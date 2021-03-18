@@ -434,7 +434,8 @@ int ObMysqlCompressAnalyzer::do_analyze_last_compress_packet(ObMysqlResp &resp)
             body_start = last_packet_buffer_ + MYSQL_NET_HEADER_LENGTH;
             body_len = meta1.pkt_len_ - MYSQL_NET_HEADER_LENGTH;
             // only one ok packet, we need rewrite later
-            if (OB_MYSQL_COM_FIELD_LIST == mysql_cmd_|| OB_MYSQL_COM_STMT_PREPARE == mysql_cmd_) {
+            if (OB_MYSQL_COM_FIELD_LIST == mysql_cmd_|| OB_MYSQL_COM_STMT_PREPARE == mysql_cmd_
+                || OB_MYSQL_COM_STMT_GET_PIECE_DATA == mysql_cmd_) {
               resp.get_analyze_result().ok_packet_action_type_ = OK_PACKET_ACTION_CONSUME;
             } else {
               resp.get_analyze_result().ok_packet_action_type_ = OK_PACKET_ACTION_REWRITE;

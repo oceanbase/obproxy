@@ -195,7 +195,9 @@ char const *get_mysql_cmd_str(ObMySQLCmd mysql_cmd)
 
     "Binlog dump gtid",  // OB_MYSQL_COM_BINLOG_DUMP_GTID,
     // "Reset connection",  // COM_RESET_CONNECTION,
-    "Prepare Execute" // OB_MYSQL_COM_STMT_PREPARE_EXECUTE,
+    "Prepare Execute", // OB_MYSQL_COM_STMT_PREPARE_EXECUTE,
+    "SEND PIECE DATA",
+    "GET PIECE DATA",
     "End",  // OB_MYSQL_COM_END,
 
     "Delete session", // OB_MYSQL_COM_DELETE_SESSION

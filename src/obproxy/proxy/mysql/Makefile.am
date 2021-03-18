@@ -62,7 +62,8 @@ common_sources =                      \
   ob_prepare_statement_struct.cpp     \
   ob_prepare_statement_struct.h       \
   ob_cursor_struct.cpp                \
-  ob_cursor_struct.h
+  ob_cursor_struct.h                  \
+  ob_piece_info.h
 
 libmysqlproxy_a_SOURCES = ${common_sources}
 

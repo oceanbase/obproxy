@@ -32,4 +32,5 @@ obproxy/proxy/mysql/ob_mysql_vctable.h\
 obproxy/proxy/mysql/ob_prepare_statement_struct.cpp\
 obproxy/proxy/mysql/ob_prepare_statement_struct.h\
 obproxy/proxy/mysql/ob_cursor_struct.cpp\
-obproxy/proxy/mysql/ob_cursor_struct.h
+obproxy/proxy/mysql/ob_cursor_struct.h\
+obproxy/proxy/mysql/ob_piece_info.h

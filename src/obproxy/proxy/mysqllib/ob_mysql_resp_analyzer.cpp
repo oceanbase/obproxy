@@ -273,7 +273,9 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       }
       case OB_MYSQL_COM_STMT_FETCH:
       case OB_MYSQL_COM_STMT_EXECUTE:
-      case OB_MYSQL_COM_QUERY : {
+      case OB_MYSQL_COM_QUERY:
+      case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
+      case OB_MYSQL_COM_STMT_GET_PIECE_DATA: {
         if (RESULT_SET_RESP_TYPE == resp_type_ || OTHERS_RESP_TYPE == resp_type_) {
           if (OB_UNLIKELY(is_mysql_mode())) {
             if (2 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
@@ -506,7 +508,9 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
                    || OB_MYSQL_COM_STMT_PREPARE == result.get_cmd()
                    || OB_MYSQL_COM_STMT_FETCH == result.get_cmd()
                    || OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd()
-                   || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == result.get_cmd())
+                   || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == result.get_cmd()
+                   || OB_MYSQL_COM_STMT_GET_PIECE_DATA == result.get_cmd()
+                   || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == result.get_cmd())
             && OB_LIKELY(MAX_RESP_TYPE == result.get_resp_type())) {
           ObMysqlRespEndingType type = meta_analyzer_.get_cur_type();
           if (ERROR_PACKET_ENDING_TYPE == type || OK_PACKET_ENDING_TYPE == type) {
@@ -642,6 +646,8 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
               } else {
                 ok_packet_action_type = OK_PACKET_ACTION_REWRITE;
               }
+            } else if (COM_STMT_GET_PIECE_DATA == result.get_cmd()) {
+              ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
             } else if (1 == prepare_ok_pkt_cnt) {
               //stmt_prepare extra ok atfter
               ok_packet_action_type = OK_PACKET_ACTION_CONSUME;

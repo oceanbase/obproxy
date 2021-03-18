@@ -195,6 +195,12 @@ const char *ObProxyParserUtils::get_sql_cmd_name(const ObMySQLCmd cmd)
     case OB_MYSQL_COM_MAX_NUM:
       name = "OB_MYSQL_COM_MAX_NUM";
       break;
+    case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
+      name ="OB_MYSQL_COM_STMT_SEND_PIECE_DATA";
+      break;
+    case OB_MYSQL_COM_STMT_GET_PIECE_DATA:
+      name = "OB_MYSQL_COM_STMT_GET_PIECE_DATA";
+      break;
 
     default:
       name = "unknown sql command";

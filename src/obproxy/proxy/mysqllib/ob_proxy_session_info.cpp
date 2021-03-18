@@ -1124,6 +1124,7 @@ void ObClientSessionInfo::destroy()
   destroy_ps_id_entry_map();
   destroy_cursor_id_addr_map();
   destroy_ps_id_addrs_map();
+  destroy_piece_info_map();
   is_trans_specified_ = false;
   is_global_vars_changed_ = false;
   is_user_idc_name_set_ = false;
@@ -1178,6 +1179,18 @@ void ObClientSessionInfo::destroy_cursor_id_addr_map()
     tmp_iter->destroy();
   }
   cursor_id_addr_map_.reset();
+}
+
+void ObClientSessionInfo::destroy_piece_info_map()
+{
+  ObPieceInfoMap::iterator last = piece_info_map_.end();
+  ObPieceInfoMap::iterator tmp_iter;
+  for (ObPieceInfoMap::iterator iter = piece_info_map_.begin(); iter != last;) {
+    tmp_iter = iter;
+    ++iter;
+    op_free(&(*tmp_iter));
+  }
+  piece_info_map_.reset();
 }
 
 void ObClientSessionInfo::destroy_ps_id_addrs_map()

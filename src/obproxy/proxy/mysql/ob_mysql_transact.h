@@ -839,6 +839,7 @@ public:
   static int build_server_request(ObTransState &s, event::ObIOBufferReader *&reader,
                                   int64_t &request_len);
 
+  static int rewrite_stmt_id(ObTransState &s, event::ObIOBufferReader *client_buffer_reader);
   static int build_oceanbase_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                           event::ObIOBufferReader *&reader, int64_t &request_len);
   static int build_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,

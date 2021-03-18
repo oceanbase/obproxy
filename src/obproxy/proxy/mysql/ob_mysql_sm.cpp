@@ -1862,11 +1862,12 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
         } else if (OB_FAIL(analyze_ps_prepare_request())) {
           LOG_WARN("fail to analyze ps prepare request", K(ret));
         }
-      } else if (OB_MYSQL_COM_STMT_EXECUTE == req_cmd) {
+      } else if (OB_MYSQL_COM_STMT_EXECUTE == req_cmd
+          || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == req_cmd) {
         if (OB_FAIL(analyze_ps_execute_request())) {
-          LOG_WARN("fail to analyze ps execute request", K(ret));
+          LOG_WARN("fail to analyze ps execute request", K(ret), K(req_cmd));
         }
-      } else if (OB_MYSQL_COM_STMT_FETCH == req_cmd) {
+      } else if (OB_MYSQL_COM_STMT_FETCH == req_cmd || OB_MYSQL_COM_STMT_GET_PIECE_DATA == req_cmd) {
         if (OB_FAIL(analyze_fetch_request())) {
           LOG_WARN("fail to analyze fetch request", K(ret));
         }
@@ -1883,7 +1884,8 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
       }
     } else if (ANALYZE_CONT == status)  {
       // large request means we have received enough packet(> request_buffer_len_)
-      if (OB_MYSQL_COM_STMT_EXECUTE == req_cmd && client_request.is_large_request()) {
+      if ((OB_MYSQL_COM_STMT_EXECUTE == req_cmd || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == req_cmd)
+          && client_request.is_large_request()) {
         if (OB_FAIL(analyze_ps_execute_request())) {
           LOG_WARN("fail to analyze ps execute request", K(ret));
         }
@@ -2002,8 +2004,8 @@ int ObMysqlSM::analyze_ps_execute_request()
     LOG_WARN("com_stmt_execute packet is empty", K(ret));
   } else {
     const char *pos = data.ptr() + MYSQL_NET_META_LENGTH;
-    int32_t ps_id = 0;
-    ObMySQLUtil::get_int4(pos, ps_id);
+    uint32_t ps_id = 0;
+    ObMySQLUtil::get_uint4(pos, ps_id);
     ObPsEntry *entry = NULL;
     if (OB_ISNULL(entry = session_info.get_ps_entry(ps_id)) || !entry->is_valid()) {
       ret = OB_ERR_UNEXPECTED;
@@ -2165,8 +2167,8 @@ int ObMysqlSM::analyze_ps_prepare_execute_request()
     LOG_WARN("com_stmt_execute packet is empty", K(ret));
   } else {
     const char *pos = data.ptr() + MYSQL_NET_META_LENGTH;
-    int32_t ps_id = 0;
-    ObMySQLUtil::get_int4(pos, ps_id);
+    uint32_t ps_id = 0;
+    ObMySQLUtil::get_uint4(pos, ps_id);
     if (0 == ps_id) {
       session_info.set_client_ps_id(client_session_->inc_and_get_ps_id());
     } else {
@@ -3028,6 +3030,7 @@ int ObMysqlSM::state_server_request_send(int event, void *data)
           ss_info.remove_ps_id_pair(client_ps_id);
           ss_info.remove_cursor_id_pair(client_ps_id);
           cs_info.remove_cursor_id_addr(client_ps_id);
+          cs_info.remove_piece_info(client_ps_id);
           if (NULL != ps_id_addrs) {
             ps_id_addrs->remove_addr(server_session_->get_netvc()->get_remote_addr());
           }
@@ -5034,7 +5037,8 @@ inline int ObMysqlSM::do_internal_observer_open()
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_LAST_INSERT_ID;
       } else if (trans_state_.is_hold_start_trans_) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_START_TRANS;
-      } else if ((OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)
+      } else if (((OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)
+                  || (OB_MYSQL_COM_STMT_SEND_PIECE_DATA == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_))
                  && client_info.need_do_prepare(server_info)) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_PREPARE;
       } else if (client_info.is_text_ps_execute() && client_info.need_do_text_ps_prepare(server_info)) {
@@ -6065,17 +6069,9 @@ int ObMysqlSM::setup_client_transfer(ObMysqlVCType to_vc_type)
              K_(sm_id), K(ret));
   } else if (OB_FAIL(trans_state_.alloc_internal_buffer(MYSQL_BUFFER_SIZE))) {
     LOG_ERROR("fail to allocate internal buffer,", K_(sm_id), K(ret));
+  } else if (OB_FAIL(ObMysqlTransact::rewrite_stmt_id(trans_state_, client_buffer_reader_ ))) {
+    LOG_WARN("rewrite stmt id failed", K(ret));
   } else {
-    // rewrite stmt id for ps execute
-    if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.sql_cmd_) {
-      ObServerSessionInfo &ss_info = server_session_->get_session_info();
-      ObClientSessionInfo &cs_info = client_session_->get_session_info();
-      uint32_t client_ps_id = cs_info.get_client_ps_id();
-      // get server_ps_id by client_ps_id
-      uint32_t server_ps_id = ss_info.get_server_ps_id(client_ps_id);
-      client_buffer_reader_->replace(reinterpret_cast<const char*>(&server_ps_id), sizeof(server_ps_id), MYSQL_NET_META_LENGTH);
-    }
-
     // Next order of business if copy the remaining data from the
     // request buffer into new buffer
     if (OB_FAIL(trans_state_.internal_buffer_->remove_append(client_buffer_reader_, written_bytes))) {
