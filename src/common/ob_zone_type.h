@@ -21,7 +21,8 @@ enum ObZoneType
 {
   ZONE_TYPE_READWRITE = 0,
   ZONE_TYPE_READONLY = 1,
-  ZONE_TYPE_INVALID = 2,
+  ZONE_TYPE_ENCRYPTION = 2,
+  ZONE_TYPE_INVALID = 3,
 };
 
 const char *zone_type_to_str(ObZoneType zone_type);

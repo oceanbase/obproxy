@@ -65,6 +65,10 @@ ObString ObProxyReplicaLocation::get_replica_type_string(const ObReplicaType typ
       string = ObString::make_string("MEMONLY");
       break;
     }
+    case REPLICA_TYPE_ENCRYPTION_LOGONLY: {
+      string = ObString::make_string("ENCRYPTION_LOGONLY");
+      break;
+    }
     case REPLICA_TYPE_MAX: {
       string = ObString::make_string("MAX");
       break;

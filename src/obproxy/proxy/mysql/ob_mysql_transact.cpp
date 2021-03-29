@@ -4275,7 +4275,8 @@ inline void ObMysqlTransact::handle_server_failed(ObTransState &s)
             break;
           }
           case -OB_ERR_READ_ONLY: {
-            if (ZONE_TYPE_READONLY == s.pll_info_.route_.cur_chosen_server_.zone_type_) {
+            if (ZONE_TYPE_READONLY == s.pll_info_.route_.cur_chosen_server_.zone_type_
+                || ZONE_TYPE_ENCRYPTION == s.pll_info_.route_.cur_chosen_server_.zone_type_) {
               LOG_WARN("zone is readonly, but server tell error response, "
                        "maybe this new server do not support old agreement, try next server",
                        "origin_name", s.pll_info_.te_name_,

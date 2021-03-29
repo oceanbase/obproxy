@@ -399,7 +399,8 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
                 && !replica.is_leader()) {
               //do not use it
               need_use_it = false;
-            } else if (REPLICA_TYPE_LOGONLY == replica.get_replica_type()) {
+            } else if (REPLICA_TYPE_LOGONLY == replica.get_replica_type()
+                       || REPLICA_TYPE_ENCRYPTION_LOGONLY == replica.get_replica_type()) {
               // log relica, skip
               need_use_it = false;
             } else {
@@ -457,7 +458,9 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
       for (int64_t j = 0; OB_SUCC(ret) && j < dummy_ldc.item_count_; ++j) {
         const ObLDCItem &dummy_item = dummy_ldc.item_array_[j];
         // skip log relica
-        if (dummy_item.is_used_ || REPLICA_TYPE_LOGONLY == dummy_item.replica_->get_replica_type()) {
+        if (dummy_item.is_used_
+            || REPLICA_TYPE_LOGONLY == dummy_item.replica_->get_replica_type()
+            || REPLICA_TYPE_ENCRYPTION_LOGONLY == dummy_item.replica_->get_replica_type()) {
           //continue
         } else if (is_only_readwrite_zone && common::ZONE_TYPE_READWRITE != dummy_item.zone_type_) {
           //do not use id

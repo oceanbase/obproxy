@@ -36,6 +36,7 @@ struct ObZoneStateInfo
   int set_idc_name(const common::ObString &idc_name);
   int64_t to_string(char *buffer, const int64_t size) const;
   bool is_readonly_zone() { return common::ZONE_TYPE_READONLY == zone_type_; }
+  bool is_encryption_zone() { return common::ZONE_TYPE_ENCRYPTION == zone_type_; }
   ObZoneStateInfo &operator=(const ObZoneStateInfo &other);
 
   common::ObString zone_name_;

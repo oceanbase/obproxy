@@ -946,8 +946,9 @@ inline bool is_not_supported_err(int err)
  * |--- 4 bits ---|--- 2 bits ---|--- 2 bits ---| LSB
  * |---  clog  ---|-- SSStore ---|--- MemStore--| LSB
  */
-static const int64_t SSSTORE_BITS_SHIFT = 2;
-static const int64_t CLOG_BITS_SHIFT    = 4;
+static const int64_t SSSTORE_BITS_SHIFT    = 2;
+static const int64_t CLOG_BITS_SHIFT       = 4;
+static const int64_t ENCRYPTION_BITS_SHIFT = 8;
 // replica type associated with memstore
 static const int64_t WITH_MEMSTORE      = 0;
 static const int64_t WITHOUT_MEMSTORE   = 1;
@@ -957,6 +958,9 @@ static const int64_t WITHOUT_SSSTORE    = 1 << SSSTORE_BITS_SHIFT;
 // replica type associated with clog
 static const int64_t SYNC_CLOG          = 0 << CLOG_BITS_SHIFT;
 static const int64_t ASYNC_CLOG         = 1 << CLOG_BITS_SHIFT;
+// replica type associated with encryption
+const int64_t WITHOUT_ENCRYPTION        = 0 << ENCRYPTION_BITS_SHIFT;
+const int64_t WITH_ENCRYPTION           = 1 << ENCRYPTION_BITS_SHIFT;
 
 // Need to manually maintain the replica_type_to_str function in utility.cpp,
 // Currently there are only three types: REPLICA_TYPE_FULL, REPLICA_TYPE_READONLY, and REPLICA_TYPE_LOGONLY
@@ -974,6 +978,8 @@ enum ObReplicaType
   REPLICA_TYPE_READONLY = (ASYNC_CLOG | WITH_SSSTORE | WITH_MEMSTORE), // 16
   // Incremental copy: not a member of paxos; no ssstore; memstore
   REPLICA_TYPE_MEMONLY = (ASYNC_CLOG | WITHOUT_SSSTORE | WITH_MEMSTORE), // 20
+  // Encrypted log copy: encrypted; paxos member; no sstore; no memstore
+  REPLICA_TYPE_ENCRYPTION_LOGONLY = (WITH_ENCRYPTION | SYNC_CLOG | WITHOUT_SSSTORE | WITHOUT_MEMSTORE), // 261
   // invalid value
   REPLICA_TYPE_MAX,
 };
@@ -995,7 +1001,8 @@ public:
   }
   static bool is_paxos_replica(const int32_t replica_type)
   {
-    return (replica_type >= REPLICA_TYPE_FULL && replica_type <= REPLICA_TYPE_LOGONLY);
+    return (replica_type >= REPLICA_TYPE_FULL && replica_type <= REPLICA_TYPE_LOGONLY)
+           || (REPLICA_TYPE_ENCRYPTION_LOGONLY == replica_type);
   }
   static bool is_writable_replica(const int32_t replica_type)
   {

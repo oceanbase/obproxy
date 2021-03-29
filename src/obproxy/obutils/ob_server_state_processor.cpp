@@ -1658,6 +1658,8 @@ int ObServerStateRefreshUtils::get_server_state_info(
       } else {
         if (server_state.zone_state_->is_readonly_zone()) {
           server_state.replica_.replica_type_ = REPLICA_TYPE_READONLY;
+        } else if (server_state.zone_state_->is_encryption_zone()) {
+          server_state.replica_.replica_type_ = REPLICA_TYPE_ENCRYPTION_LOGONLY;
         } else {
           server_state.replica_.replica_type_ = REPLICA_TYPE_FULL;
         }
