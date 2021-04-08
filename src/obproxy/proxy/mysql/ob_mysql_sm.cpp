@@ -5137,6 +5137,7 @@ void ObMysqlSM::do_internal_request()
         // current not support compress to client
         handshake.disable_use_compress();
         handshake.enable_session_track();
+        handshake.enable_connection_attr();
         // use cs id (proxy connection id)
         // before receive ok pkt from observer, the conn_id_ is always 0, means has not set
         uint32_t conn_id = client_session_->get_cs_id();

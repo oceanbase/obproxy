@@ -94,7 +94,7 @@ public:
                                const bool need_save_sys_var);
 
   static int rewrite_handshake_response_packet(ObMysqlAuthRequest &orig_auth_req,
-                                               const ObHandshakeResponseParam &param,
+                                               ObHandshakeResponseParam &param,
                                                obmysql::OMPKHandshakeResponse &tg_hsr);
 
   static int add_connect_attr(const char *key,
