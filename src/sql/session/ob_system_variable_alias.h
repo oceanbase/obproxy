@@ -74,6 +74,7 @@ namespace sql
   static const char* const OB_SV_ENABLE_PLAN_CACHE = "ob_enable_plan_cache";
   static const char* const OB_SV_ENABLE_INDEX_DIRECT_SELECT = "ob_enable_index_direct_select";
   static const char* const OB_SV_PROXY_SET_TRX_EXECUTED = "ob_proxy_set_trx_executed";
+  static const char* const OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED = "_ob_proxy_session_temporary_table_used";
   static const char* const OB_SV_ENABLE_AGGREGATION_PUSHDOWN = "ob_enable_aggregation_pushdown";
   static const char* const OB_SV_LAST_SCHEMA_VERSION = "ob_last_schema_version";
   static const char* const OB_SV_GLOBAL_DEBUG_SYNC = "ob_global_debug_sync";
