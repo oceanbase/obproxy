@@ -1090,6 +1090,9 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
   }
   if (OB_SUCC(ret)) {
     if (is_from_local) {
+      if (cluster_id == OB_DEFAULT_CLUSTER_ID) {
+        cluster_id = json_cluster_id;
+      }
       if (cluster_name == OB_META_DB_CLUSTER_NAME) {
         if (!real_meta_cluster_name.empty()) {
           data_info_.meta_table_info_.real_cluster_name_.set_value(real_meta_cluster_name);
