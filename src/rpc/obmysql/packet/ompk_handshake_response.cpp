@@ -38,6 +38,7 @@ int OMPKHandshakeResponse::decode()
   const char *pos = cdata_;
   const int64_t len = hdr_.len_;
   const char *end = buf + len;
+  bool maybe_connector_j = false;
 
   //OB_ASSERT(NULL != cdata_);
   if (NULL != cdata_) {
@@ -97,6 +98,10 @@ int OMPKHandshakeResponse::decode()
       if (capability_.cap_flags_.OB_CLIENT_CONNECT_WITH_DB) {
         database_ = ObString::make_string(pos);
         pos += strlen(pos) + 1;
+      } else {
+        if ('\0' == *pos) {
+          maybe_connector_j = true;
+        }
       }
     }
 
@@ -131,8 +136,13 @@ int OMPKHandshakeResponse::decode()
                 pos += key_len;
 
                 if (pos > end) {
-                  ret = OB_ERR_UNEXPECTED;
-                  LOG_WARN("unexpected error pos > end", K(ret), K(pos), K(end));
+                  if (!maybe_connector_j) {
+                    ret = OB_ERR_UNEXPECTED;
+                    LOG_WARN("unexpected error pos > end", K(ret), K(pos), K(end));
+                  } else {
+                    ret = OB_INVALID_ARGUMENT;
+                    LOG_DEBUG("unexpected error pos > end, may by connector/j", K(ret), K(pos), K(end));
+                  }
                 } else {
                   // get value
                   uint64_t value_inc_len = 0;
@@ -151,25 +161,51 @@ int OMPKHandshakeResponse::decode()
                       }
                     } else {
                       ret = OB_INVALID_ARGUMENT;
-                      LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(value_len));
+                      if (!maybe_connector_j) {
+                        LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(value_len));
+                      } else {
+                        LOG_DEBUG("invalid packet, may by connector/j", K(ret), K(all_attrs_len), K(value_len));
+                      }
                     }
                   } else {
                     ret = OB_INVALID_ARGUMENT;
-                    LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(value_inc_len));
+                    if (!maybe_connector_j) {
+                      LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(value_inc_len));
+                    } else {
+                      LOG_DEBUG("invalid packet, may by connector/j", K(ret), K(all_attrs_len), K(value_inc_len));
+                    }
                   }
                 }
               } else {
                 ret = OB_INVALID_ARGUMENT;
-                LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(key_len));
+                if (!maybe_connector_j) {
+                  LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(key_len));
+                } else {
+                  LOG_DEBUG("invalid packet, may by connector/j", K(ret), K(all_attrs_len), K(key_len));
+                }
               }
             } else {
               ret = OB_INVALID_ARGUMENT;
-              LOG_ERROR("error", K(ret), K(all_attrs_len), K(key_inc_len));
+              if (!maybe_connector_j) {
+                LOG_ERROR("error", K(ret), K(all_attrs_len), K(key_inc_len));
+              } else {
+                LOG_DEBUG("error, may by connector/j", K(ret), K(all_attrs_len), K(key_inc_len));
+              }
             }
           }
         } else {
           ret = OB_INVALID_ARGUMENT;
-          LOG_ERROR("get len fail", K(ret), K(pos), K(all_attrs_len));
+          if (!maybe_connector_j) {
+            LOG_ERROR("get len fail", K(ret), K(pos), K(all_attrs_len));
+          } else {
+            LOG_DEBUG("get len fail, may by connector/j", K(ret), K(pos), K(all_attrs_len));
+          }
+        }
+
+        /* 如果长度不对, 又怀疑是 connector/j, 放过, 参考 bug: https://bugs.mysql.com/bug.php?id=79612 */
+        if (OB_INVALID_ARGUMENT == ret && maybe_connector_j) {
+          ret = OB_SUCCESS;
+          connect_attrs_.reset();
         }
       }
     }
