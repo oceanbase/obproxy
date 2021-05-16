@@ -643,6 +643,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           client_session->attach_server_session(NULL);
           last_session->do_io_read(client_session, 0, NULL);
           client_session->set_last_bound_server_session(last_session);
+          client_session->set_need_return_last_bound_ss(true);
         }
 
         if (OB_SUCC(ret)) {
@@ -653,30 +654,29 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
         }
       } else {
         // move last_bound_ss to bound_ss
-        if (NULL != last_bound_session) {
-          ObMysqlServerSession *last_session = client_session->get_server_session();
-          // if bound_ss not NULL, return to connection pool
-          if (NULL != last_session) {
-            last_session->release();
-            client_session->attach_server_session(NULL);
-          }
-          // need set cur_server_session, because will check session != cur_ss_ in attach_server_session func
-          client_session->set_cur_server_session(last_bound_session);
-          if (OB_FAIL(client_session->attach_server_session(last_bound_session))) {
-            LOG_WARN("client session failed to attach server session", K(ret));
+        if (client_session->is_need_return_last_bound_ss()) {
+          if (NULL != last_bound_session) {
+            if (OB_FAIL(return_last_bound_server_session(client_session))) {
+              LOG_WARN("fail to return last bond server session", K(ret));
+            }
           } else {
-            client_session->set_last_bound_server_session(NULL);
+            LOG_WARN("[ObMysqlTransact::handle request] last bound session is NULL, we have to disconnect");
+            ret = OB_ERR_UNEXPECTED;
           }
         }
 
-        if (!client_session->is_in_trans_for_close_request()) {
-          s.sm_->trans_state_.current_.state_ = ObMysqlTransact::TRANSACTION_COMPLETE;
-        } else {
-          s.sm_->trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
-        }
+        if (OB_SUCC(ret)) {
+          if (!client_session->is_in_trans_for_close_request()) {
+            s.sm_->trans_state_.current_.state_ = ObMysqlTransact::TRANSACTION_COMPLETE;
+          } else {
+            s.sm_->trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
+          }
 
-        // if close all, move to internal request and clear session cache
-        TRANSACT_RETURN(SM_ACTION_INTERNAL_REQUEST, handle_internal_request);
+          // if close all, move to internal request and clear session cache
+          TRANSACT_RETURN(SM_ACTION_INTERNAL_REQUEST, handle_internal_request);
+        } else {
+          TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+        }
       }
     }
   } else if (s.need_pl_lookup_) {
@@ -764,8 +764,28 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
     ObMysqlServerSession *last_session = s.sm_->client_session_->get_server_session();
 
     if (OB_LIKELY(NULL != last_session)) {
-      if (obmysql::OB_MYSQL_COM_STMT_FETCH == s.trans_info_.sql_cmd_
-       || obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA == s.trans_info_.sql_cmd_) {
+      if (obmysql::OB_MYSQL_COM_STMT_FETCH == s.trans_info_.sql_cmd_) {
+        ObCursorIdAddr *cursor_id_addr = NULL;
+        if (OB_FAIL(s.sm_->get_client_session()->get_session_info().get_cursor_id_addr(cursor_id_addr))) {
+          LOG_WARN("fail to get client cursor id addr", K(ret));
+          if (OB_HASH_NOT_EXIST == ret) {
+            handle_fetch_request(s);
+          } else {
+            TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+          }
+        } else {
+          if (OB_UNLIKELY(cursor_id_addr->get_addr() != last_session->get_netvc()->get_remote_addr())) {
+            ObMysqlClientSession *client_session = s.sm_->get_client_session();
+            client_session->attach_server_session(NULL);
+            last_session->do_io_read(client_session, 0, NULL);
+            client_session->set_last_bound_server_session(last_session);
+            client_session->set_need_return_last_bound_ss(true);
+          }
+
+          s.server_info_.set_addr(cursor_id_addr->get_addr());
+          s.pll_info_.lookup_success_ = true;
+        }
+      } else if (obmysql::COM_STMT_GET_PIECE_DATA == s.trans_info_.sql_cmd_) {
         ObCursorIdAddr *cursor_id_addr = NULL;
         if (OB_FAIL(s.sm_->get_client_session()->get_session_info().get_cursor_id_addr(cursor_id_addr))) {
           LOG_WARN("fail to get client cursor id addr", K(ret));
@@ -825,11 +845,17 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           s.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
           TRANSACT_RETURN(SM_ACTION_INTERNAL_NOOP, NULL);
         }
+
+        if (OB_SUCC(ret)) {
+          s.server_info_.set_addr(last_session->get_netvc()->get_remote_addr());
+          s.pll_info_.lookup_success_ = true;
+        }
+      } else {
+        s.server_info_.set_addr(last_session->get_netvc()->get_remote_addr());
+        s.pll_info_.lookup_success_ = true;
       }
 
       if (OB_SUCC(ret)) {
-        s.server_info_.set_addr(last_session->get_netvc()->get_remote_addr());
-        s.pll_info_.lookup_success_ = true;
         start_access_control(s);
       }
     } else {
@@ -867,6 +893,32 @@ void ObMysqlTransact::handle_fetch_request(ObTransState &s)
 
   s.inner_errcode_ = ret;
   TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+}
+
+int ObMysqlTransact::return_last_bound_server_session(ObMysqlClientSession *client_session)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_ISNULL(client_session)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid param, client session is NULL", K(ret));
+  } else {
+    ObMysqlServerSession *last_session = client_session->get_server_session();
+    ObMysqlServerSession *last_bound_session = client_session->get_last_bound_server_session();
+    if (NULL != last_session) {
+      last_session->release();
+      client_session->attach_server_session(NULL);
+    }
+    client_session->set_cur_server_session(last_bound_session);
+    if (OB_FAIL(client_session->attach_server_session(last_bound_session))) {
+      LOG_WARN("fail to attach server session", K(ret));
+    } else {
+      client_session->set_last_bound_server_session(NULL);
+      client_session->set_need_return_last_bound_ss(false);
+    }
+  }
+
+  return ret;
 }
 
 void ObMysqlTransact::handle_request(ObTransState &s)

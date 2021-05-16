@@ -827,6 +827,7 @@ public:
     DISALLOW_COPY_AND_ASSIGN(ObTransState);
   }; // End of State struct.
 
+  static int return_last_bound_server_session(ObMysqlClientSession *client_session);
   static void modify_request(ObTransState &s);
   static bool is_sequence_request(ObTransState &s);
   static void handle_mysql_request(ObTransState &s);

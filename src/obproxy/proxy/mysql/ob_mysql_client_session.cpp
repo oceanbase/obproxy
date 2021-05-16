@@ -64,6 +64,7 @@ ObMysqlClientSession::ObMysqlClientSession()
       vc_ready_killed_(false), is_waiting_trans_first_request_(false),
       is_need_send_trace_info_(true), is_already_send_trace_info_(false),
       is_first_handle_close_request_(true), is_in_trans_for_close_request_(false),
+      is_need_return_last_bound_ss_(false),
       need_delete_cluster_(false), is_first_dml_sql_got_(false),
       cluster_resource_(NULL), dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(),  dummy_entry_valid_time_ns_(0), server_state_version_(0),
@@ -150,6 +151,7 @@ void ObMysqlClientSession::destroy()
   is_already_send_trace_info_ = false;
   is_first_handle_close_request_ = true;
   is_in_trans_for_close_request_ = false;
+  is_need_return_last_bound_ss_ = false;
   is_first_dml_sql_got_ = false;
 
   schema_key_.reset();

@@ -3566,6 +3566,31 @@ int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
       ObMysqlTransact::handle_pl_update(trans_state_);
     }
 
+    if (obmysql::COM_STMT_FETCH == trans_state_.trans_info_.sql_cmd_
+        && client_session_->is_need_return_last_bound_ss()) {
+      int ret = OB_SUCCESS;
+      ObMysqlServerSession *last_bound_session = client_session_->get_last_bound_server_session();
+      if (NULL != last_bound_session) {
+        // 由于 tunnel_handler_server 中只有事务中才会释放 server_session,
+        // 正常释放 server sssion 有两个地方:
+        //   1. 事务中, tunnel_handler_server
+        //   2. 事务结束, setup_cmd_complete
+        // 对于事务中的 COM_STMT_FETCH, 如果需要切换到另外一台 Server:
+        //   1. 在 tunnel_handler_server 时, 是认为事务结束了. 因为 in_trans = false;
+        //   2. 由于这里修改了事务状态，在 setup_cmd_complete 中又认为是事务中
+        // 所以上面两处都不会释放, 所以这里要释放一次
+        release_server_session();
+        if (OB_FAIL(ObMysqlTransact::return_last_bound_server_session(client_session_))) {
+          LOG_WARN("fail to return last bound server session", K(ret));
+        } else {
+          trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
+        }
+      } else {
+        trans_state_.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
+        LOG_WARN("need return last bound ss, but last bound ss is NULL", K(ret));
+      }
+    }
+
     // each sm will be destroyed after it runs 5 secondes.
     if (NULL != client_session_
         && (ObMysqlTransact::CMD_COMPLETE == trans_state_.current_.state_
@@ -4865,8 +4890,10 @@ inline int ObMysqlSM::do_oceanbase_internal_observer_open(ObMysqlServerSession *
 
   last_session = client_session_->get_server_session();
   // if need_pl_lookup is false, we must use last server session
-  // allow no last server session when OB_MYSQL_COM_STMT_CLOSE and need_pl_lookup_ = false
-  if (!trans_state_.need_pl_lookup_ && OB_MYSQL_COM_STMT_CLOSE != trans_state_.trans_info_.sql_cmd_) {
+  // allow no last server session when OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_FETCH and need_pl_lookup_ = false
+  if (!trans_state_.need_pl_lookup_
+      && ((OB_MYSQL_COM_STMT_CLOSE != trans_state_.trans_info_.sql_cmd_ && OB_MYSQL_COM_STMT_FETCH != trans_state_.trans_info_.sql_cmd_)
+           || !client_session_->is_need_return_last_bound_ss())) {
     if (OB_ISNULL(last_session)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("last server session is NULL, disconnect", K_(sm_id), K(ret));
@@ -6675,6 +6702,7 @@ int ObMysqlSM::setup_cmd_complete()
     client_session_->set_first_handle_close_request(true);
     client_session_->set_in_trans_for_close_request(false);
     client_session_->set_sharding_select_log_plan(NULL);
+    client_session_->set_need_return_last_bound_ss(false);
 
     if (OB_MYSQL_COM_HANDSHAKE == trans_state_.trans_info_.sql_cmd_) {
       // set inactivity timeout to connect_timeout after proxy send handshake
