@@ -739,7 +739,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
       if (0 == eof_pkt_cnt) {
         // analyze the first eof packet
         bool is_in_trans = false;
-        if (OB_FAIL(analyze_eof_pkt(is_in_trans, is_last_eof_pkt))) {
+        if (OB_FAIL(analyze_eof_pkt(result.get_cmd(), is_in_trans, is_last_eof_pkt))) {
           LOG_WARN("fail to analyze_eof_pkt", K(ret));
         } else {
           if (is_in_trans) {
@@ -1040,7 +1040,7 @@ inline int ObMysqlRespAnalyzer::analyze_prepare_ok_pkt(ObRespResult &result)
 }
 
 // ref:http://dev.mysql.com/doc/internals/en/packet-EOF_Packet.html
-inline int ObMysqlRespAnalyzer::analyze_eof_pkt(bool &is_in_trans, bool &is_last_eof_pkt)
+inline int ObMysqlRespAnalyzer::analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &is_in_trans, bool &is_last_eof_pkt)
 {
   int ret = OB_SUCCESS;
   int64_t len = body_buf_.len();
@@ -1065,7 +1065,7 @@ inline int ObMysqlRespAnalyzer::analyze_eof_pkt(bool &is_in_trans, bool &is_last
       cur_stmt_has_more_result_ = false;
     }
 
-    if (server_status.status_flags_.OB_SERVER_STATUS_CURSOR_EXISTS) {
+    if (COM_STMT_EXECUTE == cmd && server_status.status_flags_.OB_SERVER_STATUS_CURSOR_EXISTS) {
       is_last_eof_pkt = true;
     }
   }

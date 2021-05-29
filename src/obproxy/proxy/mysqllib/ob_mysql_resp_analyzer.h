@@ -212,7 +212,7 @@ public:
 private:
   int analyze_prepare_ok_pkt(ObRespResult &result);
   int analyze_ok_pkt(bool &is_in_trans);
-  int analyze_eof_pkt(bool &is_in_trans, bool &is_last_eof_pkt);
+  int analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &is_in_trans, bool &is_last_eof_pkt);
   int analyze_error_pkt(ObMysqlResp *resp);
   int analyze_hanshake_pkt(ObMysqlResp *resp);//extract connection id
 
