@@ -10,7 +10,7 @@ Refer to the Get Started guide [link TODO] to try out ODP.
 
 ## Documentation
 
-- English [link TODO]
+- English
 - Simplified Chinese (简体中文) [link TODO]
 
 ## Licencing
