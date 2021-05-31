@@ -1,0 +1,7 @@
+obproxy_executor_sources:=\
+obproxy/executor/ob_proxy_parallel_processor.cpp\
+obproxy/executor/ob_proxy_parallel_processor.h\
+obproxy/executor/ob_proxy_parallel_cont.cpp\
+obproxy/executor/ob_proxy_parallel_cont.h\
+obproxy/executor/ob_proxy_parallel_execute_cont.cpp\
+obproxy/executor/ob_proxy_parallel_execute_cont.h

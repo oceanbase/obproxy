@@ -1,0 +1,12 @@
+grpc_sources:=\
+obproxy/dbconfig/grpc/ob_proxy_grpc_client.cpp\
+obproxy/dbconfig/grpc/ob_proxy_grpc_client.h\
+obproxy/dbconfig/grpc/ob_proxy_grpc_client_pool.cpp\
+obproxy/dbconfig/grpc/ob_proxy_grpc_client_pool.h\
+obproxy/dbconfig/grpc/ob_proxy_grpc_utils.h
+
+
+dbconfig_grpc_libobgrpc_la_SOURCES := ${grpc_sources}
+dbconfig_grpc_libobgrpc_la_CFLAGS := $(AM_CFLAGS) -std=c++11 -w
+dbconfig_grpc_libobgrpc_la_CXXFLAGS := $(AM_CXXFLAGS) -std=c++11 -Iobproxy/dbconfig/protobuf -w
+noinst_LTLIBRARIES += dbconfig/grpc/libobgrpc.la

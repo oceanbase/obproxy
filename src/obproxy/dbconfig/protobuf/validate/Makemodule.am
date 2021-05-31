@@ -1,0 +1,3 @@
+validate_sources:=\
+obproxy/dbconfig/protobuf/validate/validate.pb.cc\
+obproxy/dbconfig/protobuf/validate/validate.pb.h

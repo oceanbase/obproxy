@@ -1,0 +1,11 @@
+packet_sources:=\
+obproxy/packet/ob_proxy_ok_packet.h\
+obproxy/packet/ob_proxy_ok_packet.cpp\
+obproxy/packet/ob_proxy_cached_packets.h\
+obproxy/packet/ob_proxy_cached_packets.cpp\
+obproxy/packet/ob_mysql_packet_writer.h\
+obproxy/packet/ob_mysql_packet_writer.cpp\
+obproxy/packet/ob_mysql_packet_reader.h\
+obproxy/packet/ob_mysql_packet_reader.cpp\
+obproxy/packet/ob_mysql_packet_util.cpp\
+obproxy/packet/ob_mysql_packet_util.h

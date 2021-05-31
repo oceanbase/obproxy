@@ -1,0 +1,3 @@
+envoy_type_sources:=\
+obproxy/dbconfig/protobuf/envoy/type/percent.pb.cc\
+obproxy/dbconfig/protobuf/envoy/type/percent.pb.h

@@ -1,0 +1,73 @@
+obutils_sources:=\
+obproxy/obutils/ob_proxy_config.h\
+obproxy/obutils/ob_proxy_config.cpp\
+obproxy/obutils/ob_proxy_reload_config.h\
+obproxy/obutils/ob_proxy_reload_config.cpp\
+obproxy/obutils/ob_proxy_sequence_entry.h\
+obproxy/obutils/ob_proxy_sequence_entry.cpp\
+obproxy/obutils/ob_proxy_sequence_entry_cont.h\
+obproxy/obutils/ob_proxy_sequence_entry_cont.cpp\
+obproxy/obutils/ob_proxy_sequence_utils.h\
+obproxy/obutils/ob_proxy_sequence_utils.cpp\
+obproxy/obutils/ob_proxy_config_manager.h\
+obproxy/obutils/ob_proxy_config_manager.cpp\
+obproxy/obutils/ob_proxy_table_processor.h\
+obproxy/obutils/ob_proxy_table_processor.cpp\
+obproxy/obutils/ob_proxy_table_processor_utils.h\
+obproxy/obutils/ob_proxy_table_processor_utils.cpp\
+obproxy/obutils/ob_proxy_stmt.h\
+obproxy/obutils/ob_proxy_stmt.cpp\
+obproxy/obutils/ob_proxy_sql_parser.h\
+obproxy/obutils/ob_proxy_sql_parser.cpp\
+obproxy/obutils/ob_proxy_config_utils.h\
+obproxy/obutils/ob_proxy_config_utils.cpp\
+obproxy/obutils/ob_proxy_refresh_server_addr_cont.h \
+obproxy/obutils/ob_proxy_refresh_server_addr_cont.cpp \
+obproxy/obutils/ob_proxy_create_server_conn_cont.h \
+obproxy/obutils/ob_proxy_create_server_conn_cont.cpp \
+obproxy/obutils/ob_proxy_conn_num_check_cont.h \
+obproxy/obutils/ob_proxy_conn_num_check_cont.cpp \
+obproxy/obutils/ob_proxy_json_config_info.h\
+obproxy/obutils/ob_proxy_json_config_info.cpp\
+obproxy/obutils/ob_proxy_string_utils.h\
+obproxy/obutils/ob_proxy_string_utils.cpp\
+obproxy/obutils/ob_config_server_processor.cpp\
+obproxy/obutils/ob_config_server_processor.h\
+obproxy/obutils/ob_async_common_task.h\
+obproxy/obutils/ob_async_common_task.cpp\
+obproxy/obutils/ob_vip_tenant_processor.h\
+obproxy/obutils/ob_vip_tenant_processor.cpp\
+obproxy/obutils/ob_vip_tenant_cache.h\
+obproxy/obutils/ob_vip_tenant_cache.cpp\
+obproxy/obutils/ob_resource_pool_processor.h\
+obproxy/obutils/ob_resource_pool_processor.cpp\
+obproxy/obutils/ob_metadb_create_cont.h\
+obproxy/obutils/ob_metadb_create_cont.cpp\
+obproxy/obutils/ob_log_file_processor.cpp\
+obproxy/obutils/ob_log_file_processor.h\
+obproxy/obutils/ob_state_info.h\
+obproxy/obutils/ob_server_state_processor.h\
+obproxy/obutils/ob_server_state_processor.cpp\
+obproxy/obutils/ob_session_pool_processor.h\
+obproxy/obutils/ob_session_pool_processor.cpp\
+obproxy/obutils/ob_hot_upgrade_processor.h\
+obproxy/obutils/ob_hot_upgrade_processor.cpp\
+obproxy/obutils/ob_congestion_entry.cpp\
+obproxy/obutils/ob_congestion_entry.h\
+obproxy/obutils/ob_congestion_manager.cpp\
+obproxy/obutils/ob_congestion_manager.h\
+obproxy/obutils/ob_safe_snapshot_entry.h\
+obproxy/obutils/ob_safe_snapshot_manager.h\
+obproxy/obutils/ob_safe_snapshot_manager.cpp\
+obproxy/obutils/ob_mt_hashtable.h\
+obproxy/obutils/ob_proxy_buf.h\
+obproxy/obutils/ob_tenant_stat_struct.h\
+obproxy/obutils/ob_tenant_stat_struct.cpp\
+obproxy/obutils/ob_tenant_stat_manager.h\
+obproxy/obutils/ob_tenant_stat_manager.cpp\
+obproxy/obutils/ob_cached_variables.h\
+obproxy/obutils/ob_cached_variables.cpp\
+obproxy/obutils/ob_task_flow_controller.h\
+obproxy/obutils/ob_task_flow_controller.cpp\
+obproxy/obutils/ob_proxy_config_processor.h\
+obproxy/obutils/ob_proxy_config_processor.cpp

@@ -1,0 +1,5 @@
+envoy_service_discovery_v2_sources:=\
+obproxy/dbconfig/protobuf/envoy/service/discovery/v2/ads.grpc.pb.cc\
+obproxy/dbconfig/protobuf/envoy/service/discovery/v2/ads.grpc.pb.h\
+obproxy/dbconfig/protobuf/envoy/service/discovery/v2/ads.pb.cc\
+obproxy/dbconfig/protobuf/envoy/service/discovery/v2/ads.pb.h

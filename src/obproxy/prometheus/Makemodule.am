@@ -1,0 +1,23 @@
+prometheus_exporter_sources:=\
+obproxy/prometheus/ob_prometheus_exporter.cpp\
+obproxy/prometheus/ob_prometheus_exporter.h\
+obproxy/prometheus/ob_prometheus_convert.cpp\
+obproxy/prometheus/ob_prometheus_convert.h
+
+prometheus_libprometheus_exporter_la_SOURCES:= ${prometheus_exporter_sources}
+prometheus_libprometheus_exporter_la_CXXFLAGS := $(AM_CXXFLAGS) -std=c++11
+noinst_LTLIBRARIES += prometheus/libprometheus_exporter.la
+
+prometheus_sources:=\
+obproxy/prometheus/ob_prometheus_processor.cpp\
+obproxy/prometheus/ob_prometheus_processor.h\
+obproxy/prometheus/ob_prometheus_info.cpp\
+obproxy/prometheus/ob_prometheus_info.h\
+obproxy/prometheus/ob_prometheus_utils.cpp\
+obproxy/prometheus/ob_prometheus_utils.h\
+obproxy/prometheus/ob_sql_prometheus.cpp\
+obproxy/prometheus/ob_sql_prometheus.h\
+obproxy/prometheus/ob_net_prometheus.cpp\
+obproxy/prometheus/ob_net_prometheus.h\
+obproxy/prometheus/ob_route_prometheus.cpp\
+obproxy/prometheus/ob_route_prometheus.h

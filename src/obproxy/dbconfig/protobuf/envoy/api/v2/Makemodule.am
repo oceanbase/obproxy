@@ -1,0 +1,3 @@
+envoy_api_v2_sources :=\
+obproxy/dbconfig/protobuf/envoy/api/v2/discovery.pb.cc\
+obproxy/dbconfig/protobuf/envoy/api/v2/discovery.pb.h

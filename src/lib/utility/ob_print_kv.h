@@ -1,0 +1,178 @@
+/**
+ * Copyright (c) 2021 OceanBase
+ * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
+ * You can use this software according to the terms and conditions of the Mulan PubL v2.
+ * You may obtain a copy of Mulan PubL v2 at:
+ *          http://license.coscl.org.cn/MulanPubL-2.0
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PubL v2 for more details.
+ */
+
+#ifndef LIB_UTILITY_OB_PRINT_KV_
+#define LIB_UTILITY_OB_PRINT_KV_
+
+#include "lib/oblog/ob_log_module.h"
+#include "lib/utility/ob_macro_utils.h"
+
+#define TYPENAME_TN0
+#define TYPENAME_TN1 typename T1
+#define TYPENAME_TN2 TYPENAME_TN1, typename T2
+#define TYPENAME_TN3 TYPENAME_TN2, typename T3
+#define TYPENAME_TN4 TYPENAME_TN3, typename T4
+#define TYPENAME_TN5 TYPENAME_TN4, typename T5
+#define TYPENAME_TN6 TYPENAME_TN5, typename T6
+#define TYPENAME_TN7 TYPENAME_TN6, typename T7
+#define TYPENAME_TN8 TYPENAME_TN7, typename T8
+#define TYPENAME_TN9 TYPENAME_TN8, typename T9
+#define TYPENAME_TN10 TYPENAME_TN9, typename T10
+#define TYPENAME_TN11 TYPENAME_TN10, typename T11
+#define TYPENAME_TN12 TYPENAME_TN11, typename T12
+#define TYPENAME_TN13 TYPENAME_TN12, typename T13
+#define TYPENAME_TN14 TYPENAME_TN13, typename T14
+#define TYPENAME_TN15 TYPENAME_TN14, typename T15
+#define TYPENAME_TN16 TYPENAME_TN15, typename T16
+#define TYPENAME_TN17 TYPENAME_TN16, typename T17
+#define TYPENAME_TN18 TYPENAME_TN17, typename T18
+#define TYPENAME_TN19 TYPENAME_TN18, typename T19
+#define TYPENAME_TN20 TYPENAME_TN19, typename T20
+#define TYPENAME_TN21 TYPENAME_TN20, typename T21
+#define TYPENAME_TN22 TYPENAME_TN21, typename T22
+#define TYPENAME_TN23 TYPENAME_TN22, typename T23
+#define TYPENAME_TN24 TYPENAME_TN23, typename T24
+#define TYPENAME_TN25 TYPENAME_TN24, typename T25
+
+#define TYPENAME_TN26 TYPENAME_TN25, typename T26
+#define TYPENAME_TN27 TYPENAME_TN26, typename T27
+#define TYPENAME_TN28 TYPENAME_TN27, typename T28
+#define TYPENAME_TN29 TYPENAME_TN28, typename T29
+#define TYPENAME_TN30 TYPENAME_TN29, typename T30
+
+#define FUNC_ARG(n) const char* key##n, const T##n &obj##n
+#define ARGUMENT_KV0
+#define ARGUMENT_KV1 FUNC_ARG(1)
+#define ARGUMENT_KV2 ARGUMENT_KV1, FUNC_ARG(2)
+#define ARGUMENT_KV3 ARGUMENT_KV2, FUNC_ARG(3)
+#define ARGUMENT_KV4 ARGUMENT_KV3, FUNC_ARG(4)
+#define ARGUMENT_KV5 ARGUMENT_KV4, FUNC_ARG(5)
+#define ARGUMENT_KV6 ARGUMENT_KV5, FUNC_ARG(6)
+#define ARGUMENT_KV7 ARGUMENT_KV6, FUNC_ARG(7)
+#define ARGUMENT_KV8 ARGUMENT_KV7, FUNC_ARG(8)
+#define ARGUMENT_KV9 ARGUMENT_KV8, FUNC_ARG(9)
+#define ARGUMENT_KV10 ARGUMENT_KV9, FUNC_ARG(10)
+#define ARGUMENT_KV11 ARGUMENT_KV10, FUNC_ARG(11)
+#define ARGUMENT_KV12 ARGUMENT_KV11, FUNC_ARG(12)
+#define ARGUMENT_KV13 ARGUMENT_KV12, FUNC_ARG(13)
+#define ARGUMENT_KV14 ARGUMENT_KV13, FUNC_ARG(14)
+#define ARGUMENT_KV15 ARGUMENT_KV14, FUNC_ARG(15)
+#define ARGUMENT_KV16 ARGUMENT_KV15, FUNC_ARG(16)
+#define ARGUMENT_KV17 ARGUMENT_KV16, FUNC_ARG(17)
+#define ARGUMENT_KV18 ARGUMENT_KV17, FUNC_ARG(18)
+#define ARGUMENT_KV19 ARGUMENT_KV18, FUNC_ARG(19)
+#define ARGUMENT_KV20 ARGUMENT_KV19, FUNC_ARG(20)
+#define ARGUMENT_KV21 ARGUMENT_KV20, FUNC_ARG(21)
+#define ARGUMENT_KV22 ARGUMENT_KV21, FUNC_ARG(22)
+#define ARGUMENT_KV23 ARGUMENT_KV22, FUNC_ARG(23)
+#define ARGUMENT_KV24 ARGUMENT_KV23, FUNC_ARG(24)
+#define ARGUMENT_KV25 ARGUMENT_KV24, FUNC_ARG(25)
+#define ARGUMENT_KV26 ARGUMENT_KV25, FUNC_ARG(26)
+#define ARGUMENT_KV27 ARGUMENT_KV26, FUNC_ARG(27)
+#define ARGUMENT_KV28 ARGUMENT_KV27, FUNC_ARG(28)
+#define ARGUMENT_KV29 ARGUMENT_KV28, FUNC_ARG(29)
+#define ARGUMENT_KV30 ARGUMENT_KV29, FUNC_ARG(30)
+
+#define J_COMMA_WITH_RET \
+    if (OB_FAIL(ret)) { \
+    } else if (OB_FAIL(J_COMMA())) { \
+    } else {}
+
+
+#define BODY(n) \
+    if (OB_SUCC(ret)) { \
+      if (1 == n) {\
+        ret = common::databuff_print_json_kv(buf, buf_len, pos, key##n, obj##n);\
+      } else {\
+        ret = common::databuff_print_json_kv_comma(buf, buf_len, pos, key##n, obj##n);\
+      }\
+    }
+
+#define FUNC_BODY_0
+#define FUNC_BODY_1 BODY(1)
+#define FUNC_BODY_2 FUNC_BODY_1 BODY(2)
+#define FUNC_BODY_3 FUNC_BODY_2 BODY(3)
+#define FUNC_BODY_4 FUNC_BODY_3 BODY(4)
+#define FUNC_BODY_5 FUNC_BODY_4 BODY(5)
+#define FUNC_BODY_6 FUNC_BODY_5 BODY(6)
+#define FUNC_BODY_7 FUNC_BODY_6 BODY(7)
+#define FUNC_BODY_8 FUNC_BODY_7 BODY(8)
+#define FUNC_BODY_9 FUNC_BODY_8 BODY(9)
+#define FUNC_BODY_10 FUNC_BODY_9 BODY(10)
+#define FUNC_BODY_11 FUNC_BODY_10 BODY(11)
+#define FUNC_BODY_12 FUNC_BODY_11 BODY(12)
+#define FUNC_BODY_13 FUNC_BODY_12 BODY(13)
+#define FUNC_BODY_14 FUNC_BODY_13 BODY(14)
+#define FUNC_BODY_15 FUNC_BODY_14 BODY(15)
+#define FUNC_BODY_16 FUNC_BODY_15 BODY(16)
+#define FUNC_BODY_17 FUNC_BODY_16 BODY(17)
+#define FUNC_BODY_18 FUNC_BODY_17 BODY(18)
+#define FUNC_BODY_19 FUNC_BODY_18 BODY(19)
+#define FUNC_BODY_20 FUNC_BODY_19 BODY(20)
+#define FUNC_BODY_21 FUNC_BODY_20 BODY(21)
+#define FUNC_BODY_22 FUNC_BODY_21 BODY(22)
+#define FUNC_BODY_23 FUNC_BODY_22 BODY(23)
+#define FUNC_BODY_24 FUNC_BODY_23 BODY(24)
+#define FUNC_BODY_25 FUNC_BODY_24 BODY(25)
+#define FUNC_BODY_26 FUNC_BODY_25 BODY(26)
+#define FUNC_BODY_27 FUNC_BODY_26 BODY(27)
+#define FUNC_BODY_28 FUNC_BODY_27 BODY(28)
+#define FUNC_BODY_29 FUNC_BODY_28 BODY(29)
+#define FUNC_BODY_30 FUNC_BODY_29 BODY(30)
+
+#define DEFINE_PRINT_KV(n)\
+  template <TYPENAME_TN##n>                                             \
+  int databuff_print_kv(char *buf, const int64_t buf_len, int64_t& pos, ARGUMENT_KV##n)\
+  {                                                                     \
+    int ret = common::OB_SUCCESS;                                       \
+    FUNC_BODY_##n                                                       \
+    return ret;                                                         \
+  }
+
+namespace oceanbase
+{
+namespace common
+{
+DEFINE_PRINT_KV(1)
+DEFINE_PRINT_KV(2)
+DEFINE_PRINT_KV(3)
+DEFINE_PRINT_KV(4)
+DEFINE_PRINT_KV(5)
+DEFINE_PRINT_KV(6)
+DEFINE_PRINT_KV(7)
+DEFINE_PRINT_KV(8)
+DEFINE_PRINT_KV(9)
+DEFINE_PRINT_KV(10)
+DEFINE_PRINT_KV(11)
+DEFINE_PRINT_KV(12)
+DEFINE_PRINT_KV(13)
+DEFINE_PRINT_KV(14)
+DEFINE_PRINT_KV(15)
+DEFINE_PRINT_KV(16)
+DEFINE_PRINT_KV(17)
+DEFINE_PRINT_KV(18)
+DEFINE_PRINT_KV(19)
+DEFINE_PRINT_KV(20)
+DEFINE_PRINT_KV(21)
+DEFINE_PRINT_KV(22)
+DEFINE_PRINT_KV(23)
+DEFINE_PRINT_KV(24)
+DEFINE_PRINT_KV(25)
+DEFINE_PRINT_KV(26)
+DEFINE_PRINT_KV(27)
+DEFINE_PRINT_KV(28)
+DEFINE_PRINT_KV(29)
+DEFINE_PRINT_KV(30)
+} // end namespace common
+} // end namespace oceanbase
+
+#endif /* LIB_UTILITY_OB_PRINT_KV_ */

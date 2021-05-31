@@ -1,0 +1,30 @@
+dbconfig_sources:=\
+obproxy/dbconfig/ob_proxy_db_config_info.h\
+obproxy/dbconfig/ob_proxy_db_config_info.cpp\
+obproxy/dbconfig/ob_proxy_json_shard_config_info.h\
+obproxy/dbconfig/ob_proxy_json_shard_config_info.cpp\
+obproxy/dbconfig/ob_proxy_db_config_processor.h\
+obproxy/dbconfig/ob_proxy_db_config_processor.cpp\
+obproxy/dbconfig/ob_proxy_db_config_task.h\
+obproxy/dbconfig/ob_proxy_db_config_task.cpp\
+obproxy/dbconfig/ob_proxy_pb_utils.h\
+obproxy/dbconfig/ob_proxy_pb_utils.cpp\
+obproxy/dbconfig/ob_dbconfig_fetch_cont.h\
+obproxy/dbconfig/ob_dbconfig_fetch_cont.cpp\
+obproxy/dbconfig/ob_dbconfig_child_cont.h\
+obproxy/dbconfig/ob_dbconfig_child_cont.cpp\
+obproxy/dbconfig/ob_dbconfig_db_cont.h\
+obproxy/dbconfig/ob_dbconfig_db_cont.cpp\
+obproxy/dbconfig/ob_dbconfig_tenant_cont.h\
+obproxy/dbconfig/ob_dbconfig_tenant_cont.cpp\
+obproxy/dbconfig/ob_proxy_inotify_processor.h\
+obproxy/dbconfig/ob_proxy_inotify_processor.cpp
+
+include obproxy/dbconfig/protobuf/Makemodule.am
+include obproxy/dbconfig/grpc/Makemodule.am
+
+dbconfig_libdbconfig_la_SOURCES := ${dbconfig_sources}
+dbconfig_libdbconfig_la_CFLAGS := $(AM_CFLAGS_WITH_ARCH) -std=c++11
+dbconfig_libdbconfig_la_CXXFLAGS := $(AM_CXXFLAGS_WITH_ARCH) -std=gnu++11 -Iobproxy/dbconfig/protobuf -Iobproxy/dbconfig/grpc
+dbconfig_libdbconfig_la_LIBADD := dbconfig/grpc/libobgrpc.la dbconfig/protobuf/libobprotobuf.la
+noinst_LTLIBRARIES += dbconfig/libdbconfig.la

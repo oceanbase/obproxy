@@ -1,0 +1,14 @@
+obproxy_engine_sources:=\
+obproxy/engine/ob_proxy_operator_result.h\
+obproxy/engine/ob_proxy_operator.h\
+obproxy/engine/ob_proxy_operator.cpp\
+obproxy/engine/ob_proxy_operator_projection.h\
+obproxy/engine/ob_proxy_operator_projection.cpp\
+obproxy/engine/ob_proxy_operator_sort.h\
+obproxy/engine/ob_proxy_operator_sort.cpp\
+obproxy/engine/ob_proxy_operator_agg.h\
+obproxy/engine/ob_proxy_operator_agg.cpp\
+obproxy/engine/ob_proxy_operator_table_scan.h\
+obproxy/engine/ob_proxy_operator_table_scan.cpp\
+obproxy/engine/ob_proxy_operator_async_task.h\
+obproxy/engine/ob_proxy_operator_async_task.cpp

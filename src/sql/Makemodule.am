@@ -1,0 +1,5 @@
+obproxy_sql_sources:=\
+sql/session/ob_system_variable_alias.h\
+sql/session/ob_system_variable_init.h\
+sql/session/ob_sys_var_class_type.h\
+sql/resolver/ob_stmt_type.h

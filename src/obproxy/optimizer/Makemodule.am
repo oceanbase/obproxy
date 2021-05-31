@@ -1,0 +1,5 @@
+obproxy_optimizer_sources:=\
+obproxy/optimizer/ob_sharding_select_log_plan.h\
+obproxy/optimizer/ob_sharding_select_log_plan.cpp\
+obproxy/optimizer/ob_proxy_optimizer_processor.h\
+obproxy/optimizer/ob_proxy_optimizer_processor.cpp

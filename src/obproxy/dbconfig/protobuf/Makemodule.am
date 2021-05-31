@@ -1,0 +1,23 @@
+include obproxy/dbconfig/protobuf/dds-api/Makemodule.am
+include obproxy/dbconfig/protobuf/envoy/api/v2/Makemodule.am
+include obproxy/dbconfig/protobuf/envoy/api/v2/core/Makemodule.am
+include obproxy/dbconfig/protobuf/envoy/service/discovery/v2/Makemodule.am
+include obproxy/dbconfig/protobuf/envoy/type/Makemodule.am
+include obproxy/dbconfig/protobuf/gogoproto/Makemodule.am
+include obproxy/dbconfig/protobuf/google/rpc/Makemodule.am
+include obproxy/dbconfig/protobuf/validate/Makemodule.am
+
+protobuf_sources:=\
+${dds_api_sources}\
+${envoy_api_v2_sources}\
+${envoy_api_v2_core_sources}\
+${envoy_type_sources}\
+${envoy_service_discovery_v2_sources}\
+${gogoproto_sources}\
+${google_rpc_status_sources}\
+${validate_sources}
+
+dbconfig_protobuf_libobprotobuf_la_SOURCES := ${protobuf_sources}
+dbconfig_protobuf_libobprotobuf_la_CFLAGS := $(AM_CFLAGS) -std=c++11
+dbconfig_protobuf_libobprotobuf_la_CXXFLAGS := $(AM_CXXFLAGS) -std=c++11 -Iobproxy/dbconfig/protobuf -w
+noinst_LTLIBRARIES += dbconfig/protobuf/libobprotobuf.la

@@ -1,0 +1,64 @@
+lib_compress_libsnappy_1_0_la_SOURCES=\
+lib/compress/snappy/ob_snappy_compressor.cpp\
+lib/compress/snappy/snappy.cpp\
+lib/compress/snappy/snappy-sinksource.cpp\
+lib/compress/snappy/snappy-stubs-internal.cpp\
+lib/compress/snappy/snappy-sinksource.h\
+lib/compress/snappy/snappy-stubs-internal.h\
+lib/compress/snappy/snappy-c.h\
+lib/compress/snappy/snappy-c.cpp\
+lib/compress/snappy/ob_snappy_compressor.h\
+lib/compress/snappy/snappy.h\
+lib/compress/snappy/snappy-internal.h\
+lib/compress/snappy/snappy-stubs-public.h\
+lib/compress/snappy/snappy-internal.h\
+lib/compress/snappy/snappy-stubs-public.h
+lib_compress_libsnappy_1_0_la_CPPFLAGS:= -I$(top_srcdir)/src -I${DEP_DIR}/include/ -w
+
+lib_compress_liblz4_1_0_la_SOURCES:=\
+lib/compress/lz4/ob_lz4_compressor.cpp\
+lib/compress/lz4/lz4.c\
+lib/compress/lz4/ob_lz4_compressor.h\
+lib/compress/lz4/lz4.h
+lib_compress_liblz4_1_0_la_CPPFLAGS:= -I$(top_srcdir)/src -I${DEP_DIR}/include/ -w
+
+lib_compress_libnone_la_SOURCES:=\
+lib/compress/none/ob_none_compressor.cpp\
+lib/compress/none/ob_none_compressor.h
+lib_compress_libnone_la_CPPFLAGS:= -I$(top_srcdir)/src -I${DEP_DIR}/include/ -w
+
+#lib_compress_libnone_la_LDFLAGS:=-ldl
+
+lib_compress_libzlib_1_0_la_SOURCES:=\
+lib/compress/zlib/ob_zlib_compressor.cpp\
+lib/compress/zlib/ob_zlib_compressor.h\
+lib/compress/zlib/adler32.c\
+lib/compress/zlib/crc32.c\
+lib/compress/zlib/gzclose.c\
+lib/compress/zlib/gzread.c\
+lib/compress/zlib/infback.c\
+lib/compress/zlib/inflate.c\
+lib/compress/zlib/trees.c\
+lib/compress/zlib/zutil.c\
+lib/compress/zlib/compress.c\
+lib/compress/zlib/deflate.c\
+lib/compress/zlib/gzlib.c\
+lib/compress/zlib/gzwrite.c\
+lib/compress/zlib/inffast.c\
+lib/compress/zlib/inftrees.c\
+lib/compress/zlib/uncompr.c\
+lib/compress/zlib/crc32.h\
+lib/compress/zlib/gzguts.h\
+lib/compress/zlib/inffixed.h\
+lib/compress/zlib/inftrees.h\
+lib/compress/zlib/zconf.h\
+lib/compress/zlib/zlib.h\
+lib/compress/zlib/deflate.h\
+lib/compress/zlib/inffast.h\
+lib/compress/zlib/inflate.h\
+lib/compress/zlib/trees.h\
+lib/compress/zlib/zutil.h
+lib_compress_libzlib_1_0_la_CPPFLAGS:= -I$(top_srcdir)/src -I${DEP_DIR}/include/ -w
+
+
+noinst_LTLIBRARIES += lib/compress/libnone.la lib/compress/libzlib_1.0.la lib/compress/libsnappy_1.0.la lib/compress/liblz4_1.0.la

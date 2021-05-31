@@ -1,0 +1,3 @@
+google_rpc_status_sources:=\
+obproxy/dbconfig/protobuf/google/rpc/status.pb.cc\
+obproxy/dbconfig/protobuf/google/rpc/status.pb.h

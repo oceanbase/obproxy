@@ -1,0 +1,9 @@
+qos_sources:=\
+obproxy/qos/ob_proxy_qos_stat_info.h\
+obproxy/qos/ob_proxy_qos_stat_info.cpp\
+obproxy/qos/ob_proxy_qos_stat_processor.h\
+obproxy/qos/ob_proxy_qos_stat_processor.cpp\
+obproxy/qos/ob_proxy_qos_condition.h\
+obproxy/qos/ob_proxy_qos_condition.cpp\
+obproxy/qos/ob_proxy_qos_action.h\
+obproxy/qos/ob_proxy_qos_action.cpp

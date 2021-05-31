@@ -1,0 +1,34 @@
+/* equal */
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int
+sql    = where t1.c1 = 1 and t1.c2 = 2;
+
+/* range */
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int
+sql    = where c1 < 10 and c1 > 1;
+
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int
+sql    = where c1 <= 10 and c1 >= 1;
+
+/* datetime */
+schema = table_name:t1, part_key:dt, part_level:1, range_type:datetime
+sql    = where dt = '2016-08-31 00:00:00';
+
+schema = table_name:t1, part_key:dt, part_level:1, range_type:datetime
+sql    = where dt > '2016-08-31 00:00:00' and dt < '2016-09-01 00:00:00';
+
+/* in */
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int
+sql    = where c1 in (1);
+
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int
+sql    = where c1 in (1, 2, 3);
+
+/* two level part */
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int, part_key:c2, part_level:2, range_type:int,
+sql    = where c1 = 1 and c2 = 2;
+
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int, part_key:c2, part_level:2, range_type:int,
+sql    = where c1 > 10 and c1 < 19 and c2 > 20 and c2 < 29;
+
+schema = table_name:t1, part_key:c1, part_level:1, range_type:int, part_key:c2, part_level:2, range_type:datetime,
+sql    = where c1 > 10 and c1 < 19 and c2 > '2016-10-10' and c2 < '2016-11-11';

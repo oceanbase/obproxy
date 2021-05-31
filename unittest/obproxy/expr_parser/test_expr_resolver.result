@@ -1,0 +1,210 @@
+SQL   :  where t1.c1 = 1 and t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+RANGES: { ranges_[0]:[1 ; 1], ranges_[1]:( ; ),}
+
+SQL   :  where c1 < 10 and c1 > 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+RANGES: { ranges_[0]:(1 ; 10), ranges_[1]:( ; ),}
+
+SQL   :  where c1 <= 10 and c1 >= 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+RANGES: { ranges_[0]:[1 ; 10], ranges_[1]:( ; ),}
+
+SQL   :  where dt = '2016-08-31 00:00:00'
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-08-31 00:00:00,
+  }
+}
+}
+RANGES: { ranges_[0]:[2016-08-31 00:00:00 ; 2016-08-31 00:00:00], ranges_[1]:( ; ),}
+
+SQL   :  where dt > '2016-08-31 00:00:00' and dt < '2016-09-01 00:00:00'
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-08-31 00:00:00,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-09-01 00:00:00,
+  }
+}
+}
+RANGES: { ranges_[0]:(2016-08-31 00:00:00 ; 2016-09-01 00:00:00), ranges_[1]:( ; ),}
+
+SQL   :  where c1 in (1)
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+RANGES: { ranges_[0]:[1 ; 1], ranges_[1]:( ; ),}
+
+SQL   :  where c1 in (1, 2, 3)
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+RANGES: { ranges_[0]:[1 ; 1], ranges_[1]:( ; ),}
+
+SQL   :  where c1 = 1 and c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:2,
+  }
+}
+}
+RANGES: { ranges_[0]:[1 ; 1], ranges_[1]:[2 ; 2],}
+
+SQL   :  where c1 > 10 and c1 < 19 and c2 > 20 and c2 < 29
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:19,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:20,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:29,
+  }
+}
+}
+RANGES: { ranges_[0]:(10 ; 19), ranges_[1]:(20 ; 29),}
+
+SQL   :  where c1 > 10 and c1 < 19 and c2 > '2016-10-10' and c2 < '2016-11-11'
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:19,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-10-10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-11-11,
+  }
+}
+}
+RANGES: { ranges_[0]:(10 ; 19), ranges_[1]:(2016-10-10 ; 2016-11-11),}
+

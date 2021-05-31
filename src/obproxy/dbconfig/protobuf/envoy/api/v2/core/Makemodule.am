@@ -1,0 +1,3 @@
+envoy_api_v2_core_sources :=\
+obproxy/dbconfig/protobuf/envoy/api/v2/core/base.pb.cc\
+obproxy/dbconfig/protobuf/envoy/api/v2/core/base.pb.h

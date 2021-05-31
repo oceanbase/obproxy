@@ -1,0 +1,560 @@
+SQL   :  where SYS.NORD.NO_D_ID = :-1 and SYS.NORD.NO_W_ID = :0 and rownum <= 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where SYS.NORD.NO_D_ID = :-1 and SYS.NORD.NO_W_ID = :0 and rownum <= 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:-1,
+  }
+}
+}
+
+SQL   :  where ("CUST"."C_W_ID" = :0) and ("CUST"."C_D_ID" = :1)
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where (TPCC.DIST.D_ID = :1) and (TPCC.DIST.D_W_ID = :0) returning TPCC.DIST.D_TAX,(TPCC.DIST.D_NEXT_O_ID - 1)
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where (TPCC.DIST.D_ID = :1) and ((TPCC.DIST.D_W_ID) = :0) returning TPCC.DIST.D_TAX,(TPCC.DIST.D_NEXT_O_ID - 1)
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where ("TPCC"."CUST"."C_W_ID" = :0) and ("TPCC"."CUST"."C_D_ID" = :1) and ("TPCC"."CUST"."C_LAST" = :7) order by "TPCC"."CUST"."C_FIRST"
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where (TPCC.CUST.C_W_ID = :0) and (TPCC.CUST.C_D_ID = :1) and (TPCC.CUST.C_LAST = :7) order by TPCC.CUST.C_FIRST
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where d1.t1.c1 = 1 and d1.t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where d1.t1.c1 = ? and d1.t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where t1.c2 = ? and t1.c1 = ?
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:1,
+  }
+}
+}
+
+SQL   :  where t1.c1 in (?, ?, ?)
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:0,
+  }
+}
+}
+
+SQL   :  where t1.c1 in (1, 2, 3)
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where t1.c1 = '?' and t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:?,
+  }
+}
+}
+
+SQL   :  where t1.c1 = :1 and t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:1,
+  }
+}
+}
+
+SQL   :  where t1.c1 = :2 and t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_PLACE_HOLDER, value:2,
+  }
+}
+}
+
+SQL   :  where t1.c2 = :1 and t1.c1 = 3
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:3,
+  }
+}
+}
+
+SQL   :  join d1.t2 on  t1.c1 = 1 and t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  join t2 on t1.c2 = t2.c2 join t3 on t1.c3 = t3.c3 and  t1.c1 = 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where t1.c1 = 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where t1.c2 = 2
+RESULT:
+{}
+
+SQL   :  where t1.c1 between 1 and 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:2,
+  }
+}
+}
+
+SQL   :  join t2 b on t1.c1 between 1 and 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:2,
+  }
+}
+}
+
+SQL   :  where c1 < 10 and c1 > 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where c1 <= 10 and c1 >= 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GE
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where t3.c1 = 1 and t1.c1 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:2,
+  }
+}
+}
+
+SQL   :  where otherdb.t1.c1 = 1 and mydb.t1.c1 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:2,
+  }
+}
+}
+
+SQL   :  where tmp1.c1 = 1 and c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where tmp1.c1 = 1 and c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where dt = '2016-08-31 00:00:00'
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-08-31 00:00:00,
+  }
+}
+}
+
+SQL   :  where dt > '2016-08-31 00:00:00' and dt < '2016-09-01 00:00:00'
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-08-31 00:00:00,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-09-01 00:00:00,
+  }
+}
+}
+
+SQL   :  where dt > '2016-08-31 00:00:00' and dt < '2016-09-01 00:00:00'
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-08-31 00:00:00,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_STR_VAL, value:2016-09-01 00:00:00,
+  }
+}
+}
+
+SQL   :  where c1 = 1 + 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+    type:TOKEN_OPERATOR, value:OPT_ADD,
+    type:TOKEN_INT_VAL, value:2,
+  }
+}
+}
+
+SQL   :  where c1 = 1 and c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:2,
+  }
+}
+}
+
+SQL   :  where c1 > 10 and c1 < 19 and c2 > 20 and c2 < 29
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:19,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:20,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:29,
+  }
+}
+}
+
+SQL   :  where c3 = 1 or c1 > 10 and c1 < 19 or c2 > 20 and c2 < 29 or c4 = 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:10,
+  }
+}
+{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:19,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_GT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:20,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_LT
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:29,
+  }
+}
+}
+
+SQL   :  where c1 = 1 + 2 - 3 / 4 * 5 % 6 and c2 = 1
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+    type:TOKEN_OPERATOR, value:OPT_ADD,
+    type:TOKEN_INT_VAL, value:2,
+    type:TOKEN_OPERATOR, value:OPT_MINUS,
+    type:TOKEN_INT_VAL, value:3,
+    type:TOKEN_OPERATOR, value:OPT_DIV,
+    type:TOKEN_INT_VAL, value:4,
+    type:TOKEN_OPERATOR, value:OPT_MUL,
+    type:TOKEN_INT_VAL, value:5,
+    type:TOKEN_OPERATOR, value:OPT_MOD,
+    type:TOKEN_INT_VAL, value:6,
+  }
+}
+{
+  level:PART_KEY_LEVEL_TWO
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+
+SQL   :  where t1.C1 = 1 and t1.c2 = 2
+RESULT:
+{{
+  level:PART_KEY_LEVEL_ONE
+  type:F_COMP_EQ
+  right_value:
+  {
+    type:TOKEN_INT_VAL, value:1,
+  }
+}
+}
+

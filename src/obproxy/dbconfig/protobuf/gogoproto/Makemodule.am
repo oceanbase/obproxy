@@ -1,0 +1,3 @@
+gogoproto_sources:=\
+obproxy/dbconfig/protobuf/gogoproto/gogo.pb.cc\
+obproxy/dbconfig/protobuf/gogoproto/gogo.pb.h

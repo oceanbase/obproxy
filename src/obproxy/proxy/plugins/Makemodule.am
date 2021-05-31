@@ -1,0 +1,13 @@
+proxy_plugins_sources:=\
+obproxy/proxy/plugins/ob_mysql_response_compress_transform_plugin.cpp\
+obproxy/proxy/plugins/ob_mysql_response_compress_transform_plugin.h\
+obproxy/proxy/plugins/ob_mysql_request_compress_transform_plugin.cpp\
+obproxy/proxy/plugins/ob_mysql_request_compress_transform_plugin.h \
+obproxy/proxy/plugins/ob_mysql_response_prepare_transform_plugin.cpp\
+obproxy/proxy/plugins/ob_mysql_response_prepare_transform_plugin.h\
+obproxy/proxy/plugins/ob_mysql_request_prepare_transform_plugin.cpp\
+obproxy/proxy/plugins/ob_mysql_request_prepare_transform_plugin.h\
+obproxy/proxy/plugins/ob_mysql_response_cursor_transform_plugin.cpp\
+obproxy/proxy/plugins/ob_mysql_response_cursor_transform_plugin.h\
+obproxy/proxy/plugins/ob_mysql_response_prepare_execute_transform_plugin.cpp\
+obproxy/proxy/plugins/ob_mysql_response_prepare_execute_transform_plugin.h

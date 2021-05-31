@@ -1,0 +1,138 @@
+/* equal */
+schema = oracle_mode:true, db_name:SYS, table_name:NORD, part_key:NO_W_ID, part_level:1, part_key:NO_W_ID, part_level:1
+sql =  where "SYS"."NORD"."NO_D_ID" = :-1 and "SYS"."NORD"."NO_W_ID" = :0 and rownum <= 1;
+
+/* equal */
+schema = oracle_mode:true, db_name:SYS, table_name:NORD, part_key:NO_D_ID, part_level:1, part_key:NO_W_ID, part_level:1
+sql =  where "SYS"."NORD"."NO_D_ID" = :-1 and "SYS"."NORD"."NO_W_ID" = :0 and rownum <= 1;
+
+/* equal*/
+schema = oracle_mode:true, table_name:CUST, part_key:C_W_ID, part_level:1
+sql    = where (\"CUST\".\"C_W_ID\" = :0) and (\"CUST\".\"C_D_ID\" = :1);
+
+schema = oracle_mode:true, db_name:TPCC, table_name:DIST, part_key:D_W_ID, part_level:1
+sql    = update "TPCC"."DIST" set "TPCC"."DIST"."D_NEXT_O_ID" = ("TPCC"."DIST"."D_NEXT_O_ID" + 1) where ("TPCC"."DIST"."D_ID" = :1) and ("TPCC"."DIST"."D_W_ID" = :0) returning "TPCC"."DIST"."D_TAX",("TPCC"."DIST"."D_NEXT_O_ID" - 1);
+
+schema = oracle_mode:true, db_name:TPCC, table_name:DIST, part_key:D_W_ID, part_level:1
+sql    = update "TPCC"."DIST" set "TPCC"."DIST"."D_NEXT_O_ID" = ("TPCC"."DIST"."D_NEXT_O_ID" + 1) where ("TPCC"."DIST"."D_ID" = :1) and (("TPCC"."DIST"."D_W_ID") = :0) returning "TPCC"."DIST"."D_TAX",("TPCC"."DIST"."D_NEXT_O_ID" - 1);
+
+schema = oracle_mode:true, db_name:TPCC, table_name:CUST, part_key:C_W_ID, part_level:1
+sql    =  where (\"TPCC\".\"CUST\".\"C_W_ID\" = :0) and (\"TPCC\".\"CUST\".\"C_D_ID\" = :1) and (\"TPCC\".\"CUST\".\"C_LAST\" = :7) order by \"TPCC\".\"CUST\".\"C_FIRST\";
+
+schema = oracle_mode:true, db_name:TPCC, table_name:CUST, part_key:C_W_ID, part_level:1
+sql    =  where ("TPCC"."CUST"."C_W_ID" = :0) and ("TPCC"."CUST"."C_D_ID" = :1) and ("TPCC"."CUST"."C_LAST" = :7) order by "TPCC"."CUST"."C_FIRST";
+
+/* equal */
+schema = db_name:d1, table_name:t1, part_key:c1, part_level:1
+sql    = where d1.t1.c1 = 1 and d1.t1.c2 = 2;
+
+/* place_holder */
+schema = db_name:d1, table_name:t1, part_key:c1, part_level:1
+sql    = where d1.t1.c1 = ? and d1.t1.c2 = 2;
+
+/* place_holder */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c2 = ? and t1.c1 = ?;
+
+/* place_holder */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c1 in (?, ?, ?);
+
+/* place_holder */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c1 in (1, 2, 3);
+
+/* place_holder */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c1 = '?' and t1.c2 = 2;
+
+/* place_holder */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c1 = :1 and t1.c2 = 2;
+
+/* place_holder */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c1 = :2 and t1.c2 = 2;
+
+/* place_holder */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c2 = :1 and t1.c1 = 3;
+
+/* join */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = join d1.t2 on  t1.c1 = 1 and t1.c2 = 2;
+
+/* multi join */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = join t2 on t1.c2 = t2.c2 join t3 on t1.c3 = t3.c3 and  t1.c1 = 1;
+
+/* join+where */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = join d1.t2 on t1.c2 = t2.c2 where t1.c1 = 1;
+
+/* join+where */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = join d1.t2 on t1.c2 = t2.c2 and t1.c1 = 1 where t1.c2 = 2;
+
+/* between */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.c1 between 1 and 2;
+
+/* join + between */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = join t2 b on t1.c1 between 1 and 2;
+
+/* range */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where c1 < 10 and c1 > 1;
+
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where c1 <= 10 and c1 >= 1;
+
+/* contains db/table name */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t3.c1 = 1 and t1.c1 = 2;
+
+schema = db_name:mydb, table_name:t1, part_key:c1, part_level:1
+sql    = where otherdb.t1.c1 = 1 and mydb.t1.c1 = 2;
+
+/* table alias */
+schema = table_name:t1, alias_name:tmp1, part_key:c1, part_level:1
+sql    = where tmp1.c1 = 1 and c2 = 2;
+
+schema = table_name:t1, alias_name:tmp1, part_key:c1, part_level:1
+sql    = where tmp1.c1 = 1 and c2 = 2;
+
+/* str value */
+schema = table_name:t1, part_key:dt, part_level:1
+sql    = where dt = '2016-08-31 00:00:00';
+
+schema = table_name:t1, part_key:dt, part_level:1
+sql    = where dt > '2016-08-31 00:00:00' and dt < '2016-09-01 00:00:00';
+
+/* func */
+schema = table_name:t1, part_key:dt, part_level:1
+sql    = where dt > '2016-08-31 00:00:00' and dt < '2016-09-01 00:00:00';
+
+/* const expr */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where c1 = 1 + 2;
+
+/* two level part */
+schema = table_name:t1, part_key:c1, part_level:1, part_key:c2, part_level:2
+sql    = where c1 = 1 and c2 = 2;
+
+schema = table_name:t1, part_key:c1, part_level:1, part_key:c2, part_level:2
+sql    = where c1 > 10 and c1 < 19 and c2 > 20 and c2 < 29;
+
+/* or opt */
+schema = table_name:t1, part_key:c1, part_level:1, part_key:c2, part_level:2
+sql    = where c3 = 1 or c1 > 10 and c1 < 19 or c2 > 20 and c2 < 29 or c4 = 1;
+
+/* all opt */
+schema = table_name:t1, part_key:c1, part_level:1, part_key:c2, part_level:2
+sql    = where c1 = 1 + 2 - 3 / 4 * 5 % 6 and c2 = 1;
+
+/* case ignore */
+schema = table_name:t1, part_key:c1, part_level:1
+sql    = where t1.C1 = 1 and t1.c2 = 2;
