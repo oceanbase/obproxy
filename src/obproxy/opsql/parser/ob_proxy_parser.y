@@ -1007,7 +1007,10 @@ opt_count: /* empty */
          | COUNT '*'
 
  /* begin stmt */
-begin_stmt: BEGI                                              { result->cur_stmt_type_ = OBPROXY_T_BEGIN; }
+begin_stmt: BEGI                                              {
+                                                                result->has_anonymous_block_ = false ;
+                                                                result->cur_stmt_type_ = OBPROXY_T_BEGIN;
+                                                              }
           | START TRANSACTION opt_transaction_characteristics { result->cur_stmt_type_ = OBPROXY_T_BEGIN; }
           | XA BEGI NAME_OB  { result->cur_stmt_type_ = OBPROXY_T_BEGIN; }
           | XA START NAME_OB { result->cur_stmt_type_ = OBPROXY_T_BEGIN; }

@@ -404,6 +404,7 @@ typedef struct _ObProxyParseResult
   bool has_row_count_;
   bool has_explain_;
   bool has_simple_route_info_;
+  bool has_anonymous_block_;
   ObProxyBasicStmtType stmt_type_;
   ObProxyBasicStmtSubType sub_stmt_type_; //for sharding
   int64_t stmt_count_;

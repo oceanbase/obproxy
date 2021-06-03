@@ -235,12 +235,13 @@ void obproxyfree (void * ,yyscan_t yyscanner );
 #define bt 13
 #define bt_in_expr 14
 #define in_expr 15
-#define in_subquery 16
-#define in_no_select_query 17
-#define prepare 18
-#define insert_all_expr 19
-#define set_expr 20
-#define show_topology 21
+#define in_anonymous_block 16
+#define in_subquery 17
+#define in_no_select_query 18
+#define prepare 19
+#define insert_all_expr 20
+#define set_expr 21
+#define show_topology 22
 
 #endif
 
@@ -358,9 +359,9 @@ extern int obproxylex \
 #undef YY_DECL
 #endif
 
-#line 1035 "ob_proxy_parser.l"
+#line 1050 "ob_proxy_parser.l"
 
 
-#line 365 "ob_proxy_parser_lex.h"
+#line 366 "ob_proxy_parser_lex.h"
 #undef obproxyIN_HEADER
 #endif /* obproxyHEADER_H */

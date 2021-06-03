@@ -559,6 +559,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   has_shard_comment_ = parse_result.has_shard_comment_;
   has_last_insert_id_ = parse_result.has_last_insert_id_;
   hint_query_timeout_ = parse_result.query_timeout_;
+  has_anonymous_block_ = parse_result.has_anonymous_block_;
   stmt_type_ = parse_result.stmt_type_;
   cmd_sub_type_ = parse_result.sub_stmt_type_;
   hint_consistency_level_ = static_cast<ObConsistencyLevel>(parse_result.read_consistency_type_);

@@ -6322,7 +6322,8 @@ int ObMysqlSM::setup_server_request_send()
       // Attention:
       //  1. if send begin or start, think as in trans
       //  2. if autocommit = 0, first SQL think as not in trans
-      } else if (trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()) {
+      } else if (trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()
+                 || trans_state_.trans_info_.client_request_.get_parse_result().has_anonymous_block()) {
         if (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_)) {
           set_server_trx_timeout();
         } else {
