@@ -492,7 +492,7 @@ int ObMysqlCompressOB20Analyzer::analyze_first_response(
         resp.get_analyze_result().is_resultset_resp_ = ((OB_MYSQL_COM_QUERY == result_.get_cmd()
                                                          || OB_MYSQL_COM_STMT_EXECUTE == result_.get_cmd()
                                                          || OB_MYSQL_COM_STMT_FETCH == result_.get_cmd())
-                                                        && (COM_STATISTICS != result_.get_cmd())
+                                                        && (OB_MYSQL_COM_STATISTICS != result_.get_cmd())
                                                         && (MYSQL_OK_PACKET_TYPE != mysql_result.meta_.pkt_type_)
                                                         && (MYSQL_ERR_PACKET_TYPE != mysql_result.meta_.pkt_type_)
                                                         && (MYSQL_EOF_PACKET_TYPE != mysql_result.meta_.pkt_type_)

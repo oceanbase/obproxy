@@ -202,7 +202,7 @@ int OMPKHandshakeResponse::decode()
           }
         }
 
-        /* 如果长度不对, 又怀疑是 connector/j, 放过, 参考 bug: https://bugs.mysql.com/bug.php?id=79612 */
+        /* If the length is wrong, and suspect it is connector/j, let it go, bug: https://bugs.mysql.com/bug.php?id=79612 */
         if (OB_INVALID_ARGUMENT == ret && maybe_connector_j) {
           ret = OB_SUCCESS;
           connect_attrs_.reset();

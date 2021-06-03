@@ -166,8 +166,8 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_STMT_FETCH:
     // pieceinfo
-    case obmysql::COM_STMT_SEND_PIECE_DATA:
-    case obmysql::COM_STMT_GET_PIECE_DATA:
+    case obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
+    case obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA:
       ret = true;
       break;
     case obmysql::OB_MYSQL_COM_CHANGE_USER:

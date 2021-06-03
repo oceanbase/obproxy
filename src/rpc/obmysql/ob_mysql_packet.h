@@ -71,6 +71,7 @@ enum ObMySQLCmd
   OB_MYSQL_COM_END,
 
 
+
   // for obproxy
   // OB_MYSQL_COM_DELETE_SESSION is not a standard mysql package type. This is a package used to process delete session
   // When the connection is disconnected, the session needs to be deleted, but at this time it may not be obtained in the callback function disconnect

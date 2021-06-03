@@ -3566,19 +3566,11 @@ int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
       ObMysqlTransact::handle_pl_update(trans_state_);
     }
 
-    if (obmysql::COM_STMT_FETCH == trans_state_.trans_info_.sql_cmd_
+    if (obmysql::OB_MYSQL_COM_STMT_FETCH == trans_state_.trans_info_.sql_cmd_
         && client_session_->is_need_return_last_bound_ss()) {
       int ret = OB_SUCCESS;
       ObMysqlServerSession *last_bound_session = client_session_->get_last_bound_server_session();
       if (NULL != last_bound_session) {
-        // 由于 tunnel_handler_server 中只有事务中才会释放 server_session,
-        // 正常释放 server sssion 有两个地方:
-        //   1. 事务中, tunnel_handler_server
-        //   2. 事务结束, setup_cmd_complete
-        // 对于事务中的 COM_STMT_FETCH, 如果需要切换到另外一台 Server:
-        //   1. 在 tunnel_handler_server 时, 是认为事务结束了. 因为 in_trans = false;
-        //   2. 由于这里修改了事务状态，在 setup_cmd_complete 中又认为是事务中
-        // 所以上面两处都不会释放, 所以这里要释放一次
         release_server_session();
         if (OB_FAIL(ObMysqlTransact::return_last_bound_server_session(client_session_))) {
           LOG_WARN("fail to return last bound server session", K(ret));

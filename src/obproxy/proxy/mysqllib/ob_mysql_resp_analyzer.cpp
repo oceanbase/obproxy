@@ -90,7 +90,7 @@ inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result)
         } else if (result.is_recv_resultset()) {
           cur_type_ = OK_PACKET_ENDING_TYPE;
         }
-      } else if (COM_STMT_EXECUTE == result.get_cmd()) {
+      } else if (OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd()) {
         if (1 == err_pkt_cnt) {
           cur_type_ = OK_PACKET_ENDING_TYPE;
         } else if (1 != eof_pkt_cnt) {
@@ -303,7 +303,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
             } else if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
               finished = true;
               ending_type = ERROR_PACKET_ENDING_TYPE;
-            } else if (1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE] && COM_STMT_EXECUTE == cmd_ && is_recv_resultset_) {
+            } else if (1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE] && OB_MYSQL_COM_STMT_EXECUTE == cmd_ && is_recv_resultset_) {
               finished = true;
               ending_type = EOF_PACKET_ENDING_TYPE;
             } else {
@@ -657,7 +657,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
               } else {
                 ok_packet_action_type = OK_PACKET_ACTION_REWRITE;
               }
-            } else if (COM_STMT_GET_PIECE_DATA == result.get_cmd()) {
+            } else if (OB_MYSQL_COM_STMT_GET_PIECE_DATA == result.get_cmd()) {
               ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
             } else if (1 == prepare_ok_pkt_cnt) {
               //stmt_prepare extra ok atfter
@@ -670,7 +670,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
             } else if (2 == eof_pkt_cnt) {
               // extra ok after result set
               ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
-            } else if (1 == eof_pkt_cnt && COM_STMT_EXECUTE == result.get_cmd() && result.is_recv_resultset()) {
+            } else if (1 == eof_pkt_cnt && OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd() && result.is_recv_resultset()) {
               ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
             } else if (0 == err_pkt_cnt || 0 == eof_pkt_cnt) {
               // last ok packet, no err and eof in front
@@ -750,7 +750,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
 
           if (is_last_eof_pkt) {
             handle_last_eof(pkt_len);
-            if (COM_STMT_EXECUTE == result.get_cmd()) {
+            if (OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd()) {
               result.set_recv_resultset(true);
             }
           }
@@ -1065,7 +1065,7 @@ inline int ObMysqlRespAnalyzer::analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &i
       cur_stmt_has_more_result_ = false;
     }
 
-    if (COM_STMT_EXECUTE == cmd && server_status.status_flags_.OB_SERVER_STATUS_CURSOR_EXISTS) {
+    if (OB_MYSQL_COM_STMT_EXECUTE == cmd && server_status.status_flags_.OB_SERVER_STATUS_CURSOR_EXISTS) {
       is_last_eof_pkt = true;
     }
   }

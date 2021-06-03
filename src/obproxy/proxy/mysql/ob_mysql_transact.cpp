@@ -785,7 +785,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           s.server_info_.set_addr(cursor_id_addr->get_addr());
           s.pll_info_.lookup_success_ = true;
         }
-      } else if (obmysql::COM_STMT_GET_PIECE_DATA == s.trans_info_.sql_cmd_) {
+      } else if (obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA == s.trans_info_.sql_cmd_) {
         ObCursorIdAddr *cursor_id_addr = NULL;
         if (OB_FAIL(s.sm_->get_client_session()->get_session_info().get_cursor_id_addr(cursor_id_addr))) {
           LOG_WARN("fail to get client cursor id addr", K(ret));
@@ -811,7 +811,12 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           s.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
           TRANSACT_RETURN(SM_ACTION_INTERNAL_NOOP, NULL);
         }
-      } else if (obmysql::COM_STMT_SEND_PIECE_DATA == s.trans_info_.sql_cmd_) {
+
+        if (OB_SUCC(ret)) {
+          s.server_info_.set_addr(last_session->get_netvc()->get_remote_addr());
+          s.pll_info_.lookup_success_ = true;
+        }
+      } else if (obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA == s.trans_info_.sql_cmd_) {
         ObPieceInfo *info = NULL;
         if (OB_FAIL(s.sm_->get_client_session()->get_session_info().get_piece_info(info))) {
           if (OB_HASH_NOT_EXIST == ret) {
@@ -2018,6 +2023,8 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
     if (s.trans_info_.request_content_length_ > 0) {
       reader = client_buffer_reader;
       request_len = client_request_len;
+    } else if (OB_FAIL(rewrite_stmt_id(s, client_buffer_reader))) {
+      LOG_WARN("rewrite stmt id failed", K(ret));
     } else {
       ObIOBufferReader *request_buffer_reader = client_buffer_reader;
       if (PROTOCOL_OB20 == ob_proxy_protocol || PROTOCOL_CHECKSUM == ob_proxy_protocol) { // convert standard mysql protocol to compression protocol
@@ -3260,7 +3267,7 @@ inline void ObMysqlTransact::handle_ok_resp(ObTransState &s)
     }
   }
 
-  if (obmysql::COM_STMT_SEND_PIECE_DATA == s.trans_info_.sql_cmd_) {
+  if (obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA == s.trans_info_.sql_cmd_) {
     ObPieceInfo *info = NULL;
     ObClientSessionInfo &cs_info = get_client_session_info(s);
     if (OB_FAIL(cs_info.get_piece_info(info))) {
@@ -3878,8 +3885,8 @@ void ObMysqlTransact::handle_oceanbase_retry_server_connection(ObTransState &s)
              && s.current_.attempts_ < max_connect_attempts
              && 0 == obproxy_route_addr
              && !s.trans_info_.client_request_.is_kill_query()
-             && obmysql::COM_STMT_FETCH != s.trans_info_.sql_cmd_
-             && obmysql::COM_STMT_GET_PIECE_DATA != s.trans_info_.sql_cmd_
+             && obmysql::OB_MYSQL_COM_STMT_FETCH != s.trans_info_.sql_cmd_
+             && obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA != s.trans_info_.sql_cmd_
              && !second_in) {
     ++s.current_.attempts_;
     LOG_DEBUG("start next retry");
