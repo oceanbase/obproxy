@@ -868,12 +868,12 @@ private:
   ObProxyStmt* proxy_stmt_;
 };
 
-const int OB_T_IDENT_NUM_CHILD = 0;
-const int OB_T_RELATION_FACTOR_NUM_CHILD = 2;
-const int OB_T_COLUMN_REF_NUM_CHILD     = 3;
-const int OB_T_ALIAS_TABLE_NAME_NUM_CHILD = 5;
-const int OB_T_ALIAS_CLUMN_NAME_NUM_CHILD = 2;
-const int OB_T_INDEX_NUM_CHILD = 3;
+const int OB_T_IDENT_NUM_CHILD                   = 0;
+const int OB_T_RELATION_FACTOR_NUM_CHILD         = 2;
+const int OB_T_COLUMN_REF_NUM_CHILD              = 3;
+const int OB_T_ALIAS_TABLE_NAME_NUM_CHILD        = 5;
+const int OB_T_ALIAS_CLUMN_NAME_NUM_CHILD        = 2;
+const int OB_T_INDEX_NUM_CHILD                   = 3;
 const int OB_T_RELATION_FACTOR_IN_HINT_NUM_CHILD = 2;
 
 class ObProxySqlParser

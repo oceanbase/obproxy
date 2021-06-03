@@ -70,14 +70,14 @@ static const std::regex ELASTIC_PATTERN2("^toint\\(substr\\(\\#(\\w+)\\#,\\s*(\\
 
 const char *OBPROXY_CONFIG_LOG_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%i:%s.%f";
 //static const char *CONFIG_
-static const char *CONFIG_TIMESTAMP = "timestamp";
-static const char *CONFIG_INSTANCE_IP = "instance_ip";
-static const char *CONFIG_INSTANCE_ZONE = "instance_zone";
-static const char *CONFIG_TENANT = "tenant";
-static const char *CONFIG_LOGICAL_DB = "logical_db";
-static const char *CONFIG_TYPE = "type";
-static const char *CONFIG_NAME = "name";
-static const char *CONFIG_VALUE = "value";
+static const char *CONFIG_TIMESTAMP             = "timestamp";
+static const char *CONFIG_INSTANCE_IP           = "instance_ip";
+static const char *CONFIG_INSTANCE_ZONE         = "instance_zone";
+static const char *CONFIG_TENANT                = "tenant";
+static const char *CONFIG_LOGICAL_DB            = "logical_db";
+static const char *CONFIG_TYPE                  = "type";
+static const char *CONFIG_NAME                  = "name";
+static const char *CONFIG_VALUE                 = "value";
 
 int ObProxyPbUtils::parse_database_prop_rule(const std::string &prop_rule, ObDataBaseProp &child_info)
 {

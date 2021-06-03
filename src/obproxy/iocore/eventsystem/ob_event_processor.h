@@ -50,9 +50,9 @@ const int64_t MAX_THREADS_IN_EACH_TYPE = 256;
 #endif
 
 #ifdef OB_MAX_NUMBER_EVENT_THREADS
-const int64_t MAX_EVENT_THREADS = OB_MAX_NUMBER_EVENT_THREADS;
+const int64_t MAX_EVENT_THREADS        = OB_MAX_NUMBER_EVENT_THREADS;
 #else
-const int64_t MAX_EVENT_THREADS = 512;
+const int64_t MAX_EVENT_THREADS        = 512;
 #endif
 
 #ifndef offsetof

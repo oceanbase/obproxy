@@ -30,14 +30,14 @@ namespace obproxy
 {
 namespace obutils
 {
-const ObString JSON_CONFIG_VERSION = ObString::make_string("json_config_version");
-const ObString JSON_CONFIG_BIN_URL = ObString::make_string("json_config_bin_url");
-const ObString JSON_CONFIG_DB = ObString::make_string("json_config_meta_table_db");
-const ObString JSON_CONFIG_USER = ObString::make_string("json_config_meta_table_user");
-const ObString JSON_CONFIG_PASSWORD = ObString::make_string("json_config_meta_table_password");
+const ObString JSON_CONFIG_VERSION      = ObString::make_string("json_config_version");
+const ObString JSON_CONFIG_BIN_URL      = ObString::make_string("json_config_bin_url");
+const ObString JSON_CONFIG_DB           = ObString::make_string("json_config_meta_table_db");
+const ObString JSON_CONFIG_USER         = ObString::make_string("json_config_meta_table_user");
+const ObString JSON_CONFIG_PASSWORD     = ObString::make_string("json_config_meta_table_password");
 const ObString JSON_CONFIG_REAL_CLUSTER = ObString::make_string("json_config_real_meta_cluster");
-const ObString JSON_CONFIG_CLUSTER = ObString::make_string("json_config_cluster_count");
-const ObString JSON_CONFIG_MODIFIED = ObString::make_string("json_config_modified_time");
+const ObString JSON_CONFIG_CLUSTER      = ObString::make_string("json_config_cluster_count");
+const ObString JSON_CONFIG_MODIFIED     = ObString::make_string("json_config_modified_time");
 
 //ConfigColumnID
 enum

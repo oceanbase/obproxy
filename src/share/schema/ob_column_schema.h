@@ -32,21 +32,21 @@ namespace share
 namespace schema
 {
 
-const char *const STR_COLUMN_TYPE_INT = "int";
-const char *const STR_COLUMN_TYPE_UINT64 = "uint64";
-const char *const STR_COLUMN_TYPE_FLOAT = "float";
-const char *const STR_COLUMN_TYPE_UFLOAT = "ufloat";
-const char *const STR_COLUMN_TYPE_DOUBLE = "double";
-const char *const STR_COLUMN_TYPE_UDOUBLE = "udouble";
-const char *const STR_COLUMN_TYPE_VCHAR = "varchar";
-const char *const STR_COLUMN_TYPE_DATETIME = "datetime";
-const char *const STR_COLUMN_TYPE_TIMESTAMP = "timestamp";
+const char *const STR_COLUMN_TYPE_INT              = "int";
+const char *const STR_COLUMN_TYPE_UINT64           = "uint64";
+const char *const STR_COLUMN_TYPE_FLOAT            = "float";
+const char *const STR_COLUMN_TYPE_UFLOAT           = "ufloat";
+const char *const STR_COLUMN_TYPE_DOUBLE           = "double";
+const char *const STR_COLUMN_TYPE_UDOUBLE          = "udouble";
+const char *const STR_COLUMN_TYPE_VCHAR            = "varchar";
+const char *const STR_COLUMN_TYPE_DATETIME         = "datetime";
+const char *const STR_COLUMN_TYPE_TIMESTAMP        = "timestamp";
 const char *const STR_COLUMN_TYPE_PRECISE_DATETIME = "precise_datetime";
-const char *const STR_COLUMN_TYPE_C_TIME = "create_time";
-const char *const STR_COLUMN_TYPE_M_TIME = "modify_time";
-const char *const STR_COLUMN_TYPE_BOOLEAN = "bool";
-const char *const STR_COLUMN_TYPE_NUMBER = "number";
-const char *const STR_COLUMN_TYPE_UNKNOWN = "unknown";
+const char *const STR_COLUMN_TYPE_C_TIME           = "create_time";
+const char *const STR_COLUMN_TYPE_M_TIME           = "modify_time";
+const char *const STR_COLUMN_TYPE_BOOLEAN          = "bool";
+const char *const STR_COLUMN_TYPE_NUMBER           = "number";
+const char *const STR_COLUMN_TYPE_UNKNOWN          = "unknown";
 
 class ObTableSchema;
 class ObColumnSchemaV2 : public ObSchema

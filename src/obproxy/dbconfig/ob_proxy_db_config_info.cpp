@@ -42,122 +42,122 @@ namespace obproxy
 namespace dbconfig
 {
 
-static const ObString LOCAL_DIR = ObString::make_string(".");
-static const ObString PARENT_DIR = ObString::make_string("..");
+static const ObString LOCAL_DIR            = ObString::make_string(".");
+static const ObString PARENT_DIR           = ObString::make_string("..");
 
 // ObDbConfigChild
-static const char *CONFIG_VERSION = "version";
-static const char *CONFIG_VALUES = "variables";
+static const char *CONFIG_VERSION          = "version";
+static const char *CONFIG_VALUES           = "variables";
 
 // LogicTenantInfo
-static const char *TENANT_NAME = "tenant_name";
-static const char *TENANT_DATABASES = "databases";
+static const char *TENANT_NAME             = "tenant_name";
+static const char *TENANT_DATABASES        = "databases";
 
 // CR Reference
-static const char *REF_KIND = "kind";
-static const char *REF_NAMESPACE = "namespace";
-static const char *REF_PARENT = "parent";
-static const char *REF_VALUE = "reference";
-static const char *TESTLOAD_REF_VALUE = "test_load_reference";
+static const char *REF_KIND                = "kind";
+static const char *REF_NAMESPACE           = "namespace";
+static const char *REF_PARENT              = "parent";
+static const char *REF_VALUE               = "reference";
+static const char *TESTLOAD_REF_VALUE      = "test_load_reference";
 
 // DatabaseVariables
-static const ObString DATABASE_VARS = ObString::make_string(CONFIG_VALUES);
-static const ObString REMOTE_ACCESS = ObString::make_string("remoteAccess");
-static const ObString SEQUENCE_MIN_VALUE = ObString::make_string("sequenceInitMinValue");
-static const ObString SEQUENCE_MAX_VALUE = ObString::make_string("sequenceInitMaxValue");
-static const ObString SEQUENCE_STEP = ObString::make_string("sequenceInitStep");
+static const ObString DATABASE_VARS        = ObString::make_string(CONFIG_VALUES);
+static const ObString REMOTE_ACCESS        = ObString::make_string("remoteAccess");
+static const ObString SEQUENCE_MIN_VALUE   = ObString::make_string("sequenceInitMinValue");
+static const ObString SEQUENCE_MAX_VALUE   = ObString::make_string("sequenceInitMaxValue");
+static const ObString SEQUENCE_STEP        = ObString::make_string("sequenceInitStep");
 static const ObString SEQUENCE_RETRY_COUNT = ObString::make_string("sequenceRetryCount");
-static const ObString SEQUENCE_TABLE = ObString::make_string("sequenceTable");
-static const ObString SEQUENCE_ENABLE = ObString::make_string("sequenceEnable");
-static const ObString SEQUENCE_TNT_ID_COL = ObString::make_string("sequenceTntId");
-static const ObString TESTLOAD_TABLE_MAP = ObString::make_string("testLoadTableMap");//testLoadTableMap
+static const ObString SEQUENCE_TABLE       = ObString::make_string("sequenceTable");
+static const ObString SEQUENCE_ENABLE      = ObString::make_string("sequenceEnable");
+static const ObString SEQUENCE_TNT_ID_COL  = ObString::make_string("sequenceTntId");
+static const ObString TESTLOAD_TABLE_MAP   = ObString::make_string("testLoadTableMap");//testLoadTableMap
 
 
 // LogicDbInfo
-static const char *LOGIC_DB_NAME = "database_name";
-static const char *LOGIC_DB_CLUSTER = "cluster_name";
-static const char *LOGIC_DB_MODE = "database_mode";
-static const char *LOGIC_DB_TYPE = "database_type";
-static const char *TESTLOAD_PREFIX = "test_load_prefix";
+static const char *LOGIC_DB_NAME                    = "database_name";
+static const char *LOGIC_DB_CLUSTER                 = "cluster_name";
+static const char *LOGIC_DB_MODE                    = "database_mode";
+static const char *LOGIC_DB_TYPE                    = "database_type";
+static const char *TESTLOAD_PREFIX                  = "test_load_prefix";
 
 // DatabaseAuth
-static const char *AUTH_HAS_PRIV = "Y";
-static const char *AUTH_NO_PRIV = "N";
+static const char *AUTH_HAS_PRIV                    = "Y";
+static const char *AUTH_NO_PRIV                     = "N";
 
-static const char *AUTH_USERS = "users";
-static const char *AUTH_ALTER_PRIV = "alter_priv";
-static const char *AUTH_CREATE_PRIV = "create_priv";
-static const char *AUTH_DELETE_PRIV = "delete_priv";
-static const char *AUTH_DROP_PRIV = "drop_priv";
-static const char *AUTH_INSERT_PRIV = "insert_priv";
-static const char *AUTH_UPDATE_PRIV = "update_priv";
-static const char *AUTH_SELECT_PRIV = "select_priv";
-static const char *AUTH_INDEX_PRIV = "index_priv";
-static const char *AUTH_HOST = "host";
+static const char *AUTH_USERS                       = "users";
+static const char *AUTH_ALTER_PRIV                  = "alter_priv";
+static const char *AUTH_CREATE_PRIV                 = "create_priv";
+static const char *AUTH_DELETE_PRIV                 = "delete_priv";
+static const char *AUTH_DROP_PRIV                   = "drop_priv";
+static const char *AUTH_INSERT_PRIV                 = "insert_priv";
+static const char *AUTH_UPDATE_PRIV                 = "update_priv";
+static const char *AUTH_SELECT_PRIV                 = "select_priv";
+static const char *AUTH_INDEX_PRIV                  = "index_priv";
+static const char *AUTH_HOST                        = "host";
 
 // ObDataBaseProp
-static const char *DB_PROP_NAME = "properties_name";
-static const char *DB_PROP_RULE = "properties_rule";
-static const char *DB_PROP_TYPE = "propsType";
-static const char *TESTLOAD_DBKEY_TYPE = "testLoadDbKeyType";
-static const char *MIRROR_DBKEY_TYPE = "mirrorDbKeyType";
+static const char *DB_PROP_NAME                     = "properties_name";
+static const char *DB_PROP_RULE                     = "properties_rule";
+static const char *DB_PROP_TYPE                     = "propsType";
+static const char *TESTLOAD_DBKEY_TYPE              = "testLoadDbKeyType";
+static const char *MIRROR_DBKEY_TYPE                = "mirrorDbKeyType";
 
-static const char *DB_PROP_TESTLOAD = "testload";
-static const char *DB_PROP_MIRROR = "mirror";
-static const char *DB_PROP_SELFADJUST = "selfadjust";
-static const char *DB_PROP_WHITELIST = "whitelist";
+static const char *DB_PROP_TESTLOAD                 = "testload";
+static const char *DB_PROP_MIRROR                   = "mirror";
+static const char *DB_PROP_SELFADJUST               = "selfadjust";
+static const char *DB_PROP_WHITELIST                = "whitelist";
 
 // ObShardTpo
-static const char *SHARDS_TPO_NAME = "topology_name";
-static const char *SHARDS_TPO_ARCH = "architecture";
-static const char *SHARDS_TPO_GROUPS = "specific_layer";
-static const char *SHARDS_TPO_SPEC_MODE = "specific_mode";
-static const char *SHARDS_TPO_SPEC = "specification";
-static const char *STRICT_SPEC_MODE = "strict";
-static const char *NORMAL_SPEC_MODE = "normal";
+static const char *SHARDS_TPO_NAME                  = "topology_name";
+static const char *SHARDS_TPO_ARCH                  = "architecture";
+static const char *SHARDS_TPO_GROUPS                = "specific_layer";
+static const char *SHARDS_TPO_SPEC_MODE             = "specific_mode";
+static const char *SHARDS_TPO_SPEC                  = "specification";
+static const char *STRICT_SPEC_MODE                 = "strict";
+static const char *NORMAL_SPEC_MODE                 = "normal";
 
 // ObShardRule
-static const char *RULE_TB_NAME = "mark";
-static const char *ROUTER_SEQUENCE = "sequence";
-static const char *RULE_ROUTER = "router";
-static const char *RULE_RULES = "rules";
-static const char *RULE_TB_NAME_PATTERN = "tbNamePattern";
-static const char *RULE_DB_NAME_PATTERN = "dbNamePattern";
-static const char *RULE_TB_SUFFIX_PADDING = "tbSuffixPadding";
-static const char *RULE_TB_RULES = "tbRules";
-static const char *RULE_DB_RULES = "dbRules";
-static const char *RULE_ES_RULES = "elasticRules";
+static const char *RULE_TB_NAME                     = "mark";
+static const char *ROUTER_SEQUENCE                  = "sequence";
+static const char *RULE_ROUTER                      = "router";
+static const char *RULE_RULES                       = "rules";
+static const char *RULE_TB_NAME_PATTERN             = "tbNamePattern";
+static const char *RULE_DB_NAME_PATTERN             = "dbNamePattern";
+static const char *RULE_TB_SUFFIX_PADDING           = "tbSuffixPadding";
+static const char *RULE_TB_RULES                    = "tbRules";
+static const char *RULE_DB_RULES                    = "dbRules";
+static const char *RULE_ES_RULES                    = "elasticRules";
 
 // ObShardRouter
-static const char *ROUTER_RULES = "routers";
+static const char *ROUTER_RULES                     = "routers";
 
 // ObShardConnector
-static const char *SHARDS_NAME = "shards_name";
-static const char *SHARDS_TYPE = "shards_type";
-static const char *SHARDS_AUTH = "shards_authority";
-static const char *SHARDS_ENC_TYPE = "encType";
-static const char *SHARDS_URL = "shards_connector";
-static const char *SHARDS_USERNAME = "user";
-static const char *SHARDS_PASSWORD = "password";
+static const char *SHARDS_NAME                      = "shards_name";
+static const char *SHARDS_TYPE                      = "shards_type";
+static const char *SHARDS_AUTH                      = "shards_authority";
+static const char *SHARDS_ENC_TYPE                  = "encType";
+static const char *SHARDS_URL                       = "shards_connector";
+static const char *SHARDS_USERNAME                  = "user";
+static const char *SHARDS_PASSWORD                  = "password";
 
 // ObShardProp
-static const char *SHARDS_CONN_PROP = "connectionProperties";
-static const char *SHARDS_CONN_TIMEOUT = "connectTimeout";
-static const char *SHARDS_SOCK_TIMEOUT = "socketTimeout";
-static const char *SHARDS_IDLE_TIMEOUT = "idleTimeoutMinutes";
-static const char *SHARDS_NEED_PREFILL = "prefill";
-static const char *SHARDS_BLOCKING_TIMEOUT = "blockingTimeoutMillis";
+static const char *SHARDS_CONN_PROP                 = "connectionProperties";
+static const char *SHARDS_CONN_TIMEOUT              = "connectTimeout";
+static const char *SHARDS_SOCK_TIMEOUT              = "socketTimeout";
+static const char *SHARDS_IDLE_TIMEOUT              = "idleTimeoutMinutes";
+static const char *SHARDS_NEED_PREFILL              = "prefill";
+static const char *SHARDS_BLOCKING_TIMEOUT          = "blockingTimeoutMillis";
 
-static const char *SHARDS_READ_CONSISTENCY = "obReadConsistency";
-static const char* SHARDS_ZONE_PROPERTIES = "zoneProperties";
-static const char* SHARDS_ZONE_MIN_CONN_PROP = "minConn";
-static const char* SHARDS_ZONE_MAX_CONN_PROP = "maxConn";
+static const char *SHARDS_READ_CONSISTENCY          = "obReadConsistency";
+static const char* SHARDS_ZONE_PROPERTIES           = "zoneProperties";
+static const char* SHARDS_ZONE_MIN_CONN_PROP        = "minConn";
+static const char* SHARDS_ZONE_MAX_CONN_PROP        = "maxConn";
 static const ObString SHARDS_ZONE_CURRENT_CONN_PROP = ObString::make_string("current");
-static const ObString SHARDS_ZONE_OTHERS_CONN_PROP = ObString::make_string("others");
+static const ObString SHARDS_ZONE_OTHERS_CONN_PROP  = ObString::make_string("others");
 // OBShardDist
-static const char *SHARD_DISTS  = "distributions";
-static const char *SHARD_DISTS_DIST = "distribution";
-static const char *SHARD_DISTS_MARK = "mark";
+static const char *SHARD_DISTS                      = "distributions";
+static const char *SHARD_DISTS_DIST                 = "distribution";
+static const char *SHARD_DISTS_MARK                 = "mark";
 
 
 ObDbConfigCache &get_global_dbconfig_cache()

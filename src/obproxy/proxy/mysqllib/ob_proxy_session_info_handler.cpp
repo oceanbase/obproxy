@@ -37,7 +37,7 @@ namespace obproxy
 namespace proxy
 {
 
-const ObString PROXY_IDC_NAME_USER_SESSION_VAR = common::ObString::make_string("proxy_idc_name");
+const ObString PROXY_IDC_NAME_USER_SESSION_VAR     = common::ObString::make_string("proxy_idc_name");
 const ObString PROXY_ROUTE_POLICY_USER_SESSION_VAR = common::ObString::make_string("proxy_route_policy");
 
 int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,

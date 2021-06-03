@@ -30,13 +30,13 @@ namespace lib
 // allocates because we can only process with memory address past in
 // ranged between 0 and this size.
 static const uint64_t MEMCHK_CHUNK_ALIGN_BITS = 20;
-static const uint64_t MEMCHK_CHUNK_ALIGN = 4UL << MEMCHK_CHUNK_ALIGN_BITS;
+static const uint64_t MEMCHK_CHUNK_ALIGN      = 4UL << MEMCHK_CHUNK_ALIGN_BITS;
 
-static const uint32_t AOBJECT_TAIL_SIZE = 8;
-static const uint32_t MIN_AOBJECT_SIZE = 16;      // 16 bytes, 2 pointers
-static const uint32_t AOBJECT_CELL_BYTES = 8;     // 8 bytes
-static const uint32_t NORMAL_AOBJECT_SIZE = 1 << 13;  // 8K
-static const uint32_t INTACT_ACHUNK_SIZE = 1 << 21;               // 2M
+static const uint32_t AOBJECT_TAIL_SIZE       = 8;
+static const uint32_t MIN_AOBJECT_SIZE        = 16;      // 16 bytes, 2 pointers
+static const uint32_t AOBJECT_CELL_BYTES      = 8;     // 8 bytes
+static const uint32_t NORMAL_AOBJECT_SIZE     = 1 << 13;  // 8K
+static const uint32_t INTACT_ACHUNK_SIZE      = 1 << 21;               // 2M
 
 static const int64_t ALLOC_ABLOCK_CONCURRENCY = 4;
 
@@ -154,26 +154,26 @@ static const uint16_t AOBJECT_MAGIC_CODE          = 0XCED1;
 static const uint16_t FREE_BIG_AOBJECT_MAGIC_CODE = 0XCED2;
 static const uint16_t BIG_AOBJECT_MAGIC_CODE      = 0XCED3;
 
-static const uint32_t AOBJECT_HEADER_SIZE = offsetof(AObject, data_);
-static const uint32_t AOBJECT_META_SIZE = AOBJECT_HEADER_SIZE + AOBJECT_TAIL_SIZE;
-static const uint32_t INTACT_NORMAL_AOBJECT_SIZE = NORMAL_AOBJECT_SIZE + AOBJECT_META_SIZE;
+static const uint32_t AOBJECT_HEADER_SIZE         = offsetof(AObject, data_);
+static const uint32_t AOBJECT_META_SIZE           = AOBJECT_HEADER_SIZE + AOBJECT_TAIL_SIZE;
+static const uint32_t INTACT_NORMAL_AOBJECT_SIZE  = NORMAL_AOBJECT_SIZE + AOBJECT_META_SIZE;
 
-static const uint32_t ABLOCK_HEADER_SIZE = offsetof(ABlock, data_);
-static const uint32_t ABLOCK_SIZE = INTACT_NORMAL_AOBJECT_SIZE;
-static const uint32_t INTACT_ABLOCK_SIZE = ABLOCK_SIZE + ABLOCK_HEADER_SIZE;
+static const uint32_t ABLOCK_HEADER_SIZE          = offsetof(ABlock, data_);
+static const uint32_t ABLOCK_SIZE                 = INTACT_NORMAL_AOBJECT_SIZE;
+static const uint32_t INTACT_ABLOCK_SIZE          = ABLOCK_SIZE + ABLOCK_HEADER_SIZE;
 
-static const uint32_t ACHUNK_HEADER_SIZE = offsetof(AChunk, data_);
-static const uint32_t ACHUNK_SIZE = INTACT_ACHUNK_SIZE - ACHUNK_HEADER_SIZE;
-static const uint32_t INTACT_BIG_ABLOCK_SIZE = ACHUNK_SIZE;
-static const uint32_t BIG_ABLOCK_SIZE = INTACT_BIG_ABLOCK_SIZE - ABLOCK_HEADER_SIZE;
-static const uint32_t INTACT_BIG_AOBJECT_SIZE = BIG_ABLOCK_SIZE;
-static const uint32_t BIG_AOBJECT_SIZE = INTACT_BIG_AOBJECT_SIZE - AOBJECT_META_SIZE;
+static const uint32_t ACHUNK_HEADER_SIZE          = offsetof(AChunk, data_);
+static const uint32_t ACHUNK_SIZE                 = INTACT_ACHUNK_SIZE - ACHUNK_HEADER_SIZE;
+static const uint32_t INTACT_BIG_ABLOCK_SIZE      = ACHUNK_SIZE;
+static const uint32_t BIG_ABLOCK_SIZE             = INTACT_BIG_ABLOCK_SIZE - ABLOCK_HEADER_SIZE;
+static const uint32_t INTACT_BIG_AOBJECT_SIZE     = BIG_ABLOCK_SIZE;
+static const uint32_t BIG_AOBJECT_SIZE            = INTACT_BIG_AOBJECT_SIZE - AOBJECT_META_SIZE;
 
-static const uint32_t CELLS_PER_BLOCK = ABLOCK_SIZE / AOBJECT_CELL_BYTES;
-static const uint64_t BLOCKS_PER_CHUNK = ACHUNK_SIZE / INTACT_ABLOCK_SIZE;
+static const uint32_t CELLS_PER_BLOCK             = ABLOCK_SIZE / AOBJECT_CELL_BYTES;
+static const uint64_t BLOCKS_PER_CHUNK            = ACHUNK_SIZE / INTACT_ABLOCK_SIZE;
 
-static const uint32_t MAX_ABLOCK_COUNT = ACHUNK_SIZE / ABLOCK_SIZE - 1;
-static const uint32_t MAX_ABLOCK_SIZE = MAX_ABLOCK_COUNT * ABLOCK_SIZE;
+static const uint32_t MAX_ABLOCK_COUNT            = ACHUNK_SIZE / ABLOCK_SIZE - 1;
+static const uint32_t MAX_ABLOCK_SIZE             = MAX_ABLOCK_COUNT * ABLOCK_SIZE;
 
 inline uint64_t align_up(uint64_t x, uint64_t align)
 {

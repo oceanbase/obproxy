@@ -50,7 +50,7 @@ public:
 } PacketErrorInfo;
 
 const int16_t OP_DEFAULT_ERROR_NO = 8001;
-const char* OP_DEFAULT_ERROR_MSG = "Inner error occured in Operator and not have any other info";
+const char* OP_DEFAULT_ERROR_MSG  = "Inner error occured in Operator and not have any other info";
 
 int change_sql_field(const ObMysqlField *src_field, obmysql::ObMySQLField *&dst_field,
                      common::ObIAllocator &allocator)

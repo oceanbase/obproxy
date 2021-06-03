@@ -28,7 +28,7 @@ namespace lib
 
 class AChunk;
 
-static const uint64_t MAXADDR = (1L << 52);
+static const uint64_t MAXADDR           = (1L << 52);
 static const uint64_t CHUNK_BITMAP_SIZE = MAXADDR / MEMCHK_CHUNK_ALIGN;
 
 class AChunkMgr

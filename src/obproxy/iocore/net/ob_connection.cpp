@@ -111,11 +111,11 @@ ObConnection::~ObConnection()
  * order to tweak options.
  */
 const ObNetVCOptions ObConnection::DEFAULT_OPTIONS;
-const int32_t ObConnection::SOCKOPT_ON = 1;
-const int32_t ObConnection::SOCKOPT_OFF = 0;
+const int32_t ObConnection::SOCKOPT_ON             = 1;
+const int32_t ObConnection::SOCKOPT_OFF            = 0;
 const int32_t ObConnection::SNDBUF_AND_RCVBUF_PREC = 1024;
 
-const int32_t ObServerConnection::LISTEN_BACKLOG = 1024;
+const int32_t ObServerConnection::LISTEN_BACKLOG   = 1024;
 
 int ObConnection::open(const ObNetVCOptions &opt)
 {

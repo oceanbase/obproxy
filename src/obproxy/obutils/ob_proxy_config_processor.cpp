@@ -40,54 +40,54 @@ namespace obproxy
 namespace obutils
 {
 
-const static char *CONFIG_META = "meta";
-const static char *CONFIG_SPEC = "spec";
+const static char *CONFIG_META              = "meta";
+const static char *CONFIG_SPEC              = "spec";
 
-const static char *CONFIG_API_VERSION = "api_version";
-const static char *CONFIG_VERSION = "version";
-const static char *CONFIG_APP_NAME = "app_name";
-const static char *CONFIG_TYPE = "config_type";
-const static char *CONFIG_SYNC = "need_sync";
+const static char *CONFIG_API_VERSION       = "api_version";
+const static char *CONFIG_VERSION           = "version";
+const static char *CONFIG_APP_NAME          = "app_name";
+const static char *CONFIG_TYPE              = "config_type";
+const static char *CONFIG_SYNC              = "need_sync";
 
 // index config
-const static char *CONFIG_REFERENCE = "reference";
-const static char *CONFIG_DATAID = "data_id";
+const static char *CONFIG_REFERENCE         = "reference";
+const static char *CONFIG_DATAID            = "data_id";
 
 // config spec
-const static char *CONFIG_VALUE = "value";
-const static char *CONFIG_ATTR = "category";
-const static char *CONFIG_PERSISTENT = "persistent";
+const static char *CONFIG_VALUE             = "value";
+const static char *CONFIG_ATTR              = "category";
+const static char *CONFIG_PERSISTENT        = "persistent";
 
 // limit config
-const static char *LIMITERS = "limiters";
-const static char *CLUSTER_NAME = "cluster";
-const static char *TENANT_NAME = "tenant";
-const static char *DATABASE_NAME = "database";
-const static char *USER_NAME = "username";
-const static char *LIMIT_NAME = "limitName";
-const static char *LIMIT_MODE = "mode";
-const static char *LIMIT_RULE = "rule";
-const static char *LIMIT_PRIORITY = "priority";
-const static char *LIMIT_STATUS = "status";
+const static char *LIMITERS                 = "limiters";
+const static char *CLUSTER_NAME             = "cluster";
+const static char *TENANT_NAME              = "tenant";
+const static char *DATABASE_NAME            = "database";
+const static char *USER_NAME                = "username";
+const static char *LIMIT_NAME               = "limitName";
+const static char *LIMIT_MODE               = "mode";
+const static char *LIMIT_RULE               = "rule";
+const static char *LIMIT_PRIORITY           = "priority";
+const static char *LIMIT_STATUS             = "status";
 
 // limit rule
-const static char *LIMIT_SQL_TYPE = "sqlType";
-const static char *LIMIT_KEY_WORDS = "keyWords";
-const static char *LIMIT_TABLE_NAME = "tableName";
-const static char *LIMIT_QPS = "qps";
-const static char *LIMIT_RT = "averageRt";
-const static char *LIMIT_CONDITION = "scene";
+const static char *LIMIT_SQL_TYPE           = "sqlType";
+const static char *LIMIT_KEY_WORDS          = "keyWords";
+const static char *LIMIT_TABLE_NAME         = "tableName";
+const static char *LIMIT_QPS                = "qps";
+const static char *LIMIT_RT                 = "averageRt";
+const static char *LIMIT_CONDITION          = "scene";
 const static char *LIMIT_CONDITION_USE_LIKE = "Uselike";
 const static char *LIMIT_CONDITION_NO_WHERE = "Nowhere";
-const static char *LIMIT_TIME_WINDOW = "timeWindow";
-const static char *LIMIT_CONN = "limitConn";
-const static char *LIMIT_FUSE_TIME = "fuseTime";
+const static char *LIMIT_TIME_WINDOW        = "timeWindow";
+const static char *LIMIT_CONN               = "limitConn";
+const static char *LIMIT_FUSE_TIME          = "fuseTime";
 
 // security
-const static char *SECURITY_SOURCE_TYPE = "sourceType";
-const static char *SECURITY_CA = "CA";
-const static char *SECURITY_PUBLIC_KEY = "publicKey";
-const static char *SECURITY_PRIVATE_KEY = "privateKey";
+const static char *SECURITY_SOURCE_TYPE     = "sourceType";
+const static char *SECURITY_CA              = "CA";
+const static char *SECURITY_PUBLIC_KEY      = "publicKey";
+const static char *SECURITY_PRIVATE_KEY     = "privateKey";
 
 #define MONITOR_LIMIT_LOG_FORMAT "%s,%s,%s," \
                                  "%s,%.*s:%.*s:%.*s,%s,"  \

@@ -37,7 +37,7 @@ namespace oceanbase
 {
 namespace common
 {
-const char *ObTimeUtility::mday_name_[31] =
+const char *ObTimeUtility::mday_name_[31]             =
 {
   "1st", "2nd", "3rd", "4th", "5th", "6th", "7th", "8th", "9th", "10th",
   "11th", "12th", "13th", "14th", "15th", "16th", "17th", "18th", "19th", "20th",
@@ -45,28 +45,28 @@ const char *ObTimeUtility::mday_name_[31] =
   "31st"
 };
 
-const char *ObTimeUtility::weekday_name_[7] =
+const char *ObTimeUtility::weekday_name_[7]           =
 {
   "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"
 };
 
-const char *ObTimeUtility::weekday_abbr_name_[7] =
+const char *ObTimeUtility::weekday_abbr_name_[7]      =
 {
   "Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"
 };
 
-const char *ObTimeUtility::month_abbr_name_[12] =
+const char *ObTimeUtility::month_abbr_name_[12]       =
 {
   "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"
 };
 
-const char *ObTimeUtility::month_name_[12] =
+const char *ObTimeUtility::month_name_[12]            =
 {
   "January", "February", "March", "April", "May", "June", "July", "August", "September",
   "October", "November", "December"
 };
 
-const char *ObTimeUtility::STD_TS_FORMAT_WITH_USEC = "%Y-%m-%d %H:%i:%s.%f";
+const char *ObTimeUtility::STD_TS_FORMAT_WITH_USEC    = "%Y-%m-%d %H:%i:%s.%f";
 
 const char *ObTimeUtility::STD_TS_FORMAT_WITHOUT_USEC = "%Y-%m-%d %H:%i:%s";
 

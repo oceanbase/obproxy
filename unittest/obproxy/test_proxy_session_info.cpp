@@ -49,7 +49,7 @@ TEST_F(TestProxySessionInfo, basic_func)
 {
   ObServerSessionInfo session;
   session.reset();
-  ObAddr server(static_cast<ObAddr::VER>(4), "10.232.4.4", 3300);
+  ObAddr server(static_cast<ObAddr::VER>(4), "", 3300);
   session.version_.sys_var_version_ = 100;
   session.version_.hot_sys_var_version_ = 100;
   session.version_.user_var_version_ = 1000;

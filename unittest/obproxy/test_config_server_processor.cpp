@@ -210,12 +210,11 @@ TEST_F(TestConfigServerProcessor, test_get_json_config_info)
 {
   int ret = OB_SUCCESS;
   config_processor_.proxy_config_.app_name.set_value("ob1.kyle.sj");
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
-      "http://11.166.86.153:8080/diamond/cgi/a.py?key=unittest_test_config_server.proxy&method=get");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_SUCCESS, ret);
   ASSERT_EQ(0, memcmp(config_processor_.json_config_info_->data_info_.bin_url_.ptr(),
-      "http://11.166.86.153:8877", config_processor_.json_config_info_->data_info_.bin_url_.length()));
+      "", config_processor_.json_config_info_->data_info_.bin_url_.length()));
   ASSERT_EQ(0, memcmp(config_processor_.json_config_info_->data_info_.meta_table_info_.db_.ptr(),
       "oceanbase", config_processor_.json_config_info_->data_info_.meta_table_info_.db_.length()));
   ASSERT_EQ(0, memcmp(config_processor_.json_config_info_->data_info_.meta_table_info_.username_.ptr(),
@@ -224,8 +223,7 @@ TEST_F(TestConfigServerProcessor, test_get_json_config_info)
       "admin", config_processor_.json_config_info_->data_info_.meta_table_info_.password_.length()));
   ASSERT_EQ(1, config_processor_.json_config_info_->data_info_.cluster_array_.count());
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
-      "http://11.166.86.153:8899/xxx");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_CURL_ERROR, ret);
 }
@@ -238,22 +236,19 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_json_config)
   ObString content;
   content.assign_buffer(buf, OB_PROXY_CONFIG_BUFFER_SIZE);
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
-      "http://11.166.86.153:8080/diamond/cgi/a.py?key=unittest_test_config_server.proxy&method=get");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
   const char *config_url = config_processor_.proxy_config_.obproxy_config_server_url;
   ret = config_processor_.fetch_by_curl(config_url, ObConfigServerProcessor::CURL_TRANSFER_TIMEOUT,
       static_cast<void *>(&content), ObConfigServerProcessor::write_data);
   ASSERT_EQ(OB_SUCCESS, ret);
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
-      "http://11.166.86.153/xxx");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
   const char *wrong_config_url = config_processor_.proxy_config_.obproxy_config_server_url;
   ret = config_processor_.fetch_by_curl(wrong_config_url, ObConfigServerProcessor::CURL_TRANSFER_TIMEOUT,
       static_cast<void *>(&content), ObConfigServerProcessor::write_data);
   ASSERT_EQ(OB_CURL_ERROR, ret);
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
-      "http://11.166.86.153:8888/diamond/cgi/a.py?key=ob1.kyle.sj.test&method=get");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
   const char *wrong_http_port = config_processor_.proxy_config_.obproxy_config_server_url;
   ret = config_processor_.fetch_by_curl(wrong_http_port, ObConfigServerProcessor::CURL_TRANSFER_TIMEOUT,
           static_cast<void *>(&content), ObConfigServerProcessor::write_data);
@@ -263,9 +258,8 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_json_config)
 TEST_F(TestConfigServerProcessor, test_get_newest_cluster_rs_list)
 {
   int ret = OB_SUCCESS;
-  config_processor_.proxy_config_.app_name.set_value("ob1.kyle.sj");
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
-      "http://11.166.86.153:8080/diamond/cgi/a.py?key=unittest_test_config_server.proxy&method=get");
+  config_processor_.proxy_config_.app_name.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_SUCCESS, ret);
 
@@ -279,7 +273,7 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
 {
   int ret = OB_SUCCESS;
   const char *save_path = "obproxy_new";
-  config_processor_.json_config_info_->data_info_.bin_url_.url_ = ObString::make_string("http://10.125.224.4:9191/method=get");
+  config_processor_.json_config_info_->data_info_.bin_url_.url_ = ObString::make_string("");
   ret = config_processor_.do_fetch_proxy_bin(save_path, "obproxy.el6.x86_64.rpm");
   ASSERT_EQ(OB_SUCCESS, ret);
   remove(save_path);
@@ -293,7 +287,7 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
   ASSERT_EQ(OB_ERR_UNEXPECTED, ret);
 
   //test short timeout
-  const char *bin_url = "http://10.125.224.4:9191/method=get&Version=big.obproxy.el6.x86_64.rpm";
+  const char *bin_url = "";
 
   int fd = 0;
   if ((fd = ::open(save_path, O_WRONLY | O_CREAT,
@@ -307,7 +301,7 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
   remove(save_path);
 
   //test wrong url
-  const char *wrong_bin_url = "http://10.125.224.4:9191/method=get&Version=/test_dir/obproxy.el6.x86_64.rpm";
+  const char *wrong_bin_url = "";
   int64_t fetch_timeout = config_processor_.proxy_config_.fetch_proxy_bin_timeout / 1000000;//us --> s
   if (fetch_timeout <= 0) {
     ret = OB_INVALID_ARGUMENT;
@@ -324,13 +318,13 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
 
 TEST_F(TestConfigServerProcessor, test_get_idc_url)
 {
-  const char *buf1 = "http://11.166.86.153:8080/oceanbase_obconfig/obtest_jianhua.sjh_10.125.224.4_ob1";
-  const char *buf2 = "http://ocp-api.alipay.com/services?Action=ObRootServiceInfo&User_ID=alibaba&UID=zhitao.rzt&ObRegion=rhz_obtrans60";
-  const char *buf3 = "http://ocp-api.alipay.com/services?action=obrootserviceinfo&user_id=alibaba&uid=zhitao.rzt&obregion=rhz_obtrans60";
-  const char *buf4 = "HTTP://OCP-API.ALIPAY.COM/SERVICES?ACTION=OBROOTSERVICEINFO&USER_ID=ALIBABA&UID=ZHITAO.RZT&OBREGION=RHZ_OBTRANS60";
-  const char *expect_buf1 = "http://11.166.86.153:8080/oceanbase_obconfig/obtest_jianhua.sjh_10.125.224.4_ob1_idc_list";
-  const char *expect_buf2 = "http://ocp-api.alipay.com/services?Action=ObIDCRegionInfo&User_ID=alibaba&UID=zhitao.rzt&ObRegion=rhz_obtrans60";
-  const char *expect_buf3 = "http://ocp-api.alipay.com/services?action=ObIDCRegionInfo&user_id=alibaba&uid=zhitao.rzt&obregion=rhz_obtrans60";
+  const char *buf1 = "";
+  const char *buf2 = "";
+  const char *buf3 = "";
+  const char *buf4 = "";
+  const char *expect_buf1 = "";
+  const char *expect_buf2 = "";
+  const char *expect_buf3 = "";
   const char *expect_buf4 = "HTTP://OCP-API.ALIPAY.COM/SERVICES?ACTION=ObIDCRegionInfo&USER_ID=ALIBABA&UID=ZHITAO.RZT&OBREGION=RHZ_OBTRANS60";
   const int64_t max_size = 256;
   char common_buf[256];
@@ -364,8 +358,7 @@ TEST_F(TestConfigServerProcessor, test_get_idc_list)
 {
   int ret = OB_SUCCESS;
   config_processor_.proxy_config_.app_name.set_value("ob1.kyle.sj");
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
-      "http://11.166.86.153:8080/diamond/cgi/a.py?key=unittest_test_config_server.proxy&method=get");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_SUCCESS, ret);
 

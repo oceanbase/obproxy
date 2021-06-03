@@ -31,7 +31,7 @@ const uint32_t ObEncryptedHelper::sha_const_key[5] =
   0x10325476,
   0xC3D2E1F0
 };
-const uint32_t ObEncryptedHelper::K[4] =
+const uint32_t ObEncryptedHelper::K[4]             =
 {
   0x5A827999,
   0x6ED9EBA1,

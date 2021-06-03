@@ -22,10 +22,10 @@ namespace obproxy
 namespace event
 {
 
-static const int64_t g_thread_freelist_high_watermark = 512;
-static const int64_t g_thread_freelist_low_watermark = 32;
+static const int64_t g_thread_freelist_high_watermark       = 512;
+static const int64_t g_thread_freelist_low_watermark        = 32;
 static const int64_t g_thread_freelist_low_watermark_for_8k = 0;
-static const int64_t size_8k = 8 * 1024;
+static const int64_t size_8k                                = 8 * 1024;
 
 struct ObProxyThreadAllocator
 {

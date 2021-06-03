@@ -27,15 +27,15 @@ namespace obproxy
 {
 namespace proxy
 {
-static const char *PROXY_SELECT_SEQUENCE_INFO_SQL =
+static const char *PROXY_SELECT_SEQUENCE_INFO_SQL          =
   "SELECT CURRENT_TIMESTAMP(6) as now, value, min_value, max_value, step, gmt_create, gmt_modified "
   "FROM %.*s.%.*s WHERE name = '%.*s' LIMIT 1";
 
-static const char* PROXY_INSERT_SEQUENCE_INFO_SQL =
+static const char* PROXY_INSERT_SEQUENCE_INFO_SQL          =
   "INSERT INTO %.*s.%.*s(name, min_value, max_value, step, value, gmt_create, gmt_modified) "
   "VALUES('%.*s', '%ld','%ld', '%ld', '%ld', '%.*s', '%.*s')";
 
-static const char* PROXY_UPDATE_SEQUENCE_INFO_SQL =
+static const char* PROXY_UPDATE_SEQUENCE_INFO_SQL          =
   "UPDATE %.*s.%.*s SET value = '%ld', gmt_modified = now() WHERE name = '%.*s' and value = '%ld'";
 
 static const char *PROXY_SELECT_SEQUENCE_INFO_WITH_TNT_SQL =

@@ -45,10 +45,10 @@ namespace oceanbase
 {
 namespace common
 {
-static const int64_t MAX_CACHE_NUM = 16;
+static const int64_t MAX_CACHE_NUM             = 16;
 static const int64_t MAX_TENANT_NUM_PER_SERVER = 1024;
-static const int32_t MAX_CACHE_NAME_LENGTH = 127;
-static const double CACHE_SCORE_DECAY_FACTOR = 0.9;
+static const int32_t MAX_CACHE_NAME_LENGTH     = 127;
+static const double CACHE_SCORE_DECAY_FACTOR   = 0.9;
 
 class ObIKVCacheKey
 {

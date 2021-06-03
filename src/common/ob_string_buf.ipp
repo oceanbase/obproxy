@@ -18,7 +18,7 @@ namespace oceanbase
 namespace common
 {
 template <typename PageAllocatorT, typename PageArenaT>
-const int64_t ObStringBufT<PageAllocatorT, PageArenaT>::DEF_MEM_BLOCK_SIZE = 64 * 1024L;
+const int64_t ObStringBufT<PageAllocatorT, PageArenaT>::DEF_MEM_BLOCK_SIZE     = 64 * 1024L;
 
 template <typename PageAllocatorT, typename PageArenaT>
 const int64_t ObStringBufT<PageAllocatorT, PageArenaT>::MIN_DEF_MEM_BLOCK_SIZE =
