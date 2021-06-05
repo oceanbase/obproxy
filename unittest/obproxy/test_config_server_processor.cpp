@@ -289,14 +289,17 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
   //test short timeout
   const char *bin_url = "";
 
-  int fd = 0;
+  int fd = -1;
   if ((fd = ::open(save_path, O_WRONLY | O_CREAT,
                 S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)) > 0) {
     ret = config_processor_.fetch_by_curl(bin_url, 1L,
         reinterpret_cast<void *>(fd), config_processor_.write_proxy_bin);
 
   }
-  if (fd > 0) close(fd);
+  if (fd >= 0) {
+    close(fd);
+    fd = -1;
+  }
   ASSERT_EQ(OB_CURL_ERROR, ret);
   remove(save_path);
 
@@ -310,7 +313,10 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
                        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)) > 0) {
     ret = config_processor_.fetch_by_curl(wrong_bin_url, fetch_timeout, reinterpret_cast<void *>((int64_t)fd), config_processor_.write_proxy_bin);
   }
-  if (fd > 0) close(fd);
+  if (fd >= 0) {
+    close(fd);
+    fd = -1;
+  }
   ASSERT_EQ(OB_CURL_ERROR, ret);
   remove(save_path);
 

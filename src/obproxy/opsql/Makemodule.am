@@ -29,9 +29,7 @@ obproxy/opsql/expr_parser/ob_expr_parser.h
 
 opsql_expr_resolver_sources:=\
 obproxy/opsql/expr_resolver/ob_expr_resolver.h\
-obproxy/opsql/expr_resolver/ob_expr_resolver.cpp\
-obproxy/opsql/expr_resolver/ob_proxy_obj_caster.h\
-obproxy/opsql/expr_resolver/ob_proxy_obj_caster.cpp
+obproxy/opsql/expr_resolver/ob_expr_resolver.cpp
 
 opsql_func_expr_parser_sources:=\
 obproxy/opsql/func_expr_parser/ob_func_expr_parser_lex.c\

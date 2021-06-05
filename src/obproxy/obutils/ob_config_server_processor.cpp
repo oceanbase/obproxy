@@ -938,7 +938,7 @@ int ObConfigServerProcessor::do_fetch_proxy_bin(const char *bin_save_path, const
         LOG_WARN("fail to fetch new proxy bin", K(bin_url), K(bin_save_path), K(ret));
       } else { }
 
-      if (fd > 0) {
+      if (fd >= 0) {
         ::close(fd);
       }
     }
@@ -1085,7 +1085,7 @@ int ObConfigServerProcessor::get_kernel_release_by_redhat(ObProxyKernelRelease &
              "release", get_kernel_release_string(release));
   }
 
-  if (fd > 0) {
+  if (fd >= 0) {
     ::close(fd);
   }
   return ret;

@@ -610,7 +610,7 @@ TEST_F(TestIOBuffer, test_OBMIOBufferReader_replace_with_char)
   ASSERT_EQ(4, reader->get_block_count());
   ASSERT_EQ(g_size, reader->read_avail());
 
-  char *target_buf = new(std::nothrow) char[g_size];
+  char target_buf[g_size] = "\0";
   char mark = '*';
   memset(target_buf, mark, g_size);
   
@@ -624,8 +624,6 @@ TEST_F(TestIOBuffer, test_OBMIOBufferReader_replace_with_char)
   ASSERT_EQ(0, memcmp(target_buf, b->start(), delta_size));
   ASSERT_NE(0, memcmp(target_buf, b->start(), buf_size));
 
-  delete []target_buf;
-  target_buf = NULL;
   buffer_ptr_->destroy();
   check_buffer_clear(buffer_ptr_);
   op_reclaim_free(buffer_ptr_);

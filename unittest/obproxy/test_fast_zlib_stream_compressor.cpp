@@ -35,9 +35,9 @@ TEST_F(TestFastZlibStreamCompressor, test_simple)
   ObFastZlibStreamCompressor compressor1;
   int ret = OB_SUCCESS;
   int64_t buff_len = 1024 * 1024;
-  char *src_buf = new char[buff_len];
-  char *second_src_buf = new char[buff_len];
-  char *compress_buf = new char[buff_len];
+  char src_buf[buff_len] = "\0";
+  char second_src_buf[buff_len] = "\0";
+  char compress_buf[buff_len] = "\0";
   int64_t src_len = 0;
   int64_t filled_len = 0;
   int64_t filled_len2 = 0;
@@ -76,13 +76,6 @@ TEST_F(TestFastZlibStreamCompressor, test_simple)
 
     LOG_INFO("one shot", K(src_len), K(total_filled_len), K(filled_len2));
   }
-
-  delete []src_buf;
-  src_buf = NULL;
-  delete []second_src_buf;
-  second_src_buf = NULL;
-  delete []compress_buf;
-  compress_buf = NULL;
 };
 
 TEST_F(TestFastZlibStreamCompressor, test_speed)
@@ -93,9 +86,9 @@ TEST_F(TestFastZlibStreamCompressor, test_speed)
   int ret = OB_SUCCESS;
   int64_t run_count = 1000;
   int64_t buff_len = 8 * 1024 * 1024;
-  char *src_buf = new char[buff_len];
-  char *second_src_buf = new char[buff_len];
-  char *compress_buf = new char[buff_len];
+  char src_buf[buff_len] = "\0";
+  char second_src_buf[buff_len] = "\0";
+  char compress_buf[buff_len] = "\0";
   int64_t src_len = 0;
   int64_t filled_len = 0;
   int64_t filled_len2 = 0;
@@ -147,13 +140,6 @@ TEST_F(TestFastZlibStreamCompressor, test_speed)
              "standard level0 compress cost", cost_time_us3,
              "standard level6 compress cost", cost_time_us4);
   }
-
-  delete []src_buf;
-  src_buf = NULL;
-  delete []second_src_buf;
-  second_src_buf = NULL;
-  delete []compress_buf;
-  compress_buf = NULL;
 };
 
 

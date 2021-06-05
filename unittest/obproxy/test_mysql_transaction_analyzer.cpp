@@ -77,7 +77,7 @@ void TestMysqlTransactionAnalyzer::analyze_mysql_response(
   int ret = OB_SUCCESS;
   bool is_completed = false;
   bool is_request_completed = false;
-  char *resp = new char[len];
+  char resp[len] = "\0";
   ret = covert_hex_to_string(hex, len, resp);
   ASSERT_EQ(OB_SUCCESS, ret);
   ObString resp_str;
@@ -93,7 +93,6 @@ void TestMysqlTransactionAnalyzer::analyze_mysql_response(
     ASSERT_TRUE(is_completed);
     ASSERT_TRUE(trans_analyzer.is_trans_completed());
   }
-  delete []resp;
 }
 
 void TestMysqlTransactionAnalyzer::analyze_mysql_response(

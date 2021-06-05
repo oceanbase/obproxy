@@ -708,7 +708,7 @@ int ObProxyFileUtils::write_and_backup_file(const char *path, const char *tmp_pa
         }
       }
     }
-    if (fd > 0) {
+    if (fd >= 0) {
       ::close(fd);
     }
   }
@@ -792,7 +792,7 @@ int ObProxyFileUtils::read_from_file(const char *dir, const char *file_name,
       } else if (OB_LIKELY(read_len < len)) {
         buf[read_len] = '\0';
       }
-      if (fd > 0) ::close(fd);
+      if (fd >= 0) ::close(fd);
     }
   }
 
