@@ -359,7 +359,7 @@ int ObStatProcessor::register_raw_stat(
   ObRecData data_default;
   memset(&data_default, 0, sizeof(ObRecData));
 
-  if (OB_UNLIKELY(!check_argument(rsb, id)) || OB_UNLIKELY(sync_type > SYNC_MAX)) {
+  if (OB_UNLIKELY(!check_argument(rsb, id)) || OB_UNLIKELY(sync_type >= SYNC_MAX)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid rsb or id", K(rsb), K(id), K(sync_type), K(ret));
   } else {

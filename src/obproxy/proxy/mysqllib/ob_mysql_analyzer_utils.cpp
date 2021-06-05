@@ -41,8 +41,8 @@ int ObMysqlAnalyzerUtils::analyze_one_compressed_packet(
     int64_t block_len = reader.block_read_avail();
     char *buf_start = reader.start();
 
+    char mysql_hdr[MYSQL_COMPRESSED_HEALDER_LENGTH];
     if (OB_UNLIKELY(block_len < MYSQL_COMPRESSED_HEALDER_LENGTH)) {
-      char mysql_hdr[MYSQL_COMPRESSED_HEALDER_LENGTH];
       char *written_pos = reader.copy(mysql_hdr, MYSQL_COMPRESSED_HEALDER_LENGTH, 0);
       if (OB_UNLIKELY(written_pos != mysql_hdr + MYSQL_COMPRESSED_HEALDER_LENGTH)) {
         ret = OB_ERR_UNEXPECTED;

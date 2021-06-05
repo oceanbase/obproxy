@@ -184,9 +184,7 @@ int ObBlowFish::convert_large_str_to_hex(const char *str, const int64_t str_len,
       int tmp_value = 0;
       for(int64_t i = start_pos; out_idx >= padding_len; --out_idx) {
         if (4 == byte_pos) {
-          if (i < 0) {
-            tmp_value = 0;
-          } else if (i >= int_num) {
+          if (i >= int_num) {
             tmp_value = is_negative ? -1 : 0;
           } else {
             int32_t var2 = static_cast<int32_t>(mag[int_num - i - 1 + start_pos]);
