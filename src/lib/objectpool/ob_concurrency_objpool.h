@@ -417,6 +417,9 @@ public:
             instance = NULL;
             ATOMIC_BCAS(&once_, 1, 0);
           } else {
+            if (instance_ != NULL) {
+              delete instance_;
+            }
             instance_ = instance;
             (void)ATOMIC_BCAS(&once_, 1, 2);
           }

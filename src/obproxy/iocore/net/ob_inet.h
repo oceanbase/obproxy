@@ -544,6 +544,7 @@ inline bool ops_is_ip_any(const sockaddr &ip)
 inline bool ops_ip_copy(sockaddr &dst, const sockaddr &src)
 {
   int64_t n = 0;
+  int64_t n2 = 0;
   switch (src.sa_family) {
     case AF_INET:
       n = sizeof(sockaddr_in);
@@ -553,7 +554,16 @@ inline bool ops_ip_copy(sockaddr &dst, const sockaddr &src)
       n = sizeof(sockaddr_in6);
       break;
   }
-  if (n) {
+  switch (dst.sa_family) {
+    case AF_INET:
+      n2 = sizeof(sockaddr_in);
+      break;
+
+    case AF_INET6:
+      n2 = sizeof(sockaddr_in6);
+      break;
+  }
+  if (n && n <= n2) {
     MEMCPY(&dst, &src, n);
 #if HAVE_STRUCT_SOCKADDR_SA_LEN
     dst.sa_len = n;

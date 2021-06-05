@@ -1528,10 +1528,10 @@ void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
         }
       }
 
-      struct iovec vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT];
+      struct iovec vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT] = {0};
       int iovcnt[MAX_FD_FILE] = {0};
       int large_iovcnt[MAX_FD_FILE] = {0};
-      struct iovec wf_vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT];
+      struct iovec wf_vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT] = {0};
       int wf_iovcnt[MAX_FD_FILE] = {0};
 
       ObLogFDType fd_type = MAX_FD_FILE;

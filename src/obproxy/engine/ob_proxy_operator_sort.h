@@ -141,7 +141,7 @@ class ObBaseSort
 {
 public:
   ObBaseSort(SortColumnArray &sort_columns, common::ObIAllocator &allocator_, ResultRows &sort_rows);
-  virtual ~ObBaseSort() {};
+  virtual ~ObBaseSort();
 
   virtual void set_sort_columns(SortColumnArray &sort_columns)
   {

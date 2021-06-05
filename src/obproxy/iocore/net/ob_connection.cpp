@@ -358,7 +358,7 @@ int ObServerConnection::accept(ObConnection *c)
     ret = OB_INVALID_ARGUMENT;
     PROXY_SOCK_LOG(WARN, "invalid argument conn", K(c), K(ret));
   } else {
-    int64_t sz = sizeof(c->addr_);
+    int64_t sz = sizeof(c->addr_.sa_);
     if (OB_FAIL(ObSocketManager::accept(fd_, &c->addr_.sa_, &sz, c->fd_))) {
       if (OB_SYS_EAGAIN != ret) {
         PROXY_SOCK_LOG(WARN, "fail to accept", K(fd_), K(ret));
