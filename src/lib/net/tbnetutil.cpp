@@ -81,9 +81,6 @@ bool CNetUtil::isLocalAddr(uint32_t ip, bool loopSkip)
     return false;
 }
 
-/**
- * 10.0.100.89 => 1499725834
- */
 uint32_t CNetUtil::getAddr(const char *ip)
 {
     if (ip == NULL) return 0;

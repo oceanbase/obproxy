@@ -239,6 +239,8 @@ public:
   bool is_first_handle_close_request() const { return is_first_handle_close_request_; }
   void set_in_trans_for_close_request(bool is_in_trans_for_close_request) { is_in_trans_for_close_request_ = is_in_trans_for_close_request; }
   bool is_in_trans_for_close_request() const { return is_in_trans_for_close_request_; }
+  void set_need_return_last_bound_ss(bool is_need_return_last_bound_ss) { is_need_return_last_bound_ss_ = is_need_return_last_bound_ss; }
+  bool is_need_return_last_bound_ss() const { return is_need_return_last_bound_ss_; }
 
   bool enable_analyze_internal_cmd() const { return session_info_.enable_analyze_internal_cmd(); }
   bool is_metadb_user() const { return session_info_.is_metadb_user(); }
@@ -334,6 +336,7 @@ public:
   bool is_already_send_trace_info_;
   bool is_first_handle_close_request_;
   bool is_in_trans_for_close_request_;
+  bool is_need_return_last_bound_ss_;
   bool need_delete_cluster_;
   bool is_first_dml_sql_got_;//default false, will route with merge status careless
                              //it is true after user first dml sql arrived.

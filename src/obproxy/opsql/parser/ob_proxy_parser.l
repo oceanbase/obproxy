@@ -193,6 +193,15 @@ do {\
   }\
   return word_type;\
 } while (0);
+#define SET_HAS_ANONYMOUS_BLOCK() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    if (OBPROXY_T_INVALID == p->cur_stmt_type_) {\
+      p->has_anonymous_block_ = true;\
+    } \
+  }\
+} while (0);
 
 #define PUSH_STATE(state) \
   { yy_push_state(state, yyscanner); }
@@ -249,6 +258,7 @@ do {\
 %x                      bt
 %x                      bt_in_expr
 %x                      in_expr
+%x                      in_anonymous_block
 %x                      in_subquery
 %x                      in_no_select_query
 %x                      prepare
@@ -352,12 +362,14 @@ REPLACE          { SET_DML_STMT(OBPROXY_T_REPLACE); return REPLACE; }
 MERGE            { SET_DML_STMT(OBPROXY_T_MERGE); return MERGE; }
 SHOW             { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW; }
 XA               { RETURN_NON_RESERVED_KEYWORD(XA); }
-BEGIN            { RETURN_NON_RESERVED_KEYWORD(BEGI); }
+ /* if begin is for starting transaction, will set has_anonymous_block = false in yacc */
+BEGIN            { SET_HAS_ANONYMOUS_BLOCK(); RETURN_NON_RESERVED_KEYWORD(BEGI); }
 START            { RETURN_NON_RESERVED_KEYWORD(START); }
 COMMIT           { SET_BASIC_STMT(OBPROXY_T_COMMIT); RETURN_IGNORED_WORD(); }
 ROLLBACK         { SET_BASIC_STMT(OBPROXY_T_ROLLBACK); RETURN_IGNORED_WORD(); }
 SET              { SET_BASIC_STMT(OBPROXY_T_SET); PUSH_STATE_IF_NOT_ICMD(set_expr); return SET; }
 CALL             { SET_BASIC_STMT(OBPROXY_T_CALL); return CALL; }
+DECLARE          { SET_HAS_ANONYMOUS_BLOCK(); PUSH_STATE(in_anonymous_block); }
 WHEN             { ObProxyParseResult *p = yyget_extra(yyscanner);
                    if (OB_NOTNULL(p)) {
                      if (OBPROXY_T_INSERT == p->cur_stmt_type_) 
@@ -1029,6 +1041,9 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <prepare>{identifer}                   { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <prepare>{dquote}                      { POP_STATE(); }
 <prepare>{quote}                       { POP_STATE(); }
+
+<in_anonymous_block>"BEGIN"            { POP_STATE(); return BEGI;}
+<in_anonymous_block>.                  {}
 
 <<EOF>>                     { return END_P; }
 .                           { RETURN_IGNORED_WORD(); }

@@ -22,7 +22,7 @@ namespace common
 // modify ObObjTypeClass and ob_obj_type_class when append new object type.
 enum ObObjType
 {
-  ObNullType = 0,
+  ObNullType          = 0,
 
   ObTinyIntType=1,                // int8, aka mysql boolean type
   ObSmallIntType=2,               // int16
@@ -59,21 +59,21 @@ enum ObObjType
   ObExtendType=25,                 // Min, Max, NOP etc.
   ObUnknownType=26,                // For question mark(?) in prepared statement, no need to serialize
   // @note future new types to be defined here !!!
-  ObTinyTextType    = 27,
-  ObTextType        = 28,
-  ObMediumTextType  = 29,
-  ObLongTextType    = 30,
-  ObBitType         = 31,
-  ObEnumType        = 32,
-  ObSetType         = 33,
-  ObEnumInnerType   = 34,
-  ObSetInnerType    = 35,
+  ObTinyTextType      = 27,
+  ObTextType          = 28,
+  ObMediumTextType    = 29,
+  ObLongTextType      = 30,
+  ObBitType           = 31,
+  ObEnumType          = 32,
+  ObSetType           = 33,
+  ObEnumInnerType     = 34,
+  ObSetInnerType      = 35,
 
   /*
-  ObTinyBlobType = 31,
-  ObMediumBlobType = 32,
-  ObBlobType = 33,
-  ObLongBlobType = 34,
+  ObTinyBlobType      = 31,
+  ObMediumBlobType    = 32,
+  ObBlobType          = 33,
+  ObLongBlobType      = 34,
 
   ObBitType=35
   ObEnumType=36
@@ -107,7 +107,7 @@ enum ObObjTypeClass
   ObStringTC    = 10,   // varchar, char, varbinary, binary.
   ObExtendTC    = 11,   // extend
   ObUnknownTC   = 12,   // unknown
-  ObTextTC = 13, //TinyText,MediumText, Text ,LongText
+  ObTextTC      = 13, //TinyText,MediumText, Text ,LongText
   ObMaxTC,
   // invalid type classes are below, only used as the result of XXXX_type_promotion()
   // to indicate that the two obj can't be promoted to the same type.

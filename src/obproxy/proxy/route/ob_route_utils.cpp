@@ -46,23 +46,23 @@ namespace obproxy
 namespace proxy
 {
 
-static const char PART_KEY_EXTRA_SEPARATOR = ';';
+static const char PART_KEY_EXTRA_SEPARATOR               = ';';
 
-static const char *PROXY_PLAIN_SCHEMA_SQL =
+static const char *PROXY_PLAIN_SCHEMA_SQL                =
     //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1
     "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ * "
     "FROM oceanbase.%s "
     "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' "
     "AND partition_id = %ld "
     "ORDER BY role ASC LIMIT %ld";
-static const char *PROXY_TENANT_SCHEMA_SQL =
+static const char *PROXY_TENANT_SCHEMA_SQL               =
     //svr_ip, sql_port, table_id, role, part_num, replica_num
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
     "FROM oceanbase.%s "
     "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' AND sql_port > 0 "
     "ORDER BY partition_id ASC, role ASC LIMIT %ld";
 
-static const char *PROXY_PART_INFO_SQL =
+static const char *PROXY_PART_INFO_SQL                   =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ template_num, part_level, part_num, part_type, part_space, part_expr, "
     "part_interval_bin, interval_start_bin, sub_part_num, sub_part_type, sub_part_space, "
     "sub_part_expr, def_sub_part_interval_bin, def_sub_interval_start_bin, "
@@ -71,28 +71,28 @@ static const char *PROXY_PART_INFO_SQL =
     "FROM oceanbase.%s "
     "WHERE table_id = %lu LIMIT %d;";
 
-static const char *PROXY_FIRST_PART_SQL =
+static const char *PROXY_FIRST_PART_SQL                  =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, part_name, high_bound_val_bin, sub_part_num "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu LIMIT %ld;";
 
 // observer 2.1.1 do not have high_bound_val_bin, so use two different sql
-static const char *PROXY_HASH_FIRST_PART_SQL =
+static const char *PROXY_HASH_FIRST_PART_SQL             =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, part_name, sub_part_num "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu LIMIT %ld;";
 
-static const char *PROXY_SUB_PART_SQL =
+static const char *PROXY_SUB_PART_SQL                    =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, high_bound_val_bin "
   "FROM oceanbase.%s "
   "WHERE table_id = %lu and part_id = %ld LIMIT %ld;";
 
-static const char *PROXY_NON_TEMPLATE_SUB_PART_SQL =
+static const char *PROXY_NON_TEMPLATE_SUB_PART_SQL       =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, high_bound_val_bin "
   "FROM oceanbase.%s "
   "WHERE table_id = %lu LIMIT %ld;";
 
-static const char *PROXY_ROUTINE_SCHEMA_SQL =
+static const char *PROXY_ROUTINE_SCHEMA_SQL              =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
   "FROM oceanbase.%s "
   "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' "

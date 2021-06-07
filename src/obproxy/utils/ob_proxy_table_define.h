@@ -67,7 +67,6 @@ public:
   static const char *READ_ONLY_USERNAME_USER;
   static const char *READ_ONLY_USERNAME;
   static const char *READ_ONLY_DATABASE;
-  static const char *READ_ONLY_PASSWD_STAGED1;
 
   static const char *TEST_MODE_USERNAME;
   static const char *TEST_MODE_PASSWORD;

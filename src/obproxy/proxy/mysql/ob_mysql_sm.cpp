@@ -1862,11 +1862,12 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
         } else if (OB_FAIL(analyze_ps_prepare_request())) {
           LOG_WARN("fail to analyze ps prepare request", K(ret));
         }
-      } else if (OB_MYSQL_COM_STMT_EXECUTE == req_cmd) {
+      } else if (OB_MYSQL_COM_STMT_EXECUTE == req_cmd
+          || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == req_cmd) {
         if (OB_FAIL(analyze_ps_execute_request())) {
-          LOG_WARN("fail to analyze ps execute request", K(ret));
+          LOG_WARN("fail to analyze ps execute request", K(ret), K(req_cmd));
         }
-      } else if (OB_MYSQL_COM_STMT_FETCH == req_cmd) {
+      } else if (OB_MYSQL_COM_STMT_FETCH == req_cmd || OB_MYSQL_COM_STMT_GET_PIECE_DATA == req_cmd) {
         if (OB_FAIL(analyze_fetch_request())) {
           LOG_WARN("fail to analyze fetch request", K(ret));
         }
@@ -1883,7 +1884,8 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
       }
     } else if (ANALYZE_CONT == status)  {
       // large request means we have received enough packet(> request_buffer_len_)
-      if (OB_MYSQL_COM_STMT_EXECUTE == req_cmd && client_request.is_large_request()) {
+      if ((OB_MYSQL_COM_STMT_EXECUTE == req_cmd || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == req_cmd)
+          && client_request.is_large_request()) {
         if (OB_FAIL(analyze_ps_execute_request())) {
           LOG_WARN("fail to analyze ps execute request", K(ret));
         }
@@ -2002,8 +2004,8 @@ int ObMysqlSM::analyze_ps_execute_request()
     LOG_WARN("com_stmt_execute packet is empty", K(ret));
   } else {
     const char *pos = data.ptr() + MYSQL_NET_META_LENGTH;
-    int32_t ps_id = 0;
-    ObMySQLUtil::get_int4(pos, ps_id);
+    uint32_t ps_id = 0;
+    ObMySQLUtil::get_uint4(pos, ps_id);
     ObPsEntry *entry = NULL;
     if (OB_ISNULL(entry = session_info.get_ps_entry(ps_id)) || !entry->is_valid()) {
       ret = OB_ERR_UNEXPECTED;
@@ -2165,8 +2167,8 @@ int ObMysqlSM::analyze_ps_prepare_execute_request()
     LOG_WARN("com_stmt_execute packet is empty", K(ret));
   } else {
     const char *pos = data.ptr() + MYSQL_NET_META_LENGTH;
-    int32_t ps_id = 0;
-    ObMySQLUtil::get_int4(pos, ps_id);
+    uint32_t ps_id = 0;
+    ObMySQLUtil::get_uint4(pos, ps_id);
     if (0 == ps_id) {
       session_info.set_client_ps_id(client_session_->inc_and_get_ps_id());
     } else {
@@ -3028,6 +3030,7 @@ int ObMysqlSM::state_server_request_send(int event, void *data)
           ss_info.remove_ps_id_pair(client_ps_id);
           ss_info.remove_cursor_id_pair(client_ps_id);
           cs_info.remove_cursor_id_addr(client_ps_id);
+          cs_info.remove_piece_info(client_ps_id);
           if (NULL != ps_id_addrs) {
             ps_id_addrs->remove_addr(server_session_->get_netvc()->get_remote_addr());
           }
@@ -3561,6 +3564,23 @@ int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
     // begin(start transaction), or set autocommit = 0 is not the first request;
     if (trans_state_.is_trans_first_request_) {
       ObMysqlTransact::handle_pl_update(trans_state_);
+    }
+
+    if (obmysql::OB_MYSQL_COM_STMT_FETCH == trans_state_.trans_info_.sql_cmd_
+        && client_session_->is_need_return_last_bound_ss()) {
+      int ret = OB_SUCCESS;
+      ObMysqlServerSession *last_bound_session = client_session_->get_last_bound_server_session();
+      if (NULL != last_bound_session) {
+        release_server_session();
+        if (OB_FAIL(ObMysqlTransact::return_last_bound_server_session(client_session_))) {
+          LOG_WARN("fail to return last bound server session", K(ret));
+        } else {
+          trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
+        }
+      } else {
+        trans_state_.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
+        LOG_WARN("need return last bound ss, but last bound ss is NULL", K(ret));
+      }
     }
 
     // each sm will be destroyed after it runs 5 secondes.
@@ -4862,8 +4882,10 @@ inline int ObMysqlSM::do_oceanbase_internal_observer_open(ObMysqlServerSession *
 
   last_session = client_session_->get_server_session();
   // if need_pl_lookup is false, we must use last server session
-  // allow no last server session when OB_MYSQL_COM_STMT_CLOSE and need_pl_lookup_ = false
-  if (!trans_state_.need_pl_lookup_ && OB_MYSQL_COM_STMT_CLOSE != trans_state_.trans_info_.sql_cmd_) {
+  // allow no last server session when OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_FETCH and need_pl_lookup_ = false
+  if (!trans_state_.need_pl_lookup_
+      && ((OB_MYSQL_COM_STMT_CLOSE != trans_state_.trans_info_.sql_cmd_ && OB_MYSQL_COM_STMT_FETCH != trans_state_.trans_info_.sql_cmd_)
+           || !client_session_->is_need_return_last_bound_ss())) {
     if (OB_ISNULL(last_session)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("last server session is NULL, disconnect", K_(sm_id), K(ret));
@@ -5034,7 +5056,8 @@ inline int ObMysqlSM::do_internal_observer_open()
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_LAST_INSERT_ID;
       } else if (trans_state_.is_hold_start_trans_) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_START_TRANS;
-      } else if ((OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)
+      } else if (((OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)
+                  || (OB_MYSQL_COM_STMT_SEND_PIECE_DATA == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_))
                  && client_info.need_do_prepare(server_info)) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_PREPARE;
       } else if (client_info.is_text_ps_execute() && client_info.need_do_text_ps_prepare(server_info)) {
@@ -5137,6 +5160,7 @@ void ObMysqlSM::do_internal_request()
         // current not support compress to client
         handshake.disable_use_compress();
         handshake.enable_session_track();
+        handshake.enable_connection_attr();
         // use cs id (proxy connection id)
         // before receive ok pkt from observer, the conn_id_ is always 0, means has not set
         uint32_t conn_id = client_session_->get_cs_id();
@@ -6064,17 +6088,9 @@ int ObMysqlSM::setup_client_transfer(ObMysqlVCType to_vc_type)
              K_(sm_id), K(ret));
   } else if (OB_FAIL(trans_state_.alloc_internal_buffer(MYSQL_BUFFER_SIZE))) {
     LOG_ERROR("fail to allocate internal buffer,", K_(sm_id), K(ret));
+  } else if (OB_FAIL(ObMysqlTransact::rewrite_stmt_id(trans_state_, client_buffer_reader_ ))) {
+    LOG_WARN("rewrite stmt id failed", K(ret));
   } else {
-    // rewrite stmt id for ps execute
-    if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.sql_cmd_) {
-      ObServerSessionInfo &ss_info = server_session_->get_session_info();
-      ObClientSessionInfo &cs_info = client_session_->get_session_info();
-      uint32_t client_ps_id = cs_info.get_client_ps_id();
-      // get server_ps_id by client_ps_id
-      uint32_t server_ps_id = ss_info.get_server_ps_id(client_ps_id);
-      client_buffer_reader_->replace(reinterpret_cast<const char*>(&server_ps_id), sizeof(server_ps_id), MYSQL_NET_META_LENGTH);
-    }
-
     // Next order of business if copy the remaining data from the
     // request buffer into new buffer
     if (OB_FAIL(trans_state_.internal_buffer_->remove_append(client_buffer_reader_, written_bytes))) {
@@ -6321,7 +6337,8 @@ int ObMysqlSM::setup_server_request_send()
       // Attention:
       //  1. if send begin or start, think as in trans
       //  2. if autocommit = 0, first SQL think as not in trans
-      } else if (trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()) {
+      } else if (trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()
+                 || trans_state_.trans_info_.client_request_.get_parse_result().has_anonymous_block()) {
         if (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_)) {
           set_server_trx_timeout();
         } else {
@@ -6677,6 +6694,7 @@ int ObMysqlSM::setup_cmd_complete()
     client_session_->set_first_handle_close_request(true);
     client_session_->set_in_trans_for_close_request(false);
     client_session_->set_sharding_select_log_plan(NULL);
+    client_session_->set_need_return_last_bound_ss(false);
 
     if (OB_MYSQL_COM_HANDSHAKE == trans_state_.trans_info_.sql_cmd_) {
       // set inactivity timeout to connect_timeout after proxy send handshake

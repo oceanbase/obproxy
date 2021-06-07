@@ -48,7 +48,7 @@ typedef void *(*ThreadFunction)(void *arg);
 extern ObProxyMutex *global_mutex;
 
 static const int MAX_THREAD_NAME_LENGTH = 32;
-static const int DEFAULT_STACKSIZE = 1048576; // 1MB
+static const int DEFAULT_STACKSIZE      = 1048576; // 1MB
 
 /**
  * Base class for the threads in the ObEvent System. ObThread is the base

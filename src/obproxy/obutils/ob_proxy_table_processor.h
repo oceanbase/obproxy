@@ -43,12 +43,12 @@ enum ObProxyRowStatus
 };
 
 //.upgrade_start_time | .upgrade_duration_time
-const int64_t OB_MAX_PROXY_UPGRADEN_TIME_LEN = 24;
+const int64_t OB_MAX_PROXY_UPGRADEN_TIME_LEN   = 24;
 //upgrade_off | upgrade_part | upgrade_on | upgrade_bin
 const int64_t OB_MAX_PROXY_UPGRADEN_SWITCH_LEN = 16;
 //all_proxy
-const int64_t OB_ALL_PROXY_HEADER_LEN = sizeof("all_proxy");
-const int64_t OB_PROXY_CONFIG_VERSION_LEN = sizeof(".config_version");
+const int64_t OB_ALL_PROXY_HEADER_LEN          = sizeof("all_proxy");
+const int64_t OB_PROXY_CONFIG_VERSION_LEN      = sizeof(".config_version");
 
 class ObProxyServerInfo
 {

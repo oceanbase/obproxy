@@ -29,10 +29,10 @@ namespace obproxy
 {
 namespace obutils
 {
-static const ObString LOCAL_DIR = ObString::make_string(".");
-static const ObString PARENT_DIR = ObString::make_string("..");
+static const ObString LOCAL_DIR                   = ObString::make_string(".");
+static const ObString PARENT_DIR                  = ObString::make_string("..");
 
-const char *INSERT_KV_TABLE_VERSION_SQL =
+const char *INSERT_KV_TABLE_VERSION_SQL           =
     "INSERT INTO %s "
     "(name, datatype, value, info) VALUES ('%s', %d, '%ld', '%s') "
     "ON DUPLICATE KEY UPDATE name = VALUES(name);\n";
@@ -45,7 +45,7 @@ const char *INSERT_KV_TABLE_ALL_PROXY_UPGRADE_SQL =
     "('%.*s%.*s', %d, '%.*s', '%s'), ('%.*s%.*s', %d, '%.*s', '%s'), ('%.*s%.*s', %d, '%.*s', '%s') "
     "ON DUPLICATE KEY UPDATE name = VALUES(name);\n";
 
-const char *INSERT_CONFIG_TABLE_ALL_PROXY_SQL =
+const char *INSERT_CONFIG_TABLE_ALL_PROXY_SQL     =
     "INSERT INTO %s "
     "(app_name, name, value, need_reboot, info) VALUES "
     "('all_proxy', '%s', '%s', '%s', '%s') "
@@ -708,7 +708,7 @@ int ObProxyFileUtils::write_and_backup_file(const char *path, const char *tmp_pa
         }
       }
     }
-    if (fd > 0) {
+    if (fd >= 0) {
       ::close(fd);
     }
   }
@@ -792,7 +792,7 @@ int ObProxyFileUtils::read_from_file(const char *dir, const char *file_name,
       } else if (OB_LIKELY(read_len < len)) {
         buf[read_len] = '\0';
       }
-      if (fd > 0) ::close(fd);
+      if (fd >= 0) ::close(fd);
     }
   }
 

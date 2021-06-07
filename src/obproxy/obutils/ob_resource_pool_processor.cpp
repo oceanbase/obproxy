@@ -44,19 +44,19 @@ namespace obutils
 {
 ObResourcePoolProcessor g_rp_processor;
 
-const static char *CHEK_CLUSTER_NAME_SQL =
+const static char *CHEK_CLUSTER_NAME_SQL    =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster FROM oceanbase.%s LIMIT 1";
-const static char *CHEK_CLUSTER_ROLE_SQL =
+const static char *CHEK_CLUSTER_ROLE_SQL    =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster_role, cluster_status FROM oceanbase.%s LIMIT 1";
 const static char *OBPROXY_V_DATABASE_TNAME = "v$ob_cluster";
-const static char *INIT_SS_INFO_SQL =
+const static char *INIT_SS_INFO_SQL         =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/  *, zs.status AS zone_status, ss.status AS server_status "
     "FROM oceanbase.%s zs, oceanbase.%s ss "
     "WHERE zs.zone=ss.zone "
     "AND ss.svr_port > 0 LIMIT %ld;";
 
-const static char *PRIMARY_ROLE = "PRIMARY";
-const static char *ROLE_VALID = "VALID";
+const static char *PRIMARY_ROLE             = "PRIMARY";
+const static char *ROLE_VALID               = "VALID";
 
 //-------ObClusterInfoKey------
 DEF_TO_STRING(ObClusterInfoKey)

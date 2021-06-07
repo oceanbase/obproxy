@@ -189,7 +189,7 @@ int ObMysqlPacketRewriter::add_connect_attr(const char *key, const common::ObStr
 
 int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
     ObMysqlAuthRequest &orig_auth_req,
-    const ObHandshakeResponseParam &param,
+    ObHandshakeResponseParam &param,
     OMPKHandshakeResponse &tg_hsr)
 {
   int ret = OB_SUCCESS;
@@ -209,6 +209,18 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
   // 3. if is_saved_login, clear database(-D xxx)
   if (param.is_saved_login_) {
     tg_hsr.set_database(ObString::make_empty_string());
+  }
+
+  // find client_ip
+  ObStringKV string_kv;
+  for (int64_t i = 0; OB_SUCC(ret) && i <  tg_hsr.get_connect_attrs().count(); ++i) {
+    string_kv = tg_hsr.get_connect_attrs().at(i);
+    if (0 == string_kv.key_.case_compare(OB_MYSQL_CLIENT_IP)) {
+      if (!string_kv.value_.empty()) {
+        snprintf(param.client_ip_buf_, ObHandshakeResponseParam::OB_MAX_IP_BUF_LEN, "%.*s", string_kv.value_.length(), string_kv.value_.ptr());
+      }
+      break;
+    }
   }
 
   // reset before add

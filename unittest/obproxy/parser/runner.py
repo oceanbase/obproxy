@@ -45,7 +45,7 @@ class MainHandler():
             if (os.path.isfile(self.opt.base_parser)):
                 run_cmd("./%s -f %s -r %s" % (self.opt.base_parser, self.opt.test_case, result_file_name))
             else:
-                url = 'http://10.218.248.181:7788/obproxy_build/%s' % self.opt.base_parser
+                url = 'http://ip:port/obproxy_build/%s' % self.opt.base_parser
                 print 'get base parser from %s' % url
                 run_cmd("wget %s -O %s &>/dev/null && chmod a+x %s" % (url, self.opt.base_parser, self.opt.base_parser))
                 if (os.path.isfile(self.opt.base_parser)):

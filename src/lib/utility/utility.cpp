@@ -1230,7 +1230,7 @@ static int read_pid(const char *pidfile, long &pid)
     pid = strtol(buf, NULL, 10);
   }
 
-  if (fd > 0) {
+  if (fd >= 0) {
     close(fd);
   }
 

@@ -20,7 +20,7 @@ namespace oceanbase
 namespace common
 {
 
-static const char *zone_type_strs[] = { "ReadWrite", "ReadOnly", "Invalid" };
+static const char *zone_type_strs[] = { "ReadWrite", "ReadOnly", "Encryption", "Invalid" };
 const char *zone_type_to_str(ObZoneType zone_type)
 {
   const char *zone_type_str = NULL;

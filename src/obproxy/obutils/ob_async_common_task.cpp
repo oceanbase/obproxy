@@ -27,7 +27,7 @@ namespace obproxy
 {
 namespace obutils
 {
-static const int EVENT_COMPLETE = CLIENT_TRANSPORT_MYSQL_RESP_EVENT;
+static const int EVENT_COMPLETE   = CLIENT_TRANSPORT_MYSQL_RESP_EVENT;
 static const int EVENT_INFORM_OUT = ASYNC_PROCESS_INFORM_OUT_EVENT;
 
 int ObAsyncCommonTask::main_handler(int event, void *data)

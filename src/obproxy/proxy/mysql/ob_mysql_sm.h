@@ -59,7 +59,7 @@ namespace proxy
 // from the observer since we want to get as much of the
 // document as possible on the first read Marco benchmarked
 // about 3% ops/second improvement using the larger buffer size
-static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
+static int64_t const MYSQL_BUFFER_SIZE     = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 static const int64_t MYSQL_SM_LIST_BUCKETS = 64;
 
 class ObMysqlServerSession;
@@ -67,7 +67,7 @@ class ObMysqlServerSession;
 enum ObMysqlSMMagic
 {
   MYSQL_SM_MAGIC_ALIVE = 0x0000FEED,
-  MYSQL_SM_MAGIC_DEAD = 0xDEADFEED
+  MYSQL_SM_MAGIC_DEAD  = 0xDEADFEED
 };
 
 struct ObStreamSizeStat

@@ -142,8 +142,11 @@ void FooServer::run()
         }
         memset(line, 0, MAX_LINE);
         total_size = 0;
-        while ((read_size = read(sock_fd, line + total_size, MAX_LINE)) > 0) {
+        while ((read_size = read(sock_fd, line + total_size, MAX_LINE - total_size)) > 0) {
           total_size += read_size;
+          if (total_size >= MAX_LINE) {
+            break;
+          }
         }
 
         if (total_size == 0) {

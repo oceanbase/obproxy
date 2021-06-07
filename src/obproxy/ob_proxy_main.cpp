@@ -146,8 +146,8 @@ void ObProxyMain::print_usage() const
   MPRINT("  -t,--regression_test     TEST_NAME     regression test");
   MPRINT("example:");
   MPRINT("  run without config server:");
-  MPRINT("    ./bin/obproxy -p6789 -r'10.125.224.11:26506;10.125.224.22:26577' -n test -o enable_cluster_checkout=false,syslog_level=INFO");
-  MPRINT(" OR ./bin/obproxy -p6789 -r'10.125.224.11:26506;10.125.224.22:26577' -c 'ob_test' -n test -o syslog_level=INFO \n");
+  MPRINT("    ./bin/obproxy -p6789 -r'ip:port;ip:port' -n test -o enable_cluster_checkout=false,syslog_level=INFO");
+  MPRINT(" OR ./bin/obproxy -p6789 -r'ip:port;ip:port' -c 'ob_test' -n test -o syslog_level=INFO \n");
   MPRINT("  run with config server:");
   MPRINT("    ./bin/obproxy -p6789 -e -n test -o obproxy_config_server_url='your config url',syslog_level=INFO\n");
   MPRINT("  Non-first start with local config file:");
@@ -155,7 +155,7 @@ void ObProxyMain::print_usage() const
   MPRINT("  dump config update sql:");
   MPRINT("    ./bin/obproxy -d\n");
   MPRINT("  run regression tests:");
-  MPRINT("    ./bin/obproxy -p6789 -r10.125.224.11:26506 -ntest -o obproxy_config_server_url='' -t ''");
+  MPRINT("    ./bin/obproxy -p6789 -rip:port -ntest -o obproxy_config_server_url='' -t ''");
   MPRINT("----------------------------------------------------------------------------------");
 }
 

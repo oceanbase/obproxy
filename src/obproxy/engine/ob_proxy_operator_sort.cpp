@@ -370,7 +370,17 @@ ObBaseSort::ObBaseSort(SortColumnArray &sort_columns, common::ObIAllocator &allo
   *err_ = common::OB_SUCCESS;
   *sort_err_ = common::OB_SUCCESS;
 }
-
+ObBaseSort::~ObBaseSort()
+{
+  if (err_ != NULL) {
+    delete err_;
+    err_ = NULL;
+  }
+  if (sort_err_ != NULL) {
+    delete sort_err_;
+    sort_err_ = NULL;
+  }
+}
 bool ObBaseSort::compare_row(ResultRow &row1, ResultRow &row2, int &ret) //row1 <= row2 true, row1 > row2 false
 {
   *err_ = common::OB_SUCCESS;

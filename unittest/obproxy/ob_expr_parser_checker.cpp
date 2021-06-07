@@ -85,6 +85,7 @@ ObProxyParseString ObExprParserChecker::get_value(std::string &extra_str, const 
                                                   std::size_t &pos)
 {
   ObProxyParseString ret_str;
+  memset(&ret_str, 0, sizeof(ObProxyParseString));
   ret_str.str_len_ = 0;
   std::size_t key_index = extra_str.find(key_name, pos);
   if (key_index != std::string::npos) {

@@ -40,7 +40,7 @@ namespace obproxy
 namespace obutils
 {
 
-static const char *SELECT_ZONE_STATE_INFO_SQL =
+static const char *SELECT_ZONE_STATE_INFO_SQL                     =
     //zone, is_merging, status, region
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
     "FROM oceanbase.%s LIMIT %ld";
@@ -48,19 +48,19 @@ static const char *SELECT_ZONE_STATE_INFO_SQL =
 //when server fail to start, its status is inactive, but its port == 0.
 //it is design defect, but proxy need compatible with it.
 //so select svr_port > 0 one
-const static char *SELECT_SERVER_STATE_INFO_SQL =
+const static char *SELECT_SERVER_STATE_INFO_SQL                   =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ svr_ip, svr_port, zone, status, start_service_time, stop_time "
     "FROM oceanbase.%s "
     "WHERE svr_port > 0 ORDER BY zone LIMIT %ld";
 
-const static char *SELECT_CLUSTER_ROEL_SQL =
+const static char *SELECT_CLUSTER_ROEL_SQL                        =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster_role, cluster_status, primary_cluster_id "
     "FROM oceanbase.v$ob_cluster LIMIT 1";
 
-const static char *SYS_LDG_INFO_SQL =
+const static char *SYS_LDG_INFO_SQL                               =
     "SELECT TENANT_ID, TENANT_NAME, CLUSTER_ID, CLUSTER_NAME, LDG_ROLE "
     "FROM oceanbase.ldg_standby_status";
-const static char *SELECT_ALL_TENANT_SQL =
+const static char *SELECT_ALL_TENANT_SQL                          =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ tenant_name, locality FROM oceanbase.__all_tenant "
     "where previous_locality = '' and tenant_id != 1";
 
@@ -1658,6 +1658,8 @@ int ObServerStateRefreshUtils::get_server_state_info(
       } else {
         if (server_state.zone_state_->is_readonly_zone()) {
           server_state.replica_.replica_type_ = REPLICA_TYPE_READONLY;
+        } else if (server_state.zone_state_->is_encryption_zone()) {
+          server_state.replica_.replica_type_ = REPLICA_TYPE_ENCRYPTION_LOGONLY;
         } else {
           server_state.replica_.replica_type_ = REPLICA_TYPE_FULL;
         }

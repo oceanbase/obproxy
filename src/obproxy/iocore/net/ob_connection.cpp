@@ -8,6 +8,24 @@
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
+ *
+ * *************************************************************
+ *
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
  */
 
 #include "iocore/net/ob_connection.h"
@@ -111,11 +129,11 @@ ObConnection::~ObConnection()
  * order to tweak options.
  */
 const ObNetVCOptions ObConnection::DEFAULT_OPTIONS;
-const int32_t ObConnection::SOCKOPT_ON = 1;
-const int32_t ObConnection::SOCKOPT_OFF = 0;
+const int32_t ObConnection::SOCKOPT_ON             = 1;
+const int32_t ObConnection::SOCKOPT_OFF            = 0;
 const int32_t ObConnection::SNDBUF_AND_RCVBUF_PREC = 1024;
 
-const int32_t ObServerConnection::LISTEN_BACKLOG = 1024;
+const int32_t ObServerConnection::LISTEN_BACKLOG   = 1024;
 
 int ObConnection::open(const ObNetVCOptions &opt)
 {
@@ -340,7 +358,7 @@ int ObServerConnection::accept(ObConnection *c)
     ret = OB_INVALID_ARGUMENT;
     PROXY_SOCK_LOG(WARN, "invalid argument conn", K(c), K(ret));
   } else {
-    int64_t sz = sizeof(c->addr_);
+    int64_t sz = sizeof(c->addr_.sa_);
     if (OB_FAIL(ObSocketManager::accept(fd_, &c->addr_.sa_, &sz, c->fd_))) {
       if (OB_SYS_EAGAIN != ret) {
         PROXY_SOCK_LOG(WARN, "fail to accept", K(fd_), K(ret));

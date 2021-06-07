@@ -36,7 +36,7 @@ namespace obproxy
 {
 namespace obutils
 {
-static const char *INADDR_ANY_IP = "0.0.0.0";
+static const char *INADDR_ANY_IP      = "0.0.0.0";
 static const char *INADDR_LOOPBACK_IP = "127.0.0.1";
 
 static const char *GET_PROXY_INFO_SQL =
@@ -134,7 +134,7 @@ static const char *GET_PROXY_ALL_VIP_TENANT_SQL =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ vid, vip, vport, tenant_name, cluster_name, info FROM %s LIMIT %ld";
 
 static const char *JSON_REQUEST_TARGET = "REQUEST_TARGET";
-static const char *JSON_RW_TYPE = "RW_TYPE";
+static const char *JSON_RW_TYPE        = "RW_TYPE";
 
 
 int ObProxyTableProcessorUtils::get_proxy_info(ObMysqlProxy &mysql_proxy,

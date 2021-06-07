@@ -56,16 +56,16 @@ static inline bool IN6_IS_ADDR_UNSPECIFIED(const in6_addr *addr)
 #endif
 
 // Buffer size sufficient for IPv6 address and port.
-static const int64_t INET6_ADDRPORTSTRLEN = INET6_ADDRSTRLEN + 6;
+static const int64_t INET6_ADDRPORTSTRLEN      = INET6_ADDRSTRLEN + 6;
 // Convenience type for address formatting.
 typedef char ip_text_buffer[INET6_ADDRSTRLEN];
 typedef char ip_port_text_buffer[INET6_ADDRPORTSTRLEN];
 
-static const int64_t MAX_HOST_NAME_LEN = 256;
+static const int64_t MAX_HOST_NAME_LEN         = 256;
 static const int64_t MAX_LOCAL_ADDR_LIST_COUNT = 64;
 
 // Size in bytes of an IPv6 address.
-static const int64_t IP6_SIZE = sizeof(in6_addr);
+static const int64_t IP6_SIZE                  = sizeof(in6_addr);
 
 struct ObIpAddr;
 
@@ -511,10 +511,7 @@ inline bool ops_is_ip_private(const sockaddr &ip)
   bool zret = false;
   if (ops_is_ip4(ip)) {
     in_addr_t a = ops_ip4_addr_cast(ip);
-    zret = ((a & htonl(0xFF000000)) == htonl(0x0A000000))   // 10.0.0.0/8
-        || ((a & htonl(0xFFC00000)) == htonl(0x64400000))   // 100.64.0.0/10
-        || ((a & htonl(0xFFF00000)) == htonl(0xAC100000))   // 172.16.0.0/12
-        || ((a & htonl(0xFFFF0000)) == htonl(0xC0A80000));  // 192.168.0.0/16
+    zret = ((a & htonl(0xFFFF0000)) == htonl(0xC0A80000));  // 192.168.0.0/16
   } else if (ops_is_ip6(ip)) {
     in6_addr a = ops_ip6_addr_cast(ip);
     zret = ((a.s6_addr[0] & 0xFE) == 0xFC); // fc00::/7
@@ -525,26 +522,6 @@ inline bool ops_is_ip_private(const sockaddr &ip)
 inline bool ops_is_ip_private(const ObIpEndpoint &ip)
 {
   return ops_is_ip_private(ip.sa_);
-}
-
-// Check for Link Local.
-// @return @true if ip is link local.
-inline bool ops_is_ip_linklocal(const sockaddr &ip)
-{
-  bool zret = false;
-  if (ops_is_ip4(ip)) {
-    in_addr_t a = ops_ip4_addr_cast(ip);
-    zret = ((a & htonl(0xFFFF0000)) == htonl(0xA9FE0000)); // 169.254.0.0/16
-  } else if (ops_is_ip6(ip)) {
-    in6_addr a = ops_ip6_addr_cast(ip);
-    zret = ((a.s6_addr[0] == 0xFE) && ((a.s6_addr[1] & 0xC0) == 0x80)); // fe80::/10
-  }
-  return zret;
-}
-
-inline bool ops_is_ip_linklocal(const ObIpEndpoint &ip)
-{
-  return ops_is_ip_linklocal(ip.sa_);
 }
 
 // Check for being "any" address.
@@ -567,6 +544,7 @@ inline bool ops_is_ip_any(const sockaddr &ip)
 inline bool ops_ip_copy(sockaddr &dst, const sockaddr &src)
 {
   int64_t n = 0;
+  int64_t n2 = 0;
   switch (src.sa_family) {
     case AF_INET:
       n = sizeof(sockaddr_in);
@@ -576,7 +554,16 @@ inline bool ops_ip_copy(sockaddr &dst, const sockaddr &src)
       n = sizeof(sockaddr_in6);
       break;
   }
-  if (n) {
+  switch (dst.sa_family) {
+    case AF_INET:
+      n2 = sizeof(sockaddr_in);
+      break;
+
+    case AF_INET6:
+      n2 = sizeof(sockaddr_in6);
+      break;
+  }
+  if (n && n <= n2) {
     MEMCPY(&dst, &src, n);
 #if HAVE_STRUCT_SOCKADDR_SA_LEN
     dst.sa_len = n;

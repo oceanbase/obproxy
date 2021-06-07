@@ -553,7 +553,9 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     }
     case OB_MYSQL_COM_STMT_FETCH:
     case OB_MYSQL_COM_STMT_CLOSE:
-    case OB_MYSQL_COM_STMT_EXECUTE: {
+    case OB_MYSQL_COM_STMT_EXECUTE:
+    case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
+    case OB_MYSQL_COM_STMT_GET_PIECE_DATA: {
       // add packet's buffer to mysql common request, for parsing later
       if (OB_FAIL(client_request.add_request(ctx.reader_, ctx.request_buffer_length_))) {
         LOG_WARN("fail to add com request", K(ret));
@@ -607,7 +609,9 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
       }
     }
     case OB_MYSQL_COM_HANDSHAKE:
-    case OB_MYSQL_COM_QUIT:
+    case OB_MYSQL_COM_QUIT: {
+      break;
+    }
     default: {
       break;
     }

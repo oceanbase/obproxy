@@ -26,9 +26,9 @@ namespace obproxy
 namespace obutils
 {
 
-static const int64_t MT_HASHTABLE_PARTITION_BITS = 6;
-static const int64_t MT_HASHTABLE_PARTITIONS = 1 << MT_HASHTABLE_PARTITION_BITS;
-static const uint64_t MT_HASHTABLE_PARTITION_MASK = MT_HASHTABLE_PARTITIONS - 1;
+static const int64_t MT_HASHTABLE_PARTITION_BITS    = 6;
+static const int64_t MT_HASHTABLE_PARTITIONS        = 1 << MT_HASHTABLE_PARTITION_BITS;
+static const uint64_t MT_HASHTABLE_PARTITION_MASK   = MT_HASHTABLE_PARTITIONS - 1;
 static const int64_t MT_HASHTABLE_MAX_CHAIN_AVG_LEN = 4;
 
 template <class Key, class Value>

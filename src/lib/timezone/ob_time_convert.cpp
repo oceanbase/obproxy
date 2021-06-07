@@ -33,12 +33,12 @@ ObTimeConverter::~ObTimeConverter()
 {
 }
 
-const int32_t DT_PART_BASE[DATETIME_PART_CNT] = { 100, 12, -1, 24, 60, 60, 1000000};
-const int32_t DT_PART_MIN[DATETIME_PART_CNT]  = {   0,  1,  1,  0,  0,  0, 0};
-const int32_t DT_PART_MAX[DATETIME_PART_CNT]  = {9999, 12, 31, 23, 59, 59, 1000000};
+const int32_t DT_PART_BASE[DATETIME_PART_CNT]  = { 100, 12, -1, 24, 60, 60, 1000000};
+const int32_t DT_PART_MIN[DATETIME_PART_CNT]   = {   0,  1,  1,  0,  0,  0, 0};
+const int32_t DT_PART_MAX[DATETIME_PART_CNT]   = {9999, 12, 31, 23, 59, 59, 1000000};
 // 1000000 for usecond, because sometimes we round .9999999 to  .1000000
 
-static const int8_t DAYS_PER_MON[2][12 + 1] = {
+static const int8_t DAYS_PER_MON[2][12 + 1]    = {
   {0, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31},
   {0, 31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31}
 };
@@ -922,7 +922,7 @@ int ObTimeConverter::int_to_ob_time_without_date(int64_t int64, ObTime &ob_time)
 //int ObTimeConverter::uint_to_ob_time_with_date(int64_t int64, ObTime &ob_time)
 //int ObTimeConverter::uint_to_ob_time_without_date(int64_t int64, ObTime &ob_time)
 
-static const int32_t DATETIME_PART_LENS_MAX[] = {
+static const int32_t DATETIME_PART_LENS_MAX[]   = {
   INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX, INT32_MAX, 7};
 static const int32_t DATETIME_PART_LENS_YEAR4[] = {4, 2, 2, 2, 2, 2, 7};
 static const int32_t DATETIME_PART_LENS_YEAR2[] = {2, 2, 2, 2, 2, 2, 7};

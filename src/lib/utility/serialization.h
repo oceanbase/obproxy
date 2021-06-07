@@ -26,69 +26,69 @@ namespace common
 {
 namespace serialization
 {
-const uint64_t OB_MAX_V1B = (__UINT64_C(1) << 7) - 1;
-const uint64_t OB_MAX_V2B = (__UINT64_C(1) << 14) - 1;
-const uint64_t OB_MAX_V3B = (__UINT64_C(1) << 21) - 1;
-const uint64_t OB_MAX_V4B = (__UINT64_C(1) << 28) - 1;
-const uint64_t OB_MAX_V5B = (__UINT64_C(1) << 35) - 1;
-const uint64_t OB_MAX_V6B = (__UINT64_C(1) << 42) - 1;
-const uint64_t OB_MAX_V7B = (__UINT64_C(1) << 49) - 1;
-const uint64_t OB_MAX_V8B = (__UINT64_C(1) << 56) - 1;
-const uint64_t OB_MAX_V9B = (__UINT64_C(1) << 63) - 1;
+const uint64_t OB_MAX_V1B                 = (__UINT64_C(1) << 7) - 1;
+const uint64_t OB_MAX_V2B                 = (__UINT64_C(1) << 14) - 1;
+const uint64_t OB_MAX_V3B                 = (__UINT64_C(1) << 21) - 1;
+const uint64_t OB_MAX_V4B                 = (__UINT64_C(1) << 28) - 1;
+const uint64_t OB_MAX_V5B                 = (__UINT64_C(1) << 35) - 1;
+const uint64_t OB_MAX_V6B                 = (__UINT64_C(1) << 42) - 1;
+const uint64_t OB_MAX_V7B                 = (__UINT64_C(1) << 49) - 1;
+const uint64_t OB_MAX_V8B                 = (__UINT64_C(1) << 56) - 1;
+const uint64_t OB_MAX_V9B                 = (__UINT64_C(1) << 63) - 1;
 
 
-const uint64_t OB_MAX_1B = (__UINT64_C(1) << 8) - 1;
-const uint64_t OB_MAX_2B = (__UINT64_C(1) << 16) - 1;
-const uint64_t OB_MAX_3B = (__UINT64_C(1) << 24) - 1;
-const uint64_t OB_MAX_4B = (__UINT64_C(1) << 32) - 1;
-const uint64_t OB_MAX_5B = (__UINT64_C(1) << 40) - 1;
-const uint64_t OB_MAX_6B = (__UINT64_C(1) << 48) - 1;
-const uint64_t OB_MAX_7B = (__UINT64_C(1) << 56) - 1;
-const uint64_t OB_MAX_8B = UINT64_MAX;
+const uint64_t OB_MAX_1B                  = (__UINT64_C(1) << 8) - 1;
+const uint64_t OB_MAX_2B                  = (__UINT64_C(1) << 16) - 1;
+const uint64_t OB_MAX_3B                  = (__UINT64_C(1) << 24) - 1;
+const uint64_t OB_MAX_4B                  = (__UINT64_C(1) << 32) - 1;
+const uint64_t OB_MAX_5B                  = (__UINT64_C(1) << 40) - 1;
+const uint64_t OB_MAX_6B                  = (__UINT64_C(1) << 48) - 1;
+const uint64_t OB_MAX_7B                  = (__UINT64_C(1) << 56) - 1;
+const uint64_t OB_MAX_8B                  = UINT64_MAX;
 
 
 
-const uint64_t OB_MAX_INT_1B = (__UINT64_C(23));
-const uint64_t OB_MAX_INT_2B = (__UINT64_C(1) << 8) - 1;
-const uint64_t OB_MAX_INT_3B = (__UINT64_C(1) << 16) - 1;
-const uint64_t OB_MAX_INT_4B = (__UINT64_C(1) << 24) - 1;
-const uint64_t OB_MAX_INT_5B = (__UINT64_C(1) << 32) - 1;
-const uint64_t OB_MAX_INT_7B = (__UINT64_C(1) << 48) - 1;
-const uint64_t OB_MAX_INT_9B = UINT64_MAX;
+const uint64_t OB_MAX_INT_1B              = (__UINT64_C(23));
+const uint64_t OB_MAX_INT_2B              = (__UINT64_C(1) << 8) - 1;
+const uint64_t OB_MAX_INT_3B              = (__UINT64_C(1) << 16) - 1;
+const uint64_t OB_MAX_INT_4B              = (__UINT64_C(1) << 24) - 1;
+const uint64_t OB_MAX_INT_5B              = (__UINT64_C(1) << 32) - 1;
+const uint64_t OB_MAX_INT_7B              = (__UINT64_C(1) << 48) - 1;
+const uint64_t OB_MAX_INT_9B              = UINT64_MAX;
 
 
-const int64_t OB_MAX_1B_STR_LEN = (__INT64_C(55));
-const int64_t OB_MAX_2B_STR_LEN = (__INT64_C(1) << 8) - 1;
-const int64_t OB_MAX_3B_STR_LEN = (__INT64_C(1) << 16) - 1;
-const int64_t OB_MAX_4B_STR_LEN = (__INT64_C(1) << 24) - 1;
-const int64_t OB_MAX_5B_STR_LEN = (__INT64_C(1) << 32) - 1;
+const int64_t OB_MAX_1B_STR_LEN           = (__INT64_C(55));
+const int64_t OB_MAX_2B_STR_LEN           = (__INT64_C(1) << 8) - 1;
+const int64_t OB_MAX_3B_STR_LEN           = (__INT64_C(1) << 16) - 1;
+const int64_t OB_MAX_4B_STR_LEN           = (__INT64_C(1) << 24) - 1;
+const int64_t OB_MAX_5B_STR_LEN           = (__INT64_C(1) << 32) - 1;
 
-const int8_t OB_INT_TYPE_BIT_POS = 7;
-const int8_t OB_INT_OPERATION_BIT_POS = 6;
-const int8_t OB_INT_SIGN_BIT_POS = 5;
-const int8_t OB_DATETIME_OPERATION_BIT = 3;
-const int8_t OB_DATETIME_SIGN_BIT = 2;
-const int8_t OB_FLOAT_OPERATION_BIT_POS = 0;
+const int8_t OB_INT_TYPE_BIT_POS          = 7;
+const int8_t OB_INT_OPERATION_BIT_POS     = 6;
+const int8_t OB_INT_SIGN_BIT_POS          = 5;
+const int8_t OB_DATETIME_OPERATION_BIT    = 3;
+const int8_t OB_DATETIME_SIGN_BIT         = 2;
+const int8_t OB_FLOAT_OPERATION_BIT_POS   = 0;
 const int8_t OB_DECIMAL_OPERATION_BIT_POS = 7;
 
-const int8_t OB_INT_VALUE_MASK = 0x1f;
-const int8_t OB_VARCHAR_LEN_MASK = 0x3f;
-const int8_t OB_DATETIME_LEN_MASK =  0x3;
+const int8_t OB_INT_VALUE_MASK            = 0x1f;
+const int8_t OB_VARCHAR_LEN_MASK          = 0x3f;
+const int8_t OB_DATETIME_LEN_MASK         =  0x3;
 
 
-const int8_t OB_VARCHAR_TYPE = static_cast<int8_t>((0x1 << 7));
-const int8_t OB_SEQ_TYPE = static_cast<int8_t>(0xc0);
-const int8_t OB_DATETIME_TYPE = static_cast<int8_t>(0xd0);
-const int8_t OB_PRECISE_DATETIME_TYPE = static_cast<int8_t>(0xe0);
-const int8_t OB_MODIFYTIME_TYPE = static_cast<int8_t>(0xf0);
-const int8_t OB_CREATETIME_TYPE = static_cast<int8_t>(0xf4);
-const int8_t OB_FLOAT_TYPE = static_cast<int8_t>(0xf8);
-const int8_t OB_DOUBLE_TYPE = static_cast<int8_t>(0xfa);
-const int8_t OB_NULL_TYPE =  static_cast<int8_t>(0xfc);
-const int8_t OB_BOOL_TYPE =  static_cast<int8_t>(0xfd);
-const int8_t OB_EXTEND_TYPE = static_cast<int8_t>(0xfe);
-const int8_t OB_DECIMAL_TYPE = static_cast<int8_t>(0xff);
-const int8_t OB_NUMBER_TYPE = OB_DECIMAL_TYPE; // 2014number
+const int8_t OB_VARCHAR_TYPE              = static_cast<int8_t>((0x1 << 7));
+const int8_t OB_SEQ_TYPE                  = static_cast<int8_t>(0xc0);
+const int8_t OB_DATETIME_TYPE             = static_cast<int8_t>(0xd0);
+const int8_t OB_PRECISE_DATETIME_TYPE     = static_cast<int8_t>(0xe0);
+const int8_t OB_MODIFYTIME_TYPE           = static_cast<int8_t>(0xf0);
+const int8_t OB_CREATETIME_TYPE           = static_cast<int8_t>(0xf4);
+const int8_t OB_FLOAT_TYPE                = static_cast<int8_t>(0xf8);
+const int8_t OB_DOUBLE_TYPE               = static_cast<int8_t>(0xfa);
+const int8_t OB_NULL_TYPE                 =  static_cast<int8_t>(0xfc);
+const int8_t OB_BOOL_TYPE                 =  static_cast<int8_t>(0xfd);
+const int8_t OB_EXTEND_TYPE               = static_cast<int8_t>(0xfe);
+const int8_t OB_DECIMAL_TYPE              = static_cast<int8_t>(0xff);
+const int8_t OB_NUMBER_TYPE               = OB_DECIMAL_TYPE; // 2014number
 inline void set_bit(int8_t &v, int8_t pos)
 {
   v |= static_cast<int8_t>(1 << pos);

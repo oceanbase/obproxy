@@ -55,6 +55,11 @@ public:
     server_capabilities_upper_.capability_flag_.OB_SERVER_SESSION_VARIABLE_TRACK = 1;
   }
 
+  void enable_connection_attr()
+  {
+    server_capabilities_upper_.capability_flag_.OB_SERVER_CONNECT_ATTRS = 1;
+  }
+
   void disable_ssl()
   {
     server_capabilities_lower_.capability_flag_.OB_SERVER_SSL = 0;

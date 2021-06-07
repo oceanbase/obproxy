@@ -37,7 +37,7 @@ namespace obproxy
 namespace proxy
 {
 
-const ObString PROXY_IDC_NAME_USER_SESSION_VAR = common::ObString::make_string("proxy_idc_name");
+const ObString PROXY_IDC_NAME_USER_SESSION_VAR     = common::ObString::make_string("proxy_idc_name");
 const ObString PROXY_ROUTE_POLICY_USER_SESSION_VAR = common::ObString::make_string("proxy_route_policy");
 
 int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,
@@ -220,11 +220,8 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
       LOG_WARN("fail to encrypt_passwd_to_stage1", K(ret));
     } else {
       passwd_string += 1;
-      OMPKHandshake handshake;
       int64_t actual_len = 0;
-      char scramble_buf[SCRAMBLE_LENGTH + 1] = {0};
-      handshake.get_scramble(scramble_buf, SCRAMBLE_LENGTH + 1, actual_len);
-      ObString scramble_string(actual_len, scramble_buf);
+      const ObString &scramble_string = client_info.get_scramble_string();
       if (OB_FAIL(ObClientUtils::get_auth_password_from_stage1(passwd_string,
               scramble_string, pwd_buf, pwd_buf_len, actual_len))) {
             LOG_WARN("fail to get get_auth_password_from_stage1", K(ret));

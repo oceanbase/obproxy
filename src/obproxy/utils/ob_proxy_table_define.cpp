@@ -19,7 +19,7 @@ namespace oceanbase
 {
 namespace obproxy
 {
-const char *ObProxyTableInfo::CREATE_PROXY_TABLE_SQL =
+const char *ObProxyTableInfo::CREATE_PROXY_TABLE_SQL                        =
     "CREATE TABLE IF NOT EXISTS %s (           \n"
     "  proxy_ip                   varchar(%ld),\n"
     "  proxy_port                 bigint,      \n"
@@ -43,7 +43,7 @@ const char *ObProxyTableInfo::CREATE_PROXY_TABLE_SQL =
     "  PRIMARY KEY(proxy_ip, proxy_port)       \n"
     ");\n";
 
-const char *ObProxyTableInfo:: CREATE_PROXY_CONFIG_TABLE_SQL =
+const char *ObProxyTableInfo:: CREATE_PROXY_CONFIG_TABLE_SQL                =
     "CREATE TABLE IF NOT EXISTS %s (\n"
     "  app_name     varchar(%ld),   \n"
     "  name         varchar(%ld),   \n"
@@ -53,7 +53,7 @@ const char *ObProxyTableInfo:: CREATE_PROXY_CONFIG_TABLE_SQL =
     "  PRIMARY KEY(app_name, name)  \n"
     ");\n";
 
-const char *ObProxyTableInfo::CREATE_PROXY_STAT_TABLE_SQL =
+const char *ObProxyTableInfo::CREATE_PROXY_STAT_TABLE_SQL                   =
     "CREATE TABLE IF NOT EXISTS %s (         \n"
     "  cluster_name varchar(%ld),            \n"
     "  proxy_ip     varchar(%ld),            \n"
@@ -66,7 +66,7 @@ const char *ObProxyTableInfo::CREATE_PROXY_STAT_TABLE_SQL =
     "  PRIMARY KEY(cluster_name, proxy_ip, proxy_port, session_id, stat_name)"
     ");\n";
 
-const char *ObProxyTableInfo::CREATE_PROXY_KV_TABLE_SQL =
+const char *ObProxyTableInfo::CREATE_PROXY_KV_TABLE_SQL                     =
     "CREATE TABLE IF NOT EXISTS %s (\n"
     "  name         varchar(%ld),   \n"
     "  datatype     bigint,         \n"
@@ -75,7 +75,7 @@ const char *ObProxyTableInfo::CREATE_PROXY_KV_TABLE_SQL =
     "  PRIMARY KEY(name)            \n"
     ");\n";
 
-const char *ObProxyTableInfo::CREATE_PROXY_VIP_TENANT_TABLE_SQL =
+const char *ObProxyTableInfo::CREATE_PROXY_VIP_TENANT_TABLE_SQL             =
     "CREATE TABLE IF NOT EXISTS %s (       \n"
     "  vid          bigint DEFAULT 0,      \n"
     "  vip          varchar(%ld),          \n"
@@ -86,29 +86,28 @@ const char *ObProxyTableInfo::CREATE_PROXY_VIP_TENANT_TABLE_SQL =
     "  PRIMARY KEY(vid, vip, vport)        \n"
     ");\n";
 
-const char *ObProxyTableInfo::PROXY_INFO_TABLE_NAME       = "ob_all_proxy";
-const char *ObProxyTableInfo::PROXY_CONFIG_TABLE_NAME     = "ob_all_proxy_app_config";
-const char *ObProxyTableInfo::PROXY_STAT_TABLE_NAME       = "ob_all_proxy_stat";
-const char *ObProxyTableInfo::PROXY_KV_TABLE_NAME         = "ob_all_proxy_kv_table";
-const char *ObProxyTableInfo::PROXY_VIP_TENANT_TABLE_NAME = "ob_all_proxy_vip_tenant";
+const char *ObProxyTableInfo::PROXY_INFO_TABLE_NAME                         = "ob_all_proxy";
+const char *ObProxyTableInfo::PROXY_CONFIG_TABLE_NAME                       = "ob_all_proxy_app_config";
+const char *ObProxyTableInfo::PROXY_STAT_TABLE_NAME                         = "ob_all_proxy_stat";
+const char *ObProxyTableInfo::PROXY_KV_TABLE_NAME                           = "ob_all_proxy_kv_table";
+const char *ObProxyTableInfo::PROXY_VIP_TENANT_TABLE_NAME                   = "ob_all_proxy_vip_tenant";
 
-const char *ObProxyTableInfo::PROXY_VIP_TENANT_VERSION_NAME       = "ob_proxy_vip_tenant_version";
+const char *ObProxyTableInfo::PROXY_VIP_TENANT_VERSION_NAME                 = "ob_proxy_vip_tenant_version";
 
 
-const char *ObProxyTableInfo::READ_ONLY_USERNAME_USER   = "proxyro"; // do not modify
-const char *ObProxyTableInfo::READ_ONLY_USERNAME        = "proxyro@sys"; // do not modify
-const char *ObProxyTableInfo::READ_ONLY_DATABASE        = "oceanbase";   // do not modify
-const char *ObProxyTableInfo::READ_ONLY_PASSWD_STAGED1  = "ee0e5138c912aed80b683c05303684be347ce81d";   // do not modify
+const char *ObProxyTableInfo::READ_ONLY_USERNAME_USER                       = "proxyro";
+const char *ObProxyTableInfo::READ_ONLY_USERNAME                            = "proxyro@sys";
+const char *ObProxyTableInfo::READ_ONLY_DATABASE                            = "oceanbase";
 
-const char *ObProxyTableInfo::TEST_MODE_USERNAME = "root@sys";
-const char *ObProxyTableInfo::TEST_MODE_PASSWORD = "";
-const char *ObProxyTableInfo::TEST_MODE_DATABASE = "oceanbase";
+const char *ObProxyTableInfo::TEST_MODE_USERNAME                            = "root@sys";
+const char *ObProxyTableInfo::TEST_MODE_PASSWORD                            = "";
+const char *ObProxyTableInfo::TEST_MODE_DATABASE                            = "oceanbase";
 
-const ObString ObProxyTableInfo::PROXY_ALL_PROXY_HEADER               = ObString::make_string("all_proxy");
-const ObString ObProxyTableInfo::PROXY_CONFIG_VERSION_NAME            = ObString::make_string(".config_version");
-const ObString ObProxyTableInfo::PROXY_UPGRADE_SWITCH_NAME            = ObString::make_string(".upgrade_switch");
-const ObString ObProxyTableInfo::PROXY_UPGRADE_START_TIME_NAME        = ObString::make_string(".upgrade_start_time");
-const ObString ObProxyTableInfo::PROXY_UPGRADE_DURATION_MINUTES_NAME  = ObString::make_string(".upgrade_duration_minutes");
+const ObString ObProxyTableInfo::PROXY_ALL_PROXY_HEADER                     = ObString::make_string("all_proxy");
+const ObString ObProxyTableInfo::PROXY_CONFIG_VERSION_NAME                  = ObString::make_string(".config_version");
+const ObString ObProxyTableInfo::PROXY_UPGRADE_SWITCH_NAME                  = ObString::make_string(".upgrade_switch");
+const ObString ObProxyTableInfo::PROXY_UPGRADE_START_TIME_NAME              = ObString::make_string(".upgrade_start_time");
+const ObString ObProxyTableInfo::PROXY_UPGRADE_DURATION_MINUTES_NAME        = ObString::make_string(".upgrade_duration_minutes");
 const ObString ObProxyTableInfo::PROXY_UPGRADE_NEW_BINARY_NAME[RELEASE_MAX] = {
     ObString::make_string(".new_binary_name_5u"),
     ObString::make_string(".new_binary_name_6u"),
@@ -116,7 +115,7 @@ const ObString ObProxyTableInfo::PROXY_UPGRADE_NEW_BINARY_NAME[RELEASE_MAX] = {
     ObString::make_string(".new_binary_name_unknown"),
 };
 
-const ObString ObProxyTableInfo::PROXY_UPGRADE_NEW_BINARY_MD5[RELEASE_MAX] = {
+const ObString ObProxyTableInfo::PROXY_UPGRADE_NEW_BINARY_MD5[RELEASE_MAX]  = {
     ObString::make_string(".new_binary_md5_5u"),
     ObString::make_string(".new_binary_md5_6u"),
     ObString::make_string(".new_binary_md5_7u"),

@@ -827,6 +827,7 @@ public:
     DISALLOW_COPY_AND_ASSIGN(ObTransState);
   }; // End of State struct.
 
+  static int return_last_bound_server_session(ObMysqlClientSession *client_session);
   static void modify_request(ObTransState &s);
   static bool is_sequence_request(ObTransState &s);
   static void handle_mysql_request(ObTransState &s);
@@ -839,6 +840,7 @@ public:
   static int build_server_request(ObTransState &s, event::ObIOBufferReader *&reader,
                                   int64_t &request_len);
 
+  static int rewrite_stmt_id(ObTransState &s, event::ObIOBufferReader *client_buffer_reader);
   static int build_oceanbase_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                           event::ObIOBufferReader *&reader, int64_t &request_len);
   static int build_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,

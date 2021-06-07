@@ -64,23 +64,23 @@ struct ObSessionStatTableSync : public event::ObContinuation
 };
 
 ObStatProcessor g_stat_processor;
-volatile int64_t g_current_report_count = 0;
+volatile int64_t g_current_report_count                                             = 0;
 
-const char *ObStatProcessor::INSERT_PROXY_STAT_SQL_HEAD =
+const char *ObStatProcessor::INSERT_PROXY_STAT_SQL_HEAD                             =
     "INSERT INTO %s "
     "(cluster_name, proxy_ip, proxy_port, session_id, stat_name, value, info) VALUES ";
 
 const char *ObStatProcessor::ObStatProcessor::INSERT_PROXY_STAT_SQL_VALUES_AND_INFO =
     "('%s', '%s', %d, %ld, '%s', %ld, '%s'),";
 
-const char *ObStatProcessor::INSERT_PROXY_STAT_SQL_VALUES_AND_INFO_END =
+const char *ObStatProcessor::INSERT_PROXY_STAT_SQL_VALUES_AND_INFO_END              =
     "('%s', '%s', %d, %ld, '%s', %ld, '%s') "
     "ON DUPLICATE KEY UPDATE value = VALUES(value), info=VALUES(info);\n";
 
-const char *ObStatProcessor::ObStatProcessor::INSERT_PROXY_STAT_SQL_VALUES =
+const char *ObStatProcessor::ObStatProcessor::INSERT_PROXY_STAT_SQL_VALUES          =
     "('%s', '%s', %d, %lu, '%s', %ld, ''),";
 
-const char *ObStatProcessor::INSERT_PROXY_STAT_SQL_VALUES_END =
+const char *ObStatProcessor::INSERT_PROXY_STAT_SQL_VALUES_END                       =
     "('%s', '%s', %d, %lu, '%s', %ld, '') "
     "ON DUPLICATE KEY UPDATE value = VALUES(value);\n";
 
@@ -359,7 +359,7 @@ int ObStatProcessor::register_raw_stat(
   ObRecData data_default;
   memset(&data_default, 0, sizeof(ObRecData));
 
-  if (OB_UNLIKELY(!check_argument(rsb, id)) || OB_UNLIKELY(sync_type > SYNC_MAX)) {
+  if (OB_UNLIKELY(!check_argument(rsb, id)) || OB_UNLIKELY(sync_type >= SYNC_MAX)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid rsb or id", K(rsb), K(id), K(sync_type), K(ret));
   } else {

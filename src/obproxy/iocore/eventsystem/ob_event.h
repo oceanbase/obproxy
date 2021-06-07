@@ -86,7 +86,7 @@ namespace event
 #define API_EVENT_EVENTS_START                    60000
 
 typedef int32_t ObEventThreadType;
-const int32_t ET_CALL = 0;
+const int32_t ET_CALL         = 0;
 const int32_t MAX_EVENT_TYPES = 6; // conservative, these are dynamically allocated
 
 class ObEThread;

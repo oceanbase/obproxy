@@ -627,6 +627,7 @@ struct ObSqlParseResult
   bool has_explain() const { return has_explain_; }
   bool has_simple_route_info() const { return has_simple_route_info_; }
   bool has_shard_comment() const { return has_shard_comment_; }
+  bool has_anonymous_block() const { return has_anonymous_block_; }
 
   bool is_simple_route_info_valid() const { return route_info_.is_valid(); }
 
@@ -724,6 +725,7 @@ struct ObSqlParseResult
       has_row_count_ = other.has_row_count_;
       has_explain_ = other.has_explain_;
       has_simple_route_info_ = other.has_simple_route_info_;
+      has_anonymous_block_ = other.has_anonymous_block_;
       stmt_type_ = other.stmt_type_;
       hint_query_timeout_ = other.hint_query_timeout_;
       parsed_length_ = other.parsed_length_;
@@ -814,6 +816,7 @@ private:
   bool has_simple_route_info_;
   bool has_shard_comment_;
   bool is_dual_request_;
+  bool has_anonymous_block_;
   ObProxyBasicStmtType stmt_type_;
   int64_t hint_query_timeout_;
   int64_t parsed_length_; // next parser can starts with (orig_sql + parsed_length_)
@@ -868,12 +871,12 @@ private:
   ObProxyStmt* proxy_stmt_;
 };
 
-const int OB_T_IDENT_NUM_CHILD = 0;
-const int OB_T_RELATION_FACTOR_NUM_CHILD = 2;
-const int OB_T_COLUMN_REF_NUM_CHILD     = 3;
-const int OB_T_ALIAS_TABLE_NAME_NUM_CHILD = 5;
-const int OB_T_ALIAS_CLUMN_NAME_NUM_CHILD = 2;
-const int OB_T_INDEX_NUM_CHILD = 3;
+const int OB_T_IDENT_NUM_CHILD                   = 0;
+const int OB_T_RELATION_FACTOR_NUM_CHILD         = 2;
+const int OB_T_COLUMN_REF_NUM_CHILD              = 3;
+const int OB_T_ALIAS_TABLE_NAME_NUM_CHILD        = 5;
+const int OB_T_ALIAS_CLUMN_NAME_NUM_CHILD        = 2;
+const int OB_T_INDEX_NUM_CHILD                   = 3;
 const int OB_T_RELATION_FACTOR_IN_HINT_NUM_CHILD = 2;
 
 class ObProxySqlParser
@@ -913,6 +916,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_simple_route_info_ = false;
   has_shard_comment_ = false;
   is_dual_request_ = false;
+  has_anonymous_block_ = false;
   stmt_type_ = OBPROXY_T_INVALID;
   cmd_sub_type_ = OBPROXY_T_SUB_INVALID;
   cmd_err_type_ = OBPROXY_T_ERR_INVALID;

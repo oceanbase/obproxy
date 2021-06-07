@@ -88,7 +88,7 @@ enum
   OB_SSC_MAX_STAT_COLUMN_ID,
 };
 
-const ObProxyColumnSchema LIST_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID] = {
+const ObProxyColumnSchema LIST_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID]           = {
     ObProxyColumnSchema::make_schema(OB_SLC_ID,           "Id",                 OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_SLC_TENANT,       "Tenant",             OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_SLC_USER,         "User",               OB_MYSQL_TYPE_VARCHAR),
@@ -116,13 +116,13 @@ const ObProxyColumnSchema INTERNAL_LIST_COLUMN_ARRAY[OB_SILC_MAX_SLIST_COLUMN_ID
     ObProxyColumnSchema::make_schema(OB_SILC_PID,           "pid",                OB_MYSQL_TYPE_LONG),
 };
 
-const ObProxyColumnSchema ATTRIBUTE_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID] = {
+const ObProxyColumnSchema ATTRIBUTE_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID]      = {
   ObProxyColumnSchema::make_schema(OB_SAC_NAME,   "attribute_name", OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SAC_VALUE,  "value",          OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SAC_INFO,   "info",           OB_MYSQL_TYPE_VARCHAR),
 };
 
-const ObProxyColumnSchema VARIABLES_COLUMN_ARRAY[OB_SVC_MAX_VARIABLES_COLUMN_ID] = {
+const ObProxyColumnSchema VARIABLES_COLUMN_ARRAY[OB_SVC_MAX_VARIABLES_COLUMN_ID]  = {
   ObProxyColumnSchema::make_schema(OB_SVC_NAME,   "variable_name",      OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SVC_VALUE,  "value",              OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SVC_INFO,   "info",               OB_MYSQL_TYPE_VARCHAR),
@@ -130,7 +130,7 @@ const ObProxyColumnSchema VARIABLES_COLUMN_ARRAY[OB_SVC_MAX_VARIABLES_COLUMN_ID]
   ObProxyColumnSchema::make_schema(OB_SVC_FLAG,   "sys_variable_flag",  OB_MYSQL_TYPE_VARCHAR),
 };
 
-const ObProxyColumnSchema STAT_COLUMN_ARRAY[OB_SSC_MAX_STAT_COLUMN_ID] = {
+const ObProxyColumnSchema STAT_COLUMN_ARRAY[OB_SSC_MAX_STAT_COLUMN_ID]            = {
   ObProxyColumnSchema::make_schema(OB_SSC_NAME,   "stat_name",  OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SSC_VALUE,  "value",      OB_MYSQL_TYPE_LONGLONG),
 };

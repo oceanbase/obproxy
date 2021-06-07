@@ -26,6 +26,7 @@
 #include "proxy/route/ob_ldc_struct.h"
 #include "proxy/mysql/ob_prepare_statement_struct.h"
 #include "proxy/mysql/ob_cursor_struct.h"
+#include "proxy/mysql/ob_piece_info.h"
 #include "rpc/obmysql/packet/ompk_handshake.h"
 #include "rpc/obmysql/packet/ompk_ssl_request.h"
 #include "utils/ob_proxy_hot_upgrader.h"
@@ -762,6 +763,30 @@ public:
   }
   void destroy_cursor_id_addr_map();
 
+  int add_piece_info(ObPieceInfo *info)
+  {
+    return piece_info_map_.unique_set(info);
+  }
+
+  int get_piece_info(ObPieceInfo* &info)
+  {
+    return piece_info_map_.get_refactored(ps_id_, info);
+  }
+  int get_piece_info(const uint32_t ps_id, ObPieceInfo* &info)
+  {
+    return piece_info_map_.get_refactored(ps_id, info);
+  }
+  void remove_piece_info(const uint32_t ps_id)
+  {
+    ObPieceInfo *info = piece_info_map_.remove(ps_id);
+    if (NULL != info) {
+      op_free(info);
+      info = NULL;
+    }
+  }
+
+  void destroy_piece_info_map();
+
   int add_ps_id_addrs(ObPsIdAddrs *ps_id_addrs) {
     return ps_id_addrs_map_.unique_set(ps_id_addrs);
   }
@@ -891,6 +916,7 @@ private:
   ObCursorIdAddrMap cursor_id_addr_map_;
 
   ObPsIdAddrsMap ps_id_addrs_map_;
+  ObPieceInfoMap piece_info_map_;
 
   bool is_read_only_user_;
   bool is_request_follower_user_;

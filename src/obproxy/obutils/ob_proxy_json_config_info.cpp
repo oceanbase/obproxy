@@ -30,43 +30,43 @@ namespace obproxy
 namespace obutils
 {
 
-static const char *JSON_HTTP_MESSAGE = "Message";
-static const char *HTTP_SUCC_MESSAGE = "successful";
-static const char *JSON_HTTP_STATUS = "Success";
-static const char *JSON_HTTP_CODE = "Code";
-static const char *JSON_CONFIG_DATA = "Data";
-static const char *JSON_CONFIG_VERSION  = "Version";
-static const char *JSON_CLUSTER_LIST = "ObRootServiceInfoUrlList";
-static const char *JSON_OB_REGION = "ObRegion";
-static const char *JSON_OB_CLUSTER = "ObCluster";
-static const char *JSON_OB_REGION_ID = "ObRegionId";
-static const char *JSON_OB_CLUSTER_ID = "ObClusterId";
-static const char *JSON_OB_CLUSTER_TYPE = "Type";
-static const char *JSON_REAL_META_REGION = "ObRealMetaRegion";
-static const char *JSON_RS_URL = "ObRootServiceInfoUrl";
-static const char *JSON_RS_LIST = "RsList";
-static const char *JSON_ADDRESS = "address";
-static const char *JSON_SQL_PORT = "sql_port";
-static const char *JSON_ROLE = "role";
-static const char *JSON_META_TABLE_INFO = "ObProxyDatabaseInfo";
-static const char *JSON_META_DATABASE = "DataBase";
-static const char *JSON_META_USER = "User";
-static const char *JSON_META_PASSWORD = "Password";
-static const char *JSON_BIN_URL = "ObProxyBinUrl";
-static const char *JSON_IDC_LIST = "IDCList";
-static const char *JSON_REGION = "region";
-static const char *JSON_IDC = "idc";
-static const char *JSON_READONLY_RS_LIST = "ReadonlyRsList";
-static const char *LEADER_ROLE = "LEADER";
-static const char *FOLLOWER_ROLE = "FOLLOWER";
-static const char *PRIMARY_ROLE = "PRIMARY";
-static const char *STANDBY_ROLE = "STANDBY";
-static const char *JSON_ROOT_SERVICE_INFO_URL_TEMPLATE = "ObRootServiceInfoUrlTemplate";
+static const char *JSON_HTTP_MESSAGE                      = "Message";
+static const char *HTTP_SUCC_MESSAGE                      = "successful";
+static const char *JSON_HTTP_STATUS                       = "Success";
+static const char *JSON_HTTP_CODE                         = "Code";
+static const char *JSON_CONFIG_DATA                       = "Data";
+static const char *JSON_CONFIG_VERSION                    = "Version";
+static const char *JSON_CLUSTER_LIST                      = "ObRootServiceInfoUrlList";
+static const char *JSON_OB_REGION                         = "ObRegion";
+static const char *JSON_OB_CLUSTER                        = "ObCluster";
+static const char *JSON_OB_REGION_ID                      = "ObRegionId";
+static const char *JSON_OB_CLUSTER_ID                     = "ObClusterId";
+static const char *JSON_OB_CLUSTER_TYPE                   = "Type";
+static const char *JSON_REAL_META_REGION                  = "ObRealMetaRegion";
+static const char *JSON_RS_URL                            = "ObRootServiceInfoUrl";
+static const char *JSON_RS_LIST                           = "RsList";
+static const char *JSON_ADDRESS                           = "address";
+static const char *JSON_SQL_PORT                          = "sql_port";
+static const char *JSON_ROLE                              = "role";
+static const char *JSON_META_TABLE_INFO                   = "ObProxyDatabaseInfo";
+static const char *JSON_META_DATABASE                     = "DataBase";
+static const char *JSON_META_USER                         = "User";
+static const char *JSON_META_PASSWORD                     = "Password";
+static const char *JSON_BIN_URL                           = "ObProxyBinUrl";
+static const char *JSON_IDC_LIST                          = "IDCList";
+static const char *JSON_REGION                            = "region";
+static const char *JSON_IDC                               = "idc";
+static const char *JSON_READONLY_RS_LIST                  = "ReadonlyRsList";
+static const char *LEADER_ROLE                            = "LEADER";
+static const char *FOLLOWER_ROLE                          = "FOLLOWER";
+static const char *PRIMARY_ROLE                           = "PRIMARY";
+static const char *STANDBY_ROLE                           = "STANDBY";
+static const char *JSON_ROOT_SERVICE_INFO_URL_TEMPLATE    = "ObRootServiceInfoUrlTemplate";
 static const char *JSON_ROOT_SERVICE_INFO_URL_TEMPLATE_V2 = "ObRootServiceInfoUrlTemplateV2";
-static const char *JSON_DATA_CLUSTER_LIST = "ObClusterList";
+static const char *JSON_DATA_CLUSTER_LIST                 = "ObClusterList";
 
-static const char *REGION_TEMPLATE = "${ObRegion}";
-static const char *CLUSTER_TEMPLATE = "${ObCluster}";
+static const char *REGION_TEMPLATE                        = "${ObRegion}";
+static const char *CLUSTER_TEMPLATE                       = "${ObCluster}";
 
 const char *cluster_role_to_str(ObClusterRole role)
 {
@@ -1090,6 +1090,9 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
   }
   if (OB_SUCC(ret)) {
     if (is_from_local) {
+      if (cluster_id == OB_DEFAULT_CLUSTER_ID) {
+        cluster_id = json_cluster_id;
+      }
       if (cluster_name == OB_META_DB_CLUSTER_NAME) {
         if (!real_meta_cluster_name.empty()) {
           data_info_.meta_table_info_.real_cluster_name_.set_value(real_meta_cluster_name);
