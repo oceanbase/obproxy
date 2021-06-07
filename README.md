@@ -26,7 +26,7 @@ Contributions are warmly welcomed and greatly appreciated. Here are a few ways y
 
 ## Support
 
-In cease you have any problems when using OceanBase Database, welcome reach out for help:
+In case you have any problems when using OceanBase Database, welcome reach out for help:
 
 - GitHub Issue [link TODO]
 - Official forum [link TODO]
