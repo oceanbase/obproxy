@@ -136,7 +136,7 @@ void ObProxyMain::print_usage() const
   MPRINT("  -l,--promethues_listen_port  PLPORT    obproxy prometheus listen port");
   MPRINT("  -o,--optstr              OPTSTR        extra options string");
   MPRINT("  -n,--appname             APPNAME       application name");
-  MPRINT("  -r,--rs_list             RS_LIST       root server list(format ip:sql_prot)");
+  MPRINT("  -r,--rs_list             RS_LIST       root server list(format ip:sql_port)");
   MPRINT("  -c,--cluster_name        CLUSTER_NAME  root server cluster name");
   MPRINT("  -d,--dump_config_sql     DSQL          dump config sql to file");
   MPRINT("  -e,--execute_config_sql  ESQL          exectue config sql(create tables, insert initial data)");
