@@ -107,7 +107,7 @@ static int copy_string(const ObObjCastParams &params,
       } else {
         int64_t zf = params.zf_info_->max_length_ - len;
         if (zf > 0) {
-          MEMSET(buf, 0, zf);
+          MEMSET(buf, '0', zf);
           MEMCPY(buf + zf, str, len);
           len = str_len; // set string length
         } else {
