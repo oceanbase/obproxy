@@ -562,6 +562,10 @@ inline bool ops_ip_copy(sockaddr &dst, const sockaddr &src)
     case AF_INET6:
       n2 = sizeof(sockaddr_in6);
       break;
+
+    default:
+      n2 = sizeof(sockaddr_in);
+      break;
   }
   if (n && n <= n2) {
     MEMCPY(&dst, &src, n);
