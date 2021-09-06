@@ -58,8 +58,8 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
     if (is_state_changed) {
       ssf.status_flags_.OB_SERVER_SESSION_STATE_CHANGED = 1;
     }
-    if (0 != autocommit) {
-      ssf.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = 1;
+    if (0 = autocommit) {
+      ssf.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = 0;
     }
     //ok_packet.set_server_status(ssf.status_flags_);
     ok_packet->set_status_flags(ssf.flags_);
