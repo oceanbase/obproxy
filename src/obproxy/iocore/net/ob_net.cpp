@@ -45,8 +45,6 @@ namespace net
   }
 
 // This will get set via either command line or ObProxyConfig.
-// epoll timeout
-int net_config_poll_timeout = -1;
 
 int init_net(ObModuleVersion version, const ObNetOptions &net_options)
 {
@@ -69,7 +67,6 @@ int init_net(ObModuleVersion version, const ObNetOptions &net_options)
 int update_net_options(const ObNetOptions &net_options)
 {
   int ret = OB_SUCCESS;
-  net_config_poll_timeout = static_cast<int32_t>(net_options.poll_timeout_);
   if (OB_FAIL(update_cop_config(net_options.default_inactivity_timeout_, net_options.max_client_connections_))) {
     PROXY_NET_LOG(WARN, "fail to update_cop_config",
                   K(net_options.default_inactivity_timeout_),

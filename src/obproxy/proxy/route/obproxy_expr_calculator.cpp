@@ -20,6 +20,8 @@
 #include "proxy/route/obproxy_part_info.h"
 #include "proxy/mysql/ob_prepare_statement_struct.h"
 #include "lib/rowid/ob_urowid.h"
+#include "obproxy/utils/ob_proxy_utils.h"
+
 
 using namespace oceanbase::common;
 using namespace oceanbase::share::schema;
@@ -27,6 +29,7 @@ using namespace oceanbase::obmysql;
 using namespace oceanbase::obproxy::opsql;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::proxy;
+using namespace oceanbase::obproxy;
 
 int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allocator,
                                                   const ObString &req_sql,
@@ -68,7 +71,8 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
       }
     }
 
-    if (FAILEDx(do_expr_parse(req_sql, parse_result, part_info, allocator, expr_parse_result))) {
+    if (FAILEDx(do_expr_parse(req_sql, parse_result, part_info, allocator, expr_parse_result,
+                              static_cast<ObCollationType>(client_info.get_collation_connection())))) {
       LOG_INFO("fail to do expr parse", K(print_sql),
                K(part_info), "expr_parse_result", ObExprParseResultPrintWrapper(expr_parse_result));
     } else if (OB_FAIL(do_expr_resolve(expr_parse_result, client_request, &client_info, ps_entry,
@@ -81,7 +85,20 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
         LOG_INFO("fail to do expr resolve", K(print_sql), K(resolve_result), K(part_info));
       }
     } else {
-    // do nothing here
+      // do nothing here
+    }
+
+    if (OB_FAIL(ret)) {
+      int64_t tmp_first_part_id = OB_INVALID_INDEX;
+      int64_t tmp_sub_part_id = OB_INVALID_INDEX;
+      if (OB_FAIL(calc_part_id_by_random_choose_from_exist(part_info,
+                                                           tmp_first_part_id,
+                                                           tmp_sub_part_id,
+                                                           partition_id))) {
+        LOG_WARN("fail to cal part id by random choose", K(tmp_first_part_id), K(tmp_sub_part_id), K(ret));
+      } else {
+        LOG_DEBUG("succ to cal part id by random choose", K(tmp_first_part_id), K(tmp_sub_part_id), K(partition_id));
+      }
     }
   }
 
@@ -115,7 +132,8 @@ int ObProxyExprCalculator::do_expr_parse(const common::ObString &req_sql,
                                          const ObSqlParseResult &parse_result,
                                          ObProxyPartInfo &part_info,
                                          ObIAllocator &allocator,
-                                         ObExprParseResult &expr_result)
+                                         ObExprParseResult &expr_result,
+                                         ObCollationType connection_collation)
 {
   int ret = OB_SUCCESS;
 
@@ -160,7 +178,8 @@ int ObProxyExprCalculator::do_expr_parse(const common::ObString &req_sql,
   } else {
     // do nothing
   }
-  if (OB_FAIL(expr_parser.parse_reqsql(req_sql,  parse_result.get_parsed_length(), expr_result, parse_result.get_stmt_type()))) {
+  if (OB_FAIL(expr_parser.parse_reqsql(req_sql,  parse_result.get_parsed_length(), expr_result,
+                                       parse_result.get_stmt_type(), connection_collation))) {
     LOG_DEBUG("fail to do expr parse_reqsql", K(req_sql), K(ret));
   }
   return ret;
@@ -232,7 +251,7 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
                                                 int64_t &partition_id)
 {
   int ret = OB_SUCCESS;
-  ObProxyPartMgr part_mgr = part_info.get_part_mgr();
+  ObProxyPartMgr &part_mgr = part_info.get_part_mgr();
   int64_t first_part_id = OB_INVALID_INDEX;
   int64_t sub_part_id = OB_INVALID_INDEX;
   if (part_info.has_first_part()) {
@@ -240,7 +259,7 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
     if (OB_FAIL(part_mgr.get_first_part(resolve_result.ranges_[PARTITION_LEVEL_ONE - 1],
                                         allocator,
                                         part_ids))) {
-      LOG_DEBUG("fail to get part", K(ret));
+      LOG_DEBUG("fail to get first part", K(ret));
     } else if (part_ids.count() >= 1) {
       first_part_id = part_ids[0];
     } else {
@@ -249,26 +268,95 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
 
     ObSEArray<int64_t, 1> sub_part_ids;
     if (OB_INVALID_INDEX != first_part_id && part_info.has_sub_part()) {
-      if (OB_FAIL(part_mgr.get_sub_part(part_info.is_template_table(),
-                                        first_part_id,
-                                        resolve_result.ranges_[PARTITION_LEVEL_TWO - 1],
-                                        allocator,
-                                        sub_part_ids))) {
-        LOG_DEBUG("fail to get sub part", K(ret));
+      ObPartDesc *sub_part_desc_ptr = NULL;
+      if (OB_FAIL(part_mgr.get_sub_part_desc_by_first_part_id(part_info.is_template_table(),
+                                                              first_part_id,
+                                                              sub_part_desc_ptr))) {
+        LOG_WARN("fail to get sub part desc by first", K(ret));
+      } else if (OB_FAIL(part_mgr.get_sub_part(resolve_result.ranges_[PARTITION_LEVEL_TWO - 1],
+                                               allocator,
+                                               sub_part_desc_ptr,
+                                               sub_part_ids))) { 
+        LOG_WARN("fail to get sub part", K(ret));
       } else if (sub_part_ids.count() >= 1) {
         sub_part_id = sub_part_ids[0];
+      } else {
+        // nothing.
       }
     }
 
     if (OB_SUCC(ret)) {
       partition_id = generate_phy_part_id(first_part_id, sub_part_id, part_info.get_part_level());
-      LOG_DEBUG("succ to get partition_id", K(first_part_id), K(sub_part_id), K(partition_id));
+      LOG_DEBUG("succ to get part id", K(first_part_id), K(sub_part_id), K(partition_id));
     } else {
-      LOG_DEBUG("fail to get partition_id", K(ret));
+      if (OB_FAIL(calc_part_id_by_random_choose_from_exist(part_info, first_part_id, sub_part_id, partition_id))) {
+        LOG_WARN("fail to get part id at last", K(first_part_id), K(sub_part_id), K(ret));
+      } else {
+        LOG_DEBUG("succ to get part id by random", K(first_part_id), K(sub_part_id), K(partition_id));
+      }
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("not a valid partition table", K(part_info.get_part_level()), K(ret));
+  }
+
+  return ret;
+}
+
+int ObProxyExprCalculator::calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
+                                                                    int64_t &first_part_id,
+                                                                    int64_t &sub_part_id,
+                                                                    int64_t &phy_part_id)
+{
+  int ret = OB_SUCCESS;
+  
+	ObProxyPartMgr &part_mgr = part_info.get_part_mgr();
+  if (part_info.has_first_part() && OB_INVALID_INDEX == first_part_id) {
+    int64_t first_part_num = 0;
+    if (OB_FAIL(part_info.get_part_mgr().get_first_part_num(first_part_num))) {
+      LOG_WARN("fail to get first part num", K(ret));
+    } else {
+      int64_t rand_num = 0;
+      if (OB_FAIL(ObRandomNumUtils::get_random_num(0, first_part_num - 1, rand_num))) {
+        LOG_WARN("fail to get random num in first part", K(first_part_num), K(ret));
+      } else {
+        if (OB_FAIL(part_mgr.get_first_part_id_by_idx(rand_num, first_part_id))) {
+          LOG_WARN("failed to random get first part id by idx", K(rand_num), K(ret));
+        }
+      }
+    }
+  }
+
+  if (OB_SUCC(ret) && part_info.has_sub_part() && OB_INVALID_INDEX == sub_part_id) {
+    int64_t sub_part_num = 0;
+    if (OB_FAIL(part_mgr.get_sub_part_num_by_first_part_id(part_info, first_part_id, sub_part_num))) {
+      LOG_WARN("fail to get sub part num in random schedule", K(ret));
+    } else {
+      int64_t sub_rand_num = 0;
+      if (OB_FAIL(ObRandomNumUtils::get_random_num(0, sub_part_num - 1, sub_rand_num))) {
+        LOG_WARN("fail to get random num in sub part", K(sub_part_num), K(ret));
+      } else {
+        ObSEArray<int64_t, 1> part_ids;
+        ObPartDesc *sub_part_desc_ptr = NULL;
+        if (OB_FAIL(part_mgr.get_sub_part_desc_by_first_part_id(part_info.is_template_table(),
+                                                                first_part_id,
+                                                                sub_part_desc_ptr))) {
+          LOG_WARN("fail to get sub part desc by first part id", K(first_part_id), K(ret));
+        } else if (OB_FAIL(part_mgr.get_sub_part_by_random(sub_rand_num, sub_part_desc_ptr, part_ids))) {
+          LOG_WARN("fail to get sub part id by random", K(ret));
+        } else if (part_ids.count() >= 1) {
+          sub_part_id = part_ids[0];
+        } else {
+          // nothing.
+        }
+      }
+    }
+  }
+   
+  if (OB_SUCC(ret)) {
+    phy_part_id = generate_phy_part_id(first_part_id, sub_part_id, part_info.get_part_level());
+  } else {
+    LOG_WARN("fail to cal part id by random choose from exist", K(ret));
   }
 
   return ret;

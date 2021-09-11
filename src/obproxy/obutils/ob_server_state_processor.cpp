@@ -975,7 +975,7 @@ int ObServerStateRefreshCont::handle_rs_changed(const ObIArray<ObServerStateInfo
       for (int64_t i = 0; found_rs && i < rslist.count(); ++i) {
         found_rs = false;
         for (int64_t j = 0; !found_rs && j < servers_state.count(); ++j) {
-          if (rslist.at(i).server_ == servers_state.at(j).replica_.server_) {
+          if (rslist.at(i).server_.is_ip_loopback() || rslist.at(i).server_ == servers_state.at(j).replica_.server_) {
             found_rs = true;
           }
         }
@@ -1157,6 +1157,9 @@ int ObServerStateRefreshCont::add_refresh_rslist_task(const bool need_update_dum
         cont->destroy();
         cont = NULL;
       }
+    } else {
+      congestion_manager_->clear_base_servers_added();
+      LOG_INFO("congestion manager's base servers has cleared", K_(cluster_name), K_(cluster_id));
     }
   } else {
     LOG_DEBUG("refresh rslist task has been scheduled", K_(cluster_name), K_(cluster_id),

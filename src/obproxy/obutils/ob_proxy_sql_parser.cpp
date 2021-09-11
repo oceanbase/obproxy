@@ -868,6 +868,7 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
                                 const ObProxyParseMode parse_mode,
                                 ObSqlParseResult &sql_parse_result,
                                 const bool use_lower_case_name,
+                                ObCollationType connection_collation,
                                 const bool drop_origin_db_table_name /*false*/,
                                 const bool is_sharding_request /*false*/)
 {
@@ -887,7 +888,7 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
     ObProxyParseResult obproxy_parse_result;
 
     int tmp_ret = OB_SUCCESS;
-    if (OB_SUCCESS != (tmp_ret = obproxy_parser.parse(sql, obproxy_parse_result))) {
+    if (OB_SUCCESS != (tmp_ret = obproxy_parser.parse(sql, obproxy_parse_result, connection_collation))) {
       LOG_INFO("fail to parse sql, will go on anyway", K(sql), K(tmp_ret));
     } else if (OB_SUCCESS != (tmp_ret = sql_parse_result.load_result(obproxy_parse_result, use_lower_case_name,
                                                                      drop_origin_db_table_name, is_sharding_request))) {

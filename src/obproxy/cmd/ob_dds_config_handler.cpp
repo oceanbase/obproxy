@@ -309,7 +309,8 @@ int ObDdsConfigHandler::handle_select_sql_variables()
   }
   if (OB_FAIL(ret)) {
     //do nothing
-  } else if (OB_FAIL(handle_parse_where_fields(&allocator, expr_result))) {
+  } else if (OB_FAIL(handle_parse_where_fields(&allocator, expr_result,
+                     static_cast<ObCollationType>(sm_->get_client_session()->get_session_info().get_collation_connection())))) {
     WARN_ICMD("fail to parse where fileds", K(ret));
   } else {
     ObString app_block = table_name;
@@ -335,7 +336,8 @@ int ObDdsConfigHandler::handle_select_sql_variables()
   return event_ret;
 }
 
-int ObDdsConfigHandler::handle_parse_where_fields(ObArenaAllocator* allocator, ObExprParseResult& expr_result)
+int ObDdsConfigHandler::handle_parse_where_fields(ObArenaAllocator* allocator, ObExprParseResult& expr_result,
+                                                  ObCollationType connection_collation)
 {
   int ret = OB_SUCCESS;
   bool need_parse_fields = true;
@@ -360,7 +362,9 @@ int ObDdsConfigHandler::handle_parse_where_fields(ObArenaAllocator* allocator, O
     } else {
       ObExprParser expr_parser(*allocator, parse_mode);
       expr_result.part_key_info_.key_num_ = 0;
-      if (OB_FAIL(expr_parser.parse_reqsql(sql,  sql_parse_result.get_parsed_length(), expr_result, sql_parse_result.get_stmt_type()))) {
+      if (OB_FAIL(expr_parser.parse_reqsql(sql,  sql_parse_result.get_parsed_length(),
+                                           expr_result, sql_parse_result.get_stmt_type(),
+                                           connection_collation))) {
         WARN_ICMD("fail to do expr parse_reqsql", K(sql), K(ret));
       } else {
         DEBUG_ICMD("parse success:", K(sql), K(expr_result.all_relation_info_.relation_num_));
@@ -445,7 +449,8 @@ int ObDdsConfigHandler::handle_update_variables()
   ObString table_name = client_request.get_parse_result().get_table_name();
   ObArenaAllocator allocator;
   ObExprParseResult expr_result;
-  if (OB_FAIL(handle_parse_where_fields(&allocator, expr_result))) {
+  if (OB_FAIL(handle_parse_where_fields(&allocator, expr_result,
+              static_cast<ObCollationType>(sm_->get_client_session()->get_session_info().get_collation_connection())))) {
     WARN_ICMD("fail to parse where fileds", K(ret));
   } else {
     ObString app_block = table_name;

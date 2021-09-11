@@ -1534,6 +1534,7 @@ inline int ObMysqlSM::init_request_content(ObRequestAnalyzeCtx &ctx)
     trans_state_.trans_info_.client_request_.set_user_identity(client_session_->get_user_identity());
 
     ctx.is_sharding_mode_ = client_session_->get_session_info().is_sharding_user();
+    ctx.connection_collation_ = static_cast<common::ObCollationType>(client_session_->get_session_info().get_collation_connection());
   }
 
   if (OB_SUCC(ret)) {
@@ -1599,6 +1600,23 @@ inline int ObMysqlSM::encode_unsupport_ps_message()
     trans_state_.mysql_errcode_ = OB_UNSUPPORTED_PS;
     if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
       LOG_WARN("[ObMysqlSM::encode_unsupport_ps_message] fail to encode error response",
+               K_(sm_id), K(ret), "errcode", trans_state_.mysql_errcode_);
+    }
+  }
+
+  return ret;
+}
+
+inline int ObMysqlSM::encode_unsupport_change_user_message()
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(client_buffer_reader_->consume_all())) {
+    LOG_WARN("client buffer reader fail to consume all", K(ret));
+  } else {
+    trans_state_.mysql_errcode_ = OB_NOT_SUPPORTED;
+    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+      LOG_WARN("[ObMysqlSM::encode_unsupport_change_user_message] fail to encode error response",
                K_(sm_id), K(ret), "errcode", trans_state_.mysql_errcode_);
     }
   }
@@ -1827,7 +1845,7 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
             if (client_session_->is_proxysys_tenant()) {
               //proxysys user no need check everything
             } else {
-              if (!client_session_->is_proxy_mysql_client_ && !client_session_->is_proxysys_tenant()) {
+              if (!client_session_->is_proxy_mysql_client_) {
                 SESSION_PROMETHEUS_STAT(client_session_->get_session_info(), PROMETHEUS_CURRENT_SESSION, true, 1);
                 client_session_->set_conn_prometheus_decrease(true);
               }
@@ -1850,6 +1868,15 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
             }//end if !proxysys
           }
         }
+      } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd) {
+        if (session_info.is_sharding_user() || session_info.is_session_pool_client_) {
+          if (OB_FAIL(encode_unsupport_change_user_message())) {
+            LOG_WARN("fail to encode unsupport change user error message", K(ret));
+          } else {
+            LOG_INFO("not support change user");
+          }
+          status = ANALYZE_ERROR;
+        }
       } else if (OB_MYSQL_COM_STMT_PREPARE == req_cmd) {
         if (client_request.get_parse_result().is_start_trans_stmt() || session_info.is_sharding_user()) {
           if (OB_FAIL(encode_unsupport_ps_message())) {
@@ -1868,6 +1895,8 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
           LOG_WARN("fail to analyze ps execute request", K(ret), K(req_cmd));
         }
       } else if (OB_MYSQL_COM_STMT_FETCH == req_cmd || OB_MYSQL_COM_STMT_GET_PIECE_DATA == req_cmd) {
+        // Every time you execute COM_STMT_GET_PIECE_DATA, you also need to set the cursor id,
+        // because it is the same, so the analyze_fetch_request function is reused here
         if (OB_FAIL(analyze_fetch_request())) {
           LOG_WARN("fail to analyze fetch request", K(ret));
         }
@@ -3571,6 +3600,14 @@ int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
       int ret = OB_SUCCESS;
       ObMysqlServerSession *last_bound_session = client_session_->get_last_bound_server_session();
       if (NULL != last_bound_session) {
+        // Since the tunnel_handler_server only releases server_session in a transaction,
+        // There are two places to release server sssion normally:
+        //   1. During the transaction, tunnel_handler_server
+        //   2. End of transaction, setup_cmd_complete
+        // For the COM_STMT_FETCH in the transaction, if you need to switch to another Server:
+        //   1. In tunnel_handler_server, it is considered that the transaction is over. Because in_trans = false;
+        //   2. Since the transaction status is modified here, it is considered to be in transaction in the setup_cmd_complete
+        // So neither of the above will be released, so here we have to release it once
         release_server_session();
         if (OB_FAIL(ObMysqlTransact::return_last_bound_server_session(client_session_))) {
           LOG_WARN("fail to return last bound server session", K(ret));
@@ -5170,9 +5207,9 @@ void ObMysqlSM::do_internal_request()
           handshake.set_server_version(server_version);
         }
 
-        if (trans_state_.mysql_config_params_->enable_proxy_scramble_
-            && client_session_->get_scramble_string().empty()) {
-          if (OB_FAIL(client_session_->create_scramble())) {
+        if (trans_state_.mysql_config_params_->enable_proxy_scramble_) {
+          if (client_session_->get_scramble_string().empty()
+              && OB_FAIL(client_session_->create_scramble())) {
             LOG_WARN("fail to create_scramble", K_(sm_id), K(ret));
           } else {
             ObString &scramble = client_session_->get_scramble_string();
@@ -5308,7 +5345,6 @@ void ObMysqlSM::do_internal_request()
           bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
           ObObj value;
           value.set_int(0);
-          client_info.set_need_sync_session_vars(true);
           if (client_info.update_common_sys_variable("autocommit", value, true, false)) {
             LOG_WARN("fail to update sys variable", K_(sm_id), K(ret));
           } else if (OB_FAIL(ObMysqlResponseBuilder::build_ok_resq_with_state_changed(
@@ -6705,7 +6741,6 @@ int ObMysqlSM::setup_cmd_complete()
     // stat reset
     if (ObMysqlTransact::TRANSACTION_COMPLETE == trans_state_.current_.state_) {
       update_stats();
-      client_session_->get_session_info().set_need_sync_session_vars(true);
       trans_stats_.reset();
       milestones_.trans_reset();
       set_client_wait_timeout();

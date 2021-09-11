@@ -1,6 +1,7 @@
 %option noyywrap nounput noinput case-insensitive
 %option stack noyyalloc noyyrealloc noyyfree
 %option reentrant bison-bridge bison-locations
+%option prefix="ob_expr_parser_yy"
 %option header-file="ob_expr_parser_lex.h"
 %{
 #define YYSTYPE         OBEXPRSTYPE
@@ -49,6 +50,11 @@ do {\
 %x                      dq
 %x                      bt
 
+/*following character status will be rewrite by gen_parse.sh according to connection character*/
+multi_byte_space              [\u3000]
+multi_byte_comma              [\uff0c]
+multi_byte_left_parenthesis   [\uff08]
+multi_byte_right_parenthesis  [\uff09]
 space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
 int_num                 [0-9]+
@@ -81,6 +87,7 @@ btend         {backtick}
 btdouble      {backtick}{backtick}
 btcontent     [^`]+
 
+comma         ,
 leftbracket   \(
 rightbracket  \)
 
@@ -118,7 +125,10 @@ IN        { return IN; }
 {number}               { RETURN_NUMBER_VAL(); }
 {identifer}            { RETURN_NAME_OB(); }
 {whitespace}           { }
-[-+().;*&~|^/%,:!@=]  { return yytext[0]; }
+{comma}|{multi_byte_comma} { return ','; }
+{leftbracket}|{multi_byte_left_parenthesis}    { return '('; }
+{rightbracket}|{multi_byte_right_parenthesis}  { return ')'; }
+[-+.;*&~|^/%:!@=]  { return yytext[0]; }
 
  /* comment */
 {c_cmt_begin}             { PUSH_STATE(in_c_comment); }

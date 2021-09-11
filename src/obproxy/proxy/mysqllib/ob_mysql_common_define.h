@@ -165,12 +165,12 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     case obmysql::OB_MYSQL_COM_STMT_RESET:
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_STMT_FETCH:
+    case obmysql::OB_MYSQL_COM_CHANGE_USER:
     // pieceinfo
     case obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
     case obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA:
       ret = true;
       break;
-    case obmysql::OB_MYSQL_COM_CHANGE_USER:
     // Replication Protocol
     case obmysql::OB_MYSQL_COM_BINLOG_DUMP:
     case obmysql::OB_MYSQL_COM_TABLE_DUMP:

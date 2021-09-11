@@ -36,18 +36,37 @@ public:
     REMOVE_ROUTINE_OP,
   };
 
-  ObRoutineCacheParam() : hash_(0), key_(), op_(INVALID_ROUTINE_OP), entry_(NULL) {}
-  ~ObRoutineCacheParam() {}
+  ObRoutineCacheParam() : hash_(0), key_(), op_(INVALID_ROUTINE_OP), entry_(NULL),
+                          name_buf_len_(0), name_buf_(NULL) {}
+  ~ObRoutineCacheParam() { reset(); }
   int64_t to_string(char *buf, const int64_t buf_len) const;
   static const char *get_op_name(const Op op);
+  void reset();
+  int deep_copy_key(const ObRoutineEntryKey &key);
 
   static const int64_t SCHEDULE_ROUTINE_CACHE_CONT_INTERVAL =  HRTIME_MSECONDS(1);
   uint64_t hash_;
   ObRoutineEntryKey key_;
   Op op_;
   ObRoutineEntry *entry_;
+  int64_t name_buf_len_;
+  char *name_buf_;
   SLINK(ObRoutineCacheParam, link_);
 };
+
+inline void ObRoutineCacheParam::reset()
+{
+  hash_ = 0;
+  key_.reset();
+  op_ = INVALID_ROUTINE_OP;
+  entry_ = NULL;
+
+  if (NULL != name_buf_ && name_buf_len_ > 0) {
+    op_fixed_mem_free(name_buf_, name_buf_len_);
+    name_buf_ = NULL;
+    name_buf_len_ = 0;
+  }
+}
 
 // ObRoutineCache, ObPartitionCache and ObTableCache have the same sub partitions,
 // that is MT_HASHTABLE_PARTITIONS(64);

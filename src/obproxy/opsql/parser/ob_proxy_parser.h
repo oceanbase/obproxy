@@ -17,12 +17,13 @@
 #include "opsql/parser/ob_proxy_parse_result.h"
 #include "lib/string/ob_string.h"
 #include "utils/ob_proxy_lib.h"
+#include "lib/charset/ob_charset.h"
 
 #include <ob_sql_parser.h>
 #include <parse_malloc.h>
 #include <parse_node.h>
 
-extern "C" int obproxy_parse_sql(ObProxyParseResult *p, const char *pszSql, size_t iLen);
+extern "C" int obproxy_parse_utf8_sql(ObProxyParseResult *p, const char *pszSql, size_t iLen);
 
 namespace oceanbase
 {
@@ -42,7 +43,8 @@ public:
   // will not be inherited, do not set to virtual
   ~ObProxyParser() {}
 
-  int parse(const common::ObString &sql_string, ObProxyParseResult &parse_result);
+  int parse(const common::ObString &sql_string, ObProxyParseResult &parse_result,
+            common::ObCollationType connection_collation);
   void free_result(ObProxyParseResult &parse_result);
   // the following function use ob parser
   int obparse(const common::ObString &sql_string, ParseResult &parse_result);
@@ -184,16 +186,25 @@ inline int ObProxyParser::obparse(const common::ObString &sql_string,
 }
 
 inline int ObProxyParser::parse(const common::ObString &sql_string,
-                                ObProxyParseResult &parse_result)
+                                ObProxyParseResult &parse_result,
+                                common::ObCollationType connection_collation)
 {
   int ret = common::OB_SUCCESS;
   if (0 != init_result(parse_result, sql_string.ptr())) {
     ret = common::OB_ERR_PARSER_INIT;
     PROXY_LOG(WARN, "failed to initialized parser", KERRMSGS, K(ret));
-  } else if (0 != obproxy_parse_sql(&parse_result,
-                                    sql_string.ptr(),
-                                    static_cast<size_t>(sql_string.length()))) {
-    ret = common::OB_ERR_PARSE_SQL;
+  } else {
+    switch (connection_collation) {
+      case 45/*CS_TYPE_UTF8MB4_GENERAL_CI*/:
+      case 46/*CS_TYPE_UTF8MB4_BIN*/:
+      default:
+        if (common::OB_SUCCESS != obproxy_parse_utf8_sql(&parse_result,
+                                                         sql_string.ptr(),
+                                                         static_cast<size_t>(sql_string.length()))) {
+          ret = common::OB_ERR_PARSE_SQL;
+        }
+        break;
+    }
   }
   return ret;
 }

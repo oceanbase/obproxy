@@ -43,10 +43,9 @@ int ObPartDescKey::get_part(ObNewRange &range,
                       "obj_cnt", range.get_start_key().get_obj_cnt(), K(ret));
   } else {
     ObObj &src_obj = const_cast<ObObj &>(range.get_start_key().get_obj_ptr()[0]);
-    src_obj.set_collation_type(cs_type_);
     ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, cs_type_);
     // use src_obj as buf_obj
-    if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cast_ctx, src_obj, src_obj))) {
+    if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cs_type_, cast_ctx, src_obj, src_obj))) {
       COMMON_LOG(INFO, "failed to cast obj", K(src_obj), K(obj_type_), K(cs_type_), K(ret));
     } else {
       int64_t result_num = 0;
@@ -71,5 +70,22 @@ int ObPartDescKey::get_part(ObNewRange &range,
 
   return ret;
 }
+
+int ObPartDescKey::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+{
+  int ret = OB_SUCCESS;
+  int64_t part_idx = num % part_num_;
+  int64_t part_id = part_idx;
+  if (share::schema::PARTITION_LEVEL_ONE == part_level_ && part_array_ != NULL) {
+    part_id = part_array_[part_idx];
+  }
+  part_id = part_space_ << OB_PART_IDS_BITNUM | part_id;
+  if (OB_FAIL(part_ids.push_back(part_id))) {
+    COMMON_LOG(WARN, "fail to push part_id", K(ret));
+  }
+  return ret;
+}
+
+                            
 } // end of common
 } // end of oceanbase

@@ -155,6 +155,7 @@ class ObClientReuqestInfo
 public:
    ObClientReuqestInfo()
     : user_name_(), database_name_(), password_(),
+      password0_(), password1_(), using_password_num_(-1),
       request_param_(), name_(NULL), name_len_(0),
       need_skip_stage2_(false) {}
   ~ObClientReuqestInfo() { reset(); }
@@ -168,12 +169,28 @@ public:
   bool is_need_skip_stage2() { return need_skip_stage2_;}
   int set_names(const common::ObString &user_name,
                 const common::ObString &password,
-                const common::ObString &database_name);
+                const common::ObString &database_name,
+                const common::ObString &password1 = "");
   int set_request_param(const ObMysqlRequestParam &request_param);
 
   const common::ObString &get_user_name() const { return user_name_; }
   const common::ObString &get_database_name() const { return database_name_; }
   const common::ObString &get_password() const { return password_; }
+  bool change_password()
+  {
+    bool bret = false;
+    if (using_password_num_ != -1) {
+      using_password_num_ = (using_password_num_ + 1) % 2;
+      if (using_password_num_ == 0) {
+        password_ = password0_;
+      } else {
+        password_ = password1_;
+      }
+      bret = true;
+    }
+    return bret;
+  }
+  inline bool can_change_password() const { return using_password_num_ != -1; }
   const common::ObString &get_request_sql() const { return request_param_.sql_; }
   ObMysqlRequestParam &get_request_param() { return request_param_; }
 
@@ -183,6 +200,9 @@ private:
   common::ObString user_name_;
   common::ObString database_name_;
   common::ObString password_;
+  common::ObString password0_;
+  common::ObString password1_;
+  int32_t using_password_num_;
   ObMysqlRequestParam request_param_;
   char *name_;
   int64_t name_len_;

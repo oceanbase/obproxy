@@ -32,6 +32,7 @@ bool RangePartition::less_than(const RangePartition &a, const RangePartition &b)
 
 ObPartDescRange::ObPartDescRange() : part_array_ (NULL)
                                    , part_array_size_(0)
+                                   , collation_type_(CS_TYPE_UTF8MB4_BIN)
 {
 }
 
@@ -45,12 +46,8 @@ int64_t ObPartDescRange::to_string(char *buf, const int64_t buf_len) const
   int64_t pos = 0;
   J_OBJ_START();
 
-  J_KV("part_type", "range");
-  J_COMMA();
-  for (int64_t i = 0; i < part_array_size_; ++i) {
-    J_KV("part_id", i, "part_array", part_array_[i]);
-    J_COMMA();
-  }
+  J_KV("part_type", "range",
+       K_(part_array_size));
 
   J_OBJ_END();
   return pos;
@@ -158,15 +155,25 @@ int ObPartDescRange::get_part(ObNewRange &range,
   return ret;
 }
 
+int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+{
+  int ret = OB_SUCCESS;
+  int64_t part_idx = num % part_array_size_;
+  if (OB_FAIL(part_ids.push_back(part_array_[part_idx].part_id_))) {
+    COMMON_LOG(WARN, "fail to push part id", K(ret));
+  }
+  return ret;
+}
+
 int ObPartDescRange::cast_key(ObRowkey &src_key,
-                              const ObRowkey &target_key,
+                              ObRowkey &target_key,
                               ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
   int64_t min_col_cnt = std::min(src_key.get_obj_cnt(), target_key.get_obj_cnt());
   for (int64_t i = 0; i < min_col_cnt && OB_SUCC(ret); ++i) {
     if (OB_FAIL(cast_obj(const_cast<ObObj &>(src_key.get_obj_ptr()[i]),
-                         target_key.get_obj_ptr()[i],
+                         const_cast<ObObj &>(target_key.get_obj_ptr()[i]),
                          allocator))) {
       COMMON_LOG(INFO, "fail to cast obj", K(i), K(ret));
     } else {
@@ -177,16 +184,17 @@ int ObPartDescRange::cast_key(ObRowkey &src_key,
 }
 
 inline int ObPartDescRange::cast_obj(ObObj &src_obj,
-                                     const ObObj &target_obj,
+                                     ObObj &target_obj,
                                      ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
-  src_obj.set_collation_type(target_obj.get_collation_type());
+  COMMON_LOG(DEBUG, "begin to cast obj for range", K(src_obj), K(target_obj), K_(collation_type));
   ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, target_obj.get_collation_type());
   // use src_obj as buf_obj
-  if (OB_FAIL(ObObjCasterV2::to_type(target_obj.get_type(), cast_ctx, src_obj, src_obj))) {
-    COMMON_LOG(INFO, "failed to cast obj", K(src_obj), K(target_obj), K(ret));
+  if (OB_FAIL(ObObjCasterV2::to_type(target_obj.get_type(), collation_type_, cast_ctx, src_obj, src_obj))) {
+    COMMON_LOG(WARN, "failed to cast obj", K(src_obj), K(target_obj), K_(collation_type), K(ret));
   }
+  COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(target_obj), K_(collation_type));
   return ret;
 }
 

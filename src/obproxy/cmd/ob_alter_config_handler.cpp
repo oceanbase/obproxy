@@ -69,7 +69,8 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
   ObString value_string(value_str_);
 
   if ((0 == key_string.case_compare("observer_sys_password")
-      || 0 == key_string.case_compare("obproxy_sys_password"))
+      || 0 == key_string.case_compare("obproxy_sys_password")
+      || 0 == key_string.case_compare("observer_sys_password1"))
       && !value_string.empty()) {
     char passwd_staged1_buf[ENC_STRING_BUF_LEN];
     ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);

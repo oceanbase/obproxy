@@ -41,6 +41,7 @@ public:
   virtual int get_part(ObNewRange &range,
                        ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids);
+  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
   void set_default_part_array_idx(int64_t idx) { default_part_array_idx_ = idx; }
   int64_t get_default_part_array_idx() const { return default_part_array_idx_; }
   ListPartition *get_part_array() { return part_array_; }
@@ -50,15 +51,21 @@ public:
     return OB_SUCCESS;
   }
 
+  void set_collation_type(const ObCollationType collation_type)
+  {
+    collation_type_ = collation_type;
+  }
+
   DECLARE_VIRTUAL_TO_STRING;
 private:
   int cast_obj(ObObj &src_obj,
-               const ObObj &target_obj,
+               ObObj &target_obj,
                ObIAllocator &allocator);
 private:
   ListPartition *part_array_;
   int64_t part_array_size_;
   int64_t default_part_array_idx_;
+  ObCollationType collation_type_;
 };
 
 } // end common

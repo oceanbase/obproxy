@@ -29,6 +29,7 @@ public:
   virtual int get_part(ObNewRange &range,
                        ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids);
+  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
   void set_part_num(int64_t part_num) { part_num_ = part_num; }
   void set_part_space(int64_t part_space) { part_space_ = part_space; }
   void set_first_part_id(int64_t first_part_id) { first_part_id_ = first_part_id; }

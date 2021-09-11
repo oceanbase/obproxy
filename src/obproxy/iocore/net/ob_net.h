@@ -79,7 +79,6 @@ namespace net
 
 struct ObNetOptions
 {
-  int64_t poll_timeout_;
   int64_t max_connections_;
   int64_t default_inactivity_timeout_;
   int64_t max_client_connections_;

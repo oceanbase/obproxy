@@ -888,6 +888,7 @@ public:
                 const ObProxyParseMode parse_mode,
                 ObSqlParseResult &sql_parse_result,
                 const bool use_lower_case_name,
+                common::ObCollationType connection_collation,
                 const bool drop_origin_db_table_name = false,
                 const bool is_sharding_request = false);
 

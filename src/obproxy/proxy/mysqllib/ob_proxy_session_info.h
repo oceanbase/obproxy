@@ -492,6 +492,7 @@ public:
   // include all
   bool need_reset_all_session_vars() const { return is_global_vars_changed_; }
   bool is_user_idc_name_set() const { return is_user_idc_name_set_; }
+  bool is_proxy_route_policy_set() const { return is_proxy_route_policy_set_; }
 
   //sys variables related methords
   int update_cached_variable(const common::ObString &var_name, ObSessionSysField *field);
@@ -519,6 +520,7 @@ public:
   int replace_user_variable(const common::ObString &name, const common::ObObj &val);
   int replace_user_variable(const common::ObString &name, const common::ObString &val);
   int remove_user_variable(const common::ObString &name);
+  int remove_all_user_variable();
   int get_user_variable(const common::ObString &name, ObSessionUserField *&value) const;
   int get_user_variable_value(const common::ObString &name, common::ObObj &value) const;
   int user_variable_exists(const common::ObString &name, bool &is_exist);
@@ -566,7 +568,10 @@ public:
 
   //proxy route policy
   ObProxyRoutePolicyEnum get_proxy_route_policy() const { return proxy_route_policy_; }
-  void set_proxy_route_policy(ObProxyRoutePolicyEnum policy) { proxy_route_policy_ = policy; }
+  void set_proxy_route_policy(ObProxyRoutePolicyEnum policy) { 
+    proxy_route_policy_ = policy;
+    is_proxy_route_policy_set_ = true;
+  }
 
   // the initial value of this flag is false,
   // when we specifies next transaction characteristic(set transaction xxx), this flag will be set;
@@ -641,6 +646,7 @@ public:
   int64_t get_net_write_timeout() const{ return cached_variables_.get_net_write_timeout(); }
   bool need_use_lower_case_names() const { return cached_variables_.need_use_lower_case_names(); }
   int64_t get_read_consistency() const { return cached_variables_.get_read_consistency(); }
+  int64_t get_collation_connection() const { return cached_variables_.get_collation_connection(); }
 
   ObConsistencyLevel get_consistency_level_prop() const {return consistency_level_prop_;}
   void set_consistency_level_prop(ObConsistencyLevel level) {consistency_level_prop_ = level;}
@@ -673,7 +679,6 @@ public:
   void set_group_id(const int64_t group_id) { group_id_ = group_id; }
   int64_t get_group_id() { return group_id_; }
 
-  void set_need_sync_session_vars(bool need_sync) { need_sync_session_vars_ = need_sync; }
   bool is_sys_hot_version_changed() const {
     return hash_version_.hot_sys_var_version_ != version_.hot_sys_var_version_;
   }
@@ -833,6 +838,8 @@ private:
   bool is_read_consistency_set_;
   // is oracle mode
   bool is_oracle_mode_;
+  //when user set proxy_route_policy, set it true;
+  bool is_proxy_route_policy_set_;
 
   bool enable_shard_authority_;
   bool enable_reset_db_;
@@ -900,8 +907,6 @@ private:
 
   // consistency_level_prop in shard_conn_prop
   ObConsistencyLevel consistency_level_prop_;
-  // if has synced will not need sync to avoid loop sync when compare failed
-  bool need_sync_session_vars_;
 
   uint32_t recv_client_ps_id_;
   uint32_t ps_id_;
@@ -1102,7 +1107,18 @@ inline bool ObClientSessionInfo::need_reset_user_session_vars(const ObServerSess
 {
   bool bret = false;
   if (!is_session_pool_client_) {
-    bret = get_user_var_version() > server_info.get_user_var_version();
+    if (get_user_var_version() > server_info.get_user_var_version()) {
+      int ret = OB_SUCCESS;
+      common::ObSEArray<common::ObString, 32> names;
+      ObClientSessionInfo* client_info = const_cast<ObClientSessionInfo*>(this);
+      if (OB_FAIL(client_info->get_all_user_var_names(names))) {
+        PROXY_LOG(WARN, "fail get all var name for source", K(ret));
+      } else {
+        int64_t count = names.count();
+        bret = (0 != count);
+        PROXY_LOG(DEBUG, "need_reset_user_session_vars", K(bret), K(count));
+      }
+    }
   } else {
     bool is_changed = is_user_var_version_changed();
     if (is_changed) {
@@ -1137,27 +1153,19 @@ inline bool ObClientSessionInfo::need_reset_safe_read_snapshot(const ObServerSes
 inline bool ObClientSessionInfo::need_reset_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = true;
-  bool bret2 = false;
   if (is_oceanbase_server()) {
     bret = need_reset_common_hot_session_vars(server_info)
            || need_reset_common_cold_session_vars(server_info)
            || need_reset_hot_session_vars(server_info)
            || need_reset_cold_session_vars(server_info)
-           || need_reset_user_session_vars(server_info);
-    bret2 = need_reset_safe_read_snapshot(server_info);
+           || need_reset_user_session_vars(server_info)
+           || need_reset_safe_read_snapshot(server_info);
   } else {
     bret =  need_reset_common_hot_session_vars(server_info)
            || need_reset_common_cold_session_vars(server_info)
            || need_reset_mysql_hot_session_vars(server_info)
            || need_reset_mysql_cold_session_vars(server_info)
            || need_reset_user_session_vars(server_info);
-  }
-  // for defence
-  if (bret && !need_sync_session_vars_) {
-    bret = bret2;
-    PROXY_LOG(WARN, "session not same but no need sync", K(bret2));
-  } else if (!bret) {
-    bret = bret2;
   }
   return bret;
 }

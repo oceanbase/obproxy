@@ -96,7 +96,7 @@ int ObExprResolver::resolve(ObExprResolverContext &ctx, ObExprResolverResult &re
  * for normal ps sql, placeholder_idx_ in token node means the pos of '?'
  * for normal pl sql, placeholder_idx_ in token node means the index of call_info.params_
  * for pl sql with ps, placeholder_idx_ in call_info_node_ means the pos of '?'
- * for example: ps sql = call func1(11, ?, 22, ?), 
+ * for example: ps sql = call func1(11, ?, 22, ?),
  * the first sql of func1 is select * from t1 where a = :1 and b = :2 and c =:3 and d = :4
  * result:
  * call_info_.params_[1].placeholder_idx_ = 0, call_info_.params_[3].placeholder_idx_ = 1
@@ -167,6 +167,11 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
         } else {
           LOG_DEBUG("succ to calculate generated key value", K(target_obj), K(ret));
         }
+      }
+
+      if (OB_SUCC(ret) && ObStringTC == target_obj->get_type_class()) {
+        // The character set of the string parsed from the parser uses the value of the variable collation_connection
+        target_obj->set_collation_type(static_cast<common::ObCollationType>(client_info->get_collation_connection()));
       }
 
       if (OB_SUCC(ret)) {

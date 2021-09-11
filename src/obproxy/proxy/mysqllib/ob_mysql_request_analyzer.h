@@ -54,6 +54,7 @@ struct ObRequestAnalyzeCtx
   bool is_auth_;
   bool drop_origin_db_table_name_;
   bool is_sharding_mode_;
+  common::ObCollationType connection_collation_;
   ObProxyParseMode parse_mode_;
   event::ObIOBufferReader *reader_;
   obutils::ObCachedVariables *cached_variables_;
@@ -130,7 +131,8 @@ private:
                                 const bool is_oracle_mode = false);
   static int handle_internal_cmd(ObProxyMysqlRequest &client_request);
   static void extract_fileds(const ObExprParseResult& result, ObProxyMysqlRequest &client_request);
-  static int parse_sql_fileds(ObProxyMysqlRequest &client_request);
+  static int parse_sql_fileds(ObProxyMysqlRequest &client_request,
+                              common::ObCollationType connection_collation);
 
   static int rewrite_part_key_comment(event::ObIOBufferReader *reader,
                                       ObProxyMysqlRequest &client_request);

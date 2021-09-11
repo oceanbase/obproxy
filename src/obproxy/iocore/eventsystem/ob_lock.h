@@ -198,21 +198,14 @@ public:
 #endif //OB_HAS_EVENT_DEBUG
   }
 
-  virtual ~ObProxyMutex() { common::mutex_destroy(&the_mutex_); }
+  virtual ~ObProxyMutex() {}
 
   /**
    * Initializes the underlying mutex object.
    * After constructing your ObProxyMutex object, use this function
    * to initialize the underlying mutex object with an optional name.
    */
-  int init()
-  {
-    int ret = common::OB_SUCCESS;
-    if (OB_FAIL(common::mutex_init(&the_mutex_))) {
-      PROXY_EVENT_LOG(ERROR, "fail to init mutex", K(ret));
-    }
-    return ret;
-  }
+  int init() { return common::OB_SUCCESS; }
 
   void free()
   {
@@ -221,10 +214,6 @@ public:
     print_lock_stats(1);
 #endif //OB_HAS_LOCK_CONTENTION_PROFILING
 #endif //OB_HAS_EVENT_DEBUG
-    int ret = common::OB_SUCCESS;
-    if (OB_FAIL(common::mutex_destroy(&the_mutex_))) {
-      PROXY_EVENT_LOG(ERROR, "fail to destroy mutex", K(ret));
-    }
     op_reclaim_free(this);
   }
 
@@ -241,7 +230,7 @@ public:
    * The platform independent mutex for the ObProxyMutex class. You
    * must not modify or set it directly.
    */
-  ObMutex the_mutex_;
+  lib::ObMutex the_mutex_;
 
   /**
    * Backpointer to owning thread.
@@ -286,7 +275,7 @@ inline bool mutex_trylock(
     PROXY_EVENT_LOG(WARN, "argument is error", K(t), K(m));
   } else {
     if (m->thread_holding_ != t) {
-      if (OB_UNLIKELY(!common::mutex_try_acquire(&m->the_mutex_))) {
+      if (OB_UNLIKELY(!lib::mutex_try_acquire(&m->the_mutex_))) {
 #ifdef OB_HAS_EVENT_DEBUG
         lock_waiting(m->srcloc_, m->handler_);
 #ifdef OB_HAS_LOCK_CONTENTION_PROFILING
@@ -339,7 +328,7 @@ inline bool mutex_trylock_spin(
   } else {
     if (m->thread_holding_ != t) {
       do {
-        bret = common::mutex_try_acquire(&m->the_mutex_);
+        bret = lib::mutex_try_acquire(&m->the_mutex_);
       } while (--spincnt && OB_UNLIKELY(!bret));
 
       if (OB_UNLIKELY(!bret)) {
@@ -393,7 +382,7 @@ inline bool mutex_lock(
     PROXY_EVENT_LOG(WARN, "argument is error", K(t), K(m));
   } else {
     if (m->thread_holding_ != t) {
-      if (OB_UNLIKELY(common::OB_SUCCESS != common::mutex_acquire(&m->the_mutex_))) {
+      if (OB_UNLIKELY(common::OB_SUCCESS != lib::mutex_acquire(&m->the_mutex_))) {
         bret = false;
         PROXY_EVENT_LOG(ERROR, "fail to acquire mutex");
       } else {
@@ -444,7 +433,7 @@ inline void mutex_unlock(ObProxyMutex *m, ObEThread *t)
         m->handler_ = NULL;
 #endif //OB_HAS_EVENT_DEBUG
         m->thread_holding_ = NULL;
-        if (OB_UNLIKELY(common::OB_SUCCESS != common::mutex_release(&m->the_mutex_))) {
+        if (OB_UNLIKELY(common::OB_SUCCESS != lib::mutex_release(&m->the_mutex_))) {
           PROXY_EVENT_LOG(ERROR, "fail to release mutex");
         }
       }

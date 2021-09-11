@@ -43,6 +43,7 @@ static const ObString type_names[CACHED_VAR_MAX + 1] = {
     ObString(OB_SV_LOWER_CASE_TABLE_NAMES),
     ObString(OB_SV_TX_READ_ONLY),
     ObString(OB_SV_READ_CONSISTENCY),
+    ObString(OB_SV_COLLATION_CONNECTION),
     ObString("CACHED_VAR_MAX"),
 };
 
@@ -104,6 +105,11 @@ int ObCachedVariables::update_var(const ObCachedVariableType &type, const ObObj 
     }
 
     case CACHED_INT_VAR_READ_CONSISTENCY: {
+      cached_vars_[index] = obj;
+      break;
+    }
+
+    case CACHED_INT_VAR_COLLATION_CONNECTION: {
       cached_vars_[index] = obj;
       break;
     }

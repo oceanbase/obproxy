@@ -56,7 +56,8 @@ private:
                                     common::ObString& config_val);
 
   int handle_parse_where_fields(common::ObArenaAllocator* allocator,
-                                ObExprParseResult& expr_result);
+                                ObExprParseResult& expr_result,
+                                common::ObCollationType connection_collation);
   int update_dds_config_to_processor(const common::ObString& app_name,
                                      const common::ObString& app_version,
                                      const common::ObString& app_block,

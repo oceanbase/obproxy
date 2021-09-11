@@ -221,7 +221,9 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
     } else {
       passwd_string += 1;
       int64_t actual_len = 0;
-      const ObString &scramble_string = client_info.get_scramble_string();
+      const ObString &scramble_string = (client_info.get_scramble_string().empty()
+                                        ? ObString::make_string("aaaaaaaabbbbbbbbbbbb")
+                                        : client_info.get_scramble_string());
       if (OB_FAIL(ObClientUtils::get_auth_password_from_stage1(passwd_string,
               scramble_string, pwd_buf, pwd_buf_len, actual_len))) {
             LOG_WARN("fail to get get_auth_password_from_stage1", K(ret));
@@ -408,6 +410,77 @@ int  ObProxySessionInfoHandler::rewrite_ldg_login_req(ObClientSessionInfo &clien
       target_hsr_buf = NULL;
       target_hsr_reader = NULL;
     }
+  }
+  return ret;
+}
+
+int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo &client_info,
+  const ObString& username,
+  const ObString& auth_response)
+{
+  int ret = OB_SUCCESS;
+  const int64_t BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_4K);
+  ObMIOBuffer *target_hsr_buf = NULL;
+  ObIOBufferReader *target_hsr_reader = NULL;
+  // 1.alloc tmp buffer
+  if (OB_ISNULL(target_hsr_buf = new_miobuffer(BUFFER_SIZE))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_CS_LOG(WARN, "fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
+  } else if (OB_ISNULL(target_hsr_reader = target_hsr_buf->alloc_reader())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_CS_LOG(WARN, "fail to alloc reader for ObIOBufferReader", K(ret));
+  } else {
+    OMPKHandshakeResponse target_hsr;
+    ObRequestAnalyzeCtx target_ctx;
+    ObMysqlAuthRequest& auth_req = client_info.get_login_req();
+    target_hsr = auth_req.get_hsr_result().response_;
+
+    // 1. assign seq num
+    target_hsr.set_seq(static_cast<int8_t>(auth_req.get_packet_meta().pkt_seq_));
+
+    // 2. change username
+    target_hsr.set_username(username);
+
+    // 3. change auth_response
+    target_hsr.set_auth_response(auth_response);
+
+    ObString default_tenant_name;
+    ObString default_cluster_name;
+    if (OB_FAIL(client_info.get_tenant_name(default_tenant_name))) {
+      LOG_WARN("fail to get tenant name", K(ret));
+    } else if (OB_FAIL(client_info.get_cluster_name(default_cluster_name))) {
+      LOG_WARN("fail to get cluster name", K(ret));
+    } else if (OB_FAIL(ObMysqlPacketWriter::write_packet(*target_hsr_buf, target_hsr))) {
+      PROXY_CS_LOG(WARN, "fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
+    } else if (OB_FAIL(ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(
+                                            target_ctx, target_hsr_reader, 
+                                            default_tenant_name, default_cluster_name))) {
+      PROXY_CS_LOG(WARN, "fail to init request analyze context", K(ret));
+    } else {
+      ObMysqlAnalyzeStatus status = ANALYZE_CONT;
+      obmysql::ObMySQLCmd tmp_req_cmd = obmysql::OB_MYSQL_COM_MAX_NUM;
+      ObProxyMysqlRequest tmp_request;
+      auth_req.reset();
+      ObMysqlRequestAnalyzer::analyze_request(target_ctx, auth_req,
+                                              tmp_request, tmp_req_cmd, status);
+      if (OB_UNLIKELY(ANALYZE_DONE != status)) {
+        ret = OB_ERR_UNEXPECTED;
+        PROXY_CS_LOG(WARN, "fail to analyze request", K(status), K(ret));
+      } else {
+        ObProxySessionPrivInfo &priv_info = client_info.get_priv_info();
+        priv_info.cluster_name_ = auth_req.get_hsr_result().cluster_name_;
+        priv_info.tenant_name_ = auth_req.get_hsr_result().tenant_name_;
+        priv_info.user_name_ = auth_req.get_hsr_result().user_name_;
+        PROXY_CS_LOG(DEBUG, "rewrite change user login req", K(auth_req.get_hsr_result()));
+      }
+    }
+  }
+  
+  // 4. free the buffer if need
+  if (OB_LIKELY(NULL != target_hsr_buf)) {
+    free_miobuffer(target_hsr_buf);
+    target_hsr_buf = NULL;
+    target_hsr_reader = NULL;
   }
   return ret;
 }

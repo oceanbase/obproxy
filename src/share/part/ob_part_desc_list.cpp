@@ -21,6 +21,7 @@ namespace common
 ObPartDescList::ObPartDescList() : part_array_ (NULL)
                                    , part_array_size_(0)
                                    , default_part_array_idx_(OB_INVALID_INDEX)
+                                   , collation_type_(CS_TYPE_UTF8MB4_BIN)
 {
 }
 
@@ -34,13 +35,8 @@ int64_t ObPartDescList::to_string(char *buf, const int64_t buf_len) const
   int64_t pos = 0;
   J_OBJ_START();
 
-  J_KV("part_type", "list");
-  J_COMMA();
-  for (int64_t i = 0; i < part_array_size_; ++i) {
-    J_KV("part_id", i, "part_array", part_array_[i]);
-    J_COMMA();
-  }
-
+  J_KV("part_type", "list",
+       K_(part_array_size));
   J_OBJ_END();
   return pos;
 }
@@ -54,7 +50,6 @@ int ObPartDescList::get_part(ObNewRange &range,
                              ObIArray<int64_t> &part_ids)
 {
   int ret = OB_SUCCESS;
-  part_ids.reset();
 
   if (OB_ISNULL(part_array_)
       || OB_UNLIKELY(part_array_size_ <= 0)) {
@@ -101,17 +96,28 @@ int ObPartDescList::get_part(ObNewRange &range,
   return ret;
 }
 
+int ObPartDescList::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+{
+  int ret = OB_SUCCESS;
+  int64_t part_idx = num % part_array_size_;
+  if (OB_FAIL(part_ids.push_back(part_array_[part_idx].part_id_))) {
+    COMMON_LOG(WARN, "fail to push part_id", K(ret));
+  }
+  return ret;
+}
+
 inline int ObPartDescList::cast_obj(ObObj &src_obj,
-                                    const ObObj &target_obj,
+                                    ObObj &target_obj,
                                     ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
-  src_obj.set_collation_type(target_obj.get_collation_type());
+  COMMON_LOG(DEBUG, "begin to cast obj for list", K(src_obj), K(target_obj), K_(collation_type));
   ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, target_obj.get_collation_type());
   // use src_obj as buf_obj
-  if (OB_FAIL(ObObjCasterV2::to_type(target_obj.get_type(), cast_ctx, src_obj, src_obj))) {
-    COMMON_LOG(INFO, "failed to cast obj", K(src_obj), K(target_obj), K(ret));
+  if (OB_FAIL(ObObjCasterV2::to_type(target_obj.get_type(), collation_type_, cast_ctx, src_obj, src_obj))) {
+    COMMON_LOG(WARN, "failed to cast obj", K(src_obj), K(target_obj), K_(collation_type), K(ret));
   }
+  COMMON_LOG(DEBUG, "end to cast obj for list", K(src_obj), K(target_obj), K_(collation_type));
   return ret;
 }
 

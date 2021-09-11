@@ -1357,11 +1357,17 @@ int ObSessionFieldMgr::format_all_var(ObSqlString &sql) const
       for (int64_t i = 0; OB_SUCC(ret) && i < block->free_idx_; ++i) {
         field = const_cast<ObSessionSysField *>(block->field_slots_ + i);
         if (OB_FIELD_USED == field->stat_) {
-          if (OB_FAIL(field->format(sql))) {
-            LOG_WARN("construct sql failed", K(ret));
+          var_name.assign(const_cast<char *>(field->name_), field->name_len_);
+          hash_ret = local_var_set.exist_refactored(var_name);
+          if (OB_HASH_EXIST == hash_ret) {
+            // do nothing
+          } else if (OB_HASH_NOT_EXIST != hash_ret) {
+            ret = hash_ret;
+            LOG_WARN("local_var_set set failed", K(ret));
           } else {
-            var_name.assign(const_cast<char *>(field->name_), field->name_len_);
-            if (OB_FAIL(local_var_set.set_refactored(var_name))) {
+            if (OB_FAIL(field->format(sql))) {
+              LOG_WARN("construct sql failed", K(ret));
+            } else if (OB_FAIL(local_var_set.set_refactored(var_name))) {
               LOG_WARN("local_var_set set failed", K(ret));
             }
           }
@@ -2740,6 +2746,8 @@ int ObDefaultSysVarSet::load_default_system_variable()
     LOG_WARN("fail to load default sysvar tx_read_only", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_READ_CONSISTENCY), 3, both_scope, print_info_log))) {
     LOG_WARN("fail to load default sysvar ob_read_consistency", K(ret));
+  } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_COLLATION_CONNECTION), 45, both_scope, print_info_log))) {
+    LOG_WARN("fail to load default sysvar collation_connection", K(ret));
   }
   return ret;
 }

@@ -81,7 +81,8 @@ public:
 
   int init(const common::ObString &user_name,
            const common::ObString &password,
-           const common::ObString &database);
+           const common::ObString &database,
+           const common::ObString &password1 = "");
 
   int sync_raw_execute(const char *sql, const int64_t timeout_ms, ObClientMysqlResp *&resp);
 

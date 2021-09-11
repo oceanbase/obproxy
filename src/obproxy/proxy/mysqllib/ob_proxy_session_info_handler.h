@@ -146,6 +146,10 @@ public:
                                       const common::ObString &server_scramble,
                                       const common::ObString &proxy_scramble,
                                       const common::ObAddr &client_addr);
+  
+  static int rewrite_change_user_login_req(ObClientSessionInfo &client_info,
+                                           const common::ObString& username,
+                                           const common::ObString& auth_response);
 
   static void assign_database_version(ObClientSessionInfo &client_info,
                                       ObServerSessionInfo &server_info);

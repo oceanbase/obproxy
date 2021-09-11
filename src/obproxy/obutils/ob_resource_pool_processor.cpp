@@ -165,9 +165,10 @@ int ObRslistFetchCont::init_task()
 {
   int ret = OB_SUCCESS;
 
+  ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
+
   if (OB_LIKELY(get_global_proxy_config().with_config_server_)) {
     ObSEArray<ObAddr, 5> rs_list;
-    ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
     if (OB_FAIL(cs_processor.get_newest_cluster_rs_list(cr_->get_cluster_name(),
                                                         cr_->get_cluster_id(), rs_list, need_update_dummy_entry_))) {
       LOG_WARN("fail to get cluster rslist", K_(cr_->cluster_info_key), K(ret));
@@ -176,6 +177,16 @@ int ObRslistFetchCont::init_task()
     }
   } else {
     fetch_result_ = true;
+  }
+
+  if (!fetch_result_) {
+    // If rstlist is started, do not modify the rslist_hash value
+    bool need_save_rslist_hash = get_global_proxy_config().with_config_server_;
+    if (OB_FAIL(cs_processor.swap_origin_web_rslist_and_build_sys(cr_->get_cluster_name(), cr_->get_cluster_id(), need_save_rslist_hash))) {
+      LOG_WARN("fail to swap origin web rslist", K_(cr_->cluster_info_key), K(ret));
+    } else {
+      fetch_result_ = true;
+    }
   }
 
   LOG_DEBUG("finish to ObRslistFetchCont", K_(cr_->cluster_info_key), K(ret));
@@ -204,6 +215,7 @@ int ObIDCListFetchCont::init_task()
   if (OB_FAIL(cs_processor.refresh_idc_list(cr_->get_cluster_name(), cr_->get_cluster_id(), idc_list))) {
     LOG_INFO("fail to refresh_idc_list", "cluster_name", cr_->get_cluster_name(),
              "cluster_id", cr_->get_cluster_id(), K(ret));
+    fetch_result_ = true;
   } else {
     fetch_result_ = true;
   }
@@ -1464,8 +1476,9 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
   const ObString user_name(ObProxyTableInfo::READ_ONLY_USERNAME);
   const ObString database(ObProxyTableInfo::READ_ONLY_DATABASE);
   ObString password(get_global_proxy_config().observer_sys_password.str());
+  ObString password1(get_global_proxy_config().observer_sys_password1.str());
 
-  if (OB_FAIL(mysql_proxy_.init(timeout_ms, user_name, password, database))) {
+  if (OB_FAIL(mysql_proxy_.init(timeout_ms, user_name, password, database, password1))) {
     LOG_WARN("fail to init mysql proxy", K(ret));
   } else if (OB_FAIL(rebuild_mysql_client_pool(
              get_global_resource_pool_processor().get_default_cluster_resource()))) {
@@ -1594,9 +1607,10 @@ int ObClusterResource::rebuild_mysql_client_pool(ObClusterResource *cr)
     const ObString user_name(ObProxyTableInfo::READ_ONLY_USERNAME);
     const ObString database(ObProxyTableInfo::READ_ONLY_DATABASE);
     ObString password(get_global_proxy_config().observer_sys_password.str());
+    ObString password1(get_global_proxy_config().observer_sys_password1.str());
     const bool is_meta_mysql_client = (get_global_resource_pool_processor().get_default_cluster_resource() == cr);
     if (OB_FAIL(mysql_proxy_.rebuild_client_pool(cr, is_meta_mysql_client, get_cluster_name(), get_cluster_id(), user_name,
-                password, database))) {
+                password, database, password1))) {
       LOG_WARN("fail to create mysql client pool", K(ret));
     }
   }

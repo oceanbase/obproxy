@@ -811,11 +811,44 @@ int ObProxyJsonConfigInfo::parse(const Value *json_value)
 int ObProxyJsonConfigInfo::parse_local_rslist(const Value *root)
 {
   int ret = OB_SUCCESS;
-  bool is_from_local = true;
-  if (OB_FAIL(parse_rslist_array_data(root, ObString::make_empty_string(), is_from_local))) {
-    LOG_WARN("fail to parse rs list array data for local rslist", K(ret));
+  if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(root, JT_ARRAY))) {
+    LOG_WARN("fail to check local rs list", K(ret));
   } else {
-    LOG_DEBUG("succ to parse all local rslist");
+    bool is_from_local = true;
+    ObString app_name = ObString::make_empty_string();
+
+    int64_t json_cluster_id = OB_DEFAULT_CLUSTER_ID;
+    LocationList web_rslist;
+    bool is_primary = false;
+    ObString cluster_name;
+
+    DLIST_FOREACH(it, root->get_array()) {
+      json_cluster_id = OB_DEFAULT_CLUSTER_ID;
+      web_rslist.reuse();
+      is_primary = false;
+      cluster_name.reset();
+      if (OB_FAIL(parse_rslist_data(it, app_name, json_cluster_id, web_rslist, is_primary, cluster_name, is_from_local))) {
+        if (OB_EAGAIN == ret) {
+          // here e_again means local rslist for this cluster is empty, do nothing and go on parsing
+          ret = OB_SUCCESS;
+        } else {
+          LOG_WARN("fail to parse rslist data", K(ret));
+        }
+      }
+
+      if (OB_SUCC(ret) && is_primary) {
+        int64_t master_cluster_id = OB_DEFAULT_CLUSTER_ID;
+        if (OB_FAIL(get_master_cluster_id(cluster_name, master_cluster_id))) {
+          LOG_WARN("fail to get master cluster id",  K(cluster_name), K(ret));
+        } else if (OB_DEFAULT_CLUSTER_ID == master_cluster_id) {
+          if (OB_FAIL(set_master_cluster_id(cluster_name, json_cluster_id))) {
+            LOG_WARN("fail to set master cluster id",  K(json_cluster_id), K(ret));
+          } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name, OB_DEFAULT_CLUSTER_ID, web_rslist, !is_from_local))) {
+            LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(web_rslist), K(ret));
+          }
+        }
+      }
+    }  //end traverse rs list array
   }
   return ret;
 }
@@ -1026,7 +1059,10 @@ int ObProxyJsonConfigInfo::parse_remote_rslist(const Value *root, const ObString
     if (OB_FAIL(parse_rslist_data(value, appname, json_cluster_id, web_rslist, is_primary,
                                   cluster_name, is_from_local, need_update_dummy_entry)) && OB_EAGAIN != ret) {
       LOG_WARN("fail to parse remote rslist data", K(ret));
-    } else if (OB_DEFAULT_CLUSTER_ID == cluster_id || is_primary) {
+    // If there is no cluster id, there must be no active/standby case.
+    // It must be set, otherwise the cluster resource of the main library cannot be obtained when get_cluster_resource
+    // If you bring the cluster id, because you want to access a specific library, the main library information is not updated
+    } else if (OB_DEFAULT_CLUSTER_ID == cluster_id) {
       if (OB_FAIL(set_master_cluster_id(is_from_local ? cluster_name : appname, json_cluster_id))) {
         LOG_WARN("fail to set master cluster id",  K(json_cluster_id), K(ret));
       } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(
@@ -1116,26 +1152,28 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
       }
     }
 
-    const bool is_rslist = !is_from_local;
-    web_rslist.reuse();
-    if (OB_FAIL(parse_rslist_item(rslist, is_from_local ? cluster_name : appname, web_rslist, false))) {
-      LOG_WARN("fail to parse rslist item", K(rslist), K(ret));
-    } else if (NULL != readonly_rslist
-        && OB_FAIL(parse_rslist_item(readonly_rslist, is_from_local ? cluster_name : appname, web_rslist, true))) {
-      LOG_WARN("fail to parse readonly_rslist item", K(readonly_rslist), K(ret));
-    } else if (OB_FAIL(reset_create_failure_count(is_from_local ? cluster_name : appname, json_cluster_id))) {
-      LOG_WARN("fail to reset_create_failure_count", K(json_cluster_id), K(ret));
-    } else if (web_rslist.empty()) {
-      LOG_INFO("rslist is empty", K(web_rslist), K(json_cluster_id), K(cluster_name));
-    } else if (OB_FAIL(set_cluster_web_rs_list(is_from_local ? cluster_name : appname, json_cluster_id, web_rslist,
-                                               role_str.empty() ? ObString::make_string(PRIMARY_ROLE) : role_str))) {
-      if (OB_EAGAIN == ret) {
-        LOG_DEBUG("web rslist is not changed, no need to update", K(role_str), K(ret));
-        ret = OB_SUCCESS;
-      } else {
-        LOG_WARN("fail to set cluster web rs list", K(web_rslist), K(role_str), K(ret));
+    if (OB_SUCC(ret)) {
+      web_rslist.reuse();
+      if (OB_FAIL(parse_rslist_item(rslist, is_from_local ? cluster_name : appname, web_rslist, false))) {
+        LOG_WARN("fail to parse rslist item", K(rslist), K(ret));
+      } else if (NULL != readonly_rslist
+          && OB_FAIL(parse_rslist_item(readonly_rslist, is_from_local ? cluster_name : appname, web_rslist, true))) {
+        LOG_WARN("fail to parse readonly_rslist item", K(readonly_rslist), K(ret));
+      } else if (OB_FAIL(reset_create_failure_count(is_from_local ? cluster_name : appname, json_cluster_id))) {
+        LOG_WARN("fail to reset_create_failure_count", K(json_cluster_id), K(ret));
+      } else if (web_rslist.empty()) {
+        LOG_INFO("rslist is empty", K(web_rslist), K(json_cluster_id), K(cluster_name));
+      } else if (OB_FAIL(set_cluster_web_rs_list(is_from_local ? cluster_name : appname, json_cluster_id, web_rslist,
+                                                 web_rslist, role_str.empty() ? ObString::make_string(PRIMARY_ROLE) : role_str))) {
+        if (OB_EAGAIN == ret) {
+          LOG_DEBUG("web rslist is not changed, no need to update", K(role_str), K(ret));
+          ret = OB_SUCCESS;
+        } else {
+          LOG_WARN("fail to set cluster web rs list", K(web_rslist), K(role_str), K(ret));
+        }
       }
     }
+
     if (OB_SUCC(ret)) {
       if (role_str.empty() || role_str.case_compare(PRIMARY_ROLE) == 0) {
         is_primary = true;
@@ -1153,6 +1191,7 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
         }
       }
       if (OB_SUCC(ret) && need_update_dummy_entry) {
+        const bool is_rslist = !is_from_local;
         if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(
             is_from_local ? cluster_name : appname, json_cluster_id, web_rslist, is_rslist))) {
           LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(cluster_id), K(web_rslist), K(ret));
@@ -1160,6 +1199,36 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
       }
     }
   }
+  return ret;
+}
+
+int ObProxyJsonConfigInfo::swap_origin_web_rslist_and_build_sys(const ObString &cluster_name, const int64_t cluster_id, const bool need_save_rslist_hash)
+{
+  int ret = OB_SUCCESS;
+  ObProxySubClusterInfo *sub_cluster_info = NULL;
+  if (OB_FAIL(reset_create_failure_count(cluster_name, cluster_id))) {
+    LOG_WARN("fail to reset_create_failure_count", K(cluster_name), K(cluster_id), K(ret));
+  } else if (OB_FAIL(get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
+    LOG_WARN("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
+  } else if (OB_ISNULL(sub_cluster_info)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
+  } else {
+    LOG_INFO("will update rslist", K(cluster_name), K(cluster_id),
+             "real cluster_id", sub_cluster_info->cluster_id_,
+             "old rslist", sub_cluster_info->web_rs_list_,
+             "new rslist", sub_cluster_info->origin_web_rs_list_);
+    if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(sub_cluster_info->origin_web_rs_list_))) {
+      LOG_WARN("fail to set cluster web_rs_list", K(cluster_name), K(cluster_id),
+               "origin_web_rs_list", sub_cluster_info->origin_web_rs_list_, K(ret));
+    } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name, cluster_id, sub_cluster_info->origin_web_rs_list_, true))) {
+      LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(cluster_id),
+               "origin_web_rs_list", sub_cluster_info->origin_web_rs_list_, K(ret));
+    } else if (need_save_rslist_hash) {
+      sub_cluster_info->rs_list_hash_ = ObProxyClusterInfo::get_server_list_hash(sub_cluster_info->origin_web_rs_list_);
+    }
+  }
+
   return ret;
 }
 
@@ -1701,14 +1770,14 @@ int ObProxyJsonConfigInfo::copy_bin_url(char *bin_url, const int64_t len) const
 }
 
 int ObProxyJsonConfigInfo::set_cluster_web_rs_list(const ObString &cluster_name, const int64_t cluster_id,
-    const LocationList &web_rs_list, const ObString &role, const uint64_t cur_rs_list_hash/*0*/)
+    const LocationList &web_rs_list, const LocationList &origin_web_rs_list, const ObString &role, const uint64_t cur_rs_list_hash/*0*/)
 {
   int ret = OB_SUCCESS;
   ObProxyClusterInfo *cluster_info = NULL;
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   bool new_sub_cluster_info = false;
-  if (web_rs_list.empty()) {
-    LOG_INFO("rslist is empty", K(web_rs_list), K(cluster_name));
+  if (web_rs_list.empty() && origin_web_rs_list.empty()) {
+    LOG_INFO("rslist is empty", K(web_rs_list), K(origin_web_rs_list), K(cluster_name));
   } else {
     if (cluster_name == OB_META_DB_CLUSTER_NAME) {
       cluster_info = const_cast<ObProxyClusterInfo *>(&data_info_.meta_table_info_.cluster_info_);
@@ -1739,30 +1808,34 @@ int ObProxyJsonConfigInfo::set_cluster_web_rs_list(const ObString &cluster_name,
       if (OB_ISNULL(sub_cluster_info)) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("sub cluster info is null", K(ret));
-      } else if (!sub_cluster_info->is_web_rs_list_changed(web_rs_list)
-                 && !sub_cluster_info->is_cluster_role_changed(role)) {
-        ret = OB_EAGAIN;
-      } else {
-        LOG_INFO("will update rslist",
-                 "old rslist", sub_cluster_info->web_rs_list_,
-                 "new rslist", web_rs_list,
-                 "old cluster role", cluster_role_to_str(sub_cluster_info->role_),
-                 K(role), K(cluster_name), K(cluster_id));
-        if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(web_rs_list))) {
-          LOG_WARN("fail to set cluster web_rs_list", K(cluster_name), K(cluster_id), K(web_rs_list), K(ret));
+      } else if (!origin_web_rs_list.empty() && OB_FAIL(sub_cluster_info->origin_web_rs_list_.assign(origin_web_rs_list))) {
+        LOG_WARN("fail to set cluster origin_web_rs_list", K(cluster_name), K(cluster_id), K(origin_web_rs_list), K(ret));
+      } else if (!web_rs_list.empty()) {
+        if (!sub_cluster_info->is_web_rs_list_changed(web_rs_list)
+                   && !sub_cluster_info->is_cluster_role_changed(role)) {
+          ret = OB_EAGAIN;
         } else {
-          if (0 == cur_rs_list_hash) {
-            sub_cluster_info->rs_list_hash_ = ObProxyClusterInfo::get_server_list_hash(web_rs_list);
+          LOG_INFO("will update rslist",
+                   "old rslist", sub_cluster_info->web_rs_list_,
+                   "new rslist", web_rs_list,
+                   "old cluster role", cluster_role_to_str(sub_cluster_info->role_),
+                   K(role), K(cluster_name), K(cluster_id));
+          if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(web_rs_list))) {
+            LOG_WARN("fail to set cluster web_rs_list", K(cluster_name), K(cluster_id), K(web_rs_list), K(ret));
           } else {
-            sub_cluster_info->rs_list_hash_ =  cur_rs_list_hash;
-          }
-          if (role.case_compare(PRIMARY_ROLE) == 0) {
-            sub_cluster_info->role_ = PRIMARY;
-          } else if (role.case_compare(STANDBY_ROLE) == 0) {
-            sub_cluster_info->role_ = STANDBY;
-          } else {
-            ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpected role", K(role), K(cluster_name), K(cluster_id), K(ret));
+            if (0 == cur_rs_list_hash) {
+              sub_cluster_info->rs_list_hash_ = ObProxyClusterInfo::get_server_list_hash(web_rs_list);
+            } else {
+              sub_cluster_info->rs_list_hash_ =  cur_rs_list_hash;
+            }
+            if (role.case_compare(PRIMARY_ROLE) == 0) {
+              sub_cluster_info->role_ = PRIMARY;
+            } else if (role.case_compare(STANDBY_ROLE) == 0) {
+              sub_cluster_info->role_ = STANDBY;
+            } else {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("unexpected role", K(role), K(cluster_name), K(cluster_id), K(ret));
+            }
           }
         }
       }
@@ -1886,7 +1959,7 @@ int ObProxyJsonConfigInfo::add_default_cluster_info(ObProxyClusterInfo *cluster_
 {
   int ret = OB_SUCCESS;
   int64_t default_cluster_id = OB_DEFAULT_CLUSTER_ID;
-  bool is_rslist = true;
+  bool is_rslist = false;
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_ISNULL(cluster_info)) {
     ret = OB_INVALID_ARGUMENT;
@@ -1898,7 +1971,9 @@ int ObProxyJsonConfigInfo::add_default_cluster_info(ObProxyClusterInfo *cluster_
     cluster_info->master_cluster_id_ = default_cluster_id;
     sub_cluster_info->cluster_id_ = default_cluster_id;
     sub_cluster_info->role_ = PRIMARY;
-    if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(web_rs_list))) {
+    if (OB_FAIL(sub_cluster_info->origin_web_rs_list_.assign(web_rs_list))) {
+      LOG_WARN("fail to set default cluster origin_web_rs_list", K(cluster_info), K(web_rs_list), K(ret));
+    } else if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(web_rs_list))) {
       LOG_WARN("fail to set default cluster web_rs_list", K(cluster_info), K(web_rs_list), K(ret));
     } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(
             cluster_info->cluster_name_, default_cluster_id, web_rs_list, is_rslist))) {

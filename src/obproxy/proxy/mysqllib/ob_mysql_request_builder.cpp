@@ -100,7 +100,6 @@ int ObMysqlRequestBuilder::build_all_session_vars_sync_packet(ObMIOBuffer &mio_b
 
     if (OB_SUCC(ret)) {
       server_session->set_compressed_seq(compressed_seq);
-      client_info.set_need_sync_session_vars(false);
       LOG_DEBUG("will sync all session variables", K(reset_sql));
     } else {
       LOG_WARN("fail to write buffer", K(cmd), K(reset_sql), K(ob_proxy_protocol), K(ret));
@@ -135,7 +134,6 @@ int ObMysqlRequestBuilder::build_session_vars_sync_packet(ObMIOBuffer &mio_buf,
     }
 
     if (OB_SUCC(ret)) {
-      client_info.set_need_sync_session_vars(false);
       server_session->set_compressed_seq(compressed_seq);
       LOG_DEBUG("will sync session variables", K(reset_sql));
     } else {

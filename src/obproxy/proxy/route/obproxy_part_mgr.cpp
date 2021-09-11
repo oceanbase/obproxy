@@ -12,6 +12,7 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "proxy/route/obproxy_part_mgr.h"
+#include "proxy/route/obproxy_part_info.h"
 #include "share/part/ob_part_desc_hash.h"
 #include "share/part/ob_part_desc_key.h"
 #include "share/part/ob_part_desc_range.h"
@@ -63,13 +64,25 @@ int ObProxyPartMgr::get_part_with_part_name(const ObString &part_name,
   return ret;
 }
 
+int ObProxyPartMgr::get_first_part_id_by_idx(const int64_t idx, int64_t &part_id)
+{
+  int ret = OB_SUCCESS;
+  if (idx < 0 || idx >= first_part_num_ || OB_ISNULL(part_pair_array_)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("fail to get part id by idx", K(ret), K(idx), K(first_part_num_), K(part_pair_array_));
+  } else {
+    part_id = part_pair_array_[idx].get_part_id();
+  }
+  return ret;
+}
+
 int ObProxyPartMgr::get_first_part(ObNewRange &range,
                                    ObIAllocator &allocator,
                                    ObIArray<int64_t> &part_ids)
 {
   int ret = OB_SUCCESS;
 
-  if (NULL != first_part_desc_) {
+  if (OB_NOT_NULL(first_part_desc_)) {
     ret = first_part_desc_->get_part(range, allocator, part_ids);
   } else {
     ret = OB_INVALID_ARGUMENT;
@@ -81,28 +94,26 @@ int ObProxyPartMgr::get_first_part(ObNewRange &range,
   return ret;
 }
 
-int ObProxyPartMgr::get_sub_part(const bool is_template_table,
-                                 const int64_t first_part_id,
-                                 ObNewRange &range,
-                                 ObIAllocator &allocator,
-                                 ObIArray<int64_t> &part_ids)
+int ObProxyPartMgr::get_sub_part_desc_by_first_part_id(const bool is_template_table,
+                                                       const int64_t first_part_id,
+                                                       ObPartDesc *&sub_part_desc_ptr)
 {
   int ret = OB_SUCCESS;
 
-  if (NULL != sub_part_desc_) {
-    ObPartDesc *sub_part_desc = NULL;
-
+  if (OB_LIKELY(is_sub_part_valid())) {
+    ObPartDesc *sub_part_desc_tmp = NULL;
+    
     if (is_template_table) {
-      sub_part_desc = sub_part_desc_;
+      sub_part_desc_tmp = sub_part_desc_;
     } else {
       const ObPartitionFuncType sub_part_func_type = sub_part_desc_->get_part_func_type();
-      for (int i = 0; i < first_part_num_; i++) {
+      for (int64_t i = 0; i < first_part_num_; ++i) {
         if (is_range_part(sub_part_func_type)) {
           ObPartDescRange *desc_range = (((ObPartDescRange*)sub_part_desc_) + i);
           RangePartition *part_array = desc_range->get_part_array();
           // use first sub partition of everty first partition to get firt partition id
           if (first_part_id == part_array[0].first_part_id_) {
-            sub_part_desc = desc_range;
+            sub_part_desc_tmp = desc_range;
             break;
           }
         } else if (is_list_part(sub_part_func_type)) {
@@ -110,36 +121,75 @@ int ObProxyPartMgr::get_sub_part(const bool is_template_table,
           ListPartition *part_array = desc_list->get_part_array();
           // use first sub partition of everty first partition to get firt partition id
           if (first_part_id == part_array[0].first_part_id_) {
-            sub_part_desc = desc_list;
+            sub_part_desc_tmp = desc_list;
             break;
           }
         } else if (is_hash_part(sub_part_func_type)) {
           ObPartDescHash *desc_hash = (((ObPartDescHash*)sub_part_desc_) + i);
           if (first_part_id == desc_hash->get_first_part_id()) {
-            sub_part_desc = desc_hash;
+            sub_part_desc_tmp = desc_hash;
             break;
           }
         } else if (is_key_part(sub_part_func_type)) {
           ObPartDescKey *desc_key = (((ObPartDescKey*)sub_part_desc_) + i);
           if (first_part_id == desc_key->get_first_part_id()) {
-            sub_part_desc = desc_key;
+            sub_part_desc_tmp = desc_key;
             break;
           }
+        } else {
+          // nothing.
         }
       }
     }
-    if (NULL != sub_part_desc) {
-      if (OB_FAIL(sub_part_desc->get_part(range, allocator, part_ids))) {
-        LOG_WARN("fail to get part", K(sub_part_desc), K(ret));
-      }
+
+    if (OB_NOT_NULL(sub_part_desc_tmp)) {
+      sub_part_desc_ptr = sub_part_desc_tmp;
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to get part, no sub_part_desc", K(ret));
+      LOG_WARN("fail to get sub part desc ptr", K(ret));
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get part, no sub_part_desc", K(ret));
+    LOG_WARN("fail to get sub part desc by first part id", K(ret));
   }
+  
+  return ret;
+}                                   
+
+int ObProxyPartMgr::get_sub_part(ObNewRange &range,
+                                 ObIAllocator &allocator,
+                                 ObPartDesc *sub_part_desc_ptr,
+                                 ObIArray<int64_t> &part_ids)
+{
+  int ret = OB_SUCCESS;
+  
+  if (OB_ISNULL(sub_part_desc_ptr)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("fail to get sub part, null ptr", K(ret));
+  } else {
+    if (OB_FAIL(sub_part_desc_ptr->get_part(range, allocator, part_ids))) {
+      LOG_WARN("fail to get sub part", K(sub_part_desc_ptr), K(ret));
+    }
+  }
+  
+  return ret;
+}
+
+int ObProxyPartMgr::get_sub_part_by_random(const int64_t rand_num, 
+                                           ObPartDesc *sub_part_desc_ptr,
+                                           ObIArray<int64_t> &part_ids)
+{
+  int ret = OB_SUCCESS;
+  
+  if (OB_ISNULL(sub_part_desc_ptr)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("fail to get sub part, null ptr", K(ret));
+  } else {
+    if (OB_FAIL(sub_part_desc_ptr->get_part_by_num(rand_num, part_ids))) {
+      LOG_WARN("fail to get sub part by random", K(sub_part_desc_ptr), K(ret));
+    }
+  }
+  
   return ret;
 }
 
@@ -422,6 +472,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
                                      const ObPartitionFuncType part_func_type,
                                      const int64_t part_num,
                                      const bool is_template_table,
+                                     const ObProxyPartKeyInfo &key_info,
                                      ObResultSetFetcher &rs_fetcher)
 {
   int ret = OB_SUCCESS;
@@ -509,6 +560,14 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
   if (OB_SUCC(ret)) {
     desc_range->set_part_level(part_level);
     desc_range->set_part_func_type(part_func_type);
+    for (int k = 0; k < key_info.key_num_; ++k) {
+      if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == part_level) {
+        if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
+          desc_range->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
+          break;
+        }
+      }
+    }
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_desc_ = desc_range;
     } else if (PARTITION_LEVEL_TWO == part_level) {
@@ -522,6 +581,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
 }
 
 int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFuncType part_func_type,
+                                                           const ObProxyPartKeyInfo &key_info,
                                                            ObResultSetFetcher &rs_fetcher)
 {
   int ret = OB_SUCCESS;
@@ -578,6 +638,14 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
     if (OB_SUCC(ret)) {
       desc_range->set_part_level(PARTITION_LEVEL_TWO);
       desc_range->set_part_func_type(part_func_type);
+      for (int k = 0; k < key_info.key_num_; ++k) {
+        if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == PARTITION_LEVEL_TWO) {
+          if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
+            desc_range->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
+            break;
+          }
+        }
+      }
       if (OB_FAIL(desc_range->set_part_array(part_array, sub_part_num_[i]))) {
         LOG_WARN("failed to set_part_array, unexpected ", K(ret));
       }
@@ -595,6 +663,7 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
                                     const ObPartitionFuncType part_func_type,
                                     const int64_t part_num,
                                     const bool is_template_table,
+                                    const ObProxyPartKeyInfo &key_info,
                                     ObResultSetFetcher &rs_fetcher)
 {
   int ret = OB_SUCCESS;
@@ -693,6 +762,14 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
   if (OB_SUCC(ret)) {
     desc_list->set_part_level(part_level);
     desc_list->set_part_func_type(part_func_type);
+    for (int k = 0; k < key_info.key_num_; ++k) {
+      if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == part_level) {
+        if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
+          desc_list->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
+          break;
+        }
+      }
+    }
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_desc_ = desc_list;
     } else if (PARTITION_LEVEL_TWO == part_level) {
@@ -706,6 +783,7 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
 }
 
 int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncType part_func_type,
+                                                          const ObProxyPartKeyInfo &key_info,
                                                           ObResultSetFetcher &rs_fetcher)
 {
   int ret = OB_SUCCESS;
@@ -777,6 +855,14 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
     if (OB_SUCC(ret)) {
       desc_list->set_part_level(PARTITION_LEVEL_TWO);
       desc_list->set_part_func_type(part_func_type);
+      for (int k = 0; k < key_info.key_num_; ++k) {
+        if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == PARTITION_LEVEL_TWO) {
+          if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
+            desc_list->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
+            break;
+          }
+        }
+      }
       if (OB_FAIL(desc_list->set_part_array(part_array, sub_part_num_[i]))) {
         LOG_WARN("failed to set_part_array, unexpected ", K(ret));
       }
@@ -787,6 +873,81 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
     sub_part_desc_ = sub_part_desc;
   }
 
+  return ret;
+}
+
+int ObProxyPartMgr::get_first_part_num(int64_t &num)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_first_part_valid())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("fail to get first part num", K(ret));
+  } else {
+    num = first_part_num_;
+  }
+  return ret;
+}
+
+int ObProxyPartMgr::get_sub_part_num_by_first_part_id(ObProxyPartInfo &part_info,
+                                                      const int64_t first_part_id,
+                                                      int64_t &num)
+{
+  int ret = OB_SUCCESS;
+  
+  if (part_info.is_template_table()) {
+    num = part_info.get_sub_part_option().part_num_;
+  } else {
+    if (OB_UNLIKELY(!is_sub_part_valid())) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("fail to get sub part num by first due to invalid sub part", K(ret));
+    } else {
+      int sub_ret = OB_INVALID_ARGUMENT;
+      const ObPartitionFuncType sub_part_func_type = sub_part_desc_->get_part_func_type();
+      
+      for (int64_t i = 0; i < first_part_num_; ++i) {
+        if (is_range_part(sub_part_func_type)) {
+          ObPartDescRange *desc_range = (((ObPartDescRange*)sub_part_desc_) + i);
+          RangePartition *part_array = desc_range->get_part_array();
+          if (first_part_id == part_array[0].first_part_id_) {
+            num = sub_part_num_[i];
+            sub_ret = OB_SUCCESS;
+            break;
+          }
+        } else if (is_list_part(sub_part_func_type)) {
+          ObPartDescList *desc_list = (((ObPartDescList*)sub_part_desc_) + i);
+          ListPartition *part_array = desc_list->get_part_array();
+          if (first_part_id == part_array[0].first_part_id_) {
+            num = sub_part_num_[i];
+            sub_ret = OB_SUCCESS;
+            break;
+          }
+        } else if (is_hash_part(sub_part_func_type)) {
+          ObPartDescHash *desc_hash = (((ObPartDescHash*)sub_part_desc_) + i);
+          if (first_part_id == desc_hash->get_first_part_id()) {
+            num = sub_part_num_[i];
+            sub_ret = OB_SUCCESS;
+            break;
+          }
+        } else if (is_key_part(sub_part_func_type)) {
+          ObPartDescKey *desc_key = (((ObPartDescKey*)sub_part_desc_) + i);
+          if (first_part_id == desc_key->get_first_part_id()) {
+            num = sub_part_num_[i];
+            sub_ret = OB_SUCCESS;
+            break;
+          }
+        } else {
+          LOG_WARN("unsupported partition func type", K(sub_part_func_type));
+          break;
+        }
+      }
+
+      if (OB_FAIL(sub_ret)) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WARN("fail to get sub part num by first part id", K(ret));
+      }
+    }
+  }
+  
   return ret;
 }
 
@@ -802,19 +963,19 @@ int64_t ObProxyPartMgr::to_string(char *buf, const int64_t buf_len) const
   if (NULL != sub_part_desc_ && NULL != sub_part_num_) {
     const ObPartitionFuncType sub_part_func_type = sub_part_desc_->get_part_func_type();
     ObPartDesc *sub_part_desc = NULL;
-    for (int64_t i = 0; i < first_part_num_; ++i) {
-      if (is_range_part(sub_part_func_type)) {
-        sub_part_desc = (((ObPartDescRange*)sub_part_desc_) + i);
-      } else if (is_list_part(sub_part_func_type)) {
-        sub_part_desc = (((ObPartDescList*)sub_part_desc_) + i);
-      } else if (is_hash_part(sub_part_func_type)) {
-        sub_part_desc = (((ObPartDescHash*)sub_part_desc_) + i);
-      } else if (is_key_part(sub_part_func_type)) {
-        sub_part_desc = (((ObPartDescKey*)sub_part_desc_) + i);
-      }
-      J_KV("first_part_id", i, KPC(sub_part_desc));
-      J_COMMA();
+    int i = 0;
+    // If it is a non-template partition, only print the first secondary partition to avoid too many logs
+    if (is_range_part(sub_part_func_type)) {
+      sub_part_desc = (((ObPartDescRange*)sub_part_desc_) + i);
+    } else if (is_list_part(sub_part_func_type)) {
+      sub_part_desc = (((ObPartDescList*)sub_part_desc_) + i);
+    } else if (is_hash_part(sub_part_func_type)) {
+      sub_part_desc = (((ObPartDescHash*)sub_part_desc_) + i);
+    } else if (is_key_part(sub_part_func_type)) {
+      sub_part_desc = (((ObPartDescKey*)sub_part_desc_) + i);
     }
+    J_KV("first_part_id", i, KPC(sub_part_desc));
+    J_COMMA();
   } else {
     J_KV(KPC_(sub_part_desc));
   }

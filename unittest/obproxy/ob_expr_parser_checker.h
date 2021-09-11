@@ -30,9 +30,10 @@ public:
   ~ObExprParserChecker() {}
 
   // parse sql
-  bool run_parse_string(const common::ObString query_str, std::string &extra_str);
-  bool run_parse_std_string(std::string query_str, std::string extra_str);
-  int do_obproxy_parser(const common::ObString &query_str, ObExprParseResult &result);
+  bool run_parse_string(const common::ObString query_str, std::string &extra_str, common::ObCollationType connection_collation);
+  bool run_parse_std_string(std::string query_str, std::string extra_str, common::ObCollationType connection_collation);
+  bool run_parse_file(const char *filepath, std::string extra_str, common::ObCollationType connection_collation);
+  int do_obproxy_parser(const common::ObString &query_str, ObExprParseResult &result, common::ObCollationType connection_collation);
   int do_expr_resolver(opsql::ObExprResolverContext &ctx, opsql::ObExprResolverResult &result);
 
   void print_stat();

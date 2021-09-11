@@ -309,6 +309,9 @@ inline bool ObUnixNetVConnection::handle_read_from_net_error(ObEThread &thread,
     read_.triggered_ = false;
     nh_->read_ready_list_.remove(this);
   } else if (0 == total_read || OB_SYS_ECONNRESET == error) {
+    if (OB_SYS_ETIMEDOUT == error) {
+      PROXY_NET_LOG(INFO, "recv OB_SYS_ETIMEDOUT error when read, maybe KeepAlive fail");
+    }
     read_.triggered_ = false;
     nh_->read_ready_list_.remove(this);
     if (EVENT_DONE == read_signal_done(VC_EVENT_EOS)) {
@@ -354,6 +357,9 @@ inline bool ObUnixNetVConnection::handle_write_to_net_error(ObEThread &thread,
     nh_->write_ready_list_.remove(this);
     write_reschedule();
   } else if (0 == total_write || OB_SYS_ECONNRESET == error) {
+    if (OB_SYS_ETIMEDOUT == error) {
+      PROXY_NET_LOG(INFO, "recv OB_SYS_ETIMEDOUT erroru when write, maybe KeepAlive fail");
+    }
     write_.triggered_ = false;
     if (EVENT_DONE == write_signal_done(VC_EVENT_EOS)) {
       is_done = true;

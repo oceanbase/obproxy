@@ -53,6 +53,7 @@ namespace net
 #define EVENTIO_NETACCEPT       1
 #define EVENTIO_READWRITE_VC    2
 #define EVENTIO_ASYNC_SIGNAL    3
+#define EVENTIO_TIMER           4
 
 #ifdef USE_EDGE_TRIGGER_EPOLL
 #define USE_EDGE_TRIGGER 1

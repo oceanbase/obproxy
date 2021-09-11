@@ -282,6 +282,9 @@ void ObClientReuqestInfo::reset_names()
   user_name_.reset();
   database_name_.reset();
   password_.reset();
+  password0_.reset();
+  password1_.reset();
+  using_password_num_ = -1;
 }
 
 void ObClientReuqestInfo::reset_sql()
@@ -302,7 +305,8 @@ int64_t ObClientReuqestInfo::to_string(char *buf, const int64_t buf_len) const
 
 int ObClientReuqestInfo::set_names(const ObString &user_name,
                                    const ObString &password,
-                                   const ObString &database_name)
+                                   const ObString &database_name,
+                                   const ObString &password1)
 {
   int ret = OB_SUCCESS;
   if (user_name.empty()) {
@@ -310,7 +314,7 @@ int ObClientReuqestInfo::set_names(const ObString &user_name,
     LOG_WARN("user_name can not be NULL", K(user_name), K(ret));
   } else {
     reset_names();
-    int64_t total_len = user_name.length() + password.length() + database_name.length();
+    int64_t total_len = user_name.length() + password.length() + password1.length() + database_name.length();
     if (OB_ISNULL(name_ = static_cast<char *>(op_fixed_mem_alloc(total_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("fail to allocate mem", "alloc size", total_len, K(ret));
@@ -324,7 +328,18 @@ int ObClientReuqestInfo::set_names(const ObString &user_name,
       if (!password.empty()) {
         MEMCPY(name_ + pos, password.ptr(), password.length());
         password_.assign_ptr(name_ + pos, password.length());
+        password0_ = password_;
         pos += password.length();
+      }
+      
+      if (!password1.empty()) {
+        MEMCPY(name_ + pos, password1.ptr(), password1.length());
+        password1_.assign_ptr(name_ + pos, password1.length());
+        pos += password1.length();
+      }
+
+      if (!password.empty() && !password1.empty()) {
+        using_password_num_ = 0;
       }
 
       if (!database_name.empty()) {

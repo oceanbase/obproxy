@@ -34,6 +34,7 @@ enum ObCachedVariableType
   CACHED_INT_VAR_LOWER_CASE_TABLE_NAMES,
   CACHED_INT_VAR_TX_READ_ONLY,
   CACHED_INT_VAR_READ_CONSISTENCY,
+  CACHED_INT_VAR_COLLATION_CONNECTION,
   CACHED_VAR_MAX,
 };
 
@@ -50,6 +51,7 @@ public:
   int update_var(const ObCachedVariableType &type, const common::ObObj &obj);
 
   int64_t get_query_timeout() const { return get_int_var(CACHED_INT_VAR_QUERY_TIMEOUT); }
+  int64_t get_collation_connection() const { return get_int_var(CACHED_INT_VAR_COLLATION_CONNECTION); }
   int64_t get_trx_timeout() const { return get_int_var(CACHED_INT_VAR_TRX_TIMEOUT); }
   int64_t get_wait_timeout() const { return get_int_var(CACHED_INT_VAR_WAIT_TIMEOUT); }
   int64_t get_net_read_timeout() const { return get_int_var(CACHED_INT_VAR_NET_READ_TIMEOUT); }
@@ -60,6 +62,7 @@ public:
   int64_t get_read_consistency() const { return get_int_var(CACHED_INT_VAR_READ_CONSISTENCY); }
 
   const common::ObObj &get_query_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_QUERY_TIMEOUT); }
+  const common::ObObj &get_collation_connection_obj() const { return get_obj_var(CACHED_INT_VAR_COLLATION_CONNECTION); }
   const common::ObObj &get_trx_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_TRX_TIMEOUT); }
   const common::ObObj &get_wait_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_WAIT_TIMEOUT); }
   const common::ObObj &get_net_read_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_NET_READ_TIMEOUT); }

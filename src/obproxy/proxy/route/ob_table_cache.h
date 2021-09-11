@@ -140,6 +140,7 @@ struct ObGetTableEntryKey
     if (OB_LIKELY(NULL != table_entry)) {
       key.name_ = &table_entry->get_names();
       key.cr_version_ = table_entry->get_cr_version();
+      key.cr_id_ = table_entry->get_cr_id();
     }
     return key;
   }

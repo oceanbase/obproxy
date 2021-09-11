@@ -820,7 +820,10 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
                      && OB_FAIL(new_json_info->set_master_cluster_id(old_cluster_info.cluster_name_,
                      old_cluster_info.master_cluster_id_))) {
             LOG_WARN("fail to set cluster id", K(old_cluster_info), K(ret));
-          } else if (NULL != sub_cluster_info && OB_FAIL(new_json_info->set_cluster_web_rs_list(old_cluster_info.cluster_name_, old_cluster_info.master_cluster_id_, sub_cluster_info->web_rs_list_, ObString::make_string(cluster_role_to_str(sub_cluster_info->role_))))) {
+          } else if (NULL != sub_cluster_info
+                  && OB_FAIL(new_json_info->set_cluster_web_rs_list(old_cluster_info.cluster_name_, old_cluster_info.master_cluster_id_,
+                                                                    sub_cluster_info->web_rs_list_, sub_cluster_info->origin_web_rs_list_,
+                                                                    ObString::make_string(cluster_role_to_str(sub_cluster_info->role_))))) {
             if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
               LOG_WARN("fail to set cluster web rs_list", K(old_cluster_info), K(ret));
             } else {
@@ -861,7 +864,8 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
               }
               if (OB_FAIL(ret)) {
               } else if (OB_FAIL(new_json_info->set_cluster_web_rs_list(old_it->cluster_name_, sub_it->cluster_id_,
-                                                                 sub_it->web_rs_list_, ObString::make_string(cluster_role_to_str(sub_it->role_))))) {
+                                                                        sub_it->web_rs_list_, sub_it->origin_web_rs_list_,
+                                                                        ObString::make_string(cluster_role_to_str(sub_it->role_))))) {
                 if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
                   LOG_WARN("fail to set cluster web rs_list", KPC(old_it.value_), K(ret));
                 } else if (OB_EAGAIN == ret) {
@@ -1938,6 +1942,17 @@ int ObConfigServerProcessor::fetch_rs_list_from_url(const char *url, const ObStr
   return ret;
 }
 
+int ObConfigServerProcessor::swap_origin_web_rslist_and_build_sys(const ObString &cluster, const int64_t cluster_id, const bool need_save_rslist_hash)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(json_config_info_->swap_origin_web_rslist_and_build_sys(cluster, cluster_id, need_save_rslist_hash))) {
+    LOG_WARN("fail to parse remote rslist", K(cluster), K(cluster_id), K(ret));
+  }
+
+  return ret;
+}
+
 int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
     const ObString &cluster_name, const int64_t cluster_id, ObProxyIDCList &idc_list)
 {
@@ -1951,7 +1966,7 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
     LOG_ERROR("fail to alloc memory for region idc json info", K(ret));
   } else if (FALSE_IT(json.assign_buffer(buf, static_cast<int32_t>(OB_PROXY_CONFIG_BUFFER_SIZE)))) {
     // impossible
-  } else if (OB_FAIL(do_fetch_json_info(url, json))) {
+  } else if (OB_FAIL(do_fetch_json_info(url, json, CURL_IDC_TRANSFER_TIMEOUT))) {
     LOG_INFO("fail to fetch region idc json info", K(json), K(ret));
   } else {
     Value *root = NULL;
@@ -1996,7 +2011,7 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
   return ret;
 }
 
-int ObConfigServerProcessor::do_fetch_json_info(const char *url, ObString &json)
+int ObConfigServerProcessor::do_fetch_json_info(const char *url, ObString &json, int64_t timeout)
 {
   int ret = OB_SUCCESS;
 
@@ -2006,7 +2021,7 @@ int ObConfigServerProcessor::do_fetch_json_info(const char *url, ObString &json)
   } else {
     int64_t fetch_attempts = 0;
     do {
-      if (OB_FAIL(fetch_by_curl(url, CURL_TRANSFER_TIMEOUT,
+      if (OB_FAIL(fetch_by_curl(url, timeout,
           static_cast<void *>(&json), write_data))) {
         LOG_WARN("fail to fetch json info", "try attempts:", fetch_attempts, K(url), K(is_inited_), K(ret));
       }

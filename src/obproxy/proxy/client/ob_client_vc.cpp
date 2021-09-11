@@ -228,7 +228,8 @@ ObMysqlClient::ObMysqlClient()
     client_vc_(NULL), pool_(NULL),
     active_timeout_action_(NULL), common_mutex_(), action_(), active_timeout_ms_(0),
     next_action_(CLIENT_ACTION_UNDEFINED), request_buf_(NULL),
-    request_reader_(NULL), mysql_resp_(NULL), info_(), is_session_pool_client_(false)
+    request_reader_(NULL), mysql_resp_(NULL), info_(), is_session_pool_client_(false),
+    need_connect_retry_(false), retry_times_(0)
 {
   SET_HANDLER(&ObMysqlClient::main_handler);
 }
@@ -238,6 +239,7 @@ int ObMysqlClient::init(ObMysqlClientPool *pool,
                         const ObString &password,
                         const ObString &database,
                         const bool is_meta_mysql_client,
+                        const ObString &password1,
                         ClientPoolOption* client_pool_option)
 {
   int ret = OB_SUCCESS;
@@ -251,7 +253,7 @@ int ObMysqlClient::init(ObMysqlClientPool *pool,
   } else if (OB_ISNULL(mutex = new_proxy_mutex(CLIENT_VC_LOCK))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to allocate mutex", K(ret));
-  } else if (OB_FAIL(info_.set_names(user_name, password, database))) {
+  } else if (OB_FAIL(info_.set_names(user_name, password, database, password1))) {
     LOG_WARN("fail to set names", K(user_name), K(password), K(database), K(ret));
   } else {
     if (client_pool_option != NULL) {
@@ -344,6 +346,9 @@ int ObMysqlClient::post_request(
       LOG_WARN("fail to set request sql", K(request_param), K(ret));
     } else {
       active_timeout_ms_ = timeout_ms;
+      if (CLIENT_ACTION_CONNECT == next_action_ && info_.can_change_password()) {
+        retry_times_ = 1;
+      }
       if (OB_FAIL(do_post_request())) {
         LOG_WARN("fail to do post request", K(ret));
       } else if (OB_ISNULL(client_vc_)) {
@@ -433,15 +438,35 @@ int ObMysqlClient::main_handler(int event, void *data)
   if (0 == reentrancy_count_) {
     // here common_mutex_ is free or held by this thread, so we can ensure lock it
     MUTEX_LOCK(lock, common_mutex_, this_ethread());
-    if (is_request_complete_) {
-      if (OB_FAIL(handle_request_complete())) {
-        LOG_WARN("fail to handle request complete", K(ret));
+    if (OB_SUCCESS == ret && need_connect_retry_ && CLIENT_ACTION_CONNECT == next_action_) {
+      need_connect_retry_ = false;
+      retry_times_ = 0;
+      is_request_complete_ = false;
+      info_.change_password();
+      if (NULL != mysql_resp_) {
+        op_free(mysql_resp_);
+        if (OB_ISNULL(mysql_resp_ = op_alloc(ObClientMysqlResp))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WARN("fail to allocate ObClientMysqlResp", K(ret));
+        } else if (mysql_resp_->init()) {
+          LOG_WARN("fail to init client mysql resp", K(ret));
+        }
       }
-    }
 
-    if (terminate_) {
-      kill_this();
-      he_ret = EVENT_DONE;
+      if (OB_SUCC(ret)) {
+        do_post_request();
+      }
+    } else {
+      if (is_request_complete_) {
+        if (OB_FAIL(handle_request_complete())) {
+          LOG_WARN("fail to handle request complete", K(ret));
+        }
+      } 
+
+      if (terminate_) {
+        kill_this();
+        he_ret = EVENT_DONE;
+      }
     }
   }
   return he_ret;
@@ -456,6 +481,12 @@ int ObMysqlClient::transport_mysql_resp()
       // if fail to auth, free client_vc
       if (mysql_resp_->is_error_resp()) {
         // free client_vc
+        if (retry_times_ == 1 && CLIENT_ACTION_READ_LOGIN_RESP == next_action_) {
+          //do nothing
+          if (ER_ACCESS_DENIED_ERROR == mysql_resp_->get_err_code()) {
+            need_connect_retry_ = true;
+          }
+        }
         client_vc_->handle_event(VC_EVENT_EOS, NULL);
         client_vc_ = NULL;
         //Attention!! the request buf will be free by client session
@@ -696,6 +727,7 @@ int ObMysqlClient::do_next_action(void *data)
               LOG_WARN("fail to transfrom mysql resp", K(ret));
             }
           } else {
+            retry_times_ = 0;
             if (OB_FAIL(setup_read_autocommit_resp())) {
               LOG_WARN("fail to setup read autocommit resp", K(ret));
             } else if (OB_FAIL(forward_mysql_request())) {
@@ -1070,14 +1102,14 @@ void ObMysqlClient::kill_this()
 int ObMysqlClient::alloc(ObMysqlClientPool *pool, ObMysqlClient *&client,
     const ObString &user_name, const ObString &password,
     const ObString &database, const bool is_meta_mysql_client,
-    ClientPoolOption* client_pool_option)
+    const ObString &password1, ClientPoolOption* client_pool_option)
 {
   int ret = OB_SUCCESS;
   client = NULL;
   if (OB_ISNULL(client = op_alloc(ObMysqlClient))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to allocate ObMysqlClient", K(ret));
-  } else if (OB_FAIL(client->init(pool, user_name, password, database, is_meta_mysql_client, client_pool_option))) {
+  } else if (OB_FAIL(client->init(pool, user_name, password, database, is_meta_mysql_client, password1, client_pool_option))) {
     LOG_WARN("fail to init client", K(ret));
   }
   if (OB_FAIL(ret) && (NULL != client)) {

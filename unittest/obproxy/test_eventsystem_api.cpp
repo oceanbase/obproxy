@@ -202,7 +202,6 @@ void *thread_g_net_processor_start(void *data)
   UNUSED(data);
   int ret = OB_SUCCESS;
   net::ObNetOptions net_options;
-  net_options.poll_timeout_ = 10;
   net_options.max_connections_ = 8192;
   net_options.default_inactivity_timeout_ = 180000;
   net_options.max_client_connections_ = 0;

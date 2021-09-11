@@ -33,6 +33,7 @@ public:
   ObServerRoute()
     : table_entry_(NULL), dummy_entry_(NULL), part_entry_(NULL), cur_chosen_pl_(NULL),
       is_table_entry_from_remote_(false), is_part_entry_from_remote_(false),
+      has_dup_replica_(false), need_use_dup_replica_(false),
       consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
       ldc_route_(), valid_count_(0), cur_chosen_server_(),
       cur_chosen_route_type_(ROUTE_TYPE_MAX) {}
@@ -117,6 +118,8 @@ public:
   const ObProxyPartitionLocation *cur_chosen_pl_;
   bool is_table_entry_from_remote_;
   bool is_part_entry_from_remote_;
+  bool has_dup_replica_;
+  bool need_use_dup_replica_;
 
   common::ObConsistencyLevel consistency_level_;
   ObLDCItem leader_item_;
@@ -132,6 +135,8 @@ inline void ObServerRoute::reset()
 {
   is_table_entry_from_remote_ = false;
   is_part_entry_from_remote_ = false;
+  has_dup_replica_ = false;
+  need_use_dup_replica_ = false;
   set_dummy_entry(NULL);
   set_table_entry(NULL);
   set_part_entry(NULL);
@@ -186,11 +191,12 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
   if (OB_FAIL(ObLDCLocation::fill_strong_read_location(pl, dummy_ldc, leader_item_,
                                                     ldc_route_.location_, entry_need_update,
                                                     is_only_readwrite_zone,
+                                                    need_use_dup_replica_,
                                                     ss_info, region_names,
                                                     proxy_primary_zone_name))) {
     PROXY_LOG(WARN, "fail to divide_leader_replica", K(ret));
   } else {
-    valid_count_ = ldc_route_.location_.count() + (leader_item_.is_valid() ? 1 : 0);
+    valid_count_ = ldc_route_.location_.count() + ((!need_use_dup_replica_ && leader_item_.is_valid()) ? 1 : 0);
     PROXY_LOG(DEBUG, "succ to fill_strong_read_replica", KPC(this), KPC(pl), K(dummy_ldc));
   }
   if (entry_need_update) {
@@ -323,6 +329,12 @@ inline int ObServerRoute::fill_replicas(
             ldc_route_.next_index_in_site_ = ldc_route_.location_.get_other_region_site_start_index();
             break;
           }
+          case FOLLOWER_ONLY: {
+            ldc_route_.policy_ = FOLLOWER_ONLY_OPTIMIZED;
+            ldc_route_.curr_cursor_index_ = ldc_route_.get_cursor_index(ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REMOTE);
+            ldc_route_.next_index_in_site_ = ldc_route_.location_.get_other_region_site_start_index();
+            break;
+          }
           default:
             //do nothing
             break;
@@ -337,17 +349,24 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
 {
   const ObLDCItem *item = NULL;
   if (is_strong_read()) {
-    if (NULL != leader_item_.replica_ && !leader_item_.is_used_) {
-      //1. get leader
-      item = &leader_item_;
-      cur_chosen_route_type_ = ROUTE_TYPE_LEADER;
-      leader_item_.is_used_ = true;
-    } else {
-      leader_item_.is_used_ = true;
-
-      //2. get follower
+    if (need_use_dup_replica_) {
+      // if need_use_dup_replica,
+      // leader item has already been added into item_array of ldc_route
       item = ldc_route_.get_next_item();
       cur_chosen_route_type_ = ldc_route_.get_curr_route_type();
+    } else {
+      if (NULL != leader_item_.replica_ && !leader_item_.is_used_) {
+        //1. get leader
+        item = &leader_item_;
+        cur_chosen_route_type_ = ROUTE_TYPE_LEADER;
+        leader_item_.is_used_ = true;
+      } else {
+        leader_item_.is_used_ = true;
+
+        //2. get follower
+        item = ldc_route_.get_next_item();
+        cur_chosen_route_type_ = ldc_route_.get_curr_route_type();
+      }
     }
 
     if (NULL != item) {
@@ -508,6 +527,7 @@ inline void ObServerRoute::set_route_info(ObMysqlRouteResult &result)
 
   is_table_entry_from_remote_ = result.is_table_entry_from_remote_;
   is_part_entry_from_remote_ = result.is_partition_entry_from_remote_;
+  has_dup_replica_ = result.has_dup_replica_;
 }
 
 inline void ObServerRoute::set_table_entry(ObTableEntry *entry)

@@ -84,15 +84,18 @@ public:
 
   int get_part_with_part_name(const common::ObString &part_name,
                               int64_t &part_id_);
-
+  int get_first_part_id_by_idx(const int64_t idx, int64_t &part_id);
   int get_first_part(common::ObNewRange &range,
                      common::ObIAllocator &allocator,
                      common::ObIArray<int64_t> &part_ids);
-  int get_sub_part(const bool is_template_table,
-                   const int64_t first_part_id,
-                   common::ObNewRange &range,
-                   common::ObIAllocator &allocator,
-                   common::ObIArray<int64_t> &part_ids);
+  int get_sub_part(ObNewRange &range,
+                   ObIAllocator &allocator,
+                   ObPartDesc *sub_part_desc_ptr,
+                   ObIArray<int64_t> &part_ids);
+
+  int get_sub_part_by_random(const int64_t rand_num, 
+                             ObPartDesc *sub_part_desc_ptr,
+                             ObIArray<int64_t> &part_ids);
 
   int build_hash_part(const bool is_oracle_mode,
                       const share::schema::ObPartitionLevel part_level,
@@ -122,19 +125,31 @@ public:
                        const share::schema::ObPartitionFuncType part_func_type,
                        const int64_t part_num,
                        const bool is_template_table,
+                       const ObProxyPartKeyInfo &key_info,
                        ObResultSetFetcher &rs_fetcher);
   int build_sub_range_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
+                                             const ObProxyPartKeyInfo &key_info,
                                              ObResultSetFetcher &rs_fetcher);
   int build_list_part(const share::schema::ObPartitionLevel part_level,
                       const share::schema::ObPartitionFuncType part_func_type,
                       const int64_t part_num,
                       const bool is_template_table,
+                      const ObProxyPartKeyInfo &key_info,
                       ObResultSetFetcher &rs_fetcher);
   int build_sub_list_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
+                                            const ObProxyPartKeyInfo &key_info,
                                             ObResultSetFetcher &rs_fetcher);
 
   bool is_first_part_valid() const { return NULL != first_part_desc_; }
   bool is_sub_part_valid() const { return NULL != sub_part_desc_; }
+  int get_first_part_num(int64_t &num);
+  int get_sub_part_num_by_first_part_id(ObProxyPartInfo &part_info,
+                                        const int64_t first_part_id,
+                                        int64_t &num);
+  int get_sub_part_desc_by_first_part_id(const bool is_template_table,
+                                         const int64_t first_part_id,
+                                         ObPartDesc *&sub_part_desc_ptr);
+
   common::ObObjType get_first_part_type() const;
   common::ObObjType get_sub_part_type() const;
 

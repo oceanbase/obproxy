@@ -60,13 +60,16 @@ public:
   ~ObNetPoll();
   int init();
   ObPollDescriptor &get_poll_descriptor() { return *poll_descriptor_; }
+  int timerfd_settime();
+  int get_timer_fd() { return timer_fd_; }
 
 public:
   ObPollDescriptor *poll_descriptor_;
 
 private:
   ObNetHandler &nh_;
-  int poll_timeout_;
+  int timer_fd_;
+  ObEventIO *ep_;
 
   DISALLOW_COPY_AND_ASSIGN(ObNetPoll);
 };

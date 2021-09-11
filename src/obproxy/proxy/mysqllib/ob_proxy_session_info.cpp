@@ -160,7 +160,8 @@ int ObServerSessionInfo::add_text_ps_name(const uint32_t text_ps_name_id)
 
 ObClientSessionInfo::ObClientSessionInfo()
     : is_inited_(false), is_trans_specified_(false), is_global_vars_changed_(false),
-      is_user_idc_name_set_(false), is_read_consistency_set_(false), is_oracle_mode_(false),
+      is_user_idc_name_set_(false), is_read_consistency_set_(false), is_oracle_mode_(false), 
+      is_proxy_route_policy_set_(false),
       enable_shard_authority_(false), enable_reset_db_(true), cap_(0), safe_read_snapshot_(0),
       syncing_safe_read_snapshot_(0), route_policy_(1), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY),
       user_identity_(USER_TYPE_NONE), cached_variables_(),
@@ -168,7 +169,7 @@ ObClientSessionInfo::ObClientSessionInfo()
       var_set_processor_(NULL), cluster_id_(OB_INVALID_CLUSTER_ID),
       real_meta_cluster_name_(), real_meta_cluster_name_str_(NULL),
       server_type_(DB_OB_MYSQL), shard_conn_(NULL), group_id_(OBPROXY_MAX_DBMESH_ID), is_allow_use_last_session_(true),
-      consistency_level_prop_(INVALID_CONSISTENCY), need_sync_session_vars_(true),
+      consistency_level_prop_(INVALID_CONSISTENCY),
       recv_client_ps_id_(0), ps_id_(0), ps_entry_(NULL), ps_id_entry_map_(),
       text_ps_name_entry_map_(), is_text_ps_execute_(false),
       cursor_id_(0), cursor_id_addr_map_(), ps_id_addrs_map_(),
@@ -710,6 +711,15 @@ int ObClientSessionInfo::remove_user_variable(const ObString &var_name)
   return  ret;
 }
 
+int ObClientSessionInfo::remove_all_user_variable()
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(field_mgr_.remove_all_user_vars())) {
+    LOG_WARN("fail to remove all user variable", K(ret));
+  }
+  return ret;
+}
+
 int ObClientSessionInfo::get_user_variable(const ObString &var_name, ObSessionUserField *&value) const
 {
   int ret = OB_SUCCESS;
@@ -1130,6 +1140,7 @@ void ObClientSessionInfo::destroy()
   is_user_idc_name_set_ = false;
   is_read_consistency_set_ = false;
   is_oracle_mode_ = false;
+  is_proxy_route_policy_set_ = false;
 
   enable_shard_authority_ = false;
   enable_reset_db_ = true;

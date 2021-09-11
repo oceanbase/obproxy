@@ -14,21 +14,19 @@
 #define OCEANBASE_OBMYSQL_OMPK_CHANGE_USER_H_
 
 #include "lib/string/ob_string.h"
+#include "lib/container/ob_se_array.h"
 #include "rpc/obmysql/ob_mysql_packet.h"
 
-namespace oceanbase
-{
+namespace oceanbase {
 using common::ObString;
-namespace obmysql
-{
+namespace obmysql {
 
-class OMPKChangeUser
-    : public ObMySQLPacket
-{
+class OMPKChangeUser : public ObMySQLRawPacket {
 public:
   OMPKChangeUser();
 
-  ~OMPKChangeUser() {}
+  virtual ~OMPKChangeUser()
+  {}
 
   /**
    * Serialize all data not include packet header to buffer
@@ -36,26 +34,91 @@ public:
    * @param len     buffer length
    * @param pos     buffer pos
    */
-  int serialize(char *buffer, int64_t len, int64_t &pos) const;
+  virtual int serialize(char* buffer, int64_t len, int64_t& pos) const;
+  // decode ok packet
   int decode();
-  inline const ObString& get_username() { return username_; }
-  inline const ObString& get_auth_plugin_name() { return auth_plugin_name_; }
-  inline const ObString& get_auth_response() { return auth_plugin_data_; }
-  inline void set_auth_plugin_name(const ObString &plugin_name) { auth_plugin_name_ = plugin_name; }
-  inline void set_auth_response(const ObString &auth_response) { auth_plugin_data_ = auth_response; }
+  void reset();
+  inline void set_mysql_capability(const ObMySQLCapabilityFlags& mysql_cap)
+  {
+    mysql_cap_ = mysql_cap;
+  }
+  inline void set_username(const ObString& username)
+  {
+    username_ = username;
+  }
+  inline void set_auth_response(const ObString& auth_response)
+  {
+    auth_response_ = auth_response;
+  }
+  inline void set_database(const ObString& database)
+  {
+    database_ = database;
+  }
+  inline void set_character_set(const uint8_t charset)
+  {
+    character_set_ = charset;
+  }
+  inline void set_auth_plugin_name(const ObString& auth_plugin_name)
+  {
+    auth_plugin_name_ = auth_plugin_name;
+  }
+  inline const ObString& get_username()
+  {
+    return username_;
+  }
+  inline const ObString& get_auth_response()
+  {
+    return auth_response_;
+  }
+  inline const common::ObIArray<ObStringKV>& get_system_vars() const
+  {
+    return sys_vars_;
+  }
+  inline const common::ObIArray<ObStringKV>& get_user_vars() const
+  {
+    return user_vars_;
+  }
+  inline common::ObIArray<ObStringKV>& get_system_vars()
+  {
+    return sys_vars_;
+  }
+  inline common::ObIArray<ObStringKV>& get_user_vars()
+  {
+    return user_vars_;
+  }
+  inline const common::ObIArray<ObStringKV>& get_connect_attrs() const
+  {
+    return connect_attrs_;
+  }
+  inline void set_capability_flag(const ObMySQLCapabilityFlags mysql_cap)
+  {
+    mysql_cap_ = mysql_cap;
+  }
   virtual int64_t get_serialize_size() const;
+  void reset_connect_attr() { connect_attrs_.reset(); }
 
 private:
-  //DISALLOW_COPY_AND_ASSIGN(OMPKChangeUser);
-  uint8_t status_;
+  uint64_t get_session_vars_len() const;
+  uint64_t get_connect_attrs_len() const;
+  int serialize_session_vars(char* buffer, const int64_t length, int64_t& pos) const;
+  static int decode_string_kv(const char* attrs_end, const char*& pos, obmysql::ObStringKV& kv);
+  int decode_session_vars(const char*& pos, const int64_t session_vars_len);
+
+private:
+  uint8_t cmd_;
+  uint16_t character_set_;
+  ObMySQLCapabilityFlags mysql_cap_;
   ObString username_;
-  ObString auth_plugin_data_;
+  ObString auth_response_;
   ObString auth_plugin_name_;
   ObString database_;
-  uint8_t character_set_;
-}; // end of class
+  common::ObSEArray<ObStringKV, 8> connect_attrs_;
+  common::ObSEArray<ObStringKV, 128> sys_vars_;
+  common::ObSEArray<ObStringKV, 16> user_vars_;
+  //DISALLOW_COPY_AND_ASSIGN(OMPKChangeUser);
+};  // end of class
 
-} // end of namespace obmysql
-} // end of namespace oceanbase
+}  // end of namespace obmysql
+}  // end of namespace oceanbase
 
 #endif /* OCEANBASE_OBMYSQL_OMPK_CHANGE_USER_H_ */

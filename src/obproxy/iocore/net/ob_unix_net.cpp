@@ -33,6 +33,7 @@
 #include "iocore/net/ob_net.h"
 #include "iocore/net/ob_unix_net.h"
 #include "iocore/net/ob_event_io.h"
+#include "iocore/net/ob_timerfd_manager.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -205,7 +206,8 @@ int initialize_thread_for_net(ObEThread *thread)
 ObNetPoll::ObNetPoll(ObNetHandler &nh)
     : poll_descriptor_(NULL),
       nh_(nh),
-      poll_timeout_(-1)
+      timer_fd_(OB_INVALID_INDEX),
+      ep_(NULL)
 {
 }
 
@@ -213,6 +215,13 @@ ObNetPoll::~ObNetPoll()
 {
   delete poll_descriptor_;
   poll_descriptor_ = NULL;
+
+  if (NULL != ep_) {
+    op_reclaim_free(ep_);
+    ep_ = NULL;
+  }
+
+  ObTimerFdManager::timerfd_close(timer_fd_);
 }
 
 int ObNetPoll::init()
@@ -230,7 +239,32 @@ int ObNetPoll::init()
       PROXY_NET_LOG(WARN, "fail to init poll_descriptor");
       delete poll_descriptor_;
       poll_descriptor_ = NULL;
+    } else if (OB_FAIL(ObTimerFdManager::timerfd_create(CLOCK_REALTIME, TFD_NONBLOCK, timer_fd_))) {
+      PROXY_NET_LOG(WARN, "fail to create timerfd", K(timer_fd_), KERRMSGS, K(ret));
+    } else if (OB_FAIL(ObTimerFdManager::timerfd_settime(timer_fd_, 0, 0, 0))) {
+      PROXY_NET_LOG(WARN, "fail to set timerfd time", K(timer_fd_), KERRMSGS, K(ret));
+    } else if (OB_ISNULL(ep_ = op_reclaim_alloc(ObEventIO))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_NET_LOG(ERROR, "fail to new ObEventIO", K(ret));
+    } else {
+      struct epoll_event ev;
+      memset(&ev, 0, sizeof(ev));
+      ev.events = EVENTIO_READ;
+      ev.data.ptr = ep_;
+      ep_->type_ = EVENTIO_TIMER;
+      if (OB_FAIL(ObSocketManager::epoll_ctl(poll_descriptor_->epoll_fd_, EPOLL_CTL_ADD, timer_fd_, &ev))) {
+        PROXY_NET_LOG(WARN, "fail to epoll_ctl, op is EPOLL_CTL_ADD", K(poll_descriptor_->epoll_fd_), K_(timer_fd), K(ret));
+      }
     }
+  }
+  return ret;
+}
+
+int ObNetPoll::timerfd_settime()
+{
+  int ret = OB_SUCCESS;
+  if (timer_fd_ > 0 && OB_FAIL(ObTimerFdManager::timerfd_settime(timer_fd_, 0, 0, 1))) {
+    PROXY_NET_LOG(WARN, "fail to set timer time, it should not happened", K(timer_fd_), K(ret));
   }
   return ret;
 }
@@ -503,17 +537,18 @@ int ObNetHandler::main_net_event(int event, ObEvent *e)
     ObEventIO *epd = NULL;
 
     NET_INCREMENT_DYN_STAT(NET_HANDLER_RUN);
-    if (OB_LIKELY(!read_ready_list_.empty() || !write_ready_list_.empty()
-                  || !read_enable_list_.empty() || !write_enable_list_.empty())) {
-      poll_timeout = 0; // poll immediately returns -- we have triggered stuff to process right now
-    } else {
-      poll_timeout = net_config_poll_timeout;
-    }
 
     if(OB_ISNULL(ethread = trigger_event_->ethread_)) {
       ret = OB_ERR_UNEXPECTED;
       PROXY_NET_LOG(WARN, "fail to get trigger_event_'s ethread", K(trigger_event_), K(ret));
     } else {
+      if (OB_LIKELY(!read_ready_list_.empty() || !write_ready_list_.empty()
+            || !read_enable_list_.empty() || !write_enable_list_.empty())) {
+        poll_timeout = 0; // poll immediately returns -- we have triggered stuff to process right now
+      } else {
+        poll_timeout = (int32_t)(hrtime_to_msec(ethread->sleep_time_));
+      }
+
       ObPollDescriptor &pd = ethread->get_net_poll().get_poll_descriptor();
       if (OB_FAIL(ObSocketManager::epoll_wait(pd.epoll_fd_,
           pd.epoll_triggered_events_,
@@ -562,6 +597,9 @@ int ObNetHandler::main_net_event(int event, ObEvent *e)
               }
             } else if (EVENTIO_ASYNC_SIGNAL == epd->type_) {
               net_signal_hook_callback(*ethread);
+            } else if (EVENTIO_TIMER == epd->type_) {
+              uint64_t exp;
+              read(ethread->get_net_poll().get_timer_fd(), &exp, sizeof(uint64_t)); //Need to read uint64_t size, otherwise an error will occur
             }
           }
         }

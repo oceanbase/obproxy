@@ -85,6 +85,7 @@ int64_t ObProxyReplicaLocation::to_string(char *buf, const int64_t buf_len) cons
   int64_t pos = 0;
   J_OBJ_START();
   J_KV(K_(server),
+       K_(is_dup_replica),
        "role", get_role_type_string(role_),
        "type", get_replica_type_string(replica_type_));
   J_OBJ_END();

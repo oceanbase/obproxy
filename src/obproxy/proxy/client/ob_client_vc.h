@@ -140,6 +140,7 @@ public:
                    const common::ObString &password,
                    const common::ObString &database,
                    const bool is_meta_mysql_client,
+                   const common::ObString &password1 = "",
                    ClientPoolOption* client_pool_option = NULL);
 
   int init(ObMysqlClientPool *pool,
@@ -147,6 +148,7 @@ public:
            const common::ObString &password,
            const common::ObString &database,
            const bool is_meta_mysql_client,
+           const common::ObString &password1 = "",
            ClientPoolOption* client_pool_option = NULL);
 
   // must be used under the mutex_'s lock
@@ -226,6 +228,8 @@ private:
   bool is_session_pool_client_;
   ObProxySchemaKey schema_key_;
   proxy::ObCommonAddr server_addr_;
+  bool need_connect_retry_;
+  int64_t retry_times_;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlClient);
 };
 

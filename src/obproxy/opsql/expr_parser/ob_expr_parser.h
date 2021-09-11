@@ -19,7 +19,7 @@
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
 #include "lib/string/ob_string.h"
 
-extern "C" int ob_expr_parse_sql(ObExprParseResult *p, const char *pszSql, size_t iLen);
+extern "C" int ob_expr_parse_utf8_sql(ObExprParseResult *p, const char *pszSql, size_t iLen);
 
 namespace oceanbase
 {
@@ -39,9 +39,12 @@ public:
   // will not be inherited, do not set to virtual
   ~ObExprParser() {}
 
-  int parse(const common::ObString &sql_string, ObExprParseResult &parse_result);
+  int parse(const common::ObString &sql_string, ObExprParseResult &parse_result,
+            common::ObCollationType connection_collation);
 
-  int parse_reqsql(const common::ObString &req_sql, int64_t parsed_length, ObExprParseResult &parse_result, ObProxyBasicStmtType stmt_type);
+  int parse_reqsql(const common::ObString &req_sql, int64_t parsed_length,
+                   ObExprParseResult &parse_result, ObProxyBasicStmtType stmt_type,
+                   common::ObCollationType connection_collation);
 
   void free_result(ObExprParseResult &parse_result);
 private:
@@ -100,21 +103,33 @@ inline void ObExprParser::free_result(ObExprParseResult &parse_result)
 }
 
 inline int ObExprParser::parse(const common::ObString &sql_string,
-                               ObExprParseResult &parse_result)
+                               ObExprParseResult &parse_result,
+                               common::ObCollationType connection_collation)
 {
   int ret = common::OB_SUCCESS;
   if (common::OB_SUCCESS != init_result(parse_result, sql_string.ptr())) {
     ret = common::OB_ERR_PARSER_INIT;
     PROXY_LOG(WARN, "failed to initialized parser", KERRMSGS, K(ret));
-  } else if (common::OB_SUCCESS != ob_expr_parse_sql(&parse_result,
-                                                     sql_string.ptr(),
-                                                     static_cast<size_t>(sql_string.length()))) {
-    ret = common::OB_ERR_PARSE_SQL;
+  } else {
+    switch (connection_collation) {
+      case 45/*CS_TYPE_UTF8MB4_GENERAL_CI*/:
+      case 46/*CS_TYPE_UTF8MB4_BIN*/:
+      default:
+        if (common::OB_SUCCESS != ob_expr_parse_utf8_sql(&parse_result,
+                                                         sql_string.ptr(),
+                                                         static_cast<size_t>(sql_string.length()))) {
+          ret = common::OB_ERR_PARSE_SQL;
+          PROXY_LOG(WARN, "failed to parser utf8 sql", KERRMSGS, K(connection_collation), K(ret));
+        }
+        break;
+    }
   }
   return ret;
 }
 
-inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t parsed_length, ObExprParseResult &expr_result, ObProxyBasicStmtType stmt_type)
+inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t parsed_length,
+                                      ObExprParseResult &expr_result, ObProxyBasicStmtType stmt_type,
+                                      common::ObCollationType connection_collation)
 {
   int ret = common::OB_SUCCESS;
   common::ObString expr_sql = obproxy::proxy::ObProxyMysqlRequest::get_expr_sql(req_sql, parsed_length);
@@ -142,11 +157,10 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
     }
 
     if (NULL != pos) {
-      const int32_t len_before_where = static_cast<int32_t>(pos - expr_sql_str);
-      expr_sql += (len_before_where - 1);
+      expr_sql += static_cast<int32_t>(pos - expr_sql_str);
     }
   }
-  if (OB_FAIL(parse(expr_sql, expr_result))) {
+  if (OB_FAIL(parse(expr_sql, expr_result, connection_collation))) {
     PROXY_LOG(DEBUG, "fail to do expr parse", K(expr_sql), K(ret));
   } else {
     PROXY_LOG(DEBUG, "succ to do expr parse", "expr_result", ObExprParseResultPrintWrapper(expr_result), K(expr_sql));

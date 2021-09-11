@@ -1318,6 +1318,7 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
   //1. get config server username and passwd
   ObString string_username;
   ObString string_passwd;
+  ObString string_passwd1;
   ObString string_db;
   char full_user_name[OB_PROXY_FULL_USER_NAME_MAX_LEN + 1] = {0};
   char passwd_staged1_buf[ENC_STRING_BUF_LEN] = {0}; // 1B '*' + 40B octal num
@@ -1360,6 +1361,8 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
           string_username.assign_ptr(full_user_name, static_cast<ObString::obstr_size_t>(pos));
           string_passwd.assign_ptr(get_global_proxy_config().observer_sys_password.str(),
                                    static_cast<ObString::obstr_size_t>(strlen(get_global_proxy_config().observer_sys_password.str())));
+          string_passwd1.assign_ptr(get_global_proxy_config().observer_sys_password1.str(),
+                                   static_cast<ObString::obstr_size_t>(strlen(get_global_proxy_config().observer_sys_password1.str())));
           string_db.assign_ptr(ObProxyTableInfo::READ_ONLY_DATABASE,
                                static_cast<ObString::obstr_size_t>(STRLEN(ObProxyTableInfo::READ_ONLY_DATABASE)));
         }
@@ -1394,7 +1397,7 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
       LOG_WARN("fail to set addr", K(proxy_ip_), K(proxy_port_), K(ret));
     } else if (OB_FAIL(local_addrs.push_back(addr))) {
       LOG_WARN("fail to push addr to local_addrs", K(addr), K(ret));
-    } else if (OB_FAIL(raw_client.init(string_username, string_passwd, string_db))) {
+    } else if (OB_FAIL(raw_client.init(string_username, string_passwd, string_db, string_passwd1))) {
       LOG_WARN("fail to init raw mysql client", K(string_username), K(string_db), K(ret));
     } else if (OB_FAIL(raw_client.set_server_addr(local_addrs))) {
       LOG_WARN("fail to set server addr", K(ret));

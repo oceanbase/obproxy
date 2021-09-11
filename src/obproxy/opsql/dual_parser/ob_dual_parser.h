@@ -28,14 +28,15 @@ public:
 	ObProxyDualParser();
 	~ObProxyDualParser();
 	int parse(const common::ObString &sql_string,
-	          obutils::ObProxyDualParseResult &parse_result);
+	          obutils::ObProxyDualParseResult &parse_result,
+            common::ObCollationType connection_collation);
 	bool is_valid_result();
 private:
 	int skip_comments();
 	int parse_key_word(const char* key, bool allow_semi = false);
 	int parse_seqs_and_fields();
 	int parse_where_key_word();
-	int parse_where_fields();
+	int parse_where_fields(common::ObCollationType connection_collation);
 
 	inline bool is_slash_char(const char c) {
 		return c == '/';

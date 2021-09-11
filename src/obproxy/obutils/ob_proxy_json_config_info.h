@@ -357,7 +357,9 @@ public:
   int update_rslist(const LocationList &rs_list, const uint64_t hash = 0);
   int get_idc_region(const common::ObString &idc_name,
                      ObProxyNameString &region_name) const;
-  void reuse_rslist() { web_rs_list_.reuse(); }
+  void reuse_rslist() {
+    web_rs_list_.reuse();
+  }
   void reuse_idc_list() { idc_list_.reuse(); }
   
   DECLARE_TO_STRING;
@@ -369,6 +371,7 @@ public:
   uint64_t rs_list_hash_;
   int64_t create_failure_count_;//if cnt > 3 && rslist exist , reset rslist;
   LocationList web_rs_list_;
+  LocationList origin_web_rs_list_;
   ObProxyIDCList idc_list_;
   LINK(ObProxySubClusterInfo, sub_cluster_link_);
 
@@ -666,6 +669,7 @@ public:
   int parse_rslist_item(const json::Value *root, const common::ObString &appname,
                         LocationList &web_rslist, const bool is_readonly_zone);
   int get_rslist_file_max_size(int64_t &max_size);
+  int swap_origin_web_rslist_and_build_sys(const ObString &cluster_name, const int64_t cluster_id, const bool need_save_rslist_hash);
 
   int idc_list_to_json(char *buf, const int64_t buf_len, int64_t &data_len);
   int parse_local_idc_list(const json::Value *root);
@@ -753,6 +757,7 @@ public:
 
   int set_cluster_web_rs_list(const common::ObString &cluster_name, const int64_t cluster_id,
                               const LocationList &web_rs_list,
+                              const LocationList &origin_web_rs_list,
                               const common::ObString &role,
                               const uint64_t cur_rs_list_hash = 0);
   int set_master_cluster_id(const common::ObString &cluster_name, const int64_t cluster_id);

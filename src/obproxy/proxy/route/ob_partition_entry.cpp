@@ -113,6 +113,7 @@ int64_t ObPartitionEntry::to_string(char *buf, const int64_t buf_len) const
   J_COMMA();
   J_KV(KP(this),
        K_(pl),
+       K_(has_dup_replica),
        K_(table_id),
        K_(partition_id));
   J_OBJ_END();

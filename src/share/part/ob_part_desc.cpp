@@ -26,5 +26,13 @@ int ObPartDesc::get_part(common::ObNewRange &range,
   return OB_NOT_IMPLEMENT;
 }
 
+int ObPartDesc::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+{
+  UNUSED(num);
+  UNUSED(part_ids);
+  return OB_NOT_IMPLEMENT;
+}
+
+
 } // end of common
 } // end of oceanbase

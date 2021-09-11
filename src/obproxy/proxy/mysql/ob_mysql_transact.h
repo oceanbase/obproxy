@@ -755,7 +755,8 @@ public:
     static bool is_for_update_sql(common::ObString src_sql);
     common::ObConsistencyLevel get_trans_consistency_level(ObClientSessionInfo &cs_info);
     bool is_request_readonly_zone_support(ObClientSessionInfo &cs_info);
-    ObRoutePolicyEnum get_route_policy(ObMysqlClientSession &cs);
+    ObRoutePolicyEnum get_route_policy(ObMysqlClientSession &cs, const bool need_use_dup_replica);
+    void get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePolicyEnum& ret_policy);
 
     event::ObFixedArenaAllocator<1024> arena_;
 
@@ -840,11 +841,11 @@ public:
   static int build_server_request(ObTransState &s, event::ObIOBufferReader *&reader,
                                   int64_t &request_len);
 
-  static int rewrite_stmt_id(ObTransState &s, event::ObIOBufferReader *client_buffer_reader);
   static int build_oceanbase_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                           event::ObIOBufferReader *&reader, int64_t &request_len);
   static int build_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                 event::ObIOBufferReader *&reader, int64_t &request_len);
+  static int rewrite_stmt_id(ObTransState &s, event::ObIOBufferReader *client_buffer_reader);
 
   static void start_access_control(ObTransState &s);
   static void bad_request(ObTransState &s);
@@ -889,6 +890,7 @@ public:
   static bool is_large_request(ObTransState &s) { return s.trans_info_.client_request_.is_large_request(); }
   static bool is_bad_route_request(ObTransState &s);
   static bool is_session_memory_overflow(ObTransState &s);
+  static bool need_use_dup_replica(const common::ObConsistencyLevel level, ObTransState &s);
   static bool need_pl_lookup(ObTransState &s);
   static bool need_use_last_server_session(ObTransState &s);
   static bool is_db_reset(ObTransState &s);
@@ -935,6 +937,7 @@ public:
   static int do_handle_execute_succ(ObTransState &s);
   static void handle_prepare_execute_succ(ObTransState &s);
   static void handle_text_ps_prepare_succ(ObTransState &s);
+  static int handle_change_user_request_succ(ObTransState &s);
 
   static int build_error_packet(ObTransState &s);
 

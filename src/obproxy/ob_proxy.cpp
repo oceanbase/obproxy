@@ -195,7 +195,6 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
         regression_cont_.set_regression_test(opts.regression_test_);
 #endif
         ObNetOptions net_options;
-        net_options.poll_timeout_ = usec_to_msec(config_->net_config_poll_timeout);
         net_options.default_inactivity_timeout_ = usec_to_sec(config_->default_inactivity_timeout);
         net_options.max_client_connections_ = config_->client_max_connections;
 
@@ -271,6 +270,32 @@ int ObProxy::start()
       }
     }
 
+  }
+
+  if (OB_SUCC(ret)) {
+    char *password1 = NULL;
+    char *password2 = NULL;
+    password1 = getenv("observer_sys_password");
+    password2 = getenv("observer_sys_password1");
+    if (NULL != password1) {
+      ObString key_string("observer_sys_password");
+      ObString value_string(password1);
+      if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
+        LOG_WARN("fail to update config", K(key_string));
+      }
+    }
+
+    if (OB_SUCC(ret) && NULL != password2) {
+      ObString key_string("observer_sys_password1");
+      ObString value_string(password2);
+      if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
+        LOG_WARN("fail to update config", K(key_string));
+      }
+    }
+
+    if (OB_SUCC(ret) && OB_FAIL(get_global_proxy_config().dump_config_to_local())) {
+      LOG_WARN("fail to dump config to local", K(ret));
+    }
   }
 
   if (OB_SUCC(ret) && config_->is_metadb_used()) {
@@ -874,7 +899,6 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
   if (OB_SUCC(ret)) {
     // net related
     ObNetOptions net_options;
-    net_options.poll_timeout_ = usec_to_msec(config_->net_config_poll_timeout);
     net_options.default_inactivity_timeout_ = usec_to_sec(config.default_inactivity_timeout);
     net_options.max_client_connections_ = config.client_max_connections;
     update_net_options(net_options);
@@ -901,6 +925,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
   const ObString user_name(ObProxyTableInfo::READ_ONLY_USERNAME);
   const ObString database(ObProxyTableInfo::READ_ONLY_DATABASE);
   ObString password(config_->observer_sys_password.str());
+  ObString password1(config_->observer_sys_password1.str());
   ObSEArray<ObAddr, 5> rs_list;
 
   // first get from local
@@ -921,7 +946,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
     if (rs_list.count() <= 0) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("rs_list count must > 0", K(ret));
-    } else if (OB_FAIL(raw_client.init(user_name, password, database))) {
+    } else if (OB_FAIL(raw_client.init(user_name, password, database, password1))) {
       LOG_WARN("fail to init raw mysql client", K(ret));
     } else if (OB_FAIL(raw_client.set_server_addr(rs_list))) {
       LOG_WARN("fail to set server addr", K(ret));

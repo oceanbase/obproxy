@@ -13,6 +13,8 @@
 #ifndef OBPROXY_EXPR_CALCULATOR_H
 #define OBPROXY_EXPR_CALCULATOR_H
 #include "opsql/expr_parser/ob_expr_parse_result.h"
+#include "lib/charset/ob_charset.h"
+
 namespace oceanbase
 {
 namespace common
@@ -57,7 +59,8 @@ private:
                     const obutils::ObSqlParseResult &parse_result,
                     ObProxyPartInfo &part_info,
                     common::ObIAllocator &allocator,
-                    ObExprParseResult &expr_result);
+                    ObExprParseResult &expr_result,
+                    common::ObCollationType connection_collation);
   int do_expr_resolve(ObExprParseResult &expr_result,
                       const ObProxyMysqlRequest &client_request,
                       ObClientSessionInfo *client_info,
@@ -81,6 +84,10 @@ private:
                                     ObProxyPartInfo &part_info,
                                     opsql::ObExprResolverResult &resolve_result,
                                     common::ObIAllocator &allocator);
+  int calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
+                                               int64_t &first_part_id,
+                                               int64_t &sub_part_id,
+                                               int64_t &phy_part_id);
 };
 } // end of namespace proxy
 } // end of namespace obproxy

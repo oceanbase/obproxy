@@ -37,6 +37,7 @@
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "lib/encrypt/ob_encrypted_helper.h"
 #include "proxy/shard/obproxy_shard_utils.h"
+#include "rpc/obmysql/packet/ompk_change_user.h"
 
 using namespace oceanbase::share;
 using namespace oceanbase::common;
@@ -250,6 +251,14 @@ void ObMysqlTransact::modify_request(ObTransState &s)
   }
 }
 
+bool ObMysqlTransact::need_use_dup_replica(const ObConsistencyLevel level, ObTransState &s)
+{
+  return (STRONG == level)
+          && (s.trans_info_.client_request_.get_parse_result().is_select_stmt())
+          && (!ObTransState::is_for_update_sql(s.trans_info_.client_request_.get_sql()))
+          && (s.pll_info_.route_.has_dup_replica_);
+}
+
 bool ObMysqlTransact::need_disable_merge_status_check(ObTransState &s)
 {
   bool bret = false;
@@ -407,7 +416,7 @@ bool ObMysqlTransact::is_sequence_request(ObTransState &s) {
       oceanbase::obproxy::opsql::ObProxyDualParser parser;
       ObSqlParseResult& parse_result = client_request.get_parse_result();
       ObProxyDualParseResult& dual_result = parse_result.get_dual_result();
-      if (OB_FAIL(parser.parse(sql, dual_result))) {
+      if (OB_FAIL(parser.parse(sql, dual_result, static_cast<ObCollationType>(session_info.get_collation_connection())))) {
         LOG_DEBUG("parse sequence_sql_ fail", K(sql)); // ignore parse fail, maybe a db dual request
       } else if (OB_UNLIKELY(!parser.is_valid_result())) {
         LOG_DEBUG("not a senquence sql", K(ret));
@@ -1694,8 +1703,10 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
         // non weak read(login request included) do nothing:
       }
 
+      bool use_dup_replica = need_use_dup_replica(consistency_level, s);
+      s.pll_info_.route_.need_use_dup_replica_ = use_dup_replica;
       const bool disable_merge_status_check = need_disable_merge_status_check(s);
-      const ObRoutePolicyEnum route_policy = s.get_route_policy(*s.sm_->client_session_);
+      const ObRoutePolicyEnum route_policy = s.get_route_policy(*s.sm_->client_session_, use_dup_replica);
 
       ModulePageAllocator *allocator = NULL;
       ObLDCLocation::get_thread_allocator(allocator);
@@ -2061,10 +2072,10 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
 
             if (OB_SUCC(ret)) {
               if (OB_FAIL(ObProto20Utils::consume_and_compress_data(
-                          request_buffer_reader, write_buffer, client_request_len, compress_seq, compress_seq,
-                          s.sm_->get_server_session()->get_next_server_request_id(),
-                          s.sm_->get_server_session()->get_server_sessid(),
-                          is_last_packet, need_reroute, &extro_info))) {
+                      request_buffer_reader, write_buffer, client_request_len, compress_seq, compress_seq,
+                      s.sm_->get_server_session()->get_next_server_request_id(),
+                      s.sm_->get_server_session()->get_server_sessid(),
+                      is_last_packet, need_reroute, &extro_info))) {
                 LOG_ERROR("fail to consume_and_compress_data", K(ret));
               }
             }
@@ -2072,8 +2083,8 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
             const bool use_fast_compress = true;
             const bool is_checksum_on = s.sm_->is_checksum_on();
             if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(
-                        request_buffer_reader, write_buffer, client_request_len, use_fast_compress,
-                        compress_seq, is_checksum_on))) {
+                    request_buffer_reader, write_buffer, client_request_len, use_fast_compress,
+                    compress_seq, is_checksum_on))) {
               LOG_WARN("fail to consume_and_compress_data", K(ret));
             }
           }
@@ -2669,9 +2680,82 @@ inline void ObMysqlTransact::handle_user_request_succ(ObTransState &s)
     }
   }
 
+  if (OB_SUCC(ret) && obmysql::OB_MYSQL_COM_CHANGE_USER == s.trans_info_.sql_cmd_) {
+    if (OB_FAIL(handle_change_user_request_succ(s))) {
+      LOG_WARN("fail to handle change user request", K(ret));
+    }
+  }
+
   if (OB_FAIL(ret)) {
     s.current_.state_ = INTERNAL_ERROR;
   }
+}
+
+inline int ObMysqlTransact::handle_change_user_request_succ(ObTransState &s)
+{
+  int ret = OB_SUCCESS;
+  ObClientSessionInfo& client_info = get_client_session_info(s);
+  ObProxyMysqlRequest& client_request = s.trans_info_.client_request_;
+  ObString change_user = client_request.get_req_pkt();
+  OMPKChangeUser result;
+  if (OB_UNLIKELY(change_user.empty())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("client request is empty", K(change_user), K(ret));
+  } else {
+    const char *start = change_user.ptr() + MYSQL_NET_META_LENGTH;
+    int32_t len = static_cast<uint32_t>(change_user.length() - MYSQL_NET_META_LENGTH);
+    if (len <= 0) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("client request packet is error", K(ret));
+    } else {
+      result.set_content(start, len);
+      const ObMySQLCapabilityFlags &capability = client_info.get_orig_capability_flags();
+      result.set_capability_flag(capability);
+      if (OB_FAIL(result.decode())) {
+        LOG_WARN("fail to decode change user packet", K(ret));
+      } else {
+        // 1. Save username and auth_response
+        if (OB_FAIL(ObProxySessionInfoHandler::rewrite_change_user_login_req(
+          client_info, result.get_username(), result.get_auth_response()))) {
+          LOG_WARN("rewrite change user login req failed", K(ret));
+        } else {
+          /*
+           * A database will be filled in the change_user API. So the observer side will switch based on this database
+           * server will clean up session var
+           * Change_user is allowed to be executed in the transaction, and the current transaction will be forced to rollback after execution
+           * The above three version number synchronization has been processed in save_changed_session_info, no need to process it anymore
+           */
+
+          // 2. Clean up user variables
+          if (OB_FAIL(client_info.remove_all_user_variable())) {
+            LOG_WARN("remove all user variable failed", K(ret));
+          }
+
+          // 3. Update auth_str
+          if (OB_SUCC(ret)) {
+            const ObString full_username = client_info.get_full_username();
+            ObMysqlServerSession* server_session = s.sm_->get_server_session();
+            if (NULL != server_session && full_username.length() < OB_PROXY_FULL_USER_NAME_MAX_LEN) {
+              MEMCPY(server_session->full_name_buf_, full_username.ptr(), full_username.length());
+              server_session->auth_user_.assign_ptr(server_session->full_name_buf_, full_username.length());
+              LOG_DEBUG("handle normal change user request succ", K(server_session->auth_user_));
+            } else {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("username length is error", K(full_username.length()), K(ret));
+            }
+          }
+
+          // 4. Clear all server sessions
+          if (OB_SUCC(ret)) {
+            ObMysqlClientSession* client_session = s.sm_->get_client_session();
+            client_session->get_session_manager().purge_keepalives();
+          }
+        }
+      }
+    }
+  }
+
+  return ret;
 }
 
 inline int ObMysqlTransact::handle_user_set_request_succ(ObTransState &s)
@@ -4242,7 +4326,52 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
     }
 
     case SERVER_SEND_ALL_SESSION_VARS:
+      if (OB_LIKELY(NULL != s.sm_->client_session_) && OB_LIKELY(NULL != s.sm_->get_server_session())) {
+        ObClientSessionInfo &client_info = get_client_session_info(s);
+        ObServerSessionInfo &server_info = get_server_session_info(s);
+        //obutils::ObSqlParseResult &sql_result = s.trans_info_.client_request_.get_parse_result();
+        if (obmysql::OB_MYSQL_COM_STMT_CLOSE == s.trans_info_.client_request_.get_packet_meta().cmd_) {
+          // no need sync var, send to server directly
+          s.current_.send_action_ = SERVER_SEND_REQUEST;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          break;
+        } else if (client_info.need_reset_database(server_info)) {
+          s.current_.send_action_ = SERVER_SEND_USE_DATABASE;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          break;
+        } else {
+          // fall through:
+        }
+      } else {
+        s.current_.state_ = INTERNAL_ERROR;
+        handle_server_connection_break(s);
+        LOG_WARN("[ObMysqlTransact::handle_on_forward_server_response], "
+                 "client session or server session is NULL",
+                 "next_action", ObMysqlTransact::get_action_name(s.next_action_),
+                 K(s.sm_->client_session_), "server_session", s.sm_->get_server_session());
+        break;
+      }
     case SERVER_SEND_USE_DATABASE:
+      if (OB_LIKELY(NULL != s.sm_->client_session_) && OB_LIKELY(NULL != s.sm_->get_server_session())) {
+        ObClientSessionInfo &client_info = get_client_session_info(s);
+        ObServerSessionInfo &server_info = get_server_session_info(s);
+        //obutils::ObSqlParseResult &sql_result = s.trans_info_.client_request_.get_parse_result();
+        if (client_info.need_reset_session_vars(server_info)) {
+          s.current_.send_action_ = SERVER_SEND_SESSION_VARS;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          break;
+        } else {
+          // fall through:
+        }
+      } else {
+        s.current_.state_ = INTERNAL_ERROR;
+        handle_server_connection_break(s);
+        LOG_WARN("[ObMysqlTransact::handle_on_forward_server_response], "
+                 "client session or server session is NULL",
+                 "next_action", ObMysqlTransact::get_action_name(s.next_action_),
+                 K(s.sm_->client_session_), "server_session", s.sm_->get_server_session());
+        break;
+      }
     case SERVER_SEND_SESSION_VARS:
     case SERVER_SEND_LAST_INSERT_ID:
     case SERVER_SEND_PREPARE:
@@ -4252,14 +4381,7 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
         ObClientSessionInfo &client_info = get_client_session_info(s);
         ObServerSessionInfo &server_info = get_server_session_info(s);
         //obutils::ObSqlParseResult &sql_result = s.trans_info_.client_request_.get_parse_result();
-        if (obmysql::OB_MYSQL_COM_STMT_CLOSE == s.trans_info_.client_request_.get_packet_meta().cmd_) {
-          // no need sync var, send to server directly
-          s.current_.send_action_ = SERVER_SEND_REQUEST;
-        } else if (client_info.need_reset_database(server_info)) {
-          s.current_.send_action_ = SERVER_SEND_USE_DATABASE;
-        } else if (client_info.need_reset_session_vars(server_info)) {
-          s.current_.send_action_ = SERVER_SEND_SESSION_VARS;
-        } else if (client_info.need_reset_last_insert_id(server_info)) {
+        if (client_info.need_reset_last_insert_id(server_info)) {
           // TODO: current version proxy parse can't judge last_insert_id exactly,
           // so we do not judge, whether sql_reuslt has_last_insert_id here
           // if it is large request, we do not parse the sql, we don't know whether the sql contains
@@ -4734,7 +4856,18 @@ void ObMysqlTransact::handle_new_config_acquired(ObTransState &s)
   }
 }
 
-inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysqlClientSession &cs)
+inline void ObMysqlTransact::ObTransState::get_route_policy(ObProxyRoutePolicyEnum policy,
+                                                            ObRoutePolicyEnum& ret_policy)
+{
+  if (FOLLOWER_FIRST_ENUM == policy) {
+    ret_policy = FOLLOWER_FIRST;
+  } else if (UNMERGE_FOLLOWER_FIRST_ENUM == policy) {
+    ret_policy = UNMERGE_FOLLOWER_FIRST;
+  } else if (FOLLOWER_ONLY_ENUM == policy) {
+    ret_policy = FOLLOWER_ONLY;
+  }
+}
+inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysqlClientSession &cs, const bool need_use_dup_replica)
 {
   ObRoutePolicyEnum ret_policy = READONLY_ZONE_FIRST;
   ObRoutePolicyEnum session_route_policy = READONLY_ZONE_FIRST;
@@ -4757,7 +4890,10 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
                     "session_route_policy", get_route_policy_enum_string(session_route_policy));
   }
 
-  if (cs.dummy_ldc_.is_readonly_zone_exist()) {
+  if (need_use_dup_replica) {
+    //if dup_replica read, use DUP_REPLICA_FIRST, no need care about zone type
+    ret_policy = DUP_REPLICA_FIRST;
+  } else if (cs.dummy_ldc_.is_readonly_zone_exist()) {
     if (common::WEAK == get_trans_consistency_level(cs.get_session_info())) {
       //if wead read, use session_route_policy
       ret_policy = session_route_policy;
@@ -4772,19 +4908,22 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
         ret_policy = MERGE_IDC_ORDER;
       }
     } else {
-      //if readonly zone also support, only use readwrite zone
+      //if readonly zone not support, only use readwrite zone
       ret_policy = ONLY_READWRITE_ZONE;
     }
   } else {
     //if no readonly zone exist, use orig policy
     ret_policy = MERGE_IDC_ORDER;
-    if (common::WEAK == get_trans_consistency_level(cs.get_session_info())
-        && is_valid_proxy_route_policy(cs.get_session_info().get_proxy_route_policy())) {
-      //use proxy_route_policy
-      if (FOLLOWER_FIRST_ENUM == cs.get_session_info().get_proxy_route_policy()) {
-        ret_policy = FOLLOWER_FIRST;
-      } else if (UNMERGE_FOLLOWER_FIRST_ENUM == cs.get_session_info().get_proxy_route_policy()) {
-        ret_policy = UNMERGE_FOLLOWER_FIRST;
+    if (common::WEAK == get_trans_consistency_level(cs.get_session_info())) {
+      if (is_valid_proxy_route_policy(cs.get_session_info().get_proxy_route_policy()) 
+        && cs.get_session_info().is_proxy_route_policy_set()) {
+        get_route_policy(cs.get_session_info().get_proxy_route_policy(), ret_policy);
+      } else {
+        const ObString value = get_global_proxy_config().proxy_route_policy.str();
+        ObProxyRoutePolicyEnum policy = get_proxy_route_policy(value);
+        PROXY_CS_LOG(INFO, "succ to global variable proxy_route_policy",
+                 "policy", get_proxy_route_policy_enum_string(policy));
+        get_route_policy(policy, ret_policy);
       }
     }
   }

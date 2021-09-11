@@ -49,14 +49,14 @@ ObProxyParserChecker::ObProxyParserChecker() : is_verbose_(true),
 {
 }
 
-int ObProxyParserChecker::do_obproxy_parser(const ObString &query_str, ObProxyParseResultWapper &result)
+int ObProxyParserChecker::do_obproxy_parser(const ObString &query_str, ObProxyParseResultWapper &result, ObCollationType connection_collation)
 {
   int ret = OB_SUCCESS;
 
   int64_t t0 = ObTimeUtility::current_time();
   ObProxyParser parser(allocator_, NORMAL_PARSE_MODE);
   ObProxyParseResult obproxy_parse_result;
-  if (OB_FAIL(parser.parse(query_str, obproxy_parse_result))) {
+  if (OB_FAIL(parser.parse(query_str, obproxy_parse_result, connection_collation))) {
     // do nothing
   } else if (OB_FAIL(result.load_result(&obproxy_parse_result))) {
     // do nothing
@@ -70,7 +70,7 @@ int ObProxyParserChecker::do_obproxy_parser(const ObString &query_str, ObProxyPa
 }
 
 
-bool ObProxyParserChecker::run_parse_string(const ObString query_str)
+bool ObProxyParserChecker::run_parse_string(const ObString query_str, ObCollationType connection_collation)
 {
   bool bret = false;
 
@@ -79,7 +79,7 @@ bool ObProxyParserChecker::run_parse_string(const ObString query_str)
   ObProxyParseResultWapper result;
 
   DUMP_RESULT("SQL   : %.*s\n", query_str.length(), query_str.ptr());
-  if (OB_SUCCESS == do_obproxy_parser(query_str, result)) {
+  if (OB_SUCCESS == do_obproxy_parser(query_str, result, connection_collation)) {
     DUMP_RESULT("RESULT: %s\n",
                 (result.to_string(parse_string, MAX_STR_LEN), parse_string));
   } else {
@@ -92,16 +92,16 @@ bool ObProxyParserChecker::run_parse_string(const ObString query_str)
   return bret;
 }
 
-bool ObProxyParserChecker::run_parse_std_string(std::string query_str)
+bool ObProxyParserChecker::run_parse_std_string(std::string query_str, ObCollationType connection_collation)
 {
   query_str += "  ";
   ObString input_query(query_str.size(), query_str.c_str());
   input_query.ptr()[input_query.length() - 2] = 0;
   input_query.ptr()[input_query.length() - 1] = 0;
-  return run_parse_string(input_query);
+  return run_parse_string(input_query, connection_collation);
 }
 
-bool ObProxyParserChecker::run_parse_file(const char *filepath)
+bool ObProxyParserChecker::run_parse_file(const char *filepath, ObCollationType connection_collation)
 {
   bool bret = false;
   std::ifstream input_file(filepath);
@@ -133,7 +133,7 @@ bool ObProxyParserChecker::run_parse_file(const char *filepath)
         std::size_t end = -1;
         if (std::string::npos !=  (end = query_str.find_last_of(';'))) {
           query_str = query_str.substr(begin, end - begin + 1);
-          run_parse_std_string(query_str);
+          run_parse_std_string(query_str, connection_collation);
           query_str = "";
         } else {
           // not contains ';'
@@ -162,7 +162,7 @@ void ObProxyParserChecker::print_stat()
 
 #define YYDEBUG 1
 #if YYDEBUG
-extern int obproxydebug;
+extern int ob_proxy_parser_utf8_yydebug;
 #endif
 using namespace oceanbase::obproxy::test;
 int main(int argc, char **argv)
@@ -172,8 +172,9 @@ int main(int argc, char **argv)
   int c = -1;
   const char *filepath = "";
   const char *input_str = "";
+  ObCollationType connection_collation = CS_TYPE_INVALID;
   int loop_count = 1;
-  while(-1 != (c = getopt(argc, argv, "f:s:n:r:SD"))) {
+  while(-1 != (c = getopt(argc, argv, "f:s:n:r:c:SD"))) {
     switch(c) {
       case 'f':
         filepath = optarg;
@@ -186,11 +187,16 @@ int main(int argc, char **argv)
         break;
       case 'D':
 #if YYDEBUG
-        obproxydebug = 1;
+        ob_proxy_parser_utf8_yydebug = 1;
 #endif
         break;
       case 'n':
         loop_count = atoi(optarg);
+        break;
+      case 'c':
+        if (strcmp(optarg, "utb8") == 0) {
+          connection_collation = CS_TYPE_UTF8MB4_GENERAL_CI;
+        }
         break;
       case 'r':
         checker.result_file_name_ = optarg;
@@ -199,11 +205,11 @@ int main(int argc, char **argv)
 
   while (loop_count-- > 0) {
     if (strlen(filepath) > 0) {
-      checker.run_parse_file(filepath);
+      checker.run_parse_file(filepath, connection_collation);
     } else if (strlen(input_str) > 0) {
-      checker.run_parse_std_string(input_str);
+      checker.run_parse_std_string(input_str, connection_collation);
     } else {
-      checker.run_parse_file("parser/mysqltest.sql");
+      checker.run_parse_file("parser/mysqltest.sql", connection_collation);
     }
   }
 

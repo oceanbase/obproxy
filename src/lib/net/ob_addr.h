@@ -63,6 +63,11 @@ public:
     memset(&ip_, 0, sizeof (ip_));
   }
 
+  inline bool is_ip_loopback() const
+  {
+    return (IPV4 == version_ && INADDR_LOOPBACK == ip_.v4_)
+           || (IPV6 == version_ && IN6_IS_ADDR_LOOPBACK(ip_.v6_));
+  }
   static uint32_t convert_ipv4_addr(const char *ip);
 
   int64_t to_string(char *buffer, const int64_t size) const;
@@ -101,7 +106,7 @@ private:
   VER version_;
   union
   {
-    uint32_t v4_;
+    uint32_t v4_; //host byte order
     uint32_t v6_[4];
   } ip_;
   int32_t port_;

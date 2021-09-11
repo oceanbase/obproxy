@@ -103,7 +103,7 @@ int ObProxyParallelResp::next(ObObj *&rows)
           } else {
             ObCastCtx cast_ctx(allocator_, NULL, CM_NULL_ON_WARN, cs_type);
             // use src_obj as buf_obj
-            if (OB_FAIL(ObObjCasterV2::to_type(ob_type, cast_ctx, rows[i], rows[i]))) {
+            if (OB_FAIL(ObObjCasterV2::to_type(ob_type, cs_type, cast_ctx, rows[i], rows[i]))) {
               COMMON_LOG(WARN, "failed to cast obj", "idx", i, "row", rows[i], K(ob_type), K(cs_type), K(ret));
             }
           }

@@ -44,8 +44,6 @@ namespace obproxy
 namespace net
 {
 
-extern int net_config_poll_timeout;
-
 class ObSocketManager
 {
   ObSocketManager() { };

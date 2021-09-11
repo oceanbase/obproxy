@@ -60,11 +60,15 @@ public:
   ~ObProxyParserChecker() {}
 
   // parse sql
-  bool run_parse_string(const common::ObString query_str);
-  bool run_parse_std_string(std::string query_str);
-  bool run_parse_file(const char *filename);
+  bool run_parse_string(const common::ObString query_str,
+                        common::ObCollationType connection_collation);
+  bool run_parse_std_string(std::string query_str,
+                            common::ObCollationType connection_collation);
+  bool run_parse_file(const char *filename,
+                      common::ObCollationType connection_collation);
   int do_obproxy_parser(const common::ObString &query_str,
-                        ObProxyParseResultWapper &result);
+                        ObProxyParseResultWapper &result,
+                        common::ObCollationType connection_collation);
 
   void print_stat();
 

@@ -33,6 +33,7 @@ int64_t ObServerRoute::to_string(char *buf, const int64_t buf_len) const
        K_(ldc_route),
        K_(is_table_entry_from_remote),
        K_(is_part_entry_from_remote),
+       K_(need_use_dup_replica),
        KP_(table_entry),
        KP_(part_entry),
        KP_(dummy_entry));

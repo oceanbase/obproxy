@@ -47,13 +47,13 @@ ObExprParserChecker::ObExprParserChecker() : is_verbose_(true),
 {
 }
 
-int ObExprParserChecker::do_obproxy_parser(const ObString &query_str, ObExprParseResult &result)
+int ObExprParserChecker::do_obproxy_parser(const ObString &query_str, ObExprParseResult &result, ObCollationType connection_collation)
 {
   int ret = OB_SUCCESS;
 
   int64_t t0 = ObTimeUtility::current_time();
   ObExprParser parser(allocator_, parse_mode_);
-  if (OB_FAIL(parser.parse(query_str, result))) {
+  if (OB_FAIL(parser.parse(query_str, result, connection_collation))) {
     // do nothing
   }
 
@@ -151,7 +151,7 @@ void ObExprParserChecker::build_schema(std::string &extra_str, ObExprParseResult
   }
 }
 
-bool ObExprParserChecker::run_parse_string(const ObString query_str, std::string &extra_str)
+bool ObExprParserChecker::run_parse_string(const ObString query_str, std::string &extra_str, ObCollationType connection_collation)
 {
   bool bret = false;
 
@@ -166,7 +166,7 @@ bool ObExprParserChecker::run_parse_string(const ObString query_str, std::string
   build_schema(extra_str, result);
 
   DUMP_RESULT("SQL   : %.*s\n", query_str.length(), query_str.ptr());
-  if (OB_SUCCESS == do_obproxy_parser(query_str, result)) {
+  if (OB_SUCCESS == do_obproxy_parser(query_str, result, connection_collation)) {
     ObExprParseResultPrintWrapper wrapper(result);
     DUMP_RESULT("RESULT:\n%.*s\n", static_cast<int32_t>(wrapper.to_string(buf, MAX_STR_LEN)), buf);
 
@@ -193,7 +193,7 @@ bool ObExprParserChecker::run_parse_string(const ObString query_str, std::string
   return bret;
 }
 
-bool ObExprParserChecker::run_parse_std_string(std::string query_str, std::string extra_str)
+bool ObExprParserChecker::run_parse_std_string(std::string query_str, std::string extra_str, ObCollationType connection_collation)
 {
   query_str += "  ";
   ObString input_query(query_str.size(), query_str.c_str());
@@ -228,7 +228,56 @@ bool ObExprParserChecker::run_parse_std_string(std::string query_str, std::strin
       input_query += (len_before_where - 1);
     }
   }
-  return run_parse_string(input_query, extra_str);
+  return run_parse_string(input_query, extra_str, connection_collation);
+}
+
+bool ObExprParserChecker::run_parse_file(const char *filepath, std::string extra_str, ObCollationType connection_collation)
+{
+  bool bret = false;
+  std::ifstream input_file(filepath);
+  std::string line_str;
+  std::string query_str;
+
+  if (!input_file.is_open()) {
+    fprintf(stderr, "file is not open, filepath:%s\n", filepath);
+    bret = false;
+  } else {
+    // open result file
+    if (NULL == result_file_ && strlen(result_file_name_) > 0) {
+      result_file_ = fopen(result_file_name_, "w+");
+    }
+
+    // walk through and do parser string
+    while (std::getline(input_file, line_str)) {
+      if (query_str == "") {
+        query_str = line_str;
+      } else {
+        query_str += "\n" + line_str;
+      }
+      std::size_t begin = query_str.find_first_not_of("\r\f\n\t ");
+      begin = (begin == std::string::npos) ? 0 : begin;
+      if (query_str.size() <= 0 || query_str.at(begin) == '#' || query_str.at(begin) == '-' ) {
+        query_str = "";
+        continue;
+      } else {
+        std::size_t end = -1;
+        if (std::string::npos !=  (end = query_str.find_last_of(';'))) {
+          query_str = query_str.substr(begin, end - begin + 1);
+          run_parse_std_string(query_str, extra_str, connection_collation);
+          query_str = "";
+        } else {
+          // not contains ';'
+        }
+      }
+    }
+    input_file.close();
+
+    // close if need
+    if (NULL != result_file_) {
+      fclose(result_file_);
+    }
+  }
+  return bret;
 }
 
 void ObExprParserChecker::print_stat()
@@ -244,18 +293,23 @@ void ObExprParserChecker::print_stat()
 } // end of namespace obproxy
 } // end of namespace oceanbase
 
-extern int obexprdebug;
+extern int ob_expr_parser_utf8_yydebug;
 using namespace oceanbase::obproxy::test;
 int main(int argc, char **argv)
 {
   int ret = 0;
   ObExprParserChecker checker;
   int c = -1;
+  const char *filepath = "";
   const char *input_str = "";
   const char *extra_str = "";
   int loop_count = 1;
-  while(-1 != (c = getopt(argc, argv, "e:s:n:r:t:SDRI"))) {
+  ObCollationType connection_collation = CS_TYPE_INVALID;;
+  while(-1 != (c = getopt(argc, argv, "f:e:s:n:r:t:c:SDRI"))) {
     switch(c) {
+      case 'f':
+        filepath = optarg;
+        break;
       case 's':
         input_str = optarg;
         break;
@@ -263,7 +317,7 @@ int main(int argc, char **argv)
         checker.is_verbose_ = false;
         break;
       case 'D':
-        obexprdebug = 1;
+        ob_expr_parser_utf8_yydebug = 1;
         oceanbase::common::ObLogger::get_logger().set_log_level("DEBUG");
         OB_LOGGER.set_log_level("DEBUG");
         break;
@@ -282,6 +336,11 @@ int main(int argc, char **argv)
       case 'I':
         checker.parse_mode_ = INSERT_STMT_PARSE_MODE;
         break;
+      case 'c':
+        if (strcmp(optarg, "utb8") == 0) {
+          connection_collation = CS_TYPE_UTF8MB4_GENERAL_CI;
+        }
+        break;
       case 't':
         ObString stmt_type(strlen(optarg), optarg);
         checker.stmt_type_ = get_stmt_type_by_name(stmt_type);
@@ -289,12 +348,14 @@ int main(int argc, char **argv)
     }
   }
 
-  if (strlen(input_str) > 0 && strlen(extra_str)) {
-    while (loop_count-- > 0) {
-      checker.run_parse_std_string(input_str, extra_str);
+  while (loop_count-- > 0) {
+    if (strlen(filepath) > 0 && strlen(extra_str)) {
+      checker.run_parse_file(filepath, extra_str, connection_collation);
+    } else if (strlen(input_str) > 0 && strlen(extra_str)) {
+      checker.run_parse_std_string(input_str, extra_str, connection_collation);
+    } else {
+      printf("must spec input_str(-i)/file_name(-f) and extra_str(-e)");
     }
-  } else {
-    printf("must spec input_str(-i) and extra_str(-e)");
   }
 
   checker.print_stat();

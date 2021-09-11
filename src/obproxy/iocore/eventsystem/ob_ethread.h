@@ -335,6 +335,8 @@ public:
   ObProtectedQueue event_queue_external_;
   ObPriorityEventQueue event_queue_;
 
+  ObHRTime sleep_time_;
+
   ObEThread **ethreads_to_be_signalled_;
   int64_t ethreads_to_be_signalled_count_;
 

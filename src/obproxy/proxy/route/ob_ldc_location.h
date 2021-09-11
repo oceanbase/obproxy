@@ -203,6 +203,7 @@ public:
                                        ObLDCLocation &ldc_location,
                                        bool &entry_need_update,
                                        const bool is_only_readwrite_zone,
+                                       const bool need_use_dup_replica,
                                        const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                        const common::ObIArray<common::ObString> &region_names,
                                        const common::ObString &proxy_primary_zone_name);

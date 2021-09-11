@@ -413,7 +413,7 @@ int ObProxyCreateServerConnCont::do_create_server_conn()
         LOG_WARN("fail to init proxy", K(login_info.username_), K(login_info.db_));
       } else if (DB_OB_ORACLE == server_type || DB_OB_MYSQL == server_type) {
         if (OB_FAIL(proxy->rebuild_client_pool(cr_, is_meta_mysql_client,
-                         cluster_name, OB_DEFAULT_CLUSTER_ID, login_info.username_, passwd_string, login_info.db_, &client_pool_option))) {
+                         cluster_name, OB_DEFAULT_CLUSTER_ID, login_info.username_, passwd_string, login_info.db_, "", &client_pool_option))) {
           LOG_WARN("fail to create mysql client pool", K(login_info), K(ret));
         } else {
           LOG_DEBUG("succ to create ob client pool", K(login_info.username_), K(server_type),
@@ -421,7 +421,7 @@ int ObProxyCreateServerConnCont::do_create_server_conn()
         }
       } else if (DB_MYSQL == server_type) {
         if (OB_FAIL(proxy->rebuild_client_pool(schema_key.shard_conn_,
-              is_meta_mysql_client, user_name, passwd_string, database_name, &client_pool_option))) {
+              is_meta_mysql_client, user_name, passwd_string, database_name, "", &client_pool_option))) {
           LOG_WARN("fail to create mysql client pool", K(user_name), K(database_name), K(ret));
         } else {
           LOG_DEBUG("succ to create mysql clinet pool", K(login_info.username_), K(database_name), K(server_type),

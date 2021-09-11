@@ -41,7 +41,7 @@ class ObTableEntry : public ObRouteEntry
 public:
   ObTableEntry()
     : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_entry_from_rslist_(false),
-      is_empty_entry_allowed_(false), is_need_force_flush_(false), table_id_(common::OB_INVALID_ID),
+      is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), table_id_(common::OB_INVALID_ID),
       table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
       buf_len_(0), buf_start_(NULL), first_pl_(NULL)
   {
@@ -79,6 +79,8 @@ public:
   void set_allow_empty_entry(const bool is_empty_entry_allowed) { is_empty_entry_allowed_ = is_empty_entry_allowed; }
   bool is_need_force_flush() const { return is_need_force_flush_; }
   void set_need_force_flush(const bool is_need_force_flush) { is_need_force_flush_ = is_need_force_flush; }
+  bool has_dup_replica() const { return has_dup_replica_; }
+  void set_has_dup_replica() { has_dup_replica_ = true; }
 
   bool exist_leader_server() const;
   const ObProxyReplicaLocation *get_leader_replica() const;
@@ -126,6 +128,7 @@ private:
   bool is_entry_from_rslist_;
   bool is_empty_entry_allowed_;
   bool is_need_force_flush_;
+  bool has_dup_replica_;
 
   // schema info, add more later
   uint64_t table_id_;

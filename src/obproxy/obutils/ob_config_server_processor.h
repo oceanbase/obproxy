@@ -57,6 +57,7 @@ public:
                                  const int64_t cluster_id,
                                  common::ObIArray<common::ObAddr> &rs_list,
                                  const bool need_update_dummy_entry = true);
+  int swap_origin_web_rslist_and_build_sys(const ObString &cluster, const int64_t cluster_id, const bool need_save_rslist_hash);
 
   int refresh_idc_list(const common::ObString &cluster_name, const int64_t cluster_id, ObProxyIDCList &idc_list);
 
@@ -176,7 +177,7 @@ private:
   int refresh_json_config_info(const bool force_refresh = false);
   int get_json_config_info(const char *url, const bool version_only = false);
   int parse_json_config_info(const common::ObString &json_str, const bool version_only = false);
-  virtual int do_fetch_json_info(const char *url, common::ObString &json);
+  virtual int do_fetch_json_info(const char *url, common::ObString &json, int64_t timeout = CURL_TRANSFER_TIMEOUT);
   int handle_content_string(char *content, const int64_t content_length);
   int init_json(const common::ObString &json_str, json::Value *&json_root, common::ObArenaAllocator &allocator);
 
@@ -200,6 +201,7 @@ private:
   static const int64_t ITEM_STR_SIZE = 512;
   static const int64_t CURL_CONNECTION_TIMEOUT = 10;
   static const int64_t CURL_TRANSFER_TIMEOUT = 5;
+  static const int64_t CURL_IDC_TRANSFER_TIMEOUT = 1;
   static const int64_t CURL_TRANSFER_TIMEOUT_LARGE = 120;
 
   static const ObConfigServerHeaderVersion HEADER_VERSION = HEADER_VERSION_ZLIB_COMPRESS;

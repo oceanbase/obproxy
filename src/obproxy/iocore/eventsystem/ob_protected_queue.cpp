@@ -32,6 +32,7 @@
 #define USING_LOG_PREFIX PROXY_EVENT
 
 #include "iocore/eventsystem/ob_event_system.h"
+#include "iocore/net/ob_unix_net.h"
 
 using namespace oceanbase::common;
 
@@ -71,6 +72,9 @@ void ObProtectedQueue::enqueue(ObEvent *e, const bool fast_signal)
         if (OB_FAIL(signal())) {
           LOG_WARN("fail to do signal, it should not happened", K(ret));
         }
+        if (NULL != e_ethread->net_poll_) {
+          e_ethread->get_net_poll().timerfd_settime();
+        }
         if (fast_signal) {
           if (NULL != e_ethread->signal_hook_) {
             e_ethread->signal_hook_(*e_ethread);
@@ -81,7 +85,13 @@ void ObProtectedQueue::enqueue(ObEvent *e, const bool fast_signal)
 #ifdef EAGER_SIGNALLING
         // Try to signal now and avoid deferred posting.
         if (OB_SUCC(e_ethread->event_queue_external_.try_signal())) {
-          need_break = true;
+          if (NULL != e_ethread->net_poll_) {
+            if (OB_SUCC(e_ethread->get_net_poll().timerfd_settime())) {
+              need_break = true;
+            }
+          } else {
+            need_break = true;
+          }
         }
 #endif
         if (!need_break) {
@@ -146,7 +156,13 @@ void flush_signals(ObEThread *thr)
       // Try to signal as many threads as possible without blocking.
       if (NULL != thr->ethreads_to_be_signalled_[i]) {
         if (thr->ethreads_to_be_signalled_[i]->event_queue_external_.try_signal()) {
-          thr->ethreads_to_be_signalled_[i] = 0;
+          if (NULL != thr->ethreads_to_be_signalled_[i]->net_poll_) {
+            if (OB_SUCC(thr->ethreads_to_be_signalled_[i]->get_net_poll().timerfd_settime())) {
+              thr->ethreads_to_be_signalled_[i] = 0;
+            }
+          } else {
+            thr->ethreads_to_be_signalled_[i] = 0;
+          }
         }
       }
     }
@@ -155,6 +171,9 @@ void flush_signals(ObEThread *thr)
       if (NULL != thr->ethreads_to_be_signalled_[i]) {
         if (OB_FAIL(thr->ethreads_to_be_signalled_[i]->event_queue_external_.signal())) {
           LOG_WARN("failed to do signal, it should not happened", K(ret));
+        }
+        if (NULL != thr->ethreads_to_be_signalled_[i]->net_poll_) {
+          thr->ethreads_to_be_signalled_[i]->get_net_poll().timerfd_settime();
         }
         if (NULL != thr->ethreads_to_be_signalled_[i]->signal_hook_) {
           thr->ethreads_to_be_signalled_[i]->signal_hook_(*(thr->ethreads_to_be_signalled_[i]));

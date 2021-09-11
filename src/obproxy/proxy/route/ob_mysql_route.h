@@ -42,7 +42,8 @@ public:
   ObMysqlRouteResult()
     : table_entry_(NULL), part_entry_(NULL),
       is_table_entry_from_remote_(false),
-      is_partition_entry_from_remote_(false) {}
+      is_partition_entry_from_remote_(false),
+      has_dup_replica_(false) {}
   ~ObMysqlRouteResult() {}
   void reset();
   void ref_reset();
@@ -52,6 +53,7 @@ public:
 
   bool is_table_entry_from_remote_;
   bool is_partition_entry_from_remote_;
+  bool has_dup_replica_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObMysqlRouteResult);
 };
@@ -62,6 +64,7 @@ inline void ObMysqlRouteResult::reset()
   part_entry_ = NULL;
   is_table_entry_from_remote_ = false;
   is_partition_entry_from_remote_ = false;
+  has_dup_replica_ = false;
 }
 
 inline void ObMysqlRouteResult::ref_reset()
@@ -76,6 +79,7 @@ inline void ObMysqlRouteResult::ref_reset()
   }
   is_table_entry_from_remote_ = false;
   is_partition_entry_from_remote_ = false;
+  has_dup_replica_ = false;
 }
 
 class ObRouteParam

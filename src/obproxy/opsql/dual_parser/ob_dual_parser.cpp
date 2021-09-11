@@ -382,7 +382,7 @@ int ObProxyDualParser::parse_where_key_word()
   return OB_SUCCESS;
 }
 
-int ObProxyDualParser::parse_where_fields()
+int ObProxyDualParser::parse_where_fields(ObCollationType connection_collation)
 {
   int ret = OB_SUCCESS;
   // OB_PROXY_MAX_CONFIG_STRING_LENGTH is 512
@@ -416,7 +416,7 @@ int ObProxyDualParser::parse_where_fields()
         expr_sql += (len_before_where - 1);
       }
     }
-    if (OB_FAIL(expr_parser.parse(expr_sql, expr_result))) {
+    if (OB_FAIL(expr_parser.parse(expr_sql, expr_result, connection_collation))) {
       LOG_DEBUG("parse failed ", K(expr_sql));
     } else {
       LOG_DEBUG("expr_sql", K(expr_sql));
@@ -426,7 +426,8 @@ int ObProxyDualParser::parse_where_fields()
 }
 
 int ObProxyDualParser::parse(const common::ObString &sql_string,
-                             ObProxyDualParseResult &parse_result)
+                             ObProxyDualParseResult &parse_result,
+                             ObCollationType connection_collation)
 {
   int ret = OB_SUCCESS;
   reset();
@@ -445,7 +446,7 @@ int ObProxyDualParser::parse(const common::ObString &sql_string,
     LOG_WARN("parse_key_word DUAL failed");
   } else if (OB_FAIL(parse_where_key_word())) {
     LOG_DEBUG("parse_where_and_fields failed");
-  } else if (OB_FAIL(parse_where_fields())) {
+  } else if (OB_FAIL(parse_where_fields(connection_collation))) {
     LOG_DEBUG("parse_where_fields failed");
   }
   return ret;

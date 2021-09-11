@@ -42,6 +42,7 @@ public:
   static bool is_same_zone_type(const ObRouteType route_type, const ObLDCItem &item);
   static bool is_same_partition_type(const ObRouteType route_type, const ObLDCItem &item);
   static bool is_same_role(const ObRouteType route_type, const ObLDCItem &item);
+  static bool is_same_dup_replica_type(const ObRouteType route_type, const ObLDCItem &item);
 
   TO_STRING_KV("policy", get_route_policy_enum_string(policy_), K_(disable_merge_status_check),
                K_(curr_cursor_index), K_(next_index_in_site), K_(location));
@@ -163,6 +164,26 @@ inline bool ObLDCRoute::is_same_role(const ObRouteType route_type,
         break;
       default:
         //do nothing
+        break;
+    }
+  }
+  return ret_bool;
+}
+
+inline bool ObLDCRoute::is_same_dup_replica_type(const ObRouteType route_type, const ObLDCItem &item)
+{
+  bool ret_bool = false;
+  if (OB_NOT_NULL(item.replica_)) {
+    switch (route_type & MAX_DUP_REPLICA_TYPE_VALUE) {
+      case IS_DUP_REPLICA:
+        ret_bool = item.replica_->is_dup_replica_ || common::LEADER == item.replica_->role_;
+        break;
+      case NON_DUP_REPLICA:
+        ret_bool = !item.replica_->is_dup_replica_;
+        break;
+      case UNKNOWN_DUP_REPLICA_TYPE:
+        ret_bool = true;
+      default:
         break;
     }
   }

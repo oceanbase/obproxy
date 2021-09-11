@@ -62,6 +62,19 @@ int ObPartDescHash::get_part(ObNewRange &range,
   return ret;
 }
 
+int ObPartDescHash::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+{
+  int ret = OB_SUCCESS;
+  int64_t part_id = -1;
+  int64_t part_idx = num % part_num_;
+  if (OB_FAIL(get_part_hash_idx(part_idx, part_id))) {
+    COMMON_LOG(WARN, "fail to get part hash id", K(num), K(ret));
+  } else if (OB_FAIL(part_ids.push_back(part_id))) {
+    COMMON_LOG(WARN, "fail to push part_id", K(ret));
+  }
+  return ret;
+}
+
 bool ObPartDescHash::is_oracle_supported_type(const ObObjType type)
 {
   bool supported = false;
@@ -143,13 +156,14 @@ int ObPartDescHash::calc_value_for_oracle(ObObj &src_obj, ObIAllocator &allocato
 
   uint64_t hash_val = 0;
 
-  src_obj.set_collation_type(cs_type_);
   ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, cs_type_);
   // use src_obj as buf_obj
-  if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cast_ctx, src_obj, src_obj))) {
+  COMMON_LOG(DEBUG, "begin to cast value for hash oracle", K(src_obj), K(cs_type_));
+  if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cs_type_, cast_ctx, src_obj, src_obj))) {
     COMMON_LOG(WARN, "failed to cast obj", K(src_obj), K(obj_type_), K(cs_type_), K(ret));
   } else {
     //1. calc hash value
+    COMMON_LOG(DEBUG, "end to cast values for hash oracle", K(src_obj), K(cs_type_));
     const ObObjType type = src_obj.get_type();
     if (ObNullType == type) {
       //do nothing, hash_code not changed
@@ -193,7 +207,7 @@ int ObPartDescHash::calc_value_for_mysql(ObObj &src_obj, ObIAllocator &allocator
 
   ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, CS_TYPE_INVALID);
   ObObjType target_type = ObIntType;
-  if (OB_FAIL(ObObjCasterV2::to_type(target_type, cast_ctx, src_obj, src_obj))) {
+  if (OB_FAIL(ObObjCasterV2::to_type(target_type, cs_type_, cast_ctx, src_obj, src_obj))) {
     COMMON_LOG(INFO, "failed to cast to target type", K(target_type), K(src_obj), K(ret));
   } else {
     int64_t val = 0;

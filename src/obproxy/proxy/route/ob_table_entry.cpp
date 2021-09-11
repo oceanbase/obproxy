@@ -248,6 +248,7 @@ int64_t ObTableEntry::to_string(char *buf, const int64_t buf_len) const
        K_(is_entry_from_rslist),
        K_(is_empty_entry_allowed),
        K_(is_need_force_flush),
+       K_(has_dup_replica),
        K_(cr_id),
        K_(name),
        K_(table_id),

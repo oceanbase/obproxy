@@ -1102,7 +1102,6 @@ int ObMysqlClientSession::init_session_pool_info()
 int ObMysqlClientSession::acquire_svr_session_in_session_pool(const sockaddr &addr, ObMysqlServerSession *&svr_session)
 {
   int ret = OB_SUCCESS;
-  session_info_.set_need_sync_session_vars(true);
   PROXY_CS_LOG(DEBUG, "[acquire server session] try to acquire session in session pool", K_(cs_id), K_(schema_key));
   ObShardConnector *shard_conn = session_info_.get_shard_connector();
   ObCommonAddr common_addr;

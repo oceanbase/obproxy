@@ -86,7 +86,7 @@ void do_parser_test(ObProxyMysqlRequest& client_request, std::string query_str) 
   ObProxySqlParser sql_parser;
   ObSqlParseResult& sql_result = client_request.get_parse_result();
 
-  if (OB_FAIL(sql_parser.parse_sql(input_query, NORMAL_PARSE_MODE, sql_result, true, false, false))) {
+  if (OB_FAIL(sql_parser.parse_sql(input_query, NORMAL_PARSE_MODE, sql_result, true, CS_TYPE_UTF8MB4_GENERAL_CI, false, false))) {
     fprintf(stderr, "parse sql failed");
   } else if (sql_result.get_proxy_stmt() != NULL) {
     ObSqlString sql_string;
@@ -315,7 +315,7 @@ int parse_sql_fileds(ObProxyMysqlRequest &client_request, ObString expr_sql) {
       expr_sql += (len_before_where - 1);
     }
   }
-  if(OB_FAIL(expr_parser.parse(expr_sql, expr_result))) {
+  if(OB_FAIL(expr_parser.parse(expr_sql, expr_result, CS_TYPE_UTF8MB4_GENERAL_CI))) {
     fprintf(stderr, "parse failed %s\n", expr_sql.ptr());
   } else {
     int64_t t1 = ObTimeUtility::current_time();

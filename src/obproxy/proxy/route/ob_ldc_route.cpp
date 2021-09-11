@@ -449,6 +449,86 @@ static ObRouteType route_order_cursor_of_unmerge_follower_first_optimized[] = {
     ROUTE_TYPE_MAX
 };
 
+//ANPD, BNPD, AMPD, BMPD
+//CNPD, CMPD
+//ANP, BNP, AMP, BMP;
+//CNP, CMP;
+//ANT, BNT, AMT, BMT;
+//CNT, CMT
+static ObRouteType route_order_cursor_of_dup_strong_read_order[] = {
+    ROUTE_TYPE_DUP_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_DUP_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_DUP_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_DUP_PARTITION_MERGE_REGION,
+    ROUTE_TYPE_DUP_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_DUP_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_PARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_NONPARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_NONPARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_MAX
+};
+
+//ANPF, BNPF, AMPF, BMPF;
+//ANT, BNT, AMT, BMT;
+//CNPF, CMPF;
+//CNT, CMT
+static ObRouteType route_order_cursor_of_follower_only[] = {
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_NONPARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_NONPARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_MAX
+};
+
+//ANPF, BNPF, AMPF, BMPF;
+//CNPF, CMPF;
+//ANT, BNT, AMT, BMT;
+//CNT, CMT
+static ObRouteType route_order_cursor_of_follower_only_optimized[] = {
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_NONPARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_NONPARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_MAX
+};
 
 const ObRouteType *ObLDCRoute::route_order_cursor_[] = {
     route_order_cursor_of_merge_idc_order,
@@ -465,6 +545,9 @@ const ObRouteType *ObLDCRoute::route_order_cursor_[] = {
     route_order_cursor_of_unmerge_follower_first,
     route_order_cursor_of_follower_first_optimized,
     route_order_cursor_of_unmerge_follower_first_optimized,
+    route_order_cursor_of_dup_strong_read_order,
+    route_order_cursor_of_follower_only,
+    route_order_cursor_of_follower_only_optimized,
 };
 
 int64_t ObLDCRoute::route_order_size_[] = {
@@ -483,6 +566,11 @@ int64_t ObLDCRoute::route_order_size_[] = {
     sizeof(route_order_cursor_of_unmerge_follower_first) / sizeof(ObRouteType),//19
     sizeof(route_order_cursor_of_follower_first_optimized) / sizeof(ObRouteType),//19
     sizeof(route_order_cursor_of_unmerge_follower_first_optimized) / sizeof(ObRouteType),//19
+
+    sizeof(route_order_cursor_of_dup_strong_read_order) / sizeof(ObRouteType),//18
+
+    sizeof(route_order_cursor_of_follower_only) / sizeof(ObRouteType),//13
+    sizeof(route_order_cursor_of_follower_only_optimized) / sizeof(ObRouteType),//13
 };
 
 const ObLDCItem *ObLDCRoute::get_next_item()
@@ -516,6 +604,7 @@ const ObLDCItem *ObLDCRoute::get_next_item()
             && is_same_role(route_type, *ret_item)
             && is_same_partition_type(route_type, *ret_item)
             && is_same_zone_type(route_type, *ret_item)
+            && is_same_dup_replica_type(route_type, *ret_item)
             && (disable_merge_status_check_ || is_same_merge_type(route_type, *ret_item))) {
           ret_item->is_used_ = true;
           need_break = true;

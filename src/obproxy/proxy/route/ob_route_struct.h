@@ -79,9 +79,9 @@ do { \
 struct ObProxyReplicaLocation
 {
 public:
-  ObProxyReplicaLocation() : server_(), role_(common::FOLLOWER), replica_type_(common::REPLICA_TYPE_FULL) {}
+  ObProxyReplicaLocation() : is_dup_replica_(false), server_(), role_(common::FOLLOWER), replica_type_(common::REPLICA_TYPE_FULL) {}
   ObProxyReplicaLocation(const common::ObAddr &server, const common::ObRole role, const common::ObReplicaType replica_type)
-    : server_(server), role_(role), replica_type_(replica_type) {}
+    : is_dup_replica_(false), server_(server), role_(role), replica_type_(replica_type) {}
   ~ObProxyReplicaLocation() { reset(); }
 
   void reset();
@@ -97,6 +97,8 @@ public:
   static common::ObString get_role_type_string(const common::ObRole role);
   static common::ObString get_replica_type_string(const common::ObReplicaType type);
   bool is_full_replica() const { return common::REPLICA_TYPE_FULL == replica_type_; }
+  void set_dup_replica_type(const int32_t dup_replica_type);
+  bool is_dup_replica() const { return is_dup_replica_; }
   bool is_weak_read_avail() const
   {
     return common::REPLICA_TYPE_FULL == replica_type_
@@ -104,6 +106,7 @@ public:
   }
   bool is_readonly_replica() const { return common::REPLICA_TYPE_READONLY == replica_type_; }
 
+  bool is_dup_replica_;
   common::ObAddr server_;
   common::ObRole role_;
   common::ObReplicaType replica_type_;
@@ -247,8 +250,18 @@ inline int ObProxyReplicaLocation::set_replica_type(const int32_t replica_type)
   return ret;
 }
 
+inline void ObProxyReplicaLocation::set_dup_replica_type(const int32_t dup_replica_type)
+{
+  if (dup_replica_type > 0) {
+    is_dup_replica_ = true;
+  } else {
+    is_dup_replica_ = false;
+  }
+}
+
 inline void ObProxyReplicaLocation::reset()
 {
+  is_dup_replica_ = false;
   server_.reset();
   role_ = common::FOLLOWER;
   replica_type_ = common::REPLICA_TYPE_FULL;
@@ -265,7 +278,8 @@ inline bool ObProxyReplicaLocation::operator==(const ObProxyReplicaLocation &oth
 {
   return (server_ == other.server_)
           && (role_ == other.role_)
-          && (replica_type_ == other.replica_type_);
+          && (replica_type_ == other.replica_type_)
+          && (is_dup_replica_ == other.is_dup_replica_);
 }
 
 inline bool ObProxyReplicaLocation::operator!=(const ObProxyReplicaLocation &other) const

@@ -354,7 +354,7 @@ bool ObLDCLocation::is_in_primary_zone(const ObProxyReplicaLocation &replica,
 
 int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
     ObLDCLocation &dummy_ldc, ObLDCItem &leader_item, ObLDCLocation &ldc_location,
-    bool &entry_need_update, const bool is_only_readwrite_zone,
+    bool &entry_need_update, const bool is_only_readwrite_zone, const bool need_use_dup_replica,
     const ObIArray<ObServerStateSimpleInfo> &ss_info,
     const ObIArray<ObString> &region_names,
     const ObString &proxy_primary_zone_name)
@@ -425,6 +425,11 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
                        K(replica));
               leader_item.set(replica, default_merging_status, default_idc_type, default_zone_type,
                             true, default_congested_status);
+              if (need_use_dup_replica) {
+                if (OB_FAIL(tmp_item_array.push_back(leader_item))) {
+                  LOG_WARN("fail to push_back leader_item", K(leader_item), K(tmp_item_array), K(ret));
+                }
+              }
             } else if (is_ldc_used) {
               LOG_WARN("fail to find replica in dummy ldc with ldc, maybe someone old, "
                        "do not use it", K(replica));
@@ -441,6 +446,11 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
             //found it
             if (replica.is_leader()) {
               leader_item = tmp_item;
+              if (need_use_dup_replica) {
+                if (OB_FAIL(tmp_item_array.push_back(leader_item))) {
+                  LOG_WARN("fail to push_back leader_item", K(leader_item), K(tmp_item_array), K(ret));
+                }
+              }
             } else if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
               LOG_WARN("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
             }

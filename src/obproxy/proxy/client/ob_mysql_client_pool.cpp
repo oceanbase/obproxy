@@ -158,6 +158,7 @@ int ObMysqlClientPool::init(
     const ObString &user_name,
     const ObString &password,
     const ObString &database,
+    const ObString &password1,
     ClientPoolOption* client_pool_option)
 {
   int ret = OB_SUCCESS;
@@ -174,7 +175,7 @@ int ObMysqlClientPool::init(
     ObMysqlClient *mysql_client = NULL;
     const int64_t mc_count = get_mysql_client_pool_count(is_meta_mysql_client);
     for (int64_t i = 0; (i < mc_count && OB_SUCC(ret)); ++i) {
-      if (OB_FAIL(ObMysqlClient::alloc(this, mysql_client, user_name, password, database, is_meta_mysql_client, client_pool_option))) {
+      if (OB_FAIL(ObMysqlClient::alloc(this, mysql_client, user_name, password, database, is_meta_mysql_client, password1, client_pool_option))) {
         LOG_WARN("fail to alloc mysql client", K(user_name), K(password),
                  K(database), "idx", i, K(is_meta_mysql_client), K(ret));
       } else if (OB_ISNULL(mysql_client)) {

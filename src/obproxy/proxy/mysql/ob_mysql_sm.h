@@ -174,6 +174,7 @@ public:
   bool is_pl_route_supported();
   int encode_throttle_message();
   int encode_unsupport_ps_message();
+  int encode_unsupport_change_user_message();
   int handle_saved_session_variables();
   void print_mysql_complete_log(ObMysqlTunnelProducer *p);
 

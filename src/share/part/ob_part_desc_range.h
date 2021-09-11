@@ -14,6 +14,7 @@
 #define _OB_PART_DESC_RANGE_H 1
 
 #include "share/part/ob_part_desc.h"
+#include "lib/container/ob_se_array.h"
 
 namespace oceanbase
 {
@@ -43,11 +44,17 @@ public:
   virtual int get_part(common::ObNewRange &range,
                        common::ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids);
+  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
   RangePartition* get_part_array() { return part_array_; }
   int set_part_array(RangePartition *part_array, int64_t size) {
     part_array_ = part_array;
     part_array_size_ = size;
     return common::OB_SUCCESS;
+  }
+
+  void set_collation_type(const ObCollationType collation_type)
+  {
+    collation_type_ = collation_type;
   }
 
   DECLARE_VIRTUAL_TO_STRING;
@@ -61,15 +68,16 @@ private:
                   const ObNewRange &range);
 
   int cast_key(ObRowkey &src_key,
-               const ObRowkey &target_key,
+               ObRowkey &target_key,
                ObIAllocator &allocator);
 
   int cast_obj(ObObj &src_obj,
-               const ObObj &target_obj,
+               ObObj &target_obj,
                ObIAllocator &allocator);
 private:
   RangePartition *part_array_;
   int64_t part_array_size_;
+  ObCollationType collation_type_;
 };
 }
 }

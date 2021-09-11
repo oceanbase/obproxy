@@ -99,7 +99,8 @@ class ObPartitionEntry : public ObRouteEntry
 {
 public:
   ObPartitionEntry()
-    : ObRouteEntry(), table_id_(common::OB_INVALID_ID),
+    : ObRouteEntry(), has_dup_replica_(false),
+      table_id_(common::OB_INVALID_ID),
       partition_id_(common::OB_INVALID_ID), pl_()
   {
   }
@@ -122,6 +123,8 @@ public:
   void set_table_id(const uint64_t table_id) { table_id_ = table_id; }
   void set_partition_id(const uint64_t partition_id) { partition_id_ = partition_id; }
   int set_pl(const common::ObIArray<ObProxyReplicaLocation> &replicas) { return pl_.set_replicas(replicas); }
+  bool has_dup_replica() const { return has_dup_replica_; }
+  void set_has_dup_replica() { has_dup_replica_ = true; }
 
   ObPartitionEntryKey get_key() const;
   uint64_t get_partition_id() const { return partition_id_; }
@@ -139,6 +142,7 @@ public:
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 private:
+  bool has_dup_replica_;
   uint64_t table_id_;
   uint64_t partition_id_;
   ObProxyPartitionLocation pl_;

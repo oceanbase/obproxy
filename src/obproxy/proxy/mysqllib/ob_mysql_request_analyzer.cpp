@@ -425,7 +425,8 @@ void ObMysqlRequestAnalyzer::extract_fileds(const ObExprParseResult& result, Sql
   }
 }
 
-int ObMysqlRequestAnalyzer::parse_sql_fileds(ObProxyMysqlRequest &client_request)
+int ObMysqlRequestAnalyzer::parse_sql_fileds(ObProxyMysqlRequest &client_request,
+                                             ObCollationType connection_collation)
 {
   int ret = OB_SUCCESS;
   bool need_parse_fields = true;
@@ -470,7 +471,7 @@ int ObMysqlRequestAnalyzer::parse_sql_fileds(ObProxyMysqlRequest &client_request
         }
       }
       LOG_DEBUG("expr_sql is ", K(expr_sql));
-      if (OB_FAIL(expr_parser.parse(expr_sql, expr_result))) {
+      if (OB_FAIL(expr_parser.parse(expr_sql, expr_result, connection_collation))) {
         LOG_WARN("parse failed", K(expr_sql));
       } else if (INSERT_STMT_PARSE_MODE == parse_mode
                     && FALSE_IT(sql_parse_result.set_batch_insert_values_count(expr_result.multi_param_values_))) {
@@ -525,10 +526,12 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
 
             if (OB_FAIL(sql_parser.parse_sql(sql, ctx.parse_mode_, sql_parse_result,
                                              use_lower_case_name,
+                                             ctx.connection_collation_,
                                              ctx.drop_origin_db_table_name_,
                                              client_request.is_sharding_user()))) {
               LOG_WARN("fail to parse sql", K(sql), K(ret));
-            } else if (client_request.is_sharding_user() && OB_FAIL(parse_sql_fileds(client_request))){
+            } else if (client_request.is_sharding_user()
+                       && OB_FAIL(parse_sql_fileds(client_request, ctx.connection_collation_))){
               LOG_WARN("fail to extract_fileds");
             } else if (OB_FAIL(handle_internal_cmd(client_request))) {
               LOG_WARN("fail to handle internal cmd", K(sql), K(ret));
@@ -576,6 +579,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
       }
       break;
     }
+    case OB_MYSQL_COM_CHANGE_USER:
     case OB_MYSQL_COM_INIT_DB: {
       if (OB_FAIL(client_request.add_request(ctx.reader_, ctx.request_buffer_length_))) {
         LOG_WARN("fail to add com request", K(ret));
@@ -595,7 +599,6 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     case OB_MYSQL_COM_DEBUG:
     case OB_MYSQL_COM_TIME:
     case OB_MYSQL_COM_DELAYED_INSERT:
-    case OB_MYSQL_COM_CHANGE_USER:
     case OB_MYSQL_COM_DAEMON: {
       //if it is proxysys tenant, we treat it as error cmd, and response error packet to client
       if (client_request.is_proxysys_tenant()) {

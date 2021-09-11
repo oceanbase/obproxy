@@ -56,7 +56,8 @@ public:
   int init(const int64_t timeout_ms,
            const common::ObString &user_name,
            const common::ObString &password,
-           const common::ObString &database);
+           const common::ObString &database,
+           const common::ObString &password1 = "");
   bool is_inited() const { return is_inited_; }
   void destroy();
   int set_timeout_ms(const int64_t timeout_ms);
@@ -69,6 +70,7 @@ public:
                           const common::ObString &user_name,
                           const common::ObString &password,
                           const common::ObString &database,
+                          const common::ObString &password1 = "",
                           ClientPoolOption* client_pool_option = NULL);
 
   int rebuild_client_pool(obutils::ObClusterResource *cr,
@@ -78,6 +80,7 @@ public:
                           const common::ObString &user_name,
                           const common::ObString &password,
                           const common::ObString &database,
+                          const common::ObString &password1 = "",
                           ClientPoolOption* client_pool_option = NULL);
 
   void destroy_client_pool();
@@ -110,6 +113,7 @@ private:
                         const common::ObString &user_name,
                         const common::ObString &password,
                         const common::ObString &database,
+                        const common::ObString &password1 = "",
                         ClientPoolOption* client_pool_option = NULL);
 public:
   ObMysqlClientPool *acquire_client_pool();

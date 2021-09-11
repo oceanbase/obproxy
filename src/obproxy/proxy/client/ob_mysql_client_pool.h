@@ -52,6 +52,7 @@ public:
            const common::ObString &user_name,
            const common::ObString &password,
            const common::ObString &database,
+           const common::ObString &password1 = "",
            ClientPoolOption* client_pool_option = NULL);
   void destroy();
   // Attention!! must release, after required

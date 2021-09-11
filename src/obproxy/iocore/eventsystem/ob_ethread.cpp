@@ -348,7 +348,7 @@ void ObEThread::execute()
       Que(ObEvent, link_) negative_queue;
       ObEvent *e = NULL;
       ObHRTime next_time = 0;
-      ObHRTime sleep_time = 0;
+      sleep_time_ = 0;
       bool done_one = false;
 
       //NOTE:: the precision of schedule in ObEThread is [-5ms, 60ms)
@@ -389,6 +389,21 @@ void ObEThread::execute()
           }
           //3.1 execute all the available external events that have already been dequeued
           dequeue_local_event(negative_queue);
+          if (ethreads_to_be_signalled_count_ > 0) {
+            flush_signals(this);
+          }
+
+          if (event_queue_external_.get_local_queue_size() > 0 || event_queue_external_.get_atomic_list_size() > 0) {
+            sleep_time_ = 0;
+          } else {
+            cur_time_ = get_hrtime_internal();
+            sleep_time_ = event_queue_.earliest_timeout() - cur_time_;
+            if (sleep_time_ <= 0) {
+              sleep_time_ = 0;
+            } else if (sleep_time_ > THREAD_MAX_HEARTBEAT_MSECONDS * HRTIME_MSECOND) {
+              sleep_time_ = THREAD_MAX_HEARTBEAT_MSECONDS * HRTIME_MSECOND;
+            }
+          }
 
           // execute poll events
           while (NULL != (e = negative_queue.dequeue())) {
@@ -403,9 +418,9 @@ void ObEThread::execute()
         //4. wait for the appropriate event
         } else {
           next_time = event_queue_.earliest_timeout();
-          sleep_time = next_time - cur_time_;
+          sleep_time_ = next_time - cur_time_;
 
-          if (sleep_time > THREAD_MAX_HEARTBEAT_MSECONDS * HRTIME_MSECOND) {
+          if (sleep_time_ > THREAD_MAX_HEARTBEAT_MSECONDS * HRTIME_MSECOND) {
             next_time = cur_time_ + THREAD_MAX_HEARTBEAT_MSECONDS * HRTIME_MSECOND;
           }
           // dequeue all the external events and put them in a local queue.

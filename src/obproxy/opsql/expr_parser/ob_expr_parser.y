@@ -1,5 +1,6 @@
 %define api.pure
 %parse-param {ObExprParseResult* result}
+%name-prefix "ob_expr_parser_yy"
 %locations
 %no-lines
 %verbose
@@ -562,7 +563,7 @@ void yyerror(YYLTYPE* yylloc, ObExprParseResult* p, char* s, ...)
 void ob_expr_parser_fatal_error(yyconst char *msg, yyscan_t yyscanner)
 {
   fprintf(stderr, "FATAL ERROR:%s\n", msg);
-  ObExprParseResult *p = obexprget_extra(yyscanner);
+  ObExprParseResult *p = ob_expr_parser_yyget_extra(yyscanner);
   if (OB_ISNULL(p)) {
     fprintf(stderr, "unexpected null parse result\n");
   } else {
@@ -577,15 +578,15 @@ int ob_expr_parse_sql(ObExprParseResult* p, const char* buf, size_t len)
   if (OB_ISNULL(p) || OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
     // print err msg later
-  } else if (OB_FAIL(obexprlex_init_extra(p, &(p->yyscan_info_)))) {
+  } else if (OB_FAIL(ob_expr_parser_yylex_init_extra(p, &(p->yyscan_info_)))) {
     // print err msg later
   } else {
     int val = setjmp(p->jmp_buf_);
     if (val) {
       ret = OB_PARSER_ERR_PARSE_SQL;
     } else {
-      obexpr_scan_buffer((char *)buf, len, p->yyscan_info_);
-      if (OB_FAIL(obexprparse(p))) {
+      ob_expr_parser_yy_scan_buffer((char *)buf, len, p->yyscan_info_);
+      if (OB_FAIL(ob_expr_parser_yyparse(p))) {
         // print err msg later
       } else {
         // do nothing

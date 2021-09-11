@@ -319,8 +319,10 @@ inline void ObMysqlRoute::setup_route_sql_parse()
       ObProxyParseResult obproxy_parse_result;
       int tmp_ret = OB_SUCCESS;
       const common::ObString &parse_sql = ObProxyMysqlRequest::get_parse_sql(routine_entry_->get_route_sql());
+      // Because it is a sys tenant, the default UTF8 character set can be used
       if (OB_SUCCESS != (tmp_ret = obproxy_parser.parse(parse_sql,
-                                                        obproxy_parse_result))) {
+                                                        obproxy_parse_result,
+                                                        CS_TYPE_UTF8MB4_GENERAL_CI))) {
         LOG_INFO("fail to parse sql, will go on anyway", K(parse_sql), K(tmp_ret));
       } else if (OB_SUCCESS != (tmp_ret = route_sql_result_.load_result(obproxy_parse_result,
                                                                         param_.use_lower_case_name_))) {
@@ -769,6 +771,11 @@ inline void ObMysqlRoute::notify_caller()
             param_.result_.part_entry_ = NULL;
           }
 
+          if (NULL != table_entry_ && NULL != part_entry_) {
+            param_.result_.has_dup_replica_ = part_entry_->has_dup_replica();
+          } else if (NULL != table_entry_) {
+            param_.result_.has_dup_replica_ = table_entry_->has_dup_replica();
+          }
           param_.result_.table_entry_ = table_entry_;
           table_entry_ = NULL;
           param_.result_.is_table_entry_from_remote_ = is_table_entry_from_remote_;

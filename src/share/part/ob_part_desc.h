@@ -35,6 +35,7 @@ public:
   virtual int get_part(common::ObNewRange &range,
                        common::ObIAllocator &allocator,
                        common::ObIArray<int64_t> &part_ids);
+  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
   void set_part_level(share::schema::ObPartitionLevel part_level) { part_level_ = part_level; }
   share::schema::ObPartitionLevel get_part_level() { return part_level_; }
   void set_part_func_type(share::schema::ObPartitionFuncType part_func_type) { part_func_type_ = part_func_type; }

@@ -200,7 +200,7 @@ public:
   //net related
   DEF_BOOL(frequent_accept, "true", "frequent accept", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(net_accept_threads, "2", "[0,8]", "net accept threads num, [0, 8]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(net_config_poll_timeout, "1ms", "[0,]", "epoll_wait timeout for net events, [0, +∞], if set a value <= 0, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(net_config_poll_timeout, "1ms", "[0,]", "not used, just for compatible", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(default_inactivity_timeout, "180000s", "[1s,30d]", "default inactivity timeout, [1s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_CAP(sock_recv_buffer_size_out, "0", "[0,8MB]", "sock param, recv buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_CAP(sock_send_buffer_size_out, "0", "[0,8MB]", "sock param, send buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -345,6 +345,7 @@ public:
   // in public cloud, will assign a vip addr to proxy. qa_mode_mock_slb_vip is a vip addr for testing
   DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(qa_mode_mock_public_cloud_vid, "1", "[1,102400]", "mock public cloud vid", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(proxy_route_policy, "", "proxy route policy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   DEF_STR(mysql_version, "5.6.25", "returned version for mysql mode, default value is 5.6.25. If set, proxy will send new version when user connect to proxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER)
   // sql table cache
@@ -436,6 +437,7 @@ public:
   DEF_STR(inspector_password, "", "password for inspector user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_STR(obproxy_sys_password, "", "password for obproxy sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_STR(observer_sys_password, "", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(observer_sys_password1, "", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 };
 
 ObProxyConfig &get_global_proxy_config();

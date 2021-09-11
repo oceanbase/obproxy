@@ -1839,13 +1839,7 @@ int ObProxyConfigProcessor::update_global_proxy_config(const ObProxyAppConfig &n
     ret = OB_ERR_NULL_VALUE;
     LOG_WARN("fail to get reload config", K(ret));
   }
-  if (OB_SUCC(ret)) {
-    if (NULL == cur_app_config || new_app_config.init_config_.version_ != cur_app_config->init_config_.version_) {
-      if (OB_FAIL(do_update_global_proxy_config(new_app_config.init_config_, old_global_config_items))) {
-        LOG_WARN("fail to update init config to global proxy config", K_(new_app_config.init_config), K(ret));
-      }
-    }
-  }
+  // Update the configuration of dynamic_config, the init configuration passes in the parameters at startup
   if (OB_SUCC(ret)) {
     if (NULL == cur_app_config || new_app_config.dynamic_config_.version_ != cur_app_config->dynamic_config_.version_) {
       if (OB_FAIL(do_update_global_proxy_config(new_app_config.dynamic_config_, old_global_config_items))) {

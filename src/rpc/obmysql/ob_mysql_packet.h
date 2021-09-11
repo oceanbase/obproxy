@@ -276,7 +276,10 @@ public:
   virtual int64_t get_serialize_size() const;
   int encode(char *buffer, int64_t length, int64_t &pos) const;
   virtual int decode() { return common::OB_NOT_SUPPORTED; }
-
+  static int store_string_kv(char* buf, int64_t len, const ObStringKV& str, int64_t& pos);
+  static uint64_t get_kv_encode_len(const ObStringKV& string_kv);
+  static ObStringKV get_separator_kv();  // separator for system variables and user variables
+  
   VIRTUAL_TO_STRING_KV("header", hdr_);
 
 protected:

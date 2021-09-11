@@ -81,6 +81,35 @@ int64_t ObMySQLPacket::get_serialize_size() const
   return -1;
 }
 
+int ObMySQLPacket::store_string_kv(char* buf, int64_t len, const ObStringKV& str, int64_t& pos)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(ObMySQLUtil::store_obstr(buf, len, str.key_, pos))) {
+    LOG_WARN("store stringkv key fail", K(ret));
+  } else if (OB_FAIL(ObMySQLUtil::store_obstr(buf, len, str.value_, pos))) {
+    LOG_WARN("store stringkv value fail", K(ret));
+  }
+  return ret;
+}
+
+uint64_t ObMySQLPacket::get_kv_encode_len(const ObStringKV& string_kv)
+{
+  uint64_t len = 0;
+  len += ObMySQLUtil::get_number_store_len(string_kv.key_.length());
+  len += string_kv.key_.length();
+  len += ObMySQLUtil::get_number_store_len(string_kv.value_.length());
+  len += string_kv.value_.length();
+  return len;
+}
+
+ObStringKV ObMySQLPacket::get_separator_kv()
+{
+  static ObStringKV separator_kv;
+  separator_kv.key_ = common::ObString::make_string("__NULL");
+  separator_kv.value_ = common::ObString::make_string("__NULL");
+  return separator_kv;
+}
+
 int64_t ObMySQLRawPacket::get_serialize_size() const
 {
   return static_cast<int64_t>(get_clen()) + 1; // add 1 for cmd_

@@ -2613,9 +2613,43 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
   } else {
     ObString str;
     in.get_string(str);
-    ret = copy_string(params, expect_type, str, out);
-    if (CS_TYPE_INVALID != in.get_collation_type()) {
-      out.set_collation_type(in.get_collation_type());
+    if (0 != str.length()
+        && CS_TYPE_BINARY != in.get_collation_type()
+        && CS_TYPE_BINARY != params.dest_collation_
+        && (ObCharset::charset_type_by_coll(in.get_collation_type())
+            != ObCharset::charset_type_by_coll(params.dest_collation_))) {
+      char *buf = NULL;
+      // buf_len is related to the encoding length, gbk uses 2 bytes to encode a character, utf8mb4 uses 1 to 4 bytes
+      // CharConvertFactorNum is a multiple of the requested memory size
+      const int32_t CharConvertFactorNum = 2;
+      int32_t buf_len = str.length() * CharConvertFactorNum;
+      uint32_t result_len = 0;
+      if (OB_UNLIKELY(NULL == (buf = static_cast<char*>(params.alloc(buf_len))))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_ERROR("alloc memory failed", K(ret));
+      } else if (OB_FAIL(ObCharset::charset_convert(in.get_collation_type(),
+                                                    str.ptr(),
+                                                    str.length(),
+                                                    params.dest_collation_,
+                                                    buf,
+                                                    buf_len,
+                                                    result_len))) {
+        LOG_WARN("charset convert failed", K(ret), K(in.get_collation_type()), K(params.dest_collation_));
+      }
+
+      LOG_DEBUG("convert result", K(str), "result", ObHexEscapeSqlStr(ObString(result_len, buf)));
+
+      if (OB_SUCC(ret)) {
+        out.set_string(expect_type, buf, static_cast<int32_t>(result_len));
+        if (CS_TYPE_INVALID != in.get_collation_type()) {
+          out.set_collation_type(params.dest_collation_);
+        }
+      }
+    } else {
+      ret = copy_string(params, expect_type, str, out);
+      if (CS_TYPE_INVALID != in.get_collation_type()) {
+        out.set_collation_type(in.get_collation_type());
+      }
     }
   }
   if (OB_SUCC(ret)) {
@@ -3230,6 +3264,7 @@ int ObObjCasterV2::to_type(const ObObjType expect_type, const ObCollationType ex
   const ObObjTypeClass in_tc = in_obj.get_type_class();
   const ObObjTypeClass out_tc = ob_obj_type_class(expect_type);
   cast_ctx.warning_ = OB_SUCCESS;
+  cast_ctx.dest_collation_ = expect_cs_type;
   if (OB_UNLIKELY(ob_is_invalid_obj_tc(in_tc) || ob_is_invalid_obj_tc(out_tc))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("unexpected type", K(ret), K(in_obj), K(expect_type));

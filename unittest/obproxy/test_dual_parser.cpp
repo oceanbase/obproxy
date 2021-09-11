@@ -100,7 +100,7 @@ TEST(ObProxyDualParserTest, SIMPLE_DUAL_MULTI_COL_TEST)
 	ObProxyDualParser parser;
 	ObProxyDualParseResult result;
 	ObString sql = ObString::make_string("select test_seq.next_val, test_seq.min_value, test_seq.uid  from dual;");
-	parser.parse(sql, result);
+	parser.parse(sql, result, CS_TYPE_UTF8MB4_GENERAL_CI);
 	show_parser_result(result);
 	ASSERT_FALSE(parser.is_valid_result());
 }
@@ -109,7 +109,7 @@ TEST(ObProxyDualParserTest, INVALID_COL_TEST)
 	ObProxyDualParser parser;
 	ObProxyDualParseResult result;
 	ObString sql = ObString::make_string("select test_seq1.next_val, test_seq2.min_value, test_seq.uid  from dual;");
-	parser.parse(sql, result);
+	parser.parse(sql, result, CS_TYPE_UTF8MB4_GENERAL_CI);
 	show_parser_result(result);
 	ASSERT_FALSE(parser.is_valid_result());
 }
@@ -118,7 +118,7 @@ TEST(ObProxyDualParserTest, SIMPLE_DUAL_ONE_COL_TEST)
 	ObProxyDualParser parser;
 	ObProxyDualParseResult result;
 	ObString sql = ObString::make_string("select test_sql.nextval from dual");
-	parser.parse(sql, result);
+	parser.parse(sql, result, CS_TYPE_UTF8MB4_GENERAL_CI);
 	show_parser_result(result);
 	ASSERT_TRUE(parser.is_valid_result());
 }
@@ -127,7 +127,7 @@ TEST(ObProxyDualParserTest, ONE_WHERE_COL_TEST)
 	ObProxyDualParser parser;
 	ObProxyDualParseResult result;
 	ObString sql = ObString::make_string("select test.nextval from dual where sharding_col = '00'");
-	parser.parse(sql, result);
+	parser.parse(sql, result, CS_TYPE_UTF8MB4_GENERAL_CI);
 	show_parser_result(result);
 	ASSERT_TRUE(parser.is_valid_result());
 }
@@ -136,7 +136,7 @@ TEST(ObProxyDualParserTest, MULTI_WHERE_COLS_TEST)
 	ObProxyDualParser parser;
 	ObProxyDualParseResult result;
 	ObString sql = ObString::make_string("select test_sql.nextval from dual where sharding_col = '123' and name = 'test'");
-	parser.parse(sql, result);
+	parser.parse(sql, result, CS_TYPE_UTF8MB4_GENERAL_CI);
 	show_parser_result(result);
 	ASSERT_TRUE(parser.is_valid_result());
 }
@@ -145,7 +145,7 @@ TEST(ObProxyDualParserTest, ALIAS_NAME_TEST)
 	ObProxyDualParser parser;
 	ObProxyDualParseResult result;
 	ObString sql = ObString::make_string("select test_seq.nextval next_val, test_seq.min_value min_value, test_seq.uid as uid from dual;");
-	parser.parse(sql, result);
+	parser.parse(sql, result, CS_TYPE_UTF8MB4_GENERAL_CI);
 	show_parser_result(result);
 	ASSERT_FALSE(parser.is_valid_result());
 }
@@ -162,7 +162,7 @@ int main(int argc, char **argv)
 		ObProxyDualParser parser;
 		ObProxyDualParseResult result;
 		ObString sql = ObString::make_string(argv[1]);
-		if (OB_FAIL(parser.parse(sql, result))) {
+		if (OB_FAIL(parser.parse(sql, result, CS_TYPE_UTF8MB4_GENERAL_CI))) {
 			fprintf(stderr, "parse sql failed");
 		} else {
 			oceanbase::obproxy::show_parser_result(result);

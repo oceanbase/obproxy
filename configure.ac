@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [3.1.0],
-            [huating.zmq@alipay.com],
+            [3.2.0],
+            [wgs13579@gmail.com],
             [obproxy],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="3.1.0"
+    obapi_version="3.2.0"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC

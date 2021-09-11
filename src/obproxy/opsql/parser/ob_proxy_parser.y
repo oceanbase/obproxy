@@ -1,5 +1,6 @@
 %define api.pure
 %parse-param {ObProxyParseResult* result}
+%name-prefix "ob_proxy_parser_yy"
 %locations
 %no-lines
 %verbose
@@ -23,7 +24,7 @@ do {\
       result->end_pos_ = result->table_info_.table_name_.end_ptr_;\
     }\
   } else {\
-    result->end_pos_ = obproxyget_text(result->yyscan_info_);\
+    result->end_pos_ = ob_proxy_parser_yyget_text(result->yyscan_info_);\
   }\
   YYACCEPT;\
 } while (0);
@@ -1129,7 +1130,7 @@ void yyerror(YYLTYPE* yylloc, ObProxyParseResult* p, char* s, ...)
 void ob_proxy_parser_fatal_error(yyconst char *msg, yyscan_t yyscanner)
 {
   fprintf(stderr, "FATAL ERROR:%s\n", msg);
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);
+  ObProxyParseResult *p = ob_proxy_parser_yyget_extra(yyscanner);
   if (OB_ISNULL(p)) {
     fprintf(stderr, "unexpected null parse result\n");
   } else {
@@ -1144,15 +1145,15 @@ int obproxy_parse_sql(ObProxyParseResult* p, const char* buf, size_t len)
   if (OB_ISNULL(p) || OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
     // print err msg later
-  } else if (OB_FAIL(obproxylex_init_extra(p, &(p->yyscan_info_)))) {
+  } else if (OB_FAIL(ob_proxy_parser_yylex_init_extra(p, &(p->yyscan_info_)))) {
     // print err msg later
   } else {
     int val = setjmp(p->jmp_buf_);
     if (val) {
       ret = OB_PARSER_ERR_PARSE_SQL;
     } else {
-      obproxy_scan_buffer((char *)buf, len, p->yyscan_info_);
-      if (OB_FAIL(obproxyparse(p))) {
+      ob_proxy_parser_yy_scan_buffer((char *)buf, len, p->yyscan_info_);
+      if (OB_FAIL(ob_proxy_parser_yyparse(p))) {
         // print err msg later
       } else {
         // do nothing

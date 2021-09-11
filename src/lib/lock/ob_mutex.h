@@ -39,6 +39,20 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObMutex);
 };
 
+static inline int mutex_acquire(ObMutex *m)
+{
+  return m->lock();
+}
+
+static inline bool mutex_try_acquire(ObMutex *m)
+{
+  return common::OB_SUCCESS == m->trylock();
+}
+static inline int mutex_release(ObMutex *m)
+{
+  return m->unlock();
+}
+
 typedef ObLockGuard<ObMutex> ObMutexGuard;
 
 } // end of namespace lib

@@ -240,6 +240,41 @@ int ObRoutineCacheCont::add_building_routine_entry(ObRoutineCache &routine_cache
 }
 
 //---------------------------ObRoutineCacheParam-------------------------//
+int ObRoutineCacheParam::deep_copy_key(const ObRoutineEntryKey &other)
+{
+  int ret = OB_SUCCESS;
+
+  if (NULL != name_buf_ && name_buf_len_ > 0) {
+    op_fixed_mem_free(name_buf_, name_buf_len_);
+    name_buf_ = NULL;
+    name_buf_len_ = 0;
+  }
+
+  const int64_t name_size = other.name_->get_total_str_len();
+  const int64_t obj_size = sizeof(ObTableEntryName);
+  name_buf_len_ = name_size + obj_size;
+  name_buf_ = static_cast<char *>(op_fixed_mem_alloc(name_buf_len_));
+  if (OB_ISNULL(name_buf_)) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to alloc mem", K_(name_buf_len), K(ret));
+  } else {
+    ObTableEntryName *name = new (name_buf_) ObTableEntryName();
+    if (OB_FAIL(name->deep_copy(*other.name_, name_buf_ + obj_size, name_size))) {
+      LOG_WARN("fail to deep copy table entry name", K(ret));
+    } else {
+      key_ = other;
+      key_.name_ = name;
+    }
+  }
+
+  if (OB_FAIL(ret) && (NULL != name_buf_)) {
+    op_fixed_mem_free(name_buf_, name_buf_len_);
+    name_buf_ = NULL;
+    name_buf_len_ = 0;
+  }
+  return ret;
+}
+
 const char *ObRoutineCacheParam::get_op_name(const Op op)
 {
   const char *name = NULL;
@@ -432,6 +467,7 @@ int ObRoutineCache::add_routine_entry(ObRoutineEntry &entry, bool direct_add)
       } else {
         param->op_ = ObRoutineCacheParam::ADD_ROUTINE_OP;
         param->hash_ = hash;
+        // No deep copy is needed, because the key here is obtained from the entry
         param->key_ = key;
         entry.inc_ref();
         param->entry_ = &entry;
@@ -476,7 +512,7 @@ int ObRoutineCache::remove_routine_entry(const ObRoutineEntryKey &key)
       } else {
         param->op_ = ObRoutineCacheParam::REMOVE_ROUTINE_OP;
         param->hash_ = hash;
-        param->key_ = key;
+        param->deep_copy_key(key);
         param->entry_ = NULL;
         todo_lists_[part_num(hash)].push(param);
       }

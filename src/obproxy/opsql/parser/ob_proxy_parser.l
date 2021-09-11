@@ -1,6 +1,7 @@
 %option noyywrap nounput noinput case-insensitive
 %option stack noyyalloc noyyrealloc noyyfree
 %option reentrant bison-bridge bison-locations
+%option prefix="ob_proxy_parser_yy"
 %option header-file="ob_proxy_parser_lex.h"
 %{
 #define YYSTYPE         OBPROXYSTYPE
@@ -19,7 +20,7 @@ void store_str_with_quote(ObProxyParseQuoteType type, char* str, int64_t str_len
 
 #define SET_DML_STMT(stmt_type) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p)) {\
     if (OBPROXY_T_INVALID == p->cur_stmt_type_\
         || OBPROXY_T_BEGIN == p->cur_stmt_type_\
@@ -31,7 +32,7 @@ do {\
 
 #define SET_DDL_STMT(stmt_type) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p)) {\
     if (OBPROXY_T_INVALID == p->cur_stmt_type_\
         || OBPROXY_T_BEGIN == p->cur_stmt_type_) {\
@@ -42,7 +43,7 @@ do {\
 
 #define SET_BASIC_STMT(stmt_type) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p)) {\
     if (OBPROXY_T_INVALID == p->cur_stmt_type_\
         || OBPROXY_T_BEGIN == p->cur_stmt_type_) {\
@@ -53,7 +54,7 @@ do {\
 
 #define SET_ICMD_STMT(stmt_type) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p) && (OBPROXY_T_INVALID == p->cur_stmt_type_ || OBPROXY_T_SHOW == p->cur_stmt_type_)) {\
     p->cur_stmt_type_ = stmt_type;\
   }\
@@ -62,7 +63,7 @@ do {\
 
 #define SET_GLOBAL_SET_STMT() \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p) && (OBPROXY_T_SET == p->cur_stmt_type_)) {\
     p->cur_stmt_type_ = OBPROXY_T_SET_GLOBAL;\
   }\
@@ -79,7 +80,7 @@ do {\
   errno = 0;\
   yylval->num = strtoll(yytext, NULL, 10);\
   if (0 != errno) {\
-    ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+    ObProxyParseResult *p = yyget_extra(yyscanner);\
     if (OB_NOTNULL(p) && OBPROXY_T_INVALID < p->cur_stmt_type_ && p->cur_stmt_type_ < OBPROXY_T_ICMD_MAX) {\
       p->cmd_info_.err_type_ = OBPROXY_T_ERR_INVALID_NUM;\
     } else {\
@@ -177,7 +178,7 @@ do { \
 
 #define RETURN_SHARD_COMMENT_NAME_OB_DOT(word_type) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p) && !p->has_shard_comment_) {\
     p->has_shard_comment_ = true;\
   }\
@@ -187,12 +188,13 @@ do {\
 
 #define RETURN_SHARD_COMMENT(word_type) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p) && !p->has_shard_comment_) {\
     p->has_shard_comment_ = true;\
   }\
   return word_type;\
 } while (0);
+
 #define SET_HAS_ANONYMOUS_BLOCK() \
 do { \
   ObProxyParseResult *p = yyget_extra(yyscanner);\
@@ -211,7 +213,7 @@ do { \
 
 #define PUSH_STATE_IF_NOT_ICMD(state) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p) && OBPROXY_T_INVALID < p->cur_stmt_type_ && p->cur_stmt_type_ < OBPROXY_T_ICMD_MAX) {\
     /*do nothing*/\
   } else {\
@@ -221,7 +223,7 @@ do {\
 
 #define RETURN_WITH_CALL_CHECK(key) \
 do {\
-  ObProxyParseResult *p = obproxyget_extra(yyscanner);\
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p) && (OBPROXY_T_CALL == p->cur_stmt_type_ || OBPROXY_T_INSERT == p->cur_stmt_type_)) {\
     return key;\
   } else {\
@@ -249,9 +251,12 @@ do {\
 %x                      in_old_comment_expr
 %x                      in_odp_comment_expr
 %x                      in_odp_comment_value_expr
+%x                      in_odp_comment_value_expr_calc
 %x                      in_ignored_comment_expr
 %x                      in_dbp_comment_expr
+%x                      in_dbp_comment_trace_expr
 %x                      in_dbp_comment_trace_value_expr
+%x                      in_dbp_comment_trace_value_expr_calc
 %x                      comment_sq
 %x                      sq
 %x                      dq
@@ -266,6 +271,11 @@ do {\
 %x                      set_expr
 %x                      show_topology
 
+/*following character status will be rewrite by gen_parse.sh according to connection character*/
+multi_byte_space              [\u3000]
+multi_byte_comma              [\uff0c]
+multi_byte_left_parenthesis   [\uff08]
+multi_byte_right_parenthesis  [\uff09]
 space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
 int_num                 [\-\+]?[0-9]+
@@ -317,6 +327,7 @@ btend         {backtick}
 btdouble      {backtick}{backtick}
 btcontent     [^`]+
 
+comma         ,
 leftbracket   \(
 rightbracket  \)
 
@@ -342,7 +353,7 @@ show_tables               (show{space}+tables)
 show_create_table         (show{space}+create{space}+table)
 show_topology             (show{space}+elastic_id)
 show_db_version           (show{space}+database_version)
-select_database           (select{space}+database\(\))
+select_database           (select{space}+database({leftbracket}|{multi_byte_left_parenthesis})({rightbracket}|{multi_byte_right_parenthesis}))
 alter_proxyconfig         (alter{space}+proxyconfig)
 alter_proxyresource       (alter{space}+proxyresource)
 ping_proxy                (ping{space}+proxy)
@@ -560,6 +571,7 @@ QUERY               { RETURN_NON_RESERVED_KEYWORD(QUERY); }
 FOUND_ROWS       { SET_FOUND_ROWS(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 ROW_COUNT        { SET_ROW_COUNT(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
+{comma}|{multi_byte_comma} { return ','; }
 {int_num}        { RETURN_INT_NUM(); }
 {identifer}      { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 {sqbegin}{identifer}{sqend} { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_SINGLE); }
@@ -567,8 +579,10 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 {btbegin}{identifer}{btend} { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_BACK); }
 {number}         { RETURN_NUMBER_VAL(); }
 "?"              { return PLACE_HOLDER; }
-[.;*-+&~|^/%,:!@=] { return yytext[0]; }
-[()]                { RETURN_WITH_CALL_CHECK(yytext[0]); }
+[.;*-+&~|^/%:!@=] { return yytext[0]; }
+{leftbracket}|{rightbracket}   { RETURN_WITH_CALL_CHECK(yytext[0]); }
+{multi_byte_left_parenthesis}  { RETURN_WITH_CALL_CHECK('('); }
+{multi_byte_right_parenthesis} { RETURN_WITH_CALL_CHECK(')'); }
 {whitespace}        { }
 
  /* hint option */
@@ -609,10 +623,11 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <set_expr>"global"                      { return GLOBAL; }
 <set_expr>"session"                     { return SESSION; }
 <set_expr>{int_num}                     { RETURN_INT_NUM(); }
+<set_expr>{comma}|{multi_byte_comma}    { return ','; }
 <set_expr>{identifer}                   { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <set_expr>{number}                      { RETURN_NUMBER_VAL(); }
 <set_expr>{whitespace}                  { }
-<set_expr>[,@=]                         { return yytext[0]; }
+<set_expr>[@=]                         { return yytext[0]; }
 <set_expr><<EOF>>                       { return END_P; }
 <set_expr>;                             { POP_STATE(); PUSH_STATE(INITIAL); return yytext[0]; }
 
@@ -650,6 +665,8 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <insert_all_expr>"into"        { POP_STATE(); RETURN_IGNORED_WORD(); }
 <insert_all_expr>.             {}
 
+<hint>{multi_byte_left_parenthesis}  { return '('; }
+<hint>{multi_byte_right_parenthesis}  { return ')'; }
 <hint>"query_timeout"     { return QUERY_TIMEOUT; }
 <hint>{int_num}           { RETURN_INT_NUM(); }
 <hint>"read_consistency"  { return READ_CONSISTENCY; }
@@ -657,7 +674,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <hint>STRONG              { return STRONG; }
 <hint>FROZEN              { return FROZEN; }
 <hint>INDEX               { return INDEX; }
-<hint>[()]                { return yytext[0]; }
+<hint>{leftbracket}|{rightbracket}  { return yytext[0]; }
 <hint>{identifer}         { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <hint>{c_cmt_end}         { POP_STATE(); return HINT_END; }
 <hint>.                   {}
@@ -768,9 +785,10 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_odp_comment_expr>"trace_id"          { return TRACE_ID; }
 <in_odp_comment_expr>"rpc_id"            { return RPC_ID; }
 <in_odp_comment_expr>{sqbegin}           { ENTER_QUOTE_STATE(comment_sq); }
+<in_odp_comment_expr>{comma}|{multi_byte_comma}  { return ','; }
 <in_odp_comment_expr>{odp_comment_identifer} { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_odp_comment_expr>[=]                 { PUSH_STATE(in_odp_comment_value_expr); return yytext[0]; }
-<in_odp_comment_expr>[.,]                { return yytext[0]; }
+<in_odp_comment_expr>[.]                { return yytext[0]; }
 <in_odp_comment_expr>{space}             {}
 <in_odp_comment_expr>.                   { return ERROR; }
 <in_odp_comment_expr>{c_cmt_end} {
@@ -785,9 +803,9 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 }
 
 <in_odp_comment_value_expr>{sqbegin}            { ENTER_QUOTE_STATE(comment_sq); }
-<in_odp_comment_value_expr>[,]                  {
+<in_odp_comment_value_expr>{comma}|{multi_byte_comma} {
   POP_STATE();
-  return yytext[0];
+  return ',';
 }
 <in_odp_comment_value_expr>{c_cmt_end} {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -800,7 +818,37 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   POP_STATE();
   return COMMENT_END;
 }
-<in_odp_comment_value_expr>[^,\\' \t\n\r\f*/]+              { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
+<in_odp_comment_value_expr>{space} {}
+<in_odp_comment_value_expr>. {
+  do {
+    PUSH_STATE(in_odp_comment_value_expr_calc)
+    ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+    if (OB_NOTNULL(p)) {
+      p->tmp_buf_ = yytext;
+      p->tmp_start_ptr_ = yytext;
+      p->tmp_len_ = 1;
+    }
+  } while (0);
+}
+
+<in_odp_comment_value_expr_calc>{sqbegin}|{comma}|{multi_byte_comma}|{space}|{c_cmt_end} {
+  POP_STATE();
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p) && OB_NOTNULL(p->tmp_buf_)) {
+    store_str(p->tmp_buf_, p->tmp_len_, p->tmp_start_ptr_ + p->tmp_len_, yyscanner);
+    yyless(0);
+    return NAME_STR;
+  } else {
+    RETURN_IGNORED_WORD();
+  }
+}
+
+<in_odp_comment_value_expr_calc>. {
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p)) {
+    p->tmp_len_ += yyleng;
+  }
+}
 
 <in_comment_expr>"+DBP:"                    { PUSH_STATE(in_dbp_comment_expr); RETURN_SHARD_COMMENT(DBP_COMMENT); }
 <in_dbp_comment_expr>"$ROUTE"            { return ROUTE_TAG; }
@@ -810,9 +858,12 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_dbp_comment_expr>"table_name"        { return TABLE_NAME;}
 <in_dbp_comment_expr>"parallelism"       { return PARALL; }
 <in_dbp_comment_expr>"group_id"          { return GROUP_ID; }
-<in_dbp_comment_expr>"TRACE"             { PUSH_STATE(in_dbp_comment_trace_value_expr); return TRACE; }
+<in_dbp_comment_expr>"TRACE"             { PUSH_STATE(in_dbp_comment_trace_expr); return TRACE; }
 <in_dbp_comment_expr>{sqbegin}           { ENTER_QUOTE_STATE(comment_sq); }
-<in_dbp_comment_expr>[,=(){}]            { return yytext[0]; }
+<in_dbp_comment_expr>[={}]|{leftbracket}|{rightbracket}       { return yytext[0]; }
+<in_dbp_comment_expr>{multi_byte_left_parenthesis}            { return '('; }
+<in_dbp_comment_expr>{multi_byte_right_parenthesis}           { return ')'; }
+<in_dbp_comment_expr>{comma}|{multi_byte_comma}  { return ','; }
 <in_dbp_comment_expr>{space}             { }
 <in_dbp_comment_expr>{comment_identifer} { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 
@@ -827,13 +878,27 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   return COMMENT_END;
 }
 <in_dbp_comment_expr>.                   {return yytext[0];}
+<in_dbp_comment_trace_expr>{leftbracket}|{multi_byte_left_parenthesis} { PUSH_STATE(in_dbp_comment_trace_value_expr); return '('; }
+<in_dbp_comment_trace_expr>{space}       {}
 
 <in_dbp_comment_trace_value_expr>{sqbegin}            { ENTER_QUOTE_STATE(comment_sq); }
-<in_dbp_comment_trace_value_expr>[)]                  {
+<in_dbp_comment_trace_value_expr>{rightbracket}|{multi_byte_right_parenthesis}      {
   POP_STATE();
-  return yytext[0];
+  POP_STATE();
+  return ')';
 }
-<in_dbp_comment_trace_value_expr>[(#]            { return yytext[0]; }
+<in_dbp_comment_trace_value_expr>[#]            {
+  do {
+    PUSH_STATE(in_dbp_comment_trace_value_expr_calc)
+    ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+    if (OB_NOTNULL(p)) {
+      p->tmp_buf_ = yytext;
+      p->tmp_start_ptr_ = yytext;
+      p->tmp_len_ = 1;
+    }
+    return yytext[0];
+  } while (0);
+}
 <in_dbp_comment_trace_value_expr>{c_cmt_end} {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -843,9 +908,40 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   POP_STATE();
   POP_STATE();
   POP_STATE();
+  POP_STATE();
   return COMMENT_END;
 }
-<in_dbp_comment_trace_value_expr>[^()#,\\' \t\n\r\f*/]+              { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
+<in_dbp_comment_trace_value_expr>{space}        {}
+<in_dbp_comment_trace_value_expr>. {
+  do {
+    PUSH_STATE(in_dbp_comment_trace_value_expr_calc)
+    ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+    if (OB_NOTNULL(p)) {
+      p->tmp_buf_ = yytext;
+      p->tmp_start_ptr_ = yytext;
+      p->tmp_len_ = 0;
+    }
+  } while (0);
+}
+
+<in_dbp_comment_trace_value_expr_calc>{sqbegin}|[#]|{leftbracket}|{rightbracket}|{multi_byte_left_parenthesis}|{multi_byte_right_parenthesis}|{space}|{c_cmt_end} {
+  POP_STATE();
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p) && OB_NOTNULL(p->tmp_buf_)) {
+    store_str(p->tmp_buf_, p->tmp_len_, p->tmp_start_ptr_ + p->tmp_len_, yyscanner);
+    yyless(0);
+    return NAME_STR;
+  } else {
+    RETURN_IGNORED_WORD();
+  }
+}
+
+<in_dbp_comment_trace_value_expr_calc>. {
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p)) {
+    p->tmp_len_ += yyleng;
+  }
+}
 
  /* quote */
 {sqbegin} {
@@ -1000,7 +1096,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
  /* some useful keyword */
 <in_expr>"FROM"{whitespace}+"DUAL"     { RETURN_IGNORED_WORD_FOR_DUAL(); }
 <in_expr>"FROM"                        { POP_STATE(); PUSH_STATE(INITIAL); return FROM; }
-<in_expr>{leftbracket}                 { PUSH_STATE(in_subquery); return yytext[0]; }
+<in_expr>{leftbracket}|{multi_byte_left_parenthesis}                 { PUSH_STATE(in_subquery); return '('; }
 <in_expr>{dqbegin}                     { PUSH_STATE(dq); }
 <in_expr>{sqbegin}                     { PUSH_STATE(sq); }
 <in_expr>{btbegin}                     { PUSH_STATE(bt_in_expr); }
@@ -1017,16 +1113,16 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>.                             { RETURN_IGNORED_WORD(); }
 
 <in_subquery>"SELECT"                  { PUSH_STATE(in_expr); return SELECT; }
-<in_subquery>{leftbracket}             { PUSH_STATE(in_subquery); return yytext[0]; }
-<in_subquery>{rightbracket}            { POP_STATE(); return yytext[0]; }
+<in_subquery>{leftbracket}|{multi_byte_left_parenthesis}             { PUSH_STATE(in_subquery); return '('; }
+<in_subquery>{rightbracket}|{multi_byte_right_parenthesis}            { POP_STATE(); return ')'; }
 <in_subquery>{dqbegin}                 { PUSH_STATE(dq); }
 <in_subquery>{sqbegin}                 { PUSH_STATE(sq); }
 <in_subquery><<EOF>>                   { return END_P; }
 <in_subquery>{whitespace}              { }
 <in_subquery>.                         { PUSH_STATE(in_no_select_query); RETURN_IGNORED_WORD(); }
 
-<in_no_select_query>{leftbracket}      { PUSH_STATE(in_subquery); return yytext[0]; }
-<in_no_select_query>{rightbracket}     { POP_STATE(); POP_STATE(); return yytext[0]; }
+<in_no_select_query>{leftbracket}|{multi_byte_left_parenthesis}      { PUSH_STATE(in_subquery); return '('; }
+<in_no_select_query>{rightbracket}|{multi_byte_right_parenthesis}     { POP_STATE(); POP_STATE(); return ')'; }
 <in_no_select_query>{dqbegin}          { PUSH_STATE(dq); }
 <in_no_select_query>{sqbegin}          { PUSH_STATE(sq); }
 <in_no_select_query>"found_rows"       { SET_FOUND_ROWS(); RETURN_IGNORED_WORD(); }

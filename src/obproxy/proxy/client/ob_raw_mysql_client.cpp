@@ -16,12 +16,14 @@
 #include "iocore/eventsystem/ob_io_buffer.h"
 #include "proxy/mysqllib/ob_mysql_request_builder.h"
 #include "proxy/client/ob_raw_mysql_client.h"
+#include "obutils/ob_proxy_config.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::net;
 using namespace oceanbase::obproxy::packet;
+using namespace oceanbase::obproxy::obutils;
 
 namespace oceanbase
 {
@@ -99,8 +101,14 @@ int ObRawMysqlClientActor::sync_raw_execute(const char *sql, const int64_t timeo
   } else if (OB_FAIL(resp_->init())) {
     LOG_WARN("fail to init client mysql resp", K(ret));
   } else {
-    if (!is_avail() && OB_FAIL(connect(addr_, timeout_ms))) {
-      LOG_WARN("fail to connect", "addr", addr_, K(ret));
+    // Get the password again, it may be changed
+    if (!is_avail() &&
+        OB_FAIL(connect(addr_, timeout_ms))) {
+      if (!is_avail() && info_->change_password() && OB_FAIL(connect(addr_, timeout_ms))) {
+        LOG_WARN("fail to connect using password1", "addr", addr_, K(ret));
+      } else {
+        LOG_WARN("fail to connect using password", "addr", addr_, K(ret));
+      }
     } else if (OB_FAIL(send_request(sql))) {
       LOG_WARN("fail to post request", K(sql), K(ret));
     } else {
@@ -210,9 +218,9 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
       }
     }
 
-   // do auth job
-   if (OB_SUCC(ret)) {
-     if (OB_FAIL(read_response(OB_MYSQL_COM_HANDSHAKE))) {
+    // do auth job
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(read_response(OB_MYSQL_COM_HANDSHAKE))) {
         LOG_WARN("fail to read response", K(ret));
       } else if (resp_->is_error_resp()) {
         ret = -resp_->get_err_code();
@@ -226,6 +234,10 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
         LOG_WARN("fail to auth", K(ret));
       }
     }
+  }
+
+  if (OB_SUCC(ret)) {
+    is_avail_ = true;
   }
   return ret;
 }
@@ -382,7 +394,8 @@ int ObRawMysqlClientActor::read_response(const ObMySQLCmd cmd)
 
 int ObRawMysqlClient::init(const ObString &user_name,
                            const ObString &password,
-                           const ObString &database)
+                           const ObString &database,
+                           const ObString &password1)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(user_name.empty())) {
@@ -393,8 +406,8 @@ int ObRawMysqlClient::init(const ObString &user_name,
     LOG_WARN("init twice", K_(is_inited), K(ret));
   } else if (OB_FAIL(mutex_init(&mutex_))) {
     LOG_WARN("fail to init mutex", K(ret));
-  } else if (OB_FAIL(info_.set_names(user_name, password, database))) {
-    LOG_WARN("fail to set names", K(user_name), K(password), K(database), K(ret));
+  } else if (OB_FAIL(info_.set_names(user_name, password, database, password1))) {
+    LOG_WARN("fail to set names", K(user_name), K(password), K(password1), K(database), K(ret));
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = mutex_destroy(&mutex_))) {
       LOG_ERROR("fail to destroy mutex", K(tmp_ret));

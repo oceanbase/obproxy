@@ -121,6 +121,7 @@ struct ObObjCastParams
   const ObZerofillInfo *zf_info_;
   ObCollationType connection_collation_;
   ObAccuracy *res_accuracy_;
+  ObCollationType dest_collation_;
 };
 /**
  * cast functions to do the real work
