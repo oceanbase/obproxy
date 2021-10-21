@@ -91,7 +91,7 @@ function do_rpm()
   set -x
   sw
   PACKAGE=obproxy
-  VERSION=3.1.0
+  VERSION=3.2.0
   RELEASE=1
   PREFIX=/home/admin/obproxy
   SPEC_FILE=obproxy.spec

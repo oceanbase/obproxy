@@ -283,7 +283,7 @@ public:
   DEF_BOOL(enable_bad_route_reject, "false", "if enabled, bad route request will be rejected, e.g. first statement of transaction opened by BEGIN(or START TRANSACTION) without table name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_partition_table_route, "true", "if enabled, partition table will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_compression_protocol, "true", "if enabled, proxy will use compression protocol with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_ob_protocol_v2, "false", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_ob_protocol_v2, "true", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
