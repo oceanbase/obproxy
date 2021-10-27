@@ -355,7 +355,7 @@ public:
   DEF_BOOL(enable_cloud_full_username, "false", "used for cloud user, if set false, treat all login user as username", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_BOOL(skip_proxyro_check, "false", "used for proxro@sys, if set false, access denied", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
-  DEF_BOOL(skip_proxy_sys_private_check, "false", "skip_proxy_sys_private_check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(skip_proxy_sys_private_check, "true", "skip_proxy_sys_private_check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   // SSL related config
   DEF_BOOL(enable_client_ssl, "false", "if enabled, proxy will try best to connect client with ssl",
              CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
