@@ -90,7 +90,7 @@ function do_rpm()
 {
   set -x
   sw
-  PACKAGE=obproxy
+  PACKAGE=obproxy-ce
   VERSION=3.2.0
   RELEASE=1
   PREFIX=/home/admin/obproxy
@@ -106,7 +106,7 @@ function do_rpm()
   mkdir -p ${TMP_DIR}/RPMS
   mkdir -p ${TMP_DIR}/SOURCES
   mkdir -p ${TMP_DIR}/SRPMS
-  cp obproxy-${VERSION}.tar.gz ${TMP_DIR}/SOURCES
+  cp ${PACKAGE}-${VERSION}.tar.gz ${TMP_DIR}/SOURCES
   cd ${TMP_DIR}/BUILD
 
   echo "[BUILD] make rpms..._prefix=${PREFIX} spec_file=${SPEC_FILE}"

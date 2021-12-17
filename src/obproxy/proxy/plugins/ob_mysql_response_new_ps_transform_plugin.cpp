@@ -10,7 +10,7 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#include "ob_mysql_response_prepare_execute_transform_plugin.h"
+#include "ob_mysql_response_new_ps_transform_plugin.h"
 #include "ob_mysql_response_cursor_transform_plugin.h"
 #include "rpc/obmysql/packet/ompk_prepare.h"
 #include "rpc/obmysql/packet/ompk_field.h"

@@ -1,7 +1,7 @@
     AC_INIT([OceanBase],
             [3.2.0],
             [wgs13579@gmail.com],
-            [obproxy],
+            [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
     obapi_version="3.2.0"
