@@ -85,7 +85,7 @@ public:
   void destroy();
 
   // start proxy, this function is blocked after invoking
-  // until the prxy itself stops it.
+  // until the proxy itself stops it.
   int start();
   int init_meta_client_proxy(const bool is_raw_init);
 
