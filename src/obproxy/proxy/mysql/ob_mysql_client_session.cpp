@@ -342,6 +342,11 @@ int ObMysqlClientSession::new_connection(
             }
           }
 
+          // set weak read flag global
+          if (obutils::get_global_proxy_config().enable_force_request_follower) {
+            session_info_.set_is_request_follower_user(true);
+          }
+
           // 2. handle_new_connection no matter convert vip to tenant result.
           handle_new_connection();
         }

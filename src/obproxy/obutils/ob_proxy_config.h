@@ -193,6 +193,7 @@ public:
   DEF_BOOL(enable_cluster_checkout, "true", "if enable cluster checkout, proxy will send cluster name when login and server will check it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_proxy_scramble, "false", "if enable proxy scramble, proxy will send client its variable scramble num, not support old observer", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_BOOL(enable_client_ip_checkout, "true", "if enabled, proxy send client ip when login", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_force_request_follower, "false", "force request follower ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   //connection related
   DEF_INT(connect_observer_max_retries, "3", "[2,5]", "max retries to do connect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);

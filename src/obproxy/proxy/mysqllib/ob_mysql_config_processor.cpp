@@ -79,6 +79,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     enable_bad_route_reject_(false),
     enable_cluster_checkout_(true),
     enable_client_ip_checkout_(true),
+    enable_force_request_follower_(false),
     enable_proxy_scramble_(false),
     enable_compression_protocol_(false),
     enable_ob_protocol_v2_(false),
@@ -172,6 +173,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(enable_bad_route_reject);
   CONFIG_ITEM_ASSIGN(enable_cluster_checkout);
   CONFIG_ITEM_ASSIGN(enable_client_ip_checkout);
+  CONFIG_ITEM_ASSIGN(enable_force_request_follower);
   CONFIG_ITEM_ASSIGN(enable_proxy_scramble);
   CONFIG_ITEM_ASSIGN(enable_compression_protocol);
   CONFIG_ITEM_ASSIGN(enable_ob_protocol_v2);
@@ -317,7 +319,8 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(proxy_service_mode), K_(server_routing_mode), K_(proxy_id), K_(proxy_idc_name),
        K_(client_max_memory_size),
        K_(default_inactivity_timeout), K_(enable_partition_table_route), K_(enable_pl_route),
-       K_(enable_cluster_checkout), K_(enable_client_ip_checkout), K_(enable_proxy_scramble),
+       K_(enable_cluster_checkout), K_(enable_client_ip_checkout), K_(enable_force_request_follower),
+       K_(enable_proxy_scramble),
        K_(enable_compression_protocol), K_(enable_ob_protocol_v2), K_(enable_reroute), K_(enable_index_route),
        K_(enable_causal_order_read));
   J_OBJ_END();
