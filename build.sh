@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 TOPDIR="$(dirname $(readlink -f "$0"))"
 DEP_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/deps/devel
 TOOLS_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/devtools
@@ -13,10 +13,10 @@ function sw()
   export RUNTIME_DIR;
   export DEP_VAR=$DEP_DIR/var/;
   /sbin/ldconfig -n $DEP_DIR/lib;
-  export LD_LIBRARY_PATH=$DEP_DIR/lib:$DEP_VAR/usr/local/lib64:$DEP_VAR/usr/local/lib:$DEP_VAR/usr/lib64:$DEP_VAR/usr/lib;
-  export LIBRARY_PATH=$DEP_DIR/lib:$DEP_VAR/usr/local/lib64:$DEP_VAR/usr/local/lib:$DEP_VAR/usr/lib64:$DEP_VAR/usr/lib;
-  export CPLUS_INCLUDE_PATH=$DEP_DIR/include:${RUNTIME_DIR}/include:$DEP_VAR/usr/local/include:$DEP_VAR/usr/include;
-  export C_INCLUDE_PATH=$DEP_DIR/include:${RUNTIME_DIR}/include;
+  export LD_LIBRARY_PATH=$DEP_DIR/lib:$DEP_VAR/usr/local/lib64:$DEP_VAR/usr/local/lib:$DEP_VAR/usr/lib64:$DEP_VAR/usr/lib:$DEP_VAR/lib64:/usr/lib/x86_64-linux-gnu;
+  export LIBRARY_PATH=$DEP_DIR/lib:$DEP_VAR/usr/local/lib64:$DEP_VAR/usr/local/lib:$DEP_VAR/usr/lib64:$DEP_VAR/usr/lib:/usr/lib/x86_64-linux-gnu;
+  export CPLUS_INCLUDE_PATH=$DEP_DIR/include:${RUNTIME_DIR}/include:$DEP_VAR/usr/local/include:$DEP_VAR/usr/include:$DEP_VAR/devel/include:/usr/include/x86_64-linux-gnu;
+  export C_INCLUDE_PATH=$DEP_DIR/include:${RUNTIME_DIR}/include:/usr/include/x86_64-linux-gnu;
   export PATH=$DEP_DIR/bin:$TOOLS_DIR/bin:$PATH;
 }
 
@@ -35,7 +35,7 @@ function do_init()
 
 function do_dep_init()
 {
-  (cd $TOPDIR/deps/3rd && sh dep_create.sh)
+  (cd $TOPDIR/deps/3rd && bash dep_create.sh)
   cd $TOPDIR
   do_init
 }

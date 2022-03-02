@@ -26,17 +26,17 @@
     if test "$withval" = "yes"; then
       case "$host_cpu" in
         *aarch64* )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wunused-parameter -Wformat -Wconversion -Wno-deprecated -Wno-invalid-offsetof -finline-functions -fno-strict-aliasing -mtune=generic -Wno-psabi -Wno-sign-compare"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=generic -Wno-psabi -Wno-sign-compare"
           AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=generic -Wno-psabi -Wno-sign-compare"
         ;;
         * )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wunused-parameter -Wformat -Wconversion -Wno-deprecated -Wno-invalid-offsetof -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare"
           AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=core2 -Wno-psabi -Wno-sign-compare"
         ;;
       esac
     fi
     ],
-    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wall -Wextra -Wunused-parameter -Wformat -Wconversion -Wno-invalid-offsetof -Wno-deprecated -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic -Wno-psabi  -Wno-sign-compare"
+    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -Wno-deprecated -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic -Wno-psabi  -Wno-sign-compare"
       AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g -Wall -Wno-psabi  -Wno-sign-compare"
         ]
     )
@@ -52,6 +52,8 @@
     else test $major -eq 5 -a $minor -eq 2;
         AM_CXXFLAGS="${AM_CXXFLAGS} -DGCC_52"
     fi
+
+    AM_CXXFLAGS="${AM_CXXFLAGS} -D_GLIBCXX_USE_CXX11_ABI=0"
 
     gcc_version="4.4.4"
     dnl condition OPT_GCC_VERSION
@@ -176,7 +178,7 @@
     AM_LDFLAGS="${AM_LDFLAGS} -L${DEP_DIR}/lib -L${DEP_DIR}/lib/mysql"
 
     dnl global default INCLUDES
-    AM_CPPFLAGS="${AM_CPPFLAGS} -I${DEP_DIR}/include -I${DEP_DIR}/include/mysql"
+    AM_CXXFLAGS="${AM_CXXFLAGS} -I${DEP_DIR}/include -I${DEP_DIR}/include/mariadb -I${RUNTIME_DIR}/include"
 
     if test "X${CXXFLAGS}" = "X-g -O2"; then
         CXXFLAGS=""
@@ -301,7 +303,7 @@
     AC_DEFINE_UNQUOTED([RELEASEID], "$RELEASEID")
 
     dnl LDADD
-    AM_LDFLAGS="${AM_LDFLAGS} -Wl,--allow-multiple-definition"
+    AM_LDFLAGS="${AM_LDFLAGS} -Wl,--no-as-needed -Wl,--allow-multiple-definition"
     BIN_LDFLAGS="-lc -lrt"
 
     if test "X5.2.0" = "X$GCC_VERSION"; then
