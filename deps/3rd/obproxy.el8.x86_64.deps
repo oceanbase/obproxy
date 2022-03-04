@@ -17,4 +17,4 @@ obdevtools-bison-2.4.1-3.el8.x86_64.rpm
 obdevtools-flex-2.5.35-3.el8.x86_64.rpm
 
 [release]
-oceanbase-ce-sql-parser-3.1.0-1.el8.x86_64.rpm
+oceanbase-ce-devel-3.1.3-10000102022030411.el8.x86_64.rpm

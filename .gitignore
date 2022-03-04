@@ -4,6 +4,8 @@ unittest/**/*_test
 unittest/**/**/test_*
 unittest/**/**/*_test
 unittest/**/unittest_*
+unittest/obproxy/foo_client
+unittest/obproxy/foo_server
 !unittest/**/test_*.*
 !unittest/**/**/test_*.*
 !unittest/**/unittest_*.*
@@ -173,6 +175,8 @@ tools/deploy/focus_*
 src/.idea/*
 src/cmake-build-debug/*
 CMakeLists.txt
+*.gz
+obproxy-tmp*
 .DS_Store
 src/.DS_Store
 unittest/.DS_Store

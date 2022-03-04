@@ -2,7 +2,7 @@
 TOPDIR="$(dirname $(readlink -f "$0"))"
 DEP_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/deps/devel
 TOOLS_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/devtools
-RUNTIME_DIR=${TOPDIR}/deps/3rd/home/admin/oceanbase
+RUNTIME_DIR=${TOPDIR}/deps/3rd/usr
 CPU_CORES=`grep -c ^processor /proc/cpuinfo`
 MAKE_ARGS=(-j $CPU_CORES)
 
