@@ -4,7 +4,13 @@ DEP_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/deps/devel
 TOOLS_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/devtools
 RUNTIME_DIR=${TOPDIR}/deps/3rd/usr
 CPU_CORES=`grep -c ^processor /proc/cpuinfo`
-MAKE_ARGS=(-j $CPU_CORES)
+MAKE_ARGS="-j $CPU_CORES"
+
+PACKAGE=${2:-obproxy-ce}
+VERSION=${3:-`cat rpm/${PACKAGE}-VER.txt`}
+RELEASE=${4:-1}
+PREFIX=/home/admin/obproxy
+SPEC_FILE=obproxy.spec
 
 function sw()
 {
@@ -35,7 +41,7 @@ function do_init()
 
 function do_dep_init()
 {
-  (cd $TOPDIR/deps/3rd && bash dep_create.sh)
+  cd $TOPDIR/deps/3rd && bash dep_create.sh
   cd $TOPDIR
   do_init
 }
@@ -83,18 +89,13 @@ function do_make()
 {
   set -x
   sw
-  make "${MAKE_ARGS[@]}"
+  make $MAKE_ARGS
 }
 
 function do_rpm()
 {
   set -x
   sw
-  PACKAGE=obproxy-ce
-  VERSION=3.2.0
-  RELEASE=1
-  PREFIX=/home/admin/obproxy
-  SPEC_FILE=obproxy.spec
 
   echo "[BUILD] make dist..."
   make dist-gzip || exit 1

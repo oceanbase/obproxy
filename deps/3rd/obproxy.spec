@@ -36,7 +36,9 @@ OceanBase Database Proxy
 %build
 ./configure CXX=${CXX} CC=${CC} --with-gcc-version=5.2.0 RELEASEID=%{RELEASE} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
 mkdir -p unittest
-make %{?_smp_mflags}
+CPU_CORES=`grep -c ^processor /proc/cpuinfo`
+MAKE_ARGS="-j $CPU_CORES"
+make $MAKE_ARGS
 
 %install
 make DESTDIR=$RPM_BUILD_ROOT install
