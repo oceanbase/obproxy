@@ -306,6 +306,9 @@ public:
   // proxy cmd
   DEF_INT(proxy_local_cmd, "0", "[0,]", "proxy local cmd type: 0->none(default), 1->exit, 2->restart, 3->commit, 4->rollback", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
 
+  DEF_BOOL(enable_weak_read, "false", "weak read by default for all clients connected this proxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR_LIST(weak_read_user_list, "", "weak read only for list of users, format user1;user2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+
   //ldc
   DEF_STR(proxy_idc_name, "", "idc name for proxy ldc route. If is empty or invalid, treat as do not use ldc. User session vars 'proxy_session_ldc' can cover it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
