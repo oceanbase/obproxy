@@ -1176,7 +1176,25 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
 
   // 6. handle vip for fllower replica in public cloud or handle config enable read only mode
   if (OB_SUCC(ret) && is_auth_request) {
-    if (client_info.is_request_follower_user()) {
+    bool is_weak_read_user = false ;
+    int64_t total_size = get_global_proxy_config().weak_read_user_list.size();
+    if (OB_UNLIKELY(total_size > 0)){
+      ObMysqlAuthRequest &auth_req = client_info.get_login_req();
+      ObHSRResult &hsr = auth_req.get_hsr_result();
+      char user_buf[MAX_VALUE_LENGTH];
+      for (int64_t i = 0; i < total_size; ++i) {
+        user_buf[0] = '\0';
+        if (OB_FAIL(get_global_proxy_config().weak_read_user_list.get(i, user_buf, static_cast<int64_t>(sizeof(user_buf))))) {
+          LOG_WARN("get weak read user list variables failed", K(ret));
+        }
+        else if (hsr.response_.get_username().prefix_match(user_buf)){
+          is_weak_read_user = true;
+          break;
+        }
+      }
+    }
+    
+    if (client_info.is_request_follower_user() || get_global_proxy_config().enable_weak_read || is_weak_read_user) {
       ObString ob_read_consistency("ob_read_consistency");
       // 2 means WEAK for ob_read_consistency
       ObString weak("2");
