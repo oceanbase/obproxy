@@ -10,12 +10,14 @@ devdeps-mariadb-connector-c-3.1.12-16.el8.aarch64.rpm
 devdeps-gtest-1.8.0-16.el8.aarch64.rpm
 devdeps-prometheus-cpp-0.8.0-2.el8.aarch64.rpm
 devdeps-grpc-1.20.1-8.el8.aarch64.rpm
+devdeps-sqlite-3.38.1-5.el8.aarch64.rpm
 
 [tools]
-obdevtools-gcc-5.2.0-15.el8.aarch64.rpm
+obdevtools-gcc9-9.3.0-3.el8.aarch64.rpm
 obdevtools-binutils-2.30-7.el8.aarch64.rpm
 obdevtools-bison-2.4.1-9.el8.aarch64.rpm
 obdevtools-flex-2.5.35-10.el8.aarch64.rpm
+obdevtools-llvm-11.0.1-40.el8.aarch64.rpm
 
 [release]
 oceanbase-ce-devel-3.1.3-10000102022030411.el8.aarch64.rpm

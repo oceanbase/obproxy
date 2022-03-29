@@ -29,7 +29,7 @@ namespace proxy
 {
 class ObProxyPartInfo;
 class ObProxyMysqlRequest;
-class ObPsEntry;
+class ObPsIdEntry;
 class ObTextPsEntry;
 class ObClientSessionInfo;
 }
@@ -38,12 +38,13 @@ namespace opsql
 struct ObExprResolverContext
 {
   ObExprResolverContext() : relation_info_(NULL), part_info_(NULL), client_request_(NULL),
-                            ps_entry_(NULL), text_ps_entry_(NULL), client_info_(NULL) {}
+                            ps_id_entry_(NULL), text_ps_entry_(NULL), client_info_(NULL) {}
   // parse result
   ObProxyRelationInfo *relation_info_;
   proxy::ObProxyPartInfo *part_info_;
   proxy::ObProxyMysqlRequest *client_request_;
-  proxy::ObPsEntry *ps_entry_;
+  // proxy::ObPsEntry *ps_entry_;
+  proxy::ObPsIdEntry *ps_id_entry_;
   proxy::ObTextPsEntry *text_ps_entry_;
   proxy::ObClientSessionInfo *client_info_;
 };
@@ -71,14 +72,18 @@ private:
                          proxy::ObProxyPartInfo *part_info,
                          proxy::ObProxyMysqlRequest *client_request,
                          proxy::ObClientSessionInfo *client_info,
-                         proxy::ObPsEntry *ps_entry,
+                         proxy::ObPsIdEntry *ps_entry,
                          proxy::ObTextPsEntry *text_ps_entry,
                          common::ObNewRange &range);
+  int calc_token_func_obj(ObProxyTokenNode *token,
+                          proxy::ObClientSessionInfo *client_session_info,
+                          common::ObObj &target_obj);
   int calc_generated_key_value(common::ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode);
   int get_obj_with_param(common::ObObj &target_obj,
                          proxy::ObProxyMysqlRequest *client_request,
                          proxy::ObClientSessionInfo *client_info,
-                         proxy::ObPsEntry *ps_entry,
+                         proxy::ObProxyPartInfo *part_info,
+                         proxy::ObPsIdEntry *ps_entry,
                          const int64_t param_index);
   common::ObIAllocator &allocator_;
 

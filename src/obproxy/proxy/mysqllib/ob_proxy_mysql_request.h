@@ -71,10 +71,10 @@ public:
   int64_t get_sql_id_buf_len() const { return common::OB_MAX_SQL_ID_LENGTH + 1; }
   common::ObString get_parse_sql() { return get_parse_sql(get_sql()); }
   common::ObString get_expr_sql() { return get_expr_sql(get_sql(), result_.get_parsed_length()); }
-  common::ObString get_print_sql() {  return get_print_sql(get_sql()); }
+  common::ObString get_print_sql(const int64_t sql_len = PRINT_SQL_LEN) {  return get_print_sql(get_sql(), sql_len); }
   static common::ObString get_expr_sql(const common::ObString &req_sql, const int64_t parsed_length);
   static common::ObString get_parse_sql(const common::ObString &req_sql);
-  static common::ObString get_print_sql(const common::ObString &req_sql);
+  static common::ObString get_print_sql(const common::ObString &req_sql, const int64_t sql_len = PRINT_SQL_LEN);
   common::ObString get_req_pkt();
   obutils::ObSqlParseResult &get_parse_result();
   obutils::ObSqlParseResult *get_ps_parse_result() { return ps_result_; }
@@ -93,6 +93,7 @@ public:
   bool is_sharding_user() const { return USER_TYPE_SHARDING == user_identity_; }
   bool is_proxysys_user() const { return USER_TYPE_PROXYSYS == user_identity_; }
   bool is_inspector_user() const { return USER_TYPE_INSPECTOR == user_identity_; }
+  bool is_rootsys_user() const { return USER_TYPE_ROOTSYS == user_identity_; }
   bool is_proxysys_tenant() const { return (is_proxysys_user() || is_inspector_user()); }
 
   void set_internal_cmd(const bool flag) { is_internal_cmd_ = flag; }
@@ -100,6 +101,7 @@ public:
   void set_large_request(const bool flag) { is_large_request_ = flag; }
   void set_enable_analyze_internal_cmd(const bool internal) { enable_analyze_internal_cmd_ = internal; }
   void set_user_identity(const ObProxyLoginUserType type) { user_identity_ = type; }
+  inline ObProxyLoginUserType get_user_identity() const { return user_identity_; }
 
   int64_t get_packet_len() { return meta_.pkt_len_; }
 
@@ -145,11 +147,11 @@ private:
 
 inline void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
 {
-  if (NULL != cmd_info_) {
+  if (OB_UNLIKELY(NULL != cmd_info_)) {
     op_fixed_mem_free(cmd_info_, static_cast<int64_t>(sizeof(ObInternalCmdInfo)));
     cmd_info_ = NULL;
   }
-  if (NULL != query_info_) {
+  if (OB_UNLIKELY(NULL != query_info_)) {
     op_fixed_mem_free(query_info_, static_cast<int64_t>(sizeof(ObProxyKillQueryInfo)));
     query_info_ = NULL;
   }
@@ -211,7 +213,8 @@ inline void ObProxyMysqlRequest::reset(bool is_reset_origin_db_table /* true */)
 inline obutils::ObSqlParseResult &ObProxyMysqlRequest::get_parse_result()
 {
   obutils::ObSqlParseResult *result = &result_;
-  if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == meta_.cmd_ && NULL != ps_result_) {
+  if ((obmysql::OB_MYSQL_COM_STMT_EXECUTE == meta_.cmd_  || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
+      && NULL != ps_result_) {
     result = ps_result_;
   }
   return *result;
@@ -304,8 +307,11 @@ inline common::ObString ObProxyMysqlRequest::get_sql()
 {
   const char *sql = NULL;
   int64_t sql_len = 0;
-  if (NULL != req_buf_ && req_pkt_len_ > MYSQL_NET_META_LENGTH) {
-    if (obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE == meta_.cmd_) {
+  if (OB_LIKELY(NULL != req_buf_ && req_pkt_len_ > MYSQL_NET_META_LENGTH)) {
+    if (OB_LIKELY(obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE != meta_.cmd_)) {
+      sql = req_buf_ + MYSQL_NET_META_LENGTH; // skip pkt meta(5 bytes)
+      sql_len = req_pkt_len_ - MYSQL_NET_META_LENGTH;
+    } else {
       int ret = OB_SUCCESS;
       uint64_t query_len = 0;
       const char *pos = req_buf_ + MYSQL_NET_META_LENGTH + MYSQL_PS_EXECUTE_HEADER_LENGTH; // skip 9 bytes
@@ -331,9 +337,6 @@ inline common::ObString ObProxyMysqlRequest::get_sql()
           sql_len = copy_len;
         }
       }
-    } else {
-      sql = req_buf_ + MYSQL_NET_META_LENGTH; // skip pkt meta(5 bytes)
-      sql_len = req_pkt_len_ - MYSQL_NET_META_LENGTH;
     }
   }
   common::ObString sql_str(sql_len, sql);
@@ -366,11 +369,11 @@ common::ObString ObProxyMysqlRequest::get_expr_sql(
   return expr_sql;
 }
 
-common::ObString ObProxyMysqlRequest::get_print_sql(const common::ObString &req_sql)
+common::ObString ObProxyMysqlRequest::get_print_sql(const common::ObString &req_sql, const int64_t sql_len)
 {
   return (req_sql.empty()
       ? req_sql
-      : common::ObString(std::min(req_sql.length(), static_cast<int32_t>(PRINT_SQL_LEN)), req_sql.ptr()));
+      : common::ObString(std::min(req_sql.length(), static_cast<int32_t>(sql_len)), req_sql.ptr()));
 }
 
 inline common::ObString ObProxyMysqlRequest::get_req_pkt()

@@ -71,11 +71,12 @@ int ObMysqlPacketUtil::encode_header(ObMIOBuffer &write_buf,
 
 int ObMysqlPacketUtil::encode_row_packet(ObMIOBuffer &write_buf,
                                          uint8_t &seq,
-                                         const ObNewRow &row)
+                                         const ObNewRow &row,
+                                         ObIArray<ObField> *fields)
 {
   int ret = OB_SUCCESS;
 
-  OMPKRow row_packet(ObSMRow(TEXT, row));
+  OMPKRow row_packet(ObSMRow(TEXT, row, NULL, fields));
   row_packet.set_seq(seq++);
 
   if (OB_FAIL(ObMysqlPacketWriter::write_row_packet(write_buf, row_packet))) {

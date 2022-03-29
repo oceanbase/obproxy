@@ -14,6 +14,7 @@
 #include "common/ob_obj_cast.h"
 #include "share/part/ob_part_desc_hash.h"
 #include "lib/charset/ob_mysql_global.h"
+#include "obproxy/proxy/route/obproxy_expr_calculator.h"
 
 namespace oceanbase
 {
@@ -33,7 +34,8 @@ ObPartDescHash::ObPartDescHash() : is_oracle_mode_(false)
  */
 int ObPartDescHash::get_part(ObNewRange &range,
                              ObIAllocator &allocator,
-                             ObIArray<int64_t> &part_ids)
+                             ObIArray<int64_t> &part_ids,
+                             ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
   if (1 != range.get_start_key().get_obj_cnt()) { // single value
@@ -44,7 +46,7 @@ int ObPartDescHash::get_part(ObNewRange &range,
     int64_t part_idx = -1;
     ObObj &src_obj = const_cast<ObObj &>(range.get_start_key().get_obj_ptr()[0]);
     if (is_oracle_mode_) {
-      ret = calc_value_for_oracle(src_obj, allocator, part_idx);
+      ret = calc_value_for_oracle(src_obj, allocator, part_idx, ctx);
     } else {
       ret = calc_value_for_mysql(src_obj, allocator, part_idx);
     }
@@ -86,13 +88,11 @@ bool ObPartDescHash::is_oracle_supported_type(const ObObjType type)
     case ObDateTimeType:
     case ObCharType:
     case ObVarcharType:
-        /*
     case ObTimestampTZType:
     case ObTimestampLTZType:
     case ObTimestampNanoType:
-    */
     case ObRawType:
-        /*
+    /*  
     case ObIntervalYMType:
     case ObIntervalDSType:
     */
@@ -114,9 +114,6 @@ uint64_t ObPartDescHash::calc_hash_value_with_seed(const ObObj &obj, int64_t see
 {
   uint64 hval = 0;
   ObObjType type = obj.get_type();
-
-  // set thread context before call hash func
-  lib::set_oracle_mode(true);
 
   if (ObCharType == type || ObNCharType == type) {
     ObObj obj_trimmed;
@@ -144,58 +141,76 @@ uint64_t ObPartDescHash::calc_hash_value_with_seed(const ObObj &obj, int64_t see
     }
   }
 
-  // clear context
-  lib::set_oracle_mode(false);
-
   return hval;
 }
 
-int ObPartDescHash::calc_value_for_oracle(ObObj &src_obj, ObIAllocator &allocator, int64_t &part_idx)
+int ObPartDescHash::calc_value_for_oracle(ObObj &src_obj,
+                                          ObIAllocator &allocator,
+                                          int64_t &part_idx,
+                                          ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
 
-  uint64_t hash_val = 0;
+  ObTimeZoneInfo tz_info;
+  ObDataTypeCastParams dtc_params;
 
-  ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, cs_type_);
-  // use src_obj as buf_obj
-  COMMON_LOG(DEBUG, "begin to cast value for hash oracle", K(src_obj), K(cs_type_));
-  if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cs_type_, cast_ctx, src_obj, src_obj))) {
-    COMMON_LOG(WARN, "failed to cast obj", K(src_obj), K(obj_type_), K(cs_type_), K(ret));
+  if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
+                                                                            obj_type_, tz_info, dtc_params))) {
+    COMMON_LOG(WARN, "fail to build dtc params with tz info", K(ret));
   } else {
-    //1. calc hash value
-    COMMON_LOG(DEBUG, "end to cast values for hash oracle", K(src_obj), K(cs_type_));
-    const ObObjType type = src_obj.get_type();
-    if (ObNullType == type) {
-      //do nothing, hash_code not changed
-    } else if (!is_oracle_supported_type(type)) {
-      ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(WARN, "type is wrong", K(ret), K(src_obj), K(type));
+    lib::set_oracle_mode(true);
+
+    uint64_t hash_val = 0;
+    ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type_);
+    ObAccuracy accuracy(accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
+    const ObObj *res_obj = &src_obj;
+
+    // use src_obj as buf_obj
+    COMMON_LOG(DEBUG, "begin to cast value for hash oracle", K(src_obj), K(cs_type_));
+    if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cs_type_, cast_ctx, src_obj, src_obj))) {
+      COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(obj_type_), K(cs_type_));
+    } else if (ctx.need_accurate()
+               && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type_, *res_obj, src_obj, res_obj))) {
+      COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj), K(obj_type_));
     } else {
-      hash_val = calc_hash_value_with_seed(src_obj, hash_val);
-    }
-  }
-
-  // calc logic part
-  if (OB_SUCC(ret)) {
-    int64_t N = 0;
-    int64_t powN = 0;
-    const static int64_t max_part_num_log2 = 64;
-
-    int64_t result_num = static_cast<int64_t>(hash_val);
-    result_num = result_num < 0 ? -result_num : result_num;
-
-    N = static_cast<int64_t>(std::log(part_num_) / std::log(2));
-    if (N >= max_part_num_log2) {
-      ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "result is too big", K(N), K(part_num_), K(result_num));
-    } else {
-      powN = (1ULL << N);
-      part_idx = result_num % powN;
-      if (part_idx + powN < part_num_ && (result_num & powN) == powN) {
-        part_idx += powN;
+      COMMON_LOG(DEBUG, "finish to cast and accuracy values for hash oracle", K(src_obj), K(obj_type_), K(cs_type_));
+      // calculate hash value
+      const ObObjType type = src_obj.get_type();
+      if (ObNullType == type) {
+        //do nothing, hash_code not changed
+      } else if (!is_oracle_supported_type(type)) {
+        ret = OB_INVALID_ARGUMENT;
+        COMMON_LOG(WARN, "type is wrong", K(ret), K(src_obj), K(type));
+      } else {
+        hash_val = calc_hash_value_with_seed(src_obj, hash_val);
       }
     }
-    COMMON_LOG(DEBUG, "get hash part idx for oracle mode", K(ret), K(result_num), K(part_num_), K(N), K(powN), K(part_idx));
+
+    lib::set_oracle_mode(false);
+
+    // calculate logic partition
+    if (OB_SUCC(ret)) {
+      int64_t N = 0;
+      int64_t powN = 0;
+      const static int64_t max_part_num_log2 = 64;
+
+      int64_t result_num = static_cast<int64_t>(hash_val);
+      result_num = result_num < 0 ? -result_num : result_num;
+
+      N = static_cast<int64_t>(std::log(part_num_) / std::log(2));
+      if (N >= max_part_num_log2) {
+        ret = OB_ERR_UNEXPECTED;
+        COMMON_LOG(WARN, "result is too big", K(N), K(part_num_), K(result_num));
+      } else {
+        powN = (1ULL << N);
+        part_idx = result_num % powN;
+        if (part_idx + powN < part_num_ && (result_num & powN) == powN) {
+          part_idx += powN;
+        }
+      }
+      COMMON_LOG(DEBUG, "get hash part idx for oracle mode",
+        K(ret), K(result_num), K(part_num_), K(N), K(powN), K(part_idx));
+    }
   }
 
   return ret;
@@ -214,6 +229,11 @@ int ObPartDescHash::calc_value_for_mysql(ObObj &src_obj, ObIAllocator &allocator
     if (OB_FAIL(src_obj.get_int(val))) {
       COMMON_LOG(WARN, "fail to get int", K(src_obj), K(ret));
     } else {
+      if (OB_UNLIKELY(INT64_MIN == val)) {
+        val = INT64_MAX;
+      } else {
+        val = val < 0 ? -val : val;
+      }
       part_idx = val % part_num_;
       COMMON_LOG(DEBUG, "get hash part idx for mysql mode", K(ret), K(val), K(part_num_), K(part_idx));
     }

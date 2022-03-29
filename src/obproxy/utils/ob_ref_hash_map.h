@@ -21,7 +21,7 @@ namespace oceanbase
 namespace obproxy
 {
 
-template <class K, class V, template<class K, class V> class GetKey,
+template <class K, class V, template<class U, class W> class GetKey,
           int64_t default_size = common::OB_MALLOC_NORMAL_BLOCK_SIZE,
           class Allocator = common::ModulePageAllocator>
 class ObRefHashMap

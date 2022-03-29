@@ -131,11 +131,11 @@ public:
   int release();
   net::ObNetVConnection *get_netvc() const { return server_vc_; }
 
-  void set_client_session(ObMysqlClientSession &client_session) { client_session_ = &client_session; }
-  void clear_client_session() { client_session_ = NULL; }
-  ObMysqlClientSession *get_client_session() { return client_session_; }
-  ObServerSessionInfo &get_session_info() { return session_info_; }
-  const ObServerSessionInfo &get_session_info() const { return session_info_; }
+  inline void set_client_session(ObMysqlClientSession &client_session) { client_session_ = &client_session; }
+  inline void clear_client_session() { client_session_ = NULL; }
+  inline ObMysqlClientSession *get_client_session() { return client_session_; }
+  inline ObServerSessionInfo &get_session_info() { return session_info_; }
+  inline const ObServerSessionInfo &get_session_info() const { return session_info_; }
   const char *get_state_str() const;
 
   // set inactivity to the value timeout(in nanoseconds)

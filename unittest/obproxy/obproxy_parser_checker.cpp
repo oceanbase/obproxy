@@ -162,7 +162,7 @@ void ObProxyParserChecker::print_stat()
 
 #define YYDEBUG 1
 #if YYDEBUG
-extern int ob_proxy_parser_utf8_yydebug;
+int ob_proxy_parser_utf8_yydebug;
 #endif
 using namespace oceanbase::obproxy::test;
 int main(int argc, char **argv)

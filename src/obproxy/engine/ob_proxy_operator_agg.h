@@ -25,6 +25,7 @@ namespace obproxy {
 namespace engine {
 typedef common::ObSEArray<common::ObColumnInfo, 4, common::ObIAllocator&> ObColInfoArray;
 
+class ObProxyAggUnit;
 class ObAggregateFunction;
 class HashTable;
 class ObHashCols;
@@ -52,7 +53,7 @@ class HashTable
 public:
   HashTable(common::ObIAllocator &allocator)
         : allocator_(allocator),
-        buckets_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
+        buckets_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
         nbuckets_(0),
         buf_cnt_(0),
         cur_(0)
@@ -262,7 +263,7 @@ public:
   }
 
   virtual int init_group_by_columns();
-  virtual int handle_response_result(void *src, bool is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
   virtual int process_exprs_in_agg(ResultRows *src_rows, ResultRows *obj_rows);
 
 protected:
@@ -277,45 +278,30 @@ class ObProxyAggInput : public ObProxyOpInput
 public:
   ObProxyAggInput()
      : ObProxyOpInput(),
-       group_by_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
-       having_exprs_(NULL) {}
-  ObProxyAggInput(
-      const common::ObSEArray<ObProxyExpr*, 4> &select_exprs,
-      const common::ObSEArray<ObProxyExpr*, 4> &group_by_exprs,
-      ObProxyExpr *&having_exprs)
-     : ObProxyOpInput(select_exprs),
-       group_by_exprs_(group_by_exprs),
-       having_exprs_(having_exprs) {}
+       group_by_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+       agg_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
 
   ~ObProxyAggInput() {}
 
-  void init(const common::ObSEArray<ObProxyExpr*, 4> &select_exprs,
-     const common::ObSEArray<ObProxyExpr*, 4> &group_by_exprs,
-     ObProxyExpr *&having_exprs) {
-    select_exprs_ = select_exprs;
-    group_by_exprs_ = group_by_exprs;
-    having_exprs_ = having_exprs;
+  int set_group_by_exprs(const common::ObIArray<ObProxyGroupItem*> &group_by_exprs) {
+    return group_by_exprs_.assign(group_by_exprs);
   }
 
-  void set_group_by_exprs(const common::ObSEArray<ObProxyExpr*, 4> &group_by_exprs) {
-    group_by_exprs_ = group_by_exprs;
-  }
-
-  void set_having_exprs(ObProxyExpr* having_exprs) {
-    having_exprs_ = having_exprs;
-  }
-
-  common::ObSEArray<ObProxyExpr*, 4>& get_group_by_exprs() {
+  common::ObSEArray<ObProxyGroupItem*, 4>& get_group_by_exprs() {
     return group_by_exprs_;
   }
 
-  ObProxyExpr* get_having_exprs() {
-    return having_exprs_;
+  int set_agg_exprs(const common::ObIArray<ObProxyExpr*> &agg_exprs) {
+    return agg_exprs_.assign(agg_exprs);
+  }
+
+  common::ObSEArray<ObProxyExpr*, 4>& get_agg_exprs() {
+    return agg_exprs_;
   }
 
 protected:
-  common::ObSEArray<ObProxyExpr*, 4> group_by_exprs_;
-  ObProxyExpr* having_exprs_;
+  common::ObSEArray<ObProxyGroupItem*, 4> group_by_exprs_;
+  common::ObSEArray<ObProxyExpr*, 4> agg_exprs_;
 };
 
 class ObProxyHashAggOp : public ObProxyAggOp
@@ -329,7 +315,7 @@ public:
   ~ObProxyHashAggOp() {};
 
   virtual int init();
-  virtual int handle_response_result(void *src, bool is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
 
 private:
   HashTable *result_rows_;
@@ -348,7 +334,7 @@ public:
 
   virtual int init();
   virtual int init_result_rows_array(int64_t regions);
-  virtual int handle_response_result(void *src, bool is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
   int fetch_all_result(ResultRows *rows);
 
 protected:
@@ -358,6 +344,152 @@ protected:
   ResultFlagArray *result_rows_flag_array_;
   typedef common::ObSEArray<ObProxyResultResp*, 4, common::ObIAllocator&> ResultRespArray;
   ResultRespArray *regions_results_;
+};
+
+class ObProxyGroupUnit
+{
+public:
+  ObProxyGroupUnit(common::ObIAllocator &allocator)
+    : allocator_(allocator), row_(NULL),
+      group_values_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+      agg_units_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
+  ~ObProxyGroupUnit();
+
+  int init(ResultRow *row, const common::ObIArray<ObProxyGroupItem*>& group_by_exprs);
+
+  uint64_t hash() const;
+  bool operator==(const ObProxyGroupUnit &group_unit) const;
+  int assign(const ObProxyGroupUnit &group_unit);
+
+  int aggregate(const ObProxyGroupUnit &group_unit,
+                const common::ObIArray<ObProxyExpr*>& agg_exprs);
+  int set_agg_value();
+
+  ResultRow *get_row() const { return row_; }
+  const common::ObIArray<ObObj>& get_group_values() const { return group_values_; }
+  const common::ObIArray<ObProxyAggUnit*>& get_agg_units() { return agg_units_;; }
+
+public:
+  static int create_group_unit(common::ObIAllocator &allocator,
+                               ObProxyGroupUnit* &current_group_unit,
+                               ObProxyGroupUnit &group_unit);
+  static void destroy_group_unit(common::ObIAllocator &allocator,
+                                 ObProxyGroupUnit* group_unit);
+
+private:
+  int do_aggregate(ResultRow *row);
+
+public:
+  LINK(ObProxyGroupUnit, group_unit_link_);
+
+private:
+  common::ObIAllocator &allocator_;
+  ResultRow *row_;
+  common::ObSEArray<ObObj, 4> group_values_;
+  common::ObSEArray<ObProxyAggUnit*, 4> agg_units_;
+};
+
+class ObProxyStreamAggOp : public ObProxyAggOp
+{
+public:
+  ObProxyStreamAggOp(ObProxyOpInput *input, common::ObIAllocator &allocator)
+    : ObProxyAggOp(input, allocator), current_group_unit_(NULL),
+      current_rows_(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator)
+  { set_op_type(PHY_STREAM_AGG); }
+
+  ~ObProxyStreamAggOp();
+
+  virtual int init() { return ObProxyOperator::init(); }
+  virtual int get_next_row() { return ObProxyOperator::get_next_row(); }
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
+
+private:
+  ObProxyGroupUnit *current_group_unit_;
+  ResultRows current_rows_;
+};
+
+class ObProxyMemMergeAggOp : public ObProxyAggOp
+{
+public:
+  ObProxyMemMergeAggOp(ObProxyOpInput *input, common::ObIAllocator &allocator)
+    : ObProxyAggOp(input, allocator), group_unit_map_()
+  { set_op_type(PHY_MEM_MERGE_AGG); }
+
+  ~ObProxyMemMergeAggOp();
+
+  virtual int init() { return ObProxyOperator::init(); }
+  virtual int get_next_row() { return ObProxyOperator::get_next_row(); }
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
+
+public:
+  struct ObGroupUnitHashing
+  {
+    typedef const ObProxyGroupUnit &Key;
+    typedef ObProxyGroupUnit Value;
+    typedef ObDLList(ObProxyGroupUnit, group_unit_link_) ListHead;
+
+    static uint64_t hash(Key key) { return key.hash(); }
+    static Key key(Value *value) { return *value; }
+    static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
+  };
+  typedef common::hash::ObBuildInHashMap<ObGroupUnitHashing, 256 * 1024> GroupUnitHashMap;
+
+private:
+  GroupUnitHashMap group_unit_map_;
+};
+
+class ObProxyAggUnit
+{
+public:
+  ObProxyAggUnit(common::ObIAllocator &allocator)
+    : allocator_(allocator), agg_expr_(NULL), obj_(), is_first_(true) {}
+  ~ObProxyAggUnit() {}
+
+  static int create_agg_unit(common::ObIAllocator &allocator,
+                             ObProxyExpr *expr,
+                             ObProxyAggUnit* &agg_unit);
+  static void destroy_agg_unit(common::ObIAllocator &allocator,
+                               ObProxyAggUnit *agg_unit);
+
+  virtual int merge(common::ObIArray<ObObj> &agg_values) = 0;
+  virtual ObObj &get_result() { return obj_; };
+
+  void set_agg_expr(ObProxyExpr* agg_expr) { agg_expr_ = agg_expr; }
+  ObProxyExpr* get_agg_expr() { return agg_expr_; }
+
+  TO_STRING_KV(KP_(agg_expr), K_(obj), K_(is_first));
+
+protected:
+  common::ObIAllocator &allocator_;
+  ObProxyExpr* agg_expr_;
+  ObObj obj_;
+  bool is_first_;
+};
+
+class ObProxyComparableAggUnit : public ObProxyAggUnit
+{
+public:
+  ObProxyComparableAggUnit(common::ObIAllocator &allocator, bool asc)
+    : ObProxyAggUnit(allocator), asc_(asc) {}
+  ~ObProxyComparableAggUnit() {}
+
+  virtual int merge(common::ObIArray<ObObj> &agg_values);
+
+private:
+  bool asc_;
+};
+
+class ObProxyAccumulationAggUnit : public ObProxyAggUnit
+{
+public:
+  ObProxyAccumulationAggUnit(common::ObIAllocator &allocator, int64_t scale)
+    : ObProxyAggUnit(allocator), scale_(scale) {}
+  ~ObProxyAccumulationAggUnit() {}
+
+  virtual int merge(common::ObIArray<ObObj> &agg_values);
+
+private:
+  int64_t scale_;
 };
 
 }

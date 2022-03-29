@@ -171,7 +171,8 @@ int ObLogFileStruct::reopen_wf()
     LOG_STDERR("invalid argument log_file = %p\n", filename_);
     ret = OB_INVALID_ARGUMENT;
   } else {
-    char tmp_file_name[MAX_LOG_FILE_NAME_SIZE];
+    const int64_t WARN_NAME_LEN = 3;
+    char tmp_file_name[MAX_LOG_FILE_NAME_SIZE + WARN_NAME_LEN];
     snprintf(tmp_file_name, sizeof(tmp_file_name), "%s.wf", filename_);
     if (OB_UNLIKELY(tmp_fd = ::open(tmp_file_name, O_WRONLY | O_CREAT | O_APPEND , LOG_FILE_MODE)) < 0) {
       LOG_STDERR("open file = %s errno = %d error = %m\n", tmp_file_name, errno);

@@ -523,6 +523,14 @@ public:
   // or @c NULL if @a c is not found.
   const char *find(char c) const { return static_cast<const char *>(memchr(ptr_, c, data_length_)); }
 
+  // Reverse Find a character from backwards.
+  // @return A pointer to the first occurrence of @a c in @a this
+  // or @c NULL if @a c is not found.
+  const char* reverse_find(char c) const
+  {
+    return static_cast<const char*>(memrchr(ptr_, c, data_length_));
+  }
+
   // Split the buffer on the character at @a p.
   //
   // The buffer is split in to two parts and the character at @a p

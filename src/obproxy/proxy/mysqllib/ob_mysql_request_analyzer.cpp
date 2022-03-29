@@ -15,10 +15,15 @@
 #include "packet/ob_mysql_packet_reader.h"
 #include "packet/ob_mysql_packet_util.h"
 #include "rpc/obmysql/ob_mysql_global.h"
+#include "rpc/obmysql/ob_mysql_util.h"
 #include "obutils/ob_cached_variables.h"
 #include "common/obsm_utils.h"
 #include "lib/timezone/ob_time_convert.h"
+#include "lib/charset/ob_charset.h"
 #include "opsql/expr_parser/ob_expr_parser.h"
+#include "proxy/mysqllib/ob_mysql_config_processor.h"
+#include "obproxy/obutils/ob_proxy_sql_parser.h"
+#include "proxy/shard/obproxy_shard_utils.h"
 #include <ob_sql_parser.h>
 #include <parse_malloc.h>
 
@@ -34,7 +39,6 @@ using namespace obutils;
 using namespace obmysql;
 using namespace event;
 using namespace packet;
-
 static const char OBPROXY_SIMPLE_PART_KEY_MARK = '*';
 
 int ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(ObRequestAnalyzeCtx &ctx,
@@ -85,7 +89,7 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
   } else {
     // 1. determine whether mysql request packet is received complete
     ObMysqlAnalyzeResult result;
-    if (ctx.is_auth_) {
+    if (OB_UNLIKELY(ctx.is_auth_)) {
       if (OB_FAIL(handle_auth_request(*ctx.reader_, result))) {
         LOG_WARN("fail to handle auth request", K(ret));
       }
@@ -111,9 +115,9 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
     status = result.status_;
     if (ANALYZE_DONE == status) {
       LOG_DEBUG("mysql request packet is received complete", "is_auth", ctx.is_auth_,
-               "analyze status", ObProxyParserUtils::get_analyze_status_name(status),
-               K(result.meta_), "packet cmd type",
-               ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
+              "analyze status", ObProxyParserUtils::get_analyze_status_name(status),
+              K(result.meta_), "packet cmd type",
+              ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
     } else {
       LOG_DEBUG("mysql request packet has not yet been received complete", "is_auth", ctx.is_auth_,
                 "analyze status", ObProxyParserUtils::get_analyze_status_name(status), K(avail_bytes),
@@ -121,10 +125,10 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
                 ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
     }
 
-    if (OB_SUCCESS == ret && (ANALYZE_DONE == status || ANALYZE_CONT == status)) {
+    if (OB_SUCC(ret) && (ANALYZE_DONE == status || ANALYZE_CONT == status)) {
       // 3. set mysql request packet meta
       sql_cmd = result.meta_.cmd_;
-      if (OB_MYSQL_COM_LOGIN == result.meta_.cmd_ || OB_MYSQL_COM_HANDSHAKE == result.meta_.cmd_) {
+      if (OB_UNLIKELY(OB_MYSQL_COM_LOGIN == result.meta_.cmd_ || OB_MYSQL_COM_HANDSHAKE == result.meta_.cmd_)) {
         // add pkt meta to mysql auth request
         auth_request.set_packet_meta(result.meta_);
       } else {
@@ -135,13 +139,11 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
       }
 
       // 4. dispatch mysql packet by cmd type, and parse mysql request
-      if (ANALYZE_DONE == status) {
+      if (OB_LIKELY(ANALYZE_DONE == status)) {
         if (OB_FAIL(do_analyze_request(ctx, sql_cmd, auth_request, client_request, is_oracle_mode))) {
           if (OB_ERR_PARSE_SQL == ret) {
             //ob parse fail will not disconnect
             status = ANALYZE_OBPARSE_ERROR;
-          } else if (OB_ERROR_UNSUPPORT_EXPR_TYPE == ret) {
-            status = ANALYZE_OBUNSUPPORT_ERROR;
           } else {
             status = ANALYZE_ERROR;
           }
@@ -155,7 +157,9 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
             && result.meta_.pkt_len_ > ctx.large_request_threshold_len_
             && avail_bytes + ObProxyMysqlRequest::PARSE_EXTRA_CHAR_NUM > ctx.request_buffer_length_
             && !client_request.is_sharding_user()
-            && !ctx.using_ldg_) {
+            && !client_request.is_proxysys_user()
+            && !ctx.using_ldg_
+            && OB_MYSQL_COM_STMT_SEND_LONG_DATA != sql_cmd) {
           if (OB_FAIL(do_analyze_request(ctx, sql_cmd, auth_request, client_request, is_oracle_mode))) {
             status = ANALYZE_ERROR;
             LOG_WARN("fail to dispatch mysql cmd", "analyze status",
@@ -430,9 +434,10 @@ int ObMysqlRequestAnalyzer::parse_sql_fileds(ObProxyMysqlRequest &client_request
 {
   int ret = OB_SUCCESS;
   bool need_parse_fields = true;
-  ObExprParseMode parse_mode = INVLIAD_PARSE_MODE;
+  ObExprParseMode parse_mode = INVALID_PARSE_MODE;
   ObSqlParseResult &sql_parse_result = client_request.get_parse_result();
-  if (sql_parse_result.is_select_stmt() && sql_parse_result.get_dbp_route_info().scan_all_) {
+  bool need_scan_all = ObProxyShardUtils::need_scan_all(sql_parse_result);
+  if (need_scan_all) {
     //sharding parser extract by ob_parse
     LOG_DEBUG("sharding sql no need parse_sql_fileds");
     need_parse_fields = false;
@@ -458,6 +463,7 @@ int ObMysqlRequestAnalyzer::parse_sql_fileds(ObProxyMysqlRequest &client_request
       ObExprParser expr_parser(*allocator, parse_mode);
       ObString sql = client_request.get_sql();
       expr_result.part_key_info_.key_num_ = 0;
+      expr_result.target_mask_ = 0;
       ObString expr_sql = ObProxyMysqlRequest::get_expr_sql(sql, sql_parse_result.get_parsed_length());
       if (SELECT_STMT_PARSE_MODE == parse_mode) {
         const char *expr_sql_str = expr_sql.ptr();
@@ -500,9 +506,9 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
   int ret = OB_SUCCESS;
 
   switch (sql_cmd) {
+    case OB_MYSQL_COM_QUERY:
     case OB_MYSQL_COM_STMT_PREPARE_EXECUTE:
-    case OB_MYSQL_COM_STMT_PREPARE:
-    case OB_MYSQL_COM_QUERY: {
+    case OB_MYSQL_COM_STMT_PREPARE: {
       // add packet's buffer to mysql common request, for parsing later
       if (OB_FAIL(client_request.add_request(ctx.reader_, ctx.request_buffer_length_))) {
         LOG_WARN("fail to add com request", K(ret));
@@ -510,7 +516,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
         LOG_DEBUG("the request sql", "sql", client_request.get_sql());
 
         ObString sql = client_request.get_parse_sql();
-        if ((OB_SUCC(ret)) && !sql.empty()) {
+        if ((OB_SUCC(ret)) && OB_LIKELY(!sql.empty())) {
           ObProxySqlParser sql_parser;
           ObSqlParseResult &sql_parse_result = client_request.get_parse_result();
           // we will handle parser error in parse_sql
@@ -530,9 +536,6 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
                                              ctx.drop_origin_db_table_name_,
                                              client_request.is_sharding_user()))) {
               LOG_WARN("fail to parse sql", K(sql), K(ret));
-            } else if (client_request.is_sharding_user()
-                       && OB_FAIL(parse_sql_fileds(client_request, ctx.connection_collation_))){
-              LOG_WARN("fail to extract_fileds");
             } else if (OB_FAIL(handle_internal_cmd(client_request))) {
               LOG_WARN("fail to handle internal cmd", K(sql), K(ret));
             }
@@ -557,6 +560,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     case OB_MYSQL_COM_STMT_FETCH:
     case OB_MYSQL_COM_STMT_CLOSE:
     case OB_MYSQL_COM_STMT_EXECUTE:
+    case OB_MYSQL_COM_STMT_SEND_LONG_DATA:
     case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
     case OB_MYSQL_COM_STMT_GET_PIECE_DATA: {
       // add packet's buffer to mysql common request, for parsing later
@@ -702,8 +706,11 @@ int ObMysqlRequestAnalyzer::handle_internal_cmd(ObProxyMysqlRequest &client_requ
   if (client_request.is_proxysys_user()) {
     // allow follow type to support java connect
     if (parse_result.is_show_stmt() || parse_result.is_set_stmt() || parse_result.is_select_stmt()
+      || parse_result.is_select_proxy_version()
       || parse_result.is_set_names_stmt()
-      || parse_result.is_update_stmt()) {
+      || parse_result.is_update_stmt()
+      || parse_result.is_replace_stmt()
+      || parse_result.is_delete_stmt()) {
       is_internal_cmd = true;
     }
   }
@@ -764,52 +771,43 @@ int ObMysqlRequestAnalyzer::rewrite_part_key_comment(ObIOBufferReader *reader,
   return ret;
 }
 
-int ObMysqlRequestAnalyzer::do_analyze_execute_param(const char *buf,
-                                                     int64_t data_len,
-                                                     const int64_t param_num,
-                                                     ObIArray<EMySQLFieldType> &param_types,
-                                                     ObProxyMysqlRequest &client_request,
-                                                     const int64_t target_index,
-                                                     ObObj &target_obj)
+int ObMysqlRequestAnalyzer::analyze_execute_header(const int64_t param_num,
+                                                   const char *&bitmap,
+                                                   int8_t &new_param_bound_flag,
+                                                   const char *&buf, int64_t &data_len)
 {
   int ret = OB_SUCCESS;
 
-  int8_t new_param_bound_flag = 0;
-  ObIAllocator &allocator = client_request.get_param_allocator();
-
-  int64_t bitmap_types = (param_num + 7) /8;
-  const char *bitmap = buf;
+  int64_t bitmap_types = (param_num + 7) / 8;
+  bitmap = buf;
   buf += bitmap_types;
   data_len -= bitmap_types;
+
   if (OB_FAIL(ObMysqlPacketUtil::get_int1(buf, data_len, new_param_bound_flag))) {
     LOG_WARN("fail to get int1", K(data_len), K(ret));
-  } else if (1 == new_param_bound_flag) {
-    param_types.reset();
   }
+
+  return ret;
+}
+
+// The default data of this method is complete and can only come in once
+int ObMysqlRequestAnalyzer::parse_param_type(const int64_t param_num,
+                                             ObIArray<EMySQLFieldType> &param_types,
+                                             const char *&buf, int64_t &data_len)
+{
+  int ret = OB_SUCCESS;
+
   uint8_t type = 0;
   int8_t flag = 0;
-  ObObjType ob_type;
-  bool is_null = false;
-  ObCharsetType charset = ObCharset::get_default_charset();
   // decode all types
   for (int64_t i = 0; OB_SUCC(ret) && i < param_num; ++i) {
-    if (1 == new_param_bound_flag) {
-      if (OB_FAIL(ObMysqlPacketUtil::get_uint1(buf, data_len, type))) {
-        LOG_WARN("fail to get uint1", K(data_len), K(ret));
-      } else if (OB_FAIL(ObMysqlPacketUtil::get_int1(buf, data_len, flag))) {
-        LOG_WARN("fail to get int1", K(data_len), K(ret));
-      } else if (OB_FAIL(param_types.push_back(static_cast<EMySQLFieldType>(type)))) {
-        LOG_WARN("fail to push back param type", K(type), K(ret));
-      }
-    } else {
-      if (param_num != param_types.count()) {
-        ret = OB_ERR_WRONG_DYNAMIC_PARAM;
-        LOG_WARN("wrong param num and param_types num", K(param_num), K(param_types), K(ret));
-      } else {
-        type = static_cast<uint8_t>(param_types.at(i));
-      }
-    }
-    if (OB_SUCC(ret) && OB_MYSQL_TYPE_COMPLEX == type) {
+    if (OB_FAIL(ObMysqlPacketUtil::get_uint1(buf, data_len, type))) {
+      LOG_WARN("fail to get uint1", K(data_len), K(ret));
+    } else if (OB_FAIL(ObMysqlPacketUtil::get_int1(buf, data_len, flag))) {
+      LOG_WARN("fail to get int1", K(data_len), K(ret));
+    } else if (OB_FAIL(param_types.push_back(static_cast<EMySQLFieldType>(type)))) {
+      LOG_WARN("fail to push back param type", K(type), K(ret));
+    } else if (OB_MYSQL_TYPE_COMPLEX == type) {
       TypeInfo type_name_info;
       uint8_t elem_type = 0;
       // skip all complex type bytes
@@ -828,11 +826,111 @@ int ObMysqlRequestAnalyzer::do_analyze_execute_param(const char *buf,
       }
     } // end complex type
   }
+
+  return ret;
+}
+
+// This method can be entered repeatedly, you need to pass the param offset and buf offset
+int ObMysqlRequestAnalyzer::parse_param_type_from_reader(int64_t& param_offset,
+                                                         const int64_t param_num,
+                                                         ObIArray<EMySQLFieldType> &param_types,
+                                                         event::ObIOBufferReader* reader,
+                                                         int64_t& analyzed_len,
+                                                         bool& is_finished)
+
+{
+  int ret = OB_SUCCESS;
+
+  int64_t analyzed_len_tmp = analyzed_len;
+  uint8_t type = 0;
+  int8_t flag = 0;
+  // decode all types
+  for (int64_t i = param_offset; OB_SUCC(ret) && i < param_num; ++i) {
+    if (OB_FAIL(get_uint1_from_reader(reader, analyzed_len_tmp, type))) {
+      LOG_WARN("fail to get uint1", K(analyzed_len_tmp), K(ret));
+    } else if (OB_FAIL(get_int1_from_reader(reader, analyzed_len_tmp, flag))) {
+      LOG_WARN("fail to get int1", K(analyzed_len_tmp), K(ret));
+    } else if (OB_FAIL(param_types.push_back(static_cast<EMySQLFieldType>(type)))) {
+      LOG_WARN("fail to push back param type", K(type), K(ret));
+    } else if (OB_MYSQL_TYPE_COMPLEX == type) {
+      TypeInfo type_name_info;
+      uint8_t elem_type = 0;
+      // skip all complex type bytes
+      if (OB_FAIL(decode_type_info_from_reader(reader, analyzed_len_tmp, type_name_info))) {
+        LOG_WARN("failed to decode type info", K(ret));
+      } else if (type_name_info.is_elem_type_) {
+        if (OB_FAIL(get_uint1_from_reader(reader, analyzed_len_tmp, elem_type))) {
+          LOG_WARN("fail to get uint1", K(analyzed_len_tmp), K(ret));
+        } else if (OB_FAIL(ObSMUtils::get_ob_type(type_name_info.elem_type_, static_cast<EMySQLFieldType>(elem_type)))) {
+          LOG_WARN("cast ob type from mysql type failed", K(type_name_info.elem_type_), K(elem_type), K(ret));
+        } else if (OB_MYSQL_TYPE_COMPLEX == elem_type
+                   && OB_FAIL(decode_type_info_from_reader(reader, analyzed_len_tmp, type_name_info))) {
+            LOG_WARN("failed to decode type info", K(ret));
+        }
+      }
+    } // end complex type
+
+    if (OB_SUCC(ret)) {
+      param_offset++;
+      analyzed_len = analyzed_len_tmp;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    // if type buff is complete
+    if (param_num == param_offset) {
+      is_finished = true;
+    }
+  }
+
+  return ret;
+}
+
+int ObMysqlRequestAnalyzer::do_analyze_execute_param(const char *buf,
+                                                     int64_t data_len,
+                                                     const int64_t param_num,
+                                                     ObIArray<EMySQLFieldType> *param_types,
+                                                     ObProxyMysqlRequest &client_request,
+                                                     const int64_t target_index,
+                                                     ObObj &target_obj)
+{
+  int ret = OB_SUCCESS;
+
+  int8_t new_param_bound_flag = 0;
+  common::ObArray<obmysql::EMySQLFieldType> param_types_tmp;
+  ObIAllocator &allocator = client_request.get_param_allocator();
+
+  const char *bitmap = NULL;
+  if (OB_FAIL(analyze_execute_header(param_num, bitmap, new_param_bound_flag, buf, data_len))) {
+    LOG_WARN("fail to analyze execute header", K(param_num), K(ret));
+  } else if (1 == new_param_bound_flag) {
+    if (OB_FAIL(parse_param_type(param_num, param_types_tmp, buf, data_len))) {
+      LOG_WARN("fail to parse param type", K(param_num), K(ret));
+    } else {
+      // If the flag is 1, anyway, the param type is also parsed here, so use the parsed directly here
+      //   It is mainly the first Execute. If it is a large request, since the param type will not be parsed in the
+      //   do_analyze_ps_execute_request function, when this function is reached, the passed param types array is empty
+      // If the flag is 0, for example, the second Execute is a large request, then the passed param types parameter is used directly
+      param_types = &param_types_tmp;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    // Check the number in param_num and parm_type
+    if (param_num != param_types->count()) {
+      ret = OB_ERR_WRONG_DYNAMIC_PARAM;
+      LOG_WARN("wrong param num and param_types num", K(param_num), KP(param_types), K(ret));
+    }
+  }
+
+  bool is_null = false;
+  ObObjType ob_type;
   const char *param_buf = buf;
+  ObCharsetType charset = ObCharset::get_default_charset();
   // decode all values
   for (int64_t i = 0; OB_SUCC(ret) && i <= target_index; ++i) {
     target_obj.reset();
-    type = param_types.at(i);
+    uint8_t type = param_types->at(i);
     if (OB_FAIL(ObSMUtils::get_ob_type(ob_type, static_cast<EMySQLFieldType>(type)))) {
       LOG_DEBUG("fail to cast mysql type to ob type, will add param with null", K(i), K(type), K(ret));
     } else {
@@ -873,12 +971,111 @@ int ObMysqlRequestAnalyzer::analyze_execute_param(const int64_t param_num,
     const char *buf = data.ptr() + MYSQL_NET_META_LENGTH + MYSQL_PS_EXECUTE_HEADER_LENGTH;
     data_len -= (MYSQL_NET_META_LENGTH + MYSQL_PS_EXECUTE_HEADER_LENGTH);
     if (param_num > 0) {
-      if (OB_FAIL(do_analyze_execute_param(buf, data_len, param_num, param_types,
+      if (OB_FAIL(do_analyze_execute_param(buf, data_len, param_num, &param_types,
                                            client_request, target_index, target_obj))) {
         LOG_DEBUG("fail to do analyze execute param", K(ret));
       }
     } //  end if param_num > 0
   }
+  return ret;
+}
+
+/*
+ * try to calculate partition key for OB_MYSQL_COM_STMT_SEND_LONG_DATA
+ * steps:
+ * 1: get param id from send long data package, compare with param idx
+ * 2: try to get obj type from execute parse result if exist
+ * 3: get obj type from prepare parse result
+ * 4: resolve send long data package, fill to obj, prepare to calculate partition key
+ * 5: if the procedure failed, choose part key with random optimization
+ */
+int ObMysqlRequestAnalyzer::analyze_send_long_data_param(ObProxyMysqlRequest &client_request,
+                                                         const int64_t execute_param_index,
+                                                         ObProxyPartInfo *part_info,
+                                                         ObPsIdEntry *ps_id_entry,
+                                                         ObObj &target_obj)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_ISNULL(ps_id_entry)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("ps id entry is NULL", K(ret));
+  } else if (OB_UNLIKELY(execute_param_index >= ps_id_entry->get_param_count()
+                         || execute_param_index < 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid execute param idx", K(execute_param_index), K(ret));
+  } else {
+    ObString data = client_request.get_req_pkt();
+    uint16_t origin_param_id = 0;
+    const char *param_id_pos = data.ptr() + MYSQL_NET_META_LENGTH + MYSQL_PS_STMT_ID_LENGTH; // stmt_id 4
+    obmysql::ObMySQLUtil::get_uint2(param_id_pos, origin_param_id);
+    uint64_t param_id = static_cast<uint64_t>(origin_param_id);
+    
+    if (param_id != execute_param_index) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_DEBUG("param id is not part key.", K(ret));
+    } else {
+      // try to get type from execute, if not, then get from part key info
+      bool get_param_type = false;
+      common::ObIArray<EMySQLFieldType> &param_types = ps_id_entry->get_ps_sql_meta().get_param_types();
+      if (!param_types.empty()) {
+        if (param_id > param_types.count()) {
+          ret = OB_INVALID_ARGUMENT;
+          LOG_WARN("fail to get param type from execute parse result", K(ret), K(param_id), K(param_types.count()));
+        } else {
+          EMySQLFieldType param_type = param_types.at(param_id);
+          ObObjType ob_type;
+          if (OB_FAIL(ObSMUtils::get_ob_type(ob_type, param_type))) {
+            LOG_WARN("fail to get ob type by mysql filed type", K(ret), K(param_type));
+          } else {
+            target_obj.set_type(ob_type);
+            get_param_type = true;
+          }
+        }
+      }
+
+      if (OB_SUCC(ret) && !get_param_type) {
+        ObString param_name;
+        obutils::SqlFieldResult &sql_result = client_request.get_parse_result().get_sql_filed_result();
+        if (static_cast<int>(param_id) > sql_result.field_num_) {
+          ret = OB_INVALID_ARGUMENT;
+          LOG_WARN("fail to get param name from prepare result", K(ret), K(param_id), K(sql_result.field_num_));
+        } else {
+          obutils::SqlField &field = sql_result.fields_.at(param_id);
+          param_name = field.column_name_.string_;
+
+          ObProxyPartKeyInfo &key_info = part_info->get_part_key_info();
+          for (uint64_t i = 0; i < key_info.key_num_; ++i) {
+            ObProxyPartKey &part_key = key_info.part_keys_[i];
+            if (param_name == ObString::make_string(part_key.name_.str_)) {
+              target_obj.set_type(static_cast<common::ObObjType>(part_key.obj_type_));
+              get_param_type = true;
+            }
+          }
+        }
+      }
+
+      if (OB_SUCC(ret) && get_param_type) {
+        // common net meta + stmt_id + param_id
+        uint16 value_inc = MYSQL_NET_META_LENGTH + MYSQL_PS_STMT_ID_LENGTH + MYSQL_PS_SEND_LONG_DATA_PARAM_ID_LENGTH;
+        const char *buf = data.ptr() + value_inc;
+        int64_t buf_len = data.length() - value_inc;
+        ObCharsetType charset = ObCharset::get_default_charset();
+        ObIAllocator &allocator = client_request.get_param_allocator();
+        if (OB_FAIL(ObMysqlRequestAnalyzer::parse_param_value(allocator,
+                                                              buf,
+                                                              buf_len,
+                                                              target_obj.get_type(),
+                                                              charset,
+                                                              target_obj))) {
+          LOG_WARN("fail to parse param value for send long data", K(ret));
+        }
+      } else {
+        LOG_WARN("fail to analyze obj for send long data", K(ret), K(get_param_type));
+      }
+    }
+  }
+
   return ret;
 }
 
@@ -912,7 +1109,7 @@ int ObMysqlRequestAnalyzer::analyze_prepare_execute_param(ObProxyMysqlRequest &c
 
     if (OB_SUCC(ret) && param_num > 0) {
       common::ObArray<obmysql::EMySQLFieldType> param_types;
-      if (OB_FAIL(do_analyze_execute_param(buf, data_len, param_num, param_types,
+      if (OB_FAIL(do_analyze_execute_param(buf, data_len, param_num, &param_types,
                                            client_request, target_index, target_obj))) {
         LOG_DEBUG("fail to do analyze execute param", K(ret));
       }
@@ -922,7 +1119,7 @@ int ObMysqlRequestAnalyzer::analyze_prepare_execute_param(ObProxyMysqlRequest &c
   return ret;
 }
 
-int ObMysqlRequestAnalyzer::parse_param_value(ObIAllocator &allocator, 
+int ObMysqlRequestAnalyzer::parse_param_value(ObIAllocator &allocator,
                                               const char *&data, int64_t &buf_len, const uint8_t type,
                                               const ObCharsetType charset, ObObj &param)
 {
@@ -1000,6 +1197,10 @@ int ObMysqlRequestAnalyzer::parse_param_value(ObIAllocator &allocator,
         break;
       }
       case OB_MYSQL_TYPE_OB_RAW:
+      case OB_MYSQL_TYPE_BLOB:
+      case OB_MYSQL_TYPE_LONG_BLOB:
+      case OB_MYSQL_TYPE_MEDIUM_BLOB:
+      case OB_MYSQL_TYPE_TINY_BLOB:
       case OB_MYSQL_TYPE_STRING:
       case OB_MYSQL_TYPE_VARCHAR:
       case OB_MYSQL_TYPE_VAR_STRING:
@@ -1259,6 +1460,170 @@ int ObMysqlRequestAnalyzer::decode_type_info(const char*& buf, int64_t &buf_len,
   return ret;
 }
 
+int ObMysqlRequestAnalyzer::decode_type_info_from_reader(event::ObIOBufferReader* reader,
+                                                         int64_t &decoded_offset,
+                                                         TypeInfo &type_info)
+{
+  int ret = OB_SUCCESS;
+  uint64_t read_avail = reader->read_avail();
+  if (OB_SUCC(ret)) {
+    uint64_t length = 0;
+    if (OB_FAIL(get_length_from_reader(reader, decoded_offset, length))) {
+      LOG_WARN("failed to get length", K(ret));
+    } else if (read_avail < (decoded_offset + length)) {
+      ret = OB_SIZE_OVERFLOW;
+      LOG_WARN("packet buf size is not enough", K(read_avail), K(decoded_offset), K(length), K(ret));
+    } else {
+      decoded_offset += length;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    uint64_t length = 0;
+    if (OB_FAIL(get_length_from_reader(reader, decoded_offset, length))) {
+      LOG_WARN("failed to get length", K(ret));
+    } else if (read_avail < (decoded_offset + length)) {
+      ret = OB_SIZE_OVERFLOW;
+      LOG_WARN("packet buf size is not enough", K(read_avail), K(decoded_offset), K(length), K(ret));
+    } else {
+      if (length == 0) {
+        type_info.is_elem_type_ = true;
+      }
+      decoded_offset += length;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    uint64_t version = 0;
+    if (OB_FAIL(get_length_from_reader(reader, decoded_offset, version))) {
+      LOG_WARN("failed to get version", K(ret));
+    }
+  }
+  return ret;
+}
+
+int ObMysqlRequestAnalyzer::get_length_from_reader(event::ObIOBufferReader* reader,
+                                                   int64_t &decoded_offset,
+                                                   uint64_t &length)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(reader->read_avail() - decoded_offset < 1)) {
+    ret = OB_SIZE_OVERFLOW;
+  } else {
+    uint16_t s2 = 0;
+    uint32_t s4 = 0;
+    uint8_t sentinel = 0;
+    get_uint1_from_reader(reader, decoded_offset, sentinel);
+    if (sentinel < 251) {
+      length = sentinel;
+    } else if (sentinel == 251) {
+      length = UINT64_MAX; // represents a NULL resultset
+    } else if (sentinel == 252) {
+      ret = get_uint2_from_reader(reader, decoded_offset, s2);
+      length = s2;
+    } else if (sentinel == 253) {
+      ret = get_uint3_from_reader(reader, decoded_offset, s4);
+      length = s4;
+    } else if (sentinel == 254) {
+      ret = get_uint8_from_reader(reader, decoded_offset, length);
+    } else {
+      // 255??? won't get here.
+      decoded_offset++;           // roll back
+      ret = OB_INVALID_DATA;
+    }
+  }
+  return ret;
+}
+
+int ObMysqlRequestAnalyzer::get_uint1_from_reader(event::ObIOBufferReader* reader,
+                                                  int64_t &decoded_offset,
+                                                  uint8_t &v)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(reader->read_avail() - decoded_offset < 1)) {
+    ret = OB_SIZE_OVERFLOW;
+  } else {
+    reader->copy((char*)&v, 1, decoded_offset);
+    decoded_offset += 1;
+  }
+
+  return ret;
+}
+
+int ObMysqlRequestAnalyzer::get_uint2_from_reader(event::ObIOBufferReader* reader,
+                                                  int64_t &decoded_offset,
+                                                  uint16_t &v)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(reader->read_avail() - decoded_offset < 2)) {
+    ret = OB_SIZE_OVERFLOW;
+  } else {
+    char buf[2] = "\0";
+    char *buf_ptr = buf;
+    reader->copy(buf, 2, decoded_offset);
+    ObMySQLUtil::get_uint2(buf_ptr, v);
+    decoded_offset += 2;
+  }
+
+  return ret;
+}
+
+int ObMysqlRequestAnalyzer::get_uint3_from_reader(event::ObIOBufferReader* reader,
+                                                  int64_t &decoded_offset,
+                                                  uint32_t &v)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(reader->read_avail() - decoded_offset < 3)) {
+    ret = OB_SIZE_OVERFLOW;
+  } else {
+    char buf[3] = "\0";
+    char *buf_ptr = buf;
+    reader->copy(buf, 3, decoded_offset);
+    ObMySQLUtil::get_uint3(buf_ptr, v);
+    decoded_offset += 3;
+  }
+
+  return ret;
+}
+
+int ObMysqlRequestAnalyzer::get_uint8_from_reader(event::ObIOBufferReader* reader,
+                                                  int64_t &decoded_offset,
+                                                  uint64_t &v)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(reader->read_avail() - decoded_offset < 8)) {
+    ret = OB_SIZE_OVERFLOW;
+  } else {
+    char buf[8] = "\0";
+    char *buf_ptr = buf;
+    reader->copy(buf, 8, decoded_offset);
+    ObMySQLUtil::get_uint8(buf_ptr, v);
+    decoded_offset += 8;
+  }
+
+  return ret;
+}
+
+int ObMysqlRequestAnalyzer::get_int1_from_reader(event::ObIOBufferReader* reader,
+                                                 int64_t &decoded_offset,
+                                                 int8_t &v)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(reader->read_avail() - decoded_offset < 1)) {
+    ret = OB_SIZE_OVERFLOW;
+  } else {
+    reader->copy((char*)&v, 1, decoded_offset);
+    decoded_offset += 1;
+  }
+
+  return ret;
+}
+
 int ObMysqlRequestAnalyzer::analyze_sql_id(ObProxyMysqlRequest &client_request, ObString &sql_id)
 {
   int ret = OB_SUCCESS;
@@ -1306,6 +1671,10 @@ int ObMysqlRequestAnalyzer::analyze_sql_id(ObProxyMysqlRequest &client_request, 
       sql_id_buf[sql_id_buf_len - 1] = '\0';
       sql_id.assign_ptr(sql_id_buf, static_cast<int32_t>(sql_id_buf_len - 1));
       LOG_DEBUG("succ to get sql id", K(sql_id), K(sql));
+    }
+
+    if (OB_NOT_NULL(allocator)) {
+      allocator->reuse();
     }
   }
   return ret;

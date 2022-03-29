@@ -133,6 +133,12 @@ public:
     set_collation_level(CS_LEVEL_INVALID);
     set_collation_type(CS_TYPE_BINARY);
   }
+  OB_INLINE void set_otimestamp_type(const ObObjType type)
+  {
+    type_ = static_cast<uint8_t>(type);
+    set_collation_level(CS_LEVEL_NUMERIC);
+    set_collation_type(CS_TYPE_BINARY);
+  }
 
   OB_INLINE bool is_valid() const { return ob_is_valid_obj_type(static_cast<ObObjType>(type_)); }
   OB_INLINE bool is_invalid() const { return !ob_is_valid_obj_type(static_cast<ObObjType>(type_)); }
@@ -188,6 +194,14 @@ public:
   OB_INLINE bool is_integer_type() const { return ob_is_integer_type(get_type()); }
   OB_INLINE bool is_string_type() const { return ob_is_string_tc(get_type()); }
   OB_INLINE bool is_temporal_type() const { return ob_is_temporal_type(get_type()); }
+  OB_INLINE bool is_nchar() const { return type_ == static_cast<uint8_t>(ObNCharType); }
+  OB_INLINE bool is_nvarchar2() const { return type_ == static_cast<uint8_t>(ObNVarchar2Type); }
+  OB_INLINE bool is_nstring() const { return is_nvarchar2() || is_nchar(); }
+  OB_INLINE bool is_blob() const { return (ob_is_text_tc(get_type()) && CS_TYPE_BINARY == cs_type_); }
+  OB_INLINE bool is_character_type() const { return is_nstring() || is_varchar_or_char(); }
+  OB_INLINE bool is_timestamp_tz() const { return type_ == static_cast<uint8_t>(ObTimestampTZType); }
+  OB_INLINE bool is_timestamp_ltz() const { return type_ == static_cast<uint8_t>(ObTimestampLTZType); }
+  OB_INLINE bool is_timestamp_nano() const { return type_ == static_cast<uint8_t>(ObTimestampNanoType); }
   OB_INLINE bool is_unsigned_integer() const
   {
     return (static_cast<uint8_t>(ObUTinyIntType) <= type_
@@ -220,6 +234,28 @@ private:
   uint8_t cs_level_;    // collation level
   uint8_t cs_type_;     // collation type
   int8_t scale_;        // scale
+};
+
+struct ObObjPrintParams {
+  ObObjPrintParams(const ObTimeZoneInfo* tz_info, ObCollationType cs_type)
+      : tz_info_(tz_info), cs_type_(cs_type), print_flags_(0)
+  {}
+  ObObjPrintParams(const ObTimeZoneInfo* tz_info)
+      : tz_info_(tz_info), cs_type_(CS_TYPE_UTF8MB4_GENERAL_CI), print_flags_(0)
+  {}
+  ObObjPrintParams() : tz_info_(NULL), cs_type_(CS_TYPE_UTF8MB4_GENERAL_CI), print_flags_(0)
+  {}
+  TO_STRING_KV(K_(tz_info), K_(cs_type));
+  const ObTimeZoneInfo* tz_info_;
+  ObCollationType cs_type_;
+  union {
+    uint32_t print_flags_;
+    struct {
+      uint32_t need_cast_expr_ : 1;
+      uint32_t is_show_create_view_ : 1;
+      uint32_t reserved_ : 30;
+    };
+  };
 };
 
 // sizeof(ObObjValue)=8
@@ -339,10 +375,13 @@ public:
 
   void set_datetime_value(const int64_t value);
   void set_timestamp_value(const int64_t value);
+  void set_otimestamp_value(const ObObjType type, const ObOTimestampData &value);
+  void set_otimestamp_value(const ObObjType type, const int64_t time_us, const uint32_t time_ctx_desc);
+  void set_otimestamp_value(const ObObjType type, const int64_t time_us, const uint16_t time_desc);
+  void set_otimestamp_null(const ObObjType type);
   void set_date_value(const int32_t value);
   void set_time_value(const int64_t value);
   void set_year_value(const uint8_t value);
-
 
   void set_string(const ObObjType type, const char *ptr, const ObString::obstr_size_t size);
   void set_string(const ObObjType type, const ObString &value);
@@ -385,6 +424,7 @@ public:
     v_.string_ = ptr;
     val_len_ = static_cast<int32_t>(size);
   }
+  
   //@}
 
   //@{ getters
@@ -474,6 +514,7 @@ public:
   OB_INLINE ObString get_raw() const { return ObString(val_len_, v_.string_); }
   OB_INLINE ObString get_binary() const { return ObString(val_len_, v_.string_); }
   OB_INLINE ObString get_hex_string() const { return ObString(val_len_, v_.string_); }
+  OB_INLINE int64_t get_number_byte_length() const { return nmb_desc_.len_ * sizeof(uint32_t); }
 
   OB_INLINE bool get_bool() const { return (0 != v_.int64_); }
   inline int64_t get_ext() const;
@@ -487,6 +528,24 @@ public:
 
   inline ObString get_nvarchar2() const { return ObString(val_len_, v_.string_); }
   inline ObString get_nchar() const { return ObString(val_len_, v_.string_); }
+  
+  inline ObOTimestampData::UnionTZCtx get_tz_desc() const
+  {
+    return time_ctx_;
+  }
+  inline ObOTimestampData get_otimestamp_value() const
+  {
+    return ObOTimestampData(v_.datetime_, time_ctx_);
+  }
+  static int64_t get_otimestamp_store_size(const bool is_timestamp_tz)
+  {
+    return static_cast<int64_t>(sizeof(int64_t) + (is_timestamp_tz ? sizeof(uint32_t) : sizeof(uint16_t)));
+  }
+  inline int64_t get_otimestamp_store_size() const
+  {
+    return get_otimestamp_store_size(is_timestamp_tz());
+  }
+  
   //@}
 
   //@{ test functions
@@ -531,6 +590,11 @@ public:
   OB_INLINE bool is_temporal_type() const { return meta_.is_temporal_type(); }
   OB_INLINE bool is_varchar_or_char() const { return meta_.is_varchar_or_char(); }
   OB_INLINE bool is_varying_len_char_type() const { return meta_.is_varying_len_char_type(); }
+  OB_INLINE bool is_character_type() const { return meta_.is_character_type(); }
+  OB_INLINE bool is_blob() const { return meta_.is_blob(); }
+  OB_INLINE bool is_timestamp_tz() const { return meta_.is_timestamp_tz(); }
+  OB_INLINE bool is_timestamp_nano() const { return meta_.is_timestamp_nano(); }
+  OB_INLINE bool is_varbinary_or_binary() const { return meta_.is_varbinary_or_binary(); }
 
   inline bool is_min_value() const;
   inline bool is_max_value() const;
@@ -611,6 +675,7 @@ public:
   {
     int32_t val_len_;
     number::ObNumber::Desc nmb_desc_;
+    ObOTimestampData::UnionTZCtx time_ctx_;
   };  // sizeof = 4
   ObObjValue v_;  // sizeof = 8
 };
@@ -945,6 +1010,36 @@ inline void ObObj::set_timestamp(const int64_t value)
 inline void ObObj::set_timestamp_value(const int64_t value)
 {
   v_.datetime_ = value;
+}
+
+inline void ObObj::set_otimestamp_value(const ObObjType type, const ObOTimestampData &value)
+{
+  meta_.set_otimestamp_type(type);
+  time_ctx_ = value.time_ctx_;
+  v_.datetime_ = value.time_us_;
+}
+
+inline void ObObj::set_otimestamp_value(const ObObjType type, const int64_t time_us, const uint32_t time_ctx_desc)
+{
+  meta_.set_otimestamp_type(type);
+  time_ctx_.desc_ = time_ctx_desc;
+  v_.datetime_ = time_us;
+}
+
+inline void ObObj::set_otimestamp_value(const ObObjType type, const int64_t time_us, const uint16_t time_desc)
+{
+  meta_.set_otimestamp_type(type);
+  time_ctx_.tz_desc_ = 0;
+  time_ctx_.time_desc_ = time_desc;
+  v_.datetime_ = time_us;
+}
+
+inline void ObObj::set_otimestamp_null(const ObObjType type)
+{
+  meta_.set_otimestamp_type(type);
+  time_ctx_.tz_desc_ = 0;
+  time_ctx_.time_desc_ = 0;
+  time_ctx_.is_null_ = 1;
 }
 
 inline void ObObj::set_date(const int32_t value)
@@ -1662,7 +1757,7 @@ private:
   ParamFlag flag_;
 };
 
-typedef int (*ob_obj_print)(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+typedef int (*ob_obj_print)(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObObjPrintParams &params);
 typedef int64_t (*ob_obj_crc64)(const ObObj &obj, const int64_t current);
 typedef void (*ob_obj_batch_checksum)(const ObObj &obj, ObBatchChecksum &bc);
 typedef uint64_t (*ob_obj_hash)(const ObObj &obj, const uint64_t hash);

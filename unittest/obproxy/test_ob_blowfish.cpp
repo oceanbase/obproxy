@@ -11,10 +11,10 @@
  */
 
 #define USING_LOG_PREFIX PROXY
-#define private public
-#define protected public
 #include <gtest/gtest.h>
 #include <map>
+#define private public
+#define protected public
 #include "lib/oblog/ob_log.h"
 #include "lib/string/ob_string.h"
 #include "obproxy/utils/ob_proxy_blowfish.h"

@@ -942,10 +942,11 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
       const uint8_t req_seq = sm_->get_request_seq();
       const obmysql::ObMySQLCmd cmd = sm_->get_request_cmd();
       ObMysqlCompressAnalyzer *compress_analyzer = &sm_->get_compress_analyzer();
+      const ObMysqlProtocolMode mysql_mode = sm_->client_session_->get_session_info().is_oracle_mode() ? OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
       compress_analyzer->reset();
       const bool enable_extra_ok_packet_for_stats = sm_->is_extra_ok_packet_for_stats_enabled();
       if (OB_FAIL(compress_analyzer->init(req_seq, ObMysqlCompressAnalyzer::SIMPLE_MODE,
-              cmd, enable_extra_ok_packet_for_stats, req_seq, sm_->get_server_session()->get_server_request_id(),
+              cmd, mysql_mode, enable_extra_ok_packet_for_stats, req_seq, sm_->get_server_session()->get_server_request_id(),
               sm_->get_server_session()->get_server_sessid()))) {
         LOG_WARN("fail to init compress analyzer", K(req_seq), K(cmd),
                  K(enable_extra_ok_packet_for_stats), K(ret));

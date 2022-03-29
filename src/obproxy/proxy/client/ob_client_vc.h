@@ -177,6 +177,8 @@ private:
 
   int notify_transfer_completed();
 
+  int do_new_connection_with_cr(ObMysqlClientSession *client_session);
+  int do_new_connection_with_shard_conn(ObMysqlClientSession *client_session);
   int setup_read_handshake();
   int setup_read_login_resp();
   int setup_read_autocommit_resp();

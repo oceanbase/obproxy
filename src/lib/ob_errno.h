@@ -181,6 +181,7 @@ namespace common
   static const int OB_COLUMN_GROUP_NOT_FOUND = -4185;
   static const int OB_CS_COMPRESS_LIB_ERROR = -4186;
   static const int OB_ITEM_NOT_MATCH = -4187;
+  static const int OB_INVALID_DATE_FORMAT_END = -4190;
   static const int OB_HASH_EXIST = -4200;
   static const int OB_HASH_NOT_EXIST = -4201;
   static const int OB_HASH_GET_TIMEOUT = -4204;
@@ -608,6 +609,49 @@ namespace common
   static const int OB_ERR_TOO_MANY_ROWS = -5294;
   static const int OB_WRONG_FIELD_TERMINATORS = -5295;
   static const int OB_ERR_UNEXPECTED_TZ_TRANSITION = -5296;
+  static const int OB_ERR_INVALID_TIMEZONE_REGION_ID = -5341;
+  static const int OB_ERR_INVALID_HEX_NUMBER = -5342;
+  static const int OB_ERR_YEAR_CONFLICTS_WITH_JULIAN_DATE = -5629;
+  static const int OB_ERR_DAY_OF_YEAR_CONFLICTS_WITH_JULIAN_DATE = -5630;
+  static const int OB_ERR_MONTH_CONFLICTS_WITH_JULIAN_DATE = -5631;
+  static const int OB_ERR_DAY_OF_MONTH_CONFLICTS_WITH_JULIAN_DATE = -5632;
+  static const int OB_ERR_DAY_OF_WEEK_CONFLICTS_WITH_JULIAN_DATE = -5633;
+  static const int OB_ERR_HOUR_CONFLICTS_WITH_SECONDS_IN_DAY = -5634;
+  static const int OB_ERR_MINUTES_OF_HOUR_CONFLICTS_WITH_SECONDS_IN_DAY = -5635;
+  static const int OB_ERR_SECONDS_OF_MINUTE_CONFLICTS_WITH_SECONDS_IN_DAY = -5636;  
+  static const int OB_ERR_DATE_NOT_VALID_FOR_MONTH_SPECIFIED = -5637;
+  static const int OB_ERR_INPUT_VALUE_NOT_LONG_ENOUGH = -5638;
+  static const int OB_ERR_INVALID_YEAR_VALUE = -5639;
+  static const int OB_ERR_INVALID_MONTH = -5641;
+  static const int OB_ERR_INVALID_DAY_OF_THE_WEEK = -5642;
+  static const int OB_ERR_INVALID_DAY_OF_YEAR_VALUE = -5643;
+  static const int OB_ERR_INVALID_HOUR12_VALUE = -5644;
+  static const int OB_ERR_INVALID_HOUR24_VALUE = -5645;
+  static const int OB_ERR_INVALID_MINUTES_VALUE = -5646;
+  static const int OB_ERR_INVALID_SECONDS_VALUE = -5647;
+  static const int OB_ERR_INVALID_SECONDS_IN_DAY_VALUE = -5648;
+  static const int OB_ERR_INVALID_JULIAN_DATE_VALUE = -5649;
+  static const int OB_ERR_AM_OR_PM_REQUIRED = -5650;
+  static const int OB_ERR_BC_OR_AD_REQUIRED = -5651;
+  static const int OB_ERR_FORMAT_CODE_APPEARS_TWICE = -5652;
+  static const int OB_ERR_DAY_OF_WEEK_SPECIFIED_MORE_THAN_ONCE = -5653;
+  static const int OB_ERR_SIGNED_YEAR_PRECLUDES_USE_OF_BC_AD = -5654;
+  static const int OB_ERR_JULIAN_DATE_PRECLUDES_USE_OF_DAY_OF_YEAR = -5655;
+  static const int OB_ERR_YEAR_MAY_ONLY_BE_SPECIFIED_ONCE = -5656;
+  static const int OB_ERR_HOUR_MAY_ONLY_BE_SPECIFIED_ONCE = -5657;
+  static const int OB_ERR_AM_PM_CONFLICTS_WITH_USE_OF_AM_DOT_PM_DOT = -5658;
+  static const int OB_ERR_BC_AD_CONFLICT_WITH_USE_OF_BC_DOT_AD_DOT = -5659;
+  static const int OB_ERR_MONTH_MAY_ONLY_BE_SPECIFIED_ONCE = -5660;
+  static const int OB_ERR_DAY_OF_WEEK_MAY_ONLY_BE_SPECIFIED_ONCE = -5661;
+  static const int OB_ERR_FORMAT_CODE_CANNOT_APPEAR = -5662;
+  static const int OB_ERR_NON_NUMERIC_CHARACTER_VALUE = -5663;
+  static const int OB_INVALID_MERIDIAN_INDICATOR_USE = -5664;
+  static const int OB_ERR_DAY_OF_MONTH_RANGE = -5667;
+  static const int OB_ERR_THE_LEADING_PRECISION_OF_THE_INTERVAL_IS_TOO_SMALL = -5708;
+  static const int OB_ERR_INVALID_TIME_ZONE_HOUR = -5709;
+  static const int OB_ERR_INVALID_TIME_ZONE_MINUTE = -5710;
+  static const int OB_ERR_NOT_A_VALID_TIME_ZONE = -5711;
+  static const int OB_ERR_DATE_FORMAT_IS_TOO_LONG_FOR_INTERNAL_BUFFER = -5712;
   static const int OB_ERR_REROUTE = -5727;
   static const int OB_ERR_REGEXP_NOMATCH = -5809;
   static const int OB_ERR_REGEXP_BADPAT = -5810;
@@ -627,6 +671,7 @@ namespace common
   static const int OB_ERR_REGEXP_BADOPT = -5824;
   static const int OB_ERR_REGEXP_ETOOBIG = -5825;
   static const int OB_INVALID_ROWID = -5802;
+  static const int OB_ERR_DATETIME_INTERVAL_INTERNAL_ERROR = -5898;
   static const int OB_ERR_FETCH_OUT_SEQUENCE = -5931;
   static const int OB_TRANSACTION_SET_VIOLATION = -6001;
   static const int OB_TRANS_ROLLBACKED = -6002;
@@ -707,19 +752,21 @@ namespace common
   static const int OB_EXPR_CALC_ERROR = -8057;
   static const int OB_EXPR_COLUMN_NOT_EXIST = -8058;
   static const int OB_ERROR_UNSUPPORT_EXPR_TYPE = -8059;
-  static const int OB_ERROR_UNSUPPORT_HAS_AGG_EXPR_TYPE = -8060;
   static const int OB_ERR_FORMAT_FOR_TESTLOAD_TABLE_MAP = -8061;
   static const int OB_ERR_MORE_TABLES_WITH_TABLE_HINT = -8062;
   static const int OB_ERR_GET_PHYSIC_INDEX_BY_RULE = -8063;
   static const int OB_ERR_TESTLOAD_ALIPAY_COMPATIBLE = -8064;
   static const int OB_ERR_NULL_DB_VAL_TESTLOAD_TABLE_MAP = -8065;
   static const int OB_ERR_BATCH_INSERT_FOUND = -8066;
+  static const int OB_ERR_UNSUPPORT_DIFF_TOPOLOGY = -8067;
   static const int OB_SESSION_POOL_CMD_ERROR = -8101;
   static const int OB_SESSION_POOL_FULL_ERROR = -8102;
   static const int OB_ERR_NO_ZONE_SHARD_TPO = -8200;
   static const int OB_ERR_NO_DEFAULT_SHARD_TPO = -8201;
   static const int OB_ERR_NO_TABLE_RULE = -8202;
   static const int OB_ERR_DISTRIBUTED_TRANSACTION_NOT_SUPPORTED = -8203;
+  static const int OB_ERR_SHARD_DDL_UNEXPECTED = -8204;
+  static const int OB_ERR_CAN_NOT_PASS_WHITELIST = -8205;
 
 #define OB_SUCCESS__USER_ERROR_MSG "Success"
 #define OB_ERROR__USER_ERROR_MSG "Common error"
@@ -874,6 +921,7 @@ namespace common
 #define OB_COLUMN_GROUP_NOT_FOUND__USER_ERROR_MSG "Column group not found"
 #define OB_CS_COMPRESS_LIB_ERROR__USER_ERROR_MSG "ChunkServer failed to get compress library"
 #define OB_ITEM_NOT_MATCH__USER_ERROR_MSG "Item not match"
+#define OB_INVALID_DATE_FORMAT_END__USER_ERROR_MSG "Invalid date format"
 #define OB_HASH_EXIST__USER_ERROR_MSG "hash map/set entry exist"
 #define OB_HASH_NOT_EXIST__USER_ERROR_MSG "hash map/set entry not exist"
 #define OB_HASH_GET_TIMEOUT__USER_ERROR_MSG "hash map/set get timeout"
@@ -1300,6 +1348,51 @@ namespace common
 #define OB_ERR_TOO_MANY_ROWS__USER_ERROR_MSG "Result consisted of more than one row"
 #define OB_WRONG_FIELD_TERMINATORS__USER_ERROR_MSG "Field separator argument is not what is expected; check the manual"
 #define OB_ERR_UNEXPECTED_TZ_TRANSITION__USER_ERROR_MSG "unexpected time zone info transition"
+#define OB_ERR_INVALID_TIMEZONE_REGION_ID__USER_ERROR_MSG "timezone region ID is invalid"
+#define OB_ERR_INVALID_HEX_NUMBER__USER_ERROR_MSG "invalid hex number"
+#define OB_ERR_YEAR_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "year conflicts with Julian date"
+#define OB_ERR_DAY_OF_YEAR_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "day of year conflicts with Julian date"
+#define OB_ERR_MONTH_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "month conflicts with Julian date"
+#define OB_ERR_DAY_OF_MONTH_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "day of month conflicts with Julian date"
+#define OB_ERR_DAY_OF_WEEK_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "day of week conflicts with Julian date"
+#define OB_ERR_HOUR_CONFLICTS_WITH_SECONDS_IN_DAY__USER_ERROR_MSG "hour conflicts with seconds in day"
+#define OB_ERR_MINUTES_OF_HOUR_CONFLICTS_WITH_SECONDS_IN_DAY__USER_ERROR_MSG "minutes of hour conflicts with seconds in day"
+#define OB_ERR_SECONDS_OF_MINUTE_CONFLICTS_WITH_SECONDS_IN_DAY__USER_ERROR_MSG "seconds of minute conflicts with seconds in day"
+#define OB_ERR_DATE_NOT_VALID_FOR_MONTH_SPECIFIED__USER_ERROR_MSG "date not valid for month specified"
+#define OB_ERR_INPUT_VALUE_NOT_LONG_ENOUGH__USER_ERROR_MSG "input value not long enough for date format"
+#define OB_ERR_INVALID_YEAR_VALUE__USER_ERROR_MSG "(full) year must be between -4713 and +9999, and not be 0"
+#define OB_ERR_INVALID_MONTH__USER_ERROR_MSG "not a valid month"
+#define OB_ERR_INVALID_DAY_OF_THE_WEEK__USER_ERROR_MSG "not a valid day of the week"
+#define OB_ERR_INVALID_DAY_OF_YEAR_VALUE__USER_ERROR_MSG "day of year must be between 1 and 365 (366 for leap year)"
+#define OB_ERR_INVALID_HOUR12_VALUE__USER_ERROR_MSG "hour must be between 1 and 12"
+#define OB_ERR_INVALID_HOUR24_VALUE__USER_ERROR_MSG "hour must be between 0 and 23"
+#define OB_ERR_INVALID_MINUTES_VALUE__USER_ERROR_MSG "minutes must be between 0 and 59"
+#define OB_ERR_INVALID_SECONDS_VALUE__USER_ERROR_MSG "seconds must be between 0 and 59"
+#define OB_ERR_INVALID_SECONDS_IN_DAY_VALUE__USER_ERROR_MSG "seconds in day must be between 0 and 86399"
+#define OB_ERR_INVALID_JULIAN_DATE_VALUE__USER_ERROR_MSG "julian date must be between 1 and 5373484"
+#define OB_ERR_AM_OR_PM_REQUIRED__USER_ERROR_MSG "AM/A.M. or PM/P.M. required"
+#define OB_ERR_BC_OR_AD_REQUIRED__USER_ERROR_MSG "BC/B.C. or AD/A.D. required"
+#define OB_ERR_FORMAT_CODE_APPEARS_TWICE__USER_ERROR_MSG "format code appears twice"
+#define OB_ERR_DAY_OF_WEEK_SPECIFIED_MORE_THAN_ONCE__USER_ERROR_MSG "day of week may only be specified once"
+#define OB_ERR_SIGNED_YEAR_PRECLUDES_USE_OF_BC_AD__USER_ERROR_MSG "signed year precludes use of BC/AD"
+#define OB_ERR_JULIAN_DATE_PRECLUDES_USE_OF_DAY_OF_YEAR__USER_ERROR_MSG "Julian date precludes use of day of year"
+#define OB_ERR_YEAR_MAY_ONLY_BE_SPECIFIED_ONCE__USER_ERROR_MSG "year may only be specified once"
+#define OB_ERR_HOUR_MAY_ONLY_BE_SPECIFIED_ONCE__USER_ERROR_MSG "hour may only be specified once"
+#define OB_ERR_AM_PM_CONFLICTS_WITH_USE_OF_AM_DOT_PM_DOT__USER_ERROR_MSG "AM/PM conflicts with use of A.M./P.M."
+#define OB_ERR_BC_AD_CONFLICT_WITH_USE_OF_BC_DOT_AD_DOT__USER_ERROR_MSG "BC/AD conflicts with use of B.C./A.D."
+#define OB_ERR_MONTH_MAY_ONLY_BE_SPECIFIED_ONCE__USER_ERROR_MSG "month may only be specified once"
+#define OB_ERR_DAY_OF_WEEK_MAY_ONLY_BE_SPECIFIED_ONCE__USER_ERROR_MSG "day of week may only be specified once"
+#define OB_ERR_FORMAT_CODE_CANNOT_APPEAR__USER_ERROR_MSG "format code cannot appear in date input format"
+#define OB_ERR_NON_NUMERIC_CHARACTER_VALUE__USER_ERROR_MSG "a non-numeric character was found where a numeric was expected"
+#define OB_INVALID_MERIDIAN_INDICATOR_USE__USER_ERROR_MSG "'HH24' precludes use of meridian indicator"
+#define OB_ERR_DAY_OF_MONTH_RANGE__ORA_USER_ERROR_MSG "ORA-01847: day of month must be between 1 and last day of month"
+#define OB_ERR_THE_LEADING_PRECISION_OF_THE_INTERVAL_IS_TOO_SMALL__USER_ERROR_MSG "the leading precision of the interval is too small"
+#define OB_ERR_INVALID_TIME_ZONE_HOUR__USER_ERROR_MSG "time zone hour must be between -12 and 14"
+#define OB_ERR_INVALID_TIME_ZONE_MINUTE__USER_ERROR_MSG "time zone minute must be between -59 and 59"
+#define OB_ERR_NOT_A_VALID_TIME_ZONE__USER_ERROR_MSG "not a valid time zone"
+#define OB_ERR_DATE_FORMAT_IS_TOO_LONG_FOR_INTERNAL_BUFFER__USER_ERROR_MSG "date format is too long for internal buffer"
+#define OB_INVALID_ROWID__USER_ERROR_MSG "invalid ROWID"
+#define OB_ERR_DATETIME_INTERVAL_INTERNAL_ERROR__USER_ERROR_MSG "Datetime/Interval internal error"
 #define OB_ERR_FETCH_OUT_SEQUENCE__USER_ERROR_MSG "ORA-01002: fetch out of sequence"
 #define OB_TRANSACTION_SET_VIOLATION__USER_ERROR_MSG "Transaction set changed during the execution"
 #define OB_TRANS_ROLLBACKED__USER_ERROR_MSG "transaction is rolled back"

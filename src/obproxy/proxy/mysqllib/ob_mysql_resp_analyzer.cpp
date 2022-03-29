@@ -46,7 +46,7 @@ inline int ObBufferReader::read(char *buf, const int64_t len)
 }
 
 //------------------ObMysqlPacketMetaAnalyzer-------------------
-inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result)
+inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result, const ObMysqlProtocolMode mysql_mode)
 {
   int ret = OB_SUCCESS;
   int64_t eof_pkt_cnt = result.get_pkt_cnt(EOF_PACKET_ENDING_TYPE);
@@ -96,6 +96,18 @@ inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result)
         } else if (1 != eof_pkt_cnt) {
           cur_type_ = OK_PACKET_ENDING_TYPE;
         } else if (result.is_recv_resultset()) {
+          cur_type_ = OK_PACKET_ENDING_TYPE;
+        }
+      } else if (OB_MYSQL_COM_STMT_FETCH == result.get_cmd()) {
+        if (1 == err_pkt_cnt) {
+          cur_type_ = OK_PACKET_ENDING_TYPE;
+          // After two EOF packages in Oracle mode is the OK package
+        } else if (OCEANBASE_ORACLE_PROTOCOL_MODE == mysql_mode) {
+          if (1 != eof_pkt_cnt) {
+            cur_type_ = OK_PACKET_ENDING_TYPE;
+          }
+          // OB MySQL mode and standard MySQL mode are OK packets after an EOF
+        } else if (1 == eof_pkt_cnt) {
           cur_type_ = OK_PACKET_ENDING_TYPE;
         }
       } else if (1 != eof_pkt_cnt) {
@@ -279,7 +291,40 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
 
         break;
       }
-      case OB_MYSQL_COM_STMT_FETCH:
+      case OB_MYSQL_COM_STMT_FETCH: {
+        if (RESULT_SET_RESP_TYPE == resp_type_ || OTHERS_RESP_TYPE == resp_type_) {
+          if (OB_UNLIKELY(is_mysql_mode() || is_oceanbase_mysql_mode())) {
+            if (1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = EOF_PACKET_ENDING_TYPE;
+            } else if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = ERROR_PACKET_ENDING_TYPE;
+            } else if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = OK_PACKET_ENDING_TYPE;
+            }
+          } else if (OB_LIKELY(is_oceanbase_oracle_mode()) && 1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+            if (2 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = EOF_PACKET_ENDING_TYPE;
+            } else if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = ERROR_PACKET_ENDING_TYPE;
+            } else {
+              finished = true;
+              ending_type = OK_PACKET_ENDING_TYPE;
+            }
+          }
+        } else if (MAX_RESP_TYPE == resp_type_) {
+          // have not read resp type, as read data len less than MYSQL_PACKET_HEADER(4)
+          finished = false;
+        } else {
+          ret = OB_NOT_SUPPORTED;
+          LOG_WARN("infile not supported now", K(ret));
+        }
+        break;
+      }
       case OB_MYSQL_COM_STMT_EXECUTE:
       case OB_MYSQL_COM_QUERY:
       case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
@@ -511,7 +556,7 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
         LOG_INFO("now received large packet", "meta", meta_analyzer_.get_meta(), K_(is_in_multi_pkt));
       }
 
-      if (OB_FAIL(meta_analyzer_.update_cur_type(result))) {
+      if (OB_FAIL(meta_analyzer_.update_cur_type(result, mysql_mode_))) {
         LOG_WARN("fail to update ending type", K(ret));
       } else {
         if (OB_LIKELY(OB_MYSQL_COM_QUERY == result.get_cmd()
@@ -671,6 +716,8 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
               // extra ok after result set
               ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
             } else if (1 == eof_pkt_cnt && OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd() && result.is_recv_resultset()) {
+              ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
+            } else if (1 == eof_pkt_cnt && OB_MYSQL_COM_STMT_FETCH == result.get_cmd()) {
               ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
             } else if (0 == err_pkt_cnt || 0 == eof_pkt_cnt) {
               // last ok packet, no err and eof in front

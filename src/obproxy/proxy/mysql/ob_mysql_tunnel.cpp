@@ -239,13 +239,19 @@ inline ObMysqlTunnelProducer *ObMysqlTunnel::alloc_producer()
   ObMysqlTunnelProducer *ret = NULL;
 
   if (OB_LIKELY(num_producers_ < MAX_PRODUCERS)) {
-    for (int64_t i = 0; i < MAX_PRODUCERS && NULL == ret; ++i) {
-      if (NULL == producers_[i].vc_) {
-        ++num_producers_;
-        ret = producers_ + i;
+    if (OB_LIKELY(NULL == producers_[0].vc_)) {
+      ++num_producers_;
+      ret = producers_;
+    } else {
+      for (int64_t i = 1; i < MAX_PRODUCERS && NULL == ret; ++i) {
+        if (OB_LIKELY(NULL == producers_[i].vc_)) {
+          ++num_producers_;
+          ret = producers_ + i;
+        }
       }
     }
   }
+
   return ret;
 }
 
@@ -254,13 +260,19 @@ inline ObMysqlTunnelConsumer *ObMysqlTunnel::alloc_consumer()
   ObMysqlTunnelConsumer *ret = NULL;
 
   if (OB_LIKELY(num_consumers_ < MAX_CONSUMERS)) {
-    for (int64_t i = 0; i < MAX_CONSUMERS && NULL == ret; ++i) {
-      if (NULL == consumers_[i].vc_) {
-        ++num_consumers_;
-        ret = consumers_ + i;
+    if (OB_LIKELY(NULL == consumers_[0].vc_)) {
+      ++num_consumers_;
+      ret = consumers_;
+    } else {
+      for (int64_t i = 1; i < MAX_CONSUMERS && NULL == ret; ++i) {
+        if (OB_LIKELY(NULL == consumers_[i].vc_)) {
+          ++num_consumers_;
+          ret = consumers_ + i;
+        }
       }
     }
   }
+
   return ret;
 }
 
@@ -297,7 +309,7 @@ ObMysqlTunnelProducer *ObMysqlTunnel::add_producer(
       }
     }
 
-    if (OB_SUCC(ret) && MYSQL_TUNNEL_STATIC_PRODUCER == vc && OB_UNLIKELY(0 != ntodo)) {
+    if (OB_UNLIKELY(OB_SUCCESS == ret && MYSQL_TUNNEL_STATIC_PRODUCER == vc && 0 != ntodo)) {
       ret = OB_ERR_SYS;
       LOG_ERROR("add_producer, invalid static producer ntodo",
                 K(nbytes_arg), K(read_avail), K(ntodo), K(ret));
@@ -390,9 +402,8 @@ int ObMysqlTunnel::tunnel_run(ObMysqlTunnelProducer *p_arg)
   int ret = OB_SUCCESS;
   LOG_DEBUG("tunnel_run started", K_(sm_->sm_id), K(p_arg));
 
-  if (NULL != p_arg) {
-    ret = producer_run(*p_arg);
-    if (OB_FAIL(ret)) {
+  if (OB_LIKELY(NULL != p_arg)) {
+    if (OB_FAIL(producer_run(*p_arg))) {
       LOG_WARN("failed to run producer", K(ret));
     }
   } else {
@@ -418,7 +429,7 @@ int ObMysqlTunnel::tunnel_run(ObMysqlTunnelProducer *p_arg)
   // due to a all transfers being zero length
   // If that is the case, call the state machine
   // back to say we are done
-  if (!is_tunnel_alive()) {
+  if (OB_UNLIKELY(!is_tunnel_alive())) {
     active_ = false;
     sm_->handle_event(MYSQL_TUNNEL_EVENT_DONE, this);
     ret = OB_SUCCESS; // tunnel complete
@@ -1096,25 +1107,25 @@ int ObMysqlTunnel::main_handler(int event, void *data)
   LOG_DEBUG("mysql tunnel main_handler",
             K_(sm_->sm_id), "event", ObMysqlDebugNames::get_event_name(event), K(data));
 
-  if (MYSQL_SM_MAGIC_ALIVE != sm_->magic_) {
+  if (OB_UNLIKELY(MYSQL_SM_MAGIC_ALIVE != sm_->magic_)) {
     LOG_WARN("failed to check sm magic", K_(sm_->magic), "expected", MYSQL_SM_MAGIC_ALIVE);
   }
 
   // Find the appropriate entry
   if (NULL != (p = get_producer(reinterpret_cast<ObVIO *>(data)))) {
     sm_callback = producer_handler(event, *p);
-    if (!sm_callback) {
+    if (OB_UNLIKELY(get_global_performance_params().enable_trace_ && !sm_callback)) {
       current_time = get_based_hrtime();
       p->cost_time_ += (current_time - last_handler_event_time_);
       last_handler_event_time_ = current_time;
     }
   } else {
-    if (NULL != (c = get_consumer(reinterpret_cast<ObVIO *>(data)))) {
+    if (OB_LIKELY(NULL != (c = get_consumer(reinterpret_cast<ObVIO *>(data))))) {
       if (c->write_vio_ != data) {
         LOG_WARN("failed to check vio, data must equal to write vio", K_(c->write_vio), K(data));
       }
       sm_callback = consumer_handler(event, *c);
-      if (!sm_callback) {
+      if (OB_UNLIKELY(get_global_performance_params().enable_trace_ && !sm_callback)) {
         current_time = get_based_hrtime();
         c->cost_time_ += (current_time - last_handler_event_time_);
         last_handler_event_time_ = current_time;

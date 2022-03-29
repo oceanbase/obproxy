@@ -21,6 +21,10 @@
 #include "proxy/mysql/ob_prepare_statement_struct.h"
 #include "lib/rowid/ob_urowid.h"
 #include "obproxy/utils/ob_proxy_utils.h"
+#include "share/part/ob_part_desc.h"
+#include "rpc/obmysql/ob_mysql_packet.h"
+#include "lib/timezone/ob_time_convert.h"
+#include "lib/timezone/ob_timezone_info.h"
 
 
 using namespace oceanbase::common;
@@ -47,7 +51,7 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
     }
   }
   if (OB_INVALID_INDEX == partition_id && parse_result.has_simple_route_info()) {
-    if (OB_FAIL(calc_part_id_with_simple_route_info(allocator, parse_result, part_info, partition_id))) {
+    if (OB_FAIL(calc_part_id_with_simple_route_info(allocator, parse_result, client_info, part_info, partition_id))) {
       LOG_WARN("fail to calc part id with simple part info, will do calc in normal path", K(ret));
     }
   }
@@ -56,13 +60,17 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
     expr_parse_result.is_oracle_mode_ = client_info.is_oracle_mode();
     ObExprResolverResult resolve_result;
     const common::ObString &print_sql = ObProxyMysqlRequest::get_print_sql(req_sql);
-    ObPsEntry *ps_entry = NULL;
+    ObPsIdEntry *ps_id_entry = NULL;
     ObTextPsEntry *text_ps_entry = NULL;
-    if (OB_MYSQL_COM_STMT_EXECUTE == client_request.get_packet_meta().cmd_) {
-      // parse execute param value
-      if (OB_ISNULL(ps_entry = client_info.get_ps_entry())) {
+    ObMySQLCmd cmd = client_request.get_packet_meta().cmd_;
+
+    if (OB_MYSQL_COM_STMT_EXECUTE == cmd || OB_MYSQL_COM_STMT_SEND_LONG_DATA == cmd) {
+      // parse execute param value for OB_MYSQL_COM_STMT_EXECUTE
+      // try to get param types from OB_MYSQL_COM_STMT_EXECUTE while handling OB_MYSQL_COM_STMT_SEND_LONG_DATA
+      ps_id_entry = client_info.get_ps_id_entry();
+      if (OB_ISNULL(ps_id_entry)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("client ps entry is null", K(ret));
+        LOG_WARN("client ps id entry is null", K(ret));
       }
     } else if (parse_result.is_text_ps_execute_stmt()) {
       if (OB_ISNULL(text_ps_entry = client_info.get_text_ps_entry())) {
@@ -71,21 +79,24 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
       }
     }
 
-    if (FAILEDx(do_expr_parse(req_sql, parse_result, part_info, allocator, expr_parse_result,
-                              static_cast<ObCollationType>(client_info.get_collation_connection())))) {
-      LOG_INFO("fail to do expr parse", K(print_sql),
-               K(part_info), "expr_parse_result", ObExprParseResultPrintWrapper(expr_parse_result));
-    } else if (OB_FAIL(do_expr_resolve(expr_parse_result, client_request, &client_info, ps_entry,
-                                       text_ps_entry, part_info, allocator, resolve_result))) {
-      LOG_INFO("fail to do expr resolve", K(print_sql),
-               "expr_parse_result", ObExprParseResultPrintWrapper(expr_parse_result),
-               K(part_info), KPC(ps_entry), KPC(text_ps_entry), K(resolve_result));
-    } else if (OB_FAIL(do_partition_id_calc(resolve_result, part_info, allocator, partition_id))) {
-      if (OB_MYSQL_COM_STMT_PREPARE != client_request.get_packet_meta().cmd_) {
-        LOG_INFO("fail to do expr resolve", K(print_sql), K(resolve_result), K(part_info));
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(do_expr_parse(req_sql, parse_result, part_info, allocator, expr_parse_result,
+                                static_cast<ObCollationType>(client_info.get_collation_connection())))) {
+        LOG_INFO("fail to do expr parse", K(print_sql), K(part_info), "expr_parse_result",
+                 ObExprParseResultPrintWrapper(expr_parse_result));
+      } else if (OB_FAIL(do_expr_resolve(expr_parse_result, client_request, &client_info, ps_id_entry,
+                                         text_ps_entry, part_info, allocator, resolve_result))) {
+        LOG_INFO("fail to do expr resolve", K(print_sql), "expr_parse_result",
+                 ObExprParseResultPrintWrapper(expr_parse_result),
+                 K(part_info), KPC(ps_id_entry), KPC(text_ps_entry), K(resolve_result));
+      } else if (OB_FAIL(do_partition_id_calc(resolve_result, client_info, part_info, parse_result,
+                                              allocator, partition_id))) {
+        if (OB_MYSQL_COM_STMT_PREPARE != cmd) {
+          LOG_INFO("fail to do expr resolve", K(print_sql), K(resolve_result), K(part_info));
+        }
+      } else {
+        /* do nothing */
       }
-    } else {
-      // do nothing here
     }
 
     if (OB_FAIL(ret)) {
@@ -107,6 +118,7 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
 
 int ObProxyExprCalculator::calc_part_id_with_simple_route_info(ObArenaAllocator &allocator,
                                                                const ObSqlParseResult &parse_result,
+                                                               ObClientSessionInfo &client_info,
                                                                ObProxyPartInfo &part_info,
                                                                int64_t &part_id)
 {
@@ -121,7 +133,8 @@ int ObProxyExprCalculator::calc_part_id_with_simple_route_info(ObArenaAllocator 
     ObExprResolverResult resolve_result;
     if (OB_FAIL(do_resolve_with_part_key(parse_result, allocator, resolve_result))) {
       LOG_WARN("fail to do_resolve_with_part_key", K(ret));
-    } else if (OB_FAIL(do_partition_id_calc(resolve_result, part_info, allocator, part_id))) {
+    } else if (OB_FAIL(do_partition_id_calc(resolve_result, client_info, part_info,
+                                            parse_result, allocator, part_id))) {
       LOG_INFO("fail to do_partition_id_calc", K(resolve_result), K(part_info));
     }
   }
@@ -138,7 +151,7 @@ int ObProxyExprCalculator::do_expr_parse(const common::ObString &req_sql,
   int ret = OB_SUCCESS;
 
   // do parse
-  ObExprParseMode parse_mode = INVLIAD_PARSE_MODE;
+  ObExprParseMode parse_mode = INVALID_PARSE_MODE;
   if (parse_result.is_select_stmt() || parse_result.is_delete_stmt()
       || parse_result.is_text_ps_select_stmt()
       || parse_result.is_text_ps_delete_stmt()) {
@@ -215,7 +228,7 @@ int ObProxyExprCalculator::do_resolve_with_part_key(const ObSqlParseResult &pars
 int ObProxyExprCalculator::do_expr_resolve(ObExprParseResult &parse_result,
                                            const ObProxyMysqlRequest &client_request,
                                            ObClientSessionInfo *client_info,
-                                           ObPsEntry *ps_entry,
+                                           ObPsIdEntry *ps_id_entry,
                                            ObTextPsEntry *text_ps_entry,
                                            ObProxyPartInfo &part_info,
                                            ObIAllocator &allocator,
@@ -226,7 +239,7 @@ int ObProxyExprCalculator::do_expr_resolve(ObExprParseResult &parse_result,
   ctx.relation_info_ = &parse_result.relation_info_;
   ctx.part_info_ = &part_info;
   ctx.client_request_ = const_cast<ObProxyMysqlRequest *>(&client_request);
-  ctx.ps_entry_ = ps_entry;
+  ctx.ps_id_entry_ = ps_id_entry;
   ctx.text_ps_entry_ = text_ps_entry;
   ctx.client_info_ = client_info;
 
@@ -246,7 +259,9 @@ int ObProxyExprCalculator::do_expr_resolve(ObExprParseResult &parse_result,
 }
 
 int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_result,
+                                                ObClientSessionInfo &session_info,
                                                 ObProxyPartInfo &part_info,
+                                                const ObSqlParseResult &parse_result,
                                                 ObIAllocator &allocator,
                                                 int64_t &partition_id)
 {
@@ -255,10 +270,12 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
   int64_t first_part_id = OB_INVALID_INDEX;
   int64_t sub_part_id = OB_INVALID_INDEX;
   if (part_info.has_first_part()) {
+    ObPartDescCtx ctx(&session_info, parse_result.is_insert_stmt());
     ObSEArray<int64_t, 1> part_ids;
     if (OB_FAIL(part_mgr.get_first_part(resolve_result.ranges_[PARTITION_LEVEL_ONE - 1],
                                         allocator,
-                                        part_ids))) {
+                                        part_ids,
+                                        ctx))) {
       LOG_DEBUG("fail to get first part", K(ret));
     } else if (part_ids.count() >= 1) {
       first_part_id = part_ids[0];
@@ -276,7 +293,8 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
       } else if (OB_FAIL(part_mgr.get_sub_part(resolve_result.ranges_[PARTITION_LEVEL_TWO - 1],
                                                allocator,
                                                sub_part_desc_ptr,
-                                               sub_part_ids))) { 
+                                               sub_part_ids,
+                                               ctx))) { 
         LOG_WARN("fail to get sub part", K(ret));
       } else if (sub_part_ids.count() >= 1) {
         sub_part_id = sub_part_ids[0];
@@ -419,3 +437,98 @@ int ObProxyExprCalculator::calc_partition_id_using_rowid(const ObExprParseResult
 
   return ret;
 }
+
+int ObExprCalcTool::build_dtc_params_with_tz_info(ObClientSessionInfo *session_info,
+                                                  ObObjType obj_type,
+                                                  ObTimeZoneInfo &tz_info,
+                                                  ObDataTypeCastParams &dtc_params)
+{
+  int ret = OB_SUCCESS;
+  
+  if (OB_FAIL(build_tz_info(session_info, obj_type, tz_info))) {
+    LOG_WARN("fail to build tz info", K(ret));
+  } else if (OB_FAIL(build_dtc_params(session_info, obj_type, dtc_params))) {
+    LOG_WARN("fail to build dtc params", K(ret));
+  } else {
+    dtc_params.tz_info_ = &tz_info;
+  }
+
+  return ret;
+}
+
+/*
+ * for ObTimestampLTZType, input timestamp string, and we also need time_zone from session
+ * in order to decide the absolutely time
+ */
+int ObExprCalcTool::build_tz_info(ObClientSessionInfo *session_info,
+                                  ObObjType obj_type,
+                                  ObTimeZoneInfo &tz_info)
+{
+  int ret = OB_SUCCESS;
+
+  if (ObTimestampLTZType == obj_type) {
+    ObObj value_obj;
+    ObString sys_key_name = ObString::make_string(oceanbase::sql::OB_SV_TIME_ZONE);
+    if (OB_FAIL(session_info->get_sys_variable_value(sys_key_name, value_obj))) {
+      LOG_WARN("fail to get sys var from session", K(ret), K(sys_key_name));
+    } else {
+      ObString value_str = value_obj.get_string();
+      if (OB_FAIL(tz_info.set_timezone(value_str))) {
+        LOG_WARN("fail to set time zone for tz_info", K(ret), K(value_str));
+      } else {
+        LOG_DEBUG("succ to set time zone for tz_info", K(value_str));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObExprCalcTool::build_dtc_params(ObClientSessionInfo *session_info,
+                                     ObObjType obj_type,
+                                     ObDataTypeCastParams &dtc_params)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_NOT_NULL(session_info)) {
+    ObString sys_key_name;
+    switch (obj_type) {
+      case ObDateTimeType:
+        sys_key_name = ObString::make_string(oceanbase::sql::OB_SV_NLS_DATE_FORMAT);
+        break;
+      case ObTimestampNanoType:
+      case ObTimestampLTZType:
+        sys_key_name = ObString::make_string(oceanbase::sql::OB_SV_NLS_TIMESTAMP_FORMAT);
+        break;
+      case ObTimestampTZType:
+        sys_key_name = ObString::make_string(oceanbase::sql::OB_SV_NLS_TIMESTAMP_TZ_FORMAT);
+        break;
+      default:
+        break;
+    }
+
+    if (!sys_key_name.empty()) {
+      ObObj value_obj;
+      int sub_ret = OB_SUCCESS;
+      if (OB_SUCCESS != (sub_ret = session_info->get_sys_variable_value(sys_key_name, value_obj))) {
+        LOG_WARN("fail to get sys var from session, use standard nls format", K(sub_ret), K(sys_key_name));
+      } else {
+        ObString value_str = value_obj.get_string();
+        if (OB_FAIL(dtc_params.set_nls_format_by_type(obj_type, value_str))) {
+          LOG_WARN("fail to set nls format by type", K(ret), K(obj_type), K(value_str));
+        } else {
+          LOG_DEBUG("succ to set nls format by type", K(obj_type), K(value_str));
+        }
+      }
+    } else {
+      /* other types do not need nls format from session, do nothing here */
+      LOG_DEBUG("no need to set nls format", K(obj_type));
+    }
+  } else {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("fail to build dtc params due to null session", K(ret));
+  }
+
+  return ret;
+}
+                                                         

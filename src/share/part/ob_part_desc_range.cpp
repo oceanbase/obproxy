@@ -12,6 +12,8 @@
 
 #include "common/ob_obj_cast.h"
 #include "share/part/ob_part_desc_range.h"
+#include "obproxy/proxy/route/obproxy_expr_calculator.h"
+
 
 namespace oceanbase
 {
@@ -32,7 +34,6 @@ bool RangePartition::less_than(const RangePartition &a, const RangePartition &b)
 
 ObPartDescRange::ObPartDescRange() : part_array_ (NULL)
                                    , part_array_size_(0)
-                                   , collation_type_(CS_TYPE_UTF8MB4_BIN)
 {
 }
 
@@ -124,7 +125,8 @@ RangePartition::RangePartition() : is_max_value_(false)
 
 int ObPartDescRange::get_part(ObNewRange &range,
                               ObIAllocator &allocator,
-                              ObIArray<int64_t> &part_ids)
+                              ObIArray<int64_t> &part_ids,
+                              ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
   part_ids.reset();
@@ -136,10 +138,10 @@ int ObPartDescRange::get_part(ObNewRange &range,
     ret = OB_INVALID_ARGUMENT;
     COMMON_LOG(WARN, "invalid argument", K_(part_array), K_(part_array_size), K(range), K(ret));
     // use the fisrt range as the type to cast
-  } else if (OB_FAIL(cast_key(range.start_key_, part_array_[0].high_bound_val_, allocator))) {
+  } else if (OB_FAIL(cast_key(range.start_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
     COMMON_LOG(INFO, "fail to cast start key ",
                      K(range), K(part_array_[0].high_bound_val_), K(ret));
-  } else if (OB_FAIL(cast_key(range.end_key_, part_array_[0].high_bound_val_, allocator))) {
+  } else if (OB_FAIL(cast_key(range.end_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
     COMMON_LOG(INFO, "fail to cast end key",
                      K(range), K(part_array_[0].high_bound_val_), K(ret));
   } else {
@@ -167,14 +169,16 @@ int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t
 
 int ObPartDescRange::cast_key(ObRowkey &src_key,
                               ObRowkey &target_key,
-                              ObIAllocator &allocator)
+                              ObIAllocator &allocator,
+                              ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
   int64_t min_col_cnt = std::min(src_key.get_obj_cnt(), target_key.get_obj_cnt());
   for (int64_t i = 0; i < min_col_cnt && OB_SUCC(ret); ++i) {
     if (OB_FAIL(cast_obj(const_cast<ObObj &>(src_key.get_obj_ptr()[i]),
                          const_cast<ObObj &>(target_key.get_obj_ptr()[i]),
-                         allocator))) {
+                         allocator,
+                         ctx))) {
       COMMON_LOG(INFO, "fail to cast obj", K(i), K(ret));
     } else {
       // do nothing
@@ -185,16 +189,35 @@ int ObPartDescRange::cast_key(ObRowkey &src_key,
 
 inline int ObPartDescRange::cast_obj(ObObj &src_obj,
                                      ObObj &target_obj,
-                                     ObIAllocator &allocator)
+                                     ObIAllocator &allocator,
+                                     ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
-  COMMON_LOG(DEBUG, "begin to cast obj for range", K(src_obj), K(target_obj), K_(collation_type));
-  ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, target_obj.get_collation_type());
-  // use src_obj as buf_obj
-  if (OB_FAIL(ObObjCasterV2::to_type(target_obj.get_type(), collation_type_, cast_ctx, src_obj, src_obj))) {
-    COMMON_LOG(WARN, "failed to cast obj", K(src_obj), K(target_obj), K_(collation_type), K(ret));
+  COMMON_LOG(DEBUG, "begin to cast obj for range", K(src_obj), K(target_obj));
+
+  ObTimeZoneInfo tz_info;
+  ObDataTypeCastParams dtc_params;
+  ObObjType obj_type = target_obj.get_type();
+
+  if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
+                                                                            obj_type, tz_info, dtc_params))) {
+    COMMON_LOG(WARN, "fail to build dtc params with ctx session", K(ret), K(obj_type));
+  } else {
+    ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, target_obj.get_collation_type());
+    ObAccuracy accuracy(accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
+    const ObObj *res_obj = &src_obj;
+    
+    // use src_obj as buf_obj
+    if (OB_FAIL(ObObjCasterV2::to_type(obj_type, target_obj.get_collation_type(), cast_ctx, src_obj, src_obj))) {
+      COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(target_obj));
+    } else if (ctx.need_accurate()
+               && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, target_obj.get_collation_type(), *res_obj, src_obj, res_obj))) {
+      COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj));
+    } else {
+      COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(target_obj));
+    }
   }
-  COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(target_obj), K_(collation_type));
+    
   return ret;
 }
 

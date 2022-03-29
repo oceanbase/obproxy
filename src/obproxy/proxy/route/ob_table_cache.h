@@ -104,7 +104,7 @@ inline void ObTableCache::set_cache_expire_time(const int64_t relative_time_ms)
 
 bool ObTableCache::is_table_entry_expired(const ObTableEntry &entry)
 {
-  return is_table_entry_expired_in_time_mode(entry) || is_table_entry_expired_in_qa_mode(entry);
+   return is_table_entry_expired_in_time_mode(entry) || is_table_entry_expired_in_qa_mode(entry);
 }
 
 bool ObTableCache::is_table_entry_expired_in_qa_mode(const ObTableEntry &entry)

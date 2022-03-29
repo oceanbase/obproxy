@@ -38,11 +38,11 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
 
   va_list args;
   va_start(args, metric);
-
+  const ObString vip_addr_name;
   if (OB_FAIL(handle_prometheus(logic_tenant_name, logic_database_name, cluster_name,
-                                tenant_name, database_name, stmt_type, metric, args))) {
+                                tenant_name, vip_addr_name, database_name, stmt_type, metric, args))) {
     LOG_WARN("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
-             K(cluster_name), K(tenant_name), K(database_name), K(metric), K(ret));
+             K(cluster_name), K(tenant_name), K(vip_addr_name), K(database_name), K(metric), K(ret));
   }
 
   va_end(args);
@@ -60,6 +60,7 @@ int ObSQLPrometheus::handle_prometheus(const ObClientSessionInfo &cs_info,
   ObString cluster_name;
   ObString tenant_name;
   ObString database_name;
+  ObString vip_addr_name;
 
   cs_info.get_logic_tenant_name(logic_tenant_name);
   if (OB_UNLIKELY(logic_tenant_name.empty())) {
@@ -74,15 +75,18 @@ int ObSQLPrometheus::handle_prometheus(const ObClientSessionInfo &cs_info,
     cs_info.get_cluster_name(cluster_name);
     cs_info.get_tenant_name(tenant_name);
     cs_info.get_database_name(database_name);
+    if (get_global_proxy_config().need_convert_vip_to_tname) {
+      cs_info.get_vip_addr_name(vip_addr_name);
+    }
   }
 
   va_list args;
   va_start(args, metric);
 
   if (OB_FAIL(handle_prometheus(logic_tenant_name, logic_database_name, cluster_name,
-                                tenant_name, database_name, OBPROXY_T_MAX, metric, args))) {
+                                tenant_name, vip_addr_name, database_name, OBPROXY_T_MAX, metric, args))) {
     LOG_WARN("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
-             K(cluster_name), K(tenant_name), K(database_name), K(metric), K(ret));
+             K(cluster_name), K(tenant_name), K(vip_addr_name), K(database_name), K(metric), K(ret));
   }
 
   va_end(args);
@@ -94,6 +98,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
                                        const ObString &logic_database_name,
                                        const ObString &cluster_name,
                                        const ObString &tenant_name,
+                                       const ObString &vip_addr_name,
                                        const ObString &database_name,
                                        const ObProxyBasicStmtType stmt_type,
                                        const ObPrometheusMetrics metric,
@@ -166,6 +171,18 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(CURRENT_SESSION, CURRENT_SESSION_HELP,
                                                        label_vector, value, false))) {
       LOG_WARN("fail to handle counter with CURRENT_SESSION", K(ret));
+    }
+    break;
+  }
+  case PROMETHEUS_USED_CONNECTIONS:
+  {
+    int32_t value = va_arg(args, int32_t);
+
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, vip_addr_name, false);
+
+    if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(USED_CONNECTIONS, USED_CONNECTIONS_HELP,
+                                                       label_vector, value, false))) {
+      LOG_WARN("fail to handle counter with USED_CONNECTIONS", K(ret));
     }
     break;
   }

@@ -15,6 +15,7 @@
 #include "lib/timezone/ob_timezone_info.h"
 #include "lib/timezone/ob_time_convert.h"
 #include "lib/oblog/ob_log.h"
+#include "lib/ob_proxy_worker.h"
 
 namespace oceanbase
 {
@@ -38985,15 +38986,372 @@ ObTimeZoneTrans ObTimeZoneInfo::TIME_ZONE_TRANS[] =
   {INT64_MIN, 0, 573},
 };
 
+DEF_TO_STRING(ObOTimestampData)
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV(K_(time_us),
+      "tail_nsec",
+      time_ctx_.tail_nsec_,
+      "version",
+      time_ctx_.version_,
+      "is_null",
+      time_ctx_.is_null_,
+      "store_tz_id",
+      time_ctx_.store_tz_id_);
+  if (time_ctx_.store_tz_id_ != 0) {
+    J_COMMA();
+    J_KV("tz_id", time_ctx_.tz_id_, "tran_type_id", time_ctx_.tran_type_id_);
+  } else {
+    J_COMMA();
+    J_KV("is_neg_offset", time_ctx_.is_neg_offset_, "offset_min", time_ctx_.offset_min_);
+  }
+  J_OBJ_END();
+  return pos;
+}
+
+ObTZNameKey::ObTZNameKey(const ObString &tz_key_str)
+{
+  int64_t len = tz_key_str.length();
+  if (OB_UNLIKELY(len + 1 > OB_MAX_TZ_NAME_LEN)) {
+    LOG_ERROR("invalid tz_key_str", K(tz_key_str));
+  } else {
+    for (int64_t i = 0; i < len; ++i) {
+      tz_name_[i] = static_cast<char>(tolower(tz_key_str[i]));
+    }
+    tz_name_[len] = 0;
+  }
+}
+
+void ObTZNameKey::reset()
+{
+  MEMSET(tz_name_, 0, OB_MAX_TZ_NAME_LEN);
+}
+
+int ObTZNameKey::assign(const ObTZNameKey &src)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(this != &src)) {
+    this->reset();
+    MEMCPY(tz_name_, src.tz_name_, OB_MAX_TZ_NAME_LEN);
+  }
+  return ret;
+}
+
+void ObTZNameKey::operator=(const ObTZNameKey &key)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(assign(key))) {
+    LOG_ERROR("fail to assign ObTZNameKey", K(key), K(ret));
+  }
+}
+
+ObTZNameKey::ObTZNameKey(const ObTZNameKey &key)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(assign(key))) {
+    LOG_ERROR("fail to assign ObTZNameKey", K(key), K(ret));
+  }
+}
+
+uint64_t ObTZNameKey::hash(uint64_t seed) const
+{
+  uint64_t seed_ret = 0;
+  int32_t str_len = static_cast<int32_t>(strlen(tz_name_));
+  if (OB_ISNULL(tz_name_) || OB_UNLIKELY(str_len > OB_MAX_TZ_NAME_LEN)) {
+    LOG_WARN("invalid tz_name", K(str_len));
+  } else {
+    seed_ret = murmurhash(tz_name_, str_len, seed);
+  }
+  return seed_ret;
+}
+
+void ObTZTransitionTypeInfo::reset()
+{
+  lower_time_ = OB_INVALID_TZ_TRAN_TIME;
+  info_.reset();
+}
+
+int ObTZTransitionTypeInfo::assign(const ObTZTransitionTypeInfo &src)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(this != &src)) {
+    this->reset();
+    lower_time_ = src.lower_time_;
+    ret = info_.assign(src.info_);
+  }
+  return ret;
+}
+
+int ObTZTransitionTypeInfo::get_offset_according_abbr(const ObString &tz_abbr_str,
+                                                      int32_t &offset_sec,
+                                                      int32_t &tran_type_id) const
+{
+  int ret = OB_SUCCESS;
+  if (0 == tz_abbr_str.case_compare(info_.abbr_)) {
+    offset_sec = info_.offset_sec_;
+    tran_type_id = info_.tran_type_id_;
+  } else {
+    ret = OB_ERR_UNEXPECTED_TZ_TRANSITION;
+    LOG_WARN("invalid abbr", K(tz_abbr_str), KPC(this), K(ret));
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE(ObTZTransitionTypeInfo)
+{
+  int ret = OB_SUCCESS;
+  ObString abbr_str(static_cast<ObString::obstr_size_t>(strlen(info_.abbr_)), info_.abbr_);
+  LST_DO_CODE(OB_UNIS_ENCODE, lower_time_, info_.offset_sec_, info_.is_dst_, abbr_str, info_.tran_type_id_);
+  return ret;
+}
+
+OB_DEF_DESERIALIZE(ObTZTransitionTypeInfo)
+{
+  int ret = OB_SUCCESS;
+  info_.reset();
+  ObString abbr_str;
+  LST_DO_CODE(OB_UNIS_DECODE, lower_time_, info_.offset_sec_, info_.is_dst_, abbr_str, info_.tran_type_id_);
+  if (OB_FAIL(ret)) {
+  } else if (OB_UNLIKELY(abbr_str.length() + 1 > OB_MAX_TZ_ABBR_LEN)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid abbr_str", K(abbr_str), K(ret));
+  } else {
+    MEMCPY(info_.abbr_, abbr_str.ptr(), abbr_str.length());
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE_SIZE(ObTZTransitionTypeInfo)
+{
+  int64_t len = 0;
+  ObString abbr_str(static_cast<ObString::obstr_size_t>(strlen(info_.abbr_)), info_.abbr_);
+  LST_DO_CODE(OB_UNIS_ADD_LEN, lower_time_, info_.offset_sec_, info_.is_dst_, abbr_str, info_.tran_type_id_);
+  return len;
+}
+
+void ObTZRevertTypeInfo::reset()
+{
+  ObTZTransitionTypeInfo::reset();
+  type_class_ = NONE;
+  extra_info_.reset();
+}
+
+int ObTZRevertTypeInfo::assign_normal(const ObTZTransitionTypeInfo &src)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(this != &src)) {
+    ret = info_.assign(src.info_);
+  }
+  return ret;
+}
+
+int ObTZRevertTypeInfo::assign_extra(const ObTZTransitionTypeInfo &src)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(this != &src)) {
+    ret = extra_info_.assign(src.info_);
+  }
+  return ret;
+}
+
+int ObTZRevertTypeInfo::assign(const ObTZRevertTypeInfo &src)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(this != &src)) {
+    this->reset();
+    if (OB_FAIL(ObTZTransitionTypeInfo::assign(src))) {
+      LOG_WARN("fail to assign tran type info", K(ret));
+    } else if (OB_FAIL(extra_info_.assign(src.extra_info_))) {
+      LOG_WARN("fail to assign tran extra info", K(ret));
+    } else {
+      type_class_ = src.type_class_;
+    }
+  }
+  return ret;
+}
+
+int ObTZRevertTypeInfo::get_offset_according_abbr(const ObString &tz_abbr_str,
+                                                  int32_t &offset_sec,
+                                                  int32_t &tran_type_id) const
+{
+  int ret = OB_SUCCESS;
+  if (0 == tz_abbr_str.case_compare(info_.abbr_)) {
+    offset_sec = info_.offset_sec_;
+    tran_type_id = info_.tran_type_id_;
+  } else if (0 == tz_abbr_str.case_compare(extra_info_.abbr_)) {
+    offset_sec = extra_info_.offset_sec_;
+    tran_type_id = extra_info_.tran_type_id_;
+  } else {
+    ret = OB_ERR_UNEXPECTED_TZ_TRANSITION;
+    LOG_WARN("invalid abbr", K(tz_abbr_str), KPC(this), K(ret));
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE(ObTZRevertTypeInfo)
+{
+  int ret = ObTZTransitionTypeInfo::serialize(buf, buf_len, pos);
+  ObString abbr_str(static_cast<ObString::obstr_size_t>(strlen(extra_info_.abbr_)), extra_info_.abbr_);
+  LST_DO_CODE(
+      OB_UNIS_ENCODE, type_class_, extra_info_.offset_sec_, extra_info_.is_dst_, abbr_str, extra_info_.tran_type_id_);
+  return ret;
+}
+
+OB_DEF_DESERIALIZE(ObTZRevertTypeInfo)
+{
+  int ret = ObTZTransitionTypeInfo::deserialize(buf, data_len, pos);
+  extra_info_.reset();
+  ObString abbr_str;
+  LST_DO_CODE(
+      OB_UNIS_DECODE, type_class_, extra_info_.offset_sec_, extra_info_.is_dst_, abbr_str, extra_info_.tran_type_id_);
+  if (OB_FAIL(ret)) {
+  } else if (OB_UNLIKELY(abbr_str.length() + 1 > OB_MAX_TZ_ABBR_LEN)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid abbr_str", K(abbr_str), K(ret));
+  } else {
+    MEMCPY(extra_info_.abbr_, abbr_str.ptr(), abbr_str.length());
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE_SIZE(ObTZRevertTypeInfo)
+{
+  int64_t len = ObTZTransitionTypeInfo::get_serialize_size();
+  ObString abbr_str(static_cast<ObString::obstr_size_t>(strlen(extra_info_.abbr_)), extra_info_.abbr_);
+  LST_DO_CODE(
+      OB_UNIS_ADD_LEN, type_class_, extra_info_.offset_sec_, extra_info_.is_dst_, abbr_str, extra_info_.tran_type_id_);
+  return len;
+}
+
+/*
+int ObTZInfoMap::init(const lib::ObLabel& label)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(inited_)) {
+    ret = OB_INIT_TWICE;
+    LOG_WARN("init twice", K(ret));
+  } else if (OB_FAIL(id_map_.init(label))) {
+    LOG_WARN("fail to init id map", K(ret));
+  } else if (OB_FAIL(name_map_.init(label))) {
+    LOG_WARN("fail to init name map", K(ret));
+  } else {
+    inited_ = true;
+  }
+  return ret;
+}
+*/
+
+int ObTZInfoMap::reset()
+{
+  int ret = OB_SUCCESS;
+  id_map_.reset();
+  name_map_.reset();
+  return ret;
+}
+
+static bool print_tz_info(ObTZIDKey &key, ObTimeZoneInfoPos *tz_info)
+{
+  int ret = OB_SUCCESS;
+  UNUSED(key);
+  if (OB_ISNULL(tz_info)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("tz info is NULL", K(tz_info));
+  } else {
+    LOG_INFO("dump current time zone info", KPC(tz_info));
+  }
+  return OB_SUCCESS == ret;
+}
+
+int ObTZInfoMap::print_tz_info_map()
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(id_map_.for_each(print_tz_info))) {
+    LOG_WARN("fail to call for_each", K(ret));
+  }
+  return ret;
+}
+
+int ObTZInfoMap::get_tz_info_by_id(const int64_t tz_id, ObTimeZoneInfoPos *&tz_info_by_id)
+{
+  int ret = OB_SUCCESS;
+  if (OB_NOT_NULL(tz_info_by_id)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("tz_info_by_id should be null here", K(ret));
+  } else if (OB_FAIL(id_map_.get(tz_id, tz_info_by_id))) {
+    LOG_WARN("fail to get tz_info_by_id, should not happened", K(tz_id), K(ret));
+  } else {
+    LOG_DEBUG("succ to get tz_info_by_id", K(tz_id), KPC(tz_info_by_id), K(ret));
+  }
+  return ret;
+}
+
+int ObTZInfoMap::get_tz_info_by_name(const ObString &tz_name, ObTimeZoneInfoPos *&tz_info_by_name)
+{
+  int ret = OB_SUCCESS;
+  ObTZNameIDInfo *name_id_info = NULL;
+  if (OB_NOT_NULL(tz_info_by_name)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("v should be null here", K(ret));
+  } else if (OB_FAIL(name_map_.get(ObTZNameKey(tz_name), name_id_info))) {
+    LOG_WARN("fail to get get_tz_info_by_name", K(tz_name), K(ret));
+  } else if (OB_FAIL(get_tz_info_by_id(name_id_info->tz_id_, tz_info_by_name))) {
+    LOG_WARN("fail to get get_tz_info_by_name", KPC(name_id_info), K(ret));
+  } else {
+    LOG_DEBUG("succ to get get_tz_info_by_name", K(tz_name), KPC(name_id_info), KPC(tz_info_by_name), K(ret));
+  }
+
+  if (OB_ENTRY_NOT_EXIST == ret) {
+    ret = OB_ERR_UNKNOWN_TIME_ZONE;
+  }
+
+  if (NULL != name_id_info) {
+    name_map_.revert(name_id_info);
+    name_id_info = NULL;
+  }
+
+  return ret;
+}
+
+ObTZMapWrap::~ObTZMapWrap()
+{
+  if (!OB_ISNULL(tz_info_map_)) {
+    tz_info_map_->dec_ref_count();
+  }
+}
+
+void ObTZMapWrap::set_tz_map(const common::ObTZInfoMap *timezone_info_map)
+{
+  if (OB_NOT_NULL(tz_info_map_)) {
+    tz_info_map_->dec_ref_count();
+  }
+  ObTZInfoMap *non_const_tz_map = const_cast<ObTZInfoMap*>(timezone_info_map);
+  if (!OB_ISNULL(timezone_info_map)) {
+    non_const_tz_map->inc_ref_count();
+  }
+  tz_info_map_ = non_const_tz_map;
+}
+
+int ObTimeZoneInfo::assign(const ObTimeZoneInfo &src)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(this != &src)) {
+    this->reset();
+    tz_id_ = src.tz_id_;
+    offset_ = src.offset_;
+    error_on_overlap_time_ = src.error_on_overlap_time_;
+  }
+  return ret;
+}
+
 int ObTimeZoneInfo::set_timezone(const ObString &str)
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(get_timezone_id(str, tz_id_))) {
-    LOG_WARN("failed get time zone id", K(ret), K(str));
-  } else if (0 == tz_id_) {
-    if (OB_FAIL(ObTimeConverter::str_to_offset(str, offset_))) {
-      LOG_WARN("invalid time zone offset", K(ret), K(str));
-    }
+  int ret_more = OB_SUCCESS;
+  if (OB_FAIL(ObTimeConverter::str_to_offset(str, offset_, ret_more, true, true))) {
+    LOG_WARN("invalid time zone offset", K(ret), K(str));
+  } else {
+    tz_id_ = 0;
   }
   return ret;
 }
@@ -39010,15 +39368,511 @@ int ObTimeZoneInfo::get_timezone_offset(int64_t value, int32_t &offset) const
   return ret;
 }
 
-int ObTimeZoneInfo::get_timezone_id(const ObString &str, int32_t &tz_id)
+int ObTimeZoneInfo::get_timezone_sub_offset(int64_t value,
+                                            const ObString &tz_abbr_str,
+                                            int32_t &offset_sec,
+                                            int32_t &tz_id,
+                                            int32_t &tran_type_id) const
 {
   int ret = OB_SUCCESS;
-  UNUSED(str);
-  tz_id = 0;
+  UNUSED(tz_abbr_str);
+  if (tz_id_ > 0) {
+    ret = OB_NOT_SUPPORTED;
+  } else {
+    tz_id = OB_INVALID_INDEX;
+    tran_type_id = OB_INVALID_INDEX;
+    ret = get_timezone_offset(value, offset_sec);
+  }
+  return ret;
+}
+
+int ObTimeZoneInfo::get_timezone_offset(int64_t value,
+                                        int32_t &offset_sec,
+                                        common::ObString &tz_abbr_str,
+                                        int32_t &tran_type_id) const
+{
+  int ret = OB_SUCCESS;
+  UNUSED(value);
+  offset_sec = offset_;
+  tz_abbr_str.reset();
+  tran_type_id = common::OB_INVALID_INDEX;
+  return ret;
+}
+
+int ObTimeZoneInfo::timezone_to_str(char *buf, const int64_t buf_len, int64_t &pos) const
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(buf) || OB_UNLIKELY(buf_len < 0) || OB_UNLIKELY(buf_len < pos)) {
+    ret = OB_ERR_UNEXPECTED;
+  } else {
+    int32_t offset_min = static_cast<int32_t>(SEC_TO_MIN(offset_));
+    const char *fmt_str = (offset_min < 0 ? "-%02d:%02d" : "+%02d:%02d");
+    ret = databuff_printf(buf, buf_len, pos, fmt_str, abs(offset_min) / 60, abs(offset_min) % 60);
+  }
   return ret;
 }
 
 OB_SERIALIZE_MEMBER(ObTimeZoneInfo, tz_id_, offset_);
+
+
+void ObTimeZoneInfoPos::reset()
+{
+  tz_id_ = OB_INVALID_TZ_ID;
+  default_type_.reset();
+  curr_idx_ = 0;
+  tz_tran_types_[0].reset();
+  tz_tran_types_[1].reset();
+  tz_revt_types_[0].reset();
+  tz_revt_types_[1].reset();
+  MEMSET(tz_name_, 0, common::OB_MAX_TZ_NAME_LEN);
+}
+
+int ObTimeZoneInfoPos::assign(const ObTimeZoneInfoPos &src)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(this != &src)) {
+    this->reset();
+    tz_id_ = src.tz_id_;
+    curr_idx_ = src.get_curr_idx();
+    if (OB_FAIL(default_type_.assign(src.default_type_))) {
+      LOG_WARN("fail to assign default type", K(ret));
+    } else if (OB_FAIL(tz_tran_types_[get_curr_idx() % 2].assign(src.get_tz_tran_types()))) {
+      LOG_WARN("fail to assign tz_tran_types", K(ret));
+    } else if (OB_FAIL(tz_revt_types_[get_curr_idx() % 2].assign(src.get_tz_revt_types()))) {
+      LOG_WARN("fail to assign tz_revt_types", K(ret));
+    } else {
+      MEMCPY(tz_name_, src.tz_name_, OB_MAX_TZ_NAME_LEN);
+    }
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::add_tran_type_info(const ObTZTransitionTypeInfo &type_info)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(tz_tran_types_[get_curr_idx() % 2].push_back(type_info))) {
+    LOG_WARN("fail to push back type info", K(type_info), K(ret));
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::set_default_tran_type(const ObTZTransitionTypeInfo &tran_type)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(default_type_.assign(tran_type))) {
+    LOG_WARN("fail to assign tran type", K(tran_type), K(ret));
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::get_tz_name(ObString &tz_name) const
+{
+  int ret = OB_SUCCESS;
+  int64_t str_length = strlen(tz_name_);
+  if (OB_UNLIKELY(false == is_valid())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("tz info is invalid", K(ret));
+  } else if (OB_UNLIKELY(str_length + 1 > OB_MAX_TZ_NAME_LEN)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid tz_name", K(str_length), K(OB_MAX_TZ_NAME_LEN), K(ret));
+  } else {
+    tz_name.assign_ptr(tz_name_, static_cast<ObString::obstr_size_t>(str_length));
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::set_tz_name(const char *name, int64_t name_len)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(name)
+      || OB_ISNULL(tz_name_)
+      || OB_UNLIKELY(name_len < 0
+      || name_len + 1 > OB_MAX_TZ_NAME_LEN)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid parameter", K(name_len), K(OB_MAX_TZ_NAME_LEN), K(ret));
+  } else {
+    MEMCPY(tz_name_, name, name_len);
+    tz_name_[name_len] = 0;
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::compare_upgrade(const ObTimeZoneInfoPos &other, bool &is_equal) const
+{
+  int ret = OB_SUCCESS;
+  is_equal = false;
+  const common::ObSArray<ObTZTransitionTypeInfo, ObMalloc> &other_type = other.get_tz_tran_types();
+  const common::ObSArray<ObTZTransitionTypeInfo, ObMalloc> &tz_tran_types = get_tz_tran_types();
+
+  if (OB_UNLIKELY(tz_id_ != other.get_tz_id())
+      || OB_UNLIKELY(0 != other.get_tz_name().compare(tz_name_))
+      || OB_UNLIKELY(default_type_ != other.get_default_trans_type())
+      || OB_UNLIKELY(tz_tran_types.count() > other_type.count())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("it should not happened", KPC(this), K(other), K(ret));
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < tz_tran_types.count(); i++) {
+      if (OB_UNLIKELY(other_type[i] != tz_tran_types[i])) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_ERROR("it should not happened", K(other_type[i]), K(tz_tran_types[i]), K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret) && tz_tran_types.count() == other.get_tz_tran_types().count()) {
+      is_equal = true;
+    }
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::find_time_range(int64_t value,
+                                       const common::ObIArray<ObTZTransitionTypeInfo> &tz_tran_types,
+                                       int64_t &type_idx) const
+{
+  int ret = OB_SUCCESS;
+  int64_t higher_bound = tz_tran_types.count();
+  int64_t lower_bound = 0;
+  int64_t i = 0;
+  while (higher_bound - lower_bound > 1) {
+    i = (lower_bound + higher_bound) >> 1;
+    if (tz_tran_types.at(i).lower_time_ <= value) {
+      lower_bound = i;
+    } else {
+      higher_bound = i;
+    }
+  }
+  type_idx = lower_bound;
+  return ret;
+}
+
+int ObTimeZoneInfoPos::find_revt_time_range(int64_t value,
+                                            const common::ObIArray<ObTZRevertTypeInfo> &tz_revt_types,
+                                            int64_t &type_idx) const
+{
+  int ret = OB_SUCCESS;
+  int64_t higher_bound = tz_revt_types.count();
+  int64_t lower_bound = 0;
+  int64_t i = 0;
+  while (higher_bound - lower_bound > 1) {
+    i = (lower_bound + higher_bound) >> 1;
+    if (tz_revt_types.at(i).lower_time_ <= value) {
+      lower_bound = i;
+    } else {
+      higher_bound = i;
+    }
+  }
+  type_idx = lower_bound;
+  return ret;
+}
+
+int ObTimeZoneInfoPos::get_timezone_offset(int64_t value,
+                                           int32_t &offset_sec,
+                                           common::ObString &tz_abbr_str,
+                                           int32_t &tran_type_id) const
+{
+  int ret = OB_SUCCESS;
+  const common::ObSArray<ObTZTransitionTypeInfo, ObMalloc> &tz_tran_types = get_tz_tran_types();
+  int64_t type_cnt = tz_tran_types.count();
+  int64_t type_idx = 0;
+  if (OB_UNLIKELY(false == is_valid())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("tz info is invalid", K(ret));
+  } else if (0 == type_cnt || value < tz_tran_types.at(0).lower_time_) {
+    offset_sec = default_type_.info_.offset_sec_;
+    tz_abbr_str.assign_ptr(default_type_.info_.abbr_, static_cast<int32_t>(strlen(default_type_.info_.abbr_)));
+    tran_type_id = default_type_.info_.tran_type_id_;
+  } else if (OB_FAIL(find_time_range(value, tz_tran_types, type_idx))) {
+    LOG_WARN("fail to find time range", K(ret));
+  } else if (OB_UNLIKELY(type_idx < 0 || type_idx >= tz_tran_types.count())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected type idx", K(type_idx), K(tz_tran_types), K(ret));
+  } else {
+    const ObTZTransitionStruct &info = tz_tran_types.at(type_idx).info_;
+    offset_sec = info.offset_sec_;
+    tz_abbr_str.assign_ptr(info.abbr_, static_cast<int32_t>(strlen(info.abbr_)));
+    tran_type_id = info.tran_type_id_;
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::get_timezone_offset(int64_t value, int32_t &offset_sec) const
+{
+  common::ObString tz_abbr_str;
+  int32_t tran_type_id = OB_INVALID_INDEX;
+  return get_timezone_offset(value, offset_sec, tz_abbr_str, tran_type_id);
+}
+
+int ObTimeZoneInfoPos::find_offset_range(const int32_t tran_type_id,
+                                         const common::ObIArray<ObTZTransitionTypeInfo> &tz_tran_types,
+                                         int64_t &type_idx) const
+{
+  int ret = OB_SUCCESS;
+  int64_t count = tz_tran_types.count();
+  bool found = false;
+  type_idx = OB_INVALID_INDEX;
+  for (int64_t i = 0; !found && i < count; ++i) {
+    if (tz_tran_types.at(i).info_.tran_type_id_ == tran_type_id) {
+      found = true;
+      type_idx = i;
+    }
+  }
+
+  return ret;
+}
+
+int ObTimeZoneInfoPos::get_timezone_offset(const int32_t tran_type_id,
+                                           common::ObString &tz_abbr_str,
+                                           int32_t &offset_sec) const
+{
+  int ret = OB_SUCCESS;
+  const common::ObSArray<ObTZTransitionTypeInfo, ObMalloc> &tz_tran_types = get_tz_tran_types();
+  int64_t type_idx = 0;
+  if (OB_UNLIKELY(false == is_valid())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("tz info is invalid", K(ret));
+  } else if (tran_type_id == default_type_.info_.tran_type_id_) {
+    offset_sec = default_type_.info_.offset_sec_;
+    tz_abbr_str.assign_ptr(default_type_.info_.abbr_, static_cast<int32_t>(strlen(default_type_.info_.abbr_)));
+  } else if (OB_FAIL(find_offset_range(tran_type_id, tz_tran_types, type_idx))) {
+    LOG_WARN("fail to find time range", K(ret));
+  } else if (OB_UNLIKELY(type_idx < 0 || type_idx >= tz_tran_types.count())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected type idx", K(type_idx), K(tz_tran_types), K(ret));
+  } else {
+    const ObTZTransitionStruct &info = tz_tran_types.at(type_idx).info_;
+    offset_sec = info.offset_sec_;
+    tz_abbr_str.assign_ptr(info.abbr_, static_cast<int32_t>(strlen(info.abbr_)));
+  }
+
+  return ret;
+}
+
+int ObTimeZoneInfoPos::get_timezone_sub_offset(int64_t value,
+                                               const ObString &tz_abbr_str,
+                                               int32_t &offset_sec,
+                                               int32_t &tz_id,
+                                               int32_t &tran_type_id) const
+{
+  int ret = OB_SUCCESS;
+  const common::ObSArray<ObTZRevertTypeInfo, ObMalloc> &tz_revt_types = get_tz_revt_types();
+  tz_id = static_cast<int32_t>(tz_id_);
+  int64_t type_idx = 0;
+  if (OB_UNLIKELY(!is_valid())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("tz info is invalid", K(ret));
+  } else if (OB_FAIL(find_revt_time_range(value, tz_revt_types, type_idx))) {
+    LOG_WARN("fail to find time range", K(ret));
+  } else if (OB_UNLIKELY(type_idx < 0 || type_idx >= tz_revt_types.count())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected type idx", K(type_idx), K(tz_revt_types), K(ret));
+  } else {
+    const ObTZRevertTypeInfo &revt_type_info = tz_revt_types.at(type_idx);
+    if (OB_UNLIKELY(revt_type_info.is_gap())) {  // gap
+      ret = OB_ERR_UNEXPECTED_TZ_TRANSITION;
+      LOG_WARN("fail to get offset, value may be in gap range", K(value), K(type_idx), K(revt_type_info), K(ret));
+    } else if (OB_UNLIKELY(revt_type_info.is_overlap())) {  // overlap
+      if (OB_LIKELY(tz_abbr_str.empty())) {
+        if (error_on_overlap_time_) {
+          ret = OB_ERR_UNEXPECTED_TZ_TRANSITION;
+          LOG_WARN(
+              "fail to get offset, value may be in overlap range", K(value), K(type_idx), K(revt_type_info), K(ret));
+        } else {  // if error_on_overlap_time_ == false,
+          // oracle mode : use standard offset, mysql mode: use daylight saving time
+          if (lib::is_oracle_mode()) {
+            offset_sec = revt_type_info.extra_info_.offset_sec_;
+            tran_type_id = revt_type_info.extra_info_.tran_type_id_;
+          } else {
+            offset_sec = revt_type_info.info_.offset_sec_;
+            tran_type_id = revt_type_info.info_.tran_type_id_;
+          }
+        }
+      } else if (OB_FAIL(revt_type_info.get_offset_according_abbr(tz_abbr_str, offset_sec, tran_type_id))) {
+        LOG_WARN("fail to get offset according to abbr", K(tz_abbr_str), K(revt_type_info), K(ret));
+        ret = OB_ERR_UNEXPECTED_TZ_TRANSITION;
+      }
+    } else if (revt_type_info.is_normal()) {  // normal
+      if (OB_LIKELY(tz_abbr_str.empty())) {
+        offset_sec = revt_type_info.info_.offset_sec_;
+        tran_type_id = revt_type_info.info_.tran_type_id_;
+      } else if (OB_FAIL(revt_type_info.get_offset_according_abbr(tz_abbr_str, offset_sec, tran_type_id))) {
+        LOG_WARN("fail to get offset according to abbr", K(tz_abbr_str), K(revt_type_info), K(ret));
+        ret = OB_ERR_UNEXPECTED_TZ_TRANSITION;
+      }
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected revert type info", K(revt_type_info), K(ret));
+    }
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::calc_revt_types()
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(false == is_valid())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("tz info is invalid", K(ret));
+  } else {
+    common::ObSArray<ObTZRevertTypeInfo, ObMalloc> &tz_revt_types = tz_revt_types_[get_curr_idx() % 2];
+    tz_revt_types.reset();
+    ObTZRevertTypeInfo revt_type_info;
+    const common::ObSArray<ObTZTransitionTypeInfo, ObMalloc> &tz_tran_types = get_tz_tran_types();
+
+    // add first revert type, type info is from default type
+    revt_type_info.type_class_ = ObTZRevertTypeInfo::NORMAL;
+    revt_type_info.lower_time_ = DATETIME_MIN_VAL;
+    if (OB_FAIL(revt_type_info.assign_normal(default_type_))) {
+      LOG_WARN("fail to assign transition type info", K(ret));
+    } else if (OB_FAIL(tz_revt_types.push_back(revt_type_info))) {
+      LOG_WARN("fail to push back revert type info", K(revt_type_info), K(ret));
+    }
+
+    for (int64_t i = 0; OB_SUCC(ret) && i < tz_tran_types.count(); ++i) {
+      const ObTZTransitionTypeInfo &cur_tran_type_info = tz_tran_types.at(i);
+      int64_t last_high_time = (cur_tran_type_info.lower_time_ - 1) + revt_type_info.info_.offset_sec_;
+      int64_t cur_lower_time = cur_tran_type_info.lower_time_ + cur_tran_type_info.info_.offset_sec_;
+      if (last_high_time + 1 > cur_lower_time) {  // add overlap revert_type_info
+        revt_type_info.type_class_ =
+            ObTZRevertTypeInfo::OVERLAP;  // no need reset revt_type_info, reuse the normal_type_info
+        revt_type_info.lower_time_ = cur_lower_time;
+        if (OB_FAIL(revt_type_info.assign_extra(cur_tran_type_info))) {
+          LOG_WARN("fail to assign extra type info", K(cur_tran_type_info), K(ret));
+        } else if (OB_FAIL(tz_revt_types.push_back(revt_type_info))) {
+          LOG_WARN("fail to push back revert type info", K(revt_type_info), K(ret));
+        }
+      } else if (last_high_time + 1 < cur_lower_time) {  // add gap revert_type_info
+        revt_type_info.reset();                          // type_info should be empty
+        revt_type_info.type_class_ = ObTZRevertTypeInfo::GAP;
+        revt_type_info.lower_time_ = last_high_time + 1;
+        if (OB_FAIL(tz_revt_types.push_back(revt_type_info))) {
+          LOG_WARN("fail to push back revert type info", K(revt_type_info), K(ret));
+        }
+      } else { /*do nothing*/
+      }
+
+      if (OB_SUCC(ret)) {
+        // add normal revert_type_info
+        bool is_overlap = ObTZRevertTypeInfo::OVERLAP == revt_type_info.type_class_;
+        revt_type_info.reset();
+        revt_type_info.type_class_ = ObTZRevertTypeInfo::NORMAL;
+        revt_type_info.lower_time_ = is_overlap ? last_high_time + 1 : cur_lower_time;
+        if (OB_FAIL(revt_type_info.assign_normal(cur_tran_type_info))) {
+          LOG_WARN("fail to assign normal type info", K(ret));
+        } else if (OB_FAIL(tz_revt_types.push_back(revt_type_info))) {
+          LOG_WARN("fail to push back revert type info", K(revt_type_info), K(ret));
+        }
+      }
+    }  // for
+  }
+  return ret;
+}
+
+int ObTimeZoneInfoPos::timezone_to_str(char *buf, const int64_t buf_len, int64_t &pos) const
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(buf) || OB_UNLIKELY(buf_len < 0) || OB_UNLIKELY(buf_len < pos)) {
+    ret = OB_ERR_UNEXPECTED;
+  } else {
+    const size_t tz_len = strlen(tz_name_);
+    if (OB_UNLIKELY((pos + tz_len + 1) > buf_len)) {
+      ret = OB_BUF_NOT_ENOUGH;
+      LOG_WARN("buff size is not enough", K(pos), K(tz_len), K(buf_len), KPC(this), K(ret));
+    } else {
+      memcpy(buf + pos, tz_name_, tz_len);
+      pos += tz_len;
+      buf[tz_len] = '\0';
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE(ObTimeZoneInfoPos)
+{
+  int ret = OB_SUCCESS;
+  ObString tz_name_str(static_cast<ObString::obstr_size_t>(strlen(tz_name_)), tz_name_);
+  const common::ObSArray<ObTZTransitionTypeInfo, ObMalloc> &tz_tran_types = get_tz_tran_types();
+  const common::ObSArray<ObTZRevertTypeInfo, ObMalloc> &tz_revt_types = get_tz_revt_types();
+  LST_DO_CODE(OB_UNIS_ENCODE, tz_id_, default_type_, tz_tran_types, tz_revt_types, tz_name_str);
+  return ret;
+}
+
+OB_DEF_DESERIALIZE(ObTimeZoneInfoPos)
+{
+  int ret = OB_SUCCESS;
+  ObString tz_name_str;
+  curr_idx_ = 0;
+  common::ObSArray<ObTZTransitionTypeInfo, ObMalloc> &tz_tran_types = tz_tran_types_[0];
+  common::ObSArray<ObTZRevertTypeInfo, ObMalloc> &tz_revt_types = tz_revt_types_[0];
+  LST_DO_CODE(OB_UNIS_DECODE, tz_id_, default_type_, tz_tran_types, tz_revt_types, tz_name_str);
+  if (OB_FAIL(ret)) {
+  } else if (OB_UNLIKELY(tz_name_str.length() + 1 > OB_MAX_TZ_NAME_LEN)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid tz_name_str", K(tz_name_str));
+  } else {
+    MEMCPY(tz_name_, tz_name_str.ptr(), tz_name_str.length());
+    tz_name_[tz_name_str.length()] = 0;
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE_SIZE(ObTimeZoneInfoPos)
+{
+  int64_t len = 0;
+  ObString tz_name_str(static_cast<ObString::obstr_size_t>(strlen(tz_name_)), tz_name_);
+  LST_DO_CODE(OB_UNIS_ADD_LEN, tz_id_, default_type_, get_tz_tran_types(), get_tz_revt_types(), tz_name_str);
+  return len;
+}
+
+ObTimeZoneInfoPos* ObTZIDPosAlloc::alloc_value()
+{
+  return op_alloc(ObTimeZoneInfoPos);
+}
+
+void ObTZIDPosAlloc::free_value(ObTimeZoneInfoPos *tz_info)
+{
+  op_free(tz_info);
+  tz_info = NULL;
+}
+
+ObTZIDHashNode* ObTZIDPosAlloc::alloc_node(ObTimeZoneInfoPos *value)
+{
+  UNUSED(value);
+  return op_alloc(ObTZIDHashNode);
+}
+
+void ObTZIDPosAlloc::free_node(ObTZIDHashNode *node)
+{
+  if (NULL != node) {
+    op_free(node);
+    node = NULL;
+  }
+}
+
+ObTZNameIDInfo* ObTZNameIDAlloc::alloc_value()
+{
+  return op_alloc(ObTZNameIDInfo);
+}
+
+void ObTZNameIDAlloc::free_value(ObTZNameIDInfo *info)
+{
+  op_free(info);
+  info = NULL;
+}
+
+ObTZNameHashNode* ObTZNameIDAlloc::alloc_node(ObTZNameIDInfo *value)
+{
+  UNUSED(value);
+  return op_alloc(ObTZNameHashNode);
+}
+
+void ObTZNameIDAlloc::free_node(ObTZNameHashNode *node)
+{
+  if (NULL != node) {
+    op_free(node);
+    node = NULL;
+  }
+}
+
 
 } // end of common
 } // end of oceanbase

@@ -508,6 +508,18 @@ int ObSessionFieldMgr::set_tenant_name(const ObString &tenant_name)
   return ret;
 }
 
+int ObSessionFieldMgr::set_vip_addr_name(const ObString &vip_addr_name)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WARN("not inited", K(ret));
+  } else if (OB_FAIL(replace_str_field(OB_V_FIELD_VIP_ADDR_NAME, vip_addr_name))) {
+    LOG_WARN("fail to set vip addr name", K(vip_addr_name), K(ret));
+  }
+  return ret;
+}
+
 int ObSessionFieldMgr::set_user_name(const ObString &user_name)
 {
   int ret = OB_SUCCESS;
@@ -615,6 +627,18 @@ int ObSessionFieldMgr::get_tenant_name(ObString &tenant_name) const
     LOG_WARN("not inited", K(ret));
   } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_TENANT_NAME, tenant_name))) {
     LOG_WARN("fail to get tenant name", K(ret));
+  }
+  return ret;
+}
+
+int ObSessionFieldMgr::get_vip_addr_name(ObString &vip_addr_name) const
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WARN("not inited", K(ret));
+  } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_VIP_ADDR_NAME, vip_addr_name))) {
+    LOG_DEBUG("fail to get vip addr name", K(ret));
   }
   return ret;
 }

@@ -118,6 +118,7 @@ public:
   static const ObPrecision MAX_PRECISION = 65;
   static const ObScale MIN_SCALE = -84;
   static const ObScale MAX_SCALE = 127;
+  static const ObScale MAX_TOTAL_SCALE = MAX_SCALE + MAX_PRECISION + 1;
   // 5 valid digits, another: 1 for round, 1 for negative end flag
   static const int64_t MAX_STORE_LEN = 9;
   static const int64_t MAX_BYTE_LEN = sizeof(uint32_t) * MAX_STORE_LEN + sizeof(Desc::desc_);

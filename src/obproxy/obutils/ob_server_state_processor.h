@@ -13,6 +13,7 @@
 #ifndef OBPROXY_STATE_PROCESSOR_H
 #define OBPROXY_STATE_PROCESSOR_H
 #include "obutils/ob_state_info.h"
+#include "obutils/ob_proxy_json_config_info.h"
 #include "lib/container/ob_se_array.h"
 #include "iocore/eventsystem/ob_continuation.h"
 #include "iocore/eventsystem/ob_lock.h"
@@ -69,6 +70,7 @@ private:
   int refresh_ldg_info();
   int refresh_all_tenant();
 
+  int handle_delete_cluster_resource(int64_t master_cluster_id);
   int handle_cluster_role(void *data);
   int handle_zone_state(void *data);
   int handle_server_state(void *data);
@@ -150,6 +152,7 @@ public:
   static uint64_t get_zones_state_hash(common::ObIArray<ObZoneStateInfo> &zones_state);
   static uint64_t get_servers_state_hash(common::ObIArray<ObServerStateInfo> &servers_state);
   static uint64_t get_servers_addr_hash(common::ObIArray<ObServerStateInfo> &servers_state);
+  static int order_servers_state(const common::ObIArray<ObServerStateInfo> &servers_state, LocationList &server_list);
 };
 
 } // end of namespace obutils

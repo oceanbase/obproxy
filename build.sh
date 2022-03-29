@@ -69,17 +69,22 @@ function do_config()
   case "x$1" in
     xdebug)
       # configure for developers
-      ./configure --with-gcc-version=5.2.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
+      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
       echo -e "\033[31m ===build debug version=== \033[0m"
       ;;
     xgcov)
       # configure for release
-      ./configure --with-gcc-version=5.2.0 --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
+      ./configure --with-gcc-version=9.3.0 --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
       echo -e "\033[31m ===build gcov version=== \033[0m"
+      ;;
+    xperf)
+      # configure for release
+      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-perf
+      echo -e "\033[31m ===build perf version=== \033[0m"
       ;;
     *)
       # configure for release
-      ./configure --with-gcc-version=5.2.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release
+      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release
       echo -e "\033[31m ===build release version=== \033[0m"
       ;;
   esac

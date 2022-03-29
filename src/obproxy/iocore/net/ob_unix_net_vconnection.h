@@ -36,6 +36,7 @@
 #include "iocore/net/ob_net_vconnection.h"
 #include "iocore/net/ob_net_state.h"
 #include "iocore/net/ob_connection.h"
+#include "lib/string/ob_string.h"
 
 namespace oceanbase
 {
@@ -233,7 +234,7 @@ public:
     IO_WRITE,
   };
 
-  int ssl_init(const SSLType ssL_type);
+  int ssl_init(const SSLType ssL_type, const common::ObString &cluster_name, const common::ObString &tenant_name);
   inline bool using_ssl() const { return using_ssl_; }
   inline bool ssl_connected() const { return ssl_connected_; }
   void do_ssl_io(event::ObEThread &thread);

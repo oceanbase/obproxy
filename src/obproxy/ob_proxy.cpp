@@ -33,6 +33,7 @@
 #include "obutils/ob_log_file_processor.h"
 #include "obutils/ob_proxy_config_utils.h"
 #include "obutils/ob_proxy_table_processor_utils.h"
+#include "obutils/ob_hot_upgrade_processor.h"
 #include "obutils/ob_task_flow_controller.h"
 #include "obutils/ob_metadb_create_cont.h"
 #include "obutils/ob_tenant_stat_manager.h"
@@ -72,6 +73,8 @@
 #include "cmd/ob_show_global_session_handler.h"
 #include "cmd/ob_kill_global_session_handler.h"
 #include "obutils/ob_session_pool_processor.h"
+#include "obutils/ob_config_processor.h"
+#include "iocore/net/ob_ssl_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
@@ -121,6 +124,7 @@ ObProxy::ObProxy()
       config_(&get_global_proxy_config()),
       reload_config_(this),
       proxy_table_processor_(get_global_proxy_table_processor()),
+      hot_upgrade_processor_(get_global_hot_upgrade_processor()),
       mysql_config_params_(NULL), proxy_opts_(NULL), proxy_version_(NULL)
 {
 }
@@ -165,8 +169,12 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_ERROR("fail to init sql table cache", K(ret));
     } else if (OB_FAIL(table_processor.init(&table_cache))) {
       LOG_ERROR("fail to init table processor", K(ret));
+    } else if (OB_FAIL(g_ssl_processor.init())) {
+      LOG_ERROR("fail to init ssl processor", K(ret));
     } else if (OB_FAIL(init_config())) {
       LOG_ERROR("fail to init config", K(ret));
+    } else if (get_global_config_processor().init()) {
+      LOG_ERROR("fail to init config processor", K(ret));
     } else if (OB_FAIL(config_->enable_sharding
                        && dbconfig_processor.init(config_->grpc_client_num, ObProxyMain::get_instance()->get_startup_time()))) {
       LOG_ERROR("fail to init dbconfig processor", K(ret));
@@ -319,6 +327,8 @@ int ObProxy::start()
       LOG_WARN("fail to alloc and schedule cache cleaner", K(ret));
     } else if (config_->is_metadb_used() && OB_FAIL(proxy_table_processor_.start_check_table_task())) {
       LOG_WARN("fail to start check table check", K(ret));
+    } else if (OB_FAIL(hot_upgrade_processor_.start_hot_upgrade_task())) {
+      LOG_WARN("fail to start hot upgrade task", K(ret));
     } else if (OB_FAIL(log_file_processor_->start_cleanup_log_file())) {
       LOG_WARN("fail to start cleanup log file task", K(ret));
     } else if (config_->with_config_server_ && OB_FAIL(cs_processor_->start_refresh_task())) {
@@ -342,8 +352,8 @@ int ObProxy::start()
       LOG_WARN("fail to start_session_pool_task", K(ret));
     } else {
       // if fail to init prometheus, do not stop the startup of obproxy
-      if (g_ob_prometheus_processor.start_prometheus_task()) {
-        LOG_WARN("fail to start prometheus task");
+      if (g_ob_prometheus_processor.start_prometheus()) {
+        LOG_WARN("fail to start prometheus");
       }
 
       mysql_config_params_ = NULL;
@@ -358,6 +368,15 @@ int ObProxy::start()
 
       LOG_INFO("obproxy start up successful and can provide normal service", "cost time(us)",
                ObTimeUtility::current_time() - start_time_, K_(is_service_started));
+      ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+      if (info.is_inherited_) {
+        pid_t parent_pid= getppid();
+        if (parent_pid != 1) {
+          LOG_INFO("obproxy child will send SIGTERM to parent", K(parent_pid));
+          kill(parent_pid, SIGUSR1);
+        }
+        info.is_parent_ = true;
+      }
       this_ethread()->execute();
     }
   }
@@ -446,14 +465,6 @@ int ObProxy::init_user_specified_config()
     }
   }
 
-  //6. update from_local_restart
-  if (OB_SUCC(ret)) {
-    if (config_->is_local_restart() && !info.is_parent()) {
-      config_->reset_local_cmd();
-      info.cmd_ = HUC_LOCAL_RESTART;
-      LOG_INFO("proxy was restarted", K(info));
-    }
-  }
   return ret;
 }
 
@@ -571,6 +582,9 @@ int ObProxy::init_conn_pool(const bool load_local_config_succ)
   } else if (config_->is_metadb_used()
              && OB_FAIL(proxy_table_processor_.init(meta_client_proxy_, *proxy_version_, reload_config_))) {
     LOG_ERROR("fail to init proxy processor", K(ret));
+  } else if (!config_->is_metadb_used()
+             && OB_FAIL(hot_upgrade_processor_.init(meta_client_proxy_))) {
+    LOG_ERROR("fail to init hot upgrade processor", K(ret));
   } else {
     // if we need init tables on metadb, or load local config failed, we need do force start refresh table
     is_force_remote_start_ = (proxy_opts_->execute_cfg_sql_ || !load_local_config_succ);
@@ -912,6 +926,7 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
     get_pl_task_flow_controller().set_normal_threshold(config_->normal_pl_update_threshold);
     get_pl_task_flow_controller().set_limited_threshold(config_->limited_pl_update_threshold);
   }
+
   return ret;
 }
 

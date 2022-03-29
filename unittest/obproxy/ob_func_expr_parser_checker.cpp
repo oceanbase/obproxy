@@ -11,12 +11,13 @@
  */
 
 #define USING_LOG_PREFIX PROXY
-#include "ob_func_expr_parser_checker.h"
-#include "lib/utility/ob_print_utils.h"
-#include "opsql/func_expr_parser/ob_func_expr_parser_utils.h"
+
 #include <string>
 #include <dirent.h>
 #include <sys/types.h>
+#include "ob_func_expr_parser_checker.h"
+#include "lib/utility/ob_print_utils.h"
+#include "opsql/func_expr_parser/ob_func_expr_parser_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::opsql;
@@ -96,7 +97,7 @@ void ObFuncExprParserChecker::print_stat()
 } // end of namespace obproxy
 } // end of namespace oceanbase
 
-extern int obfuncexprdebug;
+int obfuncexprdebug;
 using namespace oceanbase::obproxy::test;
 int main(int argc, char **argv)
 {

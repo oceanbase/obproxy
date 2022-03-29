@@ -24,6 +24,8 @@
 #include "utils/ob_proxy_utils.h"
 #include "utils/ob_proxy_monitor_utils.h"
 #include "iocore/net/ob_ssl_processor.h"
+#include "obutils/ob_config_processor.h"
+#include "omt/ob_ssl_config_table_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::json;
@@ -32,6 +34,7 @@ using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::qos;
 using namespace oceanbase::obproxy::net;
 using namespace oceanbase::obmysql;
+using namespace oceanbase::obproxy::omt;
 
 namespace oceanbase
 {
@@ -411,6 +414,11 @@ int ObProxyBaseConfig::load_from_local(const char *file_path, ObProxyAppConfig &
   } else if (OB_FAIL(app_config.update_config(json_str, type_, is_from_local))) {
     LOG_WARN("fail to load local config", K(json_str), K(file_path), K(ret));
   }
+
+  if (NULL != buf) {
+    ob_free(buf);
+  }
+
   return ret;
 }
 
@@ -602,6 +610,14 @@ int ObProxyDynamicConfig::assign(const ObProxyDynamicConfig &other)
 }
 
 //---------------ObProxyLimitControlConfig--------------
+ObProxyLimitConfig::~ObProxyLimitConfig()
+{
+  int64_t count = cond_array_.count();
+  for (int64_t i = 0; i < count; i++) {
+    cond_array_.at(i)->~ObProxyQosCond();
+  }
+}
+
 int64_t ObProxyLimitConfig::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
@@ -616,7 +632,7 @@ int64_t ObProxyLimitConfig::to_string(char *buf, const int64_t buf_len) const
 int ObProxyLimitConfig::init(ObArenaAllocator &allocator)
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(limit_rule_map_.create(LIMIT_RULE_MAP_BUCKET, ObModIds::OB_HASH_BUCKET_CONF_CONTAINER))) {
+  if (OB_FAIL(limit_rule_map_.create(LIMIT_RULE_MAP_BUCKET, ObModIds::OB_PROXY_QOS, ObModIds::OB_PROXY_QOS))) {
     LOG_WARN("fail to init limit rule map", K(ret));
   } else {
     allocator_ = &allocator;
@@ -914,6 +930,14 @@ int ObProxyLimitConfig::calc(ObMysqlTransact::ObTransState &trans_state, const O
   }
 
   return ret;
+}
+
+ObProxyLimitControlConfig::~ObProxyLimitControlConfig()
+{
+  int64_t count = limit_config_array_.count();
+  for (int64_t i = 0; i < count; i++) {
+    limit_config_array_.at(i)->~ObProxyLimitConfig();
+  }
 }
 
 int64_t ObProxyLimitControlConfig::to_string(char *buf, const int64_t buf_len) const
@@ -1476,15 +1500,8 @@ int ObProxyConfigProcessor::get_app_config_string(const ObString &app_name,
         ret = app_config->fuse_control_config_.to_json_str(buf);
         break;
       case SECURITY_CONFIG:
-        if (!security_config_.ca_.empty() && !security_config_.public_key_.empty()
-            && !security_config_.private_key_.empty()) {
-          if (security_config_.source_type_.get_string() == "DBMESH") {
-            ret = buf.append_fmt("SSL INFO DBMESH");
-          } else if (security_config_.source_type_.get_string() == "FILE") {
-            ret = buf.append_fmt("SSL INFO FILE");
-          } else {
-            ret = OB_ERR_UNEXPECTED;
-          }
+        if (get_global_ssl_config_table_processor().is_ssl_key_info_valid("*", "*")) {
+          ret = buf.append_fmt("SSL INFO VALID");
         } else {
           ret = buf.append_fmt("SSL INFO INVALID");
         }
@@ -2157,12 +2174,31 @@ int ObProxyConfigProcessor::update_app_security_config(const ObString &appname,
 
       if (!security_config_.source_type_.get_string().empty() && !security_config_.ca_.get_string().empty()
           && !security_config_.public_key_.get_string().empty() && !security_config_.private_key_.get_string().empty()) {
-        if (OB_FAIL(g_ssl_processor.update_key(security_config_.source_type_.get_string(),
-                security_config_.ca_.get_string(),
-                security_config_.public_key_.get_string(),
-                security_config_.private_key_.get_string()))) {
-          LOG_WARN("update key failed", K(ret), K(security_config_.source_type_), K(security_config_.ca_),
-              K(security_config_.public_key_), K(security_config_.private_key_));
+        const int64_t json_len = security_config_.source_type_.get_string().length()
+                          + security_config_.ca_.get_string().length()
+                          + security_config_.public_key_.get_string().length()
+                          + security_config_.private_key_.get_string().length() + 256;
+        char *json_buf = (char*)ob_malloc(json_len + 1, ObModIds::OB_PROXY_CONFIG_TABLE);
+        if (OB_ISNULL(json_buf)) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WARN("allocate json_buf failed", K(ret), K(json_len));
+        } else {
+          const char *json_string = "{\"sourceType\": \"%.*s\", \"CA\": \"%.*s\", \"publicKey\": \"%.*s\", \"privateKey\": \"%.*s\"}";
+          int64_t len = static_cast<int64_t>(snprintf(json_buf, json_len, json_string,
+                security_config_.source_type_.get_string().length(), security_config_.source_type_.get_string().ptr(),
+                security_config_.ca_.get_string().length(), security_config_.ca_.get_string().ptr(),
+                security_config_.public_key_.get_string().length(), security_config_.public_key_.get_string().ptr(),
+                security_config_.private_key_.get_string().length(), security_config_.private_key_.get_string().ptr()));
+          if (OB_UNLIKELY(len <= 0 || len > json_len)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("fill sql failed", K(len), K(json_len), K(ret));
+          } else if (OB_FAIL(get_global_config_processor().store_cloud_config("ssl_config", "*", "*", "key_info", json_buf))) {
+            LOG_WARN("execute sql failed", K(ret));
+          }
+        }
+
+        if (OB_NOT_NULL(json_buf)) {
+          ob_free(json_buf);
         }
       }
     }

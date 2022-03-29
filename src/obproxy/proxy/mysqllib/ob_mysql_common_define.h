@@ -28,6 +28,8 @@ static const uint32_t MYSQL_PAYLOAD_LENGTH_LENGTH         = 3;  // standard payl
 static const int64_t MYSQL_COMP_HEADER_LENGTH             = 3;      // compression header extra size
 static const int64_t MYSQL_NET_TYPE_LENGTH                = 1;         // packet type size
 static const int64_t MYSQL_PS_EXECUTE_HEADER_LENGTH       = 9; // ps packet header size: stmt_id + flag + iteration-count
+static const int64_t MYSQL_PS_STMT_ID_LENGTH              = 4;       // mysql prepare-statement protocol: statement-id
+static const int64_t MYSQL_PS_SEND_LONG_DATA_PARAM_ID_LENGTH = 2;  // mysql ps send_long_data: param-id
 // mysql meta info include mysql header and mysql request type
 static const int64_t MYSQL_NET_META_LENGTH                = MYSQL_NET_TYPE_LENGTH + MYSQL_NET_HEADER_LENGTH;
 
@@ -162,7 +164,6 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     case obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE:
     case obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA:
     case obmysql::OB_MYSQL_COM_STMT_CLOSE:
-    case obmysql::OB_MYSQL_COM_STMT_RESET:
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_STMT_FETCH:
     case obmysql::OB_MYSQL_COM_CHANGE_USER:
@@ -179,6 +180,8 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     case obmysql::OB_MYSQL_COM_BINLOG_DUMP_GTID:
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_SET_OPTION:
+    // mysql prepare statement
+    case obmysql::OB_MYSQL_COM_STMT_RESET:
       ret = false;
       break;
     default:

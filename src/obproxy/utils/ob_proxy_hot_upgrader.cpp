@@ -13,15 +13,16 @@
 #define USING_LOG_PREFIX PROXY
 
 #include "utils/ob_proxy_hot_upgrader.h"
+#include "iocore/eventsystem/ob_event_processor.h"
 
 using namespace oceanbase::common;
+using namespace oceanbase::obproxy::event;
 
 namespace oceanbase
 {
 namespace obproxy
 {
 volatile int g_proxy_fatal_errcode = OB_SUCCESS;
-volatile int64_t g_client_active_close_count = 0;
 
 ObHotUpgraderInfo g_hot_upgrade_info;
 
@@ -51,6 +52,7 @@ void ObHotUpgraderInfo::reset()
   }
   memset(upgrade_version_buf_, 0, sizeof(upgrade_version_buf_));
   is_inherited_ = false;
+  parent_hot_upgrade_flag_ = false;
 }
 
 void ObHotUpgraderInfo::set_main_arg(const int32_t argc, char *const *argv)
@@ -84,7 +86,29 @@ DEF_TO_STRING(ObHotUpgraderInfo)
        K_(argc));
 
   for (int32_t i = 0; i < argc_; ++i) {
-    databuff_printf(buf, buf_len, pos, ", argv[%d]=\"%s\"", i, argv_[i]);
+    char *sub_str = argv_[i];
+    char *end_str = argv_[i] + strlen(argv_[i]);
+    int32_t skip_len = strlen("password=");
+    databuff_printf(buf, buf_len, pos, ", argv[%d]=\"", i);
+
+    while (sub_str < end_str) {
+      char *start_str = sub_str;
+      if (NULL == (sub_str = strstr(start_str, "password="))) {
+        databuff_printf(buf, buf_len, pos, "%s", start_str);
+        break;
+      } else {
+        sub_str += skip_len;
+        databuff_printf(buf, buf_len, pos, "%.*s", (int)(sub_str - start_str), start_str);
+        databuff_printf(buf, buf_len, pos, "***");
+        for (; sub_str < end_str; sub_str++) {
+          if (*sub_str == ',') {
+            break;
+          }
+        }
+      }
+    }
+
+    databuff_printf(buf, buf_len, pos, "\"");
   }
 
   for (int64_t i = 0; i < OB_MAX_INHERITED_ARGC; ++i) {
@@ -109,8 +133,6 @@ ObString ObHotUpgraderInfo::get_cmd_string(const ObHotUpgradeCmd cmd)
 
       ObString::make_string("local_exit"),
       ObString::make_string("local_restart"),
-      ObString::make_string("local_commit"),
-      ObString::make_string("local_rollback"),
   };
 
   ObString string;
@@ -248,7 +270,8 @@ ObString ObHotUpgraderInfo::get_state_string(const ObHotUpgradeState state)
       ObString::make_string("HU_STATE_WAIT_HU_CMD"),
       ObString::make_string("HU_STATE_FORK_NEW_PROXY"),
       ObString::make_string("HU_STATE_WAIT_CR_CMD"),
-      ObString::make_string("HU_STATE_WAIT_CR_FINISH")
+      ObString::make_string("HU_STATE_WAIT_CR_FINISH"),
+      ObString::make_string("HU_STATE_WAIT_LOCAL_CR_FINISH")
   };
 
   ObString string;
@@ -334,6 +357,22 @@ int ObHotUpgraderInfo::fill_inherited_info(const bool is_server_service_mode, co
     upgrade_version_ = ((upgrade_version > 0) ? upgrade_version : 0);
   }
   return ret;
+}
+
+void ObHotUpgraderInfo::disable_net_accept()
+{
+  int ret = OB_SUCCESS;
+  ObThreadId tid = 0;
+  need_conn_accept_ = false;
+  for (int64_t i = 0; i < g_event_processor.dedicate_thread_count_; ++i) {
+    if (DEDICATE_THREAD_ACCEPT == g_event_processor.all_dedicate_threads_[i]->get_dedicate_type()) {
+      tid = g_event_processor.all_dedicate_threads_[i]->tid_;
+      if (OB_FAIL(thread_kill(tid, 43))) {
+        LOG_WARN("fail to do thread_kill", K(tid), K(ret));
+      }
+    }
+    ret = OB_SUCCESS;//ignore error
+  }
 }
 
 } // end of namespace obproxy

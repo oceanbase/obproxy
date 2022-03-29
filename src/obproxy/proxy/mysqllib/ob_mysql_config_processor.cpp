@@ -31,6 +31,7 @@ namespace proxy
 #define CONFIG_IP_ASSIGN(ret, x) (ret = (this->x##_.load(proxy_config.x)))
 
 ObMysqlConfigProcessor mysql_config_processor;
+ObPerformanceParams performance_params;
 
 ObMysqlConfigParams::ObMysqlConfigParams()
   : stat_table_sync_interval_(0),
@@ -324,6 +325,29 @@ DEF_TO_STRING(ObMysqlConfigParams)
   return pos;
 }
 
+ObPerformanceParams::ObPerformanceParams()
+  : enable_performance_mode_(false), enable_trace_(false), enable_stat_(false), is_inited_(false) {}
+
+int ObPerformanceParams::assign_config(const ObProxyConfig &proxy_config)
+{
+  int ret = OB_SUCCESS;
+
+  CONFIG_ITEM_ASSIGN(enable_performance_mode);
+  CONFIG_ITEM_ASSIGN(enable_trace);
+  CONFIG_ITEM_ASSIGN(enable_stat);
+
+  return ret;
+}
+
+DEF_TO_STRING(ObPerformanceParams)
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV(K_(enable_performance_mode), K_(enable_trace), K_(enable_stat));
+  J_OBJ_END();
+  return pos;
+}
+
 int ObMysqlConfigProcessor::reconfigure(const ObProxyConfig &proxy_config)
 {
   int ret = OB_SUCCESS;
@@ -343,6 +367,12 @@ int ObMysqlConfigProcessor::reconfigure(const ObProxyConfig &proxy_config)
     // no matter succ or not
     params->dec_ref();
     params = NULL;
+  }
+
+  if (OB_FAIL(performance_params.assign_config(proxy_config))) {
+    LOG_WARN("fail to set new performance params", K(ret));
+  } else {
+    performance_params.is_inited_ = true;
   }
   return ret;
 }

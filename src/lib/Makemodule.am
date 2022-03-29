@@ -194,6 +194,8 @@ lib/timezone/ob_time_convert.h\
 lib/timezone/ob_time_convert.cpp\
 lib/timezone/ob_timezone_info.h\
 lib/timezone/ob_timezone_info.cpp\
+lib/timezone/ob_oracle_format_models.h\
+lib/timezone/ob_oracle_format_models.cpp\
 lib/utility/ob_preload.h\
 lib/utility/ob_print_kv.h\
 lib/utility/ob_print_utils.h\

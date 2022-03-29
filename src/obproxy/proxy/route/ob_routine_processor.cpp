@@ -192,11 +192,13 @@ int ObRoutineEntryCont::main_handler(int event, void *data)
         }
         break;
       }
+      __attribute__ ((fallthrough));
       case ROUTINE_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT: {
         // fail to schedule, data must be NULL
         data = NULL;
         // fall through
       }
+      __attribute__ ((fallthrough));
       case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
         if (OB_FAIL(handle_client_resp(data))) {
           LOG_WARN("fail to handle client resp", K(ret));

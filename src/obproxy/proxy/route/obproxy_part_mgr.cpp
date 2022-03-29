@@ -78,12 +78,13 @@ int ObProxyPartMgr::get_first_part_id_by_idx(const int64_t idx, int64_t &part_id
 
 int ObProxyPartMgr::get_first_part(ObNewRange &range,
                                    ObIAllocator &allocator,
-                                   ObIArray<int64_t> &part_ids)
+                                   ObIArray<int64_t> &part_ids,
+                                   ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
 
   if (OB_NOT_NULL(first_part_desc_)) {
-    ret = first_part_desc_->get_part(range, allocator, part_ids);
+    ret = first_part_desc_->get_part(range, allocator, part_ids, ctx);
   } else {
     ret = OB_INVALID_ARGUMENT;
   }
@@ -159,7 +160,8 @@ int ObProxyPartMgr::get_sub_part_desc_by_first_part_id(const bool is_template_ta
 int ObProxyPartMgr::get_sub_part(ObNewRange &range,
                                  ObIAllocator &allocator,
                                  ObPartDesc *sub_part_desc_ptr,
-                                 ObIArray<int64_t> &part_ids)
+                                 ObIArray<int64_t> &part_ids,
+                                 ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
   
@@ -167,7 +169,7 @@ int ObProxyPartMgr::get_sub_part(ObNewRange &range,
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("fail to get sub part, null ptr", K(ret));
   } else {
-    if (OB_FAIL(sub_part_desc_ptr->get_part(range, allocator, part_ids))) {
+    if (OB_FAIL(sub_part_desc_ptr->get_part(range, allocator, part_ids, ctx))) {
       LOG_WARN("fail to get sub part", K(sub_part_desc_ptr), K(ret));
     }
   }
@@ -261,6 +263,7 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == part_level) {
         desc_hash->set_part_key_type(static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
         desc_hash->set_part_key_cs_type(static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
+        desc_hash->set_accuracy(key_info.part_keys_[i].accuracy_);
         break;
       }
     }
@@ -320,6 +323,7 @@ int ObProxyPartMgr::build_sub_hash_part_with_non_template(const bool is_oracle_m
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == PARTITION_LEVEL_TWO) {
           desc_hash->set_part_key_type(static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
           desc_hash->set_part_key_cs_type(static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
+          desc_hash->set_accuracy(key_info.part_keys_[i].accuracy_);
           break;
         }
       }
@@ -398,6 +402,7 @@ int ObProxyPartMgr::build_key_part(const ObPartitionLevel part_level,
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == part_level) {
         desc_key->set_part_key_type(static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
         desc_key->set_part_key_cs_type(static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
+        desc_key->set_accuracy(key_info.part_keys_[i].accuracy_);
         break;
       }
     }
@@ -455,6 +460,7 @@ int ObProxyPartMgr::build_sub_key_part_with_non_template(const ObPartitionFuncTy
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == PARTITION_LEVEL_TWO) {
           desc_key->set_part_key_type(static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
           desc_key->set_part_key_cs_type(static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
+          desc_key->set_accuracy(key_info.part_keys_[i].accuracy_);
           break;
         }
       }
@@ -562,10 +568,8 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
     desc_range->set_part_func_type(part_func_type);
     for (int k = 0; k < key_info.key_num_; ++k) {
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == part_level) {
-        if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
-          desc_range->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
-          break;
-        }
+        desc_range->set_accuracy(key_info.part_keys_[k].accuracy_);
+        break;
       }
     }
     if (PARTITION_LEVEL_ONE == part_level) {
@@ -640,10 +644,8 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
       desc_range->set_part_func_type(part_func_type);
       for (int k = 0; k < key_info.key_num_; ++k) {
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == PARTITION_LEVEL_TWO) {
-          if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
-            desc_range->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
-            break;
-          }
+          desc_range->set_accuracy(key_info.part_keys_[k].accuracy_);
+          break;
         }
       }
       if (OB_FAIL(desc_range->set_part_array(part_array, sub_part_num_[i]))) {
@@ -764,10 +766,8 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
     desc_list->set_part_func_type(part_func_type);
     for (int k = 0; k < key_info.key_num_; ++k) {
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == part_level) {
-        if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
-          desc_list->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
-          break;
-        }
+        desc_list->set_accuracy(key_info.part_keys_[k].accuracy_);
+        break;
       }
     }
     if (PARTITION_LEVEL_ONE == part_level) {
@@ -857,10 +857,8 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
       desc_list->set_part_func_type(part_func_type);
       for (int k = 0; k < key_info.key_num_; ++k) {
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[k].level_) == PARTITION_LEVEL_TWO) {
-          if (static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_ != CS_TYPE_INVALID)) {
-            desc_list->set_collation_type(static_cast<ObCollationType>(key_info.part_keys_[k].cs_type_));
-            break;
-          }
+          desc_list->set_accuracy(key_info.part_keys_[k].accuracy_);
+          break;
         }
       }
       if (OB_FAIL(desc_list->set_part_array(part_array, sub_part_num_[i]))) {

@@ -66,6 +66,7 @@ public:
   // otherwise, we will clear current client pool and create a new one
 
   int rebuild_client_pool(dbconfig::ObShardConnector *shard_conn,
+                          dbconfig::ObShardProp *shard_prop,
                           const bool is_meta_mysql_client,
                           const common::ObString &user_name,
                           const common::ObString &password,

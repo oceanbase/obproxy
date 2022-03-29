@@ -166,7 +166,7 @@ bool ObProxySequenceEntryCont::need_create_cluster_resource() {
     if (OB_UNLIKELY(OB_ISNULL(client_pool))) {
       LOG_WARN("client_pool is NULL", K(sequence_info_.seq_id_));
     } else {
-      ObClusterResource *cluster_resource = dynamic_cast<ObClusterResource*>(client_pool->acquire_connection_param());
+      ObClusterResource *cluster_resource = client_pool->acquire_cluster_resource();
       if (OB_UNLIKELY(OB_ISNULL(cluster_resource))) {
         LOG_WARN("cluster_resource is NULL", K(sequence_info_.seq_id_));
       } else if (cluster_resource->is_avail()) {
@@ -292,7 +292,7 @@ int ObProxySequenceEntryCont::rebuild_proxy(ObMysqlProxy *proxy, ObSharedRefCoun
                K_(database_name), K(ret));
     }
   } else {
-    if (OB_FAIL(proxy->rebuild_client_pool(dynamic_cast<ObShardConnector*>(param), is_meta_mysql_client,
+    if (OB_FAIL(proxy->rebuild_client_pool(dynamic_cast<ObShardConnector*>(param), NULL, is_meta_mysql_client,
                        username, passwd, database_name_))) {
       LOG_WARN("fail to create mysql client pool", K(username), K_(database_name), K(ret));
     }
@@ -882,6 +882,7 @@ int ObProxySequenceEntryCont::main_handler(int event, void *data)
       data = NULL;
       // fail through, do not break
     }
+    __attribute__ ((fallthrough));
     case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
       if (OB_FAIL(handle_client_resp(data))) {
         LOG_WARN("fail to handle client resp", K(ret), K(sequence_info_.seq_id_));

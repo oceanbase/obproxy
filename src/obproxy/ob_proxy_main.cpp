@@ -505,7 +505,6 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
       // and set it HU_STATE_WAIT_HU_CMD state
       info.update_state(HU_STATE_WAIT_HU_CMD);
       info.is_parent_ = true;
-      info.update_both_status(HU_STATUS_NONE, HU_STATUS_NONE);
     } else if (info.is_inherited_) {
       ret = OB_ERR_UNEXPECTED;
       MPRINT("hot upgrade info is_inherited can't be true, ret=%d", ret);
@@ -514,9 +513,8 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
       // we will set it HU_STATE_WAIT_CR_CMD state and HU_STATUS_NEW_PROXY_CREATED_SUCC status
       info.is_inherited_ = true;
       info.fd_ = atoi(inherited);
-      info.update_state(HU_STATE_WAIT_CR_CMD);
+      info.update_state(HU_STATE_WAIT_HU_CMD);
       info.is_parent_ = false;
-      info.update_both_status(HU_STATUS_CREATE_NEW_PROXY_SUCC, HU_STATUS_NEW_PROXY_CREATED_SUCC);
       if (OB_FAIL(unsetenv(OBPROXY_INHERITED_FD))) {
         MPRINT("fail to unsetenv OBPROXY_INHERITED_FD, ret=%d", ret);
       }
@@ -575,6 +573,10 @@ int ObProxyMain::init_signal()
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGINT))) {
     LOG_WARN("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGTERM))) {
+    LOG_WARN("fail to add_sig_direct_catched", K(ret));
+  } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR1))) {
+    LOG_WARN("fail to add_sig_direct_catched", K(ret));
+  } else if (OB_FAIL(add_sig_direct_catched(action, 43))) {
     LOG_WARN("fail to add_sig_direct_catched", K(ret));
 
   // when a process terminates, the SIGHUP signal can be catch by its sub process
@@ -724,7 +726,6 @@ int ObProxyMain::do_detect_sig()
 
   if (OB_INVALID_INDEX != sig) {
     info.received_sig_ = OB_INVALID_INDEX;
-    LOG_INFO("receive signal", K(sig));
     switch (sig) {
       case SIGCHLD: {
         pid_t pid = OB_INVALID_INDEX;
@@ -736,8 +737,13 @@ int ObProxyMain::do_detect_sig()
         while((pid = waitpid(-1, &stat, WNOHANG)) > 0) {
           LOG_INFO("sub process exit", K(info), K(pid), "status", stat, KERRMSGS);
           if (info.sub_pid_ == pid) {
+            info.reset_sub_pid();
             // after sub was exited, we need passing this status
-            info.update_sub_status(HU_STATUS_EXITED);
+            if (OB_LIKELY(common::OB_SUCCESS == lib::mutex_acquire(&info.hot_upgrade_mutex_))) {
+              info.update_sub_status(HU_STATUS_EXITED);
+              info.parent_hot_upgrade_flag_ = false;
+              lib::mutex_release(&info.hot_upgrade_mutex_);
+            }
           } else {
             LOG_WARN("sub process exit, but recv it late");
           }
@@ -794,6 +800,30 @@ extern "C" {
 void ObProxyMain::sig_direct_handler(const int sig)
 {
   switch (sig) {
+    case SIGUSR1: {
+      ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+      if (OB_LIKELY(common::OB_SUCCESS == lib::mutex_acquire(&info.hot_upgrade_mutex_))) {
+        // If an exit signal has been sent to the child process,
+        // the parent process ignores the signal sent by the child process
+        if (OB_LIKELY(!info.parent_hot_upgrade_flag_)) {
+#ifdef TEST_COVER
+          LOG_INFO("gcov flush now");
+          __gcov_flush();
+#endif
+          info.received_sig_ = sig;
+          LOG_INFO("recv SIGUSR1 signal, will graceful exit", K(info));
+          if (info.need_conn_accept_) {
+            info.disable_net_accept();  // disable accecpt new connection
+          }
+          info.graceful_exit_start_time_ = get_hrtime_internal();
+          info.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
+                                         + info.graceful_exit_start_time_;
+          info.parent_hot_upgrade_flag_ = true;
+        }
+        lib::mutex_release(&info.hot_upgrade_mutex_);
+      }
+      break;
+    }
     case SIGTERM:
     case SIGINT: {
       ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
@@ -801,14 +831,14 @@ void ObProxyMain::sig_direct_handler(const int sig)
         LOG_INFO("gcov flush now");
         __gcov_flush();
       #endif
+      info.received_sig_ = sig;
       if (info.need_conn_accept_) {
-        info.received_sig_ = sig;
         info.disable_net_accept();  // disable accecpt new connection
-        info.graceful_exit_start_time_ = get_hrtime_internal();
-        info.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().delay_exit_time)
-                                       + info.graceful_exit_start_time_;
-        g_proxy_fatal_errcode = OB_GOT_SIGNAL_ABORTING;
       }
+      info.graceful_exit_start_time_ = get_hrtime_internal();
+      info.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().delay_exit_time)
+                                     + info.graceful_exit_start_time_;
+      g_proxy_fatal_errcode = OB_GOT_SIGNAL_ABORTING;
       break;
     }
     default: {

@@ -36,7 +36,7 @@ public:
       has_dup_replica_(false), need_use_dup_replica_(false),
       consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
       ldc_route_(), valid_count_(0), cur_chosen_server_(),
-      cur_chosen_route_type_(ROUTE_TYPE_MAX) {}
+      cur_chosen_route_type_(ROUTE_TYPE_MAX), skip_leader_item_(false) {}
   ~ObServerRoute() { reset(); };
   inline void reset();
 
@@ -127,6 +127,7 @@ public:
   int64_t valid_count_;
   ObLDCItem cur_chosen_server_;
   ObRouteType cur_chosen_route_type_;
+  bool skip_leader_item_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObServerRoute);
 };
@@ -137,6 +138,7 @@ inline void ObServerRoute::reset()
   is_part_entry_from_remote_ = false;
   has_dup_replica_ = false;
   need_use_dup_replica_ = false;
+  skip_leader_item_ = false;
   set_dummy_entry(NULL);
   set_table_entry(NULL);
   set_part_entry(NULL);
@@ -192,6 +194,7 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
                                                     ldc_route_.location_, entry_need_update,
                                                     is_only_readwrite_zone,
                                                     need_use_dup_replica_,
+                                                    skip_leader_item_,
                                                     ss_info, region_names,
                                                     proxy_primary_zone_name))) {
     PROXY_LOG(WARN, "fail to divide_leader_replica", K(ret));

@@ -104,6 +104,10 @@ public:
 
   inline bool need_enable_plugin(ObMysqlSM *sm) const
   {
+    PROXY_API_LOG(DEBUG, "need_enable_plugin",
+                  "send action", sm->trans_state_.current_.send_action_,
+                  "mysql_cmd", get_mysql_cmd_str(sm->trans_state_.trans_info_.sql_cmd_));
+
     return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && obmysql::OB_MYSQL_COM_STMT_PREPARE == sm->trans_state_.trans_info_.sql_cmd_);

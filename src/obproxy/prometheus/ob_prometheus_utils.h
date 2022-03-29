@@ -32,6 +32,8 @@ namespace prometheus
 #define COST_TOTAL_HELP "user cost total"
 #define CURRENT_SESSION "odp_current_session"
 #define CURRENT_SESSION_HELP "The num of current session"
+#define USED_CONNECTIONS "odp_used_connections"
+#define USED_CONNECTIONS_HELP "The num of used connections"
 
 #define REQUEST_BYTE "odp_request_byte"
 #define REQUEST_BYTE_HELP "The num of request byte"
@@ -61,6 +63,7 @@ namespace prometheus
 #define LABEL_SUCC "success"
 #define LABEL_FALSE "false"
 #define LABEL_TRUE "true"
+#define LABEL_VIP "vip"
 
 class ObProxyPrometheusUtils
 {

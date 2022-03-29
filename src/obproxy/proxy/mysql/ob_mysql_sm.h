@@ -44,6 +44,7 @@
 #include "proxy/mysql/ob_mysql_tunnel.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
 #include "proxy/mysql/ob_mysql_sm_time_stat.h"
+#include "proxy/shard/obproxy_shard_ddl_cont.h"
 #include "obutils/ob_tenant_stat_struct.h"
 #include "engine/ob_proxy_operator_result.h"
 
@@ -150,19 +151,26 @@ public:
   void add_history_entry(const char *fileline, const int event, const int32_t reentrant);
 
   int get_mysql_schedule(int event, void *data);
+  int setup_handle_shard_ddl(event::ObAction *action);
+  int state_handle_shard_ddl(int event, void *data);
+  int process_shard_ddl_result(ObShardDDLStatus *ddl_status);
   int setup_handle_execute_plan();
   int state_handle_execute_plan(int event, void *data);
   int process_executor_result(engine::ObProxyResultResp *result_resp);
   int build_executor_resp(event::ObMIOBuffer *write_buf, uint8_t &seq, engine::ObProxyResultResp *result_resp);
 
-  int handle_shard_request(bool &need_direct_response_for_dml);
+  int handle_shard_request(bool &need_response_for_stmt, bool &need_wait_callback);
 
   int check_user_identity(const ObString &user_name, const ObString &tenant_name, const ObString &cluster_name);
   int save_user_login_info(ObClientSessionInfo &session_info, ObHSRResult &hsr_result);
   void analyze_mysql_request(ObMysqlAnalyzeStatus &status);
+  int analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeStatus &status);
   int analyze_ps_prepare_request();
   int do_analyze_ps_prepare_request(const ObString &ps_sql);
-  int analyze_ps_execute_request();
+  int analyze_ps_execute_request(bool is_large_request = false);
+  int do_analyze_ps_execute_request(ObPsIdEntry *entry, bool is_large_request);
+  int do_analyze_ps_execute_request_with_flag(ObPsIdEntry *entry);
+  int do_analyze_ps_execute_request_without_flag(ObPsIdEntry *entry);
   int analyze_text_ps_prepare_request();
   int analyze_text_ps_execute_request();
   int analyze_fetch_request();
@@ -170,11 +178,11 @@ public:
   int analyze_ps_prepare_execute_request();
   bool need_setup_client_transfer();
   bool check_connection_throttle();
+  bool can_pass_white_list();
+  bool check_vt_connection_throttle();
   bool is_partition_table_route_supported();
   bool is_pl_route_supported();
-  int encode_throttle_message();
-  int encode_unsupport_ps_message();
-  int encode_unsupport_change_user_message();
+  int encode_error_message(int err_code);
   int handle_saved_session_variables();
   void print_mysql_complete_log(ObMysqlTunnelProducer *p);
 
@@ -231,8 +239,10 @@ public:
   bool is_cloud_user() const;
   bool need_reject_user_login(const common::ObString &user,
                               const common::ObString &tenant,
-                              const bool has_full_username,
+                              const bool has_tenant_username,
+                              const bool has_cluster_username,
                               const bool is_cloud_user) const;
+  inline void set_skip_plugin(const bool bvalue) { skip_plugin_ = bvalue; }
 public:
   static const int64_t OP_LOCAL_NUM = 32;
   static const int64_t MAX_SCATTER_LEN;
@@ -269,7 +279,7 @@ public:
   ObMysqlCompressOB20Analyzer compress_ob20_analyzer_;
   ObMysqlRequestAnalyzer request_analyzer_;
 
-private:
+public:
   static uint32_t get_next_sm_id();
   void remove_client_entry();
   void remove_server_entry();
@@ -322,6 +332,24 @@ private:
   int do_normal_internal_observer_open(ObMysqlServerSession *&selected_session);
   int do_internal_observer_open();
   void do_internal_request();
+  int do_internal_request_for_sharding_init_db(event::ObMIOBuffer *buf,
+                                               ObProxyMysqlRequest &client_request,
+                                               ObClientSessionInfo &client_info);
+  int do_internal_request_for_sharding_show_db_version(event::ObMIOBuffer *buf,
+                                                       ObProxyMysqlRequest &client_request,
+                                                       ObClientSessionInfo &client_info);
+  int do_internal_request_for_sharding_show_db(event::ObMIOBuffer *buf,
+                                               ObProxyMysqlRequest &client_request,
+                                               ObClientSessionInfo &client_info);
+  int do_internal_request_for_sharding_show_table(event::ObMIOBuffer *buf,
+                                                  ObProxyMysqlRequest &client_request,
+                                                  ObClientSessionInfo &client_info);
+  int do_internal_request_for_sharding_show_topology(event::ObMIOBuffer *buf,
+                                                     ObProxyMysqlRequest &client_request,
+                                                     ObClientSessionInfo &client_info);
+  int do_internal_request_for_sharding_select_db(event::ObMIOBuffer *buf,
+                                                 ObProxyMysqlRequest &client_request,
+                                                 ObClientSessionInfo &client_info);
   int connect_observer();
   int setup_client_transfer(ObMysqlVCType to_vc_type);
   void handle_api_return();
@@ -434,6 +462,12 @@ private:
   bool is_in_trans_;
   int32_t retry_acquire_server_session_count_;
   int64_t start_acquire_server_session_time_;
+  bool skip_plugin_;
+
+  // private functions
+  int handle_server_request_send_long_data();
+  int do_analyze_ps_execute_request_with_remain_value(event::ObMIOBuffer *writer, int64_t read_avail,
+                                                      int64_t param_type_pos);
 };
 
 inline ObMysqlSM *ObMysqlSM::allocate()
@@ -526,14 +560,19 @@ inline int64_t ObMysqlSM::get_query_timeout()
 {
   int64_t timeout = HRTIME_NSECONDS(trans_state_.mysql_config_params_->observer_query_timeout_delta_);
   if (OB_LIKELY(NULL != client_session_) && OB_LIKELY(NULL != server_session_)) {
-    int64_t hint_query_timeout = trans_state_.trans_info_.client_request_.get_parse_result().get_hint_query_timeout();
-    // if the request contains query_timeout in hint, we use it
-    if (hint_query_timeout > 0) {
-      // the query timeout in hint is in microseconds(us), so convert it into nanoseconds
-      timeout += HRTIME_USECONDS(hint_query_timeout);
+    dbconfig::ObShardProp *shard_prop = client_session_->get_session_info().get_shard_prop();
+    if (OB_NOT_NULL(shard_prop)) {
+      timeout = HRTIME_MSECONDS(shard_prop->get_socket_timeout());
     } else {
-      // we do parse in trans now, so we can use query_timeout in anycase
-      timeout += client_session_->get_session_info().get_query_timeout();
+      int64_t hint_query_timeout = trans_state_.trans_info_.client_request_.get_parse_result().get_hint_query_timeout();
+      // if the request contains query_timeout in hint, we use it
+      if (hint_query_timeout > 0) {
+        // the query timeout in hint is in microseconds(us), so convert it into nanoseconds
+        timeout += HRTIME_USECONDS(hint_query_timeout);
+      } else {
+        // we do parse in trans now, so we can use query_timeout in anycase
+        timeout += client_session_->get_session_info().get_query_timeout();
+      }
     }
   } else {}
   return timeout;
@@ -620,7 +659,7 @@ inline void ObMysqlSM::callout_api_and_start_next_action(
     const ObMysqlTransact::ObStateMachineActionType api_next_action)
 {
   trans_state_.api_next_action_ = api_next_action;
-  if (hooks_set_) {
+  if (hooks_set_ && !skip_plugin_) {
     api_.do_api_callout_internal();
   } else {
     handle_api_return();
@@ -639,11 +678,11 @@ inline ObHRTime ObMysqlSM::get_based_hrtime()
   return time;
 }
 
-inline bool ObMysqlSM::is_causal_order_read_enabled()
-{
-  return trans_state_.mysql_config_params_->enable_causal_order_read_
-         && NULL != client_session_
-         && client_session_->get_session_info().is_safe_read_weak_supported();
+inline bool ObMysqlSM::is_causal_order_read_enabled()		
+{		
+  return trans_state_.mysql_config_params_->enable_causal_order_read_		
+         && NULL != client_session_		
+         && client_session_->get_session_info().is_safe_read_weak_supported();		
 }
 
 inline bool ObMysqlSM::need_print_trace_stat() const

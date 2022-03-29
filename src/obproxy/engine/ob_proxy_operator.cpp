@@ -346,26 +346,28 @@ int ObProxyOperator::put_result_row(ResultRow *row)
 int ObProxyOperator::process_ready_data(void *data, int &event)
 {
   int ret = OB_SUCCESS;
+  bool is_final = false;
   ObProxyResultResp *result = NULL;
-  ObProxyResultResp *res = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid param, data is null", "op_name", op_name(), K(ret));
-  } else if (OB_ISNULL(res = reinterpret_cast<ObProxyResultResp*>(data))) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, pres type is not match", K(ret), KP(data));
-  } else if (OB_FAIL(handle_result(res, false, result))) {
-    LOG_WARN("fail to handle_result", "op_name", op_name(), K(ret));
-  } else if (OB_NOT_NULL(result) && result->is_error_resp()) {
+  } else if (OB_FAIL(handle_result(data, is_final, result))) {
+    LOG_WARN("fail to handle result", "op_name", op_name(), K(ret));
+  } else if (!is_final && OB_ISNULL(result)) {
+    event = VC_EVENT_CONT;
+  } else if (is_final || result->is_error_resp()) {
     result_ = result;
     event = VC_EVENT_READ_COMPLETE;
+  } else {
+    result_ = result;
+    event = VC_EVENT_READ_READY;
   }
 
   LOG_DEBUG("finish process_ready_data", K(event), K(ret));
   return ret;
 }
 
-int ObProxyOperator::handle_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyOperator::handle_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
 
@@ -391,7 +393,7 @@ int ObProxyOperator::handle_result(void *data, bool is_final, ObProxyResultResp 
   return ret; 
 }
 
-int ObProxyOperator::handle_response_result(void *src, bool is_final, ObProxyResultResp *&result)
+int ObProxyOperator::handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result)
 {
   UNUSED(src);
   UNUSED(is_final);
@@ -402,15 +404,12 @@ int ObProxyOperator::handle_response_result(void *src, bool is_final, ObProxyRes
 int ObProxyOperator::process_complete_data(void *data)
 {
   int ret = OB_SUCCESS;
+  bool is_final = true;
   ObProxyResultResp *result = NULL;
-  ObProxyResultResp *res = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid param, data is null", K(ret));
-  } else if (OB_ISNULL(res = reinterpret_cast<ObProxyResultResp*>(data))) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, pres type is not match", K(ret));
-  } else if (OB_FAIL(handle_result(res, true, result))) {
+  } else if (OB_FAIL(handle_result(data, is_final, result))) {
     LOG_WARN("fail to handle result", K(ret));
   } else if (OB_ISNULL(result)) {
     ret = OB_ERR_UNEXPECTED;
@@ -453,7 +452,7 @@ int ObProxyOperator::init_row(ResultRow *&row)
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRow)));
   } else {
-    row = new (buf) ResultRow(array_new_alloc_size, allocator_);
+    row = new (buf) ResultRow(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
   }
   return ret;
 }
@@ -467,7 +466,7 @@ int ObProxyOperator::init_row_set(ResultRows *&rows)
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
   } else {
-    rows = new (buf) ResultRows(array_new_alloc_size, allocator_);
+    rows = new (buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
   }
   return ret;
 }
@@ -591,13 +590,6 @@ int ObProxyOperator::build_ok_packet(ObProxyResultResp *&res)
 void ObProxyOperator::set_op_type(ObPhyOperatorType type)
 {
   type_ = type;
-}
-
-void ObProxyOpInput::set_op_limit(int64_t limit, int64_t offset)
-{
-  LOG_DEBUG("set_op_limit:", K(limit), K(offset));
-  limit_ = limit;
-  offset_ = offset;
 }
 
 }

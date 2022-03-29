@@ -280,7 +280,8 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
 }
 
 ObEvent *ObEventProcessor::spawn_thread(
-    ObContinuation *cont, const char *thr_name, const int64_t stacksize)
+    ObContinuation *cont, const char *thr_name, const int64_t stacksize,
+    ObDedicateThreadType dedicate_thread_type)
 {
   int ret = OB_SUCCESS;
   ObEvent *event = NULL;
@@ -310,6 +311,7 @@ ObEvent *ObEventProcessor::spawn_thread(
       delete all_dedicate_threads_[dedicate_thread_count_];
       all_dedicate_threads_[dedicate_thread_count_] = NULL;
     } else {
+      all_dedicate_threads_[dedicate_thread_count_]->set_dedicate_type(dedicate_thread_type);
       all_dedicate_threads_[dedicate_thread_count_]->id_ = dedicate_thread_count_;
       event->ethread_ = all_dedicate_threads_[dedicate_thread_count_];
       event->continuation_->mutex_ = all_dedicate_threads_[dedicate_thread_count_]->mutex_;

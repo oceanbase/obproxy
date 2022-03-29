@@ -291,10 +291,10 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "ObEvent is NULL", K(e), K(ret));
   } else {
-    if (OB_UNLIKELY(!info.need_conn_accept_) && OB_LIKELY(info.graceful_exit_end_time_ > 0)) {
+    if (OB_UNLIKELY(!info.need_conn_accept_ || OB_SUCCESS != g_proxy_fatal_errcode) && OB_LIKELY(info.graceful_exit_end_time_ > 0)) {
       int64_t global_connections = 0;
+      NET_READ_GLOBAL_DYN_SUM(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, global_connections);
       if (0 == ethread->id_ && -1 == info.active_client_vc_count_) {
-        NET_READ_GLOBAL_DYN_SUM(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, global_connections);
         info.active_client_vc_count_ = global_connections;
         const int64_t remain_time = hrtime_to_sec(info.graceful_exit_end_time_ - now);
         PROXY_NET_LOG(INFO, "begin orderly close", "active_client_vc_count", global_connections,
@@ -304,17 +304,23 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
           PROXY_NET_LOG(INFO, "receive signal", K(info.received_sig_));
         }
       }
-      if (info.graceful_exit_end_time_ < now) {//it is time now
-        NET_READ_GLOBAL_DYN_SUM(NET_GLOBAL_CONNECTIONS_CURRENTLY_OPEN, global_connections);
-        int64_t thread_local_client_connections = 0;
-        NET_THREAD_READ_DYN_SUM(ethread, NET_CLIENT_CONNECTIONS_CURRENTLY_OPEN, thread_local_client_connections);
-        if (global_connections > 0) {
+
+      if (global_connections > 0) {
+        if (info.graceful_exit_end_time_ >= info.graceful_exit_start_time_ && info.graceful_exit_end_time_ <= now) {
+          pthread_once(&g_exit_once, proxy_exit_once);
+        } else {
+          int64_t thread_local_client_connections = 0;
+          NET_THREAD_READ_DYN_SUM(ethread, NET_CLIENT_CONNECTIONS_CURRENTLY_OPEN, thread_local_client_connections);
           PROXY_NET_LOG(INFO, "wait for net_global_connections_currently_open_stat down to zero",
                         K(global_connections), K(thread_local_client_connections), K(g_proxy_fatal_errcode));
-        } else {
-          pthread_once(&g_exit_once, proxy_exit_once);
         }
+      } else {
+        pthread_once(&g_exit_once, proxy_exit_once);
       }
+    } else {
+      info.active_client_vc_count_ = 0;
+      info.graceful_exit_start_time_ = 0;
+      info.graceful_exit_end_time_ = 0;
     }
 
     // Copy the list and use pop() to catch any closes caused by callbacks.
@@ -343,7 +349,9 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
       } else {
 
         if (vc->get_is_force_timeout()
-            || (info.graceful_exit_end_time_ > 0 && info.graceful_exit_end_time_ < now)) {
+            || (info.graceful_exit_end_time_ >= info.graceful_exit_start_time_
+                && info.graceful_exit_end_time_ > 0
+                && info.graceful_exit_end_time_ < now)) {
           vc->next_inactivity_timeout_at_ = now; // force the connection timeout
         }
 
@@ -501,7 +509,7 @@ inline void ObNetHandler::process_enabled_list()
   while (NULL != (vc = rq.pop())) {
     vc->ep_->modify(EVENTIO_READ);
     vc->read_.in_enabled_list_ = false;
-    if ((vc->reenable_read_time_at_ > 0) && vc->reenable_read_time_at_ < get_hrtime()) {
+    if ((vc->reenable_read_time_at_ > 0) && vc->reenable_read_time_at_ > get_hrtime()) {
       vc->read_.in_enabled_list_ = true;
       read_enable_list_.push(vc);
     } else if ((vc->read_.enabled_ && vc->read_.triggered_) || vc->closed_) {

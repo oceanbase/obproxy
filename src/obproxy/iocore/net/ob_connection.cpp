@@ -350,7 +350,7 @@ void ObConnection::cleanup()
   }
 }
 
-int ObServerConnection::accept(ObConnection *c)
+int ObServerConnection::accept(ObConnection *c, bool need_return_eintr /* false */)
 {
   int ret = OB_SUCCESS;
   int res = -1;
@@ -359,8 +359,8 @@ int ObServerConnection::accept(ObConnection *c)
     PROXY_SOCK_LOG(WARN, "invalid argument conn", K(c), K(ret));
   } else {
     int64_t sz = sizeof(c->addr_.sa_);
-    if (OB_FAIL(ObSocketManager::accept(fd_, &c->addr_.sa_, &sz, c->fd_))) {
-      if (OB_SYS_EAGAIN != ret) {
+    if (OB_FAIL(ObSocketManager::accept(fd_, &c->addr_.sa_, &sz, c->fd_, need_return_eintr))) {
+      if (OB_SYS_EAGAIN != ret && (!need_return_eintr || OB_SYS_EINTR != ret)) {
         PROXY_SOCK_LOG(WARN, "fail to accept", K(fd_), K(ret));
       }
     } else {

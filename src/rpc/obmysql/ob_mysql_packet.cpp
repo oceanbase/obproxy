@@ -223,7 +223,7 @@ char const *get_mysql_cmd_str(ObMySQLCmd mysql_cmd)
     "Daemno",  // OB_MYSQL_COM_DAEMON,
 
     "Binlog dump gtid",  // OB_MYSQL_COM_BINLOG_DUMP_GTID,
-    // "Reset connection",  // COM_RESET_CONNECTION,
+    // "Reset connection",  // OB_MYSQL_COM_RESET_CONNECTION,
     "Prepare Execute", // OB_MYSQL_COM_STMT_PREPARE_EXECUTE,
     "SEND PIECE DATA",
     "GET PIECE DATA",

@@ -88,7 +88,10 @@ union ObIpEndpoint
   ~ObIpEndpoint() {}
 
   void reset() { memset(this, 0, sizeof(ObIpEndpoint)); }
-  explicit ObIpEndpoint(const sockaddr &addr) { assign(addr); }
+  explicit ObIpEndpoint(const sockaddr &addr) {
+    memset(this, 0, sizeof(ObIpEndpoint));
+    assign(addr);
+  }
   ObIpEndpoint (const ObIpEndpoint &point) { MEMCPY(this, &point, sizeof(ObIpEndpoint)); }
   void operator= (const ObIpEndpoint &point) { MEMCPY(this, &point, sizeof(ObIpEndpoint)); }
 

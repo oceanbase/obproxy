@@ -34,6 +34,7 @@ static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX
 int ObMysqlCompressAnalyzer::init(
     const uint8_t last_seq, const AnalyzeMode mode,
     const obmysql::ObMySQLCmd mysql_cmd,
+    const ObMysqlProtocolMode mysql_mode,
     const bool enable_extra_ok_packet_for_stats,
     const uint8_t last_ob20_seq,
     const uint32_t request_id,
@@ -41,6 +42,7 @@ int ObMysqlCompressAnalyzer::init(
 {
   int ret = OB_SUCCESS;
 
+  UNUSED(mysql_mode);
   UNUSED(last_ob20_seq);
   UNUSED(request_id);
   UNUSED(sessid);

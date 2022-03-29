@@ -16,6 +16,7 @@
 #include "proxy/client/ob_mysql_client_pool.h"
 #include "proxy/mysqllib/ob_mysql_request_builder.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
+#include "obutils/ob_resource_pool_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -969,6 +970,53 @@ int ObMysqlClient::setup_read_normal_resp()
   return ret;
 }
 
+int ObMysqlClient::do_new_connection_with_shard_conn(ObMysqlClientSession *client_session)
+{
+  int ret = OB_SUCCESS;
+
+  dbconfig::ObShardConnector *shard_conn = pool_->acquire_shard_conn(); // inc ref
+  dbconfig::ObShardProp *shard_prop = pool_->acquire_shard_prop(); // inc ref
+  LOG_DEBUG("new connection", KP(shard_conn), KP(shard_prop));
+  if (OB_ISNULL(shard_conn)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("shard conn should not be null here", K(ret));
+    client_session->destroy();
+  } else if (OB_FAIL(client_session->new_connection(client_vc_, request_buf_, request_reader_,
+                                                    shard_conn, shard_prop))) {
+    LOG_WARN("fail to new_connection", K(ret));
+  }
+
+  if (NULL != shard_conn) {
+    shard_conn->dec_ref();
+  }
+
+  if (NULL != shard_prop) {
+    shard_prop->dec_ref();
+  }
+
+  return ret;
+}
+
+int ObMysqlClient::do_new_connection_with_cr(ObMysqlClientSession *client_session)
+{
+  int ret = OB_SUCCESS;
+
+  ObClusterResource *cr = pool_->acquire_cluster_resource(); // inc ref
+  LOG_DEBUG("new connection", K(cr), KPC(cr));
+  if (OB_ISNULL(cr)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("cluster resource should not be null here", K(ret));
+    client_session->destroy();
+  } else if (OB_FAIL(client_session->new_connection(client_vc_, request_buf_, request_reader_, cr))) {
+    LOG_WARN("fail to new_connection", K(ret));
+  }
+
+  if (NULL != cr) {
+    cr->dec_ref();
+  }
+  return ret;
+}
+
 int ObMysqlClient::setup_read_handshake()
 {
   int ret = OB_SUCCESS;
@@ -994,21 +1042,19 @@ int ObMysqlClient::setup_read_handshake()
     client_vc_->clear_resp_received();
 
     next_action_ = CLIENT_ACTION_READ_HANDSHAKE;
-    ObSharedRefCount *param = pool_->acquire_connection_param(); // inc ref
-    LOG_DEBUG("new connection", K(param));
-    if (OB_ISNULL(param)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("connection param should not be null here", K(ret));
-      client_session->destroy();
-    } else if (OB_FAIL(client_session->new_connection(client_vc_, request_buf_, request_reader_,
-                                                      pool_->is_cluster_param(), param))) {
-      LOG_WARN("fail to new_connection", K(ret));
+    if (pool_->is_cluster_param()) {
+      if (OB_FAIL(do_new_connection_with_cr(client_session))) {
+        LOG_WARN("fail to new connection with cr", K(ret));
+      }
     } else {
-      LOG_DEBUG("create new proxy client_session", K(client_session->get_proxy_sessid()),
-      K(client_session->get_cs_id()));
+      if (OB_FAIL(do_new_connection_with_shard_conn(client_session))) {
+        LOG_WARN("fail to new connection with shard conn", K(ret));
+      }
     }
-    if (NULL != param) {
-      param->dec_ref();
+
+    if (OB_SUCC(ret)) {
+      LOG_DEBUG("create new proxy client_session", K(client_session->get_proxy_sessid()),
+                K(client_session->get_cs_id()));
     }
   }
 

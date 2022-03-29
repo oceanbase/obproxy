@@ -131,7 +131,8 @@ public:
    * @return event object representing the start of the thread.
    */
   ObEvent *spawn_thread(ObContinuation *cont, const char *thr_name,
-                        const int64_t stacksize = 0);
+                        const int64_t stacksize = 0,
+                        ObDedicateThreadType dedicate_thread_type = DEDICATE_THREAD_NONE);
 
   /**
    * Spawns a group of threads for an event type. Spawns the number of

@@ -88,13 +88,13 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
       LOG_WARN("buffer reader is empty", K(ret));
     } else {
       //OB_MYSQL_COM_STMT_CLOSE always followed other request
-      if (OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == meta_.cmd_)
+      if (OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == meta_.cmd_ || OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
        && OB_LIKELY(total_len > meta_.pkt_len_)) {
         total_len = meta_.pkt_len_;
       }
 
       int64_t copy_len = 0;
-      if (is_sharding_user()) {
+      if (OB_UNLIKELY(is_sharding_user() || is_proxysys_user())) {
         copy_len = total_len;
         // add two '\0' at the tail for parser
         req_buf_len = req_buf_len > total_len + PARSE_EXTRA_CHAR_NUM ? req_buf_len : total_len + PARSE_EXTRA_CHAR_NUM;
@@ -109,8 +109,6 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
         } else {
           LOG_DEBUG("alloc request buf ", K(req_buf_len));
         }
-      } else {
-        // do nothing
       }
 
       if (OB_SUCC(ret)) {

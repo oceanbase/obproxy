@@ -102,7 +102,6 @@ enum ObClusterResourceInitState
 {
  INIT_BORN = 0,
  INIT_RS,
- CHECK_CLUSTER_NAME,
  CHECK_CLUSTER_ROLE,
  INIT_SS_INFO,
  INIT_IDC_LIST,
@@ -402,6 +401,7 @@ public:
                            event::ObAction *&action);
   // Attention!! if succ, will inc_ref;
   ObClusterResource *acquire_avail_cluster_resource(const common::ObString &cluster_name, const int64_t cluster_id = OB_DEFAULT_CLUSTER_ID);
+  ObClusterResource *acquire_cluster_resource(const common::ObString &cluster_name, const int64_t cluster_id);
   int acquire_all_avail_cluster_resource(common::ObIArray<ObClusterResource *> &cr_array);
   int acquire_all_cluster_resource(common::ObIArray<ObClusterResource *> &cr_array);
   void release_cluster_resource(ObClusterResource *cr);
@@ -442,7 +442,6 @@ public:
   typedef common::hash::ObBuildInHashMap<ObCRHashing, RP_HASH_BUCKET_SIZE> ObCRHashMap;
 
 private:
-  ObClusterResource *acquire_cluster_resource(const common::ObString &cluster_name, const int64_t cluster_id);
   int init_cluster_resource_cont(event::ObContinuation &cont,
                                  const common::ObString &cluster_name,
                                  const int64_t cluster_id,

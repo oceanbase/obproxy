@@ -743,8 +743,8 @@ struct ConnectionProperties {
 class ObShardProp : public ObDbConfigChild
 {
 public:
-  ObShardProp() : ObDbConfigChild(TYPE_SHARDS_PROP), shard_name_(), connect_timeout_(0),
-    socket_timeout_(0), idle_timeout_ms_(0), blocking_timeout_ms_(0), need_prefill_(false), read_consistency_(),
+  ObShardProp() : ObDbConfigChild(TYPE_SHARDS_PROP), shard_name_(), connect_timeout_(500),
+    socket_timeout_(5000), idle_timeout_ms_(0), blocking_timeout_ms_(0), need_prefill_(false), read_consistency_(),
     kv_kv_map_(), kv_vec_map_(), cur_conn_prop_(),
     conn_prop_type_(TYPE_SHARD_PROP), current_zone_(), conn_prop_map_() {}
   virtual ~ObShardProp() {}
@@ -886,6 +886,7 @@ public:
   int get_shard_tpo(ObShardTpo *&shard_tpo);
   int get_all_shard_table(common::ObIArray<common::ObString> &all_table);
   int get_shard_router(const common::ObString &tb_name, ObShardRouter *&shard_router);
+  int get_shard_rule(ObShardRule *&shard_rule, const common::ObString &table_name);
   bool is_shard_rule_empty();
   int get_shard_connector(const common::ObString &shard_name, ObShardConnector *&shard_conn);
   int get_testload_shard_connector(const common::ObString &shard_name,
@@ -946,6 +947,32 @@ public:
                            ObTestLoadType testload_type, const bool is_read_stmt);
   int get_shard_prop(const common::ObString & shard_name,
                       ObShardProp* &shard_prop);
+  int get_real_table_name(const ObString &table_name, obutils::SqlFieldResult &sql_result,
+                          char *real_table_name, int64_t tb_name_len, int64_t &tb_index,
+                          const ObString &hint_table, ObTestLoadType testload_type);
+  int get_es_index_by_gc(ObGroupCluster *gc_info, ObShardRule *shard_rule,
+                         ObTestLoadType testload_type, bool is_read_stmt,
+                         obutils::SqlFieldResult &sql_result, int64_t &es_index);
+  int get_db_and_table_index(ObShardRule *shard_rule,
+                             obutils::ObSqlParseResult &parse_result,
+                             ObTestLoadType testload_type,
+                             common::ObIArray<int64_t> &group_index_array,
+                             common::ObIArray<int64_t> &table_index_array);
+
+  int get_shard_prop_by_connector(ObIArray<dbconfig::ObShardConnector*> &shard_connector_array,
+                                  ObIArray<dbconfig::ObShardProp*> &shard_prop_array);
+  int get_shard_connector_by_index(ObShardRule *shard_rule,
+                                   obutils::ObSqlParseResult &parse_result,
+                                   ObTestLoadType testload_type,
+                                   bool is_read_stmt,
+                                   int64_t es_index,
+                                   common::ObIArray<int64_t> &group_index_array,
+                                   common::ObIArray<ObShardConnector*> &shard_connector_array);
+  int get_table_name_by_index(obutils::ObSqlParseResult &parse_result,
+                              ObTestLoadType testload_type,
+                              ObIAllocator &allocator,
+                              common::ObIArray<int64_t> &table_index_array,
+                              common::ObIArray<hash::ObHashMapWrapper<common::ObString, common::ObString> > &table_name_map_array);
 
   const common::ObString get_sequence_table_name();
   const common::ObString get_sequence_table_name_from_router();
@@ -966,7 +993,8 @@ public:
                                int64_t es_index,
                                common::ObIAllocator &allocator,
                                common::ObIArray<ObShardConnector*> &shard_connector_array,
-                               common::ObIArray<common::ObString> &physical_table_name_array);
+                               common::ObIArray<ObShardProp*> &shard_prop_array,
+                               common::ObIArray<hash::ObHashMapWrapper<common::ObString, common::ObString> > &table_name_map_array);
   int init_test_load_table_map();
   int check_and_get_testload_table(std::string origin_name, std::string &real_name);
 

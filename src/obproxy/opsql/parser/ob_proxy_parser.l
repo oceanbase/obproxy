@@ -359,6 +359,7 @@ alter_proxyresource       (alter{space}+proxyresource)
 ping_proxy                (ping{space}+proxy)
 kill_proxysession         (kill{space}+proxysession)
 kill_globalsession         (kill{space}+globalsession)
+select_proxy_version       (select{space}+proxy_version{space}*({leftbracket}|{multi_byte_left_parenthesis})({rightbracket}|{multi_byte_right_parenthesis}))
 
 select_obproxy_route_addr (select{space}+@obproxy_route_addr)
 set_obproxy_route_addr    (set{space}+@obproxy_route_addr)
@@ -395,6 +396,8 @@ ALTER            { return ALTER; }
 TRUNCATE         { return TRUNCATE; }
 RENAME           { return RENAME; }
 INDEX            { return INDEX; }
+TABLE            { return TABLE; }
+UNIQUE           { return UNIQUE; }
 
  /* ps stmt */
 USING            { return USING; }
@@ -419,6 +422,7 @@ UNION            { return UNION;}
 AS               { return AS; }
 WHERE            { return WHERE; }
 VALUES           { return VALUES; }
+VALUE            { return VALUES; }
 EXPLAIN          { SET_HAS_EXPLAIN(); return EXPLAIN; }
 DESC             { SET_HAS_EXPLAIN(); return DESC; }
 DESCRIBE         { SET_HAS_EXPLAIN(); return DESCRIBE; }
@@ -547,6 +551,7 @@ IDC                 { RETURN_NON_RESERVED_KEYWORD(IDC); }
 {show_tables}       { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_TABLES; }
 {show_create_table} { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_CREATE_TABLE; }
 {select_database}   { SET_DML_STMT(OBPROXY_T_SELECT); return SELECT_DATABASE; }
+{select_proxy_version}   { SET_DML_STMT(OBPROXY_T_SELECT_PROXY_VERSION); return SELECT_PROXY_VERSION; }
 
  /*alter config*/
 {alter_proxyconfig} { SET_ICMD_STMT(OBPROXY_T_ICMD_ALTER_CONFIG); return ALTER_PROXYCONFIG; }

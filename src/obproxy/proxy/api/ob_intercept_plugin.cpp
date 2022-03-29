@@ -193,6 +193,7 @@ int ObInterceptPlugin::handle_event_internal(ObEventType event, void *edata)
 
       // else fall through into the next shut down cases
       WARN_API("Error while reading request!");
+      __attribute__ ((fallthrough));
 
     case OB_EVENT_VCONN_READ_COMPLETE: // fall through intentional
     case OB_EVENT_VCONN_WRITE_COMPLETE:

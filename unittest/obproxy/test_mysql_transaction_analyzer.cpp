@@ -412,7 +412,7 @@ TEST_F(TestMysqlTransactionAnalyzer, test_OB_MYSQL_COM_CREATE_DB)
   analyze_mysql_response(trans_analyzer, hex, true);
 };
 
-TEST_F(TestMysqlTransactionAnalyzer, test_COM_SHANDSHAKE)
+TEST_F(TestMysqlTransactionAnalyzer, test_OB_MYSQL_COM_SHANDSHAKE)
 {
   ObMysqlTransactionAnalyzer trans_analyzer;
 
@@ -589,7 +589,7 @@ TEST_F(TestMysqlTransactionAnalyzer, test_OB_MYSQL_COM_STATISTICS_WITH_OK)
   bool is_completed = false;
   bool is_request_completed = false;
   char resp_s[DEFAULT_PKT_LEN];
-  // COM_STASTICS response  packet(String EOF packet + OK packet)
+  // OB_MYSQL_COM_STASTICS response  packet(String EOF packet + OK packet)
   const char *hex = "1a00000141637469766520746872656164732"
                     "06e6f7420737570706f7274080000020000002"
                     "200000000";
@@ -618,7 +618,7 @@ TEST_F(TestMysqlTransactionAnalyzer, test_OB_MYSQL_COM_STATISTICS_WITHOUT_BODY_A
   bool is_completed = false;
   bool is_request_completed = false;
   char resp_s[DEFAULT_PKT_LEN];
-  // COM_STASTICS response packe: String EOF packet(only has packet header with out body) + OK packet
+  // OB_MYSQL_COM_STASTICS response packe: String EOF packet(only has packet header with out body) + OK packet
   const char *hex = "00000000080000020000002"
                     "200000000";
   ret = covert_hex_to_string(hex, strlen(hex), resp_s);

@@ -1,3 +1,5 @@
 proxy_mysql_shard_sources:=\
 obproxy/proxy/shard/obproxy_shard_utils.h\
-obproxy/proxy/shard/obproxy_shard_utils.cpp
+obproxy/proxy/shard/obproxy_shard_utils.cpp\
+obproxy/proxy/shard/obproxy_shard_ddl_cont.h\
+obproxy/proxy/shard/obproxy_shard_ddl_cont.cpp

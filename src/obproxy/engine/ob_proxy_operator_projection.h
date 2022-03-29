@@ -24,26 +24,38 @@ class ObProxyProOp : public ObProxyOperator
 {
 public:
   ObProxyProOp(ObProxyOpInput *input, common::ObIAllocator &allocator)
-    : ObProxyOperator(input, allocator) {
+    : ObProxyOperator(input, allocator), current_rows_(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_) {
     set_op_type(PHY_PROJECTION);
   }
 
-  ~ObProxyProOp() {};
-  virtual int get_limit_result(int64_t start, int64_t offset,  ResultRows *rows);
+  ~ObProxyProOp() {}
   virtual int get_next_row();
-  virtual int handle_response_result(void *src, bool is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
 
-protected:
-  /* To temp preserve bulk records */
+private:
+  ResultRows current_rows_;
 };
 
 class ObProxyProInput : public ObProxyOpInput {
 public:
-  ObProxyProInput() : ObProxyOpInput() {}
-  ObProxyProInput(const common::ObSEArray<ObProxyExpr*, 4> &select_exprs) 
-    : ObProxyOpInput(select_exprs) {}
+  ObProxyProInput() : ObProxyOpInput(), derived_column_count_(0),
+                      calc_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
   ~ObProxyProInput() {}
-  // set method use ObProxyOpInput::set_xx_xx(..)
+
+  void set_derived_column_count(int64_t derived_column_count) {
+    derived_column_count_ = derived_column_count;
+  }
+
+  int64_t get_derived_column_count() { return derived_column_count_; }
+
+  int set_calc_exprs(common::ObIArray<opsql::ObProxyExpr*> &calc_exprs) {
+    return calc_exprs_.assign(calc_exprs);
+  }
+  common::ObIArray<opsql::ObProxyExpr*> &get_calc_exprs() { return calc_exprs_; }
+
+private:
+  int64_t derived_column_count_;
+  common::ObSEArray<opsql::ObProxyExpr*, 4> calc_exprs_;
 };
 
 }

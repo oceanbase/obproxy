@@ -30,6 +30,7 @@ class ObMysqlResponseBuilder
 {
 public:
   static const common::ObString OBPROXY_ROUTE_ADDR_NAME;
+  static const common::ObString OBPROXY_PROXY_VERSION_NAME;
 
   static int build_ok_resp(event::ObMIOBuffer &mio_buf,
                            ObProxyMysqlRequest &client_request,
@@ -61,6 +62,11 @@ public:
                                        ObProxyMysqlRequest &client_request,
                                        ObClientSessionInfo &info,
                                        const bool is_in_trans);
+
+  static int build_select_proxy_version_resp(event::ObMIOBuffer &mio_buf,
+                                             ObProxyMysqlRequest &client_request,
+                                             ObClientSessionInfo &info,
+                                             const bool is_in_trans);
 };
 
 inline int ObMysqlResponseBuilder::build_start_trans_resp(event::ObMIOBuffer &mio_buf,

@@ -57,8 +57,6 @@ enum ObProxyLocalCMDType
   OB_LOCAL_CMD_NONE = 0,
   OB_LOCAL_CMD_EXIT,
   OB_LOCAL_CMD_RESTART,
-  OB_LOCAL_CMD_COMMIT,
-  OB_LOCAL_CMD_ROLLBACK,
   OB_LOCAL_CMD_MAX
 };
 
@@ -129,8 +127,6 @@ public:
   ObProxyLocalCMDType get_local_cmd_type() const;
   void reset_local_cmd();
   bool is_local_restart();
-  bool is_local_commit();
-  bool is_local_rollback();
 
   bool is_metadb_used() const { return with_config_server_ && enable_metadb_used; }
   bool is_control_plane_used() const { return with_control_plane_; }
@@ -155,6 +151,7 @@ public:
 
   //repeat task interval related
   DEF_TIME(proxy_info_check_interval, "60s", "[1s,1h]", "proxy info check task interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(proxy_hot_upgrade_check_interval, "5s", "[1s,1h]", "proxy info check task interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(cache_cleaner_clean_interval, "20s", "[1s, 1d]", "the interval for cache cleaner to clean cache, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(server_state_refresh_interval, "20s", "[10ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(metadb_server_state_refresh_interval, "60s", "[10ms, 1h]", "the interval to refresh metadb server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -171,13 +168,17 @@ public:
   DEF_TIME(fetch_proxy_bin_timeout, "120s", "[1s,1200s]", "default hot upgrade fetch binary timeout, proxy will stop fetching after such long time, [1s, 1200s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(hot_upgrade_failure_retries, "5", "[1,20]", "default hot upgrade failure retries, proxy will stop handle hot_upgrade command after such retries, [1, 20]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(hot_upgrade_rollback_timeout, "24h", "[1s,30d]", "default hot upgrade rollback timeout, proxy will do rollback if receive no rollback command in such long time, [1s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(hot_upgrade_graceful_exit_timeout, "120s", "[0s,30d]", "graceful exit timeout, [0s, 30d], if set a value <= 0, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(hot_upgrade_exit_timeout, "30000000", "[-1,86400000000]", "graceful exit timeout, unit is us, default 30s, "
+                                             "-1 means no timeout, 0 means quit now, > 0 means wait time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(delay_exit_time, "100ms", "[100ms,500ms]", "delay exit time, [100ms,500ms]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   //log cleanup related
   DEF_INT(log_file_percentage, "80", "[0, 100]", "max percentage of avail size occupied by proxy log file, [0, 90], 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(log_cleanup_interval, "10m","[5s,30d]", "log file clean up task schedule interval, set 1 day or longer, [5s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(log_cleanup_interval, "1m","[5s,30d]", "log file clean up task schedule interval, set 1 day or longer, [5s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_CAP(log_dir_size_threshold, "64GB", "[256M,1T]", "max usable space size of log dir, used to decide whether should clean up log file, [256MB, 1T]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(max_syslog_file_time, "7d","[1s,]", "Maximum retention time of archive logs, 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(max_syslog_file_count, "0", "[0,]", "Maximum number of archive files to keep, 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_syslog_file_compress, "false", "Whether to enable archive log compression", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   //resource pool related
   DEF_BOOL(need_convert_vip_to_tname, "false", "convert vip to tenant name, which is useful in cloud", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -188,7 +189,7 @@ public:
   //client session related
   DEF_BOOL(enable_client_connection_lru_disconnect, "false",
         "if client connections reach throttle, true is that new connection will be accepted, and eliminate lru client connection, false is that new connection will disconnect, and err packet will be returned", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(client_max_connections, "8192", "[0,65535]", "client max connections for one obproxy, [0, 65535]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_max_connections, "8192", "[0,]", "client max connections for one obproxy, [0, +∞]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(observer_query_timeout_delta, "20s", "[1s,30s]", "the delta value for @@ob_query_timeout, to cover net round trip time(proxy<->server) and task schedule time(server), [1s, 30s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_cluster_checkout, "true", "if enable cluster checkout, proxy will send cluster name when login and server will check it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_proxy_scramble, "false", "if enable proxy scramble, proxy will send client its variable scramble num, not support old observer", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -204,20 +205,20 @@ public:
   DEF_TIME(default_inactivity_timeout, "180000s", "[1s,30d]", "default inactivity timeout, [1s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_CAP(sock_recv_buffer_size_out, "0", "[0,8MB]", "sock param, recv buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_CAP(sock_send_buffer_size_out, "0", "[0,8MB]", "sock param, send buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(sock_option_flag_out, "1", "[0,]","sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE, bit 3: LINGER_ON", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(sock_option_flag_out, "3", "[0,]","sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE, bit 3: LINGER_ON", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(sock_packet_mark_out, "0", "[0,]","sock param, packet mark out, [0, 1]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(sock_packet_tos_out, "0", "[0,]","sock param, packet tos out, [0, 1]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(server_tcp_init_cwnd, "0", "[0,64]", "the initial tcp congestion window, [0, 64]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_keepidle, "0", "[0,7200]", "tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_keepintvl, "0", "[0,75]", "tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_keepcnt, "0", "[0,9]", "tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_user_timeout, "5", "[0,20]", "tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(server_tcp_keepidle, "5", "[0,7200]", "tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(server_tcp_keepintvl, "5", "[0,75]", "tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(server_tcp_keepcnt, "5", "[0,9]", "tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(server_tcp_user_timeout, "0", "[0,20]", "tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
-  DEF_INT(client_sock_option_flag_out, "0", "[0,]","client sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_keepidle, "0", "[0,7200]", "client tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_keepintvl, "0", "[0,75]", "client tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_keepcnt, "0", "[0,9]", "client tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_user_timeout, "5", "[0,20]", "client tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_sock_option_flag_out, "2", "[0,]","client sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_tcp_keepidle, "5", "[0,7200]", "client tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_tcp_keepintvl, "5", "[0,75]", "client tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_tcp_keepcnt, "5", "[0,9]", "client tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_tcp_user_timeout, "0", "[0,20]", "client tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   //proxy init related
   DEF_CAP(proxy_mem_limited, "2G", "[100MB,100G]", "proxy memory limited, [100MB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -286,6 +287,7 @@ public:
   DEF_BOOL(enable_ob_protocol_v2, "true", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_cached_server, "true", "if enabled, use cached server session when no table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   // location rate limit
   DEF_INT(normal_pl_update_threshold, "100", "[0,]", "max partition location update task processing per second", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -304,7 +306,7 @@ public:
   DEF_BOOL(enable_async_log, "true", "if enabled, use async logging way, maybe lost some log when busy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   // proxy cmd
-  DEF_INT(proxy_local_cmd, "0", "[0,]", "proxy local cmd type: 0->none(default), 1->exit, 2->restart, 3->commit, 4->rollback", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
+  DEF_INT(proxy_local_cmd, "0", "[0,2]", "proxy local cmd type: 0->none(default), 1->exit, 2->restart", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
 
   //ldc
   DEF_STR(proxy_idc_name, "", "idc name for proxy ldc route. If is empty or invalid, treat as do not use ldc. User session vars 'proxy_session_ldc' can cover it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -353,6 +355,7 @@ public:
   DEF_INT(sql_table_cache_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire sql table cache base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_CAP(sql_table_cache_mem_limited, "128MB", "[1KB,100G]", "max size of proxy sql table cache size. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_cloud_full_username, "false", "used for cloud user, if set false, treat all login user as username", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_full_username, "false", "used for non-cloud user, if set true, username must have tenant and cluster", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_BOOL(skip_proxyro_check, "false", "used for proxro@sys, if set false, access denied", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   DEF_BOOL(skip_proxy_sys_private_check, "true", "skip_proxy_sys_private_check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -401,6 +404,9 @@ public:
   DEF_STR(pod_namespace, "", "sidecar pod namespace", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_STR(instance_ip, "", "ip addr string", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_STR(runtime_env, "", "runtime env", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(mng_url, "", "ob sharding console url", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(cloud_instance_id, "", "ob sharding cloud instance id", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(auto_scan_all, "false", "if enabled, need scan all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   // session pool
   DEF_BOOL(is_pool_mode, "false", "if enabled means useing session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -438,6 +444,14 @@ public:
   DEF_STR(obproxy_sys_password, "", "password for obproxy sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_STR(observer_sys_password, "", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_STR(observer_sys_password1, "", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+
+  // performance_mode has two functions: competition and verification, it will turn off some auxiliary functions,
+  // but these functions are required in production; another case is to verify whether the optimization method is effective
+  DEF_BOOL(enable_performance_mode, "false", "if enabled, for performance situation", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_trace, "true", "if enabled, log will print trace info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_stat, "true", "if enabled, will collect stat info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+
+  DEF_INT(digest_sql_length, "1024", "0 means use default print sql len, otherwise is digest_sql_length", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 };
 
 ObProxyConfig &get_global_proxy_config();
@@ -567,16 +581,6 @@ inline bool ObProxyConfig::is_local_cmd()
 inline bool ObProxyConfig::is_local_restart()
 {
   return (OB_LOCAL_CMD_RESTART == get_local_cmd_type());
-}
-
-inline bool ObProxyConfig::is_local_commit()
-{
-  return (OB_LOCAL_CMD_COMMIT == get_local_cmd_type());
-}
-
-inline bool ObProxyConfig::is_local_rollback()
-{
-  return (OB_LOCAL_CMD_ROLLBACK == get_local_cmd_type());
 }
 
 inline ObProxyLocalCMDType ObProxyConfig::get_local_cmd_type() const

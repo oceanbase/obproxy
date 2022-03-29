@@ -224,10 +224,7 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_row(event::ObIOBuffer
         /* first 2 bits are reserved */
         ObObj param;
         if (ObSMUtils::update_from_bitmap(param, bitmap, i + 2)) {
-          if (OB_MYSQL_TYPE_CURSOR != field_types.at(i)) {
-            ret = OB_ERR_UNEXPECTED;
-            PROXY_API_LOG(WARN, "cursor filed is null", K(i), "bitmap", *bitmap);
-          }
+          // do nothing
         } else {
           if (OB_MYSQL_TYPE_CURSOR == field_types.at(i)) {
             ObMysqlClientSession *client_session = sm->get_client_session();

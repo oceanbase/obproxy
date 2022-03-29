@@ -1,4 +1,4 @@
-EXTRA_DIST=build.sh svn_dist_version script/deploy unittest/Makefile.in unittest/obproxy/Makefile.in deps/easy
+EXTRA_DIST=build.sh svn_dist_version script/deploy unittest/Makefile.in unittest/obproxy/Makefile.in deps/easy hotfuncs.txt
 bin_SCRIPTS=script/deploy/obproxyd.sh
 
 if WITH_TEST_CASE
