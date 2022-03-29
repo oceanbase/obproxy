@@ -51,6 +51,7 @@ ObEThread::ObEThread()
       id_(NO_ETHREAD_ID),
       event_types_(0),
       stack_start_(0),
+      dedicate_thread_type_(DEDICATE_THREAD_NONE),
       signal_hook_(NULL),
       ep_(NULL),
       net_handler_(NULL),
@@ -63,11 +64,13 @@ ObEThread::ObEThread()
       congestion_map_(NULL),
       cache_cleaner_(NULL),
       sql_table_map_(NULL),
+      ps_entry_cache_(NULL),
       random_seed_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(REGULAR),
-      pending_event_(NULL)
+      pending_event_(NULL),
+      thread_prometheus_(NULL)
 {
 #if OB_HAVE_EVENTFD
   evfd_ = -1;
@@ -84,6 +87,7 @@ ObEThread::ObEThread(const ObThreadType att, const int64_t anid)
       id_(anid),
       event_types_(0),
       stack_start_(0),
+      dedicate_thread_type_(DEDICATE_THREAD_NONE),
       signal_hook_(NULL),
       ep_(NULL),
       net_handler_(NULL),
@@ -96,11 +100,13 @@ ObEThread::ObEThread(const ObThreadType att, const int64_t anid)
       congestion_map_(NULL),
       cache_cleaner_(NULL),
       sql_table_map_(NULL),
+      ps_entry_cache_(NULL),
       random_seed_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(att),
-      pending_event_(NULL)
+      pending_event_(NULL),
+      thread_prometheus_(NULL)
 {
 #if OB_HAVE_EVENTFD
   evfd_ = -1;
@@ -117,6 +123,7 @@ ObEThread::ObEThread(const ObThreadType att, ObEvent *e)
       id_(NO_ETHREAD_ID),
       event_types_(0),
       stack_start_(0),
+      dedicate_thread_type_(DEDICATE_THREAD_NONE),
       signal_hook_(NULL),
       ep_(NULL),
       net_handler_(NULL),
@@ -129,11 +136,13 @@ ObEThread::ObEThread(const ObThreadType att, ObEvent *e)
       congestion_map_(NULL),
       cache_cleaner_(NULL),
       sql_table_map_(NULL),
+      ps_entry_cache_(NULL),
       random_seed_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(att),
-      pending_event_(e)
+      pending_event_(e),
+      thread_prometheus_(NULL)
 {
 #if OB_HAVE_EVENTFD
   evfd_ = -1;

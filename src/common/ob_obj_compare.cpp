@@ -20,6 +20,12 @@ namespace oceanbase
 namespace common
 {
 
+#define OBJ_TYPE_CLASS_CHECK(obj, tc)                                               \
+  if (OB_UNLIKELY(obj.get_type_class() != tc)) {                                    \
+    LOG_ERROR("unexpected error. mismatch function for comparison", K(obj), K(tc)); \
+    right_to_die_or_duty_to_live();                                                 \
+  }
+
 #define DEFINE_CMP_OP_FUNC(tc, type, op, op_str) \
   template <> inline \
   int ObObjCmpFuncs::cmp_op_func<tc, tc, op>(const ObObj &obj1, \
@@ -458,6 +464,164 @@ namespace common
            : CR_ERROR; \
   }
 
+// type            storedtime
+// data            local
+// timestamp nano  local
+// timestamptz     utc + tzid
+// timestampltz    utc + tzid
+//datetimetc VS otimestamptc
+#define DEFINE_CMP_OP_FUNC_DT_OT(op, op_str) \
+  template <> inline \
+  int ObObjCmpFuncs::cmp_op_func<ObDateTimeTC, ObOTimestampTC, op>(const ObObj &obj1, \
+                                                                   const ObObj &obj2, \
+                                                                   const ObCompareCtx &cmp_ctx) \
+  { \
+    UNUSED(cmp_ctx); \
+    OBJ_TYPE_CLASS_CHECK(obj1, ObDateTimeTC);\
+    OBJ_TYPE_CLASS_CHECK(obj2, ObOTimestampTC); \
+    ObCmpRes ret = CR_FALSE; \
+    ObOTimestampData v1; \
+    v1.time_us_ = obj1.get_datetime();\
+    ObOTimestampData v2 = obj2.get_otimestamp_value();\
+    if (!obj2.is_timestamp_nano()) { \
+      if (OB_UNLIKELY(INVALID_TZ_OFF == cmp_ctx.tz_off_)) {\
+        LOG_ERROR("invalid timezone offset", K(obj1), K(obj2)); \
+        ret = CR_ERROR; \
+      } else {\
+        v1.time_us_ -= cmp_ctx.tz_off_;\
+      }\
+    }\
+    return (CR_ERROR != ret ? static_cast<int>(v1 op_str v2) : CR_ERROR); \
+  }
+
+//datetimetc VS otimestamptc
+#define DEFINE_CMP_FUNC_DT_OT() \
+  template <> inline \
+  int ObObjCmpFuncs::cmp_func<ObDateTimeTC, ObOTimestampTC>(const ObObj &obj1, \
+                                                            const ObObj &obj2, \
+                                                            const ObCompareCtx &cmp_ctx) \
+  { \
+    OBJ_TYPE_CLASS_CHECK(obj1, ObDateTimeTC);\
+    OBJ_TYPE_CLASS_CHECK(obj2, ObOTimestampTC);\
+    ObCmpRes ret = CR_FALSE;\
+    ObOTimestampData v1; \
+    v1.time_us_ = obj1.get_datetime();\
+    ObOTimestampData v2 = obj2.get_otimestamp_value(); \
+    if (!obj2.is_timestamp_nano()) { \
+      if (OB_UNLIKELY(INVALID_TZ_OFF == cmp_ctx.tz_off_)) {\
+        LOG_ERROR("invalid timezone offset", K(obj1), K(obj2)); \
+        ret = CR_ERROR; \
+      } else {\
+        v1.time_us_ -= cmp_ctx.tz_off_;\
+      }\
+    }\
+    return (CR_ERROR != ret \
+            ? (v1 < v2 \
+                ? CR_LT \
+                : (v1 > v2 \
+                   ? CR_GT \
+                   : CR_EQ))\
+            : CR_ERROR);\
+  }
+
+// otimestamptc VS datetimetc
+#define DEFINE_CMP_OP_FUNC_OT_DT(op, op_str)                                    \
+  template <>                                                                   \
+  inline int ObObjCmpFuncs::cmp_op_func<ObOTimestampTC, ObDateTimeTC, op>(      \
+      const ObObj& obj1, const ObObj& obj2, const ObCompareCtx& cmp_ctx)        \
+  {                                                                             \
+    UNUSED(cmp_ctx);                                                            \
+    OBJ_TYPE_CLASS_CHECK(obj1, ObOTimestampTC);                                 \
+    OBJ_TYPE_CLASS_CHECK(obj2, ObDateTimeTC);                                   \
+    ObCmpRes ret = CR_FALSE;                                                    \
+    ObOTimestampData v1 = obj1.get_otimestamp_value();                          \
+    ObOTimestampData v2;                                                        \
+    v2.time_us_ = obj2.get_datetime();                                          \
+    if (!obj1.is_timestamp_nano()) {                                            \
+      if (OB_UNLIKELY(INVALID_TZ_OFF == cmp_ctx.tz_off_)) {                     \
+        LOG_ERROR("invalid timezone offset", K(obj1), K(obj2));                 \
+        ret = CR_ERROR;                                                         \
+      } else {                                                                  \
+        v2.time_us_ -= cmp_ctx.tz_off_;                                         \
+      }                                                                         \
+    }                                                                           \
+    return (CR_ERROR != ret ? static_cast<int>(v1 op_str v2) : CR_ERROR); \
+  }
+
+// otimestamptc VS datetimetc
+#define DEFINE_CMP_FUNC_OT_DT()                                                                \
+  template <>                                                                                  \
+  inline int ObObjCmpFuncs::cmp_func<ObOTimestampTC, ObDateTimeTC>(                            \
+      const ObObj& obj1, const ObObj& obj2, const ObCompareCtx& cmp_ctx)                       \
+  {                                                                                            \
+    OBJ_TYPE_CLASS_CHECK(obj1, ObOTimestampTC);                                                \
+    OBJ_TYPE_CLASS_CHECK(obj2, ObDateTimeTC);                                                  \
+    ObCmpRes ret = CR_FALSE;                                                                   \
+    ObOTimestampData v1 = obj1.get_otimestamp_value();                                         \
+    ObOTimestampData v2;                                                                       \
+    v2.time_us_ = obj2.get_datetime();                                                         \
+    if (!obj1.is_timestamp_nano()) {                                                           \
+      if (OB_UNLIKELY(INVALID_TZ_OFF == cmp_ctx.tz_off_)) {                                    \
+        LOG_ERROR("invalid timezone offset", K(obj1), K(obj2));                                \
+        ret = CR_ERROR;                                                                        \
+      } else {                                                                                 \
+        v2.time_us_ -= cmp_ctx.tz_off_;                                                        \
+      }                                                                                        \
+    }                                                                                          \
+    return (CR_ERROR != ret ? (v1 < v2 ? CR_LT : (v1 > v2 ? CR_GT : CR_EQ)) : CR_ERROR); \
+  }
+
+// otimestamptc VS otimestamptc
+#define DEFINE_CMP_OP_FUNC_OT_OT(op, op_str)                                    \
+  template <>                                                                   \
+  inline int ObObjCmpFuncs::cmp_op_func<ObOTimestampTC, ObOTimestampTC, op>(    \
+      const ObObj& obj1, const ObObj& obj2, const ObCompareCtx& cmp_ctx)        \
+  {                                                                             \
+    UNUSED(cmp_ctx);                                                            \
+    OBJ_TYPE_CLASS_CHECK(obj1, ObOTimestampTC);                                 \
+    OBJ_TYPE_CLASS_CHECK(obj2, ObOTimestampTC);                                 \
+    ObCmpRes ret = CR_FALSE;                                                    \
+    ObOTimestampData v1 = obj1.get_otimestamp_value();                          \
+    ObOTimestampData v2 = obj2.get_otimestamp_value();                          \
+    if (obj1.is_timestamp_nano() != obj2.is_timestamp_nano()) {                 \
+      if (OB_UNLIKELY(INVALID_TZ_OFF == cmp_ctx.tz_off_)) {                     \
+        LOG_ERROR("invalid timezone offset", K(obj1), K(obj2));                 \
+        ret = CR_ERROR;                                                         \
+      } else {                                                                  \
+        if (obj1.is_timestamp_nano()) {                                         \
+          v1.time_us_ -= cmp_ctx.tz_off_;                                       \
+        } else {                                                                \
+          v2.time_us_ -= cmp_ctx.tz_off_;                                       \
+        }                                                                       \
+      }                                                                         \
+    }                                                                           \
+    return (CR_ERROR != ret ? static_cast<int>(v1 op_str v2) : CR_ERROR); \
+  }
+
+// otimestamptc VS otimestamptc
+#define DEFINE_CMP_FUNC_OT_OT()                                                                \
+  template <>                                                                                  \
+  inline int ObObjCmpFuncs::cmp_func<ObOTimestampTC, ObOTimestampTC>(                          \
+      const ObObj& obj1, const ObObj& obj2, const ObCompareCtx& cmp_ctx)                       \
+  {                                                                                            \
+    OBJ_TYPE_CLASS_CHECK(obj1, ObOTimestampTC);                                                \
+    OBJ_TYPE_CLASS_CHECK(obj2, ObOTimestampTC);                                                \
+    ObCmpRes ret = CR_FALSE;                                                                   \
+    ObOTimestampData v1 = obj1.get_otimestamp_value();                                         \
+    ObOTimestampData v2 = obj2.get_otimestamp_value();                                         \
+    if (obj1.is_timestamp_nano() != obj2.is_timestamp_nano()) {                                \
+      if (OB_UNLIKELY(INVALID_TZ_OFF == cmp_ctx.tz_off_)) {                                    \
+        LOG_ERROR("invalid timezone offset", K(obj1), K(obj2));                                \
+        ret = CR_ERROR;                                                                        \
+      } else if (obj1.is_timestamp_nano()) {                                                   \
+        v1.time_us_ -= cmp_ctx.tz_off_;                                                        \
+      } else {                                                                                 \
+        v2.time_us_ -= cmp_ctx.tz_off_;                                                        \
+      }                                                                                        \
+    }                                                                                          \
+    return (CR_ERROR != ret ? (v1 < v2 ? CR_LT : (v1 > v2 ? CR_GT : CR_EQ)) : CR_ERROR); \
+  }
+
 //==============================
 
 #define DEFINE_CMP_FUNCS(tc, type) \
@@ -609,6 +773,15 @@ namespace common
     DEFINE_CMP_OP_FUNC_DT_DT(CO_NE, !=); \
     DEFINE_CMP_FUNC_DT_DT(); \
 
+#define DEFINE_CMP_FUNCS_DATETIME_OTIMESTAMP() \
+    DEFINE_CMP_OP_FUNC_DT_OT(CO_EQ, ==); \
+    DEFINE_CMP_OP_FUNC_DT_OT(CO_LE, <=); \
+    DEFINE_CMP_OP_FUNC_DT_OT(CO_LT, < ); \
+    DEFINE_CMP_OP_FUNC_DT_OT(CO_GE, >=); \
+    DEFINE_CMP_OP_FUNC_DT_OT(CO_GT, > ); \
+    DEFINE_CMP_OP_FUNC_DT_OT(CO_NE, !=); \
+    DEFINE_CMP_FUNC_DT_OT(); \
+
 #define DEFINE_CMP_FUNCS_DATE_DATE() \
   DEFINE_CMP_FUNCS(ObDateTC, date);
 
@@ -617,6 +790,25 @@ namespace common
 
 #define DEFINE_CMP_FUNCS_YEAR_YEAR() \
   DEFINE_CMP_FUNCS(ObYearTC, year);
+
+  
+#define DEFINE_CMP_FUNCS_OTIMESTAMP_DATETIME() \
+    DEFINE_CMP_OP_FUNC_OT_DT(CO_EQ, ==);         \
+    DEFINE_CMP_OP_FUNC_OT_DT(CO_LE, <=);         \
+    DEFINE_CMP_OP_FUNC_OT_DT(CO_LT, <);          \
+    DEFINE_CMP_OP_FUNC_OT_DT(CO_GE, >=);         \
+    DEFINE_CMP_OP_FUNC_OT_DT(CO_GT, >);          \
+    DEFINE_CMP_OP_FUNC_OT_DT(CO_NE, !=);         \
+    DEFINE_CMP_FUNC_OT_DT();
+  
+#define DEFINE_CMP_FUNCS_OTIMESTAMP_OTIMESTAMP() \
+    DEFINE_CMP_OP_FUNC_OT_OT(CO_EQ, ==);           \
+    DEFINE_CMP_OP_FUNC_OT_OT(CO_LE, <=);           \
+    DEFINE_CMP_OP_FUNC_OT_OT(CO_LT, <);            \
+    DEFINE_CMP_OP_FUNC_OT_OT(CO_GE, >=);           \
+    DEFINE_CMP_OP_FUNC_OT_OT(CO_GT, >);            \
+    DEFINE_CMP_OP_FUNC_OT_OT(CO_NE, !=);           \
+    DEFINE_CMP_FUNC_OT_OT();
 
 #define DEFINE_CMP_FUNCS_STRING_STRING() \
   DEFINE_CMP_OP_FUNC_STRING_STRING(CO_EQ, ==); \
@@ -716,6 +908,11 @@ DEFINE_CMP_FUNCS_NUMBER_UINT();
 DEFINE_CMP_FUNCS_NUMBER_NUMBER();
 
 DEFINE_CMP_FUNCS_DATETIME_DATETIME();
+DEFINE_CMP_FUNCS_DATETIME_OTIMESTAMP();
+
+DEFINE_CMP_FUNCS_OTIMESTAMP_DATETIME();
+DEFINE_CMP_FUNCS_OTIMESTAMP_OTIMESTAMP();
+
 DEFINE_CMP_FUNCS_DATE_DATE();
 DEFINE_CMP_FUNCS_TIME_TIME();
 DEFINE_CMP_FUNCS_YEAR_YEAR();
@@ -760,7 +957,15 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),
     DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),
-    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC), //text
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //text
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //bit
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //setenun
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //setenuninner
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //raw
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //interval
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //rowid
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),  //lob
   },
   { // int
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -776,7 +981,15 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
-    DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // uint
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -792,7 +1005,15 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
-    DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // float
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -809,6 +1030,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // double
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -825,6 +1054,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // number
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -841,6 +1078,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,//enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // datetime
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -857,6 +1102,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY(ObDateTimeTC, ObOTimestampTC),//otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // date
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -873,6 +1126,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // time
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -889,6 +1150,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // year
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -905,6 +1174,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // string
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -921,6 +1198,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY(ObStringTC, ObStringTC), //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // extend
     DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObNullTC),
@@ -937,6 +1222,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),
     DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC), //text
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),//enumset
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),//enumsetInner
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),//otimestamp
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),//raw
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),//interval
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC),//rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // unknown
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -953,6 +1246,14 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),
     DEFINE_CMP_FUNCS_ENTRY(ObUnknownTC, ObUnknownTC),
     DEFINE_CMP_FUNCS_ENTRY_NULL, //text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
   { // text
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -969,6 +1270,214 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),  // extend
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
     DEFINE_CMP_FUNCS_ENTRY(ObStringTC, ObStringTC), //  text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL, //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL, //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // enumsetinner
+    DEFINE_CMP_FUNCS_ENTRY_NULL, //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // number
+    DEFINE_CMP_FUNCS_ENTRY(ObOTimestampTC, ObDateTimeTC),  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // string
+    DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC),           // extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,                           // enumsetinner
+    DEFINE_CMP_FUNCS_ENTRY(ObOTimestampTC, ObOTimestampTC),// otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL, //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL, //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL, //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+  },
+  {
+    // lob
+    DEFINE_CMP_FUNCS_ENTRY_NULL, //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
   },
 };
 

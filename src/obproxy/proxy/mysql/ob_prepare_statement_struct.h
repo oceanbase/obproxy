@@ -21,6 +21,9 @@
 #include "obutils/ob_proxy_sql_parser.h"
 #include "iocore/net/ob_inet.h"
 #include "lib/allocator/ob_mod_define.h"
+#include "obproxy/iocore/eventsystem/ob_buf_allocator.h"
+#include "lib/lock/ob_drw_lock.h"
+#include "obutils/ob_proxy_sql_parser.h"
 
 #define PARAM_TYPE_BLOCK_SIZE  1 << 9 // 512
 
@@ -34,7 +37,7 @@ namespace obproxy
 {
 namespace proxy
 {
-
+class ObMysqlClientSession;
 // stored in client session info
 class ObPsIdAddrs
 {
@@ -138,9 +141,8 @@ class ObPsSqlMeta
 
 public:
   ObPsSqlMeta()
-  : param_count_(0),
-    column_count_(0),
-    param_types_()
+  : param_count_(0), column_count_(0),
+    param_types_(), param_type_(NULL), param_type_len_(0)
   {
     param_types_.set_mod_id(common::ObModIds::OB_PROXY_PARAM_TYPE_ARRAY);
     param_types_.set_block_size(PARAM_TYPE_BLOCK_SIZE);
@@ -152,6 +154,8 @@ public:
   int64_t get_param_count() const { return param_count_; }
   int64_t get_column_count() const { return column_count_; }
   ObIArray<obmysql::EMySQLFieldType> &get_param_types() { return param_types_; }
+  ObString get_param_type() { return ObString(param_type_len_, param_type_); }
+  int set_param_type(const char *param_type, int64_t param_type_len);
   void set_param_count(int64_t param_count) { param_count_ = param_count; }
   void set_column_count(int64_t column_count) { column_count_ = column_count; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
@@ -160,6 +164,8 @@ private:
   int64_t param_count_;
   int64_t column_count_;
   common::ObArray<obmysql::EMySQLFieldType> param_types_;
+  char *param_type_;
+  int64_t param_type_len_;
   DISALLOW_COPY_AND_ASSIGN(ObPsSqlMeta);
 };
 
@@ -168,12 +174,19 @@ inline void ObPsSqlMeta::reset()
   param_count_ = 0;
   column_count_ = 0;
   param_types_.reset();
+
+  if (NULL != param_type_ && param_type_len_ > 0) {
+    op_fixed_mem_free(param_type_, param_type_len_);
+  }
+
+  param_type_ = NULL;
+  param_type_len_ = 0;
 }
 
 class ObPsEntry : public ObBasePsEntry
 {
 public:
-  ObPsEntry() : ObBasePsEntry(), ps_id_(0), ps_meta_() {}
+  ObPsEntry() : ObBasePsEntry() {}
   ~ObPsEntry() {}
 
   static int alloc_and_init_ps_entry(const common::ObString &ps_sql,
@@ -183,16 +196,11 @@ public:
   void destroy();
   int set_sql(const common::ObString &ps_sql);
 
-  ObPsSqlMeta &get_ps_sql_meta() { return ps_meta_; }
-  int64_t get_param_count() const { return ps_meta_.get_param_count(); }
-  uint32_t get_ps_id() { return ps_id_; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
-  
+
 private:
   const static int64_t PARSE_EXTRA_CHAR_NUM = 2;
 
-  uint32_t ps_id_;
-  ObPsSqlMeta ps_meta_;
 public:
   DISALLOW_COPY_AND_ASSIGN(ObPsEntry);
 };
@@ -201,7 +209,7 @@ public:
 class ObPsIdEntry
 {
 public:
-  ObPsIdEntry() : ps_id_(0), ps_entry_(NULL) {}
+  ObPsIdEntry() : ps_id_(0), ps_entry_(NULL), ps_meta_() {}
   ObPsIdEntry(uint32_t client_id, ObPsEntry *entry)
       : ps_id_(client_id), ps_entry_(entry) {
     ps_entry_->inc_ref();
@@ -220,11 +228,14 @@ public:
 
   uint32_t get_ps_id() { return ps_id_; }
   ObPsEntry *get_ps_entry() { return ps_entry_; }
+  ObPsSqlMeta &get_ps_sql_meta() { return ps_meta_; }
+  int64_t get_param_count() const { return ps_meta_.get_param_count(); }
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 public:
   uint32_t ps_id_; // client ps id
   ObPsEntry *ps_entry_;
+  ObPsSqlMeta ps_meta_;
   LINK(ObPsIdEntry, ps_id_link_);
 };
 
@@ -312,7 +323,7 @@ class ObBasePsEntryCache
 {
 public:
   ObBasePsEntryCache() : base_ps_map_() {}
-  ~ObBasePsEntryCache() {}
+  ~ObBasePsEntryCache() { destroy(); }
   void destroy();
 
 public:
@@ -343,6 +354,7 @@ public:
     }
     return ret;
   }
+
   int set_ps_entry(ObPsEntry *ps_entry)
   {
     ObBasePsEntry *tmp_entry = static_cast<ObBasePsEntry*>(ps_entry);
@@ -386,6 +398,8 @@ private:
   ObBasePsEntryMap base_ps_map_;
   DISALLOW_COPY_AND_ASSIGN(ObBasePsEntryCache);
 };
+
+int init_ps_entry_cache_for_thread();
 
 } // end of namespace proxy
 } // end of namespace obproxy

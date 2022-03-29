@@ -51,59 +51,74 @@ struct ObObjTypeFuncs
 };
 // function templates for the above functions
 template <ObObjType type>
-    int obj_print_sql(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+    int obj_print_sql(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObObjPrintParams &params);
+
 template <ObObjType type>
-    int obj_print_str(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+    int obj_print_str(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObObjPrintParams &params);
+
 template <ObObjType type>
-    int obj_print_plain_str(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+    int obj_print_plain_str(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                            const ObObjPrintParams &params);
+
 template <ObObjType type>
-    int obj_print_json(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+    int obj_print_json(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObObjPrintParams &params);
+
 template <ObObjType type>
     int64_t obj_crc64(const ObObj &obj, const int64_t current);
+
 template <ObObjType type>
     void obj_batch_checksum(const ObObj &obj, ObBatchChecksum &bc);
+
 template <ObObjType type>
     uint64_t obj_murmurhash(const ObObj &obj, const uint64_t hash);
+
 template <ObObjType type>
     int obj_val_serialize(const ObObj &obj, char* buf, const int64_t buf_len, int64_t& pos);
+
 template <ObObjType type>
     int obj_val_deserialize(ObObj &obj, const char* buf, const int64_t data_len, int64_t& pos);
+
 template <ObObjType type>
     int64_t obj_val_get_serialize_size(const ObObj &obj);
+
 ////////////////////////////////////////////////////////////////
 // ObNullType = 0,
 template <>
-    int obj_print_sql<ObNullType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_sql<ObNullType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                  const ObObjPrintParams &params)
 {
   UNUSED(obj);
-  UNUSED(tz_info);
+  UNUSED(params);
   int ret = OB_SUCCESS;
   ret = databuff_printf(buffer, length, pos, "NULL");
   return ret;
 }
 template <>
-    int obj_print_str<ObNullType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_str<ObNullType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, 
+                                  const ObObjPrintParams &params)
 {
   UNUSED(obj);
-  UNUSED(tz_info);
+  UNUSED(params);
   int ret = OB_SUCCESS;
   ret = databuff_printf(buffer, length, pos, "NULL");
   return ret;
 }
 template <>
-    int obj_print_plain_str<ObNullType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_plain_str<ObNullType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                        const ObObjPrintParams &params)
 {
   UNUSED(obj);
-  UNUSED(tz_info);
+  UNUSED(params);
   int ret = OB_SUCCESS;
   ret = databuff_printf(buffer, length, pos, "NULL");
   return ret;
 }
 
 template <>
-    int obj_print_json<ObNullType>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_json<ObNullType>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos,
+                                   const ObObjPrintParams &params)
 {
-  UNUSED(tz_info);
+  UNUSED(params);
   J_OBJ_START();
   BUF_PRINTO(ob_obj_type_str(obj.get_type()));
   J_COLON();
@@ -199,7 +214,7 @@ template <>
     static uint64_t calc_hash_value(const P &param, const uint64_t hash) {      \
       VTYPE v = param.get_##TYPE();                                     \
       HTYPE v2 = v;                                                     \
-      if (OB_UNLIKELY(ObDoubleType == OBJTYPE || ObFloatType == OBJTYPE) && 0.0 == v2) {   \
+      if (OB_UNLIKELY(ObDoubleType == OBJTYPE || ObFloatType == OBJTYPE) && 0.0 == (double)v2) {   \
         v2 = 0.0;                                                       \
       }                                                                 \
       return T::hash(&v2, sizeof(v2), hash);                            \
@@ -209,30 +224,34 @@ template <>
 // general print functions generator
 #define DEF_PRINT_FUNCS(OBJTYPE, TYPE, SQL_FORMAT, STR_FORMAT)          \
   template <>                                                           \
-  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     return databuff_printf(buffer, length, pos, SQL_FORMAT, obj.get_##TYPE()); \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     return databuff_printf(buffer, length, pos, STR_FORMAT, obj.get_##TYPE()); \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params)      \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     return databuff_printf(buffer, length, pos, SQL_FORMAT, obj.get_##TYPE()); \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos, \
+                              const ObObjPrintParams &params)           \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     J_OBJ_START();                                                      \
     PRINT_META();                                                       \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
@@ -312,9 +331,10 @@ DEF_NUMERIC_FUNCS(ObUDoubleType, udouble, double, "%2lf", "'%2lf'", double);
 // ObUNumberType=16,
 #define DEF_NUMBER_PRINT_FUNCS(OBJTYPE, TYPE)                           \
   template <>                                                           \
-  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = common::OB_SUCCESS;                                       \
     number::ObNumber nmb;                                               \
     if (OB_FAIL(obj.get_##TYPE(nmb))) {                                 \
@@ -323,10 +343,11 @@ DEF_NUMERIC_FUNCS(ObUDoubleType, udouble, double, "%2lf", "'%2lf'", double);
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
+    UNUSED(params);                                                     \
     int ret = common::OB_SUCCESS;                                       \
-    UNUSED(tz_info);                                                    \
     number::ObNumber nmb;                                               \
     const int64_t BUF_SIZE = common::number::ObNumber::MAX_PRINTABLE_SIZE;          \
     char tmp_buf[BUF_SIZE];                                             \
@@ -338,10 +359,11 @@ DEF_NUMERIC_FUNCS(ObUDoubleType, udouble, double, "%2lf", "'%2lf'", double);
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params)      \
   {                                                                     \
+    UNUSED(params);                                                     \
     int ret = common::OB_SUCCESS;                                       \
-    UNUSED(tz_info);                                                    \
     number::ObNumber nmb;                                               \
     if (OB_FAIL(obj.get_##TYPE(nmb))) {                                 \
     } else if (OB_FAIL(nmb.format(buffer, length, pos, obj.get_scale()))) {        \
@@ -349,9 +371,10 @@ DEF_NUMERIC_FUNCS(ObUDoubleType, udouble, double, "%2lf", "'%2lf'", double);
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
+                              const ObObjPrintParams &params) \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = common::OB_SUCCESS;                                       \
     number::ObNumber nmb;                                               \
     if (OB_FAIL(obj.get_##TYPE(nmb))) {                                 \
@@ -447,51 +470,72 @@ DEF_NUMBER_FUNCS(ObNumberFloatType, number_float);
 ////////////////
 #define DEF_DATETIME_PRINT_FUNCS(OBJTYPE, TYPE)                         \
   template <>                                                           \
-  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  inline int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                    int64_t &pos, const ObObjPrintParams &params)   \
   {                                                                     \
+    int ret = common::OB_SUCCESS;                                       \
+    static const char *CAST_PREFIX_ORACLE = "TO_DATE('";                \
+    static const char *NORMAL_PREFIX = "'";                             \
+    static const char *CAST_SUFFIX_ORACLE = "', 'YYYY-MM-DD HH24:MI:SS')"; \
+    static const char *NORMAL_SUFFIX = "'";                             \
+    const ObTimeZoneInfo *tz_info = params.tz_info_;                    \
     ObString str(static_cast<int32_t>(length - pos - 1), 0, buffer + pos + 1);  \
-    int ret = databuff_printf(buffer, length, pos, "'");                \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
+      const char *fmt_prefix = params.need_cast_expr_ && lib::is_oracle_mode() ? \
+                                 CAST_PREFIX_ORACLE : NORMAL_PREFIX;    \
+      ret = databuff_printf(buffer, length, pos, "%s", fmt_prefix);     \
+    }                                                                   \
+    if (OB_SUCC(ret)) {                                                 \
       if (ObTimestampType != obj.get_type()) {                          \
         tz_info = NULL;                                                 \
       }                                                                 \
-      ret = ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, obj.get_scale(), buffer, length, pos); \
+      ret = ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, \
+                                            obj.get_scale(), buffer, length, pos); \
     }                                                                   \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
+      const char *fmt_suffix = params.need_cast_expr_ && lib::is_oracle_mode() ? \
+                                 CAST_SUFFIX_ORACLE : NORMAL_SUFFIX;    \
+      ret = databuff_printf(buffer, length, pos, "%s", fmt_suffix);     \
+    }                                                                   \
+    return ret;                                                         \
+  }                                                                     \
+                                                                        \
+  template <>                                                           \
+  inline int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                    int64_t &pos, const ObObjPrintParams &params)   \
+  {                                                                                 \
+    const ObTimeZoneInfo *tz_info = params.tz_info_;                                \
+    ObString str(static_cast<int32_t>(length - pos - 1), 0, buffer + pos + 1);      \
+    int ret = databuff_printf(buffer, length, pos, "'");                \
+    if (OB_SUCC(ret)) {                                                 \
+      if (ObTimestampType != obj.get_type()) {                          \
+        tz_info = NULL;                                                 \
+      }                                                                 \
+      ret = ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, \
+                                             obj.get_scale(), buffer, length, pos);   \
+    }                                                                   \
+    if (OB_SUCC(ret)) {                                                 \
       ret = databuff_printf(buffer, length, pos, "'");                  \
     }                                                                   \
     return ret;                                                         \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
-  {                                                                             \
-    ObString str(static_cast<int32_t>(length - pos - 1), 0, buffer + pos + 1);  \
-    int ret = databuff_printf(buffer, length, pos, "'");                \
-    if (OB_SUCC(ret)) {                                            \
-      if (ObTimestampType != obj.get_type()) {                          \
-        tz_info = NULL;                                                 \
-      }                                                                 \
-      ret = ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, obj.get_scale(), buffer, length, pos); \
-    }                                                                   \
-    if (OB_SUCC(ret)) {                                            \
-      ret = databuff_printf(buffer, length, pos, "'");                  \
-    }                                                                   \
-    return ret;                                                         \
-  }                                                                     \
-                                                                        \
-  template <>                                                           \
-  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  inline int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                          int64_t &pos, const ObObjPrintParams &params)   \
   {                                                                     \
+    const ObTimeZoneInfo *tz_info = params.tz_info_;                    \
     if (ObTimestampType != obj.get_type()) {                            \
       tz_info = NULL;                                                   \
     }                                                                   \
-    return ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, 6, buffer, length, pos); \
+    return ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, OB_MAX_DATETIME_PRECISION, buffer, length, pos); \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  inline int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
+                                      const ObObjPrintParams &params)   \
   {                                                                     \
+    const ObTimeZoneInfo *tz_info = params.tz_info_;                    \
     J_OBJ_START();                                                      \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
     J_COLON();                                                          \
@@ -499,8 +543,8 @@ DEF_NUMBER_FUNCS(ObNumberFloatType, number_float);
     if (ObTimestampType != obj.get_type()) {                            \
       tz_info = NULL;                                                   \
     }                                                                   \
-    int ret = ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, 6, buf, buf_len, pos); \
-    if (OB_SUCC(ret)) {                                            \
+    int ret = ObTimeConverter::datetime_to_str(obj.get_datetime(), tz_info, OB_MAX_DATETIME_PRECISION, buf, buf_len, pos); \
+    if (OB_SUCC(ret)) {                                                 \
       J_QUOTE();                                                        \
       J_OBJ_END();                                                      \
     }                                                                   \
@@ -520,50 +564,54 @@ DEF_DATETIME_FUNCS(ObTimestampType, timestamp, int64_t);
 ////////////////
 #define DEF_DATE_YEAR_PRINT_FUNCS(OBJTYPE, TYPE)                        \
   template <>                                                           \
-  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = databuff_printf(buffer, length, pos, "'");                \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), buffer, length, pos);  \
     }                                                                   \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = databuff_printf(buffer, length, pos, "'");                  \
     }                                                                   \
     return ret;                                                         \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = databuff_printf(buffer, length, pos, "'");                \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), buffer, length, pos);  \
     }                                                                   \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = databuff_printf(buffer, length, pos, "'");                  \
     }                                                                   \
     return ret;                                                         \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params)      \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     return ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), buffer, length, pos);  \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
+                              const ObObjPrintParams &params)           \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     J_OBJ_START();                                                      \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
     J_COLON();                                                          \
     J_QUOTE();                                                          \
     int ret = ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), buf, buf_len, pos); \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       J_QUOTE();                                                        \
       J_OBJ_END();                                                      \
     }                                                                   \
@@ -581,50 +629,54 @@ DEF_DATE_YEAR_FUNCS(ObDateType, date, int32_t);
 ////////////////
 #define DEF_TIME_PRINT_FUNCS(OBJTYPE, TYPE)                             \
   template <>                                                           \
-  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = databuff_printf(buffer, length, pos, "'");                \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), obj.get_scale(), buffer, length, pos); \
     }                                                                   \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = databuff_printf(buffer, length, pos, "'");                  \
     }                                                                   \
     return ret;                                                         \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = databuff_printf(buffer, length, pos, "'");                \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), obj.get_scale(), buffer, length, pos); \
     }                                                                   \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       ret = databuff_printf(buffer, length, pos, "'");                  \
     }                                                                   \
     return ret;                                                         \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params)      \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     return ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), obj.get_scale(), buffer, length, pos); \
   }                                                                     \
                                                                         \
   template <>                                                           \
-  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
+                              const ObObjPrintParams &params)           \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     J_OBJ_START();                                                      \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
     J_COLON();                                                          \
-    J_QUOTE();                                                        \
+    J_QUOTE();                                                          \
     int ret = ObTimeConverter::TYPE##_to_str(obj.get_##TYPE(), obj.get_scale(), buf, buf_len, pos); \
-    if (OB_SUCC(ret)) {                                            \
+    if (OB_SUCC(ret)) {                                                 \
       J_QUOTE();                                                        \
       J_OBJ_END();                                                      \
     }                                                                   \
@@ -646,39 +698,46 @@ DEF_DATE_YEAR_FUNCS(ObYearType, year, uint8_t);
 // ObVarcharType=22,  // charset: utf-8, collation: utf8_general_ci
 // ObCharType=23,     // charset: utf-8, collation: utf8_general_ci
 template<>
-int obj_print_sql<ObHexStringType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+int obj_print_sql<ObHexStringType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params);
+
 template<>
-int obj_print_str<ObHexStringType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+int obj_print_str<ObHexStringType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params);
+
 template<>
-int obj_print_plain_str<ObHexStringType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info);
+int obj_print_plain_str<ObHexStringType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                         const ObObjPrintParams &params);
 
 #define DEF_VARCHAR_PRINT_FUNCS(OBJTYPE)                                \
   template <>                                                           \
-  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params) \
   {                                                                     \
     int ret = common::OB_SUCCESS;                                       \
     if (CS_TYPE_BINARY == obj.get_collation_type()) {                   \
-      ret = obj_print_sql<ObHexStringType>(obj, buffer, length, pos, tz_info); \
+      ret = obj_print_sql<ObHexStringType>(obj, buffer, length, pos, params); \
     } else {                                                            \
       ret = databuff_printf(buffer, length, pos, "'%.*s'", obj.get_string_len(), obj.get_string_ptr()); \
     }                                                                   \
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     if (CS_TYPE_BINARY == obj.get_collation_type()) {                   \
       if (obj.get_string_len() > obj.get_data_length()) {               \
       } else {                                                          \
-        int64_t zero_length = obj.get_data_length() - obj.get_string_len();   \
+        int64_t zero_length = obj.get_data_length() - obj.get_string_len();  \
         ret = databuff_printf(buffer, length, pos, "'%.*s", obj.get_string_len(), obj.get_string_ptr());  \
-        for (int64_t i = 0; OB_SUCC(ret) && i < zero_length; ++i) {  \
-          ret = databuff_printf(buffer, length, pos, "\\0");               \
+        for (int64_t i = 0; OB_SUCC(ret) && i < zero_length; ++i) {     \
+          ret = databuff_printf(buffer, length, pos, "\\0");            \
         }                                                               \
-        if (OB_SUCC(ret)) {                                        \
-          if (OB_FAIL(databuff_printf(buffer, length, pos, "'"))) {       \
+        if (OB_SUCC(ret)) {                                             \
+          if (OB_FAIL(databuff_printf(buffer, length, pos, "'"))) {     \
           }                                                             \
         }                                                               \
       }                                                                 \
@@ -688,22 +747,24 @@ int obj_print_plain_str<ObHexStringType>(const ObObj &obj, char *buffer, int64_t
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params)      \
   {                                                                     \
-    UNUSED(tz_info); \
+    UNUSED(params);                                                     \
     return databuff_printf(buffer, length, pos, "%.*s", obj.get_string_len(), obj.get_string_ptr()); \
   }                                                                     \
   template <>                                                           \
-  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
+                              const ObObjPrintParams &params)           \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     J_OBJ_START();                                                      \
     PRINT_META();                                                       \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
     J_COLON();                                                          \
     BUF_PRINTO(obj.get_varchar());                                      \
     J_COMMA();                                                          \
-    J_KV(N_COLLATION, ObCharset::collation_name(obj.get_collation_type()));\
+    J_KV(N_COLLATION, ObCharset::collation_name(obj.get_collation_type())); \
     J_OBJ_END();                                                        \
     return OB_SUCCESS;                                                  \
   }
@@ -759,9 +820,10 @@ DEF_VARCHAR_FUNCS(ObCharType, char, ObString);
 // ObHexStringType=24,
 #define DEF_HEX_STRING_PRINT_FUNCS(OBJTYPE)                             \
   template <>                                                           \
-  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     ObString str = obj.get_string();                                    \
     if (OB_SUCCESS != (ret = databuff_printf(buffer, length, pos, "X'"))) { \
@@ -772,9 +834,10 @@ DEF_VARCHAR_FUNCS(ObCharType, char, ObString);
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                             const ObObjPrintParams &params)            \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     ObString str = obj.get_string();                                    \
     if (OB_SUCCESS != (ret = databuff_printf(buffer, length, pos, "X'"))) { \
@@ -785,9 +848,10 @@ DEF_VARCHAR_FUNCS(ObCharType, char, ObString);
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                   const ObObjPrintParams &params)      \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     ObString str = obj.get_string();                                    \
     if (OB_SUCCESS != (ret = databuff_printf(buffer, length, pos, "X"))) { \
@@ -796,9 +860,10 @@ DEF_VARCHAR_FUNCS(ObCharType, char, ObString);
     return ret;                                                         \
   }                                                                     \
   template <>                                                           \
-  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
+                              const ObObjPrintParams &params)           \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     J_OBJ_START();                                                      \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
@@ -822,9 +887,10 @@ DEF_HEX_STRING_FUNCS(ObHexStringType, hex_string, ObString);
 ////////////////
 // ObExtendType=25,                 // Min, Max, etc.
 template <>
-    int obj_print_sql<ObExtendType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_sql<ObExtendType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                    const ObObjPrintParams &params)
 {
-  UNUSED(tz_info);
+  UNUSED(params);
   int ret = OB_SUCCESS;
   switch(obj.get_ext()) {
     case ObActionFlag::OP_MIN_OBJ:
@@ -848,9 +914,10 @@ template <>
 }
 
 template <>
-    int obj_print_str<ObExtendType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_str<ObExtendType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                    const ObObjPrintParams &params)
 {
-  UNUSED(tz_info);
+  UNUSED(params);
   int ret = OB_SUCCESS;
   switch(obj.get_ext()) {
     case ObActionFlag::OP_MIN_OBJ:
@@ -874,9 +941,10 @@ template <>
 }
 
 template <>
-    int obj_print_plain_str<ObExtendType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_plain_str<ObExtendType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                          const ObObjPrintParams &params)
 {
-  UNUSED(tz_info);
+  UNUSED(params);
   int ret = OB_SUCCESS;
   switch(obj.get_ext()) {
     case ObActionFlag::OP_MIN_OBJ:
@@ -900,9 +968,10 @@ template <>
 }
 
 template <>
-    int obj_print_json<ObExtendType>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_json<ObExtendType>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos,
+                                     const ObObjPrintParams &params)
 {
-  UNUSED(tz_info);
+  UNUSED(params);
   int ret = OB_SUCCESS;
   J_OBJ_START();
   BUF_PRINTO(ob_obj_type_str(obj.get_type()));
@@ -934,30 +1003,34 @@ DEF_SERIALIZE_FUNCS(ObExtendType, ext, int64_t);
 ////////////////
 // 28, ObUnknownType
 template <>
-    int obj_print_sql<ObUnknownType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_sql<ObUnknownType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                     const ObObjPrintParams &params)
 {
   UNUSED(obj);
-  UNUSED(tz_info);
+  UNUSED(params);
   return databuff_printf(buffer, length, pos, "?");
 }
 template <>
-    int obj_print_str<ObUnknownType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_str<ObUnknownType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                     const ObObjPrintParams &params)
 {
   UNUSED(obj);
-  UNUSED(tz_info);
+  UNUSED(params);
   return databuff_printf(buffer, length, pos, "'?'");
 }
 template <>
-    int obj_print_plain_str<ObUnknownType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_plain_str<ObUnknownType>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos,
+                                           const ObObjPrintParams &params)
 {
   UNUSED(obj);
-  UNUSED(tz_info);
+  UNUSED(params);
   return databuff_printf(buffer, length, pos, "?");
 }
 template <>
-    int obj_print_json<ObUnknownType>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos, const ObTimeZoneInfo *tz_info)
+    int obj_print_json<ObUnknownType>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos,
+                                      const ObObjPrintParams &params)
 {
-  UNUSED(tz_info);
+  UNUSED(params);
   J_OBJ_START();
   BUF_PRINTO(ob_obj_type_str(obj.get_type()));
   J_COLON();
@@ -1020,13 +1093,262 @@ template <>
   return len;
 }
 
+////////////////
+// ObTimestampTZType=36,
+// ObTimestampLTZType=37,
+// ObTimestampNanoType=38,
+#define DEF_ORACLE_TIMESTAMP_COMMON_PRINT_FUNCS(OBJTYPE)                \
+    template <>                                                           \
+    inline int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                      int64_t &pos, const ObObjPrintParams &params) \
+    {                                                                     \
+      int ret = common::OB_SUCCESS;                                       \
+      static const char *CAST_TZ_PREFIX = "TO_TIMESTAMP_TZ('";            \
+      static const char *CAST_LTZ_PREFIX = "TO_TIMESTAMP('";              \
+      static const char *CAST_NANO_PREFIX = "TO_TIMESTAMP('";             \
+      static const char *NORMAL_PREFIX = "'";                             \
+      static const char *CAST_SUFFIX = "', '%.*s')";                      \
+      static const char *NORMAL_SUFFIX = "'";                             \
+      ObDataTypeCastParams dtc_params(params.tz_info_);                   \
+      if (OB_SUCC(ret)) {                                                 \
+        const char *fmt_prefix = NORMAL_PREFIX;                           \
+        if (params.need_cast_expr_) {                                     \
+          switch (OBJTYPE) {                                              \
+          case ObTimestampTZType:                                         \
+            fmt_prefix = CAST_TZ_PREFIX;                                  \
+            break;                                                        \
+          case ObTimestampLTZType:                                        \
+            fmt_prefix = CAST_LTZ_PREFIX;                                 \
+            break;                                                        \
+          case ObTimestampNanoType:                                       \
+            fmt_prefix = CAST_NANO_PREFIX;                                \
+            break;                                                        \
+          default:                                                        \
+            ret = OB_ERR_UNEXPECTED;                                      \
+            break;                                                        \
+          }                                                               \
+        }                                                                 \
+        if (OB_SUCC(ret)) {                                               \
+          ret = databuff_printf(buffer, length, pos, "%s", fmt_prefix);   \
+          dtc_params.force_use_standard_format_ = true;                   \
+        }                                                                 \
+      }                                                                   \
+      if (OB_SUCC(ret)) {                                                 \
+        ret = ObTimeConverter::otimestamp_to_str(obj.get_otimestamp_value(), dtc_params, \
+                                                obj.get_scale(), OBJTYPE, buffer, length, pos);\
+      }                                                                   \
+      if (OB_SUCC(ret)) {                                                 \
+        const char *fmt_suffix = NORMAL_SUFFIX;                           \
+        if (params.need_cast_expr_) {                                     \
+          const ObString NLS_FORMAT = dtc_params.get_nls_format(OBJTYPE); \
+          fmt_suffix = CAST_SUFFIX;                                       \
+          ret = databuff_printf(buffer, length, pos, fmt_suffix,          \
+                                NLS_FORMAT.length(), NLS_FORMAT.ptr());   \
+        } else {                                                          \
+          ret = databuff_printf(buffer, length, pos, "%s", fmt_suffix);   \
+        }                                                                 \
+      }                                                                   \
+      return ret;                                                         \
+    }                                                                     \
+    template <>                                                           \
+    inline int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                      int64_t &pos, const ObObjPrintParams &params) \
+    {                                                                     \
+      int ret = databuff_printf(buffer, length, pos, "'");                \
+      if (OB_SUCC(ret)) {                                                 \
+        const ObDataTypeCastParams dtc_params(params.tz_info_);           \
+        ret = ObTimeConverter::otimestamp_to_str(obj.get_otimestamp_value(), dtc_params, \
+                                                 obj.get_scale(), OBJTYPE, buffer, length, pos);\
+      }                                                                   \
+      if (OB_SUCC(ret)) {                                                 \
+        ret = databuff_printf(buffer, length, pos, "'");                  \
+      }                                                                   \
+      return ret;                                                         \
+    }                                                                     \
+    template <>                                                           \
+    inline int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                            int64_t &pos, const ObObjPrintParams &params) \
+    {                                                                     \
+      const ObDataTypeCastParams dtc_params(params.tz_info_);             \
+      return ObTimeConverter::otimestamp_to_str(obj.get_otimestamp_value(), dtc_params, \
+                                                OB_MAX_TIMESTAMP_TZ_PRECISION,          \
+                                                OBJTYPE, buffer, length, pos); \
+    }                                                                     \
+    template <>                                                           \
+    inline int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
+                                       const ObObjPrintParams &params)    \
+    {                                                                     \
+      UNUSED(params);                                                     \
+      int ret = OB_SUCCESS;                                               \
+      J_OBJ_START();                                                      \
+      BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
+      J_COLON();                                                          \
+      J_QUOTE();                                                          \
+      const ObDataTypeCastParams dtc_params(params.tz_info_);             \
+      ret = ObTimeConverter::otimestamp_to_str(obj.get_otimestamp_value(), dtc_params, \
+                                               OB_MAX_TIMESTAMP_TZ_PRECISION,    \
+                                               OBJTYPE, buf, buf_len, pos); \
+      if (OB_SUCC(ret)) {                                                 \
+        J_QUOTE();                                                        \
+        J_OBJ_END();                                                      \
+      }                                                                   \
+      return ret;                                                         \
+    }
+
+#define DEF_ORACLE_TIMESTAMP_TZ_CS_FUNCS(OBJTYPE)                                              \
+  template <>                                                                                  \
+  inline int64_t obj_crc64<OBJTYPE>(const ObObj& obj, const int64_t current)                   \
+  {                                                                                            \
+    int type = obj.get_type();                                                                 \
+    int64_t ret = ob_crc64_sse42(current, &type, sizeof(type));                                \
+    ObOTimestampData tmp_data = obj.get_otimestamp_value();                                    \
+    ret = ob_crc64_sse42(ret, &tmp_data.time_us_, sizeof(int64_t));                            \
+    ret = ob_crc64_sse42(ret, &tmp_data.time_ctx_.desc_, sizeof(uint32_t));                    \
+    return ret;                                                                                \
+  }                                                                                            \
+  template <>                                                                                  \
+  inline void obj_batch_checksum<OBJTYPE>(const ObObj& obj, ObBatchChecksum& bc)               \
+  {                                                                                            \
+    int type = obj.get_type();                                                                 \
+    bc.fill(&type, sizeof(type));                                                              \
+    ObOTimestampData tmp_data = obj.get_otimestamp_value();                                    \
+    bc.fill(&tmp_data.time_us_, sizeof(int64_t));                                              \
+    bc.fill(&tmp_data.time_ctx_.desc_, sizeof(uint32_t));                                      \
+  }                                                                                            \
+  template <typename T>                                                                        \
+  struct ObjHashCalculator<OBJTYPE, T, ObObj> {                                                \
+    static uint64_t calc_hash_value(const ObObj& obj, const uint64_t hash)                     \
+    {                                                                                          \
+      ObOTimestampData tmp_data = obj.get_otimestamp_value();                                  \
+      uint64_t ret = T::hash(&tmp_data.time_us_, static_cast<int32_t>(sizeof(int64_t)), hash); \
+      ret = T::hash(&tmp_data.time_ctx_.desc_, static_cast<int32_t>(sizeof(uint32_t)), ret);   \
+      return ret;                                                                              \
+    }                                                                                          \
+  };                                                                                           \
+  template <>                                                                                  \
+  inline uint64_t obj_murmurhash<OBJTYPE>(const ObObj& obj, const uint64_t hash)               \
+  {                                                                                            \
+    int type = obj.get_type();                                                                 \
+    ObOTimestampData tmp_data = obj.get_otimestamp_value();                                    \
+    uint64_t ret = murmurhash(&type, sizeof(type), hash);                                      \
+    ret = murmurhash(&tmp_data.time_us_, static_cast<int32_t>(sizeof(int64_t)), ret);          \
+    ret = murmurhash(&tmp_data.time_ctx_.desc_, static_cast<int32_t>(sizeof(uint32_t)), ret);  \
+    return ret;                                                                                \
+  }                                                                                            \
+
+#define DEF_ORACLE_TIMESTAMP_TZ_SERIALIZE_FUNCS(OBJTYPE)                                                           \
+  template <>                                                                                                      \
+  inline int obj_val_serialize<OBJTYPE>(const ObObj& obj, char* buf, const int64_t buf_len, int64_t& pos)          \
+  {                                                                                                                \
+    const ObOTimestampData& ot_data = obj.get_otimestamp_value();                                                  \
+    return serialization::encode_otimestamp_tz_type(buf, buf_len, pos, ot_data.time_us_, ot_data.time_ctx_.desc_); \
+  }                                                                                                                \
+                                                                                                                   \
+  template <>                                                                                                      \
+  inline int obj_val_deserialize<OBJTYPE>(ObObj & obj, const char* buf, const int64_t buf_len, int64_t& pos)       \
+  {                                                                                                                \
+    int ret = OB_SUCCESS;                                                                                          \
+    ObOTimestampData ot_data;                                                                                      \
+    ret = serialization::decode_otimestamp_tz_type(                                                                \
+        buf, buf_len, pos, *((int64_t*)&ot_data.time_us_), *((uint32_t*)&ot_data.time_ctx_.desc_));                \
+    obj.set_otimestamp_value(OBJTYPE, ot_data);                                                                    \
+    return ret;                                                                                                    \
+  }                                                                                                                \
+  template <>                                                                                                      \
+  inline int64_t obj_val_get_serialize_size<OBJTYPE>(const ObObj& obj)                                             \
+  {                                                                                                                \
+    UNUSED(obj);                                                                                                   \
+    return serialization::encode_length_otimestamp_tz_type();                                                      \
+  }                                                                                                                \
+  
+#define DEF_ORACLE_TIMESTAMP_CS_FUNCS(OBJTYPE)                                                     \
+  template <>                                                                                      \
+  inline int64_t obj_crc64<OBJTYPE>(const ObObj& obj, const int64_t current)                       \
+  {                                                                                                \
+    int type = obj.get_type();                                                                     \
+    int64_t ret = ob_crc64_sse42(current, &type, sizeof(type));                                    \
+    ObOTimestampData tmp_data = obj.get_otimestamp_value();                                        \
+    ret = ob_crc64_sse42(ret, &tmp_data.time_us_, sizeof(int64_t));                                \
+    ret = ob_crc64_sse42(ret, &tmp_data.time_ctx_.time_desc_, sizeof(uint16_t));                   \
+    return ret;                                                                                    \
+  }                                                                                                \
+  template <>                                                                                      \
+  inline void obj_batch_checksum<OBJTYPE>(const ObObj& obj, ObBatchChecksum& bc)                   \
+  {                                                                                                \
+    int type = obj.get_type();                                                                     \
+    bc.fill(&type, sizeof(type));                                                                  \
+    ObOTimestampData tmp_data = obj.get_otimestamp_value();                                        \
+    bc.fill(&tmp_data.time_us_, sizeof(int64_t));                                                  \
+    bc.fill(&tmp_data.time_ctx_.time_desc_, sizeof(uint16_t));                                     \
+  }                                                                                                \
+  template <typename T>                                                                            \
+  struct ObjHashCalculator<OBJTYPE, T, ObObj> {                                                    \
+    static uint64_t calc_hash_value(const ObObj &obj, const uint64_t hash)                         \
+    {                                                                                              \
+      uint64_t ret = OB_SUCCESS;                                                                   \
+      ObOTimestampData tmp_data = obj.get_otimestamp_value();                                      \
+      ret = T::hash(&tmp_data.time_us_, static_cast<int32_t>(sizeof(int64_t)), hash);              \
+      ret = T::hash(&tmp_data.time_ctx_.time_desc_, static_cast<int32_t>(sizeof(uint16_t)), ret);  \
+      return ret;                                                                                  \
+    }                                                                                              \
+  };                                                                                               \
+  template <>                                                                                      \
+  inline uint64_t obj_murmurhash<OBJTYPE>(const ObObj &obj, const uint64_t hash)                   \
+  {                                                                                                \
+    int type = obj.get_type();                                                                     \
+    uint64_t ret = murmurhash(&type, sizeof(type), hash);                                          \
+    ObOTimestampData tmp_data = obj.get_otimestamp_value();                                        \
+    ret = murmurhash(&tmp_data.time_us_, static_cast<int32_t>(sizeof(int64_t)), ret);              \
+    ret = murmurhash(&tmp_data.time_ctx_.time_desc_, static_cast<int32_t>(sizeof(uint16_t)), ret); \
+    return ret;                                                                                    \
+  }                                                                                                \
+  
+#define DEF_ORACLE_TIMESTAMP_SERIALIZE_FUNCS(OBJTYPE)                                                                \
+  template <>                                                                                                        \
+  inline int obj_val_serialize<OBJTYPE>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos)            \
+  {                                                                                                                  \
+    const ObOTimestampData &ot_data = obj.get_otimestamp_value();                                                    \
+    return serialization::encode_otimestamp_type(buf, buf_len, pos, ot_data.time_us_, ot_data.time_ctx_.time_desc_); \
+  }                                                                                                                  \
+  template <>                                                                                                        \
+  inline int obj_val_deserialize<OBJTYPE>(ObObj &obj, const char *buf, const int64_t buf_len, int64_t &pos)          \
+  {                                                                                                                  \
+    int ret = OB_SUCCESS;                                                                                            \
+    ObOTimestampData ot_data;                                                                                        \
+    ret = serialization::decode_otimestamp_type(buf, buf_len, pos, \
+                                                *((int64_t*)&ot_data.time_us_), \
+                                                *((uint16_t*)&ot_data.time_ctx_.time_desc_));  \
+    obj.set_otimestamp_value(OBJTYPE, ot_data);                                                                      \
+    return ret;                                                                                                      \
+  }                                                                                                                  \
+  template <>                                                                                                        \
+  inline int64_t obj_val_get_serialize_size<OBJTYPE>(const ObObj& obj)                                               \
+  {                                                                                                                  \
+    UNUSED(obj);                                                                                                     \
+    return serialization::encode_length_otimestamp_type();                                                           \
+  }
+
+#define DEF_ORACLE_TIMESTAMP_TZ_FUNCS(OBJTYPE)      \
+  DEF_ORACLE_TIMESTAMP_COMMON_PRINT_FUNCS(OBJTYPE); \
+  DEF_ORACLE_TIMESTAMP_TZ_CS_FUNCS(OBJTYPE);        \
+  DEF_ORACLE_TIMESTAMP_TZ_SERIALIZE_FUNCS(OBJTYPE)
+
+#define DEF_ORACLE_TIMESTAMP_FUNCS(OBJTYPE)         \
+  DEF_ORACLE_TIMESTAMP_COMMON_PRINT_FUNCS(OBJTYPE); \
+  DEF_ORACLE_TIMESTAMP_CS_FUNCS(OBJTYPE);           \
+  DEF_ORACLE_TIMESTAMP_SERIALIZE_FUNCS(OBJTYPE)
+
+DEF_ORACLE_TIMESTAMP_TZ_FUNCS(ObTimestampTZType);
+DEF_ORACLE_TIMESTAMP_FUNCS(ObTimestampLTZType);
+DEF_ORACLE_TIMESTAMP_FUNCS(ObTimestampNanoType);
+
 // ObRawType=39
-#define DEF_RAW_PRINT_FUNCS(OBJTYPE)                                \
+#define DEF_RAW_PRINT_FUNCS(OBJTYPE)                                    \
   template <>                                                           \
   inline int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
-                                    const ObTimeZoneInfo *tz_info)      \
+                                    const ObObjPrintParams &params)     \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     ObString str = obj.get_string();                                    \
     if (OB_SUCCESS != (ret = databuff_printf(buffer, length, pos, "'"))) { \
@@ -1038,9 +1360,9 @@ template <>
   }                                                                     \
   template <>                                                           \
   inline int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
-                                    const ObTimeZoneInfo *tz_info)      \
+                                    const ObObjPrintParams &params)     \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     ObString str = obj.get_string();                                    \
     if (OB_SUCCESS != (ret = databuff_printf(buffer, length, pos, "'"))) { \
@@ -1052,9 +1374,9 @@ template <>
   }                                                                     \
   template <>                                                           \
   inline int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
-                                          int64_t &pos, const ObTimeZoneInfo *tz_info) \
+                                          int64_t &pos, const ObObjPrintParams &params)   \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     ObString str = obj.get_string();                                    \
     if (OB_SUCCESS != (ret = hex_print(str.ptr(), str.length(), buffer, length, pos))) { \
@@ -1063,9 +1385,9 @@ template <>
   }                                                                     \
   template <>                                                           \
   inline int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos, \
-                                      const ObTimeZoneInfo *tz_info)    \
+                                     const ObObjPrintParams &params)    \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     J_OBJ_START();                                                      \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
@@ -1086,12 +1408,13 @@ template <>
 
 DEF_RAW_FUNCS(ObRawType, raw, ObString);
 
-#define DEF_NVARCHAR_PRINT_FUNCS(OBJTYPE)                                \
+#define DEF_NVARCHAR_PRINT_FUNCS(OBJTYPE)                               \
   template <>                                                           \
-  inline int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, const ObTimeZoneInfo *tz_info) \
+  inline int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                    const ObObjPrintParams &params)     \
   {                                                                                         \
-    UNUSED(tz_info);                                                                        \
-    int ret = OB_SUCCESS;                                                            \
+    UNUSED(params);                                                                         \
+    int ret = OB_SUCCESS;                                                                   \
     if (OB_FAIL(databuff_printf(buffer, length, pos, "n'"))) {                              \
     } else if (ObCharset::charset_type_by_coll(obj.get_collation_type()) == CHARSET_UTF8MB4) { \
       ObHexEscapeSqlStr sql_str(obj.get_string());                                          \
@@ -1123,9 +1446,9 @@ DEF_RAW_FUNCS(ObRawType, raw, ObString);
   }                                                                                         \
   template <>                                                           \
   inline int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
-                                    const ObTimeZoneInfo *tz_info)      \
+                                    const ObObjPrintParams &params)     \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     uint32_t result_len = 0;                                            \
     if (OB_FAIL(databuff_printf(buffer, length, pos, "'"))) {           \
@@ -1142,9 +1465,9 @@ DEF_RAW_FUNCS(ObRawType, raw, ObString);
   }                                                                     \
   template <>                                                           \
   inline int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
-                                          int64_t &pos, const ObTimeZoneInfo *tz_info) \
+                                          int64_t &pos, const ObObjPrintParams &params)   \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     int ret = OB_SUCCESS;                                               \
     uint32_t result_len = 0;                                            \
     if (OB_FAIL(ObCharset::charset_convert(obj.get_collation_type(),    \
@@ -1159,18 +1482,18 @@ DEF_RAW_FUNCS(ObRawType, raw, ObString);
   }                                                                     \
   template <>                                                           \
   inline int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, int64_t &pos,  \
-                                     const ObTimeZoneInfo *tz_info)     \
+                                     const ObObjPrintParams &params)    \
   {                                                                     \
-    UNUSED(tz_info);                                                    \
+    UNUSED(params);                                                     \
     J_OBJ_START();                                                      \
     PRINT_META();                                                       \
     BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
     J_COLON();                                                          \
     uint32_t result_len = 0;                                            \
     ObCharset::charset_convert(obj.get_collation_type(),                \
-                               obj.get_string().ptr(), obj.get_string().length(),\
+                               obj.get_string().ptr(), obj.get_string().length(), \
                                ObCharset::get_system_collation(),       \
-                               buf + pos, static_cast<int32_t>(buf_len - pos),                \
+                               buf + pos, static_cast<int32_t>(buf_len - pos),    \
                                result_len);                             \
     pos += result_len;                                                  \
     J_COMMA();                                                          \
@@ -1181,7 +1504,7 @@ DEF_RAW_FUNCS(ObRawType, raw, ObString);
 
 #define DEF_NVARCHAR_FUNCS(OBJTYPE, TYPE, VTYPE) \
   DEF_NVARCHAR_PRINT_FUNCS(OBJTYPE);             \
-  DEF_STRING_CS_FUNCS(OBJTYPE);                 \
+  DEF_STRING_CS_FUNCS(OBJTYPE);                  \
   DEF_SERIALIZE_FUNCS(OBJTYPE, TYPE, VTYPE)
 
 DEF_NVARCHAR_FUNCS(ObNVarchar2Type, nvarchar2, ObString);

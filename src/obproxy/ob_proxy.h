@@ -137,6 +137,7 @@ private:
   obutils::ObProxyConfig *config_;
   obutils::ObProxyReloadConfig reload_config_;
   obutils::ObProxyTableProcessor &proxy_table_processor_;
+  obutils::ObHotUpgradeProcessor &hot_upgrade_processor_;
 
   // only used at start up
   proxy::ObMysqlConfigParams *mysql_config_params_;

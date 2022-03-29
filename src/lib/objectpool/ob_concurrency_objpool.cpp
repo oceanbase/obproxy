@@ -292,7 +292,7 @@ inline bool ObObjFreeList::need_to_reclaim(ObThreadCache *thread_cache)
 {
   bool ret = false;
   if (reclaim_opt_.enable_reclaim_) {
-    if(thread_cache->nr_free_ >= thread_cache->nr_average_
+    if(thread_cache->nr_free_ >= static_cast<int64_t>(thread_cache->nr_average_)
        && thread_cache->nr_free_chunks_ > chunk_count_
        && thread_cache->nr_total_ > std::max(obj_count_base_, obj_count_per_chunk_)) {
       if (thread_cache->nr_overage_++ >= reclaim_opt_.max_overage_) {

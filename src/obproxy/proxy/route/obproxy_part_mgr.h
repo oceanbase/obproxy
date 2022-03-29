@@ -22,6 +22,7 @@ namespace oceanbase
 namespace common
 {
 class ObPartDesc;
+class ObPartDescCtx;
 }
 namespace obproxy
 {
@@ -87,15 +88,17 @@ public:
   int get_first_part_id_by_idx(const int64_t idx, int64_t &part_id);
   int get_first_part(common::ObNewRange &range,
                      common::ObIAllocator &allocator,
-                     common::ObIArray<int64_t> &part_ids);
-  int get_sub_part(ObNewRange &range,
-                   ObIAllocator &allocator,
-                   ObPartDesc *sub_part_desc_ptr,
-                   ObIArray<int64_t> &part_ids);
+                     common::ObIArray<int64_t> &part_ids,
+                     common::ObPartDescCtx &ctx);
+  int get_sub_part(common::ObNewRange &range,
+                   common::ObIAllocator &allocator,
+                   common::ObPartDesc *sub_part_desc_ptr,
+                   common::ObIArray<int64_t> &part_ids,
+                   common::ObPartDescCtx &ctx);
 
   int get_sub_part_by_random(const int64_t rand_num, 
-                             ObPartDesc *sub_part_desc_ptr,
-                             ObIArray<int64_t> &part_ids);
+                             common::ObPartDesc *sub_part_desc_ptr,
+                             common::ObIArray<int64_t> &part_ids);
 
   int build_hash_part(const bool is_oracle_mode,
                       const share::schema::ObPartitionLevel part_level,

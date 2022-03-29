@@ -578,7 +578,8 @@ inline void ObMysqlRoute::setup_partition_id_calc()
       }
     } else {
       result = &param_.client_request_->get_parse_result();
-      if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == param_.client_request_->get_packet_meta().cmd_) {
+      if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == param_.client_request_->get_packet_meta().cmd_
+          || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == param_.client_request_->get_packet_meta().cmd_) {
         if (OB_FAIL(param_.client_info_->get_ps_sql(user_sql))) {
           LOG_WARN("fail to get ps sql", K(ret));
           ret = OB_SUCCESS;

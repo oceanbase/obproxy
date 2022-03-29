@@ -13,6 +13,7 @@
 #define USING_LOG_PREFIX PROXY
 #include "opsql/expr_resolver/ob_expr_resolver.h"
 #include "proxy/route/obproxy_part_info.h"
+#include "proxy/route/obproxy_expr_calculator.h"
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
 #include "proxy/mysqllib/ob_mysql_request_analyzer.h"
 #include "proxy/mysqllib/ob_proxy_session_info.h"
@@ -80,7 +81,7 @@ int ObExprResolver::resolve(ObExprResolverContext &ctx, ObExprResolverResult &re
                                        ctx.part_info_,
                                        ctx.client_request_,
                                        ctx.client_info_,
-                                       ctx.ps_entry_,
+                                       ctx.ps_id_entry_,
                                        ctx.text_ps_entry_,
                                        result.ranges_[part_idx]))) {
           LOG_INFO("fail to resolve token list, ignore it", K(ret));
@@ -105,7 +106,7 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
                                        ObProxyPartInfo *part_info,
                                        ObProxyMysqlRequest *client_request,
                                        ObClientSessionInfo *client_info,
-                                       ObPsEntry *ps_entry,
+                                       ObPsIdEntry *ps_id_entry,
                                        ObTextPsEntry *text_ps_entry,
                                        ObNewRange &range)
 {
@@ -136,9 +137,13 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
         target_obj->set_int(token->int_value_);
       } else if (TOKEN_PLACE_HOLDER == token->type_) {
         int64_t param_index = token->placeholder_idx_;
-        if (OB_FAIL(get_obj_with_param(*target_obj, client_request,
-                       client_info, ps_entry, param_index))) {
-          LOG_WARN("fail to get target obj with param", K(ret));
+        if (OB_FAIL(get_obj_with_param(*target_obj, client_request, client_info,
+                                       part_info, ps_id_entry, param_index))) {
+          LOG_DEBUG("fail to get target obj with param", K(ret));
+        }
+      } else if (TOKEN_FUNC == token->type_) {
+        if (OB_FAIL(calc_token_func_obj(token, client_info, *target_obj))) {
+          LOG_WARN("fail to calc token func obj", K(ret));
         }
       } else {
         ret = OB_INVALID_ARGUMENT;
@@ -207,6 +212,76 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
   return ret;
 }
 
+/*
+ * currently only support to_date/to_timestamp function
+ * currently support at least one param, at most two params now
+ */
+int ObExprResolver::calc_token_func_obj(ObProxyTokenNode *token,
+                                        ObClientSessionInfo *client_session_info,
+                                        ObObj &target_obj)
+{
+  int ret = OB_SUCCESS;
+  ObObjType target_type = ObMaxType;
+  ObString func_name(token->str_value_.str_len_ ,token->str_value_.str_);
+  
+  if (func_name.case_compare("to_date") == 0) {
+    target_type = ObDateTimeType;
+  } else if (func_name.case_compare("to_timestamp") == 0) {
+    target_type = ObTimestampNanoType;
+  } else {
+    /* more function could be supported */
+  }
+
+  if (target_type == ObMaxType) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("fail to parse token func, unsupported function name", K(ret), K(func_name));
+  } else if (OB_ISNULL(token->child_)
+             || OB_ISNULL(token->child_->head_)){
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("fail to parse token func, param list null", K(ret), K(token->str_value_.str_));
+  } else {
+    ObCollationType collation = ObCharset::get_default_collation(ObCharset::get_default_charset());
+    target_obj.set_collation_type(collation);
+
+    ObProxyTokenNode *param_node = token->child_->head_;
+    if (param_node->type_ == TOKEN_STR_VAL) {
+      target_obj.set_varchar(param_node->str_value_.str_, param_node->str_value_.str_len_);
+    } else if (param_node->type_ == TOKEN_INT_VAL) {
+      target_obj.set_int(param_node->int_value_);
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("unexpected token node type, please check", K(ret), K(param_node->type_));
+    }
+    
+    if (OB_SUCC(ret)) {
+      ObString nls_format;
+      if (param_node->next_ != NULL) {
+        nls_format.assign_ptr(param_node->next_->str_value_.str_, param_node->next_->str_value_.str_len_);
+      }
+      
+      ObTimeZoneInfo tz_info;
+      ObDataTypeCastParams dtc_params;
+
+      if (!nls_format.empty()) {
+        dtc_params.tz_info_ = &tz_info;
+        dtc_params.set_nls_format_by_type(target_type, nls_format);
+      } else {
+        dtc_params.tz_info_ = &tz_info;
+        if (OB_FAIL(ObExprCalcTool::build_dtc_params(client_session_info, target_type, dtc_params))) {
+          LOG_WARN("fail to build dtc params", K(ret), K(target_type));
+        }
+      }
+      
+      ObCastCtx cast_ctx(&allocator_, &dtc_params, CM_NULL_ON_WARN, collation);
+      if (OB_SUCC(ret) && OB_FAIL(ObObjCasterV2::to_type(target_type, collation, cast_ctx, target_obj, target_obj))) {
+        LOG_WARN("fail to cast obj", K(ret), K(target_obj), K(target_type), K(collation));
+      }
+    }
+  }
+
+  return ret;
+}
+
 int ObExprResolver::calc_generated_key_value(ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode)
 {
   int ret = OB_SUCCESS;
@@ -247,9 +322,12 @@ int ObExprResolver::calc_generated_key_value(ObObj &obj, const ObProxyPartKey &p
   return ret;
 }
 
-int ObExprResolver::get_obj_with_param(ObObj &target_obj, ObProxyMysqlRequest *client_request,
+int ObExprResolver::get_obj_with_param(ObObj &target_obj,
+                                       ObProxyMysqlRequest *client_request,
                                        ObClientSessionInfo *client_info,
-                                       ObPsEntry *ps_entry, const int64_t param_index)
+                                       ObProxyPartInfo *part_info,
+                                       ObPsIdEntry *ps_id_entry,
+                                       const int64_t param_index)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(client_request) || OB_ISNULL(client_info) || OB_UNLIKELY(param_index < 0)) {
@@ -287,19 +365,20 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj, ObProxyMysqlRequest *c
     } else {
       need_use_execute_param = true;
     }
-    if (OB_SUCC(ret) && need_use_execute_param
+    if (OB_SUCC(ret)
+        && need_use_execute_param
         && OB_MYSQL_COM_STMT_EXECUTE == client_request->get_packet_meta().cmd_) {
       // for com_stmt_prepare, we have no execute_params, so no need continue, just return
       LOG_DEBUG("will cal obj with value from execute param", K(execute_param_index));
-      if (OB_ISNULL(ps_entry)) {
+      if (OB_ISNULL(ps_id_entry)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("ps entry is null", K(ret));
-      } else if (OB_UNLIKELY(execute_param_index >= ps_entry->get_param_count())
+        LOG_WARN("client ps id entry is null", K(ret), KPC(ps_id_entry));
+      } else if (OB_UNLIKELY(execute_param_index >= ps_id_entry->get_param_count())
                  || execute_param_index < 0) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid placeholder idx", K(execute_param_index), KPC(ps_entry), K(ret));
-      } else if (OB_FAIL(ObMysqlRequestAnalyzer::analyze_execute_param(ps_entry->get_param_count(),
-                         ps_entry->get_ps_sql_meta().get_param_types(), *client_request, execute_param_index, target_obj))) {
+        LOG_WARN("invalid placeholder idx", K(execute_param_index), KPC(ps_id_entry), K(ret));
+      } else if (OB_FAIL(ObMysqlRequestAnalyzer::analyze_execute_param(ps_id_entry->get_param_count(),
+                         ps_id_entry->get_ps_sql_meta().get_param_types(), *client_request, execute_param_index, target_obj))) {
         LOG_WARN("fail to analyze execute param", K(ret));
       }
     }
@@ -308,7 +387,8 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj, ObProxyMysqlRequest *c
       LOG_DEBUG("prepare sql with only placeholder, will return fail", K(ret));
     }
 
-    if (OB_SUCC(ret) && need_use_execute_param
+    if (OB_SUCC(ret)
+        && need_use_execute_param
         && client_request->get_parse_result().is_text_ps_execute_stmt()) {
       ObSqlParseResult &parse_result = client_request->get_parse_result();
       ObProxyTextPsExecuteInfo execute_info = parse_result.text_ps_execute_info_;
@@ -325,7 +405,8 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj, ObProxyMysqlRequest *c
       }
     }
 
-    if (OB_SUCC(ret) && need_use_execute_param
+    if (OB_SUCC(ret)
+        && need_use_execute_param
         && OB_MYSQL_COM_STMT_PREPARE_EXECUTE == client_request->get_packet_meta().cmd_) {
       LOG_DEBUG("will cal obj with value from execute param", K(execute_param_index));
       if (OB_UNLIKELY(execute_param_index < 0)) {
@@ -333,6 +414,16 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj, ObProxyMysqlRequest *c
         LOG_WARN("invalid placeholder idx", K(execute_param_index), K(ret));
       } else if (OB_FAIL(ObMysqlRequestAnalyzer::analyze_prepare_execute_param(*client_request, execute_param_index, target_obj))) {
         LOG_WARN("fail to analyze execute param", K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret)
+        && need_use_execute_param
+        && OB_MYSQL_COM_STMT_SEND_LONG_DATA == client_request->get_packet_meta().cmd_) {
+      LOG_DEBUG("will calc obj with execute param for send long data");
+      if (OB_FAIL(ObMysqlRequestAnalyzer::analyze_send_long_data_param(*client_request, execute_param_index,
+                                                                       part_info, ps_id_entry, target_obj))) {
+        LOG_DEBUG("fail to analyze send long data param", K(ret));
       }
     }
   }

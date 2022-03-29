@@ -19,6 +19,7 @@
 #include "lib/timezone/ob_timezone_info.h"
 #include "rpc/obmysql/ob_mysql_global.h"
 #include "rpc/obmysql/ob_mysql_util.h"
+#include "rpc/obmysql/ob_mysql_field.h"
 #include "common/ob_object.h"
 #include "common/ob_accuracy.h"
 
@@ -55,6 +56,7 @@ public:
                             uint16_t &flags, ObScale &num_decimals);
 
   static int get_ob_type(ObObjType &ob_type, obmysql::EMySQLFieldType mysql_type);
+  static int to_ob_field(const obmysql::ObMySQLField &field, ObField &mfield);
 };
 
 } // end of namespace common

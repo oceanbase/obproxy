@@ -253,7 +253,7 @@ int ObMysqlSessionManager::acquire_server_session(const sockaddr &addr, const Ob
 {
   int ret = OB_SESSION_NOT_FOUND;
   server_session = NULL;
-  if (NULL != (server_session = session_pool_.acquire_session(addr, auth_user))) {
+  if (OB_LIKELY(NULL != (server_session = session_pool_.acquire_session(addr, auth_user)))) {
     ret = OB_SUCCESS;
     LOG_DEBUG("[acquire session] pool search successful");
   }

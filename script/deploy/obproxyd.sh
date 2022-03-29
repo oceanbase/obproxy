@@ -4,12 +4,20 @@
 # description: obproxyd is a daemon which guarantee obproxy is running
 
 OBPROXY_CMD=
-OBPROXY_APP_NAME=
-OBPROXY_APP_NAME_ARG=''
-OBPROXY_IDC_NAME=
+OBPROXY_APP_NAME=${APPNAME}
+OBPROXY_APP_NAME_ARG=
+OBPROXY_IDC_NAME=${OBPROXY_IDC_NAME}
 OBPROXY_IDC_NAME_ARG=
 OBPROXY_ROOT=$(dirname $(dirname $(readlink -f "$0")))
-OBPROXY_PORT=2883
+OBPROXY_PORT=${OBPROXY_PORT}
+ENABLE_ROOT_SERVER=${ENABLE_ROOT_SERVER}
+ENABLE_ROOT_SERVER_ARG=
+ROOT_SERVER_CLUSTER_NAME=${ROOT_SERVER_CLUSTER_NAME}
+ROOT_SERVER_CLUSTER_NAME_ARG=
+ROOT_SERVER_LIST=${ROOT_SERVER_LIST}
+ROOT_SERVER_LIST_ARG=
+OBPROXY_CONFIG_SERVER_URL=${OBPROXY_CONFIG_SERVER_URL}
+OBPROXY_CONFIG_SERVER_URL_ARG=
 
 STATUS_ALL_OBPROXY=
 
@@ -66,8 +74,40 @@ function check_opt()
             ;;
     esac
 
-    OBPROXY_CONFIG_SERVER_URL=$OBPROXY_CONFIG_SERVER_URL
-    echo "obproxy config server url:$OBPROXY_CONFIG_SERVER_URL"
+    if [ x$ENABLE_ROOT_SERVER == xtrue ];then
+      ENABLE_ROOT_SERVER_ARG=" -r"
+      if [ -z $ROOT_SERVER_CLUSTER_NAME ]
+      then
+        echo "ROOT_SERVER_CLUSTER_NAME not set"
+        exit 1
+      else
+        ROOT_SERVER_CLUSTER_NAME_ARG=" -s ${ROOT_SERVER_CLUSTER_NAME}"
+      fi
+
+      if [ -z $ROOT_SERVER_LIST ]
+      then
+        echo "ROOT_SERVER_LIST not set"
+        exit 1
+      else
+        ROOT_SERVER_LIST_ARG=" -t ${ROOT_SERVER_LIST}"
+      fi
+    else
+      echo "obproxy config server url:$OBPROXY_CONFIG_SERVER_URL"
+      OBPROXY_CONFIG_SERVER_URL_ARG=" -u $OBPROXY_CONFIG_SERVER_URL"
+    if
+
+    # check PORT
+    if [ -z $OBPROXY_PORT ]
+    then
+      if [ ! -z $obproxy_port ]
+      then
+        OBPROXY_PORT=$obproxy_port
+      else
+        echo "env OBPROXY_PORT not set, use default 2883"
+        OBPROXY_PORT=2883
+      fi
+    fi
+    info_msg "port is: $OBPROXY_PORT"
 
     # check APP_NAME
     if [ -z "$OBPROXY_APP_NAME" ];
@@ -85,6 +125,7 @@ function check_opt()
     else
         info_msg "idc name is: $OBPROXY_IDC_NAME"
         OBPROXY_IDC_NAME_ARG=" -i ${OBPROXY_IDC_NAME}"
+        OBPROXY_OPT_LOCAL="${OBPROXY_OPT_LOCAL},proxy_idc_name=$OBPROXY_IDC_NAME"
     fi
 
     if [ -z $WORK_THREAD_NUM ]
@@ -94,11 +135,19 @@ function check_opt()
     fi
     echo "obproxy work_thread_num:$WORK_THREAD_NUM"
 
+    if [ ! -z $NEED_CONVERT_VIP_TO_NAME ]
+    then
+      echo "obproxy NEED_CONVERT_VIP_TO_NAME: $NEED_CONVERT_VIP_TO_NAME"
+      OBPROXY_OPT_LOCAL="${OBPROXY_OPT_LOCAL},need_convert_vip_to_tname=true"
+    fi
+
     if [ ! -z $OBPROXY_EXTRA_OPT ]
     then
       echo "obproxy OBPROXY_EXTRA_OPT: $OBPROXY_EXTRA_OPT"
-      OBPROXY_OPT_LOCAL=",$OBPROXY_EXTRA_OPT"
+      OBPROXY_OPT_LOCAL="${OBPROXY_OPT_LOCAL},$OBPROXY_EXTRA_OPT"
     fi
+
+    OBPROXY_OPT_LOCAL=",enable_cached_server=false,enable_get_rslist_remote=true,monitor_stat_dump_interval=1s,enable_qos=true,enable_standby=false,query_digest_time_threshold=2ms,monitor_cost_ms_unit=true,enable_strict_kernel_release=false,enable_proxy_scramble=true,work_thread_num=$WORK_THREAD_NUM,proxy_mem_limited='2G',log_dir_size_threshold=10G${OBPROXY_OPT_LOCAL}"
 }
 
 # change to the path where this script locates.
@@ -134,7 +183,7 @@ function start()
         exit 0
     fi
 
-    (cd $OBPROXY_ROOT; nohup ./bin/obproxyd.sh -c checkalive $OBPROXY_APP_NAME_ARG $OBPROXY_IDC_NAME_ARG > /dev/null 2>&1 &)
+    (cd $OBPROXY_ROOT; nohup ./bin/obproxyd.sh -c checkalive -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG $OBPROXY_IDC_NAME_ARG $ENABLE_ROOT_SERVER_ARG $ROOT_SERVER_LIST_ARG $ROOT_SERVER_CLUSTER_NAME_ARG $OBPROXY_CONFIG_SERVER_URL_ARG > /dev/null 2>&1 &)
 
     success_msg "obproxy started"
 }
@@ -193,6 +242,7 @@ function status()
 
 function checkalive()
 {
+    is_first=true;
     while [ 1 ]
     do
         restart=0
@@ -200,7 +250,7 @@ function checkalive()
         if [ $? -ge 1 ]
         then
             is_obproxy_exists
-            if [ $? -eq 1 ]
+            if [ $? -ge 1 ]
             then
                 is_obproxy_healthy
                 if [ $? -ne 0 ]
@@ -218,13 +268,24 @@ function checkalive()
         if [ $restart -eq 1 ]
         then
           echo "ObProxy will running ..."
-          if [ -z "$OBPROXY_IDC_NAME" ];
+          if [ x$is_first == xtrue ];
           then
-            ($OBPROXY_ROOT/bin/obproxy -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG -o enable_get_rslist_remote=true,monitor_stat_dump_interval='1s',enable_qos=true,enable_standby=false,query_digest_time_threshold='2ms',monitor_cost_ms_unit=true,enable_strict_kernel_release=false,obproxy_config_server_url=''$OBPROXY_CONFIG_SERVER_URL'',enable_proxy_scramble=true,work_thread_num=$WORK_THREAD_NUM,proxy_mem_limited='2G',log_dir_size_threshold=10G"$OBPROXY_OPT_LOCAL")
+            if [ x$ENABLE_ROOT_SERVER == xtrue ];
+            then
+              ($OBPROXY_ROOT/bin/obproxy -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG -c $ROOT_SERVER_CLUSTER_NAME -r "$ROOT_SERVER_LIST" -o obproxy_config_server_url=''"$OBPROXY_OPT_LOCAL")
+            else
+              ($OBPROXY_ROOT/bin/obproxy -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG -o obproxy_config_server_url=''$OBPROXY_CONFIG_SERVER_URL''"$OBPROXY_OPT_LOCAL")
+            fi
           else
-            ($OBPROXY_ROOT/bin/obproxy -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG -o enable_get_rslist_remote=true,monitor_stat_dump_interval='1s',enable_qos=true,enable_standby=false,query_digest_time_threshold='2ms',monitor_cost_ms_unit=true,enable_strict_kernel_release=false,obproxy_config_server_url=''$OBPROXY_CONFIG_SERVER_URL'',enable_proxy_scramble=true,work_thread_num=$WORK_THREAD_NUM,proxy_mem_limited='2G',log_dir_size_threshold=10G,proxy_idc_name=''$OBPROXY_IDC_NAME''"$OBPROXY_OPT_LOCAL")
+            if [ x$ENABLE_ROOT_SERVER == xtrue ];
+            then
+              ($OBPROXY_ROOT/bin/obproxy -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG -c $ROOT_SERVER_CLUSTER_NAME -r "$ROOT_SERVER_LIST" -o obproxy_config_server_url='')
+            else
+              ($OBPROXY_ROOT/bin/obproxy -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG -o obproxy_config_server_url=''$OBPROXY_CONFIG_SERVER_URL'')
+            fi
           fi
         fi
+        is_first=false;
         sleep 1
     done
 }
@@ -258,7 +319,7 @@ function kill_all_checkalive()
 }
 
 
-while getopts c:n:i:ah opt
+while getopts c:n:i:ahp:t:rs:u: opt
 do
     case $opt in
         c)
@@ -272,6 +333,21 @@ do
             ;;
         a)
             STATUS_ALL_OBPROXY='1'
+            ;;
+        p)
+            OBPROXY_PORT=$OPTARG
+            ;;
+        t)
+            ROOT_SERVER_LIST=$OPTARG
+            ;;
+        r)
+            ENABLE_ROOT_SERVER='true'
+            ;;
+        s)
+            ROOT_SERVER_CLUSTER_NAME=$OPTARG
+            ;;
+        u)
+            OBPROXY_CONFIG_SERVER_URL=$OPTARG
             ;;
         h)
             help

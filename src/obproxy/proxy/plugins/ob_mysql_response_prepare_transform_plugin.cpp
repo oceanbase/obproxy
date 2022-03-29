@@ -169,8 +169,14 @@ int ObMysqlResponsePrepareTransformPlugin::handle_prepare_param(event::ObIOBuffe
       PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
     } else {
       ObClientSessionInfo &cs_info = sm_->get_client_session()->get_session_info();
-      ObIArray<obmysql::EMySQLFieldType> &param_types = cs_info.get_ps_entry()->get_ps_sql_meta().get_param_types();
-      param_types.push_back(field.type_);
+      ObPsIdEntry* ps_id_entry = cs_info.get_ps_id_entry();
+      if (OB_ISNULL(ps_id_entry)) {
+        ret = OB_ERR_UNEXPECTED;
+        PROXY_API_LOG(WARN, "ps id entry is null", K(ret), KPC(ps_id_entry));
+      } else {
+        ObIArray<obmysql::EMySQLFieldType> &param_types = ps_id_entry->get_ps_sql_meta().get_param_types();
+        param_types.push_back(field.type_);
+      }
     }
   }
 
@@ -192,29 +198,24 @@ int ObMysqlResponsePrepareTransformPlugin::handle_prepare_ok(event::ObIOBufferRe
 
     reader->replace(reinterpret_cast<const char*>(&client_ps_id), sizeof(client_ps_id), MYSQL_NET_META_LENGTH);
     ObClientSessionInfo &cs_info = sm_->get_client_session()->get_session_info();
-    int64_t origin_num_params = cs_info.get_ps_entry()->get_ps_sql_meta().get_param_count();
-    int64_t origin_num_columns = cs_info.get_ps_entry()->get_ps_sql_meta().get_column_count();
-
-    if ((origin_num_params > 0 && OB_UNLIKELY(origin_num_params != num_params_))
-        || (origin_num_columns > 0 && OB_UNLIKELY(origin_num_columns != num_columns_))) {
+    ObPsIdEntry* ps_id_entry = cs_info.get_ps_id_entry();
+    if (OB_ISNULL(ps_id_entry)) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(ERROR, "prepare response ok returns different param count or param count",
-                    K_(num_columns), K(origin_num_columns),
-                    K_(num_params), K(origin_num_params), KPC(cs_info.get_ps_entry()), K(ret));
-    } else if (num_params_ > 0) {
-      cs_info.get_ps_entry()->get_ps_sql_meta().set_param_count(num_params_);
-      prepare_state_ = PREPARE_PARAM;
-      ObClientSessionInfo &cs_info = sm_->get_client_session()->get_session_info();
-      ObIArray<obmysql::EMySQLFieldType> &param_types = cs_info.get_ps_entry()->get_ps_sql_meta().get_param_types();
-      param_types.reset();
-    } else if (num_columns_ > 0) {
-      cs_info.get_ps_entry()->get_ps_sql_meta().set_column_count(num_columns_);
-      prepare_state_ = PREPARE_COLUMN;
+      PROXY_API_LOG(WARN, "ps id entry is null", K(ret), KPC(ps_id_entry));
     } else {
-      prepare_state_ = PREPARE_END;
+      if (num_params_ > 0) {
+        ps_id_entry->get_ps_sql_meta().set_param_count(num_params_);
+        prepare_state_ = PREPARE_PARAM;
+        ObIArray<obmysql::EMySQLFieldType> &param_types = ps_id_entry->get_ps_sql_meta().get_param_types();
+        param_types.reset();
+      } else if (num_columns_ > 0) {
+        ps_id_entry->get_ps_sql_meta().set_column_count(num_columns_);
+        prepare_state_ = PREPARE_COLUMN;
+      } else {
+        prepare_state_ = PREPARE_END;
+      }
+      pkt_count_ = 0;
     }
-
-    pkt_count_ = 0;
   }
 
   return ret;

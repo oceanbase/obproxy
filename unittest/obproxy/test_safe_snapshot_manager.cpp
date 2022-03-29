@@ -11,9 +11,9 @@
  */
 
 #define USING_LOG_PREFIX PROXY
+#include <gtest/gtest.h>
 #define private public
 #define protected public
-#include <gtest/gtest.h>
 #include "obutils/ob_safe_snapshot_manager.h"
 #include "utils/ob_proxy_utils.h"
 

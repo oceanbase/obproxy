@@ -18,9 +18,12 @@
 #include "obutils/ob_proxy_table_processor_utils.h"
 #include "obutils/ob_proxy_config.h"
 #include "utils/ob_proxy_monitor_utils.h"
+#include "prometheus/ob_thread_prometheus.h"
+#include "iocore/net/ob_net_def.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::obutils;
+using namespace oceanbase::obproxy::event;
 
 namespace oceanbase
 {
@@ -29,8 +32,34 @@ namespace obproxy
 namespace prometheus
 {
 int init_prometheus(int32_t listen_port);
+void destory_prometheus_exposer();
+int create_prometheus_exposer();
 
 ObPrometheusProcessor g_ob_prometheus_processor;
+
+int ObPrometheusProcessor::start_prometheus()
+{
+  int ret = OB_SUCCESS;
+  // Initialize thread-level prometheus statistics
+  int64_t net_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
+  ObEThread **ethreads = g_event_processor.event_thread_[ET_NET];
+  for (int64_t i = 0; OB_SUCC(ret) && i < net_thread_count; i++) {
+    if (OB_ISNULL(ethreads[i]->thread_prometheus_ = new(std::nothrow) ObThreadPrometheus())) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to new ObThreadPrometheus", K(i), K(ret));
+    } else if (OB_FAIL(ethreads[i]->thread_prometheus_->init(ethreads[i]))) {
+      LOG_WARN("fail to init thread prometheus", K(i), K(ret));
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    // do nothing
+  } else if (OB_FAIL(start_prometheus_task())) {
+    LOG_WARN("start prometheus failed", K(ret));
+  }
+
+  return ret;
+}
 
 int ObPrometheusProcessor::start_prometheus_task()
 {
@@ -424,6 +453,16 @@ int ObPrometheusProcessor::get_or_create_family(const ObString &name, const ObSt
   return ret;
 }
 
+void ObPrometheusProcessor::destroy_exposer()
+{
+  destory_prometheus_exposer();
+}
+
+int ObPrometheusProcessor::create_exposer()
+{
+  return create_prometheus_exposer();
+}
+
 int ObPrometheusProcessor::init()
 {
   int ret = OB_SUCCESS;
@@ -448,7 +487,13 @@ int ObPrometheusProcessor::init()
     offset += strlen(package);
     MEMCPY(version_ + offset, "_", 1);
     offset ++;
-    MEMCPY(version_ + offset, version, strlen(version) - 34);
+
+    static const size_t minimumVersionLength = 17;
+    size_t version_len = strlen(version);
+    if (version_len > minimumVersionLength) {
+        version_len = minimumVersionLength;
+    }
+    MEMCPY(version_ + offset, version, version_len);
 
     ObProxyPrometheusUtils::build_label(default_constant_labels_, "ip", proxy_ip_, false);
     ObProxyPrometheusUtils::build_label(default_constant_labels_, "namespace", "ODP", false);

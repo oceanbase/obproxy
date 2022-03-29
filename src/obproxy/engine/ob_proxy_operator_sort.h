@@ -24,6 +24,8 @@ namespace engine {
 class ObSortColumn;
 class ObBaseSort;
 class ObRowTrunk;
+class ObProxyStreamSortUnit;
+class ObProxyMemMergeSortUnit;
 typedef common::ObSEArray<ObSortColumn *, 4, common::ObIAllocator&> SortColumnArray;
 class ObProxySortOp : public ObProxyOperator
 {
@@ -67,23 +69,17 @@ class ObProxySortInput : public ObProxyOpInput
 public:
   ObProxySortInput()
     : ObProxyOpInput(),
-      order_by_expr_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size) {}
-  ObProxySortInput(const common::ObSEArray<ObProxyExpr*, 4> &select_exprs,
-           const common::ObSEArray<ObProxyExpr*, 4> &order_by_expr)
-    : ObProxyOpInput(select_exprs), order_by_expr_(order_by_expr)
-  {}
+      order_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
 
-  void set_order_by_expr(const common::ObSEArray<ObProxyExpr*, 4> &select_exprs)
-  {
-    select_exprs_ = select_exprs;
+  int set_order_by_exprs(const common::ObIArray<opsql::ObProxyOrderItem*> &order_exprs) {
+    return order_exprs_.assign(order_exprs);
   }
-  common::ObSEArray<ObProxyExpr*, 4>& get_order_by_expr()
-  {
-    return order_by_expr_;
+  common::ObSEArray<opsql::ObProxyOrderItem*, 4> &get_order_exprs() {
+    return order_exprs_;
   }
 
 protected:
-  common::ObSEArray<ObProxyExpr*, 4> order_by_expr_;
+  common::ObSEArray<opsql::ObProxyOrderItem*, 4> order_exprs_;
 };
 
 class ObProxyMemSortOp : public ObProxySortOp
@@ -97,7 +93,7 @@ public:
 
   ~ObProxyMemSortOp() {};
   virtual int get_next_row();
-  virtual int handle_response_result(void *src, bool is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
 
 };
 
@@ -111,7 +107,93 @@ public:
 
   ~ObProxyTopKOp() {};
   virtual int get_next_row();
-  virtual int handle_response_result(void *src, bool is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
+};
+
+class ObProxyMemMergeSortOp : public ObProxySortOp
+{
+public:
+
+  ObProxyMemMergeSortOp(ObProxyOpInput *input, common::ObIAllocator &allocator)
+    : ObProxySortOp(input, allocator), sort_units_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {
+    set_op_type(PHY_MEM_MERGE_SORT);
+  }
+
+  ~ObProxyMemMergeSortOp();
+
+  virtual int init() { return ObProxyOperator::init(); }
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
+
+private:
+  common::ObSEArray<ObProxyMemMergeSortUnit*, 4> sort_units_;
+};
+
+template <typename T>
+class ObProxySortUnitCompare
+{
+public:
+  bool operator()(const T *l, const T *r) const
+  {
+    return l->compare(r);
+  }
+};
+
+class ObProxyMemMergeSortUnit
+{
+public:
+  ObProxyMemMergeSortUnit(common::ObIAllocator &allocator)
+    : allocator_(allocator), row_(NULL),
+      order_values_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+      order_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
+  ~ObProxyMemMergeSortUnit() {}
+
+  int init(ResultRow *row, common::ObIArray<ObProxyOrderItem*> &order_exprs);
+  virtual bool compare(const ObProxyMemMergeSortUnit* sort_unit) const;
+  int calc_order_values();
+
+  ResultRow* get_row() { return row_; }
+  const common::ObIArray<ObObj> &get_order_values() const { return order_values_; }
+
+  TO_STRING_KV(K(order_values_), K(order_exprs_));
+
+protected:
+  common::ObIAllocator &allocator_;
+  ResultRow *row_;
+  common::ObSEArray<ObObj, 4> order_values_;
+  common::ObSEArray<ObProxyOrderItem*, 4> order_exprs_;
+};
+
+class ObProxyStreamSortOp : public ObProxySortOp
+{
+public:
+
+  ObProxyStreamSortOp(ObProxyOpInput *input, common::ObIAllocator &allocator)
+    : ObProxySortOp(input, allocator), sort_units_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) { 
+    set_op_type(PHY_STREAM_SORT);
+  }
+
+  ~ObProxyStreamSortOp();
+
+  virtual int init() { return ObProxyOperator::init(); }
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
+
+private:
+  common::ObSEArray<ObProxyStreamSortUnit*, 4> sort_units_;
+};
+
+class ObProxyStreamSortUnit : public ObProxyMemMergeSortUnit
+{
+public:
+  ObProxyStreamSortUnit(common::ObIAllocator &allocator)
+    : ObProxyMemMergeSortUnit(allocator), result_set_(NULL) {}
+  ~ObProxyStreamSortUnit() {}
+
+  int init(ObProxyResultResp* result_set, common::ObIArray<ObProxyOrderItem*> &order_exprs);
+  virtual bool compare(const ObProxyStreamSortUnit* sort_unit) const;
+  int next();
+
+private:
+  ObProxyResultResp* result_set_;
 };
 
 class ObSortColumn : public common::ObColumnInfo

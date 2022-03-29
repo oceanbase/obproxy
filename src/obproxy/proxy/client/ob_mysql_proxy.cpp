@@ -483,6 +483,7 @@ int ObMysqlProxy::init(const int64_t timeout_ms,
 }
 
 int ObMysqlProxy::rebuild_client_pool(ObShardConnector *shard_conn,
+                                      ObShardProp *shard_prop,
                                       const bool is_meta_mysql_client,
                                       const ObString &user_name,
                                       const ObString &password,
@@ -503,6 +504,7 @@ int ObMysqlProxy::rebuild_client_pool(ObShardConnector *shard_conn,
       LOG_WARN("fail to alloc client pool", K(is_meta_mysql_client), K(user_name), K(database), K(ret));
     } else {
       client_pool_->set_shard_conn(shard_conn);
+      client_pool_->set_shard_prop(shard_prop);
     }
   }
 

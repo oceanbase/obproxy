@@ -55,6 +55,8 @@ struct ObProxyExprCalcItem {
     FROM_INVALID
   };
 
+  ObProxyExprCalcItem() : sql_result_(NULL), obj_array_(NULL), source_(FROM_SQL_FIELD) {}
+
   ObProxyExprCalcItem(obutils::SqlFieldResult *sql_result) :
       sql_result_(sql_result), obj_array_(NULL), source_(FROM_SQL_FIELD) {}
 
@@ -70,8 +72,8 @@ struct ObProxyExprCalcItem {
 class ObProxyExpr
 {
 public:
-  explicit ObProxyExpr() : type_(OB_PROXY_EXPR_TYPE_NONE), index_(-1), has_agg_(0),
-                           has_alias_(0), is_func_expr_(0), reserved_(0) {}
+  explicit ObProxyExpr() : type_(OB_PROXY_EXPR_TYPE_NONE), index_(-1), accuracy_(-1), has_agg_(0),
+                           is_func_expr_(0), reserved_(0), alias_name_() {}
 
   ~ObProxyExpr() {}
   void set_expr_type(const ObProxyExprType type) { type_ = type; }
@@ -82,21 +84,29 @@ public:
                    common::ObIArray<common::ObObj*> &result_obj_array);
 
   bool has_agg() const { return has_agg_ == 1; }
-  bool has_alias() const { return has_alias_ == 1; }
   void set_index(int64_t index) { index_ = index; }
   int64_t get_index() const { return index_; }
+  void set_accuracy(common::ObAccuracy accuracy) { accuracy_ = accuracy; }
+  common::ObAccuracy get_accuracy() const { return accuracy_; }
   bool is_func_expr() const { return is_func_expr_ == 1; }
-  bool is_star_expr();
+  bool is_star_expr() { return OB_PROXY_EXPR_TYPE_STAR == type_; }
 
   int64_t to_string(char *buf, int64_t buf_len) const;
 
-  virtual int to_sql_string(common::ObSqlString& sql_string)
-  {
-    int ret = common::OB_SUCCESS;
-    UNUSED(sql_string);
-    return ret;
+  virtual int to_sql_string(common::ObSqlString& sql_string);
+  virtual int to_column_string(common::ObSqlString& sql_string) {
+    return sql_string.append(expr_name_);
   }
   static  void print_proxy_expr(ObProxyExpr *root);
+  void set_alias_name(const char *buf, const int64_t length) {
+    alias_name_.assign_ptr(buf, static_cast<ObString::obstr_size_t>(length));
+  }
+  void set_alias_name(const ObString &alias_name) { alias_name_ = alias_name; }
+  ObString& get_alias_name() { return alias_name_; }
+  void set_expr_name(const char *buf, const int64_t length) {
+    expr_name_.assign_ptr(buf, static_cast<ObString::obstr_size_t>(length));
+  }
+  ObString& get_expr_name() { return expr_name_; }
 
   bool is_agg()
   {
@@ -107,16 +117,17 @@ public:
     || OB_PROXY_EXPR_TYPE_FUNC_AVG == type_;
   }
 
-  bool is_alias();
 public:
   ObProxyExprType type_;
   int64_t index_;
+  common::ObAccuracy accuracy_;
   struct {
     uint16_t has_agg_ : 1;// whethere hava agg func, 1 means true
-    uint16_t has_alias_ : 1; // whether hava alias, 1 means true
     uint16_t is_func_expr_ : 1;
-    uint16_t reserved_ : 13;
+    uint16_t reserved_ : 14;
   };
+  common::ObString expr_name_;
+  common::ObString alias_name_;
 };
 
 class ObProxyExprConst : public ObProxyExpr
@@ -128,45 +139,73 @@ public:
   void set_object(const common::ObObj& obj) { obj_ = obj; }
   virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
             common::ObIArray<common::ObObj> &result_obj_array);
+  virtual int to_column_string(common::ObSqlString& sql_string);
 
 protected:
   common::ObObj obj_;
 };
 
 // add for save sharding const column
-class ObProxyExprShardingConst : public ObProxyExprConst
+class ObProxyExprShardingConst : public ObProxyExpr
 {
 public:
-  explicit ObProxyExprShardingConst() : expr_(NULL), is_column_(false) , is_alias_(false) {}
+  explicit ObProxyExprShardingConst() {}
   virtual ~ObProxyExprShardingConst() {}
-  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
-            common::ObIArray<common::ObObj> &result_obj_array);
-  virtual int to_sql_string(common::ObSqlString& sql_string);
-  void set_is_column(bool is_column)
-  {
-    is_column_ = is_column;
-  }
-  void set_is_alias(bool is_alias)
-  {
-    is_alias_ = is_alias;
-  }
-  ObProxyExpr* expr_;
+};
+
+class ObProxyExprTable : public ObProxyExpr
+{
 public:
-  bool is_column_;
-  bool is_alias_;
+  explicit ObProxyExprTable() : database_name_(), table_name_() {}
+  ~ObProxyExprTable() {}
+
+  void set_database_name(const char *buf, const int32_t length) { database_name_.assign_ptr(buf, length); }
+  ObString& get_database_name() { return database_name_; }
+  void set_table_name(const char *buf, const int32_t length) { table_name_.assign_ptr(buf, length); }
+  ObString& get_table_name() { return table_name_; }
+private:
+  common::ObString database_name_;
+  common::ObString table_name_;
 };
 
 class ObProxyExprColumn : public ObProxyExpr
 {
 public:
-  explicit ObProxyExprColumn() : column_name_() {}
+  explicit ObProxyExprColumn() : real_table_name_(), table_name_(), column_name_() {}
   ~ObProxyExprColumn() {}
 
   virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
             common::ObIArray<common::ObObj> &result_obj_array);
-  void set_column_name(char *buf, const int32_t length) { column_name_.assign(buf, length); }
+  virtual int to_column_string(common::ObSqlString& sql_string);
+  void set_column_name(const char *buf, const int32_t length) { column_name_.assign_ptr(buf, length); }
+  ObString &get_column_name() { return column_name_; }
+  void set_table_name(const char *buf, const int32_t length) { table_name_.assign_ptr(buf, length); }
+  ObString &get_table_name() { return table_name_; }
+  void set_real_table_name(const ObString &real_table_name) { real_table_name_ = real_table_name; }
+  ObString &get_real_table_name() { return real_table_name_; }
 private:
+  common::ObString real_table_name_;
+  common::ObString table_name_;
   common::ObString column_name_;
+};
+
+class ObProxyExprStar : public ObProxyExpr
+{
+public:
+  explicit ObProxyExprStar() : table_name_() {}
+  ~ObProxyExprStar() {}
+
+  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                   common::ObIArray<common::ObObj> &result_obj_array) {
+    UNUSED(ctx);
+    UNUSED(calc_item);
+    UNUSED(result_obj_array);
+    return OB_SUCCESS;
+  };
+  void set_table_name(const char *buf, const int32_t length) { table_name_.assign_ptr(buf, length); }
+  ObString &get_table_name() { return table_name_; }
+private:
+  common::ObString table_name_;
 };
 
 enum ObProxyOrderDirection
@@ -179,25 +218,33 @@ enum ObProxyOrderDirection
   MAX_DIR, // invalid
 };
 
-class ObProxyOrderItem : public ObProxyExpr
+class ObProxyGroupItem : public ObProxyExpr
+{
+public:
+  explicit ObProxyGroupItem() : expr_(NULL) {}
+  virtual ~ObProxyGroupItem() {
+    if (NULL != expr_) {
+      expr_->~ObProxyExpr();
+    }
+  }
+  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                   common::ObIArray<common::ObObj> &result_obj_array);
+  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                   common::ObIArray<common::ObObj*> &result_obj_array);
+  virtual int to_column_string(common::ObSqlString& sql_string);
+  void set_expr(ObProxyExpr* expr) { expr_ = expr; }
+  ObProxyExpr* get_expr() { return expr_; }
+public:
+  ObProxyExpr* expr_;
+};
+
+class ObProxyOrderItem : public ObProxyGroupItem
 {
 public:
   explicit ObProxyOrderItem() : order_direction_(NULLS_FIRST_ASC) {}
   virtual ~ObProxyOrderItem() {}
-  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
-    common::ObIArray<common::ObObj*> &result_obj_array)
-  {
-    int ret = common::OB_SUCCESS;
-    if (OB_ISNULL(expr_)) {
-      ret = common::OB_ERR_UNEXPECTED;
-    } else {
-      ret = expr_->calc(ctx, calc_item, result_obj_array);
-    }
-    return ret;
-  }
   virtual int to_sql_string(common::ObSqlString& sql_string);
 public:
-  ObProxyExpr* expr_;
   ObProxyOrderDirection order_direction_;
 };
 
@@ -205,7 +252,7 @@ class ObProxyFuncExpr : public ObProxyExpr
 {
 public:
   explicit ObProxyFuncExpr() : param_array_(common::ObModIds::OB_PROXY_SHARDING_EXPR, common::OB_MALLOC_NORMAL_BLOCK_SIZE) { is_func_expr_ = true; }
-  virtual ~ObProxyFuncExpr() {}
+  virtual ~ObProxyFuncExpr();
 
   int add_param_expr(ObProxyExpr* expr) { return param_array_.push_back(expr); }
   int calc_param_expr(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
@@ -222,18 +269,6 @@ public:
 
 protected:
   common::ObSEArray<ObProxyExpr*, 4> param_array_;
-};
-
-class ObProxyShardingAliasExpr : public ObProxyFuncExpr
-{
-public:
-  explicit ObProxyShardingAliasExpr() {}
-  virtual ~ObProxyShardingAliasExpr() {}
-
-  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
-                   common::ObIArray<common::ObObj> &result_obj_array);
-  virtual int to_sql_string(common::ObSqlString& sql_string);
-
 };
 
 class ObProxyExprHash : public ObProxyFuncExpr
@@ -279,7 +314,6 @@ public:
   ~ObProxyExprDiv() {}
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
             common::ObIArray<common::ObObj> &result_obj_array);
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprAdd : public ObProxyFuncExpr
@@ -289,8 +323,6 @@ public:
   ~ObProxyExprAdd() {}
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
             common::ObIArray<common::ObObj> &result_obj_array);
-
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprSub : public ObProxyFuncExpr
@@ -300,8 +332,6 @@ public:
   ~ObProxyExprSub() {}
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
             common::ObIArray<common::ObObj> &result_obj_array);
-
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprMul : public ObProxyFuncExpr
@@ -311,7 +341,6 @@ public:
   ~ObProxyExprMul() {}
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
             common::ObIArray<common::ObObj> &result_obj_array);
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprTestLoad : public ObProxyFuncExpr
@@ -329,7 +358,6 @@ class ObProxyExprSum : public ObProxyFuncExpr
 public:
   explicit ObProxyExprSum() {}
   ~ObProxyExprSum() {}
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprCount : public ObProxyFuncExpr
@@ -337,22 +365,30 @@ class ObProxyExprCount : public ObProxyFuncExpr
 public:
   explicit ObProxyExprCount() {}
   ~ObProxyExprCount() {}
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprAvg : public ObProxyFuncExpr
 {
 public:
-  explicit ObProxyExprAvg() : sum_index_(-1), count_index_(-1) {}
-  ~ObProxyExprAvg() {}
+  explicit ObProxyExprAvg() : sum_expr_(NULL), count_expr_(NULL) {}
+  ~ObProxyExprAvg() {
+    if (NULL != sum_expr_) {
+      sum_expr_->~ObProxyExprSum();
+    }
+
+    if (NULL != count_expr_) {
+      count_expr_->~ObProxyExprCount();
+    }
+  }
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
                    common::ObIArray<common::ObObj> &result_obj_array);
-  virtual int to_sql_string(common::ObSqlString& sql_string);
-  void set_sum_index(int64_t index) { sum_index_ = index; }
-  void set_count_index(int64_t index) { count_index_ = index; }
+  void set_sum_expr(ObProxyExprSum* sum_expr) { sum_expr_ = sum_expr; }
+  ObProxyExprSum *get_sum_expr() { return sum_expr_; }
+  void set_count_expr(ObProxyExprCount *count_expr) { count_expr_ = count_expr; }
+  ObProxyExprCount *get_count_expr() { return count_expr_; }
 private:
-  int64_t sum_index_;
-  int64_t count_index_;
+  ObProxyExprSum *sum_expr_;
+  ObProxyExprCount *count_expr_;
 };
 
 class ObProxyExprMax : public ObProxyFuncExpr
@@ -360,7 +396,6 @@ class ObProxyExprMax : public ObProxyFuncExpr
 public:
   explicit ObProxyExprMax() {}
   ~ObProxyExprMax() {}
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprMin : public ObProxyFuncExpr
@@ -368,7 +403,6 @@ class ObProxyExprMin : public ObProxyFuncExpr
 public:
   explicit ObProxyExprMin() {}
   ~ObProxyExprMin() {}
-  virtual int to_sql_string(common::ObSqlString& sql_string);
 };
 
 class ObProxyExprSplit : public ObProxyFuncExpr
@@ -377,8 +411,8 @@ public:
   explicit ObProxyExprSplit() {}
   ~ObProxyExprSplit() {}
 
-    virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
-                     common::ObIArray<common::ObObj> &result_obj_array);
+  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                   common::ObIArray<common::ObObj> &result_obj_array);
 };
 
 } // end opsql

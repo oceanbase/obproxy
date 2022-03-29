@@ -23,16 +23,13 @@ int ObProxyProOp::get_next_row()
   return ObProxyOperator::get_next_row();
 }
 
-//int ObProxyProOp::handle_response_result(executor::ObProxyParallelResp *pres, bool is_final,  ObProxyResultResp *&result)
-int ObProxyProOp::handle_response_result(void *data, bool is_final,  ObProxyResultResp *&result)
+int ObProxyProOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
-  LOG_DEBUG("Enter ObProxyProOp::handle_response_result", K(op_name()), K(data));
 
   ObProxyResultResp *opres = NULL;
-  ResultFields *origin_fields = NULL;
   ObProxyResultResp *res = NULL;
-  void *tmp_buf = NULL;
+  ObProxyProInput *input = NULL;
 
   if (OB_ISNULL(data)) {
     ret = common::OB_INVALID_ARGUMENT;
@@ -43,129 +40,98 @@ int ObProxyProOp::handle_response_result(void *data, bool is_final,  ObProxyResu
   } else if (!opres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("ObProxyProOp::handle_response_result not response result", K(data), KP(opres), K(opres->is_resultset_resp()));
+  } else if (OB_ISNULL(input = dynamic_cast<ObProxyProInput*>(get_input()))) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("input is invalid", K(ret));
   } else {
-    LOG_DEBUG("ObProxyProOp::process_ready_data:resultset_resp", K(opres), KP(opres));
-    expr_has_calced_ = opres->get_has_calc_exprs();
-    LOG_DEBUG("ObProxyProOp::process_ready_data resultset", K(opres), K(opres->get_fields()));
     if (OB_ISNULL(get_result_fields())) {
       result_fields_ = opres->get_fields();
     }
 
+    common::ObIArray<ObProxyExpr*> &calc_exprs = input->get_calc_exprs();
+    int64_t derived_column_count = input->get_derived_column_count();
+    int64_t real_column_count = opres->get_fields()->count() - derived_column_count;
+    int64_t limit_offset = input->get_limit_offset();
+    int64_t limit_offset_size = input->get_limit_size() + limit_offset;
 
     ResultRow *row = NULL;
+    while (OB_SUCC(ret) && OB_SUCC(opres->next(row))) {
+      ObProxyExprCtx ctx(0, dbconfig::TESTLOAD_NON, false, &allocator_);
+      ObProxyExprCalcItem calc_item(row);
+      ObSEArray<ObObj, 4> result_obj_array;
 
-    common::ObSEArray<ObProxyExpr*, 4>& select_exprs =
-      get_input()->get_select_exprs();
-
-    int64_t limit_start = get_input()->get_op_limit_value();
-    int64_t limit_offset = get_input()->get_op_offset_value();
-    int64_t limit_topv = get_input()->get_op_top_value();
-
-    int64_t added_row_count = get_input()->get_added_row_count();
-    LOG_DEBUG("get all recored from res", K(ret), K(opres), K(opres->get_result_rows().count()),
-               K(select_exprs.count()), K(added_row_count), K(limit_start), K(limit_offset), K(limit_topv));
-    if (limit_topv != -1 && cur_result_rows_->count() >= limit_topv) {
-      //reach up limit in SELECT
-      LOG_DEBUG("not need to projection result any more, for reached the limit", K(ret), K(limit_topv));
-    } else {
-      while (OB_SUCC(ret) && (OB_SUCC(opres->next(row)))) {
-        ResultRow *new_row = NULL;
-        if (OB_ISNULL(row)) {
-          LOG_DEBUG("ObProxyProOp::process_ready_data, handle all data", K(ret));
-          break;
-        } else if (OB_FAIL(init_row(new_row))) {
-          LOG_WARN("ObProxyProOp::process_ready_data init row error", K(ret));
-          ret = common::OB_ERROR;
-          break;
+      for (int64_t i = 0; OB_SUCC(ret) && i < calc_exprs.count(); i++) {
+        result_obj_array.reuse();
+        ObProxyExpr *calc_expr = calc_exprs.at(i);
+        if (OB_FAIL(calc_expr->calc(ctx, calc_item, result_obj_array))) {
+          LOG_WARN("fail to get next row", K(i), K(ret));
+        } else {
+          *row->at(calc_expr->get_index()) = result_obj_array.at(0);
         }
+      }
 
-        LOG_DEBUG("get one recored from res", K(ret), K(opres), K(row));
-        if (OB_FAIL(ObProxyOperator::calc_result(*row, *new_row, select_exprs, added_row_count))) {
-          LOG_WARN("ObProxyProOp::process_ready_data calc result error", K(ret));
-        } else if (OB_FAIL(put_result_row(new_row))) {
-          LOG_WARN("ObProxyProOp::process_ready_data put row error", K(ret));
+      if (OB_SUCC(ret)) {
+        for (int64_t i = 0; OB_SUCC(ret) && i < derived_column_count; i++) {
+          row->pop_back();
+        }
+      }
+ 
+      if (OB_SUCC(ret)) {
+        if (OB_FAIL(current_rows_.push_back(row))) {
+          LOG_WARN("fail to push back row", K(ret));
+        } else if (limit_offset_size > 0 && current_rows_.count() == limit_offset_size) {
+          is_final = true;
+          break;
         }
       }
     }
+
     if (ret == common::OB_ITER_END) {
       ret = common::OB_SUCCESS;
-      LOG_DEBUG("ObProxyProOp::process_ready_data, handle all data", K(ret));
     }
-    if (OB_SUCC(ret)) {
-      expr_has_calced_ = true;
-    }
+
     if (is_final) {
-      LOG_DEBUG("ObProxyOperator::process_complete_data get fields", K(ret),
-                K(get_input()->get_added_row_count()));
-      if (OB_ISNULL(origin_fields = get_result_fields())) {
+      void *tmp_buf_rows = NULL;
+      void *tmp_buf_fields = NULL;
+      if (OB_ISNULL(result_fields_)) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("ObProxyProOp::handle_response_result not result field", K(data), KP(result_fields_));
-      } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultFields)))) {
+      } else if (OB_ISNULL(tmp_buf_rows = allocator_.alloc(sizeof(ResultRows)))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+      } else if (OB_ISNULL(tmp_buf_fields = allocator_.alloc(sizeof(ResultFields)))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
+        LOG_WARN("no have enough memory to init", K(op_name()), K(sizeof(ResultFields)), K(ret));
       } else {
-        ResultFields &new_fields = *(new (tmp_buf) ResultFields(array_new_alloc_size, allocator_));
-        for (int64_t i = 0; i < origin_fields->count() - get_input()->get_added_row_count(); i++) {
-          new_fields.push_back(origin_fields->at(i));
+        ResultRows *rows = new (tmp_buf_rows) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
+        ResultFields *new_fields = (new (tmp_buf_fields) ResultFields(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_));
+
+        for (int64_t i = 0; i < real_column_count; i++) {
+          new_fields->push_back(result_fields_->at(i));
         }
-   
-        LOG_DEBUG("ObProxyOperator::process_complete_data packet final resultset", K(ret));
-        if (OB_FAIL(get_limit_result(get_input()->get_op_limit_value(), get_input()->get_op_offset_value(),
-                          cur_result_rows_))) {
-          LOG_WARN("packet resultset packet limit error", K(ret));
-        } else if (OB_FAIL(packet_result_set(res, cur_result_rows_, &new_fields))) {
-          LOG_WARN("packet resultset packet error", K(ret));
+
+        int64_t count = current_rows_.count();
+        if (limit_offset_size > 0) {
+          count = count > limit_offset_size ? limit_offset_size : count;
         }
-        res->set_column_count(new_fields.count());
-        LOG_DEBUG("ObProxyOperator::process_complete_data packet final resultset over", K(ret), K(res),
-                    K(res->get_column_count()), K(cur_result_rows_), KPC(cur_result_rows_),  K(new_fields));
+
+        for (int64_t i = limit_offset; OB_SUCC(ret) && i < count; i++) {
+          if (OB_FAIL(rows->push_back(current_rows_.at(i)))) {
+            LOG_WARN("fail to push back row", K(i), K(count), K(limit_offset), K(limit_offset_size), K(ret));
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          if (OB_FAIL(packet_result_set(res, rows, new_fields))) {
+            LOG_WARN("packet resultset packet error", K(ret));
+          } else if (OB_NOT_NULL(res)) {
+            res->set_column_count(new_fields->count());
+          }
+        }
       }
     }
     result = res;
   }
-  return ret;
-}
-
-int ObProxyProOp::get_limit_result(int64_t start, int64_t offset,  ResultRows *rows)
-{
-  int ret = common::OB_SUCCESS;
-  if (OB_ISNULL(rows)) {
-    ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("ObProxyProOp::get_limit_result invalid input", K(ret), K(rows));
-  } else {
-    LOG_DEBUG("ObProxyProOp::get_limit_result remove rows by limit start", K(ret), K(start), K(offset),
-                     K(rows->count()), K(*rows));
-    if (start + offset < 0) { //no limit do nothing
-      LOG_DEBUG("ObProxyProOp::get_limit_result not value to limit",
-                        K(ret), K(start), K(offset), K(rows->count()));
-    } else if (offset == -1) { // limt start, such as limit 10
-      if (rows->count() > start) {
-        while (rows->count() > start) {
-          if (OB_FAIL(rows->remove(rows->count() - 1))) { //delete one record from backend and count_ will be minus
-            LOG_WARN("ObProxyProOp::get_limit_result remove rows failed", K(ret), K(start), K(offset));
-            break;
-          }
-        }
-      }
-    } else { //limit start, offset, such as limit 10, 2
-      int64_t i = 0;
-      for (i = 0; i < offset; i++) {
-        if (i + start >= rows->count()) {
-          break;
-        }
-        rows->at(i) = rows->at(i + start);
-      }
-      while (rows->count() > i) {
-        if (OB_FAIL(rows->remove(rows->count() - 1))) { //delete one record from backend and count_ will be minus
-          LOG_WARN("ObProxyProOp::get_limit_result remove rows failed", K(ret), K(start), K(offset));
-          break;
-        }
-      }
-    }
-    LOG_DEBUG("ObProxyProOp::get_limit_result remove rows by limit end", K(ret), K(start), K(offset),
-                  K(rows->count()), K(*rows));
-  }
-
   return ret;
 }
 

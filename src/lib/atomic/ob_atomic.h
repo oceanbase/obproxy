@@ -85,6 +85,18 @@ inline int64_t inc_update(int64_t* v_, int64_t x)
 #define ATOMIC_INC(val) do { IGNORE_RETURN ATOMIC_AAF((val), 1); } while (0)
 #define ATOMIC_DEC(val) do { IGNORE_RETURN ATOMIC_SAF((val), 1); } while (0)
 
+#define ATOMIC_LOAD64(addr)                                          \
+    ({                                                               \
+      int64_t x = __atomic_load_n((int64_t*)addr, __ATOMIC_SEQ_CST); \
+      *(typeof(addr)) & x;                                           \
+    })
+#define ATOMIC_STORE64(addr, v)                                           \
+    ({                                                                    \
+      typeof(v) v1 = v;                                                   \
+      __atomic_store_n((int64_t*)addr, *(int64_t*)&v1, __ATOMIC_SEQ_CST); \
+    })
+
+
 }
 }
 

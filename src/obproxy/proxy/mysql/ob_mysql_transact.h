@@ -224,6 +224,7 @@ public:
   {
     ObConnectionAttributes()
         : addr_(),
+          obproxy_addr_(),
           state_(STATE_UNDEFINED),
           abort_(ABORT_UNDEFINED)
     {
@@ -235,11 +236,13 @@ public:
     void set_addr(const uint32_t ipv4, const uint16_t port) { net::ops_ip_copy(addr_, ipv4, port); }
     void set_addr(const sockaddr &sa) { net::ops_ip_copy(addr_, sa); }
     void set_addr(const net::ObIpEndpoint &ip_point) { net::ops_ip_copy(addr_, ip_point.sa_); }
+    void set_obproxy_addr(const sockaddr &sa) { net::ops_ip_copy(obproxy_addr_, sa); }
 
     uint32_t get_ipv4() { return net::ops_ip4_addr_host_order(addr_.sa_); }
     uint16_t get_port() { return net::ops_ip_port_host_order(addr_); }
 
     net::ObIpEndpoint addr_;    // use function below to get/set ip and port
+    net::ObIpEndpoint obproxy_addr_;
 
     ObServerStateType state_;
     ObAbortStateType abort_;
@@ -248,6 +251,7 @@ public:
       state_ = STATE_UNDEFINED;
       abort_ = ABORT_UNDEFINED;
       addr_.reset();
+      obproxy_addr_.reset();
     }
 
   private:
@@ -441,7 +445,7 @@ public:
       sql_cmd_ = obmysql::OB_MYSQL_COM_END;
     }
 
-    common::ObString get_print_sql()
+    common::ObString get_print_sql(const int64_t sql_len = PRINT_SQL_LEN)
     {
       common::ObString ret;
       switch (sql_cmd_) {
@@ -452,7 +456,7 @@ public:
           ret = common::ObString::make_string("OB_MYSQL_COM_LOGIN");
           break;
         default:
-          ret = client_request_.get_print_sql();
+          ret = client_request_.get_print_sql(sql_len);
           break;
       }
       return ret;
@@ -492,9 +496,6 @@ public:
           internal_reader_(NULL),
           reroute_info_(),
           pll_info_(),
-          client_request_time_(0),
-          request_sent_time_(0),
-          response_received_time_(0),
           mysql_errcode_(0),
           mysql_errmsg_(NULL),
           inner_errcode_(0),
@@ -557,13 +558,15 @@ public:
         ObMysqlTransact::handle_new_config_acquired(*this);
       }
 
-      if (NULL != sqlaudit_record_queue_) {
-        sqlaudit_record_queue_->refcount_dec();
-        sqlaudit_record_queue_ = NULL;
-      }
+      if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+        if (NULL != sqlaudit_record_queue_) {
+          sqlaudit_record_queue_->refcount_dec();
+          sqlaudit_record_queue_ = NULL;
+        }
 
-      if (mysql_config_params_->sqlaudit_mem_limited_ > 0) {
-        sqlaudit_record_queue_ = get_global_sqlaudit_processor().acquire();
+        if (mysql_config_params_->sqlaudit_mem_limited_ > 0) {
+          sqlaudit_record_queue_ = get_global_sqlaudit_processor().acquire();
+        }
       }
     }
 
@@ -621,7 +624,7 @@ public:
     int alloc_internal_buffer(const int64_t buffer_block_size)
     {
       int ret = common::OB_SUCCESS;
-      if (NULL == internal_buffer_) {
+      if (OB_UNLIKELY(NULL == internal_buffer_)) {
         if (OB_ISNULL(internal_buffer_ = event::new_empty_miobuffer(buffer_block_size))) {
           ret = common::OB_ALLOCATE_MEMORY_FAILED;
           PROXY_TXN_LOG(ERROR, "failed to new miobuffer", K(ret));
@@ -649,7 +652,7 @@ public:
 
     void reset_internal_buffer()
     {
-      if (NULL != internal_buffer_) {
+      if (OB_LIKELY(NULL != internal_buffer_)) {
         internal_buffer_->dealloc_all_readers();
         cache_block_ = internal_buffer_->writer_;
         if (NULL != cache_block_) {
@@ -667,7 +670,7 @@ public:
 
     void free_internal_buffer()
     {
-      if (NULL != internal_buffer_) {
+      if (OB_LIKELY(NULL != internal_buffer_)) {
         free_miobuffer(internal_buffer_);
         internal_buffer_ = NULL;
         internal_reader_ = NULL;
@@ -792,10 +795,6 @@ public:
     ObProxyRerouteInfo reroute_info_;
     ObPartitionLookupInfo pll_info_;
 
-    ObHRTime client_request_time_;     // internal
-    ObHRTime request_sent_time_;       // internal
-    ObHRTime response_received_time_;  // internal
-
     // used to building error packet, which will be sent to client
     int mysql_errcode_;
     const char *mysql_errmsg_;
@@ -834,6 +833,7 @@ public:
   static void handle_mysql_request(ObTransState &s);
   static int set_server_ip_by_shard_conn(ObTransState &s, dbconfig::ObShardConnector* shard_conn);
   static void handle_oceanbase_request(ObTransState &s);
+  static void handle_ps_close(ObTransState &s);
   static void handle_fetch_request(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,
@@ -975,21 +975,6 @@ public:
   static bool is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s);
 };
 
-// conditions for reroute:
-// 1. first SQL in transaction
-// 2. no reroute
-// 3. not large request and request size less than 4K
-inline bool ObMysqlTransact::is_need_reroute(ObMysqlTransact::ObTransState &s)
-{
-  int64_t total_request_packet_len = s.trans_info_.client_request_.get_packet_len();
-  int64_t cached_request_packet_len = s.trans_info_.client_request_.get_req_pkt().length();
-  return s.mysql_config_params_->enable_reroute_
-         && !s.is_rerouted_ && s.need_pl_lookup_
-         && s.is_trans_first_request_
-         && !s.trans_info_.client_request_.is_large_request()
-         && total_request_packet_len == cached_request_packet_len;
-}
-
 inline bool ObMysqlTransact::is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s)
 {
   obutils::ObSqlParseResult &parse_result = s.trans_info_.client_request_.get_parse_result();
@@ -1106,7 +1091,7 @@ inline void ObMysqlTransact::update_stat(
     s.current_stats_->stats_[*next_insert].increment_ = increment;
     ++(*next_insert);
   }
-  // ignore error
+    // ignore error
 }
 
 inline int64_t milestone_diff(const ObHRTime start, const ObHRTime end)
@@ -1167,7 +1152,7 @@ inline void ObMysqlTransact::update_sql_cmd(ObTransState &s)
       break;
 
     case SERVER_SEND_REQUEST:
-      if (s.is_auth_request_) {
+      if (OB_UNLIKELY(s.is_auth_request_)) {
         s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_LOGIN;
       } else {
         s.trans_info_.sql_cmd_ = s.trans_info_.client_request_.get_packet_meta().cmd_;

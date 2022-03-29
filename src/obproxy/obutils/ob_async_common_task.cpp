@@ -305,7 +305,7 @@ inline int ObAsyncCommonTask::handle_repeat_task()
 inline void ObAsyncCommonTask::check_stop_repeat_task()
 {
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-  if (OB_UNLIKELY(!info.need_conn_accept_)) {
+  if (OB_UNLIKELY(!info.need_conn_accept_ && OB_SUCCESS != g_proxy_fatal_errcode)) {
     // no need do repeat task again
     is_stop_ = true;; // for schedule_in task
     int ret = OB_SUCCESS;

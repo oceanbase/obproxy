@@ -208,6 +208,152 @@ private:
 
   DISALLOW_COPY_AND_ASSIGN(ObHashMap);
 };
+
+template <class _key_type,
+         class _value_type,
+         class _defendmode = ReadWriteDefendMode,
+         class _hashfunc = hash_func<_key_type>,
+         class _equal = equal_to<_key_type>,
+         class _allocer = SimpleAllocer<typename HashMapTypes<_key_type, _value_type>::AllocType>,
+         template <class> class _bucket_array = NormalPointer,
+         class _bucket_allocer = oceanbase::common::ObMalloc>
+class ObHashMapWrapper
+{
+  typedef ObHashMapWrapper<_key_type, _value_type, _defendmode, _hashfunc, _equal, _allocer, _bucket_array, _bucket_allocer>
+    OB_HASH_MAP_WRAPPER;
+  typedef ObHashMap<_key_type, _value_type, _defendmode, _hashfunc, _equal, _allocer, _bucket_array, _bucket_allocer>
+    OB_HASH_MAP;
+public:
+  typedef typename OB_HASH_MAP::iterator iterator;
+  typedef typename OB_HASH_MAP::const_iterator const_iterator;
+
+public:
+  ObHashMapWrapper() : is_inited_(false), bucket_num_(-1), bucket_mod_id_(0), node_mod_id_(0),
+                       allocer_(NULL), bucket_allocer_(NULL), hash_map_() {}
+  ~ObHashMapWrapper() {
+    hash_map_.destroy();
+  }
+
+  int reuse()
+  {
+    return hash_map_.reuse();
+  }
+
+  int init(int64_t bucket_num, int64_t bucket_mod_id, int64_t node_mod_id = ObModIds::OB_HASH_NODE) {
+    int ret = OB_SUCCESS;
+
+    if (!is_inited_) {
+      bucket_num_ = bucket_num;
+      bucket_mod_id_ = bucket_mod_id;
+      node_mod_id_ = node_mod_id;
+
+      if (OB_SUCC(hash_map_.create(bucket_num, bucket_mod_id, node_mod_id))) {
+        is_inited_ = true;
+      }
+    }
+
+    return ret;
+  }
+
+  int init(int64_t bucket_num, _allocer *allocer, int64_t bucket_mod_id,
+           int64_t node_mod_id = ObModIds::OB_HASH_NODE) {
+    int ret = OB_SUCCESS;
+
+    if (!is_inited_) {
+      bucket_num_ = bucket_num;
+      allocer_ = allocer;
+      bucket_mod_id_ = bucket_mod_id;
+      node_mod_id_ = node_mod_id;
+
+      if (OB_SUCC(hash_map_.create(bucket_num, allocer, bucket_mod_id, node_mod_id))) {
+        is_inited_ = true;
+      }
+    }
+
+    return ret;
+  }
+
+  int init(int64_t bucket_num, _allocer *allocer, _bucket_allocer *bucket_allocer) {
+    int ret = OB_SUCCESS;
+
+    if (!is_inited_) {
+      bucket_num_ = bucket_num;
+      allocer_ = allocer;
+      bucket_allocer_ = bucket_allocer;
+
+      if (OB_SUCC(hash_map_.create(bucket_num, allocer, bucket_allocer))) {
+        is_inited_ = true;
+      }
+    }
+
+    return ret;
+  }
+
+  int init(const OB_HASH_MAP_WRAPPER &hash_map_wrapper) {
+    int ret = OB_SUCCESS;
+
+    if (!is_inited_) {
+      bucket_num_ = hash_map_wrapper.get_bucket_num();
+      bucket_mod_id_ = hash_map_wrapper.get_bucket_mod_id();
+      node_mod_id_ = hash_map_wrapper.get_node_mod_id();
+      allocer_ = hash_map_wrapper.get_allocer();
+      bucket_allocer_ = hash_map_wrapper.get_bucket_allocer();
+
+      if (NULL != allocer_ && NULL != bucket_allocer_) {
+        ret = hash_map_.create(bucket_num_, allocer_, bucket_allocer_);
+      } else if (NULL != allocer_) {
+        ret = hash_map_.create(bucket_num_, allocer_, bucket_mod_id_, node_mod_id_);
+      } else {
+        ret = hash_map_.create(bucket_num_, bucket_mod_id_, node_mod_id_);
+      }
+
+      if (OB_SUCC(ret)) {
+        is_inited_ = true;
+      }
+    }
+
+    return ret;
+  }
+
+  int assign(const OB_HASH_MAP_WRAPPER &hash_map_wrapper) {
+    int ret = OB_SUCCESS;
+    if (!is_inited_) {
+      ret = init(hash_map_wrapper);
+    }
+
+    if (OB_SUCC(ret)) {
+      const OB_HASH_MAP &hash_map = hash_map_wrapper.get_hash_map();
+      const_iterator iter = hash_map.begin();
+      const_iterator end = hash_map.end();
+      for (; OB_SUCC(ret) && iter !=end; iter++) {
+        ret = hash_map_.set_refactored(iter->first, iter->second);
+      }
+    }
+
+    return ret;
+  }
+
+  int64_t get_bucket_num() const { return bucket_num_; }
+  int64_t get_bucket_mod_id() const { return bucket_mod_id_; }
+  int64_t get_node_mod_id() const { return node_mod_id_; }
+  _allocer *get_allocer() const { return allocer_; }
+  _bucket_allocer *get_bucket_allocer() const { return bucket_allocer_; }
+  const OB_HASH_MAP &get_hash_map() const { return hash_map_; }
+  OB_HASH_MAP &get_hash_map() { return hash_map_; }
+
+  TO_STRING_KV(K_(is_inited), K_(bucket_num), K_(bucket_mod_id),
+               K_(node_mod_id), KP_(allocer), KP_(bucket_allocer));
+
+private:
+  bool is_inited_;
+  int64_t bucket_num_;
+  int64_t bucket_mod_id_;
+  int64_t node_mod_id_;
+  _allocer *allocer_;
+  _bucket_allocer *bucket_allocer_;
+  OB_HASH_MAP hash_map_;
+};
+
 }//namespace hash
 }//namespace common
 }//namespace oceanbase

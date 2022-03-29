@@ -28,6 +28,7 @@
 #include "opsql/func_expr_parser/ob_func_expr_parser.h"
 #include "opsql/func_expr_parser/ob_func_expr_parser_utils.h"
 #include "obutils/ob_proxy_sql_parser.h"
+#include "utils/ob_proxy_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
@@ -67,7 +68,7 @@ static const char *PROXY_PART_INFO_SQL                   =
     "part_interval_bin, interval_start_bin, sub_part_num, sub_part_type, sub_part_space, "
     "sub_part_expr, def_sub_part_interval_bin, def_sub_interval_start_bin, "
     "part_key_num, part_key_name, part_key_type, part_key_idx, part_key_level, part_key_extra, "
-    "spare1, spare2, spare4 "
+    "spare1, spare2, spare4, spare5 "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu order by part_key_idx LIMIT %d;";
 
@@ -279,7 +280,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
   ObSEArray<ObProxyReplicaLocation, 32> server_list;
   const bool is_dummy_entry = entry.is_dummy_entry();
   bool use_fake_addrs = false;
-  bool has_dup_replica = true;
+  bool has_dup_replica = false;
 
   while ((OB_SUCC(ret)) && (OB_SUCC(rs_fetcher.next()))) {
     ip_str[0] = '\0';
@@ -560,6 +561,97 @@ int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info,
   return ret;
 }
 
+/*
+ * according to rs observer, spare5 will specify the accuracy of all the part key
+ * set this if the part_key_type is valid, otherwise maybe invalid value
+ * accuracy is different between diff types, for eg: "6" for TIMESTAMP, "(2, 5)" for NUMBER
+ * see more info in ObProxyPartKeyAccuracy
+ *
+ * format: "length,precision/length_semantics,scale", type: "int32_t,int16_t,int16_t"
+ * the guide of how to handle the accuracy of part key type is reffered to yuque.
+ *
+ * return: no ret for this function, cause we need to continue our part info build procedure,
+ *         even if the accuracy parse failed or invalid value.
+ */
+void ObRouteUtils::parse_part_key_accuracy(ObProxyPartKey *part_key,
+                                           ObObjType part_key_type,
+                                           ObIAllocator *allocator,
+                                           ObString &part_key_accuracy)
+{
+  int ret = OB_SUCCESS;
+
+  if (part_key_accuracy.empty()) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_DEBUG("empty part key accuracy from rs observer");
+  } else {
+    // alloc buf to maintain string
+    char *buf = NULL;
+    if (OB_ISNULL(buf = static_cast<char *>(allocator->alloc(part_key_accuracy.length() + 1)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to alloc buf", K(ret), K(part_key_accuracy.length()));
+    } else {
+      memcpy(buf, part_key_accuracy.ptr(), part_key_accuracy.length());
+      buf[part_key_accuracy.length()] = '\0';
+    }
+
+    if (OB_SUCC(ret)) {
+      const char *delim = ",";
+      char *token = NULL;
+      char *saveptr = NULL;
+      int64_t nums[3] = {0};
+
+      token = strtok_r(buf, delim, &saveptr);
+      int i;
+      for (i = 0; OB_SUCC(ret) && token != NULL && i < 3; ++i) {
+        if (OB_FAIL(get_int_value(ObString::make_string(token), nums[i]))) {
+          LOG_WARN("fail to get int value from each token", K(ret), K(token));
+        }
+        token = strtok_r(NULL, delim, &saveptr);
+      }
+
+      // succ to parse the triple
+      if (i != 3 || OB_FAIL(ret)) {
+        LOG_WARN("invalid token or get failed from rs observer", K(i), K(ret));
+      } else {
+        int32_t length = static_cast<int32_t>(nums[0]);
+        int16_t precision = static_cast<int16_t>(nums[1]);
+        int16_t scale = static_cast<int16_t>(nums[2]);
+        
+        part_key->accuracy_.length_ = -1;         // init -1 means not used
+        part_key->accuracy_.precision_ = -1;
+        part_key->accuracy_.scale_ = -1;
+
+        // use accord to obj_type
+        if (ob_is_otimestamp_type(part_key_type)) {
+          if (scale < MIN_SCALE_FOR_TEMPORAL || scale > MAX_SCALE_FOR_ORACLE_TEMPORAL) {
+            part_key->accuracy_.scale_ = DEFAULT_SCALE_FOR_ORACLE_TIMESTAMP;
+            LOG_WARN("invalid scale for timestamp in oracle, set to default:6", K(scale));
+          } else {
+            part_key->accuracy_.scale_ = static_cast<int16_t>(scale); // timestamp only need scale
+            LOG_DEBUG("succ to set timestamp scale of accuracy", K(scale));
+          }
+        } else if (ob_is_number_tc(part_key_type)
+                   || ob_is_datetime_tc(part_key_type)
+                   || ob_is_time_tc(part_key_type)) {
+          part_key->accuracy_.precision_ = precision;
+          part_key->accuracy_.scale_ = scale;
+        } else if (ob_is_string_tc(part_key_type)) {
+          part_key->accuracy_.length_ = length;
+          part_key->accuracy_.precision_ = precision;
+        }
+        // more obj type could be supported here.
+      }
+    }
+
+    if (OB_NOT_NULL(buf)) {
+      allocator->free(buf);
+      buf = NULL;
+    }
+  }
+
+  return;
+}
+
 inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
                                         ObProxyPartInfo &part_info)
 {
@@ -575,6 +667,7 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
   ObString part_key_extra;
   ObString constraint_part_key;
   int64_t idx_in_rowid = -1;
+  ObString part_key_accuracy;
 
   PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_level", part_key_level, ObPartitionLevel);
   // part key idx is the order of part key in all columns
@@ -588,15 +681,22 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
   PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", part_key_cs_type, ObCollationType);
   // use spare2 as rowid index
   PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", idx_in_rowid, int64_t);
+  // use spare5 as the accuracy of the part key
+  PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "spare5", part_key_accuracy);
 
+  LOG_DEBUG("fetch part key", K(part_key_level), K(part_key_idx), K(part_key_type), K(part_key_name),
+            K(part_key_extra), K(constraint_part_key), K(part_key_cs_type), K(idx_in_rowid), K(part_key_accuracy));
+  
   if (!is_obj_type_supported(part_key_type)) {
     part_info.set_unknown_part_key(true);
   }
 
+  ObProxyPartKey *part_key = &part_key_info.part_keys_[part_key_info.key_num_];
+  
   if (PARTITION_LEVEL_ONE == part_key_level) {
-    part_key_info.part_keys_[part_key_info.key_num_].level_ = PART_KEY_LEVEL_ONE;
+    part_key->level_ = PART_KEY_LEVEL_ONE;
   } else if (PARTITION_LEVEL_TWO == part_key_level) {
-    part_key_info.part_keys_[part_key_info.key_num_].level_ = PART_KEY_LEVEL_TWO;
+    part_key->level_ = PART_KEY_LEVEL_TWO;
   } else {
     ret = OB_INVALID_ARGUMENT_FOR_EXTRACT;
     LOG_WARN("part key level is invalid", K(part_key_level), K(ret));
@@ -611,20 +711,22 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
   }
 
   if (OB_SUCC(ret)) {
-    part_key_info.part_keys_[part_key_info.key_num_].idx_ = part_key_idx;
-    part_key_info.part_keys_[part_key_info.key_num_].name_.str_len_ = part_key_name.length();
-    part_key_info.part_keys_[part_key_info.key_num_].name_.str_ = buf;
-    part_key_info.part_keys_[part_key_info.key_num_].obj_type_ = part_key_type;
-    part_key_info.part_keys_[part_key_info.key_num_].idx_in_rowid_ = idx_in_rowid;
+    part_key->idx_ = part_key_idx;
+    part_key->name_.str_len_ = part_key_name.length();
+    part_key->name_.str_ = buf;
+    part_key->obj_type_ = part_key_type;
+    part_key->idx_in_rowid_ = idx_in_rowid;
+
+    parse_part_key_accuracy(part_key, part_key_type, &allocator, part_key_accuracy);
+    
     if (CS_TYPE_INVALID == part_key_cs_type) {
-      part_key_info.part_keys_[part_key_info.key_num_].cs_type_ =
-        ObCharset::get_default_collation(ObCharset::get_default_charset());
+      part_key->cs_type_ = ObCharset::get_default_collation(ObCharset::get_default_charset());
     } else {
-      part_key_info.part_keys_[part_key_info.key_num_].cs_type_ = part_key_cs_type;
+      part_key->cs_type_ = part_key_cs_type;
     }
 
     if (!part_key_extra.empty() || !constraint_part_key.empty()) {
-      part_key_info.part_keys_[part_key_info.key_num_].is_generated_ = true;
+      part_key->is_generated_ = true;
       part_info.set_has_generated_key(true);
       int64_t generated_key_idx = part_key_info.key_num_;
       ++part_key_info.key_num_;
@@ -643,7 +745,7 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
         LOG_WARN("fail to add generated key", K(constraint_part_key), K(ret));
       }
     } else {
-      part_key_info.part_keys_[part_key_info.key_num_].is_generated_ = false;
+      part_key->is_generated_ = false;
       ++part_key_info.key_num_;
     }
   }
@@ -1240,7 +1342,7 @@ int ObRouteUtils::get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
     } else {
       len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_ROUTINE_SCHEMA_SQL,
                                           OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
-                                          name.table_name_.length(), name.table_name_.ptr(),
+                                          new_tenant_name.length(), new_tenant_name.ptr(),
                                           name.database_name_.length(), name.database_name_.ptr(),
                                           name.table_name_.length(), name.table_name_.ptr()));
     }

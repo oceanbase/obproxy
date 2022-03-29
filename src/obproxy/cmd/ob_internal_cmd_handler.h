@@ -41,6 +41,8 @@ struct ObProxyColumnSchema
   ObProxyColumnSchema() : cid_(-1), cname_(), ctype_(obmysql::OB_MYSQL_TYPE_NOT_DEFINED) {}
   ObProxyColumnSchema(const int64_t cid, const char *cname, const obmysql::EMySQLFieldType ctype)
                       : cid_(cid), cname_(cname), ctype_(ctype) {}
+  ObProxyColumnSchema(const int64_t cid, const int64_t length, const char *cname, const obmysql::EMySQLFieldType ctype)
+                      : cid_(cid), cname_(length, cname), ctype_(ctype) {}
   ~ObProxyColumnSchema() {}
 
   static ObProxyColumnSchema make_schema(const int64_t cid, const char *cname,
@@ -49,11 +51,17 @@ struct ObProxyColumnSchema
     return (OB_ISNULL(cname) ? ObProxyColumnSchema() : ObProxyColumnSchema(cid, cname, ctype));
   }
 
+  static ObProxyColumnSchema make_schema(const int64_t cid, common::ObString &cname,
+                                         const obmysql::EMySQLFieldType ctype)
+  {
+    return (cname.empty() ? ObProxyColumnSchema() : ObProxyColumnSchema(cid, cname.length(), cname.ptr(), ctype));
+  }
+
   TO_STRING_KV(K_(cid), K_(cname), K_(ctype));
 
-  const int64_t cid_;
-  const common::ObString cname_;
-  const obmysql::EMySQLFieldType ctype_;
+  int64_t cid_;
+  common::ObString cname_;
+  obmysql::EMySQLFieldType ctype_;
 };
 
 struct ObCSIDHandler

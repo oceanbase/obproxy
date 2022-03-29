@@ -32,7 +32,7 @@ namespace proxy
 
 enum ObMysqlAnalyzeStatus
 {
-  ANALYZE_OBUNSUPPORT_ERROR = -3,
+  ANALYZE_CAN_NOT_PASS_WHITE_LIST_ERROR = -3,
   ANALYZE_OBPARSE_ERROR = -2,
   ANALYZE_ERROR = -1,
   ANALYZE_DONE = 0,

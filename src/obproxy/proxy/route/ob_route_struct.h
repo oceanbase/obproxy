@@ -580,7 +580,7 @@ inline bool ObTableEntryName::is_oceanbase_db() const
 inline bool ObTableEntryName::is_all_dummy_table() const
 {
   static const common::ObString all_dummy_tname_str(share::OB_ALL_DUMMY_TNAME);
-  return is_valid() && all_dummy_tname_str == table_name_;
+  return is_valid() && table_name_[0] == '_' && all_dummy_tname_str == table_name_;
 }
 
 inline bool ObTableEntryName::is_ob_dummy() const

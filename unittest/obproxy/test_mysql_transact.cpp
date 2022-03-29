@@ -11,9 +11,9 @@
  */
 
 #define USING_LOG_PREFIX PROXY
+#include <gtest/gtest.h>
 #define private public
 #define protected public
-#include <gtest/gtest.h>
 #include "lib/oblog/ob_log.h"
 #include "lib/string/ob_string.h"
 #include "lib/utility/utility.h"

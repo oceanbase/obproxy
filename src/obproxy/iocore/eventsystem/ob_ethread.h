@@ -56,6 +56,7 @@ class ObPartitionRefHashMap;
 class ObRoutineRefHashMap;
 class ObSqlTableRefHashMap;
 class ObCacheCleaner;
+class ObBasePsEntryCache;
 }
 namespace net
 {
@@ -63,6 +64,11 @@ class ObEventIO;
 class ObNetHandler;
 class ObNetPoll;
 class ObInactivityCop;
+}
+
+namespace prometheus
+{
+class ObThreadPrometheus;
 }
 
 namespace event
@@ -77,6 +83,12 @@ enum ObThreadType
   REGULAR = 0,
   MONITOR,
   DEDICATED
+};
+
+enum ObDedicateThreadType
+{
+  DEDICATE_THREAD_NONE = 0,
+  DEDICATE_THREAD_ACCEPT,
 };
 
 /**
@@ -301,6 +313,8 @@ public:
 
   bool is_event_thread_type(const ObEventThreadType et) { return !!(event_types_ & (1 << et)); }
   void set_event_thread_type(const ObEventThreadType et) { event_types_ |= (1 << et); }
+  ObDedicateThreadType get_dedicate_type() { return dedicate_thread_type_; }
+  void set_dedicate_type(const ObDedicateThreadType dedicate_thread_type) { dedicate_thread_type_ = dedicate_thread_type; }
 
   net::ObNetHandler &get_net_handler() { return *net_handler_; }
   net::ObNetPoll &get_net_poll() { return *net_poll_; }
@@ -310,6 +324,7 @@ public:
   proxy::ObSqlTableRefHashMap &get_sql_table_map() { return *sql_table_map_; }
   proxy::ObPartitionRefHashMap &get_partition_map() { return *partition_map_; }
   proxy::ObRoutineRefHashMap &get_routine_map() { return *routine_map_; }
+  proxy::ObBasePsEntryCache &get_ps_entry_cache() { return *ps_entry_cache_; }
 
   obutils::ObCongestionRefHashMap &get_cgt_map() { return *congestion_map_; }
   common::ObMysqlRandom &get_random_seed() { return *random_seed_; }
@@ -343,6 +358,7 @@ public:
   int64_t id_;
   int64_t event_types_;
   int64_t stack_start_; // statck start pos, used to minitor stack size
+  ObDedicateThreadType dedicate_thread_type_;
 
   int (*signal_hook_)(ObEThread &);
 
@@ -363,6 +379,7 @@ public:
   obutils::ObCongestionRefHashMap *congestion_map_;
   proxy::ObCacheCleaner *cache_cleaner_;
   proxy::ObSqlTableRefHashMap *sql_table_map_;
+  proxy::ObBasePsEntryCache *ps_entry_cache_;
   common::ObMysqlRandom *random_seed_;
 
   char *warn_log_buf_;
@@ -370,6 +387,7 @@ public:
 
   ObThreadType tt_;
   ObEvent *pending_event_; // For dedicated event thread
+  prometheus::ObThreadPrometheus *thread_prometheus_;
 
 private:
   // prevent unauthorized copies (Not implemented)

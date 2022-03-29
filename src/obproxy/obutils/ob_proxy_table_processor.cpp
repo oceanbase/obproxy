@@ -573,66 +573,7 @@ int ObProxyTableProcessor::get_proxy_info(ObProxyServerInfo &proxy_info)
   const char *proxy_ip = hot_upgrade_processor_.get_proxy_ip();
   const int32_t proxy_port = hot_upgrade_processor_.get_proxy_port();
   proxy_info.reset();
-  ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-  ObProxyLocalCMDType cmd_type = get_global_proxy_config().get_local_cmd_type();
-  switch (cmd_type) {
-    case OB_LOCAL_CMD_NONE: {
-      //do nothing
-      break;
-    }
-    case OB_LOCAL_CMD_EXIT: {
-      get_global_proxy_config().reset_local_cmd();
-      if (info.is_in_idle_state()) {
-        info.cmd_ = HUC_LOCAL_EXIT;
-        LOG_INFO("proxy will do quick exit from local cmd, no need check proxy info", K(info));
-      } else {
-        LOG_WARN("it is doing hot upgrading now, CAN NOT do quick exit from local cmd", K(info));
-      }
-
-      break;
-    }
-    case OB_LOCAL_CMD_RESTART: {
-      get_global_proxy_config().reset_local_cmd();
-      if (info.is_in_idle_state()) {
-        info.cmd_ = HUC_LOCAL_RESTART;
-        hot_upgrade_processor_.reset_upgrade_failures();
-        LOG_INFO("proxy will do restart from local cmd", K(info));
-      } else {
-        LOG_WARN("it is doing hot upgrading now, CAN NOT do quick restart from local cmd", K(info));
-      }
-      break;
-    }
-    case OB_LOCAL_CMD_COMMIT: {
-      get_global_proxy_config().reset_local_cmd();
-      if (info.is_local_restart() && info.is_in_wait_cr_state()) {
-        info.cmd_ = HUC_LOCAL_COMMIT;
-        LOG_INFO("proxy will do commit from local cmd", K(info));
-      } else {
-        LOG_WARN("it is not doing hot upgrading now, CAN NOT do commit from local cmd", K(info));
-      }
-      break;
-    }
-    case OB_LOCAL_CMD_ROLLBACK: {
-      get_global_proxy_config().reset_local_cmd();
-      if (info.is_local_restart() && info.is_in_wait_cr_state()) {
-        info.cmd_ = HUC_LOCAL_ROLLBACK;
-        LOG_INFO("proxy will do rollback from local cmd", K(info));
-      } else {
-        LOG_WARN("it is not doing hot upgrading now, CAN NOT do rollback from local cmd", K(info));
-      }
-      break;
-    }
-    default: {
-      LOG_WARN("unknown ObProxyLocalCMDType, reset it default value", K(cmd_type));
-      get_global_proxy_config().reset_local_cmd();
-    }
-  }
-
-  //5. if this is local_cmd, no need get proxy info
-  if (info.is_local_cmd()) {
-    LOG_DEBUG("it is doing local cmd now, no need check proxy info", K(info));
-
-  } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_info(*mysql_proxy_, proxy_ip, proxy_port, proxy_info))) {
+  if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_info(*mysql_proxy_, proxy_ip, proxy_port, proxy_info))) {
     if (OB_UNLIKELY(OB_ENTRY_NOT_EXIST == ret)) {
     // this means no record in observer's PROXY_INFO_TABLE_NAME, abnormal state
       proxy_info.row_status_ = PRS_NOT_EXSIT;
@@ -659,8 +600,7 @@ int ObProxyTableProcessor::check_upgrade_state(const ObProxyServerInfo &proxy_in
       //any of the follower happened, we should do state_wait_hu_cmd()
       //1. proxy_info is AVAILABLE
       //2. this is local cmd from config cmd
-      if (OB_LIKELY(PRS_AVAILABLE == proxy_info.row_status_)
-          || info.is_local_cmd()) {
+      if (OB_LIKELY(PRS_AVAILABLE == proxy_info.row_status_)) {
         if (OB_FAIL(hot_upgrade_processor_.state_wait_hu_cmd(proxy_info))) {
           LOG_WARN("fail to handle wait_hu_cmd state", K(proxy_info), K(info), K(ret));
         }
@@ -687,8 +627,7 @@ int ObProxyTableProcessor::check_upgrade_state(const ObProxyServerInfo &proxy_in
       //4. this is restart from config cmd
       if (OB_LIKELY(PRS_AVAILABLE == proxy_info.row_status_)
           || hot_upgrade_processor_.is_timeout_rollback()
-          || info.is_auto_upgrade()
-          || info.is_local_cmd()) {
+          || info.is_auto_upgrade()) {
         if (OB_FAIL(hot_upgrade_processor_.state_wait_cr_cmd(proxy_info))) {
           LOG_WARN("fail to handle wait_cr_cmd state", K(info), K(proxy_info), K(ret));
         }
@@ -706,6 +645,8 @@ int ObProxyTableProcessor::check_upgrade_state(const ObProxyServerInfo &proxy_in
       }
       break;
     }
+    case HU_STATE_WAIT_LOCAL_CR_FINISH:
+      break;
     default: {
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("it should not enter here", K(info));
@@ -760,12 +701,8 @@ int ObProxyTableProcessor::check_update_proxy_table(const ObProxyServerInfo &pro
         break;
       }
       case PRS_NONE: {
-        if (info.is_local_cmd()) {
-          LOG_INFO("this is local cmd, no need update_proxy table", K(info));
-        } else {
-          if (OB_FAIL(register_proxy(RT_FORCE))) {
-            LOG_WARN("fail to register proxy, current proxy info in table maybe old", K(info), K(ret));
-          }
+        if (OB_FAIL(register_proxy(RT_FORCE))) {
+          LOG_WARN("fail to register proxy, current proxy info in table maybe old", K(info), K(ret));
         }
         break;
       }
@@ -923,7 +860,6 @@ int ObProxyTableProcessor::do_check_work()
 
   if (OB_SUCC(ret)) {
     //proxy need check kv table when it is not local cmd
-    const bool need_check_kv = ((!get_global_hot_upgrade_info().is_local_cmd() && !get_global_proxy_config().is_local_cmd()));
     ObProxyKVTableInfo kv_info;
 
     if (is_meta_mysql_avail) {
@@ -934,27 +870,18 @@ int ObProxyTableProcessor::do_check_work()
         }
       }
 
-      if (need_check_kv) {
-        //2. check proxy kv info from tables without care is_registered_
-        if (OB_FAIL(check_proxy_kv_info(kv_info))) {
+      //2. check proxy kv info from tables without care is_registered_
+      if (OB_FAIL(check_proxy_kv_info(kv_info))) {
+        LOG_WARN("fail to check proxy info", K(kv_info), K(ret));
+      }
+
+      //3. get proxy info from tables if needed
+      if (need_check_proxy_info_table(kv_info)) {
+        if (OB_FAIL(check_proxy_info(kv_info))) {
           LOG_WARN("fail to check proxy info", K(kv_info), K(ret));
         }
-
-        //3. get proxy info from tables if needed
-        if (need_check_proxy_info_table(kv_info)) {
-          if (OB_FAIL(check_proxy_info(kv_info))) {
-            LOG_WARN("fail to check proxy info", K(kv_info), K(ret));
-          }
-        } else {
-          LOG_DEBUG("there is no need to get proxy info", K(need_check_kv), K(is_meta_mysql_avail), K(kv_info));
-        }
-      }
-    }
-
-    //4. get proxy info from tables if use local cmd
-    if (!need_check_kv) {
-      if (OB_FAIL(check_proxy_info(kv_info))) {
-        LOG_WARN("fail to check proxy info", K(kv_info), K(ret));
+      } else {
+        LOG_DEBUG("there is no need to get proxy info", K(is_meta_mysql_avail), K(kv_info));
       }
     }
   }

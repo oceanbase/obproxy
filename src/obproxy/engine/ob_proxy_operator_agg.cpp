@@ -54,13 +54,13 @@ int ObProxyAggOp::init()
   if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(ObColInfoArray)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("init not have enough memory", K(ret), K(sizeof(ObColInfoArray)));
-  } else if (OB_ISNULL(hash_col_idxs_ = new (tmp_buf) ObColInfoArray(array_new_alloc_size, allocator_))) {
+  } else if (OB_ISNULL(hash_col_idxs_ = new (tmp_buf) ObColInfoArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
     LOG_WARN("init construct error", K(ret), K(hash_col_idxs_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(SortColumnArray)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("init not have enough memory", K(ret), K(sizeof(SortColumnArray)));
-  } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(array_new_alloc_size, allocator_))) {
+  } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
     LOG_WARN("init construct error", K(ret), K(sort_columns_));
   } else {
@@ -94,15 +94,13 @@ int ObProxyAggOp::get_next_row()
 int ObProxyAggOp::init_group_by_columns()
 {
   int ret = common::OB_SUCCESS;
-  ObProxyAggInput *input =
-    dynamic_cast<ObProxyAggInput*>(get_input());
+  ObProxyAggInput *input = dynamic_cast<ObProxyAggInput*>(get_input());
 
   if (OB_ISNULL(input)) {
     ret = common::OB_INVALID_ARGUMENT;
     LOG_WARN("input is invalid in ObProxyAggOp", K(ret), K(input_));
   } else {
-    const ObSEArray<ObProxyExpr*, 4>& group_by_expr = input->get_group_by_exprs();
-    const ObSEArray<ObProxyExpr*, 4>& select_expr = input->get_select_exprs();
+    const ObSEArray<ObProxyGroupItem*, 4>& group_by_expr = input->get_group_by_exprs();
     ObProxyExpr* expr_ptr = NULL;
     void *tmp_ptr = NULL;
 
@@ -118,26 +116,6 @@ int ObProxyAggOp::init_group_by_columns()
       ObSortColumn *new_col= new (tmp_ptr) ObSortColumn();
       if (expr_ptr->index_ >= 0) {
         new_col->index_ = expr_ptr->index_;
-      } else if (expr_ptr->index_ == -1 && expr_ptr->is_alias()) {
-        // For 'SLELCT c1 AS a FROM ta GROUP BY a', the expr of 'a' not set index for a not put into
-        // forehead in select expr. We need to calc correct index for expr of 'a'.
-        int64_t l = 0;
-        ObProxyExprShardingConst *shard_const_expr = dynamic_cast<ObProxyExprShardingConst*>(expr_ptr);
-        if (OB_NOT_NULL(shard_const_expr)) {
-          for (l=0; l<select_expr.count(); l++) {
-            if (shard_const_expr->expr_ == select_expr.at(l)) {
-              break;
-            }
-          }
-        }
-        if (OB_ISNULL(shard_const_expr) || l == select_expr.count()) {
-          //not found expr in select_expr
-          ret = common::OB_ERR_UNEXPECTED;
-          LOG_WARN("ObProxyAggOp::init_group_by_columns not found group by expression with alias in"
-                   " select expressions", K(ret), KP(expr_ptr));
-        } else {
-          new_col->index_ = select_expr.count() - 1 - l;
-        }
       } else {
         ret = common::OB_ERR_UNEXPECTED;
         LOG_WARN("ObProxyAggOp::init_group_by_columns error group by expression", K(ret), KP(expr_ptr));
@@ -191,7 +169,6 @@ int ObProxyAggOp::process_exprs_in_agg(ResultRows *src_rows, ResultRows *obj_row
     LOG_DEBUG("get one recored from res", K(ret), K(row));
     if (OB_FAIL(ObProxyOperator::calc_result(*row, *new_row, select_exprs, added_row_count))) {
       LOG_WARN("ObProxyProOp::process_ready_data calc result error", K(ret));
-    //} else if (OB_FAIL(put_result_row(new_row))) {
     } else if (OB_FAIL(obj_rows->push_back(new_row))) {
       LOG_WARN("ObProxyProOp::process_ready_data put row error", K(ret));
     }
@@ -204,7 +181,7 @@ int ObProxyAggOp::process_exprs_in_agg(ResultRows *src_rows, ResultRows *obj_row
   return ret;
 }
 
-int ObProxyAggOp::handle_response_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyAggOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
   LOG_DEBUG("Enter ObProxyAggOp::handle_response_result", K(op_name()), K(data));
@@ -287,7 +264,7 @@ int ObProxyHashAggOp::init() {
   return ret;
 }
 
-int ObProxyHashAggOp::handle_response_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyHashAggOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
   LOG_DEBUG("Enter ObProxyHashAggOp::handle_response_result", K(op_name()), K(data));
@@ -371,14 +348,14 @@ int ObProxyMergeAggOp::init()
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("no have enough memory to init", K(ret), K(tmp_buf), K(sizeof(ResultFlagArray)));
     } else if (OB_ISNULL(result_rows_flag_array_
-        = new (tmp_buf) ResultFlagArray(array_new_alloc_size, allocator_))) {
+        = new (tmp_buf) ResultFlagArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
       LOG_WARN("ObProxyAggOp::init error for construct", K(ret), K(result_rows_flag_array_));
     } else if (OB_ISNULL(tmp_buf = (char*)allocator_.alloc(sizeof(ResultRespArray)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("no have enough memory to init", K(ret), K(tmp_buf), K(sizeof(ResultRespArray)));
     } else if (OB_ISNULL(regions_results_
-        = new (tmp_buf) ResultRespArray(array_new_alloc_size, allocator_))) {
+        = new (tmp_buf) ResultRespArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
       LOG_WARN("ObProxyAggOp::init error for construct", K(ret), K(regions_results_));
     }
@@ -386,7 +363,7 @@ int ObProxyMergeAggOp::init()
   return ret;
 }
 
-int ObProxyMergeAggOp::handle_response_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyMergeAggOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
   LOG_DEBUG("Enter ObProxyMergeAggOp::handle_response_result", K(op_name()), K(data));
@@ -484,7 +461,7 @@ int ObProxyMergeAggOp::fetch_all_result(ResultRows *rows)
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
-    } else if (OB_ISNULL(new_rows = new (tmp_buf) ResultRows(array_new_alloc_size, allocator_))) {
+    } else if (OB_ISNULL(new_rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
       LOG_WARN("init ResultRows failed", K(ret), K(op_name()), K(new_rows));
     } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObMemorySort)))) {
@@ -583,6 +560,502 @@ int ObProxyMergeAggOp::fetch_all_result(ResultRows *rows)
   return ret;
 }
 
+ObProxyStreamAggOp::~ObProxyStreamAggOp()
+{
+  if (NULL != current_group_unit_) {
+    ObProxyGroupUnit::destroy_group_unit(allocator_, current_group_unit_);
+    current_group_unit_ = NULL;
+  }
+}
+
+int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyResultResp *opres = NULL;
+  ObProxyAggInput *input = NULL;
+
+  if (OB_ISNULL(data)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid input, data is NULL", K(ret));
+  } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid input, opres type is not match", K(ret));
+  } else if (!opres->is_resultset_resp()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("resp is not resultset", K(opres), K(ret));
+  } else if (OB_ISNULL(input = dynamic_cast<ObProxyAggInput*>(get_input()))) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("input is invalid", K(ret));
+  } else {
+    const ObSEArray<ObProxyGroupItem*, 4>& group_exprs = input->get_group_by_exprs();
+    const ObSEArray<ObProxyExpr*, 4>& agg_exprs = input->get_agg_exprs();
+    int64_t limit_offset = get_input()->get_limit_offset();
+    int64_t limit_offset_size = get_input()->get_limit_size() + limit_offset;
+
+    if (OB_ISNULL(get_result_fields())) {
+      result_fields_ = opres->get_fields();
+      if (OB_ISNULL(result_fields_)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("no result field, unexpected", K(ret));
+      }
+    }
+
+    ResultRow *row = NULL;
+    while (OB_SUCC(ret) && OB_SUCC(opres->next(row))) {
+      ObProxyGroupUnit group_unit(allocator_);
+      if (OB_FAIL(group_unit.init(row, group_exprs))) {
+        LOG_WARN("fail to init group unit", K(ret));
+      } else if (NULL == current_group_unit_) {
+        if (OB_FAIL(ObProxyGroupUnit::create_group_unit(allocator_, current_group_unit_, group_unit))) {
+          LOG_WARN("fail to create group unit", K(ret));
+        }
+      } else if (*current_group_unit_ == group_unit) {
+        if (OB_FAIL(current_group_unit_->aggregate(group_unit, agg_exprs))) {
+          LOG_WARN("fail to aggregate", K(ret));
+        }
+      } else {
+        if (OB_FAIL(current_group_unit_->set_agg_value())) {
+          LOG_WARN("fail to set agg value", K(ret));
+        } else if (OB_FAIL(current_rows_.push_back(current_group_unit_->get_row()))) {
+          LOG_WARN("fail to push back row", K(ret));
+        } else {
+          ObProxyGroupUnit::destroy_group_unit(allocator_, current_group_unit_);
+          current_group_unit_ = NULL;
+          if (limit_offset_size > 0 && current_rows_.count() == limit_offset_size) {
+            is_final = true;
+            break;
+          }
+
+          if (OB_FAIL(ObProxyGroupUnit::create_group_unit(allocator_, current_group_unit_, group_unit))) {
+            LOG_WARN("fail to create group unit", K(ret));
+          }
+        }
+      }
+    }
+
+    if (ret == OB_ITER_END) {
+      ret = OB_SUCCESS;
+      if (is_final && NULL != current_group_unit_) {
+        if (OB_FAIL(current_group_unit_->set_agg_value())) {
+          LOG_WARN("fail to set agg value", K(ret));
+        } else if (OB_FAIL(current_rows_.push_back(current_group_unit_->get_row()))) {
+          LOG_WARN("fail to push back row", K(ret));
+        } else {
+          ObProxyGroupUnit::destroy_group_unit(allocator_, current_group_unit_);
+          current_group_unit_ = NULL;
+        }
+      }
+    }
+
+    if (OB_SUCC(ret) && (!current_rows_.empty() || is_final)) {
+      ObProxyResultResp *res = NULL;
+      ResultRows *rows = NULL;
+      void *tmp_buf = NULL;
+      if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+      } else if (FALSE_IT(rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
+        // impossible
+      } else {
+        int64_t count = current_rows_.count();
+        if (limit_offset_size > 0) {
+          count = count > limit_offset_size ? limit_offset_size : count;
+        }
+
+        for (int64_t i = limit_offset; OB_SUCC(ret) && i < count; i++) {
+          if (OB_FAIL(rows->push_back(current_rows_.at(i)))) {
+            LOG_WARN("fail to push back row", K(i), K(count), K(limit_offset), K(limit_offset_size), K(ret));
+          }
+        }
+      }
+
+      if (OB_SUCC(ret)) {
+        if (FALSE_IT(current_rows_.reuse())) {
+          // impossible
+        } else if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
+          LOG_WARN("fail to packet resultset", K(op_name()), K(ret));
+        }
+      }
+
+      result = res;
+    }
+  }
+
+  return ret;
+}
+
+ObProxyMemMergeAggOp::~ObProxyMemMergeAggOp()
+{
+  GroupUnitHashMap::iterator it = group_unit_map_.begin();
+  GroupUnitHashMap::iterator tmp_it;
+  GroupUnitHashMap::iterator end = group_unit_map_.end();
+  for (; it != end;) {
+    tmp_it = it;
+    ++it;
+    ObProxyGroupUnit::destroy_group_unit(allocator_, &(*tmp_it));
+  }
+}
+
+int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyResultResp *opres = NULL;
+  ObProxyAggInput *input = NULL;
+
+  if (OB_ISNULL(data)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid input, data is NULL", K(ret));
+  } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid input, opres type is not match", K(ret));
+  } else if (!opres->is_resultset_resp()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("resp is not resultset", K(opres), K(ret));
+  } else if (OB_ISNULL(input = dynamic_cast<ObProxyAggInput*>(get_input()))) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("input is invalid", K(ret));
+  } else {
+    const ObSEArray<ObProxyGroupItem*, 4>& group_exprs = input->get_group_by_exprs();
+    const ObSEArray<ObProxyExpr*, 4>& agg_exprs = input->get_agg_exprs();
+
+    if (OB_ISNULL(get_result_fields())) {
+      result_fields_ = opres->get_fields();
+      if (OB_ISNULL(result_fields_)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("no result field, unexpected", K(ret));
+      }
+    }
+
+    ResultRow *row = NULL;
+    while (OB_SUCC(ret) && OB_SUCC(opres->next(row))) {
+      ObProxyGroupUnit group_unit(allocator_);
+      ObProxyGroupUnit *current_group_unit = NULL;
+      if (OB_FAIL(group_unit.init(row, group_exprs))) {
+        LOG_WARN("fail to init group unit", K(ret));
+      } else if (OB_FAIL(group_unit_map_.get_refactored(group_unit, current_group_unit))) {
+        if (OB_HASH_NOT_EXIST == ret) {
+          if (OB_FAIL(ObProxyGroupUnit::create_group_unit(allocator_, current_group_unit, group_unit))) {
+            LOG_WARN("fail to create group unit", K(ret));
+          } else if (OB_FAIL(group_unit_map_.set_refactored(current_group_unit))) {
+            LOG_WARN("fail to set group unit", K(ret));
+          }
+        } else {
+          LOG_WARN("fail to get group unit", K(ret));
+        }
+      } else if (OB_FAIL(current_group_unit->aggregate(group_unit, agg_exprs))) {
+        LOG_WARN("fail to aggregate", K(ret));
+      }
+    }
+
+    if (ret == OB_ITER_END) {
+      ret = OB_SUCCESS;
+    }
+
+    if (OB_SUCC(ret) && is_final) {
+      ObProxyResultResp *res = NULL;
+      ResultRows *rows = NULL;
+      void *tmp_buf = NULL;
+      if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+      } else if (FALSE_IT(rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
+        // impossible
+      } else {
+        GroupUnitHashMap::iterator it = group_unit_map_.begin();
+        GroupUnitHashMap::iterator tmp_it;
+        GroupUnitHashMap::iterator end = group_unit_map_.end();
+        for (; OB_SUCC(ret) && it != end; ) {
+          if (OB_FAIL(it->set_agg_value())) {
+            LOG_WARN("fail to set agg value", K(ret));
+          } else if (OB_FAIL(rows->push_back(it->get_row()))) {
+            LOG_WARN("fail to push back row", K(ret));
+          } else {
+            tmp_it = it;
+            ++it;
+            ObProxyGroupUnit::destroy_group_unit(allocator_, &(*tmp_it));
+          }
+        }
+        group_unit_map_.reset();
+      }
+
+      if (OB_SUCC(ret)) {
+        if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
+          LOG_WARN("fail to packet resultset", K(op_name()), K(ret));
+        }
+      }
+      result = res;
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyGroupUnit::create_group_unit(common::ObIAllocator &allocator,
+                                        ObProxyGroupUnit* &current_group_unit,
+                                        ObProxyGroupUnit &group_unit)
+{
+  int ret = OB_SUCCESS;
+  void *buf = NULL;
+  current_group_unit = NULL;
+  if (OB_ISNULL(buf = (char*)(allocator.alloc(sizeof(ObProxyGroupUnit))))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to alloc group unit buf", K(ret));
+  } else if (OB_ISNULL(current_group_unit = new (buf)ObProxyGroupUnit(allocator))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to new group unit", K(ret));
+  } else if (OB_FAIL(current_group_unit->assign(group_unit))) {
+    LOG_WARN("fail to assign group unit", K(ret));
+  }
+
+  return ret;
+}
+
+void ObProxyGroupUnit::destroy_group_unit(common::ObIAllocator &allocator,
+                                          ObProxyGroupUnit* group_unit)
+{
+  group_unit->~ObProxyGroupUnit();
+  allocator.free(group_unit);
+}
+
+ObProxyGroupUnit::~ObProxyGroupUnit()
+{
+  for (int64_t i = 0; i < agg_units_.count(); i++) {
+    ObProxyAggUnit *agg_unit = agg_units_.at(i);
+    ObProxyAggUnit::destroy_agg_unit(allocator_, agg_unit);
+  }
+}
+
+int ObProxyGroupUnit::init(ResultRow *row, const ObIArray<ObProxyGroupItem*>& group_exprs)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyExprCtx ctx(0, dbconfig::TESTLOAD_NON, false, &allocator_);
+  ObProxyExprCalcItem calc_item(row);
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < group_exprs.count(); i++) {
+    if (OB_FAIL(group_exprs.at(i)->calc(ctx, calc_item, group_values_))) {
+      LOG_WARN("fail to calc group exprs", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    row_ = row;
+  }
+
+  return ret;
+}
+
+uint64_t ObProxyGroupUnit::hash() const
+{
+  uint64_t hash = 0;
+  for (int64_t i = 0; i < group_values_.count(); i++) {
+    hash = group_values_.at(i).hash(hash);
+  }
+
+  return hash;
+}
+
+bool ObProxyGroupUnit::operator==(const ObProxyGroupUnit &group_unit) const
+{
+  bool bret = true;
+  const ObIArray<ObObj> &group_values = group_unit.get_group_values();
+  if (group_values_.count() != group_values.count()) {
+    bret = false;
+  } else {
+    for (int64_t i = 0; bret && i < group_values_.count(); i++) {
+      bret = (group_values_.at(i) == group_values.at(i));
+    }
+  }
+
+  return bret;
+}
+
+int ObProxyGroupUnit::assign(const ObProxyGroupUnit &group_unit)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(group_values_.assign(group_unit.get_group_values()))) {
+    LOG_WARN("fail to assign group value", K(ret));
+  } else {
+    row_ = group_unit.get_row();
+  }
+
+  return ret;
+}
+
+int ObProxyGroupUnit::do_aggregate(ResultRow *row)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyExprCtx ctx(0, dbconfig::TESTLOAD_NON, false, &allocator_);
+  ObProxyExprCalcItem calc_item(row);
+  common::ObSEArray<ObObj, 4> agg_values;
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < agg_units_.count(); i++) {
+    ObProxyAggUnit *agg_unit = agg_units_.at(i);
+    agg_values.reuse();
+    if (OB_FAIL(agg_unit->get_agg_expr()->calc(ctx, calc_item, agg_values))) {
+      LOG_WARN("fail to calc agg expr", K(ret));
+    } else if (OB_FAIL(agg_unit->merge(agg_values))) {
+      LOG_WARN("fail to merge agg value", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyGroupUnit::aggregate(const ObProxyGroupUnit &group_unit, const ObIArray<ObProxyExpr*>& agg_exprs)
+{
+  int ret = OB_SUCCESS;
+
+  if (agg_units_.empty() && !agg_exprs.empty()) {
+    for (int64_t i = 0; OB_SUCC(ret) && i < agg_exprs.count(); i++) {
+      ObProxyExpr *agg_expr = agg_exprs.at(i);
+      ObProxyAggUnit *agg_unit = NULL;
+      if (OB_FAIL(ObProxyAggUnit::create_agg_unit(allocator_, agg_expr, agg_unit))) {
+        LOG_WARN("fail to create agg unit", "agg type", agg_expr->get_expr_type(), K(ret));
+      } else if (FALSE_IT(agg_unit->set_agg_expr(agg_expr))) {
+        LOG_WARN("fail to set agg expr", K(ret));
+      } else if (agg_units_.push_back(agg_unit)) {
+        LOG_WARN("fail to push back agg unit", K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      // Process the first row of data
+      if (OB_FAIL(do_aggregate(row_))) {
+        LOG_WARN("fail to do aggregate", K(ret));
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    // Aggregate subsequent data
+    if (OB_FAIL(do_aggregate(group_unit.get_row()))) {
+      LOG_WARN("fail to do aggregate", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyGroupUnit::set_agg_value()
+{
+  int ret = OB_SUCCESS;
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < agg_units_.count(); i++) {
+    ObProxyAggUnit *agg_unit = agg_units_.at(i);
+    int64_t index = agg_unit->get_agg_expr()->get_index();
+    *(row_->at(index)) = agg_unit->get_result();
+  }
+
+  return ret;
+}
+
+int ObProxyAggUnit::create_agg_unit(ObIAllocator &allocator,
+                                    ObProxyExpr *expr,
+                                    ObProxyAggUnit* &agg_unit)
+{
+  int ret = OB_SUCCESS;
+  void* buf = NULL;
+  ObProxyExprType expr_type = expr->get_expr_type();
+#define ALLOC_AGG_UNIT_BY_TYPE(ExprClass, args) \
+  if (OB_ISNULL(buf = (allocator.alloc(sizeof(ExprClass))))) { \
+    ret = OB_ALLOCATE_MEMORY_FAILED; \
+    LOG_WARN("fail to alloc mem", K(ret)); \
+  } else if (OB_ISNULL(agg_unit = new (buf)ExprClass(allocator, args))) { \
+    ret = OB_ALLOCATE_MEMORY_FAILED; \
+    LOG_WARN("fail to new expr", K(ret)); \
+  }
+
+  switch(expr_type) {
+    case OB_PROXY_EXPR_TYPE_FUNC_MAX:
+      ALLOC_AGG_UNIT_BY_TYPE(ObProxyComparableAggUnit, false);
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_MIN:
+      ALLOC_AGG_UNIT_BY_TYPE(ObProxyComparableAggUnit, true);
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_COUNT:
+    case OB_PROXY_EXPR_TYPE_FUNC_SUM:
+      ALLOC_AGG_UNIT_BY_TYPE(ObProxyAccumulationAggUnit, expr->get_accuracy().get_scale());
+      break;
+    default:
+      ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+      LOG_WARN("unexpected type", K(expr_type));
+      break;
+  }
+
+  return ret;
+}
+
+void ObProxyAggUnit::destroy_agg_unit(ObIAllocator &allocator,
+                                      ObProxyAggUnit *agg_unit)
+{
+  agg_unit->~ObProxyAggUnit();
+  allocator.free(agg_unit);
+}
+
+int ObProxyComparableAggUnit::merge(common::ObIArray<ObObj> &agg_values)
+{
+  int ret = OB_SUCCESS;
+
+  if (!agg_values.empty()) {
+    ObObj obj = agg_values.at(0);
+    if (is_first_) {
+      obj_ = obj;
+      is_first_ = false;
+    } else if (!obj.is_null() && obj_.is_null()) {
+      obj_ = obj;
+    } else if (!obj.is_null()) {
+      int cmp = obj.compare(obj_);
+      if ((asc_ && cmp < 0) || (!asc_ && cmp > 0)) {
+        obj_ = obj;
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyAccumulationAggUnit::merge(common::ObIArray<ObObj> &agg_values)
+{
+  int ret = OB_SUCCESS;
+
+  if (!agg_values.empty()) {
+    ObObj obj = agg_values.at(0);
+    if (is_first_) {
+      obj_ = obj;
+      is_first_ = false;
+    } else if (!obj.is_null() && obj_.is_null()) {
+      obj_ = obj;
+    } else if (!obj.is_null()) {
+      ObProxyExprCtx ctx(0, dbconfig::TESTLOAD_NON, false, &allocator_);
+      ObProxyExprCalcItem calc_item;
+      ObProxyExprAdd add_expr;
+      ObProxyExprConst first_expr;
+      ObProxyExprConst second_expr;
+      ObSEArray<ObObj, 4> result_obj;
+
+      ctx.set_scale(scale_);
+      first_expr.set_object(obj_);
+      second_expr.set_object(agg_values.at(0));
+      if (OB_FAIL(add_expr.add_param_expr(&first_expr))) {
+        LOG_WARN("fail to add first expr", K(ret));
+      } else if (OB_FAIL(add_expr.add_param_expr(&second_expr))) {
+        LOG_WARN("fail to add second expr", K(ret));
+      } else if (add_expr.calc(ctx, calc_item, result_obj)) {
+        LOG_WARN("fail to calc", K(ret));
+      } else {
+        obj_ = result_obj.at(0);
+      }
+    }
+  }
+
+  return ret;
+}
+
 ObAggregateFunction::ObAggregateFunction(common::ObIAllocator &allocator,
                                 common::ObSEArray<ObProxyExpr*, 4> &select_exprs)
                              : //expr_ctx_(NULL, NULL, NULL, &allocator, NULL),
@@ -594,8 +1067,8 @@ ObAggregateFunction::ObAggregateFunction(common::ObIAllocator &allocator,
                                sort_columns_(NULL),
                                agg_rows_(NULL),
                                result_rows_(NULL)
-                               //agg_rows_(*(new ResultRows(array_new_alloc_size, allocator)))
-                               //result_rows(*(new ResultRows(array_new_alloc_size, allocator_)))
+                               //agg_rows_(*(new ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator)))
+                               //result_rows(*(new ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_)))
 {}
 
 ObAggregateFunction::~ObAggregateFunction()
@@ -632,7 +1105,7 @@ int ObAggregateFunction::handle_all_result(ResultRow *&row)
   if (OB_ISNULL(buf)) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("handle_all_result not have enough memory", K(ret), K(sizeof(sizeof(ResultRow))));
-  } else if (OB_ISNULL(row = new (buf) ResultRow(array_new_alloc_size, allocator_))) {
+  } else if (OB_ISNULL(row = new (buf) ResultRow(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERROR;
     LOG_WARN("handle_all_result init ResultRow error", K(ret));
   } else if (agg_rows_->count() > 0
@@ -721,7 +1194,7 @@ int ObAggregateFunction::handle_all_hash_result(ResultRows *rows)
       if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
         LOG_WARN("no have enough memory to init", K(ret), K(sizeof(ResultRows)));
-      } else if (OB_ISNULL(new_rows = new (tmp_buf) ResultRows(array_new_alloc_size, allocator_))) {
+      } else if (OB_ISNULL(new_rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
         ret = common::OB_ERR_UNEXPECTED;
         LOG_WARN("init ResultRows failed", K(ret), K(new_rows));
       } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObMemorySort)))) {
@@ -822,19 +1295,19 @@ int ObAggregateFunction::init(ObColInfoArray &group_col_idxs)
 //  } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(ObColInfoArray)))) {
 //    ret = common::OB_ALLOCATE_MEMORY_FAILED;
 //    LOG_WARN("init not have enough memory", K(ret), K(sizeof(ObColInfoArray)));
-//  } else if (OB_ISNULL(group_col_idxs_ = new (tmp_buf) ObColInfoArray(array_new_alloc_size, allocator_))) {
+//  } else if (OB_ISNULL(group_col_idxs_ = new (tmp_buf) ObColInfoArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
 //    ret = common::OB_ERR_UNEXPECTED;
 //    LOG_WARN("init construct error", K(ret), K(group_col_idxs_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(SortColumnArray)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("init not have enough memory", K(ret), K(sizeof(SortColumnArray)));
-  } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(array_new_alloc_size, allocator_))) {
+  } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
     LOG_WARN("init construct error", K(ret), K(sort_columns_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(ResultRows)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("init not have enough memory", K(ret), K(sizeof(ResultRows)));
-  } else if (OB_ISNULL(agg_rows_ = new (tmp_buf) ResultRows(array_new_alloc_size, allocator_))) {
+  } else if (OB_ISNULL(agg_rows_ = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
     LOG_WARN("init construct error", K(ret), K(agg_rows_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(HashTable)))) {
@@ -1060,7 +1533,6 @@ int ObAggregateFunction::calc_aggr_cell(const ObProxyExprType aggr_fun,
       case OB_PROXY_EXPR_TYPE_NONE:
       case OB_PROXY_EXPR_TYPE_CONST:
       case OB_PROXY_EXPR_TYPE_SHARDING_CONST:
-      case OB_PROXY_EXPR_TYPE_SHARDING_ALIAS:
       case OB_PROXY_EXPR_TYPE_COLUMN:
       case OB_PROXY_EXPR_TYPE_FUNC_HASH:
       case OB_PROXY_EXPR_TYPE_FUNC_SUBSTR:

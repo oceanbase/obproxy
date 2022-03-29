@@ -361,14 +361,14 @@ public:
                         const int errcode,
                         const char *fmt, ...) __attribute__((format(printf, 4, 5)));
 
-  inline void log_message_kv(const char *mod_name,
+  void log_message_kv(const char *mod_name,
                              const int32_t level,
                              const char *file,
                              const int32_t line,
                              const char *function,
                              const char *info_string);
 
-  inline void log_message_kv(const ObLogFDType type,
+  void log_message_kv(const ObLogFDType type,
                              const char *mod_name,
                              const int32_t level,
                              const char *file,
@@ -783,57 +783,6 @@ inline void ObLogger::check_log_end(ObLogItem &log_item, int64_t pos)
     data[pos++] = '\n';
     data[pos] = '\0';
     log_item.set_data_len(pos);
-  }
-}
-
-inline void ObLogger::log_message_kv(const char *mod_name,
-                                     const int32_t level,
-                                     const char *file,
-                                     const int32_t line,
-                                     const char *function,
-                                     const char *info_string)
-{
-  const ObLogFDType type = (NULL == mod_name ? FD_XFLUSH_FILE : FD_DEFAULT_FILE);
-  log_message_kv(type, mod_name, level, file, line, function, info_string);
-}
-
-inline void ObLogger::log_message_kv(const ObLogFDType type,
-                                     const char *mod_name,
-                                     const int32_t level,
-                                     const char *file,
-                                     const int32_t line,
-                                     const char *function,
-                                     const char *info_string)
-{
-  int ret = common::OB_SUCCESS;
-  LogBuffer *log_buffer = NULL;
-  if (OB_NOT_NULL(info_string)) {
-    if (get_trace_mode()) {
-      if (OB_LIKELY(is_enable_logging())
-          && OB_NOT_NULL(log_buffer = get_thread_buffer())
-          && OB_LIKELY(!log_buffer->is_oversize())) {
-        set_disable_logging(true);
-        log_head_info(type, mod_name, level, LogLocation(file, line, function), *log_buffer);
-        int64_t &pos = log_buffer->pos_;
-        char *data = log_buffer->buffer_;
-        LOG_PRINT_INFO(info_string);
-        log_tail(level, *log_buffer);
-        set_disable_logging(false);
-      }
-    } else if (is_async_log_used()) {
-      ret = async_log_message_kv(type, mod_name, level, LogLocation(file, line, function), info_string,
-          static_cast<int64_t>(strlen(info_string)));
-    } else if (OB_LIKELY(is_enable_logging())) {//sync away
-      set_disable_logging(true);
-      if (OB_NOT_NULL(log_buffer = get_thread_buffer())
-          && OB_LIKELY(!log_buffer->is_oversize())) {
-        int64_t &pos = log_buffer->pos_;
-        char *data = log_buffer->buffer_;
-        LOG_PRINT_INFO(info_string);
-        log_data(type, mod_name, level, LogLocation(file, line, function), *log_buffer);
-        set_disable_logging(false);
-      }
-    }
   }
 }
 

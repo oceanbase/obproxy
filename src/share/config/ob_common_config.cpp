@@ -73,15 +73,20 @@ int ObCommonConfig::add_extra_config(const char *config_str,
   while (OB_SUCC(ret) && OB_LIKELY(NULL != token)) {
     char *saveptr_one = NULL;
     const char *name = NULL;
+    const char *value_tmp = "";
     const char *value = NULL;
     ObConfigItem *const *pp_item = NULL;
     if (OB_ISNULL(name = STRTOK_R(token, "=", &saveptr_one))) {
       ret = OB_INVALID_CONFIG;
       LOG_ERROR("Invalid config string", K(token), K(ret));
-    } else if (OB_ISNULL(saveptr_one) || OB_UNLIKELY('\0' == *(value = saveptr_one))) {
+    } else if (OB_ISNULL(saveptr_one) || OB_UNLIKELY('\0' == *(saveptr_one))) {
       LOG_INFO("Empty config string", K(token), K(name));
-      // ret = OB_INVALID_CONFIG;
-      name = "";
+      value = value_tmp;
+    } else {
+      value = saveptr_one;
+    }
+
+    if (OB_FAIL(ret)) {
     } else if (OB_ISNULL(pp_item = container_.get(ObConfigStringKey(name)))) {
       /* make compatible with previous configuration */
       ret = check_name ? OB_INVALID_CONFIG : OB_SUCCESS;

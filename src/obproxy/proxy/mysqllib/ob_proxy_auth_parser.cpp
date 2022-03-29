@@ -37,7 +37,8 @@ void ObHSRResult::reset()
   cluster_name_.reset();
   cluster_id_ = OB_DEFAULT_CLUSTER_ID;
   is_clustername_from_default_ = false;
-  has_full_username_ = false;
+  has_tenant_username_ = false;
+  has_cluster_username_ = false;
   response_.reset();
   full_name_buf_[0] = '\0';
   if (NULL != name_buf_) {
@@ -67,7 +68,8 @@ int64_t ObHSRResult::to_string(char *buf, const int64_t buf_len) const
        K_(full_name),
        K_(response),
        K_(is_clustername_from_default),
-       K_(has_full_username));
+       K_(has_tenant_username),
+       K_(has_cluster_username));
   J_OBJ_END();
   return pos;
 }
@@ -355,8 +357,12 @@ int ObProxyAuthParser::do_parse_full_user_name(const ObString &full_name,
         }
       }
     } else {
-      // if tenant or cluster is not empty, think as full name
-      hsr.has_full_username_ = true;
+      if (!tenant.empty()) {
+        hsr.has_tenant_username_ = true;
+      }
+      if (!cluster.empty()) {
+        hsr.has_cluster_username_ = true;
+      }
     }
   }
   if (OB_SUCC(ret)) {

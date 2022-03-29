@@ -42,6 +42,7 @@ private:
                                const common::ObString &logic_database_name,
                                const common::ObString &cluster_name,
                                const common::ObString &tenant_name,
+                               const common::ObString &vip_addr_name,
                                const common::ObString &database_name,
                                const ObProxyBasicStmtType stmt_type,
                                const ObPrometheusMetrics metric,

@@ -87,7 +87,7 @@ inline int ObExprParser::init_result(ObExprParseResult &parse_result, const char
   parse_result.all_relation_info_.right_value_num_ = 0;
 
   if (0 == parse_result.target_mask_
-      || INVLIAD_PARSE_MODE == parse_result.parse_mode_) {
+      || INVALID_PARSE_MODE == parse_result.parse_mode_) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_LOG(DEBUG, "failed to initialized parser, maybe parse sql for shard user",
               K(parse_result.target_mask_),

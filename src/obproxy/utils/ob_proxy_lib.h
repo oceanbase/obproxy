@@ -140,6 +140,7 @@ static const int64_t OBPROXY_MAX_TNT_ID_LENGTH             = 128;
 
 static const int64_t OB_PROXY_MAX_CLUSTER_NAME_LENGTH      = 256;
 static const int64_t OB_PROXY_FULL_USER_NAME_MAX_LEN       = oceanbase::common::OB_MYSQL_FULL_USER_NAME_MAX_LEN + OB_PROXY_MAX_CLUSTER_NAME_LENGTH;//username@tenantname#clustername
+static const int64_t OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH = OB_PROXY_MAX_CLUSTER_NAME_LENGTH + oceanbase::common::OB_MAX_TENANT_NAME_LENGTH + 1; //tenantname#clustername
 
 static const int64_t OB_PROXY_CLUSTER_RESOURCE_ITEM_COUNT  = 12;
 static const int64_t OB_PROXY_MAX_IDC_NAME_LENGTH          = oceanbase::common::MAX_ZONE_LENGTH;
@@ -163,6 +164,8 @@ static const int64_t OB_NORMAL_MYSQL_CLIENT_COUNT          = 4;
 
 static const int64_t OB_PROXY_WARN_LOG_BUF_LENGTH          = (1 << 20) * 1;
 static const int64_t OB_PROXY_WARN_LOG_AVG_LENGTH          = 512;
+
+static const int64_t OB_PROXY_MAX_INNER_TABLE_COLUMN_NUM = 64;
 
 // errno define
 #define OPS_START_ERRNO 20000

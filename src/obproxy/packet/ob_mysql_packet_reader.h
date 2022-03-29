@@ -42,8 +42,7 @@ public:
   void reset();
 
   // === GET function will not comsume the packet
-  int get_content_len(event::ObIOBufferReader &buf_reader, const int64_t offset, int64_t &content_len);
-  int get_seq(event::ObIOBufferReader &buf_reader, const int64_t offset, uint8_t &seq);
+  int get_content_len_and_seq(event::ObIOBufferReader &buf_reader, const int64_t offset, int64_t &content_len, uint8_t &seq);
 
   // DESC: get the next ok packet from MIOBuffer
   // NOTE: 1. get function will NOT consume buffer as packet may hold some string int mio_buf

@@ -73,14 +73,22 @@ public:
   static int check_shard_request(ObMysqlClientSession &client_session,
                                  obutils::ObSqlParseResult &parse_result,
                                  dbconfig::ObDbConfigLogicDb &logic_db_info);
-  static int handle_shard_request(ObMysqlClientSession &client_session,
+  static int handle_shard_request(ObMysqlSM *sm,
+             ObMysqlClientSession &client_session,
              ObMysqlTransact::ObTransState &trans_state,
              ObIOBufferReader &client_buffer_reader,
-             dbconfig::ObDbConfigLogicDb &db_info);
-  static int handle_single_shard_request(ObMysqlClientSession &client_session,
-             ObMysqlTransact::ObTransState &trans_state,
-             ObIOBufferReader &client_buffer_reader,
-             dbconfig::ObDbConfigLogicDb &db_info);
+             dbconfig::ObDbConfigLogicDb &db_info,
+             bool &need_wait_callback);
+  static int do_handle_single_shard_request(ObMysqlClientSession &client_session,
+                                            ObMysqlTransact::ObTransState &trans_state,
+                                            ObIOBufferReader &client_buffer_reader,
+                                            dbconfig::ObDbConfigLogicDb &logic_db_info);
+  static int handle_single_shard_request(ObMysqlSM *sm,
+                                         ObMysqlClientSession &client_session,
+                                         ObMysqlTransact::ObTransState &trans_state,
+                                         ObIOBufferReader &client_buffer_reader,
+                                         dbconfig::ObDbConfigLogicDb &logic_db_info,
+                                         bool &need_wait_callback);
   static int build_error_packet(int err_code, bool &need_response_for_dml,
                                 ObMysqlTransact::ObTransState &trans_state);
 
@@ -90,7 +98,26 @@ public:
                                   const ObString table_name,
                                   common::ObIAllocator &allocator,
                                   common::ObIArray<dbconfig::ObShardConnector*> &shard_connector_array,
-                                  common::ObIArray<ObString> &physcial_table_name_array);
+                                  common::ObIArray<dbconfig::ObShardProp*> &shard_prop_array,
+                                  common::ObIArray<hash::ObHashMapWrapper<common::ObString, common::ObString> > &table_name_map_array);
+  static bool need_scan_all(obutils::ObSqlParseResult &parse_result);
+  static int need_scan_all_by_index(const common::ObString &table_name,
+                                    dbconfig::ObDbConfigLogicDb &db_info,
+                                    obutils::SqlFieldResult& sql_result,
+                                    bool &is_scan_all);
+  static int check_topology(obutils::ObSqlParseResult &parse_result,
+                            dbconfig::ObDbConfigLogicDb &db_info);
+
+  static int do_rewrite_shard_select_request(const ObString &sql,
+                                             obutils::ObSqlParseResult &parse_result,
+                                             bool is_oracle_mode,
+                                             const common::hash::ObHashMap<ObString, ObString> &table_name_map,
+                                             const ObString &real_database_name,
+                                             bool is_single_shard_db_table,
+                                             common::ObSqlString &new_sql);
+  static int add_table_name_to_map(ObIAllocator &allocator,
+                                   hash::ObHashMap<ObString, ObString> &table_name_map,
+                                   const ObString &table_name, const ObString &real_table_name);
 
 private:
   static bool is_read_stmt(ObClientSessionInfo &session_info,
@@ -102,11 +129,26 @@ private:
                               const dbconfig::ObShardConnector *prev_shard_conn,
                               dbconfig::ObShardConnector *shard_conn);
 
+  static int handle_ddl_request(ObMysqlSM *sm,
+                                ObMysqlClientSession &client_session,
+                                ObMysqlTransact::ObTransState &trans_state,
+                                dbconfig::ObDbConfigLogicDb &db_info,
+                                bool &need_wait_callback);
   static int handle_dml_request(ObMysqlClientSession &client_session,
                                 ObMysqlTransact::ObTransState &trans_state,
                                 ObIOBufferReader &client_buffer_reader,
                                 const common::ObString &table_name,
                                 dbconfig::ObDbConfigLogicDb &db_info);
+  static int handle_other_request(ObMysqlClientSession &client_session,
+                                  ObMysqlTransact::ObTransState &trans_state,
+                                  ObIOBufferReader &client_buffer_reader,
+                                  const common::ObString &table_name,
+                                  dbconfig::ObDbConfigLogicDb &db_info);
+  static int handle_select_request(ObMysqlClientSession &client_session,
+                                   ObMysqlTransact::ObTransState &trans_state,
+                                   ObIOBufferReader &client_buffer_reader,
+                                   const common::ObString &table_name,
+                                   dbconfig::ObDbConfigLogicDb &db_info);
   static int check_logic_database(ObMysqlTransact::ObTransState &trans_state,
                                   ObMysqlClientSession &client_session, const ObString &db_name);
   static void replace_oracle_table(ObSqlString &new_sql, const ObString &real_name,
@@ -118,6 +160,12 @@ private:
                                    const ObString &table_name, const ObString &database_name,
                                    const ObString &real_table_name, const ObString &real_database_name,
                                    bool is_single_shard_db_table);
+  static int rewrite_shard_select_request(ObClientSessionInfo &session_info,
+                                          ObProxyMysqlRequest &client_request,
+                                          ObIOBufferReader &client_buffer_reader,
+                                          const common::hash::ObHashMap<ObString, ObString> &table_name_map,
+                                          const ObString &real_database_name,
+                                          bool is_single_shard_db_table);
   static int testload_check_obparser_node_is_valid(const ParseNode *root, const ObItemType &type);
   static int testload_rewrite_name_base_on_parser_node(common::ObSqlString &new_sql,
                                    const char *new_name,
@@ -161,6 +209,15 @@ private:
                                   const ObString &table_name,
                                   char *real_database_name, int64_t db_name_len,
                                   char *real_table_name, int64_t tb_name_len);
+  static int handle_scan_all_real_info(dbconfig::ObDbConfigLogicDb &logic_db_info,
+                                       ObMysqlClientSession &client_session,
+                                       ObMysqlTransact::ObTransState &trans_state,
+                                       const ObString &table_name);
+  static int handle_select_real_info(dbconfig::ObDbConfigLogicDb &logic_db_info,
+                                     ObMysqlClientSession &client_session,
+                                     ObMysqlTransact::ObTransState &trans_state,
+                                     const ObString &table_name,
+                                     ObIOBufferReader &client_buffer_reader);
   static int handle_sys_read_consitency_prop(dbconfig::ObDbConfigLogicDb &logic_db_info,
                                              dbconfig::ObShardConnector& shard_conn,
                                              ObClientSessionInfo &session_info);

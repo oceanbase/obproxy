@@ -23,6 +23,7 @@ namespace common
 {
 class ObString;
 class ObAddr;
+class ObIAllocator;
 }
 namespace obproxy
 {
@@ -92,6 +93,8 @@ public:
 
 private:
   static int fetch_part_key(obproxy::ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info);
+  static void parse_part_key_accuracy(ObProxyPartKey *part_key, common::ObObjType part_key_type,
+                                      common::ObIAllocator *allocator, ObString &part_key_accuracy);
   static int add_generated_part_key(const common::ObString &func_expr,
                                     const int64_t generated_key_idx,
                                     ObProxyPartInfo &part_info);

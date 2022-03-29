@@ -186,7 +186,6 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::handle_prepare_column(event::O
     if (OB_FAIL(pkt_reader_.get_packet(*reader, field_packet))) {
       PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
     } else {
-      pkt_count_++;
       field_types_.push_back(field.type_);
       if (OB_MYSQL_TYPE_CURSOR == field.type_) {
         hava_cursor_ = true;

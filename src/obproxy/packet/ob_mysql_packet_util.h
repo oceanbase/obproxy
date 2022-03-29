@@ -15,6 +15,7 @@
 
 #include "lib/container/ob_array.h"
 #include "rpc/obmysql/ob_mysql_field.h"
+#include "common/ob_field.h"
 #include "rpc/obmysql/ob_mysql_packet.h"
 
 namespace oceanbase
@@ -43,7 +44,8 @@ public:
                            common::ObIArray<obmysql::ObMySQLField> &fields,
                            uint16_t status_flag = 0);
   static int encode_row_packet(event::ObMIOBuffer &write_buf, uint8_t &seq,
-                               const common::ObNewRow &row);
+                               const common::ObNewRow &row,
+                               common::ObIArray<common::ObField> *fields = NULL);
   static int encode_eof_packet(event::ObMIOBuffer &write_buf, uint8_t &seq,
                                uint16_t status_flag = 0);
   static int encode_err_packet(event::ObMIOBuffer &write_buf, uint8_t &seq, int errcode);

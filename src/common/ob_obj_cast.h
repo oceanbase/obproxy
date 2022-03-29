@@ -41,6 +41,8 @@ namespace common
                                                     // do range check.
 #define CM_NO_CAST_INT_UINT           (1ULL << 3)   // no cast between int and uint, otherwise
                                                     // do cast between int and uint.
+#define CM_ORACLE_MODE (1ULL << 61)
+
 #define CM_INSERT_UPDATE_SCOPE        (1ULL << 62)  // affect calculate values() function. return the insert values
                                                     // otherwise return NULL;
 #define CM_INTERNAL_CALL              (1ULL << 63)  // is internal call, otherwise
@@ -59,6 +61,7 @@ typedef uint64_t ObCastMode;
 #define CM_UNSET_NO_CAST_INT_UINT(mode)       (~CM_NO_CAST_INT_UINT & (mode))
 #define CM_IS_INTERNAL_CALL(mode)             (CM_INTERNAL_CALL & (mode))
 #define CM_IS_EXTERNAL_CALL(mode)             (!CM_IS_INTERNAL_CALL(mode))
+
 struct ObObjCastParams
 {
   // add params when necessary
@@ -66,42 +69,58 @@ struct ObObjCastParams
   ObObjCastParams()
     : allocator_(NULL),
       allocator_v2_(NULL),
-      tz_info_(NULL),
       cur_time_(0),
       cast_mode_(CM_NONE),
       warning_(OB_SUCCESS),
       zf_info_(NULL),
-      connection_collation_(CS_TYPE_INVALID),
-      res_accuracy_(NULL) {}
+      dest_collation_(CS_TYPE_INVALID),
+      expect_obj_collation_(CS_TYPE_INVALID),
+      res_accuracy_(NULL),
+      dtc_params_()
+  {
+    set_compatible_cast_mode();
+  }
 
-  ObObjCastParams(ObIAllocator *allocator_v2, const ObTimeZoneInfo *tz_info,
-                  ObCastMode cast_mode, ObCollationType connection_collation,
-                  ObAccuracy *res_accuracy = NULL)
+  ObObjCastParams(ObIAllocator* allocator_v2, const ObDataTypeCastParams* dtc_params, ObCastMode cast_mode,
+                  ObCollationType dest_collation, ObAccuracy* res_accuracy = NULL)
+      //ObIAllocator *allocator_v2, ObCastMode cast_mode, ObCollationType dest_collation, ObAccuracy *res_accuracy = NULL)
     : allocator_(NULL),
       allocator_v2_(allocator_v2),
-      tz_info_(tz_info),
       cur_time_(0),
       cast_mode_(cast_mode),
       warning_(OB_SUCCESS),
       zf_info_(NULL),
-      connection_collation_(connection_collation),
-      res_accuracy_(res_accuracy) {}
+      dest_collation_(dest_collation),
+      expect_obj_collation_(dest_collation),
+      res_accuracy_(res_accuracy),
+      dtc_params_()
+  {
+    set_compatible_cast_mode();
+    if (NULL != dtc_params) {
+      dtc_params_ = *dtc_params;
+    }
+  }
 
-  ObObjCastParams(ObIAllocator *allocator_v2, const ObTimeZoneInfo *tz_info,
-                  int64_t cur_time, ObCastMode cast_mode,
-                  ObCollationType connection_collation,
-                  const ObZerofillInfo *zf_info = NULL,
-                  ObAccuracy *res_accuracy = NULL)
+  ObObjCastParams(ObIAllocator* allocator_v2, const ObDataTypeCastParams* dtc_params, int64_t cur_time,
+                  ObCastMode cast_mode, ObCollationType dest_collation, const ObZerofillInfo* zf_info = NULL,
+                  ObAccuracy* res_accuracy = NULL)
     : allocator_(NULL),
       allocator_v2_(allocator_v2),
-      tz_info_(tz_info),
       cur_time_(cur_time),
       cast_mode_(cast_mode),
       warning_(OB_SUCCESS),
       zf_info_(zf_info),
-      connection_collation_(connection_collation),
-      res_accuracy_(res_accuracy) {}
-
+      dest_collation_(dest_collation),
+      expect_obj_collation_(dest_collation),
+      res_accuracy_(res_accuracy),
+      dtc_params_()
+  {
+    set_compatible_cast_mode();
+    if (NULL != dtc_params) {
+      dtc_params_ = *dtc_params;
+    }
+  }
+      
   void *alloc(const int64_t size) const
   {
     void *ret = NULL;
@@ -112,17 +131,52 @@ struct ObObjCastParams
     }
     return ret;
   }
+
+  void set_compatible_cast_mode()
+  {
+    if (lib::is_oracle_mode()) {
+      cast_mode_ &= ~CM_WARN_ON_FAIL;
+      cast_mode_ |= CM_ORACLE_MODE;
+    } else {
+      cast_mode_ &= ~CM_ORACLE_MODE;
+    }
+    return;
+  }
+
+  TO_STRING_KV(K(cur_time_), KP(cast_mode_), K(warning_), K(dest_collation_),
+               K(expect_obj_collation_), K(res_accuracy_));
+  
   IAllocator *allocator_;
   ObIAllocator *allocator_v2_;
-  const ObTimeZoneInfo *tz_info_;
   int64_t cur_time_;
   ObCastMode cast_mode_;
   int warning_;
   const ObZerofillInfo *zf_info_;
-  ObCollationType connection_collation_;
-  ObAccuracy *res_accuracy_;
   ObCollationType dest_collation_;
+  ObCollationType expect_obj_collation_;  // for each column obj
+  ObAccuracy *res_accuracy_;
+  ObDataTypeCastParams dtc_params_;
 };
+
+
+typedef ObObjCastParams ObCastCtx;
+
+class ObHexUtils {
+public:
+  // text can be odd number, like 'aaa', treat as '0aaa'
+  static int unhex(const common::ObString &text, common::ObCastCtx &cast_ctx, common::ObObj &result);
+  static int hex(const common::ObString &text, common::ObCastCtx &cast_ctx, common::ObObj &result);
+  static int hex_for_mysql(const uint64_t uint_val, common::ObCastCtx &cast_ctx, common::ObObj &result);
+  static int rawtohex(const common::ObObj &text, common::ObCastCtx &cast_ctx, common::ObObj &result);
+  static int hextoraw(const common::ObObj &text, common::ObCastCtx &cast_ctx, common::ObObj &result);
+  static int get_uint(const common::ObObj &obj, common::ObCastCtx &cast_ctx, common::number::ObNumber &out);
+  static int copy_raw(const common::ObObj &obj, common::ObCastCtx &cast_ctx, common::ObObj &result);
+
+private:
+  static int uint_to_raw(const common::number::ObNumber &text, common::ObCastCtx &cast_ctx, common::ObObj &result);
+};
+
+
 /**
  * cast functions to do the real work
  * cast the input object to the type specified and store the result in out_obj
@@ -337,7 +391,7 @@ int ObObjCaster<Source, AllocatorTmpl>::expr_obj_cast(const ObObjTypeClass orig_
     ObObjCastParams::TAllocator<Allocator> ta(allocator_);
     ObObjCastParams params;
     params.allocator_ = &ta;
-    params.tz_info_ = tz_info;
+    params.dtc_params_.tz_info_ = tz_info;
     params.cast_mode_ = CM_WARN_ON_FAIL;
     int warning = OB_SUCCESS;
     extern ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC];
@@ -427,13 +481,9 @@ bool cast_supported(const ObObjTypeClass orig_td, const ObObjTypeClass expect_td
 int ob_obj_to_ob_time_with_date(const ObObj &obj, const ObTimeZoneInfo *tz_info, ObTime &ob_time);
 int ob_obj_to_ob_time_without_date(const ObObj &obj, const ObTimeZoneInfo *tz_info, ObTime &ob_time);
 
-//==============================
-
-typedef ObObjCastParams ObCastCtx;
-
 int obj_collation_check(const bool is_strict_mode, const ObCollationType cs_type, ObObj &obj);
-int obj_accuracy_check(ObCastCtx &cast_ctx, const ObAccuracy &accuracy, const ObCollationType cs_type,
-                       const ObObj &obj, ObObj &buf_obj, const ObObj *&res_obj);
+int obj_accuracy_check(ObCastCtx &cast_ctx, const ObAccuracy &accuracy,
+                       const ObCollationType cs_type, const ObObj &obj, ObObj &buf_obj, const ObObj *&res_obj);
 
 class ObObjCasterV2
 {
@@ -442,7 +492,7 @@ public:
                      const ObObj &in_obj, ObObj &buf_obj, const ObObj *&out_obj);
   static int to_type(const ObObjType expect_type, ObCastCtx &cast_ctx,
                      const ObObj &in_obj, ObObj &out_obj);
-  static int to_type(const ObObjType expect_type, const ObCollationType expect_cs_type,
+  static int to_type(const ObObjType expect_type, ObCollationType expect_cs_type,
                      ObCastCtx &cast_ctx, const ObObj &in_obj, ObObj &out_obj);
   static int is_cast_monotonic(ObObjType t1, ObObjType t2, bool &is_monotonic);
   static int is_order_consistent(const ObObjMeta &from,

@@ -188,18 +188,20 @@ static int64_t get_part_key_idx(ObProxyParseString *db_name,
                                 ObExprParseResult *result)
 {
   int64_t part_key_idx = IDX_NO_PART_KEY_COLUMN;
-  if (NULL != db_name && !is_equal(db_name, &result->table_info_.database_name_)) {
-    part_key_idx = IDX_NO_PART_KEY_COLUMN;
-  } else if (NULL != table_name
-             && !is_equal(table_name, &result->table_info_.table_name_)
-             && !is_equal(table_name, &result->table_info_.alias_name_)) {
-    part_key_idx = IDX_NO_PART_KEY_COLUMN;
-  } else if (NULL != column_name) {
-    int64_t i = 0;
-    for (i = 0; i < result->part_key_info_.key_num_ && part_key_idx  < 0; ++i) {
-      if (is_equal(column_name, &result->part_key_info_.part_keys_[i].name_)) {
-        part_key_idx = i;
-        break;
+  if (result->part_key_info_.key_num_ > 0) {
+    if (NULL != db_name && !is_equal(db_name, &result->table_info_.database_name_)) {
+      part_key_idx = IDX_NO_PART_KEY_COLUMN;
+    } else if (NULL != table_name
+               && !is_equal(table_name, &result->table_info_.table_name_)
+               && !is_equal(table_name, &result->table_info_.alias_name_)) {
+      part_key_idx = IDX_NO_PART_KEY_COLUMN;
+    } else if (NULL != column_name) {
+      int64_t i = 0;
+      for (i = 0; i < result->part_key_info_.key_num_ && part_key_idx  < 0; ++i) {
+        if (is_equal(column_name, &result->part_key_info_.part_keys_[i].name_)) {
+          part_key_idx = i;
+          break;
+        }
       }
     }
   }
@@ -366,7 +368,7 @@ static inline void add_right_relation_value(ObExprParseResult *result,
 %token<num> INT_VAL POS_PLACE_HOLDER
 %type<func> comp
 %type<node> token opt_column
-%type<list> expr token_list in_expr_list column_list
+%type<list> expr token_list in_expr_list column_list func_param_list
 %type<operator> operator
 %type<relation> bool_pri
 %start start
@@ -403,6 +405,7 @@ cond_expr: bool_pri { check_and_add_relation(result, $1); }
          | '(' cond_expr OR_OP bool_pri ')' { check_and_add_relation(result, $4); }
 
 bool_pri: expr comp expr { add_relation(result, $1, $2,$3); $$ = get_relation(result, $1, $2, $3); }
+        | expr comp '(' expr ')' { add_relation(result, $1, $2,$4); $$ = get_relation(result, $1, $2, $4); }
         | '(' expr comp expr ')' { $$ = get_relation(result, $2, $3, $4); add_relation(result, $2, $3,$4); }
         | expr IN '(' in_expr_list ')' { $$ = get_relation(result, $1, F_COMP_EQ, $4); add_relation(result, $1, F_COMP_EQ,$4); }
         | expr BETWEEN expr AND_OP expr
@@ -438,9 +441,9 @@ expr: token_list { $$ = $1; }
 token_list: token { malloc_list($$, result, $1); }
           | token_list token { add_token($1, result, $2); $$ = $1; }
 
-func_param_list: /* empty */
-               | token_list ',' token_list         {}
-               | func_param_list ',' token_list    {}
+func_param_list: { $$ = NULL; } /* empty */
+               | token_list ',' token_list         { add_token_list($1, $3); $$ = $1; }
+               | func_param_list ',' token_list    { add_token_list($1, $3); $$ = $1; }
 
 token: NAME_OB
      {
@@ -470,6 +473,7 @@ token: NAME_OB
      {
        malloc_node($$, result, TOKEN_FUNC);
        $$->str_value_ = $1;
+	   $$->child_ = $3;
      }
      | INT_VAL { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = $1; }
      | STR_VAL { malloc_node($$, result, TOKEN_STR_VAL); $$->str_value_ = $1; }

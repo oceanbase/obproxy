@@ -17,6 +17,7 @@
 #include <cstdlib>
 #include <cstddef>
 #include "lib/utility/ob_macro_utils.h"
+#include "lib/utility/ob_template_utils.h"
 
 namespace oceanbase
 {

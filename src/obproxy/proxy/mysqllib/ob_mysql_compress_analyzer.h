@@ -49,6 +49,7 @@ public:
 
   virtual int init(const uint8_t last_seq, const AnalyzeMode mode,
                    const obmysql::ObMySQLCmd mysql_cmd,
+                   const ObMysqlProtocolMode mysql_mode,
                    const bool enable_extra_ok_packet_for_stats,
                    const uint8_t last_ob20_seq,
                    const uint32_t request_id,

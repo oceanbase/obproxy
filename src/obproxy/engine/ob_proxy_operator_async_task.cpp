@@ -148,7 +148,6 @@ int ObOperatorAsyncCommonTask::main_handler(int event, void *data)
   if (!terminate_) {
     if (OB_SUCC(ret)) {
       if (event_ret == VC_EVENT_READ_READY || event_ret == VC_EVENT_READ_COMPLETE) {
-        LOG_DEBUG("ObOperatorAsyncCommonTask enter next OP", K(event_ret), KP_(ob_operator), "op_name", ob_operator_->op_name());
         cb_cont_->handle_event(event_ret, ob_operator_->get_operator_result());
       }
 

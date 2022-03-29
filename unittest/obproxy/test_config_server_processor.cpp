@@ -10,10 +10,10 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#define private public
 #define USING_LOG_PREFIX PROXY
 #include <gtest/gtest.h>
 #include <curl/curl.h>
+#define private public
 #include "lib/oblog/ob_log.h"
 #include "lib/container/ob_se_array.h"
 #include "lib/string/ob_sql_string.h"

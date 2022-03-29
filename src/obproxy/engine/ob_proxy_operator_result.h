@@ -14,6 +14,7 @@
 #define OBPROXY_OB_PROXY_RESULT_RESP_H
 #include "common/ob_row.h"
 //#include "common/ob_field.h"
+#include "common/obsm_utils.h"
 #include "rpc/obmysql/ob_mysql_field.h"
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
 #include "lib/container/ob_se_array.h"
@@ -26,7 +27,7 @@ namespace obproxy{
 namespace engine{
 
 
-int64_t array_new_alloc_size = common::OB_MALLOC_NORMAL_BLOCK_SIZE;
+const int64_t ENGINE_ARRAY_NEW_ALLOC_SIZE = 1;
 
 typedef common::ObSEArray<common::ObObj*, 4, common::ObIAllocator&> ResultRow;
 typedef common::ObSEArray<ResultRow *, 4, common::ObIAllocator&> ResultRows;
@@ -72,9 +73,9 @@ int change_sql_field(const ObMysqlField *src_field, obmysql::ObMySQLField *&dst_
     MEMCPY(buf, src_field->table_.ptr(), src_field->table_.length());
     dst_field->tname_.assign_ptr(buf, src_field->table_.length());
 
-    buf = static_cast<char*>(allocator.alloc(src_field->table_.length()));
-    MEMCPY(buf, src_field->table_.ptr(), src_field->table_.length());
-    dst_field->org_tname_.assign_ptr(src_field->table_.ptr(), src_field->table_.length());
+    buf = static_cast<char*>(allocator.alloc(src_field->org_table_.length()));
+    MEMCPY(buf, src_field->org_table_.ptr(), src_field->org_table_.length());
+    dst_field->org_tname_.assign_ptr(buf, src_field->org_table_.length());
 
 
     buf = static_cast<char*>(allocator.alloc(src_field->name_.length()));
@@ -83,9 +84,37 @@ int change_sql_field(const ObMysqlField *src_field, obmysql::ObMySQLField *&dst_
 
     buf = static_cast<char*>(allocator.alloc(src_field->org_name_.length()));
     MEMCPY(buf, src_field->org_name_.ptr(), src_field->org_name_.length());
-
     dst_field->org_cname_.assign_ptr(buf, src_field->org_name_.length());
-    dst_field->accuracy_.set_accuracy(static_cast<int64_t>(src_field->decimals_));
+
+    if (obmysql::OB_MYSQL_TYPE_FLOAT == src_field->type_
+        || obmysql::OB_MYSQL_TYPE_DOUBLE == src_field->type_) {
+      if (0x1f == src_field->decimals_) {
+        ObObjType ob_type;
+        if (OB_SUCCESS != ObSMUtils::get_ob_type(ob_type, src_field->type_)) {
+          ob_type = ObDoubleType;
+        }
+        dst_field->accuracy_ = ObAccuracy::DML_DEFAULT_ACCURACY[ob_type];
+      } else {
+        dst_field->accuracy_.set_scale(static_cast<ObScale>(src_field->decimals_));
+      }
+    } else if(obmysql::OB_MYSQL_TYPE_NEWDECIMAL == src_field->type_
+              || obmysql::OB_MYSQL_TYPE_DECIMAL == src_field->type_
+              || obmysql::OB_MYSQL_TYPE_TIMESTAMP == src_field->type_
+              || obmysql::OB_MYSQL_TYPE_DATETIME == src_field->type_
+              || obmysql::OB_MYSQL_TYPE_TIME == src_field->type_) {
+      if (src_field->decimals_ > number::ObNumber::MAX_SCALE) {
+        ObObjType ob_type;
+        if (OB_SUCCESS != ObSMUtils::get_ob_type(ob_type, src_field->type_)) {
+          ob_type = ObNumberType;
+        }
+        dst_field->accuracy_ = ObAccuracy::DML_DEFAULT_ACCURACY[ob_type];
+      } else {
+        dst_field->accuracy_.set_scale(static_cast<ObScale>(src_field->decimals_));
+      }
+    } else {
+      dst_field->accuracy_.set_accuracy(static_cast<int64_t>(src_field->decimals_));
+    }
+
     dst_field->type_ = src_field->type_;
     dst_field->flags_ = static_cast<uint16_t>(src_field->flags_);
     dst_field->set_charset_number(static_cast<uint16_t>(src_field->charsetnr_));

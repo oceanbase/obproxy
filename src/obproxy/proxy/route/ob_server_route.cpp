@@ -36,7 +36,8 @@ int64_t ObServerRoute::to_string(char *buf, const int64_t buf_len) const
        K_(need_use_dup_replica),
        KP_(table_entry),
        KP_(part_entry),
-       KP_(dummy_entry));
+       KP_(dummy_entry),
+       K_(skip_leader_item));
   J_OBJ_END();
 
   return pos;

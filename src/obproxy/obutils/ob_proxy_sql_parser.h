@@ -23,6 +23,7 @@
 #include "common/ob_hint.h"
 #include "lib/utility/ob_print_utils.h"
 #include "utils/ob_proxy_lib.h"
+#include "obutils/ob_proxy_string_utils.h"
 #include <ob_sql_parser.h>
 #include <parse_malloc.h>
 #include <parse_node.h>
@@ -279,7 +280,7 @@ struct ObProxySimpleRouteInfo
            && part_key_offset_ > 0 && part_key_len_ > 0;
   }
 
-  void reset()
+  inline void reset()
   {
     table_offset_ = 0;
     table_len_ = 0;
@@ -339,7 +340,7 @@ struct SqlField {
   // TODO: erase deprecated
   ObProxyTokenType value_type_;
   int64_t  column_int_value_;
-  ObFixSizeString<OBPROXY_MAX_STRING_VALUE_LENGTH> column_value_;
+  obutils::ObProxyVariantString column_value_;
 };
 
 struct SqlFieldResult {
@@ -514,7 +515,8 @@ typedef struct  _ObProxyDualParseResult
 
 struct ObSqlParseResult
 {
-  ObSqlParseResult() : ob_parser_result_(NULL), proxy_stmt_(NULL) { reset(); }
+  ObSqlParseResult() : allocator_(common::ObModIds::OB_PROXY_SHARDING_PARSE),
+    ob_parser_result_(NULL), proxy_stmt_(NULL) { reset(); }
   ~ObSqlParseResult() { reset(); }
   void clear_proxy_stmt();
   void reset(bool is_reset_origin_db_table = true);
@@ -543,6 +545,7 @@ struct ObSqlParseResult
   bool is_show_trace_stmt() const { return OBPROXY_T_SHOW_TRACE == stmt_type_; }
   bool is_show_session_stmt() const { return OBPROXY_T_ICMD_SHOW_SESSION == stmt_type_; }
   bool is_select_tx_ro() const { return OBPROXY_T_SELECT_TX_RO == stmt_type_; }
+  bool is_select_proxy_version() const { return OBPROXY_T_SELECT_PROXY_VERSION == stmt_type_; }
   bool is_set_autocommit_0() const { return OBPROXY_T_SET_AC_0 == stmt_type_; }
   bool is_select_route_addr() const { return OBPROXY_T_SELECT_ROUTE_ADDR == stmt_type_; }
   bool is_set_route_addr() const { return OBPROXY_T_SET_ROUTE_ADDR == stmt_type_; }
@@ -598,7 +601,7 @@ struct ObSqlParseResult
   bool is_text_ps_prepare_stmt() const { return OBPROXY_T_TEXT_PS_PREPARE == stmt_type_; }
   bool is_text_ps_execute_stmt() const { return OBPROXY_T_TEXT_PS_EXECUTE == stmt_type_; }
 
-  bool is_internal_select() const { return is_select_tx_ro(); }
+  bool is_internal_select() const { return is_select_tx_ro() || is_select_proxy_version(); }
   bool is_dual_request() const {return is_dual_request_;}
   bool is_internal_request() const;
   bool is_dml_stmt() const;
@@ -628,6 +631,7 @@ struct ObSqlParseResult
   bool has_simple_route_info() const { return has_simple_route_info_; }
   bool has_shard_comment() const { return has_shard_comment_; }
   bool has_anonymous_block() const { return has_anonymous_block_; }
+  bool has_for_update() const { return has_for_update_; }
 
   bool is_simple_route_info_valid() const { return route_info_.is_valid(); }
 
@@ -698,10 +702,11 @@ struct ObSqlParseResult
   ObProxyBasicStmtType get_text_ps_inner_stmt_type() const { return text_ps_inner_stmt_type_; }
 
   int load_ob_parse_result(const ParseResult &parse_result,
-                           const common::ObString& sql);
+                           const common::ObString& sql,
+                           const bool need_handle_result);
   static int ob_parse_resul_to_string(const ParseResult &parse_result, const common::ObString& sql,
-                                      char* buf, int64_t buf_len);
-  static int get_result_tree_str(ParseNode *root, const int level, char* buf, int& pos, int64_t length);
+                                      char* buf, int64_t buf_len, int64_t &pos);
+  static int get_result_tree_str(ParseNode *root, const int level, char* buf, int64_t &pos, int64_t length);
   SqlFieldResult& get_sql_filed_result() { return fileds_result_; }
   int64_t get_batch_insert_values_count() { return batch_insert_values_count_; }
   void set_batch_insert_values_count(int64_t count) { batch_insert_values_count_ = count; }
@@ -726,6 +731,7 @@ struct ObSqlParseResult
       has_explain_ = other.has_explain_;
       has_simple_route_info_ = other.has_simple_route_info_;
       has_anonymous_block_ = other.has_anonymous_block_;
+      has_for_update_ = other.has_for_update_;
       stmt_type_ = other.stmt_type_;
       hint_query_timeout_ = other.hint_query_timeout_;
       parsed_length_ = other.parsed_length_;
@@ -817,6 +823,7 @@ private:
   bool has_shard_comment_;
   bool is_dual_request_;
   bool has_anonymous_block_;
+  bool has_for_update_;
   ObProxyBasicStmtType stmt_type_;
   int64_t hint_query_timeout_;
   int64_t parsed_length_; // next parser can starts with (orig_sql + parsed_length_)
@@ -894,8 +901,8 @@ public:
 
   int parse_sql_by_obparser(const common::ObString &sql,
                             const ObProxyParseMode parse_mode,
-                            ObSqlParseResult &sql_parse_result);
-  bool need_parser_by_obparser(ObSqlParseResult &sql_parse_result);
+                            ObSqlParseResult &sql_parse_result,
+                            const bool need_handle_result);
   typedef common::hash::ObHashMap<common::ObString, ObParseNode*> AliasTableMap;
   static int ob_load_testload_parse_node(ParseNode *root, const int level,
                               common::ObSEArray<ObParseNode*, 1> &relation_table_node,
@@ -918,6 +925,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_shard_comment_ = false;
   is_dual_request_ = false;
   has_anonymous_block_ = false;
+  has_for_update_ = false;
   stmt_type_ = OBPROXY_T_INVALID;
   cmd_sub_type_ = OBPROXY_T_SUB_INVALID;
   cmd_err_type_ = OBPROXY_T_ERR_INVALID;

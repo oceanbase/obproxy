@@ -14,6 +14,7 @@
 #define OBPROXY_EXPR_CALCULATOR_H
 #include "opsql/expr_parser/ob_expr_parse_result.h"
 #include "lib/charset/ob_charset.h"
+#include "common/ob_obj_type.h"
 
 namespace oceanbase
 {
@@ -22,6 +23,8 @@ namespace common
 class ObIAllocator;
 class ObArenaAllocator;
 class ObString;
+class ObTimeZoneInfo;
+class ObDataTypeCastParams;
 }
 namespace obproxy
 {
@@ -38,7 +41,7 @@ namespace proxy
 class ObProxyMysqlRequest;
 class ObProxyPartInfo;
 class ObClientSessionInfo;
-class ObPsEntry;
+class ObPsIdEntry;
 class ObTextPsEntry;
 
 class ObProxyExprCalculator
@@ -64,17 +67,20 @@ private:
   int do_expr_resolve(ObExprParseResult &expr_result,
                       const ObProxyMysqlRequest &client_request,
                       ObClientSessionInfo *client_info,
-                      ObPsEntry *ps_entry,
+                      ObPsIdEntry *ps_id_entry,
                       ObTextPsEntry *text_ps_entry,
                       ObProxyPartInfo &part_info,
                       common::ObIAllocator &allocator,
                       opsql::ObExprResolverResult &resolve_result);
   int do_partition_id_calc(opsql::ObExprResolverResult &resolve_result,
+                           ObClientSessionInfo &client_info,
                            ObProxyPartInfo &part_info,
+                           const obutils::ObSqlParseResult &parse_result,
                            common::ObIAllocator &allocator,
                            int64_t &partition_id);
   int calc_part_id_with_simple_route_info(common::ObArenaAllocator &allocator,
                                           const obutils::ObSqlParseResult &parse_result,
+                                          ObClientSessionInfo &client_info,
                                           ObProxyPartInfo &part_info,
                                           int64_t &part_id);
   int do_resolve_with_part_key(const obutils::ObSqlParseResult &parse_result,
@@ -89,6 +95,22 @@ private:
                                                int64_t &sub_part_id,
                                                int64_t &phy_part_id);
 };
+
+class ObExprCalcTool {
+public:
+  static int build_dtc_params_with_tz_info(ObClientSessionInfo *session_info,
+                                           common::ObObjType obj_type,
+                                           common::ObTimeZoneInfo &tz_info,
+                                           common::ObDataTypeCastParams &dtc_params);
+  static int build_tz_info(ObClientSessionInfo *session_info,
+                           common::ObObjType obj_type,
+                           common::ObTimeZoneInfo &tz_info);
+  static int build_dtc_params(ObClientSessionInfo *session_info,
+                              common::ObObjType obj_type,
+                              common::ObDataTypeCastParams &dtc_params);
+};
+
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

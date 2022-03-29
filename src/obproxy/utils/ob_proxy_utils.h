@@ -14,6 +14,8 @@
 #define OBPROXY_UTILS_H
 #include "lib/ob_define.h"
 #include "common/ob_object.h"
+#include "lib/string/ob_fixed_length_string.h"
+#include "utils/ob_proxy_lib.h"
 
 namespace oceanbase
 {
@@ -74,6 +76,8 @@ int str_replace(char *input_buf, const int32_t input_size,
                 const common::ObString &target_value, int32_t &output_pos);
 
 int convert_timestamp_to_version(int64_t time_us, char *buf, int64_t len);
+int paste_tenant_and_cluster_name(const common::ObString &tenant_name, const common::ObString &cluster_name,
+                                  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> &key_string);
 
 } // end of namespace obproxy
 } // end of namespace oceanbase

@@ -34,6 +34,8 @@ public:
   ~ObProxyPrometheusExporter() {};
 
   int init(int32_t listen_port);
+  int create_exposer();
+  void destroy_exposer();
 
   int get_or_create_counter_family(const std::string& name, const std::string& help,
                                    const std::map<std::string, std::string>& labels,

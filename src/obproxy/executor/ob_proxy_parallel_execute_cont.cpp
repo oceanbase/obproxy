@@ -83,7 +83,19 @@ int ObProxyParallelResp::next(ObObj *&rows)
     for (int64_t i = 0; OB_SUCC(ret) && i < column_count_; i++) {
       if (OB_FAIL(rs_fetcher_->get_obj(i, rows[i]))) {
         LOG_WARN("fail to get varchar", K(i), K(ret));
-      } else if (rows[i].is_varchar()) {
+      } else if (rows[i].need_deep_copy()) {
+        int64_t copy_size = rows[i].get_deep_copy_size();
+        int64_t pos = 0;
+        buf = NULL;
+        if (OB_ISNULL(buf = static_cast<char *>(allocator_->alloc(copy_size)))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WARN("fail to alloc mem", K(copy_size), K(ret));
+        } else if (OB_FAIL(rows[i].deep_copy(rows[i], buf, copy_size, pos))) {
+          LOG_WARN("fail to deep coy", "obj", rows[i], K(copy_size), K(ret));
+        }
+      }
+
+      if (OB_SUCC(ret) && rows[i].is_varchar()) {
         ObCollationType cs_type = static_cast<ObCollationType>(fields[i].charsetnr_);
         // utf8_general_ci => CS_TYPE_UTF8MB4_GENERAL_CI
         if (33 == fields[i].charsetnr_) {
@@ -100,6 +112,9 @@ int ObProxyParallelResp::next(ObObj *&rows)
           if (OB_FAIL(ObSMUtils::get_ob_type(ob_type, fields[i].type_))) {
             LOG_INFO("cast ob type from mysql type failed", K(ob_type), "elem_type", fields[i].type_, K(ret));
             ret = OB_SUCCESS;
+          } else if (ObTimestampType == ob_type || ObTimeType == ob_type
+                     || ObDateType == ob_type || ObDateTimeType == ob_type) {
+            //do nothing
           } else {
             ObCastCtx cast_ctx(allocator_, NULL, CM_NULL_ON_WARN, cs_type);
             // use src_obj as buf_obj
@@ -137,7 +152,8 @@ int ObProxyParallelExecuteCont::init(const ObProxyParallelParam &parallel_param,
       LOG_WARN("fail to alloc ObMysqlProxy");
     } else if (OB_FAIL(mysql_proxy_->init(timeout_ms, username, passwd_string, database_name))) {
       LOG_WARN("fail to init proxy", K(username), K(database_name));
-    } else if (OB_FAIL(mysql_proxy_->rebuild_client_pool(shard_conn_, false, username, passwd_string, database_name))) {
+    } else if (OB_FAIL(mysql_proxy_->rebuild_client_pool(shard_conn_, parallel_param.shard_prop_,
+                                                         false, username, passwd_string, database_name))) {
       LOG_WARN("fail to create mysql client pool", K(username), K(database_name), K(ret));
     } else if (OB_FAIL(deep_copy_sql(parallel_param.request_sql_))) {
       LOG_WARN("fail to deep_copy_sql", K(parallel_param.request_sql_), K(ret));

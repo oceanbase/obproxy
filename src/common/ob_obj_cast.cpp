@@ -47,9 +47,19 @@ static int not_support(const ObObjType expect_type,
                        const ObCastMode cast_mode)
 {
   UNUSED(params);
-  LOG_WARN("not supported obj type convert",
-            K(expect_type), K(in), K(out), K(cast_mode));
+  LOG_WARN("not supported obj type convert" , K(expect_type), K(in), K(out), K(cast_mode));
   return OB_NOT_SUPPORTED;
+}
+
+static int not_expected(const ObObjType expect_type,
+                        ObObjCastParams &params,
+                        const ObObj& in,
+                        ObObj& out,
+                        const ObCastMode cast_mode)
+{
+  UNUSED(params);
+  LOG_WARN("not expected obj type convert", K(expect_type), K(in), K(out), K(cast_mode));
+  return OB_ERR_UNEXPECTED;
 }
 
 static int unknown_other(const ObObjType expect_type,
@@ -171,6 +181,47 @@ static int check_convert_str_err(const char *str,
   return ret;
 }
 
+static int convert_string_collation(const ObString &in,
+                                    const ObCollationType in_collation,
+                                    ObString &out,
+                                    const ObCollationType out_collation,
+                                    ObObjCastParams &params)
+{
+  int ret = OB_SUCCESS;
+  
+  if (!ObCharset::is_valid_collation(in_collation)
+      || !ObCharset::is_valid_collation(out_collation)
+      || ObCharset::charset_type_by_coll(in_collation) == CHARSET_BINARY
+      || ObCharset::charset_type_by_coll(out_collation) == CHARSET_BINARY
+      || (ObCharset::charset_type_by_coll(in_collation) == ObCharset::charset_type_by_coll(out_collation))) {
+    out = in;
+  } else if (in.empty()) {
+    out.reset();
+  } else {
+    char* buf = NULL;
+    const int32_t CharConvertFactorNum = 4;
+    int32_t buf_len = in.length() * CharConvertFactorNum;
+    uint32_t result_len = 0;
+    if (OB_ISNULL(buf = static_cast<char*>(params.alloc(buf_len)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_ERROR("alloc memory failed", K(ret));
+    } else if (OB_FAIL(ObCharset::charset_convert(in_collation,
+                                                  in.ptr(),
+                                                  in.length(),
+                                                  out_collation,
+                                                  buf,
+                                                  buf_len,
+                                                  result_len))) {
+      LOG_WARN("charset convert failed", K(ret));
+    } else {
+      out.assign_ptr(buf, result_len);
+    }
+  }
+  LOG_DEBUG("convert_string_collation", K(in.length()), K(in_collation), K(out.length()), K(out_collation));
+  
+  return ret;
+}
+
 ////////////////////////////////////////////////////////////////
 
 OB_INLINE int get_cast_ret(const ObCastMode cast_mode,
@@ -218,6 +269,8 @@ OB_INLINE int get_cast_ret(const ObCastMode cast_mode,
 #define SET_RES_DATE(res)       SET_RES_OBJ(res, date, , , value, ObTimeConverter::ZERO_DATE)
 #define SET_RES_TIME(res)       SET_RES_OBJ(res, time, , , value, ObTimeConverter::ZERO_TIME)
 #define SET_RES_YEAR(res)       SET_RES_OBJ(res, year, , , value, ObTimeConverter::ZERO_YEAR)
+#define SET_RES_OTIMESTAMP(res) SET_RES_OBJ(res, otimestamp_value, expect_type, COMMA, value, ObOTimestampData())
+
 
 #define SET_RES_ACCURACY(res_precision, res_scale, res_length) \
   if (params.res_accuracy_ != NULL && OB_SUCCESS == ret) {\
@@ -225,6 +278,18 @@ OB_INLINE int get_cast_ret(const ObCastMode cast_mode,
     params.res_accuracy_->set_precision(res_precision);\
     params.res_accuracy_->set_length(res_length);\
   }
+
+#define SET_RES_ACCURACY_STRING(type, res_precision, res_length) \
+  if (params.res_accuracy_ != NULL && OB_SUCCESS == ret) {       \
+    params.res_accuracy_->set_precision(res_precision);          \
+    params.res_accuracy_->set_length(res_length);                \
+    if (ob_is_text_tc(type)) {                                   \
+      params.res_accuracy_->set_scale(DEFAULT_SCALE_FOR_TEXT);   \
+    } else {                                                     \
+      params.res_accuracy_->set_scale(DEFAULT_SCALE_FOR_STRING); \
+    }                                                            \
+  }
+  
 ////////////////////////////////////////////////////////////////
 // range check function templates.
 
@@ -419,6 +484,354 @@ ObPrecision get_precision_for_integer(T value)
   return static_cast<ObPrecision>((iter - (bound_info + BOUND_INFO_START_POS)) * flag + 1);
 }
 
+int ObHexUtils::unhex(const ObString &text, ObCastCtx &cast_ctx, ObObj &result)
+{
+  int ret = OB_SUCCESS;
+  ObString str_result;
+  char *buf = NULL;
+  const bool need_fill_zero = (1 == text.length() % 2);
+  const int32_t tmp_length = text.length() / 2 + need_fill_zero;
+  int32_t alloc_length = (0 == tmp_length ? 1 : tmp_length);
+  if (OB_ISNULL(cast_ctx.allocator_v2_)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("allocator in cast ctx is NULL", K(ret), K(text));
+  } else if (OB_ISNULL(buf = static_cast<char *>(cast_ctx.allocator_v2_->alloc(alloc_length)))) {
+    result.set_null();
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_ERROR("alloc memory failed", K(alloc_length), K(ret));
+  } else {
+    int32_t i = 0;
+    char c1 = 0;
+    char c2 = 0;
+    if (text.length() > 0) {
+      if (need_fill_zero) {
+        c1 = '0';
+        c2 = text[0];
+        i = 0;
+      } else {
+        c1 = text[0];
+        c2 = text[1];
+        i = 1;
+      }
+    }
+    while (OB_SUCC(ret) && i < text.length()) {
+      if (isxdigit(c1) && isxdigit(c2)) {
+        buf[i / 2] = (char)((get_xdigit(c1) << 4) | get_xdigit(c2));
+        c1 = text[++i];
+        c2 = text[++i];
+      } else {
+        ret = OB_ERR_INVALID_HEX_NUMBER;
+        LOG_WARN("invalid hex number", K(ret), K(c1), K(c2), K(text));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      str_result.assign_ptr(buf, tmp_length);
+      result.set_varchar(str_result);
+    }
+  }
+  return ret;
+}
+
+int ObHexUtils::hex(const ObString &text, ObCastCtx &cast_ctx, ObObj &result)
+{
+  int ret = OB_SUCCESS;
+  ObString str_result;
+  char* buf = NULL;
+  const int32_t alloc_length = text.empty() ? 1 : text.length() * 2;
+  if (OB_ISNULL(cast_ctx.allocator_v2_)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("allocator in cast ctx is NULL", K(ret), K(text));
+  } else if (OB_ISNULL(buf = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_length)))) {
+    result.set_null();
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_ERROR("alloc memory failed", K(ret), K(alloc_length));
+  } else {
+    static const char* HEXCHARS = "0123456789ABCDEF";
+    int32_t pos = 0;
+    for (int32_t i = 0; i < text.length(); ++i) {
+      buf[pos++] = HEXCHARS[text[i] >> 4 & 0xF];
+      buf[pos++] = HEXCHARS[text[i] & 0xF];
+    }
+    str_result.assign_ptr(buf, pos);
+    result.set_varchar(str_result);
+    LOG_DEBUG("succ to hex", K(text), "length", text.length(), K(str_result));
+  }
+  return ret;
+}
+
+int ObHexUtils::hex_for_mysql(const uint64_t uint_val, common::ObCastCtx &cast_ctx, common::ObObj &result)
+{
+
+  int ret = OB_SUCCESS;
+  char* buf = NULL;
+  const int32_t MAX_INT64_LEN = 20;
+  if (OB_ISNULL(cast_ctx.allocator_v2_)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("allocator in cast ctx is NULL", K(ret), K(uint_val));
+  } else if (OB_ISNULL(buf = static_cast<char*>(cast_ctx.allocator_v2_->alloc(MAX_INT64_LEN)))) {
+    result.set_null();
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_ERROR("alloc memory failed", K(ret));
+  } else {
+    int pos = snprintf(buf, MAX_INT64_LEN, "%lX", uint_val);
+    if (OB_UNLIKELY(pos <= 0) || OB_UNLIKELY(pos >= MAX_INT64_LEN)) {
+      ret = OB_SIZE_OVERFLOW;
+      LOG_ERROR("size is overflow", K(ret), K(uint_val));
+    } else {
+      ObString str_result(pos, buf);
+      result.set_varchar(str_result);
+    }
+  }
+  return ret;
+}
+
+// https://docs.oracle.com/en/database/oracle/oracle-database/12.2/sqlrf/RAWTOHEX.html
+// As a SQL built-in function, RAWTOHEX accepts an argument of any scalar data type other than LONG,
+// LONG RAW, CLOB, NCLOB, BLOB, or BFILE. If the argument is of a data type other than RAW,
+// then this function converts the argument value, which is represented using some number of data bytes,
+// into a RAW value with the same number of data bytes. The data itself is not modified in any way,
+// but the data type is recast to a RAW data type.
+int ObHexUtils::rawtohex(const ObObj &text, ObCastCtx &cast_ctx, ObObj &result)
+{
+  int ret = OB_SUCCESS;
+
+  if (text.is_null()) {
+    result.set_null();
+  } else {
+    ObString str;
+    ObObj num_obj;
+    char* splice_num_str = NULL;  // for splice Desc and degits_ of number.
+    ObOTimestampData time_value;
+    switch (text.get_type()) {
+      // TODO::this should same as oracle, and support dump func
+      case ObTinyIntType:
+      case ObSmallIntType:
+      case ObInt32Type:
+      case ObIntType: {
+        int64_t int_value = text.get_int();
+        number::ObNumber nmb;
+        if (OB_FAIL(nmb.from(int_value, cast_ctx))) {
+          LOG_WARN("fail to int_number", K(ret), K(int_value), "type", text.get_type());
+        } else {
+          num_obj.set_number(ObNumberType, nmb);
+          int32_t alloc_len =
+              static_cast<int32_t>(sizeof(num_obj.get_number_desc()) + num_obj.get_number_byte_length());
+          if (OB_ISNULL(cast_ctx.allocator_v2_)) {
+            ret = OB_INVALID_ARGUMENT;
+            LOG_WARN("allocator in cast ctx is NULL", K(ret));
+          } else if (OB_ISNULL(splice_num_str = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_len)))) {
+            result.set_null();
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_ERROR("alloc memory failed", K(ret), K(alloc_len));
+          } else {
+            MEMCPY(splice_num_str, &(num_obj.get_number_desc()), sizeof(num_obj.get_number_desc()));
+            MEMCPY(splice_num_str + sizeof(num_obj.get_number_desc()),
+                num_obj.get_data_ptr(),
+                num_obj.get_number_byte_length());
+            str.assign_ptr(static_cast<const char*>(splice_num_str), alloc_len);
+          }
+          LOG_DEBUG("succ to int_number", K(ret), K(int_value), "type", num_obj.get_type(), K(nmb), K(str));
+        }
+        break;
+      }
+      case ObNumberFloatType:
+      case ObNumberType: {
+        int32_t alloc_len = static_cast<int32_t>(sizeof(text.get_number_desc()) + text.get_number_byte_length());
+        if (OB_ISNULL(cast_ctx.allocator_v2_)) {
+          ret = OB_INVALID_ARGUMENT;
+          LOG_WARN("allocator in cast ctx is NULL", K(ret));
+        } else if (OB_ISNULL(splice_num_str = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_len)))) {
+          result.set_null();
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_ERROR("alloc memory failed", K(ret), K(alloc_len));
+        } else {
+          MEMCPY(splice_num_str, &(text.get_number_desc()), sizeof(text.get_number_desc()));
+          MEMCPY(splice_num_str + sizeof(text.get_number_desc()), text.get_data_ptr(), text.get_number_byte_length());
+          str.assign_ptr(static_cast<const char*>(splice_num_str), alloc_len);
+        }
+        break;
+      }
+      case ObDateTimeType: {
+        str.assign_ptr(static_cast<const char*>(text.get_data_ptr()), static_cast<int32_t>(sizeof(int64_t)));
+        break;
+      }
+      case ObNVarchar2Type:
+      case ObNCharType:
+      case ObVarcharType:
+      case ObCharType:
+      case ObLongTextType:
+      case ObRawType: {
+        // https://www.techonthenet.com/oracle/functions/rawtohex.php
+        // NOTE:: when convert string to raw, Oracle use utl_raw.cast_to_raw(), while PL/SQL use hextoraw()
+        //       here we use utl_raw.cast_to_raw(), as we can not distinguish in which SQL
+        str = text.get_varbinary();
+        break;
+      }
+      case ObTimestampTZType:
+      case ObTimestampLTZType:
+      case ObTimestampNanoType: {
+        time_value = text.get_otimestamp_value();
+        str.assign_ptr(reinterpret_cast<char*>(&time_value), static_cast<int32_t>(text.get_otimestamp_store_size()));
+        break;
+      }
+      default: {
+        ret = OB_ERR_INVALID_HEX_NUMBER;
+        LOG_WARN("invalid hex number", K(ret), K(text), "type", text.get_type());
+      }
+    }
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(hex(str, cast_ctx, result))) {
+        LOG_WARN("fail to convert to hex", K(ret), K(str));
+      } else {
+        result.set_default_collation_type();
+        LOG_DEBUG("succ to rawtohex", "type", text.get_type(), K(text), K(result), K(lbt()));
+      }
+    }
+  }
+  
+  return ret;
+}
+
+int ObHexUtils::hextoraw(const ObObj &text, ObCastCtx &cast_ctx, ObObj &result)
+{
+  int ret = OB_SUCCESS;
+  if (text.is_null()) {
+    result.set_null();
+  } else if (text.is_numeric_type()) {
+    number::ObNumber nmb_val;
+    if (OB_FAIL(get_uint(text, cast_ctx, nmb_val))) {
+      LOG_WARN("fail to get uint64", K(ret), K(text));
+    } else if (OB_FAIL(uint_to_raw(nmb_val, cast_ctx, result))) {
+      LOG_WARN("fail to convert to hex", K(ret), K(nmb_val));
+    }
+  } else if (text.is_raw()) {
+    // fast path
+    if (OB_FAIL(copy_raw(text, cast_ctx, result))) {
+      LOG_WARN("fail to convert to hex", K(ret), K(text));
+    }
+  } else if (text.is_character_type() || text.is_varbinary_or_binary()) {
+    ObString utf8_string;
+    if (OB_FAIL(convert_string_collation(text.get_string(),
+                                         text.get_collation_type(),
+                                         utf8_string,
+                                         ObCharset::get_system_collation(),
+                                         cast_ctx))) {
+      LOG_WARN("convert_string_collation", K(ret));
+    } else if (OB_FAIL(unhex(utf8_string, cast_ctx, result))) {
+      LOG_WARN("fail to convert to hex", K(ret), K(text));
+    } else {
+      result.set_raw(result.get_raw());
+    }
+  } else {
+    ret = OB_ERR_INVALID_HEX_NUMBER;
+    LOG_WARN("invalid hex number", K(ret), K(text));
+  }
+  
+  return ret;
+}
+
+int ObHexUtils::get_uint(const ObObj &obj, ObCastCtx &cast_ctx, number::ObNumber &out)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!ob_is_accurate_numeric_type(obj.get_type()))) {
+    ret = OB_ERR_INVALID_HEX_NUMBER;
+    LOG_WARN("invalid hex number", K(ret), K(obj));
+  } else if (obj.is_number() || obj.is_unumber()) {
+    const number::ObNumber& value = obj.get_number();
+    if (OB_FAIL(out.from(value, cast_ctx))) {
+      LOG_WARN("deep copy failed", K(ret), K(obj));
+    } else if (OB_UNLIKELY(!out.is_integer()) || OB_UNLIKELY(out.is_negative())) {
+      ret = OB_ERR_INVALID_HEX_NUMBER;
+      LOG_WARN("invalid hex number", K(ret), K(out));
+    } else if (OB_FAIL(out.round(0))) {
+      LOG_WARN("round failed", K(ret), K(out));
+    }
+  } else {
+    if (OB_UNLIKELY(obj.get_int() < 0)) {
+      ret = OB_ERR_INVALID_HEX_NUMBER;
+      LOG_WARN("invalid hex number", K(ret), K(obj));
+    } else if (OB_FAIL(out.from(obj.get_int(), cast_ctx))) {
+      LOG_WARN("deep copy failed", K(ret), K(obj));
+    }
+  }
+  return ret;
+}
+
+int ObHexUtils::uint_to_raw(const number::ObNumber &uint_num, ObCastCtx &cast_ctx, ObObj &result)
+{
+  int ret = OB_SUCCESS;
+  const int64_t oracle_max_avail_len = 40;
+  char uint_buf[number::ObNumber::MAX_TOTAL_SCALE] = {0};
+  int64_t uint_pos = 0;
+  ObString uint_str;
+  if (OB_FAIL(uint_num.format(uint_buf, number::ObNumber::MAX_TOTAL_SCALE, uint_pos, 0))) {
+    LOG_WARN("fail to format ", K(ret), K(uint_num));
+  } else if (uint_pos > oracle_max_avail_len) {
+    ret = OB_ERR_INVALID_HEX_NUMBER;
+    LOG_WARN("invalid hex number", K(ret), K(uint_pos), K(oracle_max_avail_len), K(uint_num));
+  } else {
+    uint_str.assign_ptr(uint_buf, static_cast<int32_t>(uint_pos));
+    if (OB_FAIL(unhex(uint_str, cast_ctx, result))) {
+      LOG_WARN("fail to str_to_raw", K(ret), K(result));
+    } else {
+      result.set_raw(result.get_raw());
+    }
+  }
+  return ret;
+}
+
+int ObHexUtils::copy_raw(const common::ObObj &obj, common::ObCastCtx &cast_ctx, common::ObObj &result)
+{
+  int ret = OB_SUCCESS;
+  char* buf = NULL;
+  const ObString& value = obj.get_raw();
+  const int32_t alloc_length = value.empty() ? 1 : value.length();
+  if (OB_ISNULL(cast_ctx.allocator_v2_)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("allocator in cast ctx is NULL", K(ret));
+  } else if (OB_ISNULL(buf = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_length)))) {
+    result.set_null();
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_ERROR("alloc memory failed", K(ret), K(alloc_length));
+  } else {
+    MEMCPY(buf, value.ptr(), value.length());
+    result.set_raw(buf, value.length());
+  }
+  return ret;
+}
+
+static int check_convert_string(const ObObjType expect_type,
+                                ObObjCastParams &params,
+                                const ObObj &in,
+                                ObObj &out)
+{
+  int ret = OB_SUCCESS;
+  if (lib::is_oracle_mode() && ob_is_blob(expect_type, params.expect_obj_collation_) && !in.is_blob() && !in.is_raw()) {
+    if (in.is_varchar_or_char()) {
+      if (OB_FAIL(ObHexUtils::hextoraw(in, params, out))) {
+        LOG_WARN("fail to hextoraw for blob", K(ret), K(in));
+      }
+    } else {
+      ret = OB_NOT_SUPPORTED;
+      LOG_ERROR("Invalid use of blob type", K(ret), K(in), K(expect_type));
+    }
+  } else {
+    out = in;
+  }
+  return ret;
+}
+
+static int check_convert_string(const ObObjType expect_type,
+                                ObObjCastParams &params,
+                                const ObString &in_string,
+                                ObObj &out)
+{
+  ObObj tmp_obj;
+  tmp_obj.set_varchar(in_string);
+  return check_convert_string(expect_type, params, tmp_obj, out);
+}
+
 ////////////////////////////////////////////////////////////////
 // Int -> XXX
 
@@ -546,7 +959,7 @@ static int int_datetime(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
     int64_t value = 0;
     if (in.get_int() < 0) {
       CAST_FAIL(OB_INVALID_DATE_FORMAT);
@@ -1219,7 +1632,7 @@ static int double_datetime(const ObObjType expect_type, ObObjCastParams &params,
         K(ret), K(in), K(expect_type));
   } else {
     int64_t value = 0;
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
     char buf[MAX_DOUBLE_PRINT_SIZE];
     MEMSET(buf, 0, MAX_DOUBLE_PRINT_SIZE);
     int64_t length = ob_gcvt_opt(in.get_double(), OB_GCVT_ARG_DOUBLE, (int)sizeof(buf) - 1, buf, NULL, lib::is_oracle_mode());
@@ -1469,7 +1882,7 @@ static int number_datetime(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
     int64_t value = 0;
     int64_t int_part = 0;
     int64_t dec_part = 0;
@@ -1608,7 +2021,7 @@ static int datetime_int(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     int64_t value = 0;
     if (OB_FAIL(ObTimeConverter::datetime_to_int(in.get_datetime(), tz_info, value))) {
     } else if (expect_type < ObIntType && CAST_FAIL(int_range_check(expect_type, value, value))) {
@@ -1632,7 +2045,7 @@ static int datetime_uint(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     int64_t int64 = 0;
     if (OB_FAIL(ObTimeConverter::datetime_to_int(in.get_datetime(), tz_info, int64))) {
     } else {
@@ -1658,7 +2071,7 @@ static int datetime_float(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     double value = 0.0;
     if (OB_FAIL(ObTimeConverter::datetime_to_double(in.get_datetime(), tz_info, value))) {
     } else {
@@ -1682,7 +2095,7 @@ static int datetime_double(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     double value = 0.0;
     if (OB_FAIL(ObTimeConverter::datetime_to_double(in.get_datetime(), tz_info, value))) {
     } else {
@@ -1706,7 +2119,7 @@ static int datetime_number(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH];
     MEMSET(buf, 0, OB_CAST_TO_VARCHAR_MAX_LENGTH);
     int64_t len = 0;
@@ -1735,9 +2148,9 @@ static int datetime_datetime(const ObObjType expect_type, ObObjCastParams &param
   } else {
     int64_t value = in.get_datetime();
     if (ObDateTimeType == in.get_type() && ObTimestampType == expect_type) {
-      ret = ObTimeConverter::datetime_to_timestamp(in.get_datetime(), params.tz_info_, value);
+      ret = ObTimeConverter::datetime_to_timestamp(in.get_datetime(), params.dtc_params_.tz_info_, value);
     } else if (ObTimestampType == in.get_type() && ObDateTimeType == expect_type) {
-      ret = ObTimeConverter::timestamp_to_datetime(in.get_datetime(), params.tz_info_, value);
+      ret = ObTimeConverter::timestamp_to_datetime(in.get_datetime(), params.dtc_params_.tz_info_, value);
     }
 
     if (OB_FAIL(ret)) {
@@ -1760,7 +2173,7 @@ static int datetime_date(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     int32_t value = 0;
     if (OB_FAIL(ObTimeConverter::datetime_to_date(in.get_datetime(), tz_info, value))) {
     } else {
@@ -1782,7 +2195,7 @@ static int datetime_time(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     int64_t value = 0;
     if (OB_FAIL(ObTimeConverter::datetime_to_time(in.get_datetime(), tz_info, value))) {
     } else {
@@ -1804,7 +2217,7 @@ static int datetime_year(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     uint8_t value = 0;
     if (CAST_FAIL(ObTimeConverter::datetime_to_year(in.get_datetime(), tz_info, value))) {
     } else {
@@ -1828,7 +2241,7 @@ static int datetime_string(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
     char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH];
     MEMSET(buf, 0, OB_CAST_TO_VARCHAR_MAX_LENGTH);
     int64_t len = 0;
@@ -1847,6 +2260,46 @@ static int datetime_string(const ObObjType expect_type, ObObjCastParams &params,
   UNUSED(cast_mode);
   return ret;
 }
+
+static int datetime_otimestamp(const ObObjType expect_type,
+                               ObObjCastParams &params,
+                               const ObObj &in,
+                               ObObj &out,
+                               const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  
+  if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()) 
+      || OB_UNLIKELY(ObOTimestampTC != ob_obj_type_class(expect_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+  } else {
+    int64_t dt_value = 0;
+    if (ObTimestampType == in.get_type()) {
+      int64_t utc_value = in.get_timestamp();
+      if (OB_FAIL(ObTimeConverter::timestamp_to_datetime(utc_value, params.dtc_params_.tz_info_, dt_value))) {
+        LOG_WARN("fail to convert timestamp to datetime", K(ret));
+      }
+    } else {
+      dt_value = in.get_datetime();
+    }
+    if (OB_SUCC(ret)) {
+      int64_t odate_value = 0;
+      ObOTimestampData value;
+      ObTimeConverter::datetime_to_odate(dt_value, odate_value);
+      if (OB_FAIL(ObTimeConverter::odate_to_otimestamp(odate_value, params.dtc_params_.tz_info_, expect_type, value))) {
+        LOG_WARN("fail to odate to otimestamp", K(ret), K(in), K(expect_type));
+      } else {
+        SET_RES_OTIMESTAMP(out);
+      }
+    }
+  }
+  SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_TEMPORAL, in.get_scale(), DEFAULT_LENGTH_FOR_TEMPORAL);
+  
+  return ret;
+}
+
 
 ////////////////////////////////////////////////////////////
 // Date -> XXX
@@ -1962,7 +2415,7 @@ static int date_datetime(const ObObjType expect_type, ObObjCastParams &params,
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
     int64_t value = 0;
     if (OB_FAIL(ObTimeConverter::date_to_datetime(in.get_date(), tz_info, value))) {
     } else {
@@ -2155,7 +2608,7 @@ static int time_datetime(const ObObjType expect_type, ObObjCastParams &params,
                          const ObObj &in, ObObj &out, const ObCastMode cast_mode)
 {
   int ret = OB_SUCCESS;
-  const ObTimeZoneInfo *tz_info = params.tz_info_;
+  const ObTimeZoneInfo *tz_info = params.dtc_params_.tz_info_;
   int64_t value = 0;
   if (OB_UNLIKELY(ObTimeTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
@@ -2529,7 +2982,7 @@ static int string_datetime(const ObObjType expect_type, ObObjCastParams &params,
      LOG_ERROR("invalid input type",
          K(ret), K(in), K(expect_type));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.tz_info_ : NULL;
+    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
     int64_t value = 0;
     if (CAST_FAIL(ObTimeConverter::str_to_datetime(in.get_string(), tz_info, value, &res_scale))) {
     } else {
@@ -2616,6 +3069,8 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
     if (0 != str.length()
         && CS_TYPE_BINARY != in.get_collation_type()
         && CS_TYPE_BINARY != params.dest_collation_
+        && CS_TYPE_INVALID != in.get_collation_type()
+        && CS_TYPE_INVALID != params.dest_collation_
         && (ObCharset::charset_type_by_coll(in.get_collation_type())
             != ObCharset::charset_type_by_coll(params.dest_collation_))) {
       char *buf = NULL;
@@ -2660,245 +3115,728 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
   return ret;
 }
 
+static int string_otimestamp(const ObObjType expect_type,
+                             ObObjCastParams &params,
+                             const ObObj &in,
+                             ObObj &out,
+                             const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  ObScale res_scale = -1;
+  ObString utf8_string;
+
+  if (OB_UNLIKELY(ObStringTC != in.get_type_class() && ObTextTC != in.get_type_class())
+      || OB_UNLIKELY(ObOTimestampTC != ob_obj_type_class(expect_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+  } else if (lib::is_oracle_mode() && in.is_blob()) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_ERROR("invalid use of blob type", K(ret), K(in), K(expect_type));
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "Cast to blob type");
+  } else if (OB_FAIL(convert_string_collation(in.get_string(),
+                                              in.get_collation_type(),
+                                              utf8_string,
+                                              ObCharset::get_system_collation(),
+                                              params))) {
+    LOG_WARN("convert_string_collation", K(ret));
+  } else {
+    ObOTimestampData value;
+    ObTimeConvertCtx cvrt_ctx(params.dtc_params_.tz_info_, true);
+    cvrt_ctx.oracle_nls_format_ = params.dtc_params_.get_nls_format(expect_type);
+    if (CAST_FAIL(ObTimeConverter::str_to_otimestamp(utf8_string, cvrt_ctx, expect_type, value, res_scale))) {
+    } else {
+      SET_RES_OTIMESTAMP(out);
+    }
+  }
+
+  SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_TEMPORAL, res_scale, DEFAULT_LENGTH_FOR_TEMPORAL);
+  return ret;
+}
+
+////////////////////////////////////////////////////////////
+// OTimestamp -> XXX
+
+static int otimestamp_datetime(const ObObjType expect_type,
+                               ObObjCastParams &params,
+                               const ObObj &in,
+                               ObObj &out,
+                               const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  
+  int64_t usec = 0;
+  if (OB_UNLIKELY(ObOTimestampTC != in.get_type_class())
+      || OB_UNLIKELY(ObDateTimeTC != ob_obj_type_class(expect_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+  } else if (OB_FAIL(ObTimeConverter::otimestamp_to_odate(in.get_type(),
+                                                          in.get_otimestamp_value(),
+                                                          params.dtc_params_.tz_info_,
+                                                          usec))) {
+    LOG_WARN("fail to timestamp_tz_to_timestamp", K(ret), K(in), K(expect_type));
+  } else {
+    ObTimeConverter::trunc_datetime(OB_MAX_DATE_PRECISION, usec);
+    out.set_datetime(expect_type, usec);
+    out.set_scale(OB_MAX_DATE_PRECISION);
+  }
+  SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_TEMPORAL, in.get_scale(), DEFAULT_LENGTH_FOR_TEMPORAL);
+  
+  return ret;
+}
+
+static int otimestamp_string(const ObObjType expect_type,
+                             ObObjCastParams &params,
+                             const ObObj &in,
+                             ObObj &out,
+                             const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  ObLength res_length = -1;
+  
+  if (OB_UNLIKELY(ObOTimestampTC != in.get_type_class())
+      || OB_UNLIKELY(ObStringTC != ob_obj_type_class(expect_type) && ObTextTC != ob_obj_type_class(expect_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+  } else {
+    char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+    int64_t len = 0;
+    if (OB_FAIL(ObTimeConverter::otimestamp_to_str(in.get_otimestamp_value(),
+                                                   params.dtc_params_,
+                                                   in.get_scale(),
+                                                   in.get_type(),
+                                                   buf,
+                                                   OB_CAST_TO_VARCHAR_MAX_LENGTH,
+                                                   len))) {
+      LOG_WARN("failed to convert otimestamp to string", K(ret));
+    } else {
+      ObString tmp_str;
+      ObObj tmp_out;
+      if (OB_FAIL(convert_string_collation(ObString(len, buf), 
+                                           ObCharset::get_system_collation(),
+                                           tmp_str,
+                                           params.dest_collation_,
+                                           params))) {
+        LOG_WARN("fail to convert string collation", K(ret));
+      } else if (OB_FAIL(check_convert_string(expect_type, params, tmp_str, tmp_out))) {
+        LOG_WARN("fail to check_convert_string", K(ret), K(in), K(expect_type));
+      } else if (OB_FAIL(copy_string(params, expect_type, tmp_out.get_string(), out))) {
+        LOG_WARN("failed to copy_string", K(ret), K(expect_type), K(len));
+      } else {
+        out.set_type(expect_type);
+        res_length = static_cast<ObLength>(out.get_string_len());
+      }
+    }
+  }
+  SET_RES_ACCURACY_STRING(expect_type, DEFAULT_PRECISION_FOR_STRING, res_length);
+  
+  return ret;
+}
+
+static int otimestamp_otimestamp(const ObObjType expect_type,
+                                 ObObjCastParams &params,
+                                 const ObObj &in,
+                                 ObObj &out,
+                                 const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  ObOTimestampData value;
+  
+  if (OB_UNLIKELY(ObOTimestampTC != in.get_type_class())
+      || OB_UNLIKELY(ObOTimestampTC != ob_obj_type_class(expect_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+  } else if (ObTimestampNanoType == in.get_type()) {
+    if (OB_FAIL(ObTimeConverter::odate_to_otimestamp(in.get_otimestamp_value().time_us_,
+                                                     params.dtc_params_.tz_info_,
+                                                     expect_type,
+                                                     value))) {
+      LOG_WARN("fail to odate_to_otimestamp", K(ret), K(expect_type));
+    } else {
+      value.time_ctx_.tail_nsec_ = in.get_otimestamp_value().time_ctx_.tail_nsec_;
+    }
+  } else if (ObTimestampNanoType == expect_type) {
+    if (OB_FAIL(ObTimeConverter::otimestamp_to_odate(in.get_type(),
+                                                     in.get_otimestamp_value(),
+                                                     params.dtc_params_.tz_info_,
+                                                     *(int64_t*)&value.time_us_))) {
+      LOG_WARN("fail to otimestamp_to_odate", K(ret), K(expect_type));
+    } else {
+      value.time_ctx_.tail_nsec_ = in.get_otimestamp_value().time_ctx_.tail_nsec_;
+    }
+  } else {
+    if (OB_FAIL(ObTimeConverter::otimestamp_to_otimestamp(in.get_type(),
+                                                          in.get_otimestamp_value(),
+                                                          params.dtc_params_.tz_info_,
+                                                          expect_type,
+                                                          value))) {
+      LOG_WARN("fail to otimestamp_to_otimestamp", K(ret), K(expect_type));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    SET_RES_OTIMESTAMP(out);
+  }
+  SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_TEMPORAL, in.get_scale(), DEFAULT_LENGTH_FOR_TEMPORAL);
+  
+  return ret;
+}
+
+
 ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
 {
   {
     /*null -> XXX*/
-    identity,/*null*/
-    identity,/*int*/
-    identity,/*uint*/
-    identity,/*float*/
-    identity,/*double*/
-    identity,/*number*/
-    identity,/*datetime*/
-    identity,/*date*/
-    identity,/*time*/
-    identity,/*year*/
-    identity,/*string*/
-    identity,/*extend*/
-    identity,/*unknown*/
-    identity,/*text*/
+    identity,           /*null*/
+    identity,           /*int*/
+    identity,           /*uint*/
+    identity,           /*float*/
+    identity,           /*double*/
+    identity,           /*number*/
+    identity,           /*datetime*/
+    identity,           /*date*/
+    identity,           /*time*/
+    identity,           /*year*/
+    identity,           /*string*/
+    identity,           /*extend*/
+    identity,           /*unknown*/
+    identity,           /*text*/
+    not_support,        /*bit*/
+    not_support,        /*enumset*/
+    not_support,        /*enumsetInner*/
+    identity,           /*otimestamp*/
+    not_expected,       /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*int -> XXX*/
-    not_support,/*null*/
-    int_int,/*int*/
-    int_uint,/*uint*/
-    int_float,/*float*/
-    int_double,/*double*/
-    int_number,/*number*/
-    int_datetime,/*datetime*/
-    int_date,/*date*/
-    int_time,/*time*/
-    int_year,/*year*/
-    int_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    int_string,/*text*/
+    not_support,        /*null*/
+    int_int,            /*int*/
+    int_uint,           /*uint*/
+    int_float,          /*float*/
+    int_double,         /*double*/
+    int_number,         /*number*/
+    int_datetime,       /*datetime*/
+    int_date,           /*date*/
+    int_time,           /*time*/
+    int_year,           /*year*/
+    int_string,         /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    int_string,         /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*uint -> XXX*/
-    not_support,/*null*/
-    uint_int,/*int*/
-    uint_uint,/*uint*/
-    uint_float,/*float*/
-    uint_double,/*double*/
-    uint_number,/*number*/
-    uint_datetime,/*datetime*/
-    uint_date,/*date*/
-    uint_time,/*time*/
-    uint_year,/*year*/
-    uint_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    uint_string,/*text*/
+    not_support,        /*null*/
+    uint_int,           /*int*/
+    uint_uint,          /*uint*/
+    uint_float,         /*float*/
+    uint_double,        /*double*/
+    uint_number,        /*number*/
+    uint_datetime,      /*datetime*/
+    uint_date,          /*date*/
+    uint_time,          /*time*/
+    uint_year,          /*year*/
+    uint_string,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    uint_string,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*float -> XXX*/
-    not_support,/*null*/
-    float_int,/*int*/
-    float_uint,/*uint*/
-    float_float,/*float*/
-    float_double,/*double*/
-    float_number,/*number*/
-    float_datetime,/*datetime*/
-    float_date,/*date*/
-    float_time,/*time*/
-    not_support,/*year*/
-    float_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    float_string,/*text*/
+    not_support,        /*null*/
+    float_int,          /*int*/
+    float_uint,         /*uint*/
+    float_float,        /*float*/
+    float_double,       /*double*/
+    float_number,       /*number*/
+    float_datetime,     /*datetime*/
+    float_date,         /*date*/
+    float_time,         /*time*/
+    not_support,        /*year*/
+    float_string,       /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    float_string,       /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*double -> XXX*/
-    not_support,/*null*/
-    double_int,/*int*/
-    double_uint,/*uint*/
-    double_float,/*float*/
-    double_double,/*double*/
-    double_number,/*number*/
-    double_datetime,/*datetime*/
-    double_date,/*date*/
-    double_time,/*time*/
-    not_support,/*year*/
-    double_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    double_string,/*text*/
+    not_support,        /*null*/
+    double_int,         /*int*/
+    double_uint,        /*uint*/
+    double_float,       /*float*/
+    double_double,      /*double*/
+    double_number,      /*number*/
+    double_datetime,    /*datetime*/
+    double_date,        /*date*/
+    double_time,        /*time*/
+    not_support,        /*year*/
+    double_string,      /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    double_string,      /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*number -> XXX*/
-    not_support,/*null*/
-    number_int,/*int*/
-    number_uint,/*uint*/
-    number_float,/*float*/
-    number_double,/*double*/
-    number_number,/*number*/
-    number_datetime,/*datetime*/
-    number_date,/*date*/
-    number_time,/*time*/
-    number_year,/*year*/
-    number_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    number_string,/*text*/
+    not_support,        /*null*/
+    number_int,         /*int*/
+    number_uint,        /*uint*/
+    number_float,       /*float*/
+    number_double,      /*double*/
+    number_number,      /*number*/
+    number_datetime,    /*datetime*/
+    number_date,        /*date*/
+    number_time,        /*time*/
+    number_year,        /*year*/
+    number_string,      /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    number_string,      /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*datetime -> XXX*/
-    not_support,/*null*/
-    datetime_int,/*int*/
-    datetime_uint,/*uint*/
-    datetime_float,/*float*/
-    datetime_double,/*double*/
-    datetime_number,/*number*/
-    datetime_datetime,/*datetime*/
-    datetime_date,/*date*/
-    datetime_time,/*time*/
-    datetime_year,/*year*/
-    datetime_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    datetime_string,/*text*/
+    not_support,          /*null*/
+    datetime_int,         /*int*/
+    datetime_uint,        /*uint*/
+    datetime_float,       /*float*/
+    datetime_double,      /*double*/
+    datetime_number,      /*number*/
+    datetime_datetime,    /*datetime*/
+    datetime_date,        /*date*/
+    datetime_time,        /*time*/
+    datetime_year,        /*year*/
+    datetime_string,      /*string*/
+    not_support,          /*extend*/
+    not_support,          /*unknown*/
+    datetime_string,      /*text*/
+    not_support,          /*bit*/
+    not_expected,         /*enumset*/
+    not_expected,         /*enumset_inner*/
+    datetime_otimestamp,  /*otimestamp*/
+    not_support,          /*raw*/
+    not_expected,         /*interval*/
+    not_expected,         /*rowid*/
+    not_support,          /*lob*/
   },
   {
     /*date -> XXX*/
-    not_support,/*null*/
-    date_int,/*int*/
-    date_uint,/*uint*/
-    date_float,/*float*/
-    date_double,/*double*/
-    date_number,/*number*/
-    date_datetime,/*datetime*/
-    identity,/*date*/
-    date_time,/*time*/
-    date_year,/*year*/
-    date_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    date_string,/*text*/
+    not_support,        /*null*/
+    date_int,           /*int*/
+    date_uint,          /*uint*/
+    date_float,         /*float*/
+    date_double,        /*double*/
+    date_number,        /*number*/
+    date_datetime,      /*datetime*/
+    identity,           /*date*/
+    date_time,          /*time*/
+    date_year,          /*year*/
+    date_string,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    date_string,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*time -> XXX*/
-    not_support,/*null*/
-    time_int,/*int*/
-    time_uint,/*uint*/
-    time_float,/*float*/
-    time_double,/*double*/
-    time_number,/*number*/
-    time_datetime,/*datetime*/
-    not_support,/*date*/
-    identity,/*time*/
-    not_support,/*year*/
-    time_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    time_string,/*text*/
+    not_support,        /*null*/
+    time_int,           /*int*/
+    time_uint,          /*uint*/
+    time_float,         /*float*/
+    time_double,        /*double*/
+    time_number,        /*number*/
+    time_datetime,      /*datetime*/
+    not_support,        /*date*/
+    identity,           /*time*/
+    not_support,        /*year*/
+    time_string,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    time_string,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*year -> XXX*/
-    not_support,/*null*/
-    year_int,/*int*/
-    year_uint,/*uint*/
-    year_float,/*float*/
-    year_double,/*double*/
-    year_number,/*number*/
-    not_support,/*datetime*/
-    not_support,/*date*/
-    not_support,/*time*/
-    identity,/*year*/
-    year_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    year_string,/*text*/
+    not_support,        /*null*/
+    year_int,           /*int*/
+    year_uint,          /*uint*/
+    year_float,         /*float*/
+    year_double,        /*double*/
+    year_number,        /*number*/
+    not_support,        /*datetime*/
+    not_support,        /*date*/
+    not_support,        /*time*/
+    identity,           /*year*/
+    year_string,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    year_string,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*string -> XXX*/
-    not_support,/*null*/
-    string_int,/*int*/
-    string_uint,/*uint*/
-    string_float,/*float*/
-    string_double,/*double*/
-    string_number,/*number*/
-    string_datetime,/*datetime*/
-    string_date,/*date*/
-    string_time,/*time*/
-    string_year,/*year*/
-    string_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    string_string,/*text*/
+    not_support,        /*null*/
+    string_int,         /*int*/
+    string_uint,        /*uint*/
+    string_float,       /*float*/
+    string_double,      /*double*/
+    string_number,      /*number*/
+    string_datetime,    /*datetime*/
+    string_date,        /*date*/
+    string_time,        /*time*/
+    string_year,        /*year*/
+    string_string,      /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    string_string,      /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    string_otimestamp,  /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*extend -> XXX*/
-    not_support,/*null*/
-    not_support,/*int*/
-    not_support,/*uint*/
-    not_support,/*float*/
-    not_support,/*double*/
-    not_support,/*number*/
-    not_support,/*datetime*/
-    not_support,/*date*/
-    not_support,/*time*/
-    not_support,/*year*/
-    not_support,/*string*/
-    identity,/*extend*/
-    not_support,/*unknown*/
-    not_support,/*text*/
+    not_support,        /*null*/
+    not_support,        /*int*/
+    not_support,        /*uint*/
+    not_support,        /*float*/
+    not_support,        /*double*/
+    not_support,        /*number*/
+    not_support,        /*datetime*/
+    not_support,        /*date*/
+    not_support,        /*time*/
+    not_support,        /*year*/
+    not_support,        /*string*/
+    identity,           /*extend*/
+    not_support,        /*unknown*/
+    not_support,        /*text*/
+    not_support,        /*bit*/
+    not_support,        /*enumset*/
+    not_support,        /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*unknown -> XXX*/
-    unknown_other,/*null*/
-    unknown_other,/*int*/
-    unknown_other,/*uint*/
-    unknown_other,/*float*/
-    unknown_other,/*double*/
-    unknown_other,/*number*/
-    unknown_other,/*datetime*/
-    unknown_other,/*date*/
-    unknown_other,/*time*/
-    unknown_other,/*year*/
-    unknown_other,/*string*/
-    unknown_other,/*extend*/
-    identity,/*unknown*/
-    not_support,/*text*/
+    unknown_other,      /*null*/
+    unknown_other,      /*int*/
+    unknown_other,      /*uint*/
+    unknown_other,      /*float*/
+    unknown_other,      /*double*/
+    unknown_other,      /*number*/
+    unknown_other,      /*datetime*/
+    unknown_other,      /*date*/
+    unknown_other,      /*time*/
+    unknown_other,      /*year*/
+    unknown_other,      /*string*/
+    unknown_other,      /*extend*/
+    identity,           /*unknown*/
+    not_support,        /*text*/
+    not_support,        /*bit*/
+    not_support,        /*enumset*/
+    not_support,        /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
   },
   {
     /*text -> XXX*/
-    not_support,/*null*/
-    string_int,/*int*/
-    string_uint,/*uint*/
-    string_float,/*float*/
-    string_double,/*double*/
-    string_number,/*number*/
-    string_datetime,/*datetime*/
-    string_date,/*date*/
-    string_time,/*time*/
-    string_year,/*year*/
-    string_string,/*string*/
-    not_support,/*extend*/
-    not_support,/*unknown*/
-    string_string,/*text*/
+    not_support,        /*null*/
+    string_int,         /*int*/
+    string_uint,        /*uint*/
+    string_float,       /*float*/
+    string_double,      /*double*/
+    string_number,      /*number*/
+    string_datetime,    /*datetime*/
+    string_date,        /*date*/
+    string_time,        /*time*/
+    string_year,        /*year*/
+    string_string,      /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    string_string,      /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    string_otimestamp,  /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
+  },
+  {
+    /*bit -> XXX*/
+    not_support,        /*null*/
+    not_support,        /*int*/
+    not_support,        /*uint*/
+    not_support,        /*float*/
+    not_support,        /*double*/
+    not_support,        /*number*/
+    not_support,        /*datetime*/
+    not_support,        /*date*/
+    not_support,        /*time*/
+    not_support,        /*year*/
+    not_support,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    not_support,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
+  },
+  {
+    /*enumset -> XXX*/
+    not_support,        /*null*/
+    not_support,        /*int*/
+    not_support,        /*uint*/
+    not_support,        /*float*/
+    not_support,        /*double*/
+    not_support,        /*number*/
+    not_expected,       /*datetime*/
+    not_expected,       /*date*/
+    not_expected,       /*time*/
+    not_support,        /*year*/
+    not_expected,       /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    not_expected,       /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_expected,       /*lob*/
+  },
+  {
+    /*enumset_inner -> XXX*/
+    not_support,        /*null*/
+    not_support,        /*int*/
+    not_support,        /*uint*/
+    not_support,        /*float*/
+    not_support,        /*double*/
+    not_support,        /*number*/
+    not_support,        /*datetime*/
+    not_support,        /*date*/
+    not_support,        /*time*/
+    not_support,        /*year*/
+    not_support,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    not_support,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_expected,       /*interval*/
+    not_expected,       /*rowid*/
+    not_support,        /*lob*/
+  },
+  {
+    /*otimestamp -> XXX*/
+    not_support,            /*null*/
+    not_support,            /*int*/
+    not_support,            /*uint*/
+    not_support,            /*float*/
+    not_support,            /*double*/
+    not_support,            /*number*/
+    otimestamp_datetime,    /*datetime*/
+    not_expected,           /*date*/
+    not_expected,           /*time*/
+    not_expected,           /*year*/
+    otimestamp_string,      /*string*/
+    not_support,            /*extend*/
+    not_support,            /*unknown*/
+    not_support,            /*text*/
+    not_support,            /*bit*/
+    not_expected,           /*enumset*/
+    not_expected,           /*enumset_inner*/
+    otimestamp_otimestamp,  /*otimestamp*/
+    not_support,            /*raw*/
+    not_support,            /*interval*/
+    not_support,            /*rowid*/
+    not_support,            /*lob*/
+  },
+  {
+    /*raw -> XXX*/
+    not_support,        /*null*/
+    not_support,        /*int*/
+    not_support,        /*uint*/
+    not_support,        /*float*/
+    not_support,        /*double*/
+    not_support,        /*number*/
+    not_support,        /*datetime*/
+    not_expected,       /*date*/
+    not_expected,       /*time*/
+    not_expected,       /*year*/
+    not_support,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    not_support,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_support,        /*interval*/
+    not_support,        /*rowid*/
+    not_support,        /*lob*/
+  },
+  {
+    /*interval -> XXX*/
+    not_expected,       /*null*/
+    not_expected,       /*int*/
+    not_expected,       /*uint*/
+    not_expected,       /*float*/
+    not_expected,       /*double*/
+    not_expected,       /*number*/
+    not_expected,       /*datetime*/
+    not_expected,       /*date*/
+    not_expected,       /*time*/
+    not_expected,       /*year*/
+    not_support,        /*string*/
+    not_expected,       /*extend*/
+    not_expected,       /*unknown*/
+    not_expected,       /*text*/
+    not_expected,       /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_expected,       /*otimestamp*/
+    not_expected,       /*raw*/
+    not_support,        /*interval*/
+    not_support,        /*rowid*/
+    not_support,        /*lob*/
+  },
+  {
+    /*rowid -> XXX*/
+    not_support,        /*null*/
+    not_support,        /*int*/
+    not_support,        /*uint*/
+    not_support,        /*float*/
+    not_support,        /*double*/
+    not_support,        /*number*/
+    not_support,        /*datetime*/
+    not_expected,       /*date*/
+    not_expected,       /*time*/
+    not_expected,       /*year*/
+    not_support,        /*string*/
+    not_expected,       /*extend*/
+    not_expected,       /*unknown*/
+    not_expected,       /*text*/
+    not_expected,       /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_support,        /*interval*/
+    not_support,        /*rowid*/
+    not_support,        /*lob*/
+  },
+  {
+    /*lob -> XXX*/
+    not_support,        /*null*/
+    not_support,        /*int*/
+    not_support,        /*uint*/
+    not_support,        /*float*/
+    not_support,        /*double*/
+    not_support,        /*number*/
+    not_support,        /*datetime*/
+    not_expected,       /*date*/
+    not_expected,       /*time*/
+    not_expected,       /*year*/
+    not_support,        /*string*/
+    not_support,        /*extend*/
+    not_support,        /*unknown*/
+    not_support,        /*text*/
+    not_support,        /*bit*/
+    not_expected,       /*enumset*/
+    not_expected,       /*enumset_inner*/
+    not_support,        /*otimestamp*/
+    not_support,        /*raw*/
+    not_support,        /*interval*/
+    not_support,        /*rowid*/
+    not_support,        /*lob*/
   },
 };
 
@@ -2963,6 +3901,8 @@ int number_range_check(ObObjCastParams &params, const ObAccuracy &accuracy,
     res_obj = &obj;
     if (OB_UNLIKELY(precision < scale)) {
       ret = OB_ERR_M_BIGGER_THAN_D;
+    } else if (precision < 0 && scale < 0) {
+      /* do nothing */
     } else if (number::ObNumber::MAX_PRECISION >= precision &&
                number::ObNumber::MAX_SCALE >= scale &&
                precision >= 0 &&
@@ -3022,6 +3962,37 @@ int datetime_scale_check(ObObjCastParams &params, const ObAccuracy &accuracy,
   }
   UNUSED(params);
   UNUSED(cast_mode);
+  return ret;
+}
+
+int otimestamp_scale_check(ObObjCastParams &params, const ObAccuracy &accuracy, const ObObj &obj,
+                           ObObj &buf_obj, const ObObj *&res_obj, const ObCastMode cast_mode)
+{
+  UNUSED(params);
+  UNUSED(cast_mode);
+
+  int ret = OB_SUCCESS;
+  res_obj = NULL;
+  ObScale scale = accuracy.get_scale();
+
+  if (OB_UNLIKELY(scale > MAX_SCALE_FOR_ORACLE_TEMPORAL)) {
+    ret = OB_ERR_TOO_BIG_PRECISION;
+    LOG_WARN("fail to scale check", K(ret), K(MAX_SCALE_FOR_ORACLE_TEMPORAL));
+  } else if (0 <= scale && scale < MAX_SCALE_FOR_ORACLE_TEMPORAL) {
+    ObOTimestampData ot_data = ObTimeConverter::round_otimestamp(scale, obj.get_otimestamp_value());
+    if (ObTimeConverter::is_valid_otimestamp(ot_data.time_us_, static_cast<int32_t>(ot_data.time_ctx_.tail_nsec_))) {
+      buf_obj.set_otimestamp_value(obj.get_type(), ot_data);
+      buf_obj.set_scale(scale);
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("invalid otimestamp, set it null", K(ret), K(ot_data), K(scale));
+      buf_obj.set_null();
+    }
+    res_obj = &buf_obj;
+  } else {
+    res_obj = &obj;
+  }
+
   return ret;
 }
 
@@ -3146,25 +4117,51 @@ int obj_collation_check(const bool is_strict_mode, const ObCollationType cs_type
   return ret;
 }
 
-int obj_accuracy_check(ObCastCtx &cast_ctx, const ObAccuracy &accuracy, const ObCollationType cs_type,
-                       const ObObj &obj, ObObj &buf_obj, const ObObj *&res_obj)
+int obj_accuracy_check(ObCastCtx &cast_ctx,
+                       const ObAccuracy &accuracy,
+                       const ObCollationType cs_type,
+                       const ObObj &obj,
+                       ObObj &buf_obj, 
+                       const ObObj *&res_obj)
 {
   int ret = OB_SUCCESS;
-  if (ObFloatTC == obj.get_type_class()) {
-    ret = float_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-  } else if (ObDoubleTC == obj.get_type_class()) {
-    ret = double_check_precision(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-  } else if (ObNumberTC == obj.get_type_class()) {
-    ret = number_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-  } else if (ObDateTimeTC == obj.get_type_class()) {
-    ret = datetime_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-  } else if (ObTimeTC == obj.get_type_class()) {
-    ret = time_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-  } else if (ObStringTC == obj.get_type_class()) {
-    ret = string_length_check(cast_ctx, accuracy, cs_type, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-  } else {
-    //LOG_WARN("unexpected type class to check", K(obj));
+
+  LOG_DEBUG("obj_accuracy_check before", K(obj), K(accuracy), K(cs_type));
+
+  switch (obj.get_type_class()) {
+    case ObFloatTC: {
+      ret = float_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+      break;
+    }
+    case ObDoubleTC: {
+      ret = double_check_precision(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+      break;
+    }
+    case ObNumberTC: {
+      ret = number_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+      break;
+    }
+    case ObDateTimeTC: {
+      ret = datetime_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+      break;
+    }
+    case ObOTimestampTC: {
+      ret = otimestamp_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+      break;
+    }
+    case ObTimeTC: {
+      ret = time_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+      break;
+    }
+    case ObStringTC: {
+      ret = string_length_check(cast_ctx, accuracy, cs_type, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+      break;
+    }
+    default: {
+      break;
+    }
   }
+
   return ret;
 }
 
@@ -3235,8 +4232,11 @@ int ob_obj_to_ob_time_without_date(const ObObj &obj, const ObTimeZoneInfo *tz_in
   return ret;
 }
 
-int ObObjCasterV2::to_type(const ObObjType expect_type, ObCastCtx &cast_ctx,
-                           const ObObj &in_obj, ObObj &buf_obj, const ObObj *&res_obj)
+int ObObjCasterV2::to_type(const ObObjType expect_type,
+                           ObCastCtx &cast_ctx,
+                           const ObObj &in_obj,
+                           ObObj &buf_obj,
+                           const ObObj *&res_obj)
 {
   int ret = OB_SUCCESS;
   res_obj = NULL;
@@ -3251,43 +4251,52 @@ int ObObjCasterV2::to_type(const ObObjType expect_type, ObCastCtx &cast_ctx,
   return ret;
 }
 
-int ObObjCasterV2::to_type(const ObObjType expect_type, ObCastCtx &cast_ctx,
-                           const ObObj &in_obj, ObObj &out_obj)
+int ObObjCasterV2::to_type(const ObObjType expect_type,
+                           ObCastCtx &cast_ctx,
+                           const ObObj &in_obj,
+                           ObObj &out_obj)
 {
   return to_type(expect_type, CS_TYPE_INVALID, cast_ctx, in_obj, out_obj);
 }
 
-int ObObjCasterV2::to_type(const ObObjType expect_type, const ObCollationType expect_cs_type,
-                           ObCastCtx &cast_ctx, const ObObj &in_obj, ObObj &out_obj)
+int ObObjCasterV2::to_type(const ObObjType expect_type,
+                           ObCollationType expect_cs_type,
+                           ObCastCtx &cast_ctx,
+                           const ObObj &in_obj,
+                           ObObj &out_obj)
 {
   int ret = OB_SUCCESS;
   const ObObjTypeClass in_tc = in_obj.get_type_class();
   const ObObjTypeClass out_tc = ob_obj_type_class(expect_type);
   cast_ctx.warning_ = OB_SUCCESS;
-  cast_ctx.dest_collation_ = expect_cs_type;
+  if (CS_TYPE_INVALID != expect_cs_type) {
+    cast_ctx.dest_collation_ = expect_cs_type;
+  } else {
+    cast_ctx.dest_collation_ = cast_ctx.dtc_params_.connection_collation_;
+  }
   if (OB_UNLIKELY(ob_is_invalid_obj_tc(in_tc) || ob_is_invalid_obj_tc(out_tc))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("unexpected type", K(ret), K(in_obj), K(expect_type));
   } else if (OB_FAIL(OB_OBJ_CAST[in_tc][out_tc](expect_type, cast_ctx, in_obj, out_obj, cast_ctx.cast_mode_))) {
-    LOG_WARN("failed to cast obj", K(ret), K(in_obj), K(expect_type), K(cast_ctx.cast_mode_));
-  } else {
-    if (ObStringTC == out_tc) {
-      if (CS_TYPE_INVALID != expect_cs_type) {
-        // expect_cs_type has higher priority than collation of in_obj or connection.
-        out_obj.set_collation_type(expect_cs_type);
-      } else if (ObStringTC != in_tc) {
-        // cast to varchar from other types, the result collation is collation_connection
-        if (OB_UNLIKELY(CS_TYPE_INVALID == cast_ctx.connection_collation_)) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected collation type", K(ret), K(cast_ctx.connection_collation_));
-        } else if (out_obj.is_varchar_or_char()) {
-          out_obj.set_collation_type(cast_ctx.connection_collation_);
-        }
+    LOG_WARN("failed to cast obj", K(ret), K(in_obj), K(in_tc), K(out_tc), K(expect_type), K(cast_ctx.cast_mode_));
+  }
+
+  if (OB_SUCC(ret)) {
+    if (ObStringTC == out_tc || ObTextTC == out_tc || ObLobTC == out_tc) {
+      if (ObStringTC == in_tc || ObTextTC == in_tc || ObLobTC == out_tc) {
+        out_obj.set_collation_level(in_obj.get_collation_level());
       } else {
-        // collation of out_obj has been set in string_string(), nothing to do here.
+        out_obj.set_collation_level(CS_LEVEL_COERCIBLE);
+      }
+      if (OB_LIKELY(expect_cs_type != CS_TYPE_INVALID)) {
+        out_obj.set_collation_type(expect_cs_type);
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("unexpected collation type", K(ret), K(in_obj), K(out_obj), K(expect_cs_type), K(common::lbt()));
       }
     }
   }
+  LOG_DEBUG("process to_type", K(ret), "in_type", in_obj.get_type(), K(in_obj), K(expect_type), K(out_obj), K(lbt()));
   return ret;
 }
 

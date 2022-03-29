@@ -11,9 +11,9 @@
  */
 
 #define USING_LOG_PREFIX PROXY
+#include <gtest/gtest.h>
 #define private public
 #define protected public
-#include <gtest/gtest.h>
 #include "lib/oblog/ob_log.h"
 #include "lib/string/ob_string.h"
 #include "proxy/route/ob_ldc_route.h"
@@ -834,8 +834,9 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   ObSEArray<ObString, 5> region_names;
   ObSEArray<ObServerStateSimpleInfo, 5> servers_info;
   ObString proxy_primary_zone_name;
+  bool need_skip_leader = false;
   ASSERT_EQ(OB_ERR_UNEXPECTED, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item, target_ldc, entry_need_update, is_only_readwrite_zone,
-            need_use_dup_replica, servers_info, region_names, proxy_primary_zone_name));
+            need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
 
   ASSERT_EQ(OB_SUCCESS, dummy_ldc.assign(&ts, ss_info_, idc_name, true, cluster_name, OB_DEFAULT_CLUSTER_ID));
   ASSERT_TRUE(dummy_ldc.is_ldc_used());
@@ -875,7 +876,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   ASSERT_TRUE(!dummy_ldc.is_empty());
 
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
-      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(!entry_need_update);
   ASSERT_TRUE(!leader_item.is_valid());
@@ -895,7 +896,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
 
   is_only_readwrite_zone = true;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
-      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_TRUE(leader_item.is_valid());
@@ -911,7 +912,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
 
   is_only_readwrite_zone = false;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
-      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_TRUE(leader_item.is_valid());

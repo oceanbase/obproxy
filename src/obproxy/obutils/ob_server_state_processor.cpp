@@ -16,7 +16,6 @@
 #include "utils/ob_proxy_utils.h"
 #include "utils/ob_proxy_hot_upgrader.h"
 #include "obutils/ob_congestion_manager.h"
-#include "obutils/ob_proxy_json_config_info.h"
 #include "obutils/ob_config_server_processor.h"
 #include "obutils/ob_resource_pool_processor.h"
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
@@ -288,23 +287,40 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
 
   if (OB_FAIL(ret)) {
     bool imm_reschedule = false;
+    bool has_slave_clusters = get_global_config_server_processor().has_slave_clusters(cluster_name_);
     // primary-slave cluser mode, if primary cluster refresh failed count greater than three, need reschedule now
     if (ss_refresh_failure_ >= MIN_REFRESH_FAILURE
         && OB_DEFAULT_CLUSTER_ID == cluster_id_
-        && get_global_config_server_processor().has_slave_clusters(cluster_name_)) {
+        && has_slave_clusters) {
       imm_reschedule = true;
       LOG_DEBUG("primary cluster server state task has failed more than MIN_REFRESH_FAILURE times, will schedule immediately",
                 K(ss_refresh_failure_), K(static_cast<int64_t>(MIN_REFRESH_FAILURE)), K(cluster_name_), K(cluster_id_));
     }
-    if (ss_refresh_failure_ >= MAX_REFRESH_FAILURE) {
+    if (-OB_CLUSTER_NO_MATCH == ret) {
       imm_reschedule = false;
-      LOG_INFO("refresh server state has failed too many times, should refresh rslist",
-               K_(ss_refresh_failure), K(static_cast<int64_t>(MAX_REFRESH_FAILURE)), K(cluster_name_), K(cluster_id_));
-      bool need_update_dummy_entry = true;
-      if (OB_FAIL(add_refresh_rslist_task(need_update_dummy_entry))) {
-        LOG_WARN("fail to add refresh rslist task", K(ret));
+      if (OB_FAIL(handle_delete_cluster_resource(OB_DEFAULT_CLUSTER_ID))) {
+        LOG_WARN("fail to delete cluster resource", K(ret));
+      }
+    } else if (ss_refresh_failure_ >= MAX_REFRESH_FAILURE) {
+      bool need_refresh_cluster_role = get_global_proxy_config().with_config_server_
+                                       && get_global_proxy_config().enable_standby
+                                       && OB_DEFAULT_CLUSTER_ID == cluster_id_
+                                       && has_slave_clusters;
+      imm_reschedule = false;
+      LOG_INFO("refresh server state has failed too many times, should refresh rslist or delete cluster resource",
+               K_(ss_refresh_failure), K(static_cast<int64_t>(MAX_REFRESH_FAILURE)), K(cluster_name_), K(cluster_id_), K(need_refresh_cluster_role));
+
+      if (need_refresh_cluster_role) {
+        if (OB_FAIL(handle_delete_cluster_resource(OB_DEFAULT_CLUSTER_ID))) {
+          LOG_WARN("fail to delete cluster resource", K(ret));
+        }
       } else {
-        ss_refresh_failure_ = 0;
+        bool need_update_dummy_entry = true;
+        if (OB_FAIL(add_refresh_rslist_task(need_update_dummy_entry))) {
+          LOG_WARN("fail to add refresh rslist task", K(ret));
+        } else {
+          ss_refresh_failure_ = 0;
+        }
       }
     }
     // ignore ret, schedule next;
@@ -469,6 +485,14 @@ int ObServerStateRefreshCont::handle_ldg_info(void *data)
     }
     if (ret != OB_ITER_END) {
       // some cluster do not support LDG
+      ret = OB_SUCCESS;
+      if (ER_TABLEACCESS_DENIED_ERROR == resp->get_err_code()) {
+        LOG_DEBUG("access denied for ldg_standby_status");
+      } else if (ER_NO_SUCH_TABLE == resp->get_err_code()) {
+        LOG_DEBUG("table ldg_standby_status not exist");
+      } else {
+        LOG_WARN("fail to get all ldg info", K(ret), K(resp->get_err_code()));
+      }
       LOG_DEBUG("fail to get ldg info", K(ret), K_(cluster_name));
     } else {
       ret = OB_SUCCESS;
@@ -529,6 +553,33 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
       LOG_WARN("fail to schedule refresh server state", K(ret));
     }
   }
+
+  return ret;
+}
+
+int ObServerStateRefreshCont::handle_delete_cluster_resource(int64_t master_cluster_id)
+{
+  int ret = OB_SUCCESS;
+
+  //1. if master cluster id changed, update master cluster id
+  ObConfigServerProcessor &csp = get_global_config_server_processor();
+  if (OB_DEFAULT_CLUSTER_ID == master_cluster_id) {
+    LOG_INFO("current cluster has been switched to STANDBY or FailOver, but ob does not return new primary cluster id", K_(cluster_name));
+  } else if (OB_FAIL(csp.set_master_cluster_id(cluster_name_, master_cluster_id))) {
+    LOG_WARN("fail to set master cluster id", K_(cluster_name), K(master_cluster_id), K(ret));
+    ret = OB_SUCCESS;
+  }
+  //2. delete cluster resource
+  ObResourcePoolProcessor &rpp = get_global_resource_pool_processor();
+  if (cluster_name_ == OB_META_DB_CLUSTER_NAME) {
+    const bool ignore_cluster_not_exist = true;
+    if (OB_FAIL(rpp.rebuild_metadb(ignore_cluster_not_exist))) {
+      PROXY_CS_LOG(WARN, "fail to rebuild metadb cluster resource", K(ret));
+    }
+  } else if (OB_FAIL(rpp.delete_cluster_resource(cluster_name_, cluster_id_))) {
+    LOG_WARN("fail to delete cluster resource", K_(cluster_name), K(OB_DEFAULT_CLUSTER_ID), K(ret));
+  }
+
   return ret;
 }
 
@@ -549,23 +600,8 @@ int ObServerStateRefreshCont::handle_cluster_role(void *data)
       LOG_WARN("fail to check cluster role, will reschedule", K(ret));
       if (OB_NOT_MASTER == ret) {
         int tmp_ret = OB_SUCCESS;
-        //1. if master cluster id changed, update master cluster id
-        ObConfigServerProcessor &csp = get_global_config_server_processor();
-        if (OB_DEFAULT_CLUSTER_ID == master_cluster_id) {
-          LOG_INFO("current cluster has been switched to STANDBY, but ob does not return new primary cluster id", K_(cluster_name));
-        } else if (OB_SUCCESS != (tmp_ret = csp.set_master_cluster_id(cluster_name_, master_cluster_id))) {
-          LOG_WARN("fail to set master cluster id", K_(cluster_name), K(master_cluster_id), K(tmp_ret));
-          tmp_ret = OB_SUCCESS;
-        }
-        //2. delete cluster resource
-        ObResourcePoolProcessor &rpp = get_global_resource_pool_processor();
-        if (cluster_name_ == OB_META_DB_CLUSTER_NAME) {
-          const bool ignore_cluster_not_exist = true;
-          if (OB_SUCCESS != (tmp_ret = rpp.rebuild_metadb(ignore_cluster_not_exist))) {
-            PROXY_CS_LOG(WARN, "fail to rebuild metadb cluster resource", K(tmp_ret));
-          }
-        } else if (OB_SUCCESS != (tmp_ret = rpp.delete_cluster_resource(cluster_name_, OB_DEFAULT_CLUSTER_ID))) {
-          LOG_WARN("fail to delete cluster resource", K_(cluster_name), K(OB_DEFAULT_CLUSTER_ID), K(tmp_ret));
+        if (OB_SUCCESS != (tmp_ret = handle_delete_cluster_resource(master_cluster_id))) {
+          LOG_WARN("fail to delete cluster resource", K_(cluster_name), K(master_cluster_id), K(tmp_ret));
         }
         // cluster resouce delete succes, no need reschedule refresh task
         ret = OB_SUCC(tmp_ret) ? tmp_ret : ret;
@@ -1229,89 +1265,13 @@ int ObServerStateRefreshCont::check_add_refresh_idc_list_task()
 int ObServerStateRefreshCont::update_all_dummy_entry(const ObIArray<ObServerStateInfo> &servers_state)
 {
   int ret = OB_SUCCESS;
-  const int64_t server_count = servers_state.count();
-  ObSEArray<int64_t, DEFAULT_ZONE_COUNT> first_idx_in_zone;//save first svr_idx_idx in zone
   LocationList server_list; //save the ordered servers
-  ObString last_zone_name;
-  const ObServerStateInfo *server_info = NULL;
 
-  // 1. fill first_idx_in_zone
-  for (int64_t i = 0; i < server_count && OB_SUCC(ret); ++i) {
-    server_info = &servers_state.at(i);
-    if (last_zone_name != server_info->zone_state_->zone_name_) {
-      // save first idx in zone
-      if (OB_FAIL(first_idx_in_zone.push_back(i))) {
-        LOG_WARN("fail to push back first_idx_in_zone", K(i), K(ret));
-      } else {
-        last_zone_name = server_info->zone_state_->zone_name_;
-      }
-    }//end of different zone
-  }//end of for
-
-  if (OB_SUCC(ret)) {
-    //virtual invalid idx, just used for compute svr_count_in_zone
-    if (OB_FAIL(first_idx_in_zone.push_back(server_count))) {
-      LOG_WARN("fail to push back first_idx_in_zone", K(server_count), K(ret));
-    }
+  if (OB_FAIL(ObServerStateRefreshUtils::order_servers_state(servers_state, server_list))) {
+    LOG_WARN("fail to order servers state", K(ret));
   }
 
-  LOG_DEBUG("current info", K(servers_state), K(server_count), K(first_idx_in_zone), K(ret));
-
-  // 2. order servers
-  if (OB_SUCC(ret)
-      && OB_LIKELY(server_count > 0)
-      && OB_LIKELY(first_idx_in_zone.count() > 1)) {
-    const int64_t zone_count = first_idx_in_zone.count() - 1;//NOTE:: the last one is virtual invalid;
-    const int64_t replica_count = zone_count;
-    const int64_t partition_count = (server_count / replica_count + (0 == server_count % replica_count ? 0 : 1));
-    ObSEArray<int64_t, DEFAULT_ZONE_COUNT + 1> unused_server_count;
-    int64_t svr_count_in_zone = 0;
-
-    for (int64_t i = 0; i < zone_count && OB_SUCC(ret); ++i) {
-      if (OB_UNLIKELY(0 >= (svr_count_in_zone = first_idx_in_zone.at(i + 1) - first_idx_in_zone.at(i)))) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("it should not happened", K(first_idx_in_zone), K(svr_count_in_zone), K(ret));
-      } else if (OB_FAIL(unused_server_count.push_back(svr_count_in_zone))) {
-        LOG_WARN("fail to push back unused_server_count", K(i), K(svr_count_in_zone), K(ret));
-      } else {/*do nothing*/}
-    }
-    if (OB_SUCC(ret)) {
-      // random to pick zone
-      int64_t init_idx = (get_hrtime() + *(static_cast<const int64_t *>(&server_count))) % server_count;
-      int64_t finish_count = 0;
-      int64_t svr_idx = 0;
-      LOG_DEBUG("begin to extract rs list", K(init_idx));
-      while (finish_count < server_count && OB_SUCC(ret)) {
-        ++init_idx;
-        for (int64_t i = 0; i < zone_count && OB_SUCC(ret); ++i) {
-          if (unused_server_count.at(i) > 0) {
-            svr_count_in_zone = first_idx_in_zone.at(i + 1) - first_idx_in_zone.at(i);
-            svr_idx = first_idx_in_zone.at(i) + (init_idx + i) % svr_count_in_zone;
-            if (OB_FAIL(server_list.push_back(servers_state.at(svr_idx).replica_))) {
-              LOG_WARN("fail to push back server_list", "replica", servers_state.at(svr_idx).replica_,
-                       K(i), K(unused_server_count), K(ret));
-            } else {
-              ++finish_count;
-              --unused_server_count.at(i);
-            }
-          } else {
-            LOG_DEBUG("no need try", K(i), K(unused_server_count));
-          } //end of unused_server_count
-        } //end of for zone_count
-      } //end of while server_count
-
-      //make the first one leader
-      if (OB_SUCC(ret)) {
-        for (int64_t i = 0; i < partition_count && OB_SUCC(ret); ++i) {
-          svr_idx = i * replica_count;
-          server_list.at(svr_idx).role_ = LEADER;
-        }
-        LOG_DEBUG("succ to get rs list", K(server_list), K(partition_count), K(replica_count));
-      }
-    }
-  } //end of order servers
-
-  // 3. update rslist
+  // update rslist
   bool need_update_dummy_entry = true;
   bool is_rs_list_changed = false;
   if (OB_SUCC(ret) && OB_LIKELY(!server_list.empty())) {
@@ -1346,7 +1306,7 @@ int ObServerStateRefreshCont::update_all_dummy_entry(const ObIArray<ObServerStat
 
   // 4. add to table location
   if (OB_SUCC(ret) && OB_LIKELY(!server_list.empty()) && need_update_dummy_entry) {
-    LOG_DEBUG("succ to get server list", K(server_list), K(server_count));
+    LOG_DEBUG("succ to get server list", K(server_list), "server_count", servers_state.count());
     ObTableEntry *entry = NULL;
     ObTableCache &table_cache = get_global_table_cache();
     const bool is_rslist = false;
@@ -1721,6 +1681,93 @@ uint64_t ObServerStateRefreshUtils::get_servers_state_hash(ObIArray<ObServerStat
     hash += murmurhash(data, len, 0);
   }
   return hash;
+}
+
+int ObServerStateRefreshUtils::order_servers_state(const ObIArray<ObServerStateInfo> &servers_state, LocationList &server_list)
+{
+  int ret = OB_SUCCESS;
+  const int64_t server_count = servers_state.count();
+  ObSEArray<int64_t, ObServerStateRefreshCont::DEFAULT_ZONE_COUNT> first_idx_in_zone;//save first svr_idx_idx in zone
+  ObString last_zone_name;
+  const ObServerStateInfo *server_info = NULL;
+
+  // 1. fill first_idx_in_zone
+  for (int64_t i = 0; i < server_count && OB_SUCC(ret); ++i) {
+    server_info = &servers_state.at(i);
+    if (last_zone_name != server_info->zone_state_->zone_name_) {
+      // save first idx in zone
+      if (OB_FAIL(first_idx_in_zone.push_back(i))) {
+        LOG_WARN("fail to push back first_idx_in_zone", K(i), K(ret));
+      } else {
+        last_zone_name = server_info->zone_state_->zone_name_;
+      }
+    }//end of different zone
+  }//end of for
+
+  if (OB_SUCC(ret)) {
+    //virtual invalid idx, just used for compute svr_count_in_zone
+    if (OB_FAIL(first_idx_in_zone.push_back(server_count))) {
+      LOG_WARN("fail to push back first_idx_in_zone", K(server_count), K(ret));
+    }
+  }
+
+  LOG_DEBUG("current info", K(servers_state), K(server_count), K(first_idx_in_zone), K(ret));
+
+  // 2. order servers
+  if (OB_SUCC(ret)
+      && OB_LIKELY(server_count > 0)
+      && OB_LIKELY(first_idx_in_zone.count() > 1)) {
+    const int64_t zone_count = first_idx_in_zone.count() - 1;//NOTE:: the last one is virtual invalid;
+    const int64_t replica_count = zone_count;
+    const int64_t partition_count = (server_count / replica_count + (0 == server_count % replica_count ? 0 : 1));
+    ObSEArray<int64_t, ObServerStateRefreshCont::DEFAULT_ZONE_COUNT + 1> unused_server_count;
+    int64_t svr_count_in_zone = 0;
+
+    for (int64_t i = 0; i < zone_count && OB_SUCC(ret); ++i) {
+      if (OB_UNLIKELY(0 >= (svr_count_in_zone = first_idx_in_zone.at(i + 1) - first_idx_in_zone.at(i)))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("it should not happened", K(first_idx_in_zone), K(svr_count_in_zone), K(ret));
+      } else if (OB_FAIL(unused_server_count.push_back(svr_count_in_zone))) {
+        LOG_WARN("fail to push back unused_server_count", K(i), K(svr_count_in_zone), K(ret));
+      } else {/*do nothing*/}
+    }
+    if (OB_SUCC(ret)) {
+      // random to pick zone
+      int64_t init_idx = (get_hrtime() + *(static_cast<const int64_t *>(&server_count))) % server_count;
+      int64_t finish_count = 0;
+      int64_t svr_idx = 0;
+      LOG_DEBUG("begin to extract rs list", K(init_idx));
+      while (finish_count < server_count && OB_SUCC(ret)) {
+        ++init_idx;
+        for (int64_t i = 0; i < zone_count && OB_SUCC(ret); ++i) {
+          if (unused_server_count.at(i) > 0) {
+            svr_count_in_zone = first_idx_in_zone.at(i + 1) - first_idx_in_zone.at(i);
+            svr_idx = first_idx_in_zone.at(i) + (init_idx + i) % svr_count_in_zone;
+            if (OB_FAIL(server_list.push_back(servers_state.at(svr_idx).replica_))) {
+              LOG_WARN("fail to push back server_list", "replica", servers_state.at(svr_idx).replica_,
+                       K(i), K(unused_server_count), K(ret));
+            } else {
+              ++finish_count;
+              --unused_server_count.at(i);
+            }
+          } else {
+            LOG_DEBUG("no need try", K(i), K(unused_server_count));
+          } //end of unused_server_count
+        } //end of for zone_count
+      } //end of while server_count
+
+      //make the first one leader
+      if (OB_SUCC(ret)) {
+        for (int64_t i = 0; i < partition_count && OB_SUCC(ret); ++i) {
+          svr_idx = i * replica_count;
+          server_list.at(svr_idx).role_ = LEADER;
+        }
+        LOG_DEBUG("succ to get rs list", K(server_list), K(partition_count), K(replica_count));
+      }
+    }
+  } //end of order servers
+
+  return ret;
 }
 
 } // end of namespace obutils

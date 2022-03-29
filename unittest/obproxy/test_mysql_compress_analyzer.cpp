@@ -69,7 +69,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_ok_packet)
              "is_checksum_on", is_checksum_on[k]);
 
     ObMysqlCompressAnalyzer analyzer;
-    ret = analyzer.init(seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, false, 0, 0, 0);
+    ret = analyzer.init(seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, OCEANBASE_MYSQL_PROTOCOL_MODE, false, 0, 0, 0);
     ASSERT_EQ(OB_SUCCESS, ret);
 
     ObMysqlResp resp;
@@ -85,7 +85,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_ok_packet)
     // stream analyze
     ObMysqlResp resp2;
     ObMysqlCompressAnalyzer analyzer2;
-    ret = analyzer2.init(seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, false, 0, 0, 0);
+    ret = analyzer2.init(seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, OCEANBASE_MYSQL_PROTOCOL_MODE, false, 0, 0, 0);
     ASSERT_EQ(OB_SUCCESS, ret);
     for (int64_t i = 0; i < compress_packet_len; ++i) {
       ObString resp_str(1, compressed_buf + i);
@@ -181,7 +181,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_eof_packet)
     // 4. analyze in one buf
     ObMysqlCompressAnalyzer analyzer;
     uint8_t request_seq = 1;
-    ret = analyzer.init(request_seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, false, 0, 0, 0);
+    ret = analyzer.init(request_seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, OCEANBASE_MYSQL_PROTOCOL_MODE, false, 0, 0, 0);
     ASSERT_EQ(OB_SUCCESS, ret);
 
     ObMysqlResp resp;
@@ -196,7 +196,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_eof_packet)
 
     // 5. analyze in stream one byte by one byte
     ObMysqlCompressAnalyzer analyzer2;
-    ret = analyzer2.init(request_seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, false, 0, 0, 0);
+    ret = analyzer2.init(request_seq, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, OCEANBASE_MYSQL_PROTOCOL_MODE, false, 0, 0, 0);
     ASSERT_EQ(OB_SUCCESS, ret);
     ObMIOBuffer *mio_buffer = analyzer2.get_transfer_miobuf();
     ObIOBufferReader *reader = mio_buffer->alloc_reader();
@@ -259,7 +259,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_error_packet)
 
     ObMysqlCompressAnalyzer analyzer;
     uint8_t request_req = 0;
-    ret = analyzer.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, false, 0, 0, 0);
+    ret = analyzer.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, OCEANBASE_MYSQL_PROTOCOL_MODE, false, 0, 0, 0);
     ASSERT_EQ(OB_SUCCESS, ret);
 
     ObMysqlResp resp;
@@ -274,7 +274,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_error_packet)
 
     // stream analyze
     ObMysqlCompressAnalyzer analyzer2;
-    ret = analyzer2.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, false, 0, 0, 0);
+    ret = analyzer2.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_QUERY, OCEANBASE_MYSQL_PROTOCOL_MODE, false, 0, 0, 0);
     ObMysqlResp resp2;
     ASSERT_EQ(OB_SUCCESS, ret);
     for (int64_t i = 0; i < compress_packet_len; ++i) {
@@ -325,7 +325,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_OB_MYSQL_COM_STATISTICS)
 
     ObMysqlCompressAnalyzer analyzer;
     uint8_t request_req = 0;
-    ret = analyzer.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, true, 0, 0, 0);
+    ret = analyzer.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, OCEANBASE_MYSQL_PROTOCOL_MODE, true, 0, 0, 0);
     ASSERT_EQ(OB_SUCCESS, ret);
 
     ObMysqlResp resp;
@@ -340,7 +340,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_OB_MYSQL_COM_STATISTICS)
 
     // stream analyze
     ObMysqlCompressAnalyzer analyzer2;
-    ret = analyzer2.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, true, 0, 0, 0);
+    ret = analyzer2.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, OCEANBASE_MYSQL_PROTOCOL_MODE, true, 0, 0, 0);
     ObMysqlResp resp2;
     ASSERT_EQ(OB_SUCCESS, ret);
     for (int64_t i = 0; i < compress_packet_len; ++i) {
@@ -386,7 +386,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_OB_MYSQL_COM_STATISTICS2)
 
     ObMysqlCompressAnalyzer analyzer;
     uint8_t request_req = 0;
-    ret = analyzer.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, true, 0, 0, 0);
+    ret = analyzer.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, OCEANBASE_MYSQL_PROTOCOL_MODE, true, 0, 0, 0);
     ASSERT_EQ(OB_SUCCESS, ret);
 
     ObMysqlResp resp;
@@ -401,7 +401,7 @@ TEST_F(TestMysqlCompressAnalyzer, test_comressed_OB_MYSQL_COM_STATISTICS2)
 
     // stream analyze
     ObMysqlCompressAnalyzer analyzer2;
-    ret = analyzer2.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, true, 0, 0, 0);
+    ret = analyzer2.init(request_req, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_STATISTICS, OCEANBASE_MYSQL_PROTOCOL_MODE, true, 0, 0, 0);
     ObMysqlResp resp2;
     ASSERT_EQ(OB_SUCCESS, ret);
     for (int64_t i = 0; i < compress_packet_len; ++i) {

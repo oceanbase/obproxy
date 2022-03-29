@@ -38,11 +38,14 @@ const char* get_generate_function_type(const ObProxyExprType type)
     case OB_PROXY_EXPR_TYPE_SHARDING_CONST:
       str_ret = "OB_PROXY_EXPR_TYPE_SHARDING_CONST";
       break;
-    case OB_PROXY_EXPR_TYPE_SHARDING_ALIAS:
-      str_ret = "OB_PROXY_EXPR_TYPE_SHARDING_ALIAS";
+    case OB_PROXY_EXPR_TYPE_TABLE:
+      str_ret = "OB_PROXY_EXPR_TYPE_TABLE";
       break;
     case OB_PROXY_EXPR_TYPE_COLUMN:
       str_ret = "OB_PROXY_EXPR_TYPE_COLUMN";
+      break;
+    case OB_PROXY_EXPR_TYPE_STAR:
+      str_ret = "OB_PROXY_EXPR_TYPE_STAR";
       break;
     case OB_PROXY_EXPR_TYPE_FUNC_HASH:
       str_ret = "OB_PROXY_EXPR_TYPE_FUNC_HASH";
@@ -85,6 +88,9 @@ const char* get_generate_function_type(const ObProxyExprType type)
       break;
     case OB_PROXY_EXPR_TYPE_FUNC_ORDER:
       str_ret = "OB_PROXY_EXPR_TYPE_FUNC_ORDER";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_GROUP:
+      str_ret = "OB_PROXY_EXPR_TYPE_FUNC_GROUP";
       break;
     case OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD:
       str_ret = "OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD";

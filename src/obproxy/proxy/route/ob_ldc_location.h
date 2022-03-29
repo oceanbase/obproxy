@@ -134,8 +134,11 @@ public:
       pl_(NULL), ts_(NULL), safe_snapshot_mananger_(NULL),
       readonly_exist_status_(READONLY_ZONE_UNKNOWN), use_ldc_(false), idc_name_(), idc_name_buf_(),
       random_()
-  { }
-  ~ObLDCLocation() { reset(); }
+  {}
+  ~ObLDCLocation()
+  {
+    reset();
+  }
 
   enum ObRegionMatchedType
   {
@@ -204,6 +207,7 @@ public:
                                        bool &entry_need_update,
                                        const bool is_only_readwrite_zone,
                                        const bool need_use_dup_replica,
+                                       const bool need_skip_leader_item,
                                        const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                        const common::ObIArray<common::ObString> &region_names,
                                        const common::ObString &proxy_primary_zone_name);

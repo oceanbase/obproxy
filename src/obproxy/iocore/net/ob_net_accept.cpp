@@ -156,7 +156,7 @@ int ObNetAccept::init_accept_loop(const char *thread_name, const int64_t stacksi
   } else {
     NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_ACCEPTS_CURRENTLY_OPEN, 1);
     SET_CONTINUATION_HANDLER(this, &ObNetAccept::accept_loop_event);
-    if (OB_ISNULL(g_event_processor.spawn_thread(this, thread_name, stacksize))) {
+    if (OB_ISNULL(g_event_processor.spawn_thread(this, thread_name, stacksize, DEDICATE_THREAD_ACCEPT))) {
       ret = OB_ERR_UNEXPECTED;
       PROXY_NET_LOG(ERROR, "g_event_processor fail to spawn_thread", K(ret));
     }
@@ -327,8 +327,12 @@ int ObNetAccept::do_blocking_accept()
       continue;
     }
 
-    if (OB_FAIL(server_.accept(&con))) {
-      PROXY_NET_LOG(ERROR, "failed to accept con", K(ret));
+    if (OB_FAIL(server_.accept(&con, true))) {
+      if (OB_LIKELY(OB_SYS_EINTR == ret && !info.need_conn_accept_)) {
+        PROXY_NET_LOG(DEBUG, "accept interrupted when need_conn_accept is false", K(ret), "need_conn_accept", info.need_conn_accept_);
+      } else {
+        PROXY_NET_LOG(ERROR, "failed to accept con", K(ret));
+      }
     } else {
       NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_CONNECTIONS_CURRENTLY_OPEN, 1);
       NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, 1);

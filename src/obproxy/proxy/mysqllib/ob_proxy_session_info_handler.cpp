@@ -100,7 +100,7 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
     const ObMySQLCapabilityFlags cap = server_info.get_compatible_capability_flags();
     OMPKOK src_ok;
     int64_t offset = reader.read_avail() - pkt_len;
-    LOG_DEBUG("rebuild_ok_packet", K(reader.read_avail()), K(pkt_len));
+    LOG_DEBUG("rebuild_ok_packet", K(reader.read_avail()), K(pkt_len), K(offset));
 
     // 1. get ok packet from buffer
     pkt_reader.get_ok_packet(reader, offset, cap, src_ok);
@@ -168,8 +168,6 @@ int ObProxySessionInfoHandler::rewrite_query_req_by_sharding(ObClientSessionInfo
     LOG_WARN("fail to analyze request", K(status), K(ret));
     if (ANALYZE_OBPARSE_ERROR == status) {
       ret = OB_ERR_PARSER_SYNTAX;
-    } else if (ANALYZE_OBUNSUPPORT_ERROR == status) {
-      ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
     } else {
       ret = OB_ERR_UNEXPECTED;
     }
@@ -405,11 +403,12 @@ int  ObProxySessionInfoHandler::rewrite_ldg_login_req(ObClientSessionInfo &clien
         PROXY_CS_LOG(DEBUG, "rewrite ldg login req", K(auth_req.get_hsr_result()));
       }
     }
-    if (OB_LIKELY(NULL != target_hsr_buf)) {
-      free_miobuffer(target_hsr_buf);
-      target_hsr_buf = NULL;
-      target_hsr_reader = NULL;
-    }
+  }
+
+  if (OB_LIKELY(NULL != target_hsr_buf)) {
+    free_miobuffer(target_hsr_buf);
+    target_hsr_buf = NULL;
+    target_hsr_reader = NULL;
   }
   return ret;
 }

@@ -57,6 +57,7 @@ enum
   OB_SILC_STATE,
   OB_SILC_TID,
   OB_SILC_PID,
+  OB_SILC_USING_SSL,
   OB_SILC_MAX_SLIST_COLUMN_ID,
 };
 
@@ -114,6 +115,7 @@ const ObProxyColumnSchema INTERNAL_LIST_COLUMN_ARRAY[OB_SILC_MAX_SLIST_COLUMN_ID
     ObProxyColumnSchema::make_schema(OB_SILC_STATE,         "state",              OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_SILC_TID,           "tid",                OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_SILC_PID,           "pid",                OB_MYSQL_TYPE_LONG),
+    ObProxyColumnSchema::make_schema(OB_SILC_USING_SSL,     "using_ssl",          OB_MYSQL_TYPE_LONG),
 };
 
 const ObProxyColumnSchema ATTRIBUTE_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID]      = {
@@ -752,6 +754,7 @@ int ObShowSessionHandler::dump_cs_list(const ObMysqlClientSession &cs)
     cells[OB_SILC_STATE].set_varchar(cs.get_read_state_str());
     cells[OB_SILC_TID].set_int(cs.get_current_tid());
     cells[OB_SILC_PID].set_mediumint(getpid());
+    cells[OB_SILC_USING_SSL].set_int(static_cast<ObUnixNetVConnection*>(cs.get_netvc())->using_ssl());
     row.cells_ = cells;
     row.count_ = OB_SILC_MAX_SLIST_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {

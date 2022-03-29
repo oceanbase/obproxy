@@ -209,6 +209,7 @@ class ObProxyLimitConfig
 {
 public:
   ObProxyLimitConfig() : action_(NULL),
+    cond_array_(ObModIds::OB_PROXY_QOS, OB_MALLOC_NORMAL_BLOCK_SIZE),
     limit_mode_(LIMIT_MODE_INVALID), limit_priority_(-1), limit_qps_(-1),
     limit_status_(LIMIT_STATUS_INVALID), limit_time_window_(-1),
     limit_conn_(0), limit_fuse_time_(0), allocator_(NULL) {};
@@ -307,9 +308,11 @@ private:
 class ObProxyLimitControlConfig : public ObProxyBaseConfig
 {
 public:
-  ObProxyLimitControlConfig() : ObProxyBaseConfig(LIMIT_CONTROL_CONFIG) {}
-  ObProxyLimitControlConfig(ObProxyConfigType type) : ObProxyBaseConfig(type) {}
-  virtual ~ObProxyLimitControlConfig() {}
+  ObProxyLimitControlConfig() : ObProxyBaseConfig(LIMIT_CONTROL_CONFIG), allocator_(ObModIds::OB_PROXY_QOS),
+    limit_config_array_(ObModIds::OB_PROXY_QOS, OB_MALLOC_NORMAL_BLOCK_SIZE) {}
+  ObProxyLimitControlConfig(ObProxyConfigType type) : ObProxyBaseConfig(type), allocator_(ObModIds::OB_PROXY_QOS),
+    limit_config_array_(ObModIds::OB_PROXY_QOS, OB_MALLOC_NORMAL_BLOCK_SIZE) {}
+  virtual ~ObProxyLimitControlConfig();
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
   virtual int parse_config_spec(json::Value &json_value);

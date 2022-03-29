@@ -23,6 +23,7 @@
 namespace oceanbase {
 namespace obproxy {
 namespace engine {
+
 class ObProxyTableScanOp : public ObProxyOperator
 {
 public:
@@ -38,21 +39,18 @@ public:
 
   virtual ObProxyOperator* get_child(const uint32_t idx);// { return NULL; }
 
-  int rewrite_hint_table(const common::ObString &hint_string, common::ObSqlString &obj_hint_string,
-      const common::ObString &table_name, const common::ObString &database_name,
-      const common::ObString &real_table_name, const common::ObString &real_database_name,
-      bool is_oracle_mode);
-
-  virtual int format_sql_header(ObSqlString &sql_header); /* sql: SELECT ... FROM */
-  virtual int format_sql_tailer(ObSqlString &sql_header, bool is_oracle_mode); /* sql: WHERE ... GROUP BY ORDER BY LIMIT */
-
-  virtual int handle_result(void *src, bool is_final, ObProxyResultResp *&result);
-  virtual int handle_response_result(void *src, bool is_final, ObProxyResultResp *&result);
-  virtual int process_ready_data(void *data, int &event);
-  virtual int process_complete_data(void *data);
+  virtual int handle_result(void *src, bool &is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result);
 
   int64_t get_sub_sql_count() { return sub_sql_count_; }
   void set_sub_sql_count(int64_t count) { sub_sql_count_ = count; }
+
+private:
+  int set_index();
+  template <typename T>
+  int set_index_for_exprs(common::ObIArray<T*> &expr_array);
+  int set_index_for_expr(opsql::ObProxyExpr *expr);
+
 protected:
   int64_t sub_sql_count_;
 };
@@ -60,127 +58,78 @@ protected:
 class ObProxyTableScanInput : public ObProxyOpInput
 {
 public:
-  ObProxyTableScanInput()
-    : ObProxyOpInput(), // { }
-      logical_table_name_(),
-      logical_database_name_(),
-      phy_db_table_names_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
-      db_key_names_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
-      condition_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
-      group_by_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
-      having_exprs_(NULL),
-      order_by_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
-      hint_string_(),
-      normal_annotation_string_()
-  {}
+  ObProxyTableScanInput() : ObProxyOpInput(), request_sql_(),
+    table_name_maps_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+    db_key_names_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+    shard_props_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+    calc_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+    agg_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+    group_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
+    order_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
 
-  ObProxyTableScanInput(const common::ObString &logical_table_name,
-              const common::ObString &logical_database_name,
-              //const common::ObSEArray<std::pair<common::ObString, common::ObString>, 1>
-              //  &phy_db_table_names,
-              const common::ObSEArray<common::ObString, 4> &phy_db_table_names,
-              const common::ObSEArray<dbKeyName*, 4> &db_key_names,
-              const common::ObSEArray<ObProxyExpr*, 4> &select_exprs,
-              const common::ObSEArray<ObProxyExpr*, 4> &condition_exprs,
-              const common::ObSEArray<ObProxyExpr*, 4> &group_by_exprs,
-              ObProxyExpr* having_exprs,
-              const common::ObSEArray<ObProxyExpr*, 4> &order_by_exprs,
-              const common::ObString &hint_string,
-              const common::ObString &normal_annotation_string)
-    : ObProxyOpInput(select_exprs),
-        logical_table_name_(logical_table_name),
-        logical_database_name_(logical_database_name),
-        phy_db_table_names_(phy_db_table_names),
-        db_key_names_(db_key_names),
-        condition_exprs_(condition_exprs),
-        group_by_exprs_(group_by_exprs),
-        having_exprs_(having_exprs),
-        order_by_exprs_(order_by_exprs),
-        hint_string_(hint_string),
-        normal_annotation_string_(normal_annotation_string)
-  {
-  }
+  ~ObProxyTableScanInput();
 
-  ~ObProxyTableScanInput() {}
+  void set_request_sql(const ObString &request_sql) { request_sql_ = request_sql; }
+  ObString &get_request_sql() { return request_sql_; }
 
-  void set_logical_table_name(const common::ObString &logical_table_name) {
-    logical_table_name_ = logical_table_name;
+  int set_db_key_names(const common::ObIArray<dbconfig::ObShardConnector*> &db_key_names) {
+    return db_key_names_.assign(db_key_names);
   }
-  common::ObString& get_logical_table_name() {
-    return logical_table_name_;
-  }
-
-  void set_logical_database_name(const common::ObString &logical_database_name) {
-    logical_database_name_ = logical_database_name;
-  }
-  common::ObString& get_logical_database_name() {
-    return logical_database_name_;
-  }
-
-  void set_db_key_names(const common::ObIArray<dbKeyName*> &db_key_names) {
-    db_key_names_.assign(db_key_names);
-  }
-  const common::ObSEArray<dbKeyName*, 4>& get_db_key_names() {
+  common::ObIArray<dbconfig::ObShardConnector*> &get_db_key_names() {
     return db_key_names_;
   }
 
-  void set_phy_db_table_names(
-    //const common::ObSEArray<std::pair<common::ObString, common::ObString>, 1>
-    const common::ObIArray<common::ObString> &phy_db_table_names) {
-    phy_db_table_names_.assign(phy_db_table_names);
+  int set_shard_props(const common::ObIArray<dbconfig::ObShardProp*> &shard_props) {
+    return shard_props_.assign(shard_props);
   }
-  //common::ObSEArray<std::pair<common::ObString, common::ObString>, 1>&
-  common::ObSEArray<common::ObString, 4>& get_phy_db_table_names() {
-    return phy_db_table_names_;
+  common::ObIArray<dbconfig::ObShardProp*> &get_shard_props() {
+    return shard_props_;
   }
 
-  void set_condition_exprs(const common::ObSEArray<ObProxyExpr*, 4> &condition_exprs) {
-    condition_exprs_ = condition_exprs;
+  int set_table_name_maps(common::ObIArray<hash::ObHashMapWrapper<common::ObString, common::ObString> > &table_name_map_array) {
+    return table_name_maps_.assign(table_name_map_array);
   }
-  common::ObSEArray<ObProxyExpr*, 4>& get_condition_exprs() {
-    return condition_exprs_;
-  }
-
-  void set_group_by_exprs(const common::ObSEArray<ObProxyExpr*, 4> &group_by_exprs) {
-    group_by_exprs_ = group_by_exprs;
-  }
-  common::ObSEArray<ObProxyExpr*, 4>& get_group_by_exprs() {
-    return group_by_exprs_;
+  common::ObIArray<hash::ObHashMapWrapper<common::ObString, common::ObString> > &get_table_name_maps() {
+    return table_name_maps_;
   }
 
-  void set_order_by_exprs(const common::ObSEArray<ObProxyExpr*, 4> &order_by_exprs) {
-    order_by_exprs_ = order_by_exprs;
+  int set_calc_exprs(common::ObIArray<opsql::ObProxyExpr*> &calc_exprs) {
+    return calc_exprs_.assign(calc_exprs);
   }
-  common::ObSEArray<ObProxyExpr*, 4>& get_order_by_exprs() {
-    return order_by_exprs_;
-  }
-
-  void set_hint_string(const common::ObString &hint_string) {
-    hint_string_ = hint_string;
-  }
-  common::ObString& get_hint_string() {
-    return hint_string_;
+  common::ObIArray<opsql::ObProxyExpr*> &get_calc_exprs() {
+    return calc_exprs_;
   }
 
-  void set_normal_annotation_string(const common::ObString &normal_annotation_string) {
-    normal_annotation_string_ = normal_annotation_string;
+  int set_agg_exprs(common::ObIArray<opsql::ObProxyExpr*> &agg_exprs) {
+    return agg_exprs_.assign(agg_exprs);
   }
-  common::ObString& get_normal_annotation_string() {
-    return normal_annotation_string_;
+  common::ObIArray<opsql::ObProxyExpr*> &get_agg_exprs() {
+    return agg_exprs_;
   }
 
-protected:
-  common::ObString logical_table_name_;
-  common::ObString logical_database_name_;
-  common::ObSEArray<common::ObString, 4> phy_db_table_names_;
-  common::ObSEArray<dbKeyName*, 4> db_key_names_;
-  //common::ObSEArray<ObProxyExpr*, 4> select_exprs_;
-  common::ObSEArray<ObProxyExpr*, 4> condition_exprs_;
-  common::ObSEArray<ObProxyExpr*, 4> group_by_exprs_;
-  ObProxyExpr* having_exprs_;
-  common::ObSEArray<ObProxyExpr*, 4> order_by_exprs_;
-  common::ObString hint_string_;
-  common::ObString normal_annotation_string_;
+  int set_group_exprs(common::ObIArray<opsql::ObProxyGroupItem*> &group_exprs) {
+    return group_exprs_.assign(group_exprs);
+  }
+  common::ObIArray<opsql::ObProxyGroupItem*> &get_group_exprs() {
+    return group_exprs_;
+  }
+
+  int set_order_exprs(common::ObIArray<opsql::ObProxyOrderItem*> &order_exprs) {
+    return order_exprs_.assign(order_exprs);
+  }
+  common::ObIArray<opsql::ObProxyOrderItem*> &get_order_exprs() {
+    return order_exprs_;
+  }
+
+private:
+  ObString request_sql_;
+  ObSEArray<hash::ObHashMapWrapper<common::ObString, common::ObString>, 4> table_name_maps_;
+  common::ObSEArray<dbconfig::ObShardConnector*, 4> db_key_names_;
+  common::ObSEArray<dbconfig::ObShardProp*, 4> shard_props_;
+  common::ObSEArray<opsql::ObProxyExpr*, 4> calc_exprs_;
+  common::ObSEArray<opsql::ObProxyExpr*, 4> agg_exprs_;
+  common::ObSEArray<opsql::ObProxyGroupItem*, 4> group_exprs_;
+  common::ObSEArray<opsql::ObProxyOrderItem*, 4> order_exprs_;
 };
 
 }

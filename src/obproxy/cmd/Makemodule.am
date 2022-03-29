@@ -9,6 +9,8 @@ obproxy/cmd/ob_alter_config_handler.h\
 obproxy/cmd/ob_alter_config_handler.cpp\
 obproxy/cmd/ob_dds_config_handler.h\
 obproxy/cmd/ob_dds_config_handler.cpp\
+obproxy/cmd/ob_config_v2_handler.h\
+obproxy/cmd/ob_config_v2_handler.cpp\
 obproxy/cmd/ob_alter_resource_handler.h\
 obproxy/cmd/ob_alter_resource_handler.cpp\
 obproxy/cmd/ob_show_warning_handler.h\

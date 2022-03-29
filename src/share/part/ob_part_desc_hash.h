@@ -28,10 +28,11 @@ public:
   ObPartDescHash();
   virtual ~ObPartDescHash() {}
 
-  virtual int get_part(common::ObNewRange &range,
-                       common::ObIAllocator &allocator,
-                       ObIArray<int64_t> &part_ids);
-  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
+  virtual int get_part(ObNewRange &range,
+                       ObIAllocator &allocator,
+                       ObIArray<int64_t> &part_ids,
+                       ObPartDescCtx &ctx);
+  virtual int get_part_by_num(const int64_t num, ObIArray<int64_t> &part_ids);
   void set_part_num(int64_t part_num) { part_num_ = part_num; }
   void set_part_space(int64_t part_space) { part_space_ = part_space; }
   void set_first_part_id(int64_t first_part_id) { first_part_id_ = first_part_id; }
@@ -50,10 +51,9 @@ public:
 private:
   uint64_t calc_hash_value_with_seed(const ObObj &obj, int64_t seed);
   bool is_oracle_supported_type(const ObObjType type);
-  int calc_value_for_oracle(ObObj &src_obj, common::ObIAllocator &allocator, int64_t &part_idx);
-  int calc_value_for_mysql(ObObj &src_obj, common::ObIAllocator &allocator, int64_t &part_idx);
-  int get_part_hash_idx(const int64_t part_idx,
-                        int64_t &part_id);
+  int calc_value_for_oracle(ObObj &src_obj, ObIAllocator &allocator, int64_t &part_idx, ObPartDescCtx &ctx);
+  int calc_value_for_mysql(ObObj &src_obj, ObIAllocator &allocator, int64_t &part_idx);
+  int get_part_hash_idx(const int64_t part_idx, int64_t &part_id);
 
 private:
   bool is_oracle_mode_;

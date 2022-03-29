@@ -326,5 +326,23 @@ int convert_timestamp_to_version(int64_t time_us, char *buf, int64_t len)
   return ret;
 }
 
+int paste_tenant_and_cluster_name(const ObString &tenant_name, const ObString &cluster_name,
+                                  ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> &key_string)
+{
+  int ret = OB_SUCCESS;
+  char buf[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH];
+  int64_t len = 0;
+  len = static_cast<int64_t>(snprintf(buf, OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH, 
+    "%.*s#%.*s", tenant_name.length(), tenant_name.ptr(), cluster_name.length(), cluster_name.ptr()));
+  if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to fill buf", K(ret), K(tenant_name), K(cluster_name));
+  } else if (OB_FAIL(key_string.assign(buf))) {
+    LOG_WARN("assign failed", K(ret));
+  }
+
+  return ret;
+}
+
 } // end of namespace obproxy
 } // end of namespace oceanbase

@@ -213,7 +213,7 @@ inline void ObRespAnalyzeResult::reset()
   has_new_sys_var_ = false;
   has_proxy_idc_name_user_var_ = false;
   connection_id_ = 0;
-  MEMSET(scramble_buf_, 0, sizeof(scramble_buf_));
+  scramble_buf_[0] = '\0';
   ok_packet_action_type_ = OK_PACKET_ACTION_SEND;
   reserved_len_ = 0;
   reserved_len_for_ob20_ok_ = 0;

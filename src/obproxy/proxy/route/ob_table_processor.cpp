@@ -40,6 +40,7 @@ namespace obproxy
 {
 namespace proxy
 {
+
 int ObTableProcessor::init(ObTableCache *table_cache)
 {
   int ret = OB_SUCCESS;
@@ -340,21 +341,21 @@ int ObTableProcessor::get_table_entry_from_thread_cache(
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", K(table_param), K(ret));
   } else {
-    if (!table_param.need_fetch_remote()) {
+    if (OB_LIKELY(!table_param.need_fetch_remote())) {
       // find entry from thread cache
       ObTableRefHashMap &table_map = self_ethread().get_table_map();
       ObTableEntry *tmp_entry = NULL;
       ObTableEntryKey key(table_param.name_, table_param.cr_version_, table_param.cr_id_);
       tmp_entry = table_map.get(key); // get will inc entry's ref
-      if (NULL != tmp_entry) {
+      if (OB_LIKELY(NULL != tmp_entry)) {
         bool find_succ = false;
         if (tmp_entry->is_deleted_state()) {
           LOG_DEBUG("this table entry in thread cache has deleted", KPC(tmp_entry));
-        } else if (table_cache.is_table_entry_expired(*tmp_entry)) {
+        } else if (OB_UNLIKELY(table_cache.is_table_entry_expired(*tmp_entry))) {
           // table entry has expired
           LOG_DEBUG("the table entry in thread cache is expired", "expire_time_us",
                     table_cache.get_cache_expire_time_us(), KPC(tmp_entry), K(table_param));
-        } else if (tmp_entry->is_avail_state() || tmp_entry->is_updating_state()) { // avail
+        } else if (OB_LIKELY(tmp_entry->is_avail_state() || tmp_entry->is_updating_state())) { // avail
           find_succ = true;
         } else if (tmp_entry->is_building_state()) {
           LOG_ERROR("building state table entry can not in thread cache", KPC(tmp_entry));
@@ -516,7 +517,7 @@ int ObTableProcessor::get_table_entry(ObTableRouteParam &table_param, ObAction *
     if (OB_FAIL(get_table_entry_from_thread_cache(table_param, *table_cache_, tmp_entry))) {
       LOG_WARN("fail to get table entry in thread cache", K(table_param), K(ret));
     } else {
-      if (NULL != tmp_entry) {
+      if (OB_LIKELY(NULL != tmp_entry)) {
         PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_THREAD_CACHE_HIT);
         ROUTE_PROMETHEUS_STAT(table_param.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, TBALE_ENTRY, true, true);
         tmp_entry->renew_last_access_time();

@@ -32,6 +32,7 @@ namespace obproxy
 namespace proxy
 {
 const ObString ObMysqlResponseBuilder::OBPROXY_ROUTE_ADDR_NAME = "@obproxy_route_addr";
+const ObString ObMysqlResponseBuilder::OBPROXY_PROXY_VERSION_NAME = "proxy_version()";
 
 int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
                                           ObProxyMysqlRequest &client_request,
@@ -155,6 +156,52 @@ int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
   }
   return ret;
 }
+
+int ObMysqlResponseBuilder::build_select_proxy_version_resp(ObMIOBuffer &mio_buf,
+                                                            ObProxyMysqlRequest &client_request,
+                                                            ObClientSessionInfo &info,
+                                                            const bool is_in_trans)
+{
+  int ret = OB_SUCCESS;
+
+  // get seq
+  uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+
+  // get field
+  ObMySQLField field;
+  if (client_request.get_parse_result().get_col_name().empty()) {
+    field.cname_ = OBPROXY_PROXY_VERSION_NAME;
+    field.org_cname_ = OBPROXY_PROXY_VERSION_NAME;
+  } else {
+    field.cname_ = client_request.get_parse_result().get_col_name();
+    field.org_cname_ = OBPROXY_PROXY_VERSION_NAME;
+  }
+  field.type_ = OB_MYSQL_TYPE_VARCHAR;
+  field.charsetnr_ = CS_TYPE_BINARY;
+  field.flags_ = OB_MYSQL_BINARY_FLAG;
+
+  // get filed value
+  ObObj field_value;
+  field_value.set_varchar(PACKAGE_VERSION);
+
+  // get status flag
+  uint16_t status_flag = 0;
+  int64_t autocommit = info.get_cached_variables().get_autocommit();
+  if (0 != autocommit) {
+    status_flag |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+  }
+  if (is_in_trans) {
+    status_flag |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+  }
+
+  // encode to mio_buf
+  if (OB_FAIL(ObMysqlPacketUtil::encode_kv_resultset(mio_buf, seq,
+                                                     field, field_value, status_flag))) {
+    LOG_WARN("fail to encode kv resultset", K(seq), K(ret));
+  }
+  return ret;
+}
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

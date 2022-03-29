@@ -34,8 +34,11 @@ public:
   ~ObPrometheusProcessor();
 
   int init();
+  int create_exposer();
+  void destroy_exposer();
   bool is_inited() { return is_inited_; }
 
+  int start_prometheus();
   int start_prometheus_task();
 
   int handle_counter(const char *name_ptr, const char *help_ptr,

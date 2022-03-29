@@ -71,6 +71,7 @@ public:
   static int do_repeat_task();
   int handle_hot_upgrade();
   ObAsyncCommonTask *get_hot_upgrade_cont() { return hu_cont_; }
+  ObAsyncCommonTask *get_new_hot_upgrade_cont() { return hot_upgrade_cont_; }
   bool is_same_hot_binary(const common::ObString &name, const common::ObString &md5) const
   {
     return (name == hot_binary_name_ && md5 == hot_binary_md5_);
@@ -79,6 +80,11 @@ public:
   {
     return (name == cold_binary_name_ && md5 == cold_binary_md5_);
   }
+
+  static int do_hot_upgrade_repeat_task();
+  static void update_hot_upgrade_interval();
+  int start_hot_upgrade_task();
+  int do_hot_upgrade_work();
 
   DECLARE_TO_STRING;
 
@@ -105,9 +111,7 @@ private:
   int send_cmd_and_check_response(const char *sql, const ObProxyLoginUserType type,
                                   const int64_t retry_times = 1, const int64_t expected_affected_rows = 0);
   int send_commit_via_subprocess();
-  int send_local_cmd_to_subprocess(const ObProxyLocalCMDType type);
   int check_subprocess_available();
-  int handle_local_restart();
 
 public:
   static const int64_t OB_MAX_CHECK_SUBPROCESS_FAILURES = 32;
@@ -127,6 +131,7 @@ private:
   ObHotUpgradeCmd cmd_;
   proxy::ObMysqlProxy *mysql_proxy_;
   ObAsyncCommonTask *hu_cont_;
+  ObAsyncCommonTask *hot_upgrade_cont_;
   ObHotUpgraderInfo &info_;
   char proxy_ip_[common::OB_IP_STR_BUFF]; // ip primary key
   char proxy_self_md5_[OB_DEFAULT_PROXY_MD5_LEN + 1];

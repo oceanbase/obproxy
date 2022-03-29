@@ -20,6 +20,7 @@
 #include "obutils/ob_proxy_config.h"
 #include "obutils/ob_proxy_reload_config.h"
 #include "lib/encrypt/ob_encrypted_helper.h"
+#include "obutils/ob_config_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -129,6 +130,16 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     }
   }
 
+  // If it is an ssl switch, it needs to be synchronized to ssl_config_table for compatibility
+  if (OB_SUCC(ret)) {
+    if (0 == key_string.case_compare("enable_client_ssl")
+        || 0 == key_string.case_compare("enable_server_ssl")) {
+      if (OB_FAIL(get_global_config_processor().store_cloud_config("ssl_config", "*", "*", key_string, value_string))) {
+        LOG_WARN("store cloud ssl config failed", K(ret));
+      }
+    }
+  }
+
   //5. rollback
   if (OB_FAIL(ret)) {
     int tmp_ret = OB_SUCCESS;
@@ -163,7 +174,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     if (OB_FAIL(encode_ok_packet(0, capability_))) {
       WARN_ICMD("fail to encode ok packet", K(ret));
     } else {
-      INFO_ICMD("succ to update config", K(key_string), K(value_string));
+      INFO_ICMD("succ to update config", K(key_string));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
     }
   } else {
