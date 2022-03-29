@@ -27,13 +27,14 @@ namespace executor
 class ObProxyParallelParam
 {
 public:    
-  ObProxyParallelParam() : shard_conn_(NULL), request_sql_() {}
+  ObProxyParallelParam() : shard_conn_(NULL), shard_prop_(NULL), request_sql_() {}
   ~ObProxyParallelParam() {}
 
   TO_STRING_KV(KPC_(shard_conn), K_(request_sql));
 
 public:    
   dbconfig::ObShardConnector* shard_conn_;
+  dbconfig::ObShardProp* shard_prop_;
   common::ObString request_sql_;
 };
 

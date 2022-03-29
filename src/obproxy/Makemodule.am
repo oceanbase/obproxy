@@ -33,6 +33,7 @@ include obproxy/engine/Makemodule.am
 include obproxy/optimizer/Makemodule.am
 include obproxy/executor/Makemodule.am
 include obproxy/qos/Makemodule.am
+include obproxy/omt/Makemodule.am
 #include obproxy/tests/Makemodule.am
 
 pub_source =                            \
@@ -68,7 +69,8 @@ ${prometheus_sources}\
 ${obproxy_executor_sources}\
 ${obproxy_optimizer_sources}\
 ${obproxy_engine_sources}\
-${qos_sources}
+${qos_sources}\
+${omt_sources}
 
 obproxy_libobproxy_la_SOURCES :=\
 ${obproxy_lib_sources}\
@@ -81,7 +83,7 @@ ${obproxy_sources}
 nodist_obproxy_libobproxy_la_SOURCES = build_version.c
 obproxy_obproxy_SOURCES := obproxy/main.cpp ${pub_source}
 
-obproxy_obproxy_LDADD_BASE := obproxy/libobproxy.la lib/compress/libzlib_1.0.la ${BIN_LDFLAGS} ${DEP_DIR}/lib64/libprotobuf.a ${DEP_DIR}/lib/libgrpc.a ${DEP_DIR}/lib/libgrpc++.a ${DEP_DIR}/lib/libgrpc_unsecure.a ${DEP_DIR}/lib/libgrpc++_unsecure.a ${DEP_DIR}/lib/libgrpc++_reflection.a ${DEP_DIR}/lib/libgrpcpp_channelz.a ${DEP_DIR}/lib/libgrpc++_error_details.a ${DEP_DIR}/lib/libgrpc_cronet.a ${DEP_DIR}/lib/libgrpc++_cronet.a ${DEP_DIR}/lib/libgpr.a ${DEP_DIR}/lib/libaddress_sorting.a ${DEP_DIR}/lib/libcares.a ${DEP_DIR}/lib64/libprometheus-cpp-pull.a ${DEP_DIR}/lib64/libprometheus-cpp-core.a ${RUNTIME_DIR}/lib/libob_sql_proxy_parser_static.a ${DEP_DIR}/lib/libssl.a ${DEP_DIR}/lib/libcrypto.a -lpthread ${DEP_DIR}/lib/libcurl.a ${DEP_DIR}/lib/libcrypto.a
+obproxy_obproxy_LDADD_BASE := obproxy/libobproxy.la lib/compress/libzlib_1.0.la lib/compress/libzstd_1.3.8.la ${BIN_LDFLAGS} ${DEP_DIR}/lib64/libprotobuf.a ${DEP_DIR}/lib/libgrpc.a ${DEP_DIR}/lib/libgrpc++.a ${DEP_DIR}/lib/libgrpc_unsecure.a ${DEP_DIR}/lib/libgrpc++_unsecure.a ${DEP_DIR}/lib/libgrpc++_reflection.a ${DEP_DIR}/lib/libgrpcpp_channelz.a ${DEP_DIR}/lib/libgrpc++_error_details.a ${DEP_DIR}/lib/libgrpc_cronet.a ${DEP_DIR}/lib/libgrpc++_cronet.a ${DEP_DIR}/lib/libgpr.a ${DEP_DIR}/lib/libaddress_sorting.a ${DEP_DIR}/lib/libcares.a ${DEP_DIR}/lib64/libprometheus-cpp-pull.a ${DEP_DIR}/lib64/libprometheus-cpp-core.a ${RUNTIME_DIR}/lib/libob_sql_proxy_parser_static.a ${DEP_DIR}/lib/libssl.a ${DEP_DIR}/lib/libcrypto.a -lpthread ${DEP_DIR}/lib/libcurl.a ${DEP_DIR}/lib/libcrypto.a ${DEP_DIR}/lib/sqlite/libsqlite3.a
 obproxy_obproxy_LDFLAGS :=${AM_LDFLAGS} -lpthread -lc -lm -lrt -ldl -L${DEP_DIR}/lib
 
 obproxy_obproxy_LDADD := ${obproxy_obproxy_LDADD_BASE}

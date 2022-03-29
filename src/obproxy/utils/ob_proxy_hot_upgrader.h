@@ -21,6 +21,7 @@ namespace oceanbase
 namespace obproxy
 {
 #define OBPROXY_INHERITED_FD "OBPROXY_INHERITED_FD"
+extern volatile int g_proxy_fatal_errcode;
 
 enum ObReloadConfigStatus
 {
@@ -55,8 +56,6 @@ enum ObHotUpgradeCmd
 
   HUC_LOCAL_EXIT,    //used for a config cmd exit
   HUC_LOCAL_RESTART, //used for a config cmd restart
-  HUC_LOCAL_COMMIT,  //used for a config cmd commit
-  HUC_LOCAL_ROLLBACK,//used for a config cmd rollback
   HUC_MAX,
 };
 
@@ -66,6 +65,7 @@ enum ObHotUpgradeState
   HU_STATE_FORK_NEW_PROXY,    //fork new proxy
   HU_STATE_WAIT_CR_CMD,       //wait commit and rollback cmd
   HU_STATE_WAIT_CR_FINISH,    //wait commit and rollback finish
+  HU_STATE_WAIT_LOCAL_CR_FINISH,    //wait commit and rollback finish
   HU_STATE_MAX,
 };
 
@@ -149,7 +149,8 @@ public:
 
   void reset();
   void set_main_arg(const int32_t argc, char *const *argv);
-  void disable_net_accept() { need_conn_accept_ = false; }
+  void disable_net_accept();
+  void enable_net_accept() { need_conn_accept_ = true; }
   bool is_parent() const { return is_parent_; }
   bool need_reject_metadb() const { return USER_TYPE_METADB == user_rejected_;}
   bool need_reject_proxyro() const { return USER_TYPE_PROXYRO == user_rejected_;}
@@ -174,9 +175,7 @@ public:
   bool is_local_restart() const { return HUC_LOCAL_RESTART == cmd_; };
   bool is_exit() const { return HUC_EXIT == cmd_; };
   bool is_local_exit() const { return HUC_LOCAL_EXIT == cmd_; };
-  bool is_local_commit() const { return HUC_LOCAL_COMMIT == cmd_; };
-  bool is_local_rollback() const { return HUC_LOCAL_ROLLBACK == cmd_; };
-  bool is_local_cmd() const { return HUC_LOCAL_EXIT <= cmd_ && cmd_ <= HUC_LOCAL_ROLLBACK; };
+  bool is_local_cmd() const { return HUC_LOCAL_EXIT <= cmd_ && cmd_ < HUC_MAX; };
 
   bool is_in_idle_state() const { return HU_STATE_WAIT_HU_CMD == state_; };
   bool is_in_wait_cr_state() const { return HU_STATE_WAIT_CR_CMD == state_; };
@@ -223,11 +222,12 @@ public:
 
   int64_t upgrade_version_;             // mainly used for connection id during server service mode
   char upgrade_version_buf_[MAX_UPGRADE_VERSION_BUF_SIZE];// used to pass upgrade version to sub process
-  char restart_buf_[MAX_RESTART_BUF_SIZE];// used to pass upgrade version to sub process
 
   int32_t argc_;                        // main's argc, used to be passed to sub process
   char *const *argv_;                   // main's argv
   char *inherited_argv_[OB_MAX_INHERITED_ARGC];// argv used for inherited sub process
+  volatile bool parent_hot_upgrade_flag_;
+  lib::ObMutex hot_upgrade_mutex_;
 
   common::ObAddr local_addr_;
 private:
@@ -347,7 +347,9 @@ inline bool ObHotUpgraderInfo::is_graceful_exit_timeout(const ObHRTime cur_time)
 {
   return (OB_UNLIKELY(!need_conn_accept_)
           && OB_LIKELY(graceful_exit_end_time_ > 0)
-          && graceful_exit_end_time_ < cur_time);
+          && OB_LIKELY(graceful_exit_end_time_ >= graceful_exit_start_time_)
+          && graceful_exit_end_time_ < cur_time
+          && common::OB_SUCCESS != g_proxy_fatal_errcode);
 }
 
 ObHotUpgraderInfo &get_global_hot_upgrade_info();
@@ -374,9 +376,6 @@ public:
 private:
   DISALLOW_COPY_AND_ASSIGN(ObExecCtx);
 };
-
-extern volatile int g_proxy_fatal_errcode;
-extern volatile int64_t g_client_active_close_count;
 
 extern ObHotUpgraderInfo g_hot_upgrade_info;
 inline ObHotUpgraderInfo &get_global_hot_upgrade_info()

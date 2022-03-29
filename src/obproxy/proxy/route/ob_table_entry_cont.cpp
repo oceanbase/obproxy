@@ -280,6 +280,7 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
         data = NULL;
         // fail through, do not break
       }
+      __attribute__ ((fallthrough));
       case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
         if (OB_FAIL(handle_client_resp(data))) {
           LOG_WARN("fail to handle client resp", K(ret));

@@ -60,7 +60,7 @@ public:
     bool is_overlap() const { return is_overlap_; }
 
   private:
-    static const double RETAIN_RATIO = 0.1;
+    static constexpr double RETAIN_RATIO = 0.1;
 
     ObSqlauditRecordQueue &sql_audit_record_queue_;
     bool is_overlap_;

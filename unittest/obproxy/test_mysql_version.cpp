@@ -10,9 +10,9 @@
  * See the Mulan PubL v2 for more details.
  */
 
+#include <gtest/gtest.h>
 #define private public
 #define protected public
-#include <gtest/gtest.h>
 #include "common/ob_version.h"
 
 namespace oceanbase

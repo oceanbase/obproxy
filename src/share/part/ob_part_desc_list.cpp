@@ -12,6 +12,8 @@
 
 #include "common/ob_obj_cast.h"
 #include "share/part/ob_part_desc_list.h"
+#include "obproxy/proxy/route/obproxy_expr_calculator.h"
+
 
 namespace oceanbase
 {
@@ -21,7 +23,6 @@ namespace common
 ObPartDescList::ObPartDescList() : part_array_ (NULL)
                                    , part_array_size_(0)
                                    , default_part_array_idx_(OB_INVALID_INDEX)
-                                   , collation_type_(CS_TYPE_UTF8MB4_BIN)
 {
 }
 
@@ -47,7 +48,8 @@ ListPartition::ListPartition() : part_id_(0), rows_()
 
 int ObPartDescList::get_part(ObNewRange &range,
                              ObIAllocator &allocator,
-                             ObIArray<int64_t> &part_ids)
+                             ObIArray<int64_t> &part_ids,
+                             ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
 
@@ -64,7 +66,7 @@ int ObPartDescList::get_part(ObNewRange &range,
     ObObj &src_obj = const_cast<ObObj &>(range.get_start_key().get_obj_ptr()[0]);
     // use the first row cell as target obj
     ObObj &target_obj = const_cast<ObObj &>(part_array_[0].rows_[0].get_cell(0));
-    if (OB_FAIL(cast_obj(src_obj, target_obj, allocator))) {
+    if (OB_FAIL(cast_obj(src_obj, target_obj, allocator, ctx))) {
       COMMON_LOG(INFO, "fail to cast obj", K(src_obj), K(target_obj), K(ret));
     } else {
       bool found = false;
@@ -108,16 +110,35 @@ int ObPartDescList::get_part_by_num(const int64_t num, common::ObIArray<int64_t>
 
 inline int ObPartDescList::cast_obj(ObObj &src_obj,
                                     ObObj &target_obj,
-                                    ObIAllocator &allocator)
+                                    ObIAllocator &allocator,
+                                    ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
-  COMMON_LOG(DEBUG, "begin to cast obj for list", K(src_obj), K(target_obj), K_(collation_type));
-  ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, target_obj.get_collation_type());
-  // use src_obj as buf_obj
-  if (OB_FAIL(ObObjCasterV2::to_type(target_obj.get_type(), collation_type_, cast_ctx, src_obj, src_obj))) {
-    COMMON_LOG(WARN, "failed to cast obj", K(src_obj), K(target_obj), K_(collation_type), K(ret));
+  COMMON_LOG(DEBUG, "begin to cast obj for list", K(src_obj), K(target_obj));
+
+  ObTimeZoneInfo tz_info;
+  ObDataTypeCastParams dtc_params;
+  ObObjType obj_type = target_obj.get_type();
+
+  if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
+                                                                            obj_type, tz_info, dtc_params))) {
+    COMMON_LOG(WARN, "fail to build dtc params with ctx session", K(ret), K(obj_type));
+  } else {
+    ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, target_obj.get_collation_type());
+    ObAccuracy accuracy(accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
+    const ObObj *res_obj = &src_obj;
+    
+    // use src_obj as buf_obj
+    if (OB_FAIL(ObObjCasterV2::to_type(obj_type, target_obj.get_collation_type(), cast_ctx, src_obj, src_obj))) {
+      COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(target_obj));
+    } else if (ctx.need_accurate()
+               && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, target_obj.get_collation_type(), *res_obj, src_obj, res_obj))) {
+      COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj), K(obj_type));
+    } else {
+      COMMON_LOG(DEBUG, "succ to cast obj for list", K(src_obj), K(target_obj));
+    }
   }
-  COMMON_LOG(DEBUG, "end to cast obj for list", K(src_obj), K(target_obj), K_(collation_type));
+  
   return ret;
 }
 

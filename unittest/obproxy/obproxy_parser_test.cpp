@@ -60,9 +60,9 @@ void show_sql_result(SqlFieldResult& sql_result) {
     if(sql_result.fields_[i].value_type_ == TOKEN_INT_VAL) {
       snprintf(buf, 256, "column_value:%ld", sql_result.fields_[i].column_int_value_);
     } else if (sql_result.fields_[i].value_type_ == TOKEN_STR_VAL){
-     snprintf(buf, sql_result.fields_[i].column_value_.string_.length()+1, "column_value:%.*s",
-      sql_result.fields_[i].column_value_.string_.length(),
-      sql_result.fields_[i].column_value_.string_.ptr());
+     snprintf(buf, sql_result.fields_[i].column_value_.config_string_.length()+1, "column_value:%.*s",
+      sql_result.fields_[i].column_value_.config_string_.length(),
+      sql_result.fields_[i].column_value_.config_string_.ptr());
    }
    printf("%s\n", buf);
   //   fprintf(stdout, "%s %s %s\n", sql_result.fields_[i].column_name_,
@@ -242,7 +242,7 @@ void extract_local_fileds(const ObExprParseResult& result, ObProxyMysqlRequest &
           // sql_result.fields_[sql_result.field_num_].column_value_ = std::string(buf);
       } else if(relation_expr->right_value_->head_->type_ == TOKEN_STR_VAL) {
        field.value_type_ = TOKEN_STR_VAL;
-       field.column_value_.string_.assign_ptr(
+       field.column_value_.config_string_.assign_ptr(
         relation_expr->right_value_->head_->str_value_.str_,
         relation_expr->right_value_->head_->str_value_.str_len_);
         LOG_DEBUG("field.column_value", K(field.column_value_));
@@ -280,7 +280,7 @@ int parse_sql_fileds(ObProxyMysqlRequest &client_request, ObString expr_sql) {
   } else if (OB_ISNULL(allocator)) {
     ret = OB_ERR_UNEXPECTED;
   } else {
-    ObExprParseMode parse_mode = INVLIAD_PARSE_MODE;
+    ObExprParseMode parse_mode = INVALID_PARSE_MODE;
     if (sql_parse_result.is_select_stmt() || sql_parse_result.is_delete_stmt()) {
     // we treat delete as select
       parse_mode = SELECT_STMT_PARSE_MODE;

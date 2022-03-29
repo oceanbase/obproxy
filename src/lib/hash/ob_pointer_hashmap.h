@@ -45,7 +45,7 @@ namespace hash
 /**
  * not thread safe hash map only for pointer
  */
-template <class K, class V, template <class K, class V> class GetKey>
+template <class K, class V, template <class U, class W> class GetKey>
 class ObPointerHashArray
 {
 public:
@@ -456,7 +456,7 @@ private:
   V cells_[0];
 };
 
-template < class K, class V, template <class K, class V> class GetKey,
+template < class K, class V, template <class U, class W> class GetKey,
            int64_t default_size = OB_MALLOC_NORMAL_BLOCK_SIZE, class Allocator = ModulePageAllocator >
 class ObPointerHashMap
 {

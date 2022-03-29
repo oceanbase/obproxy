@@ -1825,7 +1825,7 @@ int ObNumberBuilder::build(const char *str,
   } else if (OB_FAIL(find_point_(str, length, integer_start, integer_end, decimal_start,
                                        negative, integer_zero, decimal_zero, warning))) {
     _OB_LOG(WARN, "lookup fail ret=%d str=[%.*s]", ret, (int)length, str);
-  } else if (OB_FAIL(ib_.build(str, integer_start, integer_end, integer_zero))) {
+  } else if (OB_FAIL(build_integer_(str, integer_start, integer_end, decimal_zero))) {
     _OB_LOG(WARN, "build integer fail, ret=%d str=[%.*s]", ret, (int)length, str);
   } else if (OB_FAIL(build_decimal_(str, length, decimal_start, decimal_zero))) {
     _OB_LOG(WARN, "build decimal fail, ret=%d str=[%.*s]", ret, (int)length, str);
@@ -1999,6 +1999,7 @@ int ObNumberBuilder::find_point_(
             } else {
               b_decimal_zero = false;
             }
+            __attribute__ ((fallthrough));
             /* no break. */
           case '0':
             if (-2 == i_integer_start) {

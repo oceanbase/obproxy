@@ -10,11 +10,11 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#define private public
 #define USING_LOG_PREFIX PROXY
 #include <malloc.h>
 #include <stdlib.h>
 #include <gtest/gtest.h>
+#define private public
 #include "lib/objectpool/ob_concurrency_objpool.h"
 #include "obproxy/proxy/mysqllib/ob_mysql_request_analyzer.h"
 

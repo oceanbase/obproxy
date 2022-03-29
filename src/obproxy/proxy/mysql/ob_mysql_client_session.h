@@ -26,6 +26,7 @@
 #include "rpc/obmysql/packet/ompk_handshake.h"
 #include "optimizer/ob_sharding_select_log_plan.h"
 #include "optimizer/ob_proxy_optimizer_processor.h"
+#include "iocore/net/ob_unix_net_vconnection.h"
 
 namespace oceanbase
 {
@@ -63,8 +64,12 @@ public:
                      event::ObIOBufferReader *reader);
 
   int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
-                     event::ObIOBufferReader *reader, bool is_cluster_param,
-                     common::ObSharedRefCount *param);
+                     event::ObIOBufferReader *reader, obutils::ObClusterResource *cluster_resource);
+
+  int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
+                     event::ObIOBufferReader *reader, dbconfig::ObShardConnector *shard_conn,
+                     dbconfig::ObShardProp *shard_prop);
+
   // Implement ObVConnection interface.
   virtual event::ObVIO *do_io_read(event::ObContinuation *c,
                                    const int64_t nbytes = INT64_MAX,
@@ -98,14 +103,14 @@ public:
   int acquire_svr_session_no_pool(const sockaddr &addr, ObMysqlServerSession *&svr_session);
   int64_t get_svr_session_count() const;
 
-  ObMysqlServerSession *get_server_session() const { return bound_ss_; }
-  ObMysqlServerSession *get_cur_server_session() const { return cur_ss_; }
-  ObMysqlServerSession *get_lii_server_session() const { return lii_ss_; }
-  ObMysqlServerSession *get_last_bound_server_session() const { return last_bound_ss_; }
-  void set_server_session(ObMysqlServerSession *ssession) { bound_ss_ = ssession; }
-  void set_cur_server_session(ObMysqlServerSession *ssession) { cur_ss_ = ssession; }
-  void set_lii_server_session(ObMysqlServerSession *ssession) { lii_ss_ = ssession; }
-  void set_last_bound_server_session(ObMysqlServerSession *ssession) { last_bound_ss_ = ssession; }
+  inline ObMysqlServerSession *get_server_session() const { return bound_ss_; }
+  inline ObMysqlServerSession *get_cur_server_session() const { return cur_ss_; }
+  inline ObMysqlServerSession *get_lii_server_session() const { return lii_ss_; }
+  inline ObMysqlServerSession *get_last_bound_server_session() const { return last_bound_ss_; }
+  inline void set_server_session(ObMysqlServerSession *ssession) { bound_ss_ = ssession; }
+  inline void set_cur_server_session(ObMysqlServerSession *ssession) { cur_ss_ = ssession; }
+  inline void set_lii_server_session(ObMysqlServerSession *ssession) { lii_ss_ = ssession; }
+  inline void set_last_bound_server_session(ObMysqlServerSession *ssession) { last_bound_ss_ = ssession; }
   bool is_hold_conn_id(const uint32_t conn_id);
 
   // Functions for manipulating api hooks
@@ -127,8 +132,6 @@ public:
 
   //proxy inner mysql_client do need convert vip to tenant
   bool is_need_convert_vip_to_tname();
-  // for cloud user, proxy start with proxy_tenant and cluster name
-  bool is_need_use_proxy_tenant_name();
 
   int64_t get_current_tid() const { return current_tid_; }
 
@@ -225,7 +228,7 @@ public:
   void set_session_pool_client(bool is_session_pool_client) {
     session_info_.is_session_pool_client_ = is_session_pool_client;
   }
-  bool is_session_pool_client() { return session_info_.is_session_pool_client_; }
+  inline bool is_session_pool_client() { return session_info_.is_session_pool_client_; }
   void set_server_addr(proxy::ObCommonAddr addr) {common_addr_ = addr;}
   void set_first_dml_sql_got() { is_first_dml_sql_got_ = true; }
   bool is_first_dml_sql_got() const { return is_first_dml_sql_got_; }
@@ -252,6 +255,7 @@ public:
   ObProxyLoginUserType get_user_identity() const { return session_info_.get_user_identity(); }
   void set_user_identity(const ObProxyLoginUserType identity) { session_info_.set_user_identity(identity); }
   void set_conn_prometheus_decrease(bool conn_prometheus_decrease) { conn_prometheus_decrease_ = conn_prometheus_decrease; }
+  void set_vip_connection_decrease(bool vip_connection_decrease) { vip_connection_decrease_ = vip_connection_decrease; }
   optimizer::ObShardingSelectLogPlan* get_sharding_select_log_plan() const { return select_plan_; }
   void set_sharding_select_log_plan(optimizer::ObShardingSelectLogPlan *plan) {
     if (NULL != select_plan_) {
@@ -262,7 +266,7 @@ public:
       }
       select_plan_ = NULL;
     }
-  
+
     select_plan_ = plan;
   }
 
@@ -270,8 +274,6 @@ public:
   void set_can_direct_ok(bool val) { can_direct_ok_ = val; }
 
   // ps cache
-  ObPsEntry *get_ps_entry(const common::ObString &sql);
-  int add_ps_entry(ObPsEntry *entry) { return ps_cache_.set_ps_entry(entry); }
   ObTextPsEntry *get_text_ps_entry(const common::ObString &sql);
   int add_text_ps_entry(ObTextPsEntry *entry) { return text_ps_cache_.set_text_ps_entry(entry); }
   int delete_text_ps_entry(ObTextPsEntry *entry) { return text_ps_cache_.delete_text_ps_entry(entry); }
@@ -308,6 +310,7 @@ private:
 
   int fetch_tenant_by_vip();
   int get_vip_addr();
+  inline void decrease_used_connections();
 
   void update_session_stats();
   bool need_close() const;
@@ -390,6 +393,7 @@ private:
   bool half_close_;
   bool conn_decrease_;
   bool conn_prometheus_decrease_;
+  bool vip_connection_decrease_;
   int magic_;
 
   event::ObEThread *create_thread_;
@@ -431,7 +435,6 @@ private:
   ObSessionStats session_stats_;
   ObTraceStats *trace_stats_;
   optimizer::ObShardingSelectLogPlan *select_plan_;
-  ObBasePsEntryCache ps_cache_;
   uint32_t ps_id_;
   uint32_t cursor_id_;
   ObBasePsEntryCache text_ps_cache_;
@@ -459,18 +462,6 @@ inline uint32_t ObMysqlClientSession::get_next_ps_stmt_id()
     ret = ATOMIC_FAA(&next_stmt_id, 1);
   } while (0 == ret);
   return ret;
-}
-
-inline ObPsEntry *ObMysqlClientSession::get_ps_entry(const common::ObString &sql)
-{
-  int ret = OB_SUCCESS;
-  ObPsEntry *entry = NULL;
-  if (OB_FAIL(ps_cache_.get_ps_entry(sql, entry))) {
-    if (OB_HASH_NOT_EXIST != ret) {
-      _PROXY_LOG(WARN, "fail to get ps entry with sql, ret=%d", ret);
-    }
-  }
-  return entry;
 }
 
 ObTextPsEntry *ObMysqlClientSession::get_text_ps_entry(const common::ObString &sql)

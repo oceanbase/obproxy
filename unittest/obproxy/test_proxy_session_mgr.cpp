@@ -11,10 +11,10 @@
  */
 
 #define USING_LOG_PREFIX PROXY
-#define private public
-#define protected public
 
 #include <gtest/gtest.h>
+#define private public
+#define protected public
 #include "easy_io_struct.h"
 #include "lib/oblog/ob_log.h"
 #include "lib/time/ob_time_utility.h"

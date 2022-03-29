@@ -142,6 +142,17 @@ static inline int thread_join(ObThreadId t)
   return ret;
 }
 
+static inline int thread_kill(ObThreadId t, int sig)
+{
+  int ret = common::OB_SUCCESS;
+  int err_code = 0;
+  if (OB_UNLIKELY(0 != (err_code = pthread_kill(t, sig)))) {
+    ret = ob_get_sys_errno(err_code);
+    PROXY_EVENT_LOG(ERROR, "failed to pthread_kill", KERRNOMSGS(err_code), K(ret));
+  }
+  return ret;
+}
+
 static inline ObThreadId thread_self()
 {
   return (pthread_self());

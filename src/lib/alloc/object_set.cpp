@@ -384,7 +384,7 @@ void ObjectSet::free_object(AObject *obj)
   if (NULL == bm_
       && NULL == free_lists_
       && normal_hold_bytes_ > ABLOCK_SIZE
-      && (normal_used_bytes_
+      && (static_cast<double>(normal_used_bytes_)
           < static_cast<double>(normal_hold_bytes_)
           * (1. - FREE_LISTS_BUILD_RATIO))) {
     build_free_lists();

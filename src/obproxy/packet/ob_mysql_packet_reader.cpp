@@ -111,35 +111,19 @@ inline int ObMysqlPacketReader::get_buf(ObIOBufferReader &buf_reader, const int6
   return ret;
 }
 
-inline int ObMysqlPacketReader::get_content_len(ObIOBufferReader &buf_reader,
-                                                const int64_t offset, int64_t &content_len)
+inline int ObMysqlPacketReader::get_content_len_and_seq(ObIOBufferReader &buf_reader,
+                             const int64_t offset, int64_t &content_len, uint8_t &seq)
 {
   int ret = OB_SUCCESS;
   char *pbuf = NULL;
-  if (OB_FAIL(get_buf(buf_reader, OB_MYSQL_CONTENT_LENGTH_ENCODE_SIZE, offset, pbuf))) {
-    LOG_WARN("fail to get content length buf", K(ret));
+  if (OB_FAIL(get_buf(buf_reader, OB_MYSQL_NET_HEADER_LENGTH, offset, pbuf))) {
+    LOG_WARN("fail to get header buf", K(ret));
   } else if (OB_ISNULL(pbuf)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("pbuf is null, which is unexpected", K(pbuf), K(ret));
   } else {
     content_len = static_cast<int64_t>(ob_uint3korr(pbuf));
-  }
-  return ret;
-}
-
-inline int ObMysqlPacketReader::get_seq(ObIOBufferReader &buf_reader,
-                                        const int64_t offset, uint8_t &seq)
-{
-  int ret = OB_SUCCESS;
-  char *pbuf = NULL;
-  if (OB_FAIL(get_buf(buf_reader, OB_MYSQL_SEQ_ENCODE_SIZE,
-                      offset + OB_MYSQL_CONTENT_LENGTH_ENCODE_SIZE, pbuf))) {
-    LOG_WARN("fail to get seq buf", K(ret));
-  } else if (OB_ISNULL(pbuf)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pbuf is null, which is unexpected", K(pbuf), K(ret));
-  } else {
-    seq = static_cast<int64_t>(ob_uint1korr(pbuf));
+    seq = static_cast<int64_t>(ob_uint1korr(pbuf + 3));
   }
   return ret;
 }
@@ -154,10 +138,8 @@ int ObMysqlPacketReader::get_ok_packet(ObIOBufferReader &buf_reader,
   char *content_buf = NULL;
   int64_t content_len = 0;
   uint8_t seq = 0;
-  if (OB_FAIL(get_content_len(buf_reader, offset, content_len))) {
-    LOG_WARN("fail to get content length", K(content_len), K(offset), K(ret));
-  } else if (OB_FAIL(get_seq(buf_reader, offset, seq))) {
-    LOG_WARN("fail to get seq", K(seq), K(offset), K(ret));
+  if (OB_FAIL(get_content_len_and_seq(buf_reader, offset, content_len, seq))) {
+    LOG_WARN("fail to get content length and seq", K(ret), K(offset), K(content_len), K(seq));
   } else if (OB_FAIL(get_buf(buf_reader, content_len, offset + OB_MYSQL_NET_HEADER_LENGTH, content_buf))) {
     LOG_WARN("fail to get content buf", K(content_len), K(content_buf), K(offset), K(ret));
   } else {
@@ -182,10 +164,8 @@ int ObMysqlPacketReader::get_ok_packet_server_status(ObIOBufferReader &buf_reade
   int64_t content_len = 0;
   uint8_t seq = 0;
   int64_t offset = 0;
-  if (OB_FAIL(get_content_len(buf_reader, offset, content_len))) {
-    LOG_WARN("fail to get content length", K(content_len), K(offset), K(ret));
-  } else if (OB_FAIL(get_seq(buf_reader, offset, seq))) {
-    LOG_WARN("fail to get seq", K(seq), K(offset), K(ret));
+  if (OB_FAIL(get_content_len_and_seq(buf_reader, offset, content_len, seq))) {
+    LOG_WARN("fail to get content length and seq", K(content_len), K(seq), K(offset), K(ret));
   } else if (OB_FAIL(get_buf(buf_reader, content_len, offset + OB_MYSQL_NET_HEADER_LENGTH, content_buf))) {
     LOG_WARN("fail to get content buf", K(content_len), K(content_buf), K(offset), K(ret));
   } else {
@@ -217,10 +197,8 @@ int ObMysqlPacketReader::get_packet(ObIOBufferReader &buf_reader,
   int64_t content_len = 0;
   uint8_t seq = 0;
   int64_t offset = 0;
-  if (OB_FAIL(get_content_len(buf_reader, offset, content_len))) {
-    LOG_WARN("fail to get content length", K(content_len), K(offset), K(ret));
-  } else if (OB_FAIL(get_seq(buf_reader, offset, seq))) {
-    LOG_WARN("fail to get seq", K(seq), K(offset), K(ret));
+  if (OB_FAIL(get_content_len_and_seq(buf_reader, offset, content_len, seq))) {
+    LOG_WARN("fail to get content length and seq", K(content_len), K(seq), K(offset), K(ret));
   } else if (OB_FAIL(get_buf(buf_reader, content_len, offset + OB_MYSQL_NET_HEADER_LENGTH, content_buf))) {
     LOG_WARN("fail to get content buf", K(content_len), K(content_buf), K(offset), K(ret));
   } else {

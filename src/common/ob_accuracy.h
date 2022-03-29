@@ -32,12 +32,15 @@ public:
   ~ObAccuracy() {}
   explicit ObAccuracy(ObLength length) { set_length(length); }
   ObAccuracy(ObPrecision precision, ObScale scale) { set_precision(precision); set_scale(scale); }
+  ObAccuracy(ObLength length, ObPrecision precision, ObScale scale)
+  { set_length(length); set_precision(precision); set_scale(scale); }
   ObAccuracy(const ObAccuracy &other) { accuracy_ = other.accuracy_; }
   OB_INLINE void set_accuracy(const ObAccuracy &accuracy) { accuracy_ = accuracy.accuracy_; }
   OB_INLINE void set_accuracy(const int64_t &accuracy) { accuracy_ = accuracy; }
   OB_INLINE void set_length(ObLength length) { length_ = length; }
   OB_INLINE void set_precision(ObPrecision precision) { precision_ = precision; }
   OB_INLINE void set_scale(ObScale scale) { scale_ = scale; }
+  
   // get union data
   OB_INLINE int64_t get_accuracy() const { return accuracy_; }
   // get detail data

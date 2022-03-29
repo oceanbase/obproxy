@@ -134,7 +134,7 @@ int ObMysqlTransactionAnalyzer::analyze_trans_response(const ObResultBuffer &buf
   return ret;
 }
 
-inline int ObMysqlTransactionAnalyzer::analyze_trans_response(ObIOBufferReader &reader,
+int ObMysqlTransactionAnalyzer::analyze_trans_response(ObIOBufferReader &reader,
                                                               ObMysqlResp *resp /*= NULL*/)
 {
   int ret = OB_SUCCESS;
@@ -223,7 +223,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
                                                  const bool need_receive_complete)
 {
   int ret = OB_SUCCESS;
-  if (need_receive_complete) {
+  if (OB_UNLIKELY(need_receive_complete)) {
     if (OB_FAIL(analyze_trans_response(reader, resp))) {
       LOG_WARN("fail to analyze trans response", K(ret));
       result.status_ = ANALYZE_ERROR;
@@ -242,7 +242,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
     }
   } else {
     ObServerStatusFlags server_status(0);
-    if (OB_MYSQL_COM_STATISTICS == result_.get_cmd()) {
+    if (OB_UNLIKELY(OB_MYSQL_COM_STATISTICS == result_.get_cmd())) {
       // OB_MYSQL_COM_STATISTICS, maybe only have mysql packet header, without packet body
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet_only_header(reader, result))) {
         LOG_WARN("fail to analyze packet", K(&reader), K(ret));
@@ -255,10 +255,8 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
     }
 
     if (ANALYZE_DONE == result.status_) {
-      if (OB_UNLIKELY(OCEANBASE_MYSQL_PROTOCOL_MODE != analyzer_.get_mysql_mode())) {
-        // non-oceanbase mode, do nothing
-      } else {
-        if (OB_MYSQL_COM_STATISTICS == result_.get_cmd()) {
+      if (OB_LIKELY(analyzer_.is_oceanbase_mode())) {
+        if (OB_UNLIKELY(OB_MYSQL_COM_STATISTICS == result_.get_cmd())) {
           if (result_.is_extra_ok_packet_for_stats_enabled()) {
             if (OB_FAIL(receive_next_ok_packet(reader, result))) {
               LOG_WARN("fail to receive next ok packet", K(ret));
@@ -273,7 +271,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
             } else {
               // do nothing
             }
-          } else if (MYSQL_ERR_PACKET_TYPE == result.meta_.pkt_type_) {
+          } else if (OB_UNLIKELY(MYSQL_ERR_PACKET_TYPE == result.meta_.pkt_type_)) {
             // 2. if the fist packet is an err pkt, it must be followed by an ok packet.
             //    in this case, we should also confirm the second ok packet is received competed.
             if (OB_FAIL(receive_next_ok_packet(reader, result))) {

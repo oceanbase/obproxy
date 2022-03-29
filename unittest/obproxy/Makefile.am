@@ -8,6 +8,7 @@ AM_CPPFLAGS += -I${top_srcdir}/src/obproxy/iocore/eventsystem               \
                -I${top_srcdir}/src/obproxy/proxy/mysql                      \
                -I${top_srcdir}/src/obproxy/proxy/mysqllib                   \
                -I${top_srcdir}/src/obproxy/proxy/api                        \
+               -I${top_srcdir}/src/obproxy/proxy/omt                        \
                -I${top_srcdir}/src/obproxy/obutils                          \
                -I${top_srcdir}/src/obproxy/utils                            \
 							 -I${top_srcdir}/src/lib/hash \
@@ -22,6 +23,7 @@ LIBTOOLFLAGS=--preserve-dup-deps
 
 LDADD = $(top_builddir)/src/obproxy/libobproxy.la           \
         $(top_builddir)/src/lib/compress/libzlib_1.0.la     \
+        $(top_builddir)/src/lib/compress/libzstd_1.3.8.la   \
         ${DEP_DIR}/lib64/libprometheus-cpp-pull.a \
         ${DEP_DIR}/lib64/libprometheus-cpp-core.a \
         ${RUNTIME_DIR}/lib/libob_sql_proxy_parser_static.a \
@@ -36,6 +38,7 @@ LDADD = $(top_builddir)/src/obproxy/libobproxy.la           \
 				${DEP_DIR}/lib/libssl.a \
 				${DEP_DIR}/lib/libcurl.a \
 				${DEP_DIR}/lib/libcrypto.a \
+				${DEP_DIR}/lib/sqlite/libsqlite3.a \
         -lc -lm -lrt -ldl -lpthread
 
 pub_sources=                                           \
@@ -63,11 +66,13 @@ bin_PROGRAMS =                                         \
                  test_resultset_fetcher                \
                  test_config_server_processor          \
                  test_vip_tenant_cache                 \
+				 test_white_list_processor             \
+                 test_tenant_processor                 \
                  test_proxy_json_config_info           \
                  test_mysql_transact									 \
                  test_ldc_location  									 \
                  obproxy_task_flow_controller_checker  \
-								 ob_expr_parser_checker                \
+				                 ob_expr_parser_checker                \
 								 ob_func_expr_parser_checker           \
 								 test_zlib_stream_compressor           \
 								 test_fast_zlib_stream_compressor      \
@@ -107,6 +112,8 @@ test_unix_net_SOURCES = test_unix_net.cpp  ${pub_sources}
 test_unix_net_vconnection_SOURCES = test_unix_net_vconnection.cpp  ${pub_sources}
 test_resultset_fetcher_SOURCES = test_resultset_fetcher.cpp  ${pub_sources}
 test_vip_tenant_cache_SOURCES = test_vip_tenant_cache.cpp
+test_white_list_processor_SOURCES = test_white_list_processor.cpp
+test_tenant_processor_SOURCES = test_tenant_processor.cpp
 test_proxy_json_config_info_SOURCES = test_proxy_json_config_info.cpp
 test_mysql_transact_SOURCES = test_mysql_transact.cpp
 test_ldc_location_SOURCES = test_ldc_location.cpp

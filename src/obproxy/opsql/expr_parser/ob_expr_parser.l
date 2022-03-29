@@ -57,8 +57,8 @@ multi_byte_left_parenthesis   [\uff08]
 multi_byte_right_parenthesis  [\uff09]
 space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
-int_num                 [0-9]+
-number      ([0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*E[-+]?[0-9]+)|("."[0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*)|("."[0-9]+)
+int_num                 [\-\+]?[0-9]+
+number      ([\-]?[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*E[-+]?[0-9]+)|([\-]?"."[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*)|([\-]?"."[0-9]+)
 
 non_newline             [^\n\r]
 sql_comment             ("--"{space}+{non_newline}*)|(#{non_newline}*)
@@ -95,6 +95,7 @@ rightbracket  \)
 WHERE  { return WHERE; }
 AS     { return AS; }
 VALUES { return VALUES; }
+VALUE { return VALUES; }
 SET    { return SET; }
 FOR    { return END_WHERE; }
 LIMIT  { return END_WHERE; }
@@ -119,7 +120,6 @@ IN        { return IN; }
 "!="|"<>" { return COMP_NE; }
 "?"       { return PLACE_HOLDER; }
 ":"{int_num} { store_pos_place_holder(yytext + 1, yyscanner); return POS_PLACE_HOLDER; }
-":"[+-]{int_num} { store_pos_place_holder(yytext + 1, yyscanner); return POS_PLACE_HOLDER; }
 
 {int_num}              { RETURN_INT_VAL(); }
 {number}               { RETURN_NUMBER_VAL(); }

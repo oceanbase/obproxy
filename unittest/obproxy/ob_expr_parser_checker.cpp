@@ -10,17 +10,18 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#include "ob_expr_parser_checker.h"
-#include "lib/utility/ob_print_utils.h"
-#include "obproxy/opsql/expr_parser/ob_expr_parser_utils.h"
-#include "obutils/ob_proxy_config_processor.h"
-#include "obproxy/proxy/route/obproxy_part_info.h"
 #include <fstream>
 #include <iterator>
 #include <vector>
 #include <string>
 #include <dirent.h>
 #include <sys/types.h>
+#include "ob_expr_parser_checker.h"
+#define private public
+#include "lib/utility/ob_print_utils.h"
+#include "obproxy/opsql/expr_parser/ob_expr_parser_utils.h"
+#include "obutils/ob_proxy_config_processor.h"
+#include "obproxy/proxy/route/obproxy_part_info.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::opsql;
@@ -293,7 +294,7 @@ void ObExprParserChecker::print_stat()
 } // end of namespace obproxy
 } // end of namespace oceanbase
 
-extern int ob_expr_parser_utf8_yydebug;
+int ob_expr_parser_utf8_yydebug;
 using namespace oceanbase::obproxy::test;
 int main(int argc, char **argv)
 {

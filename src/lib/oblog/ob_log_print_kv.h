@@ -254,11 +254,7 @@ int logdata_print_key_obj(char *buf, const int64_t buf_len, int64_t &pos, const 
                           const bool with_comma, const T &obj)
 {
   int ret = OB_SUCCESS;
-  if (NULL == &obj) {
-    ret = logdata_printf(buf, buf_len, pos, WITH_COMMA("%s=NULL"), key);
-  } else {
-    ret = logdata_print_key_obj(buf, buf_len, pos, key, with_comma, obj, BoolType<__is_enum(T)>());
-  }
+  ret = logdata_print_key_obj(buf, buf_len, pos, key, with_comma, obj, BoolType<__is_enum(T)>());
   return ret;
 }
 template<class T>

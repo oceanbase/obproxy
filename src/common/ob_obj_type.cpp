@@ -273,6 +273,14 @@ const char *ob_sql_tc_str(ObObjTypeClass tc)
     "EXT",
     "UNKNOWN",
     "TEXT",
+    "BIT",
+    "ENUMSET",
+    "ENUMSETINNER",
+    "OTIMESTAMP",
+    "RAW",
+    "INTERVAL",
+    "ROWID",
+    "LOB",
     ""
   };
   return sql_tc_name[OB_LIKELY(tc < ObMaxTC) ? tc : ObMaxTC];

@@ -39,8 +39,12 @@ enum ObPhyOperatorType
   PHY_PROJECTION,
   PHY_MERGE_AGG,
   PHY_HASH_AGG,
+  PHY_STREAM_AGG,
+  PHY_MEM_MERGE_AGG,
   PHY_MERGE_SORT,
   PHY_TOPK,
+  PHY_STREAM_SORT,
+  PHY_MEM_MERGE_SORT,
   PHY_MAX
 };
 
@@ -72,14 +76,24 @@ const char* get_op_name(ObPhyOperatorType type)
     case PHY_TOPK:
       char_ret = "PHY_TOPK";
       break;
+    case PHY_STREAM_AGG:
+      char_ret = "PHY_STREAM_AGG";
+      break;
+    case PHY_MEM_MERGE_AGG:
+      char_ret = "PHY_MEM_MERGE_AGG";
+      break;
+    case PHY_STREAM_SORT:
+      char_ret = "PHY_STREAM_SORT";
+      break;
+    case PHY_MEM_MERGE_SORT:
+      char_ret = "PHY_MEM_MERGE_SORT";
+      break;
     default:
       char_ret = "UNKOWN_OPERATOR";
       break;
   }
   return char_ret;
 }
-
-typedef dbconfig::ObShardConnector dbKeyName;
 
 /* Default child_cnt_ for each Operator */
 const uint32_t OP_MAX_CHILDREN_NUM = 10;
@@ -136,8 +150,8 @@ public:
 
   virtual int process_ready_data(void *data, int &event);
   virtual int process_complete_data(void *data);
-  virtual int handle_result(void *data, bool is_final, ObProxyResultResp *&result);
-  virtual int handle_response_result(void *data, bool is_final, ObProxyResultResp *&result);
+  virtual int handle_result(void *data, bool &is_final, ObProxyResultResp *&result);
+  virtual int handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result);
 
   virtual int calc_result(ResultRow &row, ResultRow &result, common::ObIArray<ObProxyExpr*> &exprs,
                              const int64_t first_res_offset);
@@ -205,42 +219,27 @@ protected:
 class ObProxyOpInput
 {
 public:
-  ObProxyOpInput() : select_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, array_new_alloc_size),
-                     limit_(-1), offset_(-1), added_row_count_(0),
-                     first_field_offset_(0) {}
-
-  ObProxyOpInput(const common::ObSEArray<ObProxyExpr*, 4> &select_exprs)
-       : select_exprs_(select_exprs), limit_(-1), offset_(-1), added_row_count_(0),
-         first_field_offset_(0) {
-  }
+  ObProxyOpInput() : limit_offset_(0), limit_size_(-1),
+                     select_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
   virtual ~ObProxyOpInput() {}
 
-  void set_select_exprs(const common::ObSEArray<ObProxyExpr*, 4> &select_exprs) {
-    select_exprs_.reset();
-    select_exprs_ = select_exprs;
+  int set_select_exprs(const common::ObIArray<ObProxyExpr*> &select_exprs) {
+    return select_exprs_.assign(select_exprs);
   }
+
+  void set_limit_offset(int64_t limit_offset) { limit_offset_ = limit_offset; }
+  int64_t get_limit_offset() { return limit_offset_; }
+  void set_limit_size(int64_t limit_size) { limit_size_ = limit_size; }
+  int64_t get_limit_size() { return limit_size_; }
 
   common::ObSEArray<ObProxyExpr*, 4>& get_select_exprs() { return select_exprs_; }
 
-  void set_op_limit(int64_t limit, int64_t offset = -1);
-  int64_t get_op_limit_value() { return limit_; }
-  int64_t get_op_offset_value() { return offset_; }
-  int64_t get_op_top_value() {
-        return (offset_ != -1) ? (limit_ + offset_) : ((limit_ == 0)? -1 : limit_);
-  }
-  void set_added_row_count(int64_t offset) { added_row_count_ = offset; }
-  int64_t get_added_row_count() { return added_row_count_; }
-  void set_first_field_offset(int64_t offset) { first_field_offset_ = offset; }
-  int64_t get_first_field_offset() { return first_field_offset_; }
+  int64_t get_op_top_value() { return 0; }
 protected:
+  int64_t limit_offset_;
+  int64_t limit_size_;
   /* All operations need the select_expr, so need put it inito here. */
   common::ObSEArray<ObProxyExpr*, 4> select_exprs_;
-
-  /* All operations need the limit info. */
-  int64_t limit_;    //ObExpr *limit_;
-  int64_t offset_;   //ObExpr *offset_;
-  int64_t added_row_count_;
-  int64_t first_field_offset_; //TODO will be delete
 };
 
 }

@@ -31,6 +31,7 @@ enum ObMysqlProtocolMode
   UNDEFINED_MYSQL_PROTOCOL_MODE = 0,
   STANDARD_MYSQL_PROTOCOL_MODE,
   OCEANBASE_MYSQL_PROTOCOL_MODE,
+  OCEANBASE_ORACLE_PROTOCOL_MODE,
 };
 
 enum ObMysqlResponseAnalyzerState
@@ -65,7 +66,7 @@ private:
 };
 
 // this class is binded to Server Command. when new Server
-// Command arrive, this class should be reset.
+// Command arrive, this class should be reset.`
 class ObRespResult
 {
 public:
@@ -74,7 +75,7 @@ public:
   void reset();
   int is_resp_finished(bool &finished, ObMysqlRespEndingType &ending_type) const;
 
-  void set_cmd(const obmysql::ObMySQLCmd cmd) { cmd_ = cmd; }
+  inline void set_cmd(const obmysql::ObMySQLCmd cmd) { cmd_ = cmd; }
   obmysql::ObMySQLCmd get_cmd() const { return cmd_; }
 
   int64_t get_pkt_cnt(const ObMysqlRespEndingType type) const { return pkt_cnt_[type]; }
@@ -100,8 +101,10 @@ public:
   void set_trans_state(const ObRespTransState state) { trans_state_ = state; }
 
   ObMysqlProtocolMode get_mysql_mode() const { return mysql_mode_; }
-  void set_mysql_mode(const ObMysqlProtocolMode mode) { mysql_mode_ = mode; }
-  bool is_oceanbase_mode() const { return OCEANBASE_MYSQL_PROTOCOL_MODE == mysql_mode_; }
+  inline void set_mysql_mode(const ObMysqlProtocolMode mode) { mysql_mode_ = mode; }
+  bool is_oceanbase_mode() const { return OCEANBASE_MYSQL_PROTOCOL_MODE == mysql_mode_ || OCEANBASE_ORACLE_PROTOCOL_MODE == mysql_mode_; }
+  bool is_oceanbase_mysql_mode() const { return OCEANBASE_MYSQL_PROTOCOL_MODE == mysql_mode_; }
+  bool is_oceanbase_oracle_mode() const { return OCEANBASE_ORACLE_PROTOCOL_MODE == mysql_mode_; }
   bool is_mysql_mode() const { return STANDARD_MYSQL_PROTOCOL_MODE == mysql_mode_; }
 
   void set_enable_extra_ok_packet_for_stats(const bool enable_extra_ok_packet_for_stats) {
@@ -154,7 +157,7 @@ public:
 
   bool is_need_copy(ObRespResult &result) const;
   bool is_need_reserve_packet(ObRespResult &result) const;
-  int update_cur_type(ObRespResult &result);
+  int update_cur_type(ObRespResult &result, const ObMysqlProtocolMode mysql_mode);
 
   bool is_full_filled() const { return meta_buf_.is_full_filled(); }
   bool empty() const { return (0 == meta_buf_.len()); }
@@ -205,7 +208,7 @@ public:
 
   ObMysqlProtocolMode get_mysql_mode() const { return mysql_mode_; }
   void set_mysql_mode(const ObMysqlProtocolMode mode) { mysql_mode_ = mode; }
-  bool is_oceanbase_mode() const { return OCEANBASE_MYSQL_PROTOCOL_MODE == mysql_mode_; }
+  bool is_oceanbase_mode() const { return OCEANBASE_MYSQL_PROTOCOL_MODE == mysql_mode_ || OCEANBASE_ORACLE_PROTOCOL_MODE == mysql_mode_; }
   bool is_mysql_mode() const { return STANDARD_MYSQL_PROTOCOL_MODE == mysql_mode_; }
   bool need_wait_more_data() const { return (next_read_len_ > 0); }
 

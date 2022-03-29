@@ -204,7 +204,7 @@ inline const char *get_emysql_field_type_str(const obmysql::EMySQLFieldType &typ
       str = "OB_MYSQL_TYPE_TINYBLOB";
       break;
     case obmysql::OB_MYSQL_TYPE_MEDIUM_BLOB:
-      str = "MYSQL_TYPE_MEDIUMBLOB";
+      str = "OB_MYSQL_TYPE_MEDIUMBLOB";
       break;
     case obmysql::OB_MYSQL_TYPE_LONG_BLOB:
       str = "OB_MYSQL_TYPE_LONGBLOB";
@@ -222,7 +222,7 @@ inline const char *get_emysql_field_type_str(const obmysql::EMySQLFieldType &typ
       str = "OB_MYSQL_TYPE_GEOMETRY";
       break;
     case obmysql::OB_MYSQL_TYPE_NOT_DEFINED:
-      str = "MYSQL_TYPE_NOTDEFINED";
+      str = "OB_MYSQL_TYPE_NOTDEFINED";
       break;
     default:
       str = "UNKNOWN_TYPE";

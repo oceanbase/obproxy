@@ -20,4 +20,6 @@ obproxy/prometheus/ob_sql_prometheus.h\
 obproxy/prometheus/ob_net_prometheus.cpp\
 obproxy/prometheus/ob_net_prometheus.h\
 obproxy/prometheus/ob_route_prometheus.cpp\
-obproxy/prometheus/ob_route_prometheus.h
+obproxy/prometheus/ob_route_prometheus.h\
+obproxy/prometheus/ob_thread_prometheus.cpp\
+obproxy/prometheus/ob_thread_prometheus.h

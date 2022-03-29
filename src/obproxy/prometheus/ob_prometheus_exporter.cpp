@@ -31,14 +31,34 @@ int ObProxyPrometheusExporter::init(int32_t listen_port)
   } else if (!(registry_ = std::make_shared<Registry>())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
   } else {
+    listen_port_ = listen_port;
+    if (OB_FAIL(create_exposer())) {
+    } else {
+      is_inited_ = true;
+    }
+  }
+
+  return ret;
+}
+
+void ObProxyPrometheusExporter::destroy_exposer()
+{
+  if (NULL != exposer_) {
+    delete exposer_;
+    exposer_ = NULL;
+  }
+}
+
+int ObProxyPrometheusExporter::create_exposer()
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_LIKELY(NULL == exposer_)) {
     try {
-      if (!(exposer_ = new Exposer(std::to_string(listen_port)))) {
+      if (OB_UNLIKELY(NULL == (exposer_ = new Exposer(std::to_string(listen_port_))))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
       } else {
-        listen_port_ = listen_port;
-
         exposer_->RegisterCollectable(registry_);
-        is_inited_ = true;
       }
     } catch (...) {
       ret = OB_INVALID_ARGUMENT;
@@ -122,6 +142,16 @@ ObProxyPrometheusExporter& get_obproxy_prometheus_exporter()
 int init_prometheus(int32_t listen_port)
 {
   return get_obproxy_prometheus_exporter().init(listen_port);
+}
+
+void destory_prometheus_exposer()
+{
+  get_obproxy_prometheus_exporter().destroy_exposer();
+}
+
+int create_prometheus_exposer()
+{
+  return get_obproxy_prometheus_exporter().create_exposer();
 }
 
 } // end of namespace prometheus

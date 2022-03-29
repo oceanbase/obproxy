@@ -45,7 +45,24 @@ struct ObField
   {
   }
 
-  int64_t to_string(char *buffer, int64_t length) const;
+  int64_t to_string(char *buffer, int64_t length) const
+  {
+    int64_t pos = 0;
+    databuff_printf(buffer, length, pos,
+                    "dname:%.*s, tname: %.*s, org_tname: %.*s, "
+                    "cname: %.*s, org_cname: %.*s, type: %s, "
+                    "charset: %hu, "
+                    "decimal_scale: %hu, flags: %x",
+                    dname_.length(), dname_.ptr(),
+                    tname_.length(), tname_.ptr(),
+                    org_tname_.length(), org_tname_.ptr(),
+                    cname_.length(), cname_.ptr(),
+                    org_cname_.length(), org_cname_.ptr(),
+                    to_cstring(type_),
+                    charsetnr_, accuracy_.get_scale(), flags_);
+    return pos;
+  }
+
   int deep_copy(const ObField &other, ObIAllocator *allocator);
   static int get_field_mb_length(const ObObjType type,
                                  const ObAccuracy &accuracy,

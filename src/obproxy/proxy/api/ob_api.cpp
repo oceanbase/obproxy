@@ -22,6 +22,7 @@
 #include "proxy/plugins/ob_mysql_request_compress_transform_plugin.h"
 #include "proxy/plugins/ob_mysql_response_cursor_transform_plugin.h"
 #include "proxy/plugins/ob_mysql_response_new_ps_transform_plugin.h"
+#include "proxy/plugins/ob_mysql_request_execute_transform_plugin.h"
 
 /****************************************************************
  *  IMPORTANT - READ ME
@@ -451,6 +452,7 @@ int api_init()
           //init_null_transform();
           //init_trim_okpacket_transform();
           init_mysql_request_prepare_transform();
+          init_mysql_request_execute_transform();
           init_mysql_request_compress_transform();
           init_mysql_resposne_compress_transform();
           init_mysql_response_prepare_transform();

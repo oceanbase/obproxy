@@ -218,10 +218,6 @@ const char *ObProxyParserUtils::get_analyze_status_name(const ObMysqlAnalyzeStat
     name = "ANALYZE_OBPARSE_ERROR";
     break;
 
-  case ANALYZE_OBUNSUPPORT_ERROR:
-    name = "ANALYZE_OBUNSUPPORT_ERROR";
-    break;
-
   case ANALYZE_ERROR:
     name = "ANALYZE_ERROR";
     break;
@@ -270,12 +266,11 @@ int ObProxyParserUtils::analyze_one_packet(ObIOBufferReader &reader, ObMysqlAnal
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(analyze_mysql_packet_meta(buf_start, MYSQL_NET_META_LENGTH, result.meta_))) {
-        LOG_WARN("fail to analyze mysql packet meta", K(ret));
-      } else {
-        if (len >= result.meta_.pkt_len_) {
-          result.status_ = ANALYZE_DONE;
-        }
+      result.meta_.pkt_len_ = ob_uint3korr(buf_start) + MYSQL_NET_HEADER_LENGTH;
+      result.meta_.pkt_seq_ = ob_uint1korr(buf_start + 3);
+      result.meta_.data_ = static_cast<uint8_t>(buf_start[4]);
+      if (OB_LIKELY(len >= result.meta_.pkt_len_)) {
+        result.status_ = ANALYZE_DONE;
       }
     }
   }
@@ -320,7 +315,7 @@ int ObProxyParserUtils::analyze_one_packet_only_header(ObIOBufferReader &reader,
 int ObProxyParserUtils::analyze_mysql_packet_meta(const char *ptr, const int64_t len, ObMysqlPacketMeta &meta)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(ptr) || (len < MYSQL_NET_META_LENGTH)) {
+  if (OB_ISNULL(ptr) || (OB_UNLIKELY(len < MYSQL_NET_META_LENGTH))) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", KP(ptr), K(len), K(ret));
   } else {

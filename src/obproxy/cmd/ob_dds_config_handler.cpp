@@ -341,7 +341,7 @@ int ObDdsConfigHandler::handle_parse_where_fields(ObArenaAllocator* allocator, O
 {
   int ret = OB_SUCCESS;
   bool need_parse_fields = true;
-  ObExprParseMode parse_mode = INVLIAD_PARSE_MODE;
+  ObExprParseMode parse_mode = INVALID_PARSE_MODE;
   ObProxyMysqlRequest &client_request = sm_->trans_state_.trans_info_.client_request_;
   ObSqlParseResult &sql_parse_result = client_request.get_parse_result();
   ObString sql = client_request.get_sql();
@@ -362,6 +362,7 @@ int ObDdsConfigHandler::handle_parse_where_fields(ObArenaAllocator* allocator, O
     } else {
       ObExprParser expr_parser(*allocator, parse_mode);
       expr_result.part_key_info_.key_num_ = 0;
+      expr_result.target_mask_ = 0;
       if (OB_FAIL(expr_parser.parse_reqsql(sql,  sql_parse_result.get_parsed_length(),
                                            expr_result, sql_parse_result.get_stmt_type(),
                                            connection_collation))) {
@@ -494,7 +495,7 @@ static int dds_config_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info
     ret = OB_ALLOCATE_MEMORY_FAILED;
     ERROR_ICMD("fail to new ObDdsConfigHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObDdsConfigHandler");
+    WARN_ICMD("fail to init for ObDdsConfigHandler", K(ret));
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
@@ -515,21 +516,20 @@ static int dds_config_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info
 int dds_config_cmd_init()
 {
   int ret = OB_SUCCESS;
-  // for dds_config use interal account, skip cmd type check
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SHOW,
               &dds_config_cmd_callback, true))) {
     WARN_ICMD("fail to register_cmd for OBPROXY_T_SHOW", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SET_NAMES,
-                     &dds_config_cmd_callback, true))) {
+                    &dds_config_cmd_callback, true))) {
     WARN_ICMD("fail to register_cmd for OBPROXY_T_SET_NAMES", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SET,
-                     &dds_config_cmd_callback, true))) {
+                    &dds_config_cmd_callback, true))) {
     WARN_ICMD("fail to register_cmd for OBPROXY_T_SET", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SELECT,
-                     &dds_config_cmd_callback, true))) {
+                    &dds_config_cmd_callback, true))) {
     WARN_ICMD("fail to register_cmd for OBPROXY_T_SELECT", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_UPDATE,
-                     &dds_config_cmd_callback, true))) {
+                    &dds_config_cmd_callback, true))) {
     WARN_ICMD("fail to register_cmd for OBPROXY_T_UPDATE", K(ret));
   }
   return ret;

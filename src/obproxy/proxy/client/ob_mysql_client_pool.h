@@ -44,7 +44,7 @@ class ObMysqlClientPool : public common::ObSharedRefCount
 public:
   ObMysqlClientPool()
     : is_inited_(false), stop_(false), mc_count_(0), cluster_resource_(NULL),
-      shard_conn_(NULL), free_mc_list_(), is_cluster_param_(true) {}
+      shard_conn_(NULL), shard_prop_(NULL), free_mc_list_(), is_cluster_param_(true) {}
   virtual ~ObMysqlClientPool() {}
   virtual void free();
 
@@ -60,8 +60,11 @@ public:
   void release_mysql_client(ObMysqlClient *mysql_client);
 
   void set_cluster_resource(obutils::ObClusterResource *cr);
+  obutils::ObClusterResource *acquire_cluster_resource();
   void set_shard_conn(dbconfig::ObShardConnector *shard_conn);
-  common::ObSharedRefCount *acquire_connection_param();
+  dbconfig::ObShardConnector *acquire_shard_conn();
+  void set_shard_prop(dbconfig::ObShardProp *shard_prop);
+  dbconfig::ObShardProp *acquire_shard_prop();
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
   static int64_t get_mysql_client_pool_count(const bool is_meta_mysql_client);
@@ -76,6 +79,7 @@ private:
   int64_t mc_count_;  // mysql client count
   obutils::ObClusterResource *cluster_resource_;
   dbconfig::ObShardConnector *shard_conn_;
+  dbconfig::ObShardProp *shard_prop_;
   common::ObAtomicList free_mc_list_;
   bool is_cluster_param_;
 

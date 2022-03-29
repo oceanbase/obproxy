@@ -59,7 +59,7 @@ class ObSocketManager
                         const int maxevents, const int timeout, int64_t &count);
 
   static int socket(const int domain, const int type, const int protocol, int &sockfd);
-  static int accept(int sockfd, struct sockaddr *addr, int64_t *addrlen, int &fd);
+  static int accept(int sockfd, struct sockaddr *addr, int64_t *addrlen, int &fd, bool need_return_eintr = false);
   static int bind(int sockfd, const struct sockaddr *name, const int64_t namelen);
   static int listen(int sockfd, const int backlog);
   static int connect(int sockfd, const struct sockaddr *addr, const int64_t addrlen);
@@ -100,7 +100,7 @@ class ObSocketManager
   static int ssl_connect(SSL *ssl, bool &is_connected, int &tmp_code);
   static int ssl_read(SSL *ssl, void *buf, const size_t size, int64_t &count, int &tmp_code);
   static int ssl_write(SSL *ssl, const void *buf, const size_t size, int64_t &count, int &tmp_code);
-  static void print_ssl_error();
+  static int handle_ssl_error(int tmp_code);
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObSocketManager);
@@ -178,7 +178,7 @@ inline int ObSocketManager::socket(const int domain, const int type, const int p
   return ret;
 }
 
-inline int ObSocketManager::accept(int sockfd, struct sockaddr *addr, int64_t *addrlen, int &fd)
+inline int ObSocketManager::accept(int sockfd, struct sockaddr *addr, int64_t *addrlen, int &fd, bool need_return_eintr /* false */)
 {
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(sockfd < 3) || OB_ISNULL(addr) || OB_ISNULL(addrlen)) {
@@ -186,7 +186,7 @@ inline int ObSocketManager::accept(int sockfd, struct sockaddr *addr, int64_t *a
   } else {
     do {
       fd = ::accept(sockfd, addr, reinterpret_cast<socklen_t *>(addrlen));
-    } while (fd < 0 && EINTR == errno);
+    } while (fd < 0 && EINTR == errno && !need_return_eintr);
     if (OB_UNLIKELY(fd < 0)) {
       ret = ob_get_sys_errno();
     }
@@ -575,20 +575,11 @@ int ObSocketManager::ssl_accept(SSL *ssl, bool &is_connected, int &tmp_code)
     int tmp_ret = SSL_accept(ssl);
     if (1 != tmp_ret) {
       tmp_code = SSL_get_error(ssl, tmp_ret);
-      switch(tmp_code) {
-        case SSL_ERROR_NONE:
-          PROXY_NET_LOG(DEBUG, "ssl server accept succ", K(ret));
-          is_connected = true;
-          break;
-          // SSL_accept() will yield SSL_ERROR_WANT_READ or SSL_ERROR_WANT_WRITE
-        case SSL_ERROR_WANT_READ:
-        case SSL_ERROR_WANT_WRITE:
-          break;
-        default:
-          ret = common::OB_SSL_ERROR;
-          print_ssl_error();
-          PROXY_NET_LOG(WARN, "unexpected error", K(ret), K(tmp_code));
-          break;
+      if (SSL_ERROR_NONE == tmp_code) {
+        PROXY_NET_LOG(DEBUG, "ssl server accept succ", K(ret));
+        is_connected = true;
+      } else {
+        ret = handle_ssl_error(tmp_code);
       }
     } else {
       is_connected = true;
@@ -610,20 +601,11 @@ int ObSocketManager::ssl_connect(SSL *ssl, bool &is_connected, int &tmp_code)
     int tmp_ret = SSL_connect(ssl);
     if (1 != tmp_ret) {
       tmp_code = SSL_get_error(ssl, tmp_ret);
-      switch(tmp_code) {
-        case SSL_ERROR_NONE:
-          PROXY_NET_LOG(DEBUG, "ssl client connect succ", K(ret));
-          is_connected = true;
-          break;
-          // SSL_connect() will yield SSL_ERROR_WANT_READ or SSL_ERROR_WANT_WRITE
-        case SSL_ERROR_WANT_WRITE:
-        case SSL_ERROR_WANT_READ:
-          break;
-        default:
-          ret = common::OB_SSL_ERROR;
-          print_ssl_error();
-          PROXY_NET_LOG(WARN, "unexpected error", K(ret), K(tmp_code));
-          break;
+      if (SSL_ERROR_NONE == tmp_code) {
+        PROXY_NET_LOG(DEBUG, "ssl client connect succ", K(ret));
+        is_connected = true;
+      } else {
+        ret = handle_ssl_error(tmp_code);
       }
     } else {
       is_connected = true;
@@ -647,17 +629,8 @@ int ObSocketManager::ssl_read(SSL *ssl, void *buf, const size_t size,
     count = SSL_read(ssl, buf, static_cast<int>(size));
     if (count <= 0 && !last_succ) {
       tmp_code = SSL_get_error(ssl, static_cast<int>(count));
-      switch(tmp_code) {
-        case SSL_ERROR_WANT_READ:
-        case SSL_ERROR_WANT_WRITE:
-          count = 0;
-          break;
-        default:
-          ret = common::OB_SSL_ERROR;
-          print_ssl_error();
-          PROXY_NET_LOG(WARN, "ssl unexpected error", K(ret), K(tmp_code), K(count));
-          break;
-      }
+      ret = handle_ssl_error(tmp_code);
+      count = 0;
     } else {
       PROXY_NET_LOG(DEBUG, "ssl read succ", K(count));
     }
@@ -678,17 +651,8 @@ int ObSocketManager::ssl_write(SSL *ssl, const void *buf, const size_t size,
     count = SSL_write(ssl, buf, static_cast<int>(size));
     if (count <= 0 && !last_succ) {
       tmp_code = SSL_get_error(ssl, static_cast<int>(count));
-      switch(tmp_code) {
-        case SSL_ERROR_WANT_WRITE:
-        case SSL_ERROR_WANT_READ:
-          count = 0;
-          break;
-        default:
-          ret = common::OB_SSL_ERROR;
-          print_ssl_error();
-          PROXY_NET_LOG(WARN, "ssl unexpecte error", K(ret), K(tmp_code), K(count));
-          break;
-      }
+      ret = handle_ssl_error(tmp_code);
+      count = 0;
     } else {
       PROXY_NET_LOG(DEBUG, "ssl write succ", K(count));
     }
@@ -696,12 +660,27 @@ int ObSocketManager::ssl_write(SSL *ssl, const void *buf, const size_t size,
   return ret;
 }
 
-void ObSocketManager::print_ssl_error()
+inline int ObSocketManager::handle_ssl_error(int tmp_code)
 {
-  char temp_buf[512];
-  unsigned long e = ERR_peek_last_error();
-  ERR_error_string_n(e, temp_buf, sizeof(temp_buf));
-  PROXY_NET_LOG(WARN, "SSL error", K(e), K(temp_buf), K(errno), K(strerror(errno)));
+  int ret = common::OB_SUCCESS;
+  switch(tmp_code) {
+    case SSL_ERROR_WANT_WRITE:
+    case SSL_ERROR_WANT_READ:
+      break;
+    case SSL_ERROR_ZERO_RETURN:
+      ret = common::OB_SSL_ERROR;
+      PROXY_NET_LOG(WARN, "the ssl peer has closed", K(ret));
+      break;
+    default:
+      ret = common::OB_SSL_ERROR;
+      char temp_buf[512];
+      unsigned long e = ERR_peek_last_error();
+      ERR_error_string_n(e, temp_buf, sizeof(temp_buf));
+      PROXY_NET_LOG(WARN, "SSL error", K(e), K(temp_buf), K(errno), K(strerror(errno)));
+      break;
+  }
+
+  return ret;
 }
 
 } // end of namespace net

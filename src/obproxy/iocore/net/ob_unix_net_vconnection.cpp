@@ -39,6 +39,7 @@
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::obutils;
+using namespace oceanbase::obproxy::proxy;
 
 namespace oceanbase
 {
@@ -47,7 +48,8 @@ namespace obproxy
 namespace net
 {
 
-static const int64_t NET_MAX_IOV = 16;
+// A block size is 8k, and 2 blocks can transmit 16k data, which meets the requirements
+static const int64_t NET_MAX_IOV = 2;
 
 static inline ObNetState &get_net_state_by_vio(ObVIO &vio)
 {
@@ -213,16 +215,13 @@ inline void ObUnixNetVConnection::net_activity()
 inline bool ObUnixNetVConnection::check_read_state()
 {
   bool ret = true;
-  if (!read_.enabled_ || ObVIO::READ != read_.vio_.op_) {
-    // if it is not enabled.
-    read_disable();
-    ret = false;
-  } else if ((read_.vio_.ntodo()) <= 0) {
-    // if there is nothing to do, disable connection
+  if (OB_UNLIKELY(!read_.enabled_
+                  || ObVIO::READ != read_.vio_.op_
+                  || read_.vio_.ntodo() <= 0)) {
     read_disable();
     ret = false;
   } else if (OB_ISNULL(read_.vio_.buffer_.writer())) {
-    PROXY_NET_LOG(ERROR, "fail to get writer from buf", "vc: ", this);
+    PROXY_NET_LOG(ERROR, "fail to get writer from buf", "vc", this);
     read_disable();
     ret = false;
   }
@@ -232,17 +231,14 @@ inline bool ObUnixNetVConnection::check_read_state()
 inline bool ObUnixNetVConnection::check_write_state()
 {
   bool ret = true;
-  if (!write_.enabled_ || ObVIO::WRITE != write_.vio_.op_) {
-    // If it is not enabled,add to WaitList.
-    write_disable();
-    ret = false;
-  } else if ((write_.vio_.ntodo()) <= 0) {
-    // If there is nothing to do, disable
+  if (OB_UNLIKELY(!write_.enabled_
+                  || ObVIO::WRITE != write_.vio_.op_
+                  || write_.vio_.ntodo() <= 0)) {
     write_disable();
     ret = false;
   } else if (OB_ISNULL(write_.vio_.buffer_.reader())
              || OB_ISNULL(write_.vio_.buffer_.writer())) {
-    PROXY_NET_LOG(ERROR, "fail to get reader or writer from buf", K(this));
+    PROXY_NET_LOG(ERROR, "fail to get reader or writer from buf", "vc: ", this);
     write_disable();
     ret = false;
   }
@@ -261,7 +257,7 @@ inline bool ObUnixNetVConnection::calculate_towrite_size(int64_t &towrite, bool 
     towrite = ntodo;
   }
 
-  if (towrite <= 0 && towrite < ntodo && writer->write_avail() > 0) {
+  if (OB_UNLIKELY(towrite <= 0 && towrite < ntodo && writer->write_avail() > 0)) {
     if (EVENT_CONT == write_signal_and_update(VC_EVENT_WRITE_READY)) {
       if ((ntodo = write_.vio_.ntodo()) <= 0) {
         towrite = ntodo;
@@ -396,7 +392,7 @@ inline bool ObUnixNetVConnection::handle_read_from_net_success(
   } else {
     if (EVENT_CONT != read_signal_and_update(VC_EVENT_READ_READY)) {
       // finish read, needn't reschedule
-    } else if (mutex != read_.vio_.mutex_.ptr_) {
+    } else if (OB_UNLIKELY(mutex != read_.vio_.mutex_.ptr_)) {
       // change of lock... don't look at shared variables!
       read_reschedule();
     } else {
@@ -408,7 +404,7 @@ inline bool ObUnixNetVConnection::handle_read_from_net_success(
 }
 
 inline bool ObUnixNetVConnection::handle_write_to_net_success(
-    ObEThread &thread, const ObProxyMutex *mutex, const int64_t total_write, const bool signalled)
+  ObEThread &thread, const ObProxyMutex *mutex, const int64_t total_write, const bool signalled)
 {
   bool is_done = true;
   ObProxyMutex *mutex_ = thread.mutex_;
@@ -442,7 +438,7 @@ inline bool ObUnixNetVConnection::handle_write_to_net_success(
     }
   } else if (!signalled) {
     if (EVENT_CONT != write_signal_and_update(VC_EVENT_WRITE_READY)) {
-    } else if (mutex != write_.vio_.mutex_.ptr_) {
+    } else if (OB_UNLIKELY(mutex != write_.vio_.mutex_.ptr_)) {
       // change of lock... don't look at shared variables!
       write_reschedule();
     } else {
@@ -578,13 +574,12 @@ inline int ObUnixNetVConnection::read_from_net_internal(
           total_read += count;
         }
       }
-
       NET_INCREMENT_DYN_STAT(NET_CALLS_TO_READ);
     } while (OB_SUCCESS == ret && (count == rattempted) && (total_read < toread) && (NULL != block));
   }
 
   // if once read data form fd successfully, return OB_SUCCESS.
-  if (total_read > 0) {
+  if (OB_LIKELY(total_read > 0)) {
     ret = OB_SUCCESS;
   }
 
@@ -597,7 +592,6 @@ inline int ObUnixNetVConnection::read_from_net_internal(
 inline void ObUnixNetVConnection::read_from_net(ObEThread &thread)
 {
   int ret = OB_SUCCESS;
-
   ObProxyMutex *mutex_ = thread.mutex_;
   NET_INCREMENT_DYN_STAT(NET_CALLS_TO_READFROMNET);
 
@@ -607,11 +601,10 @@ inline void ObUnixNetVConnection::read_from_net(ObEThread &thread)
   bool is_done = true;
 
   MUTEX_TRY_LOCK(lock, read_.vio_.mutex_, &thread);
-
-  if (!lock.is_locked()) {
+  if (OB_UNLIKELY(!lock.is_locked())) {
     read_reschedule();
-  } else if (!check_read_state()) {
-    PROXY_NET_LOG(DEBUG, "fail to check_read_state", K(this));
+  } else if (OB_UNLIKELY(!check_read_state())) {
+    PROXY_NET_LOG(WARN, "fail to check_read_state", K(this));
   } else {
     reenable_read_time_at_ = 0;
     ntodo = read_.vio_.ntodo();
@@ -631,12 +624,12 @@ inline void ObUnixNetVConnection::read_from_net(ObEThread &thread)
     // read data
     if (toread > 0) {
       int tmp_code = 0;
-      if (OB_FAIL(read_from_net_internal(writer, toread, total_read, tmp_code)) || (0 == total_read)) {
+      if (OB_FAIL(read_from_net_internal(writer, toread, total_read, tmp_code)) || OB_UNLIKELY((0 == total_read))) {
         is_done = handle_read_from_net_error(thread, total_read, ret, tmp_code);
       } else {
         ++read_.active_count_;
         // just check it
-        if (ntodo < 0) {
+        if (OB_UNLIKELY(ntodo < 0)) {
           PROXY_NET_LOG(ERROR, "occur fatal error", K(ntodo), K(this));
         }
         is_done = handle_read_from_net_success(thread, lock.get_mutex(), total_read);
@@ -662,7 +655,6 @@ inline int ObUnixNetVConnection::write_to_net_internal(ObIOBufferReader &reader,
                        const int64_t towrite, int64_t &total_write, int &tmp_code)
 {
   int ret = OB_SUCCESS;
-  ObProxyMutex *mutex_ = &self_ethread().get_mutex();
 
   int64_t count = 0;
   int64_t wattempted = 0;
@@ -693,7 +685,7 @@ inline int ObUnixNetVConnection::write_to_net_internal(ObIOBufferReader &reader,
       }
     }
 
-    if (len > 0) {
+    if (OB_LIKELY(len > 0)) {
       do {
         niov = 0;
         wattempted = 0;
@@ -737,14 +729,13 @@ inline int ObUnixNetVConnection::write_to_net_internal(ObIOBufferReader &reader,
             total_write += count;
           }
         }
-
         NET_INCREMENT_DYN_STAT(NET_CALLS_TO_WRITE);
       } while (OB_SUCC(ret) && (count == wattempted) && (total_write < towrite) && (NULL != block));
     }
   }
 
   // if once write data to fd successfully, return OB_SUCCESS
-  if (total_write > 0) {
+  if (OB_LIKELY(total_write > 0)) {
     ret = OB_SUCCESS;
   }
 
@@ -758,27 +749,25 @@ inline void ObUnixNetVConnection::write_to_net(ObEThread &thread)
   int ret = OB_SUCCESS;
   ObProxyMutex *mutex_ = thread.mutex_;
   NET_INCREMENT_DYN_STAT(NET_CALLS_TO_WRITETONET);
-
   int64_t total_write = 0;
   int64_t towrite = 0;
   bool is_done = true;
   bool signalled = false;
 
   MUTEX_TRY_LOCK(lock, write_.vio_.mutex_, &thread);
-
-  if (!lock.is_locked() || lock.get_mutex() != write_.vio_.mutex_.ptr_) {
+  if (OB_UNLIKELY(!lock.is_locked() || lock.get_mutex() != write_.vio_.mutex_.ptr_)) {
     write_reschedule();
-  } else if (!check_write_state()) {
+  } else if (OB_UNLIKELY(!check_write_state())) {
     PROXY_NET_LOG(DEBUG, "fail to check_write_state", K(this));
   } else {
     ObIOBufferReader &reader = *(write_.vio_.buffer_.reader());
     ObIOBufferReader *old_reader = write_.vio_.buffer_.reader();
     is_done = calculate_towrite_size(towrite, signalled);
 
-    if (!is_done) {
-      if (towrite > 0) {
+    if (OB_LIKELY(!is_done)) {
+      if (OB_LIKELY(towrite > 0)) {
         int tmp_code = 0;
-        if (OB_FAIL(write_to_net_internal(reader, towrite, total_write, tmp_code)) || (0 == total_write)) {
+        if (OB_FAIL(write_to_net_internal(reader, towrite, total_write, tmp_code)) || OB_UNLIKELY((0 == total_write))) {
           is_done = handle_write_to_net_error(thread, total_write, ret, tmp_code);
         } else {
           is_done = handle_write_to_net_success(thread, lock.get_mutex(), total_write, signalled);
@@ -795,7 +784,7 @@ inline void ObUnixNetVConnection::write_to_net(ObEThread &thread)
          * if not same, get read avail from new reader
          */
         ObIOBufferReader *new_reader = write_.vio_.buffer_.reader();
-        if (NULL != new_reader && new_reader != old_reader) {
+        if (OB_UNLIKELY(NULL != new_reader && new_reader != old_reader)) {
           read_avail = new_reader->read_avail();
         }
       }
@@ -803,7 +792,7 @@ inline void ObUnixNetVConnection::write_to_net(ObEThread &thread)
       if (0 == read_avail) {
         write_disable();
       } else {
-        if (read_avail < 0) {
+        if (OB_UNLIKELY(read_avail < 0)) {
           PROXY_NET_LOG(ERROR, "write vio buffer's reader read_avail < 0",
                         K(read_avail), K(towrite), K(total_write), K(signalled));
         }
@@ -1631,7 +1620,9 @@ int ObUnixNetVConnection::start_event(int event, ObEvent *e)
   return event_ret;
 }
 
-int ObUnixNetVConnection::ssl_init(const SSLType ssl_type)
+int ObUnixNetVConnection::ssl_init(const SSLType ssl_type,
+                                   const ObString &cluster_name,
+                                   const ObString &tenant_name)
 {
   int ret = OB_SUCCESS;
 
@@ -1640,7 +1631,7 @@ int ObUnixNetVConnection::ssl_init(const SSLType ssl_type)
     PROXY_NET_LOG(WARN, "ssl is not null, init before", K(ret),
         K(ssl_connected_), K(using_ssl_), K(ssl_));
   } else {
-    ssl_ = g_ssl_processor.create_new_ssl();
+    ssl_ = g_ssl_processor.create_new_ssl(cluster_name, tenant_name);
     if (NULL == ssl_) {
       ret = OB_SSL_ERROR;
       PROXY_NET_LOG(WARN, "ssl new failed", K(ret));

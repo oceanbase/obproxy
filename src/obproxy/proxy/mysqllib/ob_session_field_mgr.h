@@ -57,6 +57,7 @@ enum ObVFieldType
   OB_V_FIELD_LDG_LOGICAL_TENANT_NAME,
   OB_V_FIELD_LDG_REAL_CLUSTER_NAME,
   OB_V_FIELD_LDG_REAL_TENANT_NAME,
+  OB_V_FIELD_VIP_ADDR_NAME,
   OB_V_FIELD_MAX,
 };
 
@@ -385,6 +386,7 @@ public:
   //set and get methord
   int set_cluster_name(const common::ObString &cluster_name);
   int set_tenant_name(const common::ObString &tenant_name);
+  int set_vip_addr_name(const common::ObString &vip_addr_name);
   int set_user_name(const common::ObString &user_name);
   int set_database_name(const common::ObString &database_name);
   int set_logic_tenant_name(const common::ObString &logic_tenant_name);
@@ -393,6 +395,7 @@ public:
   int set_ldg_logical_tenant_name(const common::ObString &tenant_name);
   int get_cluster_name(common::ObString &cluster_name) const;
   int get_tenant_name(common::ObString &tenant_name) const;
+  int get_vip_addr_name(common::ObString &vip_addr_name) const;
   int get_user_name(common::ObString &user_name) const;
   int get_database_name(common::ObString &database_name) const;
   int get_logic_tenant_name(common::ObString &logic_tenant_name) const;

@@ -10,7 +10,6 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#define private public
 #include "lib/allocator/page_arena.h"
 //#include "sql/parser/ob_parser.h"
 #include "obutils/ob_proxy_sql_parser.h"

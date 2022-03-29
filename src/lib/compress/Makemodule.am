@@ -61,4 +61,58 @@ lib/compress/zlib/zutil.h
 lib_compress_libzlib_1_0_la_CPPFLAGS:= -I$(top_srcdir)/src -I${DEP_DIR}/include/ -w
 
 
-noinst_LTLIBRARIES += lib/compress/libnone.la lib/compress/libzlib_1.0.la lib/compress/libsnappy_1.0.la lib/compress/liblz4_1.0.la
+lib_compress_libzstd_1_3_8_la_SOURCES:=\
+lib/compress/zstd_1_3_8/error_private.c\
+lib/compress/zstd_1_3_8/error_private.h\
+lib/compress/zstd_1_3_8/entropy_common.c\
+lib/compress/zstd_1_3_8/debug.h\
+lib/compress/zstd_1_3_8/debug.c\
+lib/compress/zstd_1_3_8/cpu.h\
+lib/compress/zstd_1_3_8/compiler.h\
+lib/compress/zstd_1_3_8/bitstream.h\
+lib/compress/zstd_1_3_8/hist.h\
+lib/compress/zstd_1_3_8/hist.c\
+lib/compress/zstd_1_3_8/fse.h\
+lib/compress/zstd_1_3_8/fse_decompress.c\
+lib/compress/zstd_1_3_8/fse_compress.c\
+lib/compress/zstd_1_3_8/ob_zstd_wrapper.h\
+lib/compress/zstd_1_3_8/ob_zstd_wrapper.cpp\
+lib/compress/zstd_1_3_8/ob_zstd_compressor_1_3_8.h\
+lib/compress/zstd_1_3_8/ob_zstd_compressor_1_3_8.cpp\
+lib/compress/zstd_1_3_8/mem.h\
+lib/compress/zstd_1_3_8/huf.h\
+lib/compress/zstd_1_3_8/huf_decompress.c\
+lib/compress/zstd_1_3_8/huf_compress.c\
+lib/compress/zstd_1_3_8/xxhash.h\
+lib/compress/zstd_1_3_8/xxhash.c\
+lib/compress/zstd_1_3_8/threading.h\
+lib/compress/zstd_1_3_8/threading.c\
+lib/compress/zstd_1_3_8/pool.h\
+lib/compress/zstd_1_3_8/pool.c\
+lib/compress/zstd_1_3_8/zstd.h\
+lib/compress/zstd_1_3_8/zstd_common.c\
+lib/compress/zstd_1_3_8/zstd_compress.c\
+lib/compress/zstd_1_3_8/zstd_ddict.h\
+lib/compress/zstd_1_3_8/zstd_ddict.c\
+lib/compress/zstd_1_3_8/zstd_compress_internal.h\
+lib/compress/zstd_1_3_8/zstd_decompress_internal.h\
+lib/compress/zstd_1_3_8/zstd_decompress.c\
+lib/compress/zstd_1_3_8/zstd_decompress_block.h\
+lib/compress/zstd_1_3_8/zstd_decompress_block.c\
+lib/compress/zstd_1_3_8/zstd_internal.h\
+lib/compress/zstd_1_3_8/zstd_fast.h\
+lib/compress/zstd_1_3_8/zstd_fast.c\
+lib/compress/zstd_1_3_8/zstd_errors.h\
+lib/compress/zstd_1_3_8/zstd_double_fast.h\
+lib/compress/zstd_1_3_8/zstd_double_fast.c\
+lib/compress/zstd_1_3_8/zstd_opt.c\
+lib/compress/zstd_1_3_8/zstd_opt.h\
+lib/compress/zstd_1_3_8/zstd_ldm.h\
+lib/compress/zstd_1_3_8/zstd_ldm.c\
+lib/compress/zstd_1_3_8/zstd_lazy.h\
+lib/compress/zstd_1_3_8/zstd_lazy.c\
+lib/compress/zstd_1_3_8/zstdmt_compress.c\
+lib/compress/zstd_1_3_8/zstdmt_compress.h
+lib_compress_libzstd_1_3_8_la_CPPFLAGS:= -I$(top_srcdir)/src -I${DEP_DIR}/include/ -w
+
+noinst_LTLIBRARIES += lib/compress/libnone.la lib/compress/libzlib_1.0.la lib/compress/libsnappy_1.0.la lib/compress/liblz4_1.0.la lib/compress/libzstd_1.3.8.la

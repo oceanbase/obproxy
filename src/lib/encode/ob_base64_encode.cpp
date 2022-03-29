@@ -142,7 +142,7 @@ int ObBase64Encoder::decode(const char *input, const int64_t input_len,
     uint8_t uint8_array_4[4];
     int64_t i = 0;
     int64_t rounds = input_len / 4;
-    if (OB_UNLIKELY(rounds * 3) + pos > output_len) {
+    if ((rounds * 3) + pos > output_len) {
       ret = OB_BUF_NOT_ENOUGH;
       _OB_LOG(WARN, "buffer not enough, pos=%ld, output_len=%ld, input_len=%ld",
                     pos, output_len, input_len);

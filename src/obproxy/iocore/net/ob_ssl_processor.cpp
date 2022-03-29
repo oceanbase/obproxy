@@ -19,8 +19,10 @@
 #include "obutils/ob_proxy_config.h"
 #include "lib/atomic/ob_atomic.h"
 #include "lib/alloc/malloc_hook.h"
+#include "utils/ob_proxy_utils.h"
 
 using namespace oceanbase::common;
+using namespace oceanbase::common::hash;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::event;
 
@@ -44,14 +46,8 @@ int ObSSLProcessor::init()
   OpenSSL_add_all_algorithms();
   SSL_load_error_strings();
 
-
-  SSL_CTX *ssl_ctx = SSL_CTX_new(SSLv23_method());
-  if (OB_ISNULL(ssl_ctx)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ssl ctx is null", K(ret));
-  } else {
-    ssl_ctx_ = ssl_ctx;
-    SSL_CTX_set_verify(ssl_ctx_, SSL_VERIFY_PEER, NULL);
+  if (OB_FAIL(ssl_ctx_map_.create(32, ObModIds::OB_PROXY_SSL_RELATED))) {
+    LOG_WARN("create ssl ctx map failed", K(ret));
   }
 
   return ret;
@@ -85,66 +81,121 @@ void ObSSLProcessor::free_for_ssl(void *ptr)
   lib::glibc_hook_opt = lib::GHO_NOHOOK;
 }
 
-int ObSSLProcessor::update_key(const ObString &source_type,
+int ObSSLProcessor::update_key(const ObString &cluster_name,
+                               const ObString &tenant_name,
+                               const ObString &source_type,
                                const ObString &ca,
                                const ObString &public_key,
                                const ObString &private_key)
 {
   int ret = OB_SUCCESS;
-  if (source_type == "DBMESH") {
-    if (OB_FAIL(update_key_from_dbmesh(ca, public_key, private_key))) {
-      LOG_WARN("update key from dbmesh failed", K(ret), K(ca), K(public_key), K(private_key));
-    }
-  } else if (source_type == "FILE") {
-    if (OB_FAIL(update_key_from_file(ca, public_key, private_key))) {
-      LOG_WARN("update key from file failed", K(ret), K(ca), K(public_key), K(private_key));
-    }
+  ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
+  SSL_CTX *ssl_ctx = NULL;
+  SSL_CTX *old_ssl_ctx = NULL;
+  if (OB_UNLIKELY(cluster_name.empty() || tenant_name.empty() || source_type.empty()
+      || ca.empty() || public_key.empty() || private_key.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("argument is invalid", K(ret), K(ca), K(public_key), K(private_key));
+  } else if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
+    LOG_WARN("paste tenant and cluser name failed", K(ret), K(tenant_name), K(cluster_name));
   } else {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unknown source type", K(source_type), K(ret));
+    DRWLock::WRLockGuard guard(ssl_ctx_lock_);
+    if (OB_FAIL(ssl_ctx_map_.get_refactored(key_string, old_ssl_ctx))) {
+      if (OB_HASH_NOT_EXIST != ret) {
+        LOG_WARN("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
+      } else {
+        ret = OB_SUCCESS;
+      }
+    } 
+    
+    if (OB_SUCC(ret)) {
+      if (OB_ISNULL(ssl_ctx = SSL_CTX_new(SSLv23_method()))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("ssl ctx new failed", K(ret));
+      } else {
+        SSL_CTX_set_verify(ssl_ctx, SSL_VERIFY_PEER, NULL);
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (source_type == "DBMESH" || source_type == "KEY") {
+        if (OB_FAIL(update_key_from_string(ssl_ctx, ca, public_key, private_key))) {
+          LOG_WARN("update key from dbmesh failed", K(ret), K(cluster_name), K(tenant_name),
+                    K(ca), K(public_key), K(private_key));
+        } else {
+          LOG_INFO("update key from string succ", K(tenant_name), K(cluster_name));
+        }
+      } else if (source_type == "FILE") {
+        if (OB_FAIL(update_key_from_file(ssl_ctx, ca, public_key, private_key))) {
+          LOG_WARN("update key from file failed", K(ret), K(ca), K(public_key), K(private_key));
+        } else {
+          LOG_INFO("update key from file succ", K(tenant_name), K(cluster_name), K(ca), K(public_key), K(private_key));
+        }
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("unknown source type", K(source_type), K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(ssl_ctx_map_.set_refactored(key_string, ssl_ctx, 1))) {
+        LOG_WARN("ssl ctx map set refactored failed", K(ret));
+      } else {
+        LOG_INFO("ssl inited succ", K(cluster_name), K(tenant_name), K(ca), K(public_key), K(private_key));
+        if (OB_LIKELY(NULL != old_ssl_ctx)) {
+          SSL_CTX_free(old_ssl_ctx);
+        }
+      }
+    }
+
+    if (OB_FAIL(ret)) {
+      if (OB_NOT_NULL(ssl_ctx)) {
+        SSL_CTX_free(ssl_ctx);
+      }
+    }
   }
 
   return ret;
 }
 
-int ObSSLProcessor::update_key_from_file(const ObString &ca,
+int ObSSLProcessor::update_key_from_file(SSL_CTX *ssl_ctx,
+                                         const ObString &ca,
                                          const ObString &public_key,
                                          const ObString &private_key)
 {
   int ret = OB_SUCCESS;
-  if (ca.empty() || public_key.empty() || private_key.empty()) {
+  if (NULL == ssl_ctx || ca.empty() || public_key.empty()
+      || private_key.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is invalid", K(ret), K(ca), K(public_key), K(private_key));
+    LOG_WARN("invalid argument", K(ret));
   } else {
-    if (OB_SSL_SUCC_RET != SSL_CTX_load_verify_locations(ssl_ctx_, ca.ptr(), NULL)) {
+    if (OB_SSL_SUCC_RET != SSL_CTX_load_verify_locations(ssl_ctx, ca.ptr(), NULL)) {
       ret = OB_SSL_ERROR;
       LOG_WARN("load verify location failed", K(ca), K(ret));
-    } else if (OB_SSL_SUCC_RET != SSL_CTX_use_certificate_chain_file(ssl_ctx_, public_key.ptr())) {
+    } else if (OB_SSL_SUCC_RET != SSL_CTX_use_certificate_chain_file(ssl_ctx, public_key.ptr())) {
       ret = OB_SSL_ERROR;
       LOG_WARN("use certificate file failed", K(ret), K(public_key));
-    } else if (OB_SSL_SUCC_RET != SSL_CTX_use_PrivateKey_file(ssl_ctx_, private_key.ptr(), SSL_FILETYPE_PEM)) {
+    } else if (OB_SSL_SUCC_RET != SSL_CTX_use_PrivateKey_file(ssl_ctx, private_key.ptr(), SSL_FILETYPE_PEM)) {
       ret = OB_SSL_ERROR;
       LOG_WARN("use private key file failed", K(ret), K(private_key));
-    } else if (OB_SSL_SUCC_RET != SSL_CTX_check_private_key(ssl_ctx_)) {
+    } else if (OB_SSL_SUCC_RET != SSL_CTX_check_private_key(ssl_ctx)) {
       ret = OB_SSL_ERROR;
       LOG_WARN("check private key failed", K(ret), K(ca), K(public_key), K(private_key));
-    } else {
-      ATOMIC_STORE(&ssl_inited_, true);
-      LOG_INFO("ssl inited using file succ");
     }
   }
 
   return ret;
 }
 
-int ObSSLProcessor::update_key_from_dbmesh(const ObString &ca,
+int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
+                                           const ObString &ca,
                                            const ObString &public_key,
                                            const ObString &private_key)
 {
   int ret = OB_SUCCESS;
-  if (ca.empty() || public_key.empty() || private_key.empty()) {
+  if (NULL == ssl_ctx || ca.empty() || public_key.empty() || private_key.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is invalid", K(ret), K(ca), K(public_key), K(private_key));
+    LOG_WARN("invalid argument", K(ret));
   } else {
     //load ca cert
     BIO *cbio = BIO_new_mem_buf((void*)ca.ptr(), -1);
@@ -157,7 +208,7 @@ int ObSSLProcessor::update_key_from_dbmesh(const ObString &ca,
       ret = OB_SSL_ERROR;
       LOG_WARN("x509 store add cert failed", K(ret));
     } else {
-      SSL_CTX_set_cert_store(ssl_ctx_, x509_store);
+      SSL_CTX_set_cert_store(ssl_ctx, x509_store);
     }
 
     // load app cert chain
@@ -170,13 +221,13 @@ int ObSSLProcessor::update_key_from_dbmesh(const ObString &ca,
         if (itmp->x509) {
           if (is_first) {
             is_first = 0;
-            if (OB_SSL_SUCC_RET != SSL_CTX_use_certificate(ssl_ctx_, itmp->x509)) {
+            if (OB_SSL_SUCC_RET != SSL_CTX_use_certificate(ssl_ctx, itmp->x509)) {
               ret = OB_SSL_ERROR;
               sk_X509_INFO_pop_free(inf, X509_INFO_free); //cleanup
               LOG_WARN("ssl ctx use cerjtificate failed", K(ret));
             }
           } else {
-            if (OB_SSL_SUCC_RET != SSL_CTX_add_extra_chain_cert(ssl_ctx_, itmp->x509)) {
+            if (OB_SSL_SUCC_RET != SSL_CTX_add_extra_chain_cert(ssl_ctx, itmp->x509)) {
               ret = OB_SSL_ERROR;
               sk_X509_INFO_pop_free(inf, X509_INFO_free); //cleanup
               LOG_WARN("ssl ctx add extra chain cert failed", K(ret));
@@ -200,27 +251,73 @@ int ObSSLProcessor::update_key_from_dbmesh(const ObString &ca,
       if (NULL == (rsa = PEM_read_bio_RSAPrivateKey(cbio, NULL, 0, NULL))) {
         ret = OB_SSL_ERROR;
         LOG_WARN("pem read bio rsaprivatekey failed", K(ret));
-      } else if (OB_SSL_SUCC_RET != SSL_CTX_use_RSAPrivateKey(ssl_ctx_, rsa)) {
+      } else if (OB_SSL_SUCC_RET != SSL_CTX_use_RSAPrivateKey(ssl_ctx, rsa)) {
         ret = OB_SSL_ERROR;
         LOG_WARN("ssl ctx use rsaprivatekey failed", K(ret));
       } else {
         LOG_DEBUG("update ssl key from dbmesh");
       }
     }
-
-    if (OB_SUCC(ret)) {
-      ATOMIC_STORE(&ssl_inited_, true);
-      LOG_INFO("ssl inited using dbmesh succ");
-    }
   }
 
   return ret;
 }
 
-SSL* ObSSLProcessor::create_new_ssl()
+SSL* ObSSLProcessor::create_new_ssl(const common::ObString &cluster_name,
+                                    const common::ObString &tenant_name)
 {
+  int ret = OB_SUCCESS;
   SSL *new_ssl = NULL;
-  new_ssl = SSL_new(ssl_ctx_);
+  SSL_CTX *ssl_ctx = NULL;
+  ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
+  // Take the tenant-level configuration first
+  DRWLock::RDLockGuard guard(ssl_ctx_lock_);
+  if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
+    LOG_WARN("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
+  } else {
+    if (OB_FAIL(ssl_ctx_map_.get_refactored(key_string, ssl_ctx))) {
+      if (OB_HASH_NOT_EXIST != ret) {
+        LOG_WARN("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
+      }
+    }
+  }
+
+  // If you do not get the tenant configuration, get the cluster configuration
+  if (OB_HASH_NOT_EXIST == ret) {
+    key_string.reset();
+    if (OB_FAIL(paste_tenant_and_cluster_name("*", cluster_name, key_string))) {
+      LOG_WARN("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
+    } else {
+      if (OB_FAIL(ssl_ctx_map_.get_refactored(key_string, ssl_ctx))) {
+        if (OB_HASH_NOT_EXIST != ret) {
+          LOG_WARN("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
+        }
+      }
+    }
+  }
+
+  // If you don't get the cluster configuration, get the global configuration
+  if (OB_HASH_NOT_EXIST == ret) {
+    key_string.reset();
+    if (OB_FAIL(paste_tenant_and_cluster_name("*", "*", key_string))) {
+      LOG_WARN("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
+    } else {
+      if (OB_FAIL(ssl_ctx_map_.get_refactored(key_string, ssl_ctx))) {
+        if (OB_HASH_NOT_EXIST != ret) {
+          LOG_WARN("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
+        }
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_ISNULL(ssl_ctx)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("ssl ctx is null unexpected", K(ret));
+    } else {
+      new_ssl = SSL_new(ssl_ctx);
+    }
+  }
 
   return new_ssl;
 }
@@ -235,14 +332,18 @@ void ObSSLProcessor::release_ssl(SSL* ssl, const bool can_shutdown_ssl)
   }
 }
 
-bool ObSSLProcessor::is_client_ssl_supported()
+void ObSSLProcessor::release_ssl_ctx(common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> &delete_info)
 {
-  return get_global_proxy_config().enable_client_ssl && ATOMIC_LOAD(&ssl_inited_);
-}
-
-bool ObSSLProcessor::is_server_ssl_supported()
-{
-  return get_global_proxy_config().enable_server_ssl && ATOMIC_LOAD(&ssl_inited_);
+  int ret = OB_SUCCESS;
+  SSL_CTX *ssl_ctx = NULL;
+  DRWLock::RDLockGuard guard(ssl_ctx_lock_);
+  if (OB_FAIL(ssl_ctx_map_.erase_refactored(delete_info, &ssl_ctx))) {
+    if (OB_HASH_NOT_EXIST != ret) {
+      LOG_WARN("get ssl ctx failed", K(ret), K(delete_info));
+    }
+  } else if (NULL != ssl_ctx) {
+    SSL_CTX_free(ssl_ctx);
+  }
 }
 
 } // end net

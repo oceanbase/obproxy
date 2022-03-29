@@ -15,6 +15,7 @@
 #include "lib/oblog/ob_log_module.h"
 #include "common/ob_obj_compare.h"
 #include "ob_proxy_operator_sort.h"
+#include "lib/container/ob_se_array_iterator.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -45,7 +46,7 @@ int ObProxySortOp::init()
   if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(SortColumnArray)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("init error for no memory to alloc", K(ret), K(sizeof(SortColumnArray)));
-  } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(array_new_alloc_size, allocator_))) {
+  } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
     LOG_WARN("init error for no memory to construct", K(ret), K(sort_columns_));
   }
@@ -64,7 +65,7 @@ int ObProxySortOp::init_sort_columns()
     ret = common::OB_INVALID_ARGUMENT;
     LOG_WARN("input is invalid in ObProxySortOp", K(ret), K(input_));
   } else {
-    const ObSEArray<ObProxyExpr*, 4>& order_by_expr = input->get_order_by_expr();
+    const ObSEArray<ObProxyOrderItem*, 4> &order_by_expr = input->get_order_exprs();
     ObProxyOrderItem* expr_ptr = NULL;
     void *tmp_ptr = NULL;
 
@@ -72,7 +73,7 @@ int ObProxySortOp::init_sort_columns()
 
     LOG_DEBUG("ObProxySortOp::init_sort_columns", K(order_by_count), K(order_by_expr));
     for (int64_t i = 0; OB_SUCC(ret) && i < order_by_count; i++) {
-      if (OB_ISNULL(expr_ptr = dynamic_cast<ObProxyOrderItem*>(order_by_expr.at(i)))) {
+      if (OB_ISNULL(expr_ptr = order_by_expr.at(i))) {
         ret = common::OB_ERROR;
         LOG_WARN("internal error in ObProxySortOp::init_sort_columns", K(ret), K(expr_ptr));
       } else {
@@ -182,7 +183,7 @@ int ObProxyMemSortOp::get_next_row()
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
-    } else if (OB_ISNULL(rows = new (tmp_buf) ResultRows(array_new_alloc_size, allocator_))) {
+    } else if (OB_ISNULL(rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
       LOG_WARN("init ResultRows failed", K(ret), K(op_name()), K(rows));
     } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObMemorySort)))) {
@@ -201,7 +202,7 @@ int ObProxyMemSortOp::get_next_row()
   return ret;
 }
 
-int ObProxyMemSortOp::handle_response_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyMemSortOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
   LOG_DEBUG("Enter ObProxyMemSortOp::handle_response_result", K(op_name()), K(data));
@@ -280,7 +281,7 @@ int ObProxyTopKOp::get_next_row()
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
-    } else if (OB_ISNULL(rows = new (tmp_buf) ResultRows(array_new_alloc_size, allocator_))) {
+    } else if (OB_ISNULL(rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
       LOG_WARN("init ResultRows failed", K(ret), K(op_name()), K(rows));
     } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObTopKSort)))) {
@@ -295,8 +296,7 @@ int ObProxyTopKOp::get_next_row()
   return ObProxySortOp::get_next_row();
 }
 
-//int ObProxyTopKOp::handle_response_result(executor::ObProxyParallelResp *pres, bool is_final, ObProxyResultResp *&result)
-int ObProxyTopKOp::handle_response_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyTopKOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
   LOG_DEBUG("Enter ObProxyMemSortOp::handle_response_result", K(op_name()), K(data));
@@ -359,6 +359,316 @@ int ObProxyTopKOp::handle_response_result(void *data, bool is_final, ObProxyResu
       result = res;
     }
   }
+  return ret;
+}
+
+ObProxyMemMergeSortOp::~ObProxyMemMergeSortOp()
+{
+  for (int64_t i = 0; i < sort_units_.count(); i++) {
+    ObProxyMemMergeSortUnit *sort_unit = sort_units_.at(i);
+    sort_unit->~ObProxyMemMergeSortUnit();
+    allocator_.free(sort_unit);
+  }
+}
+
+int ObProxyMemMergeSortOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyResultResp *opres = NULL;
+  ObProxySortInput *input = NULL;
+
+  if (OB_ISNULL(data)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid input, data is NULL", K(ret));
+  } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid input, opres type is not match", K(ret));
+  } else if (!opres->is_resultset_resp()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("resp is not resultset", K(opres), K(ret));
+  } else if (OB_ISNULL(input = dynamic_cast<ObProxySortInput*>(get_input()))) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("input is invalid", K(ret));
+  } else {
+    if (OB_ISNULL(get_result_fields())) {
+      result_fields_ = opres->get_fields();
+    }
+
+    ResultRow *row = NULL;
+    while (OB_SUCC(ret) && OB_SUCC(opres->next(row))) {
+      void *tmp_buf = NULL;
+      ObProxyMemMergeSortUnit *sort_unit = NULL;
+      if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObProxyMemMergeSortUnit)))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("no have enough memory to init", "size", sizeof(ObProxyMemMergeSortUnit), K(ret));
+      } else if (OB_ISNULL(sort_unit = new (tmp_buf) ObProxyMemMergeSortUnit(allocator_))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("fail to new merge sort unit", K(ret));
+      } else if (OB_FAIL(sort_unit->init(row, input->get_order_exprs()))) {
+        LOG_WARN("fail to init sort unit", K(ret));
+      } else if (OB_FAIL(sort_units_.push_back(sort_unit))) {
+        LOG_WARN("fail to push back sort unit", K(ret));
+      }
+    }
+
+    if (ret == OB_ITER_END) {
+      ret = OB_SUCCESS;
+    }
+  }
+
+  if (OB_SUCC(ret) && is_final) {
+    int64_t limit_offset = get_input()->get_limit_offset();
+    int64_t limit_offset_size = get_input()->get_limit_size() + limit_offset;
+    ObProxyResultResp *res = NULL;
+    ResultRows *rows = NULL;
+    void *tmp_buf = NULL;
+    if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+    } else {
+      rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
+      std::sort(sort_units_.begin(), sort_units_.end(), ObProxySortUnitCompare<ObProxyMemMergeSortUnit>());
+    }
+
+    int64_t count = sort_units_.count();
+    if (limit_offset_size > 0) {
+      count = count > limit_offset_size ? limit_offset_size : count;
+    }
+
+    for (int64_t i = limit_offset; OB_SUCC(ret) && i < count; i++) {
+      ObProxyMemMergeSortUnit *&sort_unit = sort_units_.at(i);
+
+      ResultRow *row = sort_unit->get_row();
+      if (OB_FAIL(rows->push_back(row))) {
+        LOG_WARN("fail to push back row", K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
+        LOG_WARN("fail to packet resultset", K(op_name()), K(ret));
+      }
+    }
+
+    if (OB_FAIL(ret) && OB_NOT_NULL(res)) {
+      res->set_packet_flag(PCK_ERR_RESPONSE);
+    }
+    result = res;
+  }
+
+  return ret;
+}
+
+int ObProxyMemMergeSortUnit::init(ResultRow *row, ObIArray<ObProxyOrderItem*> &order_exprs)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(order_exprs_.assign(order_exprs))) {
+    LOG_WARN("fail to assign order exprs", K(ret));
+  } else {
+    row_ = row;
+    if (OB_FAIL(calc_order_values())) {
+      LOG_WARN("fail to get order value", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyMemMergeSortUnit::calc_order_values()
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyExprCtx ctx(0, dbconfig::TESTLOAD_NON, false, &allocator_);
+  ObProxyExprCalcItem calc_item(row_);
+  order_values_.reuse();
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < order_exprs_.count(); i++) {
+    if (OB_FAIL(order_exprs_.at(i)->calc(ctx, calc_item, order_values_))) {
+      LOG_WARN("fail to calc order exprs", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+// Return true to come first
+bool ObProxyMemMergeSortUnit::compare(const ObProxyMemMergeSortUnit* sort_unit) const
+{
+  bool bret = true;
+  const ObIArray<ObObj> &order_values = sort_unit->get_order_values();
+  int i = 0;
+  int64_t count_this = order_values_.count();
+  int64_t count_other = order_values.count();
+  int64_t count = count_this <= count_other ? count_this : count_other;
+
+  for (; i < count; i++) {
+    int cmp = order_values_.at(i).compare(order_values.at(i));
+    ObProxyOrderItem *order_expr = order_exprs_.at(i);
+    if (0 != cmp) {
+      if (order_expr->order_direction_ == NULLS_FIRST_ASC) {
+        bret = cmp < 0;
+      } else {
+        bret = cmp > 0;
+      }
+      break;
+    }
+  }
+
+  if (i == count) {
+    bret = count_this <= count_other;
+  }
+
+  return bret;
+}
+
+ObProxyStreamSortOp::~ObProxyStreamSortOp()
+{
+  for (int64_t i = 0; i < sort_units_.count(); i++) {
+    ObProxyStreamSortUnit *sort_unit = sort_units_.at(i);
+    sort_unit->~ObProxyStreamSortUnit();
+    allocator_.free(sort_unit);
+  }
+}
+
+int ObProxyStreamSortOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyResultResp *opres = NULL;
+  ObProxySortInput *input = NULL;
+
+  if (OB_ISNULL(data)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid input, data is NULL", K(ret));
+  } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("invalid input, opres type is not match", K(ret));
+  } else if (!opres->is_resultset_resp()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("resp is not resultset", K(opres), K(ret));
+  } else if (OB_ISNULL(input = dynamic_cast<ObProxySortInput*>(get_input()))) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("input is invalid", K(ret));
+  } else {
+    if (OB_ISNULL(get_result_fields())) {
+      result_fields_ = opres->get_fields();
+    }
+
+    ResultRows &result_rows = opres->get_result_rows();
+    if (!result_rows.empty()) {
+      void *tmp_buf = NULL;
+      ObProxyStreamSortUnit *sort_unit = NULL;
+      if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObProxyStreamSortUnit)))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("no have enough memory to init", "size", sizeof(ObProxyStreamSortUnit), K(ret));
+      } else if (OB_ISNULL(sort_unit = new (tmp_buf) ObProxyStreamSortUnit(allocator_))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("fail to new merge sort unit", K(ret));
+      } else if (OB_FAIL(sort_unit->init(opres, input->get_order_exprs()))) {
+        LOG_WARN("fail to init sort unit", K(ret));
+      } else if (OB_FAIL(sort_units_.push_back(sort_unit))) {
+        LOG_WARN("fail to push back sort unit", K(ret));
+      }
+    }
+  }
+
+  if (OB_SUCC(ret) && is_final) {
+    int64_t limit_offset = input->get_limit_offset();
+    int64_t limit_size = input->get_limit_size();
+    ObProxyResultResp *res = NULL;
+    ResultRows *rows = NULL;
+    void *tmp_buf = NULL;
+    if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+    } else {
+      rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
+    }
+
+    while (OB_SUCC(ret) && !sort_units_.empty()) {
+      // sort
+      // Flashback according to expectations, such as positive order,
+      // put the minimum value at the end, which is convenient for pop_back
+      std::sort(sort_units_.begin(), sort_units_.end(), ObProxySortUnitCompare<ObProxyStreamSortUnit>());
+      ObProxyStreamSortUnit *sort_unit = sort_units_.at(sort_units_.count() - 1);
+
+      ResultRow *row = sort_unit->get_row();
+
+      if (limit_offset > 0) {
+        limit_offset--;
+      } else {
+        if (OB_FAIL(rows->push_back(row))) {
+          LOG_WARN("failed to push back row", K(ret));
+        } else if (limit_size > 0 && rows->count() == limit_size) {
+          break;
+        }
+      }
+
+      if (OB_SUCC(ret)) {
+        if (OB_FAIL(sort_unit->next())) {
+          if (OB_ITER_END == ret) {
+            if (OB_FAIL(sort_units_.pop_back(sort_unit))) {
+              LOG_WARN("fail to pop back sort unit", K(ret));
+            } else {
+              sort_unit->~ObProxyStreamSortUnit();
+              allocator_.free(sort_unit);
+            }
+          } else {
+            LOG_WARN("fail to exec next", K(ret));
+          }
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
+        LOG_WARN("fail to packet resultset", K(op_name()), K(ret));
+      }
+    }
+
+    if (OB_FAIL(ret) && OB_NOT_NULL(res)) {
+      res->set_packet_flag(PCK_ERR_RESPONSE);
+    }
+
+    result = res;
+  }
+
+  return ret;
+}
+
+int ObProxyStreamSortUnit::init(ObProxyResultResp* result_set, common::ObIArray<ObProxyOrderItem*> &order_exprs)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(order_exprs_.assign((order_exprs)))) {
+    LOG_WARN("fail to assign order expr", K(ret));
+  } else if (OB_ISNULL(result_set_ = result_set)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("result set should not NULL", K(ret));
+  } else if (OB_FAIL(next())) {
+    // The first time, there must be a result, so it must not be OB_ITER_END
+    LOG_WARN("fail to exec next", K(ret));
+  }
+  return ret;
+}
+
+bool ObProxyStreamSortUnit::compare(const ObProxyStreamSortUnit* sort_unit) const
+{
+  bool bret = ObProxyMemMergeSortUnit::compare(sort_unit);
+  return !bret;
+}
+
+int ObProxyStreamSortUnit::next()
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_SUCC(result_set_->next(row_))) {
+    if (OB_FAIL(calc_order_values())) {
+      LOG_WARN("fail to get order value", K(ret));
+    }
+  }
+
   return ret;
 }
 

@@ -134,9 +134,13 @@ int ObSMUtils::cell_str(
       case ObYearTC:
         ret = ObMySQLUtil::year_cell_str(buf, len, obj.get_year(), type, pos);
         break;
+      case ObRawTC:
+      case ObTextTC: // TODO@hanhui texttc share the stringtc temporarily
       case ObStringTC:
+      case ObLobTC: {
         ret = ObMySQLUtil::varchar_cell_str(buf, len, obj.get_string(), pos);
         break;
+      }
       default:
         _OB_LOG(ERROR, "invalid ob type=%d", obj.get_type());
         ret = OB_ERROR;
@@ -307,5 +311,37 @@ int ObSMUtils::get_ob_type(ObObjType &ob_type, EMySQLFieldType mysql_type)
       _OB_LOG(WARN, "unsupport MySQL type %d", mysql_type);
       ret = OB_OBJ_TYPE_ERROR;
   }
+  return ret;
+}
+
+int ObSMUtils::to_ob_field(const ObMySQLField &field, ObField &mfield)
+{
+  int ret = OB_SUCCESS;
+  mfield.dname_ = field.dname_;
+  mfield.tname_ = field.tname_;
+  mfield.org_tname_ = field.org_tname_;
+  mfield.cname_ = field.cname_;
+  mfield.org_cname_ = field.org_cname_;
+
+  mfield.accuracy_ = field.accuracy_;
+
+  // To distinguish between binary and nonbinary data for string data types,
+  // check whether the charsetnr value is 63. Also, flag must be set to binary accordingly
+  mfield.charsetnr_ = field.charsetnr_;
+  mfield.flags_ = field.flags_;
+  mfield.length_ = field.length_;
+
+  // For Varchar class, check charset:
+  // TODO:Handling incorrect character sets
+  if (ObCharset::is_valid_collation(static_cast<ObCollationType>(field.charsetnr_))
+      && ObCharset::is_bin_sort(static_cast<ObCollationType>(field.charsetnr_))) {
+    mfield.flags_ |= OB_MYSQL_BINARY_FLAG;
+  }
+
+  ObObjType ob_type;
+  ret = ObSMUtils::get_ob_type(ob_type, field.type_);
+  mfield.type_.set_type(ob_type);
+
+  OB_LOG(DEBUG, "to ob field", K(ret), K(mfield), K(field));
   return ret;
 }

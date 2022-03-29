@@ -390,7 +390,7 @@ void ObProxyPbUtils::get_str_value_by_name(const std::string &shard_url,
   }
 }
 // shard_url format: jdbc:oceanbase://127.0.0.1:18587/group_00?useUnicode=true&characterEncoding=utf8
-// or ocj shard url format: http://x.x.x.x/services?Action=ObRootServiceInfo&User_ID=ocptest&UID=gengping.zj&ObRegion=ant_dev_g&database=thin&k=v
+// or ocj shard url format: http://x.x.x.x/services?Action=xxx&User_ID=xxx&UID=xxx&ObRegion=xxx&database=xxx&k=v
 int ObProxyPbUtils::parse_shard_url(const std::string &shard_url, ObShardConnector &conn_info)
 {
   int ret = OB_SUCCESS;

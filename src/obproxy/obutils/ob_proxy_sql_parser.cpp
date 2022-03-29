@@ -16,6 +16,7 @@
 #include "obutils/ob_proxy_stmt.h"
 #include "opsql/parser/ob_proxy_parser.h"
 #include "dbconfig/ob_proxy_db_config_info.h"
+#include "proxy/shard/obproxy_shard_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::opsql;
@@ -103,13 +104,13 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
       }
       table_name_.assign_ptr(dml_buf_.table_name_buf_, table_name.str_len_);
       table_name_quote_ = table_name.quote_type_;
-      if (!drop_origin_db_table_name) {
+      if (OB_LIKELY(!drop_origin_db_table_name)) {
         MEMCPY(origin_dml_buf_.table_name_buf_, table_name.str_, table_name.str_len_);
         origin_table_name_.assign_ptr(origin_dml_buf_.table_name_buf_, table_name.str_len_);
       }
 
       // assign package name when table name is valid
-      if (NULL != package_name.str_ && 0 != package_name.str_len_) {
+      if (OB_UNLIKELY(NULL != package_name.str_ && 0 != package_name.str_len_)) {
         if (OB_UNLIKELY(package_name.str_len_ > OB_MAX_TABLE_NAME_LENGTH)
             || OB_UNLIKELY(package_name.str_len_ < 0)) {
           ret = OB_INVALID_ARGUMENT;
@@ -131,7 +132,7 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
         }
       }
 
-      if (NULL != alias_name.str_ && 0 != alias_name.str_len_) {
+      if (OB_UNLIKELY(NULL != alias_name.str_ && 0 != alias_name.str_len_)) {
         if (OB_UNLIKELY(alias_name.str_len_ > OB_MAX_TABLE_NAME_LENGTH)
             || OB_UNLIKELY(alias_name.str_len_ < 0)) {
           ret = OB_INVALID_ARGUMENT;
@@ -191,7 +192,7 @@ inline int ObSqlParseResult::set_call_prarms(const ObProxyCallParseInfo &call_pa
   } else if (OB_UNLIKELY(call_parse_info.node_count_ < 0)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid argument", K(call_parse_info.node_count_), K(ret));
-  } else if (call_parse_info.node_count_ > 0) {
+  } else if (call_parse_info.node_count_ >= 0) {
     call_info_.is_param_valid_ = true;
     call_info_.param_count_ = call_parse_info.node_count_;
     ObProxyCallParam tmp_param;
@@ -566,27 +567,27 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   parsed_length_ = static_cast<int64_t>(parse_result.end_pos_ - parse_result.start_pos_);
   text_ps_inner_stmt_type_ = parse_result.text_ps_inner_stmt_type_;
 
-  if (NULL != parse_result.table_info_.table_name_.str_ && parse_result.table_info_.table_name_.str_len_ > 0) {
+  if (OB_UNLIKELY(is_sharding_request && NULL != parse_result.table_info_.table_name_.str_ && parse_result.table_info_.table_name_.str_len_ > 0)) {
     dbmesh_route_info_.tb_pos_ = parse_result.table_info_.table_name_.str_ - parse_result.start_pos_;
   }
 
-  if (NULL != parse_result.trace_id_.str_
+  if (OB_UNLIKELY(NULL != parse_result.trace_id_.str_
       && 0 < parse_result.trace_id_.str_len_
-      && OB_MAX_OBPROXY_TRACE_ID_LENGTH > parse_result.trace_id_.str_len_) {
+      && OB_MAX_OBPROXY_TRACE_ID_LENGTH > parse_result.trace_id_.str_len_)) {
     MEMCPY(trace_id_buf_, parse_result.trace_id_.str_, parse_result.trace_id_.str_len_);
     trace_id_.assign_ptr(trace_id_buf_, parse_result.trace_id_.str_len_);
   }
 
-  if (NULL != parse_result.rpc_id_.str_
+  if (OB_UNLIKELY(NULL != parse_result.rpc_id_.str_
       && 0 < parse_result.rpc_id_.str_len_
-      && OB_MAX_OBPROXY_TRACE_ID_LENGTH > parse_result.rpc_id_.str_len_) {
+      && OB_MAX_OBPROXY_TRACE_ID_LENGTH > parse_result.rpc_id_.str_len_)) {
     MEMCPY(rpc_id_buf_, parse_result.rpc_id_.str_, parse_result.rpc_id_.str_len_);
     rpc_id_.assign_ptr(rpc_id_buf_, parse_result.rpc_id_.str_len_);
   }
 
   // if is dml stmt, then set db/table name
-  if (is_dml_stmt() || is_call_stmt() || (is_text_ps_stmt() && is_text_ps_inner_dml_stmt())
-      || is_show_create_table_stmt() || is_desc_table_stmt()) {
+  if (OB_LIKELY(is_dml_stmt() || is_call_stmt() || (is_text_ps_stmt() && is_text_ps_inner_dml_stmt())
+      || is_show_create_table_stmt() || is_desc_table_stmt())) {
     if (OB_FAIL(set_db_table_name(parse_result.table_info_.database_name_,
                                   parse_result.table_info_.package_name_,
                                   parse_result.table_info_.table_name_,
@@ -594,12 +595,12 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
                                   use_lower_case_name,
                                   drop_origin_db_table_name))) {
       LOG_WARN("failed to set db table name", K(use_lower_case_name), K(ret));
-    } else if (OB_FAIL(set_dbmesh_route_info(parse_result))) {
+    } else if (OB_UNLIKELY(is_sharding_request && OB_FAIL(set_dbmesh_route_info(parse_result)))) {
       LOG_WARN("fail to set dbmesh route info", K(ret));
       if (is_sharding_request) {
         stmt_type_ = OBPROXY_T_INVALID;
       }
-    } else if (is_call_stmt()) {
+    } else if (OB_UNLIKELY(is_call_stmt())) {
       if (OB_FAIL(set_call_prarms(parse_result.call_parse_info_))) {
         LOG_WARN("failed to set_call_prarms", K(ret));
       }
@@ -665,7 +666,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
         }
       }
     }
-  } 
+  }
 
   return ret;
 }
@@ -850,7 +851,7 @@ int ObProxySqlParser::get_parse_allocator(ObArenaAllocator *&allocator)
 {
   int ret = OB_SUCCESS;
   static __thread ObArenaAllocator *arena_allocator = NULL;
-  if (NULL == arena_allocator) {
+  if (OB_UNLIKELY(NULL == arena_allocator)) {
     if (NULL == (arena_allocator = new (std::nothrow) ObArenaAllocator(common::ObModIds::OB_PROXY_SQL_PARSE))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("fail to alloc arena allocator", K(ret));
@@ -890,7 +891,8 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = obproxy_parser.parse(sql, obproxy_parse_result, connection_collation))) {
       LOG_INFO("fail to parse sql, will go on anyway", K(sql), K(tmp_ret));
-    } else if (OB_SUCCESS != (tmp_ret = sql_parse_result.load_result(obproxy_parse_result, use_lower_case_name,
+    } else if (OB_SUCCESS != (tmp_ret = sql_parse_result.load_result(obproxy_parse_result,
+                                                                     use_lower_case_name,
                                                                      drop_origin_db_table_name, is_sharding_request))) {
       LOG_INFO("fail to load result, will go on anyway", K(sql), K(use_lower_case_name), K(tmp_ret));
     } else {
@@ -899,23 +901,7 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
 
     allocator->reuse();
   }
-  //int64_t end_time = ObTimeUtility::current_time();
-  //LOG_TRACE("finish parse sql", "total cost time(us)", end_time - start_time,
-  //          K(sql), K(sql_parse_result), K(ret));
-  if (OB_SUCC(ret) && need_parser_by_obparser(sql_parse_result)) {
-    if (OB_FAIL(parse_sql_by_obparser(sql, parse_mode, sql_parse_result))) {
-      LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
-    }
-  }
   return ret;
-}
-
-bool ObProxySqlParser::need_parser_by_obparser(ObSqlParseResult &sql_parse_result)
-{
-  return (sql_parse_result.is_select_stmt() && sql_parse_result.get_dbp_route_info().scan_all_)
-         || (sql_parse_result.get_dbmesh_route_info().testload_ != oceanbase::obproxy::dbconfig::TESTLOAD_NON
-             && sql_parse_result.get_dbmesh_route_info().testload_ != OBPROXY_MAX_DBMESH_ID)
-         ; //ADDED BY FUTURE
 }
 
 int ObProxySqlParser::init_ob_parser_node(ObArenaAllocator &allocator, ObParseNode *&ob_node)
@@ -1109,7 +1095,7 @@ int ObProxySqlParser::ob_load_testload_parse_node(ParseNode *node, const int lev
   return ret;
 }
 
-int ObSqlParseResult::get_result_tree_str(ParseNode *root, const int level, char* buf, int& pos, int64_t length)
+int ObSqlParseResult::get_result_tree_str(ParseNode *root, const int level, char* buf, int64_t& pos, int64_t length)
 {
   int ret = OB_SUCCESS;
   if (NULL == root || NULL == buf || length < 0) {
@@ -1117,20 +1103,36 @@ int ObSqlParseResult::get_result_tree_str(ParseNode *root, const int level, char
   } else {
     for (int i = 0 ; i < level *2; i++) {
       pos += snprintf(buf + pos, length - pos, "-");
+      if (OB_UNLIKELY(pos >= length)) {
+        pos = length - 1;
+        break;
+      }
     }
     pos += snprintf (buf + pos, length - pos, " %s %s:pos:%ld, text_len:%ld, num_child_:%d, token_off:%d, token_len:%d\n",
                      get_type_name(root->type_),
                      root->str_value_, root->pos_,
                      root->text_len_, root->num_child_,
                      root->token_off_, root->token_len_);
+    if (OB_UNLIKELY(pos >= length)) {
+      pos = length - 1;
+    }
+
     for (int i = 0; OB_SUCC(ret) && i < root->num_child_; i++) {
       if (NULL == root->children_[i]) {
         for (int i = 0 ; i < (level + 1) *2; i++) {
           pos += snprintf(buf + pos, length - pos, "-");
+          if (OB_UNLIKELY(pos >= length)) {
+            pos = length - 1;
+            break;
+          }
         }
         pos += snprintf(buf + pos, length - pos, " There is one NULL child node\n");
-      } else if (OB_FAIL(get_result_tree_str(root->children_[i], level + 1, buf, pos, length - pos))) {
-        LOG_WARN("get_result_tree_str failed", K(ret), K(i));
+        if (OB_UNLIKELY(pos >= length)) {
+          pos = length - 1;
+          break;
+        }
+      } else if (OB_FAIL(get_result_tree_str(root->children_[i], level + 1, buf, pos, length))) {
+        LOG_WARN("get_result_tree_str failed", K(ret), K(i), K(pos), K(length));
       }
     }
   }
@@ -1138,10 +1140,9 @@ int ObSqlParseResult::get_result_tree_str(ParseNode *root, const int level, char
 }
 
 int ObSqlParseResult::ob_parse_resul_to_string(const ParseResult &parse_result, const common::ObString& sql,
-                                               char* buf, int64_t buf_len)
+                                               char* buf, int64_t buf_len, int64_t &pos)
 {
   int ret = OB_SUCCESS;
-  int pos = 0;
   if (OB_FAIL(get_result_tree_str(parse_result.result_tree_, 0, buf, pos, buf_len))) {
     LOG_WARN("get_result_tree_str failed", K(ret), K(sql));
   } else if (parse_result.comment_list_ != NULL) {
@@ -1149,23 +1150,30 @@ int ObSqlParseResult::ob_parse_resul_to_string(const ParseResult &parse_result, 
       TokenPosInfo& token_info = parse_result.comment_list_[j];
       pos += snprintf(buf + pos, buf_len - pos, "comment[%d] is %.*s\n", j,
           token_info.token_len_, sql.ptr()+ token_info.token_off_);
+      if (OB_UNLIKELY(pos >= buf_len)) {
+        pos = buf_len - 1;
+        break;
+      }
     }
   }
   return ret;
 }
 
 int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
-                                           const common::ObString& sql)
+                                           const common::ObString& sql,
+                                           const bool need_handle_result)
 {
   int ret = OB_SUCCESS;
-  const int64_t buf_len = 64 * 1024;
-  char tree_str_buf[buf_len];
   //just for debug , ignore ret
-  ob_parse_resul_to_string(parse_result, sql, tree_str_buf, buf_len);
-  ObString tree_str(buf_len, tree_str_buf);
-  LOG_DEBUG("result_tree_ is \n", K(tree_str));
+  if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
+    const int64_t buf_len = 64 * 1024;
+    int64_t pos = 0;
+    char tree_str_buf[buf_len];
+    ob_parse_resul_to_string(parse_result, sql, tree_str_buf, buf_len, pos);
+    ObString tree_str(pos, tree_str_buf);
+    LOG_DEBUG("result_tree_ is \n", K(tree_str));
+  }
   ParseNode* node = parse_result.result_tree_;
-  ObProxySelectStmt* select_stmt= NULL;
   if (OB_ISNULL(node)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("node is unexpected null", K(ret));
@@ -1176,25 +1184,31 @@ int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
     ret = OB_ERR_UNEXPECTED;
     LOG_DEBUG("unexpected null child", K(ret));
   } else {
-    char* buf = NULL;
     switch(node->type_) {
       case T_SELECT:
-        if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxySelectStmt)))) {
-          LOG_WARN("failed to alloc buf");
-          ret = OB_ALLOCATE_MEMORY_FAILED;
-        } else if (OB_ISNULL(select_stmt = new (buf) ObProxySelectStmt())) {
-          ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("failed to new ObProxySelectStmt", K(ret));
-        } else if (OB_FAIL(select_stmt->init())) {
-          LOG_WARN("init failed", K(ret));
-        } else {
-          select_stmt->set_sql_string(sql);
-          select_stmt->set_stmt_type(OBPROXY_T_SELECT);
-          select_stmt->set_allocator(&allocator_);
-          select_stmt->field_results_ = &fileds_result_;
-          proxy_stmt_ = select_stmt;
-          if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
-            LOG_WARN("handle_parse_result failed", K(ret));
+        if (need_handle_result) {
+          char* buf = NULL;
+          ObProxySelectStmt* select_stmt= NULL;
+          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxySelectStmt)))) {
+            LOG_WARN("failed to alloc buf");
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+          } else if (OB_ISNULL(select_stmt = new (buf) ObProxySelectStmt())) {
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_WARN("failed to new ObProxySelectStmt", K(ret));
+          } else if (OB_FAIL(select_stmt->init())) {
+            LOG_WARN("init failed", K(ret));
+          } else {
+            select_stmt->set_sql_string(sql);
+            select_stmt->set_stmt_type(OBPROXY_T_SELECT);
+            select_stmt->set_allocator(&allocator_);
+            select_stmt->field_results_ = &fileds_result_;
+            select_stmt->set_table_name(origin_table_name_);
+            proxy_stmt_ = select_stmt;
+            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
+              LOG_WARN("handle_parse_result failed", K(ret));
+            } else {
+              has_for_update_ = select_stmt->has_for_update();
+            }
           }
         }
         break;
@@ -1211,7 +1225,8 @@ int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
 
 int ObProxySqlParser::parse_sql_by_obparser(const ObString &sql,
                                             const ObProxyParseMode parse_mode,
-                                            ObSqlParseResult &sql_parse_result)
+                                            ObSqlParseResult &sql_parse_result,
+                                            const bool need_handle_result)
 {
   int ret = OB_SUCCESS;
   //int64_t start_time = ObTimeUtility::current_time();
@@ -1232,8 +1247,11 @@ int ObProxySqlParser::parse_sql_by_obparser(const ObString &sql,
       ParseResult &ob_parse_result = *parser_result;
 
       if (OB_FAIL(obproxy_parser.obparse(sql, ob_parse_result))) {
+        if (OB_ERR_PARSE_SQL == ret) {
+          ret = OB_ERR_PARSER_SYNTAX;
+        }
         LOG_INFO("fail to parse sql", K(sql), K(ret));
-      } else if (OB_FAIL(sql_parse_result.load_ob_parse_result(ob_parse_result, sql))) {
+      } else if (OB_FAIL(sql_parse_result.load_ob_parse_result(ob_parse_result, sql, need_handle_result))) {
         LOG_WARN("fail to load_ob_parse_result", K(sql), K(ret));
       } else {
         LOG_DEBUG("success to do parse_sql_by_obparser", K(sql));

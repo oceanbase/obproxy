@@ -19,8 +19,10 @@
 #include "iocore/eventsystem/ob_ethread.h"
 #include "executor/ob_proxy_parallel_cont.h"
 #include "executor/ob_proxy_parallel_execute_cont.h"
+#include "proxy/shard/obproxy_shard_utils.h"
 
 using namespace oceanbase::obproxy::executor;
+using namespace oceanbase::common;
 
 namespace oceanbase {
 namespace obproxy {
@@ -44,301 +46,85 @@ ObProxyOperator* ObProxyTableScanOp::get_child(const uint32_t idx)
   return NULL;
 }
 
-int ObProxyTableScanOp::rewrite_hint_table(const common::ObString &hint_string,
-      common::ObSqlString &obj_hint_string,
-      const common::ObString &table_name, const common::ObString &database_name,
-      const common::ObString &real_table_name, const common::ObString &real_database_name,
-      bool is_oracle_mode) {
-  char* hint_buf = NULL;
-  char* tmp_buf = NULL;
-  int32_t db_table_len = table_name.length() > database_name.length()
-                                ? table_name.length() : database_name.length();
-  int32_t hint_len = hint_string.length();
-  db_table_len++;
-  int ret = common::OB_SUCCESS;
-  if (OB_ISNULL(hint_string.ptr())) {
-    //ret = common::OB_INVALID_ARGUMENT;
-    LOG_DEBUG("not have any hint_stirng, not need to rewrite_hint_table.");
-    //LOG_WARN("invalid input", K(hint_string));
-  } else if (OB_ISNULL(hint_buf
-            = reinterpret_cast<char*>(allocator_.alloc(hint_len + 1)))
-           ||(OB_ISNULL(tmp_buf
-            = reinterpret_cast<char*>(allocator_.alloc(db_table_len))))) {
-    ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("memory alloc error", K(ret), K(hint_string));
-  } else {
-    char* table_pos = NULL;
-    char* db_pos = NULL;
-    memcpy(hint_buf, hint_string.ptr(), hint_len);
-    hint_buf[hint_string.length()] = '\0';
-    string_to_upper_case(hint_buf, hint_len);
-    memcpy(tmp_buf, table_name.ptr(), table_name.length());
-    tmp_buf[table_name.length()] = '\0';
-    table_pos = strstr(hint_buf, tmp_buf);
-    if (OB_NOT_NULL(table_pos)) {
-      LOG_DEBUG("found the table_name in hint_string", K(hint_string), K(table_name));
-      int64_t pos = table_pos - hint_buf;
-      // has db_name.`table_name` or db_name.table_name
-      if (pos > 2 && (hint_buf[pos-1] == '.' || hint_buf[pos-2] == '.')) {
-        memcpy(tmp_buf, database_name.ptr(), database_name.length());
-        tmp_buf[database_name.length()] = '\0';
-        db_pos = strstr(hint_buf, tmp_buf);
-      }
-      if (OB_NOT_NULL(db_pos)) {
-        obj_hint_string.append(hint_string.ptr(), db_pos - hint_buf);
-      }else {
-        obj_hint_string.append(hint_string.ptr(), *(table_pos - 1) == '"' ? table_pos - 1 - hint_buf
-            : table_pos - hint_buf);
-      }
-      if (is_oracle_mode) {
-        obj_hint_string.append("\"", 1);
-        obj_hint_string.append(real_database_name.ptr(), real_database_name.length());
-        obj_hint_string.append("\"", 1);
-      } else {
-        obj_hint_string.append(real_database_name.ptr(), real_database_name.length());
-      }
-
-      obj_hint_string.append(".", 1);
-      if (is_oracle_mode) {
-        obj_hint_string.append("\"", 1);
-        obj_hint_string.append(real_table_name.ptr(), real_table_name.length());
-        obj_hint_string.append("\"", 1);
-      } else {
-        obj_hint_string.append(real_table_name.ptr(), real_table_name.length());
-      }
-      if (*(table_pos + table_name.length()) == '\"') {
-        obj_hint_string.append(hint_string.ptr() + (table_pos + 1 - hint_buf), 
-            hint_string.length() - (table_pos + 1 - hint_buf)); 
-      } else {
-        obj_hint_string.append(hint_string.ptr() + (table_pos - hint_buf), 
-            hint_string.length() - (table_pos - hint_buf)); 
-      }
-    }
-  }
-  return ret;
-}
-
-int ObProxyTableScanOp::format_sql_header(ObSqlString &obj_sql_head)
-{
-  int ret = common::OB_SUCCESS;
-  ObProxyTableScanInput* input = NULL;
-
-  OB_ASSERT(OB_NOT_NULL(ObProxyOperator::get_input()));
-
-  if (OB_ISNULL(input
-        =  dynamic_cast<ObProxyTableScanInput*>(ObProxyOperator::get_input()))) {
-    ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input for ObProxyTableScanOp");
-  }
-
-  if (OB_SUCC(ret)) {
-    LOG_DEBUG("SELECT EXPR count", K(ret), K(input->get_select_exprs().count()));
-    for (int64_t i = 0; i < input->get_select_exprs().count(); i++) {
-      if (OB_ISNULL(input->get_select_exprs()[i])
-          || OB_FAIL((int)(input->get_select_exprs()[i]->to_sql_string(obj_sql_head)))) {
-        LOG_WARN("inner error when select exprs to sql_string", K(ret),
-            K(input->get_select_exprs()[i]));
-      }
-      if (i + 1 != input->get_select_exprs().count()) {
-        obj_sql_head.append(", ");
-      }
-    }
-
-    obj_sql_head.append(" FROM ");
-  }
-  return ret;
-}
-
-int ObProxyTableScanOp::format_sql_tailer(ObSqlString &obj_sql_tail, bool is_oracle_mode)
-{
-  int ret = common::OB_SUCCESS;
-  ObProxyTableScanInput* input = NULL;
-  bool has_group_by = false;
-
-  OB_ASSERT(OB_NOT_NULL(ObProxyOperator::get_input()));
-
-  if (OB_ISNULL(input 
-        =  dynamic_cast<ObProxyTableScanInput*>(ObProxyOperator::get_input()))) {
-    ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input for ObProxyTableScanOp");
-  }
-
-  if(OB_SUCC(ret)) {
-    if (OB_SUCC(ret) && input->get_condition_exprs().count() > 0) {
-      obj_sql_tail.append(" WHERE ");
-    }
-    for (int64_t i = 0; OB_SUCC(ret) && i < input->get_condition_exprs().count(); i++) {
-      if (OB_ISNULL(input->get_condition_exprs()[i])
-          || OB_FAIL((int)(input->get_condition_exprs()[i]->to_sql_string(obj_sql_tail)))) {
-        LOG_WARN("inner error when condition exprs to sql_string",
-            K(input->get_condition_exprs()[i]));
-        break;
-      }
-    }
-
-    /* GROUP BY col_a, col_b ORDER BY col_c, col_d */
-    if (OB_SUCC(ret) && input->get_group_by_exprs().count() > 0) {
-      obj_sql_tail.append(" GROUP BY ");
-      has_group_by = true;
-      for (int64_t i = 0; OB_SUCC(ret) && i < input->get_group_by_exprs().count(); i++) {
-        if (OB_ISNULL(input->get_group_by_exprs()[i])
-            || OB_FAIL((int)(input->get_group_by_exprs()[i]->to_sql_string(obj_sql_tail)))) {
-          LOG_WARN("inner error when groupby exprs to sql_string",
-              K(input->get_group_by_exprs()[i]));
-        }
-        if (i + 1 != input->get_group_by_exprs().count()) {
-          obj_sql_tail.append(", ");
-        }
-      }
-      if (!is_oracle_mode) {
-        /* Add order by for GROUP BY columns for ObServer not sort by group by columns. */
-        obj_sql_tail.append(" ORDER BY ");
-        for (int64_t i = 0; OB_SUCC(ret) && i < input->get_group_by_exprs().count(); i++) {
-          if (OB_ISNULL(input->get_group_by_exprs()[i])
-              || OB_FAIL((int)(input->get_group_by_exprs()[i]->to_sql_string(obj_sql_tail)))) {
-            LOG_WARN("inner error when groupby exprs to sql_string",
-                K(input->get_group_by_exprs()[i]));
-          }
-          if (i + 1 != input->get_group_by_exprs().count()) {
-            obj_sql_tail.append(", ");
-          }
-        }
-      }
-    } else if (OB_SUCC(ret) && input->get_order_by_exprs().count() > 0) {
-      obj_sql_tail.append(" ORDER BY ");
-      for (int64_t i = 0; OB_SUCC(ret) && i < input->get_order_by_exprs().count(); i++) {
-        if (OB_ISNULL(input->get_order_by_exprs()[i])
-            || OB_FAIL((int)(input->get_order_by_exprs()[i]->to_sql_string(obj_sql_tail)))) {
-          LOG_WARN("inner error when order by exprs to sql_string", K(ret),
-              K(input->get_order_by_exprs()[i]));
-        }
-        if (i + 1 != input->get_order_by_exprs().count()) {
-          obj_sql_tail.append(", ");
-        }
-        LOG_DEBUG("ORDER BY add expr", K(ret), K(obj_sql_tail));
-      }
-    }
-
-    int64_t value = -1;
-    if (OB_SUCC(ret) && !has_group_by && -1 != (value = input->get_op_top_value())) {
-      obj_sql_tail.append_fmt(" LIMIT %ld", value);
-      int64_t start = input->get_op_limit_value();
-      int64_t offset = input->get_op_limit_value();
-      LOG_DEBUG("add LIMIT base on limit ", K(start), K(offset), K(value));
-    }
-
-  }
-
-  return ret;
-}
-
 int ObProxyTableScanOp::get_next_row()
 {
-  int ret = common::OB_SUCCESS;
+  int ret = OB_SUCCESS;
 
   ObProxyTableScanInput* input = NULL;
+  common::ObSEArray<ObProxyParallelParam, 4> parallel_param;
 
   if (OB_ISNULL(ObProxyOperator::get_input())) {
-    ret = common::OB_INVALID_ARGUMENT;
+    ret = OB_INVALID_ARGUMENT;
     LOG_WARN("not have any input for table_scan", K(ret), KP(ObProxyOperator::get_input()));
-  } else if (OB_ISNULL(input 
-        =  dynamic_cast<ObProxyTableScanInput*>(ObProxyOperator::get_input()))) {
-    ret = common::OB_INVALID_ARGUMENT;
+  } else if (OB_ISNULL(input = dynamic_cast<ObProxyTableScanInput*>(ObProxyOperator::get_input()))) { 
+    ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input for ObProxyTableScanOp", K(ret));
   } else if (OB_ISNULL(operator_async_task_)) {
-    ret = common::OB_INVALID_ARGUMENT;
+    ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input for ObProxyTableScanOp", K(ret));
-  }
+  } else {
+    ObIArray<hash::ObHashMapWrapper<ObString, ObString> > &table_name_maps = input->get_table_name_maps();
+    ObIArray<dbconfig::ObShardConnector*> &db_key_names = input->get_db_key_names();
+    ObIArray<dbconfig::ObShardProp*> &shard_props = input->get_shard_props();
+    ObString &request_sql = input->get_request_sql();
+    obutils::ObProxySqlParser sql_parser;
+    obutils::ObSqlParseResult parse_result;
 
-  LOG_DEBUG("input limit value:", K(input->get_op_limit_value()), K(input->get_op_offset_value()));
+    if (table_name_maps.count() != db_key_names.count()
+        || shard_props.count() != db_key_names.count()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("inner error for sharding info",
+               "phy table count", table_name_maps.count(),
+               "shard prop count", shard_props.count(),
+               "dbkey count", db_key_names.count(), K(ret));
+    } else if (OB_FAIL(sql_parser.parse_sql_by_obparser(request_sql, NORMAL_PARSE_MODE, parse_result, true))) {
+      LOG_WARN("parse_sql_by_obparser failed", K(request_sql), K(ret));
+    }
 
-  if (OB_SUCC(ret)) {
-    /* init object sql for select */
-    ObSqlString obj_sql_head;
-    ObSqlString obj_sql_tail;
-
-    if (OB_FAIL(format_sql_header(obj_sql_head))) {
-      LOG_WARN("inner error to format sql base on exprs");
-    } else if (input->get_phy_db_table_names().count()
-        != input->get_db_key_names().count()) {
-      ret = common::OB_ERROR;
-      LOG_WARN("inner error for sharding info", K(input->get_phy_db_table_names().count()),
-           K(input->get_db_key_names().count()));
-    } else {
-      common::ObSEArray<ObProxyParallelParam, 4> parallel_param;
-      //void *tmp_buf = NULL;
-
-      int64_t count = input->get_db_key_names().count();
+    for (int64_t i = 0; OB_SUCC(ret) && i < db_key_names.count(); i++) {
+      dbconfig::ObShardConnector *db_key_name = db_key_names.at(i);
+      dbconfig::ObShardProp *shard_prop =  shard_props.at(i);
+      hash::ObHashMapWrapper<ObString, ObString> &table_name_map_warraper = table_name_maps.at(i);
+      ObSqlString new_sql;
       char *tmp_buf = NULL;
-      ObSqlString obj_sql; // a temp ObSqlString object to use
-      for (int64_t i = 0; i < count; i++) {
-        bool is_oracle_mode = input->get_db_key_names().at(i)->server_type_ == common::DB_OB_ORACLE;
-        obj_sql.reset();
-        obj_sql.append(input->get_normal_annotation_string());
-        /* Rewrite and add hint string */
-        obj_sql.append("SELECT ");
-        obj_sql.append(obj_sql_head.ptr());
-        obj_sql_tail.reuse();
-        if (OB_FAIL(format_sql_tailer(obj_sql_tail, is_oracle_mode))) {
-          LOG_WARN("inner error to format sql base on exprs");
-        } else if (OB_FAIL(rewrite_hint_table(input->get_hint_string(), obj_sql,
-            //TODO get origin table_name and db_name
-            input->get_logical_table_name(), input->get_logical_database_name(),
-            input->get_phy_db_table_names().at(i), input->get_db_key_names().at(i)->database_name_,
-            is_oracle_mode))) {
-          LOG_WARN("internal error in rewrite_hint_table", K(ret),
-              K(input->get_hint_string()));
-        } else if (input->get_db_key_names().at(i)->database_name_.length() <= 0
-                      || input->get_phy_db_table_names().at(i).length() <= 0) {
-          ret = common::OB_INVALID_ARGUMENT;
-          LOG_WARN("invilid table name or db_name", K(ret),
-                   K(input->get_db_key_names().at(i)->database_name_),
-                   K(input->get_phy_db_table_names().at(i)));
-        } else {
-          obj_sql.append(input->get_db_key_names().at(i)->database_name_.ptr(),
-                         input->get_db_key_names().at(i)->database_name_.length());
-          obj_sql.append(".");
-          obj_sql.append(input->get_phy_db_table_names().at(i).ptr(),
-                         input->get_phy_db_table_names().at(i).length());
-          LOG_DEBUG("sub_sql table info", K(input->get_db_key_names().at(i)->database_name_.ptr()),
-                     K(input->get_phy_db_table_names().at(i).ptr()));
-          obj_sql.append(obj_sql_tail.ptr(), obj_sql_tail.length());
+      bool is_oracle_mode = db_key_name->server_type_ == common::DB_OB_ORACLE;
+      if (OB_FAIL(proxy::ObProxyShardUtils::do_rewrite_shard_select_request(request_sql, parse_result, is_oracle_mode,
+                                                                            table_name_map_warraper.get_hash_map(),
+                                                                            db_key_name->database_name_, false,
+                                                                            new_sql))) {
+        LOG_WARN("fail to rewrite shard request", K(request_sql), K(is_oracle_mode), K(ret));
+      } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(new_sql.length()))) {
+        ret = common::OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("no have enough memory to init", K(op_name()), "sql len", new_sql.length(), K(ret));
+      } else {
+        MEMCPY(tmp_buf, new_sql.ptr(), new_sql.length());
+        ObProxyParallelParam param;
 
-          if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(obj_sql.length() + 1))) {
-            ret = common::OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(obj_sql.length() + 1));
-          }
-
-          MEMCPY(tmp_buf, obj_sql.ptr(), obj_sql.length());
-          tmp_buf[obj_sql.length()] = '\0';
-
-          ObProxyParallelParam param;
-          param.shard_conn_ = input->get_db_key_names().at(i);
-          //char* tmp_p = obj_sql.ptr();
-          param.request_sql_.assign(tmp_buf, static_cast<ObString::obstr_size_t>(obj_sql.length()));
-          LOG_DEBUG("sub_sql and len:", K(param.request_sql_), K(obj_sql.length()));
-          parallel_param.push_back(param);
-        }
-      }
-
-      if (OB_SUCC(ret)) {
-        for (int64_t i = 0; i < count; i++) {
-          LOG_DEBUG("sub_sql before send", K(i), K(&parallel_param.at(i).request_sql_),
-                    K(parallel_param.at(i).request_sql_), K(parallel_param.at(i).shard_conn_->database_name_));
-        }
-        if (OB_FAIL(get_global_parallel_processor().open(*operator_async_task_, operator_async_task_->parallel_action_array_[0],
-                  parallel_param, &allocator_, timeout_ms_))) {
-          LOG_WARN("fail to op parallel processor", K(parallel_param));
-        } else {
-          set_sub_sql_count(count);
-        }
+        param.shard_conn_ = db_key_name;
+        param.shard_prop_ = shard_prop;
+        param.request_sql_.assign(tmp_buf, static_cast<ObString::obstr_size_t>(new_sql.length()));
+        parallel_param.push_back(param);
       }
     }
   }
+
+  if (OB_SUCC(ret)) {
+    for (int64_t i = 0; i < parallel_param.count(); i++) {
+      LOG_DEBUG("sub_sql before send", K(i), "sql", parallel_param.at(i).request_sql_,
+                "database", parallel_param.at(i).shard_conn_->database_name_);
+    }
+    if (OB_FAIL(get_global_parallel_processor().open(*operator_async_task_, operator_async_task_->parallel_action_array_[0],
+                                                     parallel_param, &allocator_, timeout_ms_))) {
+      LOG_WARN("fail to op parallel processor", K(parallel_param));
+    } else {
+      set_sub_sql_count(parallel_param.count());
+    }
+  }
+
   return ret;
 }
 
-int ObProxyTableScanOp::handle_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyTableScanOp::handle_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   int ret = OB_SUCCESS;
 
@@ -377,7 +163,7 @@ int ObProxyTableScanOp::handle_result(void *data, bool is_final, ObProxyResultRe
   return ret;
 }
 
-int ObProxyTableScanOp::handle_response_result(void *data, bool is_final, ObProxyResultResp *&result)
+int ObProxyTableScanOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
   UNUSED(is_final);
   int ret = OB_SUCCESS;
@@ -387,8 +173,10 @@ int ObProxyTableScanOp::handle_response_result(void *data, bool is_final, ObProx
   executor::ObProxyParallelResp *pres = NULL;
 
   ObMysqlField *fields = NULL; //_array = NULL;
-  UNUSED(data);
-  UNUSED(is_final);
+  ResultRows *rows = NULL;
+  int64_t result_sum = 0;
+  ResultRow *row = NULL;
+  common::ObObj *row_ptr = NULL;
 
   if (OB_ISNULL(data)) {
     ret = common::OB_INVALID_ARGUMENT;
@@ -399,147 +187,250 @@ int ObProxyTableScanOp::handle_response_result(void *data, bool is_final, ObProx
   } else if (!pres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("ObProxyTableScanOp::handle_response_result not response result", K(pres), KP(pres), K(pres->is_resultset_resp()));
-  } else {
-    LOG_DEBUG("ObProxyTableScanOp::process_ready_data:resultset_resp", K(pres), KP(pres));
+  } else if (OB_UNLIKELY((columns_length = pres->get_column_count()) <= 0)) {
+    ret = common::OB_ERR_UNEXPECTED;
+    LOG_WARN("columns_length less than 0", K(columns_length), K(pres), K(ret));
+  } else if (OB_ISNULL(fields = pres->get_field())) {
+    ret = common::OB_ERR_UNEXPECTED;
+    LOG_WARN("fields is null", K(pres), K(ret));
+  }
 
-    common::ObObj *row_ptr = NULL;
-    ResultRows *rows = NULL;
-    if (OB_UNLIKELY((columns_length = pres->get_column_count()) <= 0)) {
+  if (OB_SUCC(ret) && OB_ISNULL(result_fields_)) {
+    if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultFields)))) {
+      ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
+    } else if (OB_ISNULL(result_fields_ = new (tmp_buf) ResultFields(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("columns_length less than 0", K(columns_length), K(pres), K(ret));
-    } else if (OB_ISNULL(fields = pres->get_field())) {
-      ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("fields is null", K(pres), K(ret));
+      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && i < columns_length; i++) {
+        LOG_DEBUG("change field info", K(i), K(result_fields_));
+        obmysql::ObMySQLField *obj_field = NULL;
+        if (OB_FAIL(change_sql_field(fields, obj_field, allocator_))) {
+          LOG_WARN("change field info failed", K(ret));
+        } else {
+          result_fields_->push_back(*obj_field);
+          fields++;
+        }
+      }
     }
 
-    if (OB_SUCC(ret) && OB_ISNULL(result_fields_)) {
-      if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultFields)))) {
-        ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
-      } else if (OB_ISNULL(result_fields_ = new (tmp_buf) ResultFields(array_new_alloc_size, allocator_))) {
-        ret = common::OB_ERR_UNEXPECTED;
-        LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
-      } else {
-        for (int64_t i = 0; OB_SUCC(ret) && i < columns_length; i++) {
-          LOG_DEBUG("change field info", K(i), K(result_fields_));
-          obmysql::ObMySQLField *obj_field = NULL;
-          if (OB_FAIL(change_sql_field(fields, obj_field, allocator_))) {
-            LOG_WARN("change field info failed", K(ret));
-          } else {
-            result_fields_->push_back(*obj_field);
-            fields++;
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(set_index())) {
+        LOG_WARN("fail to set index", K(ret));
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
+      ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
+    } else {
+      rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
+    }
+  }
+
+  while(OB_SUCC(ret) && OB_SUCC(pres->next(row_ptr))) {
+    if (NULL == row_ptr) {
+      ret = common::OB_ERR_UNEXPECTED;
+      LOG_WARN("row prt is NULL", K(ret));
+    } else if (OB_FAIL(init_row(row))) {
+      ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(row));
+    } else {
+      result_sum++;
+
+      row->reserve(columns_length);
+      for (int64_t i = 0; i < columns_length; i++) {
+        LOG_DEBUG("row object info--------------->", K(i), KPC(row_ptr), K(pres->get_cont_index()));
+        row->push_back(row_ptr);
+        row_ptr++;
+      }
+      rows->push_back(row);
+      LOG_DEBUG("process_ready_data: get one result from server", K(op_name()), K(row), KPC(row));
+    }
+  }
+
+  if (common::OB_ITER_END == ret) {
+    ret = common::OB_SUCCESS;
+  }
+
+  LOG_DEBUG("ObProxyTableScanOp::process_ready_data get all rows", K(ret), K(result_sum),
+            K(pres->get_cont_index()));
+
+  ObProxyResultResp *res = NULL;
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
+      LOG_WARN("process_ready_data:failed to packet resultset", K(op_name()), K(ret));
+    } else if (OB_ISNULL(res)) {
+      ret = common::OB_ERR_UNEXPECTED;
+      LOG_WARN("process_ready_data::packet_result_set success but res is NULL", K(ret), K(res));
+    } else {
+      res->set_result_sum(get_sub_sql_count());
+      res->set_result_idx(pres->get_cont_index());
+      LOG_DEBUG("ObProxyTableScanOp::process_ready_data sub_sql_count", K(ret), K(res->get_result_sum()), K(res));
+    }
+    result = res;
+  }
+
+  return ret;
+}
+
+int ObProxyTableScanOp::set_index()
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyTableScanInput* input = dynamic_cast<ObProxyTableScanInput*>(get_input());
+  if (OB_FAIL(set_index_for_exprs(input->get_calc_exprs()))) {
+    LOG_WARN("fail to set index for calc exprs", K(ret));
+  } else if (OB_FAIL(set_index_for_exprs(input->get_agg_exprs()))) {
+    LOG_WARN("fail to set index for agg exprs", K(ret));
+  } else if (OB_FAIL(set_index_for_exprs(input->get_group_exprs()))) {
+    LOG_WARN("fail to set index for group exprs", K(ret));
+  } else if (OB_FAIL(set_index_for_exprs(input->get_order_exprs()))) {
+    LOG_WARN("fail to set index for order exprs", K(ret));
+  }
+
+  return ret;
+}
+
+template <typename T>
+int ObProxyTableScanOp::set_index_for_exprs(ObIArray<T*> &expr_array)
+{
+  int ret = OB_SUCCESS;
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < expr_array.count(); i++) {
+    T *expr = expr_array.at(i);
+    if (OB_ISNULL(expr)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected expr is null", K(ret));
+    } else if (OB_FAIL(set_index_for_expr(expr))) {
+      LOG_WARN("fail to set index", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyExprType expr_type = expr->get_expr_type();
+
+  if (OB_PROXY_EXPR_TYPE_FUNC_GROUP == expr_type || OB_PROXY_EXPR_TYPE_FUNC_ORDER == expr_type) {
+    ObProxyGroupItem *group_expr = dynamic_cast<ObProxyGroupItem*>(expr);
+    if (OB_ISNULL(group_expr)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+    } else if (OB_ISNULL(expr = group_expr->get_expr())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("group expr or order expr do not have child expr", KPC(group_expr), K(ret));
+    } else {
+      expr_type = expr->get_expr_type();
+    }
+  }
+
+  if (OB_SUCC(ret) && -1 == expr->get_index()
+      && (OB_PROXY_EXPR_TYPE_COLUMN == expr_type
+          || OB_PROXY_EXPR_TYPE_SHARDING_CONST == expr_type
+          || expr->is_func_expr())) {
+    int64_t i = 0;
+    for (; OB_SUCC(ret) && i < result_fields_->count(); ++i) {
+      obmysql::ObMySQLField &field = result_fields_->at(i);
+      ObString &alias_name = expr->get_alias_name();
+      if (!alias_name.empty()) {
+        if (0 == alias_name.case_compare(field.cname_)) {
+          expr->set_index(i);
+          expr->set_accuracy(field.accuracy_);
+          break;
+        }
+      } else if (OB_PROXY_EXPR_TYPE_SHARDING_CONST == expr_type || expr->is_func_expr()) {
+        ObString &expr_name = expr->get_expr_name();
+        if (0 == expr_name.case_compare(field.cname_)) {
+          expr->set_index(i);
+          expr->set_accuracy(field.accuracy_);
+          break;
+        }
+      } else if (OB_PROXY_EXPR_TYPE_COLUMN == expr_type) {
+        ObProxyExprColumn *expr_column = dynamic_cast<ObProxyExprColumn*>(expr);
+        if (OB_ISNULL(expr_column)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+        } else {
+          ObString &table_name = expr_column->get_table_name();
+          ObString &column_name = expr_column->get_column_name();
+          if ((table_name.empty() || field.tname_.prefix_match(table_name))
+              && 0 == column_name.case_compare(field.cname_)) {
+            expr->set_index(i);
+            expr->set_accuracy(field.accuracy_);
+            break;
           }
         }
       }
     }
 
-    if (OB_SUCC(ret)) {
-      if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
-        ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
-      } else {
-        rows = new (tmp_buf) ResultRows(array_new_alloc_size, allocator_);
-      }
+    if (i == result_fields_->count()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to get column from field, mayby something error", K(expr), K(ret));
     }
+  }
 
-    int64_t result_sum = 0;
-    ResultRow *row = NULL;
-
-    while(OB_SUCC(ret) && OB_SUCC(pres->next(row_ptr))) {
-      if (NULL == row_ptr) {
-        ret = common::OB_ERR_UNEXPECTED;
-        LOG_WARN("row prt is NULL", K(ret));
-      } else if (OB_FAIL(init_row(row))) {
-        ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(row));
+  if (OB_SUCC(ret)) {
+    if (OB_PROXY_EXPR_TYPE_FUNC_AVG == expr_type) {
+      // Avg-dependent count and sum expressions also set index
+      ObProxyExprAvg *avg_expr = dynamic_cast<ObProxyExprAvg*>(expr);
+      ObProxyExprSum *sum_expr = NULL;
+      ObProxyExprCount *count_expr = NULL;
+      if (OB_ISNULL(avg_expr)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+      } else if (OB_ISNULL(sum_expr = avg_expr->get_sum_expr())) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("avg expr don't have sum expr", K(avg_expr), K(ret));
+      } else if (OB_ISNULL(count_expr = avg_expr->get_count_expr())) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("avg expr don't have count expr", K(avg_expr), K(ret));
+      } else if (OB_FAIL(set_index_for_expr(sum_expr))) {
+        LOG_WARN("fail to set index for sum expr", K(ret));
+      } else if (OB_FAIL(set_index_for_expr(count_expr))) {
+        LOG_WARN("fail to set index for count expr", K(ret));
+      }
+    } else if (expr->has_agg() && !expr->is_agg()) {
+      // If the expression contains an aggregate, but it is not an aggregate function, 
+      // set an index for its parameter, which is used to calculate
+      ObProxyFuncExpr *func_expr = dynamic_cast<ObProxyFuncExpr*>(expr);
+      if (OB_ISNULL(func_expr)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("fail to dynamic cast", K(expr), K(ret));
       } else {
-        result_sum++;
-
-        row->reserve(columns_length);
-        for (int64_t i = 0; i < columns_length; i++) {
-          LOG_DEBUG("row object info--------------->", K(i), KPC(row_ptr), K(pres->get_cont_index()));
-          row->push_back(row_ptr);
-          row_ptr++;
+        ObSEArray<ObProxyExpr*, 4>& param_array = func_expr->get_param_array();
+        for (int64_t i = 0; OB_SUCC(ret) && i < param_array.count(); i++) {
+          ObProxyExpr* param_expr = param_array.at(i);
+          if (OB_FAIL(set_index_for_expr(param_expr))) {
+            LOG_WARN("fail to set index for expr", K(ret));
+          }
         }
-        rows->push_back(row);
-        LOG_DEBUG("process_ready_data: get one result from server", K(op_name()), K(row), KPC(row));
       }
-    }
-
-    if (common::OB_ITER_END == ret) {
-      ret = common::OB_SUCCESS;
-    }
-
-    LOG_DEBUG("ObProxyTableScanOp::process_ready_data get all rows", K(ret), K(result_sum),
-                 K(pres->get_cont_index()));
-
-    ObProxyResultResp *res = NULL;
-    if (OB_SUCC(ret)) {
-      if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
-        LOG_WARN("process_ready_data:failed to packet resultset", K(op_name()), K(ret));
-      } else if (OB_ISNULL(res)) {
-        LOG_WARN("process_ready_data::packet_result_set success but res is NULL", K(ret), K(res));
-        ret = common::OB_ERR_UNEXPECTED;
-      } else {
-        res->set_result_sum(get_sub_sql_count());
-        res->set_result_idx(pres->get_cont_index());
-        LOG_DEBUG("ObProxyTableScanOp::process_ready_data sub_sql_count", K(ret), K(res->get_result_sum()), K(res));
-      }
-      result = res;
     }
   }
-  LOG_DEBUG("Exit ObProxyTableScanOp::handle_result", K(ret), K(pres));
+
   return ret;
 }
 
-int ObProxyTableScanOp::process_ready_data(void *data, int &event)
+ObProxyTableScanInput::~ObProxyTableScanInput()
 {
-  int ret = OB_SUCCESS;
-  ObProxyResultResp *result = NULL;
-  executor::ObProxyParallelResp *res = NULL;
-  if (OB_ISNULL(data)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid param, data is null", "op_name", op_name(), K(ret));
-  } else if (OB_ISNULL(res = reinterpret_cast<executor::ObProxyParallelResp*>(data))) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, pres type is not match", K(ret), KP(data));
-  } else if (OB_FAIL(handle_result(res, false, result))) {
-    LOG_WARN("fail to handle result", "op_name", op_name(), K(ret));
-  } else if (OB_ISNULL(result)) {
-    event = VC_EVENT_CONT;
-  } else if (result->is_error_resp()) {
-    result_ = result;
-    event = VC_EVENT_READ_COMPLETE;
-  } else {
-    result_ = result;
-    event = VC_EVENT_READ_READY;
-  }
-  LOG_DEBUG("finish process_ready_data", K(event), K(ret));
-  return ret;
-}
-
-int ObProxyTableScanOp::process_complete_data(void *data)
-{
-  int ret = OB_SUCCESS;
-  ObProxyResultResp *result = NULL;
-  executor::ObProxyParallelResp *res = NULL;
-  if (OB_ISNULL(data)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid param, data is null", K(ret));
-  } else if (OB_ISNULL(res = reinterpret_cast<executor::ObProxyParallelResp*>(data))) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, pres type is not match", K(ret));
-  } else if (OB_FAIL(handle_result(res, true, result))) {
-    LOG_WARN("fail to handle result", K(ret));
-  } else if (OB_ISNULL(result)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("reulst is NULL, something error", K(ret));
-  } else {
-    result_ = result;
+  // free reference count
+  for (int64_t i = 0; i < db_key_names_.count(); i++) {
+    dbconfig::ObShardConnector *db_key_name = db_key_names_.at(i);
+    db_key_name->dec_ref();
   }
 
-  LOG_DEBUG("finish process_complete_data", K(ret));
-  return ret;
+  for (int64_t i = 0; i < shard_props_.count(); i++) {
+    dbconfig::ObShardProp *shard_prop = shard_props_.at(i);
+    shard_prop->dec_ref();
+  }
 }
 
 }

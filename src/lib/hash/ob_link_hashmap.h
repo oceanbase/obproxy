@@ -101,6 +101,18 @@ private:
   DISALLOW_COPY_AND_ASSIGN(LinkHashNode);
 };
 
+template <typename key_t>
+struct LinkHashValue
+{
+  LinkHashValue() : hash_node_(NULL) {}
+  ~LinkHashValue() {}
+  int32_t get_uref() const { return hash_node_ == NULL ? 0 : hash_node_->uref_; }
+  int32_t get_href() const { return hash_node_ == NULL ? 0 : hash_node_->href_; }
+  LinkHashNode<key_t>* hash_node_;
+private:
+  DISALLOW_COPY_AND_ASSIGN(LinkHashValue);
+};
+
 template<typename Key, typename Value>
 class AllocHandle
 {

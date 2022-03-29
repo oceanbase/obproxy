@@ -133,7 +133,7 @@ public:
   }
   virtual ~ObServerConnection() {};
 
-  int accept(ObConnection *c);
+  int accept(ObConnection *c, bool need_return_eintr = false);
 
   int setup_fd_for_listen(
       const bool non_blocking = false,

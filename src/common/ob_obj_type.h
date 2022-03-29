@@ -89,7 +89,8 @@ enum ObObjType
   ObNVarchar2Type     = 43, // nvarchar2
   ObNCharType         = 44, // nchar
   ObURowIDType        = 45, // UROWID
-  ObMaxType                    // invalid type, or count of obj type
+  ObLobType           = 46, // Oracle Lob
+  ObMaxType                 // invalid type, or count of obj type
 };
 
 enum ObObjTypeClass
@@ -107,7 +108,15 @@ enum ObObjTypeClass
   ObStringTC    = 10,   // varchar, char, varbinary, binary.
   ObExtendTC    = 11,   // extend
   ObUnknownTC   = 12,   // unknown
-  ObTextTC      = 13, //TinyText,MediumText, Text ,LongText
+  ObTextTC      = 13,   // TinyText, MediumText, Text, LongText
+  ObBitTC       = 14,   // bit
+  ObEnumSetTC   = 15,   // enum, set
+  ObEnumSetInnerTC = 16,
+  ObOTimestampTC = 17,  // timestamp with time zone
+  ObRawTC       = 18,   // raw
+  ObIntervalTC  = 19,   // oracle interval type class include interval year to month and interval day to second
+  ObRowIDTC     = 20,   // oracle rowid typeclass, includes urowid and rowid
+  ObLobTC       = 21,   // oracle lob typeclass
   ObMaxTC,
   // invalid type classes are below, only used as the result of XXXX_type_promotion()
   // to indicate that the two obj can't be promoted to the same type.
@@ -119,57 +128,83 @@ enum ObObjTypeClass
 
 static ObObjTypeClass OBJ_TYPE_TO_CLASS[ObMaxType] =
 {
-  ObNullTC,         // null
-  ObIntTC,          // int8
-  ObIntTC,          // int16
-  ObIntTC,          // int24
-  ObIntTC,          // int32
-  ObIntTC,          // int64
-  ObUIntTC,         // uint8
-  ObUIntTC,         // uint16
-  ObUIntTC,         // uint24
-  ObUIntTC,         // uint32
-  ObUIntTC,         // uint64
-  ObFloatTC,        // float
-  ObDoubleTC,       // double
-  ObFloatTC,        // ufloat
-  ObDoubleTC,       // udouble
-  ObNumberTC,       // number
-  ObNumberTC,       // unumber
-  ObDateTimeTC,     // datetime
-  ObDateTimeTC,     // timestamp
-  ObDateTC,         // date
-  ObTimeTC,         // time
-  ObYearTC,         // year
-  ObStringTC,       // varchar
-  ObStringTC,       // char
-  ObStringTC,       // hexadecimal literal
-  ObExtendTC,       // extend
-  ObUnknownTC,      // unknown
-  ObTextTC,         // TinyText
-  ObTextTC,         // MediumText
-  ObTextTC,         // Text
-  ObTextTC          // LongText
+  ObNullTC,         // null obNullType
+  ObIntTC,          // int8 ObTinyIntType
+  ObIntTC,          // int16 ObSmallIntType
+  ObIntTC,          // int24 ObMediumIntType
+  ObIntTC,          // int32 ObInt32Type
+  ObIntTC,          // int64 ObIntType
+  ObUIntTC,         // uint8 ObUTinyIntType
+  ObUIntTC,         // uint16 ObUSmallIntType
+  ObUIntTC,         // uint24 ObUMediumIntType
+  ObUIntTC,         // uint32 ObUInt32Type
+  ObUIntTC,         // uint64 ObUInt64Type
+  ObFloatTC,        // float ObFloatType
+  ObDoubleTC,       // double ObDoubleType
+  ObFloatTC,        // ufloat ObUFloatType
+  ObDoubleTC,       // udouble ObUDoubleType
+  ObNumberTC,       // number ObNumberType
+  ObNumberTC,       // unumber ObUNumberType
+  ObDateTimeTC,     // datetime ObDateTimeType
+  ObDateTimeTC,     // timestamp ObTimestampType
+  ObDateTC,         // date ObDateType
+  ObTimeTC,         // time ObTimeType
+  ObYearTC,         // year ObYearType
+  ObStringTC,       // varchar ObVarcharType
+  ObStringTC,       // char ObCharType
+  ObStringTC,       // hexadecimal literal ObHexStringType
+  ObExtendTC,       // extend ObExtendType
+  ObUnknownTC,      // unknown ObUnknownType
+  ObTextTC,         // TinyText ObTinyTextType
+  ObTextTC,         // Text ObTextType
+  ObTextTC,         // MediumText ObMediumTextType
+  ObTextTC,         // LongText ObLongTextType
+  ObBitTC,          // ObBitType
+  ObEnumSetTC,      // ObEnumType
+  ObEnumSetTC,      // ObSetType
+  ObEnumSetInnerTC, // ObEnumInnerType
+  ObEnumSetInnerTC, // ObSetInnerType
+  ObOTimestampTC,   // ObTimestampTZType
+  ObOTimestampTC,   // ObTimestampLTZType
+  ObOTimestampTC,   // ObTimestampNanoType
+  ObRawTC,          // ObRawType
+  ObIntervalTC,     // ObIntervalYMType
+  ObIntervalTC,     // ObIntervalDSType
+  ObNumberTC,       // ObNumberFloatType
+  ObStringTC,       // ObNVarchar2Type
+  ObStringTC,       // ObNCharType
+  ObRowIDTC,        // ObURowIDType
+  ObLobTC           // ObLobType
 };
 
 static ObObjType OBJ_DEFAULT_TYPE[ObActualMaxTC] =
 {
-  ObNullType,       // null
-  ObIntType,        // int
-  ObUInt64Type,     // uint
-  ObFloatType,      // float
-  ObDoubleType,     // double
-  ObNumberType,     // number
-  ObDateTimeType,   // datetime
-  ObDateType,       // date
-  ObTimeType,       // time
-  ObYearType,       // year
-  ObVarcharType,    // varchar
-  ObExtendType,     // extend
-  ObUnknownType,    // unknown
+  ObNullType,           // null
+  ObIntType,            // int
+  ObUInt64Type,         // uint
+  ObFloatType,          // float
+  ObDoubleType,         // double
+  ObNumberType,         // number
+  ObDateTimeType,       // datetime
+  ObDateType,           // date
+  ObTimeType,           // time
+  ObYearType,           // year
+  ObVarcharType,        // varchar
+  ObExtendType,         // extend
+  ObUnknownType,        // unknown
   ObLongTextType,       // text
-  ObMaxType,        // maxtype
-  ObUInt64Type,     // int&uint
+  ObBitType,            // bit
+  ObUInt64Type,         // enumset
+  ObMaxType,            // enumsetInner
+  ObTimestampNanoType,  // timestamp nano
+  ObRawType,            // raw
+  ObMaxType,            // no default type for interval type class
+  ObMaxType,            // no default type for rowid type class
+  ObLobType,            // lob
+  ObMaxType,            // maxtype
+  ObUInt64Type,         // int&uint
+  ObMaxType,            // lefttype
+  ObMaxType,            // righttype
 };
 
 OB_INLINE ObObjTypeClass ob_obj_type_class(const ObObjType type)
@@ -237,16 +272,30 @@ inline bool ob_is_number_tc(ObObjType type) { return ObNumberTC == ob_obj_type_c
 inline bool ob_is_datetime_tc(ObObjType type) { return ObDateTimeTC == ob_obj_type_class(type); }
 inline bool ob_is_time_tc(ObObjType type) { return ObTimeTC == ob_obj_type_class(type); }
 inline bool ob_is_string_tc(ObObjType type) { return ObStringTC == ob_obj_type_class(type); }
+inline bool ob_is_text_tc(ObObjType type) { return ObTextTC == ob_obj_type_class(type); }
 inline bool ob_is_nvarchar2(const ObObjType type) { return ObNVarchar2Type == type; }
 inline bool ob_is_nchar(const ObObjType type) { return ObNCharType == type; }
-inline bool ob_is_nstring_type(const ObObjType type)
+inline bool ob_is_nstring_type(const ObObjType type) { return ob_is_nchar(type) || ob_is_nvarchar2(type); }
+inline bool ob_is_accurate_numeric_type(ObObjType type)
 {
-  return ob_is_nchar(type) || ob_is_nvarchar2(type);
+  return (ObTinyIntType <= type && type <= ObUInt64Type) || (ob_is_number_tc(type));
 }
-
+inline bool ob_is_otimestamp_type(const ObObjType type)
+{ 
+  return (ObTimestampTZType <= type && type <= ObTimestampNanoType);
+}
+inline bool ob_is_timestamp_tz(const ObObjType type)
+{
+  return ObTimestampTZType == type;
+}
+inline bool ob_is_blob(const ObObjType type, const ObCollationType cs_type)
+{
+  return ObTextTC == ob_obj_type_class(type) && CS_TYPE_BINARY == cs_type;
+}
 inline bool is_obj_type_supported(ObObjType type)
 {
-  return type > ObNullType && type < ObUnknownType;
+  return (type > ObNullType && type < ObUnknownType)
+          || ob_is_otimestamp_type(type); 
 }
 
 // to_string adapter

@@ -54,6 +54,10 @@ static const int OB_PARSER_ERR_PARSE_SQL = -5001;
 #endif /* OB_PERF_MODE */
 #endif /* OB_ISNULL */
 
+#ifdef NDEBUG
+#define YYDEBUG 0
+#else
 #define YYDEBUG 1
+#endif
 
 #endif /* end of OBPROXY_PARSER_PARSE_DEFINE_H */

@@ -579,8 +579,8 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
       case ObCongestRequestParam::REVALIDATE_SERVER: {
         ObCongestionEntry *entry = lookup_entry(param->hash_, param->key_);
         if (NULL != entry) {
+          entry->server_state_ = param->server_state_;
           switch (param->server_state_) {
-            entry->server_state_ = param->server_state_;
             case ObCongestionEntry::ACTIVE:
               entry->check_and_set_alive();
               break;
@@ -956,7 +956,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
     } else {
       entry = lookup_entry(hash, ip);
       LOG_DEBUG("lock bucket succ, find the entry", "server_state",
-                ObCongestionEntry::get_server_state_name(server_state), K(*entry));
+                ObCongestionEntry::get_server_state_name(server_state), KP(entry));
       if (NULL != entry) {
         entry->server_state_ = server_state;
         entry->renew_last_revalidate_time();

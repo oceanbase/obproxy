@@ -85,7 +85,7 @@ void FooClient::refresh_server_addr()
   }
 
   while (!in.eof()) {
-    if (in.getline(buffer, MAX_BUF_LEN) <= 0) {
+    if (in.getline(buffer, MAX_BUF_LEN)) {
       break;
     }
     sscanf(buffer, "%[^:]:%d", ip, &port);

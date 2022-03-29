@@ -168,11 +168,13 @@ ObClientSessionInfo::ObClientSessionInfo()
       global_vars_version_(OB_INVALID_VERSION), obproxy_route_addr_(0),
       var_set_processor_(NULL), cluster_id_(OB_INVALID_CLUSTER_ID),
       real_meta_cluster_name_(), real_meta_cluster_name_str_(NULL),
-      server_type_(DB_OB_MYSQL), shard_conn_(NULL), group_id_(OBPROXY_MAX_DBMESH_ID), is_allow_use_last_session_(true),
+      server_type_(DB_OB_MYSQL), shard_conn_(NULL), shard_prop_(NULL),
+      group_id_(OBPROXY_MAX_DBMESH_ID), is_allow_use_last_session_(true),
       consistency_level_prop_(INVALID_CONSISTENCY),
       recv_client_ps_id_(0), ps_id_(0), ps_entry_(NULL), ps_id_entry_map_(),
       text_ps_name_entry_map_(), is_text_ps_execute_(false),
-      cursor_id_(0), cursor_id_addr_map_(), ps_id_addrs_map_(),
+      cursor_id_(0), cursor_id_addr_map_(),
+      ps_id_addrs_map_(),
       is_read_only_user_(false),
       is_request_follower_user_(false)
 {
@@ -287,6 +289,19 @@ int ObClientSessionInfo::set_tenant_name(const ObString &tenant_name)
   return field_mgr_.set_tenant_name(tenant_name);
 }
 
+int ObClientSessionInfo::set_vip_addr_name(const common::ObAddr &vip_addr)
+{
+  int ret = OB_SUCCESS;
+  char vip_name[OB_IP_STR_BUFF];
+  if (OB_UNLIKELY(!vip_addr.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to covert ip to string", K(vip_name), K(ret));
+  } else {
+    return field_mgr_.set_vip_addr_name(vip_name);
+  }
+  return ret;
+}
+
 int ObClientSessionInfo::set_logic_tenant_name(const ObString &logic_tenant_name)
 {
   return field_mgr_.set_logic_tenant_name(logic_tenant_name);
@@ -358,6 +373,11 @@ int ObClientSessionInfo::get_logic_database_name(ObString &logic_database_name) 
 int ObClientSessionInfo::get_database_name(ObString &database_name) const
 {
   return field_mgr_.get_database_name(database_name);
+}
+
+int ObClientSessionInfo::get_vip_addr_name(ObString &vip_addr_name) const
+{
+  return field_mgr_.get_vip_addr_name(vip_addr_name);
 }
 
 ObString ObClientSessionInfo::get_database_name() const
@@ -1162,6 +1182,10 @@ void ObClientSessionInfo::destroy()
   if (NULL != shard_conn_) {
     shard_conn_->dec_ref();
     shard_conn_ = NULL;
+  }
+  if (NULL != shard_prop_) {
+    shard_prop_->dec_ref();
+    shard_prop_ = NULL;
   }
   group_id_ = OBPROXY_MAX_DBMESH_ID;
   is_allow_use_last_session_ = true;

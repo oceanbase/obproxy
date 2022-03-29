@@ -27,18 +27,19 @@ using namespace dbconfig;
 namespace opsql
 {
 
-int get_number_obj_for_calc(ObIAllocator *allocator, ObObj &left, ObObj &right)
+template <ObObjTypeClass obj_type_class, ObObjType obj_type>
+int get_obj_for_calc(ObIAllocator *allocator, ObObj &left, ObObj &right)
 {
   int ret = OB_SUCCESS;
   ObCastCtx cast_ctx(allocator, NULL, CM_NULL_ON_WARN, CS_TYPE_UTF8MB4_GENERAL_CI);
-  if (ObNumberTC != left.get_type_class()) {
-    if (OB_FAIL(ObObjCasterV2::to_type(ObNumberType, cast_ctx, left, left))) {
+  if (obj_type_class != left.get_type_class()) {
+    if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cast_ctx, left, left))) {
       LOG_WARN("failed to cast obj", K(ret));
     }
   }
 
-  if (OB_SUCC(ret) && ObNumberTC != right.get_type_class()) {
-    if (OB_FAIL(ObObjCasterV2::to_type(ObNumberType, cast_ctx, right, right))) {
+  if (OB_SUCC(ret) && obj_type_class != right.get_type_class()) {
+    if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cast_ctx, right, right))) {
       LOG_WARN("failed to cast obj", K(ret));
     }
   }
@@ -54,32 +55,34 @@ static void get_proxy_expr_result_tree_str(ObProxyExpr *root, const int level, c
   for (int i = 0 ; i < level * 2; i++) {
     pos += snprintf(buf + pos, length - pos, "-");
   }
-  pos += snprintf (buf + pos, length - pos, " type:%s, index:%ld, has_agg:%d, has_alias:%d, is_func_expr:%d, is_star:%d, addr:%p\n",
+  pos += snprintf (buf + pos, length - pos, " type:%s, index:%ld, has_agg:%d, is_func_expr:%d, addr:%p\n",
                    get_expr_type_name(root->type_),
                    root->index_,
                    root->has_agg_,
-                   root->has_alias_,
                    root->is_func_expr_,
-                   root->is_star_expr(),
                    root);
 
   if (root->is_func_expr()) {
-    ObProxyFuncExpr* func_expr = static_cast<ObProxyFuncExpr*>(root);
+    ObProxyFuncExpr* func_expr = dynamic_cast<ObProxyFuncExpr*>(root);
     for (int i = 0; i < func_expr->get_param_array().count(); i++) {
       get_proxy_expr_result_tree_str(func_expr->get_param_array().at(i), level + 1, buf, pos, length - pos);
     }
-  } else if (OB_PROXY_EXPR_TYPE_SHARDING_CONST == root->type_) {
-    get_proxy_expr_result_tree_str(static_cast<ObProxyExprShardingConst*>(root)->expr_, level + 1, buf, pos, length - pos);
+  } else if (OB_PROXY_EXPR_TYPE_FUNC_GROUP == root->get_expr_type()
+             || OB_PROXY_EXPR_TYPE_FUNC_ORDER == root->get_expr_type()) {
+    ObProxyGroupItem* group_expr = dynamic_cast<ObProxyGroupItem*>(root);
+    get_proxy_expr_result_tree_str(group_expr->get_expr(), level + 1, buf, pos, length - pos);
   }
 }
 
 void ObProxyExpr::print_proxy_expr(ObProxyExpr *root)
 {
-  char buf[256 * 1024];
-  int pos = 0;
-  get_proxy_expr_result_tree_str(root, 0, buf, pos, 256 * 1024);
-  ObString tree_str(16  * 1024, buf);
-  LOG_DEBUG("proxy_expr is \n", K(tree_str));
+  if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
+    char buf[256 * 1024];
+    int pos = 0;
+    get_proxy_expr_result_tree_str(root, 0, buf, pos, 256 * 1024);
+    ObString tree_str(16  * 1024, buf);
+    LOG_DEBUG("proxy_expr is \n", K(tree_str));
+  }
 }
 
 int64_t ObProxyExpr::to_string(char *buf, int64_t buf_len) const
@@ -91,27 +94,8 @@ int64_t ObProxyExpr::to_string(char *buf, int64_t buf_len) const
   J_KV(K_(index));
   J_COMMA();
   J_KV(K_(has_agg));
-  J_COMMA();
-  J_KV(K_(has_alias));
   J_OBJ_END();
   return pos;
-}
-
-bool ObProxyExpr::is_star_expr()
-{
-  int ret = OB_SUCCESS;
-  bool bret = false;
-  if (OB_PROXY_EXPR_TYPE_SHARDING_CONST == type_) {
-    ObProxyExprShardingConst *expr = static_cast<ObProxyExprShardingConst*>(this);
-    ObString str;
-    if (OB_FAIL(expr->get_object().get_string(str))) {
-      // do nothing
-    } else  if (str == "*") {
-      bret = true;
-    }
-  }
-
-  return bret;
 }
 
 int ObProxyExpr::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
@@ -119,13 +103,10 @@ int ObProxyExpr::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc
 {
   int ret = OB_SUCCESS;
   UNUSED(ctx);
-  if (is_star_expr()) {
-    ret = OB_EXPR_CALC_ERROR;
-    LOG_WARN("* can't calc", K(ret));
-  } else if (-1 != index_ && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_) {
+  if (-1 != index_ && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_) {
     int64_t len = calc_item.obj_array_->count();
     if (index_ >= len
-        ||OB_FAIL(result_obj_array.push_back(*calc_item.obj_array_->at(len - 1 - index_)))) {
+        || OB_FAIL(result_obj_array.push_back(*calc_item.obj_array_->at(index_)))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("calc expr failed", K(ret), K(index_), K(calc_item.obj_array_->count()));
     }
@@ -167,17 +148,36 @@ int ObProxyExpr::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc
   return ret;
 }
 
-bool ObProxyExpr::is_alias()
+int ObProxyExpr::to_sql_string(ObSqlString& sql_string)
 {
-  bool bret = false;
-  if (OB_PROXY_EXPR_TYPE_SHARDING_CONST != type_) {
-    // do nothing
-  } else {
-    ObProxyExprShardingConst *const_expr = static_cast<ObProxyExprShardingConst*>(this);
-    bret = const_expr->is_alias_;
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(to_column_string(sql_string))) {
+    LOG_WARN("fail to column string", K(ret));
+  } else if (!alias_name_.empty()) {
+    if (OB_FAIL(sql_string.append(" AS "))){
+      LOG_WARN("append failed", K(ret));
+    } else {
+      ret = sql_string.append_fmt("%.*s", alias_name_.length(), alias_name_.ptr());
+    }
   }
 
-  return bret;
+  if (OB_FAIL(ret)) {
+    LOG_WARN("fail to sql_string", K_(alias_name), K(ret));
+  }
+
+  return ret;
+}
+
+int ObProxyExprConst::to_column_string(ObSqlString& sql_string)
+{
+  int ret = OB_SUCCESS;
+  if (obj_.get_type() == ObIntType) {
+    ret = sql_string.append_fmt("%ld", obj_.get_int());
+  } else {
+    ObString str = obj_.get_string();
+    ret = sql_string.append_fmt("'%.*s'", str.length(), str.ptr());
+  }
+  return ret;
 }
 
 int ObProxyExprConst::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
@@ -197,45 +197,22 @@ int ObProxyExprConst::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem 
   return ret;
 }
 
-int ObProxyExprShardingConst::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
-                           common::ObIArray<ObObj> &result_obj_array)
+int ObProxyExprColumn::to_column_string(ObSqlString& sql_string)
 {
   int ret = OB_SUCCESS;
-  int64_t len = result_obj_array.count();
-  if (index_ != -1 && is_alias_) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("alias index is not -1", K(ret), K(index_));
-  } else if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
-    LOG_WARN("calc expr failed", K(ret));
-  } else if (result_obj_array.count() == len) {
-    if (NULL != expr_ && is_alias_) {
-      ret = expr_->calc(ctx, calc_item, result_obj_array);
-    } else {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("cant calc expr", K(ret));
+
+  if (!table_name_.empty()) {
+    if (OB_FAIL(sql_string.append_fmt("%.*s.", table_name_.length(), table_name_.ptr()))) {
+      LOG_WARN("fail to append table name", K(table_name_), K(ret));
     }
   }
-  ObProxyExpr::print_proxy_expr(this);
 
-  return ret;
-}
-
-int ObProxyExprShardingConst::to_sql_string(ObSqlString& sql_string)
-{
-  int ret = OB_SUCCESS;
-  if (obj_.get_type() == ObIntType) {
-    ret = sql_string.append_fmt("%ld", obj_.get_int());
-  } else {
-    ObString str = obj_.get_string();
-    if (is_column_) {
-      ret = sql_string.append_fmt("%.*s", str.length(), str.ptr());
-    } else {
-      ret = sql_string.append_fmt("'%.*s'", str.length(), str.ptr());
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(sql_string.append_fmt("%.*s", column_name_.length(), column_name_.ptr()))) {
+      LOG_WARN("fail to append table name", K(column_name_), K(ret));
     }
   }
-  if (OB_FAIL(ret)) {
-    LOG_WARN("fail to sql_string", K(obj_));
-  }
+
   return ret;
 }
 
@@ -270,7 +247,7 @@ int ObProxyExprColumn::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem
               LOG_WARN("push back obj failed", K(ret), K(result_obj));
             }
           } else {
-            ret = OB_ERR_COULUMN_VALUE_NOT_MATCH;
+            ret = OB_EXPR_CALC_ERROR;
             LOG_WARN("sql_column_value value type invalid", K(sql_column_value.value_type_));
           }
         }
@@ -289,13 +266,52 @@ int ObProxyExprColumn::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem
   return ret;
 }
 
+int ObProxyGroupItem::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                           ObIArray<ObObj> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(expr_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected null", KP_(expr), K(ret));
+  } else if (OB_FAIL(expr_->calc(ctx, calc_item, result_obj_array))) {
+    LOG_WARN("fail to calc expr", K(ret));
+  }
+  return ret;
+}
+
+int ObProxyGroupItem::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                           ObIArray<ObObj*> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(expr_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected null", KP_(expr), K(ret));
+  } else if (OB_FAIL(expr_->calc(ctx, calc_item, result_obj_array))) {
+    LOG_WARN("fail to calc expr", K(ret));
+  }
+  return ret;
+}
+
+int ObProxyGroupItem::to_column_string(ObSqlString& sql_string)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(expr_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected null", K(ret));
+  } else if (OB_FAIL(expr_->to_column_string(sql_string))) {
+    LOG_WARN("to column string failed", K(ret));
+  }
+
+  return ret;
+}
+
 int ObProxyOrderItem::to_sql_string(ObSqlString& sql_string)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(expr_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("unexpected null", K(ret));
-  } else if (OB_FAIL(expr_->to_sql_string(sql_string))) {
+  } else if (OB_FAIL(expr_->to_column_string(sql_string))) {
     LOG_WARN("to sql_string failed", K(ret));
   } else if (order_direction_ == NULLS_FIRST_ASC){
     if (OB_FAIL(sql_string.append(" ASC"))) {
@@ -305,6 +321,14 @@ int ObProxyOrderItem::to_sql_string(ObSqlString& sql_string)
     LOG_WARN("fail to append", K(ret));
   }
   return ret;
+}
+
+ObProxyFuncExpr::~ObProxyFuncExpr()
+{
+  for (int64_t i = 0; i < param_array_.count(); i++) {
+    ObProxyExpr *expr = param_array_.at(i);
+    expr->~ObProxyExpr();
+  }
 }
 
 int ObProxyFuncExpr::calc_param_expr(const ObProxyExprCtx &ctx,
@@ -400,40 +424,6 @@ int ObProxyFuncExpr::check_varchar_empty(const common::ObObj& result)
     LOG_WARN("str is empty", K(ret));
   }
 
-  return ret;
-}
-
-int ObProxyShardingAliasExpr::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
-                                   common::ObIArray<common::ObObj> &result_obj_array)
-{
-  int ret = OB_SUCCESS;
-  int64_t len = result_obj_array.count();
-  if (param_array_.count() != 2) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("wrong param array count", K(ret), K(param_array_.count()));
-  } else if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
-    LOG_WARN("calc expr failed", K(ret));
-  } else if (result_obj_array.count() == len && OB_FAIL(param_array_.at(0)->calc(ctx, calc_item, result_obj_array))) {
-    LOG_WARN("calc failed", K(ret), K(*param_array_.at(0)));
-  }
-  ObProxyExpr::print_proxy_expr(this);
-
-  return ret;
-}
-
-int ObProxyShardingAliasExpr::to_sql_string(ObSqlString& sql_string)
-{
-  int ret = OB_SUCCESS;
-  if (param_array_.count() != 2) {
-    LOG_WARN("unexpected count", K(param_array_.count()));
-    ret = OB_ERR_UNEXPECTED;
-  } else if (OB_FAIL(param_array_.at(0)->to_sql_string(sql_string))) {
-    LOG_WARN("to sql_string failed", K(ret));
-  } else if (OB_FAIL(sql_string.append(" AS "))){
-    LOG_WARN("append failed", K(ret));
-  } else if (OB_FAIL(param_array_.at(1)->to_sql_string(sql_string))) {
-    LOG_WARN("to sql_string failed", K(ret));
-  }
   return ret;
 }
 
@@ -784,10 +774,14 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
   common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
   int cnt = 0;
   int64_t len = result_obj_array.count();
+ 
+  if (-1 != index_ && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_ && !has_agg_) {
+    if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+      LOG_WARN("calc expr failed", K(ret));
+    }
+  }
 
-  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
-    LOG_WARN("calc expr failed", K(ret));
-  } else if (len == result_obj_array.count()) {
+  if (OB_SUCC(ret) && len == result_obj_array.count()) {
     if (2 != param_array_.count()) {
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("div should have two param", K(ret), K(param_array_.count()));
@@ -813,18 +807,38 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
           ObObj obj1 = param_result.at(0);
           ObObj obj2 = param_result.at(1);
           ObObj result_obj;
-          if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
+          if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
+            } else if (fabs(obj2.get_double()) == 0.0) {
+              result_obj.set_null();
+            } else {
+              double obj1_d = obj1.get_double();
+              double obj2_d = obj2.get_double();
+              result_obj.set_double(obj1_d / obj2_d);
+            }
+          } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+            } else {
+              float obj1_f = obj1.get_float();
+              float obj2_f = obj2.get_float();
+              result_obj.set_float(obj1_f / obj2_f);
+            }
+          } else if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
             number::ObNumber res_nmb;
-            if (OB_FAIL(get_number_obj_for_calc(ctx.allocator_, obj1, obj2))) {
+            if (OB_FAIL((get_obj_for_calc<ObNumberTC, ObNumberType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WARN("get number obj failed", K(ret), K(obj1), K(obj2));
             } else if (OB_UNLIKELY(obj2.get_number().is_zero())) {
               result_obj.set_null();
             } else if (OB_FAIL(obj1.get_number().div(obj2.get_number(), res_nmb, *ctx.allocator_))) {
               LOG_WARN("failed to div numbers", K(ret), K(obj1), K(obj2));
             } else {
-              if (ctx.scale_ >= 0) {
-                if (OB_FAIL(res_nmb.trunc(ctx.scale_))) {
-                  LOG_WARN("failed to trunc result number", K(ret), K(res_nmb), K(ctx.scale_));
+              if (ctx.scale_ >= 0 || accuracy_.get_scale() >= 0) {
+                int64_t scale = ctx.scale_ >= 0 ? ctx.scale_ : accuracy_.get_scale();
+                if (OB_FAIL(res_nmb.round(scale))) {
+                  LOG_WARN("failed to round result number", K(res_nmb),
+                           K(scale), K(accuracy_), K(ctx.scale_), K(ret));
                 }
               }
               if (OB_SUCC(ret)) {
@@ -869,9 +883,13 @@ int ObProxyExprAdd::calc(const ObProxyExprCtx &ctx,
   int cnt = 0;
   int64_t len = result_obj_array.count();
 
-  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
-    LOG_WARN("calc expr failed", K(ret));
-  } else if (len == result_obj_array.count()) {
+  if (-1 != index_ && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_ && !has_agg_) {
+    if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+      LOG_WARN("calc expr failed", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && len == result_obj_array.count()) {
     if (2 != param_array_.count()) {
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("div should have two param", K(ret), K(param_array_.count()));
@@ -897,16 +915,34 @@ int ObProxyExprAdd::calc(const ObProxyExprCtx &ctx,
           ObObj obj1 = param_result.at(0);
           ObObj obj2 = param_result.at(1);
           ObObj result_obj;
-          if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
+          if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
+            } else {
+              double obj1_d = obj1.get_double();
+              double obj2_d = obj2.get_double();
+              result_obj.set_double(obj1_d + obj2_d);
+            }
+          } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+            } else {
+              float obj1_f = obj1.get_float();
+              float obj2_f = obj2.get_float();
+              result_obj.set_float(obj1_f + obj2_f);
+            }
+          } else if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
             number::ObNumber res_nmb;
-            if (OB_FAIL(get_number_obj_for_calc(ctx.allocator_, obj1, obj2))) {
+            if (OB_FAIL((get_obj_for_calc<ObNumberTC, ObNumberType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WARN("get number obj failed", K(ret), K(obj1), K(obj2));
             } else if (OB_FAIL(obj1.get_number().add(obj2.get_number(), res_nmb, *ctx.allocator_))) {
               LOG_WARN("failed to div numbers", K(ret), K(obj1), K(obj2));
             } else {
-              if (ctx.scale_ >= 0) {
-                if (OB_FAIL(res_nmb.trunc(ctx.scale_))) {
-                  LOG_WARN("failed to trunc result number", K(ret), K(res_nmb), K(ctx.scale_));
+              if (ctx.scale_ >= 0 || accuracy_.get_scale() >= 0) {
+                int64_t scale = ctx.scale_ >= 0 ? ctx.scale_ : accuracy_.get_scale();
+                if (OB_FAIL(res_nmb.round(scale))) {
+                  LOG_WARN("failed to round result number", K(res_nmb),
+                           K(scale), K(accuracy_), K(ctx.scale_), K(ret));
                 }
               }
               if (OB_SUCC(ret)) {
@@ -951,9 +987,13 @@ int ObProxyExprSub::calc(const ObProxyExprCtx &ctx,
   int cnt = 0;
   int64_t len = result_obj_array.count();
 
-  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
-    LOG_WARN("calc expr failed", K(ret));
-  } else if (len == result_obj_array.count()) {
+  if (-1 != index_ && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_ && !has_agg_) {
+    if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+      LOG_WARN("calc expr failed", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && len == result_obj_array.count()) {
     if (2 != param_array_.count()) {
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("div should have two param", K(ret), K(param_array_.count()));
@@ -979,16 +1019,34 @@ int ObProxyExprSub::calc(const ObProxyExprCtx &ctx,
           ObObj obj1 = param_result.at(0);
           ObObj obj2 = param_result.at(1);
           ObObj result_obj;
-          if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
+          if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
+            } else {
+              double obj1_d = obj1.get_double();
+              double obj2_d = obj2.get_double();
+              result_obj.set_double(obj1_d - obj2_d);
+            }
+          } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+            } else {
+              float obj1_f = obj1.get_float();
+              float obj2_f = obj2.get_float();
+              result_obj.set_float(obj1_f - obj2_f);
+            }
+          } else if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
             number::ObNumber res_nmb;
-            if (OB_FAIL(get_number_obj_for_calc(ctx.allocator_, obj1, obj2))) {
+            if (OB_FAIL((get_obj_for_calc<ObNumberTC, ObNumberType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WARN("get number obj failed", K(ret), K(obj1), K(obj2));
             } else if (OB_FAIL(obj1.get_number().sub(obj2.get_number(), res_nmb, *ctx.allocator_))) {
               LOG_WARN("failed to div numbers", K(ret), K(obj1), K(obj2));
             } else {
-              if (ctx.scale_ >= 0) {
-                if (OB_FAIL(res_nmb.trunc(ctx.scale_))) {
-                  LOG_WARN("failed to trunc result number", K(ret), K(res_nmb), K(ctx.scale_));
+              if (ctx.scale_ >= 0 || accuracy_.get_scale() >= 0) {
+                int64_t scale = ctx.scale_ >= 0 ? ctx.scale_ : accuracy_.get_scale();
+                if (OB_FAIL(res_nmb.round(scale))) {
+                  LOG_WARN("failed to round result number", K(res_nmb),
+                           K(scale), K(accuracy_), K(ctx.scale_), K(ret));
                 }
               }
               if (OB_SUCC(ret)) {
@@ -1033,9 +1091,13 @@ int ObProxyExprMul::calc(const ObProxyExprCtx &ctx,
   int cnt = 0;
   int64_t len = result_obj_array.count();
 
-  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
-    LOG_WARN("calc expr failed", K(ret));
-  } else if (len == result_obj_array.count()) {
+  if (-1 != index_ && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_ && !has_agg_) {
+    if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+      LOG_WARN("calc expr failed", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && len == result_obj_array.count()) {
     if (2 != param_array_.count()) {
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("div should have two param", K(ret), K(param_array_.count()));
@@ -1061,16 +1123,34 @@ int ObProxyExprMul::calc(const ObProxyExprCtx &ctx,
           ObObj obj1 = param_result.at(0);
           ObObj obj2 = param_result.at(1);
           ObObj result_obj;
-          if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
+          if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
+            } else {
+              double obj1_d = obj1.get_double();
+              double obj2_d = obj2.get_double();
+              result_obj.set_double(obj1_d * obj2_d);
+            }
+          } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+            } else {
+              float obj1_f = obj1.get_float();
+              float obj2_f = obj2.get_float();
+              result_obj.set_float(obj1_f * obj2_f);
+            }
+          } else if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
             number::ObNumber res_nmb;
-            if (OB_FAIL(get_number_obj_for_calc(ctx.allocator_, obj1, obj2))) {
+            if (OB_FAIL((get_obj_for_calc<ObNumberTC, ObNumberType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WARN("get number obj failed", K(ret), K(obj1), K(obj2));
             } else if (OB_FAIL(obj1.get_number().mul(obj2.get_number(), res_nmb, *ctx.allocator_))) {
               LOG_WARN("failed to div numbers", K(ret), K(obj1), K(obj2));
             } else {
-              if (ctx.scale_ >= 0) {
-                if (OB_FAIL(res_nmb.trunc(ctx.scale_))) {
-                  LOG_WARN("failed to trunc result number", K(ret), K(res_nmb), K(ctx.scale_));
+              if (ctx.scale_ >= 0 || accuracy_.get_scale() >= 0) {
+                int64_t scale = ctx.scale_ >= 0 ? ctx.scale_ : accuracy_.get_scale();
+                if (OB_FAIL(res_nmb.round(scale))) {
+                  LOG_WARN("failed to round result number", K(res_nmb),
+                           K(scale), K(accuracy_), K(ctx.scale_), K(ret));
                 }
               }
               if (OB_SUCC(ret)) {
@@ -1307,136 +1387,88 @@ int ObProxyExprAvg::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &c
                    common::ObIArray<ObObj> &result_obj_array)
 {
   int ret = OB_SUCCESS;
-  UNUSED(ctx);
-  if (sum_index_ >= 0 && count_index_ >= 0 && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_) {
-    if (sum_index_ >= calc_item.obj_array_->count() || count_index_ >= calc_item.obj_array_->count()) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("can't calc avg expr", K(ret), K(sum_index_), K(count_index_));
-    } else {
-      int64_t len = calc_item.obj_array_->count();
-      ObObj obj;
-      ObObj left = *(calc_item.obj_array_->at(len - 1 - sum_index_));
-      ObObj right = *(calc_item.obj_array_->at(len - 1 - count_index_));
-      number::ObNumber res_nmb;
-      if (OB_FAIL(get_number_obj_for_calc(ctx.allocator_, left, right))) {
-        LOG_WARN("get number obj failed", K(ret), K(left), K(right));
-      } else if (OB_UNLIKELY(right.get_number().is_zero())) {
-        obj.set_null();
-      } else if (OB_FAIL(left.get_number().div(right.get_number(), res_nmb, *ctx.allocator_))) {
-        LOG_WARN("failed to div numbers", K(ret), K(left), K(right));
+  if (ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_) {
+    if (OB_NOT_NULL(sum_expr_) && OB_NOT_NULL(count_expr_)) {
+      common::ObSEArray<common::ObObj, 4> param_result;
+      if (sum_expr_->calc(ctx, calc_item, param_result)) {
+        LOG_WARN("fail to calc sum", K(ret));
+      } else if (count_expr_->calc(ctx, calc_item, param_result)) {
+        LOG_WARN("fail to calc count", K(ret));
+      } else if (OB_UNLIKELY(2 != param_result.count())) {
+        ret = OB_EXPR_CALC_ERROR;
+        LOG_WARN("avg not enough param", "count", param_result.count(), K(ret));
       } else {
-        if (ctx.scale_ >= 0) {
-          int64_t scale = ctx.scale_;
-          if (scale > number::ObNumber::MAX_SCALE) {
-            scale = number::ObNumber::MAX_SCALE;
+        ObObj obj1 = param_result.at(0);
+        ObObj obj2 = param_result.at(1);
+        ObObj result_obj;
+        if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
+          if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
+            LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
+          } else if (fabs(obj2.get_double()) == 0.0) {
+            result_obj.set_null();
+          } else {
+            double obj1_d = obj1.get_double();
+            double obj2_d = obj2.get_double();
+            result_obj.set_double(obj1_d / obj2_d);
           }
-          if (OB_FAIL(res_nmb.trunc(scale))) {
-            LOG_WARN("failed to trunc result number", K(ret), K(res_nmb), K(ctx.scale_), K(scale));
+        } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
+          if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
+            LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+          } else {
+            float obj1_f = obj1.get_float();
+            float obj2_f = obj2.get_float();
+            result_obj.set_float(obj1_f / obj2_f);
+          }
+        } else if (ObIntTC != obj1.get_type_class() || ObIntTC != obj2.get_type_class()) {
+          number::ObNumber res_nmb;
+          if (OB_FAIL((get_obj_for_calc<ObNumberTC, ObNumberType>(ctx.allocator_, obj1, obj2)))) {
+            LOG_WARN("get number obj failed", K(ret), K(obj1), K(obj2));
+          } else if (OB_UNLIKELY(obj2.get_number().is_zero())) {
+            result_obj.set_null();
+          } else if (OB_FAIL(obj1.get_number().div(obj2.get_number(), res_nmb, *ctx.allocator_))) {
+            LOG_WARN("failed to div numbers", K(ret), K(obj1), K(obj2));
+          } else {
+            if (ctx.scale_ >= 0 || accuracy_.get_scale() >= 0) {
+              int64_t scale = ctx.scale_ >= 0 ? ctx.scale_ : accuracy_.get_scale();
+              if (OB_FAIL(res_nmb.round(scale))) {
+                LOG_WARN("failed to round result number", K(res_nmb),
+                         K(scale), K(accuracy_), K(ctx.scale_), K(ret));
+              }
+            }
+            if (OB_SUCC(ret)) {
+              result_obj.set_number(res_nmb);
+            }
+          }
+        } else {
+          if (OB_FAIL(get_int_obj(param_result.at(0), obj1))) {
+            LOG_WARN("get int obj failed", K(ret));
+          } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2))) {
+            LOG_WARN("get int obj failed", K(ret));
+          } else {
+            int64_t num1 = obj1.get_int();
+            int64_t num2 = obj2.get_int();
+            if (0 == num2) {
+              ret = OB_EXPR_CALC_ERROR;
+              LOG_WARN("div failed, num2 is 0", K(ret));
+            } else {
+              result_obj.set_int(num1 / num2);
+            }
           }
         }
-        if (OB_SUCC(ret)) {
-          obj.set_number(res_nmb);
-        }
-      }
 
-      if (OB_SUCC(ret) && OB_FAIL(result_obj_array.push_back(obj))) {
-        LOG_WARN("result obj push back failed", K(ret));
+        if (OB_SUCC(ret) && OB_FAIL(result_obj_array.push_back(result_obj))) {
+          LOG_WARN("result obj array push back failed", K(ret));
+        }
       }
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("can't calc avg expr", KP(sum_expr_), KP(count_expr_), K(ret));
     }
-  } else {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("can't calc avg expr", K(ret), K(sum_index_), K(count_index_));
   }
+
   ObProxyExpr::print_proxy_expr(this);
 
   return ret;
-}
-
-static int func_expr_for_two_args_to_sql_string(ObSqlString& sql_string,
-                                                common::ObSEArray<ObProxyExpr*, 4>& param_aray,
-                                                const char* op)
-{
-  int ret = OB_SUCCESS;
-  if (2 != param_aray.count()) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("should have two param", K(ret), K(param_aray.count()));
-  } else if (OB_FAIL(sql_string.append("("))) {
-    LOG_WARN("append failed", K(ret));
-  } else if (OB_FAIL(param_aray.at(0)->to_sql_string(sql_string))){
-    LOG_WARN("to sql_string failed", K(ret));
-  } else if (OB_FAIL(sql_string.append(op))) {
-    LOG_WARN("append failed", K(ret));
-  } else if (OB_FAIL(param_aray.at(1)->to_sql_string(sql_string))){
-    LOG_WARN("to sql_string failed", K(ret));
-  } else if (OB_FAIL(sql_string.append(")"))) {
-    LOG_WARN("append failed", K(ret));
-  }
-  return ret;
-}
-
-static int func_expr_for_one_args_to_sql_string(ObSqlString& sql_string,
-                                                common::ObSEArray<ObProxyExpr*, 4>& param_aray,
-                                                const char* op)
-{
-  int ret = OB_SUCCESS;
-  if (1 != param_aray.count()) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("should have one param", "op", op, K(ret), K(param_aray.count()));
-  } else if (OB_FAIL(sql_string.append(op))) {
-    LOG_WARN("append failed", K(ret));
-  } else if (OB_FAIL(sql_string.append("("))) {
-    LOG_WARN("append failed", K(ret));
-  } else if (OB_FAIL(param_aray.at(0)->to_sql_string(sql_string))) {
-    LOG_WARN("to sql_string failed", K(ret));
-  } else if (OB_FAIL(sql_string.append(")"))) {
-    LOG_WARN("append failed", K(ret));
-  }
-  return ret;
-}
-
-int ObProxyExprDiv::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_two_args_to_sql_string(sql_string, param_array_,  "/");
-}
-
-int ObProxyExprAdd::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_two_args_to_sql_string(sql_string, param_array_, "+");
-}
-
-int ObProxyExprMul::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_two_args_to_sql_string(sql_string, param_array_, "*");
-}
-
-int ObProxyExprSub::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_two_args_to_sql_string(sql_string, param_array_, "-");
-}
-
-int ObProxyExprSum::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_one_args_to_sql_string(sql_string, param_array_, "SUM");
-}
-
-int ObProxyExprCount::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_one_args_to_sql_string(sql_string, param_array_, "COUNT");
-}
-
-int ObProxyExprAvg::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_one_args_to_sql_string(sql_string, param_array_, "AVG");
-}
-
-int ObProxyExprMax::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_one_args_to_sql_string(sql_string, param_array_, "MAX");
-}
-
-int ObProxyExprMin::to_sql_string(ObSqlString& sql_string)
-{
-  return func_expr_for_one_args_to_sql_string(sql_string, param_array_, "MIN");
 }
 
 } // end opsql

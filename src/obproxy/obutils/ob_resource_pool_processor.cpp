@@ -44,16 +44,14 @@ namespace obutils
 {
 ObResourcePoolProcessor g_rp_processor;
 
-const static char *CHEK_CLUSTER_NAME_SQL    =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster FROM oceanbase.%s LIMIT 1";
 const static char *CHEK_CLUSTER_ROLE_SQL    =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster_role, cluster_status FROM oceanbase.%s LIMIT 1";
 const static char *OBPROXY_V_DATABASE_TNAME = "v$ob_cluster";
 const static char *INIT_SS_INFO_SQL         =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/  *, zs.status AS zone_status, ss.status AS server_status "
-    "FROM oceanbase.%s zs, oceanbase.%s ss "
-    "WHERE zs.zone=ss.zone "
-    "AND ss.svr_port > 0 LIMIT %ld;";
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ *, zs.status AS zone_status, ss.status AS server_status "
+    "FROM oceanbase.%s ss left join oceanbase.%s zs "
+    "ON zs.zone = ss.zone "
+    "WHERE ss.svr_port > 0 ORDER BY ss.zone LIMIT %ld;";
 
 const static char *PRIMARY_ROLE             = "PRIMARY";
 const static char *ROLE_VALID               = "VALID";
@@ -327,99 +325,6 @@ inline void *ObClusterRoleCheckCont::get_callback_data()
   return static_cast<void *>(&check_result_);
 }
 
-//---------------------ObClusterCheckNameCont---------------------//
-class ObClusterNameCheckCont : public ObAsyncCommonTask
-{
-public:
-  ObClusterNameCheckCont(ObClusterResource *cr, ObContinuation *cb_cont, ObEThread *submit_thread)
-    : ObAsyncCommonTask(cb_cont->mutex_, "cluster_name_check_task", cb_cont, submit_thread),
-      check_result_(false), cr_(cr) {}
-  virtual ~ObClusterNameCheckCont() {}
-
-  virtual void destroy();
-  virtual int init_task();
-  virtual int finish_task(void *data);
-  virtual void *get_callback_data();
-
-private:
-  bool check_result_;
-  ObClusterResource *cr_;
-  DISALLOW_COPY_AND_ASSIGN(ObClusterNameCheckCont);
-};
-
-void ObClusterNameCheckCont::destroy()
-{
-  if (NULL != cr_) {
-    // inc_ref() in add_async_task()
-    cr_->dec_ref();
-    cr_ = NULL;
-  }
-  ObAsyncCommonTask::destroy();
-}
-
-int ObClusterNameCheckCont::init_task()
-{
-  int ret = OB_SUCCESS;
-  char sql[OB_SHORT_SQL_LENGTH];
-  sql[0] = '\0';
-  int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, CHEK_CLUSTER_NAME_SQL, OB_ALL_VIRTUAL_ZONE_STAT_TNAME);
-  if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(ret));
-  } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql, pending_action_))) {
-    LOG_WARN("fail to async read", K(ret));
-  } else if (OB_ISNULL(pending_action_)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending action can not be NULL", K_(pending_action), K(ret));
-  }
-
-  return ret;
-}
-
-int ObClusterNameCheckCont::finish_task(void *data)
-{
-  int ret = OB_SUCCESS;
-  if (OB_ISNULL(data)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid data", K(data), K(ret));
-  } else {
-    ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
-    ObMysqlResultHandler handler;
-    handler.set_resp(resp);
-    if (OB_FAIL(handler.next())) {
-      if (OB_ITER_END == ret) {
-        ret = OB_ENTRY_NOT_EXIST;
-        LOG_WARN("no cluster name found", K(ret));
-      } else {
-        LOG_WARN("fail to get cluster name", K(ret));
-      }
-    } else {
-      ObString cluster_name;
-      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(handler, "cluster", cluster_name);
-
-      if (OB_SUCC(ret)) {
-        if (OB_UNLIKELY(OB_ITER_END != handler.next())) { // check if this is only one
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to get cluster name, there is more than one record", K(ret));
-        } else if (OB_UNLIKELY(cr_->get_cluster_name() != cluster_name)) {
-          ret = OB_OBCONFIG_APPNAME_MISMATCH;
-          LOG_WARN("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
-                   "remote cluster name", cluster_name, K(ret));
-        } else {
-          check_result_ = true;
-        }
-      }
-    }
-  }
-
-  return ret;
-}
-
-inline void *ObClusterNameCheckCont::get_callback_data()
-{
-  return static_cast<void *>(&check_result_);
-}
-
 //---------------------ObServerStateInfoInitCont---------------------//
 class ObServerStateInfoInitCont : public ObAsyncCommonTask
 {
@@ -458,8 +363,8 @@ int ObServerStateInfoInitCont::init_task()
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
   int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL,
-                         OB_ALL_VIRTUAL_ZONE_STAT_TNAME,
                          OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME,
+                         OB_ALL_VIRTUAL_ZONE_STAT_TNAME,
                          INT64_MAX);
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
@@ -498,6 +403,12 @@ int ObServerStateInfoInitCont::finish_task(void *data)
     int64_t tmp_real_str_len = 0;
     int64_t start_service_time = 0;
     int64_t stop_time = 0;
+    ObString cluster_name;
+    ObSEArray<ObServerStateInfo, ObServerStateRefreshCont::DEFAULT_SERVER_COUNT> servers_state;
+    ObServerStateInfo server_state;
+    ObSEArray<ObZoneStateInfo, ObServerStateRefreshCont::DEFAULT_ZONE_COUNT> zones_state;
+    ObZoneStateInfo zone_state;
+    ObSEArray<ObString, ObServerStateRefreshCont::DEFAULT_ZONE_COUNT> zone_names;
 
     while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
       ss_info.reset();
@@ -512,6 +423,9 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       port = 0;
       start_service_time = 0;
       stop_time = 0;
+      cluster_name.reset();
+      server_state.reset();
+      zone_state.reset();
 
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "zone", zone_name);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "is_merging", ss_info.is_merging_, int64_t);
@@ -522,6 +436,18 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "stop_time", stop_time, int64_t);
       PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "server_status", display_status_str,
                                        MAX_DISPLAY_STATUS_LEN, tmp_real_str_len);
+
+      if (OB_SUCC(ret)) {
+        if (OB_LIKELY(get_global_proxy_config().with_config_server_)
+            && (cr_->get_cluster_name() != OB_META_DB_CLUSTER_NAME)) {
+          PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "cluster", cluster_name);
+          if (OB_UNLIKELY(cr_->get_cluster_name() != cluster_name)) {
+            ret = OB_OBCONFIG_APPNAME_MISMATCH;
+            LOG_WARN("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
+                "remote cluster name", cluster_name, K(ret));
+          }
+        }
+      }
 
       if (OB_SUCC(ret)) {
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "region", region_name);
@@ -584,12 +510,80 @@ int ObServerStateInfoInitCont::finish_task(void *data)
           LOG_DEBUG("succ to push back server_info", K(ss_info));
         }
       }
+
+      if (OB_SUCC(ret)) {
+        zone_state.is_merging_ = ss_info.is_merging_;
+        zone_state.zone_type_ = ss_info.zone_type_;
+        zone_state.zone_status_ = ObZoneStatus::get_status(zone_status);
+        if (OB_FAIL(zone_state.set_zone_name(zone_name))) {
+          LOG_WARN("fail to set zone name", K(zone_name), K(ret));
+        } else if (OB_FAIL(zone_state.set_region_name(region_name))) {
+          LOG_WARN("fail to set region name", K(region_name), K(ret));
+        } else if (OB_FAIL(zone_state.set_idc_name(idc_name))) {
+          LOG_WARN("fail to set idc name", K(region_name), K(ret));
+        } else if (OB_FAIL(zones_state.push_back(zone_state))) {
+          LOG_WARN("fail to push back zone_info", K(zone_state), K(ret));
+        } else {
+          server_state.start_service_time_ = start_service_time;
+          server_state.stop_time_ = stop_time;
+          server_state.server_status_ = server_status;
+
+          if (OB_FAIL(server_state.add_addr(ip_str, port))) {
+            LOG_WARN("fail to add addr", K(ip_str), K(port), K(ret));
+            //if svr_ip or svr_port in __all_virtual_proxy_server_stat is wrong,
+            //we can skip over this server_state.
+            ret = OB_SUCCESS;
+            continue;
+          } else if (OB_ISNULL(ObServerStateRefreshUtils::get_zone_info_ptr(zones_state, zone_name))) {
+            LOG_INFO("this server can not find it's zone, maybe it's zone has been "		
+                     "deleted, so treat this server as deleted also", K(server_state), K(zone_name), K(zones_state));
+            ret = OB_SUCCESS;
+            continue;
+          } else {
+            if (OB_FAIL(servers_state.push_back(server_state))) {
+              LOG_WARN("fail to push back server_state", K(server_state), K(ret));
+            } else if (OB_FAIL(zone_names.push_back(zone_name))) {
+              LOG_WARN("fail to push back zone_name", K(ret), K(zone_name));
+            } else {
+              LOG_DEBUG("succ to push back server_state and zone_name", K(ret), K(server_state), K(zone_name));
+            }
+          }
+        }
+      }
     }//end of while
 
-    if (ret != OB_ITER_END) {
+    if (ret == OB_ITER_END) {
+      ret = OB_SUCCESS;
+    }
+
+    /*
+     * build zone_state_ for each server_state
+     * pay attention to the validity of the ptr zone_state_
+     * the above judgement of get_zone_info_ptr() will not set zone_state_, to avoid the ptr being invalid.
+     */
+    for (int i = 0; (OB_SUCC(ret)) && (i < zone_names.count()); ++i) {
+      ObString &each_zone_name = zone_names.at(i);
+      ObServerStateInfo &each_servers_state = servers_state.at(i);
+      if (OB_ISNULL(each_servers_state.zone_state_ = 
+            ObServerStateRefreshUtils::get_zone_info_ptr(zones_state, each_zone_name))) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WARN("unexpected situation, the corresponding zone_state has been searched before.",
+                 K(ret), K(each_zone_name), K(zones_state));
+      } else {
+        if (each_servers_state.zone_state_->is_readonly_zone()) {
+          each_servers_state.replica_.replica_type_ = REPLICA_TYPE_READONLY;
+        } else if (each_servers_state.zone_state_->is_encryption_zone()) {
+          each_servers_state.replica_.replica_type_ = REPLICA_TYPE_ENCRYPTION_LOGONLY;
+        } else {
+          each_servers_state.replica_.replica_type_ = REPLICA_TYPE_FULL;
+        }
+      }
+    }
+
+    if (OB_FAIL(ret)) {
       LOG_WARN("fail to get server state info", K(ret));
     } else {
-      ret = OB_SUCCESS;
+      LocationList server_list; //save the ordered servers
       const uint64_t new_ss_version = cr_->server_state_version_ + 1;
       common::ObIArray<ObServerStateSimpleInfo> &server_state_info = cr_->get_server_state_info(new_ss_version);
       common::DRWLock &server_state_lock = cr_->get_server_state_lock(new_ss_version);
@@ -598,10 +592,55 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       server_state_info.assign(ss_infos_);
       server_state_lock.wrunlock();
       ATOMIC_AAF(&(cr_->server_state_version_), 1);
-      check_result_ = true;
-      LOG_INFO("succ to init server state info", "cluster_info", cr_->cluster_info_key_,
-               "server_state_version_", cr_->server_state_version_,
-               K_(ss_infos));
+
+      if (OB_FAIL(ObServerStateRefreshUtils::order_servers_state(servers_state, server_list))) {
+        LOG_WARN("fail to order servers state", K(ret));
+      // add to table location
+      } else if (OB_LIKELY(!server_list.empty())) {
+        LOG_DEBUG("succ to get server list", K(server_list), "server_count", servers_state.count());
+        ObTableEntry *entry = NULL;
+        ObTableCache &table_cache = get_global_table_cache();
+        const bool is_rslist = false;
+        if (OB_FAIL(ObRouteUtils::build_sys_dummy_entry(cr_->get_cluster_name(), cr_->get_cluster_id(), server_list, is_rslist, entry))) {
+          LOG_WARN("fail to build sys dummy entry", K(server_list), "cluster_name", cr_->get_cluster_name(),
+              "cluster_id", cr_->get_cluster_id(), K(ret));
+        } else if (OB_ISNULL(entry) || OB_UNLIKELY(!entry->is_valid())) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("entry can not be NULL here", K(entry), K(ret));
+        } else {
+          ObTableEntry *tmp_entry = NULL;
+          tmp_entry = entry;
+          tmp_entry->inc_ref();//just for print
+          if (OB_FAIL(ObTableCache::add_table_entry(table_cache, *entry))) {
+            LOG_WARN("fail to add table entry", K(*entry), K(ret));
+          } else {
+            obsys::CWLockGuard guard(cr_->dummy_entry_rwlock_);
+            if (NULL != cr_->dummy_entry_) {
+              cr_->dummy_entry_->dec_ref();
+            }
+            cr_->dummy_entry_ = tmp_entry;
+            cr_->dummy_entry_->inc_ref();
+
+            LOG_INFO("ObServerStateInfoInitCont, update sys tennant's __all_dummy succ", KPC(tmp_entry));
+          }
+          tmp_entry->dec_ref();
+          tmp_entry = NULL;
+        }
+
+        if (OB_FAIL(ret)) {
+          if (NULL != entry) {
+            entry->dec_ref();
+            entry = NULL;
+          }
+        }
+      }//end of add to table location
+
+      if (OB_SUCC(ret)) {
+        check_result_ = true;
+        LOG_INFO("succ to init server state info", "cluster_info", cr_->cluster_info_key_,
+                 "server_state_version_", cr_->server_state_version_,
+                 K_(ss_infos), K(zones_state), K(servers_state));
+      }
     }
   }
 
@@ -795,11 +834,6 @@ int ObClusterResourceCreateCont::add_async_task()
                                                            need_update_dummy_entry,
                                                            this, &self_ethread());
         }
-        break;
-      case CHECK_CLUSTER_NAME:
-        LOG_INFO("will add CHECK_CLUSTER_NAME task", K(this), K_(cluster_name), K_(cluster_id));
-        created_cr_->inc_ref();
-        async_cont = new(std::nothrow) ObClusterNameCheckCont(created_cr_, this, &self_ethread());
         break;
       case CHECK_CLUSTER_ROLE:
         LOG_INFO("will add CHECK_CLUSTER_ROLE task", K(this), K_(cluster_name), K_(cluster_id));
@@ -1033,11 +1067,9 @@ int ObClusterResourceCreateCont::handle_async_task_complete(void *data)
             && get_global_proxy_config().enable_standby) {
           init_status_ = CHECK_CLUSTER_ROLE;
         } else {
-          init_status_ = CHECK_CLUSTER_NAME;
+          init_status_ = INIT_SS_INFO;
         }
       } else if (CHECK_CLUSTER_ROLE == init_status_) {
-        init_status_ = CHECK_CLUSTER_NAME;
-      } else if (CHECK_CLUSTER_NAME == init_status_) {
         init_status_ = INIT_SS_INFO;
       } else if (INIT_SS_INFO == init_status_) {
         init_status_ = INIT_IDC_LIST;
@@ -1368,24 +1400,12 @@ int ObClusterResourceCreateCont::build()
               && get_global_proxy_config().enable_standby) {
             init_status_ = CHECK_CLUSTER_ROLE;
           } else {
-            init_status_ = CHECK_CLUSTER_NAME;
+            init_status_ = INIT_SS_INFO;
           }
           LOG_DEBUG("try next status",
                    K_(cluster_name), K_(cluster_id), K(new_failure_count), K(rs_list), K(is_rslist_from_local_), K(init_status_));
         }
       }
-    }
-  }
-
-  if (OB_SUCC(ret) && CHECK_CLUSTER_NAME == init_status_) {
-    if (OB_LIKELY(get_global_proxy_config().with_config_server_)
-               && (cluster_name_ != OB_META_DB_CLUSTER_NAME)) {
-      // cluster name checking, if it is proxy meta db cluster, do not check
-      if (OB_FAIL(add_async_task())) {
-        LOG_WARN("fail to add cluster name check task", K(ret));
-      }
-    } else {
-      init_status_ = INIT_SS_INFO;
     }
   }
 
@@ -1461,8 +1481,7 @@ DEF_TO_STRING(ObClusterResource)
        "cr_state", get_cr_state_str(cr_state_), K_(version),
        K_(last_access_time_ns), K_(deleting_completed_thread_num),
        K_(fetch_rslist_task_count), K_(fetch_idc_list_task_count),
-       K_(last_idc_list_refresh_time_ns), K_(last_rslist_refresh_time_ns), K_(server_state_version),
-       KPC_(dummy_entry));
+       K_(last_idc_list_refresh_time_ns), K_(last_rslist_refresh_time_ns), K_(server_state_version));
   J_OBJ_END();
   return pos;
 }

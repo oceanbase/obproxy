@@ -23,7 +23,6 @@
 #include "iocore/eventsystem/ob_grpc_task.h"
 #include "iocore/eventsystem/ob_shard_watch_task.h"
 #include "obutils/ob_congestion_manager.h"
-#include "iocore/net/ob_ssl_processor.h"
 #include "obutils/ob_proxy_config.h"
 #include "dbconfig/ob_proxy_db_config_processor.h"
 
@@ -136,8 +135,6 @@ int ObMysqlProxyServerMain::start_mysql_proxy_server(const ObMysqlConfigParams &
   int ret = OB_SUCCESS;
   if (OB_FAIL(start_processor_threads(config_params))) {
     LOG_ERROR("fail to start processor threads", K(ret));
-  } else if (OB_FAIL(g_ssl_processor.init())) {
-    LOG_ERROR("fail to init ssl processor", K(ret));
   } else if (get_global_proxy_config().enable_sharding
              && !get_global_proxy_config().use_local_dbconfig
              && !get_global_db_config_processor().is_config_inited()
@@ -186,7 +183,8 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
              && OB_FAIL(g_grpc_task_processor.start(grpc_threads, stack_size))) {
     // if use local config, no need start grpc threads
     LOG_ERROR("fail to start grpc task processor", K(stack_size), K(ret));
-  } else if (OB_FAIL(g_shard_watch_task_processor.start(grpc_watch_threads, stack_size))) {
+  } else if (get_global_proxy_config().enable_sharding
+      && OB_FAIL(g_shard_watch_task_processor.start(grpc_watch_threads, stack_size))) {
     LOG_ERROR("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (OB_FAIL(init_cs_map_for_thread())) {
     LOG_ERROR("fail to init cs_map for thread", K(ret));
@@ -200,6 +198,8 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
     LOG_ERROR("fail to init routine_map for thread", K(ret));
   } else if (OB_FAIL(init_sql_table_map_for_thread())) {
     LOG_ERROR("fail to init sql_table_map for thread", K(ret));
+  } else if (OB_FAIL(init_ps_entry_cache_for_thread())) {
+    LOG_ERROR("fail to init ps entry cache for thread", K(ret));
   } else if (OB_FAIL(init_random_seed_for_thread())) {
     LOG_ERROR("fail to init random seed for thread", K(ret));
   } else {}

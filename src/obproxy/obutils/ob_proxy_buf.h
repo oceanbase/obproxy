@@ -58,10 +58,8 @@ template <int64_t BUF_LEN>
 inline void ObVariableLenBuffer<BUF_LEN>::reset()
 {
   if (OB_LIKELY(is_inited_)) {
-    if (OB_LIKELY(NULL != buf_)) {
-      if (total_len_ > BUF_LEN) {
-        op_fixed_mem_free(buf_, total_len_);
-      }
+    if (total_len_ > BUF_LEN && NULL != buf_) {
+      op_fixed_mem_free(buf_, total_len_);
     }
     buf_ = NULL;
     total_len_ = 0;
@@ -175,7 +173,7 @@ public:
   int64_t len() const { return valid_len_; }
   int64_t total_len() const { return BUF_LEN; }
 
-  void reset() { valid_len_ = 0; }
+  inline void reset() { valid_len_ = 0; }
 
 private:
   char buf_[BUF_LEN];

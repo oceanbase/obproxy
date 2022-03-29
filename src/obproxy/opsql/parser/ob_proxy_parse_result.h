@@ -91,6 +91,7 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_PING_PROXY,
   OBPROXY_T_SELECT_ROUTE_ADDR,
   OBPROXY_T_SET_ROUTE_ADDR,
+  OBPROXY_T_SELECT_PROXY_VERSION,
 
   // use last session
   OBPROXY_T_SHOW_WARNINGS,
@@ -200,6 +201,10 @@ typedef enum ObProxyBasicStmtSubType
 
   //desc
   OBPROXY_T_SUB_DESC_TABLE,
+
+  //ddl
+  OBPROXY_T_SUB_CREATE_TABLE,
+  OBPROXY_T_SUB_CREATE_INDEX,
 
   OBPROXY_T_SUB_MAX
 } ObProxyBasicStmtSubType;

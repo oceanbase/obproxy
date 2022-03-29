@@ -293,15 +293,17 @@ inline int ObMysqlTunnel::chain_finish_all(ObMysqlTunnelProducer &p)
 
 inline bool ObMysqlTunnel::is_tunnel_alive() const
 {
-  bool tunnel_alive = false;
+  bool tunnel_alive = producers_[0].alive_;
 
-  for (int64_t i = 0; i < MAX_PRODUCERS && !tunnel_alive; ++i) {
-    if (producers_[i].alive_) {
-      tunnel_alive = true;
+  if (OB_UNLIKELY(!tunnel_alive)) {
+    for (int64_t i = 1; i < MAX_PRODUCERS && !tunnel_alive; ++i) {
+      if (producers_[i].alive_) {
+        tunnel_alive = true;
+      }
     }
   }
 
-  if (!tunnel_alive) {
+  if (OB_UNLIKELY(!tunnel_alive)) {
     for (int64_t i = 0; i < MAX_CONSUMERS && !tunnel_alive; ++i) {
       if (consumers_[i].alive_) {
         tunnel_alive = true;
@@ -315,10 +317,15 @@ inline bool ObMysqlTunnel::is_tunnel_alive() const
 inline ObMysqlTunnelProducer *ObMysqlTunnel::get_producer(event::ObVConnection *vc)
 {
   ObMysqlTunnelProducer *ret = NULL;
-  for (int64_t i = 0; i < MAX_PRODUCERS && NULL == ret; ++i) {
-    if (producers_[i].vc_ == vc) {
-      ret = producers_ + i;
+  if (OB_LIKELY(producers_[0].vc_ == vc)) {
+    ret = producers_;
+  } else {
+    for (int64_t i = 1; i < MAX_PRODUCERS && NULL == ret; ++i) {
+      if (producers_[i].vc_ == vc) {
+        ret = producers_ + i;
+      }
     }
+
   }
   return ret;
 }
@@ -326,9 +333,13 @@ inline ObMysqlTunnelProducer *ObMysqlTunnel::get_producer(event::ObVConnection *
 inline ObMysqlTunnelConsumer *ObMysqlTunnel::get_consumer(event::ObVConnection *vc)
 {
   ObMysqlTunnelConsumer *ret = NULL;
-  for (int64_t i = 0; i < MAX_CONSUMERS && NULL == ret; ++i) {
-    if (consumers_[i].vc_ == vc) {
-      ret = consumers_ + i;
+  if (OB_LIKELY(consumers_[0].vc_ == vc)) {
+    ret = consumers_;
+  } else {
+    for (int64_t i = 1; i < MAX_CONSUMERS && NULL == ret; ++i) {
+      if (consumers_[i].vc_ == vc) {
+        ret = consumers_ + i;
+      }
     }
   }
   return ret;
@@ -337,9 +348,13 @@ inline ObMysqlTunnelConsumer *ObMysqlTunnel::get_consumer(event::ObVConnection *
 inline ObMysqlTunnelProducer *ObMysqlTunnel::get_producer(event::ObVIO *vio)
 {
   ObMysqlTunnelProducer *ret = NULL;
-  for (int64_t i = 0; i < MAX_PRODUCERS && NULL == ret; ++i) {
-    if (producers_[i].read_vio_ == vio) {
-      ret = producers_ + i;
+  if (OB_LIKELY(producers_[0].read_vio_ == vio)) {
+    ret = producers_;
+  } else {
+    for (int64_t i = 1; i < MAX_PRODUCERS && NULL == ret; ++i) {
+      if (producers_[i].read_vio_ == vio) {
+        ret = producers_ + i;
+      }
     }
   }
   return ret;
@@ -348,9 +363,13 @@ inline ObMysqlTunnelProducer *ObMysqlTunnel::get_producer(event::ObVIO *vio)
 inline ObMysqlTunnelConsumer *ObMysqlTunnel::get_consumer(event::ObVIO *vio)
 {
   ObMysqlTunnelConsumer *ret = NULL;
-  for (int64_t i = 0; i < MAX_CONSUMERS && NULL == ret; ++i) {
-    if (consumers_[i].write_vio_ == vio) {
-      ret = consumers_ + i;
+  if (OB_LIKELY(consumers_[0].write_vio_ == vio)) {
+    ret = consumers_;
+  } else {
+    for (int64_t i = 1; i < MAX_CONSUMERS && NULL == ret; ++i) {
+      if (consumers_[i].write_vio_ == vio) {
+        ret = consumers_ + i;
+      }
     }
   }
   return ret;

@@ -17,6 +17,20 @@ namespace oceanbase
 {
 namespace common
 {
+
+char get_xdigit(const char c1)
+{
+  char ret_char = 0;
+  if (c1 >= 'a' && c1 <= 'f') {
+    ret_char = (char)(c1 - 'a' + 10);
+  } else if (c1 >= 'A' && c1 <= 'F') {
+    ret_char = (char)(c1 - 'A' + 10);
+  } else {
+    ret_char = (char)(c1 - '0');
+  }
+  return (ret_char & 0x0F);
+}
+
 char *hex2str(const void *data, const int32_t size)
 {
   //TODO: change the log buffer

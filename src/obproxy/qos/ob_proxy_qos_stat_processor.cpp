@@ -96,7 +96,7 @@ int ObProxyQosStatProcessor::store_stat(const ObString &cluster_name, const ObSt
   ObProxyQosStatNode *node = NULL;
   if (cluster_name.empty() || tenant_name.empty() || database_name.empty() || user_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(cluster_name), K(tenant_name), K(database_name), K(user_name), K(ret));
+    LOG_DEBUG("invalid argument", K(cluster_name), K(tenant_name), K(database_name), K(user_name), K(ret));
   } else if (OB_FAIL(get_or_create_node(&root_node_, cluster_name, QOS_NODE_TYPE_MIDDLE, node))) {
     LOG_WARN("fail to get or create node", K(cluster_name), K(ret));
   } else if (OB_NOT_NULL(node) && OB_FAIL(store_stat_and_next(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), tenant_name, QOS_NODE_TYPE_MIDDLE, node, cost))) {

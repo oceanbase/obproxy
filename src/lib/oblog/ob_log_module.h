@@ -187,6 +187,7 @@ LOG_MOD_END(STORAGETEST)
 #define OB_XFLUSH_LOG_NEED_TO_PRINT(level) OB_LOGGER.need_to_print_xflush(OB_LOG_LEVEL_##level)
 #define OB_MONITOR_LOG_NEED_TO_PRINT(level) OB_LOGGER.need_to_print_monitor(OB_LOG_LEVEL_##level)
 #define OB_NEED_USE_ASYNC_LOG (OB_LOGGER.is_async_log_used() && !OB_LOGGER.get_trace_mode())
+#define IS_DEBUG_ENABLED() OB_LOGGER.need_to_print(OB_LOG_LEVEL_DEBUG)
 
 #define OB_PRINT(modName, level, infoString, args...)                                            \
   OB_LOGGER.log_message_kv(modName, OB_LOG_LEVEL(level), infoString, ##args)

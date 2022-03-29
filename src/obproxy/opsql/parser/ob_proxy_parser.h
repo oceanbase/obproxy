@@ -61,10 +61,6 @@ private:
 inline ObProxyParser::ObProxyParser(common::ObIAllocator &allocator, ObProxyParseMode parse_mode)
     : allocator_(allocator), parse_mode_(parse_mode)
 {
-  common::ObArenaAllocator *arena_allocator = dynamic_cast<common::ObArenaAllocator*>(&allocator);
-  if (NULL != arena_allocator) {
-    arena_allocator->set_mod_id(common::ObModIds::OB_PROXY_SHARDING_PARSE);
-  }
 }
 
 inline int ObProxyParser::init_result(ObProxyParseResult &parse_result, const char *start_pos)
@@ -83,13 +79,9 @@ inline int ObProxyParser::init_result(ObProxyParseResult &parse_result, const ch
   parse_result.cmd_info_.err_type_ = OBPROXY_T_ERR_INVALID;
   for (int64_t i = 0; i < OBPROXY_ICMD_MAX_VALUE_COUNT; ++i) {
     parse_result.cmd_info_.integer_[i] = -1;
-    MEMSET(parse_result.cmd_info_.string_ + i, 0, sizeof(ObProxyParseString));
   }
-  MEMSET(&parse_result.call_parse_info_, 0, sizeof(ObProxyCallParseInfo));
-  MEMSET(&parse_result.simple_route_info_, 0, sizeof(ObProxySimpleRouteParseInfo));
   parse_result.has_simple_route_info_ = false;
   parse_result.placeholder_list_idx_ = 0;
-  MEMSET(&parse_result.text_ps_execute_parse_info_, 0, sizeof(ObProxyTextPsExecuteParseInfo));
   parse_result.text_ps_name_.str_len_ = 0;
 
   parse_result.has_shard_comment_ = false;
@@ -103,14 +95,11 @@ inline int ObProxyParser::init_result(ObProxyParseResult &parse_result, const ch
   parse_result.dbmesh_route_info_.head_ = NULL;
   parse_result.dbmesh_route_info_.tail_ = NULL;
   parse_result.dbmesh_route_info_.index_count_ = 0;
-  memset(&parse_result.dbmesh_route_info_.index_tb_name_, 0,
-         OBPROXY_MAX_HINT_INDEX_COUNT * sizeof(ObProxyParseString));
 
   parse_result.set_parse_info_.node_count_ = 0;
   parse_result.set_parse_info_.head_ = NULL;
   parse_result.set_parse_info_.tail_ = NULL;
 
-  memset(&parse_result.dbp_route_info_, 0, sizeof(ObDbpRouteInfo));
   parse_result.comment_begin_ = NULL;
   parse_result.comment_end_ = NULL;
 

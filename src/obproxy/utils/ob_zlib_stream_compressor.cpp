@@ -12,6 +12,7 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "utils/ob_zlib_stream_compressor.h"
+#include "lib/alloc/malloc_hook.h"
 
 namespace oceanbase
 {
@@ -126,6 +127,7 @@ int ObZlibStreamCompressor::decompress_init()
   stream_.opaque = Z_NULL;
   stream_.avail_in = 0;
   stream_.next_in = Z_NULL;
+  lib::glibc_hook_opt = lib::GHO_HOOK;
   if (Z_OK != (zlib_ret = ::inflateInit(&stream_))) {
     ret = OB_INIT_FAIL;
     LOG_WARN("fail to init zlib", K(zlib_ret), K(ret));
@@ -133,6 +135,7 @@ int ObZlibStreamCompressor::decompress_init()
     type_ = DECOMPRESS_TYPE;
     is_finished_ = false;
   }
+  lib::glibc_hook_opt = lib::GHO_NOHOOK;
 
   return ret;
 }
@@ -145,6 +148,7 @@ int ObZlibStreamCompressor::compress_init()
   stream_.zalloc = Z_NULL;
   stream_.zfree = Z_NULL;
   stream_.opaque = Z_NULL;
+  lib::glibc_hook_opt = lib::GHO_HOOK;
   if (Z_OK != (zlib_ret = ::deflateInit(&stream_, static_cast<int>(compress_level_)))) {
     ret = OB_INIT_FAIL;
     LOG_WARN("fail to init zlib", K(zlib_ret), K(ret));
@@ -152,6 +156,7 @@ int ObZlibStreamCompressor::compress_init()
     type_ = COMPRESS_TYPE;
     is_finished_ = false;
   }
+  lib::glibc_hook_opt = lib::GHO_NOHOOK;
 
   return ret;
 }
@@ -175,7 +180,9 @@ int ObZlibStreamCompressor::decompress(char *dest_start, const int64_t len, int6
     stream_.avail_out = static_cast<uInt>(len);
     stream_.next_out = reinterpret_cast<Bytef *>(dest_start);
 
+    lib::glibc_hook_opt = lib::GHO_HOOK;
     zlib_ret = ::inflate(&stream_, Z_NO_FLUSH);
+    lib::glibc_hook_opt = lib::GHO_NOHOOK;
 
     LOG_DEBUG("zlib decomress complete", K(zlib_ret));
     if (Z_STREAM_END == zlib_ret) { // this means the total decompres is finished
@@ -240,7 +247,9 @@ int ObZlibStreamCompressor::compress(char *dest_start, const int64_t len, int64_
     stream_.avail_out = static_cast<uInt>(len);
     stream_.next_out = reinterpret_cast<Bytef *>(dest_start);
 
+    lib::glibc_hook_opt = lib::GHO_HOOK;
     zlib_ret = ::deflate(&stream_, static_cast<int>(compress_flush_type_));
+    lib::glibc_hook_opt = lib::GHO_NOHOOK;
     LOG_DEBUG("zlib compress complete", K(zlib_ret), K_(compress_flush_type));
     if (Z_STREAM_END == zlib_ret) { // this means the total decompres is finished
       LOG_DEBUG("zlib comress stream end");
@@ -284,7 +293,9 @@ int ObZlibStreamCompressor::decompress_close()
 {
   int ret = OB_SUCCESS;
   if (DECOMPRESS_TYPE == type_) {
+    lib::glibc_hook_opt = lib::GHO_HOOK;
     int zlib_ret = ::inflateEnd(&stream_);
+    lib::glibc_hook_opt = lib::GHO_NOHOOK;
     if (Z_OK != zlib_ret) {
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("fail to decompress close", K(zlib_ret), K(ret));
@@ -298,7 +309,9 @@ int ObZlibStreamCompressor::compress_close()
 {
   int ret = OB_SUCCESS;
   if (COMPRESS_TYPE == type_) {
+    lib::glibc_hook_opt = lib::GHO_HOOK;
     int zlib_ret = ::deflateEnd(&stream_);
+    lib::glibc_hook_opt = lib::GHO_NOHOOK;
     if (Z_OK != zlib_ret) {
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("fail to compress_close", K(zlib_ret), K(ret));

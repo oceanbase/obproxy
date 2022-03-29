@@ -86,7 +86,6 @@ do {\
   if ((OBPROXY_T_INVALID < result->cur_stmt_type_ && result->cur_stmt_type_ < OBPROXY_T_ICMD_MAX) || (OBPROXY_T_PING_PROXY == result->cur_stmt_type_)) {\
     result->cmd_info_.err_type_ = OBPROXY_T_ERR_PARSE;\
   }\
-  result->sub_stmt_type_ = OBPROXY_T_SUB_INVALID;\
   handle_stmt_end(result);\
   HANDLE_ACCEPT();\
 } while (0);
@@ -285,7 +284,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
  /* dummy token */
 %token DUMMY_WHERE_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
-%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME
+%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE UNIQUE
 %token GRANT REVOKE ANALYZE PURGE COMMENT
 %token FROM DUAL
 %token PREPARE EXECUTE USING
@@ -325,7 +324,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> SHOW_PROXYTRACE
 %token<str> SHOW_PROXYINFO BINARY UPGRADE IDC
 %token<str> SHOW_TOPOLOGY GROUP_NAME SHOW_DB_VERSION
-%token<str> SHOW_DATABASES SHOW_TABLES SELECT_DATABASE SHOW_CREATE_TABLE
+%token<str> SHOW_DATABASES SHOW_TABLES SELECT_DATABASE SHOW_CREATE_TABLE SELECT_PROXY_VERSION
 %token<str> ALTER_PROXYCONFIG
 %token<str> ALTER_PROXYRESOURCE
 %token<str> PING_PROXY
@@ -392,11 +391,16 @@ comment_stmt: comment_expr_list select_stmt
 ddl_stmt: mysql_ddl_stmt
         | oracle_ddl_stmt
 
-mysql_ddl_stmt: CREATE   { result->cur_stmt_type_ = OBPROXY_T_CREATE; }
+mysql_ddl_stmt: CREATE create_dll_expr { result->cur_stmt_type_ = OBPROXY_T_CREATE; }
               | DROP     { result->cur_stmt_type_ = OBPROXY_T_DROP; }
               | ALTER    { result->cur_stmt_type_ = OBPROXY_T_ALTER; }
               | TRUNCATE { result->cur_stmt_type_ = OBPROXY_T_TRUNCATE; }
               | RENAME   { result->cur_stmt_type_ = OBPROXY_T_RENAME; }
+
+create_dll_expr : /* empty */
+                | TABLE { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_TABLE; }
+                | INDEX { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_INDEX; }
+                | UNIQUE INDEX { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_INDEX; }
 
 text_ps_from_stmt: select_stmt {}
                  | insert_stmt {}
@@ -468,10 +472,14 @@ select_tx_read_only_stmt: SELECT TX_READ_ONLY { result->cur_stmt_type_ = OBPROXY
                         | SELECT TX_READ_ONLY select_expr_list FROM fromlist
                         | SELECT TX_READ_ONLY expr_list
 
+select_proxy_version_stmt: SELECT_PROXY_VERSION
+                         | SELECT_PROXY_VERSION AS var_name { result->col_name_ = $3; }
+
 set_autocommit_0_stmt: SET AUTOCOMMIT_0 { result->cur_stmt_type_ = OBPROXY_T_SET_AC_0; }
                      | SET AUTOCOMMIT_0 expr_list
 
 hooked_stmt: select_tx_read_only_stmt       {}
+           | select_proxy_version_stmt      {}
            | set_autocommit_0_stmt          {}
            | select_obproxy_route_addr_stmt {}
            | set_obproxy_route_addr_stmt    {}

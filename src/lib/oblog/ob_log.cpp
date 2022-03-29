@@ -647,7 +647,7 @@ void ObLogger::log_head_info(const ObLogFDType type,
                            "%04d-%02d-%02d %02d:%02d:%02d.%06ld [%s] ",
                            tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                            tm.tm_sec, tv.tv_usec, errstr_[level]);
-    } else if (FD_CONFIG_FILE == type) { // header for config file 
+    } else if (FD_CONFIG_FILE == type) { // header for config file
       /** Format for config_log is: '###${content}'
        *    '###' is consultation flag for Inspection Module
        *    ${content} is value of config in json format. */
@@ -954,7 +954,7 @@ void ObLogger::check_file(ObLogFileStruct &log_struct, const bool redirect_flag)
     }
 
     if (log_struct.open_wf_flag_) {
-      char wf_file_name[ObLogFileStruct::MAX_LOG_FILE_NAME_SIZE];
+      char wf_file_name[ObLogFileStruct::MAX_LOG_FILE_NAME_SIZE + 3];
       memset(wf_file_name, 0, sizeof(wf_file_name));
       snprintf(wf_file_name, sizeof(wf_file_name), "%s.wf", log_struct.filename_);
       err = stat(wf_file_name, &st_file);
@@ -1585,7 +1585,7 @@ void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
 
       if (max_file_size_ > 0) {
         for (int32_t i = 0; i < static_cast<int32_t>(MAX_FD_FILE); i++) {
-          if (OB_LIKELY(need_auto_rotate_log_by_size(static_cast<ObLogFDType>(i)))) { 
+          if (OB_LIKELY(need_auto_rotate_log_by_size(static_cast<ObLogFDType>(i)))) {
             const bool redirect_flag = (static_cast<int32_t>(FD_DEFAULT_FILE) == i ? redirect_flag_ : false);
             rotate_log(writen[i], redirect_flag, log_file_[i]);
           }
@@ -2014,6 +2014,58 @@ void ObLogger::async_log_message(const ObLogFDType type,
       log_item = NULL;
     }
     set_disable_logging(false);
+  }
+}
+
+
+void ObLogger::log_message_kv(const char *mod_name,
+                                     const int32_t level,
+                                     const char *file,
+                                     const int32_t line,
+                                     const char *function,
+                                     const char *info_string)
+{
+  const ObLogFDType type = (NULL == mod_name ? FD_XFLUSH_FILE : FD_DEFAULT_FILE);
+  log_message_kv(type, mod_name, level, file, line, function, info_string);
+}
+
+void ObLogger::log_message_kv(const ObLogFDType type,
+                                     const char *mod_name,
+                                     const int32_t level,
+                                     const char *file,
+                                     const int32_t line,
+                                     const char *function,
+                                     const char *info_string)
+{
+  int ret = common::OB_SUCCESS;
+  LogBuffer *log_buffer = NULL;
+  if (OB_NOT_NULL(info_string)) {
+    if (get_trace_mode()) {
+      if (OB_LIKELY(is_enable_logging())
+          && OB_NOT_NULL(log_buffer = get_thread_buffer())
+          && OB_LIKELY(!log_buffer->is_oversize())) {
+        set_disable_logging(true);
+        log_head_info(type, mod_name, level, LogLocation(file, line, function), *log_buffer);
+        int64_t &pos = log_buffer->pos_;
+        char *data = log_buffer->buffer_;
+        LOG_PRINT_INFO(info_string);
+        log_tail(level, *log_buffer);
+        set_disable_logging(false);
+      }
+    } else if (is_async_log_used()) {
+      ret = async_log_message_kv(type, mod_name, level, LogLocation(file, line, function), info_string,
+          static_cast<int64_t>(strlen(info_string)));
+    } else if (OB_LIKELY(is_enable_logging())) {//sync away
+      set_disable_logging(true);
+      if (OB_NOT_NULL(log_buffer = get_thread_buffer())
+          && OB_LIKELY(!log_buffer->is_oversize())) {
+        int64_t &pos = log_buffer->pos_;
+        char *data = log_buffer->buffer_;
+        LOG_PRINT_INFO(info_string);
+        log_data(type, mod_name, level, LogLocation(file, line, function), *log_buffer);
+        set_disable_logging(false);
+      }
+    }
   }
 }
 

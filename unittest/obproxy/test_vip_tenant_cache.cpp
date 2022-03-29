@@ -10,9 +10,9 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#define private public
 #define USING_LOG_PREFIX PROXY
 #include <gtest/gtest.h>
+#define private public
 #include "lib/objectpool/ob_concurrency_objpool.h"
 #include "obproxy/obutils/ob_vip_tenant_cache.h"
 

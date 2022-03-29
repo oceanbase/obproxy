@@ -420,7 +420,7 @@ int ObProxyCreateServerConnCont::do_create_server_conn()
             K(schema_key_conn_info_->addr_));
         }
       } else if (DB_MYSQL == server_type) {
-        if (OB_FAIL(proxy->rebuild_client_pool(schema_key.shard_conn_,
+        if (OB_FAIL(proxy->rebuild_client_pool(schema_key.shard_conn_, NULL,
               is_meta_mysql_client, user_name, passwd_string, database_name, "", &client_pool_option))) {
           LOG_WARN("fail to create mysql client pool", K(user_name), K(database_name), K(ret));
         } else {

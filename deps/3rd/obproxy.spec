@@ -34,7 +34,7 @@ OceanBase Database Proxy
 %setup
 
 %build
-./configure CXX=${CXX} CC=${CC} --with-gcc-version=5.2.0 RELEASEID=%{RELEASE} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
+./configure CXX=${CXX} CC=${CC} --with-gcc-version=9.3.0 RELEASEID=%{RELEASE} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
 mkdir -p unittest
 CPU_CORES=`grep -c ^processor /proc/cpuinfo`
 MAKE_ARGS="-j $CPU_CORES"

@@ -27,12 +27,14 @@
 #include "obutils/ob_async_common_task.h"
 #include "proxy/client/ob_mysql_proxy.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
+#include "prometheus/ob_prometheus_processor.h"
 
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::net;
 using namespace oceanbase::obproxy::proxy;
+using namespace oceanbase::obproxy::prometheus;
 
 namespace oceanbase
 {
@@ -96,22 +98,7 @@ int ObProxyHotUpgrader::fill_exec_ctx(ObExecCtx &ctx)
   if (OB_FAIL(get_envp(ctx.envp_))) {
     LOG_ERROR("fail to get envp", K(ret));
   } else {
-    const bool is_server_service_mode = !get_global_proxy_config().is_client_service_mode();
-    const int64_t idle_idx = (is_server_service_mode ? 2 : 1);
     ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-    if (info.is_local_restart()) {//need update inherited_argv_
-      const int64_t length = snprintf(info.restart_buf_, ObHotUpgraderInfo::MAX_RESTART_BUF_SIZE, "-oproxy_local_cmd=2");
-      if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= ObHotUpgraderInfo::MAX_RESTART_BUF_SIZE)) {
-        ret = OB_BUF_NOT_ENOUGH;
-        LOG_WARN("buf not enought", K(length), LITERAL_K(ObHotUpgraderInfo::MAX_RESTART_BUF_SIZE), K(ret));
-      } else {
-        info.inherited_argv_[idle_idx] = info.restart_buf_;
-        info.inherited_argv_[idle_idx + 1] = NULL;
-      }
-    } else {
-      //clear
-      info.inherited_argv_[idle_idx] = NULL;
-    }
     ctx.path_ = info.argv_[0];
     ctx.name_ = "new obproxy binary process";
     ctx.argv_ = info.inherited_argv_;
@@ -263,7 +250,7 @@ int get_binary_md5(const char *binary, char *md5_buf, const int64_t md5_buf_len)
 /******************************ObHotUpgradeProcessor************************************/
 ObHotUpgradeProcessor::ObHotUpgradeProcessor()
     : is_inited_(false), is_timeout_rollback_(false), is_self_md5_available_(false),
-      is_self_binary_(false), cmd_(HUC_NONE), mysql_proxy_(NULL), hu_cont_(NULL),
+      is_self_binary_(false), cmd_(HUC_NONE), mysql_proxy_(NULL), hu_cont_(NULL), hot_upgrade_cont_(NULL),
       info_(get_global_hot_upgrade_info()), proxy_port_(0), upgrade_failures_(0),
       check_available_failures_(0), timeout_rollback_timeout_at_(0), wait_cr_finish_timeout_at_(0)
 {
@@ -279,7 +266,10 @@ void ObHotUpgradeProcessor::destroy()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(hu_cont_))) {
-    LOG_WARN("fail to destroy hut upgrader cont", K(ret));
+    LOG_WARN("fail to destroy hot upgrader cont", K(ret));
+  }
+  if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(hot_upgrade_cont_))) {
+    LOG_WARN("fail to destroy hot upgrader cont", K(ret));
   }
   if (OB_LIKELY(is_inited_)) {
     is_inited_ = false;
@@ -660,15 +650,6 @@ int ObHotUpgradeProcessor::check_timeout_rollback()
     } else if (0 < (diff_time = timeout_rollback_timeout_at_ - get_hrtime_internal())) {
       LOG_DEBUG("it is not time to do hot upgrade timeout rollback job",
                 K_(timeout_rollback_timeout_at), K(diff_time));
-
-    } else if (info_.is_in_wait_cr_state()
-               && (info_.is_local_commit()
-                   || info_.is_local_rollback()
-                   || get_global_proxy_config().is_local_commit()
-                   || get_global_proxy_config().is_local_rollback())) {
-      LOG_INFO("receive local cmd, ignore timeout rollback this moment", K_(timeout_rollback_timeout_at),
-                K(diff_time), "cmd", ObHotUpgraderInfo::get_cmd_string(info_.cmd_));
-
     } else {
       LOG_WARN("it is time, but we still not receive rollback cmd, we need do timeout rollback job",
                 K_(timeout_rollback_timeout_at), K(diff_time));
@@ -682,7 +663,7 @@ int ObHotUpgradeProcessor::check_timeout_rollback()
       // we will try 3 times to update_proxy_hu_cmd.
       int64_t retry_times = 3;
       while (OB_LIKELY(retry_times > 0) && OB_SUCC(ret)) {
-        if (OB_FAIL(ObProxyTableProcessorUtils::update_proxy_hu_cmd(*mysql_proxy_, proxy_ip_,
+        if (OB_NOT_NULL(mysql_proxy_) && OB_FAIL(ObProxyTableProcessorUtils::update_proxy_hu_cmd(*mysql_proxy_, proxy_ip_,
             proxy_port_, target_cmd, orig_cmd, orig_cmd_either, orig_cmd_another))
             && OB_ERR_UNEXPECTED != ret) {
           LOG_WARN("fail to update hot upgrade cmd, unknown error code, we will retry update",
@@ -717,9 +698,6 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
             "receive cmd", ObHotUpgraderInfo::get_cmd_string(info_.cmd_));
 
   switch (info_.cmd_) {
-    case HUC_LOCAL_RESTART:
-      //restart from config cmd
-      check_available_failures_ = 0;
     case HUC_RESTART:
       //restart also arrive here, but no need check_arguments
     case HUC_UPGRADE_BIN:
@@ -774,13 +752,11 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
       }
       break;
     }
-    case HUC_LOCAL_EXIT:
-      //try to report status, but do not care result
     case HUC_EXIT: {
       //when recv "exit" cmd, we need do follow things:
       //1. update status in table
       //2. do quick exit in 5 seconds
-      if (OB_FAIL(ObProxyTableProcessorUtils::update_proxy_exited_status(*mysql_proxy_,
+      if (OB_NOT_NULL(mysql_proxy_) && OB_FAIL(ObProxyTableProcessorUtils::update_proxy_exited_status(*mysql_proxy_,
               proxy_ip_, proxy_port_, HU_STATUS_DO_QUICK_EXIT, HUC_NONE))) {
         LOG_WARN("fail to update hot upgrade status and cmd to DO_GRACEFUL_EXIT, NONE", K_(info), K(ret));
       }
@@ -894,7 +870,6 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
     }
 
     switch (info_.cmd_) {
-      case HUC_LOCAL_COMMIT:
       case HUC_COMMIT: {
         //when recv commit, parent must do follow things:
         //1. disable net_accept
@@ -904,7 +879,7 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
 
         info_.disable_net_accept();
         info_.graceful_exit_start_time_ = get_hrtime_internal();
-        info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_graceful_exit_timeout)
+        info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
                                         + info_.graceful_exit_start_time_;// nanosecond
         info_.update_both_status(HU_STATUS_RECV_COMMIT_AND_EXIT, HU_STATUS_COMMIT_SUCC);
         info_.update_state(HU_STATE_WAIT_CR_FINISH);
@@ -914,7 +889,6 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
         break;
       }
 
-      case HUC_LOCAL_ROLLBACK:
       case HUC_ROLLBACK: {
         //when recv rollback, parent must do follow things:
         //1. update status, state and wait_cr_finish_timeout_at_
@@ -941,7 +915,7 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
             info_.update_state(HU_STATE_WAIT_CR_FINISH);
             info_.update_sub_status(is_timeout_rollback_ ? HU_STATUS_RECV_TIMEOUT_ROLLBACK_AND_EXIT : HU_STATUS_RECV_ROLLBACK_AND_EXIT);
             wait_cr_finish_timeout_at_ = get_hrtime_internal()
-                                         + HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_graceful_exit_timeout)
+                                         + HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
                                          + HRTIME_USECONDS(get_global_proxy_config().proxy_info_check_interval);
           }
           upgrade_failures_ = 0;// reset to zero if ever succ to fork new proxy
@@ -974,12 +948,6 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
           }
         } else {
           LOG_DEBUG("parent wait subprocess normally working", K_(info));
-        }
-        break;
-      }
-      case HUC_LOCAL_RESTART: {
-        if (OB_FAIL(handle_local_restart())) {
-          LOG_WARN("fail to handle local restart", K_(info), K(ret));
         }
         break;
       }
@@ -1018,7 +986,6 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
     }
 
     switch (info_.cmd_) {
-      case HUC_LOCAL_COMMIT:
       case HUC_COMMIT: {
         //when recv commit, sub will do follow things:
         //1. update status, state and wait_cr_finish_timeout_at_
@@ -1038,12 +1005,12 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
           info_.update_state(HU_STATE_WAIT_CR_FINISH);
           info_.update_both_status(HU_STATUS_RECV_COMMIT_AND_EXIT, HU_STATUS_COMMIT_SUCC);
           wait_cr_finish_timeout_at_ = get_hrtime_internal()
-                                       + HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_graceful_exit_timeout)
+                                       + HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
                                        + HRTIME_USECONDS(get_global_proxy_config().proxy_info_check_interval);
         }
         upgrade_failures_ = 0;// reset to zero if ever succ to fork new proxy
         cancel_timeout_rollback();
-        if (!is_self_binary() && !info_.is_local_commit() && OB_FAIL(backup_old_binary())) {//!!it maybe cost long time
+        if (!is_self_binary() && OB_FAIL(backup_old_binary())) {//!!it maybe cost long time
           LOG_WARN("fail to backup old binary, but it has nothing affect", K(ret));
         }
         info_.cmd_ = HUC_COMMIT;//reset it to commit
@@ -1051,7 +1018,6 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
         break;
       }
 
-      case HUC_LOCAL_ROLLBACK:
       case HUC_ROLLBACK: {
         //when recv rollback, sub must do follow things:
         //1. disable net_accept
@@ -1061,7 +1027,7 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
 
         info_.disable_net_accept();
         info_.graceful_exit_start_time_ = get_hrtime_internal();
-        info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_graceful_exit_timeout)
+        info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
                                         + info_.graceful_exit_start_time_; // nanosecond
         info_.update_state(HU_STATE_WAIT_CR_FINISH);
         if (is_timeout_rollback_) {
@@ -1077,7 +1043,6 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
       case HUC_NONE:
       case HUC_EXIT:
       case HUC_RESTART:
-      case HUC_LOCAL_RESTART:
       case HUC_AUTO_UPGRADE:
       case HUC_HOT_UPGRADE: {
         LOG_DEBUG("it is invalid cmd, no need to perform", K_(info));
@@ -1498,29 +1463,6 @@ int ObHotUpgradeProcessor::send_commit_via_subprocess()
   return ret;
 }
 
-//parent proxy need send local cmd to subprocess
-int ObHotUpgradeProcessor::send_local_cmd_to_subprocess(const ObProxyLocalCMDType type)
-{
-  int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(!ObProxyConfig::is_local_cmd(type))) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input argument", K(type), K(ret));
-  } else {
-    const int64_t MAX_RETRY_TIMES = 16;
-    char sql[OB_SHORT_SQL_LENGTH];
-    const int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, "alter proxyconfig set proxy_local_cmd=%d", type);
-    if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
-    } else if (OB_FAIL(send_cmd_and_check_response(sql, USER_TYPE_PROXYSYS, MAX_RETRY_TIMES))) {
-      LOG_WARN("fail to send local cmd to subprocess", K(sql), K(USER_TYPE_METADB), K(ret));
-    } else {
-      //do nothing
-    }
-  }
-  return ret;
-}
-
 int ObHotUpgradeProcessor::check_subprocess_available()
 {
   int ret = OB_SUCCESS;
@@ -1602,32 +1544,158 @@ int ObHotUpgradeProcessor::check_subprocess_available()
   return ret;
 }
 
-int ObHotUpgradeProcessor::handle_local_restart()
+int ObHotUpgradeProcessor::do_hot_upgrade_repeat_task()
+{
+  return get_global_hot_upgrade_processor().do_hot_upgrade_work();
+}
+
+void ObHotUpgradeProcessor::update_hot_upgrade_interval()
+{
+  ObAsyncCommonTask *cont = get_global_hot_upgrade_processor().get_new_hot_upgrade_cont();
+  if (OB_LIKELY(NULL != cont)) {
+    int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(
+                          get_global_proxy_config().proxy_hot_upgrade_check_interval);
+    cont->set_interval(interval_us);
+  }
+}
+
+int ObHotUpgradeProcessor::start_hot_upgrade_task()
 {
   int ret = OB_SUCCESS;
-  LOG_INFO("parent proxy need check subprocess available", K_(info));
-  bool need_rollback = false;
-  if (OB_FAIL(check_subprocess_available())) {
-    if (++check_available_failures_ < OB_MAX_CHECK_SUBPROCESS_FAILURES) {
-      LOG_WARN("subprocess is unavailable, will try it next time", K(check_available_failures_), K_(info), K(ret));
-    } else {
-      need_rollback = true;
-      LOG_WARN("subprocess is unavailable, do rollback next time", K(check_available_failures_), K_(info));
-    }
-  } else if (OB_FAIL(send_local_cmd_to_subprocess(OB_LOCAL_CMD_COMMIT))) {
-    need_rollback = true;
-    LOG_WARN("fail to send commit to subprocess, do rollback next time", K_(info));
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WARN("obproxy table processor is not inited", K(ret));
+  } else if (OB_UNLIKELY(NULL != hot_upgrade_cont_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("hot upgrade cont has been scheduled", K(ret));
   } else {
-    info_.cmd_ = HUC_LOCAL_COMMIT;
-    LOG_INFO("subprocess is available, do commit next time", K_(info));
+    int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(
+                          get_global_proxy_config().proxy_hot_upgrade_check_interval);
+    if (OB_ISNULL(hot_upgrade_cont_ = ObAsyncCommonTask::create_and_start_repeat_task(interval_us,
+                                      "proxy_info_check_task",
+                                      ObHotUpgradeProcessor::do_hot_upgrade_repeat_task,
+                                      ObHotUpgradeProcessor::update_hot_upgrade_interval))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to create and start proxy table check task", K(ret));
+    } else {
+      LOG_INFO("succ to start proxy table check task", K(interval_us));
+    }
+  }
+  return ret;
+}
+
+int ObHotUpgradeProcessor::do_hot_upgrade_work()
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyLocalCMDType cmd_type = get_global_proxy_config().get_local_cmd_type();
+  switch (cmd_type) {
+    case OB_LOCAL_CMD_NONE: {
+      //do nothing
+      break;
+    }
+    case OB_LOCAL_CMD_EXIT: {
+      get_global_proxy_config().reset_local_cmd();
+      if (info_.is_in_idle_state() && info_.is_parent()) {
+        info_.cmd_ = HUC_LOCAL_EXIT;
+        LOG_INFO("proxy will do quick exit from local cmd, no need check proxy info", K_(info));
+      } else {
+        LOG_WARN("it is doing hot upgrading now, CAN NOT do quick exit from local cmd", K_(info));
+     }
+
+     break;
+   }
+    case OB_LOCAL_CMD_RESTART: {
+      get_global_proxy_config().reset_local_cmd();
+      if (info_.is_in_idle_state() && info_.is_parent()) {
+        info_.cmd_ = HUC_LOCAL_RESTART;
+        LOG_INFO("proxy will do restart from local cmd", K_(info));
+      } else {
+        LOG_WARN("it is doing hot upgrading now, CAN NOT do quick restart from local cmd", K_(info));
+      }
+      break;
+    }
+    default: {
+      LOG_WARN("unknown ObProxyLocalCMDType, reset it default value", K(cmd_type));
+      get_global_proxy_config().reset_local_cmd();
+    }
   }
 
-  if (need_rollback) {
-    if (OB_FAIL(send_local_cmd_to_subprocess(OB_LOCAL_CMD_ROLLBACK))) {
-      LOG_WARN("fail to send rollback to subprocess, ignore it, let subprocess timeout rollback", K(ret));
+  switch (info_.get_state()) {
+    case HU_STATE_WAIT_HU_CMD: {
+      LOG_DEBUG("enter HU_STATE_WAIT_HU_CMD state", "pid", getpid(),
+                "current status", ObHotUpgraderInfo::get_status_string(info_.status_),
+                "receive cmd", ObHotUpgraderInfo::get_cmd_string(info_.cmd_));
+
+      switch (info_.cmd_) {
+        case HUC_LOCAL_RESTART: {
+          g_ob_prometheus_processor.destroy_exposer();
+          if (OB_FAIL(ObProxyHotUpgrader::spawn_process())) {
+            LOG_WARN("fail to spawn sub process", K_(info), K(ret));
+            g_ob_prometheus_processor.create_exposer();
+          } else {
+            schedule_timeout_rollback();
+            info_.disable_net_accept();  // disable accecpt new connection
+            info_.update_sub_status(HU_STATUS_NONE);
+            info_.update_state(HU_STATE_WAIT_LOCAL_CR_FINISH);
+            LOG_INFO("succ to fork new proxy, start turn to HU_STATE_WAIT_CR_FINISH", K_(info));
+          }
+          break;
+        }
+        case HUC_LOCAL_EXIT: {
+          info_.disable_net_accept();
+          info_.graceful_exit_start_time_ = get_hrtime_internal();
+          info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().delay_exit_time)
+            + info_.graceful_exit_start_time_; // nanosecond
+          g_proxy_fatal_errcode = OB_SERVER_IS_STOPPING;
+          LOG_WARN("parent process stop accepting new connection, stop check timer", K_(info), K(g_proxy_fatal_errcode), K(ret));
+          break;
+        }
+        case HUC_NONE:
+          break;
+        default: {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_ERROR("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
+        }
+      }
+      info_.cmd_ = HUC_NONE;
+      break;
     }
-    info_.cmd_ = HUC_LOCAL_ROLLBACK;
+    case HU_STATE_WAIT_LOCAL_CR_FINISH: {
+      if (OB_LIKELY(common::OB_SUCCESS == lib::mutex_acquire(&info_.hot_upgrade_mutex_))) {
+        if (info_.is_sub_exited()) {
+          info_.enable_net_accept();
+          g_ob_prometheus_processor.create_exposer();
+          info_.update_sub_status(HU_STATUS_NONE);
+          info_.update_state(HU_STATE_WAIT_HU_CMD);
+        } else {
+          if (OB_LIKELY(!info_.parent_hot_upgrade_flag_)) {
+            ObHRTime diff_time = 0;
+            if (OB_LIKELY(timeout_rollback_timeout_at_ <= 0)) {
+              // maybe has not started
+            } else if (0 < (diff_time = timeout_rollback_timeout_at_ - get_hrtime_internal())) {
+              LOG_DEBUG("it is not time to do hot upgrade timeout rollback job",
+                        K_(timeout_rollback_timeout_at), K(diff_time));
+            } else {
+              kill(info_.sub_pid_, SIGKILL);
+              info_.enable_net_accept();
+              g_ob_prometheus_processor.create_exposer();
+              info_.update_state(HU_STATE_WAIT_HU_CMD);
+              info_.parent_hot_upgrade_flag_ = true;
+              LOG_INFO("upgrade timeout, will send SIGKILL to subprocess", K_(info));
+            }
+          }
+        }
+        lib::mutex_release(&info_.hot_upgrade_mutex_);
+      }
+      break;
+    }
+    default: {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_ERROR("it should not enter here", K_(info));
+    }
   }
+
   return ret;
 }
 

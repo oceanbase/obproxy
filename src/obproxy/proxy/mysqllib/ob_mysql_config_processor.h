@@ -147,6 +147,23 @@ public:
   char proxy_primary_zone_name_[common::MAX_ZONE_LENGTH + 1];
 };
 
+// param for performance
+struct ObPerformanceParams
+{
+public:
+  ObPerformanceParams();
+  virtual ~ObPerformanceParams() {}
+  virtual void free() { delete this; }
+
+  int assign_config(const obutils::ObProxyConfig &proxy_config);
+  DECLARE_TO_STRING;
+public:
+  CfgBool enable_performance_mode_;
+  CfgBool enable_trace_;
+  CfgBool enable_stat_;
+  bool is_inited_;
+};
+
 class ObMysqlConfigProcessor
 {
 public:
@@ -170,6 +187,8 @@ private:
 
 extern ObMysqlConfigProcessor mysql_config_processor;
 inline ObMysqlConfigProcessor &get_global_mysql_config_processor() { return mysql_config_processor; }
+extern ObPerformanceParams performance_params;
+inline ObPerformanceParams get_global_performance_params() { return performance_params; }
 
 inline int ObMysqlConfigParams::get_one_test_server_addr(net::ObIpEndpoint &addr) const
 {

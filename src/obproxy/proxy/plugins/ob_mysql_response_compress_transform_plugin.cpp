@@ -71,10 +71,11 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
 
   if (!analyzer_->is_inited()) {
     const obmysql::ObMySQLCmd cmd = sm_->trans_state_.trans_info_.client_request_.get_packet_meta().cmd_;
+    const ObMysqlProtocolMode mysql_mode = sm_->client_session_->get_session_info().is_oracle_mode() ? OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
     const bool extra_ok_packet_for_stats_enabled = sm_->is_extra_ok_packet_for_stats_enabled();
     // should decomrpess the data
     if (OB_FAIL(analyzer_->init(req_seq_, ObMysqlCompressAnalyzer::DECOMPRESS_MODE,
-                cmd, extra_ok_packet_for_stats_enabled, req_seq_, request_id_, server_sessid_))) {
+                cmd, mysql_mode, extra_ok_packet_for_stats_enabled, req_seq_, request_id_, server_sessid_))) {
       PROXY_API_LOG(WARN, "fail to init compress analyzer", K_(req_seq), K_(request_id), K_(server_sessid),
                     K(cmd), K(extra_ok_packet_for_stats_enabled), K(ret));
     }

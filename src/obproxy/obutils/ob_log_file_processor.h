@@ -13,6 +13,7 @@
 #ifndef OBPROXY_LOG_FILE_PROCESSOR_H
 #define OBPROXY_LOG_FILE_PROCESSOR_H
 #include "lib/container/ob_array.h"
+#include "lib/compress/zstd_1_3_8/ob_zstd_compressor_1_3_8.h"
 #include "utils/ob_layout.h"
 #include "iocore/eventsystem/ob_buf_allocator.h"
 
@@ -72,14 +73,23 @@ private:
   //sorted array until total_size_ is smaller than threshhold
   //if in hot upgrade status, log_size_threshhold is divided by both parent and child
   //process according to their proportions in total size
-  int do_cleanup_log_file(common::ObArray<ObProxyLogFileStruct> &log_array, const bool is_in_single_service,
-                          const int64_t cur_process_log_size, int64_t &total_size);
+  int do_cleanup_log_file(common::ObArray<ObProxyLogFileStruct> &log_array,
+                          int64_t &total_size);
   int do_cleanup_invalid_log_file(common::ObArray<ObProxyLogFileStruct> &log_array);
+  int do_cleanup_compress_log_file(common::ObArray<ObProxyLogFileStruct> &log_array,
+                                   common::ObArray<ObProxyLogFileStruct> &compress_log_array,
+                                   int64_t &total_size);
+  int log_compress_block(char *dest, size_t dest_size,
+                         const char *src, size_t src_size,
+                         size_t &return_size);
+  int log_compress(ObProxyLogFileStruct &log_st, const common::ObString &file_name, const common::ObString &compression_file_name,
+                   int64_t &total_size, char *src_buf, int src_size, char *dest_buf, int dest_size);
 
 private:
   static const int64_t MAX_INVALID_PROXY_LOG_NUM = 10;
 
   bool is_inited_;
+  common::zstd_1_3_8::ObZstdCompressor_1_3_8 zstd_compressor_1_3_8_;
   obutils::ObAsyncCommonTask *cleanup_cont_;
   DISALLOW_COPY_AND_ASSIGN(ObLogFileProcessor);
 };

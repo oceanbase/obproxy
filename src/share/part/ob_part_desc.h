@@ -15,12 +15,43 @@
 
 #include "common/ob_range2.h"
 #include "lib/container/ob_iarray.h"
+#include "lib/timezone/ob_time_convert.h"
 #include "share/part/ob_part_mgr_util.h"
+#include "obproxy/opsql/expr_parser/ob_expr_parse_result.h"
 
 namespace oceanbase
 {
+
+namespace obproxy
+{
+namespace proxy
+{
+class ObClientSessionInfo;
+}
+}
+
 namespace common
 {
+
+class ObPartDescCtx {
+public:
+  ObPartDescCtx() : session_info_(NULL), need_accurate_(false) {}
+  ObPartDescCtx(obproxy::proxy::ObClientSessionInfo *session_info)
+    : session_info_(session_info), need_accurate_(false) {}
+  ObPartDescCtx(obproxy::proxy::ObClientSessionInfo *session_info, bool need_accurate)
+    : session_info_(session_info), need_accurate_(need_accurate) {}
+  ~ObPartDescCtx() {}
+  
+  obproxy::proxy::ObClientSessionInfo *get_session_info() { return session_info_; }
+  bool need_accurate() { return need_accurate_; }
+
+private:
+  obproxy::proxy::ObClientSessionInfo *session_info_;
+
+  /* need accurate the part key result or not, currently only support insert stmt, need to support update set=x stmt */
+  bool need_accurate_;                
+};
+
 class ObPartDesc
 {
 public:
@@ -34,12 +65,17 @@ public:
    */
   virtual int get_part(common::ObNewRange &range,
                        common::ObIAllocator &allocator,
-                       common::ObIArray<int64_t> &part_ids);
+                       common::ObIArray<int64_t> &part_ids,
+                       ObPartDescCtx &ctx);
   virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
   void set_part_level(share::schema::ObPartitionLevel part_level) { part_level_ = part_level; }
   share::schema::ObPartitionLevel get_part_level() { return part_level_; }
   void set_part_func_type(share::schema::ObPartitionFuncType part_func_type) { part_func_type_ = part_func_type; }
   share::schema::ObPartitionFuncType get_part_func_type() { return part_func_type_; }
+  int build_dtc_params(obproxy::proxy::ObClientSessionInfo *session_info,
+                       ObObjType obj_type,
+                       ObDataTypeCastParams &dtc_params);
+  void set_accuracy(const ObProxyPartKeyAccuracy &accuracy);
 
   ObPartDesc() : part_level_(share::schema::PARTITION_LEVEL_ZERO) {};
   virtual ~ObPartDesc() {};
@@ -47,7 +83,9 @@ public:
   DECLARE_VIRTUAL_TO_STRING = 0;
   share::schema::ObPartitionLevel part_level_;
   share::schema::ObPartitionFuncType part_func_type_;
+  ObProxyPartKeyAccuracy accuracy_;
 };
+
 }
 }
 

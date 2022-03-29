@@ -28,6 +28,7 @@
 #include "lib/allocator/ob_stack_allocator.h"
 #include "lib/number/ob_number_v2.h"
 #include "common/ob_obj_funcs.h"
+
 using namespace oceanbase;
 using namespace oceanbase::common;
 
@@ -230,6 +231,12 @@ int ObObj::build_not_strict_default_value()
         set_char(null_str);
       }
       break;
+    case ObTimestampTZType:
+    case ObTimestampLTZType:
+    case ObTimestampNanoType: {
+        set_otimestamp_null(data_type);
+        break;
+    }
     default:
       ret = OB_INVALID_ARGUMENT;
       _OB_LOG(WARN, "unexpected data type=%hhd", data_type);
@@ -421,7 +428,22 @@ ObObjTypeFuncs OBJ_FUNCS[ObMaxType] =
   DEF_FUNC_ENTRY(ObHexStringType),  // 24, hex_string
   DEF_FUNC_ENTRY(ObExtendType),  // 25, ext
   DEF_FUNC_ENTRY(ObUnknownType),  // 26, unknown
-  DEF_FUNC_ENTRY(ObRawType),           // 39, timestamp (9)
+  DEF_FUNC_ENTRY(ObNullType),          // 27
+  DEF_FUNC_ENTRY(ObNullType),          // 28
+  DEF_FUNC_ENTRY(ObNullType),          // 29
+  DEF_FUNC_ENTRY(ObNullType),          // 30
+  DEF_FUNC_ENTRY(ObNullType),          // 31
+  DEF_FUNC_ENTRY(ObNullType),          // 32
+  DEF_FUNC_ENTRY(ObNullType),          // 33
+  DEF_FUNC_ENTRY(ObNullType),          // 34
+  DEF_FUNC_ENTRY(ObNullType),          // 35
+  DEF_FUNC_ENTRY(ObTimestampTZType),   // 36, timestamp with time zone
+  DEF_FUNC_ENTRY(ObTimestampLTZType),  // 37, timestamp with local time zone
+  DEF_FUNC_ENTRY(ObTimestampNanoType), // 38, timestamp (9)
+  DEF_FUNC_ENTRY(ObRawType),           // 39, raw
+  DEF_FUNC_ENTRY(ObNullType),          // 40
+  DEF_FUNC_ENTRY(ObNullType),          // 41
+  DEF_FUNC_ENTRY(ObNullType),          // 42
   DEF_FUNC_ENTRY(ObNVarchar2Type),     // 43, nvarchar2
   DEF_FUNC_ENTRY(ObNCharType),         // 44, nchar
 };

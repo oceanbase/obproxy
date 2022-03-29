@@ -1234,6 +1234,63 @@ inline int encode_number_type(char *buf,
   return err;
 }
 
+inline int64_t encode_length_otimestamp_tz_type()
+{
+  return (sizeof(int64_t) + sizeof(uint32_t));
+}
+inline int decode_otimestamp_tz_type(const char *buf,
+                                     const int64_t buf_len,
+                                     int64_t &pos,
+                                     int64_t &time_us,
+                                     uint32_t &tz_ctx)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(decode_i64(buf, buf_len, pos, &time_us))) {
+  } else if (OB_FAIL(decode_i32(buf, buf_len, pos, (int32_t*)(&tz_ctx)))) {
+  }
+  return ret;
+}
+inline int encode_otimestamp_tz_type(char *buf,
+                                     const int64_t buf_len,
+                                     int64_t &pos,
+                                     const int64_t time_us,
+                                     const uint32_t tz_ctx)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(encode_i64(buf, buf_len, pos, time_us))) {
+  } else if (OB_FAIL(encode_i32(buf, buf_len, pos, tz_ctx))) {
+  }
+  return ret;
+}
+inline int64_t encode_length_otimestamp_type()
+{
+  return (sizeof(int64_t) + sizeof(uint16_t));
+}
+inline int decode_otimestamp_type(const char *buf,
+                                  const int64_t buf_len,
+                                  int64_t &pos,
+                                  int64_t &time_us,
+                                  uint16_t &time_desc)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(decode_i64(buf, buf_len, pos, &time_us))) {
+  } else if (OB_FAIL(decode_i16(buf, buf_len, pos, (int16_t*)(&time_desc)))) {
+  }
+  return ret;
+}
+inline int encode_otimestamp_type(char *buf,
+                                  const int64_t buf_len,
+                                  int64_t &pos,
+                                  const int64_t time_us,
+                                  const uint16_t time_desc)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(encode_i64(buf, buf_len, pos, time_us))) {
+  } else if (OB_FAIL(encode_i16(buf, buf_len, pos, time_desc))) {
+  }
+  return ret;
+}
+
 inline int encode_decimal_type(char *buf, const int64_t buf_len, int64_t &pos, bool is_add,
                                int8_t precision, int8_t scale, int8_t vscale, int8_t nwords, const uint32_t *words)
 {

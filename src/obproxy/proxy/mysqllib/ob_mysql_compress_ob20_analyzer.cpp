@@ -33,6 +33,7 @@ static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX
 int ObMysqlCompressOB20Analyzer::init(
         const uint8_t last_seq, const AnalyzeMode mode,
         const obmysql::ObMySQLCmd mysql_cmd,
+        const ObMysqlProtocolMode mysql_mode,
         const bool enable_extra_ok_packet_for_stats,
         const uint8_t last_ob20_seq,
         const uint32_t request_id,
@@ -40,7 +41,7 @@ int ObMysqlCompressOB20Analyzer::init(
 {
   int ret = OB_SUCCESS;
 
-  ObMysqlCompressAnalyzer::init(last_seq, mode, mysql_cmd, enable_extra_ok_packet_for_stats,
+  ObMysqlCompressAnalyzer::init(last_seq, mode, mysql_cmd, mysql_mode, enable_extra_ok_packet_for_stats,
                                 last_ob20_seq, request_id, sessid);
   last_ob20_seq_ = last_ob20_seq;
   request_id_ = request_id;
@@ -48,9 +49,9 @@ int ObMysqlCompressOB20Analyzer::init(
   LOG_DEBUG("ObMysqlCompressOB20Analyzer init", K(request_id), "request_id_", request_id_);
 
   result_.set_cmd(mysql_cmd);
-  result_.set_mysql_mode(OCEANBASE_MYSQL_PROTOCOL_MODE);
+  result_.set_mysql_mode(mysql_mode);
   result_.set_enable_extra_ok_packet_for_stats(enable_extra_ok_packet_for_stats);
-  analyzer_.set_mysql_mode(OCEANBASE_MYSQL_PROTOCOL_MODE);
+  analyzer_.set_mysql_mode(mysql_mode);
 
   return ret;
 }

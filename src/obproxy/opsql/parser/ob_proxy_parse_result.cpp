@@ -114,7 +114,7 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
       str_ret = "BEGIN";
       break;
     case OBPROXY_T_SELECT_TX_RO:
-      str_ret = "SELECT";
+      str_ret = "SELECT_TX_RO";
       break;
     case OBPROXY_T_SET_AC_0:
       str_ret = "SET";
@@ -127,6 +127,9 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
       break;
     case OBPROXY_T_SET_ROUTE_ADDR:
       str_ret = "SET_ROUTE_ADDR";
+      break;
+    case OBPROXY_T_SELECT_PROXY_VERSION:
+      str_ret = "SELECT_PROXY_VERSION";
       break;
 
     // use last session
@@ -147,8 +150,8 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_SET_CHARSET:
     case OBPROXY_T_SET_PASSWORD:
     case OBPROXY_T_SET_DEFAULT:
-    case OBPROXY_T_SET_OB_READ_CONSISTENCY:  
-    case OBPROXY_T_SET_TX_READ_ONLY:  
+    case OBPROXY_T_SET_OB_READ_CONSISTENCY:
+    case OBPROXY_T_SET_TX_READ_ONLY:
       str_ret = "SET";
       break;
     case OBPROXY_T_USE_DB:
@@ -339,6 +342,9 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_SELECT_TX_RO:
       str_ret = "OBPROXY_T_SELECT_TX_RO";
       break;
+    case OBPROXY_T_SELECT_PROXY_VERSION:
+      str_ret = "OBPROXY_T_SELECT_PROXY_VERSION";
+      break;
     case OBPROXY_T_SET_AC_0:
       str_ret = "OBPROXY_T_SET_AC_0";
       break;
@@ -499,6 +505,18 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
       break;
     case OBPROXY_T_SUB_SHOW_DB_VERSION:
       str_ret = "OBPROXY_T_SUB_SHOW_DB_VERSION";
+      break;
+    case OBPROXY_T_SUB_SELECT_DATABASE:
+      str_ret = "OBPROXY_T_SUB_SELECT_DATABASE";
+      break;
+    case OBPROXY_T_SUB_DESC_TABLE:
+      str_ret = "OBPROXY_T_SUB_DESC_TABLE";
+      break;
+    case OBPROXY_T_SUB_CREATE_TABLE:
+      str_ret = "OBPROXY_T_SUB_CREATE_TABLE";
+      break;
+    case OBPROXY_T_SUB_CREATE_INDEX:
+      str_ret = "OBPROXY_T_SUB_CREATE_INDEX";
       break;
     case OBPROXY_T_SUB_MAX:
       str_ret = "OBPROXY_T_SUB_MAX";

@@ -78,11 +78,11 @@ int ObMysqlVCTable::remove_entry(ObMysqlVCTableEntry *e)
   } else {
     e->vc_ = NULL;
     e->eos_ = false;
-    if (NULL != e->read_buffer_) {
+    if (OB_UNLIKELY(NULL != e->read_buffer_)) {
       free_miobuffer(e->read_buffer_);
       e->read_buffer_ = NULL;
     }
-    if (NULL != e->write_buffer_) {
+    if (OB_UNLIKELY(NULL != e->write_buffer_)) {
       free_miobuffer(e->write_buffer_);
       e->write_buffer_ = NULL;
     }

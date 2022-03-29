@@ -104,12 +104,18 @@ int ObRawMysqlClientActor::sync_raw_execute(const char *sql, const int64_t timeo
     // Get the password again, it may be changed
     if (!is_avail() &&
         OB_FAIL(connect(addr_, timeout_ms))) {
-      if (!is_avail() && info_->change_password() && OB_FAIL(connect(addr_, timeout_ms))) {
-        LOG_WARN("fail to connect using password1", "addr", addr_, K(ret));
+      if (!is_avail() && info_->change_password()) {
+        if (OB_FAIL(connect(addr_, timeout_ms))) {
+          LOG_WARN("fail to connect using password1", "addr", addr_, K(ret));
+        }
       } else {
         LOG_WARN("fail to connect using password", "addr", addr_, K(ret));
       }
-    } else if (OB_FAIL(send_request(sql))) {
+    }
+
+    if (OB_FAIL(ret)) {
+      // do nothing
+    } if (OB_FAIL(send_request(sql))) {
       LOG_WARN("fail to post request", K(sql), K(ret));
     } else {
       resp = resp_;

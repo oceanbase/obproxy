@@ -206,7 +206,7 @@ public:
    *
    * @return pointer to the underlying data.
    */
-  char *buf() { return data_->data_; }
+  inline char *buf() { return data_->data_; }
 
   /**
    * Beginning of the inuse section. Returns the position in the buffer
@@ -214,7 +214,7 @@ public:
    *
    * @return pointer to the start of the inuse section.
    */
-  char *start() { return start_; }
+  inline char *start() { return start_; }
 
   /**
    * End of the used space. Returns a pointer to end of the used space
@@ -222,7 +222,7 @@ public:
    *
    * @return pointer to the end of the inuse portion of the block.
    */
-  char *end() { return end_; }
+  inline char *end() { return end_; }
 
   /**
    * End of the data buffer. Returns a pointer to end of the data buffer
@@ -230,14 +230,14 @@ public:
    *
    * @return
    */
-  char *buf_end() { return buf_end_; }
+  inline char *buf_end() { return buf_end_; }
 
   /**
    * Size of the inuse area. Returns the size of the current inuse area.
    *
    * @return bytes occupied by the inuse area.
    */
-  int64_t size() const { return static_cast<int64_t>(end_ - start_); }
+  inline int64_t size() const { return static_cast<int64_t>(end_ - start_); }
 
   /**
    * Size of the data available for reading. Returns the size of the data
@@ -245,7 +245,7 @@ public:
    *
    * @return bytes available for reading from the inuse area.
    */
-  int64_t read_avail() const { return static_cast<int64_t>(end_ - start_); }
+  inline int64_t read_avail() const { return static_cast<int64_t>(end_ - start_); }
 
   /**
    * Space available in the buffer. Returns the number of bytes that can
@@ -253,7 +253,7 @@ public:
    *
    * @return space available for writing in this ObIOBufferBlock.
    */
-  int64_t write_avail() const { return static_cast<int64_t>(buf_end_ - end_); }
+  inline int64_t write_avail() const { return static_cast<int64_t>(buf_end_ - end_); }
 
   /**
    * Size of the memory allocated by the underlying ObIOBufferData.
@@ -799,16 +799,14 @@ public:
   {
     ObIOBufferBlock *ret = NULL;
 
-    if (NULL != writer_) {
+    if (OB_LIKELY(NULL != writer_)) {
       if (NULL != writer_->next_ && 0 == writer_->write_avail()) {
         ret = writer_->next_;
+      } else if (OB_UNLIKELY(NULL != writer_->next_) && OB_UNLIKELY(0 != writer_->next_->read_avail())) {
+        PROXY_EVENT_LOG(ERROR, "next block read avail must be 0",
+                        "next_block_read_avail", writer_->next_->read_avail());
       } else {
-        if (OB_UNLIKELY(NULL != writer_->next_) && OB_UNLIKELY(0 != writer_->next_->read_avail())) {
-          PROXY_EVENT_LOG(ERROR, "next block read avail must be 0",
-                          "next_block_read_avail", writer_->next_->read_avail());
-        } else {
-          ret = writer_;
-        }
+        ret = writer_;
       }
     }
 
@@ -2006,7 +2004,7 @@ inline int ObMIOBuffer::add_block(const int64_t block_count)
 inline int ObMIOBuffer::check_add_block()
 {
   int ret = common::OB_SUCCESS;
-  if (!is_high_water() && is_current_low_water()) {
+  if (OB_UNLIKELY(!is_high_water() && is_current_low_water())) {
     ret = add_block();
   }
   return ret;

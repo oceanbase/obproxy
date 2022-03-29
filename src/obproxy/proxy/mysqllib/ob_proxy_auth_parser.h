@@ -56,7 +56,8 @@ struct ObHSRResult
   // user_name_         is UserName
   // cluster_id_        is ClusterId
   // is_clustername_from_default_ whether login packet has clustername
-  // has_full_username_ whether login packet has tenant or clustername
+  // has_tenant_username_ whether login packet has tenant
+  // has_cluster_username_ whether login packet has clustername
   common::ObString full_name_;
   common::ObString user_tenant_name_;
   common::ObString cluster_name_;
@@ -64,7 +65,8 @@ struct ObHSRResult
   common::ObString user_name_;
   bool is_clustername_from_default_;
   int64_t cluster_id_;
-  bool has_full_username_;
+  bool has_tenant_username_;
+  bool has_cluster_username_;
 
   obmysql::OMPKHandshakeResponse response_;
 

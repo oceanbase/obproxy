@@ -26,6 +26,8 @@ namespace common
 #define COMMA_FORMAT ", "
 #define WITH_COMMA(format)  (with_comma ? COMMA_FORMAT format: format)
 
+char get_xdigit(const char c1);
+
 char *hex2str(const void *data, const int32_t size);
 int32_t hex_to_str(const void *in_data, const int32_t data_length, void *buff,
                    const int32_t buff_size);
@@ -99,15 +101,11 @@ const char *to_cstring(const T &obj)
     if (OB_ISNULL(buffer)) {
       LIB_LOG(ERROR, "buffer is NULL");
     } else {
-      if (NULL == &obj) {
-        snprintf(buffer, BUFFER_SIZE, "NULL");
+      pos = to_string(obj, buffer, BUFFER_SIZE -1);
+      if (pos >= 0 && pos < BUFFER_SIZE) {
+        buffer[pos] = '\0';
       } else {
-        pos = to_string(obj, buffer, BUFFER_SIZE -1);
-        if (pos >= 0 && pos < BUFFER_SIZE) {
-          buffer[pos] = '\0';
-        } else {
-          buffer[0] = '\0';
-        }
+        buffer[0] = '\0';
       }
     }
   }

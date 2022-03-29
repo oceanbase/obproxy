@@ -211,6 +211,11 @@ void ObMysqlClientPool::free()
     shard_conn_ = NULL;
   }
 
+  if (OB_LIKELY(NULL != shard_prop_)) {
+    shard_prop_->dec_ref();
+    shard_prop_ = NULL;
+  }
+
   CLIENT_POOL_INCREMENT_DYN_STAT(FREE_CLUSTER_CLIENT_POOL_COUNT);
 
   op_free(this);
@@ -274,6 +279,20 @@ void ObMysqlClientPool::set_cluster_resource(ObClusterResource *cr)
   }
 }
 
+void ObMysqlClientPool::set_shard_prop(ObShardProp *shard_prop)
+{
+  if (NULL != shard_prop_) {
+    LOG_DEBUG("shard_prop will dec ref", K_(shard_prop), KPC_(shard_prop));
+    shard_prop_->dec_ref();
+    shard_prop_ = NULL;
+  }
+  if (NULL != shard_prop) {
+    shard_prop->inc_ref();
+    shard_prop_ = shard_prop;
+    shard_prop = NULL;
+  }
+}
+
 void ObMysqlClientPool::set_shard_conn(ObShardConnector *shard_conn)
 {
   if (NULL != shard_conn_) {
@@ -289,19 +308,28 @@ void ObMysqlClientPool::set_shard_conn(ObShardConnector *shard_conn)
   }
 }
 
-ObSharedRefCount *ObMysqlClientPool::acquire_connection_param()
+ObClusterResource *ObMysqlClientPool::acquire_cluster_resource()
 {
-  if (is_cluster_param_) {
-    if (OB_NOT_NULL(cluster_resource_)) {
-      cluster_resource_->inc_ref();
-    }
-    return cluster_resource_;
-  } else {
-    if (OB_NOT_NULL(shard_conn_)) {
-      shard_conn_->inc_ref();
-    }
-    return shard_conn_;
+  if (NULL != cluster_resource_) {
+    cluster_resource_->inc_ref();
   }
+  return cluster_resource_;
+}
+
+ObShardConnector *ObMysqlClientPool::acquire_shard_conn()
+{
+  if (NULL != shard_conn_) {
+    shard_conn_->inc_ref();
+  }
+  return shard_conn_;
+}
+
+ObShardProp *ObMysqlClientPool::acquire_shard_prop()
+{
+  if (NULL != shard_prop_) {
+    shard_prop_->inc_ref();
+  }
+  return shard_prop_;
 }
 
 } // end of namespace proxy

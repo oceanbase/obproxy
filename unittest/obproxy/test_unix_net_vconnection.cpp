@@ -10,10 +10,10 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#define private public
-#define protected public
 #include <gtest/gtest.h>
 #include <pthread.h>
+#define private public
+#define protected public
 #include "test_eventsystem_api.h"
 
 namespace oceanbase

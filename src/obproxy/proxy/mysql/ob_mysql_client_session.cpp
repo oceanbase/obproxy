@@ -21,6 +21,7 @@
 #include "prometheus/ob_sql_prometheus.h"
 #include "dbconfig/ob_proxy_pb_utils.h"
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
+#include "omt/ob_resource_unit_table_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -30,6 +31,7 @@ using namespace oceanbase::obproxy::net;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::prometheus;
 using namespace oceanbase::obproxy::dbconfig;
+using namespace oceanbase::obproxy::omt;
 
 namespace oceanbase
 {
@@ -69,12 +71,12 @@ ObMysqlClientSession::ObMysqlClientSession()
       cluster_resource_(NULL), dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(),  dummy_entry_valid_time_ns_(0), server_state_version_(0),
       inner_request_param_(NULL), tcp_init_cwnd_set_(false), half_close_(false),
-      conn_decrease_(false), conn_prometheus_decrease_(false),
+      conn_decrease_(false), conn_prometheus_decrease_(false), vip_connection_decrease_(false),
       magic_(MYSQL_CS_MAGIC_DEAD), create_thread_(NULL), is_local_connection_(false),
       client_vc_(NULL), in_list_stat_(LIST_INIT), current_tid_(-1),
       cs_id_(0), proxy_sessid_(0), bound_ss_(NULL), cur_ss_(NULL), lii_ss_(NULL), last_bound_ss_(NULL), read_buffer_(NULL),
       buffer_reader_(NULL), mysql_sm_(NULL), read_state_(MCS_INIT), ka_vio_(NULL),
-      server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL), ps_cache_(),
+      server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
       ps_id_(0), cursor_id_(CURSOR_ID_START), text_ps_cache_(), using_ldg_(false)
 {
   SET_HANDLER(&ObMysqlClientSession::main_handler);
@@ -128,14 +130,18 @@ void ObMysqlClientSession::destroy()
 
   // here need place before session_info_.destroy, because use some session_info's data
   if (conn_prometheus_decrease_) {
-    SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);
+    SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);    
+    SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_USED_CONNECTIONS, -1);
     conn_prometheus_decrease_ = false;
+  }
+  if (vip_connection_decrease_) {
+    decrease_used_connections();
+    vip_connection_decrease_ = false;
   }
 
   test_server_addr_.reset();
   session_info_.destroy();
   // destroy ps_cache after destroy session, because client session info hold ps entry pointer
-  ps_cache_.destroy();
   text_ps_cache_.destroy();
   if (NULL != trace_stats_) {
     trace_stats_->destory();
@@ -158,6 +164,25 @@ void ObMysqlClientSession::destroy()
   ObProxyClientSession::cleanup();
   create_thread_ = NULL;
   op_reclaim_free(this);
+}
+
+inline void ObMysqlClientSession::decrease_used_connections()
+{
+  ObString cluster_name;
+  ObString tenant_name;
+  ObString ip_name;
+
+  if (is_need_convert_vip_to_tname() && is_vip_lookup_success()) {
+    cluster_name = get_vip_cluster_name();
+    tenant_name  = get_vip_tenant_name();
+    session_info_.get_vip_addr_name(ip_name);
+  } else {
+    session_info_.get_cluster_name(cluster_name);
+    session_info_.get_tenant_name(tenant_name);
+  }
+
+  get_global_resource_unit_table_processor().dec_conn(
+    cluster_name, tenant_name, ip_name);
 }
 
 int ObMysqlClientSession::ssn_hook_append(ObMysqlHookID id, ObContInternal *cont)
@@ -227,16 +252,23 @@ int ObMysqlClientSession::new_transaction(const bool is_new_conn/* = false*/)
 
 int ObMysqlClientSession::new_connection(
     ObNetVConnection *new_vc, ObMIOBuffer *iobuf,
-    ObIOBufferReader *reader, bool is_cluster_param, ObSharedRefCount *param)
+    ObIOBufferReader *reader,
+    ObShardConnector *shard_conn,
+    ObShardProp *shard_prop)
 {
-  if (NULL != param) {
-    if (is_cluster_param) {
-      param->inc_ref();
-      cluster_resource_ = dynamic_cast<ObClusterResource*>(param);
-    } else {
-      session_info_.set_shard_connector(dynamic_cast<ObShardConnector*>(param));
-    }
-    param = NULL;
+  session_info_.set_shard_connector(shard_conn);
+  session_info_.set_shard_prop(shard_prop);
+  return new_connection(new_vc, iobuf, reader);
+}
+
+int ObMysqlClientSession::new_connection(
+    ObNetVConnection *new_vc, ObMIOBuffer *iobuf,
+    ObIOBufferReader *reader, ObClusterResource *cluster_resource)
+{
+  if (NULL != cluster_resource) {
+    cluster_resource->inc_ref();
+    cluster_resource_ = cluster_resource;
+    cluster_resource = NULL;
   }
   return new_connection(new_vc, iobuf, reader);
 }
@@ -339,6 +371,7 @@ int ObMysqlClientSession::new_connection(
             } else {
               session_info_.set_is_read_only_user(ct_info_.vip_tenant_.is_read_only());
               session_info_.set_is_request_follower_user(ct_info_.vip_tenant_.is_request_follower());
+              session_info_.set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
             }
           }
 
@@ -995,8 +1028,7 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
   if (OB_LIKELY(MCS_ACTIVE_READER == read_state_) && OB_LIKELY(NULL != mysql_sm_)) {
     PROXY_CS_LOG(DEBUG, "client session handle transaction complete",
                  K_(cs_id), K(mysql_sm_->sm_id_), KPC_(cluster_resource));
-    if (get_global_proxy_config().is_metadb_used()
-        && mysql_sm_->trans_state_.mysql_config_params_->enable_report_session_stats_) {
+    if (OB_UNLIKELY(get_global_proxy_config().is_metadb_used() && mysql_sm_->trans_state_.mysql_config_params_->enable_report_session_stats_)) {
       update_session_stats();
     }
 
@@ -1011,8 +1043,8 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
                    K(*this));
     // here only check in non-sharding mode.
     // in sharding mode, will switch cluster and set to NULL when use db
-    } else if (!session_info_.is_sharding_user() && session_info_.is_oceanbase_server()) {
-      if (!is_proxysys_tenant() && (OB_ISNULL(cluster_resource_) || OB_UNLIKELY(cluster_resource_->is_deleting()))) {
+    } else if (OB_LIKELY(!session_info_.is_sharding_user() && session_info_.is_oceanbase_server())) {
+      if ((OB_ISNULL(cluster_resource_) || OB_UNLIKELY(cluster_resource_->is_deleting())) && !is_proxysys_tenant()) {
         if (NULL != cluster_resource_) {
           PROXY_CS_LOG(INFO, "the cluster resource is deleting, client session will close",
                        KPC_(cluster_resource), K_(cluster_resource), K_(is_proxy_mysql_client));
@@ -1021,12 +1053,13 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
       }
     }
     if (OB_LIKELY(!close_cs)) {
-      MYSQL_DECREMENT_DYN_STAT(CURRENT_CLIENT_TRANSACTIONS);
-
-      if (OB_UNLIKELY(NULL != trace_stats_) && trace_stats_->is_trace_stats_used()) {
-        PROXY_CS_LOG(DEBUG, "current trace stats", KPC_(trace_stats), K_(cs_id));
-        //mark_trace_stats_need_reuse() will not remove history stats, just denote trace_stats need reset next time
-        trace_stats_->mark_trace_stats_need_reuse();
+      if (OB_UNLIKELY(get_global_performance_params().enable_stat_)) {
+        MYSQL_DECREMENT_DYN_STAT(CURRENT_CLIENT_TRANSACTIONS);
+        if (OB_UNLIKELY(NULL != trace_stats_) && trace_stats_->is_trace_stats_used()) {
+          PROXY_CS_LOG(DEBUG, "current trace stats", KPC_(trace_stats), K_(cs_id));
+          //mark_trace_stats_need_reuse() will not remove history stats, just denote trace_stats need reset next time
+          trace_stats_->mark_trace_stats_need_reuse();
+        }
       }
 
       // Clean up the write VIO in case of inactivity timeout
@@ -1137,7 +1170,7 @@ int ObMysqlClientSession::acquire_svr_session_no_pool(const sockaddr &addr, ObMy
   PROXY_CS_LOG(DEBUG, "[acquire server session] try to acquire session in session pool", K_(cs_id));
   ObShardConnector *shard_conn = session_info_.get_shard_connector();
   // if shard_conn not null, need use shard_conn
-  if (OB_NOT_NULL(shard_conn)) {
+  if (OB_UNLIKELY(NULL != shard_conn)) {
     if (OB_FAIL(session_manager_new_.acquire_server_session(shard_conn->shard_name_.config_string_,
                                                             addr, session_info_.get_full_username(), svr_session))) {
       PROXY_CS_LOG(DEBUG, "[acquire server session] fail to acquire server session from "
@@ -1199,7 +1232,7 @@ int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, const bool n
 
     // 2. try other session in common pool
     if (!is_proxy_mysql_client_ && NULL == svr_session) {
-      if (is_session_pool_client()) {
+      if (OB_UNLIKELY(is_session_pool_client())) {
         ret = acquire_svr_session_in_session_pool(addr, svr_session);
       } else {
         ret = acquire_svr_session_no_pool(addr, svr_session);
@@ -1428,21 +1461,14 @@ bool ObMysqlClientSession::is_need_convert_vip_to_tname()
   return (get_global_proxy_config().need_convert_vip_to_tname && !this->is_proxy_mysql_client_ );
 }
 
-bool ObMysqlClientSession::is_need_use_proxy_tenant_name()
-{
-  return strlen(get_global_proxy_config().proxy_tenant_name.str()) > 0
-         && strlen(get_global_proxy_config().rootservice_cluster_name.str()) > 0
-         && !this->is_proxy_mysql_client_;
-}
-
 inline bool ObMysqlClientSession::need_close() const
 {
   bool bret = false;
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-  if (OB_LIKELY(!info.need_conn_accept_)
+  if (OB_UNLIKELY(info.graceful_exit_start_time_ > 0)
+      && OB_LIKELY(!info.need_conn_accept_)
       && !is_proxy_mysql_client_
       && info.active_client_vc_count_ > 0
-      && OB_LIKELY(info.graceful_exit_start_time_ > 0)
       && OB_LIKELY(info.graceful_exit_end_time_ > info.graceful_exit_start_time_)) {
     int64_t current_active_count = 0;
     NET_READ_GLOBAL_DYN_SUM(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, current_active_count);
@@ -1521,9 +1547,20 @@ int ObMysqlClientSession::check_update_ldc()
 {
   int ret = OB_SUCCESS;
   common::ModulePageAllocator *allocator = NULL;
-  if (OB_ISNULL(cluster_resource_)) {
+  ObClusterResource *cluster_resource = NULL;
+  bool need_dec_cr = false;
+  if (get_global_resource_pool_processor().get_default_cluster_resource() == cluster_resource_) {
+    const ObTableEntryName &name = mysql_sm_->trans_state_.pll_info_.te_name_;
+    uint64_t cluster_id = get_cluster_id();
+    cluster_resource = get_global_resource_pool_processor().acquire_cluster_resource(name.cluster_name_, cluster_id);
+    need_dec_cr = true;
+  } else {
+    cluster_resource = cluster_resource_;
+  }
+
+  if (OB_ISNULL(cluster_resource)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "cluster_resource_ is not avail", K(ret));
+    PROXY_CS_LOG(WARN, "cluster_resource is not avail", K(ret));
   } else if (OB_ISNULL(dummy_entry_) || OB_UNLIKELY(!dummy_entry_->is_tenant_servers_valid())) {
     ret = OB_INVALID_ARGUMENT;
     PROXY_CS_LOG(WARN, "dummy_entry_ is not avail", KPC(dummy_entry_), K(ret));
@@ -1533,7 +1570,7 @@ int ObMysqlClientSession::check_update_ldc()
   } else if (OB_FAIL(ObLDCLocation::get_thread_allocator(allocator))) {
     PROXY_CS_LOG(WARN, "fail to get_thread_allocator", K(ret));
   } else {
-    bool is_base_servers_added = cluster_resource_->is_base_servers_added();
+    bool is_base_servers_added = cluster_resource->is_base_servers_added();
     ObString new_idc_name = get_current_idc_name();
     //we need update ldc when the follow happened:
     //1. servers_state_version has changed
@@ -1543,28 +1580,28 @@ int ObMysqlClientSession::check_update_ldc()
     //3. idc_name has changed
     //or
     //4. base_servers has not added
-    if (cluster_resource_->server_state_version_ != server_state_version_
+    if (cluster_resource->server_state_version_ != server_state_version_
         || dummy_ldc_.is_empty()
         || 0 != new_idc_name.case_compare(dummy_ldc_.get_idc_name())
         || !is_base_servers_added) {
       PROXY_CS_LOG(DEBUG, "need update dummy_ldc",
                    "old_idc_name", dummy_ldc_.get_idc_name(),
                    K(new_idc_name),
-                   "cluster_name", cluster_resource_->get_cluster_name(),
+                   "cluster_name", cluster_resource->get_cluster_name(),
                    "old_ss_version", server_state_version_,
-                   "new_ss_version", cluster_resource_->server_state_version_,
+                   "new_ss_version", cluster_resource->server_state_version_,
                    "dummy_ldc_is_empty", dummy_ldc_.is_empty(),
                    K(is_base_servers_added));
       ObSEArray<ObServerStateSimpleInfo, ObServerStateRefreshCont::DEFAULT_SERVER_COUNT> simple_servers_info(
           ObServerStateRefreshCont::DEFAULT_SERVER_COUNT, *allocator);
       bool need_ignore = false;
-      if (!is_base_servers_added && 0 == cluster_resource_->server_state_version_) {
+      if (!is_base_servers_added && 0 == cluster_resource->server_state_version_) {
         PROXY_CS_LOG(INFO, "base servers has not added, treat all tenant server as ok",
                      "tenant_server", *(dummy_entry_->get_tenant_servers()), K(ret));
       } else {
-        const uint64_t new_ss_version = cluster_resource_->server_state_version_;
-        common::ObIArray<ObServerStateSimpleInfo> &server_state_info = cluster_resource_->get_server_state_info(new_ss_version);
-        common::DRWLock &server_state_lock = cluster_resource_->get_server_state_lock(new_ss_version);
+        const uint64_t new_ss_version = cluster_resource->server_state_version_;
+        common::ObIArray<ObServerStateSimpleInfo> &server_state_info = cluster_resource->get_server_state_info(new_ss_version);
+        common::DRWLock &server_state_lock = cluster_resource->get_server_state_lock(new_ss_version);
         int err_no = 0;
         if (0 != (err_no = server_state_lock.try_rdlock())) {
           if (dummy_ldc_.is_empty()) {
@@ -1580,7 +1617,7 @@ int ObMysqlClientSession::check_update_ldc()
                        "old_ss_version", server_state_version_,
                        "new_ss_version", new_ss_version,
                        "dummy_ldc_is_empty", dummy_ldc_.is_empty(),
-                       K(cluster_resource_->is_base_servers_added()),
+                       K(cluster_resource->is_base_servers_added()),
                        K(is_base_servers_added), K(need_ignore), K(dummy_ldc_));
         } else {
           if (OB_FAIL(simple_servers_info.assign(server_state_info))) {
@@ -1593,8 +1630,8 @@ int ObMysqlClientSession::check_update_ldc()
       }
       if (OB_SUCC(ret) && !need_ignore) {
         if (OB_FAIL(dummy_ldc_.assign(dummy_entry_->get_tenant_servers(), simple_servers_info,
-            new_idc_name, is_base_servers_added, cluster_resource_->get_cluster_name(),
-            cluster_resource_->get_cluster_id()))) {
+            new_idc_name, is_base_servers_added, cluster_resource->get_cluster_name(),
+            cluster_resource->get_cluster_id()))) {
           if (OB_EMPTY_RESULT == ret) {
             if (dummy_entry_->is_entry_from_rslist()) {
               set_need_delete_cluster();
@@ -1611,21 +1648,26 @@ int ObMysqlClientSession::check_update_ldc()
           }
         }
       }
-      if (cluster_resource_->is_base_servers_added()) {
-        dummy_ldc_.set_safe_snapshot_manager(&cluster_resource_->safe_snapshot_mgr_);
+      if (cluster_resource->is_base_servers_added()) {
+        dummy_ldc_.set_safe_snapshot_manager(&cluster_resource->safe_snapshot_mgr_);
       }
     } else {
       PROXY_CS_LOG(DEBUG, "no need update dummy_ldc",
                    "old_idc_name", dummy_ldc_.get_idc_name(),
                    K(new_idc_name),
                    "old_ss_version", server_state_version_,
-                   "new_ss_version", cluster_resource_->server_state_version_,
+                   "new_ss_version", cluster_resource->server_state_version_,
                    "dummy_ldc_is_empty", dummy_ldc_.is_empty(),
                    K(is_base_servers_added),
                    K(dummy_ldc_));
     }
     allocator = NULL;
   }
+
+  if (OB_UNLIKELY(need_dec_cr && NULL != cluster_resource)) {
+    cluster_resource->dec_ref();
+  }
+
   return ret;
 }
 

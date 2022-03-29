@@ -28,37 +28,69 @@ namespace optimizer
 class ObShardingSelectLogPlan
 {
 public:
-  ObShardingSelectLogPlan(obutils::ObSqlParseResult &parse_result,
-                          common::ObIAllocator *allocator,
-                          common::ObIArray<common::ObString> &physical_table_name_array);
+  ObShardingSelectLogPlan(proxy::ObProxyMysqlRequest &client_request,
+                          common::ObIAllocator *allocator);
   ~ObShardingSelectLogPlan();
 
-  int generate_plan();
-  int analyze_from_clause();
-  int analyze_where_clause();
+  int generate_plan(common::ObIArray<dbconfig::ObShardConnector*> &shard_connector_array,
+                    common::ObIArray<dbconfig::ObShardProp*> &shard_prop_array,
+                    common::ObIArray<hash::ObHashMapWrapper<common::ObString, common::ObString> > &table_name_map_array);
+  int analyze_select_clause();
   int analyze_group_by_clause();
   int analyze_order_by_clause();
-  int analyze_select_clause();
+  int rewrite_sql(common::ObSqlString &new_sql);
+
+  int add_table_scan_operator(common::ObIArray<dbconfig::ObShardConnector*> &shard_connector_array,
+                              common::ObIArray<dbconfig::ObShardProp*> &shard_prop_array,
+                              common::ObIArray<hash::ObHashMapWrapper<common::ObString, common::ObString> > &table_name_map_array, 
+                              ObSqlString &new_sql);
+  int add_mem_merge_agg_operator(bool is_set_limit);
+  int add_stream_agg_operator(bool is_set_limit);
+  int add_mem_merge_sort_operator(bool is_set_limit);
+  int add_stream_sort_operator(bool is_set_limit);
+  int add_agg_and_sort_operator(bool is_same_group_and_order);
   int add_projection_operator();
-  int traverse_plan_tree(engine::ObProxyOperator *op);
+  int append_derived_order_by(bool &is_same_group_and_order);
+  int is_need_derived(opsql::ObProxyExpr *expr, opsql::ObProxyExpr *&exist_expr);
+  int add_derived_column(opsql::ObProxyExpr *expr);
   void print_plan_info();
-  int set_shard_connector_array(const ObIArray<dbconfig::ObShardConnector*> & array);
 
   common::ObIAllocator* get_allocator() const { return allocator_; }
   engine::ObProxyOperator* get_plan_root() const { return plan_root_; }
 
 private:
-  int get_agg_related_expr(opsql::ObProxyExpr* expr, common::ObIArray<opsql::ObProxyExpr*> &array);
+  template <typename T>
+  int add_agg_operator(bool is_set_limit);
+  template <typename T>
+  int add_sort_operator(bool need_set_limit);
   int handle_avg_expr(opsql::ObProxyExprAvg *expr);
+  int handle_agg_expr(opsql::ObProxyExpr *expr, bool need_add_calc = false);
+  int compare_group_and_order(bool &is_same_group_and_order);
+  int handle_select_derived(opsql::ObProxyExpr *expr);
+  int do_handle_select_derived(opsql::ObProxyExpr *expr, bool &bret, bool is_root = false);
+  int handle_derived(opsql::ObProxyExpr *expr, bool column_first = false);
+  int do_need_derived(common::ObIArray<opsql::ObProxyExpr*> &expr_array, opsql::ObProxyExpr *expr,
+                      bool column_first, bool &bret);
+  int do_other_need_derived(opsql::ObProxyExpr *tmp_expr, opsql::ObProxyExpr *expr, bool &bret);
+  int do_other_need_derived_for_avg(opsql::ObProxyExpr *tmp_expr, opsql::ObProxyExpr *expr);
+  int do_column_need_derived(common::ObIArray<opsql::ObProxyExpr*> &expr_array, opsql::ObProxyExpr *expr, bool &bret);
+  int do_column_need_derived_with_alias(common::ObIArray<opsql::ObProxyExpr*> &expr_array, opsql::ObProxyExpr *expr, bool &bret);
+  int do_column_need_derived_with_star(common::ObIArray<opsql::ObProxyExpr*> &expr_array, opsql::ObProxyExpr *expr, bool &bret);
+  template <typename T>
+  int do_handle_avg_expr(opsql::ObProxyExprAvg *agg_expr, T *&expr,
+                         const char* op, ObProxyExprType expr_type);
 
 private:
-  obutils::ObSqlParseResult &parse_result_;
+  proxy::ObProxyMysqlRequest &client_request_;
   common::ObIAllocator *allocator_;
   engine::ObProxyOperator *plan_root_;
-  common::ObSEArray<dbconfig::ObShardConnector*, 4> shard_connector_array_;
-  common::ObIArray<common::ObString> &physical_table_name_array_;
-  engine::ObProxyTableScanOp *table_scan_;
-  common::ObSEArray<opsql::ObProxyExpr*, 4> output_expr_array_;
+  int64_t derived_column_count_;
+  bool is_set_limit_;
+  common::ObSEArray<opsql::ObProxyExpr*, 4> agg_exprs_;
+  common::ObSEArray<opsql::ObProxyExpr*, 4> calc_exprs_;
+  common::ObSEArray<opsql::ObProxyExpr*, 4> derived_exprs_;
+  common::ObSEArray<common::ObString, 4> derived_columns_;
+  common::ObSEArray<common::ObString, 4> derived_orders_;
 };
 
 } // end optimizer

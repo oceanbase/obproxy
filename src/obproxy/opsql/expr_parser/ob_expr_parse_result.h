@@ -43,7 +43,7 @@
 
 typedef enum ObExprParseMode
 {
-  INVLIAD_PARSE_MODE = 0,
+  INVALID_PARSE_MODE = 0,
   SELECT_STMT_PARSE_MODE, // select/delete stmt
   INSERT_STMT_PARSE_MODE, // insert/replace/update stmt
 } ObExprParseMode;
@@ -131,6 +131,20 @@ typedef struct _ObProxyRelationExpr
   ObProxyPartKeyLevel level_;
 } ObProxyRelationExpr;
 
+/*
+ * according to observer rs colleague, we use the triple to describe all type of the accuracy
+ * which is necessary to describe the accuracy of each part key type
+ * table: oceanbase.__all_virtual_proxy_partition_info
+ *   -> column spare5: VARCHAR, format: "int32_t,int16_t,int16_t"
+ * which means "length,precision/length_semantics,scale"
+ * init -1 to each elements for invalid status.
+ */
+typedef struct _ObProxyPartKeyAccuracy {
+  int32_t length_;
+  int16_t precision_;    // the same as length_semantics
+  int16_t scale_;
+} ObProxyPartKeyAccuracy;
+
 typedef struct _ObProxyPartKey
 {
   ObProxyParseString name_;
@@ -145,6 +159,7 @@ typedef struct _ObProxyPartKey
   ObProxyExprType func_type_;
   ObProxyParamNode *params_[OBPROXY_MAX_PARAM_NUM]; // used to store generated func param
   int64_t idx_in_rowid_;
+  ObProxyPartKeyAccuracy accuracy_;
 } ObProxyPartKey;
 
 typedef struct _ObProxyPartKeyInfo

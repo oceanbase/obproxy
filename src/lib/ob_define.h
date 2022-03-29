@@ -41,6 +41,7 @@ const int64_t OB_LATEST_VERSION                                = 0;
 const uint32_t OB_INVALID_FILE_ID                              = UINT32_MAX;
 const int16_t OB_COMPACT_INVALID_INDEX                         = -1;
 const int OB_INVALID_INDEX                                     = -1;
+const int64_t OB_INVALID_INDEX_INT64                           = -1;
 const int OB_INVALID_SIZE                                      = -1;
 const int OB_INVALID_COUNT                                     = -1;
 const int OB_INVALID_PTHREAD_KEY                               = -1;
@@ -235,6 +236,12 @@ const int64_t OB_PC_RAW_PARAM_COUNT                            = 128;
 const int64_t OB_PLAN_CACHE_PERCENTAGE                         = 20;
 const int64_t OB_PLAN_CACHE_EVICT_HIGH_PERCENTAGE              = 90;
 const int64_t OB_PLAN_CACHE_EVICT_LOW_PERCENTAGE               = 50;
+
+// time zone info
+const int64_t OB_MAX_TZ_ABBR_LEN = 32;  // according to statistics
+const int64_t OB_MAX_TZ_NAME_LEN = 64;  // according to statistics
+const int64_t OB_INVALID_TZ_ID = -1;
+const int64_t OB_INVALID_TZ_TRAN_TIME = INT64_MIN;
 
 // OceanBase Log Synchronization Type
 const int64_t OB_LOG_NOSYNC                                    = 0;
@@ -717,7 +724,9 @@ static const int64_t OB_CAST_TO_VARCHAR_MAX_LENGTH           = 256;
 static const int64_t OB_CAST_BUFFER_LENGTH                   = 256;
 static const int64_t OB_PREALLOCATED_NUM                     = 21;  // half of 42
 static const int64_t OB_PREALLOCATED_COL_ID_NUM              = 128;
+static const int64_t OB_MAX_DATE_PRECISION                   = 0;
 static const int64_t OB_MAX_DATETIME_PRECISION               = 6;
+static const int64_t OB_MAX_TIMESTAMP_TZ_PRECISION           = 9;
 
 const char *const SYS_DATE                                   = "$SYS_DATE";
 const char *const OB_DEFAULT_COMPRESS_FUNC_NAME              = "none";
@@ -787,6 +796,7 @@ static const char *const OB_CONFIG_NOT_NEED_REBOOT           = "false";
 //Precision in user data type
 static const int16_t MAX_SCALE_FOR_TEMPORAL                  = 6;
 static const int16_t MIN_SCALE_FOR_TEMPORAL                  = 0;
+static const int16_t MAX_SCALE_FOR_ORACLE_TEMPORAL           = 9;
 static const int16_t DEFAULT_SCALE_FOR_INTEGER               = 0;
 static const int16_t DEFAULT_LENGTH_FOR_NUMERIC              = -1;
 static const int16_t DEFAULT_SCALE_FOR_DATE                  = 0;
@@ -799,6 +809,9 @@ static const int16_t DEFAULT_PRECISION_FOR_TEMPORAL          = -1;
 static const int16_t DEFAULT_LENGTH_FOR_TEMPORAL             = -1;
 static const int16_t DEFAULT_PRECISION_FOR_STRING            = -1;
 static const int16_t DEFAULT_SCALE_FOR_STRING                = -1;
+static const int16_t DEFAULT_SCALE_FOR_TEXT                  = 0;
+static const int16_t DEFAULT_SCALE_FOR_ORACLE_FRACTIONAL_SECONDS = 6;  //SEE : https://docs.oracle.com/cd/B19306_01/server.102/b14225/ch4datetime.htm
+static const int16_t DEFAULT_SCALE_FOR_ORACLE_TIMESTAMP      = 6;
 
 enum ObDmlType
 {

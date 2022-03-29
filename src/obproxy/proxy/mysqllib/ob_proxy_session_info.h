@@ -457,6 +457,7 @@ public:
   //set and get methord
   int set_cluster_name(const common::ObString &cluster_name);
   int set_tenant_name(const common::ObString &tenant_name);
+  int set_vip_addr_name(const common::ObAddr &vip_addr);
   int set_database_name(const common::ObString &database_name, const bool inc_db_version = true);
   int set_user_name(const common::ObString &user_name);
   int set_ldg_logical_cluster_name(const common::ObString &cluster_name);
@@ -465,6 +466,7 @@ public:
   int set_logic_database_name(const common::ObString &logic_database_name);
   int get_cluster_name(common::ObString &cluster_name) const;
   int get_tenant_name(common::ObString &tenant_name) const;
+  int get_vip_addr_name(common::ObString &vip_addr_name) const;
   int get_database_name(common::ObString &database_name) const;
   common::ObString get_database_name() const;
   common::ObString get_full_username();
@@ -669,10 +671,23 @@ public:
     shard_conn_ = shard_conn;
   }
 
+  dbconfig::ObShardProp *get_shard_prop() { return shard_prop_; }
+  void set_shard_prop(dbconfig::ObShardProp *shard_prop) {
+    if (NULL != shard_prop_) {
+      shard_prop_->dec_ref();
+      shard_prop_ = NULL;
+    }
+
+    if (NULL != shard_prop) {
+      shard_prop->inc_ref();
+    }
+    shard_prop_ = shard_prop;
+  }
+
   DBServerType get_server_type() const { return server_type_; }
   void set_server_type(DBServerType server_type) { server_type_ = server_type; }
 
-  bool is_oceanbase_server() const { return DB_OB_MYSQL == server_type_ || DB_OB_ORACLE == server_type_; }
+  inline bool is_oceanbase_server() const { return DB_OB_MYSQL == server_type_ || DB_OB_ORACLE == server_type_; }
   void set_allow_use_last_session(const bool is_allow_use_last_session) { is_allow_use_last_session_ = is_allow_use_last_session; }
   bool is_allow_use_last_session() { return is_allow_use_last_session_; }
 
@@ -716,6 +731,17 @@ public:
       set_client_ps_id(ps_id_entry->ps_id_);
       return ps_id_entry_map_.unique_set(ps_id_entry);
   }
+  ObPsIdEntry *get_ps_id_entry() { return ps_id_entry_; }
+  ObPsIdEntry *get_ps_id_entry(uint32_t ps_id) {
+    int ret = OB_SUCCESS;
+    ObPsIdEntry *ps_id_entry = NULL;
+    if (OB_FAIL(ps_id_entry_map_.get_refactored(ps_id, ps_id_entry))) {
+      if (OB_HASH_NOT_EXIST != ret) {
+        PROXY_LOG(WARN, "fail to get ps id entry with ps id", K(ret));
+      }
+    }
+    return ps_id_entry;
+  }
   void remove_ps_id_entry(uint32_t client_ps_id) {
     ObPsIdEntry *ps_id_entry = ps_id_entry_map_.remove(client_ps_id);
     if (NULL != ps_id_entry) {
@@ -725,6 +751,7 @@ public:
   }
   void destroy_ps_id_entry_map();
   void set_ps_entry(ObPsEntry *entry) { ps_entry_ = entry; }
+  void set_ps_id_entry(ObPsIdEntry *ps_id_entry) { ps_id_entry_ = ps_id_entry; }
   int get_ps_sql(common::ObString &ps_sql);
   bool need_do_prepare(ObServerSessionInfo &server_info) const;
 
@@ -896,6 +923,7 @@ private:
 
   DBServerType server_type_;
   dbconfig::ObShardConnector *shard_conn_;
+  dbconfig::ObShardProp *shard_prop_;
   int64_t group_id_;
   bool is_allow_use_last_session_;
 
@@ -911,6 +939,7 @@ private:
   uint32_t recv_client_ps_id_;
   uint32_t ps_id_;
   ObPsEntry *ps_entry_;
+  ObPsIdEntry *ps_id_entry_;
   ObPsIdEntryMap ps_id_entry_map_;
   common::ObString text_ps_name_;
   ObTextPsEntry *text_ps_entry_;
@@ -979,7 +1008,7 @@ inline void ObClientSessionInfo::set_idc_name(const ObString &name)
 
 inline bool ObClientSessionInfo::need_reset_database(const ObServerSessionInfo &server_info) const
 {
-  if (!is_session_pool_client_) {
+  if (OB_LIKELY(!is_session_pool_client_)) {
     return get_db_name_version() > server_info.get_db_name_version() && enable_reset_db_;
   }
   if (get_database_name().empty()) return false;
@@ -995,10 +1024,10 @@ inline bool ObClientSessionInfo::need_reset_database(const ObServerSessionInfo &
 inline bool ObClientSessionInfo::need_reset_common_hot_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = false;
-  bool bret_hash = false;
-  if (!is_session_pool_client_) {
+  if (OB_LIKELY(!is_session_pool_client_)) {
     bret =  get_common_hot_sys_var_version() > server_info.get_common_hot_sys_var_version();
   } else {
+    bool bret_hash = false;
     if (is_common_hot_sys_version_changed()) {
       bret_hash = true;
     } else if (val_hash_.common_hot_sys_var_hash_ != server_info.val_hash_.common_hot_sys_var_hash_) {
@@ -1013,7 +1042,7 @@ inline bool ObClientSessionInfo::need_reset_common_hot_session_vars(const ObServ
 inline bool ObClientSessionInfo::need_reset_common_cold_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = false;
-  if (!is_session_pool_client_) {
+  if (OB_LIKELY(!is_session_pool_client_)) {
     bret =  get_common_sys_var_version() > server_info.get_common_sys_var_version();
   } else {
     bool is_changed = is_common_cold_sys_version_changed();
@@ -1068,10 +1097,10 @@ inline bool ObClientSessionInfo::need_reset_mysql_cold_session_vars(const ObServ
 inline bool ObClientSessionInfo::need_reset_hot_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = false;
-  bool bret_hash_diff = false;
-  if (!is_session_pool_client_) {
+  if (OB_LIKELY(!is_session_pool_client_)) {
     bret =  get_hot_sys_var_version() > server_info.get_hot_sys_var_version();
   } else {
+    bool bret_hash_diff = false;
     bool is_changed = is_sys_hot_version_changed();
     if (is_changed) {
       bret = true;
@@ -1087,7 +1116,7 @@ inline bool ObClientSessionInfo::need_reset_hot_session_vars(const ObServerSessi
 inline bool ObClientSessionInfo::need_reset_cold_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = false;
-  if (!is_session_pool_client_) {
+  if (OB_LIKELY(!is_session_pool_client_)) {
     bret = get_sys_var_version() > server_info.get_sys_var_version();
   } else {
     bool is_changed= is_sys_cold_version_changed();
@@ -1106,8 +1135,8 @@ inline bool ObClientSessionInfo::need_reset_cold_session_vars(const ObServerSess
 inline bool ObClientSessionInfo::need_reset_user_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = false;
-  if (!is_session_pool_client_) {
-    if (get_user_var_version() > server_info.get_user_var_version()) {
+  if (OB_LIKELY(!is_session_pool_client_)) {
+    if (OB_UNLIKELY(get_user_var_version() > server_info.get_user_var_version())) {
       int ret = OB_SUCCESS;
       common::ObSEArray<common::ObString, 32> names;
       ObClientSessionInfo* client_info = const_cast<ObClientSessionInfo*>(this);
@@ -1135,8 +1164,8 @@ inline bool ObClientSessionInfo::need_reset_user_session_vars(const ObServerSess
 
 inline bool ObClientSessionInfo::need_reset_last_insert_id(const ObServerSessionInfo &server_info) const
 {
-  if (is_oceanbase_server()) {
-    if (!is_session_pool_client_) {
+  if (OB_LIKELY(is_oceanbase_server())) {
+    if (OB_LIKELY(!is_session_pool_client_)) {
       return get_last_insert_id_version() > server_info.get_last_insert_id_version();
     }
     return !(const_cast<ObClientSessionInfo*>(this))->field_mgr_.is_same_last_insert_id_var(server_info.field_mgr_);
@@ -1153,7 +1182,7 @@ inline bool ObClientSessionInfo::need_reset_safe_read_snapshot(const ObServerSes
 inline bool ObClientSessionInfo::need_reset_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = true;
-  if (is_oceanbase_server()) {
+  if (OB_LIKELY(is_oceanbase_server())) {
     bret = need_reset_common_hot_session_vars(server_info)
            || need_reset_common_cold_session_vars(server_info)
            || need_reset_hot_session_vars(server_info)
