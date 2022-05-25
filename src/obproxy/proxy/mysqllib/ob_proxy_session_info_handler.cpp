@@ -1178,16 +1178,15 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
   if (OB_SUCC(ret) && is_auth_request) {
     bool is_weak_read_user = false ;
     int64_t total_size = get_global_proxy_config().weak_read_user_list.size();
-    if (OB_UNLIKELY(total_size > 0)){
+    if (OB_UNLIKELY(total_size > 0)) {
       ObMysqlAuthRequest &auth_req = client_info.get_login_req();
       ObHSRResult &hsr = auth_req.get_hsr_result();
       char user_buf[MAX_VALUE_LENGTH];
-      for (int64_t i = 0; i < total_size; ++i) {
+      for (int64_t i = 0; OB_SUCC(ret) && i < total_size; ++i) {
         user_buf[0] = '\0';
         if (OB_FAIL(get_global_proxy_config().weak_read_user_list.get(i, user_buf, static_cast<int64_t>(sizeof(user_buf))))) {
           LOG_WARN("get weak read user list variables failed", K(ret));
-        }
-        else if (hsr.response_.get_username().prefix_match(user_buf)){
+        } else if (hsr.response_.get_username().prefix_match(user_buf)){
           is_weak_read_user = true;
           break;
         }
