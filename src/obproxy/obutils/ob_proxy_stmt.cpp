@@ -40,7 +40,8 @@ int ObProxyDMLStmt::limit_to_sql_string(common::ObSqlString& sql_string)
   return ret;
 }
 ObProxySelectStmt::ObProxySelectStmt() : is_inited_(false), has_rollup_(false),
-                                         has_for_update_(false), from_token_off_(-1)
+                                         has_for_update_(false), has_unsupport_expr_type_(false),
+                                         from_token_off_(-1)
 {
 
 }
@@ -100,7 +101,7 @@ int ObProxySelectStmt::handle_parse_result(const ParseResult &parse_result)
     if (NULL == tmp_node) {
       // do nothing
     } else if (i == PARSE_SELECT_HAVING) {
-      ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+      has_unsupport_expr_type_ = true;
       LOG_WARN("having not support", K(ret), K(sql_string_));
     } else {
       switch(tmp_node->type_) {
@@ -146,7 +147,7 @@ int ObProxySelectStmt::handle_parse_result(const ParseResult &parse_result)
           break;
         case T_QEURY_EXPRESSION_LIST: //distinct not support now
         default:
-          ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+          has_unsupport_expr_type_ = true;
           LOG_WARN("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
       }
     }
@@ -339,7 +340,7 @@ int ObProxySelectStmt::handle_limit_clause(ParseNode* node)
           }
           break;
         default:
-          ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+          has_unsupport_expr_type_ = true;
           LOG_WARN("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
       }
     }
@@ -367,7 +368,7 @@ int ObProxySelectStmt::handle_project_list(ParseNode* node)
           }
           break;
         default:
-          ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+          has_unsupport_expr_type_ = true;
           LOG_WARN("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
       }
 
@@ -532,7 +533,7 @@ int ObProxySelectStmt::get_expr_by_type(ObProxyExpr* &expr, ObProxyExprType type
     ALLOC_PROXY_EXPR_BY_TYPE(ObProxyGroupItem);
     break;
   default:
-    ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+    has_unsupport_expr_type_ = true;
     LOG_WARN("unexpected type", K(type));
     break;
   }
@@ -562,25 +563,25 @@ int ObProxySelectStmt::handle_table_and_db_node(ParseNode* node, ObProxyExprTabl
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("dynamic_cast failed", K(ret));
       }
-    } else if (OB_SUCCESS == table_exprs_map_.get_refactored(table_name, expr)) {
-      if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("dynamic_cast failed", K(ret));
-      } else {
-        // Only the real table name needs to be rewritten, not the alias
-        ObProxyExprTablePos expr_table_pos;
-        if (NULL != db_node) {
-          expr_table_pos.set_database_pos(db_node->token_off_);
-        }
-        expr_table_pos.set_table_pos(table_node->token_off_);
-        expr_table_pos.set_table_expr(expr_table);
-        if (OB_FAIL(table_pos_array_.push_back(expr_table_pos))) {
-          LOG_WARN("fail to push expr table pos", K(ret));
+    } else {
+      string_to_upper_case(table_name.ptr(), table_name.length()); // change all to upper to store
+      if (OB_SUCCESS == table_exprs_map_.get_refactored(table_name, expr)) {
+        if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("dynamic_cast failed", K(ret));
+        } else {
+          // Only the real table name needs to be rewritten, not the alias
+          ObProxyExprTablePos expr_table_pos;
+          if (NULL != db_node) {
+            expr_table_pos.set_database_pos(db_node->token_off_);
+          }
+          expr_table_pos.set_table_pos(table_node->token_off_);
+          expr_table_pos.set_table_expr(expr_table);
+          if (OB_FAIL(table_pos_array_.push_back(expr_table_pos))) {
+            LOG_WARN("fail to push expr table pos", K(ret));
+          }
         }
       }
-    } else {
-      ret = OB_ERR_BAD_FIELD_ERROR;
-      LOG_WARN("table name of column is not alias name or real table name", K(table_name), K(ret));
     }
   }
 
@@ -622,7 +623,7 @@ int ObProxySelectStmt::column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, O
       LOG_WARN("T_COLUMN_REF unexpected column entry", K(ret));
     } else if (T_IDENT != column_node->type_ && T_STAR != column_node->type_) {
       // now column_ref child should be T_IDENT
-      ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+      has_unsupport_expr_type_ = true;
       LOG_WARN("T_COLUMN_REF unexpected column entry", "node_type", get_type_name(column_node->type_), K(ret));
     } else if (T_IDENT == column_node->type_) {
       ObProxyExprColumn* expr_column = NULL;
@@ -759,7 +760,7 @@ int ObProxySelectStmt::check_node_has_agg(ParseNode* node)
         case T_FUN_MAX:
         case T_FUN_MIN:
         case T_FUN_AVG:
-          ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+          has_unsupport_expr_type_ = true;
           LOG_WARN("node has agg", "node_type", get_type_name(tmp_node->type_), K(ret), K(sql_string_));
           break;
         default:
@@ -859,7 +860,7 @@ int ObProxySelectStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr, 
       if (OB_FAIL(check_node_has_agg(node))) {
         LOG_WARN("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_));
       } else if (string_node == NULL) {
-        ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+        has_unsupport_expr_type_ = true;
         LOG_WARN("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_), K(sql_string_));
       } else if (OB_FAIL(get_sharding_const_expr(string_node, expr))) {
         LOG_WARN("get_sharding_const_expr failed", K(ret));
@@ -914,6 +915,7 @@ int ObProxySelectStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* 
              "token len", table_node->token_len_, K(ret));
   } else {
     ObString table_name(table_node->token_len_, table_node->str_value_);
+    string_to_upper_case(table_name.ptr(), table_name.length()); // change all to upper to store
     if (OB_FAIL(table_exprs_map_.get_refactored(table_name, expr))) { /* same table keep last one. */
       if (OB_HASH_NOT_EXIST == ret) {
         if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_TABLE))) {
@@ -923,6 +925,8 @@ int ObProxySelectStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* 
           LOG_WARN("dynamic_cast failed", K(ret));
         } else {
           if (NULL != db_node) {
+            ObString database_name(db_node->token_len_, db_node->str_value_);
+            string_to_upper_case(database_name.ptr(), database_name.length()); // change all to upper to store
             expr_table->set_database_name(db_node->str_value_, db_node->token_len_);
           }
           expr_table->set_table_name(table_node->str_value_, table_node->token_len_);
@@ -939,6 +943,8 @@ int ObProxySelectStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* 
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("dynamic_cast failed", K(ret));
       } else if (NULL != db_node && expr_table->get_database_name().empty()) {
+        ObString database_name(db_node->token_len_, db_node->str_value_);
+        string_to_upper_case(database_name.ptr(), database_name.length()); // change all to upper to store
         expr_table->set_database_name(db_node->str_value_, db_node->token_len_);
       }
     }
@@ -991,7 +997,7 @@ int ObProxySelectStmt::handle_table_node_to_expr(ParseNode* node)
           }
           break;
         default:
-          ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+          has_unsupport_expr_type_ = true;
           LOG_WARN("unsupport type", "node_type", get_type_name(node->type_),  K(node->str_value_));
       }
     }
@@ -1169,7 +1175,7 @@ int ObProxySelectStmt::handle_where_node(ParseNode* node)
             }
             break;
           default:
-            ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+            has_unsupport_expr_type_ = true;
             LOG_WARN("unexpected expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
         }
       }
@@ -1334,13 +1340,13 @@ int ObProxySelectStmt::handle_sort_list_node(ParseNode* node, const SortListType
                 }
                 break;
               default:
-                ret = OB_ERR_UNEXPECTED;
+                has_unsupport_expr_type_ = true;
                 LOG_WARN("invalid sort_list_type", K(sort_list_type), K(sql_string_), K(ret));
             }
           }
           break;
         default:
-          ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+          has_unsupport_expr_type_ = true;
           LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
       }
     }
@@ -1370,7 +1376,7 @@ int ObProxySelectStmt::handle_with_rollup_in_groupby(ParseNode* node)
         }
         break;
       default:
-        ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+        has_unsupport_expr_type_ = true;
         LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
       }
     }
@@ -1387,7 +1393,7 @@ int ObProxySelectStmt::handle_groupby_clause(ParseNode* node)
     if (NULL == tmp_node) {
       //do nothing
     } else if (T_WITH_ROLLUP_CLAUSE != tmp_node->type_) {
-      ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+      has_unsupport_expr_type_ = true;
       LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_with_rollup_in_groupby(tmp_node))) {
       LOG_WARN("handle_with_rollup_in_groupby failed", K(ret), K(i), K(sql_string_));
@@ -1406,7 +1412,7 @@ int ObProxySelectStmt::handle_orderby_clause(ParseNode* node)
     if (NULL == tmp_node) {
       //do nothing
     } else if (T_SORT_LIST != tmp_node->type_) {
-      ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+      has_unsupport_expr_type_ = true;
       LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_sort_list_node(tmp_node, SORT_LSIT_IN_ORDER_BY))) {
       LOG_WARN("handle_sort_list_node", K(ret), K(i), K(sql_string_));

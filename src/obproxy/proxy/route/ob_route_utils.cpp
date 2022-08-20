@@ -635,9 +635,11 @@ void ObRouteUtils::parse_part_key_accuracy(ObProxyPartKey *part_key,
                    || ob_is_time_tc(part_key_type)) {
           part_key->accuracy_.precision_ = precision;
           part_key->accuracy_.scale_ = scale;
+          part_key->accuracy_.valid_ = 1;
         } else if (ob_is_string_tc(part_key_type)) {
           part_key->accuracy_.length_ = length;
           part_key->accuracy_.precision_ = precision;
+          part_key->accuracy_.valid_ = 1;
         }
         // more obj type could be supported here.
       }
@@ -716,6 +718,7 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
     part_key->name_.str_ = buf;
     part_key->obj_type_ = part_key_type;
     part_key->idx_in_rowid_ = idx_in_rowid;
+    part_key->accuracy_.valid_ = 0;               // not valid accuracy
 
     parse_part_key_accuracy(part_key, part_key_type, &allocator, part_key_accuracy);
     

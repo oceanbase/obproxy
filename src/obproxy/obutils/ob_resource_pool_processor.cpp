@@ -173,8 +173,6 @@ int ObRslistFetchCont::init_task()
     } else {
       fetch_result_ = true;
     }
-  } else {
-    fetch_result_ = true;
   }
 
   if (!fetch_result_) {

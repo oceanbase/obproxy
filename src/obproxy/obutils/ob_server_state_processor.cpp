@@ -1193,9 +1193,6 @@ int ObServerStateRefreshCont::add_refresh_rslist_task(const bool need_update_dum
         cont->destroy();
         cont = NULL;
       }
-    } else {
-      congestion_manager_->clear_base_servers_added();
-      LOG_INFO("congestion manager's base servers has cleared", K_(cluster_name), K_(cluster_id));
     }
   } else {
     LOG_DEBUG("refresh rslist task has been scheduled", K_(cluster_name), K_(cluster_id),

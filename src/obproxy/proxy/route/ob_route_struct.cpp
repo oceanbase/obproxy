@@ -14,9 +14,11 @@
 
 #include "proxy/route/ob_route_struct.h"
 #include "iocore/eventsystem/ob_buf_allocator.h"
+#include "utils/ob_proxy_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
+using namespace oceanbase::obproxy;
 
 namespace oceanbase
 {
@@ -311,6 +313,33 @@ int64_t ObTableEntryKey::to_string(char *buf, const int64_t buf_len) const
   J_KV(K_(name), K_(cr_version), K_(cr_id));
   J_OBJ_END();
   return pos;
+}
+
+void ObRouteEntry::check_and_set_expire_time(const uint64_t tenant_version, const bool is_dummy_entry)
+{
+  int64_t period_us = obutils::get_global_proxy_config().location_expire_period_time;
+  const int64_t TENANT_LOCALITY_CHANGE_TIME = 60 * 1000 * 1000;
+  const int64_t TENANT_LOCALITY_CHANGE_TIME_CONFIG = -1;
+  if (AVAIL == state_ && !is_dummy_entry) {
+    if (tenant_version != tenant_version_) {
+      tenant_version_ = tenant_version;
+      // -1 means the change comes from a locality change
+      current_expire_time_config_ = TENANT_LOCALITY_CHANGE_TIME_CONFIG;
+      period_us = TENANT_LOCALITY_CHANGE_TIME;
+      time_for_expired_ = ObRandomNumUtils::get_random_half_to_full(period_us) + common::ObTimeUtility::current_time();
+    } else if (period_us != current_expire_time_config_ && TENANT_LOCALITY_CHANGE_TIME_CONFIG != current_expire_time_config_) {
+      current_expire_time_config_ = period_us;
+      if (period_us > 0) {
+        time_for_expired_ = ObRandomNumUtils::get_random_half_to_full(period_us) + common::ObTimeUtility::current_time();
+      } else if (period_us == 0) {
+        time_for_expired_ = 0;
+      } else {
+        // period_us < 0, unexpected error
+      }
+    } else {
+      // do nothing
+    }
+  }
 }
 
 

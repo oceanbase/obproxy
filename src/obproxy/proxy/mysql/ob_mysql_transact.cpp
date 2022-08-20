@@ -292,6 +292,7 @@ void ObMysqlTransact::acquire_cached_server_session(ObTransState &s)
     LOG_DEBUG("[ObMysqlTransact::acquire_cached_server_session] last_insert_id_session is alive, pick it");
 
   } else if (get_global_proxy_config().enable_cached_server
+             && !s.sm_->client_session_->is_proxy_mysql_client_
              && NULL != last_session && OB_LIKELY(!s.mysql_config_params_->is_random_routing_mode())) {
     const int32_t ip = ops_ip4_addr_host_order(last_session->get_netvc()->get_remote_addr());
     const int32_t port = static_cast<int32_t>(ops_ip_port_host_order(last_session->get_netvc()->get_remote_addr()));
@@ -1271,7 +1272,9 @@ void ObMysqlTransact::handle_pl_update(ObTransState &s)
 
 inline bool ObMysqlTransact::ObPartitionLookupInfo::need_update_entry_by_partition_hit()
 {
-  return (need_update_entry() && !route_.is_dummy_table());
+  return (need_update_entry()
+          && !route_.is_dummy_table()
+          && !route_.no_need_pl_update_);
 }
 
 int64_t ObMysqlTransact::ObPartitionLookupInfo::to_string(char *buf, const int64_t buf_len) const

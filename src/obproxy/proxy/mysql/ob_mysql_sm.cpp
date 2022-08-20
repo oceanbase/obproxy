@@ -5101,6 +5101,7 @@ void ObMysqlSM::do_partition_location_lookup()
       int ret = OB_SUCCESS;
       ObAction *pl_lookup_action_handle = NULL;
       bool find_entry = false;
+      int64_t tenant_version = 0;
       bool need_pl_route = (is_pl_route_supported() && (trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()
               || trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_call_stmt()));
       // Get it from table_map first
@@ -5117,10 +5118,16 @@ void ObMysqlSM::do_partition_location_lookup()
           cr_id = sm_cluster_resource_->get_cluster_id();
         }
         ObTableEntryKey key(name, sm_cluster_resource_->version_, cr_id);
+        if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
+          tenant_version = sm_cluster_resource_->get_location_tenant_version(
+              client_session_->get_session_info().get_priv_info().tenant_name_);
+        }
         tmp_entry = table_map.get(key);
         if (NULL != tmp_entry && !tmp_entry->is_partition_table()
             && (tmp_entry->is_avail_state() || tmp_entry->is_updating_state())
             && !(get_global_table_cache().is_table_entry_expired(*tmp_entry))) {
+          tmp_entry->check_and_set_expire_time(tenant_version, tmp_entry->is_dummy_entry());
+
           tmp_entry->renew_last_access_time();
           ObMysqlRouteResult result;
           result.table_entry_ = tmp_entry;
@@ -5128,7 +5135,8 @@ void ObMysqlSM::do_partition_location_lookup()
           result.has_dup_replica_ = tmp_entry->has_dup_replica();
           tmp_entry->set_need_force_flush(false);
           find_entry = true;
-          LOG_DEBUG("get table entry from thread map", KPC(tmp_entry));
+          bool is_table_entry_from_remote = false;
+          LOG_DEBUG("ObMysqlRoute get table entry succ", KPC(tmp_entry), K(is_table_entry_from_remote));
           state_partition_location_lookup(TABLE_ENTRY_EVENT_LOOKUP_DONE, &result);
         } else if (NULL != tmp_entry) {
           tmp_entry->dec_ref();
@@ -5149,15 +5157,13 @@ void ObMysqlSM::do_partition_location_lookup()
         } else {
           param.cr_id_ = sm_cluster_resource_->get_cluster_id();
         }
-        if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
-          param.tenant_version_ = sm_cluster_resource_->get_location_tenant_version(
-              client_session_->get_session_info().get_priv_info().tenant_name_);
-        }
+        param.tenant_version_ = tenant_version;
         param.timeout_us_ = hrtime_to_usec(trans_state_.mysql_config_params_->short_async_task_timeout_);
         param.is_partition_table_route_supported_ = is_partition_table_route_supported();
         param.is_oracle_mode_ = client_session_->get_session_info().is_oracle_mode();
         param.client_request_ = &trans_state_.trans_info_.client_request_; // priv parse result
         param.client_info_ = &client_session_->get_session_info();
+        param.route_ = &trans_state_.pll_info_.route_;
         param.need_pl_route_ = need_pl_route;
         param.current_idc_name_ = client_session_->get_current_idc_name();//shallow copy
         if (trans_state_.pll_info_.is_cached_dummy_force_renew()) {

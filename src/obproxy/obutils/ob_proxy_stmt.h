@@ -113,6 +113,7 @@ public:
   int handle_comment_list(const ParseResult &parse_result);
   virtual int to_sql_string(common::ObSqlString& sql_string);
   bool has_for_update() const { return has_for_update_; }
+  bool has_unsupport_expr_type() const { return has_unsupport_expr_type_; }
   void set_table_name(const common::ObString& table_name) { table_name_ = table_name; }
   int64_t get_from_token_off() { return from_token_off_; }
 
@@ -175,6 +176,7 @@ private:
   bool is_inited_;
   bool has_rollup_;
   bool has_for_update_;
+  bool has_unsupport_expr_type_;
   int64_t from_token_off_;
   ExprMap table_exprs_map_;
   ExprMap alias_table_map_;

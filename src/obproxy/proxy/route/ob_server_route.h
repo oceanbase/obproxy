@@ -33,7 +33,7 @@ public:
   ObServerRoute()
     : table_entry_(NULL), dummy_entry_(NULL), part_entry_(NULL), cur_chosen_pl_(NULL),
       is_table_entry_from_remote_(false), is_part_entry_from_remote_(false),
-      has_dup_replica_(false), need_use_dup_replica_(false),
+      has_dup_replica_(false), need_use_dup_replica_(false), no_need_pl_update_(false),
       consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
       ldc_route_(), valid_count_(0), cur_chosen_server_(),
       cur_chosen_route_type_(ROUTE_TYPE_MAX), skip_leader_item_(false) {}
@@ -120,6 +120,7 @@ public:
   bool is_part_entry_from_remote_;
   bool has_dup_replica_;
   bool need_use_dup_replica_;
+  bool no_need_pl_update_;
 
   common::ObConsistencyLevel consistency_level_;
   ObLDCItem leader_item_;
@@ -138,6 +139,7 @@ inline void ObServerRoute::reset()
   is_part_entry_from_remote_ = false;
   has_dup_replica_ = false;
   need_use_dup_replica_ = false;
+  no_need_pl_update_ = false;
   skip_leader_item_ = false;
   set_dummy_entry(NULL);
   set_table_entry(NULL);

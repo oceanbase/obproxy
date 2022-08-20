@@ -131,7 +131,7 @@ private:
 
 class ObUsedConn : public common::ObSharedRefCount {
 public:
-  ObUsedConn(common::ObString& full_name) : max_used_connections_(0) {
+  ObUsedConn(common::ObString& full_name) : max_used_connections_(0), is_in_map_(false) {
     if (full_name.length() < OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF) {
       MEMCPY(full_name_str_, full_name.ptr(), full_name.length());
       full_name_.assign_ptr(full_name_str_, (int32_t)full_name.length());
@@ -146,13 +146,15 @@ public:
   void reset() {
     full_name_.reset();
     max_used_connections_ = 0;
+    is_in_map_ = false;
   }
-  TO_STRING_KV(K_(full_name), K_(max_used_connections));
+  TO_STRING_KV(K_(full_name), K_(max_used_connections), K_(is_in_map));
   LINK(ObUsedConn, used_conn_link_);
 
 public:
   common::ObString full_name_;
   volatile int64_t max_used_connections_;
+  bool is_in_map_;
 
 private:
   char full_name_str_[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF];

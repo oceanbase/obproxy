@@ -159,7 +159,6 @@ public:
   DEF_TIME(idc_list_refresh_interval, "2h", "[10s, 1d]", "the interval to refresh idc list for getting newest region-idc, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(stat_table_sync_interval, "60s", "[0s,1d]", "update sync statistic to ob_all_proxy_stat table interval, [0s, 1d], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(stat_dump_interval, "6000s", "[0s,1d]", "dump statistic in log interval, [0s, 1d], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(partition_location_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire partition location base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_INT(cluster_count_high_water_mark, "256", "[2, 102400]", "if cluster count is greater than this water mark, cluser will be kicked out by LRU", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(cluster_expire_time, "1d", "[0,]", "cluster resource expire time, 0 means never expire,cluster will be deleted if it has not been accessed for more than the time,[0, ]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
@@ -341,8 +340,14 @@ public:
   DEF_BOOL(enable_extra_prometheus_metric, "false", "enable net and route prometheus merics or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   DEF_BOOL(enable_causal_order_read, "true", "if enabled, proxy will choose server by priority and sync safe snapshot version if need", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_qa_mode, "false", "just for test, if enabled, proxy can forcibly expire all location cache", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(location_expire_period, "0", "[0,36000000]", "the unit is ms, only work if qa_mode is set, it means location cache which has been created for more than this value will be expired", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  // The following four parameters are related to the location cache at the table level.
+  // Here, it is recommended to use partition_location_expire_relative_time in an emergency,
+  // and set the active expiration recommendation location_expire_period_time
+  // enable_qa_mode and location_expire_period will be discarded later
+  DEF_INT(partition_location_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire partition location base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_qa_mode, "false", "just for test, not recommended, if enabled, proxy can forcibly expire all location cache", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_INT(location_expire_period, "0", "[0,36000000]", "just for test, not recommended, the unit is ms, only work if qa_mode is set, it means location cache which has been created for more than this value will be expired", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_TIME(location_expire_period_time, "0d", "[0s, 30d]", "time for location expire period, values in [0s, 30d], 0 means no expire", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   // in public cloud, will assign a vip addr to proxy. qa_mode_mock_slb_vip is a vip addr for testing
   DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);

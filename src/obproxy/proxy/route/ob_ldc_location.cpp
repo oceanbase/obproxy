@@ -227,7 +227,7 @@ int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerState
           }//end of found server
         }//end of for ss_info
         if (OB_SUCC(ret) && !found) {
-          if (is_base_servers_added) {
+          if (is_base_servers_added && !replica.server_.is_ip_loopback()) {
             LOG_WARN("fail to find tenant server from server list, maybe has not updated, don not use it", K(replica));
           } else {
             // if relica has no IDC info, lower priority. Avoid choosing offline relica

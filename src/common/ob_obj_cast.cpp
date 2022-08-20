@@ -4126,39 +4126,36 @@ int obj_accuracy_check(ObCastCtx &cast_ctx,
 {
   int ret = OB_SUCCESS;
 
-  LOG_DEBUG("obj_accuracy_check before", K(obj), K(accuracy), K(cs_type));
-
-  switch (obj.get_type_class()) {
-    case ObFloatTC: {
-      ret = float_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-      break;
-    }
-    case ObDoubleTC: {
-      ret = double_check_precision(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-      break;
-    }
-    case ObNumberTC: {
-      ret = number_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-      break;
-    }
-    case ObDateTimeTC: {
-      ret = datetime_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-      break;
-    }
-    case ObOTimestampTC: {
-      ret = otimestamp_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-      break;
-    }
-    case ObTimeTC: {
-      ret = time_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-      break;
-    }
-    case ObStringTC: {
-      ret = string_length_check(cast_ctx, accuracy, cs_type, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
-      break;
-    }
-    default: {
-      break;
+  if (accuracy.is_valid()) {
+    LOG_DEBUG("obj_accuracy_check before", K(obj), K(accuracy), K(cs_type));
+    switch (obj.get_type_class()) {
+      case ObFloatTC: {
+        ret = float_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+        break;
+      }
+      case ObDoubleTC: {
+        ret = double_check_precision(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+        break;
+      }
+      case ObNumberTC: {
+        ret = number_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+        break;
+      }
+      case ObDateTimeTC: {
+        ret = datetime_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+        break;
+      }
+      case ObOTimestampTC: {
+        ret = otimestamp_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+        break;
+      }
+      case ObTimeTC: {
+        ret = time_scale_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);
+        break;
+      }
+      default: {
+        break;
+      }
     }
   }
 

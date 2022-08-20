@@ -125,9 +125,9 @@ inline int ObPartDescList::cast_obj(ObObj &src_obj,
     COMMON_LOG(WARN, "fail to build dtc params with ctx session", K(ret), K(obj_type));
   } else {
     ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, target_obj.get_collation_type());
-    ObAccuracy accuracy(accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
     const ObObj *res_obj = &src_obj;
-    
+    ObAccuracy accuracy(accuracy_.valid_, accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
+
     // use src_obj as buf_obj
     if (OB_FAIL(ObObjCasterV2::to_type(obj_type, target_obj.get_collation_type(), cast_ctx, src_obj, src_obj))) {
       COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(target_obj));

@@ -48,6 +48,8 @@ enum
   OB_RC_LAST_VALID,
   OB_RC_LAST_ACCESS,
   OB_RC_LAST_UPDATE,
+  OB_RC_EXPIRE_TIME,
+  OB_RC_RELATIVE_EXPIRE_TIME,
   OB_RC_SERVER_ADDR,
   OB_RC_MAX_ROUTE_COLUMN_ID,
 };
@@ -69,6 +71,8 @@ const ObProxyColumnSchema ROUTE_COLUMN_ARRAY[OB_RC_MAX_ROUTE_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_RC_LAST_VALID,      "last_valid_time",      OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RC_LAST_ACCESS,     "last_access_time",     OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RC_LAST_UPDATE,     "last_update_time",     OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RC_EXPIRE_TIME,     "expire_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RC_RELATIVE_EXPIRE_TIME,     "relative_expire_time",          OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RC_SERVER_ADDR,     "server addr",          OB_MYSQL_TYPE_VARCHAR),
 };
 
@@ -84,6 +88,8 @@ enum
   OB_RPC_LAST_VALID,
   OB_RPC_LAST_ACCESS,
   OB_RPC_LAST_UPDATE,
+  OB_RPC_EXPIRE_TIME,
+  OB_RPC_RELATIVE_EXPIRE_TIME,
   OB_RPC_SERVER_ADDR,
   OB_RPC_MAX_ROUTE_COLUMN_ID,
 };
@@ -98,6 +104,8 @@ const ObProxyColumnSchema ROUTE_PARTITION_COLUMN_ARRAY[OB_RPC_MAX_ROUTE_COLUMN_I
     ObProxyColumnSchema::make_schema(OB_RPC_LAST_VALID,      "last_valid_time",      OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RPC_LAST_ACCESS,     "last_access_time",     OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RPC_LAST_UPDATE,     "last_update_time",     OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RPC_EXPIRE_TIME,     "expire_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RPC_RELATIVE_EXPIRE_TIME,     "relative_expire_time",          OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RPC_SERVER_ADDR,     "server addr",          OB_MYSQL_TYPE_VARCHAR),
 };
 
@@ -119,6 +127,8 @@ enum
   OB_RRC_LAST_VALID,
   OB_RRC_LAST_ACCESS,
   OB_RRC_LAST_UPDATE,
+  OB_RRC_EXPIRE_TIME,
+  OB_RRC_RELATIVE_EXPIRE_TIME,
   OB_RRC_ROUTE_SQL,
   OB_RRC_MAX_ROUTE_COLUMN_ID,
 };
@@ -138,11 +148,14 @@ const ObProxyColumnSchema ROUTE_ROUTINE_COLUMN_ARRAY[OB_RRC_MAX_ROUTE_COLUMN_ID]
     ObProxyColumnSchema::make_schema(OB_RRC_LAST_VALID,      "last_valid_time",      OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RRC_LAST_ACCESS,     "last_access_time",     OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RRC_LAST_UPDATE,     "last_update_time",     OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RRC_EXPIRE_TIME,     "expire_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RRC_RELATIVE_EXPIRE_TIME,     "relative_expire_time",          OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_RRC_ROUTE_SQL,       "route_sql",            OB_MYSQL_TYPE_VARCHAR),
 };
 
 int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *valid_timebuf,
-                       char *access_timebuf, char *update_timebuf, const uint32_t buf_len);
+                       char *access_timebuf, char *update_timebuf, char *expire_timebuf,
+                       char *relative_expire_timebuf, const uint32_t buf_len);
 
 ObShowRouteHandler::ObShowRouteHandler(ObContinuation *cont, ObMIOBuffer *buf,
                                        const ObInternalCmdInfo &info)
@@ -534,15 +547,19 @@ int ObShowRouteHandler::dump_table_item(const ObTableEntry &entry)
     char valid_timebuf[buf_len];
     char access_timebuf[buf_len];
     char update_timebuf[buf_len];
+    char expire_timebuf[buf_len];
+    char relative_expire_timebuf[buf_len];
 
     if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
-        update_timebuf, buf_len))) {
+        update_timebuf, expire_timebuf, relative_expire_timebuf, buf_len))) {
       WARN_ICMD("fail to extract_entry_time", K(entry), K(ret));
     } else {
       cells[OB_RC_CREATE].set_varchar(create_timebuf);
       cells[OB_RC_LAST_VALID].set_varchar(valid_timebuf);
       cells[OB_RC_LAST_ACCESS].set_varchar(access_timebuf);
       cells[OB_RC_LAST_UPDATE].set_varchar(update_timebuf);
+      cells[OB_RC_EXPIRE_TIME].set_varchar(expire_timebuf);
+      cells[OB_RC_RELATIVE_EXPIRE_TIME].set_varchar(relative_expire_timebuf);
 
       row.cells_ = cells;
       row.count_ = OB_RC_MAX_ROUTE_COLUMN_ID;
@@ -558,7 +575,8 @@ int ObShowRouteHandler::dump_table_item(const ObTableEntry &entry)
 }
 
 int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *valid_timebuf,
-    char *access_timebuf, char *update_timebuf, const uint32_t buf_len)
+                       char *access_timebuf, char *update_timebuf, char *expire_timebuf,
+                       char *relative_expire_time, const uint32_t buf_len)
 {
   int ret = OB_SUCCESS;
   struct tm struct_tm;
@@ -621,6 +639,34 @@ int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *va
       }
     }
   }
+  if (OB_SUCC(ret)) {
+    time_us = usec_to_sec(entry.get_time_for_expired());
+    if (OB_ISNULL(localtime_r(&time_us, &struct_tm))) {
+      ret = OB_ERR_UNEXPECTED;
+      WARN_ICMD("fail to converts the calendar time timep to broken-time representation", K(time_us), K(ret));
+    } else {
+      strftime_len = strftime(expire_timebuf, buf_len, "%Y-%m-%d %H:%M:%S", &struct_tm);
+      if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= buf_len)) {
+        ret = OB_BUF_NOT_ENOUGH;
+        WARN_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", buf_len,
+                  K(expire_timebuf), K(ret));
+      }
+    }
+  }
+  if (OB_SUCC(ret)) {
+    time_us = usec_to_sec(get_global_table_cache().get_cache_expire_time_us());
+    if (OB_ISNULL(localtime_r(&time_us, &struct_tm))) {
+      ret = OB_ERR_UNEXPECTED;
+      WARN_ICMD("fail to converts the calendar time timep to broken-time representation", K(time_us), K(ret));
+    } else {
+      strftime_len = strftime(relative_expire_time, buf_len, "%Y-%m-%d %H:%M:%S", &struct_tm);
+      if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= buf_len)) {
+        ret = OB_BUF_NOT_ENOUGH;
+        WARN_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", buf_len,
+                  K(expire_timebuf), K(ret));
+      }
+    }
+  }
   return ret;
 }
 
@@ -668,15 +714,19 @@ int ObShowRouteHandler::dump_partition_item(const ObPartitionEntry &entry)
     char valid_timebuf[buf_len];
     char access_timebuf[buf_len];
     char update_timebuf[buf_len];
+    char expire_timebuf[buf_len];
+    char relative_expire_timebuf[buf_len];
 
     if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
-        update_timebuf, buf_len))) {
+        update_timebuf, expire_timebuf, relative_expire_timebuf, buf_len))) {
       WARN_ICMD("fail to extract_entry_time", K(entry), K(ret));
     } else {
       cells[OB_RPC_CREATE].set_varchar(create_timebuf);
       cells[OB_RPC_LAST_VALID].set_varchar(valid_timebuf);
       cells[OB_RPC_LAST_ACCESS].set_varchar(access_timebuf);
       cells[OB_RPC_LAST_UPDATE].set_varchar(update_timebuf);
+      cells[OB_RPC_EXPIRE_TIME].set_varchar(expire_timebuf);
+      cells[OB_RPC_RELATIVE_EXPIRE_TIME].set_varchar(relative_expire_timebuf);
 
       row.cells_ = cells;
       row.count_ = OB_RPC_MAX_ROUTE_COLUMN_ID;
@@ -715,15 +765,19 @@ int ObShowRouteHandler::dump_routine_item(const ObRoutineEntry &entry)
   char valid_timebuf[buf_len];
   char access_timebuf[buf_len];
   char update_timebuf[buf_len];
+  char expire_timebuf[buf_len];
+  char relative_expire_timebuf[buf_len];
 
   if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
-      update_timebuf, buf_len))) {
+      update_timebuf, expire_timebuf, relative_expire_timebuf, buf_len))) {
     WARN_ICMD("fail to extract_entry_time", K(entry), K(ret));
   } else {
     cells[OB_RRC_CREATE].set_varchar(create_timebuf);
     cells[OB_RRC_LAST_VALID].set_varchar(valid_timebuf);
     cells[OB_RRC_LAST_ACCESS].set_varchar(access_timebuf);
     cells[OB_RRC_LAST_UPDATE].set_varchar(update_timebuf);
+    cells[OB_RRC_EXPIRE_TIME].set_varchar(expire_timebuf);
+    cells[OB_RRC_RELATIVE_EXPIRE_TIME].set_varchar(relative_expire_timebuf);
 
     row.cells_ = cells;
     row.count_ = OB_RRC_MAX_ROUTE_COLUMN_ID;

@@ -162,8 +162,9 @@ int ObPartDescHash::calc_value_for_oracle(ObObj &src_obj,
 
     uint64_t hash_val = 0;
     ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type_);
-    ObAccuracy accuracy(accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
     const ObObj *res_obj = &src_obj;
+
+    ObAccuracy accuracy(accuracy_.valid_, accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
 
     // use src_obj as buf_obj
     COMMON_LOG(DEBUG, "begin to cast value for hash oracle", K(src_obj), K(cs_type_));

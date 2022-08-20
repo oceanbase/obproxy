@@ -53,9 +53,9 @@ int ObPartDescKey::get_part(ObNewRange &range,
       COMMON_LOG(WARN, "fail to build dtc params with ctx session", K(ret), K(obj_type_));
     } else {
       ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type_);
-      ObAccuracy accuracy(accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
       ObObj &src_obj = const_cast<ObObj &>(range.get_start_key().get_obj_ptr()[0]);
       const ObObj *res_obj = &src_obj; 
+      ObAccuracy accuracy(accuracy_.valid_, accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
 
       // use src_obj as buf_obj
       if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cs_type_, cast_ctx, src_obj, src_obj))) {

@@ -43,6 +43,7 @@ class ObProxyPartInfo;
 class ObClientSessionInfo;
 class ObPsIdEntry;
 class ObTextPsEntry;
+class ObServerRoute;
 
 class ObProxyExprCalculator
 {
@@ -54,6 +55,7 @@ public:
                              const obutils::ObSqlParseResult &parse_result,
                              ObProxyMysqlRequest &client_request,
                              ObClientSessionInfo &client_info,
+                             ObServerRoute &route,
                              ObProxyPartInfo &part_info,
                              int64_t &partition_id);
 private:
@@ -74,6 +76,7 @@ private:
                       opsql::ObExprResolverResult &resolve_result);
   int do_partition_id_calc(opsql::ObExprResolverResult &resolve_result,
                            ObClientSessionInfo &client_info,
+                           ObServerRoute &route,
                            ObProxyPartInfo &part_info,
                            const obutils::ObSqlParseResult &parse_result,
                            common::ObIAllocator &allocator,
@@ -81,6 +84,7 @@ private:
   int calc_part_id_with_simple_route_info(common::ObArenaAllocator &allocator,
                                           const obutils::ObSqlParseResult &parse_result,
                                           ObClientSessionInfo &client_info,
+                                          ObServerRoute &route,
                                           ObProxyPartInfo &part_info,
                                           int64_t &part_id);
   int do_resolve_with_part_key(const obutils::ObSqlParseResult &parse_result,

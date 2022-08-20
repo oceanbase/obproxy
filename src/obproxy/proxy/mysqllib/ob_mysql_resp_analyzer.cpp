@@ -234,7 +234,8 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       case OB_MYSQL_COM_REFRESH :
       case OB_MYSQL_COM_PROCESS_KILL :
       case OB_MYSQL_COM_LOGIN:
-      case OB_MYSQL_COM_INIT_DB : {
+      case OB_MYSQL_COM_INIT_DB :
+      case OB_MYSQL_COM_CHANGE_USER: {
         if (OB_UNLIKELY(is_mysql_mode())) {
           if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
             finished = true;

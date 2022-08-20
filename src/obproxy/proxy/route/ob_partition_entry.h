@@ -70,7 +70,7 @@ inline bool ObPartitionEntryKey::is_valid() const
   return (common::OB_INVALID_ID != table_id_
           && common::OB_INVALID_ID != partition_id_
           && (cr_version_ >= 0)
-          && (cr_id_ <= 0));
+          && (cr_id_ >= 0));
 }
 
 inline uint64_t ObPartitionEntryKey::hash(uint64_t seed) const

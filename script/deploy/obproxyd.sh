@@ -147,7 +147,7 @@ function check_opt()
       OBPROXY_OPT_LOCAL="${OBPROXY_OPT_LOCAL},$OBPROXY_EXTRA_OPT"
     fi
 
-    OBPROXY_OPT_LOCAL=",enable_cached_server=false,enable_get_rslist_remote=true,monitor_stat_dump_interval=1s,enable_qos=true,enable_standby=false,query_digest_time_threshold=2ms,monitor_cost_ms_unit=true,enable_strict_kernel_release=false,enable_proxy_scramble=true,work_thread_num=$WORK_THREAD_NUM,proxy_mem_limited='2G',log_dir_size_threshold=10G${OBPROXY_OPT_LOCAL}"
+    OBPROXY_OPT_LOCAL=",enable_cached_server=true,enable_get_rslist_remote=true,monitor_stat_dump_interval=1s,enable_qos=true,enable_standby=false,query_digest_time_threshold=2ms,monitor_cost_ms_unit=true,enable_strict_kernel_release=false,enable_proxy_scramble=true,work_thread_num=$WORK_THREAD_NUM,proxy_mem_limited='2G',log_dir_size_threshold=10G${OBPROXY_OPT_LOCAL}"
 }
 
 # change to the path where this script locates.
