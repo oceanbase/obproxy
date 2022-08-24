@@ -1338,10 +1338,6 @@ int ObProxyShardUtils::handle_select_request(ObMysqlClientSession &client_sessio
   ObString sql = client_request.get_parse_sql();
   if (OB_FAIL(sql_parser.parse_sql_by_obparser(sql, NORMAL_PARSE_MODE, parse_result, true))) {
     LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
-  } else if (OB_FAIL(check_topology(parse_result, db_info))) {
-    if (OB_ERR_UNSUPPORT_DIFF_TOPOLOGY != ret) {
-      LOG_WARN("fail to check topology", K(ret));
-    }
   } else if (FALSE_IT(is_scan_all = need_scan_all(parse_result))) {
     // impossible
   } else if (is_scan_all) {
@@ -1466,7 +1462,7 @@ bool ObProxyShardUtils::need_scan_all(ObSqlParseResult &parse_result)
 {
   if (parse_result.is_select_stmt() && !parse_result.has_for_update()
       && (parse_result.get_dbp_route_info().scan_all_
-          || (!parse_result.is_use_dbp_hint() && get_global_proxy_config().auto_scan_all))) {
+          || (!parse_result.has_shard_comment() && get_global_proxy_config().auto_scan_all))) {
     return true;
   }
 
@@ -2006,6 +2002,13 @@ int ObProxyShardUtils::handle_scan_all_real_info(ObDbConfigLogicDb &logic_db_inf
   if (OB_ISNULL(select_stmt)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("select stmt is null, unexpected", K(ret));
+  } else if (select_stmt->has_unsupport_expr_type()) {
+    ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
+    LOG_WARN("unsupport sql", K(ret));
+  } else if (OB_FAIL(check_topology(parse_result, logic_db_info))) {
+    if (OB_ERR_UNSUPPORT_DIFF_TOPOLOGY != ret) {
+      LOG_WARN("fail to check topology", K(ret));
+    }
   } else if (OB_FAIL(get_global_optimizer_processor().alloc_allocator(allocator))) {
     LOG_WARN("alloc allocator failed", K(ret));
   } else if (OB_FAIL(handle_sharding_select_real_info(logic_db_info, client_session, trans_state,
@@ -2109,8 +2112,6 @@ int ObProxyShardUtils::handle_select_real_info(ObDbConfigLogicDb &logic_db_info,
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("shard connector info or prev shard connector info is null", KP(shard_conn),
                KP(prev_shard_conn), K(ret));
-    } else if (OB_FAIL(add_table_name_to_map(allocator, table_name_map, table_name, real_table_name))) {
-      LOG_WARN("fail to add table name to map", K(table_name), K(real_table_name), K(ret));
     }
 
     for (; OB_SUCC(ret) && iter != end; iter++) {
@@ -2124,10 +2125,6 @@ int ObProxyShardUtils::handle_select_real_info(ObDbConfigLogicDb &logic_db_info,
         LOG_WARN("fail to cast to table expr", K(expr), K(ret));
       } else {
         ObString &sql_table_name = table_expr->get_table_name();
-        if (sql_table_name == table_name) {
-          continue;
-        }
-
         if (OB_FAIL(logic_db_info.get_real_table_name(sql_table_name, sql_result,
                                                       real_table_name, OB_MAX_TABLE_NAME_LENGTH,
                                                       tb_index, hint_table, testload_type))) {

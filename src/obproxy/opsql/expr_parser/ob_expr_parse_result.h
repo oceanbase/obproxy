@@ -137,9 +137,9 @@ typedef struct _ObProxyRelationExpr
  * table: oceanbase.__all_virtual_proxy_partition_info
  *   -> column spare5: VARCHAR, format: "int32_t,int16_t,int16_t"
  * which means "length,precision/length_semantics,scale"
- * init -1 to each elements for invalid status.
  */
 typedef struct _ObProxyPartKeyAccuracy {
+  int8_t valid_;         // default is 0, means not valid
   int32_t length_;
   int16_t precision_;    // the same as length_semantics
   int16_t scale_;

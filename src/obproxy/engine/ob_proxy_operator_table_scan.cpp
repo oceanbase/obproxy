@@ -361,7 +361,7 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
         } else {
           ObString &table_name = expr_column->get_table_name();
           ObString &column_name = expr_column->get_column_name();
-          if ((table_name.empty() || field.tname_.prefix_match(table_name))
+          if ((table_name.empty() || field.tname_.prefix_case_match(table_name))
               && 0 == column_name.case_compare(field.cname_)) {
             expr->set_index(i);
             expr->set_accuracy(field.accuracy_);

@@ -229,9 +229,8 @@ void ObResourceUnitTableProcessor::dec_conn(
         if (ATOMIC_FAA(&used_conn->max_used_connections_, -1) > 1) {
         } else {
           DRWLock::WRLockGuard guard(used_conn_rwlock_);
-          if (0 == used_conn->max_used_connections_) {
-            erase_used_conn(key_name);
-            used_conn->dec_ref();
+          if (0 == used_conn->max_used_connections_ && used_conn->is_in_map_) {
+            erase_used_conn(key_name, used_conn);
             LOG_DEBUG("erase used conn", K(key_name));
           }
         }
@@ -544,6 +543,8 @@ int ObResourceUnitTableProcessor::create_used_conn(ObString& key_name,
         used_conn->inc_ref();
         if (OB_FAIL(used_conn_cache_.set(used_conn))) {
           LOG_WARN("fail to set used conn map", K(key_name), KPC(used_conn), K(ret));
+        } else {
+          used_conn->is_in_map_ = true;
         }
       }
 
@@ -601,11 +602,14 @@ int ObResourceUnitTableProcessor::get_or_create_used_conn(ObString& key_name,
   return ret;
 }
 
-int ObResourceUnitTableProcessor::erase_used_conn(ObString& key_name)
+int ObResourceUnitTableProcessor::erase_used_conn(ObString& key_name, ObUsedConn* used_conn)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(used_conn_cache_.erase(key_name))) {
     LOG_WARN("erase used conn failed", K(key_name));
+  } else {
+    used_conn->is_in_map_ = false;
+    used_conn->dec_ref();
   }
 
   return ret;

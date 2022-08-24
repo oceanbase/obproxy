@@ -48,8 +48,7 @@ namespace obproxy
 namespace net
 {
 
-// A block size is 8k, and 2 blocks can transmit 16k data, which meets the requirements
-static const int64_t NET_MAX_IOV = 2;
+static const int64_t NET_MAX_IOV = 16;
 
 static inline ObNetState &get_net_state_by_vio(ObVIO &vio)
 {
@@ -1013,7 +1012,9 @@ ObVIO *ObUnixNetVConnection::do_io_write(
     // SSL_read maybe trigger write and SSL_write maybe trigger read
     // so reenable write
     if (nbytes > 0 && (!write_.enabled_ || using_ssl_)) {
-      write_.triggered_ = true;
+      if (using_ssl_) {
+        write_.triggered_ = true;
+      }
       write_.vio_.reenable();
     }
   } else {

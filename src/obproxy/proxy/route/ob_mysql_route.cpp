@@ -404,19 +404,6 @@ inline void ObMysqlRoute::setup_table_entry_lookup()
   }
 
   if (OB_SUCC(ret)) {
-    if (NULL != table_param.result_.target_entry_) {
-      ObTableEntry* entry = table_param.result_.target_entry_;
-      if (param_.tenant_version_ != entry->get_tenant_version()
-           && entry->is_avail_state()
-           && !entry->is_dummy_entry()
-           && entry->get_time_for_expired() == 0) {
-        LOG_INFO("tenant locality change, set table entry time expired",
-            K_(param_.tenant_version), K(entry->get_tenant_version()), KPC(entry));
-        entry->set_time_for_expired(ObRandomNumUtils::get_random_half_to_full(60*1000*1000)
-            + common::ObTimeUtility::current_time());
-      }
-    }
-
     if (NULL == table_entry_action_handle) { // cache hit
       handle_event(TABLE_ENTRY_EVENT_LOOKUP_DONE, &table_param.result_);
       table_param.result_.reset();
@@ -447,6 +434,10 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
     if (false == param_.is_need_force_flush_) {
       param_.is_need_force_flush_ = result->is_need_force_flush_;
     }
+    if (NULL != table_entry_) {
+      table_entry_->check_and_set_expire_time(param_.tenant_version_, table_entry_->is_dummy_entry());
+    }
+
     result->target_entry_ = NULL;
     is_table_entry_from_remote_ = result->is_from_remote_;
     // use different log level only for debug
@@ -603,6 +594,7 @@ inline void ObMysqlRoute::setup_partition_id_calc()
                                                                           *result,
                                                                           *param_.client_request_,
                                                                           *param_.client_info_,
+                                                                          *param_.route_,
                                                                           *part_info,
                                                                           part_id_))) {
         LOG_INFO("fail to calculate partition id, just use tenant server", K(tmp_ret));
@@ -713,13 +705,8 @@ int ObMysqlRoute::state_partition_entry_lookup(int event, void *data)
     result->target_entry_ = NULL;
     is_part_entry_from_remote_ = result->is_from_remote_;
 
-    if (NULL != part_entry_ && part_entry_->is_avail_state()
-         && param_.tenant_version_ != part_entry_->get_tenant_version()
-         && part_entry_->get_time_for_expired() == 0) {
-      LOG_DEBUG("tenant locality change, set partition entry time expired",
-          K(param_.tenant_version_), K(part_entry_->get_tenant_version()), KPC_(part_entry));
-      part_entry_->set_time_for_expired(ObRandomNumUtils::get_random_half_to_full(60*1000*1000)
-            + common::ObTimeUtility::current_time());
+    if (NULL != part_entry_) {
+      part_entry_->check_and_set_expire_time(param_.tenant_version_, false);
     }
 
     if (NULL != part_entry_ && (part_entry_->is_avail_state())) {
@@ -951,6 +938,7 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       // !!Attention client_request should not be used in scheduled cont
       param_.client_request_ = param.client_request_;
       param_.client_info_ = param.client_info_;
+      param_.route_ = param.route_;
       // no need assign result_ and cr
       if (NULL != name_buf_ && name_buf_len_ > 0) {
         op_fixed_mem_free(name_buf_, name_buf_len_);

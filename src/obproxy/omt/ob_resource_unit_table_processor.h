@@ -97,7 +97,7 @@ public:
 
   int create_used_conn(common::ObString& key_name, ObUsedConn*& used_conn, int64_t& cur_used_connections);
   int get_used_conn(common::ObString& key_name, bool is_need_inc_used_connections, ObUsedConn*& used_conn, int64_t& cur_used_connections);
-  int erase_used_conn(common::ObString& key_name);
+  int erase_used_conn(common::ObString& key_name, ObUsedConn* used_conn);
   int get_or_create_used_conn(common::ObString& key_name, ObUsedConn*& used_conn, int64_t& cur_used_connections);
 
   TO_STRING_KV(K_(is_inited), K_(backup_status));

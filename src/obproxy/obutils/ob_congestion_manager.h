@@ -156,7 +156,6 @@ public:
   ObCongestionZoneState *get_zone_state(const common::ObString &zone_name);
   bool is_base_servers_added() const { return is_base_servers_added_; }
   void set_base_servers_added() { is_base_servers_added_ = true; }
-  void clear_base_servers_added() { is_base_servers_added_ = false; }
   bool is_congestion_avail();
   int update_tc_congestion_map(ObCongestionEntry &entry);
   DECLARE_TO_STRING;

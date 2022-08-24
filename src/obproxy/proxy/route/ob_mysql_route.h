@@ -34,6 +34,7 @@ class ObMysqlRoute;
 class ObPartitionEntry;
 class ObProxyMysqlRequest;
 class ObClientSessionInfo;
+class ObServerRoute;
 typedef int (ObMysqlRoute::*MysqlRouteHandler)(int event, void *data);
 
 class ObMysqlRouteResult
@@ -89,7 +90,7 @@ public:
     : cont_(NULL), name_(), force_renew_(false), use_lower_case_name_(false),
       is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false),
       is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(),
-      cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
+      route_(NULL), cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
       cr_(NULL) {}
   ~ObRouteParam() { reset(); }
 
@@ -113,6 +114,7 @@ public:
   ObMysqlProxy *mysql_proxy_;
   ObProxyMysqlRequest *client_request_;
   ObClientSessionInfo *client_info_;
+  ObServerRoute *route_;
   int64_t cr_version_;
   int64_t cr_id_;
   uint64_t tenant_version_;
@@ -148,6 +150,7 @@ inline void ObRouteParam::reset()
   is_oracle_mode_ = false;
   is_need_force_flush_ = false;
   mysql_proxy_ = NULL;
+  route_ = NULL;
   cr_version_ = -1;
   cr_id_ = -1;
   tenant_version_ = 0;

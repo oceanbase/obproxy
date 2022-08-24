@@ -34,7 +34,10 @@ public:
   ObAccuracy(ObPrecision precision, ObScale scale) { set_precision(precision); set_scale(scale); }
   ObAccuracy(ObLength length, ObPrecision precision, ObScale scale)
   { set_length(length); set_precision(precision); set_scale(scale); }
-  ObAccuracy(const ObAccuracy &other) { accuracy_ = other.accuracy_; }
+  ObAccuracy(bool valid, ObLength length, ObPrecision precision, ObScale scale) :
+    valid_(valid), length_(length), precision_(precision), scale_(scale) {}
+  ObAccuracy(const ObAccuracy &other) { accuracy_ = other.accuracy_; valid_ = other.valid_; }
+
   OB_INLINE void set_accuracy(const ObAccuracy &accuracy) { accuracy_ = accuracy.accuracy_; }
   OB_INLINE void set_accuracy(const int64_t &accuracy) { accuracy_ = accuracy; }
   OB_INLINE void set_length(ObLength length) { length_ = length; }
@@ -47,12 +50,19 @@ public:
   OB_INLINE ObLength get_length() const { return length_; }
   OB_INLINE ObPrecision get_precision() const { return precision_; }
   OB_INLINE ObScale get_scale() const { return scale_; }
-  OB_INLINE void reset() { accuracy_ = -1; }
+
+  /*
+   * the default length, precision, scale is different in each type
+   */
+  OB_INLINE void reset() { valid_ = false; length_ = -1; precision_ = -1; scale_ = -1; }
+  OB_INLINE bool is_valid() const { return valid_; }
+  
 public:
   OB_INLINE ObAccuracy &operator =(const ObAccuracy &other)
   {
     if (this != &other) {
       accuracy_ = other.accuracy_;
+      valid_ = other.valid_;
     }
     return *this;
   }
@@ -71,9 +81,17 @@ public:
 public:
   TO_STRING_KV(N_LENGTH, length_,
                N_PRECISION, precision_,
-               N_SCALE, scale_);
+               N_SCALE, scale_,
+               K_(valid));
   NEED_SERIALIZE_AND_DESERIALIZE;
 
+public:
+  /* 
+   * whether we get the accuracy from server or not
+   * it is not recommend to judge the init status by value, the init value of different type is different
+   * the valid value of <len, pre, scale> is as the same as the mysql/oracle document defined
+   */
+  bool valid_;
   union
   {
     int64_t accuracy_;

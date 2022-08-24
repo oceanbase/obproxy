@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [3.2.3],
+            [3.2.3.5],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="3.2.3"
+    obapi_version="3.2.3.5"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC
@@ -106,7 +106,8 @@
                           [with perf (default is NO)]),
                           [
                             if test "$withval" = "yes"; then
-                                # 下面参数为使用gperftools的选项，目前未用tcmalloc
+                                # The following parameters are options for using gperftools,
+                                #  currently not using tcmalloc
                                 # test_perf=yes
                                 # AM_CXXFLAGS="${AM_CXXFLAGS} -D__NEED_PERF__"
                                 # AM_LDFLAGS="${AM_LDFLAGS} -lprofiler"

@@ -383,7 +383,7 @@ public:
   ObRouteEntry()
     : common::ObSharedRefCount(), cr_version_(-1), cr_id_(common::OB_INVALID_CLUSTER_ID), schema_version_(0), create_time_us_(0),
       last_valid_time_us_(0), last_access_time_us_(0), last_update_time_us_(0),
-      state_(BORN), tenant_version_(0), time_for_expired_(0) {}
+      state_(BORN), tenant_version_(0), time_for_expired_(0), current_expire_time_config_(0) {}
   virtual ~ObRouteEntry() {}
   virtual void free() = 0;
 
@@ -430,6 +430,7 @@ public:
   uint64_t get_tenant_version() const { return tenant_version_; }
   int64_t get_time_for_expired() const { return time_for_expired_; }
   void set_time_for_expired(int64_t expire_time) { time_for_expired_ = expire_time; }
+  void check_and_set_expire_time(const uint64_t tenant_version, const bool is_dummy_entry);
 
 protected:
   int64_t cr_version_; // one entry must belong to one cluster with the specfied version
@@ -444,6 +445,7 @@ protected:
   ObRouteEntryState state_;
   uint64_t tenant_version_;
   int64_t time_for_expired_;
+  int64_t current_expire_time_config_;
 };
 
 inline bool ObRouteEntry::is_need_update() const
