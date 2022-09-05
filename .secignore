@@ -1,0 +1,126 @@
+##########################################################
+#            OBFlow Secret Scan Ignore List              #
+##########################################################
+# Above the segmentation lines there are suspected privacy information #
+# Please use the file name as the first line and the igored information #
+# should be started with tab. #
+# Under the segmentation lines there are the folders which you need to ignore #
+##########################################################
+**
+  http://license.coscl.org.cn/MulanPubL-2.0
+  https://open.oceanbase.com/
+  https://open.oceanbase.com
+  https://github.com/oceanbase/oceanbase
+  https://github.com/oceanbase/oceanbase/issues
+  http://1.taobao.com/
+  https://mirrors.aliyun.com/oceanbase/development-kit/el/8/x86_64/
+  https://mirrors.aliyun.com/oceanbase/development-kit/el/7/aarch64/
+  https://mirrors.aliyun.com/oceanbase/development-kit/el/8/aarch64/
+  https://mirrors.aliyun.com/oceanbase/development-kit/el/7/x86_64/
+  https://mirrors.aliyun.com/oceanbase/community/stable/el/
+  http://foo.bar.com
+  http://foo.bar.com:1234
+  http://oceanbase.alibaba-inc.com/
+  http://www.apache.org/licenses/LICENSE-2.0
+  https://dev.mysql.com/doc/refman/5.6/en/c-api-data-structures.html
+  http://dev.mysql.com/doc/internals/en/client-server-protocol.html
+  http://dev.mysql.com/doc/refman/5.6/en/sql-mode.html
+  http://dev.mysql.com/doc/internals/en/prepared-statements.html#null-bitmap
+  http://dev.mysql.com/doc/internals/en/status-flags.html
+  http://dev.mysql.com/doc/internals/en/capability-flags.html
+  http://dev.mysql.com/doc/refman/5.7/en/information-functions.html#function_current-user
+  http://forums.freebsd.org/archive/index.php/t-10270.html)
+  http://www.ussg.indiana.edu/hypermail/linux/kernel/0711.3/1208.html
+  https://bugs.mysql.com/bug.php?id=79612
+  http://imysql.com/mysql-internal-manual/com-change-user.html
+  http://murmurhash.googlepages.com/)
+  http://www.opensource.org/licenses/bsd-license.php)
+  https://github.com/Cyan4973/FiniteStateEntropy
+  https://github.com/mcmilk/zstdmt
+  http://www.zlib.net)
+  http://www.oberhumer.com/opensource/lzo/)
+  http://www.quicklz.com/)
+  http://www.goof.com/pcg/marc/liblzf.html)
+  http://www.fastlz.org/
+  http://stackoverflow.com/a/32095106/646947
+  http://fastcompression.blogspot.com/p/lz4.html
+  https://groups.google.com/forum/#
+  https://github.com/mcmilk/zstdmt
+  http://www.open-std.org/JTC1/SC22/WG21/docs/lwg-defects.html#530)
+  http://code.google.com/p/lz4/
+  http://www.apache.org/licenses/LICENSE-2.0
+  https://www.cnblogs.com/westfly/p/5139645.html
+  https://docs.oracle.com/en/database/oracle/oracle-database/12.2/sqlrf/RAWTOHEX.html
+  https://www.techonthenet.com/oracle/functions/rawtohex.php
+  http://www.atatech.org/articles/56575
+  https://msdn.microsoft.com/fr-fr/library/84szxsww(v=vs.90).aspx
+  http://www.cse.wustl.edu/~schmidt/win32-cv-1.html
+  http://oceanbase.taobao.org/
+  http://tools.ietf.org/html/rfc1950
+  http://fastcompression.blogspot.fr/2014/02/fse-distributing-symbol-values.html
+  http://fastcompression.blogspot.fr/2015/08/accessing-unaligned-memory.html
+  https://github.com/facebook/folly/blob/master/folly/CpuId.h
+  https://github.com/Cyan4973/xxHash
+  https://github.com/facebook/zstd/blob/master/doc/zstd_compression_format.md#default-distributions
+  http://tools.ietf.org/html/rfc1951
+  http://en.wikipedia.org/wiki/Cyclic_redundancy_check
+  http://en.wikipedia.org/wiki/X86-64#Linux
+  http://bazaar.launchpad.net/~mysql/mysql-server/5.6/view/head:/storage/innobase/ut/ut0crc32.cc
+  https://docs.oracle.com/cd/B19306_01/server.102/b14200/sql_elements004.htm#i34924
+  http://cxh.me/2014/07/01/nvi-usage-of-virtual-template/
+  https://github.com/facebook/zstd/pull/1146.
+  https://docs.oracle.com/cd/B19306_01/server.102/b14225/ch4datetime.htm
+  http://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
+  https://dev.mysql.com/doc/internals/en/integer.html#packet-Protocol::LengthEncodedInteger
+  http://www.augustana.ca/~mohrj/courses/1999.fall/csc210/lecture_notes/hashing.html
+  http://www.gnu.org/licenses/
+  https://dev.mysql.com/doc/refman/5.6/en/keywords.html
+  https://github.com/lyft/envoy-api#apis
+  http://x.x.x.x/services?Action=xxx&User_ID=xxx&UID=xxx&ObRegion=xxx&database=xxx&k=v
+  https://dev.mysql.com/doc/refman/5.6/en/keywords.html
+  http://dev.mysql.com/doc/internals/en/packet-EOF_Packet.html
+  https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
+  https://www.openssl.org/docs/man1.0.2/man3/blowfish.html
+  https://tools.ietf.org/html/rfc1950
+  https://tools.ietf.org/html/rfc1952
+  https://github.com/facebook/zstd/blob/master/doc/zstd_compression_format.md#dictionary-format
+  http://www.xxhash.com
+  http://murmurhash.googlepages.com/
+  https://dev.mysql.com/doc/refman/8.0/en/select.html
+  https://dev.mysql.com/doc/internals/en/com-stmt-prepare-response.html
+  http://dev.mysql.com/doc/internals/en/packet-ERR_Packet.html
+  libev@schmorp.de
+  wawasa@gmail.com
+  sesse@google.com
+  martin.gieseking@uos.de
+  rbrown64@csc.com.au
+  jloup@gzip.org
+  madler@alumni.caltech.edu
+  pwd1
+  user_name2
+  string_passwd
+  string_db
+  wgs13579@gmail.com
+**/*.c
+  http://www.gnu.org/licenses/
+**/.ce
+  https://github.com/oceanbase/oblogmsg.git
+--------------------------------------------------------
+# Should use GLOB wildcard to config and analysis the ignored folder
+# The root patch shold start with '/'
+/README.md
+/README-CN.md
+/CONTRIBUTING.md
+/CODE_OF_CONDUCT.md
+/.github/**
+/.git/**
+/LICENSE
+/deps/easy/src/io/easy_ssl.c
+--------------------------------------------------------
+# Config the ignored fold to escape the Chinese scan by GLOB wildcard
+**/*.md
+/deps/easy/test/packet/easy_http_handler_test.c
+/unittest/obproxy/test_parser.sql
+/src/share/config/ob_server_config.h
+/src/lib/charset/ob_charset.cpp
+/LICENSE
