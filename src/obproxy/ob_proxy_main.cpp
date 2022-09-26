@@ -145,7 +145,7 @@ void ObProxyMain::print_usage() const
   MPRINT("  -R,--releaseid           RELEASEID     current obproxy kernel release id");
   MPRINT("  -t,--regression_test     TEST_NAME     regression test");
   MPRINT("example:");
-  MPRINT("  run without config server:");
+  MPRINT("  run without root service list:");
   MPRINT("    ./bin/obproxy -p6789 -r'ip:port;ip:port' -n test -o enable_cluster_checkout=false,syslog_level=INFO");
   MPRINT(" OR ./bin/obproxy -p6789 -r'ip:port;ip:port' -c 'ob_test' -n test -o syslog_level=INFO \n");
   MPRINT("  run with config server:");
