@@ -94,7 +94,7 @@ function check_opt()
     else
       echo "obproxy config server url:$OBPROXY_CONFIG_SERVER_URL"
       OBPROXY_CONFIG_SERVER_URL_ARG=" -u $OBPROXY_CONFIG_SERVER_URL"
-    if
+    fi
 
     # check PORT
     if [ -z $OBPROXY_PORT ]
