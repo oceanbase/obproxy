@@ -2069,7 +2069,7 @@ int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeSta
   ObUnixNetVConnection* unix_vc = static_cast<ObUnixNetVConnection *>(client_session_->get_netvc());
   if (NULL == unix_vc) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("client entry vc is null", K(ret));
+    LOG_WARN("client unix vc is null", K(ret));
   } else if (hsr.response_.is_ssl_request() && !unix_vc->ssl_connected()) {
     if (OB_FAIL(unix_vc->ssl_init(ObUnixNetVConnection::SSL_SERVER,
                                   client_session_->get_vip_cluster_name(),

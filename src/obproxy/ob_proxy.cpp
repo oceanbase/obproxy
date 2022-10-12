@@ -262,7 +262,7 @@ int ObProxy::start()
   } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_server(*mysql_config_params_))) {
     LOG_ERROR("fail to start mysql proxy server", K(ret));
   } else if (OB_FAIL(ObProxyMain::get_instance()->schedule_detect_task())) {
-    LOG_ERROR("fail to schedule detech task", K(ret));
+    LOG_ERROR("fail to schedule detect task", K(ret));
   } else {
 
     // we can't strongly dependent on the OCP.
@@ -326,7 +326,7 @@ int ObProxy::start()
     } else if (OB_FAIL(ObCacheCleaner::schedule_cache_cleaner())) {
       LOG_WARN("fail to alloc and schedule cache cleaner", K(ret));
     } else if (config_->is_metadb_used() && OB_FAIL(proxy_table_processor_.start_check_table_task())) {
-      LOG_WARN("fail to start check table check", K(ret));
+      LOG_WARN("fail to start check table task", K(ret));
     } else if (OB_FAIL(hot_upgrade_processor_.start_hot_upgrade_task())) {
       LOG_WARN("fail to start hot upgrade task", K(ret));
     } else if (OB_FAIL(log_file_processor_->start_cleanup_log_file())) {
@@ -338,7 +338,7 @@ int ObProxy::start()
     } else if (OB_FAIL(tenant_stat_mgr_->start_tenant_stat_dump_task())) {
       LOG_ERROR("fail to start_tenant_stat_dump_task", K(ret));
     } else if (OB_FAIL(g_ob_qos_stat_processor.start_qos_stat_clean_task())) {
-      LOG_ERROR("fail to start_tenant_stat_dump_task", K(ret));
+      LOG_ERROR("fail to start_qos_stat_clean_task", K(ret));
     } else if (config_->enable_sharding
                && config_->is_control_plane_used()
                && !config_->use_local_dbconfig

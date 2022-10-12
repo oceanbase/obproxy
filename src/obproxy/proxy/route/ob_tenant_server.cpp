@@ -43,7 +43,7 @@ int ObTenantServer::init(const ObIArray<ObProxyReplicaLocation> &locations)
     LOG_WARN("invalid replica location", K(locations), K(ret));
   } else if (OB_UNLIKELY(NULL != server_array_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("server_list_ should be null here", K(server_array_), K(ret));
+    LOG_WARN("server_array_ should be null here", K(server_array_), K(ret));
   } else {
     const int64_t alloc_size = static_cast<int64_t>(sizeof(ObProxyReplicaLocation)) * locations.count();
     char *server_list_buf = NULL;

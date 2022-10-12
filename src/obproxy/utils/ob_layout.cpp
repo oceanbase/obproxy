@@ -49,7 +49,7 @@ int ObLayout::init(const char *start_cmd)
     MPRINT("layout has already been inited, ret=%d", ret);
   } else if (OB_ISNULL(start_cmd)) {
     ret = OB_ERR_UNEXPECTED;
-    MPRINT("start comd is NULL, ret=%d", ret);
+    MPRINT("start cmd is NULL, ret=%d", ret);
   } else if (OB_ISNULL(cwd = arena.alloc(MAX_PATH_LENGTH))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     MPRINT("fail to alloc memeory,alloc_size=%ld, ret=%d", MAX_PATH_LENGTH, ret);
