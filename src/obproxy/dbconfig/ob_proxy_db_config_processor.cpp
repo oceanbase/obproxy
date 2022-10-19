@@ -76,7 +76,7 @@ int ObDbConfigProcessor::init(const int64_t client_count, int64_t startup_time_u
   if (OB_SUCC(ret)) {
     if (get_global_proxy_config().use_local_dbconfig
         && OB_FAIL(get_global_inotify_processor().init())) {
-      LOG_WARN("fail to init initify processor", K(ret));
+      LOG_WARN("fail to init inotify processor", K(ret));
     }
   }
   return ret;

@@ -311,7 +311,7 @@ int ObProxyMain::parse_cmd_line(const int argc, char *const argv[], ObProxyOptio
 
       if (0 == c) {
         if (OB_FAIL(parse_short_opt(long_opts[long_opts_idx].val, optarg, opts))) {
-          MPRINT("fail to parse long opt, ret=%d", ret);
+          MPRINT("fail to parse short opt, ret=%d", ret);
           break;
         }
       } else {
