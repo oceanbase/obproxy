@@ -657,7 +657,7 @@ int ObMysqlClient::do_post_request()
     }
     case CLIENT_ACTION_READ_NORMAL_RESP: {
      if (OB_FAIL(setup_read_normal_resp())) {
-        LOG_WARN("fail to setup read handshake", K(ret));
+        LOG_WARN("fail to setup read normal resp", K(ret));
       } else if (OB_FAIL(schedule_active_timeout())) {
         LOG_WARN("fail to schedule_active_timeout", K(ret));
       } else if (OB_FAIL(forward_mysql_request())) {
