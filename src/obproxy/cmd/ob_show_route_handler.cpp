@@ -157,8 +157,7 @@ int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *va
                        char *access_timebuf, char *update_timebuf, char *expire_timebuf,
                        char *relative_expire_timebuf, const uint32_t buf_len);
 
-ObShowRouteHandler::ObShowRouteHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                       const ObInternalCmdInfo &info)
+ObShowRouteHandler::ObShowRouteHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type()), list_bucket_(0)
 {
   if (!info.get_large_key_string().empty()) {

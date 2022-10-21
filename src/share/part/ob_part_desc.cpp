@@ -23,19 +23,24 @@ namespace common
 int ObPartDesc::get_part(common::ObNewRange &range,
                          common::ObIAllocator &allocator,
                          common::ObIArray<int64_t> &part_ids,
-                         ObPartDescCtx &ctx)
+                         ObPartDescCtx &ctx,
+                         common::ObIArray<int64_t> &tablet_ids)
 {
   UNUSED(range);
   UNUSED(allocator);
   UNUSED(part_ids);
   UNUSED(ctx);
+  UNUSED(tablet_ids);
   return OB_NOT_IMPLEMENT;
 }
 
-int ObPartDesc::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+int ObPartDesc::get_part_by_num(const int64_t num,
+                                common::ObIArray<int64_t> &part_ids,
+                                common::ObIArray<int64_t> &tablet_ids)
 {
   UNUSED(num);
   UNUSED(part_ids);
+  UNUSED(tablet_ids);
   return OB_NOT_IMPLEMENT;
 }
 

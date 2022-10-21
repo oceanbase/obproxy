@@ -29,7 +29,10 @@ public:
   ~ObLDCRoute() {}
   void reset_cursor();
   void reset();
+  
   const ObLDCItem *get_next_item();
+  const ObLDCItem *get_next_primary_zone_item();
+  
   bool is_reach_end() const;
   bool is_follower_first_policy() const { return (policy_ >= FOLLOWER_FIRST && policy_ <= UNMERGE_FOLLOWER_FIRST_OPTIMIZED); }
   ObRouteType get_curr_route_type() const;

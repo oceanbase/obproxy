@@ -245,6 +245,8 @@ int ObShardDDLCont::covert_stmt_type_to_operation(const ObProxyBasicStmtType stm
     operation = SHARD_DDL_OPERATION_DROP;
   } else if (stmt_type == OBPROXY_T_RENAME) {
     operation = SHARD_DDL_OPERATION_RENAME;
+  } else if (stmt_type == OBPROXY_T_TRUNCATE) {
+    operation = SHARD_DDL_OPERATION_TRUNCATE;
   } else {
     ret = OB_NOT_SUPPORTED;
   }

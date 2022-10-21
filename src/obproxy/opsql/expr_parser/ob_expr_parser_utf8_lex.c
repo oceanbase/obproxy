@@ -672,12 +672,14 @@ do {\
 #define RETURN_NAME_OB() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NAME_OB; }
 
+#define RETURN_ROW_ID() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return ROW_ID; }
 
 
 
 
 /*following character status will be rewrite by gen_parse.sh according to connection character*/
-#line 682 "ob_expr_parser_utf8_lex.c"
+#line 684 "ob_expr_parser_utf8_lex.c"
 
 #define INITIAL 0
 #define in_c_comment 1
@@ -925,9 +927,9 @@ YY_DECL
 	register int yy_act;
     struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
 
-#line 94 "ob_expr_parser_utf8.l"
+#line 96 "ob_expr_parser_utf8.l"
 
-#line 933 "ob_expr_parser_utf8_lex.c"
+#line 935 "ob_expr_parser_utf8_lex.c"
 
     yylval = yylval_param;
 
@@ -1016,206 +1018,206 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 95 "ob_expr_parser_utf8.l"
+#line 97 "ob_expr_parser_utf8.l"
 { return WHERE; }
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 96 "ob_expr_parser_utf8.l"
+#line 98 "ob_expr_parser_utf8.l"
 { return AS; }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 97 "ob_expr_parser_utf8.l"
+#line 99 "ob_expr_parser_utf8.l"
 { return VALUES; }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 98 "ob_expr_parser_utf8.l"
+#line 100 "ob_expr_parser_utf8.l"
 { return VALUES; }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 99 "ob_expr_parser_utf8.l"
+#line 101 "ob_expr_parser_utf8.l"
 { return SET; }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 100 "ob_expr_parser_utf8.l"
+#line 102 "ob_expr_parser_utf8.l"
 { return END_WHERE; }
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 101 "ob_expr_parser_utf8.l"
+#line 103 "ob_expr_parser_utf8.l"
 { return END_WHERE; }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 102 "ob_expr_parser_utf8.l"
+#line 104 "ob_expr_parser_utf8.l"
 { return END_WHERE; }
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 103 "ob_expr_parser_utf8.l"
+#line 105 "ob_expr_parser_utf8.l"
 { return END_WHERE; }
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 104 "ob_expr_parser_utf8.l"
-{ return ROWID; }
+#line 106 "ob_expr_parser_utf8.l"
+{ RETURN_ROW_ID(); }
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 106 "ob_expr_parser_utf8.l"
+#line 108 "ob_expr_parser_utf8.l"
 { return JOIN; }
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 107 "ob_expr_parser_utf8.l"
+#line 109 "ob_expr_parser_utf8.l"
 { return ON; }
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 108 "ob_expr_parser_utf8.l"
+#line 110 "ob_expr_parser_utf8.l"
 { return BETWEEN; }
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 109 "ob_expr_parser_utf8.l"
+#line 111 "ob_expr_parser_utf8.l"
 { return AND_OP; }
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 110 "ob_expr_parser_utf8.l"
+#line 112 "ob_expr_parser_utf8.l"
 { return AND_OP; }
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 111 "ob_expr_parser_utf8.l"
+#line 113 "ob_expr_parser_utf8.l"
 { return OR_OP; }
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 112 "ob_expr_parser_utf8.l"
+#line 114 "ob_expr_parser_utf8.l"
 { return OR_OP; }
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 113 "ob_expr_parser_utf8.l"
+#line 115 "ob_expr_parser_utf8.l"
 { return IN; }
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 114 "ob_expr_parser_utf8.l"
+#line 116 "ob_expr_parser_utf8.l"
 { return COMP_EQ; }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 115 "ob_expr_parser_utf8.l"
+#line 117 "ob_expr_parser_utf8.l"
 { return COMP_NSEQ; }
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 116 "ob_expr_parser_utf8.l"
+#line 118 "ob_expr_parser_utf8.l"
 { return COMP_GE; }
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 117 "ob_expr_parser_utf8.l"
+#line 119 "ob_expr_parser_utf8.l"
 { return COMP_GT; }
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 118 "ob_expr_parser_utf8.l"
+#line 120 "ob_expr_parser_utf8.l"
 { return COMP_LE; }
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 119 "ob_expr_parser_utf8.l"
+#line 121 "ob_expr_parser_utf8.l"
 { return COMP_LT; }
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 120 "ob_expr_parser_utf8.l"
+#line 122 "ob_expr_parser_utf8.l"
 { return COMP_NE; }
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 121 "ob_expr_parser_utf8.l"
+#line 123 "ob_expr_parser_utf8.l"
 { return PLACE_HOLDER; }
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 122 "ob_expr_parser_utf8.l"
+#line 124 "ob_expr_parser_utf8.l"
 { store_pos_place_holder(yytext + 1, yyscanner); return POS_PLACE_HOLDER; }
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 124 "ob_expr_parser_utf8.l"
+#line 126 "ob_expr_parser_utf8.l"
 { RETURN_INT_VAL(); }
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 125 "ob_expr_parser_utf8.l"
+#line 127 "ob_expr_parser_utf8.l"
 { RETURN_NUMBER_VAL(); }
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 126 "ob_expr_parser_utf8.l"
+#line 128 "ob_expr_parser_utf8.l"
 { RETURN_NAME_OB(); }
 	YY_BREAK
 case 31:
 /* rule 31 can match eol */
 YY_RULE_SETUP
-#line 127 "ob_expr_parser_utf8.l"
+#line 129 "ob_expr_parser_utf8.l"
 { }
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 128 "ob_expr_parser_utf8.l"
+#line 130 "ob_expr_parser_utf8.l"
 { return ','; }
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 129 "ob_expr_parser_utf8.l"
+#line 131 "ob_expr_parser_utf8.l"
 { return '('; }
 	YY_BREAK
 case 34:
 YY_RULE_SETUP
-#line 130 "ob_expr_parser_utf8.l"
+#line 132 "ob_expr_parser_utf8.l"
 { return ')'; }
 	YY_BREAK
 case 35:
 YY_RULE_SETUP
-#line 131 "ob_expr_parser_utf8.l"
+#line 133 "ob_expr_parser_utf8.l"
 { return yytext[0]; }
 	YY_BREAK
 /* comment */
 case 36:
 YY_RULE_SETUP
-#line 134 "ob_expr_parser_utf8.l"
+#line 136 "ob_expr_parser_utf8.l"
 { PUSH_STATE(in_c_comment); }
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 135 "ob_expr_parser_utf8.l"
+#line 137 "ob_expr_parser_utf8.l"
 { POP_STATE(); }
 	YY_BREAK
 case 38:
 /* rule 38 can match eol */
 YY_RULE_SETUP
-#line 136 "ob_expr_parser_utf8.l"
+#line 138 "ob_expr_parser_utf8.l"
 {}
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 137 "ob_expr_parser_utf8.l"
+#line 139 "ob_expr_parser_utf8.l"
 {}
 	YY_BREAK
 /* quote */
 case 40:
 YY_RULE_SETUP
-#line 140 "ob_expr_parser_utf8.l"
+#line 142 "ob_expr_parser_utf8.l"
 {
   PUSH_STATE(sq);
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1229,7 +1231,7 @@ YY_RULE_SETUP
 case 41:
 /* rule 41 can match eol */
 YY_RULE_SETUP
-#line 150 "ob_expr_parser_utf8.l"
+#line 152 "ob_expr_parser_utf8.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1239,7 +1241,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 157 "ob_expr_parser_utf8.l"
+#line 159 "ob_expr_parser_utf8.l"
 {
   POP_STATE();
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1251,13 +1253,13 @@ YY_RULE_SETUP
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 166 "ob_expr_parser_utf8.l"
+#line 168 "ob_expr_parser_utf8.l"
 {}
 	YY_BREAK
 case 44:
 /* rule 44 can match eol */
 YY_RULE_SETUP
-#line 167 "ob_expr_parser_utf8.l"
+#line 169 "ob_expr_parser_utf8.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1268,17 +1270,17 @@ YY_RULE_SETUP
 case 45:
 /* rule 45 can match eol */
 YY_RULE_SETUP
-#line 173 "ob_expr_parser_utf8.l"
+#line 175 "ob_expr_parser_utf8.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(sq):
-#line 174 "ob_expr_parser_utf8.l"
+#line 176 "ob_expr_parser_utf8.l"
 { return ERROR; }
 	YY_BREAK
 /* dquote */
 case 46:
 YY_RULE_SETUP
-#line 178 "ob_expr_parser_utf8.l"
+#line 180 "ob_expr_parser_utf8.l"
 {
   PUSH_STATE(dq);
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1292,7 +1294,7 @@ YY_RULE_SETUP
 case 47:
 /* rule 47 can match eol */
 YY_RULE_SETUP
-#line 188 "ob_expr_parser_utf8.l"
+#line 190 "ob_expr_parser_utf8.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1302,7 +1304,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 195 "ob_expr_parser_utf8.l"
+#line 197 "ob_expr_parser_utf8.l"
 {
   POP_STATE();
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1317,29 +1319,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 49:
 YY_RULE_SETUP
-#line 207 "ob_expr_parser_utf8.l"
+#line 209 "ob_expr_parser_utf8.l"
 {}
 	YY_BREAK
 case 50:
 /* rule 50 can match eol */
 YY_RULE_SETUP
-#line 208 "ob_expr_parser_utf8.l"
+#line 210 "ob_expr_parser_utf8.l"
 {}
 	YY_BREAK
 case 51:
 /* rule 51 can match eol */
 YY_RULE_SETUP
-#line 209 "ob_expr_parser_utf8.l"
+#line 211 "ob_expr_parser_utf8.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(dq):
-#line 210 "ob_expr_parser_utf8.l"
+#line 212 "ob_expr_parser_utf8.l"
 { return ERROR; }
 	YY_BREAK
 /* backtick */
 case 52:
 YY_RULE_SETUP
-#line 214 "ob_expr_parser_utf8.l"
+#line 216 "ob_expr_parser_utf8.l"
 {
   PUSH_STATE(bt);
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1352,7 +1354,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 53:
 YY_RULE_SETUP
-#line 224 "ob_expr_parser_utf8.l"
+#line 226 "ob_expr_parser_utf8.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + 1 < OBPROXY_MAX_NAME_LENGTH) {
@@ -1363,7 +1365,7 @@ YY_RULE_SETUP
 case 54:
 /* rule 54 can match eol */
 YY_RULE_SETUP
-#line 231 "ob_expr_parser_utf8.l"
+#line 233 "ob_expr_parser_utf8.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + yyleng < OBPROXY_MAX_NAME_LENGTH) {
@@ -1374,7 +1376,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 55:
 YY_RULE_SETUP
-#line 239 "ob_expr_parser_utf8.l"
+#line 241 "ob_expr_parser_utf8.l"
 {
   POP_STATE();
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1387,27 +1389,27 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(bt):
-#line 250 "ob_expr_parser_utf8.l"
+#line 252 "ob_expr_parser_utf8.l"
 {
   return ERROR;
 }
 	YY_BREAK
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(in_c_comment):
-#line 254 "ob_expr_parser_utf8.l"
+#line 256 "ob_expr_parser_utf8.l"
 { return END_P; }
 	YY_BREAK
 case 56:
 YY_RULE_SETUP
-#line 255 "ob_expr_parser_utf8.l"
+#line 257 "ob_expr_parser_utf8.l"
 { return IGNORED_WORD; }
 	YY_BREAK
 case 57:
 YY_RULE_SETUP
-#line 256 "ob_expr_parser_utf8.l"
+#line 258 "ob_expr_parser_utf8.l"
 ECHO;
 	YY_BREAK
-#line 1413 "ob_expr_parser_utf8_lex.c"
+#line 1415 "ob_expr_parser_utf8_lex.c"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2557,7 +2559,7 @@ static int yy_flex_strlen (yyconst char * s , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#line 256 "ob_expr_parser_utf8.l"
+#line 258 "ob_expr_parser_utf8.l"
 
 
 
@@ -2688,20 +2690,20 @@ extern int ob_expr_parser_utf8_yydebug;
      IN = 268,
      ON = 269,
      BETWEEN = 270,
-     ROWID = 271,
-     COMP_EQ = 272,
-     COMP_NSEQ = 273,
-     COMP_GE = 274,
-     COMP_GT = 275,
-     COMP_LE = 276,
-     COMP_LT = 277,
-     COMP_NE = 278,
-     PLACE_HOLDER = 279,
-     END_P = 280,
-     ERROR = 281,
-     IGNORED_WORD = 282,
-     NAME_OB = 283,
-     STR_VAL = 284,
+     COMP_EQ = 271,
+     COMP_NSEQ = 272,
+     COMP_GE = 273,
+     COMP_GT = 274,
+     COMP_LE = 275,
+     COMP_LT = 276,
+     COMP_NE = 277,
+     PLACE_HOLDER = 278,
+     END_P = 279,
+     ERROR = 280,
+     IGNORED_WORD = 281,
+     NAME_OB = 282,
+     STR_VAL = 283,
+     ROW_ID = 284,
      INT_VAL = 285,
      POS_PLACE_HOLDER = 286
    };

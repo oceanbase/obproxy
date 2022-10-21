@@ -268,7 +268,7 @@ public:
 class ObTextPsEntry : public ObBasePsEntry
 {
 public:
-  ObTextPsEntry() : ObBasePsEntry(), version_(0) {} 
+  ObTextPsEntry() : ObBasePsEntry() {} 
   ~ObTextPsEntry() { destroy(); }
 
   static int alloc_and_init_text_ps_entry(const common::ObString &sql,
@@ -276,26 +276,22 @@ public:
                                           ObTextPsEntry *&entry);
   int init(char *buf_start, int64_t buf_len, const common::ObString &text_ps_sql);
   void destroy();
-
-  void set_version(uint32_t version) { version_ = version; }
-  uint32_t get_version() const { return version_; }
-
   int64_t to_string(char *buf, const int64_t buf_len) const;
-private:
-  uint32_t version_;
 
+private:
   DISALLOW_COPY_AND_ASSIGN(ObTextPsEntry);
 };
 
 class ObTextPsNameEntry
 {
 public:
-  ObTextPsNameEntry() : text_ps_name_(), text_ps_entry_(NULL) {}
+  ObTextPsNameEntry() : text_ps_name_(), text_ps_entry_(NULL), version_(0) {}
   ~ObTextPsNameEntry() { destroy(); }
   ObTextPsNameEntry(char *buf, const int64_t buf_len, ObTextPsEntry *entry)
   {
-    text_ps_name_.assign(buf, static_cast<int32_t>(buf_len));
+    text_ps_name_.assign_ptr(buf, static_cast<int32_t>(buf_len));
     text_ps_entry_ = entry;
+    text_ps_entry_->inc_ref();
   }
 
   static int alloc_text_ps_name_entry(const ObString &text_ps_name,
@@ -304,18 +300,15 @@ public:
   void destroy();
   bool is_valid() const
   {
-    return !text_ps_name_.empty()
-           && NULL != text_ps_entry_
-           && text_ps_entry_->is_valid();
+    return !text_ps_name_.empty() && NULL != text_ps_entry_ && text_ps_entry_->is_valid();
   }
-  const ObString& get_text_ps_name() { return text_ps_name_; }
-  ObTextPsEntry *get_text_ps_entry() { return text_ps_entry_; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 public:
   // text_ps_name and text_ps_entry alloced in alloc_text_ps_name_entry
   ObString text_ps_name_;
   ObTextPsEntry *text_ps_entry_;
+  uint32_t version_;
   LINK(ObTextPsNameEntry, text_ps_name_link_);
 };
 
@@ -377,6 +370,7 @@ public:
   int set_text_ps_entry(ObTextPsEntry *text_ps_entry)
   {
     ObBasePsEntry *tmp_entry = text_ps_entry;
+    tmp_entry->set_ps_entry_cache(this);
     return base_ps_map_.unique_set(tmp_entry);
   }
 
@@ -400,6 +394,9 @@ private:
 };
 
 int init_ps_entry_cache_for_thread();
+int init_ps_entry_cache_for_one_thread(int64_t index);
+int init_text_ps_entry_cache_for_thread();
+int init_text_ps_entry_cache_for_one_thread(int64_t index);
 
 } // end of namespace proxy
 } // end of namespace obproxy

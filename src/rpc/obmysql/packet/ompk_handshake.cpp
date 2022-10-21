@@ -55,6 +55,9 @@ OMPKHandshake::OMPKHandshake()
   server_capabilities_lower_.capability_flag_.OB_SERVER_SECURE_CONNECTION = 1;
 
   server_capabilities_upper_.capability_ = 0;
+  server_capabilities_upper_.capability_flag_.OB_SERVER_MULTIPLE_STATEMENTS = 1;
+  server_capabilities_upper_.capability_flag_.OB_SERVER_MULTIPLE_RESULTS = 1;
+  server_capabilities_upper_.capability_flag_.OB_SERVER_PS_MULTIPLE_RESULTS = 1;
   server_capabilities_upper_.capability_flag_.OB_SERVER_PLUGIN_AUTH = 1;
   //server_capabilities_upper_.capability_flag_.OB_SERVER_CONNECT_ATTRS = 1;
 

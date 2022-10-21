@@ -26,8 +26,7 @@ class ObNetHandler;
 class ObShowNetHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowNetHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                   const ObInternalCmdInfo &info);
+  ObShowNetHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowNetHandler() {}
   int handle_show_threads(int event, event::ObEvent *e);
   int handle_show_connections(int event, event::ObEvent *e);

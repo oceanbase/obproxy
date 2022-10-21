@@ -12,28 +12,18 @@
 
 #include "lib/charset/ob_ctype.h"
 
-#ifdef __cplusplus
-extern "C" int check_stack_overflow_in_c(int *check_overflow);
-#endif
-
-static void __attribute__ ((noinline)) pad_max_char_help(char *str, char *end,
-                                                         char *buf, char buf_len)
+static void __attribute__ ((noinline)) pad_max_char_help(char *str, char *end, char *buf, char buf_len)
 {
-  do
-  {
-    if ((str + buf_len) <= end) {
-      /* Enough space for the characer */
+  do {
+    if ((str + buf_len) <= end) {  
       memcpy(str, buf, buf_len);
       str+= buf_len;
     } else {
-      /*
-        There is no space for whole multibyte
-        character, then add trailing spaces.
-      */
       *str++= ' ';
     }
   } while (str < end);
 }
+
 static void pad_max_char(const ObCharsetInfo *cs, char *str, char *end)
 {
   char buf[10];
@@ -43,27 +33,27 @@ static void pad_max_char(const ObCharsetInfo *cs, char *str, char *end)
       memset(str, cs->max_sort_char, end - str);
       return;
     }
+    buf_len= 2;
     buf[0]= cs->max_sort_char >> 8;
     buf[1]= cs->max_sort_char & 0xFF;
-    buf_len= 2;
   } else {
-    buf_len= cs->cset->wc_mb(cs->max_sort_char, (unsigned char*) buf,
+    buf_len= cs->cset->wc_mb(cs, cs->max_sort_char, (unsigned char*) buf,
                             (unsigned char*) buf + sizeof(buf));
   }
   ob_charset_assert(buf_len > 0);
   pad_max_char_help(str, end ,buf, buf_len);
 }
 
-int ob_like_range_mb_help(const ObCharsetInfo *cs,
-                          size_t res_length,
-                          char **min_str_,char **max_str_,
-                          char **min_org_, char **min_end_,
-                          size_t *min_length, size_t *max_length, char **max_end_)
+bool ob_like_range_mb_help(const ObCharsetInfo *cs,
+       size_t res_length,
+       char **min_str_,char **max_str_,
+       char **min_org_, char **min_end_,
+       size_t *min_length,size_t *max_length, char **max_end_)
 {
   char *min_str = *min_str_;
   char *max_str = *max_str_;
-  char *max_end = *max_end_;
   char *min_end = *min_end_;
+  char *max_end = *max_end_;
   char *min_org = *min_org_;
   *min_length = ((cs->state & OB_CS_BINSORT) ? (size_t) (min_str - min_org) : res_length);
   *max_length = res_length;
@@ -74,283 +64,276 @@ int ob_like_range_mb_help(const ObCharsetInfo *cs,
   pad_max_char(cs, max_str, max_end);
   *min_str_ = min_str;
   *max_str_ = max_str;
-  *max_end_ = max_end;
   *min_end_ = min_end;
+  *max_end_ = max_end;
   *min_org_ = min_org;
   return 0;
 }
 
-int ob_like_range_mb(const ObCharsetInfo *cs,
-                     const char *str, size_t str_len,
-                     int escape, int w_one, int w_many,
-                     size_t res_length,
-                     char *min_str, char *max_str,
-                     size_t *min_length, size_t *max_length)
+bool ob_like_range_mb(const ObCharsetInfo *cs,
+			 const char *ptr,size_t ptr_length,
+			 pbool escape_char, pbool w_one, pbool w_many,
+			 size_t res_length,
+			 char *min_str,char *max_str,
+			 size_t *min_length,size_t *max_length)
 {
   unsigned int mb_len;
-  const char *end = str + str_len;
-  char *min_org = min_str;
-  char *min_end = min_str + res_length;
-  char *max_end = max_str + res_length;
-  size_t maxcharlen = res_length / cs->mbmaxlen;
+  const char *end= ptr + ptr_length;
+  char *min_org= min_str;
+  char *min_end= min_str + res_length;
+  char *max_end= max_str + res_length;
+  size_t max_char_len= res_length / cs->mbmaxlen;
+  const ObContractions *contractions= ob_charset_get_contractions(cs, 0);
 
-  for (; str != end && min_str != min_end && maxcharlen ; maxcharlen--) {
-    /* We assume here that escape, w_any, w_namy are one-byte characters */
-    if (*str == escape && str+1 != end) {
-      str++;                                    /* Skip escape */
-    } else if (*str == w_one || *str == w_many) {   /* '_' and '%' in SQL */
+  for (; ptr != end && min_str != min_end && max_char_len ; max_char_len--) {
+    if (*ptr == escape_char && ptr+1 != end) {
+      ptr++;                                      
+    } else if (*ptr == w_one || 
+               *ptr == w_many) {
       return ob_like_range_mb_help(cs,res_length, &min_str,&max_str, &min_org, &min_end, min_length, max_length, &max_end);
     }
-    if ((mb_len= cs->cset->ismbchar(str, end - str)) > 1) {
-      if (str+mb_len > end || min_str+mb_len > min_end) {
+    mb_len= ob_ismbchar(cs, ptr, end);
+    if ( mb_len > 1) {
+      if (min_str+mb_len > min_end ||
+          ptr+mb_len > end) {
         break;
-       }
+      }
       while (mb_len--) {
-       *min_str++= *max_str++= *str++;
+       *min_str++= *max_str++= *ptr++;
       }
     } else {
-      //TODO support contractions
-      *min_str++= *max_str++= *str++;
+      if (contractions && ptr + 1 < end &&
+          ob_uca_can_be_contraction_head(contractions, (unsigned char) *ptr)) {
+        if (ptr[1] == w_one || ptr[1] == w_many) {
+          return ob_like_range_mb_help(cs,res_length, &min_str,&max_str, &min_org, &min_end, min_length, max_length, &max_end);
+        } else if (ob_uca_can_be_contraction_tail(contractions, (unsigned char) ptr[1]) &&
+            ob_uca_contraction2_weight(contractions, (unsigned char) ptr[0], ptr[1])) {
+          if (max_char_len == 1 || min_str + 1 >= min_end) {
+            return ob_like_range_mb_help(cs,res_length, &min_str,&max_str, &min_org, &min_end, min_length, max_length, &max_end);
+          }
+          max_char_len--;
+          *min_str++= *max_str++= *ptr++;
+        }
+      }
+      *min_str++= *max_str++= *ptr++;
     }
   }
 
   *min_length= *max_length = (size_t) (min_str - min_org);
-  while (min_str != min_end)
-    *min_str++= *max_str++= ' ';           /* Because if key compression */
+  while (min_end != min_str) {
+    *min_str++= *max_str++= ' ';
+  }             
   return 0;
 }
 
 int ob_wildcmp_mb(const ObCharsetInfo *cs,
-                  const char *str_ptr, const char *str_end_ptr,
-                  const char *wild_str_ptr, const char *wild_end_ptr,
-                  int escape_char, int w_one_char, int w_many_char)
+                  const char *str,const char *str_end,
+                  const char *wild_str,const char *wild_end,
+                  int escape_char, int w_one, int w_many)
 {
-  return ob_wildcmp_mb_impl(cs, str_ptr, str_end_ptr,
-                            wild_str_ptr, wild_end_ptr,
-                            escape_char, w_one_char, w_many_char);
+  return ob_wildcmp_mb_impl(cs, str, str_end, wild_str, wild_end, escape_char, w_one, w_many, 1);
 }
 
-/*
-** Compare string against string with wildcard
-**	0 if matched
-**	-1 if not matched with wildcard
-**	 1 if matched with wildcard
-*/
-
-#define INC_PTR(cs,A,B) \
-  uint32_t temp_len = cs->cset->ismbchar(A, ((B)-(A))); \
-  A+=(temp_len) ? temp_len : 1;\
+#define INC_PTR(cs,A,B) A+=(ob_ismbchar(cs,A,B) ? ob_ismbchar(cs,A,B) : 1)
 
 #define likeconv(s,A) (unsigned char) (s)->sort_order[(unsigned char) (A)]
 
 int ob_wildcmp_mb_impl(const ObCharsetInfo *cs,
-                       const char *str_ptr,const char *str_end_ptr,
-                       const char *wild_str_ptr,const char *wild_end_ptr,
-                       int escape_char, int w_one_char, int w_many_char)
+                       const char *str,const char *str_end,
+                       const char *wild_str,const char *wild_end,
+                       int escape_char, int w_one, int w_many, int recurse_level)
 {
-  int cmp_result= -1;				/* Not found, using wildcards */
-
-  /* if (my_string_stack_guard && my_string_stack_guard(recurse_level)) */
-  /*    return 1; */
-  //if (0 != check_stack_overflow_in_c(is_stack_overlow) || *is_stack_overlow) {
-  //  return 1;
-  //}
-  while (wild_str_ptr != wild_end_ptr)
-  {
-    while (*wild_str_ptr != w_many_char && *wild_str_ptr != w_one_char)
-    {
+  int result= -1;				  
+  while (wild_str != wild_end) {
+    while (*wild_str != w_many && *wild_str != w_one) {
       int l;
-      if (*wild_str_ptr == escape_char && wild_str_ptr+1 != wild_end_ptr)
-    wild_str_ptr++;
-      if ((l = cs->cset->ismbchar(wild_str_ptr, wild_end_ptr - wild_str_ptr)))
-      {
-      if (str_ptr+l > str_end_ptr || memcmp(str_ptr, wild_str_ptr, l) != 0)
-	      return 1;
-      str_ptr += l;
-      wild_str_ptr += l;
+      if (*wild_str == escape_char && wild_str+1 != wild_end) {
+        wild_str++;
       }
-      else
-      if (str_ptr == str_end_ptr || likeconv(cs,*wild_str_ptr++) != likeconv(cs,*str_ptr++))
-	return(1);				/* No match */
-      if (wild_str_ptr == wild_end_ptr)
-    return (str_ptr != str_end_ptr);		/* Match if both are at end */
-      cmp_result=1;					/* Found an anchor char */
+      if ((l = ob_ismbchar(cs, wild_str, wild_end))) {
+	      if (str+l > str_end || memcmp(str, wild_str, l) != 0)
+	        return 1;
+	      str += l;
+	      wild_str += l;
+      } else if (str == str_end || likeconv(cs,*wild_str++) != likeconv(cs,*str++)) {
+      	return(1);				  
+      }
+      if (wild_str == wild_end) {
+	      return (str != str_end);
+      }		  
+      result=1;					  
     }
-    if (*wild_str_ptr == w_one_char)
-    {
-      do
-      {
-    if (str_ptr == str_end_ptr)			/* Skip one char if possible */
-      return (cmp_result);
-    INC_PTR(cs,str_ptr,str_end_ptr);
-      } while (++wild_str_ptr < wild_end_ptr && *wild_str_ptr == w_one_char);
-      if (wild_str_ptr == wild_end_ptr)
-	break;
+    if (*wild_str == w_one) {
+      do {
+        if (str == str_end) {
+          return (result);
+        }
+	      INC_PTR(cs,str,str_end);
+      } while (++wild_str < wild_end && *wild_str == w_one);
+      if (wild_end == wild_str)
+	      break;
     }
-    if (*wild_str_ptr == w_many_char)
-    {						/* Found w_many_char */
+    if (*wild_str == w_many) {						  
       unsigned char cmp;
-      const char* mb = wild_str_ptr;
+      const char* mb = wild_str;
       int mb_len=0;
 
-      wild_str_ptr++;
-      /* Remove any '%' and '_' from the wild search string */
-      for (; wild_str_ptr != wild_end_ptr ; wild_str_ptr++)
+      wild_str++;
+        
+      for (; wild_str != wild_end ; wild_str++)
       {
-    if (*wild_str_ptr == w_many_char)
-	  continue;
-    if (*wild_str_ptr == w_one_char)
-	{
-      if (str_ptr == str_end_ptr)
-	    return (-1);
-      INC_PTR(cs,str_ptr,str_end_ptr);
-	  continue;
-	}
-	break;					/* Not a wild character */
-      }
-      if (wild_str_ptr == wild_end_ptr)
-    return(0);				/* Ok if w_many_char is last */
-      if (str_ptr == str_end_ptr)
-	return -1;
-
-      if ((cmp= *wild_str_ptr) == escape_char && wild_str_ptr+1 != wild_end_ptr)
-    cmp= *++wild_str_ptr;
-
-      mb=wild_str_ptr;
-      mb_len= cs->cset->ismbchar(wild_str_ptr, wild_end_ptr-wild_str_ptr);
-      INC_PTR(cs,wild_str_ptr,wild_end_ptr);		/* This is compared trough cmp */
-      cmp=likeconv(cs,cmp);
-      do
-      {
-        for (;;)
+        if (*wild_str == w_many)
+          continue;
+        if (*wild_str == w_one)
         {
-          if (str_ptr >= str_end_ptr)
+          if (str == str_end)
+            return (-1);
+          INC_PTR(cs,str,str_end);
+          continue;
+        }
+        break;					  
+      }
+      if (wild_str == wild_end) {
+	      return(0);				  
+      } else if (str == str_end) {
+	      return -1;
+      } else if ((cmp= *wild_str) == escape_char && wild_str+1 != wild_end) {
+	      cmp= *++wild_str;
+      }
+
+      mb=wild_str;
+      mb_len= ob_ismbchar(cs, wild_str, wild_end);
+      INC_PTR(cs,wild_str,wild_end);		  
+      cmp=likeconv(cs,cmp);
+      do {
+        while (TRUE) {
+          if (str >= str_end) {
             return -1;
-          if (mb_len)
-          {
-            if (str_ptr+mb_len <= str_end_ptr && memcmp(str_ptr, mb, mb_len) == 0)
+          } else if (mb_len) {
+            if (str+mb_len <= str_end && memcmp(str, mb, mb_len) == 0)
             {
-              str_ptr += mb_len;
+              str += mb_len;
               break;
             }
-          }
-          else if (!cs->cset->ismbchar(str_ptr, str_end_ptr-str_ptr) &&
-                   likeconv(cs,*str_ptr) == cmp)
-          {
-            str_ptr++;
+          } else if (!ob_ismbchar(cs, str, str_end) &&
+                   likeconv(cs,*str) == cmp) {
+            str++;
             break;
           }
-          INC_PTR(cs,str_ptr, str_end_ptr);
+          INC_PTR(cs,str, str_end);
         }
-	{
-      int tmp=ob_wildcmp_mb_impl(cs,str_ptr,str_end_ptr,
-                                     wild_str_ptr,wild_end_ptr,escape_char,w_one_char,
-                                     w_many_char);
-	  if (tmp <= 0)
-	    return (tmp);
-	}
-      } while (str_ptr != str_end_ptr && wild_str_ptr[0] != w_many_char);
+        {
+          int tmp=ob_wildcmp_mb_impl(cs,str,str_end,
+                                          wild_str,wild_end,escape_char,w_one,
+                                          w_many, recurse_level + 1);
+          if (tmp <= 0)
+            return (tmp);
+        }
+      } while (str != str_end && wild_str[0] != w_many);
       return(-1);
     }
   }
-  return (str_ptr != str_end_ptr ? 1 : 0);
+  return (str != str_end ? 1 : 0);
+}
+
+unsigned int __attribute__ ((noinline)) ob_instr_mb_help(size_t s_length, ob_match_t *match, unsigned int nmatch)
+{
+  if (!s_length) {
+    if (nmatch) {
+      match->beg= 0;
+      match->end= 0;
+      match->mb_len= 0;
+    }
+    return 1;     
+  }
+  return 0;
 }
 
 unsigned int ob_instr_mb(const ObCharsetInfo *cs,
-                         const char *base, size_t base_len,
-                         const char *str, size_t str_len,
-                         ob_match_info *match, uint32_t nmatch)
+                 const char *b, size_t b_length,
+                 const char *s, size_t s_length,
+                 ob_match_t *match, unsigned int nmatch)
 {
-  const char *end, *base_begin;
+  const char *end, *b0;
   int res= 0;
-  if (str_len <= base_len) {
-    if (!str_len) {
-      if (nmatch) {
-        match->beg= 0;
-        match->end= 0;
-        match->mb_len= 0;
-      }
-      return 1;   /* Empty string is always found */
+  if (s_length <= b_length) {
+    unsigned int tmp = ob_instr_mb_help(s_length, match, nmatch);
+    if (tmp) {
+      return tmp;
     }
-    base_begin= base;
-    end= base+base_len-str_len+1;
-    while (base < end) {
+    b0= b;
+    end= b+b_length-s_length+1;
+    while (b < end) {
       int mb_len;
-      if (!cs->coll->strnncoll(cs, (unsigned char*) base, str_len,
-                               (unsigned char*) str, str_len)) {
+      if (!cs->coll->strnncoll(cs, (unsigned char*) b,   s_length,
+      				   (unsigned char*) s, s_length, 0)) {
         if (nmatch) {
           match[0].beg= 0;
-          match[0].end= (size_t) (base-base_begin);
+          match[0].end= (size_t) (b-b0);
           match[0].mb_len= res;
           if (nmatch > 1) {
             match[1].beg= match[0].end;
-            match[1].end= match[0].end+str_len;
-            match[1].mb_len= 0;	/* Not computed */
+            match[1].end= match[0].end+s_length;
+            match[1].mb_len= 0;	  
           }
         }
         return 2;
       }
-      mb_len= (mb_len= cs->cset->ismbchar(base, end-base)) ? mb_len : 1;
-      base+= mb_len;
-      base_len-= mb_len;
+      mb_len= (mb_len= ob_ismbchar(cs, b, end)) ? mb_len : 1;
+      b+= mb_len;
+      b_length-= mb_len;
       res++;
     }
   }
   return 0;
 }
 
-size_t ob_numchars_mb(const ObCharsetInfo *cs, const char *str, size_t len)
+size_t ob_numchars_mb(const ObCharsetInfo *cs __attribute__((unused)), const char *pos, const char *end)
 {
-  size_t count = 0;
-  while (len > 0) {
-    uint32_t mb_len = cs->cset->ismbchar(str, len);
-    mb_len = (mb_len > 0) ? mb_len : 1;
-    str += mb_len;
-    len -= mb_len;
+  size_t count= 0;
+  while (pos < end) {
+    unsigned int mb_len;
+    pos+= (mb_len= ob_ismbchar(cs,pos,end)) ? mb_len : 1;
     count++;
   }
   return count;
 }
 
-size_t ob_charpos_mb(const ObCharsetInfo *cs, const char *str, size_t len, size_t pos)
+size_t ob_charpos_mb(const ObCharsetInfo *cs __attribute__((unused)), const char *pos, const char *end, size_t length)
 {
-  const char *str_begin= str;
-  size_t err_result = len + 2;
-  while (pos > 0 && len > 0) {
-    uint32_t mb_len = cs->cset->ismbchar(str, len);
-    mb_len = (mb_len > 0) ? mb_len : 1;
-    str += mb_len;
-    len -= mb_len;
-    pos--;
+  const char *start= pos;
+  while (length && pos < end) {
+    unsigned int mb_len;
+    pos+= (mb_len= ob_ismbchar(cs, pos, end)) ? mb_len : 1;
+    length--;
   }
-  return (size_t) (pos > 0 ? err_result : str-str_begin);
+  return (size_t) (length ? end+2-start : pos-start);
 }
 
-size_t ob_max_bytes_charpos_mb(const ObCharsetInfo *cs, const char *str, size_t str_len,
-                                size_t max_bytes, size_t *char_len)
+size_t ob_max_bytes_charpos_mb(const ObCharsetInfo *cs __attribute__((unused)), const char *pos, const char *end, size_t max_bytes, size_t *char_len)
 {
-  const char *str_begin = str;
-  while (max_bytes > 0 && str_len > 0)
-  {
-    uint32_t mb_len = cs->cset->ismbchar(str, str_len);
-    uint32_t bytes = mb_len ? mb_len : 1;
+  const char *start= pos;
+  while (max_bytes && pos < end) {
+    unsigned int mb_len;
+    unsigned int bytes;
+    mb_len = ob_ismbchar(cs, pos, end);
+    bytes = mb_len ? mb_len : 1;
     if (max_bytes < bytes) {
       break;
     } else {
-      str += bytes;
-      str_len -= bytes;
+      pos += bytes;
       max_bytes -= bytes;
       ++*char_len;
     }
   }
-  return (size_t) (str-str_begin);
+  return (size_t) (pos-start);
 }
 
 int ob_mb_ctype_mb(const ObCharsetInfo *cs __attribute__((unused)), int *ctype,
                           const unsigned char *s, const unsigned char *e)
 {
   ob_wc_t wc;
-  int res = cs->cset->mb_wc(s, e, &wc);
+  int res = cs->cset->mb_wc(cs, &wc, s, e);
   if (res <= 0 || wc > 0xFFFF) {
     *ctype = 0;
   } else {
@@ -361,197 +344,381 @@ int ob_mb_ctype_mb(const ObCharsetInfo *cs __attribute__((unused)), int *ctype,
   return res;
 }
 
-//==========================================================================
-
-size_t ob_lengthsp_8bit(const char *str, size_t str_len)
+static inline const ObUnicaseInfoChar*
+get_case_info_for_ch(const ObCharsetInfo *cs, unsigned int page, unsigned int offs)
 {
-  const char *end = (const char *) skip_trailing_space((const unsigned char *)str, str_len);
-  return (size_t) (end-str);
+  const ObUnicaseInfoChar *p;
+  return cs->caseinfo ? ((p= cs->caseinfo->page[page]) ? &p[offs] : NULL) :  NULL;
 }
 
-/* BINARY collations handlers for MB charsets */
+size_t ob_casedn_mb(const ObCharsetInfo *cs, char *src, size_t src_len,
+                    char *dst __attribute__((unused)),
+                    size_t dstlen __attribute__((unused)))
+{
+  uint32_t l;
+  unsigned char *map=cs->to_lower;
+  char *src_end = src + src_len;
+
+  while (src < src_end) {
+    l = cs->cset->ismbchar(cs, src, src_end);
+    if ( 0 != l ) {
+      const ObUnicaseInfoChar *ch = get_case_info_for_ch(cs, (unsigned char) src[0], (unsigned char) src[1]);
+      if (ch) {
+        *src++= ch->tolower >> 8;
+        *src++= ch->tolower & 0xFF;
+      } else {
+        src+= l;
+      }
+    } else {
+      *src= (char) map[(unsigned char)*src];
+      src++;
+    }
+  }
+  return src_len;
+}
+
+size_t ob_caseup_mb(const ObCharsetInfo *cs, char *src, size_t src_len,
+                    char *dst __attribute__((unused)),
+                    size_t dstlen __attribute__((unused)))
+{
+  uint32_t l;
+  unsigned char *map= cs->to_upper;
+  char *src_end= src + src_len;
+  while (src < src_end) {
+    l = cs->cset->ismbchar(cs, src, src_end);
+    if ( 0 != l ) {
+      const ObUnicaseInfoChar *ch = get_case_info_for_ch(cs, (unsigned char) src[0], (unsigned char) src[1]);
+      if (ch) {
+        *src++= ch->toupper >> 8;
+        *src++= ch->toupper & 0xFF;
+      } else {
+        src+= l;
+      }
+    } else {
+      *src=(char) map[(unsigned char) *src];
+      src++;
+    }
+  }
+  return src_len;
+}
+
+
+const ObContractions *ob_charset_get_contractions(const ObCharsetInfo *cs, int level)
+{
+  return NULL;
+}
+
+bool ob_uca_can_be_contraction_head(const ObContractions *c, ob_wc_t wc)
+{
+  return false;
+}
+
+bool ob_uca_can_be_contraction_tail(const ObContractions *c, ob_wc_t wc)
+{
+  return false;
+}
+
+uint16_t *ob_uca_contraction2_weight(const ObContractions *list, ob_wc_t wc1, ob_wc_t wc2)
+{
+  return NULL;
+}
+
+size_t ob_lengthsp_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                        const char *ptr, size_t length)
+{
+  const char *end;
+  end= (const char *) skip_trailing_space((const uchar *)ptr, length);
+  return (size_t) (end-ptr);
+}
 
 int ob_strnncoll_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
-                        const unsigned char *str1, size_t str1_len,
-                        const unsigned char *str2, size_t str2_len)
+                    const unsigned char *s, size_t slen,
+                    const unsigned char *t, size_t tlen,
+                    bool t_is_prefix)
 {
-  size_t len = str1_len < str2_len ? str1_len : str2_len;
-  int cmp = memcmp(str1, str2, len);
-  return cmp ? cmp : (int) (str1_len - str2_len);
+  size_t len= OB_MIN(slen,tlen);
+  int cmp= memcmp(s,t,len);
+  return cmp ? cmp : (int) ((t_is_prefix ? len : slen) - tlen);
+}
+
+int __attribute__ ((noinline))  ob_strnncollsp_mb_bin_help(
+    const unsigned char **a_, size_t a_length,
+    const unsigned char **b_, size_t b_length,
+    const unsigned char **end_,
+    bool diff_if_only_endspace_difference, int *has_returned, int *res_, size_t length)
+{
+  *has_returned = 0;
+  const unsigned char *a = *a_;
+  const unsigned char *b = *b_;
+  const unsigned char *end = *end_;
+  int res = *res_;
+  int swap= 1;
+  if (a_length != b_length) {
+    if (diff_if_only_endspace_difference) {
+      res= 1;                              
+    }
+    if (a_length < b_length) {
+      a_length= b_length;
+      a= b;
+      swap= -1;           
+      res= -res;
+    }
+    for (end= a + a_length-length; a < end ; a++) {
+      if (*a != ' ') {
+        *has_returned = 1;
+        break;
+      }
+    }
+  }  
+  *a_ = a;
+  *b_ = b;
+  *end_ = end;
+  *res_ = res;
+  if (*has_returned == 1) {
+    return (!diff_if_only_endspace_difference && *a < ' ') ? -swap : swap;
+  }
+  return 0;
 }
 
 int ob_strnncollsp_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
-                          const unsigned char *str1, size_t str1_len,
-                          const unsigned char *str2, size_t str2_len)
+                      const unsigned char *a, size_t a_length,
+                      const unsigned char *b, size_t b_length,
+                      bool diff_if_only_endspace_difference)
 {
   const unsigned char *end;
   size_t length;
   int res;
 
-  end= str1 + (length= (str1_len < str2_len ? str1_len : str2_len));
-  while (str1 < end) {
-    if (*str1++ != *str2++)
-      return ((int) str1[-1] - (int) str2[-1]);
-  }
-  res = 0;
-  if (str1_len != str2_len) {
-    int swap = 1;
-    if (str1_len < str2_len) {
-      str1_len = str2_len;
-      str1 = str2;
-      swap = -1;
-      res = -res;
-    }
-    for (end = str1 + str1_len - length; str1 < end; str1++) {
-      if (*str1 != ' ') return (*str1 < ' ') ? -swap : swap;
+  end= a + (length= OB_MIN(a_length, b_length));
+  while (a < end) {
+    if (*a++ != *b++) {
+      return ((int) a[-1] - (int) b[-1]);
     }
   }
-  return res;
+  res= 0;
+  int has_returned = 0;
+  int tmp = ob_strnncollsp_mb_bin_help(
+          &a, a_length,
+          &b, b_length,
+          &end,
+          diff_if_only_endspace_difference, &has_returned, &res, length);
+  return has_returned == 1 ? tmp : res;
 }
 
-//=====================================================================
+#define ob_strnxfrm_mb_non_ascii_char(cs, dst, src, se)                  \
+{                                                                        \
+  switch (cs->cset->ismbchar(cs, (const char*) src, (const char*) se)) { \
+  case 4:                                                                \
+    *dst++= *src++;                                                      \
+                                                         \
+  case 3:                                                                \
+    *dst++= *src++;                                                      \
+                                                         \
+  case 2:                                                                \
+    *dst++= *src++;                                                      \
+                                                         \
+  case 0:                                                                \
+    *dst++= *src++;     \
+  }                                                                      \
+}
 
-
-static int ob_wildcmp_mb_bin_impl_help(const ObCharsetInfo *cs, const char **str_ptr_,
-    const char **str_end_ptr_, const char **wild_str_ptr_, const char **wild_end_ptr_, int escape_char,
-    int w_one_char, int w_many_char, int *cmp_result, int *has_returned)
+size_t ob_strnxfrm_mb(const ObCharsetInfo *cs,
+               unsigned char *dst, size_t dstlen, unsigned int nweights,
+                      const unsigned char *src, size_t src_len, unsigned int flags, bool *is_valid_unicode)
 {
-  const char *wild_str_ptr = *wild_str_ptr_;
-  const char *str_end_ptr = *str_end_ptr_;
-  const char *str_ptr = *str_ptr_;
-  const char *wild_end_ptr = *wild_end_ptr_;
+  unsigned char *d0= dst;
+  unsigned char *de= dst + dstlen;
+  const unsigned char *se= src + src_len;
+  const unsigned char *sort_order= cs->sort_order;
+
+  *is_valid_unicode = 1;
+
+  if (dstlen >= src_len && nweights >= src_len) {
+    if (sort_order) {  
+      while (src < se) {
+        if (*src < 128) {
+          *dst++= sort_order[*src++];
+        } else {
+          ob_strnxfrm_mb_non_ascii_char(cs, dst, src, se);
+        }
+        nweights--;
+      }
+    } else {
+      while (src < se) {
+        if (*src < 128) {
+          *dst++= *src++;
+        } else {
+          ob_strnxfrm_mb_non_ascii_char(cs, dst, src, se);
+        }
+        nweights--;
+      }
+    }
+    goto pad;
+  }
+
+  for (; src < se && nweights && dst < de; nweights--) {
+    int chlen;
+    if (*src < 128 ||
+        !(chlen= cs->cset->ismbchar(cs, (const char*) src, (const char*) se))) {
+        
+      *dst++= sort_order ? sort_order[*src++] : *src++;
+    } else {
+      int len= (dst + chlen <= de) ? chlen : de - dst;
+      memcpy(dst, src, len);
+      dst+= len;
+      src+= len;
+    }
+  }
+
+pad:
+  return ob_strxfrm_pad_desc_and_reverse(cs, d0, dst, de, nweights, flags, 0);
+}
+  
+
+#define INC_PTR(cs,A,B) A+=(ob_ismbchar(cs,A,B) ? ob_ismbchar(cs,A,B) : 1)
+
+static int ob_wildcmp_mb_bin_impl_help(const ObCharsetInfo *cs, const char **str_,
+    const char **str_end_, const char **wildstr_, const char **wildend_, int escape_char,
+    int w_one, int w_many, int *result, int *has_returned)
+{
+  const char *wild_str = *wildstr_;
+  const char *str_end = *str_end_;
+  const char *str = *str_;
+  const char *wild_end = *wildend_;
   *has_returned = 0;
   int ret = 0;
-  while (*wild_str_ptr == escape_char || (*wild_str_ptr != w_many_char && *wild_str_ptr != w_one_char)) {
-    int l;
-    if (*wild_str_ptr == escape_char && wild_str_ptr + 1 != wild_end_ptr)
-      wild_str_ptr++;
-    if ((l = cs->cset->ismbchar(wild_str_ptr, wild_end_ptr-wild_str_ptr))) {
-      if (str_ptr + l > str_end_ptr || memcmp(str_ptr, wild_str_ptr, l) != 0) {
+  int l;
+  while (*wild_str == escape_char || (*wild_str != w_many && *wild_str != w_one)) {
+    if (*wild_str == escape_char && wild_str + 1 != wild_end) {
+      wild_str++;
+    }
+    if ((l = ob_ismbchar(cs, wild_str, wild_end))) {
+      if (str + l > str_end || memcmp(str, wild_str, l) != 0) {
         *has_returned = 1;
         ret = 1;
         break;
       }
-      str_ptr += l;
-      wild_str_ptr += l;
-    } else if (str_ptr == str_end_ptr || *wild_str_ptr++ != *str_ptr++) {
+      str += l;
+      wild_str += l;
+    } else if (str == str_end || *wild_str++ != *str++) {
       *has_returned = 1;
       ret = 1;
       break;
     }
-    if (wild_str_ptr == wild_end_ptr) {
+    if (wild_str == wild_end) {
       *has_returned = 1;
-      ret = (str_ptr != str_end_ptr);
+      ret = (str != str_end);
       break;
+    } else {
+      *result = 1;   
     }
-    *cmp_result = 1;
   }
-  *wild_str_ptr_ = wild_str_ptr;
-  *str_end_ptr_ = str_end_ptr;
-  *str_ptr_ = str_ptr;
-  *wild_end_ptr_ = wild_end_ptr;
+  *wildstr_ = wild_str;
+  *str_end_ = str_end;
+  *str_ = str;
+  *wildend_ = wild_end;
   return ret;
 }
 
-static int ob_wildcmp_mb_bin_impl(const ObCharsetInfo *cs, const char *str_ptr,
-    const char *str_end_ptr, const char *wild_str_ptr, const char *wild_end_ptr, int escape_char,
-    int w_one_char, int w_many_char, int recurse_level)
+static int ob_wildcmp_mb_bin_impl(const ObCharsetInfo *cs, const char *str,
+    const char *str_end, const char *wild_str, const char *wild_end, int escape_char,
+    int w_one, int w_many, int recurse_level)
 {
-  int cmp_result = -1;
-
-  while (wild_str_ptr != wild_end_ptr) {
+  int result = -1;   
+  while (wild_str != wild_end) {
     int has_returned = 0;
-    int tmp = ob_wildcmp_mb_bin_impl_help(cs, &str_ptr,&str_end_ptr, &wild_str_ptr, &wild_end_ptr, escape_char,w_one_char,w_many_char, &cmp_result, &has_returned);
+    int tmp = ob_wildcmp_mb_bin_impl_help(cs, &str,&str_end, &wild_str, &wild_end, escape_char,w_one,w_many, &result, &has_returned);
     if (has_returned) {
       return tmp;
-    }
-    if (*wild_str_ptr == w_one_char) {
+    } else if (*wild_str == w_one) {
       do {
-        if (str_ptr == str_end_ptr)
-          return (cmp_result);
-        INC_PTR(cs, str_ptr, str_end_ptr);
-      } while (++wild_str_ptr < wild_end_ptr && *wild_str_ptr == w_one_char);
-      if (wild_str_ptr == wild_end_ptr)
-        break;
-    }
-    if (*wild_str_ptr == w_many_char) {
-      unsigned char cmp;
-      const char* mb = wild_str_ptr;
-      int mb_len = 0;
-
-      wild_str_ptr++;
-      for (; wild_str_ptr != wild_end_ptr; wild_str_ptr++) {
-        if (*wild_str_ptr == w_many_char)
-          continue;
-        if (escape_char != w_one_char && *wild_str_ptr == w_one_char) {
-          if (str_ptr == str_end_ptr)
-            return (-1);
-          INC_PTR(cs, str_ptr, str_end_ptr);
-          continue;
+        if (str == str_end) {  
+          return (result);
+        } else {
+          INC_PTR(cs, str, str_end);
         }
+      } while (++wild_str < wild_end && *wild_str == w_one);
+      if (wild_str == wild_end) {
         break;
       }
-      if (wild_str_ptr == wild_end_ptr)
-        return (0);
-      if (str_ptr == str_end_ptr)
+    }
+    if (*wild_str == w_many) {   
+      unsigned char cmp;
+      const char* mb = wild_str;
+      int mb_len = 0;
+
+      wild_str++;
+        
+      for (; wild_str != wild_end; wild_str++) {
+        if (*wild_str == w_many) {
+          continue;
+        } else if (escape_char != w_one && *wild_str == w_one) {
+          if (str == str_end) {
+            return (-1);
+          } else {
+            INC_PTR(cs, str, str_end);
+            continue;
+          }
+        } else {
+          break;  
+        } 
+      }
+      if (wild_str == wild_end) {
+        return (0);   
+      } else if (str == str_end) {
         return -1;
+      } else if ((cmp = *wild_str) == escape_char && wild_str + 1 != wild_end) {
+        cmp = *++wild_str;
+      }
 
-      if ((cmp = *wild_str_ptr) == escape_char && wild_str_ptr + 1 != wild_end_ptr)
-        cmp = *++wild_str_ptr;
-
-      mb = wild_str_ptr;
-      mb_len = cs->cset->ismbchar(wild_str_ptr, wild_end_ptr-wild_str_ptr);
-      INC_PTR(cs, wild_str_ptr, wild_end_ptr);
+      mb = wild_str;
+      mb_len = ob_ismbchar(cs, wild_str, wild_end);
+      INC_PTR(cs, wild_str, wild_end);   
       do {
-        for (;;) {
-          if (str_ptr >= str_end_ptr)
+        while(TRUE) {
+          if (str >= str_end) {
             return -1;
-          if (mb_len) {
-            if (str_ptr + mb_len <= str_end_ptr && memcmp(str_ptr, mb, mb_len) == 0) {
-              str_ptr += mb_len;
+          } else if (mb_len) {
+            if (str + mb_len <= str_end && memcmp(str, mb, mb_len) == 0) {
+              str += mb_len;
               break;
             }
-          } else if (!cs->cset->ismbchar(str_ptr, str_end_ptr-str_ptr) && *str_ptr == cmp) {
-            str_ptr++;
+          } else if (!ob_ismbchar(cs, str, str_end) && *str == cmp) {
+            str++;
             break;
           }
-          INC_PTR(cs, str_ptr, str_end_ptr);
+          INC_PTR(cs, str, str_end);
         }
         {
-          int tmp = ob_wildcmp_mb_bin_impl(cs, str_ptr, str_end_ptr, wild_str_ptr, wild_end_ptr,
-              escape_char, w_one_char, w_many_char, recurse_level + 1);
-          if (tmp <= 0)
+          int tmp = ob_wildcmp_mb_bin_impl(cs, str, str_end, wild_str, wild_end,
+              escape_char, w_one, w_many, recurse_level + 1);
+          if (tmp <= 0) {
             return (tmp);
-        }
-      } while (str_ptr != str_end_ptr && (wild_str_ptr >= wild_end_ptr || wild_str_ptr[0] != w_many_char));
+          }
+        }          
+      } while (str != str_end && (wild_str >= wild_end || wild_str[0] != w_many));
       return (-1);
     }
   }
-  return (str_ptr != str_end_ptr ? 1 : 0);
+  return (str != str_end ? 1 : 0);
 }
 
 int ob_wildcmp_mb_bin(const ObCharsetInfo *cs,
                   const char *str,const char *str_end,
-                  const char *wildstr,const char *wildend,
-                  int escape, int w_one, int w_many)
+                  const char *wild_str,const char *wild_end,
+                  int escape_char, int w_one, int w_many)
 {
   return ob_wildcmp_mb_bin_impl(cs, str, str_end,
-                                wildstr, wildend,
-                                escape, w_one, w_many, 1);
+                                wild_str, wild_end,
+                                escape_char, w_one, w_many, 1);
 }
 
-// ================================================================
-
 void ob_hash_sort_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
-                    const unsigned char *key, size_t len, uint64_t *nr1, uint64_t *nr2,
-                    const int calc_end_space, hash_algo hash_algo)
+                    const unsigned char *key, size_t len,unsigned long int *nr1, unsigned long int *nr2,
+                    const bool calc_end_space, hash_algo hash_algo)
 {
   const unsigned char *pos = key;
 
-  /*
-     Remove trailing spaces. We have to do this to be able to compare
-    'A ' and 'A' as identical
-  */
   if (!calc_end_space) {
     key= skip_trailing_space(key, len);
   } else {
@@ -559,12 +726,30 @@ void ob_hash_sort_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
   }
   int length = (int)(key - pos);
   if (NULL == hash_algo) {
-    for (; pos < (unsigned char*) key ; pos++)
-    {
-      nr1[0]^=(uint64_t) ((((uint64_t) nr1[0] & 63)+nr2[0]) * ((uint64_t)*pos)) + (nr1[0] << 8);
+    while (pos < (unsigned char*) key) {
+      nr1[0]^=(unsigned long int) ((((unsigned int) nr1[0] & 63)+nr2[0]) *
+        ((unsigned int)*pos)) + (nr1[0] << 8);
       nr2[0]+=3;
+      pos++;
     }
   } else {
     nr1[0] = hash_algo((void*)pos, length, nr1[0]);
   }
 }
+
+  
+
+ObCollationHandler ob_collation_mb_bin_handler = {
+  ob_strnncoll_mb_bin,
+  ob_strnncollsp_mb_bin,
+  ob_strnxfrm_mb,
+  ob_like_range_mb,
+  ob_wildcmp_mb_bin,
+  ob_instr_mb,
+  ob_hash_sort_mb_bin,
+  ob_propagate_simple
+};
+
+
+#undef INC_PTR
+#undef likeconv

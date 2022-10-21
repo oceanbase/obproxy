@@ -398,6 +398,8 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_pool.log");
     } else if (FD_POOL_STAT_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_pool_stat.log");
+    } else if (FD_TRACE_FILE == type) {
+      ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_trace.log");
     } else {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy.log");
     }

@@ -73,14 +73,19 @@ function do_config()
       echo -e "\033[31m ===build debug version=== \033[0m"
       ;;
     xgcov)
-      # configure for release
+      # configure for gcov
       ./configure --with-gcc-version=9.3.0 --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
       echo -e "\033[31m ===build gcov version=== \033[0m"
       ;;
     xperf)
-      # configure for release
+      # configure for perf
       ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-perf
       echo -e "\033[31m ===build perf version=== \033[0m"
+      ;;
+    xasan)
+      # configure for asan
+     ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-asan
+      echo -e "\033[31m ===build asan version=== \033[0m"
       ;;
     *)
       # configure for release

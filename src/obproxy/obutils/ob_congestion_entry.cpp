@@ -12,10 +12,12 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "obutils/ob_congestion_entry.h"
+#include "obutils/ob_resource_pool_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::net;
+using namespace oceanbase::obproxy::obutils;
 
 namespace oceanbase
 {
@@ -88,6 +90,7 @@ ObCongestionEntry::ObCongestionEntry(const ObIpEndpoint &ip)
     : server_state_(ACTIVE), entry_state_(ENTRY_AVAIL), control_config_(NULL),zone_state_(NULL),
       last_dead_congested_(0), dead_congested_(0),
       last_alive_congested_(0),alive_congested_(0),
+      last_detect_congested_(0), detect_congested_(0),
       stat_conn_failures_(0), stat_alive_failures_(0),
       last_revalidate_time_us_(0), cr_version_(-1)
 {
@@ -266,6 +269,18 @@ int64_t ObCongestionEntry::to_string(char *buf, const int64_t buf_len) const
     databuff_printf(buf, buf_len, pos, "last_dead_congested=%s,", str_time);
   }
 
+  J_KV(K_(detect_congested));
+  J_COMMA();
+  if (detect_congested_) {
+    struct tm time;
+    time_t seconds = last_detect_congested_;
+    localtime_r(&seconds, &time);
+    snprintf(str_time, sizeof(str_time), "%04d/%02d/%02d %02d:%02d:%02d",
+             time.tm_year + 1900, time.tm_mon + 1, time.tm_mday,
+             time.tm_hour, time.tm_min, time.tm_sec);
+    databuff_printf(buf, buf_len, pos, "last_detect_congested=%s,", str_time);
+  }
+
   J_KV(K_(stat_alive_failures), K_(stat_conn_failures), K_(cr_version));
   J_COMMA();
 
@@ -302,6 +317,12 @@ const char *ObCongestionEntry::get_server_state_name(const ObServerState state)
       break;
     case REPLAY:
       state_ret = "REPLAY";
+      break;
+    case DETECT_ALIVE:
+      state_ret = "DETECT_ALIVE";
+      break;
+    case DETECT_DEAD:
+      state_ret = "DETECT_DEAD";
       break;
     default:
       break;
@@ -443,6 +464,26 @@ void ObCongestionEntry::set_dead_congested_free()
     // action not congested ?
     LOG_INFO("set dead congested free", KPC(this));
   }
+}
+
+void ObCongestionEntry::set_detect_congested()
+{
+  if (ATOMIC_TAS(&detect_congested_, 1)) {
+    // Action congested ?
+  } else {
+    last_detect_congested_ = ObTimeUtility::extract_second(ObTimeUtility::current_time());
+    LOG_INFO("set detect congested", KPC(this));
+    get_global_resource_pool_processor().ip_set_.set_refactored(server_ip_);
+  }
+}
+
+void ObCongestionEntry::set_detect_congested_free()
+{
+  if (ATOMIC_TAS(&detect_congested_, 0)) {
+    // action not congested ?
+    LOG_INFO("set detect congested free", KPC(this));
+  }
+  get_global_resource_pool_processor().ip_set_.erase_refactored(server_ip_);
 }
 
 

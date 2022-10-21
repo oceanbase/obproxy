@@ -59,7 +59,8 @@ int64_t ObRouteParam::to_string(char *buf, const int64_t buf_len) const
        K_(is_need_force_flush),
        K_(tenant_version),
        K_(timeout_us),
-       K_(current_idc_name));
+       K_(current_idc_name),
+       K_(cluster_version));
   J_OBJ_END();
   return pos;
 }
@@ -435,7 +436,7 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
       param_.is_need_force_flush_ = result->is_need_force_flush_;
     }
     if (NULL != table_entry_) {
-      table_entry_->check_and_set_expire_time(param_.tenant_version_, table_entry_->is_dummy_entry());
+      table_entry_->check_and_set_expire_time(param_.tenant_version_, table_entry_->is_sys_dummy_entry());
     }
 
     result->target_entry_ = NULL;
@@ -664,6 +665,7 @@ inline void ObMysqlRoute::setup_partition_entry_lookup()
   part_param.set_table_entry(table_entry_);
   part_param.mysql_proxy_ = param_.mysql_proxy_;
   part_param.tenant_version_ = param_.tenant_version_;
+  part_param.cluster_version_ = param_.cluster_version_;
   if (!param_.current_idc_name_.empty()) {
     MEMCPY(part_param.current_idc_name_buf_, param_.current_idc_name_.ptr(), param_.current_idc_name_.length());
     part_param.current_idc_name_.assign_ptr(part_param.current_idc_name_buf_, param_.current_idc_name_.length());
@@ -929,6 +931,7 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       param_.need_pl_route_ = param.need_pl_route_;
       param_.is_oracle_mode_ = param.is_oracle_mode_;
       param_.is_need_force_flush_ = param.is_need_force_flush_;
+      param_.cluster_version_ = param.cluster_version_;
       if (!param.current_idc_name_.empty()) {
         MEMCPY(param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
         param_.current_idc_name_.assign_ptr(param_.current_idc_name_buf_, param.current_idc_name_.length());

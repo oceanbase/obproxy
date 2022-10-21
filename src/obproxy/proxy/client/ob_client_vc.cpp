@@ -17,12 +17,14 @@
 #include "proxy/mysqllib/ob_mysql_request_builder.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
 #include "obutils/ob_resource_pool_processor.h"
+#include "proxy/mysql/ob_mysql_sm.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::packet;
 using namespace oceanbase::obproxy::obutils;
+using namespace oceanbase::obproxy::proxy;
 
 namespace oceanbase
 {
@@ -37,13 +39,12 @@ enum
   CLIENT_MAGIC_DEAD  = 0xDDCCBBAA
 };
 
-static int64_t const MYSQL_BUFFER_SIZE                       = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 static int64_t const RESCHEDULE_GET_NETHANDLER_LOCK_INTERVAL = HRTIME_MSECONDS(1); // 1ms
 
 ObClientVC::ObClientVC(ObMysqlClient &client_core)
   : ObNetVConnection(), magic_(CLIENT_MAGIC_ALIVE), disconnect_by_client_(false),
     is_request_sent_(false), is_resp_received_(false), core_client_(&client_core),
-    pending_action_(NULL), read_state_(), write_state_()
+    pending_action_(NULL), read_state_(), write_state_(), addr_()
 {
   SET_HANDLER(&ObClientVC::main_handler);
 }
@@ -214,6 +215,13 @@ void ObClientVC::reenable_re(ObVIO *vio)
     } else if (ObVIO::READ == vio->op_) { // read_vio
       if (NULL != read_state_.vio_.cont_) {
         if (!is_request_sent_) {
+          if (addr_.is_valid()) {
+            ObMysqlSM *sm = reinterpret_cast<ObMysqlSM*>(read_state_.vio_.cont_);
+            sm->trans_state_.server_info_.set_addr(addr_.get_ipv4(),
+                           static_cast<uint16_t>(addr_.get_port()));
+            sm->trans_state_.force_retry_congested_ = true;
+            sm->trans_state_.need_retry_ = false;
+          }
           // notify client session to read mysql request
           read_state_.vio_.cont_->handle_event(VC_EVENT_READ_READY, &read_state_.vio_);
           is_request_sent_ = true;
@@ -462,7 +470,7 @@ int ObMysqlClient::main_handler(int event, void *data)
         if (OB_FAIL(handle_request_complete())) {
           LOG_WARN("fail to handle request complete", K(ret));
         }
-      } 
+      }
 
       if (terminate_) {
         kill_this();
@@ -852,6 +860,7 @@ int ObMysqlClient::transfer_bytes(ObMIOBuffer &transfer_to,
 int ObMysqlClient::forward_mysql_request()
 {
   int ret = OB_SUCCESS;
+  client_vc_->set_addr(info_.get_request_param().target_addr_);
 
   if (request_reader_->read_avail() > 0) {
     client_vc_->clear_request_sent();

@@ -25,8 +25,7 @@ namespace proxy
 class ObKillOpHandler : public ObInternalCmdHandler
 {
 public:
-  ObKillOpHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                  const ObInternalCmdInfo &info);
+  ObKillOpHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObKillOpHandler() { cs_id_array_.destroy(); }
   int handle_kill_option(int event, void *data);
   virtual CSIDHanders *get_cs_id_array() { return &cs_id_array_; }

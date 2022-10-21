@@ -24,15 +24,22 @@ namespace obutils
 class ObShowTablesHandler : public ObCmdHandler
 {
 public:
-  ObShowTablesHandler(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit);
+  ObShowTablesHandler(event::ObMIOBuffer *buf, ObCmdInfo &info, ObProxyBasicStmtSubType sub_type);
   virtual ~ObShowTablesHandler() {}
-  int handle_show_tables(const ObString &logic_tenant_name, const ObString &logic_database_name);
+  int handle_show_tables(const ObString &logic_tenant_name, const ObString &logic_database_name,
+                         ObString &logic_table_name);
 
-  static int show_tables_cmd_callback(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit, const ObString &logic_tenant_name, const ObString &logic_database_name);
+  static int show_tables_cmd_callback(event::ObMIOBuffer *buf, ObCmdInfo &info, ObProxyBasicStmtSubType sub_type,
+                                      const ObString &logic_tenant_name, const ObString &logic_database_name,
+                                      ObString &logic_table_name);
 
 private:
   int dump_table_header(const ObString &logic_database_name);
-  int dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name);
+  int dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
+                 ObString &logic_table_name);
+
+private:
+  ObProxyBasicStmtSubType sub_type_;
 
   DISALLOW_COPY_AND_ASSIGN(ObShowTablesHandler);
 };

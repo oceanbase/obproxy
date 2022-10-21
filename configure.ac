@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [3.2.3.5],
+            [4.0.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="3.2.3.5"
+    obapi_version="4.0.0"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC
@@ -26,7 +26,7 @@
     if test "$withval" = "yes"; then
       case "$host_cpu" in
         *aarch64* )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=generic -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
           AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=generic -Wno-psabi -Wno-sign-compare -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
         ;;
         * )
@@ -116,6 +116,18 @@
                             fi
                           ],
                           [with_perf=no]
+           )
+
+    AC_ARG_WITH([asan],
+           AS_HELP_STRING([--with-asan],
+                          [with asan (default is NO)]),
+                          [
+                            if test "$withval" = "yes"; then
+                                AM_CXXFLAGS="${AM_CXXFLAGS} -fsanitize=address -fstack-protector-strong -fno-optimize-sibling-calls -fno-omit-frame-pointer -static-libasan -fno-var-tracking-assignments -fno-optimize-sibling-calls -fno-inline -DUSING_ASAN"
+                                AM_CFLAGS="${AM_CFLAGS} -fsanitize=address -fstack-protector-strong -fno-optimize-sibling-calls -fno-omit-frame-pointer -static-libasan -fno-var-tracking-assignments -fno-optimize-sibling-calls -fno-inline -DUSING_ASAN"
+                            fi
+                          ],
+                          [with_asan=no]
            )
 
     AC_ARG_WITH([5u-support],

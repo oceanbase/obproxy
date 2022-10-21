@@ -16,6 +16,10 @@
 #include "packet/ob_mysql_packet_util.h"
 #include "iocore/eventsystem/ob_io_buffer.h"
 #include "common/obsm_row.h"
+#include "lib/oblog/ob_log_module.h"
+#include "lib/utility/ob_print_utils.h"
+#include "obproxy/packet/ob_proxy_packet_writer.h"
+#include "cmd/ob_internal_cmd_handler.h"
 
 namespace oceanbase
 {
@@ -27,19 +31,50 @@ namespace obproxy
 #define WARN_CMD(fmt...) PROXY_CMD_LOG(WARN, ##fmt)
 #define ERROR_CMD(fmt...) PROXY_CMD_LOG(ERROR, ##fmt)
 
+class ObCmdInfo {
+public:
+  ObCmdInfo() { reset(); }
+  ObCmdInfo(uint8_t seq, int64_t memory_limit, proxy::ObProxyProtocol protocol,
+            proxy::Ob20ProtocolHeaderParam &ob20_param) :
+    seq_(seq), memory_limit_(memory_limit), protocol_(protocol), ob20_param_(ob20_param) {}
+  ~ObCmdInfo () {}
+
+  void reset() {
+    seq_ = 0;
+    memory_limit_ = 0;
+    protocol_ = proxy::ObProxyProtocol::PROTOCOL_NORMAL;
+    ob20_param_.reset();
+  }
+
+  uint8_t get_seq() const { return seq_; }
+  int64_t get_memory_limit() const { return memory_limit_; }
+  proxy::ObProxyProtocol get_protocol() const { return protocol_; }
+  proxy::Ob20ProtocolHeaderParam &get_ob20_param() { return ob20_param_; }
+
+  TO_STRING_KV(K_(seq), K_(memory_limit), K_(protocol), K_(ob20_param));
+
+private:
+  uint8_t seq_;
+  int64_t memory_limit_;
+  proxy::ObProxyProtocol protocol_;
+  proxy::Ob20ProtocolHeaderParam ob20_param_;
+};
+
 class ObCmdHandler
 {
 public:
-  ObCmdHandler(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit);
+  ObCmdHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
   virtual ~ObCmdHandler();
 
   int init(const bool is_query_cmd = true);
   int reset();//clean buf and reset seq
+  void destroy_internal_buf();
   int fill_external_buf();
   bool is_inited() const { return is_inited_; };
   bool is_buf_empty() const { return original_seq_ == seq_; }
 
 protected:
+  int encode_header(const ObProxyColumnSchema *column_schema, const int64_t size);
   int encode_header(const common::ObString *cname, const obmysql::EMySQLFieldType *ctype,
           const int64_t size);
   int encode_row_packet(const common::ObNewRow &row, const bool need_limit_size = true);
@@ -51,24 +86,34 @@ protected:
   int encode_err_packet(const int errcode, const T &param)
   {
     int ret = OB_SUCCESS;
-    if (IS_NOT_INIT) {
+    if (IS_NOT_INIT){
       ret = OB_NOT_INIT;
-      WARN_CMD("it has not inited", K(ret));
-    } else if (OB_FAIL(reset())) { //before encode_err_packet, we need clean buf
-      WARN_CMD("fail to do reset", K(errcode), K(ret));
-    } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, param))) {
-      WARN_CMD("fail to encode err packet", K(errcode), K(ret));
+      WARN_ICMD("it has not inited", K(ret));
+    } else if (OB_FAIL(reset())) { // before encode err packet, we need clean buf
+      WARN_ICMD("fail to do reset", K(errcode), K(ret));
     } else {
-      INFO_CMD("succ to encode err packet", K(errcode));
+      char *err_msg = NULL;
+      if (OB_FAIL(packet::ObProxyPacketWriter::get_user_err_buf(errcode, err_msg, param))) {
+        WARN_ICMD("fail to get user err buf", K(errcode), K(ret));
+      } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, err_msg))) {
+        WARN_ICMD("fail to encode err packet buf", K(errcode), K(ret));
+      } else {
+        INFO_ICMD("succ to encode err packet", K(errcode));
+      }
     }
     return ret;
   }
+
+  bool match_like(const ObString &str_text, const ObString &str_pattern) const;
 
 protected:
   event::ObMIOBuffer *external_buf_;
   event::ObMIOBuffer *internal_buf_;
   event::ObIOBufferReader *internal_reader_;
   int64_t internal_buf_limited_;
+  
+  proxy::ObProxyProtocol protocol_;
+  proxy::Ob20ProtocolHeaderParam ob20_param_;
 
   bool is_inited_;
   bool header_encoded_;

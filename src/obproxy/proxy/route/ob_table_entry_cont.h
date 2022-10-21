@@ -89,6 +89,7 @@ public:
   ObTableEntryName name_;
   int64_t cr_version_;
   int64_t cr_id_;
+  int64_t cluster_version_;
   uint64_t tenant_version_;
   bool is_partition_table_route_supported_;
   bool force_renew_;

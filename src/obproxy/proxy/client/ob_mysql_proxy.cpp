@@ -584,6 +584,12 @@ int ObMysqlProxy::async_write(ObContinuation *cont, const char *sql, ObAction *&
   return async_execute(cont, request_param, timeout_ms_, action);
 }
 
+int ObMysqlProxy::async_read(event::ObContinuation *cont, const ObMysqlRequestParam &request_param,
+                             event::ObAction *&action, const int64_t timeout_ms)
+{
+  return async_execute(cont, request_param, timeout_ms, action);
+}
+
 int ObMysqlProxy::async_read(event::ObContinuation *cont, const ObMysqlRequestParam &request_param, event::ObAction *&action)
 {
   return async_execute(cont, request_param, timeout_ms_, action);

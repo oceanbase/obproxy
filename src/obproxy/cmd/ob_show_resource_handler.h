@@ -25,9 +25,7 @@ class ObClusterResource;
 class ObShowResourceHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowResourceHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                        const ObInternalCmdInfo &info);
-
+  ObShowResourceHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowResourceHandler() {}
   int handle_show_resource(int event, void *data);
 

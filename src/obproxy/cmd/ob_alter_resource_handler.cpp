@@ -28,8 +28,7 @@ namespace obproxy
 {
 namespace obutils
 {
-ObAlterResourceHandler::ObAlterResourceHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                               const ObInternalCmdInfo &info)
+ObAlterResourceHandler::ObAlterResourceHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), capability_(info.get_capability())
 {
   SET_HANDLER(&ObAlterResourceHandler::handle_delete_cluster);

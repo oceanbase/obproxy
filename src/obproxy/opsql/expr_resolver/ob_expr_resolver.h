@@ -67,14 +67,15 @@ public:
   ~ObExprResolver() {}
 
   int resolve(ObExprResolverContext &ctx, ObExprResolverResult &result);
-private:
   int resolve_token_list(ObProxyRelationExpr *relation,
                          proxy::ObProxyPartInfo *part_info,
                          proxy::ObProxyMysqlRequest *client_request,
                          proxy::ObClientSessionInfo *client_info,
                          proxy::ObPsIdEntry *ps_entry,
                          proxy::ObTextPsEntry *text_ps_entry,
-                         common::ObNewRange &range);
+                         common::ObNewRange &range,
+                         const bool has_rowid = false);
+private:
   int calc_token_func_obj(ObProxyTokenNode *token,
                           proxy::ObClientSessionInfo *client_session_info,
                           common::ObObj &target_obj);

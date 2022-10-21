@@ -32,61 +32,72 @@ class ObMIOBuffer;
 }
 namespace proxy
 {
+class ObMysqlSM;
 
-typedef int (*BuildFunc)(event::ObMIOBuffer &, ObClientSessionInfo &, ObMysqlServerSession *, const ObProxyProtocol ob_proxy_protocol);
+typedef int (*BuildFunc)(ObMysqlSM *sm, event::ObMIOBuffer &, ObClientSessionInfo &, ObMysqlServerSession *,
+                         const ObProxyProtocol ob_proxy_protocol);
 
 class ObMysqlRequestBuilder
 {
 public:
   // build login packet to send first login request
-  static int build_first_login_packet(event::ObMIOBuffer &mio_buf,
+  static int build_first_login_packet(ObMysqlSM *sm,
+                                      event::ObMIOBuffer &mio_buf,
                                       ObClientSessionInfo &client_info,
                                       ObMysqlServerSession *server_session,
                                       const ObProxyProtocol ob_proxy_protocol);
 
   // build login packet to send orig login request
-  static int build_orig_login_packet(event::ObMIOBuffer &mio_buf,
+  static int build_orig_login_packet(ObMysqlSM *sm,
+                                     event::ObMIOBuffer &mio_buf,
                                      ObClientSessionInfo &client_info,
                                      ObMysqlServerSession *server_session,
                                      const ObProxyProtocol ob_proxy_protocol);
 
   // build saved login packet to send saved login request
-  static int build_saved_login_packet(event::ObMIOBuffer &mio_buf,
+  static int build_saved_login_packet(ObMysqlSM *sm,
+                                      event::ObMIOBuffer &mio_buf,
                                       ObClientSessionInfo &client_info,
                                       ObMysqlServerSession *server_session,
                                       const ObProxyProtocol ob_proxy_protocol);
 
-  static int build_ssl_request_packet(event::ObMIOBuffer &mio_buf,
+  static int build_ssl_request_packet(ObMysqlSM *sm,
+                                      event::ObMIOBuffer &mio_buf,
                                       ObClientSessionInfo &client_info,
                                       ObMysqlServerSession *server_session,
                                       const ObProxyProtocol ob_proxy_protocol);
 
   // build packet to sync all session vars
-  static int build_all_session_vars_sync_packet(event::ObMIOBuffer &mio_buf,
+  static int build_all_session_vars_sync_packet(ObMysqlSM *sm,
+                                                event::ObMIOBuffer &mio_buf,
                                                 ObClientSessionInfo &client_info,
                                                 ObMysqlServerSession *server_session,
                                                 const ObProxyProtocol ob_proxy_protocol);
 
   // build OB_MYSQL_COM_INIT_DB packet to sync database name
-  static int build_database_sync_packet(event::ObMIOBuffer &mio_buf,
+  static int build_database_sync_packet(ObMysqlSM *sm,
+                                        event::ObMIOBuffer &mio_buf,
                                         ObClientSessionInfo &client_info,
                                         ObMysqlServerSession *server_session,
                                         const ObProxyProtocol ob_proxy_protocol);
 
   // build OB_MYSQL_COM_QUERY packet to sync session vars
-  static int build_session_vars_sync_packet(event::ObMIOBuffer &mio_buf,
+  static int build_session_vars_sync_packet(ObMysqlSM *sm,
+                                            event::ObMIOBuffer &mio_buf,
                                             ObClientSessionInfo &client_info,
                                             ObMysqlServerSession *server_session,
                                             const ObProxyProtocol ob_proxy_protocol);
 
   // build OB_MYSQL_COM_QUERY packet to sync last_insert_id var
-  static int build_last_insert_id_sync_packet(event::ObMIOBuffer &mio_buf,
+  static int build_last_insert_id_sync_packet(ObMysqlSM *sm,
+                                              event::ObMIOBuffer &mio_buf,
                                               ObClientSessionInfo &client_info,
                                               ObMysqlServerSession *server_session,
                                               const ObProxyProtocol ob_proxy_protocol);
 
   // build start transaction request packet
-  static int build_start_trans_request(event::ObMIOBuffer &mio_buf,
+  static int build_start_trans_request(ObMysqlSM *sm,
+                                       event::ObMIOBuffer &mio_buf,
                                        ObClientSessionInfo &client_info,
                                        ObMysqlServerSession *server_session,
                                        const ObProxyProtocol ob_proxy_protocol);
@@ -99,23 +110,27 @@ public:
                                  const bool is_checksum_on);
 
   // build mysql prepare request packet
-  static int build_prepare_request(event::ObMIOBuffer &mio_buf,
+  static int build_prepare_request(ObMysqlSM *sm,
+                                   event::ObMIOBuffer &mio_buf,
                                    ObClientSessionInfo &client_info,
                                    ObMysqlServerSession *server_session,
                                    const ObProxyProtocol ob_proxy_protocol);
 
-  static int build_text_ps_prepare_request(event::ObMIOBuffer &mio_buf,
+  static int build_text_ps_prepare_request(ObMysqlSM *sm,
+                                           event::ObMIOBuffer &mio_buf,
                                            ObClientSessionInfo &client_info,
                                            ObMysqlServerSession *server_session,
                                            const ObProxyProtocol ob_proxy_protocol);
 };
 
-inline int ObMysqlRequestBuilder::build_first_login_packet(event::ObMIOBuffer &mio_buf,
+inline int ObMysqlRequestBuilder::build_first_login_packet(ObMysqlSM *sm,
+                                                           event::ObMIOBuffer &mio_buf,
                                                            ObClientSessionInfo &client_info,
                                                            ObMysqlServerSession *server_session,
                                                            const ObProxyProtocol ob_proxy_protocol)
 
 {
+  UNUSED(sm);
   UNUSED(server_session);
   UNUSED(ob_proxy_protocol); // auth request no need compress
   ObMysqlAuthRequest &auth_req = client_info.get_login_req();
@@ -127,12 +142,14 @@ inline int ObMysqlRequestBuilder::build_first_login_packet(event::ObMIOBuffer &m
   return packet::ObMysqlPacketWriter::write_raw_packet(mio_buf, packet_str);
 }
 
-inline int ObMysqlRequestBuilder::build_orig_login_packet(event::ObMIOBuffer &mio_buf,
+inline int ObMysqlRequestBuilder::build_orig_login_packet(ObMysqlSM *sm,
+                                                          event::ObMIOBuffer &mio_buf,
                                                           ObClientSessionInfo &client_info,
                                                           ObMysqlServerSession *server_session,
                                                           const ObProxyProtocol ob_proxy_protocol)
 
 {
+  UNUSED(sm);
   UNUSED(server_session);
   UNUSED(ob_proxy_protocol); // auth request no need compress
   ObMysqlAuthRequest &auth_req = client_info.get_login_req();
@@ -144,11 +161,13 @@ inline int ObMysqlRequestBuilder::build_orig_login_packet(event::ObMIOBuffer &mi
   return packet::ObMysqlPacketWriter::write_raw_packet(mio_buf, packet_str);
 }
 
-inline int ObMysqlRequestBuilder::build_saved_login_packet(event::ObMIOBuffer &mio_buf,
+inline int ObMysqlRequestBuilder::build_saved_login_packet(ObMysqlSM *sm,
+                                                           event::ObMIOBuffer &mio_buf,
                                                            ObClientSessionInfo &client_info,
                                                            ObMysqlServerSession *server_session,
                                                            const ObProxyProtocol ob_proxy_protocol)
 {
+  UNUSED(sm);
   UNUSED(ob_proxy_protocol); // auth request no need compress
   ObMysqlAuthRequest &auth_req = client_info.get_login_req();
   ObHSRResult &hsr = auth_req.get_hsr_result();

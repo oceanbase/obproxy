@@ -6,4 +6,14 @@ obproxy/omt/ob_resource_unit_table_processor.cpp\
 obproxy/omt/ob_vip_tenant_conn.h\
 obproxy/omt/ob_vip_tenant_conn.cpp\
 obproxy/omt/ob_ssl_config_table_processor.h\
-obproxy/omt/ob_ssl_config_table_processor.cpp
+obproxy/omt/ob_ssl_config_table_processor.cpp\
+obproxy/omt/ob_conn_table_processor.h\
+obproxy/omt/ob_conn_table_processor.cpp\
+obproxy/omt/ob_cpu_table_processor.h\
+obproxy/omt/ob_cpu_table_processor.cpp\
+obproxy/omt/ob_vip_tenant_cpu.h\
+obproxy/omt/ob_vip_tenant_cpu.cpp\
+obproxy/omt/ob_cgroup_ctrl.h\
+obproxy/omt/ob_cgroup_ctrl.cpp\
+obproxy/omt/ob_proxy_config_table_processor.h\
+obproxy/omt/ob_proxy_config_table_processor.cpp

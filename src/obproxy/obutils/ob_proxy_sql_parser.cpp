@@ -17,6 +17,7 @@
 #include "opsql/parser/ob_proxy_parser.h"
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "proxy/shard/obproxy_shard_utils.h"
+#include "obproxy/utils/ob_proxy_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::opsql;
@@ -108,43 +109,47 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
         MEMCPY(origin_dml_buf_.table_name_buf_, table_name.str_, table_name.str_len_);
         origin_table_name_.assign_ptr(origin_dml_buf_.table_name_buf_, table_name.str_len_);
       }
+    }
+  }
 
-      // assign package name when table name is valid
-      if (OB_UNLIKELY(NULL != package_name.str_ && 0 != package_name.str_len_)) {
-        if (OB_UNLIKELY(package_name.str_len_ > OB_MAX_TABLE_NAME_LENGTH)
-            || OB_UNLIKELY(package_name.str_len_ < 0)) {
-          ret = OB_INVALID_ARGUMENT;
-          LOG_WARN("invalid argument", K(ret));
-        } else {
-          MEMCPY(dml_buf_.package_name_buf_, package_name.str_, package_name.str_len_);
-          if (use_lower_case_name) {
-            string_to_lower_case(dml_buf_.package_name_buf_, package_name.str_len_);
-          }
-          package_name_.assign_ptr(dml_buf_.package_name_buf_, package_name.str_len_);
-          package_name_quote_ = package_name.quote_type_;
+  if (OB_SUCC(ret)) {
+    // assign package name when table name is valid
+    if (OB_UNLIKELY(NULL != package_name.str_ && 0 != package_name.str_len_)) {
+      if (OB_UNLIKELY(package_name.str_len_ > OB_MAX_TABLE_NAME_LENGTH)
+          || OB_UNLIKELY(package_name.str_len_ < 0)) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WARN("invalid argument", K(ret));
+      } else {
+        MEMCPY(dml_buf_.package_name_buf_, package_name.str_, package_name.str_len_);
+        if (use_lower_case_name) {
+          string_to_lower_case(dml_buf_.package_name_buf_, package_name.str_len_);
         }
+        package_name_.assign_ptr(dml_buf_.package_name_buf_, package_name.str_len_);
+        package_name_quote_ = package_name.quote_type_;
       }
+    }
+  }
 
-      // assign database name when table name is valid
-      if (OB_SUCC(ret)) {
-        if (OB_FAIL(set_db_name(database_name, use_lower_case_name, drop_origin_db_table_name))) {
-          LOG_WARN("fail to set db name", K(database_name.str_len_), K(ret));
-        }
-      }
+  // assign database name when table name is valid
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(set_db_name(database_name, use_lower_case_name, drop_origin_db_table_name))) {
+      LOG_WARN("fail to set db name", K(database_name.str_len_), K(ret));
+    }
+  }
 
-      if (OB_UNLIKELY(NULL != alias_name.str_ && 0 != alias_name.str_len_)) {
-        if (OB_UNLIKELY(alias_name.str_len_ > OB_MAX_TABLE_NAME_LENGTH)
-            || OB_UNLIKELY(alias_name.str_len_ < 0)) {
-          ret = OB_INVALID_ARGUMENT;
-          LOG_WARN("invalid argument", K(ret));
-        } else {
-          MEMCPY(dml_buf_.alias_name_buf_, alias_name.str_, alias_name.str_len_);
-          if (use_lower_case_name) {
-            string_to_lower_case(dml_buf_.alias_name_buf_, alias_name.str_len_);
-          }
-          alias_name_.assign_ptr(dml_buf_.alias_name_buf_, alias_name.str_len_);
-          alias_name_quote_ = alias_name.quote_type_;
+  if (OB_SUCC(ret)) {
+    if (OB_UNLIKELY(NULL != alias_name.str_ && 0 != alias_name.str_len_)) {
+      if (OB_UNLIKELY(alias_name.str_len_ > OB_MAX_TABLE_NAME_LENGTH)
+          || OB_UNLIKELY(alias_name.str_len_ < 0)) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WARN("invalid argument", K(ret));
+      } else {
+        MEMCPY(dml_buf_.alias_name_buf_, alias_name.str_, alias_name.str_len_);
+        if (use_lower_case_name) {
+          string_to_lower_case(dml_buf_.alias_name_buf_, alias_name.str_len_);
         }
+        alias_name_.assign_ptr(dml_buf_.alias_name_buf_, alias_name.str_len_);
+        alias_name_quote_ = alias_name.quote_type_;
       }
     }
   }
@@ -186,7 +191,7 @@ inline int ObSqlParseResult::set_col_name(const ObProxyParseString &col_name)
 inline int ObSqlParseResult::set_call_prarms(const ObProxyCallParseInfo &call_parse_info)
 {
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(!is_call_stmt())) {
+  if (OB_UNLIKELY(!is_call_stmt() && !is_text_ps_call_stmt())) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("not a call stmt should not set col name", K(ret));
   } else if (OB_UNLIKELY(call_parse_info.node_count_ < 0)) {
@@ -516,26 +521,27 @@ int ObSqlParseResult::set_var_info(const ObProxyParseResult &parse_result)
   return ret;
 }
 
-int ObSqlParseResult::set_text_ps_execute_info(const ObProxyTextPsExecuteParseInfo &execute_parse_info)
+int ObSqlParseResult::set_text_ps_info(ObProxyTextPsInfo& text_ps_info,
+    const ObProxyTextPsParseInfo& parse_info)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_text_ps_stmt())) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("not text ps stmt", K(ret));
-  } else if (OB_UNLIKELY(execute_parse_info.node_count_ < 0)) {
+  } else if (OB_UNLIKELY(parse_info.node_count_ < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(execute_parse_info.node_count_), K(ret));
-  } else if (execute_parse_info.node_count_ > 0) {
-    text_ps_execute_info_.is_param_valid_ = true;
-    text_ps_execute_info_.param_count_ = execute_parse_info.node_count_;
-    ObProxyTextPsExecuteParam tmp_param;
-    ObProxyTextPsExecuteParseNode *tmp_node = execute_parse_info.head_;
+    LOG_WARN("invalid argument", K(parse_info.node_count_), K(ret));
+  } else if (parse_info.node_count_ > 0) {
+    text_ps_info.is_param_valid_ = true;
+    text_ps_info.param_count_ = parse_info.node_count_;
+    ObProxyTextPsParam tmp_param;
+    ObProxyTextPsParseNode *tmp_node = parse_info.head_;
     while (OB_SUCC(ret) && OB_NOT_NULL(tmp_node)) {
       tmp_param.reset();
       const ObString tmp_string(tmp_node->str_value_.str_len_, tmp_node->str_value_.str_);
       tmp_param.str_value_.set(tmp_string);
 
-      if (OB_FAIL(text_ps_execute_info_.params_.push_back(tmp_param))) {
+      if (OB_FAIL(text_ps_info.params_.push_back(tmp_param))) {
         LOG_WARN("fail to push back text ps execute info", K(tmp_param), K(ret));
       }
       tmp_node = tmp_node->next_;
@@ -567,8 +573,14 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   parsed_length_ = static_cast<int64_t>(parse_result.end_pos_ - parse_result.start_pos_);
   text_ps_inner_stmt_type_ = parse_result.text_ps_inner_stmt_type_;
 
-  if (OB_UNLIKELY(is_sharding_request && NULL != parse_result.table_info_.table_name_.str_ && parse_result.table_info_.table_name_.str_len_ > 0)) {
+  if (OB_UNLIKELY(is_sharding_request && NULL != parse_result.table_info_.table_name_.str_
+                  && parse_result.table_info_.table_name_.str_len_ > 0)) {
     dbmesh_route_info_.tb_pos_ = parse_result.table_info_.table_name_.str_ - parse_result.start_pos_;
+  }
+
+  if (OB_UNLIKELY(is_sharding_request && NULL != parse_result.table_info_.database_name_.str_
+                  && parse_result.table_info_.database_name_.str_len_ > 0)) {
+    dbmesh_route_info_.db_pos_ = parse_result.table_info_.database_name_.str_ - parse_result.start_pos_;
   }
 
   if (OB_UNLIKELY(NULL != parse_result.trace_id_.str_
@@ -587,7 +599,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
 
   // if is dml stmt, then set db/table name
   if (OB_LIKELY(is_dml_stmt() || is_call_stmt() || (is_text_ps_stmt() && is_text_ps_inner_dml_stmt())
-      || is_show_create_table_stmt() || is_desc_table_stmt())) {
+      || is_show_stmt() || is_desc_table_stmt())) {
     if (OB_FAIL(set_db_table_name(parse_result.table_info_.database_name_,
                                   parse_result.table_info_.package_name_,
                                   parse_result.table_info_.table_name_,
@@ -600,7 +612,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
       if (is_sharding_request) {
         stmt_type_ = OBPROXY_T_INVALID;
       }
-    } else if (OB_UNLIKELY(is_call_stmt())) {
+    } else if (OB_UNLIKELY(is_call_stmt() || is_text_ps_call_stmt())) {
       if (OB_FAIL(set_call_prarms(parse_result.call_parse_info_))) {
         LOG_WARN("failed to set_call_prarms", K(ret));
       }
@@ -658,11 +670,23 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("text ps name is null", K(ret));
     } else {
-      MEMCPY(text_ps_buf_.text_ps_name_buf_, parse_result.text_ps_name_.str_, parse_result.text_ps_name_.str_len_);
-      text_ps_name_.assign_ptr(text_ps_buf_.text_ps_name_buf_, parse_result.text_ps_name_.str_len_);
-      if (OBPROXY_T_TEXT_PS_EXECUTE == parse_result.stmt_type_) {
-        if (OB_FAIL(set_text_ps_execute_info(parse_result.text_ps_execute_parse_info_))) {
-          LOG_WARN("fail to set text ps execute info", K(ret));
+      if (NULL != text_ps_buf_) {
+        allocator_.free(text_ps_buf_);
+        text_ps_buf_ = NULL;
+        text_ps_buf_len_ = 0;
+      }
+      if (OB_ISNULL(text_ps_buf_ = static_cast<char *>(allocator_.alloc(parse_result.text_ps_name_.str_len_)))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("fail to alloc mem", K(parse_result.text_ps_name_.str_len_), K(ret));
+      } else {
+        text_ps_buf_len_ = parse_result.text_ps_name_.str_len_;
+        MEMCPY(text_ps_buf_, parse_result.text_ps_name_.str_, parse_result.text_ps_name_.str_len_);
+        text_ps_name_.assign_ptr(text_ps_buf_, text_ps_buf_len_);
+        string_to_upper_case(text_ps_name_.ptr(), text_ps_name_.length());
+        if (OBPROXY_T_TEXT_PS_EXECUTE == parse_result.stmt_type_ || OBPROXY_T_TEXT_PS_PREPARE == parse_result.stmt_type_) {
+          if (OB_FAIL(set_text_ps_info(text_ps_info_, parse_result.text_ps_parse_info_))) {
+            LOG_WARN("fail to set text ps execute info", K(ret));
+          }
         }
       }
     }
@@ -741,7 +765,7 @@ int64_t ObProxyCallInfo::to_string(char *buf, const int64_t buf_len) const
   return pos;
 }
 
-int64_t ObProxyTextPsExecuteParam::to_string(char *buf, const int64_t buf_len) const
+int64_t ObProxyTextPsParam::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
@@ -750,7 +774,7 @@ int64_t ObProxyTextPsExecuteParam::to_string(char *buf, const int64_t buf_len) c
   return pos;
 }
 
-int64_t ObProxyTextPsExecuteInfo::to_string(char *buf, const int64_t buf_len) const
+int64_t ObProxyTextPsInfo::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
@@ -805,7 +829,7 @@ int64_t DbMeshRouteInfo::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(testload), K_(group_idx), K_(tb_idx), K_(es_idx),
+  J_KV(K_(testload), K_(group_idx), K_(tb_idx), K_(es_idx), K_(db_pos),
        K_(tb_pos), K_(index_tb_pos), K_(table_name), K_(disaster_status), K_(tnt_id));
   J_OBJ_END();
   return pos;
@@ -1192,7 +1216,7 @@ int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
           if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxySelectStmt)))) {
             LOG_WARN("failed to alloc buf");
             ret = OB_ALLOCATE_MEMORY_FAILED;
-          } else if (OB_ISNULL(select_stmt = new (buf) ObProxySelectStmt())) {
+          } else if (OB_ISNULL(select_stmt = new (buf) ObProxySelectStmt(allocator_))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
             LOG_WARN("failed to new ObProxySelectStmt", K(ret));
           } else if (OB_FAIL(select_stmt->init())) {
@@ -1200,14 +1224,86 @@ int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
           } else {
             select_stmt->set_sql_string(sql);
             select_stmt->set_stmt_type(OBPROXY_T_SELECT);
-            select_stmt->set_allocator(&allocator_);
-            select_stmt->field_results_ = &fileds_result_;
+            select_stmt->set_field_results(&fileds_result_);
             select_stmt->set_table_name(origin_table_name_);
             proxy_stmt_ = select_stmt;
             if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
-              LOG_WARN("handle_parse_result failed", K(ret));
+              LOG_WARN("handle select parse result failed", K(ret));
             } else {
               has_for_update_ = select_stmt->has_for_update();
+            }
+          }
+        }
+        break;
+      case T_INSERT:
+        if (need_handle_result) {
+          char* buf = NULL;
+          ObProxyInsertStmt* insert_stmt= NULL;
+          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxyInsertStmt)))) {
+            LOG_WARN("failed to alloc buf");
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+          } else if (OB_ISNULL(insert_stmt = new (buf) ObProxyInsertStmt(allocator_))) {
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_WARN("failed to new ObProxyInsertStmt", K(ret));
+          } else if (OB_FAIL(insert_stmt->init())) {
+            LOG_WARN("init failed", K(ret));
+          } else {
+            insert_stmt->set_sql_string(sql);
+            insert_stmt->set_stmt_type(OBPROXY_T_INSERT);
+            insert_stmt->set_field_results(&fileds_result_);
+            insert_stmt->set_table_name(origin_table_name_);
+            proxy_stmt_ = insert_stmt;
+            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
+              LOG_WARN("handle Insert parse result failed", K(ret));
+            }
+          }
+        }
+        break;
+      case T_DELETE:
+        if (need_handle_result) {
+          char* buf = NULL;
+          ObProxyDeleteStmt* delete_stmt= NULL;
+          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxyDeleteStmt)))) {
+            LOG_WARN("failed to alloc buf");
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+          } else if (OB_ISNULL(delete_stmt = new (buf) ObProxyDeleteStmt(allocator_))) {
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_WARN("failed to new ObProxyDeleteStmt", K(ret));
+          } else if (OB_FAIL(delete_stmt->init())) {
+            LOG_WARN("init failed", K(ret));
+          } else {
+            delete_stmt->set_sql_string(sql);
+            delete_stmt->set_stmt_type(OBPROXY_T_DELETE);
+            delete_stmt->set_field_results(&fileds_result_);
+            delete_stmt->set_table_name(origin_table_name_);
+            proxy_stmt_ = delete_stmt;
+            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
+              LOG_WARN("handle delete parse result failed", K(ret));
+            }
+          }
+        }
+        break;
+      //TODO
+      case T_UPDATE:
+        if (need_handle_result) {
+          char* buf = NULL;
+          ObProxyUpdateStmt* update_stmt= NULL;
+          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxyUpdateStmt)))) {
+            LOG_WARN("failed to alloc buf");
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+          } else if (OB_ISNULL(update_stmt = new (buf) ObProxyUpdateStmt(allocator_))) {
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_WARN("failed to new ObProxyUpdateStmt", K(ret));
+          } else if (OB_FAIL(update_stmt->init())) {
+            LOG_WARN("init failed", K(ret));
+          } else {
+            update_stmt->set_sql_string(sql);
+            update_stmt->set_stmt_type(OBPROXY_T_UPDATE);
+            update_stmt->set_field_results(&fileds_result_);
+            update_stmt->set_table_name(origin_table_name_);
+            proxy_stmt_ = update_stmt;
+            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
+              LOG_WARN("handle update parse result failed", K(ret));
             }
           }
         }

@@ -93,6 +93,7 @@ public:
   int main_handler(int event, void *data);
   static int schedule_cache_cleaner();
   static int update_clean_interval();
+  static int schedule_one_cache_cleaner(int64_t index);
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
   int push_deleting_cr(obutils::ObResourceDeleteActor *actor);

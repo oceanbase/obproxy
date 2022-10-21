@@ -136,6 +136,7 @@ public:
       MEMCPY(full_name_str_, full_name.ptr(), full_name.length());
       full_name_.assign_ptr(full_name_str_, (int32_t)full_name.length());
     }
+    memset(&used_conn_link_, 0, sizeof(used_conn_link_));
   }
   virtual ~ObUsedConn() { reset(); };
   virtual void free() { destroy(); }

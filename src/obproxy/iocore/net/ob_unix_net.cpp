@@ -34,9 +34,11 @@
 #include "iocore/net/ob_unix_net.h"
 #include "iocore/net/ob_event_io.h"
 #include "iocore/net/ob_timerfd_manager.h"
+#include "obutils/ob_resource_pool_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
+using namespace oceanbase::obproxy::obutils;
 
 namespace oceanbase
 {
@@ -353,6 +355,17 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
                 && info.graceful_exit_end_time_ > 0
                 && info.graceful_exit_end_time_ < now)) {
           vc->next_inactivity_timeout_at_ = now; // force the connection timeout
+        }
+
+        if (now != vc->next_inactivity_timeout_at_) {
+          ObIpEndpoint ip;
+          ip.sa_ = vc->get_remote_addr();
+          if (0 < get_global_proxy_config().server_detect_mode
+              && vc->source_type_ == ObUnixNetVConnection::VC_CONNECT
+              && OB_HASH_EXIST == get_global_resource_pool_processor().ip_set_.exist_refactored(ip)) {
+            PROXY_NET_LOG(WARN, "server dead, close connection", K(ip));
+            vc->next_inactivity_timeout_at_ = now;
+          }
         }
 
         // set a default inactivity timeout if one is not set

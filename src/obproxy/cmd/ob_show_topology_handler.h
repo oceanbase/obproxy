@@ -28,16 +28,14 @@ namespace obutils
 class ObShowTopologyHandler : public ObCmdHandler
 {
 public:
-  ObShowTopologyHandler(event::ObMIOBuffer *buf, uint8_t pkg_seq,
-                        int64_t memory_limit);
+  ObShowTopologyHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
   virtual ~ObShowTopologyHandler() {}
 
   int handle_show_topology(const common::ObString &tenant_name,
                            const common::ObString &db_name,
                            const common::ObString &group_name);
   static int show_topology_cmd_callback(event::ObMIOBuffer *buf,
-                                        uint8_t pkg_seq,
-                                        int64_t memory_limit,
+                                        ObCmdInfo &info,
                                         const common::ObString &logic_tenant_name,
                                         const common::ObString &logic_database_name,
                                         const common::ObString &group_name);

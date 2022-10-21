@@ -12,85 +12,93 @@
 
 #include "lib/charset/ob_ctype.h"
 
-static uint32_t
-ob_convert_internal(char *to, uint32_t to_length,
+static uint32
+ob_convert_internal(char *to, uint32 to_length,
                     const ObCharsetInfo *to_cs,
-                    const char *from, uint32_t from_length,
-                    const ObCharsetInfo *from_cs, uint32_t *errors)
+                    const char *from, uint32 from_length,
+                    const ObCharsetInfo *from_cs, uint *errors)
 {
-  int res;
+  unsigned int error_num= 0;
+  int cnvres;
   ob_wc_t wc;
-  const unsigned char *from_end = (const unsigned char*) from + from_length;
+  const unsigned char *from_end= (const unsigned char*) from + from_length;
   char *to_start= to;
   unsigned char *to_end= (unsigned char*) to + to_length;
-  ob_charset_conv_mb_wc mb_wc= from_cs->cset->mb_wc;
   ob_charset_conv_wc_mb wc_mb= to_cs->cset->wc_mb;
-  uint32_t error_count= 0;
-
-  while (1) {
-    if ((res = (*mb_wc)((unsigned char *) from, from_end, &wc)) > 0) {
-      from+= res;
-    } else if (res == OB_CS_ERR_ILLEGAL_SEQUENCE) {
-      error_count++;
+  ob_charset_conv_mb_wc mb_wc= from_cs->cset->mb_wc;
+  pbool conitnue = TRUE;
+  while (conitnue) {
+    if ((cnvres= (*mb_wc)(from_cs, &wc, (unsigned char*) from, from_end)) > 0) {
+      from+= cnvres;
+    } else if (cnvres == OB_CS_ILSEQ) {
       from++;
       wc= '?';
-    } else if (res > OB_CS_ERR_TOOSMALL) {
-      /*
-        A correct multibyte sequence detected
-        But it doesn't have Unicode mapping.
-      */
-      error_count++;
-      from+= (-res);
+      error_num++;
+    } else if (cnvres > OB_CS_TOOSMALL) {
+      from+= (-cnvres);
       wc= '?';
+      error_num++;
     } else {
-      break;  // Not enough characters
+      break;  
     }
 
-outp:
-    if ((res= (*wc_mb)(wc, (unsigned char*) to, to_end)) > 0) {
-      to+= res;
-    } else if (res == OB_CS_ERR_ILLEGAL_UNICODE && wc != '?') {
-      error_count++;
-      wc= '?';
-      goto outp;
-    } else {
-      break;
+    pbool go = TRUE;
+    while (go) {
+      go = FALSE;
+      if ((cnvres= (*wc_mb)(to_cs, wc, (unsigned char*) to, to_end)) > 0)
+        to+= cnvres;
+      else if (cnvres == OB_CS_ILUNI && wc != '?') {
+        error_num++;
+        wc= '?';
+        go =  TRUE;
+      } else {
+        conitnue = FALSE;
+      }
     }
   }
-  *errors= error_count;
-  return (uint32_t) (to - to_start);
+  *errors= error_num;
+  return (uint32) (to - to_start);
 }
 
-uint32_t
-ob_convert(char *to, uint32_t to_length, const ObCharsetInfo *to_cs,
-           const char *from, uint32_t from_length,
-           const ObCharsetInfo *from_cs, uint32_t *errors) {
-  uint32_t length, length2;
-  /*
-    If any of the character sets is not ASCII compatible,
-    immediately switch to slow mb_wc->wc_mb method.
-  */
+
+uint32
+ob_convert(char *to, uint32 to_length, const ObCharsetInfo *to_cs,
+           const char *from, uint32 from_length,
+           const ObCharsetInfo *from_cs, uint *errors)
+{
+  uint32 length, length2;
+
   if ((to_cs->state | from_cs->state) & OB_CS_NONASCII) {
-    return ob_convert_internal(to, to_length, to_cs,
-                               from, from_length, from_cs, errors);
+    return ob_convert_internal(to, to_length, to_cs, from, from_length, from_cs, errors);
+  } else {
+    length= length2= OB_MIN(to_length, from_length);
   }
 
-  length= length2= to_length < from_length ? to_length : from_length;
+#if defined(__i386__)
+  while (length >= 4) {
+    if ((*(uint32*)from) & 0x80808080) break;
+    *((uint32*) to) = *((const uint32*) from);
+    from += 4; 
+    to += 4;
+    length -= 4; 
+  }
+#endif /* __i386__ */
 
-  for (; ; *to++= *from++, length--) {
+  while (TRUE) {
     if (!length) {
       *errors= 0;
       return length2;
-    }
-    if (*((unsigned char*) from) > 0x7F) { /* A non-ASCII character */
-      uint32_t copied_length= length2 - length;
+    } else if (*((unsigned char*) from) > 0x7F)  {
+      uint32 copied_length= length2 - length;
       to_length-= copied_length;
       from_length-= copied_length;
       return copied_length + ob_convert_internal(to, to_length, to_cs,
                                                  from, from_length, from_cs,
                                                  errors);
     }
+    *to++= *from++;
+    length--;
   }
 
-  return 0;
+  return 0;          
 }

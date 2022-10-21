@@ -194,7 +194,10 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       || OB_UNLIKELY(OB_MYSQL_COM_END == cmd_)
       || OB_UNLIKELY(UNDEFINED_MYSQL_PROTOCOL_MODE == mysql_mode_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(pkt_cnt_), K(cmd_), K(mysql_mode_), K(ret));
+    LOG_WARN("invalid argument", "ok pkt count", pkt_cnt_[OK_PACKET_ENDING_TYPE],
+             "eof pkt count", pkt_cnt_[EOF_PACKET_ENDING_TYPE],
+             "err pkt count", pkt_cnt_[ERROR_PACKET_ENDING_TYPE],
+             K(cmd_), K(mysql_mode_), K(ret));
   } else {
     LOG_DEBUG("pkt count", "ok pkt count", pkt_cnt_[OK_PACKET_ENDING_TYPE],
               "error pkt count", pkt_cnt_[ERROR_PACKET_ENDING_TYPE],
@@ -234,8 +237,10 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       case OB_MYSQL_COM_REFRESH :
       case OB_MYSQL_COM_PROCESS_KILL :
       case OB_MYSQL_COM_LOGIN:
+      case OB_MYSQL_COM_STMT_RESET:
       case OB_MYSQL_COM_INIT_DB :
-      case OB_MYSQL_COM_CHANGE_USER: {
+      case OB_MYSQL_COM_CHANGE_USER:
+      case OB_MYSQL_COM_RESET_CONNECTION: {
         if (OB_UNLIKELY(is_mysql_mode())) {
           if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
             finished = true;
@@ -254,6 +259,9 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
             finished = true;
             ending_type = ERROR_PACKET_ENDING_TYPE;
           }
+        } else {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("unexpected mode error", K(ret), K(get_mysql_mode()));
         }
         break;
       }
@@ -527,8 +535,8 @@ inline int ObMysqlRespAnalyzer::read_pkt_hdr(ObBufferReader &buf_reader)
   }
 
   if (OB_LIKELY(NULL != buf_start)) {
-    meta_analyzer_.get_meta().pkt_len_ = ob_uint3korr(buf_start);
-    meta_analyzer_.get_meta().pkt_seq_ = ob_uint1korr(buf_start + 3);
+    meta_analyzer_.get_meta().pkt_len_ = uint3korr(buf_start);
+    meta_analyzer_.get_meta().pkt_seq_ = uint1korr(buf_start + 3);
     state_ = READ_TYPE;
     next_read_len_ = meta_analyzer_.get_meta().pkt_len_;
   }
@@ -1099,7 +1107,7 @@ inline int ObMysqlRespAnalyzer::analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &i
     LOG_WARN("fail to build packet content", K(ret));
   } else {
     // skip 2 bytes of warning_count, we don't care it
-    server_status.flags_ = ob_uint2korr(body_buf_.ptr() + 2);
+    server_status.flags_ = uint2korr(body_buf_.ptr() + 2);
 
     if (server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS) {
       is_in_trans = true;

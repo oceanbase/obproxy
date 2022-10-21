@@ -26,8 +26,7 @@ class ObProxyIDCInfo;
 class ObShowClusterHandler : public ObInternalCmdHandler
 {
 public:
-	ObShowClusterHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-	                     const ObInternalCmdInfo &info);
+	ObShowClusterHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowClusterHandler() {}
   int handle_show_cluster(int event, void *data);
 

@@ -315,12 +315,12 @@ int64_t ObTableEntryKey::to_string(char *buf, const int64_t buf_len) const
   return pos;
 }
 
-void ObRouteEntry::check_and_set_expire_time(const uint64_t tenant_version, const bool is_dummy_entry)
+void ObRouteEntry::check_and_set_expire_time(const uint64_t tenant_version, const bool is_sys_dummy_entry)
 {
   int64_t period_us = obutils::get_global_proxy_config().location_expire_period_time;
   const int64_t TENANT_LOCALITY_CHANGE_TIME = 60 * 1000 * 1000;
   const int64_t TENANT_LOCALITY_CHANGE_TIME_CONFIG = -1;
-  if (AVAIL == state_ && !is_dummy_entry) {
+  if (AVAIL == state_ && !is_sys_dummy_entry) {
     if (tenant_version != tenant_version_) {
       tenant_version_ = tenant_version;
       // -1 means the change comes from a locality change

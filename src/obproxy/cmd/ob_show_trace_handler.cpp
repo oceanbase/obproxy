@@ -53,8 +53,7 @@ const ObProxyColumnSchema TRACE_COLUMN_ARRAY[OB_TC_MAX_TRACE_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_TC_COST,          "cost_time_us", OB_MYSQL_TYPE_LONG),
 };
 
-ObShowTraceHandler::ObShowTraceHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                       const ObInternalCmdInfo &info)
+ObShowTraceHandler::ObShowTraceHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type()),
       attempt_limit_(info.get_attempt_limit()), cs_id_array_()
 {

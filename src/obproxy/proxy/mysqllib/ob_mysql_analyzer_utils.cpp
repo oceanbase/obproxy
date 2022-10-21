@@ -77,9 +77,9 @@ int ObMysqlAnalyzerUtils::analyze_compressed_packet_header(
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", KP(start), K(len), K(ret));
   } else {
-    header.compressed_len_ = ob_uint3korr(start);
+    header.compressed_len_ = uint3korr(start);
     header.seq_ = static_cast<uint8_t>(start[3]);
-    header.non_compressed_len_ = ob_uint3korr(start + 4);
+    header.non_compressed_len_ = uint3korr(start + 4);
   }
   return ret;
 }
@@ -138,7 +138,7 @@ int ObMysqlAnalyzerUtils::consume_and_normal_compress_data(
   } else {
     //checksum off, just copy
     int64_t written_len = 0;
-    // because OB_MYSQL_COM_STMT_CLOSE, can not move block, need copy data
+    // because OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_RESET, can not move block, need copy data
     if (OB_FAIL(write_buf->write(reader, data_len, written_len))) {
       LOG_WARN("fail to write uncompress data", K(write_buf), K(data_len), K(ret));
     } else if (OB_UNLIKELY(written_len != data_len)) {

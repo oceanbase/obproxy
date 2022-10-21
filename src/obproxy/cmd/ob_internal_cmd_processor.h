@@ -14,12 +14,14 @@
 #define OBPROXY_INTERNAL_CMD_PROCESSOR_H
 
 #include "lib/utility/ob_print_utils.h"
+#include "lib/lock/ob_drw_lock.h"
 #include "rpc/obmysql/ob_mysql_packet.h"
 #include "opsql/parser/ob_proxy_parse_result.h"
 
 #include "iocore/eventsystem/ob_event.h"
 #include "iocore/net/ob_inet.h"
-#include "utils/ob_proxy_privilege_check.h"
+#include "proxy/mysqllib/ob_mysql_common_define.h"
+#include "proxy/mysqllib/ob_2_0_protocol_struct.h"
 
 #define  INTERNAL_CMD_EVENTS_SUCCESS   INTERNAL_CMD_EVENTS_START + 1
 #define  INTERNAL_CMD_EVENTS_FAILED    INTERNAL_CMD_EVENTS_START + 2
@@ -40,6 +42,8 @@ class ObContinuation;
 class ObMIOBuffer;
 }
 
+class ObProxySessionPrivInfo;
+
 #define DEBUG_ICMD(fmt...) PROXY_ICMD_LOG(DEBUG, ##fmt)
 #define INFO_ICMD(fmt...) PROXY_ICMD_LOG(INFO, ##fmt)
 #define WARN_ICMD(fmt...) PROXY_ICMD_LOG(WARN, ##fmt)
@@ -53,24 +57,7 @@ public:
   ObInternalCmdInfo() { reset(); }
   ~ObInternalCmdInfo() { }
 
-  void reset()
-  {
-    session_priv_ = NULL;
-    pkt_seq_ = -1;
-    type_ = OBPROXY_T_INVALID;
-    sub_type_ = OBPROXY_T_SUB_INVALID;
-    err_type_ = OBPROXY_T_ERR_INVALID;
-    capability_.capability_ = 0;
-    memory_limit_ = 0;
-    is_internal_user_ = false;
-    first_int_ = -1;
-    second_int_ = -1;
-    third_int_ = -1;
-    first_string_.reset();
-    second_string_.reset();
-    first_str_[0] = '\0';
-    second_str_[0] = '\0';
-  }
+  void reset();
 
   uint8_t get_pkt_seq() const { return pkt_seq_; }
   obmysql::ObMySQLCapabilityFlags get_capability() const { return capability_; }
@@ -99,6 +86,13 @@ public:
   const common::ObString &get_value_string() const { return second_string_; }
   const common::ObString &get_cluster_string() const { return first_string_; }
   const common::ObString &get_large_key_string() const { return second_string_; }
+
+  proxy::ObProxyProtocol get_protocol() const { return protocol_; }
+  proxy::Ob20ProtocolHeaderParam &get_ob20_head_param() { return ob20_param_; }
+  const proxy::Ob20ProtocolHeaderParam &get_ob20_head_param() const { return ob20_param_; }
+
+  void set_protocol(const proxy::ObProxyProtocol protocol) { protocol_ = protocol; }
+  void set_ob20_head_param(const proxy::Ob20ProtocolHeaderParam &param) { ob20_param_ = param; }
 
   void set_pkt_seq(const uint8_t pkt_seq) { pkt_seq_ = pkt_seq; }
   void set_cmd_type(const ObProxyBasicStmtType type) { type_ = type; }
@@ -129,14 +123,11 @@ public:
     }
   }
 
-  TO_STRING_KV("type", get_obproxy_stmt_name(type_),
-               "sub_type", get_obproxy_sub_stmt_name(sub_type_),
-               "err_type", get_obproxy_err_stmt_name(err_type_),
-               K_(pkt_seq), K_(capability_.capability),
-               K_(memory_limit), K_(is_internal_user), K_(first_int), K_(second_int), K_(third_int),
-               K_(first_string), K_(second_string), KPC_(session_priv));
+  int64_t to_string(char* buf, const int64_t buf_len) const;
 
-  ObProxySessionPrivInfo *session_priv_;
+public:
+  ObProxySessionPrivInfo *session_priv_;  
+
 private:
   uint8_t pkt_seq_;
   ObProxyBasicStmtType type_;
@@ -169,12 +160,15 @@ private:
   char first_str_[common::OB_MAX_CONFIG_NAME_LEN];
   char second_str_[common::OB_MAX_CONFIG_VALUE_LEN];
 
+  proxy::ObProxyProtocol protocol_;
+  proxy::Ob20ProtocolHeaderParam ob20_param_;
+
 private:
   DISALLOW_COPY_AND_ASSIGN(ObInternalCmdInfo);
 };
 
 typedef int (*ObInternalCmdCallbackFunc) (event::ObContinuation *cont, ObInternalCmdInfo &info,
-                                             event::ObMIOBuffer *buf, event::ObAction *&action);
+                                          event::ObMIOBuffer *buf, event::ObAction *&action);
 
 struct ObCmdTableInfo
 {
@@ -189,7 +183,7 @@ struct ObCmdTableInfo
 class ObInternalCmdProcessor
 {
 public:
-  ObInternalCmdProcessor() :is_inited_(false), reload_config_(NULL)
+  ObInternalCmdProcessor() :is_inited_(false), reload_config_(NULL), internal_cmd_lock_()
   {
     memset(cmd_table_, 0, sizeof(cmd_table_));
   }
@@ -198,7 +192,7 @@ public:
 
   int init(obutils::ObProxyReloadConfig *reload_config);
   int execute_cmd(event::ObContinuation *cont, ObInternalCmdInfo &info,
-      event::ObMIOBuffer *buf, event::ObAction *&action);
+                  event::ObMIOBuffer *buf, event::ObAction *&action);
   //register funcs
   int register_cmd(const ObProxyBasicStmtType type, ObInternalCmdCallbackFunc func, bool skip_type_check = false);
   obutils::ObProxyReloadConfig *get_reload_config() { return reload_config_; }
@@ -207,6 +201,7 @@ private:
   bool is_inited_;
   obutils::ObProxyReloadConfig *reload_config_; //used for alter config set
   ObCmdTableInfo cmd_table_[OBPROXY_T_MAX];
+  common::DRWLock internal_cmd_lock_;
   DISALLOW_COPY_AND_ASSIGN(ObInternalCmdProcessor);
 };
 

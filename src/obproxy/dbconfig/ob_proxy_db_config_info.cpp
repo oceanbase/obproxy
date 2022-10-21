@@ -2193,7 +2193,7 @@ int64_t ObShardConnector::to_string(char *buf, const int64_t buf_len) const
   J_OBJ_START();
   pos += ObDbConfigChild::to_string(buf + pos, buf_len - pos);
   J_COMMA();
-  J_KV(K_(shard_name), K_(shard_type), K_(shard_url), K_(username), K_(password),
+  J_KV(K_(shard_name), K_(shard_type), K_(shard_url), K_(username),
        K_(database_name), K_(tenant_name), K_(cluster_name), K_(server_type),
        K_(physic_addr), K_(is_physic_ip), K_(physic_port), K_(read_consistency),
       "enc_type", get_enc_type_str(enc_type_));
@@ -4135,10 +4135,26 @@ int ObDbConfigCache::load_local_dbconfig()
   }
   event::ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
   while (OB_SUCC(ret) && NULL != (ent = readdir(dbconfig_dir))) {
-    allocator.reuse();
-    if (ent->d_type == DT_DIR
-        && LOCAL_DIR.compare(ent->d_name) != 0
-        && PARENT_DIR.compare(ent->d_name) != 0) {
+    bool is_need_load = false;
+    if (LOCAL_DIR.compare(ent->d_name) == 0 || PARENT_DIR.compare(ent->d_name) == 0) {
+      // do nothing
+    } else if (ent->d_type == DT_DIR) {
+      is_need_load = true;
+    } else if (ent->d_type == DT_UNKNOWN) {
+      struct stat st;
+      char *full_path = NULL;
+      allocator.reuse();
+      if (OB_FAIL(ObLayout::merge_file_path(layout_dbconfig_dir, ent->d_name, allocator, full_path))) {
+        LOG_WARN("fail to merge file", K(layout_dbconfig_dir), "name", ent->d_name, K(ret));
+      } else if (0 != (stat(full_path, &st))) {
+        ret = OB_IO_ERROR;
+        LOG_WARN("fail to stat dir", K(full_path), KERRMSGS, K(ret));
+      } else if (S_ISDIR(st.st_mode)) {
+        is_need_load = true;
+      }
+    }
+
+    if (OB_SUCC(ret) && is_need_load) {
       if (OB_FAIL(load_logic_tenant_config(ObString::make_string(ent->d_name)))) {
         LOG_WARN("fail to load tenant config", "tenant_dir", ent->d_name, K(ret));
       }

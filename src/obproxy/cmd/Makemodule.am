@@ -60,4 +60,6 @@ obproxy/cmd/ob_show_topology_handler.cpp\
 obproxy/cmd/ob_sequence_info_handler.h\
 obproxy/cmd/ob_sequence_info_handler.cpp\
 obproxy/cmd/ob_show_db_version_handler.h\
-obproxy/cmd/ob_show_db_version_handler.cpp
+obproxy/cmd/ob_show_db_version_handler.cpp\
+obproxy/cmd/ob_show_table_status_handler.h\
+obproxy/cmd/ob_show_table_status_handler.cpp

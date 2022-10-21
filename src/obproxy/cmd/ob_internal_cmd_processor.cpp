@@ -27,6 +27,42 @@ namespace oceanbase
 {
 namespace obproxy
 {
+
+void ObInternalCmdInfo::reset()
+{
+  session_priv_ = NULL;
+  pkt_seq_ = -1;
+  type_ = OBPROXY_T_INVALID;
+  sub_type_ = OBPROXY_T_SUB_INVALID;
+  err_type_ = OBPROXY_T_ERR_INVALID;
+  capability_.capability_ = 0;
+  memory_limit_ = 0;
+  is_internal_user_ = false;
+  first_int_ = -1;
+  second_int_ = -1;
+  third_int_ = -1;
+  first_string_.reset();
+  second_string_.reset();
+  first_str_[0] = '\0';
+  second_str_[0] = '\0';
+  protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
+  ob20_param_.reset();
+}
+
+int64_t ObInternalCmdInfo::to_string(char* buf, const int64_t buf_len) const
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV("type", get_obproxy_stmt_name(type_),
+       "sub_type", get_obproxy_sub_stmt_name(sub_type_),
+       "err_type", get_obproxy_err_stmt_name(err_type_),
+       K_(pkt_seq), K_(capability_.capability),
+       K_(memory_limit), K_(is_internal_user), K_(first_int), K_(second_int), K_(third_int),
+       K_(first_string), K_(second_string), KPC_(session_priv));
+  J_OBJ_END();
+  return pos;
+}
+
 ObInternalCmdProcessor &get_global_internal_cmd_processor()
 {
   static ObInternalCmdProcessor internal_cmd_processor;
@@ -54,6 +90,7 @@ int ObInternalCmdProcessor::execute_cmd(ObContinuation *cont, ObInternalCmdInfo 
 {
   int ret = OB_SUCCESS;
   action = NULL;
+  DRWLock::WRLockGuard guard(internal_cmd_lock_);
   const ObProxyBasicStmtType type = info.get_cmd_type();
   ObMysqlSM *sm = reinterpret_cast<ObMysqlSM *>(cont);
   ObString table_name;
@@ -67,7 +104,7 @@ int ObInternalCmdProcessor::execute_cmd(ObContinuation *cont, ObInternalCmdInfo 
     ObProxyMysqlRequest &client_request = sm->trans_state_.trans_info_.client_request_;
     table_name = client_request.get_parse_result().get_table_name();
   }
-  
+
   if (OB_FAIL(ret)) {
     // do nothing
   } else if (get_global_config_processor().is_table_in_service(table_name)

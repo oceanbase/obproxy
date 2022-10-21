@@ -65,16 +65,17 @@ struct ObInternalSelectBuf {
   char col_name_buf_[common::OB_MAX_COLUMN_NAME_LENGTH];
 };
 
-struct ObTextPsBuf {
-  char text_ps_name_buf_[common::OB_MAX_TEXT_PS_NAME_LENGTH];
-};
-
 template<int size>
 class ObFixSizeString {
 public:
   ObFixSizeString() : string_() { memset(buf_, 0, size); }
   ~ObFixSizeString() { string_.reset(); }
   int64_t get_max_size() const { return size - 2; }
+
+  inline const common::ObString& get_string() const
+  {
+    return string_;
+  }
 
   ObFixSizeString(const ObFixSizeString &other)
   {
@@ -219,10 +220,10 @@ struct ObProxyCallInfo
   bool is_param_valid_;//whether size is valid
 };
 
-struct ObProxyTextPsExecuteParam
+struct ObProxyTextPsParam
 {
-  ObProxyTextPsExecuteParam() { reset(); }
-  ~ObProxyTextPsExecuteParam() { reset(); }
+  ObProxyTextPsParam() { reset(); }
+  ~ObProxyTextPsParam() { reset(); }
   DECLARE_TO_STRING;
   void reset()
   {
@@ -233,12 +234,12 @@ struct ObProxyTextPsExecuteParam
   ObFixSizeString<OBPROXY_MAX_STRING_VALUE_LENGTH> str_value_;
 };
 
-struct ObProxyTextPsExecuteInfo
+struct ObProxyTextPsInfo
 {
-  ObProxyTextPsExecuteInfo() { reset(); }
-  ~ObProxyTextPsExecuteInfo() { reset(); }
+  ObProxyTextPsInfo() { reset(); }
+  ~ObProxyTextPsInfo() { reset(); }
   DECLARE_TO_STRING;
-  ObProxyTextPsExecuteInfo& operator=(const ObProxyTextPsExecuteInfo &other)
+  ObProxyTextPsInfo& operator=(const ObProxyTextPsInfo &other)
   {
     if (this != &other) {
       is_param_valid_ = other.is_param_valid_;
@@ -255,7 +256,7 @@ struct ObProxyTextPsExecuteInfo
     params_.reset();
   }
   bool is_valid() const { return is_param_valid_ && 0 <= param_count_; }
-  common::ObSEArray<ObProxyTextPsExecuteParam, OBPROXY_TEXT_PS_EXECUTE_NODE_COUNT> params_;
+  common::ObSEArray<ObProxyTextPsParam, OBPROXY_TEXT_PS_EXECUTE_NODE_COUNT> params_;
   int32_t param_count_;
   bool is_param_valid_;//whether size is valid
 };
@@ -368,6 +369,7 @@ struct DbMeshRouteInfo {
     tb_idx_ = OBPROXY_MAX_DBMESH_ID;
     es_idx_ = OBPROXY_MAX_DBMESH_ID;
     testload_ = OBPROXY_MAX_DBMESH_ID;
+    db_pos_ = common::OB_INVALID_INDEX;
     tb_pos_ = common::OB_INVALID_INDEX;
     index_tb_pos_ = common::OB_INVALID_INDEX;
     table_name_.reset();
@@ -392,6 +394,7 @@ struct DbMeshRouteInfo {
   int64_t tb_idx_;
   int64_t es_idx_;
   int64_t testload_;
+  int64_t db_pos_; // dml database name pos
   int64_t tb_pos_; // dml table name pos, not hint table pos
   int64_t index_tb_pos_; // index table pos from hint
   common::ObString table_name_;
@@ -516,7 +519,7 @@ typedef struct  _ObProxyDualParseResult
 struct ObSqlParseResult
 {
   ObSqlParseResult() : allocator_(common::ObModIds::OB_PROXY_SHARDING_PARSE),
-    ob_parser_result_(NULL), proxy_stmt_(NULL) { reset(); }
+    text_ps_buf_(NULL), text_ps_buf_len_(0), ob_parser_result_(NULL), proxy_stmt_(NULL) { reset(); }
   ~ObSqlParseResult() { reset(); }
   void clear_proxy_stmt();
   void reset(bool is_reset_origin_db_table = true);
@@ -562,7 +565,8 @@ struct ObSqlParseResult
   }
   bool is_show_databases_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_DATABASES == cmd_sub_type_; }
   bool is_show_tables_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_TABLES == cmd_sub_type_; }
-  bool is_show_create_table_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_CREATE_TABLE == cmd_sub_type_; }
+  bool is_show_full_tables_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_FULL_TABLES == cmd_sub_type_; }
+  bool is_show_table_status_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_TABLE_STATUS == cmd_sub_type_; }
   bool is_show_topology_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_TOPOLOGY == cmd_sub_type_; }
   bool is_show_db_version_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_DB_VERSION == cmd_sub_type_; }
   bool is_desc_table_stmt() const { return OBPROXY_T_DESC == stmt_type_ && OBPROXY_T_SUB_DESC_TABLE == cmd_sub_type_; }
@@ -597,9 +601,10 @@ struct ObSqlParseResult
            || is_noaudit_stmt();
   }
 
-  bool is_text_ps_stmt() const { return is_text_ps_prepare_stmt() || is_text_ps_execute_stmt(); }
+  bool is_text_ps_stmt() const { return is_text_ps_prepare_stmt() || is_text_ps_execute_stmt() || is_text_ps_drop_stmt(); }
   bool is_text_ps_prepare_stmt() const { return OBPROXY_T_TEXT_PS_PREPARE == stmt_type_; }
   bool is_text_ps_execute_stmt() const { return OBPROXY_T_TEXT_PS_EXECUTE == stmt_type_; }
+  bool is_text_ps_drop_stmt() const { return OBPROXY_T_TEXT_PS_DROP == stmt_type_; }
 
   bool is_internal_select() const { return is_select_tx_ro() || is_select_proxy_version(); }
   bool is_dual_request() const {return is_dual_request_;}
@@ -694,7 +699,7 @@ struct ObSqlParseResult
   int set_simple_route_info(const ObProxyParseResult &parse_result);
   int set_dbmesh_route_info(const ObProxyParseResult &obproxy_parse_result);
   int set_var_info(const ObProxyParseResult &parse_result);
-  int set_text_ps_execute_info(const ObProxyTextPsExecuteParseInfo &execute_parse_info);
+  int set_text_ps_info(ObProxyTextPsInfo& text_ps_info, const ObProxyTextPsParseInfo &execute_parse_info);
   int load_result(const ObProxyParseResult &obproxy_parse_result,
                   const bool use_lower_case_name = false,
                   const bool save_origin_db_table_name = false,
@@ -724,7 +729,7 @@ struct ObSqlParseResult
       cmd_info_ = other.cmd_info_;
       call_info_ = other.call_info_;
       route_info_ = other.route_info_;
-      text_ps_execute_info_ = other.text_ps_execute_info_;
+      text_ps_info_ = other.text_ps_info_;
       has_last_insert_id_ = other.has_last_insert_id_;
       has_found_rows_ = other.has_found_rows_;
       has_row_count_ = other.has_row_count_;
@@ -740,7 +745,6 @@ struct ObSqlParseResult
       hint_consistency_level_ = other.hint_consistency_level_;
       dml_buf_ = other.dml_buf_;
       internal_select_buf_ = other.internal_select_buf_;
-      text_ps_buf_ = other.text_ps_buf_;
       part_name_buf_ = other.part_name_buf_;
       table_name_quote_ = other.table_name_quote_;
       package_name_quote_ = other.package_name_quote_;
@@ -754,7 +758,20 @@ struct ObSqlParseResult
       alias_name_.assign_ptr(dml_buf_.alias_name_buf_, other.alias_name_.length());
       col_name_.assign_ptr(internal_select_buf_.col_name_buf_, other.col_name_.length());
       part_name_.assign_ptr(part_name_buf_.part_name_buf_, other.part_name_.length());
-      text_ps_name_.assign_ptr(text_ps_buf_.text_ps_name_buf_, other.text_ps_name_.length());
+      if (NULL != text_ps_buf_) {
+        allocator_.free(text_ps_buf_);
+        text_ps_buf_ = NULL;
+        text_ps_buf_len_ = 0;
+      }
+      if (NULL != other.text_ps_buf_ && other.text_ps_buf_len_ > 0) {
+        if (OB_ISNULL(text_ps_buf_ = static_cast<char *>(allocator_.alloc(other.text_ps_buf_len_)))) {
+          PROXY_LOG(WARN, "fail to alloc mem", K(other.text_ps_buf_len_));
+        } else {
+          MEMCPY(text_ps_buf_, other.text_ps_buf_, other.text_ps_buf_len_);
+          text_ps_buf_len_ = other.text_ps_buf_len_;
+          text_ps_name_.assign_ptr(text_ps_buf_, text_ps_buf_len_);
+        }
+      }
 
       /* some sharding variablies do not copy */
       has_shard_comment_ = other.has_shard_comment_;
@@ -812,7 +829,7 @@ struct ObSqlParseResult
   ObProxyCmdInfo cmd_info_;
   ObProxyCallInfo call_info_;
   ObProxySimpleRouteInfo route_info_;
-  ObProxyTextPsExecuteInfo text_ps_execute_info_;
+  ObProxyTextPsInfo text_ps_info_;
   oceanbase::common::ObArenaAllocator allocator_;
 private:
   bool has_last_insert_id_;
@@ -852,7 +869,8 @@ private:
   ObPartNameBuf part_name_buf_;
   // text ps
   common::ObString text_ps_name_;
-  ObTextPsBuf text_ps_buf_;
+  char* text_ps_buf_;
+  int32_t text_ps_buf_len_;
   ObProxyBasicStmtType text_ps_inner_stmt_type_;
 
   common::ObString trace_id_;
@@ -951,12 +969,14 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   cmd_info_.reset();
   call_info_.reset();
   route_info_.reset();
-  text_ps_execute_info_.reset();
+  text_ps_info_.reset();
   table_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   package_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   database_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   alias_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   col_name_quote_ = OBPROXY_QUOTE_T_INVALID;
+  text_ps_buf_ = NULL;
+  text_ps_buf_len_ = 0;
   text_ps_name_.reset();
   text_ps_inner_stmt_type_ = OBPROXY_T_INVALID;
 

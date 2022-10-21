@@ -1653,10 +1653,26 @@ int ObProxyConfigProcessor::load_local_config()
   }
   event::ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
   while (OB_SUCC(ret) && NULL != (ent = readdir(etc_dir))) {
-    allocator.reuse();
+    bool is_need_load = false;
+    if (NULL != memchr(ent->d_name, '.', ent->d_reclen)) {
+      // do nothing
+    } else if (ent->d_type == DT_DIR) {
+      is_need_load = true;
+    } else if (ent->d_type == DT_UNKNOWN) {
+      struct stat st;
+      char *full_path = NULL;
+      allocator.reuse();
+      if (OB_FAIL(ObLayout::merge_file_path(layout_etc_dir, ent->d_name, allocator, full_path))) {
+        LOG_WARN("fail to merge file", K(layout_etc_dir), "name", ent->d_name, K(ret));
+      } else if (0 != (stat(full_path, &st))) {
+        ret = OB_IO_ERROR;
+        LOG_WARN("fail to stat dir", K(full_path), KERRMSGS, K(ret));
+      } else if (S_ISDIR(st.st_mode)) {
+        is_need_load = true;
+      }
+    }
     // we only load current config dir
-    if (ent->d_type == DT_DIR
-        && NULL == memchr(ent->d_name, '.', ent->d_reclen)) {
+    if (OB_SUCC(ret) && is_need_load) {
       if (OB_FAIL(load_local_app_config(ObString::make_string(ent->d_name)))) {
         LOG_WARN("fail to load app config", "app name", ent->d_name, K(ret));
       }
@@ -2192,8 +2208,8 @@ int ObProxyConfigProcessor::update_app_security_config(const ObString &appname,
           if (OB_UNLIKELY(len <= 0 || len > json_len)) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WARN("fill sql failed", K(len), K(json_len), K(ret));
-          } else if (OB_FAIL(get_global_config_processor().store_cloud_config("ssl_config", "*", "*", "key_info", json_buf))) {
-            LOG_WARN("execute sql failed", K(ret));
+          } else if (OB_FAIL(get_global_config_processor().store_global_ssl_config("key_info", json_buf))) {
+            LOG_WARN("store global ssl config failed", K(ret));
           }
         }
 

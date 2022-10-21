@@ -44,6 +44,20 @@ enum ObPartitionFuncType
   PARTITION_FUNC_TYPE_MAX,
 };
 
+enum ObPartitionFuncTypeV4
+{
+  //TODO add other type
+  PARTITION_FUNC_TYPE_V4_HASH = 0,
+  PARTITION_FUNC_TYPE_V4_KEY,
+  PARTITION_FUNC_TYPE_V4_KEY_IMPLICIT,
+  PARTITION_FUNC_TYPE_V4_RANGE,
+  PARTITION_FUNC_TYPE_V4_RANGE_COLUMNS,
+  PARTITION_FUNC_TYPE_V4_LIST,
+  PARTITION_FUNC_TYPE_V4_LIST_COLUMNS,
+  PARTITION_FUNC_TYPE_V4_INTERVAL,
+  PARTITION_FUNC_TYPE_V4_MAX,
+};
+
 const char *get_partition_func_type_str(const ObPartitionFuncType type)
 {
   static const char *type_str_array[PARTITION_FUNC_TYPE_MAX] =
@@ -67,18 +81,55 @@ const char *get_partition_func_type_str(const ObPartitionFuncType type)
   return str;
 }
 
-inline bool is_hash_part(const ObPartitionFuncType part_type)
-{ return PARTITION_FUNC_TYPE_HASH == part_type || PARTITION_FUNC_TYPE_HASH_V2 == part_type; }
+inline bool is_hash_part(const ObPartitionFuncType part_type, const int64_t cluster_version)
+{
+  bool bret = false;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+    bret = PARTITION_FUNC_TYPE_HASH == part_type || PARTITION_FUNC_TYPE_HASH_V2 == part_type;
+  } else {
+    bret = PARTITION_FUNC_TYPE_V4_HASH == static_cast<ObPartitionFuncTypeV4>(part_type);
+  }
+  return bret;
+}
 
-inline bool is_range_part(const ObPartitionFuncType part_type)
-{ return PARTITION_FUNC_TYPE_RANGE == part_type || PARTITION_FUNC_TYPE_RANGE_COLUMNS == part_type; }
+inline bool is_range_part(const ObPartitionFuncType part_type, const int64_t cluster_version)
+{
+  bool bret = false;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+    bret = PARTITION_FUNC_TYPE_RANGE == part_type || PARTITION_FUNC_TYPE_RANGE_COLUMNS == part_type;
+  } else {
+    ObPartitionFuncTypeV4 v4_type = static_cast<ObPartitionFuncTypeV4>(part_type);
+    bret = PARTITION_FUNC_TYPE_V4_RANGE == v4_type || PARTITION_FUNC_TYPE_V4_RANGE_COLUMNS == v4_type;
+  }
 
-inline bool is_key_part(const ObPartitionFuncType part_type)
-{ return PARTITION_FUNC_TYPE_KEY_IMPLICIT == part_type || PARTITION_FUNC_TYPE_KEY_V2 == part_type
-         || PARTITION_FUNC_TYPE_KEY_V3 == part_type || PARTITION_FUNC_TYPE_KEY_IMPLICIT_V2 == part_type; }
+  return bret;
+}
 
-inline bool is_list_part(const ObPartitionFuncType part_type)
-{ return PARTITION_FUNC_TYPE_LIST == part_type || PARTITION_FUNC_TYPE_LIST_COLUMNS == part_type; }
+inline bool is_key_part(const ObPartitionFuncType part_type, const int64_t cluster_version)
+{
+  bool bret = false;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+    bret = PARTITION_FUNC_TYPE_KEY_IMPLICIT == part_type || PARTITION_FUNC_TYPE_KEY_V2 == part_type
+         || PARTITION_FUNC_TYPE_KEY_V3 == part_type || PARTITION_FUNC_TYPE_KEY_IMPLICIT_V2 == part_type;
+  } else {
+    ObPartitionFuncTypeV4 v4_type = static_cast<ObPartitionFuncTypeV4>(part_type);
+    bret = PARTITION_FUNC_TYPE_V4_KEY_IMPLICIT == v4_type || PARTITION_FUNC_TYPE_V4_KEY == v4_type;
+  }
+  return bret;
+}
+
+inline bool is_list_part(const ObPartitionFuncType part_type, const int64_t cluster_version)
+{
+  bool bret = false;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+    bret = PARTITION_FUNC_TYPE_LIST == part_type || PARTITION_FUNC_TYPE_LIST_COLUMNS == part_type;
+  } else {
+    ObPartitionFuncTypeV4 v4_type = static_cast<ObPartitionFuncTypeV4>(part_type);
+    bret = PARTITION_FUNC_TYPE_V4_LIST == v4_type || PARTITION_FUNC_TYPE_V4_LIST_COLUMNS == v4_type;
+  }
+
+  return bret;
+}
 
 OB_INLINE int64_t generate_phy_part_id(int64_t part_idx, int64_t sub_part_idx)
 {

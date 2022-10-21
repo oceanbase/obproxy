@@ -54,14 +54,14 @@ static const char *PROXY_PLAIN_SCHEMA_SQL                =
     "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ * "
     "FROM oceanbase.%s "
     "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' "
-    "AND partition_id = %ld "
+    "AND %s = %ld "
     "ORDER BY role ASC LIMIT %ld";
 static const char *PROXY_TENANT_SCHEMA_SQL               =
     //svr_ip, sql_port, table_id, role, part_num, replica_num
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
     "FROM oceanbase.%s "
     "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' AND sql_port > 0 "
-    "ORDER BY partition_id ASC, role ASC LIMIT %ld";
+    "ORDER BY %s ASC, role ASC LIMIT %ld";
 
 static const char *PROXY_PART_INFO_SQL                   =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ template_num, part_level, part_num, part_type, part_space, part_expr, "
@@ -71,6 +71,15 @@ static const char *PROXY_PART_INFO_SQL                   =
     "spare1, spare2, spare4, spare5 "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu order by part_key_idx LIMIT %d;";
+
+static const char *PROXY_PART_INFO_SQL_V4                =
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ template_num, part_level, part_num, part_type, part_space, part_expr, "
+    "part_interval_bin, interval_start_bin, sub_part_num, sub_part_type, sub_part_space, "
+    "sub_part_expr, def_sub_part_interval_bin, def_sub_interval_start_bin, "
+    "part_key_num, part_key_name, part_key_type, part_key_idx, part_key_level, part_key_extra, "
+    "part_key_collation_type, part_key_rowkey_idx, part_key_expr, part_key_length, part_key_precision, part_key_scale "
+    "FROM oceanbase.%s "
+    "WHERE table_id = %lu and tenant_name = '%.*s' order by part_key_idx LIMIT %d;";
 
 static const char *PROXY_FIRST_PART_SQL                  =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, part_name, high_bound_val_bin, sub_part_num "
@@ -83,6 +92,11 @@ static const char *PROXY_HASH_FIRST_PART_SQL             =
     "FROM oceanbase.%s "
     "WHERE table_id = %lu LIMIT %ld;";
 
+static const char *PROXY_FIRST_PART_SQL_V4 =
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ tablet_id, part_id, part_name, high_bound_val_bin, sub_part_num "
+    "FROM oceanbase.%s "
+    "WHERE table_id = %lu and tenant_name = '%.*s' LIMIT %ld;";
+
 static const char *PROXY_SUB_PART_SQL                    =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, high_bound_val_bin "
   "FROM oceanbase.%s "
@@ -92,6 +106,11 @@ static const char *PROXY_NON_TEMPLATE_SUB_PART_SQL       =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, high_bound_val_bin "
   "FROM oceanbase.%s "
   "WHERE table_id = %lu LIMIT %ld;";
+
+static const char *PROXY_SUB_PART_SQL_V4 =
+  "SELECT /*+READ_CONSISTENCY(WEAK)*/ tablet_id, part_id, sub_part_id, high_bound_val_bin "
+  "FROM oceanbase.%s "
+  "WHERE table_id = %lu and tenant_name = '%.*s' LIMIT %ld;";
 
 static const char *PROXY_ROUTINE_SCHEMA_SQL              =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
@@ -106,6 +125,12 @@ static const char *PROXY_ROUTINE_SCHEMA_SQL_WITH_PACKAGE =
   "WHERE tenant_name = '%.*s' AND (database_name = '%.*s' OR database_name = '%.*s') AND table_name = '%.*s.%.*s' "
   "AND partition_id = 0 AND svr_ip = '' AND sql_port = 0 "
   "ORDER BY table_id ASC LIMIT 1;";
+
+static const char *PROXY_ROUTINE_SCHEMA_SQL_V4 =
+  "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
+  "FROM %s "
+  "WHERE tenant_name = '%.*s' and database_name = '%.*s' and package_name = '%.*s' "
+  "and routine_name = '%.*s';";
 
 static void get_tenant_name(const ObString &origin_tenant_name, char *new_tenant_name_buf, ObString &new_tenant_name) {
   new_tenant_name = origin_tenant_name;
@@ -129,7 +154,8 @@ static void get_tenant_name(const ObString &origin_tenant_name, char *new_tenant
 
 int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
                                       ObTableEntryName &name,
-                                      bool is_need_force_flush /*false*/)
+                                      bool is_need_force_flush, /*false*/
+                                      const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
@@ -146,6 +172,7 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
                                           new_tenant_name.length(), new_tenant_name.ptr(),
                                           name.database_name_.length(), name.database_name_.ptr(),
                                           name.table_name_.length(), name.table_name_.ptr(),
+                                          IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) ? "partition_id" : "tablet_id",
                                           INT64_MAX));
     } else {
       const int64_t FIRST_PARTITION_ID = 0;
@@ -155,6 +182,7 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
                                           new_tenant_name.length(), new_tenant_name.ptr(),
                                           name.database_name_.length(), name.database_name_.ptr(),
                                           name.table_name_.length(), name.table_name_.ptr(),
+                                          IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) ? "partition_id" : "tablet_id",
                                           FIRST_PARTITION_ID, INT64_MAX));
     }
 
@@ -169,17 +197,31 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
 
 int ObRouteUtils::get_part_info_sql(char *sql_buf,
                                     const int64_t buf_len,
-                                    const uint64_t table_id)
+                                    const uint64_t table_id,
+                                    ObTableEntryName &name,
+                                    const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)) {
+  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(ret));
+    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
   } else {
-    int64_t len = snprintf(sql_buf, buf_len, PROXY_PART_INFO_SQL,
-                           OB_ALL_VIRTUAL_PROXY_PARTITION_INFO_TNAME,
-                           table_id,
-                           OB_MAX_PARTITION_KEY_COLUMN_NUMBER);
+    int64_t len = 0;
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      len = snprintf(sql_buf, buf_len, PROXY_PART_INFO_SQL,
+                     OB_ALL_VIRTUAL_PROXY_PARTITION_INFO_TNAME,
+                     table_id,
+                     OB_MAX_PARTITION_KEY_COLUMN_NUMBER);
+    } else {
+      char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
+      ObString new_tenant_name;
+      get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
+      len = snprintf(sql_buf, buf_len, PROXY_PART_INFO_SQL_V4,
+                     OB_ALL_VIRTUAL_PROXY_PARTITION_INFO_TNAME,
+                     table_id,
+                     new_tenant_name.length(), new_tenant_name.ptr(),
+                     OB_MAX_PARTITION_KEY_COLUMN_NUMBER);
+    }
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
@@ -192,23 +234,34 @@ int ObRouteUtils::get_part_info_sql(char *sql_buf,
 int ObRouteUtils::get_first_part_sql(char *sql_buf,
                                      const int64_t buf_len,
                                      const uint64_t table_id,
-                                     const bool is_hash_part)
+                                     const bool is_hash_part,
+                                     ObTableEntryName &name,
+                                     const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
 
   int64_t len = 0;
-  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)) {
+  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(ret));
-  } else {
+    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
+  } else if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
     len = snprintf(sql_buf, buf_len, is_hash_part ? PROXY_HASH_FIRST_PART_SQL : PROXY_FIRST_PART_SQL,
+        OB_ALL_VIRTUAL_PROXY_PARTITION_TNAME,
+        table_id,
+        INT64_MAX);
+  } else {
+    char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
+    ObString new_tenant_name;
+    get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
+    len = snprintf(sql_buf, buf_len, PROXY_FIRST_PART_SQL_V4,
                    OB_ALL_VIRTUAL_PROXY_PARTITION_TNAME,
                    table_id,
+                   new_tenant_name.length(), new_tenant_name.ptr(),
                    INT64_MAX);
-    if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
-    }
+  }
+  if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
   }
 
   return ret;
@@ -217,18 +270,29 @@ int ObRouteUtils::get_first_part_sql(char *sql_buf,
 int ObRouteUtils::get_sub_part_sql(char *sql_buf,
                                    const int64_t buf_len,
                                    const uint64_t table_id,
-                                   const bool is_template_table)
+                                   const bool is_template_table,
+                                   ObTableEntryName &name,
+                                   const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
 
   int64_t len = 0;
-  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)) {
+  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(ret));
+    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
   } else {
     // assume all sub_part are same for each fisrt part
     // templete part id is -1
-    if (is_template_table) {
+    if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
+      ObString new_tenant_name;
+      get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
+      len = snprintf(sql_buf, buf_len, PROXY_SUB_PART_SQL_V4,
+                     OB_ALL_VIRTUAL_PROXY_SUB_PARTITION_TNAME,
+                     table_id,
+                     new_tenant_name.length(), new_tenant_name.ptr(),
+                     INT64_MAX);
+    } else if (is_template_table) {
       const int64_t TEMPLATE_PART_ID = -1;
       len = snprintf(sql_buf, buf_len, PROXY_SUB_PART_SQL,
                      OB_ALL_VIRTUAL_PROXY_SUB_PARTITION_TNAME,
@@ -259,7 +323,8 @@ bool is_fake_ip_port(const char *ip_str, const int64_t port)
 }
 
 int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
-                                    ObTableEntry &entry)
+                                    ObTableEntry &entry,
+                                    const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
   int64_t tmp_real_str_len = 0;
@@ -307,7 +372,11 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
     }
 
     if (OB_SUCC(ret)) {
-      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", replica_type, int32_t);
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", replica_type, int32_t);
+      } else {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "replica_type", replica_type, int32_t);
+      }
       if (OB_ERR_COLUMN_NOT_FOUND == ret) {
         LOG_DEBUG("can not find spare1, maybe is old server, ignore", K(replica_type), K(ret));
         ret = OB_SUCCESS;
@@ -316,7 +385,11 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
     }
 
     if (OB_SUCC(ret)) {
-      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", dup_replica_type, int32_t);
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", dup_replica_type, int32_t);
+      } else {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "dup_replica_type", dup_replica_type, int32_t);
+      }
       if (OB_ERR_COLUMN_NOT_FOUND == ret) {
         LOG_DEBUG("can not find spare2, maybe is old server, ignore", K(dup_replica_type), K(ret));
         ret = OB_SUCCESS;
@@ -442,7 +515,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
   return ret;
 }
 
-int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info)
+int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info, const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
 
@@ -452,6 +525,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
 
   // init part key info
   part_info.get_part_key_info().key_num_ = 0;
+  part_info.set_cluster_version(cluster_version);
   for (int64_t i = 0; i < part_key_num && OB_SUCC(ret); ++i) {
     // get first row
     if (OB_FAIL(rs_fetcher.next())) {
@@ -492,22 +566,22 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
 
       // get part key info for EACH line
       if (OB_SUCC(ret)) {
-        if (OB_FAIL(fetch_part_key(rs_fetcher, part_info))) {
+        if (OB_FAIL(fetch_part_key(rs_fetcher, part_info, cluster_version))) {
           LOG_WARN("fail to get part key", K(ret));
         } // end of if
       } // end of if (OB_SUCC(ret))
     } // end of else
   } // end of for
 
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(build_part_desc(part_info))) {
+  if (OB_SUCC(ret) && IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+    if (OB_FAIL(build_part_desc(part_info, cluster_version))) {
       LOG_WARN("fail to build part desc ", K(part_info), K(ret));
     }
   }
   return ret;
 }
 
-int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info) {
+int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info, const int64_t cluster_version) {
   int ret = OB_SUCCESS;
   ObProxyPartOption &sub_part_opt = part_info.get_sub_part_option();
 
@@ -516,7 +590,7 @@ int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info) {
     LOG_INFO("part key type is unsopported, no need build part_desc", K(part_info));
   } else if (!part_info.is_template_table()) {
     LOG_INFO("part table is non-template table, build hash and key part_desc later", K(part_info));
-  } else if (OB_FAIL(build_part_desc(part_info, PARTITION_LEVEL_TWO, sub_part_opt))) {
+  } else if (OB_FAIL(build_part_desc(part_info, PARTITION_LEVEL_TWO, sub_part_opt, cluster_version))) {
     LOG_WARN("fail to build sub part", K(sub_part_opt), K(ret));
   } else {
     // do nothing
@@ -527,7 +601,8 @@ int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info) {
 
 int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info,
                                   const ObPartitionLevel part_level,
-                                  ObProxyPartOption &part_opt) {
+                                  ObProxyPartOption &part_opt,
+                                  const int64_t cluster_version) {
   int ret = OB_SUCCESS;
   ObProxyPartMgr &part_mgr = part_info.get_part_mgr();
 
@@ -535,23 +610,27 @@ int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info,
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid argument", K(part_level), K(ret));
   } else {
-    if (part_opt.is_hash_part()) {
+    if (part_opt.is_hash_part(cluster_version)) {
       if (OB_FAIL(part_mgr.build_hash_part(part_info.is_oracle_mode(),
                                            part_level,
                                            part_opt.part_func_type_,
                                            part_opt.part_num_,
                                            part_opt.part_space_,
                                            part_info.is_template_table(),
-                                           part_info.get_part_key_info()))) {
+                                           part_info.get_part_key_info(),
+                                           NULL,
+                                           cluster_version))) {
         LOG_WARN("fail to build hash part", K(part_opt), K(ret));
       }
-    } else if (part_opt.is_key_part()) {
+    } else if (part_opt.is_key_part(cluster_version)) {
       if (OB_FAIL(part_mgr.build_key_part(part_level,
                                           part_opt.part_func_type_,
                                           part_opt.part_num_,
                                           part_opt.part_space_,
                                           part_info.is_template_table(),
-                                          part_info.get_part_key_info()))) {
+                                          part_info.get_part_key_info(),
+                                          NULL,
+                                          cluster_version))) {
         LOG_WARN("fail to build key part", K(part_opt), K(ret));
       }
     } else {
@@ -559,6 +638,36 @@ int ObRouteUtils::build_part_desc(ObProxyPartInfo &part_info,
     }
   }
   return ret;
+}
+
+void ObRouteUtils::set_part_key_accuracy(ObProxyPartKey *part_key, ObObjType part_key_type,
+                         const int32_t length, const int16_t precision, const int16_t scale)
+{
+  part_key->accuracy_.length_ = -1;         // init -1 means not used
+  part_key->accuracy_.precision_ = -1;
+  part_key->accuracy_.scale_ = -1;
+
+  // use accord to obj_type
+  if (ob_is_otimestamp_type(part_key_type)) {
+    if (scale < MIN_SCALE_FOR_TEMPORAL || scale > MAX_SCALE_FOR_ORACLE_TEMPORAL) {
+      part_key->accuracy_.scale_ = DEFAULT_SCALE_FOR_ORACLE_TIMESTAMP;
+      LOG_WARN("invalid scale for timestamp in oracle, set to default:6", K(scale));
+    } else {
+      part_key->accuracy_.scale_ = static_cast<int16_t>(scale); // timestamp only need scale
+      LOG_DEBUG("succ to set timestamp scale of accuracy", K(scale));
+    }
+  } else if (ob_is_number_tc(part_key_type)
+      || ob_is_datetime_tc(part_key_type)
+      || ob_is_time_tc(part_key_type)) {
+    part_key->accuracy_.precision_ = precision;
+    part_key->accuracy_.scale_ = scale;
+    part_key->accuracy_.valid_ = 1;
+  } else if (ob_is_string_tc(part_key_type)) {
+    part_key->accuracy_.length_ = length;
+    part_key->accuracy_.precision_ = precision;
+    part_key->accuracy_.valid_ = 1;
+  }
+  // more obj type could be supported here.
 }
 
 /*
@@ -616,32 +725,7 @@ void ObRouteUtils::parse_part_key_accuracy(ObProxyPartKey *part_key,
         int32_t length = static_cast<int32_t>(nums[0]);
         int16_t precision = static_cast<int16_t>(nums[1]);
         int16_t scale = static_cast<int16_t>(nums[2]);
-        
-        part_key->accuracy_.length_ = -1;         // init -1 means not used
-        part_key->accuracy_.precision_ = -1;
-        part_key->accuracy_.scale_ = -1;
-
-        // use accord to obj_type
-        if (ob_is_otimestamp_type(part_key_type)) {
-          if (scale < MIN_SCALE_FOR_TEMPORAL || scale > MAX_SCALE_FOR_ORACLE_TEMPORAL) {
-            part_key->accuracy_.scale_ = DEFAULT_SCALE_FOR_ORACLE_TIMESTAMP;
-            LOG_WARN("invalid scale for timestamp in oracle, set to default:6", K(scale));
-          } else {
-            part_key->accuracy_.scale_ = static_cast<int16_t>(scale); // timestamp only need scale
-            LOG_DEBUG("succ to set timestamp scale of accuracy", K(scale));
-          }
-        } else if (ob_is_number_tc(part_key_type)
-                   || ob_is_datetime_tc(part_key_type)
-                   || ob_is_time_tc(part_key_type)) {
-          part_key->accuracy_.precision_ = precision;
-          part_key->accuracy_.scale_ = scale;
-          part_key->accuracy_.valid_ = 1;
-        } else if (ob_is_string_tc(part_key_type)) {
-          part_key->accuracy_.length_ = length;
-          part_key->accuracy_.precision_ = precision;
-          part_key->accuracy_.valid_ = 1;
-        }
-        // more obj type could be supported here.
+        set_part_key_accuracy(part_key, part_key_type, length, precision, scale);
       }
     }
 
@@ -655,7 +739,8 @@ void ObRouteUtils::parse_part_key_accuracy(ObProxyPartKey *part_key,
 }
 
 inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
-                                        ObProxyPartInfo &part_info)
+                                        ObProxyPartInfo &part_info,
+                                        const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
 
@@ -670,6 +755,9 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
   ObString constraint_part_key;
   int64_t idx_in_rowid = -1;
   ObString part_key_accuracy;
+  int64_t part_key_length = -1;
+  int64_t part_key_precision = -1;
+  int64_t part_key_scale = -1;
 
   PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_level", part_key_level, ObPartitionLevel);
   // part key idx is the order of part key in all columns
@@ -678,23 +766,33 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
   PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_key_name", part_key_name);
   // use part_key_extra as generated key expr
   PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_key_extra", part_key_extra);
-  PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "spare4", constraint_part_key);
-  // use spare1 as table collation type
-  PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", part_key_cs_type, ObCollationType);
-  // use spare2 as rowid index
-  PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", idx_in_rowid, int64_t);
-  // use spare5 as the accuracy of the part key
-  PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "spare5", part_key_accuracy);
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+    PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "spare4", constraint_part_key);
+    // use spare1 as table collation type
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", part_key_cs_type, ObCollationType);
+    // use spare2 as rowid index
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", idx_in_rowid, int64_t);
+    // use spare5 as the accuracy of the part key
+    PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "spare5", part_key_accuracy);
+  } else {
+    PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_key_expr", constraint_part_key);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_collation_type", part_key_cs_type, ObCollationType);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_rowkey_idx", idx_in_rowid, int64_t);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_length", part_key_length, int64_t);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_precision", part_key_precision, int64_t);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_scale", part_key_scale, int64_t);
+  }
 
   LOG_DEBUG("fetch part key", K(part_key_level), K(part_key_idx), K(part_key_type), K(part_key_name),
-            K(part_key_extra), K(constraint_part_key), K(part_key_cs_type), K(idx_in_rowid), K(part_key_accuracy));
-  
+            K(part_key_extra), K(constraint_part_key), K(part_key_cs_type), K(idx_in_rowid), K(part_key_accuracy),
+            K(part_key_length), K(part_key_precision), K(part_key_scale));
+
   if (!is_obj_type_supported(part_key_type)) {
     part_info.set_unknown_part_key(true);
   }
 
   ObProxyPartKey *part_key = &part_key_info.part_keys_[part_key_info.key_num_];
-  
+
   if (PARTITION_LEVEL_ONE == part_key_level) {
     part_key->level_ = PART_KEY_LEVEL_ONE;
   } else if (PARTITION_LEVEL_TWO == part_key_level) {
@@ -720,8 +818,15 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
     part_key->idx_in_rowid_ = idx_in_rowid;
     part_key->accuracy_.valid_ = 0;               // not valid accuracy
 
-    parse_part_key_accuracy(part_key, part_key_type, &allocator, part_key_accuracy);
-    
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      parse_part_key_accuracy(part_key, part_key_type, &allocator, part_key_accuracy);
+    } else {
+      set_part_key_accuracy(part_key, part_key_type,
+                            static_cast<int32_t>(part_key_length),
+                            static_cast<int16_t>(part_key_precision),
+                            static_cast<int16_t>(part_key_scale));
+    }
+
     if (CS_TYPE_INVALID == part_key_cs_type) {
       part_key->cs_type_ = ObCharset::get_default_collation(ObCharset::get_default_charset());
     } else {
@@ -838,28 +943,31 @@ inline int ObRouteUtils::fetch_part_option(ObResultSetFetcher &rs_fetcher,
   return ret;
 }
 
-int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info)
+int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info, const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
-  if (part_info.get_first_part_option().is_range_part()) {
+  part_info.get_part_mgr().set_cluster_version(cluster_version);
+  if (part_info.get_first_part_option().is_range_part(cluster_version)) {
     if (OB_FAIL(part_info.get_part_mgr().build_range_part(share::schema::PARTITION_LEVEL_ONE,
                                                           part_info.get_first_part_option().part_func_type_,
                                                           part_info.get_first_part_option().part_num_,
                                                           part_info.is_template_table(),
                                                           part_info.get_part_key_info(),
-                                                          rs_fetcher))) {
+                                                          rs_fetcher,
+                                                          cluster_version))) {
       LOG_WARN("fail to build range part", K(ret));
     }
-  } else if (part_info.get_first_part_option().is_list_part()) {
+  } else if (part_info.get_first_part_option().is_list_part(cluster_version)) {
     if (OB_FAIL(part_info.get_part_mgr().build_list_part(share::schema::PARTITION_LEVEL_ONE,
                                                          part_info.get_first_part_option().part_func_type_,
                                                          part_info.get_first_part_option().part_num_,
                                                          part_info.is_template_table(),
                                                          part_info.get_part_key_info(),
-                                                         rs_fetcher))) {
+                                                         rs_fetcher,
+                                                         cluster_version))) {
       LOG_WARN("fail to build list part", K(ret));
     }
-  } else if (part_info.get_first_part_option().is_hash_part()) {
+  } else if (part_info.get_first_part_option().is_hash_part(cluster_version)) {
     if (OB_FAIL(part_info.get_part_mgr().build_hash_part(part_info.is_oracle_mode(),
                                                          share::schema::PARTITION_LEVEL_ONE,
                                                          part_info.get_first_part_option().part_func_type_,
@@ -867,17 +975,19 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
                                                          part_info.get_first_part_option().part_space_,
                                                          part_info.is_template_table(),
                                                          part_info.get_part_key_info(),
-                                                         &rs_fetcher))) {
+                                                         &rs_fetcher,
+                                                         cluster_version))) {
       LOG_WARN("fail to build hash part", K(ret));
     }
-  } else if (part_info.get_first_part_option().is_key_part()) {
+  } else if (part_info.get_first_part_option().is_key_part(cluster_version)) {
     if (OB_FAIL(part_info.get_part_mgr().build_key_part(share::schema::PARTITION_LEVEL_ONE,
                                                         part_info.get_first_part_option().part_func_type_,
                                                         part_info.get_first_part_option().part_num_,
                                                         part_info.get_first_part_option().part_space_,
                                                         part_info.is_template_table(),
                                                         part_info.get_part_key_info(),
-                                                        &rs_fetcher))) {
+                                                        &rs_fetcher,
+                                                        cluster_version))) {
       LOG_WARN("fail to build key part", K(ret));
     }
   } else {
@@ -888,44 +998,48 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
   return ret;
 }
 
-int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info)
+int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info, const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
-  if (part_info.get_sub_part_option().is_range_part()) {
+  if (part_info.get_sub_part_option().is_range_part(cluster_version)) {
     if (part_info.is_template_table()) {
       if (OB_FAIL(part_info.get_part_mgr().build_range_part(share::schema::PARTITION_LEVEL_TWO,
                                                             part_info.get_sub_part_option().part_func_type_,
                                                             part_info.get_sub_part_option().part_num_,
                                                             part_info.is_template_table(),
                                                             part_info.get_part_key_info(),
-                                                            rs_fetcher))) {
+                                                            rs_fetcher,
+                                                            cluster_version))) {
         LOG_WARN("fail to build range part", K(ret));
       }
     } else {
       if (OB_FAIL(part_info.get_part_mgr().build_sub_range_part_with_non_template(part_info.get_sub_part_option().part_func_type_,
                                                                                   part_info.get_part_key_info(),
-                                                                                  rs_fetcher))) {
+                                                                                  rs_fetcher,
+                                                                                  cluster_version))) {
         LOG_WARN("fail to build range part", K(ret));
       }
     }
-  } else if (part_info.get_sub_part_option().is_list_part()) {
+  } else if (part_info.get_sub_part_option().is_list_part(cluster_version)) {
     if (part_info.is_template_table()) {
       if (OB_FAIL(part_info.get_part_mgr().build_list_part(share::schema::PARTITION_LEVEL_TWO,
                                                            part_info.get_sub_part_option().part_func_type_,
                                                            part_info.get_sub_part_option().part_num_,
                                                            part_info.is_template_table(),
                                                            part_info.get_part_key_info(),
-                                                           rs_fetcher))) {
+                                                           rs_fetcher,
+                                                           cluster_version))) {
         LOG_WARN("fail to build list part", K(ret));
       }
     } else {
       if (OB_FAIL(part_info.get_part_mgr().build_sub_list_part_with_non_template(part_info.get_sub_part_option().part_func_type_,
                                                                                  part_info.get_part_key_info(),
-                                                                                 rs_fetcher))) {
+                                                                                 rs_fetcher,
+                                                                                 cluster_version))) {
         LOG_WARN("fail to build range part", K(ret));
       }
     }
-  } else if (part_info.get_sub_part_option().is_hash_part()) {
+  } else if (part_info.get_sub_part_option().is_hash_part(cluster_version)) {
     if (part_info.is_template_table()) {
       if (OB_FAIL(part_info.get_part_mgr().build_hash_part(part_info.is_oracle_mode(),
                                                            share::schema::PARTITION_LEVEL_TWO,
@@ -934,7 +1048,8 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                            part_info.get_sub_part_option().part_space_,
                                                            part_info.is_template_table(),
                                                            part_info.get_part_key_info(),
-                                                           &rs_fetcher))) {
+                                                           &rs_fetcher,
+                                                           cluster_version))) {
         LOG_WARN("fail to build hash part", K(ret));
       }
     } else {
@@ -942,11 +1057,12 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                                                  part_info.get_sub_part_option().part_func_type_,
                                                                                  part_info.get_sub_part_option().part_space_,
                                                                                  part_info.get_part_key_info(),
-                                                                                 rs_fetcher))) {
+                                                                                 rs_fetcher,
+                                                                                 cluster_version))) {
         LOG_WARN("fail to build range part", K(ret));
       }
     }
-  } else if (part_info.get_sub_part_option().is_key_part()) {
+  } else if (part_info.get_sub_part_option().is_key_part(cluster_version)) {
     if (part_info.is_template_table()) {
       if (OB_FAIL(part_info.get_part_mgr().build_key_part(share::schema::PARTITION_LEVEL_TWO,
                                                           part_info.get_sub_part_option().part_func_type_,
@@ -954,14 +1070,16 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                           part_info.get_sub_part_option().part_space_,
                                                           part_info.is_template_table(),
                                                           part_info.get_part_key_info(),
-                                                          &rs_fetcher))) {
+                                                          &rs_fetcher,
+                                                          cluster_version))) {
         LOG_WARN("fail to build key part", K(ret));
       }
     } else {
       if (OB_FAIL(part_info.get_part_mgr().build_sub_key_part_with_non_template(part_info.get_sub_part_option().part_func_type_,
                                                                                 part_info.get_sub_part_option().part_space_,
                                                                                 part_info.get_part_key_info(),
-                                                                                rs_fetcher))) {
+                                                                                rs_fetcher,
+                                                                                cluster_version))) {
         LOG_WARN("fail to build range part", K(ret));
       }
     }
@@ -1130,6 +1248,7 @@ int ObRouteUtils::convert_route_param_to_table_param(
     table_param.mysql_proxy_ = route_param.mysql_proxy_;
     table_param.cr_version_ = route_param.cr_version_;
     table_param.cr_id_ = route_param.cr_id_;
+    table_param.cluster_version_ = route_param.cluster_version_;
     table_param.tenant_version_ = route_param.tenant_version_;
     table_param.is_partition_table_route_supported_ = route_param.is_partition_table_route_supported_;
     table_param.is_oracle_mode_ = route_param.is_oracle_mode_;
@@ -1154,6 +1273,7 @@ int ObRouteUtils::convert_route_param_to_routine_param(
     routine_param.mysql_proxy_ = route_param.mysql_proxy_;
     routine_param.cr_version_ = route_param.cr_version_;
     routine_param.cr_id_ = route_param.cr_id_;
+    routine_param.cluster_version_ = route_param.cluster_version_;
   }
   return ret;
 }
@@ -1161,7 +1281,8 @@ int ObRouteUtils::convert_route_param_to_routine_param(
 int ObRouteUtils::get_partition_entry_sql(char *sql_buf, const int64_t buf_len,
                                           const ObTableEntryName &name,
                                           const uint64_t partition_id,
-                                          bool is_need_force_flush)
+                                          bool is_need_force_flush,
+                                          const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)
@@ -1180,6 +1301,7 @@ int ObRouteUtils::get_partition_entry_sql(char *sql_buf, const int64_t buf_len,
                                         new_tenant_name.length(), new_tenant_name.ptr(),
                                         name.database_name_.length(), name.database_name_.ptr(),
                                         name.table_name_.length(), name.table_name_.ptr(),
+                                        cluster_version < 4 ? "partition_id" : "tablet_id",
                                         partition_id, INT64_MAX));
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
@@ -1194,7 +1316,8 @@ int ObRouteUtils::get_partition_entry_sql(char *sql_buf, const int64_t buf_len,
 int ObRouteUtils::fetch_one_partition_entry_info(
       ObResultSetFetcher &rs_fetcher,
       ObTableEntry &table_entry,
-      ObPartitionEntry *&entry)
+      ObPartitionEntry *&entry,
+      const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
   int64_t tmp_real_str_len = 0;
@@ -1221,9 +1344,13 @@ int ObRouteUtils::fetch_one_partition_entry_info(
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "svr_ip", ip_str, OB_IP_STR_BUFF, tmp_real_str_len);
     PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sql_port", port, int64_t);
     PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "table_id", table_id, uint64_t);
-    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "partition_id", partition_id, uint64_t);
     PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "role", role, int64_t);
     PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_num", part_num, int64_t);
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "partition_id", partition_id, uint64_t);
+    } else {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", partition_id, uint64_t);
+    }
 
     if (OB_SUCC(ret)) {
       PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "schema_version", schema_version, int64_t);
@@ -1235,20 +1362,28 @@ int ObRouteUtils::fetch_one_partition_entry_info(
     }
 
     if (OB_SUCC(ret)) {
-      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", replica_type, int32_t);
-      if (OB_ERR_COLUMN_NOT_FOUND == ret) {
-        LOG_DEBUG("can not find spare1, maybe is old server, ignore", K(replica_type), K(ret));
-        ret = OB_SUCCESS;
-        replica_type = 0;
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", replica_type, int32_t);
+        if (OB_ERR_COLUMN_NOT_FOUND == ret) {
+          LOG_DEBUG("can not find spare1, maybe is old server, ignore", K(replica_type), K(ret));
+          ret = OB_SUCCESS;
+          replica_type = 0;
+        }
+      } else {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "replica_type", replica_type, int32_t);
       }
     }
 
     if (OB_SUCC(ret)) {
-      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", dup_replica_type, int32_t);
-      if (OB_ERR_COLUMN_NOT_FOUND == ret) {
-        LOG_DEBUG("can not find spare2, maybe is old server, ignore", K(dup_replica_type), K(ret));
-        ret = OB_SUCCESS;
-        dup_replica_type = 0;
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", dup_replica_type, int32_t);
+        if (OB_ERR_COLUMN_NOT_FOUND == ret) {
+          LOG_DEBUG("can not find spare2, maybe is old server, ignore", K(dup_replica_type), K(ret));
+          ret = OB_SUCCESS;
+          dup_replica_type = 0;
+        }
+      } else {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "dup_replica_type", dup_replica_type, int32_t);
       }
     }
 
@@ -1319,7 +1454,8 @@ int ObRouteUtils::fetch_one_partition_entry_info(
 }
 
 int ObRouteUtils::get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
-                                        const ObTableEntryName &name)
+                                        const ObTableEntryName &name,
+                                        const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf)
@@ -1334,19 +1470,28 @@ int ObRouteUtils::get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
     ObString new_tenant_name;
     get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
     // call A.B or call A.B.C
-    if (OB_UNLIKELY(!name.package_name_.empty())) {
-      len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_ROUTINE_SCHEMA_SQL_WITH_PACKAGE,
-                                          OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
-                                          new_tenant_name.length(), new_tenant_name.ptr(),
-                                          name.database_name_.length(), name.database_name_.ptr(),
-                                          name.package_name_.length(), name.package_name_.ptr(),
-                                          name.package_name_.length(), name.package_name_.ptr(),
-                                          name.table_name_.length(), name.table_name_.ptr()));
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      if (OB_UNLIKELY(!name.package_name_.empty())) {
+        len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_ROUTINE_SCHEMA_SQL_WITH_PACKAGE,
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.package_name_.length(), name.package_name_.ptr(),
+                                            name.package_name_.length(), name.package_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr()));
+      } else {
+        len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_ROUTINE_SCHEMA_SQL,
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr()));
+      }
     } else {
-      len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_ROUTINE_SCHEMA_SQL,
-                                          OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+      len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_ROUTINE_SCHEMA_SQL_V4,
+                                          OB_ALL_VIRTUAL_PROXY_ROUTINE_TNAME,
                                           new_tenant_name.length(), new_tenant_name.ptr(),
                                           name.database_name_.length(), name.database_name_.ptr(),
+                                          name.package_name_.length(), name.package_name_.ptr(),
                                           name.table_name_.length(), name.table_name_.ptr()));
     }
 
@@ -1364,7 +1509,8 @@ int ObRouteUtils::fetch_one_routine_entry_info(
     const ObTableEntryName &name,
     const int64_t cr_version,
     const int64_t cr_id,
-    ObRoutineEntry *&entry)
+    ObRoutineEntry *&entry,
+    const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
   int64_t routine_type = 0;
@@ -1376,10 +1522,16 @@ int ObRouteUtils::fetch_one_routine_entry_info(
 
   if (OB_SUCC(rs_fetcher.next())) {
     PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "database_name", database_name);
-    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "table_type", routine_type, int64_t);
-    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "table_id", routine_id, uint64_t);
     PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "schema_version", schema_version, int64_t);
-    PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "spare4", route_sql);//used for route_sql
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "table_type", routine_type, int64_t);
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "table_id", routine_id, uint64_t);
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "spare4", route_sql);//used for route_sql
+    } else {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "routine_type", routine_type, int64_t);
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "routine_id", routine_id, uint64_t);
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "routine_sql", route_sql);//used for route_sql
+    }
   }
 
   if (OB_ITER_END == ret) {

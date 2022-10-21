@@ -40,6 +40,7 @@ namespace proxy
 {
 class ObMysqlConfigParams;
 }
+
 class ObLogFileProcessor;
 class ObInternalCmdProcessor;
 

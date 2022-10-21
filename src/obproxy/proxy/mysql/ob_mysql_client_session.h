@@ -133,6 +133,17 @@ public:
   //proxy inner mysql_client do need convert vip to tenant
   bool is_need_convert_vip_to_tname();
 
+  // client protocol judgement
+  ObProxyProtocol get_client_session_protocol() const
+  {
+    return session_info_.is_client_support_ob20_protocol() ?
+             ObProxyProtocol::PROTOCOL_OB20 : ObProxyProtocol::PROTOCOL_NORMAL;
+  }
+
+  // client cap judgement
+  bool is_client_support_full_link_trace() const { return session_info_.is_client_support_full_link_trace(); }
+  bool is_client_support_new_extra_info() const { return session_info_.is_client_support_new_extra_info(); }
+
   int64_t get_current_tid() const { return current_tid_; }
 
   uint32_t &get_cs_id_ref() { return cs_id_; }
@@ -233,13 +244,16 @@ public:
   void set_first_dml_sql_got() { is_first_dml_sql_got_ = true; }
   bool is_first_dml_sql_got() const { return is_first_dml_sql_got_; }
 
+  uint8_t get_compressed_seq() const { return compressed_seq_; }
+  void set_compressed_seq(const uint8_t seq) { compressed_seq_ = seq; }
+
   void set_need_send_trace_info(bool is_need_send_trace_info) { is_need_send_trace_info_ = is_need_send_trace_info; }
   bool is_need_send_trace_info() const { return is_need_send_trace_info_; }
   void set_already_send_trace_info(bool is_already_send_trace_info) { is_already_send_trace_info_ = is_already_send_trace_info; }
   bool is_already_send_trace_info() const { return is_already_send_trace_info_; }
 
-  void set_first_handle_close_request(bool is_first_handle_close_request) { is_first_handle_close_request_ = is_first_handle_close_request; }
-  bool is_first_handle_close_request() const { return is_first_handle_close_request_; }
+  void set_first_handle_request(bool is_first_handle_request) { is_first_handle_request_ = is_first_handle_request; }
+  bool is_first_handle_request() const { return is_first_handle_request_; }
   void set_in_trans_for_close_request(bool is_in_trans_for_close_request) { is_in_trans_for_close_request_ = is_in_trans_for_close_request; }
   bool is_in_trans_for_close_request() const { return is_in_trans_for_close_request_; }
   void set_need_return_last_bound_ss(bool is_need_return_last_bound_ss) { is_need_return_last_bound_ss_ = is_need_return_last_bound_ss; }
@@ -274,9 +288,6 @@ public:
   void set_can_direct_ok(bool val) { can_direct_ok_ = val; }
 
   // ps cache
-  ObTextPsEntry *get_text_ps_entry(const common::ObString &sql);
-  int add_text_ps_entry(ObTextPsEntry *entry) { return text_ps_cache_.set_text_ps_entry(entry); }
-  int delete_text_ps_entry(ObTextPsEntry *entry) { return text_ps_cache_.delete_text_ps_entry(entry); }
   uint32_t inc_and_get_ps_id() {
     uint32_t ps_id = ++ps_id_;
     if (ps_id >= (CURSOR_ID_START)) {
@@ -337,12 +348,14 @@ public:
   bool is_waiting_trans_first_request_;
   bool is_need_send_trace_info_;
   bool is_already_send_trace_info_;
-  bool is_first_handle_close_request_;
+  bool is_first_handle_request_;
   bool is_in_trans_for_close_request_;
   bool is_need_return_last_bound_ss_;
   bool need_delete_cluster_;
   bool is_first_dml_sql_got_;//default false, will route with merge status careless
                              //it is true after user first dml sql arrived.
+
+  uint8_t compressed_seq_;   // seq management between client & proxy
 
   obutils::ObClusterResource *cluster_resource_;
   ObTableEntry *dummy_entry_; // __all_dummy's table location entry
@@ -420,7 +433,9 @@ private:
 
   event::ObMIOBuffer *read_buffer_;
   event::ObIOBufferReader *buffer_reader_;
+
   ObMysqlSM *mysql_sm_;
+  
   ObClientReadState read_state_;
 
   event::ObVIO *ka_vio_;
@@ -437,7 +452,6 @@ private:
   optimizer::ObShardingSelectLogPlan *select_plan_;
   uint32_t ps_id_;
   uint32_t cursor_id_;
-  ObBasePsEntryCache text_ps_cache_;
   bool using_ldg_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObMysqlClientSession);
@@ -462,20 +476,6 @@ inline uint32_t ObMysqlClientSession::get_next_ps_stmt_id()
     ret = ATOMIC_FAA(&next_stmt_id, 1);
   } while (0 == ret);
   return ret;
-}
-
-ObTextPsEntry *ObMysqlClientSession::get_text_ps_entry(const common::ObString &sql)
-{
-  int ret = OB_SUCCESS;
-  ObTextPsEntry *entry = NULL;
-  if (OB_FAIL(text_ps_cache_.get_text_ps_entry(sql, entry))) {
-    if (OB_HASH_NOT_EXIST != ret) {
-      _PROXY_LOG(WARN, "fail to get text ps entry with sql, ret =%d", ret);
-    } else {
-      _PROXY_LOG(WARN, "text ps entry not exist, ret=%d", ret);
-    }
-  }
-  return entry;
 }
 
 inline common::ObAddr ObMysqlClientSession::get_real_client_addr(net::ObNetVConnection *server_vc)
@@ -568,11 +568,14 @@ inline common::ObMysqlRandom &get_random_seed(const event::ObEThread &t)
 
 int init_cs_map_for_thread();
 int init_random_seed_for_thread();
+int init_random_seed_for_one_thread(int64_t index);
 
 bool is_proxy_conn_id_avail(const uint64_t conn_id);
 bool is_server_conn_id_avail(const uint64_t conn_id);
 bool is_conn_id_avail(const int64_t conn_id, bool &is_proxy_generated);
 int extract_thread_id(const uint32_t cs_id, int64_t &thread_id);
+
+int init_cs_map_for_one_thread(int64_t index);
 
 } // end of namespace proxy
 } // end of namespace obproxy

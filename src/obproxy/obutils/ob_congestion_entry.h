@@ -233,7 +233,9 @@ struct ObCongestionEntry : public ObCongestionRefCnt
     DELETING,
     DELETED,
     UPGRADE,
-    REPLAY
+    REPLAY,
+    DETECT_ALIVE,
+    DETECT_DEAD,
   };
 
   enum ObEntryState
@@ -265,6 +267,7 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   bool is_dead_congested() const;
   bool is_force_alive_congested() const;
   bool is_alive_congested() const;
+  bool is_detect_congested() const;
   bool is_congested() const;
   bool is_zone_merging() const;
   bool is_zone_upgrading() const;
@@ -283,6 +286,8 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   void set_alive_congested_free();
   void set_dead_congested();
   void set_dead_congested_free();
+  void set_detect_congested();
+  void set_detect_congested_free();
   void set_dead_failed_at(const ObHRTime t);
   void set_alive_failed_at(const ObHRTime t);
 
@@ -330,6 +335,9 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   ObHRTime last_alive_congested_; // unit second
   volatile int64_t alive_congested_;
 
+  ObHRTime last_detect_congested_;
+  volatile int64_t detect_congested_;
+
   volatile int64_t stat_conn_failures_;
   volatile int64_t stat_alive_failures_;
   int64_t last_revalidate_time_us_; // unit us
@@ -369,6 +377,11 @@ inline bool ObCongestionEntry::is_dead_congested() const
   return (1 == dead_congested_);
 }
 
+inline bool ObCongestionEntry::is_detect_congested() const
+{
+  return (1 == detect_congested_);
+}
+
 inline bool ObCongestionEntry::is_zone_merging() const
 {
   bool bret = false;
@@ -392,7 +405,8 @@ inline bool ObCongestionEntry::is_congested() const
   // watch out the priority below:
   return (is_dead_congested()
           || is_force_alive_congested()
-          || is_alive_congested());
+          || is_alive_congested()
+          || is_detect_congested());
 }
 
 inline bool ObCongestionEntry::check_dead_congested()

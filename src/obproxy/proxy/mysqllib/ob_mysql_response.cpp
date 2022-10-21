@@ -42,7 +42,8 @@ int64_t ObRespAnalyzeResult::to_string(char *buf, const int64_t buf_len) const
        K_(server_capabilities_lower_.capability),
        K_(ok_packet_action_type),
        K_(last_ok_pkt_len),
-       K_(rewritten_last_ok_pkt_len));
+       K_(rewritten_last_ok_pkt_len),
+       K_(extra_info));
 
   if (is_error_resp()) {
     J_COMMA();

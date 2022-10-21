@@ -10,8 +10,15 @@ obproxy/opsql/parser/ob_proxy_parser_utf8_lex.h\
 obproxy/opsql/parser/ob_proxy_parser_utf8_tab.c\
 obproxy/opsql/parser/ob_proxy_parser_utf8_tab.h
 
+opsql_parser_gbk_sources:=\
+obproxy/opsql/parser/ob_proxy_parser_gbk_lex.c\
+obproxy/opsql/parser/ob_proxy_parser_gbk_lex.h\
+obproxy/opsql/parser/ob_proxy_parser_gbk_tab.c\
+obproxy/opsql/parser/ob_proxy_parser_gbk_tab.h
+
 opsql_parser_sources:=\
 ${opsql_parser_utf8_sources}\
+${opsql_parser_gbk_sources}\
 obproxy/opsql/parser/ob_proxy_parse_result.h\
 obproxy/opsql/parser/ob_proxy_parse_result.cpp\
 obproxy/opsql/parser/ob_proxy_parser.h
@@ -26,8 +33,15 @@ obproxy/opsql/expr_parser/ob_expr_parser_utf8_lex.h\
 obproxy/opsql/expr_parser/ob_expr_parser_utf8_tab.c\
 obproxy/opsql/expr_parser/ob_expr_parser_utf8_tab.h
 
+opsql_expr_gbk_parser_sources:=\
+obproxy/opsql/expr_parser/ob_expr_parser_gbk_lex.c\
+obproxy/opsql/expr_parser/ob_expr_parser_gbk_lex.h\
+obproxy/opsql/expr_parser/ob_expr_parser_gbk_tab.c\
+obproxy/opsql/expr_parser/ob_expr_parser_gbk_tab.h
+
 opsql_expr_parser_sources:=\
 ${opsql_expr_utf8_parser_sources}\
+${opsql_expr_gbk_parser_sources}\
 obproxy/opsql/expr_parser/ob_expr_parse_result.h\
 obproxy/opsql/expr_parser/ob_expr_parse_result.cpp\
 obproxy/opsql/expr_parser/ob_expr_parser_utils.h\

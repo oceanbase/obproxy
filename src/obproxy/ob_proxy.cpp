@@ -173,7 +173,7 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_ERROR("fail to init ssl processor", K(ret));
     } else if (OB_FAIL(init_config())) {
       LOG_ERROR("fail to init config", K(ret));
-    } else if (get_global_config_processor().init()) {
+    } else if (OB_FAIL(get_global_config_processor().init())) {
       LOG_ERROR("fail to init config processor", K(ret));
     } else if (OB_FAIL(config_->enable_sharding
                        && dbconfig_processor.init(config_->grpc_client_num, ObProxyMain::get_instance()->get_startup_time()))) {
@@ -340,16 +340,12 @@ int ObProxy::start()
     } else if (OB_FAIL(g_ob_qos_stat_processor.start_qos_stat_clean_task())) {
       LOG_ERROR("fail to start_qos_stat_clean_task", K(ret));
     } else if (config_->enable_sharding
-               && config_->is_control_plane_used()
-               && !config_->use_local_dbconfig
-               && OB_FAIL(get_global_db_config_processor().start_watch_parent_crd())) {
-      LOG_WARN("fail to start watch parent crd", K(ret));
-    } else if (config_->enable_sharding
-               && config_->use_local_dbconfig
-               && OB_FAIL(get_global_inotify_processor().start_watch_sharding_config())) {
-      LOG_WARN("fail to start inotify watch sharding config", K(ret));
+               && OB_FAIL(get_global_db_config_processor().start())) {
+      LOG_WARN("fail to start sharding", K(ret));
     } else if (OB_FAIL(config_->is_pool_mode && get_global_session_pool_processor().start_session_pool_task())) {
       LOG_WARN("fail to start_session_pool_task", K(ret));
+    } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_acceptor())) {
+      LOG_ERROR("fail to start accept server", K(ret));
     } else {
       // if fail to init prometheus, do not stop the startup of obproxy
       if (g_ob_prometheus_processor.start_prometheus()) {
@@ -942,6 +938,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
   ObString password(config_->observer_sys_password.str());
   ObString password1(config_->observer_sys_password1.str());
   ObSEArray<ObAddr, 5> rs_list;
+  int64_t cluster_version = 0;
 
   // first get from local
   if (OB_FAIL(cs_processor_->get_cluster_rs_list(cluster_name, OB_DEFAULT_CLUSTER_ID, rs_list))) {
@@ -965,7 +962,43 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
       LOG_WARN("fail to init raw mysql client", K(ret));
     } else if (OB_FAIL(raw_client.set_server_addr(rs_list))) {
       LOG_WARN("fail to set server addr", K(ret));
-    } else {
+    }
+
+    if (OB_SUCC(ret)) {
+      const char *sql = "select ob_version() as cluster_version";
+      ObClientMysqlResp *resp = NULL;
+      ObResultSetFetcher *rs_fetcher = NULL;
+      if (OB_FAIL(raw_client.sync_raw_execute(sql, timeout_ms, resp))) {
+        LOG_WARN("fail to sync raw execute", K(resp), K(timeout_ms), K(ret));
+      } else if (OB_ISNULL(resp)) {
+        ret = OB_NO_RESULT;
+        LOG_WARN("resp is null", K(ret));
+      } else if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher))) {
+        LOG_WARN("fail to get resultset fetcher", K(ret));
+      } else if (OB_ISNULL(rs_fetcher)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("rs fetcher is NULL", K(ret));
+      }
+
+      while (OB_SUCC(ret) && OB_SUCC(rs_fetcher->next())) {
+        ObString cluster_version_str;
+        PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(*rs_fetcher, "cluster_version", cluster_version_str);
+        int64_t version = 0;
+        for (int64_t i = 0; i < cluster_version_str.length() && cluster_version_str[i] != '.'; i++) {
+          version = version * 10 + cluster_version_str[i] - '0';
+        }
+        cluster_version = version;
+      }
+
+      ret = OB_SUCCESS;
+
+      if (NULL != resp) {
+        op_free(resp);
+        resp = NULL;
+      }
+    }
+
+    if (OB_SUCC(ret)) {
       ObString meta_tenant_name = username.after('@');
       if (meta_tenant_name.empty()) {
         meta_tenant_name.assign_ptr(OB_SYS_TENANT_NAME,
@@ -983,7 +1016,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
       ObResultSetFetcher *rs_fetcher = NULL;
       ObTableEntry *entry = NULL;
       ObProxyPartitionLocation pl;
-      if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, name))) {
+      if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, name, false, cluster_version))) {
         LOG_WARN("fail to get table entry sql", K(sql), K(ret));
       } else if (OB_FAIL(raw_client.sync_raw_execute(sql, timeout_ms, resp))) {
         LOG_WARN("fail to sync raw execute", K(sql), K(resp), K(timeout_ms), K(ret));
@@ -997,7 +1030,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
         LOG_WARN("rs fetcher is NULL", K(ret));
       } else if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(name, 0, OB_DEFAULT_CLUSTER_ID, entry))) {
         LOG_WARN("fail to alloc and init table entry", K(name), K(ret));
-      } else if (OB_FAIL(ObRouteUtils::fetch_table_entry(*rs_fetcher, *entry))) {
+      } else if (OB_FAIL(ObRouteUtils::fetch_table_entry(*rs_fetcher, *entry, cluster_version))) {
         LOG_WARN("fail to fetch one table entry info", K(ret));
       } else if (OB_FAIL(entry->get_random_servers(pl))) {
         LOG_WARN("fail to get random servers", K(ret));

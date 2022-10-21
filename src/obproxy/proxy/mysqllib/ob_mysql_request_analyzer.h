@@ -87,7 +87,8 @@ public:
                               ObProxyMysqlRequest &client_request,
                               obmysql::ObMySQLCmd &sql_cmd,
                               ObMysqlAnalyzeStatus &status,
-                              const bool is_oracle_mode = false);
+                              const bool is_oracle_mode = false,
+                              const bool is_client_support_ob20_protocol = false);
   static void extract_fileds(const ObExprParseResult& result, obutils::SqlFieldResult &sql_result);
   static int parse_sql_fileds(ObProxyMysqlRequest &client_request,
                               common::ObCollationType connection_collation);
@@ -133,7 +134,7 @@ public:
                                const char *&data, int64_t &buf_len, const uint8_t type,
                                const ObCharsetType charset, ObObj &param);
 
-  static int analyze_sql_id(ObProxyMysqlRequest &client_request, common::ObString &sql_id);
+  static int analyze_sql_id(const ObString &sql, ObProxyMysqlRequest &client_request, common::ObString &sql_id);
 
 private:
   struct TypeInfo {

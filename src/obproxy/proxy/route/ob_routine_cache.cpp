@@ -634,22 +634,33 @@ int init_routine_map_for_thread()
 {
   int ret = OB_SUCCESS;
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
+    if (OB_FAIL(init_routine_map_for_one_thread(i))) {
+      LOG_WARN("fail to init routine_map", K(i), K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_routine_map_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+  } else if (OB_ISNULL(ethreads[index])) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
   } else {
-    for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
-      if (OB_ISNULL(ethreads[i]->routine_map_ = new (std::nothrow) ObRoutineRefHashMap(ObModIds::OB_PROXY_ROUTINE_ENTRY_MAP))) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to new ObRoutineRefHashMap", K(i), K(ethreads[i]), K(ret));
-      } else if (OB_FAIL(ethreads[i]->routine_map_->init())) {
-        LOG_WARN("fail to init routine_map", K(ret));
-      }
+    if (OB_ISNULL(ethreads[index]->routine_map_ = new (std::nothrow) ObRoutineRefHashMap(ObModIds::OB_PROXY_ROUTINE_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to new ObRoutineRefHashMap", K(index), K(ethreads[index]), K(ret));
+    } else if (OB_FAIL(ethreads[index]->routine_map_->init())) {
+      LOG_WARN("fail to init routine_map", K(ret));
     }
   }
   return ret;
-
 }
 
 int ObRoutineRefHashMap::clean_hash_map()

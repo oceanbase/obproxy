@@ -24,8 +24,7 @@ namespace proxy
 class ObShowGlobalSessionHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowGlobalSessionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                        const ObInternalCmdInfo &info);
+  ObShowGlobalSessionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowGlobalSessionHandler() {}
   int handle_show_global_session_info(int event, void *data);
   int dump_header();

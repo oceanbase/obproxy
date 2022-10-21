@@ -71,8 +71,7 @@ const ObProxyColumnSchema CLUSTER_IDC_COLUMN_ARRAY[OB_CCI_MAX_CLUSTER_COLUMN_ID]
 };
 
 
-ObShowClusterHandler::ObShowClusterHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                           const ObInternalCmdInfo &info)
+ObShowClusterHandler::ObShowClusterHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type())
 {
   SET_HANDLER(&ObShowClusterHandler::handle_show_cluster);

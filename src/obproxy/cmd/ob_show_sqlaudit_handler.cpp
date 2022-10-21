@@ -424,8 +424,7 @@ const ObProxyColumnSchema SSA_COLUMN_ARRAY[OB_SSA_MAX_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_SSA_REQUEST_TOTAL_TIME,                  "request_total_ns", obmysql::OB_MYSQL_TYPE_LONG)
 };
 
-ObShowSqlauditHandler::ObShowSqlauditHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                             const ObInternalCmdInfo &info)
+ObShowSqlauditHandler::ObShowSqlauditHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObInternalCmdHandler(cont, buf, info),
       audit_id_offset_(info.get_limit_offset()), audit_id_limit_(info.get_limit_rows()),
       sm_id_(info.get_sm_id()), sub_cmd_type_(info.get_sub_cmd_type())

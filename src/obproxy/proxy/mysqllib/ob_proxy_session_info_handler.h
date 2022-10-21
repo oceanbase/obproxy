@@ -14,6 +14,7 @@
 #define OBPROXY_SESSION_INFO_HANDLER_H
 #include "rpc/obmysql/ob_mysql_packet.h"
 #include "utils/ob_proxy_lib.h"
+#include "proxy/mysqllib/ob_2_0_protocol_struct.h"
 
 namespace oceanbase
 {
@@ -84,7 +85,7 @@ public:
                                const bool is_auth_request,
                                const bool need_handle_sysvar,
                                ObRespAnalyzeResult &resp_result,
-                               const bool is_save_to_common_sys = false);
+                               const bool is_save_to_common_sys);
 
   static int analyze_extra_ok_packet(event::ObIOBufferReader &reader,
                                      ObClientSessionInfo &client_info,
@@ -122,8 +123,8 @@ public:
                                      const common::ObAddr &client_addr,
                                      const bool use_compress,
                                      const bool use_ob_protocol_v2,
-                                     const bool use_ssl);
-
+                                     const bool use_ssl,
+                                     const bool enable_client_ip_checkout);
   static int rewrite_saved_login_req(ObClientSessionInfo &client_info,
                                      const common::ObString &cluster_name,
                                      const int64_t cluster_id,
@@ -134,8 +135,8 @@ public:
                                      const common::ObAddr &client_addr,
                                      const bool use_compress,
                                      const bool use_ob_protocol_v2,
-                                     const bool use_ssl);
-
+                                     const bool use_ssl,
+                                     const bool enable_client_ip_checkout);
   static int rewrite_common_login_req(ObClientSessionInfo &client_info,
                                       ObHandshakeResponseParam &param,
                                       const int64_t global_vars_version,
@@ -168,6 +169,9 @@ public:
                                                       const common::ObString &value,
                                                       const bool is_auth_request,
                                                       bool &need_save);
+  static int save_changed_sess_info(ObClientSessionInfo& client_info,
+                                    ObServerSessionInfo& server_info,
+                                    Ob20ExtraInfo& extra_info);
 
 private:
   static ObProxySysVarType get_sys_var_type(const common::ObString &var_name);
@@ -235,7 +239,6 @@ private:
                                       const obmysql::ObStringKV &str_kv,
                                       const bool is_auth_request,
                                       ObRespAnalyzeResult &resp_result);
-
 };
 
 } // end of namespace proxy

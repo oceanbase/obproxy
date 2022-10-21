@@ -86,8 +86,9 @@ int ObWhiteListTableProcessor::execute(void *arg)
   return ret;
 }
 
-int ObWhiteListTableProcessor::commit(bool is_success)
+int ObWhiteListTableProcessor::commit(void* arg, bool is_success)
 {
+  UNUSED(arg);
   if (is_success) {
     get_global_white_list_table_processor().inc_index();
     if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
@@ -96,6 +97,8 @@ int ObWhiteListTableProcessor::commit(bool is_success)
   } else {
     LOG_WARN("white list commit failed");
   }
+  get_global_white_list_table_processor().clean_hashmap(
+    get_global_white_list_table_processor().get_backup_hashmap());
 
   return OB_SUCCESS;
 }
@@ -112,7 +115,6 @@ int ObWhiteListTableProcessor::init()
   ObConfigHandler handler;
   handler.execute_func_ = &ObWhiteListTableProcessor::execute;
   handler.commit_func_ = &ObWhiteListTableProcessor::commit;
-  handler.config_type_ = OBPROXY_CONFIG_CLOUD;
   if (OB_FAIL(addr_hash_map_array_[0].create(32, ObModIds::OB_HASH_BUCKET))) {
     LOG_WARN("create hash map failed", K(ret));
   } else if (OB_FAIL(addr_hash_map_array_[1].create(32, ObModIds::OB_HASH_BUCKET))) {
@@ -140,6 +142,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
 {
   int ret = OB_SUCCESS;
 
+  DRWLock::WRLockGuard guard(white_list_lock_);
   if (cluster_name.empty() || tenant_name.empty() || ip_list.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("argument is unexpected", K(ret), K(cluster_name), K(tenant_name), K(ip_list));
@@ -196,7 +199,6 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
       if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
         LOG_WARN("paster tenant and cluser name failed", K(ret), K(tenant_name), K(cluster_name));
       } else {
-        DRWLock::WRLockGuard guard(white_list_lock_);
         WhiteListHashMap &backup_map = addr_hash_map_array_[(index_ + 1) % 2];
         if (OB_FAIL(backup_map.set_refactored(key_string, addr_array, 1))) {
           LOG_WARN("addr hash map set failed", K(ret));
@@ -210,6 +212,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
 int ObWhiteListTableProcessor::delete_ip_list(ObString &cluster_name, ObString &tenant_name)
 {
   int ret = OB_SUCCESS;
+  DRWLock::WRLockGuard guard(white_list_lock_);
   if (cluster_name.empty() || tenant_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("cluster name or tenant name empty unexpected", K(ret));
@@ -221,7 +224,6 @@ int ObWhiteListTableProcessor::delete_ip_list(ObString &cluster_name, ObString &
     if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
       LOG_WARN("paste tenant and cluster name failed", K(ret), K(tenant_name), K(cluster_name));
     } else {
-      DRWLock::WRLockGuard guard(white_list_lock_);
       WhiteListHashMap &backup_map = addr_hash_map_array_[(index_ + 1) % 2];
       if (OB_FAIL(backup_map.erase_refactored(key_string))) {
         LOG_WARN("addr hash map erase failed", K(ret));
@@ -334,6 +336,12 @@ void ObWhiteListTableProcessor::inc_index()
 {
   DRWLock::WRLockGuard guard(white_list_lock_);
   index_ = (index_ + 1) % 2;
+}
+
+void ObWhiteListTableProcessor::clean_hashmap(WhiteListHashMap& whitelist_map)
+{
+  DRWLock::WRLockGuard guard(white_list_lock_);
+  whitelist_map.reuse();
 }
 
 void ObWhiteListTableProcessor::print_config()

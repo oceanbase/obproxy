@@ -143,6 +143,8 @@ public:
   obutils::ObServerRoutingMode server_routing_mode_;
   CfgInt proxy_id_;
   CfgInt client_max_memory_size_;
+  CfgBool enable_cpu_isolate_;
+  CfgBool enable_primary_zone_;
   char proxy_idc_name_[OB_PROXY_MAX_IDC_NAME_LENGTH + 1];
   char proxy_primary_zone_name_[common::MAX_ZONE_LENGTH + 1];
 };

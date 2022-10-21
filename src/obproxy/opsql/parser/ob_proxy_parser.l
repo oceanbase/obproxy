@@ -270,14 +270,17 @@ do {\
 %x                      insert_all_expr
 %x                      set_expr
 %x                      show_topology
+%x                      show_tables
+%x                      proxy_icmd_state
 
 /*following character status will be rewrite by gen_parse.sh according to connection character*/
 multi_byte_space              [\u3000]
 multi_byte_comma              [\uff0c]
 multi_byte_left_parenthesis   [\uff08]
 multi_byte_right_parenthesis  [\uff09]
+multi_byte_connect_char       /*According to connection character to set by gen_parse.sh*/
 space                   [ \t\n\r\f]
-identifer               ([A-Za-z0-9$_]*)
+identifer               (([A-Za-z0-9$_#]|{multi_byte_connect_char})*)
 int_num                 [\-\+]?[0-9]+
 number                  ([0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*E[-+]?[0-9]+)|("."[0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*)|("."[0-9]+)
 comment_identifer       [\-\+]?{identifer}
@@ -350,7 +353,10 @@ show_proxytrace           (show{space}+proxytrace)
 show_proxyinfo            (show{space}+proxyinfo)
 show_databases            (show{space}+databases)
 show_tables               (show{space}+tables)
+show_full_tables          (show{space}+full{space}+tables)
 show_create_table         (show{space}+create{space}+table)
+show_columns              (show{space}+(full{space}+)?(columns|fields))
+show_index                (show{space}+(index|indexes|keys))
 show_topology             (show{space}+elastic_id)
 show_db_version           (show{space}+database_version)
 select_database           (select{space}+database({leftbracket}|{multi_byte_left_parenthesis})({rightbracket}|{multi_byte_right_parenthesis}))
@@ -397,12 +403,16 @@ TRUNCATE         { return TRUNCATE; }
 RENAME           { return RENAME; }
 INDEX            { return INDEX; }
 TABLE            { return TABLE; }
+STATUS           { return STATUS; }
+FROM             { return FROM; }
 UNIQUE           { return UNIQUE; }
 
  /* ps stmt */
 USING            { return USING; }
 PREPARE          { PUSH_STATE(prepare); return PREPARE; }
 EXECUTE          { return EXECUTE; }
+DEALLOCATE       { return DEALLOCATE; }   
+
 
  /* oracle ddl stmt */
 GRANT            { return GRANT; }
@@ -491,10 +501,11 @@ VARIABLES           { RETURN_NON_RESERVED_KEYWORD(VARIABLES); }
 STAT                { RETURN_NON_RESERVED_KEYWORD(STAT); }
 
  /*show config*/
-{show_proxyconfig}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_CONFIG); return SHOW_PROXYCONFIG; }
+{show_proxyconfig}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_CONFIG); PUSH_STATE(proxy_icmd_state); return SHOW_PROXYCONFIG; }
 
-DIFF                { RETURN_NON_RESERVED_KEYWORD(DIFF); }
-USER                { RETURN_NON_RESERVED_KEYWORD(USER); }
+<proxy_icmd_state>"DIFF"                { RETURN_NON_RESERVED_KEYWORD(DIFF); }
+<proxy_icmd_state>"USER"                { RETURN_NON_RESERVED_KEYWORD(USER); }
+<proxy_icmd_state>"LIKE"                { POP_STATE(); return LIKE; }
 
  /*show sm*/
 {show_proxysm}      { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_SM); return SHOW_PROXYSM; }
@@ -548,7 +559,19 @@ IDC                 { RETURN_NON_RESERVED_KEYWORD(IDC); }
 
 {show_db_version}  { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_DB_VERSION; }
 {show_databases}    { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_DATABASES; }
-{show_tables}       { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_TABLES; }
+
+{show_tables}       { SET_BASIC_STMT(OBPROXY_T_SHOW); PUSH_STATE(show_tables); return SHOW_TABLES; }
+{show_full_tables}   { SET_BASIC_STMT(OBPROXY_T_SHOW); PUSH_STATE(show_tables); return SHOW_FULL_TABLES; }
+
+<show_tables>"FROM"                        { POP_STATE(); PUSH_STATE(INITIAL); return FROM; }
+<show_tables>"LIKE"                        { POP_STATE(); PUSH_STATE(INITIAL); return LIKE; }
+<show_tables><<EOF>>                       { return END_P; }
+<show_tables>{whitespace}                  { }
+<show_tables>;                             { POP_STATE(); PUSH_STATE(INITIAL); return yytext[0]; }
+<show_tables>.                             { return ERROR; }
+{show_columns}      { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_COLUMNS; }
+{show_index}        { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_INDEX; }
+
 {show_create_table} { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_CREATE_TABLE; }
 {select_database}   { SET_DML_STMT(OBPROXY_T_SELECT); return SELECT_DATABASE; }
 {select_proxy_version}   { SET_DML_STMT(OBPROXY_T_SELECT_PROXY_VERSION); return SELECT_PROXY_VERSION; }
@@ -870,7 +893,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_dbp_comment_expr>{multi_byte_right_parenthesis}           { return ')'; }
 <in_dbp_comment_expr>{comma}|{multi_byte_comma}  { return ','; }
 <in_dbp_comment_expr>{space}             { }
-<in_dbp_comment_expr>{comment_identifer} { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
+<in_dbp_comment_expr>{odp_comment_identifer} { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 
 <in_dbp_comment_expr>{c_cmt_end} {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -973,7 +996,8 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
       && OBPROXY_T_INVALID < p->cur_stmt_type_
       && (p->cur_stmt_type_ < OBPROXY_T_ICMD_MAX
           || OBPROXY_T_CALL == p->cur_stmt_type_
-          || OBPROXY_T_SET == p->cur_stmt_type_)
+          || OBPROXY_T_SET == p->cur_stmt_type_
+          || OBPROXY_T_SHOW == p->cur_stmt_type_)
       && OB_NOTNULL(p->tmp_buf_)) {
     store_str_with_quote(OBPROXY_QUOTE_T_SINGLE, p->tmp_buf_, p->tmp_len_, p->tmp_start_ptr_ + p->tmp_len_ + 2, yyscanner);
     return NAME_OB;
@@ -1036,7 +1060,8 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
       && OBPROXY_T_INVALID < p->cur_stmt_type_
       && (p->cur_stmt_type_ < OBPROXY_T_ICMD_MAX
           || OBPROXY_T_CALL == p->cur_stmt_type_
-          || OBPROXY_T_SET == p->cur_stmt_type_)
+          || OBPROXY_T_SET == p->cur_stmt_type_
+          || OBPROXY_T_SHOW == p->cur_stmt_type_)
       && OB_NOTNULL(p->tmp_buf_)) {
     store_str_with_quote(OBPROXY_QUOTE_T_DOUBLE, p->tmp_buf_, p->tmp_len_, p->tmp_start_ptr_ + p->tmp_len_ + 2, yyscanner);
     return NAME_OB;
@@ -1139,6 +1164,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_no_select_query>.                  { RETURN_IGNORED_WORD(); }
 
 <prepare>"FROM"                        { return FROM; }
+<prepare>"@"                           { return yytext[0]; }
 <prepare>{identifer}                   { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <prepare>{dquote}                      { POP_STATE(); }
 <prepare>{quote}                       { POP_STATE(); }

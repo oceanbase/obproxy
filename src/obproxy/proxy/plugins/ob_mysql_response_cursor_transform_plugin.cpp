@@ -202,7 +202,8 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_row(event::ObIOBuffer
 
   if (hava_cursor) {
     ObNewRow row;
-    OMPKRow row_packet(ObSMRow(BINARY, row));
+    ObSMRow sm_row(BINARY, row);
+    OMPKRow row_packet(sm_row);
     packet::ObMysqlPacketReader pkt_reader;
     if (OB_FAIL(pkt_reader.get_packet(*reader, row_packet))) {
       PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
@@ -361,6 +362,7 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
       case OB_MYSQL_TYPE_STRING:
       case OB_MYSQL_TYPE_VARCHAR:
       case OB_MYSQL_TYPE_VAR_STRING:
+      case OB_MYSQL_TYPE_OB_UROWID:
       case OB_MYSQL_TYPE_DECIMAL:
       case OB_MYSQL_TYPE_NEWDECIMAL: {
         uint64_t length = 0;

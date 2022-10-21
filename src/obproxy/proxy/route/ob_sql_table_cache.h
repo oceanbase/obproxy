@@ -109,6 +109,7 @@ private:
 };
 
 int init_sql_table_map_for_thread();
+int init_sql_table_map_for_one_thread(int64_t index);
 
 } // end of namespace proxy
 } // end of namespace obproxy

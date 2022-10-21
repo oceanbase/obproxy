@@ -27,19 +27,21 @@ class ObMysqlRequestParam
 {
 public:
   ObMysqlRequestParam() : sql_(), is_deep_copy_(false), is_user_idc_name_set_(false),
-                          need_print_trace_stat_(false), current_idc_name_() {};
+                          need_print_trace_stat_(false), current_idc_name_(), target_addr_() {};
   explicit ObMysqlRequestParam(const char *sql)
     : sql_(sql), is_deep_copy_(false), is_user_idc_name_set_(false),
-      need_print_trace_stat_(false), current_idc_name_() {};
+      need_print_trace_stat_(false), current_idc_name_(), target_addr_() {};
   ObMysqlRequestParam(const char *sql, const ObString &idc_name)
     : sql_(sql), is_deep_copy_(false), is_user_idc_name_set_(true),
-      need_print_trace_stat_(true), current_idc_name_(idc_name) {};
+      need_print_trace_stat_(true), current_idc_name_(idc_name), target_addr_() {};
   void reset();
   void reset_sql();
+  void set_target_addr(const common::ObAddr addr) { target_addr_ = addr; }
   bool is_valid() const { return !sql_.empty(); }
   int deep_copy(const ObMysqlRequestParam &other);
   int deep_copy_sql(const common::ObString &sql);
-  TO_STRING_KV(K_(sql), K_(is_deep_copy), K_(current_idc_name), K_(is_user_idc_name_set), K_(need_print_trace_stat));
+  TO_STRING_KV(K_(sql), K_(is_deep_copy), K_(current_idc_name), K_(is_user_idc_name_set),
+               K_(need_print_trace_stat), K_(target_addr));
 
   common::ObString sql_;
   bool is_deep_copy_;
@@ -47,6 +49,7 @@ public:
   bool need_print_trace_stat_;
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
+  common::ObAddr target_addr_;
 };
 
 class ObClientMysqlResp

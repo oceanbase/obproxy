@@ -28,6 +28,8 @@ using namespace oceanbase::lib;
 
 EXTERN_C_BEGIN
 
+#ifndef USING_ASAN
+
 extern void *__libc_malloc(size_t size);
 extern void __libc_free(void *ptr);
 extern void *__libc_realloc(void *ptr, size_t size);
@@ -289,5 +291,7 @@ int posix_memalign(void **memptr, size_t alignment, size_t size)
 
   return err;
 }
+
+#endif
 
 EXTERN_C_END

@@ -49,7 +49,8 @@ ListPartition::ListPartition() : part_id_(0), rows_()
 int ObPartDescList::get_part(ObNewRange &range,
                              ObIAllocator &allocator,
                              ObIArray<int64_t> &part_ids,
-                             ObPartDescCtx &ctx)
+                             ObPartDescCtx &ctx,
+                             ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
 
@@ -82,6 +83,8 @@ int ObPartDescList::get_part(ObNewRange &range,
             found = true;
             if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
               COMMON_LOG(WARN, "fail to push part id", K(ret));
+            } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
+              COMMON_LOG(WARN, "fail to push tablet id", K(ret));
             }
           } // end found
         } // end for rows
@@ -91,6 +94,8 @@ int ObPartDescList::get_part(ObNewRange &range,
         COMMON_LOG(DEBUG, "will use default partition id", K(src_obj), K(ret));
         if (OB_FAIL(part_ids.push_back(part_array_[default_part_array_idx_].part_id_))) {
           COMMON_LOG(WARN, "fail to push part id", K(ret));
+        } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[default_part_array_idx_]))) {
+          COMMON_LOG(WARN, "fail to push tablet id", K(ret));
         }
       }
     }
@@ -98,12 +103,14 @@ int ObPartDescList::get_part(ObNewRange &range,
   return ret;
 }
 
-int ObPartDescList::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+int ObPartDescList::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   int64_t part_idx = num % part_array_size_;
   if (OB_FAIL(part_ids.push_back(part_array_[part_idx].part_id_))) {
     COMMON_LOG(WARN, "fail to push part_id", K(ret));
+  } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+    COMMON_LOG(WARN, "fal to push tablet id", K(ret));
   }
   return ret;
 }
@@ -138,7 +145,7 @@ inline int ObPartDescList::cast_obj(ObObj &src_obj,
       COMMON_LOG(DEBUG, "succ to cast obj for list", K(src_obj), K(target_obj));
     }
   }
-  
+
   return ret;
 }
 

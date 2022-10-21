@@ -116,7 +116,7 @@ public:
   {
     int64_t pos = 0;
     J_OBJ_START();
-    //VBUF_PRINTF("alias_name: %.*s\n", result_.alias_name_.str_len_, result_.alias_name_.str_);
+    VBUF_PRINTF("has_rowid_: %d\n", result_.has_rowid_);
     for (int64_t i = 0; i < result_.relation_info_.relation_num_; ++i) {
       print_relation(buf, buf_len, pos, 0, result_.relation_info_.relations_[i]);
     }

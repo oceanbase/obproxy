@@ -38,6 +38,7 @@ public:
   ~ObDbConfigProcessor() {}
 
   int init(const int64_t client_count, int64_t startup_time_us);
+  int start();
   int init_sharding_config();
   int start_watch_parent_crd();
   bool is_config_inited() const { return is_config_inited_; }
@@ -52,6 +53,7 @@ public:
 private:
   bool is_inited_;
   bool is_config_inited_;
+  bool is_client_avail_;
   bool is_bt_updated_;
   common::ObString startup_time_str_;
   char startup_time_buf_[common::OB_MAX_TIMESTAMP_LENGTH];

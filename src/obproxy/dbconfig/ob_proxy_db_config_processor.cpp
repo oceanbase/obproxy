@@ -45,7 +45,7 @@ ObDbConfigProcessor &get_global_db_config_processor()
 
 //------ ObDbConfigProcessor------
 ObDbConfigProcessor::ObDbConfigProcessor()
-  : is_inited_(false), is_config_inited_(false), is_bt_updated_(false), startup_time_str_(), gc_pool_()
+  : is_inited_(false), is_config_inited_(false), is_client_avail_(false), is_bt_updated_(false), startup_time_str_(), gc_pool_()
 {
   startup_time_buf_[0] = '\0';
 }
@@ -53,32 +53,19 @@ ObDbConfigProcessor::ObDbConfigProcessor()
 int ObDbConfigProcessor::init(const int64_t client_count, int64_t startup_time_us)
 {
   int ret = OB_SUCCESS;
-  bool is_client_avail = false;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
     LOG_WARN("init twice", K(ret));
   } else if (OB_FAIL(set_startup_time(startup_time_us))) {
     LOG_WARN("fail to set startup time", K(startup_time_us), K(ret));
-  } else if (!get_global_proxy_config().use_local_dbconfig && OB_FAIL(gc_pool_.init(client_count, is_client_avail))) {
-    LOG_WARN("fail to init grpc client pool", K(client_count), K(is_client_avail), K(ret));
+  } else if (!get_global_proxy_config().use_local_dbconfig && OB_FAIL(gc_pool_.init(client_count, is_client_avail_))) {
+    LOG_WARN("fail to init grpc client pool", K(client_count), K_(is_client_avail), K(ret));
+  } else if (get_global_proxy_config().use_local_dbconfig && OB_FAIL(get_global_inotify_processor().init())) {
+    LOG_WARN("fail to init inotify processor", K(ret));
   } else {
     is_inited_ = true;
   }
-  if (!is_client_avail) {
-    LOG_INFO("grpc client pool is not avail, will load local dbmesh config", K(is_client_avail));
-    if (OB_FAIL(get_global_dbconfig_cache().load_local_dbconfig())) {
-      LOG_WARN("fail to load local dbconfig, we can fetch from dataplane later", K(ret));
-    } else {
-      is_config_inited_ = true;
-      LOG_INFO("succ to load local dbconfig");
-    }
-  }
-  if (OB_SUCC(ret)) {
-    if (get_global_proxy_config().use_local_dbconfig
-        && OB_FAIL(get_global_inotify_processor().init())) {
-      LOG_WARN("fail to init initify processor", K(ret));
-    }
-  }
+
   return ret;
 }
 
@@ -90,6 +77,42 @@ int ObDbConfigProcessor::set_startup_time(int64_t startup_time_us)
   } else {
     startup_time_str_.assign_ptr(startup_time_buf_, static_cast<int32_t>(strlen(startup_time_buf_)));
   }
+  return ret;
+}
+
+int ObDbConfigProcessor::start()
+{
+  int ret = OB_SUCCESS;
+  if (!get_global_proxy_config().use_local_dbconfig) {
+    if (!is_client_avail_) {
+      LOG_INFO("grpc client pool is not avail, will load local sharding config");
+      if (OB_FAIL(get_global_dbconfig_cache().load_local_dbconfig())) {
+        LOG_WARN("fail to load local dbconfig, we can fetch from dataplane later", K(ret));
+      } else {
+        is_config_inited_ = true;
+        LOG_INFO("succ to load local dbconfig");
+      }
+    } else if (OB_FAIL(init_sharding_config())) {
+      LOG_ERROR("fail to init sharding config", K(ret));
+    }
+
+    if (OB_SUCC(ret) && get_global_proxy_config().is_control_plane_used()) {
+      if (OB_FAIL(start_watch_parent_crd())) {
+        LOG_WARN("fail to start watch parent crd", K(ret));
+      }
+    }
+  } else {
+    if (OB_FAIL(get_global_dbconfig_cache().load_local_dbconfig())) {
+      LOG_WARN("fail to load local dbconfig when use_local_dbconfig", K(ret));
+    } else {
+      is_config_inited_ = true;
+      LOG_INFO("succ to load local dbconfig");
+      if (OB_FAIL(get_global_inotify_processor().start_watch_sharding_config())) {
+        LOG_WARN("fail to start inotify watch sharding config", K(ret));
+      }
+    }
+  }
+
   return ret;
 }
 

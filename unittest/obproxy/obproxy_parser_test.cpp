@@ -23,6 +23,7 @@
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
 #include "opsql/expr_parser/ob_expr_parser.h"
 #include "opsql/expr_parser/ob_expr_parser_utils.h"
+#include "obproxy/obutils/ob_proxy_sql_parser.h"
 #include "lib/allocator/page_arena.h"
 #include "obutils/ob_proxy_stmt.h"
 

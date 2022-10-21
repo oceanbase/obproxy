@@ -25,8 +25,7 @@ namespace obutils
 class ObShowStatHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowStatHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                    const ObInternalCmdInfo &info);
+  ObShowStatHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowStatHandler() {}
 
 private:

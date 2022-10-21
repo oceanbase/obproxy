@@ -250,7 +250,7 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
   if (OB_FAIL(ret)) {
     if (NULL != na) {
       if (NULL != na->action_) {
-        delete na->action_;
+        // na->action is of type ObPtr
         na->action_ = NULL;
       } else {
         delete na;

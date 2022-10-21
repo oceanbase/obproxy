@@ -937,8 +937,9 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
 
     ObMysqlResp *server_response = &sm_->trans_state_.trans_info_.server_response_;
     ObIMysqlRespAnalyzer *analyzer = NULL;
-    ObProxyProtocol ob_proxy_protocol = sm_->use_compression_protocol();
-    if (PROTOCOL_CHECKSUM == ob_proxy_protocol || PROTOCOL_OB20 == ob_proxy_protocol) {
+    ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
+    if (ObProxyProtocol::PROTOCOL_CHECKSUM == ob_proxy_protocol
+        || ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
       const uint8_t req_seq = sm_->get_request_seq();
       const obmysql::ObMySQLCmd cmd = sm_->get_request_cmd();
       ObMysqlCompressAnalyzer *compress_analyzer = &sm_->get_compress_analyzer();
@@ -1021,11 +1022,20 @@ int ObMysqlSMApi::setup_transfer_from_transform()
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
       } else {
+        ObIMysqlRespAnalyzer *analyzer = NULL;
+        if (ObProxyProtocol::PROTOCOL_OB20 == sm_->get_client_session_protocol()) {
+          analyzer = &sm_->compress_ob20_analyzer_;
+          LOG_DEBUG("set res packet analyzer is ob20");
+        } else {
+          analyzer = &sm_->analyzer_;
+          LOG_DEBUG("set res packet analyzer is normal");
+        }
+        
         response_transform_info_.entry_->in_tunnel_ = true;
         sm_->client_entry_->in_tunnel_ = true;
         if (OB_FAIL(setup_plugin_clients(*p))) {
           LOG_WARN("failed to setup_plugin_clients", K(p), K_(sm_->sm_id), K(ret));
-        } else if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, &sm_->analyzer_, NULL))) {
+        } else if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, analyzer, NULL))) {
           LOG_WARN("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
         } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
           LOG_WARN("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));

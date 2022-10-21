@@ -51,8 +51,7 @@ const ObProxyColumnSchema VIP_COLUMN_ARRAY[OB_VC_MAX_VIP_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_VC_INFO,          "info",         OB_MYSQL_TYPE_VARCHAR),
 };
 
-ObShowVipHandler::ObShowVipHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                   const ObInternalCmdInfo &info)
+ObShowVipHandler::ObShowVipHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info)
 {
   SET_HANDLER(&ObShowVipHandler::main_handler);

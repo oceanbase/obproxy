@@ -174,9 +174,9 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
   //3. reload config to memory
   if (OB_SUCC(ret)) {
     if (OB_FAIL((*reload_config_func_)(proxy_config_))) {
-      WARN_ICMD("fail to reload config", K(ret));
+      LOG_WARN("fail to reload config", K(ret));
     } else {
-      DEBUG_ICMD("succ to update local config");
+      LOG_DEBUG("succ to update local config");
     }
   }
 
@@ -186,12 +186,12 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
     if (has_serialized) {
       obsys::CWLockGuard guard(proxy_config_.rwlock_);
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = (proxy_config_.deserialize(orig_buf, write_pos, read_pos))))) {
-        WARN_ICMD("fail to deserialize old config", K(write_pos), K(read_pos), K(tmp_ret));
+        LOG_WARN("fail to deserialize old config", K(write_pos), K(read_pos), K(tmp_ret));
       } else if (OB_UNLIKELY(write_pos != read_pos)) {
         tmp_ret = OB_DESERIALIZE_ERROR;
         LOG_WARN("deserialize proxy config failed", K(write_pos), K(read_pos), K(tmp_ret));
       } else {
-        DEBUG_ICMD("succ to deserialize old config", K(write_pos), K(read_pos));
+        LOG_DEBUG("succ to deserialize old config", K(write_pos), K(read_pos));
       }
     }
     if (has_dump_config && OB_LIKELY(OB_SUCCESS == tmp_ret)) {

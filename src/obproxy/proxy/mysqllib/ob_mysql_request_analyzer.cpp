@@ -79,7 +79,8 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
                                              ObProxyMysqlRequest &client_request,
                                              ObMySQLCmd &sql_cmd,
                                              ObMysqlAnalyzeStatus &status,
-                                             const bool is_oracle_mode /* false*/)
+                                             const bool is_oracle_mode /* false */,
+                                             const bool is_client_support_ob20_protocol /* false */)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ctx.reader_)) {
@@ -102,6 +103,9 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
     // 2. verify request's legality, just print WARN
     int64_t avail_bytes = ctx.reader_->read_avail();
     if (avail_bytes >= MYSQL_NET_META_LENGTH) {
+      if (is_client_support_ob20_protocol) {
+        avail_bytes -= OB20_PROTOCOL_TAILER_LENGTH;   // avoid to print too much log in ob2.0 protocol with client
+      }
       if (avail_bytes > result.meta_.pkt_len_) {
         LOG_WARN("recevied more than one mysql packet at once, it is unexpected so far",
                  "first packet len(include packet header)", result.meta_.pkt_len_,
@@ -184,8 +188,8 @@ int ObMysqlRequestAnalyzer::get_payload_length(const char *buffer)
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("buffer is NULL", K(ret));
   } else {
-    payload_length = ob_uint3korr(buffer);
-    packet_seq_ = ob_uint1korr(buffer + MYSQL_PAYLOAD_LENGTH_LENGTH);
+    payload_length = uint3korr(buffer);
+    packet_seq_ = uint1korr(buffer + MYSQL_PAYLOAD_LENGTH_LENGTH);
     if (MYSQL_PACKET_MAX_LENGTH == payload_length) {
       is_last_request_packet_ = false;
     } else {
@@ -559,6 +563,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     }
     case OB_MYSQL_COM_STMT_FETCH:
     case OB_MYSQL_COM_STMT_CLOSE:
+    case OB_MYSQL_COM_STMT_RESET:
     case OB_MYSQL_COM_STMT_EXECUTE:
     case OB_MYSQL_COM_STMT_SEND_LONG_DATA:
     case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
@@ -584,6 +589,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
       break;
     }
     case OB_MYSQL_COM_CHANGE_USER:
+    case OB_MYSQL_COM_RESET_CONNECTION:
     case OB_MYSQL_COM_INIT_DB: {
       if (OB_FAIL(client_request.add_request(ctx.reader_, ctx.request_buffer_length_))) {
         LOG_WARN("fail to add com request", K(ret));
@@ -941,7 +947,7 @@ int ObMysqlRequestAnalyzer::do_analyze_execute_param(const char *buf,
       } else if (OB_FAIL(parse_param_value(allocator, param_buf, data_len, type, charset, target_obj))) {
         LOG_DEBUG("fail to parse param value", K(i), K(ret));
       } else {
-        LOG_DEBUG("succ to parse execute  param", K(ob_type), K(i));
+        LOG_DEBUG("succ to parse execute param", K(ob_type), K(type), K(i));
       }
     }
   } // end for
@@ -1204,7 +1210,8 @@ int ObMysqlRequestAnalyzer::parse_param_value(ObIAllocator &allocator,
       case OB_MYSQL_TYPE_STRING:
       case OB_MYSQL_TYPE_VARCHAR:
       case OB_MYSQL_TYPE_VAR_STRING:
-      case OB_MYSQL_TYPE_NEWDECIMAL: {
+      case OB_MYSQL_TYPE_NEWDECIMAL:
+      case OB_MYSQL_TYPE_OB_UROWID: {
         ObString str;
         ObString dst;
         uint64_t length = 0;
@@ -1624,7 +1631,7 @@ int ObMysqlRequestAnalyzer::get_int1_from_reader(event::ObIOBufferReader* reader
   return ret;
 }
 
-int ObMysqlRequestAnalyzer::analyze_sql_id(ObProxyMysqlRequest &client_request, ObString &sql_id)
+int ObMysqlRequestAnalyzer::analyze_sql_id(const ObString &sql, ObProxyMysqlRequest &client_request, ObString &sql_id)
 {
   int ret = OB_SUCCESS;
   ObArenaAllocator *allocator = NULL;
@@ -1649,7 +1656,6 @@ int ObMysqlRequestAnalyzer::analyze_sql_id(ObProxyMysqlRequest &client_request, 
     parse_result.is_dynamic_sql_ = false;
     parse_result.is_batched_multi_enabled_split_ = false;
 
-    const ObString sql = client_request.get_sql();
     int64_t new_length = sql.length() + 1; // needed by sql parser, terminated with '\0'
     char *buf = (char *)parse_malloc(new_length, parse_result.malloc_pool_);
 

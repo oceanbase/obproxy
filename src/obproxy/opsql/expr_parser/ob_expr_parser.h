@@ -20,6 +20,7 @@
 #include "lib/string/ob_string.h"
 
 extern "C" int ob_expr_parse_utf8_sql(ObExprParseResult *p, const char *pszSql, size_t iLen);
+extern "C" int ob_expr_parse_gbk_sql(ObExprParseResult *p, const char *pszSql, size_t iLen);
 
 namespace oceanbase
 {
@@ -32,6 +33,7 @@ namespace obproxy
 {
 namespace opsql
 {
+
 class ObExprParser
 {
 public:
@@ -112,6 +114,17 @@ inline int ObExprParser::parse(const common::ObString &sql_string,
     PROXY_LOG(WARN, "failed to initialized parser", KERRMSGS, K(ret));
   } else {
     switch (connection_collation) {
+      //case 28/*CS_TYPE_GBK_CHINESE_CI*/:
+      //case 87/*CS_TYPE_GBK_BIN*/:
+      case 248/*CS_TYPE_GB18030_CHINESE_CI*/:
+      case 249/*CS_TYPE_GB18030_BIN*/:
+        if (common::OB_SUCCESS != ob_expr_parse_gbk_sql(&parse_result,
+                                                        sql_string.ptr(),
+                                                        static_cast<size_t>(sql_string.length()))) {
+          ret = common::OB_ERR_PARSE_SQL;
+          PROXY_LOG(WARN, "failed to parser gbk sql", KERRMSGS, K(connection_collation), K(ret));
+        }
+        break;
       case 45/*CS_TYPE_UTF8MB4_GENERAL_CI*/:
       case 46/*CS_TYPE_UTF8MB4_BIN*/:
       default:
@@ -135,6 +148,8 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
   common::ObString expr_sql = obproxy::proxy::ObProxyMysqlRequest::get_expr_sql(req_sql, parsed_length);
   const char *expr_sql_str = expr_sql.ptr();
   const char *pos = NULL;
+  char* replace_sql_str = NULL;
+  int   replace_sql_len = 0;
   if (OB_LIKELY(NULL != expr_sql_str)) {
     if (SELECT_STMT_PARSE_MODE == parse_mode_) {
       if (NULL != (pos = strcasestr(expr_sql_str, "JOIN"))) {
@@ -159,11 +174,45 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
     if (NULL != pos) {
       expr_sql += static_cast<int32_t>(pos - expr_sql_str);
     }
+
+    if (OBPROXY_T_TEXT_PS_PREPARE == stmt_type || OBPROXY_T_TEXT_PS_EXECUTE == stmt_type) {
+      int i, j, index = 0;
+      replace_sql_len = expr_sql.length();
+      if (OB_ISNULL(replace_sql_str = static_cast<char *>(op_fixed_mem_alloc(replace_sql_len)))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        PROXY_LOG(WARN, "fail to alloc mem", "alloc_size", replace_sql_len, K(ret));
+      } else {
+        // PREPARE ps_stmt FROM 'select * from test9 where ID = \\'001\\''; remove escape symbols
+        for (i = 0; i < expr_sql.length() - 1; ++i) {
+          if (expr_sql[i] == 0x5c && (expr_sql[i+1] == 0x27 || expr_sql[i+1] == 0x22)) {
+            // do nothing
+          } else {
+            replace_sql_str[index++] = expr_sql[i];
+          }
+        }
+        replace_sql_str[index++] = expr_sql[i];
+
+        // PREPARE ps_stmt FROM 'select * from test9 where ID = \\'001\\''; remove trailing single quotes
+        if (replace_sql_str[index-3] == 0x27 || replace_sql_str[index-3] == 0x22) {
+          for (j = index - 3; j < index - 1; ++j) {
+            replace_sql_str[j] = replace_sql_str[j+1];
+          }
+          index -= 1;
+        }
+        PROXY_LOG(DEBUG, "parse length", K(index), K(replace_sql_len), K(replace_sql_str)); 
+        expr_sql.assign_ptr(replace_sql_str, index);
+      }
+    }
   }
-  if (OB_FAIL(parse(expr_sql, expr_result, connection_collation))) {
-    PROXY_LOG(DEBUG, "fail to do expr parse", K(expr_sql), K(ret));
-  } else {
-    PROXY_LOG(DEBUG, "succ to do expr parse", "expr_result", ObExprParseResultPrintWrapper(expr_result), K(expr_sql));
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(parse(expr_sql, expr_result, connection_collation))) {
+      PROXY_LOG(DEBUG, "fail to do expr parse", K(expr_sql), K(ret));
+    } else {
+      PROXY_LOG(DEBUG, "succ to do expr parse", "expr_result", ObExprParseResultPrintWrapper(expr_result), K(expr_sql));
+    }
+  }
+  if (NULL != replace_sql_str) {
+    op_fixed_mem_free(replace_sql_str, replace_sql_len);
   }
   return ret;
 }

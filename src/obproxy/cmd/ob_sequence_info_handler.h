@@ -29,8 +29,7 @@ class ObSequenceInfo;
 class ObSequenceInfoHandler : public ObInternalCmdHandler
 {
 public:
-  ObSequenceInfoHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                        const ObInternalCmdInfo &info);
+  ObSequenceInfoHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObSequenceInfoHandler();
 protected:
   int encode_err_packet(const int errcode);

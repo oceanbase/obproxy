@@ -27,8 +27,7 @@ namespace proxy
 class ObShowRouteHandler : public ObInternalCmdHandler
 {
 public:
-	ObShowRouteHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-	                   const ObInternalCmdInfo &info);
+	ObShowRouteHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowRouteHandler() {}
   int handle_show_table(int event, void *data);
   int handle_show_partition(int event, void *data);

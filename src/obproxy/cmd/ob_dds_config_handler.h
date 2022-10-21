@@ -33,9 +33,7 @@ namespace obutils
 class ObDdsConfigHandler : public ObInternalCmdHandler
 {
 public:
-  ObDdsConfigHandler(event::ObContinuation *cont,
-                     event::ObMIOBuffer *buf,
-                     const ObInternalCmdInfo &info);
+  ObDdsConfigHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
 
   virtual ~ObDdsConfigHandler() {}
   int main_handler(int event, void *data);

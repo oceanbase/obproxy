@@ -39,7 +39,7 @@ int OMPKSSLRequest::decode()
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("error ssl request packet", K(len), K(pos), K(end), K(ret));
   } else {
-    capability_.capability_ = ob_uint2korr(pos);
+    capability_.capability_ = uint2korr(pos);
     if (OB_UNLIKELY(!capability_.cap_flags_.OB_CLIENT_SSL)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("error capability from ssl request packet", K(ret));

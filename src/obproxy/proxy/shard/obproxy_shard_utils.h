@@ -89,8 +89,8 @@ public:
                                          ObIOBufferReader &client_buffer_reader,
                                          dbconfig::ObDbConfigLogicDb &logic_db_info,
                                          bool &need_wait_callback);
-  static int build_error_packet(int err_code, bool &need_response_for_dml,
-                                ObMysqlTransact::ObTransState &trans_state);
+  static int build_error_packet(int err_code, bool &need_response_for_dml, ObMysqlTransact::ObTransState &trans_state,
+                                ObMysqlClientSession *client_session);
 
   static int handle_sharding_select_real_info(dbconfig::ObDbConfigLogicDb &logic_db_info,
                                   ObMysqlClientSession &client_session,
@@ -154,6 +154,19 @@ private:
   static void replace_oracle_table(ObSqlString &new_sql, const ObString &real_name,
                                    bool &hava_quoto, bool is_single_shard_db_table,
                                    bool is_database);
+  static int rewrite_shard_request_db(const char *sql_ptr,  int64_t database_pos,
+                                      int64_t table_pos, uint64_t database_len,
+                                      const ObString &real_database_name, bool is_oracle_mode,
+                                      bool is_single_shard_db_table, ObSqlString &new_sql, int64_t &copy_pos);
+  static int rewrite_shard_request_table(const char *sql_ptr,
+                                         int64_t database_pos, uint64_t database_len,
+                                         int64_t table_pos, uint64_t table_len,
+                                         const ObString &real_table_name, const ObString &real_database_name,
+                                         bool is_oracle_mode, bool is_single_shard_db_table,
+                                         ObSqlString &new_sql, int64_t &copy_pos);
+  static int rewrite_shard_request_hint_table(const char *sql_ptr, int64_t index_table_pos, uint64_t index_table_len,
+                                              const ObString &real_table_name, bool is_oracle_mode,
+                                              bool is_single_shard_db_table, ObSqlString &new_sql, int64_t &copy_pos);
   static int rewrite_shard_request(ObClientSessionInfo &session_info,
                                    ObProxyMysqlRequest &client_request,
                                    ObIOBufferReader &client_buffer_reader,

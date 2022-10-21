@@ -26,8 +26,7 @@ namespace obproxy
 {
 namespace proxy
 {
-ObKillOpHandler::ObKillOpHandler(ObContinuation *cont, ObMIOBuffer *buf,
-    const ObInternalCmdInfo &info)
+ObKillOpHandler::ObKillOpHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type()),
     ss_id_(info.get_ss_id()), capability_(info.get_capability()), cs_id_array_()
 {

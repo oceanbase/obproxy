@@ -102,6 +102,7 @@ public:
 
   void clear_request_sent() { is_request_sent_ = false; }
   void clear_resp_received() { is_resp_received_ = false; }
+  void set_addr(const common::ObAddr &addr) { addr_ = addr; }
 
 private:
   uint32_t magic_;
@@ -113,6 +114,7 @@ private:
 
   ObClientVCState read_state_;
   ObClientVCState write_state_;
+  common::ObAddr addr_;
   DISALLOW_COPY_AND_ASSIGN(ObClientVC);
 };
 

@@ -15,6 +15,7 @@
 #include "lib/thread_local/ob_tsi_factory.h"
 #include "lib/utility/utility.h"
 #include <algorithm>
+#include "obutils/ob_proxy_config.h"
 #ifdef __OB_MTRACE__
 #include <execinfo.h>
 #endif

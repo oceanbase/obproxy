@@ -4125,9 +4125,17 @@ int obj_accuracy_check(ObCastCtx &cast_ctx,
                        const ObObj *&res_obj)
 {
   int ret = OB_SUCCESS;
+  bool valid_accuracy = true;
+  ObObjType type = obj.get_type();
+  if (ob_is_number_tc(type) || ob_is_double_tc(type) || ob_is_float_tc(type)) {
+    if (accuracy.precision_ == -1 || accuracy.scale_ == -1) {
+      valid_accuracy = false;     // invalid accuracy
+    }
+  }
 
-  if (accuracy.is_valid()) {
-    LOG_DEBUG("obj_accuracy_check before", K(obj), K(accuracy), K(cs_type));
+  LOG_DEBUG("obj_accuracy_check before", K(obj), K(accuracy), K(cs_type), K(valid_accuracy));
+  
+  if (valid_accuracy && accuracy.is_valid()) {
     switch (obj.get_type_class()) {
       case ObFloatTC: {
         ret = float_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);

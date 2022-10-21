@@ -102,7 +102,7 @@ public:
 
   void reset_ipv4_10(int ip = 10);
 
-private:
+public:
   VER version_;
   union
   {

@@ -99,8 +99,8 @@ public:
             && !sm->client_session_->is_proxy_mysql_client_
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && !sm->trans_state_.trans_info_.server_response_.get_analyze_result().is_decompressed()
-            && (PROTOCOL_CHECKSUM == sm->use_compression_protocol()
-                || PROTOCOL_OB20 == sm->use_compression_protocol()));
+            && (ObProxyProtocol::PROTOCOL_CHECKSUM == sm->get_server_session_protocol()
+                || ObProxyProtocol::PROTOCOL_OB20 == sm->get_server_session_protocol()));
   }
 
 private:

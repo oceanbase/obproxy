@@ -340,6 +340,8 @@ int main(int argc, char **argv)
       case 'c':
         if (strcmp(optarg, "utb8") == 0) {
           connection_collation = CS_TYPE_UTF8MB4_GENERAL_CI;
+        } else if (strcmp(optarg, "gb18030") == 0) {
+          connection_collation = CS_TYPE_GB18030_CHINESE_CI;
         }
         break;
       case 't':

@@ -29,6 +29,7 @@ class ObMIOBuffer;
 namespace proxy
 {
 class ObMysqlCompressedAnalyzeResult;
+
 class ObMysqlAnalyzerUtils
 {
 public:

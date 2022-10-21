@@ -53,6 +53,7 @@ struct AddrStruct
 
 class ObWhiteListTableProcessor
 {
+typedef common::hash::ObHashMap<common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH>, common::ObSEArray<AddrStruct, 4> > WhiteListHashMap;
 public:
   ObWhiteListTableProcessor() : index_(0), white_list_lock_(obsys::WRITE_PRIORITY) {}
   ~ObWhiteListTableProcessor() {}
@@ -65,23 +66,24 @@ public:
   int delete_ip_list(common::ObString &cluster_name, common::ObString &tenant_name);
   void inc_index();
   void print_config();
+  WhiteListHashMap& get_backup_hashmap() { return addr_hash_map_array_[(index_ + 1) % 2]; }
+  void clean_hashmap(WhiteListHashMap& whitelist_map);
 private:
   int32_t ip_to_int(char *addr, uint32_t &value);
   int backup_hash_map();
   uint32_t to_little_endian(uint32_t value);
 private:
   static int execute(void *arg);
-  static int commit(bool is_success);
+  static int commit(void* arg, bool is_success);
 
 private:
-  typedef common::hash::ObHashMap<common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH>, common::ObSEArray<AddrStruct, 4> > WhiteListHashMap;
   WhiteListHashMap addr_hash_map_array_[2];
   int64_t index_;
 private:
   common::DRWLock white_list_lock_;
 };
 
-ObWhiteListTableProcessor &get_global_white_list_table_processor();
+extern ObWhiteListTableProcessor &get_global_white_list_table_processor();
 
 } // end of omt
 } // end of obproxy

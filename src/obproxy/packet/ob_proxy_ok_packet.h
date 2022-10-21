@@ -74,7 +74,7 @@ inline void ObProxyOKPacket::set_seq(const uint8_t seq)
     // if buffer is valid, set to buffer directly
     if (is_buffer_valid_) {
       if (OB_LIKELY(OB_SEQ_POS < OB_MAX_OK_PACKET_LENGTH)) {
-        ob_int1store(pkt_buf_ + OB_SEQ_POS, seq);
+        int1store(pkt_buf_ + OB_SEQ_POS, seq);
       } else {
         is_buffer_valid_ = false;
       }
@@ -92,7 +92,7 @@ inline void ObProxyOKPacket::set_status_flags(const uint16_t status_flags)
     // if buffer is valid, set to buffer directly
     if (is_buffer_valid_) {
       if (OB_LIKELY(status_flags_pos_ + 1 < OB_MAX_OK_PACKET_LENGTH)) {
-        ob_int2store(pkt_buf_ + status_flags_pos_, status_flags);
+        int2store(pkt_buf_ + status_flags_pos_, status_flags);
       } else {
         is_buffer_valid_ = false;
       }
@@ -110,7 +110,7 @@ inline void ObProxyOKPacket::set_warnings_count(const uint16_t warnings_count)
     // if buffer is valid, set to buffer directly
     if (is_buffer_valid_) {
       if (OB_LIKELY(warnings_count_pos_ + 1 < OB_MAX_OK_PACKET_LENGTH)) {
-        ob_int2store(pkt_buf_ + warnings_count_pos_, warnings_count);
+        int2store(pkt_buf_ + warnings_count_pos_, warnings_count);
       } else {
         is_buffer_valid_ = false;
       }

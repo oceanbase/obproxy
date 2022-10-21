@@ -16,6 +16,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <setjmp.h>
+#include <strings.h>
+#include <stddef.h>
 #include "opsql/ob_proxy_parse_type.h"
 #include "opsql/func_expr_parser/ob_func_expr_parse_result.h"
 
@@ -203,10 +205,23 @@ typedef struct _ObExprParseResult
   // result argument
   ObProxyRelationInfo relation_info_;
   ObProxyRelationInfo all_relation_info_;
-  // oracle rowid
+
+  // hash rowid or not
   bool has_rowid_;
-  ObProxyParseString rowid_str_;
+  
 } ObExprParseResult;
+
+static const char *g_ROWID = "ROWID";
+static inline bool is_equal_to_rowid(ObProxyParseString *str)
+{
+  bool bret = false;
+  if (str == NULL || str->str_ == NULL || str->str_len_ != 5) {
+    // ret
+  } else {
+    bret = (strncasecmp(str->str_, g_ROWID, 5) == 0) ? true : false;
+  }
+  return bret;
+}
 
 #ifdef __cplusplus
 extern "C" const char* get_expr_parse_mode(const ObExprParseMode mode);
