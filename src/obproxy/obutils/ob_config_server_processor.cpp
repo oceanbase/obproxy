@@ -1868,7 +1868,7 @@ int ObConfigServerProcessor::parse_json_config_info(const ObString &json, const 
     bool is_metadb_changed = false;
     if (OB_ISNULL(json_info = op_alloc(ObProxyJsonConfigInfo))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc mem fot json config info", K(ret));
+      LOG_ERROR("fail to alloc mem for json config info", K(ret));
     } else if (OB_FAIL(json_info->parse(root))) {
       LOG_WARN("fail to parse json info", K(ret));
     } else if (!json_info->is_valid()) {

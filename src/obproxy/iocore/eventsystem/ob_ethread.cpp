@@ -289,7 +289,7 @@ inline void ObEThread::process_event(ObEvent *e, const int calling_code)
         if (OB_UNLIKELY(e->in_the_priority_queue_)) {
           LOG_WARN("event should not in in_the_priority_queue here", K(*e));
         } else if (OB_UNLIKELY(c_temp != e->continuation_)) {
-          LOG_WARN("event should not in in_the_priority_queue here", K(*e));
+          LOG_WARN("c_temp should equal e->continuation_", K(*e));
         } else {/*do nothing*/}
         MUTEX_RELEASE(lock);
 

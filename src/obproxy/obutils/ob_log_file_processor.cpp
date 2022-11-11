@@ -90,7 +90,7 @@ int ObLogFileProcessor::start_cleanup_log_file()
     LOG_WARN("log file processor is not inited", K(ret));
   } else if (OB_UNLIKELY(NULL != cleanup_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("log file cleanup task has already been schuduled", K_(cleanup_cont), K(ret));
+    LOG_WARN("log file cleanup task has already been scheduled", K_(cleanup_cont), K(ret));
   } else {
     int64_t interval_us = get_global_proxy_config().log_cleanup_interval;
     if (OB_ISNULL(cleanup_cont_ = ObAsyncCommonTask::create_and_start_repeat_task(interval_us,
@@ -98,7 +98,7 @@ int ObLogFileProcessor::start_cleanup_log_file()
                                   ObLogFileProcessor::do_repeat_task,
                                   ObLogFileProcessor::update_interval))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start cleanup task", K(interval_us), K(ret));
+      LOG_WARN("fail to create and start log cleanup task", K(interval_us), K(ret));
     } else {
       LOG_INFO("succ to create and start log cleanup task", K(interval_us));
     }
