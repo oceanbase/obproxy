@@ -430,7 +430,7 @@ public:
   uint64_t get_tenant_version() const { return tenant_version_; }
   int64_t get_time_for_expired() const { return time_for_expired_; }
   void set_time_for_expired(int64_t expire_time) { time_for_expired_ = expire_time; }
-  void check_and_set_expire_time(const uint64_t tenant_version, const bool is_dummy_entry);
+  void check_and_set_expire_time(const uint64_t tenant_version, const bool is_sys_dummy_entry);
 
 protected:
   int64_t cr_version_; // one entry must belong to one cluster with the specfied version

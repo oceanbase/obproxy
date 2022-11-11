@@ -271,7 +271,7 @@ int ObRoutineEntryCont::handle_client_resp(void *data)
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("rs_fetcher and entry can not be NULL", K(rs_fetcher), K(entry), K(ret));
       } else if (OB_FAIL(ObRouteUtils::fetch_one_routine_entry_info(
-              *rs_fetcher, param_.name_, param_.cr_version_, param_.cr_id_, entry))) {
+              *rs_fetcher, param_.name_, param_.cr_version_, param_.cr_id_, entry, param_.cluster_version_))) {
         LOG_WARN("fail to fetch one routine entry info", K(ret));
       } else if (NULL == entry) {
         PROCESSOR_INCREMENT_DYN_STAT(GET_ROUTINE_ENTRY_FROM_REMOTE_FAIL);
@@ -438,7 +438,7 @@ int ObRoutineEntryCont::lookup_entry_remote()
   ObMysqlProxy *mysql_proxy = param_.mysql_proxy_;
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
-  if (OB_FAIL(ObRouteUtils::get_routine_entry_sql(sql, OB_SHORT_SQL_LENGTH, param_.name_))) {
+  if (OB_FAIL(ObRouteUtils::get_routine_entry_sql(sql, OB_SHORT_SQL_LENGTH, param_.name_, param_.cluster_version_))) {
     LOG_WARN("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, param_.current_idc_name_);
@@ -540,6 +540,7 @@ inline int ObRoutineParam::deep_copy(ObRoutineParam &other)
     force_renew_ = other.force_renew_;
     cr_version_ = other.cr_version_;
     cr_id_ = other.cr_id_;
+    cluster_version_ = other.cluster_version_;
     // no need assign result_
     mysql_proxy_ = other.mysql_proxy_;
     if (!other.current_idc_name_.empty()) {

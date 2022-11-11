@@ -126,7 +126,8 @@ RangePartition::RangePartition() : is_max_value_(false)
 int ObPartDescRange::get_part(ObNewRange &range,
                               ObIAllocator &allocator,
                               ObIArray<int64_t> &part_ids,
-                              ObPartDescCtx &ctx)
+                              ObPartDescCtx &ctx,
+                              ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   part_ids.reset();
@@ -151,18 +152,22 @@ int ObPartDescRange::get_part(ObNewRange &range,
     for (int64_t i = start; OB_SUCC(ret) && i <= end; i ++) {
       if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
         COMMON_LOG(WARN, "fail to push part id", K(ret));
+      } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
+        COMMON_LOG(WARN, "fail to push tablet id", K(ret));
       }
     }
   }
   return ret;
 }
 
-int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   int64_t part_idx = num % part_array_size_;
   if (OB_FAIL(part_ids.push_back(part_array_[part_idx].part_id_))) {
     COMMON_LOG(WARN, "fail to push part id", K(ret));
+  } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+    COMMON_LOG(WARN, "fail to push tablet id", K(ret));
   }
   return ret;
 }
@@ -217,7 +222,7 @@ inline int ObPartDescRange::cast_obj(ObObj &src_obj,
       COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(target_obj));
     }
   }
-    
+
   return ret;
 }
 

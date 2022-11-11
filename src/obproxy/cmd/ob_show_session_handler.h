@@ -45,8 +45,7 @@ enum ObServerSessionType
 class ObShowSessionHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowSessionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                       const ObInternalCmdInfo &info);
+  ObShowSessionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowSessionHandler() { cs_id_array_.destroy(); }
   int handle_cs_list(int event, void *data);
   int handle_cs_details(int event, void *data);

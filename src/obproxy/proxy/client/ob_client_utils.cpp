@@ -80,6 +80,7 @@ int ObMysqlRequestParam::deep_copy(const ObMysqlRequestParam &other)
   } else {
     is_user_idc_name_set_ = other.is_user_idc_name_set_;
     need_print_trace_stat_ = other.need_print_trace_stat_;
+    target_addr_ = other.target_addr_;
     if (other.is_user_idc_name_set_ && !other.current_idc_name_.empty()) {
       MEMCPY(current_idc_name_buf_, other.current_idc_name_.ptr(), other.current_idc_name_.length());
       current_idc_name_.assign_ptr(current_idc_name_buf_, other.current_idc_name_.length());
@@ -331,7 +332,7 @@ int ObClientReuqestInfo::set_names(const ObString &user_name,
         password0_ = password_;
         pos += password.length();
       }
-      
+
       if (!password1.empty()) {
         MEMCPY(name_ + pos, password1.ptr(), password1.length());
         password1_.assign_ptr(name_ + pos, password1.length());

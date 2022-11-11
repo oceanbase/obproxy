@@ -56,6 +56,7 @@ int ObKillGlobalSessionHandler::handle_kill_global_session_info(int event, void 
   }
   return event_ret;
 }
+
 int ObKillGlobalSessionHandler::encode_err_packet(const int errcode)
 {
   int ret = OB_SUCCESS;
@@ -78,7 +79,7 @@ int ObKillGlobalSessionHandler::encode_err_packet(const int errcode)
     } else {}
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet_buf(*internal_buf_, seq_, errcode, msg_buf))) {
+    if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, msg_buf))) {
       WARN_ICMD("fail to encode err packet", K(errcode), K(msg_buf), K(ret));
     } else {
       INFO_ICMD("succ to encode err packet", K(errcode), K(msg_buf));

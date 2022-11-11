@@ -63,6 +63,8 @@ int ObMysqlCompressAnalyzer::init(
       }
     }
     is_inited_ = true;
+
+    LOG_DEBUG("compress analyzer init", K(last_seq), K(mode), K(mysql_cmd), K(enable_extra_ok_packet_for_stats), K(lbt()));
   }
   return ret;
 }
@@ -190,7 +192,7 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(event::ObIOBufferReader
       }
     }
   }
-  LOG_DEBUG("analyze compressed response finished", "data_size", reader.read_avail(), K(resp));
+  LOG_DEBUG("analyze compressed response finished", "data_size", reader.read_avail(), K(mode_), K(resp));
 
   return ret;
 }
@@ -238,6 +240,7 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(const ObString &compres
             is_stream_finished_ = true;
             LOG_DEBUG("simple mode, compressed stream complete", K(mode_));
           }
+          LOG_DEBUG("print analyzer in simple mode", K(is_last_packet_), K(is_last_data), K(resp));
         } else if (DECOMPRESS_MODE == mode_) {
           if (is_last_packet_) {
             if (OB_FAIL(analyze_last_compress_packet(buf_start, buf_len, is_last_data, resp))) {
@@ -262,9 +265,8 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(const ObString &compres
   return ret;
 }
 
-int ObMysqlCompressAnalyzer::decode_compressed_header(
-    const ObString &compressed_data,
-    int64_t &avail_len)
+int ObMysqlCompressAnalyzer::decode_compressed_header(const ObString &compressed_data,
+                                                      int64_t &avail_len)
 {
   int ret = OB_SUCCESS;
   int64_t origin_len = compressed_data.length();
@@ -786,6 +788,46 @@ int ObMysqlCompressAnalyzer::analyze_response(event::ObIOBufferReader &reader, O
 
   return ret;
 }
+
+int ObMysqlCompressAnalyzer::analyze_first_request(ObIOBufferReader &reader,
+                                                   ObMysqlCompressedAnalyzeResult &result,
+                                                   ObProxyMysqlRequest &req,
+                                                   ObMysqlAnalyzeStatus &status)
+{
+  UNUSED(req);
+  
+  int ret = OB_SUCCESS;
+  result.reset();
+
+  if (!is_inited_) {
+    ret = OB_NOT_INIT;
+    LOG_WARN("analyzer not init", K(ret));
+  } else if (OB_FAIL(analyze_one_compressed_packet(reader, result))) { // 7 + 24 header decode finish
+    LOG_WARN("fail to analyze one compressed packet", K(ret));
+  } else if (ANALYZE_DONE == result.status_) {
+    status = result.status_;
+
+    // total ob20 request received complete here, total_len = ob20.head.compressed_len + mysql compress head(3+1+3)
+    // get extra info from ob20 payload
+    if (OB_FAIL(analyze_compress_packet_payload(reader, result))) {
+      LOG_WARN("fail to analyze compress packet payload", K(ret));
+      status = ANALYZE_ERROR;
+    }
+  }
+
+  return ret;
+}
+
+int ObMysqlCompressAnalyzer::analyze_compress_packet_payload(event::ObIOBufferReader &reader,
+                                                             ObMysqlCompressedAnalyzeResult &result)
+{
+  UNUSED(reader);
+  UNUSED(result);
+  
+  int ret = OB_INVALID_ARGUMENT;
+  LOG_WARN("unexpected protocol type handle.");
+  return ret;
+}          
 
 } // end of namespace proxy
 } // end of namespace obproxy

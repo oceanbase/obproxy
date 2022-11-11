@@ -32,9 +32,21 @@
 #include "iocore/net/ob_net_accept.h"
 #include "iocore/net/ob_net.h"
 #include "iocore/net/ob_event_io.h"
+#include "omt/ob_resource_unit_table_processor.h"
+#include "proxy/mysql/ob_mysql_client_session.h"
+#include "proxy/route/ob_table_cache.h"
+#include "obutils/ob_congestion_manager.h"
+#include "proxy/route/ob_partition_cache.h"
+#include "proxy/route/ob_routine_cache.h"
+#include "proxy/route/ob_sql_table_cache.h"
+#include "prometheus/ob_prometheus_processor.h"
 
 using namespace oceanbase::common;
+using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::event;
+using namespace oceanbase::obproxy::omt;
+using namespace oceanbase::obproxy::proxy;
+using namespace oceanbase::obproxy::prometheus;
 
 namespace oceanbase
 {
@@ -308,6 +320,90 @@ int ObNetAccept::do_listen(const bool non_blocking)
   return ret;
 }
 
+int ObNetAccept::fetch_vip_tenant(ObUnixNetVConnection* vc, ObVipTenant& vip_tenant, bool& lookup_success)
+{
+  int ret = OB_SUCCESS;
+  int32_t ip;
+  int32_t port;
+  int64_t vid;
+  if (OB_ISNULL(vc)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WARN, "vc pointer is null", K(ret));
+  } else {
+    ip = ntohl(vc->get_virtual_ip());
+    port = static_cast<int32_t>(vc->get_virtual_port());
+    vid = static_cast<int64_t>(vc->get_virtual_vid());
+    vip_tenant.vip_addr_.set(ip, port, vid);
+    if (OB_FAIL(get_global_vip_tenant_processor().get_vip_tenant(vip_tenant))) {
+      PROXY_NET_LOG(DEBUG, "fail to get vip tenant", K(ret));
+      ret = OB_SUCCESS;
+    } else {
+      lookup_success = true;
+    }
+  }
+  return ret;
+}
+
+int ObNetAccept::fetch_tenant_cpu(ObVipTenant& vip_tenant, ObTenantCpu*& tenant_cpu, bool& lookup_success)
+{
+  int ret = OB_SUCCESS;
+  ObString key_name;
+  char vip_name[OB_IP_STR_BUFF];
+  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> key_string;
+  if (OB_UNLIKELY(!vip_tenant.vip_addr_.addr_.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WARN, "fail to covert ip to string", K(vip_name), K(ret));
+  } else if (OB_FAIL(build_tenant_cluster_vip_name(vip_tenant.tenant_name_, vip_tenant.cluster_name_, vip_name, key_string))) {
+    PROXY_NET_LOG(WARN, "build tenant cluser vip name failed", K(vip_tenant), K(ret));
+  } else if (FALSE_IT(key_name = ObString::make_string(key_string.ptr()))) {
+  } else if (OB_FAIL(get_global_cpu_table_processor().get_tenant_cpu(key_name, tenant_cpu))) {
+    PROXY_NET_LOG(DEBUG, "get tenant cpu failed", K(key_name), K(ret));
+  } else {
+    lookup_success = true;
+  }
+  return ret;
+}
+
+int ObNetAccept::handle_tenant_cpu_isolated(ObTenantCpu* tenant_cpu, ObEThread*& ethread)
+{
+  int ret = OB_SUCCESS;
+  // 1. Assign as many threads as there are max_thread_num, and then save the thread id
+  // 2. Create the tenant's cgroup filesystem
+  //    2.1 Write cfs_period_us and cfs_quota_us to the cgroup filesystem
+  //    2.2 tasks that write the thread id to the cgroup filesystem
+  if (OB_ISNULL(tenant_cpu)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WARN, "tenant cpu point is null", K(ret));
+  } else {
+    if (tenant_cpu->thread_array_.count() < tenant_cpu->max_thread_num_) {
+      DRWLock::WRLockGuard guard(g_event_processor.lock_);
+      if (tenant_cpu->thread_array_.count() < tenant_cpu->max_thread_num_) {
+        ethread = get_schedule_vip_ethread();
+        if (OB_ISNULL(ethread)) {
+          ret = OB_ERR_UNEXPECTED;
+          PROXY_NET_LOG(ERROR, "fail to get_shedule_ethread", K(ret));
+        } else if (OB_FAIL(tenant_cpu->acquire_more_worker(ethread->thread_id_))) {
+          PROXY_NET_LOG(WARN, "acquire more worker failed", K(ret));
+        } else {
+          ethread->use_status_ = true;
+          tenant_cpu->thread_array_.push_back(ethread);
+        }
+      } else {
+        ethread = tenant_cpu->get_tenant_schedule_ethread();
+      }
+    } else {
+      ethread = tenant_cpu->get_tenant_schedule_ethread();
+    }
+  }
+
+  // for debug
+  if (OB_NOT_NULL(ethread)) {
+    PROXY_NET_LOG(DEBUG, "has acquire thread", K(ethread->thread_id_), KPC(tenant_cpu), KPC(ethread));
+  }
+
+  return ret;
+}
+
 int ObNetAccept::do_blocking_accept()
 {
   int ret = OB_SUCCESS;
@@ -363,14 +459,33 @@ int ObNetAccept::do_blocking_accept()
 
       SET_CONTINUATION_HANDLER(vc, reinterpret_cast<NetVConnHandler>(&ObUnixNetVConnection::accept_event));
 
-      ethread = get_schedule_ethread();
-      if(OB_ISNULL(ethread)) {
+      ObVipTenant vip_tenant;
+      ObTenantCpu* tenant_cpu = NULL;
+      bool lookup_vip_tenant_success = false;
+      bool lookup_tenant_cpu_success = false;
+      if (get_global_proxy_config().enable_cpu_isolate) {
+        fetch_vip_tenant(vc, vip_tenant, lookup_vip_tenant_success);
+        if (lookup_vip_tenant_success) {
+          fetch_tenant_cpu(vip_tenant, tenant_cpu, lookup_tenant_cpu_success);
+        }
+        if (lookup_vip_tenant_success && lookup_tenant_cpu_success) {
+          if (OB_FAIL(handle_tenant_cpu_isolated(tenant_cpu, ethread))) {
+            PROXY_NET_LOG(ERROR, "handle tenant cpu isolate failed", K(ret));
+          }
+          tenant_cpu->dec_ref();
+        } else {
+          ethread = get_schedule_other_ethread();
+        }
+      } else {
+        ethread = get_schedule_ethread();
+      }
+
+      if (OB_ISNULL(ethread)) {
         ret = OB_ERR_UNEXPECTED;
         PROXY_NET_LOG(ERROR, "fail to get_shedule_ethread", K(ret));
       } else {
         NET_ATOMIC_INCREMENT_DYN_STAT(ethread, NET_CLIENT_CONNECTIONS_CURRENTLY_OPEN);
-
-        if(OB_ISNULL(ethread->schedule_imm_signal(vc))) {
+        if (OB_ISNULL(ethread->schedule_imm_signal(vc))) {
           ret = OB_ERR_UNEXPECTED;
           PROXY_NET_LOG(ERROR, "fail to schedule_imm_signal vc", K(ret));
         }
@@ -401,6 +516,105 @@ inline ObEThread *ObNetAccept::get_schedule_ethread()
     tmp_cnt = -1;
   }
   return target_ethread;
+}
+
+inline ObEThread *ObNetAccept::get_schedule_other_ethread()
+{
+  ObEventThreadType etype = ET_NET;
+  ObEThread **netthreads = g_event_processor.event_thread_[etype];
+  ObEThread *target_ethread = NULL;
+  int64_t min_conn_cnt = -1;
+  int64_t tmp_cnt = -1;
+
+  for (int64_t i = 0; i < MAX_OTHER_GROUP_NET_THREADS; ++i) {
+    NET_THREAD_READ_DYN_SUM(netthreads[i], NET_CLIENT_CONNECTIONS_CURRENTLY_OPEN, tmp_cnt);
+    if (0 == i || tmp_cnt < min_conn_cnt) {
+      min_conn_cnt = tmp_cnt;
+      target_ethread = netthreads[i];
+    }
+    tmp_cnt = -1;
+  }
+  return target_ethread;
+}
+
+inline ObEThread *ObNetAccept::get_schedule_vip_ethread()
+{
+  int ret = OB_SUCCESS;
+  ObEventThreadType etype = ET_NET;
+  int64_t net_thread_count = g_event_processor.thread_count_for_type_[etype];
+  ObEThread **netthreads = g_event_processor.event_thread_[etype];
+  ObEThread *target_ethread = NULL;
+
+  for (int64_t i = MAX_OTHER_GROUP_NET_THREADS; i < net_thread_count; ++i) {
+    if (!netthreads[i]->use_status_) {
+      target_ethread = netthreads[i];
+      break;
+    }
+  }
+
+  if (OB_ISNULL(target_ethread)) {
+    if (OB_FAIL(create_one_net_ethread(target_ethread))) {
+      PROXY_NET_LOG(WARN, "create net thread failed", K(ret));
+    }
+  }
+
+  return target_ethread;
+}
+
+int ObNetAccept::create_one_net_ethread(ObEThread*& target_ethread)
+{
+  int ret = OB_SUCCESS;
+  target_ethread = NULL;
+  bool is_new_net_thread = false;
+  int64_t event_thread_count = 0;
+  int64_t net_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  int64_t stack_size = get_global_proxy_config().stack_size;
+
+  if (OB_FAIL(g_event_processor.spawn_net_threads(1, "ET_NET", stack_size))) {
+    PROXY_NET_LOG(ERROR, "fail to spawn event threads for ET_NET", K(ret));
+  } else {
+    is_new_net_thread = true;
+    event_thread_count = g_event_processor.event_thread_count_;
+    net_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+    target_ethread = g_event_processor.event_thread_[ET_CALL][net_thread_count - 1];
+    if (OB_FAIL(initialize_thread_for_net(target_ethread))) {
+      PROXY_NET_LOG(ERROR, "fail to initialize thread for net", K(ret));
+    } else if (OB_FAIL(init_cs_map_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init cs_map for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_table_map_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init table_map for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_congestion_map_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init congestion_map for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_partition_map_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init partition_map for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_routine_map_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init routine_map for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_sql_table_map_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init sql_table_map for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_ps_entry_cache_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init ps entry cache for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_text_ps_entry_cache_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init text ps entry cache for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(init_random_seed_for_one_thread(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init random seed for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(ObCacheCleaner::schedule_one_cache_cleaner(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to init cleaner cache for thread", K(net_thread_count), K(ret));
+    } else if (OB_FAIL(g_ob_prometheus_processor.start_one_prometheus(net_thread_count - 1))) {
+      PROXY_NET_LOG(ERROR, "fail to start one prometheus", K(net_thread_count), K(ret));
+    } else {
+      PROXY_NET_LOG(INFO, "new thread", K(ET_CALL), K(net_thread_count), KPC(target_ethread));
+    }
+  }
+
+  if (OB_FAIL(ret) && is_new_net_thread) {
+    delete target_ethread;
+    target_ethread = NULL;
+    g_event_processor.all_event_threads_[event_thread_count - 1] = NULL;
+    g_event_processor.event_thread_[ET_CALL][net_thread_count -1] = NULL;
+    g_event_processor.thread_count_for_type_[ET_CALL] -= 1;
+    g_event_processor.event_thread_count_ -= 1;
+  }
+  return ret;
 }
 
 inline bool ObNetAccept::accept_balance(ObEThread *ethread)

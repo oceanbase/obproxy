@@ -25,8 +25,7 @@ namespace obutils
 class ObAlterResourceHandler : public ObInternalCmdHandler
 {
 public:
-  ObAlterResourceHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                         const ObInternalCmdInfo &info);
+  ObAlterResourceHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObAlterResourceHandler() {}
 
   int handle_delete_cluster(int event, void *data);

@@ -663,25 +663,36 @@ int init_table_map_for_thread()
 {
   int ret = OB_SUCCESS;
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
+    if (OB_FAIL(init_table_map_for_one_thread(i))) {
+      LOG_WARN("fail to init table_map", K(i), K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_table_map_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+  } else if (OB_ISNULL(ethreads[index])) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
   } else {
-    for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
-      if (OB_ISNULL(ethreads[i]->table_map_ = new (std::nothrow) ObTableRefHashMap(ObModIds::OB_PROXY_TABLE_ENTRY_MAP))) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to new ObTableRefHashMap", K(i), K(ethreads[i]), K(ret));
-      } else if (OB_FAIL(ethreads[i]->table_map_->init())) {
-        LOG_WARN("fail to init table_map", K(ret));
-      } else {
-        LOG_DEBUG("succ to init table_map", K(ET_CALL), "ethread", reinterpret_cast<const void*>(ethreads[i]),
-                  "table_map", reinterpret_cast<const void*>(ethreads[i]->table_map_), K(ret));
-      }
+    if (OB_ISNULL(ethreads[index]->table_map_ = new (std::nothrow) ObTableRefHashMap(ObModIds::OB_PROXY_TABLE_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to new ObTableRefHashMap", K(index), K(ethreads[index]), K(ret));
+    } else if (OB_FAIL(ethreads[index]->table_map_->init())) {
+      LOG_WARN("fail to init table_map", K(ret));
+    } else {
+      LOG_DEBUG("succ to init table_map", K(ET_CALL), "ethread", reinterpret_cast<const void*>(ethreads[index]),
+                "table_map", reinterpret_cast<const void*>(ethreads[index]->table_map_), K(ret));
     }
   }
   return ret;
-
 }
 
 int ObTableRefHashMap::clean_hash_map()

@@ -41,6 +41,7 @@ ObProxyPartInfo::ObProxyPartInfo() : is_oracle_mode_(false)
                                    , sub_part_option_()
                                    , part_key_info_()
                                    , part_mgr_(allocator_)
+                                   , cluster_version_()
 {
 }
 

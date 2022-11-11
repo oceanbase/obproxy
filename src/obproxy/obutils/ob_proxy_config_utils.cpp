@@ -898,8 +898,20 @@ void ObProxyFileUtils::clear_dir(const char *dir)
         if (LOCAL_DIR == ent->d_name || PARENT_DIR == ent->d_name) {
           continue;
         }
+        bool is_dir = false;
         snprintf(tmp_path, FileDirectoryUtils::MAX_PATH, "%s/%s", dir, ent->d_name);
         if (ent->d_type == DT_DIR) {
+          is_dir = true;
+        } else if (ent->d_type == DT_UNKNOWN) {
+          struct stat st;
+          if (0 != (stat(tmp_path, &st))) {
+            LOG_WARN("fail to stat dir", K(tmp_path), KERRMSGS);
+          } else {
+            is_dir = S_ISDIR(st.st_mode);
+          }
+        }
+
+        if (is_dir) {
           clear_dir(tmp_path);
         } else {
           ::unlink(tmp_path);

@@ -83,6 +83,7 @@ void ObTableRouteParam::reset()
   mysql_proxy_ = NULL;
   cr_version_ = 0;
   cr_id_ = OB_INVALID_CLUSTER_ID;
+  cluster_version_ = 0;
   tenant_version_ = 0;
   current_idc_name_.reset();
   is_need_force_flush_ = false;
@@ -346,6 +347,7 @@ inline int ObTableEntryCont::deep_copy_table_param(ObTableRouteParam &param)
       table_param_.cr_version_ = param.cr_version_;
       table_param_.cr_id_ = param.cr_id_;
       table_param_.tenant_version_ = param.tenant_version_;
+      table_param_.cluster_version_ = param.cluster_version_;
       table_param_.is_partition_table_route_supported_ = param.is_partition_table_route_supported_;
       table_param_.is_oracle_mode_ = param.is_oracle_mode_;
       table_param_.is_need_force_flush_ = param.is_need_force_flush_;
@@ -426,9 +428,12 @@ inline int ObTableEntryCont::set_next_state()
         next_state = LOOKUP_DONE_STATE;
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("part info should not be null here", K(ret));
-      } else if (!newest_table_entry_->get_part_info()->is_template_table()
-                 || newest_table_entry_->get_part_info()->get_sub_part_option().is_range_part()
-                 || newest_table_entry_->get_part_info()->get_sub_part_option().is_list_part()) {
+      } else if ((!IS_CLUSTER_VERSION_LESS_THAN_V4(table_param_.cluster_version_)
+                 && PARTITION_LEVEL_TWO == newest_table_entry_->get_part_info()->get_part_level())
+                 || (IS_CLUSTER_VERSION_LESS_THAN_V4(table_param_.cluster_version_)
+                 && (!newest_table_entry_->get_part_info()->is_template_table()
+                 || newest_table_entry_->get_part_info()->get_sub_part_option().is_range_part(table_param_.cluster_version_)
+                 || newest_table_entry_->get_part_info()->get_sub_part_option().is_list_part(table_param_.cluster_version_)))) {
         next_state = LOOKUP_SUB_PART_STATE;
       } else {
         next_state = LOOKUP_DONE_STATE;
@@ -527,7 +532,8 @@ inline int ObTableEntryCont::handle_table_entry_resp(ObResultSetFetcher &rs_fetc
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("table entry should not be NULL", K_(newest_table_entry), K(ret));
   } else if (OB_FAIL(ObRouteUtils::fetch_table_entry(rs_fetcher,
-                                                     *newest_table_entry_))) {
+                                                     *newest_table_entry_,
+                                                     table_param_.cluster_version_))) {
     LOG_WARN("fail to fetch one table entry info", K(ret));
   } else {
     newest_table_entry_->set_tenant_version(table_param_.tenant_version_);
@@ -549,7 +555,7 @@ inline int ObTableEntryCont::handle_part_info_resp(ObResultSetFetcher &rs_fetche
     LOG_WARN("part info should not be null here", K(ret));
   } else if (FALSE_IT(part_info->set_oracle_mode(table_param_.is_oracle_mode_))) {
     // do nothing
-  } else if (OB_FAIL(ObRouteUtils::fetch_part_info(rs_fetcher, *part_info))) {
+  } else if (OB_FAIL(ObRouteUtils::fetch_part_info(rs_fetcher, *part_info, table_param_.cluster_version_))) {
     PROCESSOR_INCREMENT_DYN_STAT(GET_PART_INFO_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
     LOG_WARN("fail to fetch part info", K(ret));
@@ -570,7 +576,7 @@ inline int ObTableEntryCont::handle_first_part_resp(ObResultSetFetcher &rs_fetch
   } else if (OB_ISNULL(part_info = newest_table_entry_->get_part_info())) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("part info should not be null here", K(ret));
-  } else if (OB_FAIL(ObRouteUtils::fetch_first_part(rs_fetcher, *part_info))) {
+  } else if (OB_FAIL(ObRouteUtils::fetch_first_part(rs_fetcher, *part_info, table_param_.cluster_version_))) {
     PROCESSOR_INCREMENT_DYN_STAT(GET_FIRST_PART_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
     LOG_WARN("fail to fetch part info", K(ret));
@@ -591,7 +597,7 @@ inline int ObTableEntryCont::handle_sub_part_resp(ObResultSetFetcher &rs_fetcher
   } else if (OB_ISNULL(part_info = newest_table_entry_->get_part_info())) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("part info should not be null here", K(ret));
-  } else if (OB_FAIL(ObRouteUtils::fetch_sub_part(rs_fetcher, *part_info))) {
+  } else if (OB_FAIL(ObRouteUtils::fetch_sub_part(rs_fetcher, *part_info, table_param_.cluster_version_))) {
     PROCESSOR_INCREMENT_DYN_STAT(GET_SUB_PART_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
     LOG_WARN("fail to fetch part info", K(ret));
@@ -882,7 +888,7 @@ inline int ObTableEntryCont::lookup_entry_remote()
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
   if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, table_param_.name_,
-                                                table_param_.is_need_force_flush_))) {
+                                                table_param_.is_need_force_flush_, table_param_.cluster_version_))) {
     LOG_WARN("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
@@ -911,7 +917,9 @@ inline int ObTableEntryCont::lookup_part_info_remote()
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("table entry should not be null", K(ret));
   } else if (OB_FAIL(ObRouteUtils::get_part_info_sql(sql, OB_SHORT_SQL_LENGTH,
-                                                          newest_table_entry_->get_table_id()))) {
+                                                          newest_table_entry_->get_table_id(),
+                                                          table_param_.name_,
+                                                          table_param_.cluster_version_))) {
     LOG_WARN("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
@@ -934,8 +942,10 @@ inline int ObTableEntryCont::lookup_first_part_remote()
     LOG_WARN("table entry should not be null", K(ret));
   } else if (OB_FAIL(ObRouteUtils::get_first_part_sql(sql, OB_SHORT_SQL_LENGTH,
                                                       newest_table_entry_->get_table_id(),
-                                                      (newest_table_entry_->get_part_info()->get_first_part_option().is_hash_part()
-                                                       || newest_table_entry_->get_part_info()->get_first_part_option().is_key_part())))) {
+                                                      (newest_table_entry_->get_part_info()->get_first_part_option().is_hash_part(table_param_.cluster_version_)
+                                                       || newest_table_entry_->get_part_info()->get_first_part_option().is_key_part(table_param_.cluster_version_)),
+                                                      table_param_.name_,
+                                                      table_param_.cluster_version_))) {
     LOG_WARN("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
@@ -958,7 +968,9 @@ inline int ObTableEntryCont::lookup_sub_part_remote()
     LOG_WARN("table entry should not be null", K(ret));
   } else if (OB_FAIL(ObRouteUtils::get_sub_part_sql(sql, OB_SHORT_SQL_LENGTH,
                                                     newest_table_entry_->get_table_id(),
-                                                    newest_table_entry_->get_part_info()->is_template_table()))) {
+                                                    newest_table_entry_->get_part_info()->is_template_table(),
+                                                    table_param_.name_,
+                                                    table_param_.cluster_version_))) {
     LOG_WARN("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);

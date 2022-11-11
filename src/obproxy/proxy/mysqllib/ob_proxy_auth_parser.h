@@ -123,6 +123,13 @@ public:
                                   const common::ObString &default_cluster_name,
                                   ObHSRResult  &hsr);
 
+  static void analyze_user_name_attr(const common::ObString &full_name,
+                                     bool &is_standard_username,
+                                     char &separator);
+  static int handle_full_user_name(common::ObString &full_name, const char separator,
+                                   common::ObString &user, common::ObString &tenant,
+                                   common::ObString &cluster, common::ObString &cluster_id_str);
+
   static int covert_hex_to_string(const common::ObString &hex, char *str, const int64_t str_len);
   static int covert_string_to_hex(const common::ObString &string, char *hex, const int64_t hex_len);
 
@@ -138,10 +145,6 @@ public:
   static int parse_handshake_response(ObMysqlAuthRequest &request,
                                       const common::ObString &default_tenant_name,
                                       const common::ObString &defualt_cluster_name);
-
-  static void analyze_user_name_attr(const common::ObString &full_name,
-                                     bool &is_standard_username,
-                                     char &separator);
 
   static int do_parse_full_user_name(const common::ObString &full_name,
                                      const char separator,

@@ -63,11 +63,13 @@ class ObConfigItem
 public:
   ObConfigItem();
   virtual ~ObConfigItem();
+  ObConfigItem(const ObConfigItem& item);
+  ObConfigItem& operator =(const ObConfigItem& item);
 
   void init(const char *name, const char *def, const char *info, CFG_EXTRA_INFO_DECLARE);
   void init(const char *name, const char *def, const char *range, const char *info, CFG_EXTRA_INFO_DECLARE);
   virtual bool parse_range(const char *range) { UNUSED(range); return true; }
-  virtual ObConfigItem *clone() = 0;
+  virtual ObConfigItem *clone() { return NULL; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
   void add_checker(const ObConfigChecker *new_ck)
@@ -156,11 +158,15 @@ public:
   virtual bool operator >=(const char *) const { return false; }
   virtual bool operator <(const char *) const { return false; }
   virtual bool operator <=(const char *) const { return false; }
-  virtual void set_initial_value() = 0;
+  virtual void set_initial_value() {}
 
 protected:
   //use current value to do input operation
-  virtual bool set(const char *str) = 0;
+  virtual bool set(const char *str)
+  {
+    UNUSED(str);
+    return true;
+  }
 
   const ObConfigChecker *ck_;
   int64_t version_;
@@ -172,9 +178,6 @@ protected:
   char section_str_[OB_MAX_CONFIG_SECTION_LEN];
   char visible_level_str_[OB_MAX_CONFIG_VISIBLE_LEVEL_LEN];
   char range_str_[OB_RANGE_STR_BUFSIZ];
-
-private:
-  DISALLOW_COPY_AND_ASSIGN(ObConfigItem);
 };
 
 class ObConfigIntListItem
@@ -604,10 +607,11 @@ public:
   operator const bool &() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_ : value_); }
   ObConfigBoolItem &operator = (const bool value) { set_value(value ? "True" : "False"); return *this; }
   virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true; }
+  const bool get_value() { return value_; }
+  bool set(const char *str);
 
 protected:
   //use current value to do input operation
-  bool set(const char *str);
   bool parse(const char *str, bool &valid) const;
 
 private:

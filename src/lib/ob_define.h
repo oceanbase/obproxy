@@ -392,8 +392,6 @@ const char *const OB_INTERNAL_USER                   = "__ob_server";
 const char *const OB_SERVER_ROLE_VAR_NAME            = "__ob_server_role";
 //trace id
 const char *const OB_TRACE_ID_VAR_NAME               = "__ob_trace_id";
-const char *const OB_TRACE_INFO_VAR_NAME             = "ob_trace_info";
-const char *const OB_TRACE_INFO_CLIENT_IP            = "client_ip";
 const int64_t MAX_IP_BUFFER_LEN                      = 32;
 
 ///////////////////////////////////////////////////////////
@@ -568,6 +566,10 @@ static const char *const OB_MYSQL_PROXY_SESSION_VARS        = "__proxy_session_v
 static const char *const OB_MYSQL_SCRAMBLE                  = "__proxy_scramble";
 static const char *const OB_MYSQL_PROXY_VERSION             = "__proxy_version";
 
+// another conn attr for different client type which is supported ob2.0 protocol or not
+static const char *const OB_MYSQL_CLIENT_LIBOBCLIENT_MODE = "__ob_libobclient";
+static const char *const OB_MYSQL_CLIENT_JDBC_CLIENT_MODE = "__ob_jdbc_client";
+
 // for java client
 static const char *const OB_MYSQL_JAVA_CLIENT_MODE_NAME     = "__ob_java_client";
 
@@ -582,11 +584,14 @@ enum ObCapabilityFlagShift
   OB_CAP_PRIORITY_HIT_SHIFT,
   OB_CAP_CHECKSUM_SWITCH_SHIFT,
   OB_CAP_OCJ_ENABLE_EXTRA_OK_PACKET_SHIFT,
-  OB_CAP_OB_PROTOCOL_V2_SHIFT,
+  OB_CAP_OB_PROTOCOL_V2_SHIFT,                      // 8
   OB_CAP_EXTRA_OK_PACKET_FOR_STATISTICS_SHIFT,
   OB_CAP_ABUNDANT_FEEDBACK,
   OB_CAP_PL_ROUTE_SHIFT,
   OB_CAP_PROXY_REROUTE_SHIFT,
+  OB_CAP_PROXY_SESSION_SYNC_SHIFT,                  // 13
+  OB_CAP_PROXY_FULL_LINK_TRACING_SHIFT,             // 14
+  OB_CAP_PROXY_NEW_EXTRA_INFO_SHIFT,                // 15
 };
 
 #define OB_TEST_CAPABILITY(cap, tg_cap) (((cap) & (tg_cap)) == (tg_cap))
@@ -602,6 +607,10 @@ enum ObCapabilityFlagShift
 #define OB_CAP_EXTRA_OK_PACKET_FOR_STATISTICS   OB_CAP_GET_TYPE(common::OB_CAP_EXTRA_OK_PACKET_FOR_STATISTICS_SHIFT)
 #define OB_CAP_PL_ROUTE           OB_CAP_GET_TYPE(common::OB_CAP_PL_ROUTE_SHIFT)
 #define OB_CAP_PROXY_REROUTE      OB_CAP_GET_TYPE(common::OB_CAP_PROXY_REROUTE_SHIFT)
+#define OB_CAP_PROXY_SESSION_SYNC OB_CAP_GET_TYPE(common::OB_CAP_PROXY_SESSION_SYNC_SHIFT)
+#define OB_CAP_PROXY_FULL_LINK_TRACING OB_CAP_GET_TYPE(common::OB_CAP_PROXY_FULL_LINK_TRACING_SHIFT)
+#define OB_CAP_PROXY_NEW_EXTRA_INFO OB_CAP_GET_TYPE(common::OB_CAP_PROXY_NEW_EXTRA_INFO_SHIFT)
+
 
 // for obproxy debug
 #define OBPROXY_DEBUG 0
@@ -758,7 +767,7 @@ static const int64_t OB_DEFAULT_MAX_TABLET_SIZE              = 256 * 1024 * 1024
 static const int32_t OB_DEFAULT_CHARACTER_SET                = 33; //UTF8
 static const int64_t OB_MYSQL_PACKET_BUFF_SIZE               = 6 * 1024; //6KB
 static const int64_t OB_MAX_THREAD_NUM                       = 4096;
-static const int64_t OB_MAX_CPU_NUM                          = 64;
+static const int64_t OB_MAX_CPU_NUM                          = 256;
 static const int64_t OB_MAX_STATICS_PER_TABLE                = 128;
 
 static const int64_t OB_INDEX_WRITE_START_DELAY              = 20 * 1000 * 1000; //20s

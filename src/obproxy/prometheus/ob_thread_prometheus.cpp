@@ -98,7 +98,7 @@ int ObSQLMonitorInfoCont::schedule_report_prometheus_info()
     LOG_WARN("not inited", K_(is_inited), K(ret));
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     LOG_WARN("proxy need exit now");
-  } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_NET))) {
+  } else if (OB_UNLIKELY(!thread_->is_event_thread_type(ET_NET))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_ERROR("sql monitor info cont must be scheduled in net thread", K(ret));
   } else if (OB_ISNULL(thread_->schedule_in(this, HRTIME_USECONDS(report_interval_us_), EVENT_NONE))) {

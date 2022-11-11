@@ -25,8 +25,7 @@ namespace obutils
 class ObShowVipHandler : public ObInternalCmdHandler
 {
 public:
-	ObShowVipHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-	                 const ObInternalCmdInfo &info);
+	ObShowVipHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowVipHandler() {}
   int main_handler(int event, void *data);
 

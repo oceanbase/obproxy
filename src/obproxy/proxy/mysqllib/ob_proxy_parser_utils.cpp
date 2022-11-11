@@ -13,6 +13,7 @@
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysqllib/ob_proxy_parser_utils.h"
 #include "rpc/obmysql/ob_mysql_util.h"
+#include "iocore/eventsystem/ob_io_buffer.h"
 
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obmysql;
@@ -27,18 +28,18 @@ uint64_t ObProxyParserUtils::get_lenenc_int(const char *&buf)
 {
   uint64_t ret_value = 0;
   uint64_t int_len = 0;
-  int_len = ob_uint1korr(buf);
+  int_len = uint1korr(buf);
   buf += 1;
   if (int_len < 0xfb) {
     ret_value = int_len;
   } else if (0xfc == int_len){
-    ret_value = ob_uint2korr(buf);
+    ret_value = uint2korr(buf);
     buf += 2;
   } else if (0xfd == int_len){
-    ret_value = ob_uint3korr(buf);
+    ret_value = uint3korr(buf);
     buf += 3;
   } else if(0xfe == int_len){
-    ret_value = ob_uint8korr(buf);
+    ret_value = uint8korr(buf);
     buf += 8;
   }
   return ret_value;
@@ -134,6 +135,10 @@ const char *ObProxyParserUtils::get_sql_cmd_name(const ObMySQLCmd cmd)
 
     case OB_MYSQL_COM_BINLOG_DUMP:
       name = "OB_MYSQL_COM_BINLOG_DUMP";
+      break;
+
+    case OB_MYSQL_COM_RESET_CONNECTION:
+      name = "OB_MYSQL_COM_RESET_CONNECTION";
       break;
 
     case OB_MYSQL_COM_TABLE_DUMP:
@@ -266,8 +271,8 @@ int ObProxyParserUtils::analyze_one_packet(ObIOBufferReader &reader, ObMysqlAnal
     }
 
     if (OB_SUCC(ret)) {
-      result.meta_.pkt_len_ = ob_uint3korr(buf_start) + MYSQL_NET_HEADER_LENGTH;
-      result.meta_.pkt_seq_ = ob_uint1korr(buf_start + 3);
+      result.meta_.pkt_len_ = uint3korr(buf_start) + MYSQL_NET_HEADER_LENGTH;
+      result.meta_.pkt_seq_ = uint1korr(buf_start + 3);
       result.meta_.data_ = static_cast<uint8_t>(buf_start[4]);
       if (OB_LIKELY(len >= result.meta_.pkt_len_)) {
         result.status_ = ANALYZE_DONE;
@@ -301,8 +306,8 @@ int ObProxyParserUtils::analyze_one_packet_only_header(ObIOBufferReader &reader,
     }
 
     if (OB_SUCC(ret)) {
-      result.meta_.pkt_len_ = ob_uint3korr(buf_start) + MYSQL_NET_HEADER_LENGTH; // include header
-      result.meta_.pkt_seq_ = ob_uint1korr(buf_start + 3);
+      result.meta_.pkt_len_ = uint3korr(buf_start) + MYSQL_NET_HEADER_LENGTH; // include header
+      result.meta_.pkt_seq_ = uint1korr(buf_start + 3);
       result.meta_.cmd_ = OB_MYSQL_COM_MAX_NUM; // only analyze header
       if (len >= result.meta_.pkt_len_) {
         result.status_ = ANALYZE_DONE;
@@ -319,8 +324,8 @@ int ObProxyParserUtils::analyze_mysql_packet_meta(const char *ptr, const int64_t
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", KP(ptr), K(len), K(ret));
   } else {
-    meta.pkt_len_ = ob_uint3korr(ptr) + MYSQL_NET_HEADER_LENGTH;
-    meta.pkt_seq_ = ob_uint1korr(ptr + 3);
+    meta.pkt_len_ = uint3korr(ptr) + MYSQL_NET_HEADER_LENGTH;
+    meta.pkt_seq_ = uint1korr(ptr + 3);
     meta.data_ = static_cast<uint8_t>(ptr[4]);
   }
 
@@ -334,8 +339,8 @@ int ObProxyParserUtils::analyze_mysql_packet_header(const char *ptr, const int64
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", KP(ptr), K(len), K(ret));
   } else {
-    header.len_ = ob_uint3korr(ptr);
-    header.seq_ = ob_uint1korr(ptr + 3);
+    header.len_ = uint3korr(ptr);
+    header.seq_ = uint1korr(ptr + 3);
   }
 
   return ret;

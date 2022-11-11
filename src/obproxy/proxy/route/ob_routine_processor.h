@@ -64,6 +64,7 @@ public:
   ObRoutineResult result_;
   int64_t cr_version_;
   int64_t cr_id_;
+  int64_t cluster_version_;
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
 
@@ -89,6 +90,7 @@ inline void ObRoutineParam::reset()
   force_renew_ = false;
   cr_version_ = 0;
   cr_id_ = common::OB_INVALID_CLUSTER_ID;
+  cluster_version_ = 0;
   current_idc_name_.reset();
 
   if (NULL != name_buf_ && name_buf_len_ > 0) {

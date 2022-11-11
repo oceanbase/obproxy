@@ -17,6 +17,7 @@
 #include "lib/checksum/ob_crc64.h"
 #include "lib/checksum/ob_crc16.h"
 #include "rpc/obmysql/ob_mysql_util.h"
+#include "lib/utility/ob_2_0_full_link_trace_info.h"
 
 using namespace oceanbase::obmysql;
 using namespace oceanbase::obproxy::event;
@@ -62,6 +63,8 @@ void ObMysqlCompressOB20Analyzer::reset()
   last_ob20_seq_ = 0;
   request_id_ = 0;
   sessid_ = 0;
+  remain_head_checked_len_ = 0;
+  extra_header_len_ = 0;
   extra_len_ = 0;
   extra_checked_len_ = 0;
   payload_checked_len_ = 0;
@@ -82,6 +85,8 @@ int64_t ObMysqlCompressOB20Analyzer::to_string(char *buf, const int64_t buf_len)
   J_KV(K_(last_ob20_seq),
        K_(request_id),
        K_(sessid),
+       K_(remain_head_checked_len),
+       K_(extra_header_len),
        K_(extra_len),
        K_(extra_checked_len),
        K_(payload_checked_len),
@@ -135,7 +140,7 @@ int ObMysqlCompressOB20Analyzer::do_analyzer_end(ObMysqlResp &resp)
   return ret;
 }
 
-inline int ObMysqlCompressOB20Analyzer::do_body_checksum(const char *&payload_start, uint64_t &payload_len)
+inline int ObMysqlCompressOB20Analyzer::do_body_checksum(const char *&payload_start, int64_t &payload_len)
 {
   int ret = OB_SUCCESS;
   uint32_t tail_remain_len = static_cast<uint32_t>(OB20_PROTOCOL_TAILER_LENGTH - tail_checked_len_);
@@ -153,6 +158,7 @@ inline int ObMysqlCompressOB20Analyzer::do_body_checksum(const char *&payload_st
       ObMySQLUtil::get_uint4(temp_buf, payload_checksum);
       ob20_analyzer_state_ = OB20_ANALYZER_END;
 
+
       if (payload_checksum != 0) {
         if (OB_UNLIKELY(crc64_ != payload_checksum))  {
           ret = OB_CHECKSUM_ERROR;
@@ -162,22 +168,29 @@ inline int ObMysqlCompressOB20Analyzer::do_body_checksum(const char *&payload_st
         // 0 means skip checksum
         LOG_DEBUG("body checksum is 0", K_(crc64));
       }
+
     }
   }
 
   return ret;
 }
 
-inline int ObMysqlCompressOB20Analyzer::do_body_decode(const char *&payload_start, uint64_t &payload_len, ObMysqlResp &resp)
+inline int ObMysqlCompressOB20Analyzer::do_body_decode(const char *&payload_start,
+                                                       int64_t &payload_len,
+                                                       ObMysqlResp &resp)
 {
   int ret = OB_SUCCESS;
-  uint32_t payload_remain_len = static_cast<uint32_t>(curr_compressed_ob20_header_.payload_len_ - payload_checked_len_);
+  uint32_t payload_remain_len = static_cast<uint32_t>(curr_compressed_ob20_header_.payload_len_
+                                                      - extra_header_len_ - extra_len_ - payload_checked_len_);
 
   if (payload_remain_len > 0 && payload_len > 0) {
     int64_t filled_len = 0;
     uint32_t body_len = static_cast<uint32_t>(payload_len <= payload_remain_len ? payload_len : payload_remain_len);
+
     crc64_ = ob_crc64(crc64_, payload_start, body_len); // actual is crc32
 
+    LOG_DEBUG("print body decode", K(payload_len), K(payload_remain_len), K(payload_checked_len_), K(body_len));
+    
     ObString buf;
     buf.assign_ptr(payload_start, body_len);
     ObBufferReader buf_reader(buf);
@@ -195,7 +208,7 @@ inline int ObMysqlCompressOB20Analyzer::do_body_decode(const char *&payload_star
       resp.get_analyze_result().reserved_len_for_ob20_ok_ = result_.get_reserved_len();
       LOG_DEBUG("do payload decode succ", K_(payload_checked_len), K(payload_len));
 
-      if (payload_checked_len_ == curr_compressed_ob20_header_.payload_len_) {
+      if (payload_checked_len_ == curr_compressed_ob20_header_.payload_len_ - extra_header_len_ - extra_len_) {
         ob20_analyzer_state_ = OB20_ANALYZER_TAIL;
         LOG_DEBUG("do payload decode end", K_(crc64), K_(payload_checked_len), K(payload_len));
       }
@@ -205,48 +218,193 @@ inline int ObMysqlCompressOB20Analyzer::do_body_decode(const char *&payload_star
   return ret;
 }
 
-inline int ObMysqlCompressOB20Analyzer::do_extra_info_decode(const char* &payload_start, uint64_t &payload_len)
+inline int ObMysqlCompressOB20Analyzer::do_extra_info_decode(const char* &payload_start,
+                                                             int64_t &payload_len,
+                                                             ObMysqlResp &resp)
 {
   int ret = OB_SUCCESS;
+  Ob20ExtraInfo &extra_info = resp.get_analyze_result().get_extra_info();
 
   if (curr_compressed_ob20_header_.flag_.is_extra_info_exist()) {
     //get extra info length
     if (extra_len_ == 0) {
       uint32_t extra_remain_len = static_cast<uint32_t>(OB20_PROTOCOL_EXTRA_INFO_LENGTH - extra_checked_len_);
-      uint32_t extra_len = static_cast<uint32_t>(payload_len <= extra_remain_len ? payload_len : extra_remain_len);
-      MEMCPY(temp_buf_ + extra_checked_len_, payload_start, extra_len);
-      extra_checked_len_ += extra_len;
-      payload_start += extra_len;
-      payload_len -= extra_len;
+      uint32_t extra_header_len = static_cast<uint32_t>(payload_len <= extra_remain_len ? payload_len : extra_remain_len);
+
+      crc64_ = ob_crc64(crc64_, payload_start, extra_header_len); // actual is crc32
+      
+      MEMCPY(temp_buf_ + extra_checked_len_, payload_start, extra_header_len);
+      extra_checked_len_ += extra_header_len;
+      payload_start += extra_header_len;
+      payload_len -= extra_header_len;
       LOG_DEBUG("do extra info lenth succ", K_(extra_checked_len), K(payload_len));
 
       if (extra_checked_len_ == OB20_PROTOCOL_EXTRA_INFO_LENGTH) {
         char *temp_buf = temp_buf_;
         ObMySQLUtil::get_uint4(temp_buf, extra_len_);
+        extra_header_len_ = OB20_PROTOCOL_EXTRA_INFO_LENGTH;
         extra_checked_len_ = 0;
-        LOG_DEBUG("do extra info lenth end", K_(extra_len), K(payload_len));
+        LOG_DEBUG("do extra info length end", K_(extra_len), K_(extra_header_len), K(payload_len));
+
+        extra_info.extra_info_buf_.reset();
       }
     }
 
     //get extra info
-    uint32_t extra_remain_len = extra_len_ - extra_checked_len_;
-    if (extra_len_ > 0 && extra_remain_len > 0 && payload_len > 0) {
-      uint32_t extra_remain_len = static_cast<uint32_t>(extra_len_ - extra_checked_len_);
+    int64_t extra_remain_len = extra_len_ - extra_checked_len_;
+    if (OB_SUCC(ret) && extra_len_ > 0 && extra_remain_len > 0 && payload_len > 0) {
       uint32_t extra_len = static_cast<uint32_t>(payload_len <= extra_remain_len ? payload_len : extra_remain_len);
-      extra_checked_len_ += extra_len;
-      payload_start += extra_len;
-      payload_len -= extra_len;
+      if (!extra_info.extra_info_buf_.is_inited()) {
+        if (OB_FAIL(extra_info.extra_info_buf_.init(extra_len_))) {
+          LOG_WARN("fail int alloc mem", K(extra_len_), K(ret));
+        }
+      }
+      if (OB_SUCC(ret)) {
+        if (OB_FAIL(extra_info.extra_info_buf_.write(payload_start, extra_len))) {
+          LOG_WARN("fail to write", K(extra_len), K(ret));
+        }
+      }
 
-      LOG_DEBUG("do extra info succ", K_(extra_checked_len), K(payload_len));
-      if (extra_checked_len_ == extra_len_) {
-        ob20_analyzer_state_ = OB20_ANALYZER_PAYLOAD;
-        LOG_DEBUG("do extra info end", K_(extra_len), K(payload_len));
+      if (OB_SUCC(ret)) {
+        crc64_ = ob_crc64(crc64_, payload_start, extra_len); // actual is crc32
+
+        extra_checked_len_ += extra_len;
+        payload_start += extra_len;
+        payload_len -= extra_len;
+
+        LOG_DEBUG("do extra info succ", K_(extra_checked_len), K(payload_len));
+        if (extra_checked_len_ == extra_len_) {
+          if (curr_compressed_ob20_header_.flag_.is_new_extra_info()) {
+            if (OB_FAIL(do_new_extra_info_decode(extra_info.extra_info_buf_.ptr(),
+                                                 extra_info.extra_info_buf_.len(),
+                                                 extra_info,
+                                                 resp.get_analyze_result().flt_))) {
+              LOG_WARN("fail to do resp new extra info decode", K(ret));
+            }
+          } else {
+            if (OB_FAIL(do_obobj_extra_info_decode(extra_info.extra_info_buf_.ptr(),
+                                                   extra_info.extra_info_buf_.len(),
+                                                   extra_info,
+                                                   resp.get_analyze_result().flt_))) {
+              LOG_WARN("fail to do resp obobj extra info decode", K(ret));
+            }
+          }
+
+          if (OB_SUCC(ret)) {
+            ob20_analyzer_state_ = OB20_ANALYZER_PAYLOAD;
+            LOG_DEBUG("do extra info end", K_(extra_len), K(payload_len));
+          }
+        } // if extra info received done
       }
     }
   } else {
     ob20_analyzer_state_ = OB20_ANALYZER_PAYLOAD;
     LOG_DEBUG("no need decode extra");
   }
+
+  return ret;
+}
+
+int ObMysqlCompressOB20Analyzer::do_obobj_extra_info_decode(const char *buf,
+                                                            const int64_t len,
+                                                            Ob20ExtraInfo &extra_info,
+                                                            common::FLTObjManage &flt_manage)
+{
+  int ret = OB_SUCCESS;
+
+  int64_t pos = 0;
+  while (OB_SUCC(ret) && pos < len) {
+    common::ObObj key;
+    common::ObObj value;
+    if (OB_FAIL(key.deserialize(buf, len, pos))) {
+      LOG_WARN("fail to deserialize extra info", K(ret));
+    } else if (!key.is_varchar()) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("invalid extra info key type", K(ret), K(key));
+    } else if (OB_FAIL(value.deserialize(buf, len, pos))) {
+      LOG_WARN("fail to deserialize extra info", K(ret));
+    } else if (!value.is_varchar()) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("invalid extra info value type", K(ret), K(key), K(value));
+    } else {
+      LOG_DEBUG("deserialize extra info", K(key), K(value));
+
+      if (0 == key.get_string().case_compare(OB_V20_PRO_EXTRA_KV_NAME_SYNC_SESSION_INFO)) {
+        extra_info.sess_info_buf_.reset();
+        const char *value_ptr = value.get_string().ptr();
+        const int64_t value_len = value.get_string().length();
+        if (OB_FAIL(extra_info.sess_info_buf_.init(value_len))) {
+          LOG_WARN("fail int alloc mem", K(value_len), K(ret));
+        } else if (OB_FAIL(extra_info.sess_info_buf_.write(value_ptr, value_len))) {
+          LOG_WARN("fail to write sess info to buf", K(ret), K(value));
+        } else {
+          extra_info.sess_info_.assign_ptr(extra_info.sess_info_buf_.ptr(),
+                                           static_cast<int32_t>(extra_info.sess_info_buf_.len()));
+          extra_info.is_exist_sess_info_ = true;
+        }
+      } else if (0 == key.get_string().case_compare(OB_V20_PRO_EXTRA_KV_NAME_FULL_LINK_TRACE)) {
+        int64_t full_pos = 0;
+        ObString full_trc = value.get_string();
+        const char *full_trc_buf = full_trc.ptr();
+        const int64_t full_trc_len = full_trc.length();
+        if (OB_FAIL(flt_manage.deserialize(full_trc_buf, full_trc_len, full_pos))) {
+          LOG_WARN("fail to deserialize FLT", K(ret));
+        } else if (full_pos != full_trc_len) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("unexpected pos and length check", K(ret), K(full_pos), K(full_trc));
+        } else {
+          LOG_DEBUG("succ to deserialize obobj extra info", K(flt_manage));
+        }
+      } else {
+        LOG_DEBUG("attention: do no recognize such an extra info key", K(ret), K(key));
+      }
+    }            
+  } // while
+
+  return ret;
+}
+
+int ObMysqlCompressOB20Analyzer::do_new_extra_info_decode(const char *buf,
+                                                          const int64_t len,
+                                                          Ob20ExtraInfo &extra_info,
+                                                          common::FLTObjManage &flt_manage)
+{
+  int ret = OB_SUCCESS;
+
+  int64_t pos = 0;
+  while (OB_SUCC(ret) && pos < len) {
+    int16_t key_type = OB20_SVR_END;
+    int32_t key_len = 0;
+    if (OB_FAIL(common::Ob20FullLinkTraceTransUtil::resolve_type_and_len(buf, len, pos, key_type, key_len))) {
+      LOG_WARN("fail to resolve type and len for new extra info", K(ret));
+    } else {
+      Ob20NewExtraInfoProtocolKeyType type = static_cast<Ob20NewExtraInfoProtocolKeyType>(key_type);
+      if (type == SESS_INFO) {
+        extra_info.sess_info_buf_.reset();
+        if (OB_FAIL(extra_info.sess_info_buf_.init(key_len))) {
+          LOG_WARN("fail to init sess info buf", K(ret), K(key_len));
+        } else if (OB_FAIL(extra_info.sess_info_buf_.write(buf + pos, key_len))) {
+          LOG_WARN("fail to write sess info buf", K(ret), K(key_len));
+        } else {
+          extra_info.sess_info_.assign_ptr(extra_info.sess_info_buf_.ptr(), key_len);
+          extra_info.is_exist_sess_info_ = true;
+        }
+      } else if (type == FULL_TRC) {
+        int64_t full_pos = 0;
+        if (OB_FAIL(flt_manage.deserialize(buf + pos, key_len, full_pos))) {
+          LOG_WARN("fail to deserialize FLT", K(ret));
+        } else if (full_pos != key_len) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("unexpected pos and length check", K(ret), K(full_pos));
+        } else {
+          LOG_DEBUG("succ to deserialize new extra info", K(flt_manage));
+        }
+      } else {
+        LOG_WARN("unexpected new extra info type", K(type), K(key_len));
+      }
+      pos += key_len;     // pos offset at last
+    }
+  } // while
 
   return ret;
 }
@@ -309,9 +467,8 @@ inline int ObMysqlCompressOB20Analyzer::do_header_decode(const char *start)
   return ret;
 }
 
-int ObMysqlCompressOB20Analyzer::decode_compressed_header(
-    const ObString &compressed_data,
-    int64_t &avail_len)
+int ObMysqlCompressOB20Analyzer::decode_compressed_header(const ObString &compressed_data,
+                                                          int64_t &avail_len)
 {
   int ret = OB_SUCCESS;
   int64_t origin_len = compressed_data.length();
@@ -383,6 +540,7 @@ int ObMysqlCompressOB20Analyzer::decode_compressed_header(
         is_last_packet_ = true;
       }
 
+      extra_header_len_ = 0;
       extra_len_ = 0;
       extra_checked_len_ = 0;
       payload_checked_len_ = 0;
@@ -392,6 +550,7 @@ int ObMysqlCompressOB20Analyzer::decode_compressed_header(
       last_ob20_seq_++;
       last_seq_ = curr_compressed_ob20_header_.cp_hdr_.seq_;
       remain_len_ = curr_compressed_ob20_header_.payload_len_ + OB20_PROTOCOL_TAILER_LENGTH;
+
       LOG_DEBUG("decode compressed header succ", K_(curr_compressed_ob20_header));
     }
   }
@@ -419,11 +578,14 @@ int ObMysqlCompressOB20Analyzer::decompress_data(const char *compressed_data, co
 {
   int ret = OB_SUCCESS;
   const char *payload_start = compressed_data;
-  uint64_t payload_len = len;
+  int64_t payload_len = len;
+
+  LOG_DEBUG("ob20 analyzer state", K(ob20_analyzer_state_), K(len));
+  
   while (OB_SUCC(ret) && payload_len > 0) {
     switch (ob20_analyzer_state_) {
       case OB20_ANALYZER_EXTRA: {
-        if (OB_FAIL(do_extra_info_decode(payload_start, payload_len))) {
+        if (OB_FAIL(do_extra_info_decode(payload_start, payload_len, resp))) {
           LOG_ERROR("do extra info decode failed", K(payload_len), K(len), KPC(this), K(ret));
         }
         break;
@@ -485,7 +647,7 @@ int ObMysqlCompressOB20Analyzer::analyze_first_response(
       }
     } else {
       ObMysqlAnalyzeResult mysql_result;
-      if (OB_FAIL(ObProto20Utils::analyze_fisrt_mysql_packet(reader, dynamic_cast<ObMysqlCompressedOB20AnalyzeResult&>(result), mysql_result))) {
+      if (OB_FAIL(ObProto20Utils::analyze_first_mysql_packet(reader, dynamic_cast<ObMysqlCompressedOB20AnalyzeResult&>(result), mysql_result))) {
         LOG_WARN("fail to analyze packet", K(&reader), K(ret));
       } else {
         // if it is result + eof + error + ok, it may be not....
@@ -511,32 +673,201 @@ int ObMysqlCompressOB20Analyzer::analyze_first_response(
   return ret;
 }
 
-int ObProxyTraceUtils::build_client_ip(ObIArray<ObObJKV> &extro_info, char *client_ip_buf, ObAddr &client_ip)
+int ObMysqlCompressOB20Analyzer::analyze_compress_packet_payload(ObIOBufferReader &reader,
+                                                                 ObMysqlCompressedAnalyzeResult &result)
 {
   int ret = OB_SUCCESS;
-  int64_t pos = 0;
-  if (OB_FAIL(ObMySQLUtil::store_str_nzt(client_ip_buf, MAX_IP_BUFFER_LEN, OB_TRACE_INFO_CLIENT_IP, pos))) {
-    LOG_WARN("fail to store client addr", K(ret));
-  } else if (OB_FAIL(ObMySQLUtil::store_str_nzt(client_ip_buf, MAX_IP_BUFFER_LEN, "=", pos))) {
-    LOG_WARN("fail to store equals sign", K(ret));
-  } else if (OB_UNLIKELY(!client_ip.ip_to_string(client_ip_buf + STRLEN(client_ip_buf),
-                                                 static_cast<int32_t>(MAX_IP_BUFFER_LEN - pos)))) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to ip_to_string", K(client_ip), K(ret));
+
+  ObMysqlCompressedOB20AnalyzeResult &ob20_result = dynamic_cast<ObMysqlCompressedOB20AnalyzeResult&>(result);
+  if (!ob20_result.ob20_header_.flag_.is_extra_info_exist()) {
+    LOG_DEBUG("no extra info flag in ob20 head");
   } else {
-    ObObJKV ob_trace_info;
+    ObIOBufferBlock *block = NULL;
+    int64_t offset = 0;
+    char *data = NULL;
+    int64_t data_size = 0;
+    if (NULL != reader.block_) {
+      reader.skip_empty_blocks();
+      block = reader.block_;
+      offset = reader.start_offset_;
+      data = block->start() + offset;
+      data_size = block->read_avail() - offset;
+    }
 
-    ob_trace_info.key_.set_varchar(OB_TRACE_INFO_VAR_NAME, static_cast<int32_t>(STRLEN(OB_TRACE_INFO_VAR_NAME)));
-    ob_trace_info.key_.set_default_collation_type();
+    if (data_size <= 0) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("the first block data_size in reader is less than 0", K(offset), K(block->read_avail()), K(ret));
+    }
 
-    ob_trace_info.value_.set_varchar(client_ip_buf, static_cast<int32_t>(STRLEN(client_ip_buf)));
-    ob_trace_info.value_.set_default_collation_type();
+    ob20_req_analyze_state_ = OB20_REQ_ANALYZE_HEAD;    // begin
+    ObString req_buf;
+    
+    while (OB_SUCC(ret) && block != NULL && data_size > 0 && ob20_req_analyze_state_ != OB20_REQ_ANALYZE_END) {
+      req_buf.assign_ptr(data, static_cast<int32_t>(data_size));
+      if (OB_FAIL(decompress_request_packet(req_buf, ob20_result))) {  //only extra info now
+        LOG_WARN("fail to decompress request packet", K(ret));
+      } else {
+        offset = 0;
+        block = block->next_;
+        if (NULL != block) {
+          data = block->start();
+          data_size = block->read_avail();
+        }
+      }
+    }
+  }
 
-    extro_info.push_back(ob_trace_info);
+  LOG_DEBUG("analyze ob20 request payload finished", K(ret), K(reader.read_avail()), K(ob20_result));
+
+  return ret;
+}
+
+// check the buffer cross different blocks
+int ObMysqlCompressOB20Analyzer::decompress_request_packet(ObString &req_buf,
+                                                           ObMysqlCompressedOB20AnalyzeResult &ob20_result)
+{
+  int ret = OB_SUCCESS;
+
+  if (!is_inited_ || req_buf.length() <= 0) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected argument check", K(ret), K(req_buf));
+  } else {
+    const char *buf_start = req_buf.ptr();
+    int64_t buf_len = req_buf.length();
+    
+    while (OB_SUCC(ret) && buf_len > 0 && ob20_req_analyze_state_ != OB20_REQ_ANALYZE_END) {
+      switch (ob20_req_analyze_state_) {
+        case OB20_REQ_ANALYZE_HEAD: {
+          if (OB_FAIL(do_req_head_decode(buf_start, buf_len))) {
+            LOG_WARN("fail to to req head decode", K(ret));
+          }
+          break;
+        }
+        case OB20_REQ_ANALYZE_EXTRA: {
+          if (OB_FAIL(do_req_extra_decode(buf_start, buf_len, ob20_result))) {
+            LOG_WARN("fail to do req extra decode", K(ret));
+          }
+          break;
+        }
+        case OB20_REQ_ANALYZE_END: {
+          break;
+        }
+        default: {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("ob20 analyze decompress req unknown status", K(ret), K(ob20_req_analyze_state_));
+        } 
+      }
+    }
   }
 
   return ret;
 }
+
+int ObMysqlCompressOB20Analyzer::do_req_head_decode(const char* &buf_start, int64_t &buf_len)
+{
+  int ret = OB_SUCCESS;
+
+  if (remain_head_checked_len_ == 0) {
+    remain_head_checked_len_ = MYSQL_COMPRESSED_OB20_HEALDER_LENGTH;
+  } else if (remain_head_checked_len_ < 0) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("unexpected remain head checked len", K(ret), K(remain_head_checked_len_));
+  } else {
+    // remain_head_checked_len_ > 0, nothing
+  }
+
+  if (OB_SUCC(ret)) {
+    if (remain_head_checked_len_ > buf_len) {
+      remain_head_checked_len_ -= buf_len;
+      buf_start += buf_len;
+      buf_len = 0;
+    } else {
+      buf_start += remain_head_checked_len_;
+      buf_len -= remain_head_checked_len_;
+      remain_head_checked_len_ = 0;
+      ob20_req_analyze_state_ = OB20_REQ_ANALYZE_EXTRA;
+    }
+  }
+
+  LOG_DEBUG("ob20 do req head decode", K(remain_head_checked_len_), K(buf_len), K(ob20_req_analyze_state_));
+
+  return ret;
+}
+
+int ObMysqlCompressOB20Analyzer::do_req_extra_decode(const char *&buf_start,
+                                                     int64_t &buf_len,
+                                                     ObMysqlCompressedOB20AnalyzeResult &ob20_result)
+{
+  int ret = OB_SUCCESS;
+
+  if (ob20_result.ob20_header_.flag_.is_extra_info_exist()) {
+    // extra len
+    if (extra_len_ == 0) {
+      uint32_t extra_remain_len = static_cast<uint32_t>(OB20_PROTOCOL_EXTRA_INFO_LENGTH - extra_checked_len_);
+      uint32_t extra_header_len = static_cast<uint32_t>(MIN(buf_len, extra_remain_len));
+
+      MEMCPY(temp_buf_ + extra_checked_len_, buf_start, extra_header_len);
+      extra_checked_len_ += extra_header_len;
+      buf_start += extra_header_len;
+      buf_len -= extra_header_len;
+
+      if (extra_checked_len_ == OB20_PROTOCOL_EXTRA_INFO_LENGTH) {
+        char *temp_buf = temp_buf_;
+        ObMySQLUtil::get_uint4(temp_buf, extra_len_);
+        ob20_result.extra_info_.extra_len_ = extra_len_;
+        extra_checked_len_ = 0;
+        LOG_DEBUG("ob20 do req extra len decode success", K(extra_len_), K(buf_len));
+        ob20_result.extra_info_.extra_info_buf_.reset();
+      }
+    }
+
+    // extra info
+    int64_t extra_remain_len = extra_len_ - extra_checked_len_;
+    if (extra_len_ > 0 && buf_len > 0 && extra_remain_len > 0) {
+      Ob20ExtraInfo &extra_info = ob20_result.extra_info_;
+      if (!extra_info.extra_info_buf_.is_inited()
+          && OB_FAIL(extra_info.extra_info_buf_.init(extra_len_))) {
+        LOG_WARN("fail to init buf", K(ret));
+      }
+      if (OB_SUCC(ret)) {
+        uint32_t curr_extra_len = static_cast<uint32_t>(MIN(buf_len, extra_remain_len));
+        if (OB_FAIL(extra_info.extra_info_buf_.write(buf_start, curr_extra_len))) {
+          LOG_WARN("fail to write to buf", K(ret), K(buf_len));
+        } else {
+          extra_checked_len_ += curr_extra_len;
+          buf_start += curr_extra_len;
+          buf_len -= curr_extra_len;
+
+          // decode total extra info
+          if (extra_checked_len_ == extra_len_) {
+            const char *buf = extra_info.extra_info_buf_.ptr();
+            const int64_t len = extra_info.extra_info_buf_.len();
+            if (ob20_result.ob20_header_.flag_.is_new_extra_info()) {
+              if (OB_FAIL(do_new_extra_info_decode(buf, len, extra_info, ob20_result.flt_))) {
+                LOG_WARN("fail to do new extra info decode", K(ret));
+              }
+            } else {
+              if (OB_FAIL(do_obobj_extra_info_decode(buf, len, extra_info, ob20_result.flt_))) {
+                LOG_WARN("fail to do req obobj extra info decode", K(ret));
+              }
+            }
+
+            if (OB_SUCC(ret)) {
+              ob20_req_analyze_state_ = OB20_REQ_ANALYZE_END;
+              LOG_DEBUG("ob20 req analyzer analyzed finished");
+            }
+          } // decode total extra info
+        }
+      }
+    }
+  } else {
+    ob20_req_analyze_state_ = OB20_REQ_ANALYZE_END;
+    LOG_DEBUG("no extra info flag, set to analyze end");
+  }
+
+  return ret;
+}
+
 
 } // end of namespace proxy
 } // end of namespace obproxy

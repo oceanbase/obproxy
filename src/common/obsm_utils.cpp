@@ -307,6 +307,9 @@ int ObSMUtils::get_ob_type(ObObjType &ob_type, EMySQLFieldType mysql_type)
     case OB_MYSQL_TYPE_COMPLEX:
       ob_type = ObExtendType;
       break;
+    case OB_MYSQL_TYPE_OB_UROWID:
+      ob_type = ObURowIDType;
+      break;
     default:
       _OB_LOG(WARN, "unsupport MySQL type %d", mysql_type);
       ret = OB_OBJ_TYPE_ERROR;

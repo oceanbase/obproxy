@@ -34,10 +34,14 @@
 #include "opsql/parser/ob_proxy_parser.h"
 #include "iocore/eventsystem/ob_ethread.h"
 #include "obutils/ob_proxy_sql_parser.h"
+#include "obutils/ob_proxy_stmt.h"
 #include "cmd/ob_config_v2_handler.h"
 #include "omt/ob_white_list_table_processor.h"
 #include "omt/ob_resource_unit_table_processor.h"
 #include "omt/ob_ssl_config_table_processor.h"
+#include "omt/ob_proxy_config_table_processor.h"
+#include "obutils/ob_vip_tenant_cache.h"
+#include "utils/ob_proxy_utils.h"
 
 using namespace obsys;
 using namespace oceanbase::common;
@@ -54,34 +58,45 @@ namespace obproxy
 namespace obutils
 {
 
+//the table name need to be lower case, or func'handle_dml_stmt' will get error
 #define MAX_INIT_SQL_LEN 1024
 static const char* sqlite3_db_name = "etc/proxyconfig.db";
 static const char* all_table_version_table_name = "all_table_version";
 static const char* white_list_table_name = "white_list";
 static const char* resource_unit_table_name = "resource_unit";
 static const char *ssl_config_table_name = "ssl_config";
-static const char *table_name_array[] = {white_list_table_name, resource_unit_table_name, ssl_config_table_name};
+static const char *proxy_config_table_name = "proxy_config";
+static const char *table_name_array[] = {white_list_table_name, resource_unit_table_name, ssl_config_table_name, proxy_config_table_name};
 
 static const char* create_all_table_version_table =
                  "create table if not exists "
                  "all_table_version(gmt_created date default (datetime('now', 'localtime')), "
                  "gmt_modified date, table_name varchar(1000), "
                  "version int default 0, primary key(table_name))";
-static const char* create_white_list_table = 
+static const char* create_white_list_table =
                  "create table if not exists "
                  "white_list(gmt_created date default (datetime('now', 'localtime')), gmt_modified date, "
-                 "cluster_name varchar(256), tenant_name varchar(256), name varchar(256), "
-                 "value text, primary key(cluster_name, tenant_name))";
-static const char* create_resource_unit_table = 
+                 "cluster_name varchar(256) collate nocase, tenant_name varchar(256) collate nocase, name varchar(256) collate nocase, "
+                 "value text collate nocase, primary key(cluster_name, tenant_name))";
+static const char* create_resource_unit_table =
                  "create table if not exists "
                  "resource_unit(gmt_created date default (datetime('now', 'localtime')), "
-                 "gmt_modified date, cluster_name varchar(256), tenant_name varchar(256), "
-                 "name varchar(256), value text, primary key(cluster_name, tenant_name, name))";
+                 "gmt_modified date, cluster_name varchar(256) collate nocase, tenant_name varchar(256) collate nocase, "
+                 "name varchar(256) collate nocase, value text collate nocase, primary key(cluster_name, tenant_name, name))";
 static const char* create_ssl_config_table =
                  "create table if not exists "
                  "ssl_config(gmt_created date default (datetime('now', 'localtime')), gmt_modified date, "
-                 "cluster_name varchar(256), tenant_name varchar(256), name varchar(256), value text, "
-                 "primary key(cluster_name, tenant_name, name))";
+                 "cluster_name varchar(256) collate nocase, tenant_name varchar(256) collate nocase, name varchar(256) collate nocase, "
+                 " value text collate nocase, primary key(cluster_name, tenant_name, name))";
+
+static const char* create_proxy_config_table =
+                 "create table if not exists "
+                 "proxy_config(vid int NOT NULL default -1, vip varchar(100) NOT NULL default '', "
+                 "vport int NOT NULL default 0, tenant_name varchar(128) collate nocase NOT NULL default '', "
+                 "cluster_name varchar(260) collate nocase NOT NULL default '', "
+                 "name varchar(130) collate nocase NOT NULL, value varchar(4100) NOT NULL, info varchar(1024), "
+                 "range varchar(64), need_reboot bool, visible_level varchar(20), config_level varchar(20) NOT NULL, "
+                 "primary key(vid, vip, vport, tenant_name, cluster_name, name))";
 
 ObConfigProcessor &get_global_config_processor()
 {
@@ -89,8 +104,7 @@ ObConfigProcessor &get_global_config_processor()
   return g_config_processor;
 }
 
-ObFnParams::ObFnParams() : config_type_(OBPROXY_CONFIG_INVALID),
-                           stmt_type_(OBPROXY_T_INVALID),
+ObFnParams::ObFnParams() : stmt_type_(OBPROXY_T_INVALID),
                            table_name_(), fields_(NULL)
 {}
 
@@ -119,6 +133,14 @@ int ObConfigProcessor::init()
   } else if (OB_FAIL(check_and_create_table())) {
     LOG_WARN("check create table failed", K(ret));
   } else {
+    get_global_proxy_config().proxy_config_db_ = proxy_config_db_;
+  }
+
+  if (OB_FAIL(ret)) {
+    // do nothing
+  } else if (OB_FAIL(get_global_proxy_config().dump_config_to_sqlite())) {
+    LOG_WARN("dump config to sqlite3 failed", K(ret));
+  } else {
     // TODO: Compatibility Check
     if (OB_FAIL(get_global_white_list_table_processor().init())) {
       LOG_WARN("white list table processor init failed", K(ret));
@@ -126,22 +148,15 @@ int ObConfigProcessor::init()
       LOG_WARN("resource unit table processor init failed", K(ret));
     } else if (OB_FAIL(get_global_ssl_config_table_processor().init())) {
       LOG_WARN("ssl config table processor init failed", K(ret));
+    } else if (OB_FAIL(get_global_proxy_config_table_processor().init())) {
+      LOG_WARN("proxy config table processor init failed", K(ret));
     } else if (OB_FAIL(init_config_from_disk())) {
       LOG_WARN("init config from disk failed", K(ret));
+    } else {
+      get_global_proxy_config_table_processor().set_need_sync_to_file(true);
     }
   }
 
-  // Do compatibility processing, currently it is related to ssl,
-  // if the -o startup parameter specifies that synchronization is required here
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(store_cloud_config(ssl_config_table_name, "*", "*", "enable_client_ssl",
-                                   get_global_proxy_config().enable_client_ssl.str()))) {
-      LOG_WARN("store client ssl failed", K(ret));
-    } else if (OB_FAIL(store_cloud_config(ssl_config_table_name, "*", "*", "enable_server_ssl",
-                                   get_global_proxy_config().enable_server_ssl.str()))) {
-      LOG_WARN("store server ssl failed", K(ret));
-    }
-  }
   return ret;
 }
 
@@ -154,7 +169,6 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
   } else {
     ObConfigHandler *handler = reinterpret_cast<ObConfigHandler*>(data);
     ObCloudFnParams params;
-    params.config_type_ = OBPROXY_CONFIG_CLOUD;
     params.stmt_type_ = OBPROXY_T_REPLACE;
     SqlFieldResult field_result;
     for (int64_t i = 0; OB_SUCC(ret) && i < argc; i++) {
@@ -192,7 +206,7 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
         LOG_WARN("execute fn failed", K(ret));
       }
 
-      if (OB_FAIL(handler->commit_func_(is_success))) {
+      if (OB_FAIL(handler->commit_func_(&params, is_success))) {
         LOG_WARN("commit func failed", K(ret), K(is_success));
       }
     }
@@ -246,7 +260,7 @@ int ObConfigProcessor::execute(ObString &sql, const ObProxyBasicStmtType stmt_ty
     ObProxyParser obproxy_parser(allocator, NORMAL_PARSE_MODE);
     if (OB_FAIL(obproxy_parser.obparse(parse_sql, parse_result))) {
       LOG_WARN("fail to parse sql", K(sql), K(ret));
-    } else if (OB_FAIL(handle_dml_stmt(sql, parse_result))) {
+    } else if (OB_FAIL(handle_dml_stmt(sql, parse_result, allocator))) {
       LOG_WARN("handle stmt failed", K(ret), K(sql));
     }
   }
@@ -270,6 +284,9 @@ int ObConfigProcessor::check_and_create_table()
   } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, create_ssl_config_table, NULL, 0, &err_msg)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("exec create ssl config table sql failed", K(ret), "err_msg", err_msg);
+  } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, create_proxy_config_table, NULL, 0, &err_msg)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("exec create proxy config table sql failed", K(ret), "err_msg", err_msg);
   }
 
   if (NULL != err_msg) {
@@ -279,163 +296,7 @@ int ObConfigProcessor::check_and_create_table()
   return ret;
 }
 
-int ObConfigProcessor::resolve_insert(const ParseNode* node, ResolveContext &ctx)
-{
-  int ret = OB_SUCCESS;
-  if (OB_ISNULL(node) || T_INSERT != node->type_) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("node is null or wrong type unexpected", K(ret));
-  } else {
-    if (node->children_[1] != NULL) {
-      if (node->children_[1]->type_ == T_INSERT) {
-        ctx.stmt_type_ = OBPROXY_T_INSERT;
-      } else if (node->children_[1]->type_ == T_REPLACE) {
-        ctx.stmt_type_ = OBPROXY_T_REPLACE;
-      }
-    }
-
-    if (node->children_[0] != NULL && node->children_[0]->type_ == T_SINGLE_TABLE_INSERT) {
-      ParseNode* tmp_node = node->children_[0];
-      if (tmp_node->children_[0] != NULL && tmp_node->children_[0]->type_ == T_INSERT_INTO_CLAUSE) {
-        ParseNode* tmp_node1 = tmp_node->children_[0];
-        if (tmp_node1->children_[0] != NULL && tmp_node1->children_[0]->type_ == T_ORG) {
-          ParseNode* tmp_node2 = tmp_node1->children_[0];
-          if (tmp_node2->children_[0] != NULL && tmp_node2->children_[0]->type_ == T_RELATION_FACTOR) {
-            ParseNode* tmp_node3 = tmp_node2->children_[0];
-            ctx.table_name_.assign_ptr(tmp_node3->str_value_, static_cast<int32_t>(tmp_node3->str_len_));
-            if (OB_FAIL(table_handler_map_.get_refactored(ctx.table_name_, ctx.handler_))) {
-              LOG_DEBUG("fail to get handler by table name", K(ret), K(ctx.table_name_));
-              ret = OB_SUCCESS;
-            } else {
-              ctx.config_type_ = ctx.handler_.config_type_;
-            }
-          }
-        }
-
-        if (!ctx.table_name_.empty() && tmp_node1->children_[1] != NULL && tmp_node1->children_[1]->type_ == T_COLUMN_LIST) {
-          ParseNode *tmp_node2 = tmp_node1->children_[1];
-          for (int64_t i = 0; OB_SUCC(ret) && i < tmp_node2->num_child_; i++) {
-            if (NULL != tmp_node2->children_[i]) {
-              ObString column_name;
-              column_name.assign_ptr(tmp_node2->children_[i]->str_value_, static_cast<int32_t>(tmp_node2->children_[i]->str_len_));
-              if (OB_FAIL(ctx.column_name_array_.push_back(column_name))) {
-                LOG_WARN("column name push back failed", K(ret), K(column_name));
-              }
-            }
-          }
-        }
-      }
-
-      if (!ctx.table_name_.empty() && tmp_node->children_[1] != NULL && tmp_node->children_[1]->type_ == T_VALUE_LIST) {
-        ParseNode* tmp_node1 = tmp_node->children_[1];
-        if (tmp_node1->children_[0] != NULL && tmp_node1->children_[0]->type_ == T_VALUE_VECTOR) {
-          ParseNode* tmp_node2 = tmp_node1->children_[0];
-          for (int64_t i = 0; OB_SUCC(ret) && ctx.column_name_array_.count() == tmp_node2->num_child_ && i < tmp_node2->num_child_; i++) {
-            if (tmp_node2->children_[i] != NULL) {
-              if (tmp_node2->children_[i]->type_ == T_INT) {
-                SqlField field;
-                field.column_name_.set(ctx.column_name_array_.at(i));
-                field.value_type_ = TOKEN_INT_VAL;
-                field.column_int_value_ = tmp_node2->children_[i]->value_;
-                ctx.sql_field_.fields_.push_back(field);
-                ctx.sql_field_.field_num_++;
-              } else if (tmp_node2->children_[i]->type_ == T_VARCHAR) {
-                SqlField field;
-                field.column_name_.set(ctx.column_name_array_.at(i));
-                field.value_type_ = TOKEN_STR_VAL;
-                ObString value;
-                if (tmp_node2->children_[i]->str_len_ - 2 <= 0) {
-                  ret = OB_ERR_UNEXPECTED;
-                  LOG_WARN("unexpected len", K(ret));
-                } else {
-                  value.assign_ptr(tmp_node2->children_[i]->str_value_ + 1, static_cast<int32_t>(tmp_node2->children_[i]->str_len_ - 2));
-                  field.column_value_.set_value(value);
-                  ctx.sql_field_.fields_.push_back(field);
-                  ctx.sql_field_.field_num_++;
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  return ret;
-}
-
-int ObConfigProcessor::resolve_delete(const ParseNode* node, ResolveContext &ctx)
-{
-  int ret = OB_SUCCESS;
-  if (OB_ISNULL(node) || T_DELETE != node->type_) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("node is null or wrong type", K(ret));
-  } else {
-    ctx.stmt_type_ = OBPROXY_T_DELETE;
-    if (node->children_[0] != NULL && node->children_[0]->type_ == T_DELETE_TABLE_NODE) {
-      ParseNode *tmp_node = node->children_[0];
-      if (tmp_node->children_[1] != NULL && tmp_node->children_[1]->type_ == T_TABLE_REFERENCES) {
-        ParseNode *tmp_node1 = tmp_node->children_[1];
-        if (tmp_node1->children_[0] != NULL && tmp_node1->children_[0]->type_ == T_ORG) {
-          ParseNode *tmp_node2 = tmp_node1->children_[0];
-          if (tmp_node2->children_[0] != NULL && tmp_node2->children_[0]->type_ == T_RELATION_FACTOR) {
-            ctx.table_name_.assign_ptr(tmp_node2->children_[0]->str_value_, static_cast<int32_t>(tmp_node2->children_[0]->str_len_));
-            if (OB_FAIL(table_handler_map_.get_refactored(ctx.table_name_, ctx.handler_))) {
-              LOG_DEBUG("fail to get handler by table name", K(ret), K(ctx.table_name_));
-              ret = OB_SUCCESS;
-            } else {
-              ctx.config_type_ = ctx.handler_.config_type_;
-            }
-          }
-        }
-      }
-    }
-
-    if (!ctx.table_name_.empty() && node->children_[1] != NULL && node->children_[1]->type_ == T_WHERE_CLAUSE) {
-      ParseNode* tmp_node = node->children_[1];
-      if (tmp_node->children_[0] != NULL && tmp_node->children_[0]->type_ == T_OP_AND) {
-        ParseNode* tmp_node1 = tmp_node->children_[0];
-        for (int64_t i = 0; OB_SUCC(ret) && i < tmp_node1->num_child_; i++) {
-          if (tmp_node1->children_[i] != NULL && tmp_node1->children_[i]->type_ == T_OP_EQ) {
-            ParseNode* tmp_node2 = tmp_node1->children_[i];
-            SqlField field;
-            if (tmp_node2->children_[0] != NULL && tmp_node2->children_[0]->type_ == T_COLUMN_REF) {
-              ObString column_name;
-              column_name.assign_ptr(tmp_node2->children_[0]->str_value_, static_cast<int32_t>(tmp_node2->children_[0]->str_len_));
-              field.column_name_.set(column_name);
-              LOG_DEBUG("parse column name", K(column_name), K(i));
-            }
-
-            if (tmp_node2->children_[1] != NULL) {
-              if (tmp_node2->children_[1]->type_ == T_INT) {
-                field.value_type_ = TOKEN_INT_VAL;
-                field.column_int_value_ = tmp_node2->children_[1]->value_;
-                ctx.sql_field_.fields_.push_back(field);
-                ctx.sql_field_.field_num_++;
-              } else if (tmp_node2->children_[1]->type_ == T_VARCHAR) {
-                if (tmp_node2->children_[1]->str_len_ - 2 <= 0) {
-                  ret = OB_ERR_UNEXPECTED;
-                  LOG_WARN("unexpected len", K(ret));
-                } else {
-                  ObString value;
-                  value.assign_ptr(tmp_node2->children_[1]->str_value_ + 1, static_cast<int32_t>(tmp_node2->children_[1]->str_len_ - 2));
-                  field.value_type_ = TOKEN_STR_VAL;
-                  field.column_value_.set_value(value);
-                  ctx.sql_field_.fields_.push_back(field);
-                  ctx.sql_field_.field_num_++;
-                  LOG_DEBUG("parse column value", K(value), K(i));
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-  return ret;
-}
-
-int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result)
+int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result, ObArenaAllocator&allocator)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
@@ -458,23 +319,38 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result)
     ret = OB_ERR_UNEXPECTED;
     LOG_DEBUG("unexpected null child", K(ret));
   } else {
-    // At present, our grammar parsing is relatively fixed. There can only be two equal conditions
-    // after the delete statement where, otherwise an error will be reported
-    // The new requirement is changed to the implementation of ob_proxy_stmt
-    ResolveContext ctx;
+    ObProxyDMLStmt *stmt = NULL;
+    ObProxyInsertStmt *insert_stmt = NULL;
+    ObProxyDeleteStmt *delete_stmt = NULL;
     switch(node->type_) {
       case T_INSERT:
       {
-        if (OB_FAIL(resolve_insert(node, ctx))) {
-          LOG_WARN("resove insert failed", K(ret));
+        if (OB_ISNULL(insert_stmt = op_alloc_args(ObProxyInsertStmt, allocator))) {
+          LOG_WARN("alloc insert stmt failed", K(ret));
+        } else if (OB_FAIL(insert_stmt->init())) {
+            LOG_WARN("insert stmt init failed", K(ret));
+        } else if (OB_FAIL(insert_stmt->handle_parse_result(parse_result))) {
+          LOG_WARN("insert stmt handle parse result failed", K(ret));
+        } else if (insert_stmt->has_unsupport_expr_type()) {
+          ret = OB_NOT_SUPPORTED;
+          LOG_WARN("insert stmt has unsupport expr type", K(ret));
         }
+        stmt = insert_stmt;
         break;
       }
       case T_DELETE:
       {
-        if (OB_FAIL(resolve_delete(node, ctx))) {
-          LOG_WARN("resolve delete failed", K(ret));
+        if (OB_ISNULL(delete_stmt = op_alloc_args(ObProxyDeleteStmt, allocator))) {
+          LOG_WARN("alloc delete stmt failed", K(ret));
+        } else if (OB_FAIL(delete_stmt->init())) {
+            LOG_WARN("delete stmt init failed", K(ret));
+        } else if (OB_FAIL(delete_stmt->handle_parse_result(parse_result))) {
+          LOG_WARN("delete stmt handle parse result failed", K(ret));
+        } else if (delete_stmt->has_unsupport_expr_type()) {
+          ret = OB_NOT_SUPPORTED;
+          LOG_WARN("insert stmt has unsupport expr type", K(ret));
         }
+        stmt = delete_stmt;
         break;
       }
       default:
@@ -486,23 +362,31 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result)
     bool is_success = true;
     bool is_execute = false;
     int tmp_ret = OB_SUCCESS;
-    if (OB_SUCC(ret) && OBPROXY_CONFIG_CLOUD == ctx.config_type_ && !ctx.table_name_.empty()) {
-      params.config_type_ = ctx.config_type_;
-      params.stmt_type_ = ctx.stmt_type_;
-      params.table_name_ = ctx.table_name_;
-      params.fields_ = &ctx.sql_field_;
+    ObConfigHandler handler;
+    if (OB_SUCC(ret)) {
+      params.stmt_type_ = stmt->get_stmt_type();
+      params.table_name_ = stmt->get_table_name();
+      params.fields_ = &(stmt->get_dml_field_result());
       const char* cluster_name_str = "cluster_name";
       const char* tenant_name_str = "tenant_name";
-      for (int64_t i = 0; i < ctx.sql_field_.field_num_; i++) {
-        SqlField &field = ctx.sql_field_.fields_.at(i);
+      for (int64_t i = 0; i < params.fields_->field_num_; i++) {
+        SqlField &field = params.fields_->fields_.at(i);
         if (field.column_name_.string_ == cluster_name_str) {
           params.cluster_name_ = field.column_value_.config_string_;
         } else if (field.column_name_.string_ == tenant_name_str) {
           params.tenant_name_ = field.column_value_.config_string_;
         }
       }
-
-      if (OB_FAIL(ctx.handler_.execute_func_(&params))) {
+      //table name is UPPER CASE in stmt, need convert to lower case as origin
+      //depends on the assumption that the table name in 'table_handler_map_' is lower case
+      string_to_lower_case(params.table_name_.ptr(), params.table_name_.length());
+      if (OB_FAIL(table_handler_map_.get_refactored(params.table_name_, handler))) {
+        if (params.table_name_ == all_table_version_table_name) {
+          ret = OB_SUCCESS;
+        } else {
+          LOG_WARN("get table handler failed", K_(params.table_name), K(ret));
+        }
+      } else if (OB_FAIL(handler.execute_func_(&params))) {
         is_execute = true;
         LOG_WARN("execute fn failed", K(ret));
       } else {
@@ -535,11 +419,20 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result)
     }
 
     if (is_execute) {
-      if (OB_FAIL(ctx.handler_.commit_func_(is_success))) {
+      if (OB_FAIL(handler.commit_func_(&params, is_success))) {
         LOG_WARN("commit failed", K(ret), K(is_success));
       }
     }
     ret = (OB_SUCCESS != tmp_ret ? tmp_ret : ret);
+
+    if (NULL != insert_stmt) {
+      op_free(insert_stmt);
+      insert_stmt = NULL;
+    }
+    if (NULL != delete_stmt) {
+      op_free(delete_stmt);
+      delete_stmt = NULL;
+    }
   }
 
   return ret;
@@ -606,7 +499,7 @@ int ObConfigProcessor::handle_select_stmt(ObString& sql, obproxy::ObConfigV2Hand
   return ret;
 }
 
-int ObConfigProcessor::register_callback(const common::ObString &table_name, ObConfigHandler&handler)
+int ObConfigProcessor::register_callback(const common::ObString &table_name, ObConfigHandler &handler)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(table_handler_map_.set_refactored(table_name, handler))) {
@@ -622,26 +515,23 @@ bool ObConfigProcessor::is_table_in_service(const ObString &table_name)
   if (table_name == all_table_version_table_name
       || table_name == white_list_table_name
       || table_name == resource_unit_table_name
-      || table_name == ssl_config_table_name) {
+      || table_name == ssl_config_table_name
+      || table_name == proxy_config_table_name) {
     is_in_service = true;
   }
 
   return is_in_service;
 }
 
-int ObConfigProcessor::store_cloud_config(const ObString &table_name,
-                                          const ObString &cluster_name,
-                                          const ObString &tenant_name,
-                                          const ObString &name,
-                                          const ObString &value)
+int ObConfigProcessor::store_global_ssl_config(const ObString &name, const ObString &value)
 {
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(cluster_name.empty() || tenant_name.empty() || name.empty() || value.empty())) {
+  if (OB_UNLIKELY(name.empty() || value.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(cluster_name), K(tenant_name), K(name), K(value));
+    LOG_WARN("invalid argument", K(name), K(value));
   } else {
-    const char *sql = "replace into %.*s(cluster_name, tenant_name, name, value) values('%.*s', '%.*s', '%.*s', '%.*s')";
-    int64_t buf_len = cluster_name.length() + tenant_name.length() + name.length() + value.length() + strlen(sql);
+    const char *sql = "replace into ssl_config(cluster_name, tenant_name, name, value) values('*', '*', '%.*s', '%.*s')";
+    int64_t buf_len = name.length() + value.length() + strlen(sql);
     char *sql_buf = (char*)ob_malloc(buf_len + 1, ObModIds::OB_PROXY_CONFIG_TABLE);
     if (OB_ISNULL(sql_buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -649,9 +539,7 @@ int ObConfigProcessor::store_cloud_config(const ObString &table_name,
     } else {
       ObString sql_string;
       int64_t len = 0;
-      len = static_cast<int64_t>(snprintf(sql_buf, buf_len, sql, table_name.length(), table_name.ptr(),
-                                 cluster_name.length(), cluster_name.ptr(),
-                                 tenant_name.length(), tenant_name.ptr(),
+      len = static_cast<int64_t>(snprintf(sql_buf, buf_len, sql,
                                  name.length(), name.ptr(),
                                  value.length(), value.ptr()));
       sql_string.assign_ptr(sql_buf, static_cast<int32_t>(len));
@@ -666,6 +554,122 @@ int ObConfigProcessor::store_cloud_config(const ObString &table_name,
     if (OB_NOT_NULL(sql_buf)) {
       ob_free(sql_buf);
     }
+  }
+
+  return ret;
+}
+
+int ObConfigProcessor::store_global_proxy_config(const ObString &name, const ObString &value)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(name.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid argument", K(name), K(value));
+  } else {
+    const char *sql = "replace into proxy_config(name, value, config_level) values('%.*s', '%.*s', 'LEVEL_GLOBAL')";
+    int64_t buf_len = name.length() + value.length() + strlen(sql);
+    char *sql_buf = (char*)ob_malloc(buf_len + 1, ObModIds::OB_PROXY_CONFIG_TABLE);
+    if (OB_ISNULL(sql_buf)) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("allocate memory failed", K(ret), K(buf_len));
+    } else {
+      ObString sql_string;
+      int64_t len = 0;
+      get_global_proxy_config_table_processor().set_need_sync_to_file(false);
+      len = static_cast<int64_t>(snprintf(sql_buf, buf_len, sql,
+                                 name.length(), name.ptr(),
+                                 value.length(), value.ptr()));
+      sql_string.assign_ptr(sql_buf, static_cast<int32_t>(len));
+      if (OB_UNLIKELY(len <= 0)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("fail to fill sql", K(len), K(ret));
+      } else if (OB_FAIL(execute(sql_string, OBPROXY_T_REPLACE, NULL))) {
+        LOG_WARN("execute sql failed", K(ret));
+      }
+      get_global_proxy_config_table_processor().set_need_sync_to_file(true);
+    }
+
+    if (OB_NOT_NULL(sql_buf)) {
+      ob_free(sql_buf);
+    }
+  }
+
+  return ret;
+}
+
+int ObConfigProcessor::get_proxy_config_with_level(const ObVipAddr &addr, const common::ObString &cluster_name,
+                       const common::ObString &tenant_name, const common::ObString& name,
+                       common::ObConfigItem &ret_item, const ObString level, bool &found)
+{
+  int ret = OB_SUCCESS;
+  ObProxyConfigItem proxy_item;
+  if (OB_FAIL(get_global_proxy_config_table_processor().get_config_item(
+      addr, cluster_name, tenant_name, name, proxy_item))) {
+    if (OB_HASH_NOT_EXIST != ret) {
+      LOG_WARN("get config item failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+    } else {
+      ret = OB_SUCCESS;
+    }
+  } else if (0 != strcasecmp(proxy_item.config_level_.ptr(), level.ptr())) {
+    ret = OB_SUCCESS;
+    LOG_DEBUG("vip config level not match", K(proxy_item));
+  } else {
+    found = true;
+    ret_item = proxy_item.config_item_;
+  }
+
+  return ret;
+}
+
+int ObConfigProcessor::get_proxy_config(const ObVipAddr &addr, const ObString &cluster_name,
+                                        const ObString &tenant_name, const ObString& name,
+                                        ObConfigItem &ret_item)
+{
+  int ret = OB_SUCCESS;
+  ObVipAddr tmp_addr = addr;
+  ObString tmp_cluster_name = cluster_name;
+  ObString tmp_tenant_name = tenant_name;
+  bool found = false;
+  if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_VIP", found))) {
+    LOG_WARN("get_proxy_config_with_level failed", K(ret));
+  }
+
+  if (OB_SUCC(ret) && !found) {
+    tmp_addr.reset();
+    if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_TENANT", found))) {
+      LOG_WARN("get_proxy_config_with_level failed", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && !found) {
+    tmp_tenant_name.reset();
+    if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_CLUSTER", found))) {
+      LOG_WARN("get_proxy_config_with_level failed", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && !found) {
+    if (OB_FAIL(get_global_proxy_config().get_config_item(name, ret_item))) {
+      LOG_WARN("get global config item failed", K(ret));
+    }
+  }
+
+  LOG_DEBUG("get proxy config", K(ret_item), K(found), K(ret));
+
+  return ret;
+}
+
+int ObConfigProcessor::get_proxy_config_bool_item(const ObVipAddr &addr, const ObString &cluster_name,
+                                                  const ObString &tenant_name, const ObString& name,
+                                                  ObConfigBoolItem &ret_item)
+{
+  int ret = OB_SUCCESS;
+  ObConfigItem item;
+  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item))) {
+    LOG_WARN("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+  } else {
+    ret_item.set(item.str());
+    LOG_DEBUG("get bool item succ", K(ret_item));
   }
 
   return ret;

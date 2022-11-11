@@ -27,7 +27,7 @@
 #include "proxy/mysql/ob_mysql_proxy_port.h"
 #include "cmd/ob_show_sqlaudit_handler.h"
 #include "proxy/api/ob_transform.h"
-#include "proxy/mysqllib/ob_proxy_session_info.h"
+#include "proxy/mysqllib/ob_proxy_ob20_request.h"
 
 namespace oceanbase
 {
@@ -51,7 +51,6 @@ class ObMysqlSM;
 class ObMysqlClientSession;
 class ObClientSessionInfo;
 class ObServerSessionInfo;
-struct ObTransactionStat;
 class ObSqlauditRecordQueue;
 
 enum
@@ -104,6 +103,7 @@ public:
     TRANSACTION_COMPLETE,
     DEAD_CONGESTED,
     ALIVE_CONGESTED,
+    DETECT_CONGESTED,
     INTERNAL_ERROR
   };
 
@@ -513,6 +513,7 @@ public:
           is_congestion_entry_updated_(false),
           api_mysql_sm_shutdown_(false),
           api_server_addr_set_(false),
+          need_retry_(true),
           sqlaudit_record_queue_(NULL)
     {
       memset(user_args_, 0, sizeof(user_args_));
@@ -531,7 +532,6 @@ public:
         sm_ = sm;
         need_pl_lookup_ = true;
         current_stats_ = &first_stats_;
-        refresh_mysql_config();
         trans_info_.reset();
       }
       return ret;
@@ -542,34 +542,11 @@ public:
       return ((mysql_config_params_->sqlaudit_mem_limited_ > 0) && (NULL != sqlaudit_record_queue_));
     }
 
-    void refresh_mysql_config()
-    {
-      if (OB_UNLIKELY(mysql_config_params_ != get_global_mysql_config_processor().get_config())) {
-        ObMysqlConfigParams *config = NULL;
-        if (OB_ISNULL(config = get_global_mysql_config_processor().acquire())) {
-          PROXY_TXN_LOG(WARN, "failed to acquire mysql config");
-        } else {
-          if (OB_LIKELY(NULL != mysql_config_params_)) {
-            mysql_config_params_->dec_ref();
-            mysql_config_params_ = NULL;
-          }
-          mysql_config_params_ = config;
-        }
-        ObMysqlTransact::handle_new_config_acquired(*this);
-      }
-
-      if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
-        if (NULL != sqlaudit_record_queue_) {
-          sqlaudit_record_queue_->refcount_dec();
-          sqlaudit_record_queue_ = NULL;
-        }
-
-        if (mysql_config_params_->sqlaudit_mem_limited_ > 0) {
-          sqlaudit_record_queue_ = get_global_sqlaudit_processor().acquire();
-        }
-      }
-    }
-
+    void refresh_mysql_config();
+    int get_config_item(const common::ObString& cluster_name,
+                        const common::ObString &tenant_name,
+                        const obutils::ObVipAddr &addr,
+                        const int64_t global_version = 0);
     void record_transaction_stats()
     {
       // Loop over our transaction stat blocks and record the stats
@@ -722,6 +699,7 @@ public:
         }
 
         server_info_.reset();
+        pre_server_info_.reset();
         current_.reset();
         trans_info_.reset();
         pll_info_.reset();
@@ -769,6 +747,8 @@ public:
     ObMysqlConfigParams *mysql_config_params_;
     ObConnectionAttributes client_info_;
     ObConnectionAttributes server_info_;
+    // fail-fast probe use
+    ObConnectionAttributes pre_server_info_;
 
     ObCurrentInfo current_;
     ObTransactInfo trans_info_;
@@ -820,6 +800,7 @@ public:
     bool is_congestion_entry_updated_;
     bool api_mysql_sm_shutdown_;
     bool api_server_addr_set_;
+    bool need_retry_;
 
     ObSqlauditRecordQueue *sqlaudit_record_queue_;
 
@@ -833,7 +814,7 @@ public:
   static void handle_mysql_request(ObTransState &s);
   static int set_server_ip_by_shard_conn(ObTransState &s, dbconfig::ObShardConnector* shard_conn);
   static void handle_oceanbase_request(ObTransState &s);
-  static void handle_ps_close(ObTransState &s);
+  static void handle_ps_close_reset(ObTransState &s);
   static void handle_fetch_request(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,
@@ -843,6 +824,10 @@ public:
 
   static int build_oceanbase_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                           event::ObIOBufferReader *&reader, int64_t &request_len);
+  static int build_oceanbase_ob20_user_request(ObTransState &s, event::ObMIOBuffer &write_buffer,
+                                               event::ObIOBufferReader &request_buffer_reader,
+                                               int64_t client_request_len,
+                                               uint8_t &compress_seq);
   static int build_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                 event::ObIOBufferReader *&reader, int64_t &request_len);
   static int rewrite_stmt_id(ObTransState &s, event::ObIOBufferReader *client_buffer_reader);
@@ -905,8 +890,7 @@ public:
   static ObClientSessionInfo &get_client_session_info(ObTransState &s);
   static ObServerSessionInfo &get_server_session_info(ObTransState &s);
   static void consume_response_packet(ObTransState &s);
-  static int build_no_privilege_message(ObTransState &trans_state,
-                                        ObMysqlClientSession &client_session,
+  static int build_no_privilege_message(ObTransState &trans_state, ObMysqlClientSession &client_session,
                                         const common::ObString &database);
 
   static void handle_handshake_pkt(ObTransState &s);
@@ -924,7 +908,7 @@ public:
   static void update_sql_cmd(ObTransState &s);
   // check if the global_vars_version is changed, called when receive saved login responce
   static int check_global_vars_version(ObTransState &s, const obmysql::ObStringKV &str_kv);
-  static void handle_user_request_succ(ObTransState &s);
+  static void handle_user_request_succ(ObTransState &s, bool &is_user_request);
   static int handle_user_set_request_succ(ObTransState &s);
   static int handle_normal_user_request_succ(ObTransState &s);
   static void handle_saved_login_succ(ObTransState &s);
@@ -937,9 +921,13 @@ public:
   static int do_handle_execute_succ(ObTransState &s);
   static void handle_prepare_execute_succ(ObTransState &s);
   static void handle_text_ps_prepare_succ(ObTransState &s);
+  static int handle_text_ps_drop_succ(ObTransState &s, bool &is_user_request);
   static int handle_change_user_request_succ(ObTransState &s);
+  static int handle_reset_connection_request_succ(ObTransState &s);
+  static int clear_session_related_source(ObTransState &s);
+  static int handle_ps_reset_succ(ObTransState &s, bool &is_user_request);
 
-  static int build_error_packet(ObTransState &s);
+  static int build_error_packet(ObTransState &s, ObMysqlClientSession *client_session);
 
   static void handle_new_config_acquired(ObTransState &s);
 

@@ -22,6 +22,11 @@
 #include "obutils/ob_proxy_config.h"
 #include "proxy/client/ob_client_utils.h"
 #include "lib/encrypt/ob_encrypted_helper.h"
+#include "proxy/mysql/ob_mysql_transact.h"
+#include "proxy/mysqllib/ob_2_0_protocol_struct.h"
+#include "proxy/mysqllib/ob_2_0_protocol_utils.h"
+#include "proxy/mysql/ob_mysql_client_session.h"
+#include "lib/container/ob_se_array.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -98,31 +103,38 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
   if (pkt_len > OB_SIMPLE_OK_PKT_LEN) {
     ObMysqlPacketReader pkt_reader;
     const ObMySQLCapabilityFlags cap = server_info.get_compatible_capability_flags();
+    
     OMPKOK src_ok;
     int64_t offset = reader.read_avail() - pkt_len;
     LOG_DEBUG("rebuild_ok_packet", K(reader.read_avail()), K(pkt_len), K(offset));
 
     // 1. get ok packet from buffer
-    pkt_reader.get_ok_packet(reader, offset, cap, src_ok);
-    // 2. save seesion info
-    if (OB_FAIL(save_changed_session_info(client_info, server_info, is_auth_request,
-                                          need_handle_sysvar, src_ok, resp_result,
+    if (OB_FAIL(pkt_reader.get_ok_packet(reader, offset, cap, src_ok))) {
+      LOG_WARN("fail to get ok packet", K(offset), K(ret));
+      // 2. save seesion info
+    } else if (OB_FAIL(save_changed_session_info(client_info,
+                                          server_info,
+                                          is_auth_request,
+                                          need_handle_sysvar,
+                                          src_ok,
+                                          resp_result,
                                           is_save_to_common_sys))) {
       LOG_WARN("fail to save changed session info", K(is_auth_request), K(ret));
     } else {
       // 3. rewrite ok packet
       OMPKOK des_ok;
+      char cap_buf[OB_MAX_UINT64_BUF_LEN];
       const ObMySQLCapabilityFlags &orig_cap = client_info.get_orig_capability_flags();
-      if (OB_FAIL(ObMysqlPacketRewriter::rewrite_ok_packet(src_ok, orig_cap, des_ok,
-          client_info.is_oracle_mode()))) {
+      
+      if (OB_FAIL(ObMysqlPacketRewriter::rewrite_ok_packet(src_ok, orig_cap, des_ok, client_info,
+                                                           cap_buf, OB_MAX_UINT64_BUF_LEN, is_auth_request))) {
         LOG_WARN("fail to rewrite ok packet", K(src_ok), K(ret));
       } else {
         LOG_DEBUG("rebuild_ok_packet succ", K(src_ok), "src_size", src_ok.get_serialize_size(),
                   K(des_ok), "dst_size", des_ok.get_serialize_size());
-
+          
         // 4. trim the orig ok packet
-        resp_result.rewritten_last_ok_pkt_len_ = des_ok.get_serialize_size()
-                                                 + MYSQL_NET_HEADER_LENGTH;
+        resp_result.rewritten_last_ok_pkt_len_ = des_ok.get_serialize_size() + MYSQL_NET_HEADER_LENGTH;
         ObMIOBuffer *writer = reader.writer();
         if (OB_ISNULL(writer)) {
           ret = OB_ERR_UNEXPECTED;
@@ -515,8 +527,8 @@ int ObProxySessionInfoHandler::rewrite_first_login_req(ObClientSessionInfo &clie
                                                        const ObAddr &client_addr,
                                                        const bool use_compress,
                                                        const bool use_ob_protocol_v2,
-                                                       const bool use_ssl)
-{
+                                                       const bool use_ssl,
+                                                       const bool enable_client_ip_checkout){
   int ret = OB_SUCCESS;
   // first login packet, which will be sent to observer at first auth
   // (include modified packet data and analyzed result, with -D database)
@@ -525,6 +537,7 @@ int ObProxySessionInfoHandler::rewrite_first_login_req(ObClientSessionInfo &clie
   param.use_compress_ = use_compress;
   param.use_ob_protocol_v2_ = use_ob_protocol_v2;
   param.use_ssl_ = use_ssl;
+  param.enable_client_ip_checkout_ = enable_client_ip_checkout;
   // in the first login packet the version is set to 0,
   // in the saved login packet the version is set to the global vars version
   // observer used this value to judge whether the connection is first server session
@@ -548,8 +561,8 @@ int ObProxySessionInfoHandler::rewrite_saved_login_req(ObClientSessionInfo &clie
                                                        const ObAddr &client_addr,
                                                        const bool use_compress,
                                                        const bool use_ob_protocol_v2,
-                                                       const bool use_ssl)
-{
+                                                       const bool use_ssl,
+                                                       const bool enable_client_ip_checkout){
   int ret = OB_SUCCESS;
   // saved login packet, which will be sent to observer later
   // (include modified packet data and analyzed result, without -D database)
@@ -558,6 +571,7 @@ int ObProxySessionInfoHandler::rewrite_saved_login_req(ObClientSessionInfo &clie
   param.use_compress_ = use_compress;
   param.use_ob_protocol_v2_ = use_ob_protocol_v2;
   param.use_ssl_ = use_ssl;
+  param.enable_client_ip_checkout_ = enable_client_ip_checkout;
   // in the first login packet the version is set to 0,
   // in the saved login packet the version is set to the global vars version
   // observer used this value to judge whether the connection is first server session
@@ -591,9 +605,9 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
   }
 
   if (param.use_ob_protocol_v2_) {
-    cap |= (OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_REROUTE);
+    cap |= (OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_NEW_EXTRA_INFO | OB_CAP_PROXY_REROUTE | OB_CAP_PROXY_SESSION_SYNC);
   } else {
-    cap &= ~(OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_REROUTE);
+    cap &= ~(OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_NEW_EXTRA_INFO | OB_CAP_PROXY_REROUTE | OB_CAP_PROXY_SESSION_SYNC);
   }
 
   param.cluster_name_ = cluster_name;
@@ -620,7 +634,10 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
     LOG_WARN("fail to rewrite_login_req", K(param), K(ret));
   } else if (OB_FAIL(ObProxySessionInfoHandler::rewrite_ssl_req(client_info))) {
     LOG_WARN("fail to rewrite_login_req", K(ret));
+  } else {
+    LOG_DEBUG("proxy rewrite common login req, key:__proxy_capability_flag", K(cap));
   }
+  
   return ret;
 }
 
@@ -689,30 +706,31 @@ inline int ObProxySessionInfoHandler::handle_global_variables_version_var(
   return ret;
 }
 
-int ObProxySessionInfoHandler::handle_capability_flag_var(
-    ObClientSessionInfo &client_info,
-    ObServerSessionInfo &server_info,
-    const ObString &value,
-    const bool is_auth_request,
-    bool &need_save)
+int ObProxySessionInfoHandler::handle_capability_flag_var(ObClientSessionInfo &client_info,
+                                                          ObServerSessionInfo &server_info,
+                                                          const ObString &value,
+                                                          const bool is_auth_request,
+                                                          bool &need_save)
 {
   int ret = OB_SUCCESS;
-
   need_save = true;
-  int64_t cap = 0;
-  if (OB_FAIL(get_int_value(value, cap))) {
+  int64_t orig_server_cap = 0;
+  
+  if (OB_FAIL(get_int_value(value, orig_server_cap))) {
     LOG_WARN("fail to get int from obstring", K(value), K(ret));
   } else {
-    uint64_t local_cap = (0 == client_info.get_ob_capability())
-                          ? OBPROXY_DEFAULT_CAPABILITY_FLAG
-                          : client_info.get_ob_capability();
-    uint64_t client_cap = (cap & local_cap);
-    uint64_t server_cap = (cap & OBPROXY_DEFAULT_CAPABILITY_FLAG);
+    uint64_t orig_client_cap = client_info.get_client_ob_capability();
+    uint64_t client_cap = orig_client_cap & OBPROXY_DEFAULT_CAPABILITY_FLAG;
+    uint64_t server_cap = orig_server_cap & OBPROXY_DEFAULT_CAPABILITY_FLAG;
 
-    client_info.set_ob_capability(client_cap);
-    server_info.set_ob_capability(server_cap);
-    LOG_INFO("succ to set ob_capability_flag", K(client_cap), K(server_cap), "orgin_cap", cap,
-             "support_checksum", server_info.is_checksum_supported(), K(is_auth_request));
+    server_info.set_server_ob_capability(server_cap);
+    client_info.set_client_ob_capability(client_cap);
+    client_info.set_server_ob_capability(server_cap);
+
+    LOG_INFO("succ to set ob_capability_flag", K(client_cap), K(server_cap), K(orig_client_cap), K(orig_server_cap),
+             "server_support_checksum", server_info.is_checksum_supported(), 
+             "server_support_ob_v2", server_info.is_ob_protocol_v2_supported(),
+             K(is_auth_request));
   }
   return ret;
 }
@@ -1362,6 +1380,23 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
     }
     LOG_DEBUG("assign_session_vars_version", K(client_val_hash), K(server_val_hash));
   }
+  return ret;
+}
+
+int ObProxySessionInfoHandler::save_changed_sess_info(ObClientSessionInfo& client_info,
+    ObServerSessionInfo& server_info, Ob20ExtraInfo& extra_info)
+{
+  int ret = OB_SUCCESS;
+  if (extra_info.exist_sess_info()) {
+    if (OB_FAIL(client_info.update_sess_sync_info(extra_info.get_sess_info()))) {
+      LOG_WARN("failed to update sess sync info", K(ret), K(extra_info));
+    }
+  }
+  if (OB_SUCC(ret)) {
+    int64_t c_sess_info_version = client_info.get_sess_info_version();
+    server_info.set_sess_info_version(c_sess_info_version);
+  }
+
   return ret;
 }
 

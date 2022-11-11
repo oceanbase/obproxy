@@ -26,6 +26,7 @@
 #include "utils/ob_layout.h"
 #include "utils/ob_proxy_blowfish.h"
 #include "obutils/ob_proxy_config_utils.h"
+#include "proxy/mysqllib/ob_proxy_auth_parser.h"
 #include "dbconfig/protobuf/dds-api/database.pb.h"
 #include "dbconfig/protobuf/dds-api/databaseAuthorities.pb.h"
 #include "dbconfig/protobuf/dds-api/databaseVariables.pb.h"
@@ -448,19 +449,25 @@ int ObProxyPbUtils::parse_shard_url(const std::string &shard_url, ObShardConnect
 
 void ObProxyPbUtils::parse_shard_auth_user(ObShardConnector &conn_info)
 {
-  const static char separator = ':';
-  const char *pos = NULL;
+  int ret = OB_SUCCESS;
+
+  bool is_standard_username = false;
+  char separator = '\0';
   ObString full_user_name = conn_info.full_username_.config_string_;
   ObString user;
   ObString tenant;
   ObString cluster;
-  pos = full_user_name.find(separator);
-  cluster = full_user_name.split_on(pos);
-  tenant = full_user_name.split_on(separator);
-  user = full_user_name;
-  conn_info.tenant_name_.assign_ptr(tenant.ptr(), tenant.length());
-  conn_info.cluster_name_.assign_ptr(cluster.ptr(), cluster.length());
-  conn_info.username_.assign_ptr(user.ptr(), user.length());
+  ObString cluster_id_str;
+
+  ObProxyAuthParser::analyze_user_name_attr(full_user_name, is_standard_username, separator);
+  if (OB_FAIL(ObProxyAuthParser::handle_full_user_name(full_user_name, separator, user, tenant,
+                                                       cluster, cluster_id_str))) {
+    LOG_WARN("fail to handle full user name", K(full_user_name), K(separator), K(ret));
+  } else {
+    conn_info.tenant_name_.assign_ptr(tenant.ptr(), tenant.length());
+    conn_info.cluster_name_.assign_ptr(cluster.ptr(), cluster.length());
+    conn_info.username_.assign_ptr(user.ptr(), user.length());
+  }
 }
 
 int ObProxyPbUtils::dump_tenant_info_to_file(ObDbConfigLogicTenant &tenant_info)

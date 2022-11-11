@@ -46,8 +46,6 @@ namespace omt
 struct SSLConfigInfo
 {
   SSLConfigInfo() { reset(); }
-  bool enable_client_ssl_;
-  bool enable_server_ssl_;
   bool is_key_info_valid_;
 
   void reset();
@@ -66,14 +64,12 @@ public:
   int set_ssl_config(const common::ObString &cluster_name, const common::ObString &tenant_name,
                      const common::ObString &name, const common::ObString &value);
   int delete_ssl_config(common::ObString &cluster_name, common::ObString &tenant_name);
-  bool is_ssl_supported(const common::ObString &cluster_name, const common::ObString &tenant_name, bool is_client);
   bool is_ssl_key_info_valid(const common::ObString &cluster_name, const common::ObString &tenant_name);
   void print_config();
 private:
   int backup_hash_map();
-  int alter_ssl_config(const common::ObString &key, const common::ObString &value);
   static int execute(void *arg);
-  static int commit(bool is_success);
+  static int commit(void* arg, bool is_success);
 
 private:
   typedef common::hash::ObHashMap<common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH>, SSLConfigInfo> SSLConfigHashMap;
@@ -86,7 +82,7 @@ private:
 DISALLOW_COPY_AND_ASSIGN(ObSSLConfigTableProcessor);
 };
 
-ObSSLConfigTableProcessor &get_global_ssl_config_table_processor();
+extern ObSSLConfigTableProcessor &get_global_ssl_config_table_processor();
 
 } // end of omt
 } // end of obproxy

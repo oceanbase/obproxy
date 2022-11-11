@@ -58,34 +58,94 @@ private:
 
 class ObProxyStmt {
 public:
-  ObProxyStmt() : stmt_type_(OBPROXY_T_INVALID), allocator_(NULL) {}
+  ObProxyStmt(common::ObIAllocator& allocator) : stmt_type_(OBPROXY_T_INVALID), allocator_(allocator) {}
   virtual ~ObProxyStmt() {}
   virtual int handle_parse_result(const ParseResult &parse_result) = 0;
   void set_stmt_type(ObProxyBasicStmtType stmt_type) { stmt_type_ = stmt_type; }
-  void set_allocator(common::ObIAllocator* allocator) { allocator_ = allocator; }
   void set_sql_string(const common::ObString& sql_string) { sql_string_ = sql_string; }
   ObProxyBasicStmtType get_stmt_type() { return stmt_type_; }
   virtual int to_sql_string(common::ObSqlString& sql_string) = 0;
 protected:
   ObProxyBasicStmtType stmt_type_;
-  common::ObIAllocator* allocator_;
+  common::ObIAllocator& allocator_;
   common::ObString sql_string_;
 };
 
 class ObProxyDMLStmt : public ObProxyStmt
 {
 public:
-  ObProxyDMLStmt(): limit_offset_(0), limit_size_(-1), limit_token_off_(-1), field_results_(NULL) {}
-  virtual ~ObProxyDMLStmt() {}
+  typedef common::hash::ObHashMap<common::ObString, opsql::ObProxyExpr *, common::hash::NoPthreadDefendMode> ExprMap;
+  typedef common::ObSEArray<ObProxyExprTablePos, 4> TablePosArray;
+
+public:
+  ObProxyDMLStmt(common::ObIAllocator& allocator);
+  virtual ~ObProxyDMLStmt();
+  int init();
+  virtual int handle_parse_result(const ParseResult &parse_result)
+  {
+    UNUSED(parse_result);
+    return common::OB_SUCCESS;
+  }
+  void set_table_name(const common::ObString& table_name) { table_name_ = table_name; }
+  void set_field_results(SqlFieldResult* real_field_results_ptr) { field_results_ = real_field_results_ptr; }
+
+  //if 'table_name_' is not set, 'table_name_' means the first table name in SQL and is converted to UPPER CASE
+  const common::ObString& get_table_name() const { return table_name_; }
+  SqlFieldResult& get_dml_field_result() { return dml_field_results_; }
+
+  bool has_unsupport_expr_type() const { return has_unsupport_expr_type_; }
+  ExprMap& get_table_exprs_map() { return table_exprs_map_; }
+  TablePosArray& get_table_pos_array() { return table_pos_array_; }
+
 protected:
+  ObProxyExprType get_expr_type_by_node_type(const ObItemType& item_type);
+  int get_expr_by_type(ObProxyExpr* &expr, ObProxyExprType type);
+
+  //for from
+  int handle_from_list(ParseNode* node);
+  virtual int handle_table_node_to_expr(ParseNode* node);
+  int get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &expr_table);
+  int handle_table_and_db_node(ParseNode* node, ObProxyExprTable* &expr_table);
+  //for from in delete and update
+  int handle_table_references(ParseNode *node);
+
+  //for where
+  int handle_where_clause(ParseNode* node);
+  
+  //for set
+  int handle_assign_list(ParseNode *node);
+
+  //for column
+  int handle_column_and_value(ParseNode* node);
+  int handle_varchar_node_in_column_value(ParseNode* node, SqlField& sql_field);
+  int handle_expr_list_node_in_column_value(ParseNode* node, SqlField& sql_field);
+  int handle_column_ref_in_list(ParseNode *node);
+  virtual int column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObProxyExprTable* &expr_table);
+
   int condition_exprs_to_sql_string(common::ObSqlString& sql_string);
   int limit_to_sql_string(common::ObSqlString& sql_string);
 public:
   int limit_offset_;
   int limit_size_;
   int64_t limit_token_off_;
-  SqlFieldResult* field_results_; // pointer to parseResult
+
+  //pointer to parseResult, default point to 'dml_field_results_'
+  //if 'field_results_' is not set, ObProxyDMLStmt save the parseResult in 'dml_field_results_'
+  //if 'field_results_' is set by caller, caller need save the parseResult
+  SqlFieldResult* field_results_; 
+  SqlFieldResult dml_field_results_;
+
   common::ObSEArray<common::ObString,4> comments_;
+  // Store dml related information
+  common::ObSEArray<common::ObString, 4> column_name_array_;
+  common::ObString table_name_;
+  
+protected:
+  bool is_inited_;
+  bool has_unsupport_expr_type_;
+  ExprMap table_exprs_map_;
+  ExprMap alias_table_map_;
+  common::ObSEArray<ObProxyExprTablePos, 4> table_pos_array_;
 };
 
 enum SortListType {
@@ -98,32 +158,20 @@ enum SortListType {
 class ObProxySelectStmt : public ObProxyDMLStmt
 {
 public:
-  ObProxySelectStmt();
+  ObProxySelectStmt(common::ObIAllocator& allocator);
   virtual ~ObProxySelectStmt();
-  int init();
   virtual int handle_parse_result(const ParseResult &parse_result);
   int handle_project_list(ParseNode* node);
   int handle_project_string(ParseNode* node);
-  int handle_from_list(ParseNode* node);
   int handle_hint_clause(ParseNode* node);
-  int handle_where_clause(ParseNode* node);
   int handle_groupby_clause(ParseNode* node);
   int handle_orderby_clause(ParseNode* node);
   int handle_limit_clause(ParseNode* node);
+  int handle_union_clause(ParseNode* node);
   int handle_comment_list(const ParseResult &parse_result);
   virtual int to_sql_string(common::ObSqlString& sql_string);
   bool has_for_update() const { return has_for_update_; }
-  bool has_unsupport_expr_type() const { return has_unsupport_expr_type_; }
-  void set_table_name(const common::ObString& table_name) { table_name_ = table_name; }
   int64_t get_from_token_off() { return from_token_off_; }
-
-public:
-  typedef common::hash::ObHashMap<common::ObString, opsql::ObProxyExpr *> ExprMap;
-  typedef common::ObSEArray<ObProxyExprTablePos, 4> TablePosArray;
-
-public:
-  ExprMap& get_table_exprs_map() { return table_exprs_map_; }
-  TablePosArray& get_table_pos_array() { return table_pos_array_; }
 
 private:
   int project_string_to_expr(ParseNode* node, ObProxyExpr* &expr);
@@ -141,24 +189,17 @@ private:
   int column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObProxyExprTable* &expr_table);
   int get_const_expr(ParseNode* node, ObProxyExpr* &expr);
   int get_sharding_const_expr(ParseNode* node, ObProxyExpr* &expr);
-  int get_expr_by_type(ObProxyExpr* &expr, ObProxyExprType type);
 
-  ObProxyExprType get_expr_type_by_node_type(const ObItemType& item_type);
-
-  int get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &expr_table);
   int handle_table_node_to_expr(ParseNode* node);
-  int handle_table_and_db_node(ParseNode* node, ObProxyExprTable* &expr_table);
   int handle_table_and_db_in_hint(ParseNode* node);
-  //for where
-  int handle_where_node(ParseNode* node);
-  int handle_where_expr_list_node(ParseNode* node, SqlField& sql_field);
-  int handle_varchar_node_in_where_condition(ParseNode* node, SqlField& sql_field);
+
   //for group by
   int handle_with_rollup_in_groupby(ParseNode* node);
   int handle_sort_list_node(ParseNode* node, const SortListType& sort_list_type);
   int handle_sort_key_node(ParseNode* node, ObProxyExpr* &expr, const SortListType& sort_list_type);
 
 private:
+  int do_handle_parse_result(ParseNode* node);
   int comments_to_sql_string(common::ObSqlString& sql_string);
   int hint_exprs_to_sql_string(common::ObSqlString& sql_string);
   int select_exprs_to_sql_string(common::ObSqlString& sql_string);
@@ -172,16 +213,65 @@ public:
   common::ObSEArray<opsql::ObProxyGroupItem*, 4> group_by_exprs_; //select groupby expression
   common::ObSEArray<opsql::ObProxyOrderItem*, 4> order_by_exprs_;
 private:
-  common::ObString table_name_;
-  bool is_inited_;
   bool has_rollup_;
   bool has_for_update_;
-  bool has_unsupport_expr_type_;
   int64_t from_token_off_;
-  ExprMap table_exprs_map_;
-  ExprMap alias_table_map_;
-  common::ObSEArray<ObProxyExprTablePos, 4> table_pos_array_;
 };
+
+class ObProxyInsertStmt : public ObProxyDMLStmt
+{
+public:
+  ObProxyInsertStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
+  ~ObProxyInsertStmt() {}
+  int handle_parse_result(const ParseResult &parse_result);
+  int to_sql_string(common::ObSqlString& sql_string)
+  {
+    UNUSED(sql_string);
+    return common::OB_SUCCESS;
+  }
+private:
+  int handle_single_table_insert(ParseNode *node);
+  int handle_insert_into(ParseNode *node);
+  int handle_value_list(ParseNode *node);
+  int handle_column_list(ParseNode *node);
+  int handle_value_vector(ParseNode *node);
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObProxyInsertStmt);
+};
+
+class ObProxyDeleteStmt : public ObProxyDMLStmt
+{
+public:
+  ObProxyDeleteStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
+  ~ObProxyDeleteStmt() {}
+  int handle_parse_result(const ParseResult &parse_result);
+  int to_sql_string(common::ObSqlString& sql_string)
+  {
+    UNUSED(sql_string);
+    return common::OB_SUCCESS;
+  }
+private:
+  int handle_delete_table_node(ParseNode *node);
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObProxyDeleteStmt);
+};
+
+
+class ObProxyUpdateStmt : public ObProxyDMLStmt
+{
+public:
+  ObProxyUpdateStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
+  ~ObProxyUpdateStmt() {}
+  int handle_parse_result(const ParseResult &parse_result);
+  int to_sql_string(common::ObSqlString& sql_string)
+  {
+    UNUSED(sql_string);
+    return common::OB_SUCCESS;
+  }
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObProxyUpdateStmt);
+};
+
 } // end of namespace obutils
 } // end of namespace obproxy
 } // end of namespace oceanbase

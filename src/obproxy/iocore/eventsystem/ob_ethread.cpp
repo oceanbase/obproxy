@@ -65,12 +65,14 @@ ObEThread::ObEThread()
       cache_cleaner_(NULL),
       sql_table_map_(NULL),
       ps_entry_cache_(NULL),
+      text_ps_entry_cache_(NULL),
       random_seed_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(REGULAR),
       pending_event_(NULL),
-      thread_prometheus_(NULL)
+      thread_prometheus_(NULL),
+      use_status_(false)
 {
 #if OB_HAVE_EVENTFD
   evfd_ = -1;
@@ -101,12 +103,14 @@ ObEThread::ObEThread(const ObThreadType att, const int64_t anid)
       cache_cleaner_(NULL),
       sql_table_map_(NULL),
       ps_entry_cache_(NULL),
+      text_ps_entry_cache_(NULL),
       random_seed_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(att),
       pending_event_(NULL),
-      thread_prometheus_(NULL)
+      thread_prometheus_(NULL),
+      use_status_(false)
 {
 #if OB_HAVE_EVENTFD
   evfd_ = -1;
@@ -137,12 +141,14 @@ ObEThread::ObEThread(const ObThreadType att, ObEvent *e)
       cache_cleaner_(NULL),
       sql_table_map_(NULL),
       ps_entry_cache_(NULL),
+      text_ps_entry_cache_(NULL),
       random_seed_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(att),
       pending_event_(e),
-      thread_prometheus_(NULL)
+      thread_prometheus_(NULL),
+      use_status_(false)
 {
 #if OB_HAVE_EVENTFD
   evfd_ = -1;
@@ -352,6 +358,7 @@ inline void ObEThread::dequeue_local_event(Que(ObEvent, link_) &negative_queue)
 // If successful, call the continuation, otherwise put the event back into the queue.
 void ObEThread::execute()
 {
+  thread_id_ = GETTID();
   switch (tt_) {
     case REGULAR: {
       Que(ObEvent, link_) negative_queue;

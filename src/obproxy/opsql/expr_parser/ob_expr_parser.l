@@ -43,6 +43,8 @@ do {\
 #define RETURN_NAME_OB() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NAME_OB; }
 
+#define RETURN_ROW_ID() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return ROW_ID; }
 %}
 
 %x                      in_c_comment
@@ -101,7 +103,7 @@ FOR    { return END_WHERE; }
 LIMIT  { return END_WHERE; }
 GROUP  { return END_WHERE; }
 HAVING { return END_WHERE; }
-ROWID  { return ROWID; }
+ROWID  { RETURN_ROW_ID(); }
 
 JOIN      { return JOIN; }
 ON        { return ON; }

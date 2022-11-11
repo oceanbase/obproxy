@@ -36,7 +36,8 @@ ObPartDescKey::ObPartDescKey() : part_num_(0)
 int ObPartDescKey::get_part(ObNewRange &range,
                             ObIAllocator &allocator,
                             ObIArray<int64_t> &part_ids,
-                            ObPartDescCtx &ctx)
+                            ObPartDescCtx &ctx,
+                            ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
 
@@ -65,8 +66,10 @@ int ObPartDescKey::get_part(ObNewRange &range,
         COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj), K(obj_type_));
       } else {
         int64_t result_num = 0;
-        if (share::schema::PARTITION_FUNC_TYPE_KEY_V3 == part_func_type_
-            || share::schema::PARTITION_FUNC_TYPE_KEY_IMPLICIT_V2 == part_func_type_) {
+        if ((IS_CLUSTER_VERSION_LESS_THAN_V4(ctx.get_cluster_version())
+            && (share::schema::PARTITION_FUNC_TYPE_KEY_V3 == part_func_type_
+            || share::schema::PARTITION_FUNC_TYPE_KEY_IMPLICIT_V2 == part_func_type_))
+            || (!IS_CLUSTER_VERSION_LESS_THAN_V4(ctx.get_cluster_version()))) {
           result_num = static_cast<int64_t>(src_obj.hash_murmur());
         } else {
           result_num = static_cast<int64_t>(src_obj.hash());
@@ -80,6 +83,8 @@ int ObPartDescKey::get_part(ObNewRange &range,
         part_id = part_space_ << OB_PART_IDS_BITNUM | part_id;
         if (OB_FAIL(part_ids.push_back(part_id))) {
           COMMON_LOG(WARN, "fail to push part_id", K(ret));
+        } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+          COMMON_LOG(WARN, "fail to push tablet id", K(ret));
         }
       }
     }
@@ -88,7 +93,7 @@ int ObPartDescKey::get_part(ObNewRange &range,
   return ret;
 }
 
-int ObPartDescKey::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+int ObPartDescKey::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   int64_t part_idx = num % part_num_;
@@ -99,10 +104,12 @@ int ObPartDescKey::get_part_by_num(const int64_t num, common::ObIArray<int64_t> 
   part_id = part_space_ << OB_PART_IDS_BITNUM | part_id;
   if (OB_FAIL(part_ids.push_back(part_id))) {
     COMMON_LOG(WARN, "fail to push part_id", K(ret));
+  } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+    COMMON_LOG(WARN, "fail to push tablet id", K(ret));
   }
   return ret;
 }
 
-                            
+
 } // end of common
 } // end of oceanbase

@@ -29,8 +29,7 @@ namespace proxy
 class ObShowSMHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowSMHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                  const ObInternalCmdInfo &info);
+  ObShowSMHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowSMHandler() { got_id_set_.destroy(); }
   int dump_smlist();
   int init_hash_set(); //now only show smlist need init

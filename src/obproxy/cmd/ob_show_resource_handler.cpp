@@ -66,8 +66,7 @@ const ObProxyColumnSchema RESOURCE_COLUMN_ARRAY[OB_CR_MAX_RESOURCE_COLUMN_ID] = 
   ObProxyColumnSchema::make_schema(OB_CR_LAST_FETCH_IDC_LIST_TIME_STR, "last_fetch_idc_list_time", obmysql::OB_MYSQL_TYPE_VARCHAR),
 };
 
-ObShowResourceHandler::ObShowResourceHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                             const ObInternalCmdInfo &info)
+ObShowResourceHandler::ObShowResourceHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info)
 {
   SET_HANDLER(&ObShowResourceHandler::handle_show_resource);

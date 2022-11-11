@@ -49,6 +49,8 @@ enum
   OB_CC_ALIVE_LAST_FAIL_TIME,
   OB_CC_ALIVE_FAILURE_EVENTS,
   OB_CC_REF_COUNT,
+  OB_CC_DETECT_CONGESTED,
+  OB_CC_LAST_DETECT_CONGESTED,
   OB_CC_MAX_CONGESTION_COLUMN_ID,
 };
 
@@ -71,11 +73,12 @@ const ObProxyColumnSchema CONGESTION_COLUMN_ARRAY[OB_CC_MAX_CONGESTION_COLUMN_ID
     ObProxyColumnSchema::make_schema(OB_CC_ALIVE_LAST_FAIL_TIME,  "alive_last_fail_time", obmysql::OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_CC_ALIVE_FAILURE_EVENTS,  "alive_failure_events", obmysql::OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_CC_REF_COUNT,             "ref_count",            obmysql::OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_CC_DETECT_CONGESTED,      "detect_congested",     obmysql::OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_CC_LAST_DETECT_CONGESTED, "last_detect_congested",obmysql::OB_MYSQL_TYPE_VARCHAR),
 };
 
 
-ObShowCongestionHandler::ObShowCongestionHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                                 const ObInternalCmdInfo &info)
+ObShowCongestionHandler::ObShowCongestionHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info),
     sub_type_(info.get_sub_cmd_type()), idx_(0), list_bucket_(0)
 {
@@ -234,6 +237,7 @@ int ObShowCongestionHandler::dump_item(const ObCongestionEntry *entry, const ObS
   int ret = OB_SUCCESS;
   char alive_timebuf[64];
   char dead_timebuf[64];
+  char detect_timebuf[64];
   char conn_last_fail[64];
   char alive_last_fail[64];
   ip_port_text_buffer server_ip;
@@ -297,8 +301,7 @@ int ObShowCongestionHandler::dump_item(const ObCongestionEntry *entry, const ObS
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= sizeof(dead_timebuf))) {
         ret = OB_BUF_NOT_ENOUGH;
-        WARN_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", sizeof(dead_timebuf),
-                  K(dead_timebuf), K(ret));
+        WARN_ICMD("timebuf is not enough", K(strftime_len), K(dead_timebuf), K(ret));
       } else {
         cells[OB_CC_LAST_DEAD_CONGESTED].set_varchar(dead_timebuf);
       }
@@ -323,8 +326,7 @@ int ObShowCongestionHandler::dump_item(const ObCongestionEntry *entry, const ObS
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= sizeof(conn_last_fail))) {
         ret = OB_BUF_NOT_ENOUGH;
-        WARN_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", sizeof(conn_last_fail),
-                  K(conn_last_fail), K(ret));
+        WARN_ICMD("timebuf is not enough", K(strftime_len), K(conn_last_fail), K(ret));
       } else {
         cells[OB_CC_CONN_LAST_FAIL_TIME].set_varchar(conn_last_fail);
       }
@@ -348,10 +350,33 @@ int ObShowCongestionHandler::dump_item(const ObCongestionEntry *entry, const ObS
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= sizeof(alive_last_fail))) {
         ret = OB_BUF_NOT_ENOUGH;
-        WARN_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", sizeof(alive_last_fail),
-                  K(alive_last_fail), K(ret));
+        WARN_ICMD("timebuf is not enough", K(strftime_len), K(ret));
       } else {
         cells[OB_CC_ALIVE_LAST_FAIL_TIME].set_varchar(alive_last_fail);
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    cells[OB_CC_DETECT_CONGESTED].set_int(entry->detect_congested_);
+    if (0 != entry->last_detect_congested_) {
+      t = entry->last_detect_congested_;
+      if (OB_ISNULL(localtime_r(&t, &struct_tm))) {
+        ret = OB_ERR_UNEXPECTED;
+        WARN_ICMD("fail to converts the calendar time timep to broken-time representation", K(t), K(ret));
+      } else {
+        strftime_len = strftime(detect_timebuf, sizeof(detect_timebuf), "%Y-%m-%d %H:%M:%S", &struct_tm);
+      }
+    } else {
+      strftime_len = snprintf(detect_timebuf, sizeof(detect_timebuf), "%ld", entry->last_detect_congested_);
+    }
+
+    if (OB_SUCC(ret)) {
+      if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= sizeof(detect_timebuf))) {
+        ret = OB_BUF_NOT_ENOUGH;
+        WARN_ICMD("timebuf is not enough", K(strftime_len), K(detect_timebuf), K(ret));
+      } else {
+        cells[OB_CC_LAST_DETECT_CONGESTED].set_varchar(detect_timebuf);
       }
     }
   }

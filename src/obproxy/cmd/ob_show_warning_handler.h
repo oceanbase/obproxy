@@ -136,8 +136,7 @@ struct ObShowWaringParam
 class ObShowWarningHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowWarningHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                       const ObInternalCmdInfo &info);
+  ObShowWarningHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowWarningHandler() { }
 
   int handle_show_warning(int event, event::ObEvent *e);

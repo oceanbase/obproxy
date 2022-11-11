@@ -14,11 +14,14 @@
 
 #include "ob_mysql_packet_util.h"
 #include "common/obsm_row.h"
+#include "common/obsm_utils.h"
 #include "rpc/obmysql/packet/ompk_eof.h"
 #include "rpc/obmysql/packet/ompk_ok.h"
 #include "rpc/obmysql/packet/ompk_error.h"
 #include "rpc/obmysql/packet/ompk_resheader.h"
 #include "packet/ob_mysql_packet_writer.h"
+#include "obproxy/engine/ob_proxy_operator_result.h"
+#include "obproxy/iocore/eventsystem/ob_buf_allocator.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -76,7 +79,8 @@ int ObMysqlPacketUtil::encode_row_packet(ObMIOBuffer &write_buf,
 {
   int ret = OB_SUCCESS;
 
-  OMPKRow row_packet(ObSMRow(TEXT, row, NULL, fields));
+  ObSMRow sm_row(TEXT, row, NULL, fields);
+  OMPKRow row_packet(sm_row);
   row_packet.set_seq(seq++);
 
   if (OB_FAIL(ObMysqlPacketWriter::write_row_packet(write_buf, row_packet))) {
@@ -104,14 +108,106 @@ int ObMysqlPacketUtil::encode_eof_packet(ObMIOBuffer &write_buf,
   return ret;
 }
 
-int ObMysqlPacketUtil::encode_err_packet_buf(ObMIOBuffer &write_buf, uint8_t &seq,
-                                             const int errcode, const char *msg_buf)
+int ObMysqlPacketUtil::encode_executor_response_packet(ObMIOBuffer *write_buf, uint8_t &seq,
+                                                       engine::ObProxyResultResp *result_resp)
 {
-  return encode_err_packet_buf(write_buf, seq, errcode, ObString::make_string(msg_buf));
+  int ret = OB_SUCCESS;
+
+  int64_t column_count = result_resp->get_column_count();
+  ObSEArray<ObMySQLField, 1, common::ObIAllocator&> *fields = NULL;
+  ObSEArray<ObField, 4> ob_fields;
+
+  // header , cols , first eof
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(result_resp->get_fields(fields))) {
+      LOG_WARN("faild to push field", K(fields), K(ret));
+    } else if (OB_ISNULL(fields)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fields should not be null", K(ret));
+    } else if (OB_UNLIKELY(fields->count() != column_count)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fields count should equal column_count", K(column_count), "fileds count", fields->count(), K(ret));
+    } else if (OB_FAIL(ObMysqlPacketUtil::encode_header(*write_buf, seq, *fields))) {
+      LOG_WARN("faild to encode header", K(fields), K(seq), K(ret));
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && i < column_count; i++) {
+        ObMySQLField &mysql_field = fields->at(i);
+        ObField ob_field;
+        if (OB_FAIL(ObSMUtils::to_ob_field(mysql_field, ob_field))) {
+          LOG_WARN("faild to ob field", K(mysql_field), K(ret));
+        } else if (OB_FAIL(ob_fields.push_back(ob_field))) {
+          LOG_WARN("faild to push ob field", K(ob_field), K(ret));
+        }
+      }
+    }
+  }
+
+  // rows
+  if (OB_SUCC(ret)) {
+    ObObj *objs = NULL;
+    int64_t buf_len = sizeof(ObObj) * column_count;
+
+    if (OB_ISNULL(objs = static_cast<ObObj *>(op_fixed_mem_alloc(buf_len)))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("faild to alloc obj array", K(column_count), K(ret));
+    } else {
+      ObNewRow row;
+      //ObSEArray<common::ObObj, 4> *row_array;
+      ObSEArray<common::ObObj*, 4, common::ObIAllocator&> *row_array;
+      while ((OB_SUCC(ret)) && (OB_SUCC(result_resp->next(row_array)))) {
+        if (OB_ISNULL(row_array)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("row_array should not be null", K(ret));
+        } else if (OB_UNLIKELY(row_array->count() != column_count)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("row_array count should equal column_count", K(column_count),
+                   "row_array count", row_array->count(), K(ret));
+        }
+
+        for (int64_t i = 0; OB_SUCC(ret) && i < column_count; i++) {
+          objs[i] = *(row_array->at(i));
+        }
+
+        if (OB_SUCC(ret)) {
+          row.cells_ = objs;
+          row.count_ = column_count;
+          if (OB_FAIL(ObMysqlPacketUtil::encode_row_packet(*write_buf, seq, row, &ob_fields))) {
+            LOG_WARN("faild to encode row", K(seq), K(row), K(ret));
+          } else {
+            row.reset();
+            row_array = NULL;
+          }
+        }
+      }
+
+      if (OB_ITER_END == ret) {
+        ret = OB_SUCCESS;
+      }
+    }
+
+    if (OB_NOT_NULL(objs)) {
+      op_fixed_mem_free(objs, buf_len);
+      objs = NULL;
+    }
+  }
+
+  // second eof
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(ObMysqlPacketUtil::encode_eof_packet(*write_buf, seq))) {
+      LOG_WARN("faild to encode row", K(seq), K(ret));
+    }
+  }
+
+  return ret;
 }
 
-int ObMysqlPacketUtil::encode_err_packet_buf(ObMIOBuffer &write_buf, uint8_t &seq,
-                                             const int errcode, ObString msg_buf)
+int ObMysqlPacketUtil::encode_err_packet(ObMIOBuffer &write_buf, uint8_t &seq, const int errcode, const char *msg_buf)
+{
+  return encode_err_packet(write_buf, seq, errcode, ObString::make_string(msg_buf));
+}
+
+int ObMysqlPacketUtil::encode_err_packet(ObMIOBuffer &write_buf, uint8_t &seq, const int errcode,
+                                         const ObString &msg_buf)
 {
   int ret = OB_SUCCESS;
 
@@ -129,36 +225,10 @@ int ObMysqlPacketUtil::encode_err_packet_buf(ObMIOBuffer &write_buf, uint8_t &se
   return ret;
 }
 
-int ObMysqlPacketUtil::encode_err_packet(ObMIOBuffer &write_buf, uint8_t &seq,
-                                         int errcode)
-{
-  int ret = OB_SUCCESS;
-  const int32_t MAX_MSG_BUF_SIZE = 256;
-  if (OB_SUCCESS == errcode) {
-    BACKTRACE(ERROR, (OB_SUCCESS == errcode), "BUG send error packet but err code is 0");
-    errcode = OB_ERR_UNEXPECTED;
-  }
-  char msg_buf[MAX_MSG_BUF_SIZE];
-  const char *errmsg = ob_strerror(errcode);
-  int32_t length = 0;
-  if (OB_ISNULL(errmsg)) {
-    length = snprintf(msg_buf, sizeof(msg_buf), "Unknown user error");
-  } else {
-    length = snprintf(msg_buf, sizeof(msg_buf), errmsg);
-  }
-  if (length < 0 || length >= MAX_MSG_BUF_SIZE) {
-    ret = OB_BUF_NOT_ENOUGH;
-    PROXY_LOG(WARN, "msg_buf is not enough", K(length), K(errmsg), K(ret));
-  } else {
-    ret = encode_err_packet_buf(write_buf, seq, errcode, msg_buf);
-  }
-  return ret;
-}
-
 int ObMysqlPacketUtil::encode_ok_packet(ObMIOBuffer &write_buf, uint8_t &seq,
                                         const int64_t affected_rows,
                                         const ObMySQLCapabilityFlags &capability,
-                                        uint16_t status_flag /* 0 */)
+                                        const uint16_t status_flag /* 0 */)
 {
   int ret = OB_SUCCESS;
 

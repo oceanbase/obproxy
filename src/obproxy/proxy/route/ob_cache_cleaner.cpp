@@ -818,6 +818,29 @@ int ObCacheCleaner::schedule_cache_cleaner()
 
   ObEventThreadType etype = ET_NET;
   int64_t net_thread_count = g_event_processor.thread_count_for_type_[etype];
+
+  const int64_t mt_part_num = MT_HASHTABLE_PARTITIONS;
+  if (net_thread_count > 0 && mt_part_num > 0) {
+    for (int64_t i = 0; i < net_thread_count; ++i) {
+      // calc range
+      if (OB_FAIL(schedule_one_cache_cleaner(i))) {
+        LOG_WARN("fail to init cleaner", K(i), K(ret));
+      }
+    }
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("thread_num or mt_part_num can not be NULL", K(mt_part_num), K(net_thread_count), K(ret));
+  }
+
+  return ret;
+}
+
+int ObCacheCleaner::schedule_one_cache_cleaner(int64_t index)
+{
+  int ret = OB_SUCCESS;
+
+  ObEventThreadType etype = ET_NET;
+  int64_t net_thread_count = g_event_processor.thread_count_for_type_[etype];
   ObEThread **netthreads = g_event_processor.event_thread_[etype];
   ObEThread *target_ethread = NULL;
   int64_t clean_interval = get_global_proxy_config().cache_cleaner_clean_interval;
@@ -833,23 +856,23 @@ int ObCacheCleaner::schedule_cache_cleaner()
   if (net_thread_count > 0 && mt_part_num > 0) {
     int64_t part_num_per_thread = mt_part_num / net_thread_count;
     int64_t remain_num = mt_part_num % net_thread_count;
-    for (int64_t i = 0; i < net_thread_count; ++i) {
+    //for (int64_t i = 0; i < net_thread_count; ++i) {
       // calc range
       range.reset();
 
       if (part_num_per_thread > 0) { // thread_num <= mt_part_num
-        if (i < remain_num) {
-          range.start_idx_ = (part_num_per_thread + 1) * i;
-          range.end_idx_ = ((part_num_per_thread + 1) * (i + 1) - 1);
+        if (index < remain_num) {
+          range.start_idx_ = (part_num_per_thread + 1) * index;
+          range.end_idx_ = ((part_num_per_thread + 1) * (index + 1) - 1);
         } else {
           int64_t base = (part_num_per_thread + 1) * remain_num;
-          range.start_idx_ = base + (part_num_per_thread) * (i - remain_num);
-          range.end_idx_ = base + ((part_num_per_thread) * (i - remain_num + 1) - 1);
+          range.start_idx_ = base + (part_num_per_thread) * (index - remain_num);
+          range.end_idx_ = base + ((part_num_per_thread) * (index - remain_num + 1) - 1);
         }
       } else if (0 == part_num_per_thread) { // thread_num > mt_part_num
-        if (i < mt_part_num) {
-          range.start_idx_ = i;
-          range.end_idx_ = i;
+        if (index < mt_part_num) {
+          range.start_idx_ = index;
+          range.end_idx_ = index;
         }
       }
 
@@ -858,19 +881,19 @@ int ObCacheCleaner::schedule_cache_cleaner()
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WARN("fail to alloc cleaner", K(ret));
       } else if (OB_FAIL(cleaner->init(table_cache, partition_cache, routine_cache, sql_table_cache, range,
-              net_thread_count, i, clean_interval))) {
+              net_thread_count, index, clean_interval))) {
         LOG_WARN("fail to init cleaner", K(range), K(ret));
-      } else if (OB_ISNULL(target_ethread = netthreads[i])) {
+      } else if (OB_ISNULL(target_ethread = netthreads[index])) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("ethread can not be NULL", K(target_ethread), K(ret));
       } else if (OB_FAIL(cleaner->start_clean_cache(*target_ethread))) {
         LOG_WARN("fail to start clean cache", K(ret));
       } else {
         target_ethread->cache_cleaner_ = cleaner;
-        LOG_INFO("succ schedule cache cleaners", K(target_ethread), K(range), K(i),
+        LOG_INFO("succ schedule cache cleaners", K(target_ethread), K(range), K(index),
                  K(part_num_per_thread), K(remain_num), K(net_thread_count), K(ret));
       }
-    }
+    //}
   } else {
     ret = OB_ERR_UNEXPECTED;
     LOG_ERROR("thread_num or mt_part_num can not be NULL", K(mt_part_num), K(net_thread_count), K(ret));
@@ -878,6 +901,7 @@ int ObCacheCleaner::schedule_cache_cleaner()
 
   return ret;
 }
+
 
 struct ObClientSessionCloseHandler
 {
@@ -1213,7 +1237,7 @@ int ObCacheCleaner::update_clean_interval()
   for (int64_t i = 0; (i < thread_count) && OB_SUCC(ret); ++i) {
     if (OB_ISNULL(ethread = threads[i]) || OB_ISNULL(cleaner = threads[i]->cache_cleaner_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("ethread and cache cleaner can not be NULL", K(ethread), K(cleaner), K(ret));
+      LOG_WARN("ethread and cache cleaner can not be NULL", K(i), K(thread_count), K(ethread), K(cleaner), K(ret));
     } else if (OB_FAIL(cleaner->set_clean_interval(interval_us))) {
       LOG_WARN("fail to set clean interval", K(interval_us), K(ret));
     } else if (OB_ISNULL(ethread->schedule_imm(cleaner))) {

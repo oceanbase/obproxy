@@ -21,6 +21,8 @@
 #include "lib/allocator/page_arena.h"
 #include "lib/random/ob_random.h"
 
+
+
 namespace oceanbase
 {
 namespace obproxy
@@ -30,6 +32,7 @@ namespace obutils
 class ObServerStateSimpleInfo;
 class ObSafeSnapshotManager;
 class ObProxyNameString;
+class ObClusterResource;
 }
 namespace proxy
 {
@@ -130,8 +133,8 @@ class ObLDCLocation
 {
 public:
   ObLDCLocation()
-    : item_array_(NULL), item_count_(0), site_start_index_array_(),
-      pl_(NULL), ts_(NULL), safe_snapshot_mananger_(NULL),
+    : item_array_(NULL), item_count_(0), primary_zone_item_array_(NULL), primary_zone_item_count_(0),
+      site_start_index_array_(), pl_(NULL), ts_(NULL), safe_snapshot_mananger_(NULL),
       readonly_exist_status_(READONLY_ZONE_UNKNOWN), use_ldc_(false), idc_name_(), idc_name_buf_(),
       random_()
   {}
@@ -161,12 +164,20 @@ public:
   static common::ObString get_zone_exist_status_string(const ObReadOnlyZoneExistStatus status);
 
   bool is_empty() const;
-  int64_t count() const { return (is_empty() ? 0 : item_count_); }
+  int64_t count() const { return (is_empty() ? 0 : item_count_)
+                                 + (is_primary_zone_empty() ? 0 : primary_zone_item_count_); }
   void reset_item_status();
   void reset_item_array();
   void reset();
   const ObLDCItem *get_item_array() const { return item_array_; }
   ObLDCItem *get_item_array() { return item_array_; }
+  
+  bool is_primary_zone_empty() const { return (NULL == primary_zone_item_array_ || primary_zone_item_count_ <= 0); }
+  int64_t primary_zone_count() const { return ((is_primary_zone_empty()) ? 0 : primary_zone_item_count_); }
+
+  const ObLDCItem *get_primary_zone_item_array() const { return primary_zone_item_array_; }
+  ObLDCItem *get_primary_zone_item_array() { return primary_zone_item_array_; }
+  
   const int64_t *get_site_start_index_array() const { return site_start_index_array_; }
   int64_t get_other_region_site_start_index() const { return site_start_index_array_[OTHER_REGION]; }
   bool is_ldc_used() const { return use_ldc_ && !idc_name_.empty(); }
@@ -208,9 +219,12 @@ public:
                                        const bool is_only_readwrite_zone,
                                        const bool need_use_dup_replica,
                                        const bool need_skip_leader_item,
+                                       const bool is_random_routing_mode,
                                        const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                        const common::ObIArray<common::ObString> &region_names,
-                                       const common::ObString &proxy_primary_zone_name);
+                                       const common::ObString &proxy_primary_zone_name,
+                                       const common::ObString &tenant_name,
+                                       obutils::ObClusterResource *cluster_resource);
   static int fill_weak_read_location(const ObProxyPartitionLocation *pl,
                                      ObLDCLocation &dummy_ldc,
                                      ObLDCLocation &ldc_location,
@@ -228,7 +242,8 @@ public:
                                  const common::ObString &proxy_primary_zone_name);
   int set_ldc_location(const ObProxyPartitionLocation *pl,
                        const ObLDCLocation &dummy_ldc,
-                       const common::ObIArray<ObLDCItem> &tmp_item_array);
+                       const common::ObIArray<ObLDCItem> &tmp_item_array,
+                       const common::ObIArray<ObLDCItem> &tmp_pz_item_array);
 
   void set_safe_snapshot_manager(const obutils::ObSafeSnapshotManager *safe_snapshot_mananger)
   {
@@ -263,9 +278,30 @@ private:
 
   static int add_unique_region_name(const common::ObString &region_name,
                                     common::ObIArray<common::ObString> &region_names);
+  typedef common::ObSEArray<ObLDCItem, OB_MAX_LDC_ITEM_COUNT> LdcItemArrayType;
+  static int fill_primary_zone_item_array(common::ModulePageAllocator *allocator,
+                                          obutils::ObClusterResource *cluster_resource,
+                                          const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
+                                          const ObString &tenant_name,
+                                          ObLDCLocation &dummy_ldc,
+                                          LdcItemArrayType &tmp_pz_item_array);
+  static int fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
+                                     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
+                                     const common::ObIArray<ObString> &region_names,
+                                     const ObString &proxy_primary_zone_name,
+                                     const bool need_skip_leader_item,
+                                     const bool is_only_readwrite_zone,
+                                     const bool need_use_dup_replica,
+                                     ObLDCLocation &dummy_ldc,
+                                     bool &entry_need_update,
+                                     ObLDCItem &leader_item,
+                                     LdcItemArrayType &tmp_item_array);
 private:
   ObLDCItem *item_array_;
   int64_t item_count_;
+
+  ObLDCItem *primary_zone_item_array_;
+  int64_t primary_zone_item_count_;
 
   //store start index of each site,
   //array[MAX_IDC_TYPE] store the end index, just for traverse efficiently

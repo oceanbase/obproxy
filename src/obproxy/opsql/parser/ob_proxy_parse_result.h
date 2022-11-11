@@ -121,6 +121,7 @@ typedef enum ObProxyBasicStmtType
   // text ps
   OBPROXY_T_TEXT_PS_PREPARE,
   OBPROXY_T_TEXT_PS_EXECUTE,
+  OBPROXY_T_TEXT_PS_DROP,
 
   // only for print obproxy_stat log
   OBPROXY_T_LOGIN,
@@ -192,9 +193,13 @@ typedef enum ObProxyBasicStmtSubType
   //show
   OBPROXY_T_SUB_SHOW_DATABASES,
   OBPROXY_T_SUB_SHOW_TABLES,
+  OBPROXY_T_SUB_SHOW_FULL_TABLES,
+  OBPROXY_T_SUB_SHOW_TABLE_STATUS,
   OBPROXY_T_SUB_SHOW_CREATE_TABLE,
   OBPROXY_T_SUB_SHOW_TOPOLOGY,
   OBPROXY_T_SUB_SHOW_DB_VERSION,
+  OBPROXY_T_SUB_SHOW_COLUMNS,
+  OBPROXY_T_SUB_SHOW_INDEX,
 
   //select
   OBPROXY_T_SUB_SELECT_DATABASE,
@@ -271,18 +276,18 @@ typedef struct _ObProxyCallParseInfo
   int32_t node_count_;
 } ObProxyCallParseInfo;
 
-typedef struct _ObProxyTextPsExecuteParseNode
+typedef struct _ObProxyTextPsParseNode
 {
   ObProxyParseString str_value_;
-  struct _ObProxyTextPsExecuteParseNode *next_;
-} ObProxyTextPsExecuteParseNode;
+  struct _ObProxyTextPsParseNode *next_;
+} ObProxyTextPsParseNode;
 
-typedef struct _ObProxyTextPsExecuteParseInfo
+typedef struct _ObProxyTextPsParseInfo
 {
-  ObProxyTextPsExecuteParseNode *head_;
-  ObProxyTextPsExecuteParseNode *tail_;
+  ObProxyTextPsParseNode *head_;
+  ObProxyTextPsParseNode *tail_;
   int32_t node_count_;
-} ObProxyTextPsExecuteParseInfo;
+} ObProxyTextPsParseInfo;
 
 typedef struct _ObProxySimpleRouteParseInfo
 {
@@ -433,8 +438,8 @@ typedef struct _ObProxyParseResult
   ObProxySimpleRouteParseInfo simple_route_info_;
   // partiton(p1)
   ObProxyParseString part_name_;
-  // text ps execute user variables
-  ObProxyTextPsExecuteParseInfo text_ps_execute_parse_info_;
+  // text ps user variables
+  ObProxyTextPsParseInfo text_ps_parse_info_;
   // text ps name
   ObProxyParseString text_ps_name_;
   // text ps inner sql stmt type

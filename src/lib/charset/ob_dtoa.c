@@ -8,63 +8,32 @@
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
- *
- * **************************************************************
- *
- * This file incorporates work covered by the following copyright and
- * permission notice:
- *
- * The author of this software is David M. Gay.
- *
- * Copyright (c) 1991, 2000, 2001 by Lucent Technologies.
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose without fee is hereby granted, provided that this entire notice
- * is included in all copies of any software which is or includes a copy
- * or modification of this software and in all copies of the supporting
- * documentation for such software.
- *
- * THIS SOFTWARE IS BEING PROVIDED "AS IS", WITHOUT ANY EXPRESS OR IMPLIED
- * WARRANTY.  IN PARTICULAR, NEITHER THE AUTHOR NOR LUCENT MAKES ANY
- * REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
- * OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
  */
+
+/*
+*
+* Version: $Id
+*
+* Authors:
+*      - initial release
+*
+*/
+
 
 #include "lib/charset/ob_dtoa.h"
 #include "lib/charset/ob_mysql_global.h"
 
-#define NOT_FIXED_DEC 31
-/*
-  We want to use the 'e' format in some cases even if we have enough space
-  for the 'f' one just to mimic sprintf("%.15g") behavior for large integers,
-  and to improve it for numbers < 10^(-4).
-  That is, for |x| < 1 we require |x| >= 10^(-15), and for |x| > 1 we require
-  it to be integer and be <= 10^DBL_DIG for the 'f' format to be used.
-  We don't lose precision, but make cases like "1e200" or "0.00001" look nicer.
-*/
-#define MAX_DECPT_FOR_F_FORMAT DBL_DIG
-
-//==================================================
-
-/**
-   Appears to suffice to not call malloc() in most cases.
-   @todo
-     see if it is possible to get rid of malloc().
-     this constant is sufficient to avoid malloc() on all inputs I have tried.
-*/
-
-#define DTOA_BUF_MAX_SIZE (460 * sizeof(void *))
-
-/* Magic value returned by dtoa() to indicate overflow */
 #define DTOA_OVERFLOW 9999
-#define SIZEOF_CHARP  8
-
-#define OB_ALIGN(A,L)      (((A) + (L) - 1) & ~((L) - 1))
+#define MAX_DECPT_FOR_F_FORMAT DBL_DIG
+#define NOT_FIXED_DEC 31
+#define DTOA_BUF_MAX_SIZE (460 * sizeof(void *))
+#define Scale_Bit 0x10
+#define n_bigtens 5
 
 static double ob_strtod_int(const char *, char **, int *, char *, size_t);
 static char *dtoa(double, int, int, int *, int *, char **, char *, size_t);
 static void dtoa_free(char *, char *, size_t);
-size_t ob_fcvt_overflow(char *to, ob_bool *error)
+size_t ob_fcvt_overflow(char *to, bool *error)
 {
   *to++= '0';
   *to= '\0';
@@ -106,47 +75,14 @@ void ob_fcvt_help(char **end, char **dst, char **dend, int sign, int decpt,
      {
        if (len <= decpt && dst_ptr < dend_ptr)
          *dst_ptr++= '.';
-       for (i= *precision - MY_MAX(0, (len - decpt)); i > 0 && dst_ptr < dend_ptr; i--)
+       for (i= *precision - OB_MAX(0, (len - decpt)); i > 0 && dst_ptr < dend_ptr; i--)
          *dst_ptr++= '0';
      }
      *dst = dst_ptr;
    }
 }
 
-
-/**
-   @brief
-   Converts a given floating point number to a zero-terminated string
-   representation using the 'f' format.
-
-   @details
-   This function is a wrapper around dtoa() to do the same as
-   sprintf(to, "%-.*f", precision, x), though the conversion is usually more
-   precise. The only difference is in handling [-,+]infinity and nan values,
-   in which case we print '0\0' to the output string and indicate an overflow.
-
-   @param x           the input floating point number.
-   @param precision   the number of digits after the decimal point.
-                      All properties of sprintf() apply:
-                      - if the number of significant digits after the decimal
-                        point is less than precision, the resulting string is
-                        right-padded with zeros
-                      - if the precision is 0, no decimal point appears
-                      - if a decimal point appears, at least one digit appears
-                        before it
-   @param to          pointer to the output buffer. The longest string which
-                      ob_fcvt() can return is FLOATING_POINT_BUFFER bytes
-                      (including the terminating '\0').
-   @param error       if not NULL, points to a location where the status of
-                      conversion is stored upon return.
-                      FALSE  successful conversion
-                      TRUE   the input number is [-,+]infinity or nan.
-                             The output string in this case is always '0'.
-   @return            number of written characters (excluding terminating '\0')
-*/
-
-
-size_t ob_fcvt(double x, int precision, int width, char *to, ob_bool *error)
+size_t ob_fcvt(double x, int precision, int width, char *to, bool *error)
 {
   int decpt, sign;
   char *res, *end, *dst= to, *dend= to + width;
@@ -167,9 +103,8 @@ size_t ob_fcvt(double x, int precision, int width, char *to, ob_bool *error)
   return dst - to;
 }
 
-//=================================================================================
 
-size_t ob_gcvt_overflow(char *to, ob_bool *error)
+size_t ob_gcvt_overflow(char *to, bool *error)
 {
   *to++= '0';
   *to= '\0';
@@ -180,7 +115,7 @@ size_t ob_gcvt_overflow(char *to, ob_bool *error)
 
 void ob_gcvt_help1(int *width, int *len, char **dend, char **src,
                    char **end, char **dst, int sign, int decpt, char *buf, size_t sizeofbuf,
-                   char **res, ob_bool *error, double x)
+                   char **res, bool *error, double x)
 {
   const char *dend_ptr = *dend;
   int i = 0;
@@ -230,13 +165,13 @@ void ob_gcvt_help1(int *width, int *len, char **dend, char **src,
 
 void ob_gcvt_help2(int *width, int *len, char **dend, char **src,
                    char **end, char **dst, int sign, int decpt, char *buf, size_t sizeofbuf,
-                   int *exp_len, char **res, ob_bool *error, double x, ob_bool use_oracle_mode)
+                   int *exp_len, char **res, bool *error, double x, bool use_oracle_mode)
 {
   const char *dend_ptr = *dend;
   char *dst_ptr = *dst;
   char *src_ptr = *src;
   int decpt_sign= 0;
-  const int MAX_DOUBLE_SIZE = 30;//-1.2345678912345679e+001
+  const int MAX_DOUBLE_SIZE = 30;
   if (--decpt < 0)
   {
     decpt= -decpt;
@@ -265,15 +200,10 @@ void ob_gcvt_help2(int *width, int *len, char **dend, char **src,
 
   const int need_check_buf = (*dend - *dst) < MAX_DOUBLE_SIZE;
   if (need_check_buf) {
-    /*
-      At this point we are sure we have enough space to put all digits
-      returned by dtoa
-    */
     if (sign && dst_ptr < dend_ptr)
       *dst_ptr++= '-';
     if (dst_ptr < dend_ptr)
       *dst_ptr++= *src_ptr++;
-    //zero
     const int is_zero = (dst_ptr < dend_ptr && use_oracle_mode && (*(src_ptr - 1) == '0') && ((*len) == 1));
     if (is_zero) {
       if (sign) {
@@ -324,14 +254,9 @@ void ob_gcvt_help2(int *width, int *len, char **dend, char **src,
       }
     }
   } else {
-    /*
-      At this point we are sure we have enough space to put all digits
-      returned by dtoa
-    */
     if (sign)
       *dst_ptr++= '-';
     *dst_ptr++= *src_ptr++;
-    //zero
     int is_zero = (use_oracle_mode && (*(src_ptr - 1) == '0') && ((*len) == 1));
     if (is_zero) {
       if (sign) {
@@ -379,88 +304,25 @@ void ob_gcvt_help2(int *width, int *len, char **dend, char **src,
   *src = src_ptr;
 }
 
-/**
-   @brief
-   Converts a given floating point number to a zero-terminated string
-   representation with a given field width using the 'e' format
-   (aka scientific notation) or the 'f' one.
-
-   @details
-   The format is chosen automatically to provide the most number of significant
-   digits (and thus, precision) with a given field width. In many cases, the
-   result is similar to that of sprintf(to, "%g", x) with a few notable
-   differences:
-   - the conversion is usually more precise than C library functions.
-   - there is no 'precision' argument. instead, we specify the number of
-     characters available for conversion (i.e. a field width).
-   - the result never exceeds the specified field width. If the field is too
-     short to contain even a rounded decimal representation, ob_gcvt()
-     indicates overflow and truncates the output string to the specified width.
-   - float-type arguments are handled differently than double ones. For a
-     float input number (i.e. when the 'type' argument is OB_GCVT_ARG_FLOAT)
-     we deliberately limit the precision of conversion by FLT_DIG digits to
-     avoid garbage past the significant digits.
-   - unlike sprintf(), in cases where the 'e' format is preferred,  we don't
-     zero-pad the exponent to save space for significant digits. The '+' sign
-     for a positive exponent does not appear for the same reason.
-
-   @param x           the input floating point number.
-   @param type        is either OB_GCVT_ARG_FLOAT or OB_GCVT_ARG_DOUBLE.
-                      Specifies the type of the input number (see notes above).
-   @param width       field width in characters. The minimal field width to
-                      hold any number representation (albeit rounded) is 7
-                      characters ("-Ne-NNN").
-   @param to          pointer to the output buffer. The result is always
-                      zero-terminated, and the longest returned string is thus
-                      'width + 1' bytes.
-   @param error       if not NULL, points to a location where the status of
-                      conversion is stored upon return.
-                      FALSE  successful conversion
-                      TRUE   the input number is [-,+]infinity or nan.
-                             The output string in this case is always '0'.
-   @return            number of written characters (excluding terminating '\0')
-
-   @todo
-   Check if it is possible and  makes sense to do our own rounding on top of
-   dtoa() instead of calling dtoa() twice in (rare) cases when the resulting
-   string representation does not fit in the specified field width and we want
-   to re-round the input number with fewer significant digits. Examples:
-
-     ob_gcvt(-9e-3, ..., 4, ...);
-     ob_gcvt(-9e-3, ..., 2, ...);
-     ob_gcvt(1.87e-3, ..., 4, ...);
-     ob_gcvt(55, ..., 1, ...);
-
-   We do our best to minimize such cases by:
-
-   - passing to dtoa() the field width as the number of significant digits
-
-   - removing the sign of the number early (and decreasing the width before
-     passing it to dtoa())
-
-   - choosing the proper format to preserve the most number of significant
-     digits.
-*/
-size_t ob_gcvt(double x, ob_gcvt_arg_type type, int width, char *to, ob_bool *error)
+size_t ob_gcvt(double x, ob_gcvt_arg_type type, int width, char *to, bool *error)
 {
   return ob_gcvt_strict(x, type, width, to, error, FALSE, FALSE);
 }
 
 size_t ob_gcvt_opt(double x, ob_gcvt_arg_type type, int width, char *to,
-                      ob_bool *error, ob_bool use_oracle_mode)
+                      bool *error, bool use_oracle_mode)
 {
   return ob_gcvt_strict(x, type, width, to, error, use_oracle_mode, use_oracle_mode);
 }
 
-//when use_oracle_mode, float/double has fix format like
-//1.23456791E+017/1.2345678901234568E+017, -1.23456791E+017/-1.2345678901234568E+017, -1.0E-017
 size_t ob_gcvt_strict(double x, ob_gcvt_arg_type type, int width, char *to,
-    ob_bool *error, ob_bool use_oracle_mode, ob_bool use_force_e_format)
+    bool *error, bool use_oracle_mode, bool use_force_e_format)
 {
+  int width_check = width;
   int decpt, sign, len, exp_len;
   char *res, *src, *end, *dst= to, *dend= dst + width;
   char buf[DTOA_BUF_MAX_SIZE];
-  ob_bool have_space, force_e_format;
+  bool have_space, force_e_format;
   const int TMP_MAX_DECPT_FOR_F_FORMAT = MAX_DECPT_FOR_F_FORMAT;
   if (!(width > 0 && to != NULL)) {
     return 0;
@@ -470,10 +332,9 @@ size_t ob_gcvt_strict(double x, ob_gcvt_arg_type type, int width, char *to,
   const int ORACLE_FLT_DIG = 9;//mysql FLT_DIG=6
   const int ORACLE_DBL_DIG = 17;
   const int CURR_FLT_DIG = (use_oracle_mode ? ORACLE_FLT_DIG : FLT_DIG);
-  // in oracle mode, max length of binary_float is 9, binary_double is 17.
   const int dtoa_width = (type == OB_GCVT_ARG_DOUBLE
-                          ? (use_oracle_mode ? MY_MIN(ORACLE_DBL_DIG, width) : width)
-                          : (MY_MIN(width, CURR_FLT_DIG)));
+                          ? (use_oracle_mode ? OB_MIN(ORACLE_DBL_DIG, width) : width)
+                          : (OB_MIN(width, CURR_FLT_DIG)));
   const int mode = use_oracle_mode ? 2 : 4;
   res= dtoa(x, mode, dtoa_width, &decpt, &sign, &end, buf, sizeof(buf));
   if (decpt == DTOA_OVERFLOW) {
@@ -484,74 +345,16 @@ size_t ob_gcvt_strict(double x, ob_gcvt_arg_type type, int width, char *to,
     *error= FALSE;
   src= res;
   len= end - res;
-  /*
-    Number of digits in the exponent from the 'e' conversion.
-     The sign of the exponent is taken into account separetely, we don't need
-     to count it here.
-   */
+
   exp_len= 1 + (decpt >= 101 || decpt <= -99) + (decpt >= 11 || decpt <= -9);
-  /*
-      Do we have enough space for all digits in the 'f' format?
-      Let 'len' be the number of significant digits returned by dtoa,
-      and F be the length of the resulting decimal representation.
-      Consider the following cases:
-      1. decpt <= 0, i.e. we have "0.NNN" => F = len - decpt + 2
-      2. 0 < decpt < len, i.e. we have "NNN.NNN" => F = len + 1
-      3. len <= decpt, i.e. we have "NNN00" => F = decpt
-   */
   have_space= (decpt <= 0
                ? (len - decpt + 2)
                : ((decpt > 0 && decpt < len)
                   ? (len + 1)
                   : decpt))
                <= width;
-  /*
-    The following is true when no significant digits can be placed with the
-    specified field width using the 'f' format, and the 'e' format
-    will not be truncated.
-  */
-  force_e_format= (decpt <= 0 && width <= (2 - decpt) && width >= (3 + exp_len));
-  /*
-    Assume that we don't have enough space to place all significant digits in
-    the 'f' format. We have to choose between the 'e' format and the 'f' one
-    to keep as many significant digits as possible.
-    Let E and F be the lengths of decimal representaion in the 'e' and 'f'
-    formats, respectively. We want to use the 'f' format if, and only if F <= E.
-    Consider the following cases:
-    1. decpt <= 0.
-       F = len - decpt + 2 (see above)
-       E = len + (len > 1) + 1 + 1 (decpt <= -99) + (decpt <= -9) + 1
-       ("N.NNe-MMM")
-       (F <= E) <=> (len == 1 && decpt >= -1) || (len > 1 && decpt >= -2)
-       We also need to ensure that if the 'f' format is chosen,
-       the field width allows us to place at least one significant digit
-       (i.e. width > 2 - decpt). If not, we prefer the 'e' format.
-    2. 0 < decpt < len
-       F = len + 1 (see above)
-       E = len + 1 + 1 + ... ("N.NNeMMM")
-       F is always less than E.
-    3. len <= decpt <= width
-       In this case we have enough space to represent the number in the 'f'
-       format, so we prefer it with some exceptions.
-    4. width < decpt
-       The number cannot be represented in the 'f' format at all, always use
-       the 'e' 'one.
-  */
 
-//  if ((have_space ||
-//      /*
-//        Not enough space, let's see if the 'f' format provides the most number
-//        of significant digits.
-//      */
-//       ((decpt <= width && (decpt >= -1 || (decpt == -2 &&
-//         (len > 1 || !force_e_format)))) &&
-//         !force_e_format)) &&
-//         /*
-//           Use the 'e' format in some cases even if we have enough space for the
-//           'f' one. See comment for MAX_DECPT_FOR_F_FORMAT.
-//         */
-//         (!have_space || (decpt >= -TMP_MAX_DECPT_FOR_F_FORMAT + 1 &&
-//                       (decpt <= TMP_MAX_DECPT_FOR_F_FORMAT || len > decpt))))
+  force_e_format= (decpt <= 0 && width <= (2 - decpt) && width >= (3 + exp_len));
 
   if (!use_force_e_format
       && ((have_space && (decpt >= -TMP_MAX_DECPT_FOR_F_FORMAT + 1 && (decpt <= TMP_MAX_DECPT_FOR_F_FORMAT || len > decpt)))
@@ -568,7 +371,11 @@ size_t ob_gcvt_strict(double x, ob_gcvt_arg_type type, int width, char *to,
                   &exp_len, &res, error, x, use_oracle_mode);
   }
   dtoa_free(res, buf, sizeof(buf));
-  *dst= '\0';
+  if (dst - to < width_check) {
+    *dst= '\0';
+  } else {
+    return 0;
+  }
   return dst - to;
 }
 
@@ -589,52 +396,10 @@ double ob_strtod(const char *str, char **end, int *error)
 double ob_atof(const char *nptr)
 {
   int error;
-  const char *end= nptr+65535;                  /* Should be enough */
+  const char *end= nptr+65535;               
   return (ob_strtod(nptr, (char**) &end, &error));
 }
 
-
-/****************************************************************
- *
- * The author of this software is David M. Gay.
- *
- * Copyright (c) 1991, 2000, 2001 by Lucent Technologies.
- *
- * Permission to use, copy, modify, and distribute this software for any
- * purpose without fee is hereby granted, provided that this entire notice
- * is included in all copies of any software which is or includes a copy
- * or modification of this software and in all copies of the supporting
- * documentation for such software.
- *
- * THIS SOFTWARE IS BEING PROVIDED "AS IS", WITHOUT ANY EXPRESS OR IMPLIED
- * WARRANTY.  IN PARTICULAR, NEITHER THE AUTHOR NOR LUCENT MAKES ANY
- * REPRESENTATION OR WARRANTY OF ANY KIND CONCERNING THE MERCHANTABILITY
- * OF THIS SOFTWARE OR ITS FITNESS FOR ANY PARTICULAR PURPOSE.
- *
- ***************************************************************/
-/* Please send bug reports to David M. Gay (dmg at acm dot org,
- * with " at " changed at "@" and " dot " changed to ".").      */
-
-
-/*
-  On a machine with IEEE extended-precision registers, it is
-  necessary to specify double-precision (53-bit) rounding precision
-  before invoking strtod or dtoa.  If the machine uses (the equivalent
-  of) Intel 80x87 arithmetic, the call
-       _control87(PC_53, MCW_PC);
-  does this with many compilers.  Whether this or another call is
-  appropriate depends on the compiler; for this to work, it may be
-  necessary to #include "float.h" or another system-dependent header
-  file.
-*/
-
-/*
-  #define Honor_FLT_ROUNDS if FLT_ROUNDS can assume the values 2 or 3
-       and dtoa should round accordingly.
-  #define Check_FLT_ROUNDS if FLT_ROUNDS can assume the values 2 or 3
-       and Honor_FLT_ROUNDS is not #defined.
-
-*/
 
 typedef int32 Long;
 typedef uint32 ULong;
@@ -645,20 +410,14 @@ typedef union { double d; ULong L[2]; } U;
 
 #if defined(WORDS_BIGENDIAN) || (defined(__FLOAT_WORD_ORDER) &&        \
                                  (__FLOAT_WORD_ORDER == __BIG_ENDIAN))
-#define word0(x) (x)->L[0]
-#define word1(x) (x)->L[1]
+COPY_BIGINT WORD0(x) (x)->L[0]
+#define WORD1(x) (x)->L[1]
 #else
-#define word0(x) (x)->L[1]
-#define word1(x) (x)->L[0]
+#define WORD0(x) (x)->L[1]
+#define WORD1(x) (x)->L[0]
 #endif
 
 #define dval(x) (x)->d
-
-/* #define P DBL_MANT_DIG */
-/* Ten_pmax= floor(P*log(2)/log(5)) */
-/* Bletch= (highest power of 2 < DBL_MAX_10_EXP) / 16 */
-/* Quick_max= floor((P-1)*log(FLT_RADIX)/log(10) - 1) */
-/* Int_max= floor(P*log(FLT_RADIX)/log(10) - 1) */
 
 #define Exp_shift  20
 #define Exp_shift1 20
@@ -706,49 +465,35 @@ typedef union { double d; ULong L[2]; } U;
 #define Big1 0xffffffff
 #define FFFFFFFF 0xffffffffUL
 
-/* This is tested to be enough for dtoa */
 
 #define Kmax 15
 
-#define copy_bigint(x,y) memcpy((char *)&x->sign, (char *)&y->sign,   \
+#define COPY_BIGINT(x,y) memcpy((char *)&x->sign, (char *)&y->sign,   \
                           2*sizeof(int) + y->wds*sizeof(ULong))
 
-/* Arbitrary-length integer */
 
-typedef struct Bigint
+typedef struct _bigint
 {
   union {
-    ULong *x;              /* points right after this Bigint object */
-    struct Bigint *next;   /* to maintain free lists */
+    ULong *x;              
+    struct _bigint *next;   
   } p;
-  int k;                   /* 2^k = maxwds */
-  int maxwds;              /* maximum length in 32-bit words */
-  int sign;                /* not zero if number is negative */
-  int wds;                 /* current length in 32-bit words */
+  int k;                   
+  int maxwds;             
+  int sign;               
+  int wds;                
 } Bigint;
 
 
-/* A simple stack-memory based allocator for Bigints */
 
 typedef struct ObStackAllocator
 {
   char *begin;
   char *free;
   char *end;
-  /*
-    Having list of free blocks lets us reduce maximum required amount
-    of memory from ~4000 bytes to < 1680 (tested on x86).
-  */
   Bigint *freelist[Kmax+1];
 } ObStackAllocator;
 
-
-/*
-  Try to allocate object on stack, and resort to malloc if all
-  stack memory is used. Ensure allocated objects to be aligned by the pointer
-  size in order to not break the alignment rules when storing a pointer to a
-  Bigint.
-*/
 
 static Bigint *alloc_bigint(int k, ObStackAllocator *alloc)
 {
@@ -760,7 +505,7 @@ static Bigint *alloc_bigint(int k, ObStackAllocator *alloc)
   } else {
     int x, len;
     x = 1 << k;
-    len = OB_ALIGN(sizeof(Bigint) + x * sizeof(ULong), SIZEOF_CHARP);
+    len = MY_ALIGN(sizeof(Bigint) + x * sizeof(ULong), SIZEOF_CHARP);
     if (alloc->free + len <= alloc->end) {
       rv = (Bigint*) alloc->free;
       alloc->free += len;
@@ -776,23 +521,14 @@ static Bigint *alloc_bigint(int k, ObStackAllocator *alloc)
 }
 
 
-/*
-  If object was allocated on stack, try putting it to the free
-  list. Otherwise call free().
-*/
 
 static void free_bigint(Bigint *v, ObStackAllocator *alloc)
 {
   if (v != NULL) {
-    char *gptr= (char*) v;                       /* generic pointer */
-    if (gptr < alloc->begin || gptr >= alloc->end) {
-      free(gptr);
+    char *g_ptr= (char*) v;                     
+    if (g_ptr < alloc->begin || g_ptr >= alloc->end) {
+      free(g_ptr);
     } else if (v->k <= Kmax) {
-      /*
-        Maintain free lists only for stack objects: this way we don't
-        have to bother with freeing lists in the end of dtoa;
-        heap should not be used normally anyway.
-      */
       v->p.next= alloc->freelist[v->k];
       alloc->freelist[v->k]= v;
     }
@@ -800,43 +536,26 @@ static void free_bigint(Bigint *v, ObStackAllocator *alloc)
 }
 
 
-/*
-  This is to place return value of dtoa in: tries to use stack
-  as well, but passes by free lists management and just aligns len by
-  the pointer size in order to not break the alignment rules when storing a
-  pointer to a Bigint.
-*/
-
 static char *dtoa_alloc(int i, ObStackAllocator *alloc)
 {
   char *rv;
-  int aligned_size = OB_ALIGN(i, SIZEOF_CHARP);
+  int aligned_size = MY_ALIGN(i, SIZEOF_CHARP);
   if (alloc->free + aligned_size <= alloc->end) {
     rv = alloc->free;
     alloc->free += aligned_size;
   } else {
-    rv = malloc(i);
+    rv = (char*)malloc(i);
   }
   return rv;
 }
 
-
-/*
-  dtoa_free() must be used to free values s returned by dtoa()
-  This is the counterpart of dtoa_alloc()
-*/
-
-static void dtoa_free(char *gptr, char *buf, size_t buf_size)
+static void dtoa_free(char *g_ptr, char *buf, size_t buf_size)
 {
-  if (gptr < buf || gptr >= buf + buf_size) {
-    free(gptr);
+  if (g_ptr < buf || g_ptr >= buf + buf_size) {
+    free(g_ptr);
   }
 }
 
-
-/* Bigint arithmetic functions */
-
-/* Multiply by m and add a */
 
 static Bigint *mult_and_add(Bigint *b, int m, int a, ObStackAllocator *alloc)
 {
@@ -861,7 +580,7 @@ static Bigint *mult_and_add(Bigint *b, int m, int a, ObStackAllocator *alloc)
     if (wds >= b->maxwds)
     {
       b1= alloc_bigint(b->k+1, alloc);
-      copy_bigint(b1, b);
+      COPY_BIGINT(b1, b);
       free_bigint(b, alloc);
       b= b1;
     }
@@ -871,20 +590,6 @@ static Bigint *mult_and_add(Bigint *b, int m, int a, ObStackAllocator *alloc)
   return b;
 }
 
-/**
-  Converts a string to Bigint.
-
-  Now we have nd0 digits, starting at s, followed by a
-  decimal point, followed by nd-nd0 digits.
-  Unless nd0 == nd, in which case we have a number of the form:
-     ".xxxxxx"    or    "xxxxxx."
-
-  @param s     Input string, already partially parsed by ob_strtod_int().
-  @param nd0   Number of digits before decimal point.
-  @param nd    Total number of digits.
-  @param y9    Pre-computed value of the first nine digits.
-  @param alloc Stack allocator for Bigints.
- */
 static Bigint *string2bigint(const char *s, int nd0, int nd, ULong y9, ObStackAllocator *alloc)
 {
   Bigint *b;
@@ -904,11 +609,10 @@ static Bigint *string2bigint(const char *s, int nd0, int nd, ULong y9, ObStackAl
     do
       b= mult_and_add(b, 10, *s++ - '0', alloc);
     while (++i < nd0);
-    s++;                                        /* skip '.' */
+    s++;                                        
   }
   else
     s+= 10;
-  /* now do the fractional part */
   for(; i < nd; i++)
     b= mult_and_add(b, 10, *s++ - '0', alloc);
   return b;
@@ -999,8 +703,6 @@ static int lo0bits(ULong *y)
 }
 
 
-/* Convert integer to Bigint number */
-
 static Bigint *integer2bigint(int i, ObStackAllocator *alloc)
 {
   Bigint *b;
@@ -1011,7 +713,6 @@ static Bigint *integer2bigint(int i, ObStackAllocator *alloc)
 }
 
 
-/* Multiply two Bigint numbers */
 
 static Bigint *bigint_mul_bigint(Bigint *a, Bigint *b, ObStackAllocator *alloc)
 {
@@ -1064,11 +765,6 @@ static Bigint *bigint_mul_bigint(Bigint *a, Bigint *b, ObStackAllocator *alloc)
 }
 
 
-/*
-  Precalculated array of powers of 5: tested to be enough for
-  vasting majority of dtoa_r cases.
-*/
-
 static ULong powers5[]=
 {
   625UL,
@@ -1093,7 +789,6 @@ static ULong powers5[]=
 
 static Bigint p5_a[]=
 {
-  /*  { x } - k - maxwds - sign - wds */
   { { powers5 }, 1, 1, 0, 1 },
   { { powers5 + 1 }, 1, 1, 0, 1 },
   { { powers5 + 2 }, 1, 2, 0, 2 },
@@ -1110,7 +805,7 @@ static Bigint *pow5mult(Bigint *b, int k, ObStackAllocator *alloc)
   Bigint *b1, *p5, *p51=NULL;
   int i;
   static int p05[3]= { 5, 25, 125 };
-  ob_bool overflow= FALSE;
+  bool overflow= FALSE;
 
   if ((i= k & 3))
     b= mult_and_add(b, p05[i-1], 0, alloc);
@@ -1128,7 +823,6 @@ static Bigint *pow5mult(Bigint *b, int k, ObStackAllocator *alloc)
     }
     if (!(k>>= 1))
       break;
-    /* Calculate next power of 5 */
     if (overflow)
     {
       p51= bigint_mul_bigint(p5, p5, alloc);
@@ -1272,9 +966,9 @@ static double ulp(U *x)
   register Long L;
   U u;
 
-  L= (word0(x) & Exp_mask) - (P - 1)*Exp_msk1;
-  word0(&u) = L;
-  word1(&u) = 0;
+  L= (WORD0(x) & Exp_mask) - (P - 1)*Exp_msk1;
+  WORD0(&u) = L;
+  WORD1(&u) = 0;
   return dval(&u);
 }
 
@@ -1284,8 +978,8 @@ static double b2d(Bigint *a, int *e)
   ULong *xa, *xa0, w, y, z;
   int k;
   U d;
-#define d0 word0(&d)
-#define d1 word1(&d)
+#define d0 WORD0(&d)
+#define d1 WORD1(&d)
 
   xa0= a->p.x;
   xa= xa0 + a->wds;
@@ -1324,14 +1018,14 @@ static Bigint *d2b(U *d, int *e, int *bits, ObStackAllocator *alloc)
   int de, k;
   ULong *x, y, z;
   int i;
-#define d0 word0(d)
-#define d1 word1(d)
+#define d0 WORD0(d)
+#define d1 WORD1(d)
 
   b= alloc_bigint(1, alloc);
   x= b->p.x;
 
   z= d0 & Frac_mask;
-  d0 &= 0x7fffffff;       /* clear sign bit, which we ignore */
+  d0 &= 0x7fffffff;      
   if ((de= (int)(d0 >> Exp_shift)))
     z|= Exp_msk1;
   if ((y= d1))
@@ -1342,7 +1036,6 @@ static Bigint *d2b(U *d, int *e, int *bits, ObStackAllocator *alloc)
       if (k >= 0 && k <32) {
         z >>= k;
       } else {
-
       }
     }
     else
@@ -1381,11 +1074,11 @@ static double ratio(Bigint *a, Bigint *b)
   dval(&db)= b2d(b, &kb);
   k= ka - kb + 32*(a->wds - b->wds);
   if (k > 0)
-    word0(&da)+= k*Exp_msk1;
+    WORD0(&da)+= k*Exp_msk1;
   else
   {
     k= -k;
-    word0(&db)+= k*Exp_msk1;
+    WORD0(&db)+= k*Exp_msk1;
   }
   return dval(&da) / dval(&db);
 }
@@ -1400,43 +1093,8 @@ static const double tens[] =
 static const double bigtens[]= { 1e16, 1e32, 1e64, 1e128, 1e256 };
 static const double tinytens[]=
 { 1e-16, 1e-32, 1e-64, 1e-128,
-  9007199254740992.*9007199254740992.e-256 /* = 2^106 * 1e-53 */
+  9007199254740992.*9007199254740992.e-256 
 };
-/*
-  The factor of 2^53 in tinytens[4] helps us avoid setting the underflow
-  flag unnecessarily.  It leads to a song and dance at the end of strtod.
-*/
-#define Scale_Bit 0x10
-#define n_bigtens 5
-
-/*
-  strtod for IEEE--arithmetic machines.
-
-  This strtod returns a nearest machine number to the input decimal
-  string (or sets errno to EOVERFLOW). Ties are broken by the IEEE round-even
-  rule.
-
-  Inspired loosely by William D. Clinger's paper "How to Read Floating
-  Point Numbers Accurately" [Proc. ACM SIGPLAN '90, pp. 92-101].
-
-  Modifications:
-
-   1. We only require IEEE (not IEEE double-extended).
-   2. We get by with floating-point arithmetic in a case that
-     Clinger missed -- when we're computing d * 10^n
-     for a small integer d and the integer n is not too
-     much larger than 22 (the maximum integer k for which
-     we can represent 10^k exactly), we may be able to
-     compute (d*10^k) * 10^(e-k) with just one roundoff.
-   3. Rather than a bit-at-a-time adjustment of the binary
-     result in the hard case, we use floating-point
-     arithmetic to determine the adjustment to within
-     one bit; only in really hard cases do we need to
-     compute a second residual.
-   4. Because of 3., we don't need a large table of powers of 10
-     for ten-to-e (just some small tables, e.g. of 10^k
-     for 0 <= k <= 22).
-*/
 
 static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, size_t buf_size)
 {
@@ -1469,7 +1127,6 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
     switch (*s) {
     case '-':
       sign= 1;
-      /* no break */
     case '+':
       s++;
       goto break2;
@@ -1504,7 +1161,10 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
   nd0= nd;
   if (s < end && c == '.')
   {
-    c= *++s;
+    s++;
+    if(s < end) {
+      c = *s;
+    }
     if (!nd)
     {
       for (; s < end; ++s)
@@ -1528,12 +1188,6 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       c= *s;
       if (c < '0' || c > '9')
         break;
-      /*
-        Here we are parsing the fractional part.
-        We can stop counting digits after a while: the extra digits
-        will not contribute to the actual result produced by string2bigint().
-        We have to continue scanning, in case there is an exponent part.
-       */
       if (nd < 2 * DBL_DIG)
       {
         nz++;
@@ -1576,18 +1230,18 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       }
     if (s < end && c >= '0' && c <= '9')
     {
-      while (s < end && c == '0')
-        c= *++s;
+      while (s < end && c == '0') {
+        s++;
+        if(s < end)
+          c= *s;
+      }
       if (s < end && c > '0' && c <= '9') {
         L= c - '0';
         s1= s;
         while (++s < end && (c= *s) >= '0' && c <= '9')
           L= 10*L + c - '0';
         if (s - s1 > 8 || L > 19999)
-          /* Avoid confusion from exponents
-           * so large that e might overflow.
-           */
-          e= 19999; /* safe for 16 bit ints */
+          e= 19999; 
         else
           e= (int)L;
         if (esign)
@@ -1610,14 +1264,6 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
     goto ret;
   }
   e1= e -= nf;
-
-  /*
-    Now we have nd0 digits, starting at s0, followed by a
-    decimal point, followed by nd-nd0 digits.  The number we're
-    after is the integer represented by those digits times
-    10**e
-   */
-
   if (!nd0)
     nd0= nd;
   k= nd < DBL_DIG + 1 ? nd : DBL_DIG + 1;
@@ -1644,25 +1290,19 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       if (e <= Ten_pmax)
       {
 #ifdef Honor_FLT_ROUNDS
-        /* round correctly FLT_ROUNDS = 2 or 3 */
         if (sign)
         {
           rv.d= -rv.d;
           sign= 0;
         }
 #endif
-        /* rv = */ rounded_product(dval(&rv), tens[e]);
+        rounded_product(dval(&rv), tens[e]);
         goto ret;
       }
       i= DBL_DIG - nd;
       if (e <= Ten_pmax + i)
       {
-        /*
-          A fancier test would sometimes let us do
-          this for larger i values.
-        */
 #ifdef Honor_FLT_ROUNDS
-        /* round correctly FLT_ROUNDS = 2 or 3 */
         if (sign)
         {
           rv.d= -rv.d;
@@ -1671,7 +1311,7 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
 #endif
         e-= i;
         dval(&rv)*= tens[i];
-        /* rv = */ rounded_product(dval(&rv), tens[e]);
+        rounded_product(dval(&rv), tens[e]);
         goto ret;
       }
     }
@@ -1679,14 +1319,13 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
     else if (e >= -Ten_pmax)
     {
 #ifdef Honor_FLT_ROUNDS
-      /* round correctly FLT_ROUNDS = 2 or 3 */
       if (sign)
       {
         rv.d= -rv.d;
         sign= 0;
       }
 #endif
-      /* rv = */ rounded_quotient(dval(&rv), tens[-e]);
+      rounded_quotient(dval(&rv), tens[-e]);
       goto ret;
     }
 #endif
@@ -1710,7 +1349,6 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
   }
 #endif
 
-  /* Get starting approximation = rv * 10**e1 */
 
   if (e1 > 0)
   {
@@ -1722,25 +1360,24 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       {
  ovfl:
         *error= EOVERFLOW;
-        /* Can't trust HUGE_VAL */
+        
 #ifdef Honor_FLT_ROUNDS
         switch (rounding)
         {
-        case 0: /* toward 0 */
-        case 3: /* toward -infinity */
-          word0(&rv)= Big0;
-          word1(&rv)= Big1;
+        case 0:
+        case 3:
+          WORD0(&rv)= Big0;
+          WORD1(&rv)= Big1;
           break;
         default:
-          word0(&rv)= Exp_mask;
-          word1(&rv)= 0;
+          WORD0(&rv)= Exp_mask;
+          WORD1(&rv)= 0;
         }
-#else /*Honor_FLT_ROUNDS*/
-        word0(&rv)= Exp_mask;
-        word1(&rv)= 0;
-#endif /*Honor_FLT_ROUNDS*/
+#else 
+        WORD0(&rv)= Exp_mask;
+        WORD1(&rv)= 0;
+#endif 
 #ifdef SET_INEXACT
-        /* set overflow bit */
         dval(&rv0)= 1e300;
         dval(&rv0)*= dval(&rv0);
 #endif
@@ -1752,19 +1389,17 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       for(j= 0; e1 > 1; j++, e1>>= 1)
         if (e1 & 1)
           dval(&rv)*= bigtens[j];
-    /* The last multiplication could overflow. */
-      word0(&rv)-= P*Exp_msk1;
+      WORD0(&rv)-= P*Exp_msk1;
       dval(&rv)*= bigtens[j];
-      if ((z= word0(&rv) & Exp_mask) > Exp_msk1 * (DBL_MAX_EXP + Bias - P))
+      if ((z= WORD0(&rv) & Exp_mask) > Exp_msk1 * (DBL_MAX_EXP + Bias - P))
         goto ovfl;
       if (z > Exp_msk1 * (DBL_MAX_EXP + Bias - 1 - P))
       {
-        /* set to largest number (Can't trust DBL_MAX) */
-        word0(&rv)= Big0;
-        word1(&rv)= Big1;
+        WORD0(&rv)= Big0;
+        WORD1(&rv)= Big1;
       }
       else
-        word0(&rv)+= P*Exp_msk1;
+        WORD0(&rv)+= P*Exp_msk1;
     }
   }
   else if (e1 < 0)
@@ -1781,19 +1416,18 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       for(j= 0; e1 > 0; j++, e1>>= 1)
         if (e1 & 1)
           dval(&rv)*= tinytens[j];
-      if (scale && (j = 2 * P + 1 - ((word0(&rv) & Exp_mask) >> Exp_shift)) > 0)
+      if (scale && (j = 2 * P + 1 - ((WORD0(&rv) & Exp_mask) >> Exp_shift)) > 0)
       {
-        /* scaled rv is denormal; zap j low bits */
         if (j >= 32)
         {
-          word1(&rv)= 0;
+          WORD1(&rv)= 0;
           if (j >= 53)
-            word0(&rv)= (P + 2) * Exp_msk1;
+            WORD0(&rv)= (P + 2) * Exp_msk1;
           else
-            word0(&rv)&= 0xffffffff << (j - 32);
+            WORD0(&rv)&= 0xffffffff << (j - 32);
         }
         else
-          word1(&rv)&= 0xffffffff << j;
+          WORD1(&rv)&= 0xffffffff << j;
       }
       if (!dval(&rv))
       {
@@ -1806,17 +1440,13 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
     }
   }
 
-  /* Now the hard part -- adjusting rv to the correct value.*/
-
-  /* Put digits into bd: true value = bd * 10^e */
-
   bd0= string2bigint(s0, nd0, nd, y, &alloc);
 
   for(;;)
   {
     bd= alloc_bigint(bd0->k, &alloc);
-    copy_bigint(bd, bd0);
-    bb= d2b(&rv, &bbe, &bbbits, &alloc);  /* rv = bb * 2^bbe */
+    COPY_BIGINT(bd, bd0);
+    bb= d2b(&rv, &bbe, &bbbits, &alloc); 
     bs= integer2bigint(1, &alloc);
 
     if (e >= 0)
@@ -1839,8 +1469,8 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       bs2++;
 #endif
     j= bbe - scale;
-    i= j + bbbits - 1;  /* logb(rv) */
-    if (i < Emin)  /* denormal */
+    i= j + bbbits - 1; 
+    if (i < Emin)  
       j+= P - Emin;
     else
       j= P + 1 - bbbits;
@@ -1880,10 +1510,8 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
     {
       if (i < 0)
       {
-        /* Error is less than an ulp */
         if (!delta->p.x[0] && delta->wds <= 1)
         {
-          /* exact */
 #ifdef SET_INEXACT
           inexact= 0;
 #endif
@@ -1900,9 +1528,9 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
         else if (!dsign)
         {
           adj.d= -1.;
-          if (!word1(&rv) && !(word0(&rv) & Frac_mask))
+          if (!WORD1(&rv) && !(WORD0(&rv) & Frac_mask))
           {
-            y= word0(&rv) & Exp_mask;
+            y= WORD0(&rv) & Exp_mask;
             if (!scale || y > 2*P*Exp_msk1)
             {
               delta= left_shift(delta, Log2P, &alloc);
@@ -1911,8 +1539,8 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
             }
           }
  apply_adj:
-          if (scale && (y= word0(&rv) & Exp_mask) <= 2 * P * Exp_msk1)
-            word0(&adj)+= (2 * P + 1) * Exp_msk1 - y;
+          if (scale && (y= WORD0(&rv) & Exp_mask) <= 2 * P * Exp_msk1)
+            WORD0(&adj)+= (2 * P + 1) * Exp_msk1 - y;
           dval(&rv)+= adj.d * ulp(&rv);
         }
         break;
@@ -1922,7 +1550,6 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
         adj.d= 1.;
       if (adj.d <= 0x7ffffffe)
       {
-        /* adj = rounding ? ceil(adj) : floor(adj); */
         y= adj.d;
         if (y != adj.d)
         {
@@ -1931,8 +1558,8 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
           adj.d= y;
         }
       }
-      if (scale && (y= word0(&rv) & Exp_mask) <= 2 * P * Exp_msk1)
-        word0(&adj)+= (2 * P + 1) * Exp_msk1 - y;
+      if (scale && (y= WORD0(&rv) & Exp_mask) <= 2 * P * Exp_msk1)
+        WORD0(&adj)+= (2 * P + 1) * Exp_msk1 - y;
       adj.d*= ulp(&rv);
       if (dsign)
         dval(&rv)+= adj.d;
@@ -1940,16 +1567,12 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
         dval(&rv)-= adj.d;
       goto cont;
     }
-#endif /*Honor_FLT_ROUNDS*/
+#endif
 
     if (i < 0)
     {
-      /*
-        Error is less than half an ulp -- check for special case of mantissa
-        a power of two.
-      */
-      if (dsign || word1(&rv) || word0(&rv) & Bndry_mask ||
-          (word0(&rv) & Exp_mask) <= (2 * P + 1) * Exp_msk1)
+      if (dsign || WORD1(&rv) || WORD0(&rv) & Bndry_mask ||
+          (WORD0(&rv) & Exp_mask) <= (2 * P + 1) * Exp_msk1)
       {
 #ifdef SET_INEXACT
         if (!delta->x[0] && delta->wds <= 1)
@@ -1959,7 +1582,6 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
       }
       if (!delta->p.x[0] && delta->wds <= 1)
       {
-        /* exact result */
 #ifdef SET_INEXACT
         inexact= 0;
 #endif
@@ -1972,44 +1594,40 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
     }
     if (i == 0)
     {
-      /* exactly half-way between */
       if (dsign)
       {
-        if ((word0(&rv) & Bndry_mask1) == Bndry_mask1 &&
-            word1(&rv) ==
-            ((scale && (y = word0(&rv) & Exp_mask) <= 2 * P * Exp_msk1) ?
+        if ((WORD0(&rv) & Bndry_mask1) == Bndry_mask1 &&
+            WORD1(&rv) ==
+            ((scale && (y = WORD0(&rv) & Exp_mask) <= 2 * P * Exp_msk1) ?
              (0xffffffff & (0xffffffff << (2*P+1-(y>>Exp_shift)))) :
              0xffffffff))
         {
-          /*boundary case -- increment exponent*/
-          word0(&rv)= (word0(&rv) & Exp_mask) + Exp_msk1;
-          word1(&rv) = 0;
+          WORD0(&rv)= (WORD0(&rv) & Exp_mask) + Exp_msk1;
+          WORD1(&rv) = 0;
           dsign = 0;
           break;
         }
       }
-      else if (!(word0(&rv) & Bndry_mask) && !word1(&rv))
+      else if (!(WORD0(&rv) & Bndry_mask) && !WORD1(&rv))
       {
  drop_down:
-        /* boundary case -- decrement exponent */
+
         if (scale)
         {
-          L= word0(&rv) & Exp_mask;
+          L= WORD0(&rv) & Exp_mask;
           if (L <= (2 *P + 1) * Exp_msk1)
           {
             if (L > (P + 2) * Exp_msk1)
-              /* round even ==> accept rv */
               break;
-            /* rv = smallest denormal */
             goto undfl;
           }
         }
-        L= (word0(&rv) & Exp_mask) - Exp_msk1;
-        word0(&rv)= L | Bndry_mask1;
-        word1(&rv)= 0xffffffff;
+        L= (WORD0(&rv) & Exp_mask) - Exp_msk1;
+        WORD0(&rv)= L | Bndry_mask1;
+        WORD1(&rv)= 0xffffffff;
         break;
       }
-      if (!(word1(&rv) & LSB))
+      if (!(WORD1(&rv) & LSB))
         break;
       if (dsign)
         dval(&rv)+= ulp(&rv);
@@ -2026,16 +1644,15 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
     {
       if (dsign)
         aadj= aadj1= 1.;
-      else if (word1(&rv) || word0(&rv) & Bndry_mask)
+      else if (WORD1(&rv) || WORD0(&rv) & Bndry_mask)
       {
-        if (word1(&rv) == Tiny1 && !word0(&rv))
+        if (WORD1(&rv) == Tiny1 && !WORD0(&rv))
           goto undfl;
         aadj= 1.;
         aadj1= -1.;
       }
       else
       {
-        /* special case -- power of FLT_RADIX to be rounded down... */
         if (aadj < 2. / FLT_RADIX)
           aadj= 1. / FLT_RADIX;
         else
@@ -2050,38 +1667,36 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
 #ifdef Check_FLT_ROUNDS
       switch (Rounding)
       {
-      case 2: /* towards +infinity */
+      case 2:
         aadj1-= 0.5;
         break;
-      case 0: /* towards 0 */
-      case 3: /* towards -infinity */
+      case 0:
+      case 3:
         aadj1+= 0.5;
       }
 #else
       if (Flt_Rounds == 0)
         aadj1+= 0.5;
-#endif /*Check_FLT_ROUNDS*/
+#endif
     }
-    y= word0(&rv) & Exp_mask;
-
-    /* Check for overflow */
+    y= WORD0(&rv) & Exp_mask;
 
     if (y == Exp_msk1 * (DBL_MAX_EXP + Bias - 1))
     {
       dval(&rv0)= dval(&rv);
-      word0(&rv)-= P * Exp_msk1;
+      WORD0(&rv)-= P * Exp_msk1;
       adj.d= aadj1 * ulp(&rv);
       dval(&rv)+= adj.d;
-      if ((word0(&rv) & Exp_mask) >= Exp_msk1 * (DBL_MAX_EXP + Bias - P))
+      if ((WORD0(&rv) & Exp_mask) >= Exp_msk1 * (DBL_MAX_EXP + Bias - P))
       {
-        if (word0(&rv0) == Big0 && word1(&rv0) == Big1)
+        if (WORD0(&rv0) == Big0 && WORD1(&rv0) == Big1)
           goto ovfl;
-        word0(&rv)= Big0;
-        word1(&rv)= Big1;
+        WORD0(&rv)= Big0;
+        WORD1(&rv)= Big1;
         goto cont;
       }
       else
-        word0(&rv)+= P * Exp_msk1;
+        WORD0(&rv)+= P * Exp_msk1;
     }
     else
     {
@@ -2095,7 +1710,7 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
           aadj1= dsign ? aadj : -aadj;
         }
         dval(&aadj2) = aadj1;
-        word0(&aadj2)+= (2 * P + 1) * Exp_msk1 - y;
+        WORD0(&aadj2)+= (2 * P + 1) * Exp_msk1 - y;
         aadj1= dval(&aadj2);
         adj.d= aadj1 * ulp(&rv);
         dval(&rv)+= adj.d;
@@ -2108,16 +1723,14 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
         dval(&rv)+= adj.d;
       }
     }
-    z= word0(&rv) & Exp_mask;
+    z= WORD0(&rv) & Exp_mask;
 #ifndef SET_INEXACT
     if (!scale)
       if (y == z)
       {
-        /* Can we stop now? */
         L= (Long)aadj;
         aadj-= L;
-        /* The tolerances below are conservative. */
-        if (dsign || word1(&rv) || word0(&rv) & Bndry_mask)
+        if (dsign || WORD1(&rv) || WORD0(&rv) & Bndry_mask)
         {
           if (aadj < .4999999 || aadj > .5000001)
             break;
@@ -2137,8 +1750,8 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
   {
     if (!oldinexact)
     {
-      word0(&rv0)= Exp_1 + (70 << Exp_shift);
-      word1(&rv0)= 0;
+      WORD0(&rv0)= Exp_1 + (70 << Exp_shift);
+      WORD1(&rv0)= 0;
       dval(&rv0)+= 1.;
     }
   }
@@ -2147,14 +1760,13 @@ static double ob_strtod_int(const char *s00, char **se, int *error, char *buf, s
 #endif
   if (scale)
   {
-    word0(&rv0)= Exp_1 - 2 * P * Exp_msk1;
-    word1(&rv0)= 0;
+    WORD0(&rv0)= Exp_1 - 2 * P * Exp_msk1;
+    WORD1(&rv0)= 0;
     dval(&rv)*= dval(&rv0);
   }
 #ifdef SET_INEXACT
-  if (inexact && !(word0(&rv) & Exp_mask))
+  if (inexact && !(WORD0(&rv) & Exp_mask))
   {
-    /* set underflow bit */
     dval(&rv0)= 1e-300;
     dval(&rv0)*= dval(&rv0);
   }
@@ -2184,7 +1796,7 @@ static int quorem(Bigint *b, Bigint *S)
   sxe= sx + --n;
   bx= b->p.x;
   bxe= bx + n;
-  q= *bxe / (*sxe + 1);  /* ensure q <= true quotient */
+  q= *bxe / (*sxe + 1); 
   if (q)
   {
     borrow= 0;
@@ -2234,80 +1846,9 @@ static int quorem(Bigint *b, Bigint *S)
   return q;
 }
 
-
-/*
-   dtoa for IEEE arithmetic (dmg): convert double to ASCII string.
-
-   Inspired by "How to Print Floating-Point Numbers Accurately" by
-   Guy L. Steele, Jr. and Jon L. White [Proc. ACM SIGPLAN '90, pp. 112-126].
-
-   Modifications:
-        1. Rather than iterating, we use a simple numeric overestimate
-           to determine k= floor(log10(d)).  We scale relevant
-           quantities using O(log2(k)) rather than O(k) multiplications.
-        2. For some modes > 2 (corresponding to ecvt and fcvt), we don't
-           try to generate digits strictly left to right.  Instead, we
-           compute with fewer bits and propagate the carry if necessary
-           when rounding the final digit up.  This is often faster.
-        3. Under the assumption that input will be rounded nearest,
-           mode 0 renders 1e23 as 1e23 rather than 9.999999999999999e22.
-           That is, we allow equality in stopping tests when the
-           round-nearest rule will give the same floating-point value
-           as would satisfaction of the stopping test with strict
-           inequality.
-        4. We remove common factors of powers of 2 from relevant
-           quantities.
-        5. When converting floating-point integers less than 1e16,
-           we use floating-point arithmetic rather than resorting
-           to multiple-precision integers.
-        6. When asked to produce fewer than 15 digits, we first try
-           to get by with floating-point arithmetic; we resort to
-           multiple-precision integer arithmetic only if we cannot
-           guarantee that the floating-point calculation has given
-           the correctly rounded result.  For k requested digits and
-           "uniformly" distributed input, the probability is
-           something like 10^(k-15) that we must resort to the Long
-           calculation.
- */
-
 static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
                   char **rve, char *buf, size_t buf_size)
 {
-  /*
-    Arguments ndigits, decpt, sign are similar to those
-    of ecvt and fcvt; trailing zeros are suppressed from
-    the returned string.  If not null, *rve is set to point
-    to the end of the return value.  If d is +-Infinity or NaN,
-    then *decpt is set to DTOA_OVERFLOW.
-
-    mode:
-          0 ==> shortest string that yields d when read in
-                and rounded to nearest.
-          1 ==> like 0, but with Steele & White stopping rule;
-                e.g. with IEEE P754 arithmetic , mode 0 gives
-                1e23 whereas mode 1 gives 9.999999999999999e22.
-          2 ==> max(1,ndigits) significant digits.  This gives a
-                return value similar to that of ecvt, except
-                that trailing zeros are suppressed.
-          3 ==> through ndigits past the decimal point.  This
-                gives a return value similar to that from fcvt,
-                except that trailing zeros are suppressed, and
-                ndigits can be negative.
-          4,5 ==> similar to 2 and 3, respectively, but (in
-                round-nearest mode) with the tests of mode 0 to
-                possibly return a shorter string that rounds to d.
-                With IEEE arithmetic and compilation with
-                -DHonor_FLT_ROUNDS, modes 4 and 5 behave the same
-                as modes 2 and 3 when FLT_ROUNDS != 1.
-          6-9 ==> Debugging modes similar to mode - 4:  don't try
-                fast floating-point estimate (if applicable).
-
-      Values of mode other than 0-9 are treated as mode 0.
-
-    Sufficient space is allocated to the return value
-    to hold the suppressed trailing zeros.
-  */
-
   int bbits, b2, b5, be, dig, i, ieps, ilim = 0, ilim0,
     ilim1 = 0, j, j1, k, k0, k_check, leftright, m2, m5, s2, s5,
     spec_case, try_quick;
@@ -2328,20 +1869,18 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
   memset(alloc.freelist, 0, sizeof(alloc.freelist));
 
   u.d= dd;
-  if (word0(&u) & Sign_bit)
+  if (WORD0(&u) & Sign_bit)
   {
-    /* set sign for everything, including 0's and NaNs */
     *sign= 1;
-    word0(&u) &= ~Sign_bit;  /* clear sign bit */
+    WORD0(&u) &= ~Sign_bit; 
   }
   else
     *sign= 0;
 
-  /* If infinity, set decpt to DTOA_OVERFLOW, if 0 set it to 1 */
-  if (((word0(&u) & Exp_mask) == Exp_mask && (*decpt= DTOA_OVERFLOW)) ||
+
+  if (((WORD0(&u) & Exp_mask) == Exp_mask && (*decpt= DTOA_OVERFLOW)) ||
       (!dval(&u) && (*decpt= 1)))
   {
-    /* Infinity, NaN, 0 */
     char *res= (char*) dtoa_alloc(2, &alloc);
     res[0]= '0';
     res[1]= '\0';
@@ -2362,54 +1901,31 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
 #endif
 
   b= d2b(&u, &be, &bbits, &alloc);
-  if ((i= (int)(word0(&u) >> Exp_shift1 & (Exp_mask>>Exp_shift1))))
+  if ((i= (int)(WORD0(&u) >> Exp_shift1 & (Exp_mask>>Exp_shift1))))
   {
     dval(&d2)= dval(&u);
-    word0(&d2) &= Frac_mask1;
-    word0(&d2) |= Exp_11;
+    WORD0(&d2) &= Frac_mask1;
+    WORD0(&d2) |= Exp_11;
 
-    /*
-      log(x)       ~=~ log(1.5) + (x-1.5)/1.5
-      log10(x)      =  log(x) / log(10)
-                   ~=~ log(1.5)/log(10) + (x-1.5)/(1.5*log(10))
-      log10(d)= (i-Bias)*log(2)/log(10) + log10(d2)
-
-      This suggests computing an approximation k to log10(d) by
-
-      k= (i - Bias)*0.301029995663981
-           + ( (d2-1.5)*0.289529654602168 + 0.176091259055681 );
-
-      We want k to be too large rather than too small.
-      The error in the first-order Taylor series approximation
-      is in our favor, so we just round up the constant enough
-      to compensate for any error in the multiplication of
-      (i - Bias) by 0.301029995663981; since |i - Bias| <= 1077,
-      and 1077 * 0.30103 * 2^-52 ~=~ 7.2e-14,
-      adding 1e-13 to the constant term more than suffices.
-      Hence we adjust the constant term to 0.1760912590558.
-      (We could get a more accurate k by invoking log10,
-       but this is probably not worthwhile.)
-    */
 
     i-= Bias;
     denorm= 0;
   }
   else
   {
-    /* d is denormalized */
 
     i= bbits + be + (Bias + (P-1) - 1);
-    x= i > 32  ? word0(&u) << (64 - i) | word1(&u) >> (i - 32)
-      : word1(&u) << (32 - i);
+    x= i > 32  ? WORD0(&u) << (64 - i) | WORD1(&u) >> (i - 32)
+      : WORD1(&u) << (32 - i);
     dval(&d2)= x;
-    word0(&d2)-= 31*Exp_msk1; /* adjust exponent */
+    WORD0(&d2)-= 31*Exp_msk1; 
     i-= (Bias + (P-1) - 1) + 1;
     denorm= 1;
   }
   ds= (dval(&d2)-1.5)*0.289529654602168 + 0.1760912590558 + i*0.301029995663981;
   k= (int)ds;
   if (ds < 0. && ds != k)
-    k--;    /* want k= floor(ds) */
+    k--;    
   k_check= 1;
   if (k >= 0 && k <= Ten_pmax)
   {
@@ -2464,7 +1980,6 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
     break;
   case 2:
     leftright= 0;
-    /* no break */
   case 4:
     if (ndigits <= 0)
       ndigits= 1;
@@ -2472,7 +1987,6 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
     break;
   case 3:
     leftright= 0;
-    /* no break */
   case 5:
     i= ndigits + k + 1;
     ilim= i;
@@ -2489,19 +2003,17 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
 
   if (ilim >= 0 && ilim <= Quick_max && try_quick)
   {
-    /* Try to get by with floating-point arithmetic. */
     i= 0;
     dval(&d2)= dval(&u);
     k0= k;
     ilim0= ilim;
-    ieps= 2; /* conservative */
+    ieps= 2; 
     if (k > 0)
     {
       ds= tens[k&0xf];
       j= k >> 4;
       if (j & Bletch)
       {
-        /* prevent overflows */
         j&= Bletch - 1;
         dval(&u)/= bigtens[n_bigtens-1];
         ieps++;
@@ -2538,7 +2050,7 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
       ieps++;
     }
     dval(&eps)= ieps*dval(&u) + 7.;
-    word0(&eps)-= (P-1)*Exp_msk1;
+    WORD0(&eps)-= (P-1)*Exp_msk1;
     if (ilim == 0)
     {
       S= mhi= 0;
@@ -2551,7 +2063,6 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
     }
     if (leftright)
     {
-      /* Use Steele & White method of only generating digits needed. */
       dval(&eps)= 0.5/tens[ilim-1] - dval(&eps);
       for (i= 0;;)
       {
@@ -2570,7 +2081,6 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
     }
     else
     {
-      /* Generate ilim digits, then fix them up. */
       dval(&eps)*= tens[ilim-1];
       for (i= 1;; i++, dval(&u)*= 10.)
       {
@@ -2599,11 +2109,9 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
     ilim= ilim0;
   }
 
-  /* Do we have a "small" integer? */
 
   if (be >= 0 && k <= Int_max)
   {
-    /* Yes. */
     ds= tens[k];
     if (ndigits < 0 && ilim <= 0)
     {
@@ -2617,7 +2125,6 @@ static char *dtoa(double dd, int mode, int ndigits, int *decpt, int *sign,
       L= (Long)(dval(&u) / ds);
       dval(&u)-= L*ds;
 #ifdef Check_FLT_ROUNDS
-      /* If FLT_ROUNDS == 2, L will usually be high by 1 */
       if (dval(&u) < 0)
       {
         L--;
@@ -2697,7 +2204,6 @@ bump_up:
   if (s5 > 0)
     S= pow5mult(S, s5, &alloc);
 
-  /* Check for special case that d is a normalized power of 2. */
 
   spec_case= 0;
   if ((mode < 2 || leftright)
@@ -2706,25 +2212,16 @@ bump_up:
 #endif
      )
   {
-    if (!word1(&u) && !(word0(&u) & Bndry_mask) &&
-        (word0(&u) & (Exp_mask & (~Exp_msk1)))
+    if (!WORD1(&u) && !(WORD0(&u) & Bndry_mask) &&
+        (WORD0(&u) & (Exp_mask & (~Exp_msk1)))
        )
     {
-      /* The special case */
       b2+= Log2P;
       s2+= Log2P;
       spec_case= 1;
     }
   }
 
-  /*
-    Arrange for convenient computation of quotients:
-    shift left if necessary so divisor has 4 leading 0 bits.
-
-    Perhaps we should just compute leading 28 bits of S once
-    a nd for all and pass them and a shift to quorem, so it
-    can do shifts and ors to compute the numerator for q.
-  */
   if ((i= ((s5 ? 32 - hi0bits(S->p.x[S->wds-1]) : 1) + s2) & 0x1f))
     i= 32 - i;
   if (i > 4)
@@ -2750,7 +2247,6 @@ bump_up:
     if (bigint_cmp(b,S) < 0)
     {
       k--;
-      /* we botched the k estimate */
       b= mult_and_add(b, 10, 0, &alloc);
       if (leftright)
         mhi= mult_and_add(mhi, 10, 0, &alloc);
@@ -2761,7 +2257,6 @@ bump_up:
   {
     if (ilim < 0 || bigint_cmp(b,S= mult_and_add(S,5,0, &alloc)) <= 0)
     {
-      /* no digits, fcvt style */
 no_digits:
       k= -1 - ndigits;
       goto ret;
@@ -2776,27 +2271,22 @@ one_digit:
     if (m2 > 0)
       mhi= left_shift(mhi, m2, &alloc);
 
-    /*
-      Compute mlo -- check for special case that d is a normalized power of 2.
-    */
-
     mlo= mhi;
     if (spec_case)
     {
       mhi= alloc_bigint(mhi->k, &alloc);
-      copy_bigint(mhi, mlo);
+      COPY_BIGINT(mhi, mlo);
       mhi= left_shift(mhi, Log2P, &alloc);
     }
 
     for (i= 1;;i++)
     {
       dig= quorem(b,S) + '0';
-      /* Do we yet have the shortest decimal string that will round to d? */
       j= bigint_cmp(b, mlo);
       delta= bigint_diff(S, mhi, &alloc);
       j1= delta->sign ? 1 : bigint_cmp(b, delta);
       free_bigint(delta, &alloc);
-      if (j1 == 0 && mode != 1 && !(word1(&u) & 1)
+      if (j1 == 0 && mode != 1 && !(WORD1(&u) & 1)
 #ifdef Honor_FLT_ROUNDS
           && rounding >= 1
 #endif
@@ -2809,7 +2299,7 @@ one_digit:
         *s++= dig;
         goto ret;
       }
-      if (j < 0 || (j == 0 && mode != 1 && !(word1(&u) & 1)))
+      if (j < 0 || (j == 0 && mode != 1 && !(WORD1(&u) & 1)))
       {
         if (!b->p.x[0] && b->wds <= 1)
         {
@@ -2821,7 +2311,7 @@ one_digit:
           case 0: goto accept_dig;
           case 2: goto keep_dig;
           }
-#endif /*Honor_FLT_ROUNDS*/
+#endif 
         if (j1 > 0)
         {
           b= left_shift(b, 1, &alloc);
@@ -2841,7 +2331,7 @@ accept_dig:
           goto accept_dig;
 #endif
         if (dig == '9')
-        { /* possible if i == 1 */
+        { 
 round_9_up:
           *s++= '9';
           goto roundoff;
@@ -2878,7 +2368,6 @@ keep_dig:
       b= mult_and_add(b, 10, 0, &alloc);
     }
 
-  /* Round off last digit */
 
 #ifdef Honor_FLT_ROUNDS
   switch (rounding) {

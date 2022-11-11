@@ -114,7 +114,9 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     proxy_service_mode_(OB_MAX_SERVICE_MODE),
     server_routing_mode_(OB_MAX_ROUTING_MODE),
     proxy_id_(0),
-    client_max_memory_size_(0)
+    client_max_memory_size_(0),
+    enable_cpu_isolate_(false),
+    enable_primary_zone_(true)
 {
   proxy_idc_name_[0] = '\0';
 }
@@ -206,6 +208,8 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_TIME_ASSIGN(slow_query_time_threshold);
   CONFIG_ITEM_ASSIGN(proxy_id);
   CONFIG_ITEM_ASSIGN(client_max_memory_size);
+  CONFIG_ITEM_ASSIGN(enable_cpu_isolate);
+  CONFIG_ITEM_ASSIGN(enable_primary_zone);
 
   if (OB_SUCC(ret)) {
     obsys::CRLockGuard guard(proxy_config.rwlock_);
@@ -316,11 +320,11 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(slow_transaction_time_threshold), K_(slow_proxy_process_time_threshold),
        K_(query_digest_time_threshold), K_(slow_query_time_threshold),
        K_(proxy_service_mode), K_(server_routing_mode), K_(proxy_id), K_(proxy_idc_name),
-       K_(client_max_memory_size),
+       K_(client_max_memory_size), K_(enable_cpu_isolate),
        K_(default_inactivity_timeout), K_(enable_partition_table_route), K_(enable_pl_route),
        K_(enable_cluster_checkout), K_(enable_client_ip_checkout), K_(enable_proxy_scramble),
-       K_(enable_compression_protocol), K_(enable_ob_protocol_v2), K_(enable_reroute), K_(enable_index_route),
-       K_(enable_causal_order_read));
+       K_(enable_compression_protocol), K_(enable_ob_protocol_v2),
+       K_(enable_reroute), K_(enable_index_route), K_(enable_causal_order_read));
   J_OBJ_END();
   return pos;
 }

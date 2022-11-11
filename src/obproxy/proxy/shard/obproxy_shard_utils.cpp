@@ -262,8 +262,6 @@ int ObProxyShardUtils::do_rewrite_shard_select_request(const ObString &sql,
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("unexpected null expr table", K(ret));
       } else {
-        bool database_hava_quoto = false;
-        bool table_hava_quoto = false;
         int64_t table_pos = expr_table_pos.get_table_pos();
         int64_t database_pos = expr_table_pos.get_database_pos();
 
@@ -275,52 +273,10 @@ int ObProxyShardUtils::do_rewrite_shard_select_request(const ObString &sql,
         ObString real_table_name;
         if (OB_FAIL(table_name_map.get_refactored(table_name, real_table_name))) {
           LOG_WARN("fail to get real table name", K(table_name), K(ret));
-        } else {
-          if (*(sql_ptr + table_pos - 1) == '`' || *(sql_ptr + table_pos - 1) == '"') {
-            table_hava_quoto = true;
-            table_pos -= 1;
-            table_len += 2;
-          }
-
-          // replace database
-          if (database_pos > 0) {
-            // If there is database in SQL
-            if (*(sql_ptr + database_pos - 1) == '`' || *(sql_ptr + database_pos - 1) == '"') {
-              database_hava_quoto = true;
-              database_pos -= 1;
-              database_len += 2;
-            }
-            new_sql.append(sql_ptr + copy_pos, database_pos - copy_pos);
-
-            if (is_oracle_mode) {
-              replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
-            } else {
-              new_sql.append(real_database_name);
-            }
-
-            copy_pos = database_pos + database_len;
-            new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
-          } else {
-            // If there is no database in SQL, single database and single table will not be added.
-            // add real database name before logic table name
-            new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
-            if (!is_single_shard_db_table && !real_database_name.empty()) {
-              if (is_oracle_mode) {
-                replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
-              } else {
-                new_sql.append(real_database_name);
-              }
-              new_sql.append(".", 1);
-            }
-          }
-
-          // replace table name
-          if (is_oracle_mode) {
-            replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
-          } else {
-            new_sql.append(real_table_name);
-          }
-          copy_pos = table_pos + table_len;
+        } else if (OB_FAIL(rewrite_shard_request_table(sql_ptr, database_pos, database_len,
+                                                       table_pos, table_len, real_table_name, real_database_name,
+                                                       is_oracle_mode, is_single_shard_db_table, new_sql, copy_pos))) {
+          LOG_WARN("fail to rewrite table", K(ret));
         }
       }
     }
@@ -371,6 +327,116 @@ int ObProxyShardUtils::rewrite_shard_select_request(ObClientSessionInfo &session
   return ret;
 }
 
+int ObProxyShardUtils::rewrite_shard_request_db(const char *sql_ptr, int64_t database_pos,
+                                                int64_t table_pos, uint64_t database_len,
+                                                const ObString &real_database_name, bool is_oracle_mode,
+                                                bool is_single_shard_db_table, ObSqlString &new_sql, int64_t &copy_pos)
+{
+  int ret = OB_SUCCESS;
+
+  bool database_hava_quoto = false;
+
+  // replace database
+  if (database_pos > 0) {
+    // If there is database in SQL
+    if (*(sql_ptr + database_pos - 1) == '`' || *(sql_ptr + database_pos - 1) == '"') {
+      database_hava_quoto = true;
+      database_pos -= 1;
+      database_len += 2;
+    }
+    new_sql.append(sql_ptr + copy_pos, database_pos - copy_pos);
+
+    if (is_oracle_mode) {
+      replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
+    } else {
+      new_sql.append(real_database_name);
+    }
+
+    copy_pos = database_pos + database_len;
+    if (database_pos < table_pos) {
+      new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
+    }
+  } else {
+    // If there is no database in SQL, single database and single table will not be added.
+    // add real database name before logic table name
+    new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
+    if (!is_single_shard_db_table && !real_database_name.empty()) {
+      if (is_oracle_mode) {
+        replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
+      } else {
+        new_sql.append(real_database_name);
+      }
+      new_sql.append(".", 1);
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyShardUtils::rewrite_shard_request_table(const char *sql_ptr,
+                                                   int64_t database_pos, uint64_t database_len,
+                                                   int64_t table_pos, uint64_t table_len,
+                                                   const ObString &real_table_name, const ObString &real_database_name,
+                                                   bool is_oracle_mode, bool is_single_shard_db_table,
+                                                   ObSqlString &new_sql, int64_t &copy_pos)
+{
+  int ret = OB_SUCCESS;
+
+  bool table_hava_quoto = false;
+
+  if (*(sql_ptr + table_pos - 1) == '`' || *(sql_ptr + table_pos - 1) == '"') {
+    table_hava_quoto = true;
+    table_pos -= 1;
+    table_len += 2;
+  }
+
+  if (OB_FAIL(rewrite_shard_request_db(sql_ptr, database_pos, table_pos, database_len,
+                                       real_database_name, is_oracle_mode,
+                                       is_single_shard_db_table, new_sql, copy_pos))) {
+    LOG_WARN("fail to rewrite db", K(ret));
+  } else {
+    // replace table name
+    if (is_oracle_mode) {
+      replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
+    } else {
+      new_sql.append(real_table_name);
+    }
+
+    copy_pos = table_pos + table_len;
+  }
+
+  return ret;
+}
+
+int ObProxyShardUtils::rewrite_shard_request_hint_table(const char *sql_ptr, int64_t index_table_pos, uint64_t index_table_len,
+                                                        const ObString &real_table_name, bool is_oracle_mode,
+                                                        bool is_single_shard_db_table, ObSqlString &new_sql, int64_t &copy_pos)
+{
+  int ret = OB_SUCCESS;
+
+  bool table_hava_quoto = false;
+
+  // replace index table name in hint
+  if (index_table_pos > 0) {
+    if (*(sql_ptr + index_table_pos - 1) == '`' || *(sql_ptr + index_table_pos - 1) == '"') {
+      table_hava_quoto = true;
+      index_table_pos -= 1;
+      index_table_len += 2;
+    }
+    new_sql.append(sql_ptr + copy_pos, index_table_pos);
+
+    if (is_oracle_mode) {
+      replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
+    } else {
+      new_sql.append(real_table_name);
+    }
+
+    copy_pos = index_table_pos + index_table_len;
+  }
+
+  return ret;
+}
+
 // MySQL use single quoto to table, case-insensitive
 // Oracle use double quoto, case-sensitive, The default is uppercase
 //  if single schema table mode, table from SQL:
@@ -388,8 +454,10 @@ int ObProxyShardUtils::rewrite_shard_request(ObClientSessionInfo &session_info,
 
   const uint32_t PARSE_EXTRA_CHAR_NUM = 2;
   uint64_t table_len = table_name.length();
-  int64_t dml_tb_pos = client_request.get_parse_result().get_dbmesh_route_info().tb_pos_;
+  uint64_t database_len = database_name.length();
   uint64_t index_table_len = table_name.length();
+  int64_t table_pos = client_request.get_parse_result().get_dbmesh_route_info().tb_pos_;
+  int64_t database_pos = client_request.get_parse_result().get_dbmesh_route_info().db_pos_;
   int64_t index_table_pos = client_request.get_parse_result().get_dbmesh_route_info().index_tb_pos_;
 
   ObString sql = client_request.get_parse_sql();
@@ -397,105 +465,50 @@ int ObProxyShardUtils::rewrite_shard_request(ObClientSessionInfo &session_info,
   const char *sql_ptr = sql.ptr();
   int64_t sql_len = sql.length();
 
-  bool database_hava_quoto = false;
-  bool table_hava_quoto = false;
-  int64_t table_pos = dml_tb_pos;
-  int64_t database_pos = -1;
+  bool is_oracle_mode = session_info.is_oracle_mode();
   int64_t copy_pos = 0;
-  ObString tmp_str;
 
-  // replace index table name in hint
-  if (index_table_pos > 0) {
-    if (*(sql_ptr + index_table_pos - 1) == '`' || *(sql_ptr + index_table_pos - 1) == '"') {
-      table_hava_quoto = true;
-      index_table_pos -= 1;
-      index_table_len += 2;
-    }
-    new_sql.append(sql_ptr + copy_pos, index_table_pos);
-
-    if (session_info.is_oracle_mode()) {
-      replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
-    } else {
-      new_sql.append(real_table_name);
-    }
-
-    copy_pos = index_table_pos + index_table_len;
-  }
-
-  if (*(sql_ptr + table_pos - 1) == '`' || *(sql_ptr + table_pos - 1) == '"') {
-    table_hava_quoto = true;
-    table_pos -= 1;
-    table_len = table_name.length() + 2;
-  }
-
-  // get database pos, check whether have database or not
-  // TODO: get database pos by parser
-  bool sql_has_database = !client_request.get_parse_result().get_origin_database_name().empty();
-  if (sql_has_database && *(sql_ptr + table_pos - 1) == '.') {
-    database_pos = table_pos - 1 - database_name.length();
-    if (*(sql_ptr + table_pos - 2) == '`' || *(sql_ptr + table_pos - 2) == '"') {
-      database_hava_quoto = true;
-      database_pos -= 2;
-      tmp_str.assign_ptr(sql_ptr + database_pos + 1, static_cast<size_t>(database_name.length()));
-    } else {
-      tmp_str.assign_ptr(sql_ptr + database_pos, static_cast<size_t>(database_name.length()));
-    }
-    if (database_name == tmp_str) {
-      // do nothing
-    } else {
-      database_pos = -1;
-    }
-  }
-
-  // replace database
-  if (database_pos > 0) {
-    new_sql.append(sql_ptr + copy_pos, database_pos - copy_pos);
-
-    if (session_info.is_oracle_mode()) {
-      replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
-    } else {
-      new_sql.append(real_database_name);
-    }
-
-    new_sql.append(".", 1);
+  if (OB_FAIL(rewrite_shard_request_hint_table(sql_ptr, index_table_pos, index_table_len,
+                                               real_table_name, is_oracle_mode,
+                                               is_single_shard_db_table,new_sql, copy_pos))) {
+    LOG_WARN("fail to rewrite hint table", K(ret));
   } else {
-    // if SQL not have database, no need add database in single mode
-    // add real database name before logic table name
-    new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
-    if (!is_single_shard_db_table && !database_name.empty()) {
-
-      if (session_info.is_oracle_mode()) {
-        replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
-      } else {
-        new_sql.append(real_database_name);
+    if (OB_INVALID_INDEX == database_pos || database_pos < table_pos) {
+      if (OB_FAIL(rewrite_shard_request_table(sql_ptr, database_pos, database_len,
+                                              table_pos, table_len, real_table_name, real_database_name,
+                                              is_oracle_mode, is_single_shard_db_table, new_sql, copy_pos))) {
+        LOG_WARN("fail to rewrite table", K(ret));
       }
-      new_sql.append(".", 1);
+    } else {
+      if (OB_FAIL(rewrite_shard_request_table(sql_ptr, 0, database_len,
+                                              table_pos, table_len, real_table_name, real_database_name,
+                                              is_oracle_mode, is_single_shard_db_table, new_sql, copy_pos))) {
+        LOG_WARN("fail to rewrite table", K(ret));
+      } else if (OB_FAIL(rewrite_shard_request_db(sql_ptr, database_pos, table_pos, database_len,
+                                                  real_database_name, is_oracle_mode,
+                                                  is_single_shard_db_table, new_sql, copy_pos))) {
+        LOG_WARN("fail to rewrite db", K(ret));
+      }
     }
   }
 
-  // replace table name
-  if (session_info.is_oracle_mode()) {
-    replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
-  } else {
-    new_sql.append(real_table_name);
-  }
+  if (OB_SUCC(ret)) {
+    new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos - PARSE_EXTRA_CHAR_NUM);
 
-  copy_pos = table_pos + table_len;
-  new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos - PARSE_EXTRA_CHAR_NUM);
-
-  // 4. push reader forward by consuming old buffer and write new sql into buffer
-  if (OB_FAIL(client_buffer_reader.consume_all())) {
-    LOG_WARN("fail to consume all", K(ret));
-  } else {
-    ObMIOBuffer *writer = client_buffer_reader.mbuf_;
-    if (OB_ISNULL(writer)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected null values ", K(writer), K(ret));
-      // no need compress here, if server session support comrpess, it will compress later
-    } else if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*writer, obmysql::OB_MYSQL_COM_QUERY, new_sql.string(), false, false))) {
-      LOG_WARN("fail to build_mysql_request", K(new_sql), K(ret));
-    } else if (OB_FAIL(ObProxySessionInfoHandler::rewrite_query_req_by_sharding(session_info, client_request, client_buffer_reader))) {
-      LOG_WARN("fail to rewrite_query_req_by_sharding", K(ret));
+    // 4. push reader forward by consuming old buffer and write new sql into buffer
+    if (OB_FAIL(client_buffer_reader.consume_all())) {
+      LOG_WARN("fail to consume all", K(ret));
+    } else {
+      ObMIOBuffer *writer = client_buffer_reader.mbuf_;
+      if (OB_ISNULL(writer)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("unexpected null values ", K(writer), K(ret));
+        // no need compress here, if server session support compress, it will compress later
+      } else if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*writer, obmysql::OB_MYSQL_COM_QUERY, new_sql.string(), false, false))) {
+        LOG_WARN("fail to build_mysql_request", K(new_sql), K(ret));
+      } else if (OB_FAIL(ObProxySessionInfoHandler::rewrite_query_req_by_sharding(session_info, client_request, client_buffer_reader))) {
+        LOG_WARN("fail to rewrite_query_req_by_sharding", K(ret));
+      }
     }
   }
 
@@ -1068,8 +1081,8 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
     //  3. special sql, use last shard connector
     is_need_skip_router = (!(OBPROXY_MAX_DBMESH_ID != es_index && 0 != es_index)
                              && ((is_sharding_in_trans(session_info, trans_state))
-                              || parse_result.is_show_tables_stmt()
-                              || (parse_result.is_select_stmt() && parse_result.has_last_insert_id())));
+                                 || parse_result.is_show_stmt()
+                                 || (parse_result.is_select_stmt() && parse_result.has_last_insert_id())));
     
     // some case can skip rewrite check:
     //   1. if sql have table name, can not skip
@@ -1079,6 +1092,8 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
     //      2.3 COMMIT
     //      2.4 ROLLBACK
     is_skip_rewrite_check = table_name.empty() && (parse_result.is_show_tables_stmt()
+                                                  || parse_result.is_show_full_tables_stmt()
+                                                  || parse_result.is_show_table_status_stmt()
                                                   || (parse_result.is_select_stmt() && parse_result.has_last_insert_id())
                                                   || parse_result.is_commit_stmt()
                                                   || parse_result.is_rollback_stmt()); 
@@ -1220,14 +1235,17 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlSM *sm,
       ret = OB_NOT_SUPPORTED;
       LOG_WARN("ddl stmt is unsupported for sharding table", K(ret));
     }
-  } else if (parse_result.is_show_tables_stmt() || (table_name.empty() && !parse_result.is_dml_stmt())) {
+  } else if (parse_result.is_show_tables_stmt()
+             || parse_result.is_show_full_tables_stmt()
+             || parse_result.is_show_table_status_stmt()
+             || (table_name.empty() && !parse_result.is_dml_stmt())) {
     //do nothing
   } else if (table_name.empty()) {
     // keep compatible, skip
   } else if (parse_result.is_multi_stmt()) {
     ret = OB_NOT_SUPPORTED;
     LOG_WARN("multi stmt is unsupported for sharding table", "stmt type", parse_result.get_stmt_type(), K(ret));
-  } else if (parse_result.is_show_create_table_stmt() || parse_result.is_desc_table_stmt()) {
+  } else if (parse_result.is_show_stmt() || parse_result.is_desc_table_stmt()) {
     if (OB_FAIL(handle_other_request(client_session, trans_state,
                                      client_buffer_reader, table_name, db_info))) {
       LOG_WARN("fail to handle other request", K(ret), K(session_info), K(table_name));
@@ -1375,9 +1393,13 @@ int ObProxyShardUtils::handle_dml_request(ObMysqlClientSession &client_session,
   char real_table_name[OB_MAX_TABLE_NAME_LENGTH];
   char real_database_name[OB_MAX_DATABASE_NAME_LENGTH];
 
-  ObCollationType connection_collation = static_cast<ObCollationType>(client_session.get_session_info().get_collation_connection());
-  if (OB_FAIL(ObMysqlRequestAnalyzer::parse_sql_fileds(client_request, connection_collation))) {
-    LOG_WARN("fail to extract_fileds", K(connection_collation), K(ret));
+  ObProxySqlParser sql_parser;
+  ObString sql = client_request.get_parse_sql();
+  if (OB_FAIL(sql_parser.parse_sql_by_obparser(sql, NORMAL_PARSE_MODE, parse_result, true))) {
+    LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
+  }
+  if(OB_FAIL(ret)) {
+    // doing nothing
   } else if ((parse_result.is_insert_stmt() || parse_result.is_replace_stmt()
              || parse_result.is_update_stmt()) && parse_result.get_batch_insert_values_count() > 1) {
     ret = OB_ERR_BATCH_INSERT_FOUND;
@@ -2295,7 +2317,7 @@ bool ObProxyShardUtils::check_shard_authority(const ObShardUserPrivInfo &up_info
     bret = up_info.priv_set_ & (OB_PRIV_DELETE | OB_PRIV_INSERT);
   } else if (parse_result.is_delete_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_DELETE;
-  } else if (parse_result.is_create_stmt()) {
+  } else if (parse_result.is_create_stmt() || parse_result.is_rename_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_CREATE;
   } else if (parse_result.is_alter_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_ALTER;
@@ -2309,8 +2331,10 @@ bool ObProxyShardUtils::check_shard_authority(const ObShardUserPrivInfo &up_info
   return bret;
 }
 
-int ObProxyShardUtils::build_error_packet(int err_code, bool &need_response_for_dml,
-                       ObMysqlTransact::ObTransState &trans_state)
+int ObProxyShardUtils::build_error_packet(int err_code,
+                                          bool &need_response_for_dml,
+                                          ObMysqlTransact::ObTransState &trans_state,
+                                          ObMysqlClientSession *client_session)
 {
   int ret = OB_SUCCESS;
   switch (err_code) {
@@ -2357,7 +2381,7 @@ int ObProxyShardUtils::build_error_packet(int err_code, bool &need_response_for_
   if (need_response_for_dml) {
     trans_state.mysql_errcode_ = err_code;
     trans_state.mysql_errmsg_ = ob_strerror(err_code);
-    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state))) {
+    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state, client_session))) {
       LOG_WARN("fail to build err resp", K(ret));
     }
   }

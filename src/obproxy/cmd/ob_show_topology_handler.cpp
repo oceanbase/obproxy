@@ -45,8 +45,8 @@ static const EMySQLFieldType column_type[OB_TC_MAX_COLUMN_ID] = {
     OB_MYSQL_TYPE_LONG
 };
 
-ObShowTopologyHandler::ObShowTopologyHandler(ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit)
-  : ObCmdHandler(buf, pkg_seq, memory_limit)
+ObShowTopologyHandler::ObShowTopologyHandler(ObMIOBuffer *buf, ObCmdInfo &info)
+  : ObCmdHandler(buf, info)
 {
 }
 
@@ -154,8 +154,7 @@ int ObShowTopologyHandler::dump_topology_header()
 }
 
 int ObShowTopologyHandler::show_topology_cmd_callback(ObMIOBuffer *buf,
-                                                      uint8_t pkg_seq,
-                                                      int64_t memory_limit,
+                                                      ObCmdInfo &info,
                                                       const ObString &logic_tenant_name,
                                                       const ObString &logic_database_name,
                                                       const ObString &group_name)
@@ -163,7 +162,7 @@ int ObShowTopologyHandler::show_topology_cmd_callback(ObMIOBuffer *buf,
   int ret = OB_SUCCESS;
   ObShowTopologyHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObShowTopologyHandler(buf, pkg_seq, memory_limit))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObShowTopologyHandler(buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     ERROR_CMD("fail to new ObShowTopologyHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {

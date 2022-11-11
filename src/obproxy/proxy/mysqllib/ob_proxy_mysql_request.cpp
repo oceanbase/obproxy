@@ -14,6 +14,8 @@
 
 #include "utils/ob_proxy_utils.h"
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
+#include "obproxy/cmd/ob_internal_cmd_processor.h"
+#include "obproxy/utils/ob_proxy_privilege_check.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::sql;
@@ -67,7 +69,7 @@ ObProxyMysqlRequest::ObProxyMysqlRequest()
     req_pkt_len_(0), req_buf_for_prepare_execute_(NULL),
     req_buf_for_prepare_execute_len_(0), result_(), ps_result_(NULL),
     user_identity_(USER_TYPE_NONE), is_internal_cmd_(false), is_kill_query_(false),
-    is_large_request_(false), enable_analyze_internal_cmd_(false)
+    is_large_request_(false), enable_analyze_internal_cmd_(false), is_mysql_req_in_ob20_payload_(false)
 {
   sql_id_buf_[0] = '\0';
 }
@@ -87,9 +89,12 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
       ret = OB_INVALID_ARGUMENT;
       LOG_WARN("buffer reader is empty", K(ret));
     } else {
-      //OB_MYSQL_COM_STMT_CLOSE always followed other request
-      if (OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == meta_.cmd_ || OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
-       && OB_LIKELY(total_len > meta_.pkt_len_)) {
+      // OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_SEND_LONG_DATA always followed other request
+      // mysql req in ob20 payload, always followed by crc or other mysql req
+      LOG_DEBUG("add request before", K(total_len), K(meta_), K(is_mysql_req_in_ob20_payload()));
+      if (total_len > meta_.pkt_len_
+          && (is_mysql_req_in_ob20_payload()
+              || OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == meta_.cmd_ || OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_))) {
         total_len = meta_.pkt_len_;
       }
 
@@ -158,6 +163,33 @@ int ObProxyMysqlRequest::fill_query_info(const int64_t cs_id)
   is_kill_query_ = true;
   return ret;
 }
+
+void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
+{
+  if (OB_UNLIKELY(NULL != cmd_info_)) {
+    op_fixed_mem_free(cmd_info_, static_cast<int64_t>(sizeof(ObInternalCmdInfo)));
+    cmd_info_ = NULL;
+  }
+  if (OB_UNLIKELY(NULL != query_info_)) {
+    op_fixed_mem_free(query_info_, static_cast<int64_t>(sizeof(ObProxyKillQueryInfo)));
+    query_info_ = NULL;
+  }
+  if (NULL != ps_result_) {
+    ps_result_ = NULL;
+  }
+  meta_.reset();
+  result_.reset(is_reset_origin_db_table);
+  is_internal_cmd_ = false;
+  is_kill_query_ = false;
+  is_large_request_ = false;
+  enable_analyze_internal_cmd_ = false;
+  is_mysql_req_in_ob20_payload_ = false;
+  user_identity_ = USER_TYPE_NONE;
+  req_pkt_len_ = 0;
+  allocator_.reuse();
+  sql_id_buf_[0] = '\0';
+}
+
 
 } // end of namespace proxy
 } // end of namespace obproxy

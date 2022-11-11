@@ -35,7 +35,8 @@ ObPartDescHash::ObPartDescHash() : is_oracle_mode_(false)
 int ObPartDescHash::get_part(ObNewRange &range,
                              ObIAllocator &allocator,
                              ObIArray<int64_t> &part_ids,
-                             ObPartDescCtx &ctx)
+                             ObPartDescCtx &ctx,
+                             ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   if (1 != range.get_start_key().get_obj_cnt()) { // single value
@@ -57,6 +58,8 @@ int ObPartDescHash::get_part(ObNewRange &range,
         COMMON_LOG(WARN, "fail to get part hash id", K(ret));
       } else if (OB_FAIL(part_ids.push_back(part_id))) {
         COMMON_LOG(WARN, "fail to push part_id", K(ret));
+      } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+        COMMON_LOG(WARN, "fail to push tablet_id", K(ret));
       }
     }
   }
@@ -64,7 +67,7 @@ int ObPartDescHash::get_part(ObNewRange &range,
   return ret;
 }
 
-int ObPartDescHash::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+int ObPartDescHash::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   int64_t part_id = -1;
@@ -73,6 +76,8 @@ int ObPartDescHash::get_part_by_num(const int64_t num, common::ObIArray<int64_t>
     COMMON_LOG(WARN, "fail to get part hash id", K(num), K(ret));
   } else if (OB_FAIL(part_ids.push_back(part_id))) {
     COMMON_LOG(WARN, "fail to push part_id", K(ret));
+  } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+    COMMON_LOG(WARN, "fail to push tablet_id", K(ret));
   }
   return ret;
 }
@@ -92,7 +97,7 @@ bool ObPartDescHash::is_oracle_supported_type(const ObObjType type)
     case ObTimestampLTZType:
     case ObTimestampNanoType:
     case ObRawType:
-    /*  
+    /*
     case ObIntervalYMType:
     case ObIntervalDSType:
     */
@@ -110,7 +115,7 @@ bool ObPartDescHash::is_oracle_supported_type(const ObObjType type)
   return supported;
 }
 
-uint64_t ObPartDescHash::calc_hash_value_with_seed(const ObObj &obj, int64_t seed)
+uint64_t ObPartDescHash::calc_hash_value_with_seed(const ObObj &obj, const int64_t cluster_version, int64_t seed)
 {
   uint64 hval = 0;
   ObObjType type = obj.get_type();
@@ -128,13 +133,17 @@ uint64_t ObPartDescHash::calc_hash_value_with_seed(const ObObj &obj, int64_t see
     }
     obj_trimmed.set_collation_type(obj.get_collation_type());
     obj_trimmed.set_string(type, obj.get_string_ptr(), val_len);
-    if (share::schema::PARTITION_FUNC_TYPE_HASH_V2 == part_func_type_) {
+    if ((IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)
+         && share::schema::PARTITION_FUNC_TYPE_HASH_V2 == part_func_type_)
+        || (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version))) {
       hval = obj_trimmed.hash_murmur(seed);
     } else {
       hval = obj_trimmed.hash(seed);
     }
   } else {
-    if (share::schema::PARTITION_FUNC_TYPE_HASH_V2 == part_func_type_) {
+    if ((IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)
+          && share::schema::PARTITION_FUNC_TYPE_HASH_V2 == part_func_type_)
+        || (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version))) {
       hval = obj.hash_murmur(seed);
     } else {
       hval = obj.hash(seed);
@@ -183,7 +192,7 @@ int ObPartDescHash::calc_value_for_oracle(ObObj &src_obj,
         ret = OB_INVALID_ARGUMENT;
         COMMON_LOG(WARN, "type is wrong", K(ret), K(src_obj), K(type));
       } else {
-        hash_val = calc_hash_value_with_seed(src_obj, hash_val);
+        hash_val = calc_hash_value_with_seed(src_obj, ctx.get_cluster_version(), hash_val);
       }
     }
 

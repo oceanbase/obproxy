@@ -27,6 +27,7 @@
 #include "lib/container/ob_iarray.h"
 
 #define FALSE_IT(stmt) ({ (stmt); false; })
+#define OB_FALSE_IT(stmt) ({ (stmt); false; })
 
 #define CPUID_STD_SSE4_2 0x00100000
 

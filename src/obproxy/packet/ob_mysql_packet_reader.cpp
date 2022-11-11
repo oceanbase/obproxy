@@ -122,8 +122,8 @@ inline int ObMysqlPacketReader::get_content_len_and_seq(ObIOBufferReader &buf_re
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("pbuf is null, which is unexpected", K(pbuf), K(ret));
   } else {
-    content_len = static_cast<int64_t>(ob_uint3korr(pbuf));
-    seq = static_cast<int64_t>(ob_uint1korr(pbuf + 3));
+    content_len = static_cast<int64_t>(uint3korr(pbuf));
+    seq = static_cast<int64_t>(uint1korr(pbuf + 3));
   }
   return ret;
 }

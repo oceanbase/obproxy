@@ -17,13 +17,14 @@
 #include "packet/ob_mysql_packet_writer.h"
 #include "packet/ob_mysql_packet_util.h"
 #include "proxy/mysqllib/ob_proxy_session_info.h"
+#include "obproxy/packet/ob_proxy_packet_writer.h"
+#include "obproxy/proxy/mysql/ob_mysql_client_session.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
 using namespace oceanbase::sql;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::packet;
-
 
 namespace oceanbase
 {
@@ -36,7 +37,7 @@ const ObString ObMysqlResponseBuilder::OBPROXY_PROXY_VERSION_NAME = "proxy_versi
 
 int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
                                           ObProxyMysqlRequest &client_request,
-                                          ObClientSessionInfo &info,
+                                          ObMysqlClientSession &client_session,
                                           const bool is_in_trans,
                                           const bool is_state_changed)
 {
@@ -51,7 +52,7 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
 
     // default set of ok packet
     // 0x22 means OB_SERVER_STATUS_AUTOCOMMIT, OB_SERVER_STATUS_NO_INDEX_USED is set
-    int64_t autocommit = info.get_cached_variables().get_autocommit();
+    int64_t autocommit = client_session.get_session_info().get_cached_variables().get_autocommit();
     ObServerStatusFlags ssf(0x22);
     if (is_in_trans) {
       ssf.status_flags_.OB_SERVER_STATUS_IN_TRANS = 1;
@@ -68,8 +69,8 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
     ObString pkt_str;
     if (OB_FAIL(ok_packet->get_packet_str(pkt_str))) {
       LOG_WARN("fail to get ok packet str", K(ret));
-    } else if (OB_FAIL(ObMysqlPacketWriter::write_raw_packet(mio_buf, pkt_str))) {
-      LOG_WARN("fail to write ok packet", K(ret));
+    } else if (OB_FAIL(ObProxyPacketWriter::write_raw_packet(mio_buf, client_session, pkt_str))) {
+      LOG_WARN("fail to write packet", K(ret));
     }
   }
 
@@ -78,11 +79,12 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
 
 int ObMysqlResponseBuilder::build_select_tx_ro_resp(ObMIOBuffer &mio_buf,
                                                     ObProxyMysqlRequest &client_request,
-                                                    ObClientSessionInfo &info,
+                                                    ObMysqlClientSession &client_session,
                                                     const bool is_in_trans)
 {
   int ret = OB_SUCCESS;
-
+  ObClientSessionInfo &info = client_session.get_session_info();
+  
   // get seq
   uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
 
@@ -109,20 +111,22 @@ int ObMysqlResponseBuilder::build_select_tx_ro_resp(ObMIOBuffer &mio_buf,
   }
 
   // encode to mio_buf
-  if (OB_FAIL(ObMysqlPacketUtil::encode_kv_resultset(mio_buf, seq,
-                                                     field, field_value, status_flag))) {
-    LOG_WARN("fail to encode kv resultset", K(seq), K(ret));
+  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, seq,
+                                                      field, field_value, status_flag))) {
+    LOG_WARN("fail to write kv resultset", K(ret));
   }
+  
   return ret;
 }
 
 int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
                                                          ObProxyMysqlRequest &client_request,
-                                                         ObClientSessionInfo &info,
+                                                         ObMysqlClientSession &client_session,
                                                          const bool is_in_trans,
                                                          int64_t addr)
 {
   int ret = OB_SUCCESS;
+  ObClientSessionInfo &info = client_session.get_session_info();
 
   // get seq
   uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
@@ -150,19 +154,21 @@ int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
   }
 
   // encode to mio_buf
-  if (OB_FAIL(ObMysqlPacketUtil::encode_kv_resultset(mio_buf, seq,
-                                                     field, field_value, status_flag))) {
-    LOG_WARN("fail to encode kv resultset", K(seq), K(ret));
+  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, seq,
+                                                      field, field_value, status_flag))) {
+    LOG_WARN("fail to write kv resultset", K(ret));
   }
+  
   return ret;
 }
 
 int ObMysqlResponseBuilder::build_select_proxy_version_resp(ObMIOBuffer &mio_buf,
                                                             ObProxyMysqlRequest &client_request,
-                                                            ObClientSessionInfo &info,
+                                                            ObMysqlClientSession &client_session,
                                                             const bool is_in_trans)
 {
   int ret = OB_SUCCESS;
+  ObClientSessionInfo &info = client_session.get_session_info();
 
   // get seq
   uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
@@ -195,10 +201,10 @@ int ObMysqlResponseBuilder::build_select_proxy_version_resp(ObMIOBuffer &mio_buf
   }
 
   // encode to mio_buf
-  if (OB_FAIL(ObMysqlPacketUtil::encode_kv_resultset(mio_buf, seq,
-                                                     field, field_value, status_flag))) {
-    LOG_WARN("fail to encode kv resultset", K(seq), K(ret));
+  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, seq, field, field_value, status_flag))) {
+    LOG_WARN("fail to write kv resultset", K(ret));
   }
+
   return ret;
 }
 

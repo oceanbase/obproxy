@@ -93,6 +93,8 @@ public:
   // Attention!! async_read or async_write must be called by ObEThread
   int async_read(event::ObContinuation *cont, const char *sql, event::ObAction *&action);
   int async_read(event::ObContinuation *cont, const ObMysqlRequestParam &request_param, event::ObAction *&action);
+  int async_read(event::ObContinuation *cont, const ObMysqlRequestParam &request_param,
+                 event::ObAction *&action, const int64_t timeout_ms);
   int async_write(event::ObContinuation *cont, const char *sql, event::ObAction *&action);
 
   // raw execute related

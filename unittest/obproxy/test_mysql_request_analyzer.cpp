@@ -52,9 +52,9 @@ void TestEvent::TearDown()
 void TestEvent::gen_mysql_packet(char *&data, const int64_t packet_size)
 {
   data = (char *) malloc(packet_size + MYSQL_NET_HEADER_LENGTH);
-  ob_int3store(data, packet_size);
+  int3store(data, packet_size);
   int64_t size = 0;
-  size = ob_uint3korr(data);
+  size = uint3korr(data);
   LOG_INFO("gen mysql packet", K(size));
 }
 
@@ -731,12 +731,12 @@ TEST_F(TestEvent, test_analyze_16m_0b_in_one_buffer)
   ObRequestBuffer buffer;
 
   tmp_buf = (char *) malloc(MYSQL_NET_HEADER_LENGTH + packet_len_16m + MYSQL_NET_HEADER_LENGTH + packet_len_0b);
-  ob_int3store(tmp_buf, packet_len_16m);
-  size = ob_uint3korr(tmp_buf);
+  int3store(tmp_buf, packet_len_16m);
+  size = uint3korr(tmp_buf);
   LOG_INFO("gen mysql packet", K(size));
 
-  ob_int3store(tmp_buf + (MYSQL_NET_HEADER_LENGTH + packet_len_16m), packet_len_0b);
-  size = ob_uint3korr(tmp_buf + (MYSQL_NET_HEADER_LENGTH + packet_len_16m));
+  int3store(tmp_buf + (MYSQL_NET_HEADER_LENGTH + packet_len_16m), packet_len_0b);
+  size = uint3korr(tmp_buf + (MYSQL_NET_HEADER_LENGTH + packet_len_16m));
   LOG_INFO("gen mysql packet", K(size));
 
   buffer.assign_ptr(tmp_buf, MYSQL_NET_HEADER_LENGTH + packet_len_16m + MYSQL_NET_HEADER_LENGTH + packet_len_0b);

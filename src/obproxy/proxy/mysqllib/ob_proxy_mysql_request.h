@@ -36,6 +36,7 @@ class ObIOBufferReader;
 }
 namespace proxy
 {
+
 struct ObProxyKillQueryInfo
 {
   ObProxyKillQueryInfo() { reset(); }
@@ -90,6 +91,8 @@ public:
   bool is_kill_query() const { return is_kill_query_; }
   bool is_large_request() const { return is_large_request_; }
   bool enable_analyze_internal_cmd() const { return enable_analyze_internal_cmd_; }
+  bool is_mysql_req_in_ob20_payload() const { return is_mysql_req_in_ob20_payload_; }
+  
   bool is_sharding_user() const { return USER_TYPE_SHARDING == user_identity_; }
   bool is_proxysys_user() const { return USER_TYPE_PROXYSYS == user_identity_; }
   bool is_inspector_user() const { return USER_TYPE_INSPECTOR == user_identity_; }
@@ -100,6 +103,8 @@ public:
   void set_is_kill_query(const bool flag) { is_kill_query_ = flag; }
   void set_large_request(const bool flag) { is_large_request_ = flag; }
   void set_enable_analyze_internal_cmd(const bool internal) { enable_analyze_internal_cmd_ = internal; }
+  void set_mysql_req_in_ob20_payload(const bool flag) { is_mysql_req_in_ob20_payload_ = flag; }
+
   void set_user_identity(const ObProxyLoginUserType type) { user_identity_ = type; }
   inline ObProxyLoginUserType get_user_identity() const { return user_identity_; }
 
@@ -123,6 +128,8 @@ public:
   ObInternalCmdInfo *cmd_info_;
   ObProxyKillQueryInfo *query_info_;
 
+  TO_STRING_KV(K_(meta), K_(req_buf_len), K_(req_pkt_len), K_(is_internal_cmd), K_(is_kill_query),
+               K_(is_large_request), K_(enable_analyze_internal_cmd), K_(is_mysql_req_in_ob20_payload));
 private:
   ObMysqlPacketMeta meta_;   // request packet meta
   char *req_buf_;            // request buf
@@ -140,35 +147,11 @@ private:
   bool is_kill_query_;
   bool is_large_request_;
   bool enable_analyze_internal_cmd_;//indicate whether need analyze internal cmd
+  bool is_mysql_req_in_ob20_payload_; // whether the mysql req is in ob20 protocol req payload
 
   common::ObArenaAllocator allocator_;
   char sql_id_buf_[common::OB_MAX_SQL_ID_LENGTH + 1];
 };
-
-inline void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
-{
-  if (OB_UNLIKELY(NULL != cmd_info_)) {
-    op_fixed_mem_free(cmd_info_, static_cast<int64_t>(sizeof(ObInternalCmdInfo)));
-    cmd_info_ = NULL;
-  }
-  if (OB_UNLIKELY(NULL != query_info_)) {
-    op_fixed_mem_free(query_info_, static_cast<int64_t>(sizeof(ObProxyKillQueryInfo)));
-    query_info_ = NULL;
-  }
-  if (NULL != ps_result_) {
-    ps_result_ = NULL;
-  }
-  meta_.reset();
-  result_.reset(is_reset_origin_db_table);
-  is_internal_cmd_ = false;
-  is_kill_query_ = false;
-  is_large_request_ = false;
-  enable_analyze_internal_cmd_ = false;
-  user_identity_ = USER_TYPE_NONE;
-  req_pkt_len_ = 0;
-  allocator_.reuse();
-  sql_id_buf_[0] = '\0';
-}
 
 bool ObProxyMysqlRequest::is_real_dml_sql() const
 {

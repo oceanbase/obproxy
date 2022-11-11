@@ -40,6 +40,7 @@ public:
 
   int start_prometheus();
   int start_prometheus_task();
+  int start_one_prometheus(int64_t index);
 
   int handle_counter(const char *name_ptr, const char *help_ptr,
                      common::ObVector<ObPrometheusLabel> &label_array,

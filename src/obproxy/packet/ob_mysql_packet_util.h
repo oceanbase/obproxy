@@ -35,6 +35,10 @@ namespace event
 {
 class ObMIOBuffer;
 }
+namespace engine
+{
+class ObProxyResultResp;
+}
 
 class ObMysqlPacketUtil
 {
@@ -48,49 +52,19 @@ public:
                                common::ObIArray<common::ObField> *fields = NULL);
   static int encode_eof_packet(event::ObMIOBuffer &write_buf, uint8_t &seq,
                                uint16_t status_flag = 0);
-  static int encode_err_packet(event::ObMIOBuffer &write_buf, uint8_t &seq, int errcode);
+  static int encode_executor_response_packet(event::ObMIOBuffer *write_buf, uint8_t &seq,
+                                             engine::ObProxyResultResp *result_resp);
 
-  template<typename T>
-  static int encode_err_packet(event::ObMIOBuffer &write_buf, uint8_t &seq, int errcode, T &param)
-  {
-    int ret = common::OB_SUCCESS;
-    const int32_t MAX_MSG_BUF_SIZE = 256;
-    if (OB_UNLIKELY(common::OB_SUCCESS == errcode)) {
-      PROXY_LOG(WARN, "BUG send error packet but err code is 0", "Backtrace", common::lbt());
-      errcode = common::OB_ERR_UNEXPECTED;
-    }
-    char msg_buf[MAX_MSG_BUF_SIZE];
-    const char *errmsg = ob_str_user_error(errcode);
-    int32_t length = 0;
-    if (OB_ISNULL(errmsg)) {
-      length = snprintf(msg_buf, sizeof(msg_buf), "Unknown user error, err=%d", errcode);
-    } else {
-      length = snprintf(msg_buf, sizeof(msg_buf), errmsg, param);
-    }
-    if (OB_UNLIKELY(length < 0) || OB_UNLIKELY(length > MAX_MSG_BUF_SIZE)) {
-      ret = common::OB_BUF_NOT_ENOUGH;
-      PROXY_LOG(WARN, "msg_buf is not enough", K(length), K(errmsg), K(ret));
-    } else {
-      ret = encode_err_packet_buf(write_buf, seq, errcode, msg_buf);
-    }
-    return ret;
-  }
+  static int encode_err_packet(event::ObMIOBuffer &write_buf, uint8_t &seq, const int errcode, const char *msg_buf);
 
-  static int encode_err_packet_buf(event::ObMIOBuffer &write_buf,
-                                   uint8_t &seq,
-                                   const int errcode,
-                                   const char *msg_buf);
-
-  static int encode_err_packet_buf(event::ObMIOBuffer &write_buf,
-                                   uint8_t &seq,
-                                   const int errcode,
-                                   common::ObString msg);
+  static int encode_err_packet(event::ObMIOBuffer &write_buf, uint8_t &seq, const int errcode,
+                               const common::ObString &msg);
 
   static int encode_ok_packet(event::ObMIOBuffer &write_buf,
                               uint8_t &seq,
                               const int64_t affected_rows,
                               const obmysql::ObMySQLCapabilityFlags &capability,
-                              uint16_t status_flag = 0);
+                              const uint16_t status_flag = 0);
   static int encode_kv_resultset(event::ObMIOBuffer &write_buf,
                                  uint8_t &seq,
                                  const obmysql::ObMySQLField &field,

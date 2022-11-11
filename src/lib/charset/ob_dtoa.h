@@ -31,12 +31,12 @@ typedef enum
 //==================================================
 
 double ob_strtod(const char *str, char **end, int *error);
-size_t ob_fcvt(double x, int precision, int width, char *to, ob_bool *error);
-size_t ob_gcvt(double x, ob_gcvt_arg_type type, int width, char *to, ob_bool *error);
-size_t ob_gcvt_opt(double x, ob_gcvt_arg_type type, int width, char *to, ob_bool *error,
-                   ob_bool use_oracle_mode);
-size_t ob_gcvt_strict(double x, ob_gcvt_arg_type type, int width, char *to, ob_bool *error,
-                      ob_bool use_oracle_mode, ob_bool use_force_e_format);
+size_t ob_fcvt(double x, int precision, int width, char *to, bool *error);
+size_t ob_gcvt(double x, ob_gcvt_arg_type type, int width, char *to, bool *error);
+size_t ob_gcvt_opt(double x, ob_gcvt_arg_type type, int width, char *to, bool *error,
+                   bool use_oracle_mode);
+size_t ob_gcvt_strict(double x, ob_gcvt_arg_type type, int width, char *to, bool *error,
+                      bool use_oracle_mode, bool use_force_e_format);
 
 #ifdef	__cplusplus
 }

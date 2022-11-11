@@ -26,8 +26,7 @@ class ObClusterResource;
 class ObShowCongestionHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowCongestionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                          const ObInternalCmdInfo &info);
+  ObShowCongestionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowCongestionHandler() { destroy(); }
 
 private:

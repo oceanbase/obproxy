@@ -168,7 +168,10 @@ static inline void set_part_key_column_idx(ObExprParseResult *result, ObProxyPar
     if (NULL == relation) {                                                                     \
     } else {                                                                                    \
       int64_t new_mask = get_mask(relation->type_, relation->level_);                           \
-      if ((result->cur_mask_ | new_mask) != result->cur_mask_) {                                \
+      bool has_rowid = result->has_rowid_;                                                      \
+      if (((result->cur_mask_ | new_mask) != result->cur_mask_)                                 \
+          || (has_rowid                                                                         \
+              && is_equal_to_rowid(&relation->left_value_->column_node_->column_name_))) {      \
         if (result->relation_info_.relation_num_ < OBPROXY_MAX_RELATION_NUM) {                  \
           result->relation_info_.relations_[result->relation_info_.relation_num_++] = relation; \
           result->cur_mask_ = (result->cur_mask_ | new_mask);                                   \
@@ -188,6 +191,7 @@ static int64_t get_part_key_idx(ObProxyParseString *db_name,
                                 ObExprParseResult *result)
 {
   int64_t part_key_idx = IDX_NO_PART_KEY_COLUMN;
+  
   if (result->part_key_info_.key_num_ > 0) {
     if (NULL != db_name && !is_equal(db_name, &result->table_info_.database_name_)) {
       part_key_idx = IDX_NO_PART_KEY_COLUMN;
@@ -208,9 +212,9 @@ static int64_t get_part_key_idx(ObProxyParseString *db_name,
   return part_key_idx;
 }
 static inline void add_relation(ObExprParseResult *result,
-                                                ObProxyTokenList *left_value,
-                                                ObProxyFunctionType type,
-                                                ObProxyTokenList *right_value)
+                                ObProxyTokenList *left_value,
+                                ObProxyFunctionType type,
+                                ObProxyTokenList *right_value)
 {
   if (result->all_relation_info_.relation_num_ < OBPROXY_MAX_RELATION_NUM) {
     ObProxyRelationExpr *relation = NULL;
@@ -359,12 +363,12 @@ static inline void add_right_relation_value(ObExprParseResult *result,
 %token DUMMY_SELECT_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
 %token WHERE AS VALUES SET END_WHERE JOIN
-%token AND_OP OR_OP IN ON BETWEEN ROWID
+%token AND_OP OR_OP IN ON BETWEEN
 %token COMP_EQ COMP_NSEQ COMP_GE COMP_GT COMP_LE COMP_LT COMP_NE
 %token PLACE_HOLDER
 %token END_P ERROR IGNORED_WORD
  /* type token */
-%token<str> NAME_OB STR_VAL
+%token<str> NAME_OB STR_VAL ROW_ID
 %token<num> INT_VAL POS_PLACE_HOLDER
 %type<func> comp
 %type<node> token opt_column
@@ -418,12 +422,6 @@ bool_pri: expr comp expr { add_relation(result, $1, $2,$3); $$ = get_relation(re
           add_relation(result, $1, F_COMP_LE, $5);
           $$ = NULL;
         }
-        | ROWID COMP_EQ STR_VAL
-        {
-          result->has_rowid_ =true;
-          result->rowid_str_ = $3;
-          $$ = NULL;
-        }
 
 comp: COMP_EQ   { $$ = F_COMP_EQ; }
     | COMP_NSEQ { $$ = F_COMP_NSEQ; }
@@ -445,7 +443,15 @@ func_param_list: { $$ = NULL; } /* empty */
                | token_list ',' token_list         { add_token_list($1, $3); $$ = $1; }
                | func_param_list ',' token_list    { add_token_list($1, $3); $$ = $1; }
 
-token: NAME_OB
+token:
+     ROW_ID
+     {
+       malloc_node($$, result, TOKEN_COLUMN);
+       $$->part_key_idx_ = 0;
+       $$->column_name_ = $1;
+       result->has_rowid_ = true;
+     }
+     | NAME_OB
      {
        malloc_node($$, result, TOKEN_COLUMN);
        $$->part_key_idx_ = get_part_key_idx(NULL, NULL, &$1, result);

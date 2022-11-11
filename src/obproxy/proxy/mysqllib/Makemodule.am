@@ -10,6 +10,7 @@ obproxy/proxy/mysqllib/ob_mysql_response.cpp\
 obproxy/proxy/mysqllib/ob_mysql_common_define.h\
 obproxy/proxy/mysqllib/ob_proxy_mysql_request.h\
 obproxy/proxy/mysqllib/ob_proxy_mysql_request.cpp\
+obproxy/proxy/mysqllib/ob_proxy_ob20_request.h\
 obproxy/proxy/mysqllib/ob_mysql_request_analyzer.h\
 obproxy/proxy/mysqllib/ob_mysql_request_analyzer.cpp\
 obproxy/proxy/mysqllib/ob_proxy_auth_parser.h\

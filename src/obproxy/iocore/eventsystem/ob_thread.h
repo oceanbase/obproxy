@@ -66,7 +66,7 @@ static const int DEFAULT_STACKSIZE      = 1048576; // 1MB
 class ObThread
 {
 public:
-  ObThread() : tid_(0), mutex_(NULL), mutex_ptr_(NULL) {}
+  ObThread() : tid_(0), thread_id_(0), mutex_(NULL), mutex_ptr_(NULL) {}
 
   virtual ~ObThread() { }
 
@@ -84,6 +84,7 @@ public:
    * processors and you should not modify it directly.
    */
   ObThreadId tid_;
+  int64_t thread_id_;
 
   /**
    * ObThread lock to ensure atomic operations. The thread lock available

@@ -23,8 +23,7 @@ namespace proxy
 class ObKillGlobalSessionHandler : public ObInternalCmdHandler
 {
 public:
-  ObKillGlobalSessionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                        const ObInternalCmdInfo &info);
+  ObKillGlobalSessionHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObKillGlobalSessionHandler() {}
   int handle_kill_global_session_info(int event, void *data);
   int handle_kill_session_info();

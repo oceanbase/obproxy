@@ -23,6 +23,7 @@
 #include "proxy/plugins/ob_mysql_response_cursor_transform_plugin.h"
 #include "proxy/plugins/ob_mysql_response_new_ps_transform_plugin.h"
 #include "proxy/plugins/ob_mysql_request_execute_transform_plugin.h"
+#include "proxy/plugins/ob_mysql_response_ob20_transform_plugin.h"
 
 /****************************************************************
  *  IMPORTANT - READ ME
@@ -458,6 +459,7 @@ int api_init()
           init_mysql_response_prepare_transform();
           init_mysql_response_cursor_transform();
           init_mysql_response_prepare_execute_transform();
+          init_mysql_response_ob20_protocol_transform();  
       // }
     }
   }

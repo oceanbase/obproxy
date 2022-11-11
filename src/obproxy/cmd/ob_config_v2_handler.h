@@ -47,10 +47,7 @@ namespace proxy
 class ObConfigV2Handler : public ObInternalCmdHandler
 {
 public:
-  ObConfigV2Handler(event::ObContinuation *cont,
-                    event::ObMIOBuffer *buf,
-                    const ObInternalCmdInfo &info);
-
+  ObConfigV2Handler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   ~ObConfigV2Handler() {}
   int main_handler(int event, void *data);
 

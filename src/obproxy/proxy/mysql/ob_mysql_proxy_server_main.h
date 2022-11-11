@@ -57,6 +57,7 @@ public:
   // the port data should have been created by
   // init_mysql_proxy_server()
   static int start_mysql_proxy_server(const ObMysqlConfigParams &config_params);
+  static int start_mysql_proxy_acceptor();
 
 private:
   static int make_net_accept_options(

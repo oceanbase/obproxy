@@ -47,6 +47,7 @@
 #include "proxy/shard/obproxy_shard_ddl_cont.h"
 #include "obutils/ob_tenant_stat_struct.h"
 #include "engine/ob_proxy_operator_result.h"
+#include "lib/utility/ob_2_0_full_link_trace_info.h"
 
 namespace oceanbase
 {
@@ -157,13 +158,12 @@ public:
   int setup_handle_execute_plan();
   int state_handle_execute_plan(int event, void *data);
   int process_executor_result(engine::ObProxyResultResp *result_resp);
-  int build_executor_resp(event::ObMIOBuffer *write_buf, uint8_t &seq, engine::ObProxyResultResp *result_resp);
-
+  
   int handle_shard_request(bool &need_response_for_stmt, bool &need_wait_callback);
 
   int check_user_identity(const ObString &user_name, const ObString &tenant_name, const ObString &cluster_name);
   int save_user_login_info(ObClientSessionInfo &session_info, ObHSRResult &hsr_result);
-  void analyze_mysql_request(ObMysqlAnalyzeStatus &status);
+  void analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool is_mysql_req_in_ob20 = false);
   int analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeStatus &status);
   int analyze_ps_prepare_request();
   int do_analyze_ps_prepare_request(const ObString &ps_sql);
@@ -171,14 +171,19 @@ public:
   int do_analyze_ps_execute_request(ObPsIdEntry *entry, bool is_large_request);
   int do_analyze_ps_execute_request_with_flag(ObPsIdEntry *entry);
   int do_analyze_ps_execute_request_without_flag(ObPsIdEntry *entry);
-  int analyze_text_ps_prepare_request();
+  int analyze_text_ps_prepare_request(const ObRequestAnalyzeCtx &ctx);
+  int do_parse_text_ps_prepare_sql(char*& text_ps_prepare_buf, int64_t& text_ps_prepare_buf_len,
+      ObString& text_ps_sql, const ObRequestAnalyzeCtx& ctx);
+  int do_analyze_text_ps_prepare_request(const ObString& text_ps_sql);
   int analyze_text_ps_execute_request();
+  int analyze_text_ps_drop_request();
   int analyze_fetch_request();
-  int analyze_close_request();
+  int analyze_close_reset_request();
   int analyze_ps_prepare_execute_request();
   bool need_setup_client_transfer();
   bool check_connection_throttle();
   bool can_pass_white_list();
+  int analyze_capacity_flag_from_client();
   bool check_vt_connection_throttle();
   bool is_partition_table_route_supported();
   bool is_pl_route_supported();
@@ -223,7 +228,8 @@ public:
   void release_server_session();
   bool need_close_last_used_ss();
 
-  ObProxyProtocol use_compression_protocol() const;
+  ObProxyProtocol get_server_session_protocol() const;
+  ObProxyProtocol get_client_session_protocol() const;
   bool is_checksum_on() const;
   bool is_extra_ok_packet_for_stats_enabled() const;
   uint8_t get_request_seq();
@@ -243,6 +249,7 @@ public:
                               const bool has_cluster_username,
                               const bool is_cloud_user) const;
   inline void set_skip_plugin(const bool bvalue) { skip_plugin_ = bvalue; }
+  void set_detect_server_info(net::ObIpEndpoint target_addr, int cnt, int64_t time);
 public:
   static const int64_t OP_LOCAL_NUM = 32;
   static const int64_t MAX_SCATTER_LEN;
@@ -279,6 +286,10 @@ public:
   ObMysqlCompressOB20Analyzer compress_ob20_analyzer_;
   ObMysqlRequestAnalyzer request_analyzer_;
 
+public:
+  common::FLTObjManage flt_;     // ob20 full link trace obj
+  char flt_trace_buffer_[MAX_TRACE_LOG_SIZE];     // buffer for full link trace with each sm
+  
 public:
   static uint32_t get_next_sm_id();
   void remove_client_entry();
@@ -332,24 +343,13 @@ public:
   int do_normal_internal_observer_open(ObMysqlServerSession *&selected_session);
   int do_internal_observer_open();
   void do_internal_request();
-  int do_internal_request_for_sharding_init_db(event::ObMIOBuffer *buf,
-                                               ObProxyMysqlRequest &client_request,
-                                               ObClientSessionInfo &client_info);
-  int do_internal_request_for_sharding_show_db_version(event::ObMIOBuffer *buf,
-                                                       ObProxyMysqlRequest &client_request,
-                                                       ObClientSessionInfo &client_info);
-  int do_internal_request_for_sharding_show_db(event::ObMIOBuffer *buf,
-                                               ObProxyMysqlRequest &client_request,
-                                               ObClientSessionInfo &client_info);
-  int do_internal_request_for_sharding_show_table(event::ObMIOBuffer *buf,
-                                                  ObProxyMysqlRequest &client_request,
-                                                  ObClientSessionInfo &client_info);
-  int do_internal_request_for_sharding_show_topology(event::ObMIOBuffer *buf,
-                                                     ObProxyMysqlRequest &client_request,
-                                                     ObClientSessionInfo &client_info);
-  int do_internal_request_for_sharding_select_db(event::ObMIOBuffer *buf,
-                                                 ObProxyMysqlRequest &client_request,
-                                                 ObClientSessionInfo &client_info);
+  int do_internal_request_for_sharding_init_db(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_show_db_version(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_show_db(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_show_table(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_show_table_status(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_show_topology(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_select_db(event::ObMIOBuffer *buf);
   int connect_observer();
   int setup_client_transfer(ObMysqlVCType to_vc_type);
   void handle_api_return();
@@ -370,7 +370,7 @@ public:
   void set_next_state();
   void call_transact_and_set_next_state(TransactEntryFunc f);
 
-  int init_request_content(ObRequestAnalyzeCtx &ctx);
+  int init_request_content(ObRequestAnalyzeCtx &ctx, const bool is_mysql_req_in_ob20);
   int server_transfer_init(event::ObMIOBuffer *buf, int64_t &nbytes);
 
   void setup_set_cached_variables();
@@ -389,6 +389,9 @@ public:
   int handle_first_normal_response_packet(ObMysqlAnalyzeStatus &state,
                                           const bool need_receive_completed,
                                           int64_t &first_pkt_len);
+
+  int handle_first_request_packet(ObMysqlAnalyzeStatus &status, int64_t &first_packet_len);
+  int handle_first_compress_request_packet(ObMysqlAnalyzeStatus &state, int64_t &first_packet_len);
 
   void check_update_checksum_switch(const bool is_compressed_payload);
 
@@ -424,6 +427,17 @@ public:
 
   int handle_limit(bool &need_direct_response_for_client);
   int handle_ldg(bool &need_direct_response_for_client);
+
+  void save_response_flt_result_to_sm(common::FLTObjManage &flt);
+  void save_request_flt_result_to_sm(common::FLTObjManage &flt);
+  bool enable_record_full_link_trace_info();
+  bool is_proxy_init_trace_log_info();
+  int handle_resp_for_end_proxy_root_span(trace::UUID &trace_id, bool is_in_trans);
+  int handle_req_for_begin_proxy_root_span();
+  void handle_req_to_generate_root_span_from_client();
+  int handle_req_to_generate_root_span_by_proxy();
+  int handle_for_end_proxy_trace(trace::UUID &trace_id);
+  int handle_resp_for_end_flt_trace(bool is_trans_completed);
 
 private:
   static const int64_t HISTORY_SIZE = 32;
@@ -463,11 +477,27 @@ private:
   int32_t retry_acquire_server_session_count_;
   int64_t start_acquire_server_session_time_;
   bool skip_plugin_;
+  bool add_detect_server_cnt_;
+public:
+  // Multi-level configuration items: Because the most fine-grained configuration items
+  // can take effect at the VIP level, each SM may need to be different
+  char proxy_route_policy_[OB_MAX_CONFIG_VALUE_LEN];
+  char proxy_idc_name_[OB_MAX_CONFIG_VALUE_LEN];
+  bool enable_cloud_full_username_;
+  bool enable_client_ssl_;
+  bool enable_server_ssl_;
+  uint64_t config_version_;
 
+private:
   // private functions
   int handle_server_request_send_long_data();
   int do_analyze_ps_execute_request_with_remain_value(event::ObMIOBuffer *writer, int64_t read_avail,
                                                       int64_t param_type_pos);
+  int handle_compress_request_analyze_done(ObMysqlCompressedOB20AnalyzeResult &ob20_result, int64_t &first_packet_len,
+                                           ObMysqlAnalyzeStatus &status);
+  void analyze_status_after_analyze_mysql_in_ob20_payload(ObMysqlAnalyzeStatus &status,
+                                                          ObClientSessionInfo &client_session_info);
+  int analyze_ob20_remain_after_analyze_mysql_request_done(ObClientSessionInfo &client_session_info);
 };
 
 inline ObMysqlSM *ObMysqlSM::allocate()
@@ -633,12 +663,18 @@ inline void ObMysqlSM::clear_entries()
     if (OB_SUCCESS != vc_table_.cleanup_entry(client_entry_)) {
       PROXY_LOG(WARN, "vc_table failed to cleanup client entry", K_(client_entry), K_(sm_id));
     }
+    if (OB_LIKELY(client_entry_->vc_ == NULL)) {
+      client_session_ = NULL;       // vc is equivalent to session
+    }
     client_entry_ = NULL;
   }
 
   if (OB_LIKELY(NULL != server_entry_)) {
     if (OB_SUCCESS != vc_table_.cleanup_entry(server_entry_)) {
       PROXY_LOG(WARN, "vc_table failed to cleanup client entry", K_(server_entry), K_(sm_id));
+    }
+    if (OB_LIKELY(server_entry_->vc_ == NULL)) {
+      server_session_ = NULL;       // vc is equivalent to session
     }
     server_entry_ = NULL;
   }
@@ -678,11 +714,11 @@ inline ObHRTime ObMysqlSM::get_based_hrtime()
   return time;
 }
 
-inline bool ObMysqlSM::is_causal_order_read_enabled()		
-{		
-  return trans_state_.mysql_config_params_->enable_causal_order_read_		
-         && NULL != client_session_		
-         && client_session_->get_session_info().is_safe_read_weak_supported();		
+inline bool ObMysqlSM::is_causal_order_read_enabled()
+{
+  return trans_state_.mysql_config_params_->enable_causal_order_read_
+         && NULL != client_session_
+         && client_session_->get_session_info().is_server_support_safe_read_weak();
 }
 
 inline bool ObMysqlSM::need_print_trace_stat() const

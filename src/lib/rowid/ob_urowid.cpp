@@ -16,6 +16,9 @@
 #include "lib/encode/ob_base64_encode.h"
 #include "lib/allocator/ob_allocator.h"
 #include "lib/container/ob_iarray.h"
+#include "obproxy/opsql/expr_resolver/ob_expr_resolver.h"
+#include "obproxy/proxy/route/obproxy_part_info.h"
+#include "rpc/obmysql/ob_mysql_util.h"
 
 namespace oceanbase
 {
@@ -91,9 +94,8 @@ int ObURowIDData::inner_get_pk_value<ObURowIDType>(const uint8_t *rowid_buf,
                                                    int64_t &pos, ObObj &pk_val)
 {
   int ret = OB_SUCCESS;
-  int64_t needed_size = 4 + pk_val.get_string_len();
-  if (OB_LIKELY(pos + needed_size <= rowid_buf_len)) {
-    uint32_t rowid_len = *(reinterpret_cast<const uint32_t *>(rowid_buf + pos));
+  uint32_t rowid_len = *(reinterpret_cast<const uint32_t *>(rowid_buf + pos));
+  if (OB_LIKELY(pos + 4 + rowid_len <= rowid_buf_len)) {
     pos += 4;
     const char *rowid_content = (const char *)rowid_buf + pos;
     pk_val.set_urowid(rowid_content, rowid_len);
@@ -294,10 +296,14 @@ ObURowIDData::get_pk_val_func ObURowIDData::inner_get_funcs_[ObMaxType] = {
 inline int ObURowIDData::get_pk_value(ObObjType obj_type, int64_t &pos, ObObj &pk_val) const
 {
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(obj_type >= ObMaxType)
+  const uint8_t version = get_version();
+  if (OB_UNLIKELY(PK_ROWID_VERSION != version && NO_PK_ROWID_VERSION != version)) {
+    ret = OB_INVALID_ROWID;
+    COMMON_LOG(WARN, "invalid rowid version", K(ret), K(version));
+  } else if (OB_UNLIKELY(obj_type >= ObMaxType)
       || OB_UNLIKELY(NULL == inner_get_funcs_[obj_type])) {
     ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid type or get null for get pk function", K(obj_type));
+    COMMON_LOG(WARN, "invalid type or get null for get pk function", K(ret), K(obj_type));
   } else {
     ret = inner_get_funcs_[obj_type](rowid_content_, rowid_len_, pos, pk_val);
   }
@@ -368,13 +374,18 @@ int ObURowIDData::decode_base64_str(const char *input, const int64_t input_len,
       OB_UNLIKELY(input_len < 1 || output_len < 0 || pos < 0 || pos >= output_len)) {
     ret = OB_INVALID_ARGUMENT;
     COMMON_LOG(WARN, "invalid argument", K(ret));
-  } else if (OB_UNLIKELY(input[0] != '*')) {
-    ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid urowid format", K(ret));
-  } else if (OB_FAIL(ObBase64Encoder::decode(input + 1, input_len - 1,
-                                             output, output_len, pos))) {
-    COMMON_LOG(WARN, "failed to decode base64 str", K(ret));
+  } else {
+    if (input[0] == '*') {
+      if (OB_FAIL(ObBase64Encoder::decode(input + 1, input_len - 1, output, output_len, pos))) {
+        COMMON_LOG(WARN, "failed to decode base64 str", K(ret));
+      }
+    } else {
+      if (OB_FAIL(ObBase64Encoder::decode(input, input_len, output, output_len, pos))) {
+        COMMON_LOG(WARN, "failed to decode base64 str", K(ret));
+      }
+    }
   }
+  
   return ret;
 }
 
@@ -383,61 +394,129 @@ int ObURowIDData::decode2urowid(const char* input, const int64_t input_len,
 {
   int ret = OB_SUCCESS;
   uint8_t *decoded_buf = NULL;
-  int64_t decoded_buf_len = needed_urowid_buf_size(input_len);
+  int64_t decoded_buf_len = 0;
   int64_t pos = 0;
-  if (OB_ISNULL(input)) {
+  int64_t base64_input_len = 0;
+  if (OB_UNLIKELY(OB_NOT_NULL(urowid_data.rowid_content_))) {
+    ret = OB_INIT_TWICE;
+    COMMON_LOG(WARN, "init twice", K(ret));
+  } else if (OB_UNLIKELY(OB_ISNULL(input) || input_len < 1)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid argument", K(input), K(input_len));
+    COMMON_LOG(WARN, "invalid argument", K(ret), K(input), K(input_len));
+  } else {
+    if (input[0] == '*') {
+      input += 1;
+      base64_input_len = input_len - 1;
+    } else {
+      base64_input_len = input_len;
+    }
+  }
+  if (OB_FAIL(ret)) {
+  } else if (OB_FALSE_IT(decoded_buf_len = ObBase64Encoder::needed_decoded_length(base64_input_len))) {
   } else if (OB_UNLIKELY(decoded_buf_len <= 0 || decoded_buf_len % 3 != 0)) {
     ret = OB_INVALID_ROWID;
     COMMON_LOG(WARN, "invalid base64 str for rowid", K(ret), K(decoded_buf_len));
-  } else if (OB_UNLIKELY(input[0] != '*') || OB_UNLIKELY(input_len < 1)) {
-    ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid rowid", K(ret));
   } else if (OB_ISNULL(decoded_buf = (uint8_t *)allocator.alloc(decoded_buf_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     COMMON_LOG(WARN, "failed to allocate memory", K(ret), K(decoded_buf_len));
-  } else if (OB_FAIL(decode_base64_str(input, input_len, decoded_buf, decoded_buf_len, pos))) {
+  } else if (OB_FAIL(ObBase64Encoder::decode(input, base64_input_len, decoded_buf, decoded_buf_len, pos))) {
     COMMON_LOG(WARN, "failed to decode base64_str to urowid", K(ret));
     ret = OB_INVALID_ROWID;
   } else {
     urowid_data.rowid_content_ = decoded_buf;
     urowid_data.rowid_len_ = pos;
     // check validity after decoding
-    if (urowid_data.is_valid_urowid()) {
-      // do nothing
-    } else {
+    if (!urowid_data.is_valid_urowid()) {
+      urowid_data.rowid_content_ = NULL;
+      urowid_data.rowid_len_ = 0;
       ret = OB_INVALID_ROWID;
+    } else {
+      // do nothing
     }
   }
+  if (OB_FAIL(ret) && nullptr != decoded_buf) {
+    allocator.free(decoded_buf);
+  }
   return ret;
+}
+
+bool ObURowIDData::is_valid_version(int64_t v)
+{
+  bool bret = true;
+
+  if (INVALID_ROWID_VERSION == v) {
+    bret = false;
+  } else if (PK_ROWID_VERSION != v
+             && NO_PK_ROWID_VERSION != v
+             && HEAP_TABLE_ROWID_VERSION != v
+             && EXT_HEAP_TABLE_ROWID_VERSION != v) {
+    if (!is_valid_part_gen_col_version(v)) {
+      bret = false;
+    }
+  }
+
+  return bret;
 }
 
 bool ObURowIDData::is_valid_urowid() const
 {
   bool is_valid = true;
   int ret = OB_SUCCESS;
-  // dba_len is always 0 for now
-  if (OB_ISNULL(rowid_content_) || OB_UNLIKELY(rowid_len_ <= 2) ||
-      OB_UNLIKELY(0 != rowid_content_[0]) ||
-      OB_UNLIKELY(!is_valid_version(rowid_content_[1]))) {
-    is_valid = false;
-  } else {
+  const uint8_t version = get_version();
+  if (HEAP_TABLE_ROWID_VERSION == version) {
+    is_valid = rowid_len_ == HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE;
+  } else if (EXT_HEAP_TABLE_ROWID_VERSION == version) {
+    is_valid = rowid_len_ == EXT_HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE;
+  } else if (NO_PK_ROWID_VERSION == version || PK_ROWID_VERSION == version) {
     int64_t pos = get_pk_content_offset();
     ObObj obj;
-    for(; is_valid && pos < rowid_len_;)
-    {
+    for (; is_valid && pos < rowid_len_; ) {
       ObObjType obj_type = get_pk_type(pos);
       if (OB_UNLIKELY(ob_is_invalid_obj_type(obj_type))) {
         is_valid = false;
+        COMMON_LOG(WARN, "invalid obj type", K(obj_type));
       } else if (OB_FAIL(get_pk_value(obj_type, pos, obj))) {
         is_valid = false;
       } else {
         // do nothing
       }
     }
+  } else {
+    is_valid = false;
+    COMMON_LOG(WARN, "unexpected urowid version", K(version));
   }
   return is_valid;
+}
+
+uint8_t ObURowIDData::get_version() const
+{
+  uint8_t version = INVALID_ROWID_VERSION;
+  if (OB_NOT_NULL(rowid_content_) && 0 < rowid_len_) {
+    uint8_t raw_version = rowid_content_[0];
+    if (HEAP_TABLE_ROWID_VERSION <= raw_version) {
+      version = raw_version & 0xE0;
+      if (HEAP_TABLE_ROWID_VERSION == version
+          && rowid_len_ == HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE) {
+        // valid
+      } else if (EXT_HEAP_TABLE_ROWID_VERSION == version
+                 && rowid_len_ == EXT_HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE) {
+        // valid
+      } else {
+        version = INVALID_ROWID_VERSION;
+      }
+    } else {
+      int64_t offset = get_version_offset();
+      if (offset < rowid_len_) {
+        raw_version = rowid_content_[offset];
+        if (PK_ROWID_VERSION == raw_version || NO_PK_ROWID_VERSION == raw_version) {
+          version = raw_version;
+        } else if (is_valid_part_gen_col_version(raw_version)) {
+          version = PK_ROWID_VERSION;
+        }
+      }
+    }
+  }
+  return version;
 }
 
 int64_t ObURowIDData::get_obj_size(const ObObj &pk_val)
@@ -742,27 +821,221 @@ int ObURowIDData::set_rowid_content(const ObIArray<ObObj> &pk_vals,
   return ret;
 }
 
+// used for ob4.x
+// format: | 3bit version | 37bit tablet id | 40bit self-increasing column |
+int ObURowIDData::parse_heap_organized_table_rowid(uint64_t &tablet_id, uint64_t &auto_inc) const
+{
+  int ret = OB_SUCCESS;
+  if (rowid_len_ != HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE) {
+    ret = OB_ERR_UNEXPECTED;
+    COMMON_LOG(WARN, "invalid rowid buf size", K(ret));
+  } else {
+    int pos = 0;
+    tablet_id = static_cast<uint64_t>(rowid_content_[pos++] & 0x1F) << HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS;
+    for (int i = 1; i <= HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS / 8; i++) {
+      tablet_id += static_cast<uint64_t>(rowid_content_[pos++])
+                   << (HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS - 8 * i);
+    }
+    auto_inc = 0;
+    for (int i = 4; i >= 0; i--) {
+      uint64_t x = static_cast<uint64_t>(rowid_content_[pos++]);
+      auto_inc += x << (i * 8);
+    }
+  }
+  return ret;
+}
+
+// used for ob4.x extended
+// format: | 3bit version | 61bit tablet id | 64bit self-increasing column | 
+int ObURowIDData::parse_ext_heap_organized_table_rowid(uint64_t &tablet_id, uint64_t &auto_inc)
+{
+  int ret = OB_SUCCESS;
+  if (rowid_len_ != EXT_HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE) {
+    ret = OB_ERR_UNEXPECTED;
+    COMMON_LOG(WARN, "invalid rowid buf size", K(ret));
+  } else {
+    int pos = 0;
+    tablet_id = static_cast<uint64_t>(rowid_content_[pos++] & 0x1F) << EXT_HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS;
+    for (int64_t i = 1; i <= EXT_HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS / 8; i++) {
+      tablet_id += static_cast<uint64_t>(rowid_content_[pos++])
+                   << (EXT_HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS - 8 * i);
+    }
+    auto_inc = 0;
+    for (int i = 7; i >= 0; i--) {
+      uint64_t x = static_cast<uint64_t>(rowid_content_[pos++]);
+      auto_inc += x << (i * 8);
+    }
+  }
+  return ret;
+}
+
 int ObURowIDData::get_pk_vals(ObIArray<ObObj> &pk_vals)
 {
   int ret = OB_SUCCESS;
-  int64_t pos = get_pk_content_offset();
-  while (OB_SUCC(ret) && pos < get_buf_len()) {
-    if (OB_LIKELY(pos + 1 <= get_buf_len())) {
-      ObObjType type = get_pk_type(pos);
-      ObObj tmp_obj;
-      if (OB_LIKELY(is_valid_obj_type(type))) {
-        if (OB_FAIL(get_pk_value(type, pos, tmp_obj))) {
-          COMMON_LOG(WARN, "failed to get pk value", K(ret));
-        } else if (OB_FAIL(pk_vals.push_back(tmp_obj))) {
-          COMMON_LOG(WARN, "failed to push back element", K(ret));
+  int64_t pos = 0;
+  if (OB_UNLIKELY(!is_valid_urowid())) {
+    ret = OB_INVALID_ROWID;
+    COMMON_LOG(WARN, "invalid rowid", K(ret));
+  } else if (is_physical_rowid()) {
+    if (OB_FAIL(get_rowkey_for_heap_organized_table(pk_vals))) {
+      COMMON_LOG(WARN, "failed to get rowkey for heap organized_table", K(ret));
+    } else {
+      /* do nothing */
+    }
+  } else {
+    pos = get_pk_content_offset();
+    while (OB_SUCC(ret) && pos < get_buf_len()) {
+      if (OB_LIKELY(pos + 1 <= get_buf_len())) {
+        ObObjType type = get_pk_type(pos);
+        ObObj tmp_obj;
+        if (OB_LIKELY(is_valid_obj_type(type))) {
+          if (OB_FAIL(get_pk_value(type, pos, tmp_obj))) {
+            COMMON_LOG(WARN, "failed to get pk value", K(ret));
+          } else if (OB_FAIL(pk_vals.push_back(tmp_obj))) {
+            COMMON_LOG(WARN, "failed to push back element", K(ret));
+          }
+        } else {
+          ret = OB_INVALID_ROWID;
         }
       } else {
         ret = OB_INVALID_ROWID;
       }
-    } else {
-      ret = OB_INVALID_ROWID;
     }
   }
+
+  return ret;
+}
+
+int ObURowIDData::get_rowkey_for_heap_organized_table(ObIArray<ObObj> &rowkey)
+{
+  int ret = OB_SUCCESS;
+  uint8_t version = get_version();
+  uint64_t tablet_id = 0;
+  uint64_t auto_inc = 0;
+  if (HEAP_TABLE_ROWID_VERSION == version) {
+    if (OB_FAIL(parse_heap_organized_table_rowid(tablet_id, auto_inc))) {
+      COMMON_LOG(WARN, "failed to parse rowid", K(ret));
+    }
+  } else if (EXT_HEAP_TABLE_ROWID_VERSION == version) {
+    if (OB_FAIL(parse_ext_heap_organized_table_rowid(tablet_id, auto_inc))) {
+      COMMON_LOG(WARN, "failed to parse rowid", K(ret));
+    }
+  } else {
+    ret = OB_INVALID_ROWID;
+    COMMON_LOG(WARN, "invalid rowid", K(ret));
+  }
+  
+  if (OB_SUCC(ret)) {
+    ObObj tmp_obj;
+    tmp_obj.set_uint64(auto_inc);
+    if (OB_FAIL(rowkey.push_back(tmp_obj))) {
+      COMMON_LOG(WARN, "failed to push back element", K(ret));
+    }
+  }
+  return ret;
+}
+
+int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
+                                                         obproxy::opsql::ObExprResolverResult &resolve_result,
+                                                         int64_t &partition_id)
+{
+  int ret = OB_SUCCESS;
+
+  const uint8_t version = get_version();
+  switch (version) {
+    case HEAP_TABLE_ROWID_VERSION: {
+      // 0x80 ob4.0
+      uint64_t tablet_id = 0;
+      uint64_t auto_inc = 0;
+      if (OB_FAIL(parse_heap_organized_table_rowid(tablet_id, auto_inc))) {
+        COMMON_LOG(WARN, "fail to parse heap organized table rowid", K(ret));
+      } else {
+        partition_id = static_cast<int64_t>(tablet_id);
+        COMMON_LOG(DEBUG, "succ to get tablet id from ob4.0", K(partition_id));
+      }
+      break;
+    }
+    case EXT_HEAP_TABLE_ROWID_VERSION: {
+      // 0xA0 ob4.0 extended
+      uint64_t tablet_id = 0;
+      uint64_t auto_inc = 0;
+      if (OB_FAIL(parse_ext_heap_organized_table_rowid(tablet_id, auto_inc))) {
+        COMMON_LOG(WARN, "fail to parse ext heap organized table rowid", K(ret));
+      } else {
+        partition_id = static_cast<int64_t>(tablet_id);
+        COMMON_LOG(DEBUG, "succ to get tablet id from ob4.0 extended", K(partition_id));
+      }
+      break;
+    }
+    case NO_PK_ROWID_VERSION:
+    case PK_ROWID_VERSION: {
+      // ob2.x 3.x
+      if (OB_FAIL(get_obobj_from_decoded(part_info, resolve_result))) {
+        COMMON_LOG(WARN, "fail to get obobj from decoded", K(ret));
+      }
+      break;
+    }
+    default : {
+      ret = OB_ERR_UNEXPECTED;
+      COMMON_LOG(WARN, "unexpected version for rowid", K(version));
+    }
+  }
+  
+  return ret;
+}
+
+// used for ob2.x 3.x
+int ObURowIDData::get_obobj_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
+                                         obproxy::opsql::ObExprResolverResult &resolve_result)
+{
+  int ret = OB_SUCCESS;
+
+  ObArray<ObObj> pk_vals;
+  if (OB_FAIL(get_pk_vals(pk_vals))) {
+    COMMON_LOG(WARN, "fail to get pk vals", K(ret));
+  } else {
+    ObProxyPartKeyInfo &key_info = part_info.get_part_key_info();
+    bool set_level_one_obj = false;
+    bool set_level_two_obj = false;
+
+    for (int64_t i = 0; OB_SUCC(ret) && i < key_info.key_num_; ++i) {
+      ObProxyPartKey &part_key = key_info.part_keys_[i];
+      int8_t idx = -1;
+      if ((part_key.level_ == PART_KEY_LEVEL_ONE || part_key.level_ == PART_KEY_LEVEL_BOTH)
+          && !set_level_one_obj) {
+        idx = 0;
+      } else if (part_key.level_ == PART_KEY_LEVEL_TWO
+                 && !set_level_two_obj) {
+        idx = 1;
+      }
+
+      if (idx != -1) {
+        if (part_key.idx_in_rowid_ >= 0
+            && part_key.idx_in_rowid_ < pk_vals.count()) {
+          ObObj &obj = pk_vals.at(part_key.idx_in_rowid_);
+          if (is_valid_obj_type(obj.get_type())) {
+            resolve_result.ranges_[idx].start_key_.assign(&obj, 1);
+            resolve_result.ranges_[idx].end_key_.assign(&obj, 1);
+            resolve_result.ranges_[idx].border_flag_.set_inclusive_start();
+            resolve_result.ranges_[idx].border_flag_.set_inclusive_end();
+            if (idx == 0) {
+              set_level_one_obj = true;
+            } else {
+              set_level_two_obj = true;
+            }
+            COMMON_LOG(DEBUG, "succ to get obobj from rowid", K(idx), K(part_key.idx_in_rowid_), K(obj));
+          } else {
+            ret = OB_ERR_UNEXPECTED;
+            COMMON_LOG(WARN, "invalid obj type resolved from rowid content", K(ret), K(obj.get_type()));
+          }
+        } else {
+          ret = OB_ERR_UNEXPECTED;
+          COMMON_LOG(WARN, "calc partition id using rowid failed", K(part_key.idx_in_rowid_), K(pk_vals.count()));
+        }
+      }
+    } // for
+  } // else
+
   return ret;
 }
 
@@ -770,8 +1043,29 @@ DEF_TO_STRING(ObURowIDData)
 {
   int ret = OB_SUCCESS;
   int64_t pos = 0;
+  uint64_t tablet_id = 0;
+  uint64_t auto_inc = 0;
+  int64_t version = get_version();
+  if (OB_FAIL(parse_heap_organized_table_rowid(tablet_id, auto_inc))) {
+    version = INVALID_ROWID_VERSION;
+  }
   J_OBJ_START();
-  if (OB_LIKELY(rowid_len_ >= 2)) { // dba_len is zero for now
+  if (INVALID_ROWID_VERSION == version) {
+    // do nothing
+  } else if (HEAP_TABLE_ROWID_VERSION == version) {
+    ObObj tmp_obj;
+    J_KV("VERSION", version);
+    J_COMMA();
+    J_KV("TABLET ID", tablet_id);
+    J_COMMA();
+    J_NAME("Content");
+    J_COLON();
+    J_ARRAY_START();
+    tmp_obj.set_uint64(auto_inc);
+    BUF_PRINTO(tmp_obj);
+    J_COMMA();
+    J_ARRAY_END();
+  } else {
     J_KV("DBA LEN", rowid_content_[0]);
     J_COMMA();
     J_KV("VERSION", rowid_content_[1]);
@@ -781,7 +1075,7 @@ DEF_TO_STRING(ObURowIDData)
     J_COLON();
     J_ARRAY_START();
     // skip print dba len
-    if (OB_LIKELY(rowid_pos < rowid_len_)){
+    if (OB_LIKELY(rowid_pos < rowid_len_)) {
       ObObj pk_val;
       for(; OB_SUCC(ret) && rowid_pos < rowid_len_;) {
         ObObjType obj_type = get_pk_type(rowid_pos);
@@ -796,8 +1090,8 @@ DEF_TO_STRING(ObURowIDData)
           }
         }
       }
-      J_ARRAY_END();
     }
+    J_ARRAY_END();
   }
   J_OBJ_END();
   return pos;
@@ -842,15 +1136,10 @@ OB_DEF_DESERIALIZE(ObURowIDData)
     rowid_len_ = rowid_buf_len;
     rowid_content_ = (uint8_t *)buf + pos;
     pos += rowid_buf_len;
-
-    uint8_t version = get_version();
-    if (OB_UNLIKELY(!is_valid_version(version))) {
-      ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(ERROR, "unexpected urowid version", K(ret), K(version));
-    }
   }
   return ret;
 }
+
 } // end namespace common
 } // end namespace oceanbase
 

@@ -625,6 +625,28 @@ const ObLDCItem *ObLDCRoute::get_next_item()
   }
   return ret_item;
 }
+
+const ObLDCItem *ObLDCRoute::get_next_primary_zone_item()
+{
+  ObLDCItem *ret_item = NULL;
+
+  if (!location_.is_primary_zone_empty()) {
+    ObLDCItem *pz_item_array = location_.get_primary_zone_item_array();
+    int64_t pz_array_count = location_.primary_zone_count();
+    for (int64_t i = 0; i < pz_array_count; ++i) {
+      ret_item = &pz_item_array[i];
+      if (!ret_item->is_used_) {
+        ret_item->is_used_ = true;
+        break;
+      } else {
+        ret_item = NULL;
+      }
+    }
+  }
+
+  return ret_item;
+}
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

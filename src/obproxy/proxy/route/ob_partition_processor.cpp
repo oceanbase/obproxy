@@ -275,7 +275,7 @@ int ObPartitionEntryCont::handle_client_resp(void *data)
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("rs_fetcher and entry can not be NULL", K(rs_fetcher), K(entry), K(ret));
       } else if (OB_FAIL(ObRouteUtils::fetch_one_partition_entry_info(
-              *rs_fetcher, *param_.get_table_entry(), entry))) {
+              *rs_fetcher, *param_.get_table_entry(), entry, param_.cluster_version_))) {
         LOG_WARN("fail to fetch one partition entry info", K(ret));
       } else if (NULL == entry) {
         PROCESSOR_INCREMENT_DYN_STAT(GET_PARTITION_ENTRY_FROM_REMOTE_FAIL);
@@ -485,7 +485,8 @@ int ObPartitionEntryCont::lookup_entry_remote()
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
   if (OB_FAIL(ObRouteUtils::get_partition_entry_sql(sql, OB_SHORT_SQL_LENGTH,
-          param_.get_table_entry()->get_names(), param_.partition_id_, param_.is_need_force_flush_))) {
+                 param_.get_table_entry()->get_names(), param_.partition_id_,
+                 param_.is_need_force_flush_, param_.cluster_version_))) {
     LOG_WARN("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, param_.current_idc_name_);
@@ -596,6 +597,7 @@ inline void ObPartitionParam::deep_copy(ObPartitionParam &other)
     // no need assign result_
     mysql_proxy_ = other.mysql_proxy_;
     tenant_version_ = other.tenant_version_;
+    cluster_version_ = other.cluster_version_;
     set_table_entry(other.get_table_entry());
     if (!other.current_idc_name_.empty()) {
       MEMCPY(current_idc_name_buf_, other.current_idc_name_.ptr(), other.current_idc_name_.length());

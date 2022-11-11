@@ -108,7 +108,8 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
                                        ObClientSessionInfo *client_info,
                                        ObPsIdEntry *ps_id_entry,
                                        ObTextPsEntry *text_ps_entry,
-                                       ObNewRange &range)
+                                       ObNewRange &range,
+                                       const bool has_rowid)
 {
   int ret = OB_SUCCESS;
   UNUSED(text_ps_entry);
@@ -149,7 +150,8 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
         ret = OB_INVALID_ARGUMENT;
       }
 
-      if (part_info->has_generated_key()) {
+      if (!has_rowid
+          && part_info->has_generated_key()) {
         int64_t target_idx = -1;
         ObProxyPartKeyInfo &part_key_info = part_info->get_part_key_info();
         if (col_idx >= part_key_info.key_num_) {
@@ -390,17 +392,34 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj,
     if (OB_SUCC(ret)
         && need_use_execute_param
         && client_request->get_parse_result().is_text_ps_execute_stmt()) {
+      LOG_DEBUG("will cal obj with value from ps execute param", K(execute_param_index));
       ObSqlParseResult &parse_result = client_request->get_parse_result();
-      ObProxyTextPsExecuteInfo execute_info = parse_result.text_ps_execute_info_;
-      if (param_index >= execute_info.param_count_) {
+      ObProxyTextPsInfo execute_info = parse_result.text_ps_info_;
+      if (execute_param_index >= execute_info.param_count_) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("param index is large than param count", K(param_index),
+        LOG_WARN("param index is large than param count", K(execute_param_index),
             K(execute_info.param_count_), K(ret));
       } else {
-        ObProxyTextPsExecuteParam &param = execute_info.params_.at(param_index);
+        ObProxyTextPsParam &param = execute_info.params_.at(execute_param_index);
         ObString user_variable_name = param.str_value_.string_;
         if (OB_FAIL(static_cast<const ObClientSessionInfo&>(*client_info).get_user_variable_value(user_variable_name, target_obj))) {
           LOG_WARN("get user variable failed", K(ret), K(user_variable_name));
+        } else {
+          ObString user_var;
+          int tmp_ret = OB_SUCCESS;
+          if (target_obj.is_varchar()) {
+            if (OB_SUCCESS != (tmp_ret = target_obj.get_varchar(user_var))) {
+              LOG_WARN("get varchar failed", K(tmp_ret));
+            } else {
+              char* ptr = user_var.ptr();
+              int32_t len = user_var.length();
+              // user var has store ' into value
+              if ((user_var[0] == 0x27 && user_var[len-1] == 0x27) ||
+                (user_var[0] == 0x22 && user_var[len-1] == 0x22)) {
+                target_obj.set_varchar(ptr + 1, len - 2);
+              }
+            }
+          }
         }
       }
     }

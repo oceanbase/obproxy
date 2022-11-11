@@ -325,12 +325,13 @@ public:
   proxy::ObPartitionRefHashMap &get_partition_map() { return *partition_map_; }
   proxy::ObRoutineRefHashMap &get_routine_map() { return *routine_map_; }
   proxy::ObBasePsEntryCache &get_ps_entry_cache() { return *ps_entry_cache_; }
+  proxy::ObBasePsEntryCache &get_text_ps_entry_cache() { return *text_ps_entry_cache_; }
 
   obutils::ObCongestionRefHashMap &get_cgt_map() { return *congestion_map_; }
   common::ObMysqlRandom &get_random_seed() { return *random_seed_; }
   ObProxyMutex &get_mutex() { return *mutex_; }
-  TO_STRING_KV(K_(id), K_(tid), K_(event_types), K_(tt), K_(stack_start),
-               K_(ethreads_to_be_signalled_count), K_(cur_time));
+  TO_STRING_KV(K_(id), K_(tid), K_(thread_id), K_(event_types), K_(tt), K_(stack_start),
+               K_(ethreads_to_be_signalled_count), K_(cur_time), K_(use_status));
 
 private:
   void process_event(ObEvent *e, const int calling_code);
@@ -380,6 +381,7 @@ public:
   proxy::ObCacheCleaner *cache_cleaner_;
   proxy::ObSqlTableRefHashMap *sql_table_map_;
   proxy::ObBasePsEntryCache *ps_entry_cache_;
+  proxy::ObBasePsEntryCache *text_ps_entry_cache_;
   common::ObMysqlRandom *random_seed_;
 
   char *warn_log_buf_;
@@ -388,6 +390,7 @@ public:
   ObThreadType tt_;
   ObEvent *pending_event_; // For dedicated event thread
   prometheus::ObThreadPrometheus *thread_prometheus_;
+  bool use_status_;
 
 private:
   // prevent unauthorized copies (Not implemented)

@@ -1192,14 +1192,21 @@ void ObUnixNetVConnection::remove_from_keep_alive_lru()
   }
 }
 
-int ObUnixNetVConnection::set_virtual_addr()
+int ObUnixNetVConnection::do_set_virtual_addr()
 {
   int ret = OB_SUCCESS;
   struct vtoa_get_vs4rds vs;
   int vs_len = sizeof(struct vtoa_get_vs4rds);
 
   if (OB_FAIL(get_vip4rds(con_.fd_, &vs, &vs_len))) {
-    PROXY_NET_LOG(DEBUG, "fail to get_vip4rds", K(ret));
+    PROXY_NET_LOG(DEBUG, "fail to get_vip4rds, use remote ip as virtual ip", K(ret));
+
+    sockaddr_in sin_c;
+    sin_c.sin_family = AF_INET;
+    sin_c.sin_port = htons(2883);
+    sin_c.sin_addr.s_addr = vs.caddr;
+
+    virtual_addr_.assign(ops_ip_sa_cast(sin_c));
   } else {
     ObIpAddr ip_addr(vs.entrytable.vaddr);
     virtual_addr_.assign(ip_addr, vs.entrytable.vport);
@@ -1217,21 +1224,34 @@ int ObUnixNetVConnection::set_virtual_addr()
   sin_d.sin_port = vs.dport;
   sin_d.sin_addr.s_addr = vs.daddr;
 
-  if (OB_SUCCESS == ret) {
-    PROXY_NET_LOG(INFO, "vip connect",
-                        "protocol", vs.protocol,
-                        "fd", con_.fd_,
-                        "vid", virtual_vid_,
-                        "vaddr", virtual_addr_,
-                        "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
-                        "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
+  PROXY_NET_LOG(INFO, "vip connect",
+                      "protocol", vs.protocol,
+                      "fd", con_.fd_,
+                      "vid", virtual_vid_,
+                      "vaddr", virtual_addr_,
+                      "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
+                      "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
+  return ret;
+}
+
+int ObUnixNetVConnection::set_virtual_addr()
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(get_global_proxy_config().enable_qa_mode)) {
+    // SLB to simulate public cloud allocation of IP addresses
+    // First obtain the real client address, and then modify the virutal address
+    do_set_virtual_addr();
+    if (OB_FAIL(ops_ip_pton(get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, virtual_addr_))) {
+      PROXY_CS_LOG(WARN, "fail to ops ip pton", "qa_mode_mock_public_cloud_slb_addr",
+                   get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, K(ret));
+    } else {
+      virtual_vid_ = static_cast<uint32_t>(get_global_proxy_config().qa_mode_mock_public_cloud_vid);
+    }
   } else {
-    PROXY_NET_LOG(DEBUG, "tcp connect",
-                        "protocol", vs.protocol,
-                        "fd", con_.fd_,
-                        "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
-                        "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
+    ret = do_set_virtual_addr();
   }
+
   return ret;
 }
 
@@ -1705,6 +1725,9 @@ int ObUnixNetVConnection::ssl_server_handshake(ObEThread &thread)
   if (NULL == ssl_) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "ssl server handshake event", K(ret));
+  } else if (!lock.is_locked()) {
+    nh_->write_ready_list_.in_or_enqueue(this);
+    nh_->read_ready_list_.in_or_enqueue(this);
   } else if (OB_FAIL(ObSocketManager::ssl_accept(ssl_, ssl_connected_, tmp_code))) {
     handle_ssl_err_code(tmp_code);
     read_.triggered_ = false;
@@ -1734,6 +1757,9 @@ int ObUnixNetVConnection::ssl_client_handshake(ObEThread &thread)
   if (NULL == ssl_) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "ssl client handshake event", K(ret));
+  } else if (!lock.is_locked()) {
+    nh_->write_ready_list_.in_or_enqueue(this);
+    nh_->read_ready_list_.in_or_enqueue(this);
   } else if (OB_FAIL(ObSocketManager::ssl_connect(ssl_, ssl_connected_, tmp_code))) {
     handle_ssl_err_code(tmp_code);
     write_.triggered_ = false;

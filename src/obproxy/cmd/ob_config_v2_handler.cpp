@@ -44,8 +44,7 @@ namespace oceanbase
 namespace obproxy
 {
 
-ObConfigV2Handler::ObConfigV2Handler(ObContinuation *cont, ObMIOBuffer *buf,
-                                     const ObInternalCmdInfo &info)
+ObConfigV2Handler::ObConfigV2Handler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
         : ObInternalCmdHandler(cont, buf, info), sqlite3_column_name_(),
           sqlite3_column_value_(), cmd_type_(info.get_cmd_type()),
           capability_(info.get_capability())
@@ -69,8 +68,8 @@ int ObConfigV2Handler::main_handler(int event, void *data)
       event_ret = handle_dml_stmt();
       break;
     default:
-      ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("unknown type", "cmd_type", get_print_stmt_name(cmd_type_));
+      ret = OB_NOT_SUPPORTED;
+      WARN_ICMD("unknown type", "cmd_type", get_print_stmt_name(cmd_type_), K(ret));
       event_ret = internal_error_callback(ret);
   }
 

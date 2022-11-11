@@ -189,24 +189,24 @@ do {                                                                            
   }                                                                                         \
 } while(0)                                                                                  \
 
-#define add_text_ps_execute_node(text_ps_execute_parse_info, execute_parse_node) \
+#define add_text_ps_node(text_ps_parse_info, parse_node) \
 do {                                                      \
-  if (NULL != text_ps_execute_parse_info.tail_) {\
-    text_ps_execute_parse_info.tail_->next_ = execute_parse_node;\
-    text_ps_execute_parse_info.tail_ = execute_parse_node;\
+  if (NULL != text_ps_parse_info.tail_) {\
+    text_ps_parse_info.tail_->next_ = parse_node;\
+    text_ps_parse_info.tail_ = parse_node;\
   } else {\
-    text_ps_execute_parse_info.head_ = execute_parse_node;\
-    text_ps_execute_parse_info.tail_ = execute_parse_node;\
+    text_ps_parse_info.head_ = parse_node;\
+    text_ps_parse_info.tail_ = parse_node;\
   }\
-  ++text_ps_execute_parse_info.node_count_;\
+  ++text_ps_parse_info.node_count_;\
 } while(0)
 
-#define malloc_execute_parse_node(execute_parse_node) \
+#define malloc_parse_node(parse_node) \
 do {                                                                                        \
-  if (OB_ISNULL(execute_parse_node = ((ObProxyTextPsExecuteParseNode *)obproxy_parse_malloc(sizeof(ObProxyTextPsExecuteParseNode), result->malloc_pool_)))) { \
+  if (OB_ISNULL(parse_node = ((ObProxyTextPsParseNode *)obproxy_parse_malloc(sizeof(ObProxyTextPsParseNode), result->malloc_pool_)))) { \
     YYABORT;                                                                                \
   } else {                                                                                  \
-    execute_parse_node->next_ = NULL;                                                       \
+    parse_node->next_ = NULL;                                                       \
   }                                                                                         \
 } while(0)                                                                                  \
 
@@ -284,10 +284,10 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
  /* dummy token */
 %token DUMMY_WHERE_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
-%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE UNIQUE
+%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE STATUS UNIQUE
 %token GRANT REVOKE ANALYZE PURGE COMMENT
 %token FROM DUAL
-%token PREPARE EXECUTE USING
+%token PREPARE EXECUTE USING DEALLOCATE
 %token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY QUERY_TIMEOUT READ_CONSISTENCY WEAK STRONG FROZEN PLACE_HOLDER
 %token END_P ERROR 
 %token WHEN
@@ -324,7 +324,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> SHOW_PROXYTRACE
 %token<str> SHOW_PROXYINFO BINARY UPGRADE IDC
 %token<str> SHOW_TOPOLOGY GROUP_NAME SHOW_DB_VERSION
-%token<str> SHOW_DATABASES SHOW_TABLES SELECT_DATABASE SHOW_CREATE_TABLE SELECT_PROXY_VERSION
+%token<str> SHOW_DATABASES SHOW_TABLES SHOW_FULL_TABLES SELECT_DATABASE SHOW_CREATE_TABLE SELECT_PROXY_VERSION SHOW_COLUMNS SHOW_INDEX
 %token<str> ALTER_PROXYCONFIG
 %token<str> ALTER_PROXYRESOURCE
 %token<str> PING_PROXY
@@ -339,12 +339,15 @@ root: sql_stmts { HANDLE_ACCEPT(); }
 sql_stmts: sql_stmt
          | sql_stmts sql_stmt
 
-sql_stmt: stmt END_P     { handle_stmt_end(result); HANDLE_ACCEPT(); }
-        | stmt ';'       { handle_stmt_end(result); }
-        | stmt ';' END_P { handle_stmt_end(result); HANDLE_ACCEPT(); }
+sql_stmt: comment_stmt END_P     { handle_stmt_end(result); HANDLE_ACCEPT(); }
+        | comment_stmt ';'       { handle_stmt_end(result); }
+        | comment_stmt ';' END_P { handle_stmt_end(result); HANDLE_ACCEPT(); }
         | ';'            { handle_stmt_end(result); }
         | ';' END_P      { handle_stmt_end(result); HANDLE_ACCEPT(); }
-        | BEGI stmt ';'  { handle_stmt_end(result); }
+        | BEGI comment_stmt ';'  { handle_stmt_end(result); }
+
+comment_stmt: stmt
+            | comment_expr_list stmt
 
 stmt: select_stmt                    {}
     | insert_stmt                    {}
@@ -353,7 +356,6 @@ stmt: select_stmt                    {}
     | update_stmt                    {}
     | delete_stmt                    {}
     | explain_stmt                   {}
-    | comment_stmt                   {}
     | begin_stmt                     {}
     | show_stmt                      {}
     | hooked_stmt                    {}
@@ -381,13 +383,6 @@ explain_stmt: explain_or_desc_stmt select_stmt
             | explain_or_desc_stmt replace_stmt
             | explain_or_desc_stmt merge_stmt
 
-comment_stmt: comment_expr_list select_stmt
-            | comment_expr_list insert_stmt
-            | comment_expr_list update_stmt
-            | comment_expr_list delete_stmt
-            | comment_expr_list replace_stmt
-            | comment_expr_list merge_stmt
-
 ddl_stmt: mysql_ddl_stmt
         | oracle_ddl_stmt
 
@@ -411,39 +406,65 @@ text_ps_from_stmt: select_stmt {}
                  | call_stmt {}
                  | merge_stmt {}
 
-text_ps_using_var_list: '@' NAME_OB
-                      {
-                        ObProxyTextPsExecuteParseNode *node = NULL;
-                        malloc_execute_parse_node(node);
-                        node->str_value_ = $2;
-                        add_text_ps_execute_node(result->text_ps_execute_parse_info_, node);
-                      }
-                      | text_ps_using_var_list ',' '@' NAME_OB
-                      {
-                        ObProxyTextPsExecuteParseNode *node = NULL;
-                        malloc_execute_parse_node(node);
-                        node->str_value_ = $4;
-                        add_text_ps_execute_node(result->text_ps_execute_parse_info_, node);
-                      }
+text_ps_execute_using_var_list: '@' NAME_OB
+                              {
+                                ObProxyTextPsParseNode *node = NULL;
+                                malloc_parse_node(node);
+                                node->str_value_ = $2;
+                                add_text_ps_node(result->text_ps_parse_info_, node);
+                              }
+                              | text_ps_execute_using_var_list ',' '@' NAME_OB
+                              {
+                                ObProxyTextPsParseNode *node = NULL;
+                                malloc_parse_node(node);
+                                node->str_value_ = $4;
+                                add_text_ps_node(result->text_ps_parse_info_, node);
+                              }
 
-text_ps_prepare_stmt: PREPARE var_name FROM
+text_ps_prepare_var_list: '@' NAME_OB
+                        {
+                          ObProxyTextPsParseNode *node = NULL;
+                          malloc_parse_node(node);
+                          node->str_value_ = $2;
+                          add_text_ps_node(result->text_ps_parse_info_, node);
+                        }
+
+text_ps_prepare_args_stmt : text_ps_prepare_var_list
+                          | text_ps_from_stmt
+
+
+text_ps_prepare_stmt: PREPARE var_name FROM 
                     {
                       result->text_ps_inner_stmt_type_ = OBPROXY_T_TEXT_PS_PREPARE;
                       result->text_ps_name_ = $2;
                     }
 
-text_ps_stmt: text_ps_prepare_stmt text_ps_from_stmt
+text_ps_execute_stmt: EXECUTE var_name
+                    {
+                      result->cur_stmt_type_ = OBPROXY_T_TEXT_PS_EXECUTE;
+                      result->text_ps_name_ = $2;
+                    }
+                    | EXECUTE var_name USING
+                    {
+                      result->cur_stmt_type_ = OBPROXY_T_TEXT_PS_EXECUTE;
+                      result->text_ps_name_ = $2;
+                    }
+
+text_ps_stmt: text_ps_prepare_stmt text_ps_prepare_args_stmt
             {
             }
-            | EXECUTE var_name
+            | text_ps_execute_stmt text_ps_execute_using_var_list
             {
-              result->cur_stmt_type_ = OBPROXY_T_TEXT_PS_EXECUTE;
-              result->text_ps_name_ = $2;
             }
-            | EXECUTE var_name USING text_ps_using_var_list
+            | DROP PREPARE var_name
             {
-              result->cur_stmt_type_ = OBPROXY_T_TEXT_PS_EXECUTE;
-              result->text_ps_name_ = $2;
+              result->cur_stmt_type_ = OBPROXY_T_TEXT_PS_DROP;
+              result->text_ps_name_ = $3;
+            }
+            | DEALLOCATE PREPARE var_name
+            {
+              result->cur_stmt_type_ = OBPROXY_T_TEXT_PS_DROP;
+              result->text_ps_name_ = $3;
             }
 
 oracle_ddl_stmt: GRANT     { result->cur_stmt_type_ = OBPROXY_T_GRANT; }
@@ -489,13 +510,60 @@ shard_special_stmt: show_es_id_stmt {}
                   | show_db_version_stmt {}
                   | SELECT_DATABASE { result->sub_stmt_type_ = OBPROXY_T_SUB_SELECT_DATABASE; }
                   | SHOW_DATABASES  { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_DATABASES; }
-                  | SHOW_TABLES     { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TABLES; }
+                  | show_tables_stmt {}
+                  | show_table_status_stmt {}
+                  | show_columns_stmt {}
+                  | show_index_stmt {}
                   | SHOW_CREATE_TABLE routine_name_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_CREATE_TABLE; }
                   | explain_or_desc routine_name_stmt
                   {
                       result->cur_stmt_type_ = OBPROXY_T_DESC;
                       result->sub_stmt_type_ = OBPROXY_T_SUB_DESC_TABLE;
                   }
+
+show_columns_stmt: SHOW_COLUMNS FROM NAME_OB
+                  {
+                    result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_COLUMNS;
+                    result->table_info_.table_name_ = $3;
+                  }
+                  | SHOW_COLUMNS FROM NAME_OB FROM NAME_OB
+                  {
+                    result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_COLUMNS;
+                    result->table_info_.table_name_ = $3;
+                    result->table_info_.database_name_ = $5;
+                  }
+
+show_index_stmt: SHOW_INDEX FROM NAME_OB
+               {
+                 result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_INDEX;
+                 result->table_info_.table_name_ = $3;
+               }
+               | SHOW_INDEX FROM NAME_OB FROM NAME_OB
+               {
+                 result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_INDEX;
+                 result->table_info_.table_name_ = $3;
+                 result->table_info_.database_name_ = $5;
+               }
+
+opt_show_like: /*empty*/            {}
+             | LIKE NAME_OB         { result->table_info_.table_name_ = $2; }
+
+opt_show_from: /*empty*/            {}
+             | FROM NAME_OB         { result->table_info_.database_name_ = $2; }
+
+show_tables_stmt: SHOW_TABLES opt_show_from opt_show_like
+                {
+                  result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TABLES;
+                }
+                | SHOW_FULL_TABLES opt_show_from opt_show_like
+                {
+                  result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_FULL_TABLES;
+                }
+
+show_table_status_stmt: SHOW TABLE STATUS opt_show_from opt_show_like
+                      {
+                        result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TABLE_STATUS;
+                      }
 
 show_db_version_stmt: SHOW_DB_VERSION { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_DB_VERSION; }
 

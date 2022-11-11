@@ -33,8 +33,7 @@ namespace obproxy
 {
 namespace obutils
 {
-ObAlterConfigSetHandler::ObAlterConfigSetHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                                 const ObInternalCmdInfo &info)
+ObAlterConfigSetHandler::ObAlterConfigSetHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), capability_(info.get_capability())
 {
   SET_HANDLER(&ObAlterConfigSetHandler::handle_set_config);
@@ -130,14 +129,10 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     }
   }
 
-  // If it is an ssl switch, it needs to be synchronized to ssl_config_table for compatibility
-  if (OB_SUCC(ret)) {
-    if (0 == key_string.case_compare("enable_client_ssl")
-        || 0 == key_string.case_compare("enable_server_ssl")) {
-      if (OB_FAIL(get_global_config_processor().store_cloud_config("ssl_config", "*", "*", key_string, value_string))) {
-        LOG_WARN("store cloud ssl config failed", K(ret));
-      }
-    }
+  // Global configuration items need to be synchronized to the proxy_config table
+  if (OB_SUCC(ret) &&
+      OB_FAIL(get_global_config_processor().store_global_proxy_config(key_string, value_string))) {
+    LOG_WARN("store proxy config failed", K(ret));
   }
 
   //5. rollback
@@ -147,6 +142,9 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = get_global_proxy_config().update_config_item(
           key_string, ObString::make_string(old_value))))) {
         WARN_ICMD("fail to back to old config", K(key_string), K(old_value), K(tmp_ret));
+      } else if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret =
+            get_global_config_processor().store_global_proxy_config(key_string, old_value)))) {
+        WARN_ICMD("fail to store global proxy config", K(key_string), K(old_value), K(tmp_ret));
       } else {
         DEBUG_ICMD("succ to back to old config", K(key_string), K(old_value));
       }

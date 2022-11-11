@@ -28,9 +28,7 @@ namespace obutils
 class ObShowConfigHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowConfigHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                      const ObInternalCmdInfo &info);
-
+  ObShowConfigHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowConfigHandler() {}
   int handle_show_config(int event, void *data);
 

@@ -33,7 +33,7 @@ namespace proxy
 class ObPartNameIdPair
 {
 public:
-  ObPartNameIdPair() : part_id_(-1)
+  ObPartNameIdPair() : part_id_(-1), tablet_id_(-1)
   {
     part_name_buf_[0] = '\0';
   }
@@ -41,17 +41,20 @@ public:
 
   int set_part_name(const common::ObString &part_name);
   void set_part_id(int64_t part_id) { part_id_ = part_id; }
+  void set_tablet_id(const int64_t tablet_id) { tablet_id_ = tablet_id; }
 
   const common::ObString get_part_name() const { return part_name_; }
   int64_t get_part_id() const { return part_id_; }
+  int64_t get_tablet_id() const { return tablet_id_; }
 
   int assign(const ObPartNameIdPair &other);
   int64_t to_string(char *buf, const int64_t buf_len) const;
 public:
   common::ObString part_name_;
+  int64_t part_id_;
+  int64_t tablet_id_;
 
 private:
-  int64_t part_id_;
   char part_name_buf_[common::OB_MAX_PARTITION_NAME_LENGTH];
   DISALLOW_COPY_AND_ASSIGN(ObPartNameIdPair);
 };
@@ -73,6 +76,7 @@ inline int ObPartNameIdPair::assign(const ObPartNameIdPair &other)
 {
   int ret = common::OB_SUCCESS;
   set_part_id(other.get_part_id());
+  set_tablet_id(other.get_tablet_id());
   ret = set_part_name(other.get_part_name());
   return ret;
 }
@@ -85,20 +89,23 @@ public:
 
   int get_part_with_part_name(const common::ObString &part_name,
                               int64_t &part_id_);
-  int get_first_part_id_by_idx(const int64_t idx, int64_t &part_id);
+  int get_first_part_id_by_idx(const int64_t idx, int64_t &part_id, int64_t &tablet_id);
   int get_first_part(common::ObNewRange &range,
                      common::ObIAllocator &allocator,
                      common::ObIArray<int64_t> &part_ids,
-                     common::ObPartDescCtx &ctx);
+                     common::ObPartDescCtx &ctx,
+                     common::ObIArray<int64_t> &tablet_ids);
   int get_sub_part(common::ObNewRange &range,
                    common::ObIAllocator &allocator,
                    common::ObPartDesc *sub_part_desc_ptr,
                    common::ObIArray<int64_t> &part_ids,
-                   common::ObPartDescCtx &ctx);
+                   common::ObPartDescCtx &ctx,
+                   common::ObIArray<int64_t> &tablet_ids);
 
-  int get_sub_part_by_random(const int64_t rand_num, 
+  int get_sub_part_by_random(const int64_t rand_num,
                              common::ObPartDesc *sub_part_desc_ptr,
-                             common::ObIArray<int64_t> &part_ids);
+                             common::ObIArray<int64_t> &part_ids,
+                             common::ObIArray<int64_t> &tablet_ids);
 
   int build_hash_part(const bool is_oracle_mode,
                       const share::schema::ObPartitionLevel part_level,
@@ -107,41 +114,49 @@ public:
                       const int64_t part_space,
                       const bool is_template_table,
                       const ObProxyPartKeyInfo &key_info,
-                      ObResultSetFetcher *rs_fetcher = NULL);
+                      ObResultSetFetcher *rs_fetcher,
+                      const int64_t cluster_version);
   int build_sub_hash_part_with_non_template(const bool is_oracle_mode,
                                             const share::schema::ObPartitionFuncType part_func_type,
                                             const int64_t part_space,
                                             const ObProxyPartKeyInfo &key_info,
-                                            ObResultSetFetcher &rs_fetcher);
+                                            ObResultSetFetcher &rs_fetcher,
+                                            const int64_t cluster_version);
   int build_key_part(const share::schema::ObPartitionLevel part_level,
                      const share::schema::ObPartitionFuncType part_func_type,
                      const int64_t part_num,
                      const int64_t part_space,
                      const bool is_template_table,
                      const ObProxyPartKeyInfo &key_info,
-                     ObResultSetFetcher *rs_fetcher = NULL);
+                     ObResultSetFetcher *rs_fetcher,
+                     const int64_t cluster_version);
   int build_sub_key_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
                                            const int64_t part_space,
                                            const ObProxyPartKeyInfo &key_info,
-                                           ObResultSetFetcher &rs_fetcher);
+                                           ObResultSetFetcher &rs_fetcher,
+                                           const int64_t cluster_version);
   int build_range_part(const share::schema::ObPartitionLevel part_level,
                        const share::schema::ObPartitionFuncType part_func_type,
                        const int64_t part_num,
                        const bool is_template_table,
                        const ObProxyPartKeyInfo &key_info,
-                       ObResultSetFetcher &rs_fetcher);
+                       ObResultSetFetcher &rs_fetcher,
+                       const int64_t cluster_version);
   int build_sub_range_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
                                              const ObProxyPartKeyInfo &key_info,
-                                             ObResultSetFetcher &rs_fetcher);
+                                             ObResultSetFetcher &rs_fetcher,
+                                             const int64_t cluster_verison);
   int build_list_part(const share::schema::ObPartitionLevel part_level,
                       const share::schema::ObPartitionFuncType part_func_type,
                       const int64_t part_num,
                       const bool is_template_table,
                       const ObProxyPartKeyInfo &key_info,
-                      ObResultSetFetcher &rs_fetcher);
+                      ObResultSetFetcher &rs_fetcher,
+                      const int64_t cluster_version);
   int build_sub_list_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
                                             const ObProxyPartKeyInfo &key_info,
-                                            ObResultSetFetcher &rs_fetcher);
+                                            ObResultSetFetcher &rs_fetcher,
+                                            const int64_t cluster_version);
 
   bool is_first_part_valid() const { return NULL != first_part_desc_; }
   bool is_sub_part_valid() const { return NULL != sub_part_desc_; }
@@ -151,10 +166,12 @@ public:
                                         int64_t &num);
   int get_sub_part_desc_by_first_part_id(const bool is_template_table,
                                          const int64_t first_part_id,
-                                         ObPartDesc *&sub_part_desc_ptr);
+                                         ObPartDesc *&sub_part_desc_ptr,
+                                         const int64_t cluster_version);
 
   common::ObObjType get_first_part_type() const;
   common::ObObjType get_sub_part_type() const;
+  void set_cluster_version(const int64_t cluster_version) { cluster_version_ = cluster_version; }
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
 private:
@@ -164,6 +181,7 @@ private:
   int64_t *sub_part_num_;
   ObPartNameIdPair* part_pair_array_; // first part name id pair array
   common::ObIAllocator &allocator_;
+  int64_t cluster_version_;
 };
 
 } // namespace proxy

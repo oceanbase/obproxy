@@ -18,6 +18,7 @@
 #include "engine/ob_proxy_operator_table_scan.h"
 #include "engine/ob_proxy_operator_projection.h"
 #include "obutils/ob_proxy_stmt.h"
+#include "obproxy/proxy/mysqllib/ob_proxy_mysql_request.h"
 
 using namespace oceanbase::obproxy::engine;
 using namespace oceanbase::common;

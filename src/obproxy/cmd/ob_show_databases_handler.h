@@ -24,11 +24,12 @@ namespace obutils
 class ObShowDatabasesHandler : public ObCmdHandler
 {
 public:
-  ObShowDatabasesHandler(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit);
+  ObShowDatabasesHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
   virtual ~ObShowDatabasesHandler() {}
   int handle_show_databases(const ObString &logic_tenant_name);
 
-  static int show_databases_cmd_callback(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit, const ObString &logic_tenant_name);
+  static int show_databases_cmd_callback(event::ObMIOBuffer *buf, ObCmdInfo &info,
+                                         const ObString &logic_tenant_name);
 
 private:
   int dump_database_header();

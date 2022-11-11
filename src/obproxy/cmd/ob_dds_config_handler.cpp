@@ -85,8 +85,7 @@ private:
 };
 static SessionMap session_map;
 
-ObDdsConfigHandler::ObDdsConfigHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                       const ObInternalCmdInfo &info)
+ObDdsConfigHandler::ObDdsConfigHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type()), cmd_type_(info.get_cmd_type()),
     capability_(info.get_capability())
 {

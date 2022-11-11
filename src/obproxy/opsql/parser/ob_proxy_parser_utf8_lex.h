@@ -245,6 +245,8 @@ void ob_proxy_parser_utf8_yyfree (void * ,yyscan_t yyscanner );
 #define insert_all_expr 23
 #define set_expr 24
 #define show_topology 25
+#define show_tables 26
+#define proxy_icmd_state 27
 
 #endif
 
@@ -362,9 +364,9 @@ extern int ob_proxy_parser_utf8_yylex \
 #undef YY_DECL
 #endif
 
-#line 1151 "ob_proxy_parser_utf8.l"
+#line 1193 "ob_proxy_parser_utf8.l"
 
 
-#line 369 "ob_proxy_parser_utf8_lex.h"
+#line 371 "ob_proxy_parser_utf8_lex.h"
 #undef ob_proxy_parser_utf8_yyIN_HEADER
 #endif /* ob_proxy_parser_utf8_yyHEADER_H */

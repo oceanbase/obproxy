@@ -20,7 +20,9 @@ namespace oceanbase
 {
 namespace common
 {
-#define TRACE_ID_FORMAT "Y%lX-%lX"
+
+#define TRACE_ID_FORMAT "Y%lX-%016lX"
+
 struct ObCurTraceId
 {
   class SeqGenerator

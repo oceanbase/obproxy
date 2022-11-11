@@ -34,10 +34,10 @@ ObMysqlResponseCompressTransformPlugin::ObMysqlResponseCompressTransformPlugin(O
     local_reader_(NULL), local_transfer_reader_(NULL), compress_analyzer_(),
     compress_ob20_analyzer_(), analyzer_(NULL)
 {
-  ObProxyProtocol ob_proxy_protocol = sm_->use_compression_protocol();
-  if (ob_proxy_protocol == PROTOCOL_CHECKSUM) {
+  ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
+  if (ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM) {
     analyzer_ = &compress_analyzer_;
-  } else if (ob_proxy_protocol == PROTOCOL_OB20) {
+  } else if (ob_proxy_protocol == ObProxyProtocol::PROTOCOL_OB20) {
     analyzer_ = &compress_ob20_analyzer_;
   }
 
@@ -108,6 +108,9 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       int64_t plugin_decompress_response_end = sm_->get_based_hrtime();
       sm_->cmd_time_stats_.plugin_decompress_response_time_ +=
         milestone_diff(plugin_decompress_response_begin, plugin_decompress_response_end);
+
+      // save flt from response analyze result to sm
+      sm_->save_response_flt_result_to_sm(server_response.get_analyze_result().flt_);
     }
   }
 
@@ -132,6 +135,18 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
         sm_->trans_state_.current_.state_ = ObMysqlTransact::TRANSACTION_COMPLETE;
       } else if (analyze_result.is_resp_completed()) {
         sm_->trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
+      }
+
+      if (analyze_result.is_trans_completed() || analyze_result.is_resp_completed()) {
+        if (sm_->enable_record_full_link_trace_info()) {
+          trace::ObSpanCtx *ctx = sm_->flt_.trace_log_info_.server_response_read_ctx_;
+          if (OB_NOT_NULL(ctx)) {
+            PROXY_API_LOG(DEBUG, "end span ob_proxy_server_response_read", K(ctx->span_id_));
+            SET_TRACE_BUFFER(sm_->flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+            FLT_END_SPAN(ctx);
+            sm_->flt_.trace_log_info_.server_response_read_ctx_ = NULL;
+          }
+        }
       }
 
       // get consume size again, for trim the last packet

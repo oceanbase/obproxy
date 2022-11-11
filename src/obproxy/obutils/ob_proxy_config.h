@@ -13,6 +13,7 @@
 #ifndef OBPROXY_CONFIG_H
 #define OBPROXY_CONFIG_H
 
+#include <sqlite/sqlite3.h>
 #include "lib/hash/ob_hashmap.h"
 #include "share/config/ob_common_config.h"
 #include "iocore/net/ob_inet.h"
@@ -68,7 +69,8 @@ public:
   // FIXME: here we use true value to init dump_config_res_, so that in start period,
   // if proxy fail to load config from local and ocp database,
   // we wont dump default config to local.
-  ObProxyConfig() : with_config_server_(false), with_control_plane_(false), rwlock_()
+  ObProxyConfig() : with_config_server_(false), with_control_plane_(false),
+                    proxy_config_db_(NULL), rwlock_()
   {
     original_value_str_[0] = '\0';
     set_app_name(app_name);
@@ -90,10 +92,12 @@ public:
 
   //dump config to local file
   int dump_config_to_local();
+  int dump_config_to_sqlite();
   int update_config_item(const common::ObString &key_name, const common::ObString &value);
   int update_user_config_item(const common::ObString &key_name, const common::ObString &value);
 
   int get_old_config_value(const common::ObString &key_name, char *buf, const int64_t buf_size);
+  int get_config_item(const common::ObString &key_name, common::ObConfigItem &ret_item);
 
   // if level_flag = true, we will up sys log level
   // otherwise we will down sys log level
@@ -134,6 +138,7 @@ public:
   bool with_config_server_;
   bool with_control_plane_;
   char app_name_str_[common::OB_MAX_APP_NAME_LENGTH + 1];
+  sqlite3 *proxy_config_db_;
 
 private:
   char original_value_str_[common::OB_MAX_CONFIG_VALUE_LEN];
@@ -279,11 +284,16 @@ public:
   DEF_TIME(congestion_retry_interval, "20s", "[1s,1h]", "congestion retry interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(min_congested_connect_timeout, "100ms", "[1ms,1h]", "if client connect timeout after the time, proxy set target server alive congested, [1ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_congestion, "true", "enable congestion feature or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(server_detect_mode, "0", "[0,1]", "0 means no detect, 1 means target detect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(server_detect_fail_threshold, "3", "[1,10000]", "server detect try times", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_TIME(server_detect_refresh_interval, "10s", "[1ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(detect_server_timeout, "5s", "[1s,1h]", "detect server sql timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   DEF_BOOL(enable_bad_route_reject, "false", "if enabled, bad route request will be rejected, e.g. first statement of transaction opened by BEGIN(or START TRANSACTION) without table name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_partition_table_route, "true", "if enabled, partition table will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_compression_protocol, "true", "if enabled, proxy will use compression protocol with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_ob_protocol_v2, "true", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+
   DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_cached_server, "true", "if enabled, use cached server session when no table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -294,7 +304,7 @@ public:
 
   // sqlaudit
   DEF_CAP(sqlaudit_mem_limited, "0", "[0,1G]", "sqlaudit memory limited, [0, 1GB]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(internal_cmd_mem_limited, "64K", "[0,64MB]", "internal cmd response memory limited, [0, 64MB], 0 means unlimited", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_CAP(internal_cmd_mem_limited, "16M", "[0,64MB]", "internal cmd response memory limited, [0, 64MB], 0 means unlimited", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   //debug
   DEF_STR(test_server_addr, "", "proxy will choose this addr(if not empty) as observer addr forcibly, format ip1:sql_port1;ip2:sql_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -354,6 +364,8 @@ public:
   DEF_INT(qa_mode_mock_public_cloud_vid, "1", "[1,102400]", "mock public cloud vid", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_STR(proxy_route_policy, "", "proxy route policy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
+  DEF_BOOL(enable_cpu_isolate, "false", "enable cpu isolate or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+
   DEF_STR(mysql_version, "5.6.25", "returned version for mysql mode, default value is 5.6.25. If set, proxy will send new version when user connect to proxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER)
   // sql table cache
   DEF_BOOL(enable_index_route, "false", "enable index route or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -381,6 +393,8 @@ public:
 
   // primary zone
   DEF_STR(proxy_primary_zone_name, "", "primary zone name for proxy ldc route. If not empty, proxy only route to the zone", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_primary_zone, "true", "enable proxy route according to the tenant primary zone priority while proxy calculate route failed.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+
   // LGD config
   DEF_BOOL(enable_ldg, "false", "enable proxy to support ldg", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_TIME(ldg_info_refresh_interval, "20s", "[10s,1d]", "config server info refresh task interval, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);

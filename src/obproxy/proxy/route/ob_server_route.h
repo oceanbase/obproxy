@@ -19,11 +19,19 @@
 #include "proxy/route/ob_table_entry.h"
 #include "proxy/route/ob_partition_entry.h"
 #include "proxy/route/ob_mysql_route.h"
+#include "obproxy/obutils/ob_proxy_config.h"
+#include "obproxy/proxy/mysql/ob_mysql_client_session.h"
+
 
 namespace oceanbase
 {
 namespace obproxy
 {
+namespace obutils
+{
+class ObClusterResource;
+}
+
 namespace proxy
 {
 class ObMysqlRouteResult;
@@ -53,9 +61,10 @@ public:
   ObTableEntry *get_table_entry() { return table_entry_; }
   int fill_replicas(const common::ObConsistencyLevel level,
                     const ObRoutePolicyEnum route_policy,
+                    const bool is_random_routing_mode,
                     const bool disable_merge_status_check,
-                    ObTableEntry *dummy_entry,
-                    ObLDCLocation &dummy_ldc,
+                    ObMysqlClientSession *client_session,
+                    obutils::ObClusterResource *cluster_resource,
                     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                     const common::ObIArray<common::ObString> &region_names,
                     const common::ObString &proxy_primary_zone_name
@@ -67,7 +76,10 @@ public:
   int fill_strong_read_replica(const ObProxyPartitionLocation *pl, ObLDCLocation &dummy_ldc,
                                const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                const common::ObIArray<common::ObString> &region_names,
-                               const common::ObString &proxy_primary_zone_name);
+                               const common::ObString &proxy_primary_zone_name,
+                               const common::ObString &tenant_name,
+                               obutils::ObClusterResource *cluster_resource,
+                               const bool is_random_routing_mode);
   int fill_weak_read_replica(const ObProxyPartitionLocation *pl, ObLDCLocation &dummy_ldc,
                              const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                              const common::ObIArray<common::ObString> &region_names,
@@ -187,7 +199,8 @@ inline int ObServerRoute::fill_weak_read_replica(
 inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocation *pl,
     ObLDCLocation &dummy_ldc, const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
     const common::ObIArray<common::ObString> &region_names,
-    const ObString &proxy_primary_zone_name)
+    const ObString &proxy_primary_zone_name, const ObString &tenant_name,
+    obutils::ObClusterResource *cluster_resource, const bool is_random_routing_mode)
 {
   int ret = common::OB_SUCCESS;
   const bool is_only_readwrite_zone = (ONLY_READWRITE_ZONE == ldc_route_.policy_);
@@ -197,12 +210,15 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
                                                     is_only_readwrite_zone,
                                                     need_use_dup_replica_,
                                                     skip_leader_item_,
+                                                    is_random_routing_mode,
                                                     ss_info, region_names,
-                                                    proxy_primary_zone_name))) {
+                                                    proxy_primary_zone_name,
+                                                    tenant_name,
+                                                    cluster_resource))) {
     PROXY_LOG(WARN, "fail to divide_leader_replica", K(ret));
   } else {
     valid_count_ = ldc_route_.location_.count() + ((!need_use_dup_replica_ && leader_item_.is_valid()) ? 1 : 0);
-    PROXY_LOG(DEBUG, "succ to fill_strong_read_replica", KPC(this), KPC(pl), K(dummy_ldc));
+    PROXY_LOG(DEBUG, "succ to fill_strong_read_replica", KPC(this), KPC(pl), K(dummy_ldc), K(valid_count_));
   }
   if (entry_need_update) {
     //if dummy entry has expand, we can update it here
@@ -214,9 +230,10 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
 inline int ObServerRoute::fill_replicas(
     const common::ObConsistencyLevel level,
     const ObRoutePolicyEnum route_policy,
+    const bool is_random_routing_mode,
     const bool disable_merge_status_check,
-    ObTableEntry *dummy_entry,
-    ObLDCLocation &dummy_ldc,
+    ObMysqlClientSession *client_session,
+    obutils::ObClusterResource *cluster_resource,
     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
     const common::ObIArray<common::ObString> &region_names,
     const ObString &proxy_primary_zone_name
@@ -227,6 +244,10 @@ inline int ObServerRoute::fill_replicas(
     )
 {
   int ret = common::OB_SUCCESS;
+
+  ObTableEntry *dummy_entry = client_session->dummy_entry_;
+  ObLDCLocation &dummy_ldc = client_session->dummy_ldc_;
+
   if (OB_UNLIKELY(common::STRONG != level && common::WEAK != level)) {
     ret = common::OB_ERR_UNEXPECTED;
     PROXY_LOG(WARN, "unsupport ObConsistencyLevel", K(level), K(ret));
@@ -273,7 +294,9 @@ inline int ObServerRoute::fill_replicas(
 #endif
 
       if (is_strong_read()) {
-        ret = fill_strong_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names, proxy_primary_zone_name);
+        ObString &tenant_name = client_session->get_session_info().get_priv_info().tenant_name_;
+        ret = fill_strong_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names,
+                                       proxy_primary_zone_name, tenant_name, cluster_resource, is_random_routing_mode);
       } else {
         ret = fill_weak_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names, proxy_primary_zone_name);
       }
@@ -366,11 +389,20 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
         cur_chosen_route_type_ = ROUTE_TYPE_LEADER;
         leader_item_.is_used_ = true;
       } else {
-        leader_item_.is_used_ = true;
-
         //2. get follower
-        item = ldc_route_.get_next_item();
-        cur_chosen_route_type_ = ldc_route_.get_curr_route_type();
+        leader_item_.is_used_ = true;
+        item = ldc_route_.get_next_primary_zone_item();
+        if (item == NULL) {
+          item = ldc_route_.get_next_item();  // primary zone no replica, choose from others.
+          if (NULL != item) {
+            cur_chosen_route_type_ = ldc_route_.get_curr_route_type();
+            PROXY_LOG(DEBUG, "enable pz, no pz item, choose from origin item", K(item->replica_->server_));
+          }
+        } else {
+          // succ to get item from primary zone route optimize, no need update pl
+          no_need_pl_update_ = true;
+          PROXY_LOG(DEBUG, "enable pz, choose pz item", K(item->replica_->server_));
+        }
       }
     }
 

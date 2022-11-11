@@ -32,7 +32,7 @@
 
 #include "ob_vip_tenant_conn.h"
 #include "lib/oblog/ob_log.h"
-#include "omt/ob_resource_unit_table_processor.h"
+#include "omt/ob_conn_table_processor.h"
 
 namespace oceanbase
 {
@@ -43,6 +43,9 @@ namespace omt
 
 using namespace obsys;
 using namespace oceanbase::common;
+
+extern int build_tenant_cluster_vip_name(const ObString &tenant_name, const ObString &cluster_name, const ObString &vip_name,
+    ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> &key_string);
 
 int ObVipTenantConn::set_tenant_cluster(const ObString &tenant_name, const ObString &cluster_name)
 {
@@ -78,8 +81,7 @@ int ObVipTenantConn::set_full_name()
   int ret = OB_SUCCESS;
 
   ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> full_name;
-  if (OB_FAIL(get_global_resource_unit_table_processor().build_tenant_cluster_vip_name(
-    tenant_name_, cluster_name_, vip_name_, full_name))) {
+  if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name_, cluster_name_, vip_name_, full_name))) {
     LOG_WARN("build tenant cluser and vip name failed", K(ret), K_(tenant_name), K_(cluster_name), K_(vip_name));
   } else {
     MEMCPY(full_name_str_, full_name.ptr(), full_name.size());

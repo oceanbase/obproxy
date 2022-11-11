@@ -78,60 +78,90 @@ int ObMysqlPacketWriter::write_packet(ObMIOBuffer &mio_buf,
 
 }
 
-// only compress ObMysqlRawPacket,
+int ObMysqlPacketWriter::write_raw_packet(ObMIOBuffer &mio_buf, const ObString &packet_str)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(packet_str.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid argument", K(packet_str), K(ret));
+  } else {
+    int64_t written_len = 0;
+    if (OB_FAIL(mio_buf.write(packet_str.ptr(), packet_str.length(), written_len))) {
+      LOG_WARN("not all data write to miobuffer", K(written_len), K(packet_str.length()), K(ret));
+    } else if (OB_UNLIKELY(packet_str.length() != written_len)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("packet is not written completely", K(written_len), K(packet_str.length()), K(ret));
+    } else {} // do nothing
+  }
+  return ret;
+}
+
+int ObMysqlPacketWriter::write_raw_packet(ObMIOBuffer &write_buf, const ObMySQLRawPacket &packet)
+{
+  int ret = OB_SUCCESS;
+
+  char meta_buf[MYSQL_NET_META_LENGTH];
+  int64_t pos = 0;
+  int64_t meta_buf_len = MYSQL_NET_META_LENGTH;
+  const char *buf = packet.get_cdata();
+  int64_t buf_len = packet.get_clen();
+  int64_t written_len = 0;
+
+  // first write mysql packet meta(header + cmd)
+  if (OB_FAIL(packet.encode_packet_meta(meta_buf, meta_buf_len, pos))) {
+    LOG_WARN("fail to encode packet meta", K(pos), K(packet), K(meta_buf_len), K(ret));
+  } else if (OB_FAIL(write_buf.write(meta_buf, meta_buf_len, written_len))) {
+    LOG_WARN("fail to write meta buf to dst buf", K(ret));
+  } else if (OB_UNLIKELY(written_len != MYSQL_NET_META_LENGTH)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("written len dismatch", K(ret), K(written_len), K(MYSQL_NET_META_LENGTH));
+  } else if (OB_FAIL(write_buf.write(buf, buf_len, written_len))) {   // then write packet body
+    LOG_WARN("fail to write packet buf to dst buf", K(ret));
+  } else if (OB_UNLIKELY(written_len != buf_len)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("written len dismatch", K(ret), K(buf_len), K(written_len));
+  } else {
+    // nothing
+  }
+
+  return ret;
+}
+
+// only compress ObMysqlRawPacket
 int ObMysqlPacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
                                                  const ObMySQLRawPacket &packet,
                                                  uint8_t &compressed_seq,
                                                  const bool is_checksum_on)
 {
   int ret = OB_SUCCESS;
-  char meta_buf[MYSQL_NET_META_LENGTH];
-  int64_t pos = 0;
-  int64_t meta_buf_len = MYSQL_NET_META_LENGTH;
-  // 1. encode mysql packet meta(header + cmd)
-  if (OB_FAIL(packet.encode_packet_meta(meta_buf, meta_buf_len, pos))) {
-    LOG_WARN("fail to encode packet meta", K(pos), K(packet), K(meta_buf_len), K(ret));
+
+  const bool use_fast_compress = true;
+  ObIOBufferReader *tmp_mio_reader = NULL;
+  ObMIOBuffer *tmp_mio_buf = NULL;
+  
+  if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to new miobuffer", K(ret));
+  } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to alloc reader", K(ret));
+  } else if (OB_FAIL(ObMysqlPacketWriter::write_raw_packet(*tmp_mio_buf, packet))) {
+    LOG_WARN("fail to write raw packet", K(ret));
+  } else if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
+                       tmp_mio_reader->read_avail(), use_fast_compress, compressed_seq, is_checksum_on))) {
+    LOG_WARN("fail to consume and compress data", K(ret));
   } else {
-    ObIOBufferReader *tmp_reader = NULL;
-    ObMIOBuffer *tmp_mio_buf = NULL;
-    const char *buf = packet.get_cdata();
-    int64_t buf_len = packet.get_clen();
-    int64_t written_len = 0;
-    const bool use_fast_compress = true;
-    if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer())) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new miobuffer", K(ret));
-    } else if (OB_ISNULL(tmp_reader = tmp_mio_buf->alloc_reader())) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to alloc reader", K(ret));
-    // 2. write the meta buf, the first part of mysql packet
-    } else if (OB_FAIL(tmp_mio_buf->write(meta_buf, meta_buf_len, written_len))) {
-      LOG_WARN("fail to write", K(meta_buf_len), K(ret));
-    } else if (OB_UNLIKELY(written_len != MYSQL_NET_META_LENGTH)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("written_len dismatch", K(written_len), K(MYSQL_NET_META_LENGTH), K(ret));
-    // 3. write the request buf, the second part of mysql packet
-    } else if (OB_FAIL(tmp_mio_buf->write(buf, buf_len, written_len))) {
-      LOG_WARN("fail to write", K(buf_len), K(ret));
-    } else if (OB_UNLIKELY(written_len != buf_len)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("written_len dismatch", K(written_len), K(buf_len), K(ret));
-    // 4. make up compress packet
-    } else if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(tmp_reader,
-              &mio_buf, tmp_reader->read_avail(), use_fast_compress, compressed_seq, is_checksum_on))) {
-      LOG_WARN("fail to consume and compress data", K(use_fast_compress),
-               K(tmp_reader->read_avail()), K(ret));
-    }
-    if (NULL != tmp_mio_buf) {
-      free_miobuffer(tmp_mio_buf);
-      tmp_mio_buf = NULL;
-      tmp_reader = NULL;
-    }
+    // nothing
+  }
+
+  if (NULL != tmp_mio_buf) {
+    free_miobuffer(tmp_mio_buf);
+    tmp_mio_buf = NULL;
+    tmp_mio_reader = NULL;
   }
 
   return ret;
 }
-
 
 int ObMysqlPacketWriter::write_compressed_packet(
     ObMIOBuffer &mio_buf,
@@ -197,24 +227,6 @@ int ObMysqlPacketWriter::write_compressed_packet(
     }
   }
 
-  return ret;
-}
-
-int ObMysqlPacketWriter::write_raw_packet(ObMIOBuffer &mio_buf, const ObString &packet_str)
-{
-  int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(packet_str.empty())) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(packet_str), K(ret));
-  } else {
-    int64_t written_len = 0;
-    if (OB_FAIL(mio_buf.write(packet_str.ptr(), packet_str.length(), written_len))) {
-      LOG_WARN("not all data write to miobuffer", K(written_len), K(packet_str.length()), K(ret));
-    } else if (OB_UNLIKELY(packet_str.length() != written_len)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("packet is not written completely", K(written_len), K(packet_str.length()), K(ret));
-    } else {} // do nothing
-  }
   return ret;
 }
 

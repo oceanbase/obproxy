@@ -12,4 +12,6 @@ obproxy/proxy/plugins/ob_mysql_request_execute_transform_plugin.h\
 obproxy/proxy/plugins/ob_mysql_response_cursor_transform_plugin.cpp\
 obproxy/proxy/plugins/ob_mysql_response_cursor_transform_plugin.h\
 obproxy/proxy/plugins/ob_mysql_response_new_ps_transform_plugin.cpp\
-obproxy/proxy/plugins/ob_mysql_response_new_ps_transform_plugin.h
+obproxy/proxy/plugins/ob_mysql_response_new_ps_transform_plugin.h\
+obproxy/proxy/plugins/ob_mysql_response_ob20_transform_plugin.h\
+obproxy/proxy/plugins/ob_mysql_response_ob20_transform_plugin.cpp

@@ -130,27 +130,28 @@ int ObMysqlProxyServerMain::init_mysql_proxy_server(const ObMysqlConfigParams &c
   return ret;
 }
 
+int ObMysqlProxyServerMain::start_mysql_proxy_acceptor()
+{
+  int ret = OB_SUCCESS;
+  ObMysqlProxyPort &proxy_port = get_global_proxy_port();
+  // start accepting connections
+  // although we make a good pretence here, I don't believe that ObNetProcessor::main_accept()
+  // ever actually returns NULL. It would be useful to be able to detect errors
+  // and spew them here though.
+  if (OB_ISNULL(g_net_processor.main_accept(*(g_mysql_proxy_acceptor.accept_), proxy_port.fd_,
+                                            g_mysql_proxy_acceptor.net_opt_))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("fail to execute main accept", K(ret));
+  }
+
+  return ret;
+}
+
 int ObMysqlProxyServerMain::start_mysql_proxy_server(const ObMysqlConfigParams &config_params)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(start_processor_threads(config_params))) {
     LOG_ERROR("fail to start processor threads", K(ret));
-  } else if (get_global_proxy_config().enable_sharding
-             && !get_global_proxy_config().use_local_dbconfig
-             && !get_global_db_config_processor().is_config_inited()
-             && OB_FAIL(get_global_db_config_processor().init_sharding_config())) {
-    LOG_ERROR("fail to init sharding config", K(ret));
-  } else {
-    ObMysqlProxyPort &proxy_port = get_global_proxy_port();
-    // start accepting connections
-    // although we make a good pretence here, I don't believe that ObNetProcessor::main_accept()
-    // ever actually returns NULL. It would be useful to be able to detect errors
-    // and spew them here though.
-    if (OB_ISNULL(g_net_processor.main_accept(*(g_mysql_proxy_acceptor.accept_), proxy_port.fd_,
-                                              g_mysql_proxy_acceptor.net_opt_))) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to execute main accept", K(ret));
-    }
   }
   return ret;
 }
@@ -166,12 +167,13 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
   int64_t blocking_threads = config_params.block_thread_num_; //thread for blocking task
   int64_t grpc_threads = config_params.grpc_thread_num_;
   int64_t grpc_watch_threads = 1;
+  bool enable_cpu_isolate = config_params.enable_cpu_isolate_;
   if (OB_UNLIKELY(stack_size <= 0) || OB_UNLIKELY(event_threads <= 0)
       || OB_UNLIKELY(task_threads <= 0)) {
     ret = OB_INVALID_CONFIG;
     LOG_WARN("invalid variable", K(stack_size), K(event_threads), K(task_threads), K(ret));
   } else if (OB_FAIL(g_event_processor.start(static_cast<int>(event_threads), stack_size,
-                                             enable_cpu_topology, automatic_match_work_thread))) {
+                                             enable_cpu_topology, automatic_match_work_thread, enable_cpu_isolate))) {
     LOG_ERROR("fail to start event processor", K(stack_size), K(event_threads), K(ret));
   } else if (OB_FAIL(g_net_processor.start())) {
     LOG_ERROR("fail to start net processor", K(ret));
@@ -200,6 +202,8 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
     LOG_ERROR("fail to init sql_table_map for thread", K(ret));
   } else if (OB_FAIL(init_ps_entry_cache_for_thread())) {
     LOG_ERROR("fail to init ps entry cache for thread", K(ret));
+  } else if (OB_FAIL(init_text_ps_entry_cache_for_thread())) {
+    LOG_ERROR("fail to init text ps entry cache for thread", K(ret));
   } else if (OB_FAIL(init_random_seed_for_thread())) {
     LOG_ERROR("fail to init random seed for thread", K(ret));
   } else {}

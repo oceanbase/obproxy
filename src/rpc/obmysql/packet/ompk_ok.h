@@ -43,6 +43,7 @@ public:
   int set_message(const common::ObString &message);
   void set_changed_schema(const common::ObString &schema);
   void set_state_changed(const bool state_changed);
+
   int add_system_var(const ObStringKV &system_var);
   int add_user_var(const ObStringKV &user_var);
   inline void set_capability(const ObMySQLCapabilityFlags &cap) { capability_ = cap; }
