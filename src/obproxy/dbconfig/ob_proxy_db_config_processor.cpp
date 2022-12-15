@@ -222,8 +222,7 @@ int ObDbConfigProcessor::sync_fetch_tenant_config(const google::protobuf::Messag
 
 int ObDbConfigProcessor::handle_bt_sdk()
 {
-  int ret = OB_SUCCESS;
-  ret = OB_ERR_UNEXPECTED;
+  int ret = OB_ERR_UNEXPECTED;
   LOG_ERROR("not support beyond trust password", K(ret));
   return ret;
 }
