@@ -58,15 +58,19 @@ int ObMysqlRequestBuilder::build_database_sync_packet(ObMysqlSM *sm,
       uint8_t compressed_seq = 0;
       if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
         ObSEArray<ObObJKV, 3> extra_info;
-        char extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
-        if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_server(sm, extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                                   extra_info, true))) {
-          LOG_WARN("fail to build extra info for server", K(ret));
+        ObSqlString sess_info_value;
+        char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+        char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+        if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                      client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                      sess_info_value, true))) {
+          LOG_WARN("fail to build related extra info", K(ret));
         } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, db_name,
                                                                          server_session->get_server_sessid(),
                                                                          server_session->get_next_server_request_id(),
-                                                                         compressed_seq, compressed_seq, true, false,
+                                                                         compressed_seq, compressed_seq, true, false, false,
                                                                          server_info.is_new_extra_info_supported(),
+                                                                         sm->get_client_session()->is_trans_internal_routing(),
                                                                          &extra_info))) {
           LOG_WARN("fail to write request packet in ob20", K(ret));
         } else { /* nothing */ }
@@ -102,16 +106,20 @@ int ObMysqlRequestBuilder::build_all_session_vars_sync_packet(ObMysqlSM *sm,
   } else {
     uint8_t compressed_seq = 0;
     if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-      ObSEArray<ObObJKV, 1> extra_info;
-      char extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
-      if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_server(sm, extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                                 extra_info, true))) {
-        LOG_WARN("fail to build extra info for server", K(ret));
+      ObSEArray<ObObJKV, 3> extra_info;
+      ObSqlString sess_info_value;
+      char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+      char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+      if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                    client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                    sess_info_value, true))) {
+        LOG_WARN("fail to build related extra info", K(ret));
       } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, reset_sql.string(),
                                                                        server_session->get_server_sessid(),
                                                                        server_session->get_next_server_request_id(),
-                                                                       compressed_seq, compressed_seq, true, false,
+                                                                       compressed_seq, compressed_seq, true, false, false,
                                                                        server_info.is_new_extra_info_supported(),
+                                                                       sm->get_client_session()->is_trans_internal_routing(),
                                                                        &extra_info))) {
         LOG_WARN("fail to write request packet in ob20", K(ret));
       } else { /* nothing */ }
@@ -148,16 +156,20 @@ int ObMysqlRequestBuilder::build_session_vars_sync_packet(ObMysqlSM *sm,
   } else {
     uint8_t compressed_seq = 0;
     if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-      ObSEArray<ObObJKV, 1> extra_info;
-      char extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
-      if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_server(sm, extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                                 extra_info, true))) {
-        LOG_WARN("fail to build extra info for server", K(ret));
+        ObSEArray<ObObJKV, 3> extra_info;
+        ObSqlString sess_info_value;
+        char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+        char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+        if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                      client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                      sess_info_value, true))) {
+          LOG_WARN("fail to build related extra info", K(ret));
       } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, reset_sql.string(),
                                                                       server_session->get_server_sessid(),
                                                                       server_session->get_next_server_request_id(),
-                                                                      compressed_seq, compressed_seq, true, false,
-                                                                      server_info.is_new_extra_info_supported(),
+                                                                      compressed_seq, compressed_seq, true, false, false,
+                                                                      server_info.is_new_extra_info_supported(), 
+                                                                      sm->get_client_session()->is_trans_internal_routing(),
                                                                       &extra_info))) {
         LOG_WARN("fail to write request packet in ob20", K(ret));
       } else { /* nothing */ }
@@ -177,32 +189,36 @@ int ObMysqlRequestBuilder::build_session_vars_sync_packet(ObMysqlSM *sm,
   return ret;
 }
 
-int ObMysqlRequestBuilder::build_last_insert_id_sync_packet(ObMysqlSM *sm,
-                                                            ObMIOBuffer &mio_buf,
-                                                            ObClientSessionInfo &client_info,
-                                                            ObMysqlServerSession *server_session,
-                                                            const ObProxyProtocol ob_proxy_protocol)
+int ObMysqlRequestBuilder::build_session_user_vars_sync_packet(ObMysqlSM *sm,
+                                                               ObMIOBuffer &mio_buf,
+                                                               ObClientSessionInfo &client_info,
+                                                               ObMysqlServerSession *server_session,
+                                                               const ObProxyProtocol ob_proxy_protocol)
 {
   int ret = OB_SUCCESS;
   ObMySQLCmd cmd = OB_MYSQL_COM_QUERY;
   ObSqlString reset_sql;
   ObServerSessionInfo &server_info = server_session->get_session_info();
-  if (OB_FAIL(client_info.extract_last_insert_id_reset_sql(server_info, reset_sql))) {
-    LOG_WARN("fail to extract last_insert_id variable reset sql", K(ret));
+  if (OB_FAIL(client_info.extract_user_variable_reset_sql(server_info, reset_sql))) {
+    LOG_WARN("fail to extract variable reset sql", K(ret));
   } else {
     uint8_t compressed_seq = 0;
     if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-      ObSEArray<ObObJKV, 1> extra_info;
-      char extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
-      if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_server(sm, extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                                 extra_info, true))) {
+        ObSEArray<ObObJKV, 3> extra_info;
+        ObSqlString sess_info_value;
+        char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+        char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+        if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                      client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                      sess_info_value, true))) {
         LOG_WARN("fail to build extra info for server", K(ret));
       } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, reset_sql.string(),
-                                                                       server_session->get_server_sessid(),
-                                                                       server_session->get_next_server_request_id(),
-                                                                       compressed_seq, compressed_seq, true, false,
-                                                                       server_info.is_new_extra_info_supported(),
-                                                                       &extra_info))) {
+                                                                      server_session->get_server_sessid(),
+                                                                      server_session->get_next_server_request_id(),
+                                                                      compressed_seq, compressed_seq,  true, false, false,
+                                                                      server_info.is_new_extra_info_supported(),
+                                                                      sm->get_client_session()->is_trans_internal_routing(),
+                                                                      &extra_info))) {
         LOG_WARN("fail to write request packet in ob20", K(ret));
       } else { /* nothing */ }
     } else {
@@ -213,12 +229,11 @@ int ObMysqlRequestBuilder::build_last_insert_id_sync_packet(ObMysqlSM *sm,
 
     if (OB_SUCC(ret)) {
       server_session->set_compressed_seq(compressed_seq);
-      LOG_DEBUG("will sync last_insert_id variable", K(reset_sql));
+      LOG_DEBUG("will sync session user variables", K(reset_sql));
     } else {
       LOG_WARN("fail to write packet", K(cmd), K(reset_sql), K(ob_proxy_protocol), K(ret));
     }
   }
-
   return ret;
 }
 
@@ -235,16 +250,20 @@ int ObMysqlRequestBuilder::build_start_trans_request(ObMysqlSM *sm,
 
   uint8_t compressed_seq = 0;
   if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-    ObSEArray<ObObJKV, 1> extra_info;
-    char extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
-    if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_server(sm, extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                               extra_info, true))) {
-      LOG_WARN("fail to build extra info for server", K(ret));
+    ObSEArray<ObObJKV, 3> extra_info;
+    ObSqlString sess_info_value;
+    char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+    char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+    if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                  client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                  sess_info_value, true))) {
+      LOG_WARN("fail to build related extra info", K(ret));
     } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, sql,
                                                                      server_session->get_server_sessid(),
                                                                      server_session->get_next_server_request_id(),
-                                                                     compressed_seq, compressed_seq, true, false,
+                                                                     compressed_seq, compressed_seq, true, false, false,
                                                                      server_info.is_new_extra_info_supported(),
+                                                                     sm->get_client_session()->is_trans_internal_routing(),
                                                                      &extra_info))) {
       LOG_WARN("fail to write request packet in ob20", K(ret));
     } else { /* nothing */ }
@@ -264,6 +283,54 @@ int ObMysqlRequestBuilder::build_start_trans_request(ObMysqlSM *sm,
   return ret;
 }
 
+int ObMysqlRequestBuilder::build_xa_start_request(ObMysqlSM *sm,
+                                                  ObMIOBuffer &mio_buf,
+                                                  ObClientSessionInfo &client_info,
+                                                  ObMysqlServerSession *server_session,
+                                                  const ObProxyProtocol ob_proxy_protocol)
+{
+  LOG_DEBUG("start to build xa start request");
+  int ret = OB_SUCCESS;
+  ObString &xa_start_req_pkt = client_info.get_start_trans_sql();
+  ObString xa_pkt_payload(xa_start_req_pkt.length() - MYSQL_NET_META_LENGTH, 
+                          xa_start_req_pkt.ptr() + MYSQL_NET_META_LENGTH);
+  ObServerSessionInfo &server_info = server_session->get_session_info();
+  ObMySQLCmd cmd = OB_MYSQL_COM_STMT_PREPARE_EXECUTE; 
+  uint8_t compressed_seq = 0;
+  if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
+    ObSEArray<ObObJKV, 3> extra_info;
+    ObSqlString sess_info_value;
+    char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+    char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+    if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                  client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                  sess_info_value, true))) {
+      LOG_WARN("fail to build related extra info", K(ret));
+    } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, xa_pkt_payload,
+                                                                     server_session->get_server_sessid(),
+                                                                     server_session->get_next_server_request_id(),
+                                                                     compressed_seq, compressed_seq, true, false, false,
+                                                                     server_info.is_new_extra_info_supported(),
+                                                                     sm->get_client_session()->is_trans_internal_routing(),
+                                                                     &extra_info))) {
+      LOG_WARN("fail to write request packet in ob20", K(ret));
+    } else { /* nothing */ }
+  } else {
+    const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM ? true : false;
+    ret = ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, xa_pkt_payload, compressed_seq,
+                                                    need_compress, server_info.is_checksum_on());
+  }
+
+  if (OB_SUCC(ret)) {
+    server_session->set_compressed_seq(compressed_seq);
+    LOG_DEBUG("will send to sync xa start", K(xa_pkt_payload));
+  } else {
+    LOG_WARN("fail to write xa start request to buffer", K(cmd), K(xa_pkt_payload), K(ob_proxy_protocol), K(ret));
+  }
+
+  return OB_SUCCESS;
+}
+
 int ObMysqlRequestBuilder::build_prepare_request(ObMysqlSM *sm,
                                                  ObMIOBuffer &mio_buf,
                                                  ObClientSessionInfo &client_info,
@@ -279,16 +346,20 @@ int ObMysqlRequestBuilder::build_prepare_request(ObMysqlSM *sm,
   } else {
     uint8_t compressed_seq = 0;
     if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-      ObSEArray<ObObJKV, 1> extra_info;
-      char extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
-      if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_server(sm, extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                                 extra_info, true))) {
-        LOG_WARN("fail to build extra info for server", K(ret));
+        ObSEArray<ObObJKV, 3> extra_info;
+        ObSqlString sess_info_value;
+        char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+        char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+        if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                      client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                      sess_info_value, true))) {
+          LOG_WARN("fail to build related extra info", K(ret));
       } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, ps_sql,
                                                                        server_session->get_server_sessid(),
                                                                        server_session->get_next_server_request_id(),
-                                                                       compressed_seq, compressed_seq, true, false,
-                                                                       server_info.is_new_extra_info_supported(),
+                                                                       compressed_seq, compressed_seq, true, false, false,
+                                                                       server_info.is_new_extra_info_supported(), 
+                                                                       sm->get_client_session()->is_trans_internal_routing(),
                                                                        &extra_info))) {
         LOG_WARN("fail to write request packet in ob20", K(ret));
       } else { /* nothing */ }
@@ -338,16 +409,20 @@ int ObMysqlRequestBuilder::build_text_ps_prepare_request(ObMysqlSM *sm,
   } else {
     uint8_t compressed_seq = 0;
     if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-      ObSEArray<ObObJKV, 1> extra_info;
-      char extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
-      if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_server(sm, extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                                 extra_info, true))) {
-        LOG_WARN("fail to build extra info for server", K(ret));
+        ObSEArray<ObObJKV, 3> extra_info;
+        ObSqlString sess_info_value;
+        char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+        char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+        if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+                      client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                      sess_info_value, true))) {
+          LOG_WARN("fail to build related extra info", K(ret));
       } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, sql,
                                                                        server_session->get_server_sessid(),
                                                                        server_session->get_next_server_request_id(),
-                                                                       compressed_seq, compressed_seq, true, false,
-                                                                       server_info.is_new_extra_info_supported(),
+                                                                       compressed_seq, compressed_seq, true, false, false,
+                                                                       server_info.is_new_extra_info_supported(), 
+                                                                       sm->get_client_session()->is_trans_internal_routing(),
                                                                        &extra_info))) {
         LOG_WARN("fail to write request packet in ob20", K(ret));
       } else { /* nothing */ }
@@ -366,6 +441,24 @@ int ObMysqlRequestBuilder::build_text_ps_prepare_request(ObMysqlSM *sm,
   }
 
   return ret;
+}
+
+int ObMysqlRequestBuilder::build_binlog_login_packet(ObMysqlSM *sm,
+                                                     ObMIOBuffer &mio_buf,
+                                                     ObClientSessionInfo &client_info,
+                                                     ObMysqlServerSession *server_session,
+                                                     const ObProxyProtocol ob_proxy_protocol)
+{
+  UNUSED(sm);
+  UNUSED(server_session);
+  UNUSED(ob_proxy_protocol);
+
+  OMPKHandshakeResponse tg_hsr = client_info.get_login_req().get_hsr_result().response_;
+  tg_hsr.set_username(client_info.get_login_req().get_hsr_result().full_name_);
+  tg_hsr.set_seq(1);
+  tg_hsr.reset_connect_attr();
+
+  return packet::ObMysqlPacketWriter::write_packet(mio_buf, tg_hsr);
 }
 
 } // end of namespace proxy

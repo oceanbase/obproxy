@@ -55,8 +55,8 @@ static inline void add_token_list(ObProxyTokenList *list, ObProxyTokenList *next
   if (OB_ISNULL(list) || OB_ISNULL(next_list)) {
   } else if (NULL != list->tail_
              && NULL  != next_list->head_
-             && (TOKEN_INT_VAL == list->tail_->type_ || TOKEN_STR_VAL == list->tail_->type_)
-             && (TOKEN_INT_VAL == next_list->head_->type_ || TOKEN_STR_VAL == next_list->head_->type_)) {
+             && (TOKEN_INT_VAL == list->tail_->type_ || TOKEN_STR_VAL == list->tail_->type_ || TOKEN_FUNC == list->tail_->type_)
+             && (TOKEN_INT_VAL == next_list->head_->type_ || TOKEN_STR_VAL == next_list->head_->type_ || TOKEN_FUNC == next_list->head_->type_)) {
     list->tail_->next_ = next_list->head_;
     list->tail_ = next_list->head_;
     list->tail_->next_ = NULL;
@@ -128,8 +128,15 @@ static inline void set_part_key_column_idx(ObExprParseResult *result, ObProxyPar
   for (i = 0; i < result->part_key_info_.key_num_; ++i) {
     if (is_equal(column_name, &result->part_key_info_.part_keys_[i].name_)) {
       result->part_key_info_.part_keys_[i].idx_ = result->column_idx_;
-      break;
+      result->part_key_info_.part_keys_[i].is_exist_in_sql_ = true;
     }
+  }
+}
+
+static inline void init_part_key_all_match(ObExprParseResult *result)
+{
+  for (int64_t i = 0; i < result->part_key_info_.key_num_; ++i) {
+      result->part_key_info_.part_keys_[i].is_exist_in_sql_ = true;
   }
 }
 
@@ -167,20 +174,12 @@ static inline void set_part_key_column_idx(ObExprParseResult *result, ObProxyPar
   do {                                                                                          \
     if (NULL == relation) {                                                                     \
     } else {                                                                                    \
-      int64_t new_mask = get_mask(relation->type_, relation->level_);                           \
-      bool has_rowid = result->has_rowid_;                                                      \
-      if (((result->cur_mask_ | new_mask) != result->cur_mask_)                                 \
-          || (has_rowid                                                                         \
-              && is_equal_to_rowid(&relation->left_value_->column_node_->column_name_))) {      \
+      if (relation->level_ != PART_KEY_LEVEL_ZERO) {                                            \
         if (result->relation_info_.relation_num_ < OBPROXY_MAX_RELATION_NUM) {                  \
           result->relation_info_.relations_[result->relation_info_.relation_num_++] = relation; \
-          result->cur_mask_ = (result->cur_mask_ | new_mask);                                   \
         } else {                                                                                \
           /* YYACCEPT; */                                                                       \
         }                                                                                       \
-      }                                                                                         \
-      if ((result->cur_mask_ & result->target_mask_) == result->target_mask_) {                 \
-        /* YYACCEPT; */                                                                              \
       }                                                                                         \
     }                                                                                           \
   } while(0)                                                                                    \
@@ -251,6 +250,92 @@ static inline void add_relation(ObExprParseResult *result,
   }
 }
 
+static inline void set_relation_part_with_column_idx(int64_t idx_in_schema_columns, 
+                                                     ObExprParseResult *result, 
+                                                     ObProxyPartKeyLevel *level, 
+                                                     int64_t *first_part_column_idx, 
+                                                     int64_t *second_part_column_idx) 
+{
+  if (OB_ISNULL(level) && OB_ISNULL(first_part_column_idx) && 
+      OB_ISNULL(second_part_column_idx) && OB_ISNULL(result)) {
+    // do nothing
+  } else {
+    *level = PART_KEY_LEVEL_ZERO;
+    *first_part_column_idx = 0;
+    *second_part_column_idx = 0;
+    bool is_level_one = false;
+    bool is_level_two = false;
+    for (int i = 0; i < result->part_key_info_.key_num_; i++) {
+      // make sure the part_key exist in sql to avoid the uninitialized idx_
+      if (idx_in_schema_columns == result->part_key_info_.part_keys_[i].idx_ && result->part_key_info_.part_keys_[i].is_exist_in_sql_) {
+        if (result->part_key_info_.part_keys_[i].level_ == PART_KEY_LEVEL_ONE) {
+          is_level_one = true;
+          *first_part_column_idx = result->part_key_info_.part_keys_[i].idx_in_part_columns_;
+        } else if (result->part_key_info_.part_keys_[i].level_ == PART_KEY_LEVEL_TWO) {
+          is_level_two = true;
+          *second_part_column_idx = result->part_key_info_.part_keys_[i].idx_in_part_columns_;
+        }
+      }
+    }
+    if (is_level_one) {
+      *level = PART_KEY_LEVEL_ONE;
+    }
+    if (is_level_two) {
+      *level = PART_KEY_LEVEL_TWO;
+    }
+    if (is_level_one && is_level_two) {
+      *level = PART_KEY_LEVEL_BOTH;
+    }
+  }
+}
+
+static inline void set_relation_part_with_column_name(ObProxyParseString *column,
+                                                      ObExprParseResult *result,
+                                                      ObProxyPartKeyLevel *level,
+                                                      int64_t *first_part_column_idx,
+                                                      int64_t *second_part_column_idx) 
+{
+  if (OB_ISNULL(column)
+      || OB_ISNULL(result)
+      || OB_ISNULL(level)
+      || OB_ISNULL(first_part_column_idx)
+      || OB_ISNULL(second_part_column_idx)) {
+    // do nothing
+  } else if (result->has_rowid_
+             && is_equal_to_rowid(column)) {
+    // handle rowid
+    *level = PART_KEY_LEVEL_ONE;
+    *first_part_column_idx = 0;
+    *second_part_column_idx = 0;
+  } else {
+    *level = PART_KEY_LEVEL_ZERO;
+    *first_part_column_idx = 0;
+    *second_part_column_idx = 0;
+    bool is_level_one = false;
+    bool is_level_two = false;
+    for (int i = 0; i < result->part_key_info_.key_num_; i++) {
+      if (is_equal(&result->part_key_info_.part_keys_[i].name_, column)) {
+        if (result->part_key_info_.part_keys_[i].level_ == PART_KEY_LEVEL_ONE) {
+          is_level_one = true;
+          *first_part_column_idx = result->part_key_info_.part_keys_[i].idx_in_part_columns_;
+        } else if (result->part_key_info_.part_keys_[i].level_ == PART_KEY_LEVEL_TWO) {
+          is_level_two = true;
+          *second_part_column_idx = result->part_key_info_.part_keys_[i].idx_in_part_columns_;
+        }
+      }
+    }
+    if (is_level_one) {
+      *level = PART_KEY_LEVEL_ONE;
+    }
+    if (is_level_two) {
+      *level = PART_KEY_LEVEL_TWO;
+    }
+    if (is_level_one && is_level_two) {
+      *level = PART_KEY_LEVEL_BOTH;
+    }
+  }
+}
+
 
 static inline ObProxyRelationExpr *get_relation(ObExprParseResult *result,
                                                 ObProxyTokenList *left_value,
@@ -261,25 +346,25 @@ static inline ObProxyRelationExpr *get_relation(ObExprParseResult *result,
   ObProxyTokenList *tmp_left = NULL;
   ObProxyTokenList *tmp_right = NULL;
   ObProxyFunctionType tmp_type = F_NONE;
-  ObProxyPartKeyLevel tmp_level = PART_KEY_LEVEL_ZERO;
   int64_t tmp_column_idx_ = -1;
+  ObProxyParseString *tmp_column = NULL;
 
   if (NULL != left_value->column_node_
       && TOKEN_COLUMN == left_value->column_node_->type_
       && left_value->column_node_->part_key_idx_ >= 0) {
     tmp_left = left_value;
-    tmp_level = result->part_key_info_.part_keys_[left_value->column_node_->part_key_idx_].level_;
     tmp_right = right_value;
     tmp_type = type;
     tmp_column_idx_ = left_value->column_node_->part_key_idx_;
+    tmp_column = &left_value->column_node_->column_name_;
   } else if (NULL != right_value->column_node_
              && TOKEN_COLUMN == right_value->column_node_->type_
              && right_value->column_node_->part_key_idx_ >= 0) {
     tmp_left = right_value;
-    tmp_level = result->part_key_info_.part_keys_[right_value->column_node_->part_key_idx_].level_;
     tmp_right = left_value;
     tmp_type = get_reverse_func(type);
     tmp_column_idx_ = right_value->column_node_->part_key_idx_;
+    tmp_column = &right_value->column_node_->column_name_;
   }
 
   if (NULL == tmp_left || NULL == tmp_right || F_COMP_NE == tmp_type) {
@@ -292,7 +377,11 @@ static inline ObProxyRelationExpr *get_relation(ObExprParseResult *result,
     relation->left_value_ = tmp_left;
     relation->type_ = tmp_type;
     relation->right_value_ = tmp_right;
-    relation->level_ = tmp_level;
+    set_relation_part_with_column_name(tmp_column,
+                                       result,
+                                       &relation->level_,
+                                       &relation->first_part_column_idx_,
+                                       &relation->second_part_column_idx_);
   }
   return relation;
 }
@@ -306,14 +395,20 @@ static inline ObProxyRelationExpr *get_values_relation(ObExprParseResult *result
   } else {
     int64_t i = 0;
     for (i = 0; i < result->part_key_info_.key_num_; ++i) {
-      if (result->values_list_idx_ == result->part_key_info_.part_keys_[i].idx_) {
+      // make sure the part_key exist in sql to avoid the uninitialized idx_
+      if (result->values_list_idx_ == result->part_key_info_.part_keys_[i].idx_ && result->part_key_info_.part_keys_[i].is_exist_in_sql_) {
         if (OB_ISNULL(relation = ((ObProxyRelationExpr *)obproxy_parse_malloc(
                                         sizeof(ObProxyRelationExpr), result->malloc_pool_)))) {
         } else {
           relation->column_idx_ = i;
           relation->type_ = F_COMP_EQ;
           relation->right_value_ = right_value;
-          relation->level_ = result->part_key_info_.part_keys_[i].level_;
+          relation->left_value_ = NULL;
+          set_relation_part_with_column_idx(result->values_list_idx_, 
+                                            result,
+                                            &relation->level_, 
+                                            &relation->first_part_column_idx_, 
+                                            &relation->second_part_column_idx_);        
         }
         break;
       }
@@ -363,12 +458,12 @@ static inline void add_right_relation_value(ObExprParseResult *result,
 %token DUMMY_SELECT_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
 %token WHERE AS VALUES SET END_WHERE JOIN
-%token AND_OP OR_OP IN ON BETWEEN
+%token AND_OP OR_OP IN ON BETWEEN IS TOKEN_NULL NOT
 %token COMP_EQ COMP_NSEQ COMP_GE COMP_GT COMP_LE COMP_LT COMP_NE
 %token PLACE_HOLDER
 %token END_P ERROR IGNORED_WORD
  /* type token */
-%token<str> NAME_OB STR_VAL ROW_ID
+%token<str> NAME_OB STR_VAL ROW_ID REVERSED_EXPR_FUNC
 %token<num> INT_VAL POS_PLACE_HOLDER
 %type<func> comp
 %type<node> token opt_column
@@ -422,6 +517,8 @@ bool_pri: expr comp expr { add_relation(result, $1, $2,$3); $$ = get_relation(re
           add_relation(result, $1, F_COMP_LE, $5);
           $$ = NULL;
         }
+        | expr IS TOKEN_NULL { $$ = NULL; }
+        | expr IS NOT TOKEN_NULL { $$ = NULL; }
 
 comp: COMP_EQ   { $$ = F_COMP_EQ; }
     | COMP_NSEQ { $$ = F_COMP_NSEQ; }
@@ -469,6 +566,11 @@ token:
        $$->part_key_idx_ = get_part_key_idx(&$1, &$3, &$5, result);
        $$->column_name_ = $5;
      }
+     | REVERSED_EXPR_FUNC 
+     {
+       malloc_node($$, result, TOKEN_FUNC);
+       $$->str_value_ = $1;
+     } 
      | NAME_OB '(' token_list ')'
      {
        malloc_node($$, result, TOKEN_FUNC);
@@ -518,7 +620,7 @@ values_expr_lists: '(' values_expr_list ')'
                    result->multi_param_values_++;
                  }
 
-opt_column_list: /* empty */
+opt_column_list: /* empty */ { init_part_key_all_match(result);}
                | '(' column_list ')'
 
  /* column_list: NAME_OB { result->column_idx_ = 0; set_part_key_column_idx(result, &$1); }

@@ -80,6 +80,7 @@ public:
   virtual void reenable(event::ObVIO *vio) { reenable_re(vio); }
   virtual void reenable_re(event::ObVIO *vio);
   void reenable_read() { reenable_re(&read_state_.vio_); }
+  int transfer_bytes();
 
   // Timeouts
   virtual int set_active_timeout(ObHRTime timeout_in) { UNUSED(timeout_in); return 0; }
@@ -101,14 +102,12 @@ public:
   virtual int apply_options() { return 0; }
 
   void clear_request_sent() { is_request_sent_ = false; }
-  void clear_resp_received() { is_resp_received_ = false; }
   void set_addr(const common::ObAddr &addr) { addr_ = addr; }
 
 private:
   uint32_t magic_;
   bool disconnect_by_client_; // dissconnect by received VC_EVENT_EOS, sent by ObMysqlClient
   bool is_request_sent_; // used to inform client session read request only once
-  bool is_resp_received_; // used to inform mysql client read resp onely once
   ObMysqlClient *core_client_;
   event::ObAction *pending_action_;
 
@@ -142,6 +141,7 @@ public:
                    const common::ObString &password,
                    const common::ObString &database,
                    const bool is_meta_mysql_client,
+                   const common::ObString &cluster_name = "",
                    const common::ObString &password1 = "",
                    ClientPoolOption* client_pool_option = NULL);
 
@@ -150,8 +150,11 @@ public:
            const common::ObString &password,
            const common::ObString &database,
            const bool is_meta_mysql_client,
+           const common::ObString &cluster_name = "",
            const common::ObString &password1 = "",
            ClientPoolOption* client_pool_option = NULL);
+
+  int init_detect_client(obutils::ObClusterResource *cr);
 
   // must be used under the mutex_'s lock
   bool is_avail() const { return !in_use_; }
@@ -167,6 +170,8 @@ public:
   static const char *get_client_event_name(const int64_t event);
 
   event::ObProxyMutex *get_common_mutex() { return common_mutex_.ptr_; }
+  void kill_this();
+  event::ObMIOBuffer *get_client_buf() { return mysql_resp_->get_resp_miobuf(); }
 
 private:
   static const char *get_client_action_name(const ObClientActionType type);
@@ -174,8 +179,6 @@ private:
   int do_post_request();
   int do_next_action(void *data);
   int transfer_and_analyze_response(event::ObVIO &vio, const obmysql::ObMySQLCmd cmd);
-  int transfer_bytes(event::ObMIOBuffer &transfer_to, event::ObIOBufferReader &transfer_from,
-                     const int64_t act_on, int64_t &added);
 
   int notify_transfer_completed();
 
@@ -187,7 +190,6 @@ private:
   int setup_read_normal_resp();
   bool is_in_auth() const;
   int transport_mysql_resp();
-  void kill_this();
   int handle_client_vc_disconnect();
   int forward_mysql_request();
 
@@ -196,7 +198,7 @@ private:
   int handle_active_timeout();
   int handle_request_complete();
 
-  void release();
+  void release(bool is_need_check_reentry);
 
 public:
   SLINK(ObMysqlClient, link_);
@@ -215,6 +217,8 @@ private:
   bool use_short_connection_;
   ObClientVC *client_vc_;
   ObMysqlClientPool *pool_;
+  // in some situtaion, we can create obmysql client without ClientPool
+  obutils::ObClusterResource *cr_;
 
   event::ObAction *active_timeout_action_;
   common::ObPtr<event::ObProxyMutex> common_mutex_;
@@ -227,7 +231,7 @@ private:
   event::ObIOBufferReader *request_reader_;
 
   ObClientMysqlResp *mysql_resp_;
-  ObClientReuqestInfo info_;
+  ObClientRequestInfo info_;
 
   bool is_session_pool_client_;
   ObProxySchemaKey schema_key_;

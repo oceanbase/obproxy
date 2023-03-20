@@ -57,6 +57,7 @@ public:
            const common::ObString &user_name,
            const common::ObString &password,
            const common::ObString &database,
+           const common::ObString &cluster_name = "",
            const common::ObString &password1 = "");
   bool is_inited() const { return is_inited_; }
   void destroy();
@@ -116,6 +117,7 @@ private:
                         const common::ObString &user_name,
                         const common::ObString &password,
                         const common::ObString &database,
+                        const common::ObString &cluster_name = "",
                         const common::ObString &password1 = "",
                         ClientPoolOption* client_pool_option = NULL);
 public:

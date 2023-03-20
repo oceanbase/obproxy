@@ -181,7 +181,7 @@ public:
         if (OB_SUCCESS != (ret = src_ok.decode())) {
           PROXY_API_LOG(WARN, "fail to decode ok packet", K(src_ok), K(ret));
         } else if (OB_SUCCESS != (ret = ObProxySessionInfoHandler::save_changed_session_info(
-            client_info, server_info, sm_->trans_state_.is_auth_request_, NULL, src_ok, analyze_result))) {
+            client_info, server_info, sm_->trans_state_.is_auth_request_, NULL, src_ok, analyze_result, sm_->trans_state_.trace_log_))) {
           _PROXY_API_LOG(WARN, "fail to save changed session info, is_auth_request=%d, ret=%d",
                          sm_->trans_state_.is_auth_request_, ret);
         }

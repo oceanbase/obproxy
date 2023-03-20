@@ -28,6 +28,7 @@
 #include "obutils/ob_async_common_task.h"
 
 #include "cmd/ob_show_sqlaudit_handler.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::lib;
@@ -400,6 +401,8 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_pool_stat.log");
     } else if (FD_TRACE_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_trace.log");
+    } else if (FD_DRIVER_CLIENT_FILE == type) {
+      ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_client.log");
     } else {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy.log");
     }
@@ -436,7 +439,7 @@ int ObProxyMain::start(const int argc, char *const argv[])
   ObProxyOptions opts;
   memset(&opts, 0, sizeof(opts));
 
-  if (OB_FAIL(print_args(argc, argv))) {
+  if (RUN_MODE_PROXY == g_run_mode && OB_FAIL(print_args(argc, argv))) {
     MPRINT("fail to print args, ret=%d", ret);
   } else if (OB_FAIL(parse_cmd_line(argc, argv, opts))) {
     if (OB_NOT_RUNNING != ret) {
@@ -448,7 +451,7 @@ int ObProxyMain::start(const int argc, char *const argv[])
 
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
   // if inherited, don not use daemon
-  if (OB_SUCC(ret)) {
+  if (RUN_MODE_PROXY == g_run_mode && OB_SUCC(ret)) {
     if (!opts.nodaemon_ && !info.is_inherited_) {
       if (OB_FAIL(use_daemon())) {
         MPRINT("fail to use deamon, ret=%d", ret);
@@ -456,16 +459,16 @@ int ObProxyMain::start(const int argc, char *const argv[])
     }
   }
 
-  if (OB_SUCC(ret)) {
+  if (RUN_MODE_PROXY == g_run_mode && OB_SUCC(ret)) {
     if (info.is_inherited_) {
-      if (OB_FAIL(close_all_fd(info.fd_))) {
+      if (OB_FAIL(close_all_fd(info.ipv4_fd_, info.ipv6_fd_))) {
         MPRINT("fail to close all fd, ret=%d", ret);
       }
     }
   }
 
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(get_global_layout().init(info.argv_[0]))) {
+    if (OB_FAIL(get_global_layout().init(argv[0]))) {
       MPRINT("fail to init global layout, ret=%d", ret);
     } else if (OB_FAIL(init_log())) {
       MPRINT("fail to init log, ret=%d", ret);
@@ -477,7 +480,8 @@ int ObProxyMain::start(const int argc, char *const argv[])
       app_info_.setup(PACKAGE_STRING, APP_NAME, RELEASEID);
       _LOG_INFO("%s-%s", app_info_.full_version_info_str_, build_version());
       if (info.is_inherited_) {
-        LOG_INFO("obproxy will start by hot upgrade", " listen fd", info.fd_, K(info));
+        LOG_INFO("obproxy will start by hot upgrade", " listen ipv4 fd", info.ipv4_fd_,
+                        "listen ipv6 fd", info.ipv6_fd_, K(info));
       } else {
         LOG_INFO("has no inherited sockets, start new obproxy", K(info));
       }
@@ -495,18 +499,28 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
   int ret = OB_SUCCESS;
   ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
 
-  if (OB_UNLIKELY(argc <= 0) || OB_ISNULL(argv) || OB_ISNULL(argv[0])) {
+  if (RUN_MODE_CLIENT == g_run_mode) {
+    // do nothing
+  } else if (OB_UNLIKELY(argc <= 0) || OB_ISNULL(argv) || OB_ISNULL(argv[0])) {
     ret = OB_INVALID_ARGUMENT;
     MPRINT("invalid argument, argc=%d, argv=%p, ret=%d", argc, argv, ret);
   } else {
     info.set_main_arg(argc, argv);
-    char *inherited = NULL;
+    char *inherited_ipv4 = NULL;
+    char *inherited_ipv6 = NULL;
 
-    if (NULL == (inherited = getenv(OBPROXY_INHERITED_FD))) {
+    inherited_ipv4 = getenv(OBPROXY_INHERITED_IPV4_FD);
+    inherited_ipv6 = getenv(OBPROXY_INHERITED_IPV6_FD);
+    if (NULL == inherited_ipv4 && NULL == inherited_ipv6) {
       // has no inherited sockets, will start new obproxy,
       // and set it HU_STATE_WAIT_HU_CMD state
       info.update_state(HU_STATE_WAIT_HU_CMD);
       info.is_parent_ = true;
+    } else if (NULL == inherited_ipv4) {
+      // Allow IPv6 to be empty
+      // because it may be a hot upgrade from a lower version to a higher version
+      ret = OB_ERR_UNEXPECTED;
+      LOG_ERROR("ipv4 should not be NULL", K(ret));
     } else if (info.is_inherited_) {
       ret = OB_ERR_UNEXPECTED;
       MPRINT("hot upgrade info is_inherited can't be true, ret=%d", ret);
@@ -514,11 +528,18 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
       // obproxy will start by hot upgrade
       // we will set it HU_STATE_WAIT_CR_CMD state and HU_STATUS_NEW_PROXY_CREATED_SUCC status
       info.is_inherited_ = true;
-      info.fd_ = atoi(inherited);
+      info.ipv4_fd_ = atoi(inherited_ipv4);
+
+      if (NULL != inherited_ipv6) {
+        info.ipv6_fd_ = atoi(inherited_ipv6);
+      }
+
       info.update_state(HU_STATE_WAIT_HU_CMD);
       info.is_parent_ = false;
-      if (OB_FAIL(unsetenv(OBPROXY_INHERITED_FD))) {
-        MPRINT("fail to unsetenv OBPROXY_INHERITED_FD, ret=%d", ret);
+      if (OB_FAIL(unsetenv(OBPROXY_INHERITED_IPV4_FD))) {
+        MPRINT("fail to unsetenv OBPROXY_INHERITED_IPV4_FD, ret=%d", ret);
+      } else if (OB_FAIL(unsetenv(OBPROXY_INHERITED_IPV6_FD))) {
+        MPRINT("fail to unsetenv OBPROXY_INHERITED_IPV6_FD, ret=%d", ret);
       }
     }
   }
@@ -536,7 +557,13 @@ int ObProxyMain::init_log()
       LOG_ERROR("fail to get log file name", K(type), K(ret));
     } else {
       if (FD_DEFAULT_FILE == type) {
-        OB_LOGGER.set_file_name(type, log_file_name, true, true);
+        if (RUN_MODE_PROXY == g_run_mode) {
+          OB_LOGGER.set_file_name(type, log_file_name, true, true);
+        } else if (RUN_MODE_CLIENT == g_run_mode) {
+          OB_LOGGER.set_file_name(type, log_file_name, false, true);
+        } else {
+          MPRINT("invalid g_run_mode, mode=%d", g_run_mode);
+        }
       } else {
         OB_LOGGER.set_file_name(type, log_file_name);
       }
@@ -577,6 +604,8 @@ int ObProxyMain::init_signal()
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGTERM))) {
     LOG_WARN("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR1))) {
+    LOG_WARN("fail to add_sig_direct_catched", K(ret));
+  } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR2))) {
     LOG_WARN("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, 43))) {
     LOG_WARN("fail to add_sig_direct_catched", K(ret));
@@ -738,16 +767,17 @@ int ObProxyMain::do_detect_sig()
         // -1      : wait for any sub process
         while((pid = waitpid(-1, &stat, WNOHANG)) > 0) {
           LOG_INFO("sub process exit", K(info), K(pid), "status", stat, KERRMSGS);
-          if (info.sub_pid_ == pid) {
-            info.reset_sub_pid();
-            // after sub was exited, we need passing this status
-            if (OB_LIKELY(common::OB_SUCCESS == lib::mutex_acquire(&info.hot_upgrade_mutex_))) {
+          if (OB_LIKELY(common::OB_SUCCESS == lib::mutex_acquire(&info.hot_upgrade_mutex_))) {
+            if (info.sub_pid_ == pid) {
+              info.reset_sub_pid();
+              // after sub was exited, we need passing this status
               info.update_sub_status(HU_STATUS_EXITED);
               info.parent_hot_upgrade_flag_ = false;
               lib::mutex_release(&info.hot_upgrade_mutex_);
+            } else {
+              LOG_WARN("sub process exit, but recv it late");
             }
-          } else {
-            LOG_WARN("sub process exit, but recv it late");
+            lib::mutex_release(&info.hot_upgrade_mutex_);
           }
         }
         break;
@@ -822,6 +852,17 @@ void ObProxyMain::sig_direct_handler(const int sig)
                                          + info.graceful_exit_start_time_;
           info.parent_hot_upgrade_flag_ = true;
         }
+        lib::mutex_release(&info.hot_upgrade_mutex_);
+      }
+      break;
+    }
+    case SIGUSR2: {
+      ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+      if (OB_LIKELY(common::OB_SUCCESS == lib::mutex_acquire(&info.hot_upgrade_mutex_))) {
+        // If the SIGUSR2 signal is received,
+        // the child process is considered to exit normally,
+        // and the child process is ignored
+        info.reset_sub_pid();
         lib::mutex_release(&info.hot_upgrade_mutex_);
       }
       break;
@@ -945,7 +986,7 @@ int ObProxyMain::do_monitor_mem()
     }
   }
 
-  if (is_out_of_mem_limit) {
+  if (is_out_of_mem_limit && RUN_MODE_PROXY == g_run_mode) {
     LOG_ERROR("obproxy's memroy is out of limit, will be going to commit suicide",
               K(mem_limited), "OTHER_MEMORY_SIZE", static_cast<int64_t>(OTHER_MEMORY_SIZE),
               K(is_out_of_mem_limit), K(cur_pos));
@@ -1033,7 +1074,7 @@ int ObProxyMain::do_detect_sqlaudit()
   return ret;
 }
 
-int ObProxyMain::close_all_fd(const int32_t listen_fd)
+int ObProxyMain::close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen_ipv6_fd)
 {
   //this func can't print log, because log isn't initialized
   int ret = OB_SUCCESS;
@@ -1042,7 +1083,7 @@ int ObProxyMain::close_all_fd(const int32_t listen_fd)
   DIR *fd_dir = NULL;
   char fd_dir_path [OB_MAX_FILE_NAME_LENGTH];
 
-  if (OB_UNLIKELY(listen_fd < 3)) {
+  if (OB_UNLIKELY(listen_ipv4_fd < 3 && listen_ipv6_fd < 3)) {
     ret = OB_INVALID_ARGUMENT;
   } else {
     int n = snprintf(fd_dir_path, OB_MAX_FILE_NAME_LENGTH, "/proc/%d/fd", pid);
@@ -1062,7 +1103,8 @@ int ObProxyMain::close_all_fd(const int32_t listen_fd)
             fd = static_cast<int32_t>(strtol(de->d_name, NULL, 10));
             if (fd < 0) {
               continue;
-            } else if (fd < 3 || fd == dirfd(fd_dir) || fd == listen_fd) {
+            } else if (fd < 3 || fd == dirfd(fd_dir) || fd == listen_ipv4_fd
+                       || fd == listen_ipv6_fd) {
               continue;
             } else {
               if (OB_UNLIKELY(0 != close(fd))) {

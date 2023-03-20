@@ -131,39 +131,6 @@ int ObProto20Utils::encode_err_packet(event::ObMIOBuffer &write_buf, const Ob20P
   return ret;
 }
 
-int ObProto20Utils::encode_executor_response_packet(event::ObMIOBuffer *write_buf,
-                                                    const Ob20ProtocolHeaderParam &ob20_head_param,
-                                                    uint8_t &seq, engine::ObProxyResultResp *result_resp)
-{
-  int ret = OB_SUCCESS;
-
-  event::ObIOBufferReader *tmp_mio_reader = NULL;
-  event::ObMIOBuffer *tmp_mio_buf = NULL;
-  
-  if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer(MYSQL_BUFFER_SIZE))) {
-    ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc miobuffer", K(ret));
-  } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
-    ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to alloc reader", K(ret));
-  } else if (OB_FAIL(ObMysqlPacketUtil::encode_executor_response_packet(write_buf, seq, result_resp))) {
-    LOG_WARN("fail to encode err packet buf", K(ret));
-  } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, write_buf,
-                                                               tmp_mio_reader->read_avail(), ob20_head_param))) {
-    LOG_WARN("fail to consume and compress data for executor response packet in ob20", K(ret));
-  } else {
-    LOG_DEBUG("succ to executor response in ob20 packet");
-  }
-
-  if (OB_LIKELY(tmp_mio_buf != NULL)) {
-    free_miobuffer(tmp_mio_buf);
-    tmp_mio_buf = NULL;
-    tmp_mio_reader = NULL;
-  }
-  
-  return ret;
-}
-
 int ObProto20Utils::analyze_ok_packet_and_get_reroute_info(ObIOBufferReader *reader,
                                                            const int64_t pkt_len,
                                                            const ObMySQLCapabilityFlags &cap,
@@ -350,11 +317,11 @@ inline int ObProto20Utils::reserve_proto20_hdr(ObMIOBuffer *write_buf, char *&hd
 inline int ObProto20Utils::fill_proto20_header(char *hdr_start, const int64_t payload_len,
                                                const uint8_t compressed_seq, const uint8_t packet_seq,
                                                const uint32_t request_id, const uint32_t connid,
-                                               const bool is_last_packet, const bool is_need_reroute,
-                                               const bool is_extra_info_exist, const bool is_new_extra_info)
+                                               const bool is_last_packet, const bool is_weak_read,
+                                               const bool is_need_reroute, const bool is_extra_info_exist,
+                                               const bool is_new_extra_info, const bool is_trans_internal_routing)
 {
   int ret = OB_SUCCESS;
-
   //include compress header and ob20 header
   int64_t header_len = MYSQL_COMPRESSED_HEALDER_LENGTH + OB20_PROTOCOL_HEADER_LENGTH;
   //compress payload
@@ -366,7 +333,9 @@ inline int ObProto20Utils::fill_proto20_header(char *hdr_start, const int64_t pa
   flag.st_flags_.OB_EXTRA_INFO_EXIST = is_extra_info_exist ? 1 : 0;
   flag.st_flags_.OB_IS_LAST_PACKET = is_last_packet ? 1 : 0;
   flag.st_flags_.OB_IS_PROXY_REROUTE = is_need_reroute ? 1 : 0;
+  flag.st_flags_.OB_IS_WEAK_READ = is_weak_read ? 1 : 0;
   flag.st_flags_.OB_IS_NEW_EXTRA_INFO = is_new_extra_info ? 1 : 0;
+  flag.st_flags_.OB_IS_TRANS_INTERNAL_ROUTING = is_trans_internal_routing ? 1 : 0;
   uint16_t reserved = 0;
   uint16_t header_checksum = 0;
   int64_t pos = 0;
@@ -571,8 +540,9 @@ int ObProto20Utils::fill_proto20_new_extra_info(ObMIOBuffer *write_buf, const Ob
           } else if (OB_UNLIKELY(FLT_TYPE_AND_LEN != type_written_len)) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WARN("unexpected check written len", K(ret), K(type_written_len));
-          } else if (OB_FAIL(write_buf->write(ptr, len, value_written_len))) {
-            LOG_WARN("fail to write obj value to buf", K(ret), K(obj_value));
+          } else if (OB_NOT_NULL(ptr) && len > 0
+              && OB_FAIL(write_buf->write(ptr, len, value_written_len))) {
+            LOG_WARN("fail to write obj value to buf", K(ret), K(obj_value), K(len), K(NULL == ptr), K(obj_key));
           } else if (OB_UNLIKELY(len != value_written_len)) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WARN("unexpected check written len", K(ret), K(len), K(value_written_len));
@@ -667,15 +637,17 @@ int ObProto20Utils::consume_and_compress_data(ObIOBufferReader *reader,
   const uint32_t request_id = ob20_head_param.get_request_id();
   const uint32_t conn_id = ob20_head_param.get_connection_id();
   const bool is_last_packet = ob20_head_param.is_last_packet();
+  const bool is_weak_read = ob20_head_param.is_weak_read();
   const bool is_need_reroute = ob20_head_param.is_need_reroute();
   const bool is_new_extra_info = ob20_head_param.is_new_extra_info();
+  const bool is_trans_internal_routing = ob20_head_param.is_trans_internal_routing();
 
   if (OB_ISNULL(reader) || OB_ISNULL(write_buf) || data_len > reader->read_avail()) {
     ret = OB_INVALID_ARGUMENT;
     int64_t tmp_read_avail = ((NULL == reader) ? 0 : reader->read_avail());
     LOG_ERROR("invalid input value", K(reader), K(write_buf), K(data_len), K(compressed_seq),
-              K(packet_seq), K(request_id), K(conn_id), K(is_last_packet), K(is_need_reroute),
-              "read_avail", tmp_read_avail, K(ret));
+              K(packet_seq), K(request_id), K(conn_id), K(is_last_packet), K(is_weak_read), 
+              K(is_need_reroute), "read_avail", tmp_read_avail, K(ret));
   } else if (OB_FAIL(reserve_proto20_hdr(write_buf, hdr_start))) {
     LOG_ERROR("fail to reserve proto20 hdr", K(ret));
   } else if (OB_NOT_NULL(extra_info)
@@ -688,15 +660,20 @@ int ObProto20Utils::consume_and_compress_data(ObIOBufferReader *reader,
     LOG_ERROR("fail to fill proto20 tailer", K(crc64), K(ret));
   } else if (OB_FAIL(fill_proto20_header(hdr_start, payload_len, compressed_seq,
                                          packet_seq, request_id, conn_id,
-                                         is_last_packet, is_need_reroute,
-                                         is_extra_info_exist, is_new_extra_info))) {
+                                         is_last_packet, is_weak_read, is_need_reroute,
+                                         is_extra_info_exist, is_new_extra_info, is_trans_internal_routing))) {
     LOG_ERROR("fail to fill_proto20_header", K(payload_len), K(compressed_seq),
               K(packet_seq), K(request_id), K(conn_id), K(is_last_packet),
-              K(is_need_reroute), K(ret));
+              K(is_weak_read), K(is_need_reroute), K(ret));
   } else {
     LOG_DEBUG("build mysql compress packet with ob20 succ", "origin len", data_len, K(compressed_seq), K(crc64));
   }
   return ret;
+}
+
+bool ObProto20Utils::is_trans_related_sess_info(int16_t type)
+{
+  return SESSION_SYNC_TXN_STATIC_INFO <= type && type <= SESSION_SYNC_TXN_EXTRA_INFO;
 }
 
 int ObProxyTraceUtils::build_client_ip(ObIArray<ObObJKV> &extra_info,
@@ -742,26 +719,51 @@ int ObProxyTraceUtils::build_client_ip(ObIArray<ObObJKV> &extra_info,
 }
                                        
 int ObProxyTraceUtils::build_sync_sess_info(common::ObIArray<ObObJKV> &extra_info,
+                                            common::ObSqlString &info_value,
                                             common::hash::ObHashMap<int16_t, ObString> &sess_info_hash_map,
-                                            common::ObSqlString &info_value)
+                                            common::hash::ObHashMap<int16_t, int64_t> &client_sess_field_version,
+                                            common::hash::ObHashMap<int16_t, int64_t> &server_sess_field_version,
+                                            ObMysqlSM *sm)
 {
   int ret = OB_SUCCESS;
   ObObJKV ob_sess_info;
-
   ob_sess_info.key_.set_varchar(OB_V20_PRO_EXTRA_KV_NAME_SYNC_SESSION_INFO,
                                 static_cast<int32_t>(STRLEN(OB_V20_PRO_EXTRA_KV_NAME_SYNC_SESSION_INFO)));
   ob_sess_info.key_.set_default_collation_type();
 
-  common::hash::ObHashMap<int16_t, ObString>::iterator last = sess_info_hash_map.end();
-  common::hash::ObHashMap<int16_t, ObString>::iterator it = sess_info_hash_map.begin();
-  for (; it != last; ++it) {
-    info_value.append(it->second);
-  }
-  ob_sess_info.value_.set_varchar(info_value.string());
-  ob_sess_info.value_.set_default_collation_type();
+  const int MAX_TYPE_RECORD = 32;
+  char type_record[MAX_TYPE_RECORD];
+  memset(type_record, '0', MAX_TYPE_RECORD);
+  bool is_sess_exist = false;
 
-  if (OB_FAIL(extra_info.push_back(ob_sess_info))) {
-    LOG_WARN("fail to push back", K(ret));
+  SessFieldHashMap::iterator last = sess_info_hash_map.end();
+  SessFieldHashMap::iterator it = sess_info_hash_map.begin();
+  for (; it != last && OB_SUCC(ret); ++it) {
+    int16_t sess_info_type = it->first;
+    int64_t client_version = 0;
+    int64_t server_version = 0;
+    if (OB_FAIL(ObProxyTraceUtils::get_sess_field_version(client_version , sess_info_type, client_sess_field_version))) {
+      LOG_WARN("fail to get client session field version", K(ret), K(sess_info_type));
+    } else if (OB_FAIL(ObProxyTraceUtils::get_sess_field_version(server_version , sess_info_type, server_sess_field_version))) {
+      LOG_WARN("fail to get server session field version", K(ret), K(sess_info_type));
+    } else if (client_version > server_version) {
+      is_sess_exist = true;
+      if (sess_info_type < MAX_TYPE_RECORD) {
+        type_record[sess_info_type] = '1';
+      }
+      info_value.append(it->second);
+    }
+  }
+  if (is_sess_exist) {
+    type_record[MAX_TYPE_RECORD - 1] = '\0';
+    sm->trans_state_.trace_log_.log_it("[send_sess]", "type", type_record);
+  }
+  if (OB_SUCC(ret)) {
+    ob_sess_info.value_.set_varchar(info_value.string());
+    ob_sess_info.value_.set_default_collation_type();
+    if (OB_FAIL(extra_info.push_back(ob_sess_info))) {
+      LOG_WARN("fail to push back", K(ret));
+    }
   }
   return ret;
 }
@@ -894,8 +896,13 @@ int ObProxyTraceUtils::build_related_extra_info_all(ObIArray<ObObJKV> &extra_inf
       if (!client_session->is_proxy_mysql_client_
           && client_info.need_reset_sess_info_vars(server_info)
           && is_last_packet) {
-        SessFieldHashMap& sess_info_hash_map = client_info.get_sess_info_map();
-        if (OB_FAIL(ObProxyTraceUtils::build_sync_sess_info(extra_info, sess_info_hash_map, sess_info_value))) {
+        SessFieldHashMap &sess_info_hash_map = client_info.get_sess_info_map();
+        LOG_DEBUG("send session info to server", "server addr", sm->trans_state_.server_info_.addr_);
+        if (OB_FAIL(ObProxyTraceUtils::build_sync_sess_info(extra_info, sess_info_value,
+                                                            sess_info_hash_map,
+                                                            client_info.get_sess_field_version(), 
+                                                            server_info.get_sess_field_version(),
+                                                            sm))) {
           LOG_WARN("fail to build sync sess info", K(ret));
         }
       }
@@ -905,6 +912,20 @@ int ObProxyTraceUtils::build_related_extra_info_all(ObIArray<ObObJKV> &extra_inf
   return ret;
 }
 
+int ObProxyTraceUtils::get_sess_field_version(int64_t &version, int16_t type, common::hash::ObHashMap<int16_t, int64_t> &map)
+{
+  int ret = OB_SUCCESS;
+  version = 0;
+  if (OB_FAIL(map.get_refactored(type, version))) {
+    if (OB_HASH_NOT_EXIST == ret) {
+      version = 0;
+      ret = OB_SUCCESS;
+    } else {
+      LOG_WARN("query session field version failed", K(type), K(ret));
+    }
+  }
+  return ret;
+}
 
 } // end of namespace proxy
 } // end of namespace obproxy

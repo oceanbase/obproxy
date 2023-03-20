@@ -15,6 +15,7 @@
 #include "common/ob_row.h"
 //#include "common/ob_field.h"
 #include "common/obsm_utils.h"
+#include "common/ob_obj_cast.h"
 #include "rpc/obmysql/ob_mysql_field.h"
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
 #include "lib/container/ob_se_array.h"
@@ -120,6 +121,44 @@ int change_sql_field(const ObMysqlField *src_field, obmysql::ObMySQLField *&dst_
     dst_field->set_charset_number(static_cast<uint16_t>(src_field->charsetnr_));
     dst_field->length_ = static_cast<uint32_t>(src_field->length_);
   }
+  return ret;
+}
+
+int change_sql_value(ObObj &value, obmysql::ObMySQLField &field, ObIAllocator *allocator)
+{
+  int ret = OB_SUCCESS;
+
+  if (value.is_varchar()) {
+    ObObjType ob_type;
+    ObCollationType cs_type = static_cast<ObCollationType>(field.charsetnr_);
+    // utf8_general_ci => CS_TYPE_UTF8MB4_GENERAL_CI
+    if (33 == field.charsetnr_) {
+      cs_type = CS_TYPE_UTF8MB4_GENERAL_CI;
+      // utf8_bin => CS_TYPE_UTF8MB4_BIN
+    } else if (83 == field.charsetnr_) {
+      cs_type = CS_TYPE_UTF8MB4_BIN;
+    }
+
+    value.set_collation_type(cs_type);
+
+    if (0 != value.get_string_len()) {
+      // Convert the column to a specific type, if it cannot be converted, keep varchar
+      if (OB_FAIL(ObSMUtils::get_ob_type(ob_type, field.type_))) {
+        COMMON_LOG(INFO, "cast ob type from mysql type failed", K(ob_type), "elem_type", field.type_, K(ret));
+        ret = OB_SUCCESS;
+      } else if (ObTimestampType == ob_type || ObTimeType == ob_type
+                 || ObDateType == ob_type || ObDateTimeType == ob_type) {
+        //do nothing
+      } else {
+        ObCastCtx cast_ctx(allocator, NULL, CM_NULL_ON_WARN, cs_type);
+        // use src_obj as buf_obj
+        if (OB_FAIL(ObObjCasterV2::to_type(ob_type, cs_type, cast_ctx, value, value))) {
+          COMMON_LOG(WARN, "failed to cast obj", "row", value, K(ob_type), K(cs_type), K(ret));
+        }
+      }
+    }
+  }
+
   return ret;
 }
 

@@ -22,9 +22,11 @@
 #include "iocore/eventsystem/ob_blocking_task.h"
 #include "iocore/eventsystem/ob_grpc_task.h"
 #include "iocore/eventsystem/ob_shard_watch_task.h"
+#include "iocore/eventsystem/ob_shard_scan_all_task.h"
 #include "obutils/ob_congestion_manager.h"
 #include "obutils/ob_proxy_config.h"
 #include "dbconfig/ob_proxy_db_config_processor.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -41,7 +43,8 @@ namespace proxy
 {
 
 // global acceptor, ObMysqlProxyAccept
-ObMysqlProxyAcceptor g_mysql_proxy_acceptor;
+ObMysqlProxyAcceptor g_mysql_proxy_ipv4_acceptor;
+ObMysqlProxyAcceptor g_mysql_proxy_ipv6_acceptor;
 
 // called from ob_api.cpp
 int ObMysqlProxyServerMain::make_net_accept_options(
@@ -105,7 +108,7 @@ int ObMysqlProxyServerMain::init_mysql_proxy_server(const ObMysqlConfigParams &c
   // enable reclaim mysql sm
   op_reclaim_sparse_opt(ObMysqlSM, ObMysqlSM::instantiate_func, ENABLE_RECLAIM, 1);
 
-  if (OB_FAIL(init_mysql_proxy_port(config_params))) {
+  if (RUN_MODE_PROXY == g_run_mode && OB_FAIL(init_mysql_proxy_port(config_params))) {
     LOG_ERROR("fail to init mysql proxy port", K(ret));
   } else if (OB_FAIL(init_mysql_stats())) {
     LOG_ERROR("fail to init_mysql_stats", K(ret));
@@ -119,11 +122,23 @@ int ObMysqlProxyServerMain::init_mysql_proxy_server(const ObMysqlConfigParams &c
   }
 #endif
 
-  if (OB_SUCC(ret)) {
+  int64_t ip_mode = config_params.ip_listen_mode_;
+  bool enable_ipv4 = (ip_mode == 1 || ip_mode == 3);
+  bool enable_ipv6 = (ip_mode == 2 || ip_mode == 3);
+
+  if (OB_SUCC(ret) && enable_ipv4) {
     // do the configuration defined ports
     if (OB_FAIL(make_mysql_proxy_acceptor(config_params,
-                                          get_global_proxy_port(),
-                                          g_mysql_proxy_acceptor))) {
+                                          get_global_proxy_ipv4_port(),
+                                          g_mysql_proxy_ipv4_acceptor))) {
+      LOG_ERROR("fail to make mysql proxy acceptor", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && enable_ipv6) {
+    if (OB_FAIL(make_mysql_proxy_acceptor(config_params,
+                                          get_global_proxy_ipv6_port(),
+                                          g_mysql_proxy_ipv6_acceptor))) {
       LOG_ERROR("fail to make mysql proxy acceptor", K(ret));
     }
   }
@@ -133,15 +148,23 @@ int ObMysqlProxyServerMain::init_mysql_proxy_server(const ObMysqlConfigParams &c
 int ObMysqlProxyServerMain::start_mysql_proxy_acceptor()
 {
   int ret = OB_SUCCESS;
-  ObMysqlProxyPort &proxy_port = get_global_proxy_port();
+  int64_t ip_mode = get_global_proxy_config().ip_listen_mode;
+  bool enable_ipv4 = (ip_mode == 1 || ip_mode == 3);
+  bool enable_ipv6 = (ip_mode == 2 || ip_mode == 3);
   // start accepting connections
   // although we make a good pretence here, I don't believe that ObNetProcessor::main_accept()
   // ever actually returns NULL. It would be useful to be able to detect errors
   // and spew them here though.
-  if (OB_ISNULL(g_net_processor.main_accept(*(g_mysql_proxy_acceptor.accept_), proxy_port.fd_,
-                                            g_mysql_proxy_acceptor.net_opt_))) {
+  if (enable_ipv4 && OB_ISNULL(g_net_processor.main_accept(*(g_mysql_proxy_ipv4_acceptor.accept_),
+                                                           get_global_proxy_ipv4_port().fd_,
+                                                           g_mysql_proxy_ipv4_acceptor.net_opt_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to execute main accept", K(ret));
+    LOG_ERROR("fail to execute ipv4 main accept", K(ret));
+  } else if (enable_ipv6 && OB_ISNULL(g_net_processor.main_accept(*(g_mysql_proxy_ipv6_acceptor.accept_),
+                                                            get_global_proxy_ipv6_port().fd_,
+                                                            g_mysql_proxy_ipv6_acceptor.net_opt_))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("fail to execute ipv6 main accept", K(ret));
   }
 
   return ret;
@@ -161,6 +184,7 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
   int ret = OB_SUCCESS;
   int64_t stack_size = config_params.stack_size_;
   int64_t event_threads = config_params.work_thread_num_;
+  int64_t shard_scan_threads = config_params.shard_scan_thread_num_;
   int64_t task_threads = config_params.task_thread_num_;
   bool enable_cpu_topology = config_params.enable_cpu_topology_;
   bool automatic_match_work_thread = config_params.automatic_match_work_thread_;
@@ -188,6 +212,11 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
   } else if (get_global_proxy_config().enable_sharding
       && OB_FAIL(g_shard_watch_task_processor.start(grpc_watch_threads, stack_size))) {
     LOG_ERROR("fail to start grpc parent task processor", K(stack_size), K(ret));
+  } else if (get_global_proxy_config().enable_sharding
+      && OB_FAIL(g_shard_scan_all_task_processor.start(shard_scan_threads > 0 ? shard_scan_threads
+                                                       : g_event_processor.thread_count_for_type_[ET_CALL] / 2,
+                                                       stack_size))) {
+    LOG_ERROR("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (OB_FAIL(init_cs_map_for_thread())) {
     LOG_ERROR("fail to init cs_map for thread", K(ret));
   } else if (OB_FAIL(init_table_map_for_thread())) {
@@ -210,30 +239,60 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
   return ret;
 }
 
+int ObMysqlProxyServerMain::init_inherited_info(ObMysqlProxyPort &proxy_port, const int fd)
+{
+  int ret = OB_SUCCESS;
+  proxy_port.fd_ = fd;
+  struct sockaddr_storage sock_addr;
+  int64_t namelen = sizeof(sock_addr);
+  memset(&sock_addr, 0, namelen);
+  if (OB_FAIL(ObSocketManager::getsockname(proxy_port.fd_, (struct sockaddr*)(&sock_addr), &namelen))) {
+    LOG_ERROR("fail to get sock name", K(ret));
+  } else {
+    // This step of conversion is mainly to obtain the port number, sockaddr_in and sockaddr_in6 port number positions are compatible
+    struct sockaddr_in *ain = (sockaddr_in *)&sock_addr;
+    proxy_port.inbound_ip_.assign(*(struct sockaddr*)(&sock_addr));
+    proxy_port.port_ = static_cast<in_port_t>((ntohs)(ain->sin_port));
+    LOG_INFO("succ init mysql proxy port by inherited fd", K(proxy_port));
+  }
+  return ret;
+}
+
 int ObMysqlProxyServerMain::init_mysql_proxy_port(const ObMysqlConfigParams &config_params)
 {
   int ret = OB_SUCCESS;
-  ObMysqlProxyPort &proxy_port = get_global_proxy_port();
+  ObMysqlProxyPort &proxy_ipv4_port = get_global_proxy_ipv4_port();
+  ObMysqlProxyPort &proxy_ipv6_port = get_global_proxy_ipv6_port();
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+  int64_t ip_mode = config_params.ip_listen_mode_;
+  bool enable_ipv4 = (ip_mode == 1 || ip_mode == 3);
+  bool enable_ipv6 = (ip_mode == 2 || ip_mode == 3);
 
   // init from inherited fd
   if (info.is_inherited_) {
-    proxy_port.fd_ = info.fd_;
-    struct sockaddr sock_addr;
-    int64_t namelen = sizeof(sock_addr);
-    memset(&sock_addr, 0, namelen);
-    if (OB_FAIL(ObSocketManager::getsockname(proxy_port.fd_, &sock_addr , &namelen))) {
-      LOG_ERROR("fail to get sock name", K(ret), K(ret));
-    } else {
-      struct sockaddr_in *ain = (sockaddr_in *)&sock_addr;
-      proxy_port.inbound_ip_.assign(sock_addr);
-      proxy_port.port_ = static_cast<in_port_t>((ntohs)(ain->sin_port));
-      LOG_INFO("succ init mysql proxy port by inherited fd", K(proxy_port));
+    if (enable_ipv4) {
+      if (OB_FAIL(init_inherited_info(proxy_ipv4_port, info.ipv4_fd_))) {
+        LOG_WARN("fail to init inherited info", K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret) && enable_ipv6) {
+      if (OB_FAIL(init_inherited_info(proxy_ipv6_port, info.ipv6_fd_))) {
+        LOG_WARN("fail to init inherited info", K(ret));
+      }
     }
   } else { // init from config
-    proxy_port.port_ = static_cast<in_port_t>(config_params.listen_port_);
-    proxy_port.inbound_ip_ = config_params.local_bound_ip_;
-    LOG_INFO("succ init mysql proxy port by config", K(proxy_port));
+    if (enable_ipv4) {
+      proxy_ipv4_port.port_ = static_cast<in_port_t>(config_params.listen_port_);
+      proxy_ipv4_port.inbound_ip_ = config_params.local_bound_ip_;
+      LOG_INFO("succ init mysql proxy ipv4 port by config", K(proxy_ipv4_port));
+    }
+
+    if (enable_ipv6) {
+      proxy_ipv6_port.port_ = static_cast<in_port_t>(config_params.listen_port_);
+      proxy_ipv6_port.inbound_ip_ = config_params.local_bound_ipv6_ip_;
+      LOG_INFO("succ init mysql proxy ipv6 port by config", K(proxy_ipv6_port));
+    }
   }
   return ret;
 }

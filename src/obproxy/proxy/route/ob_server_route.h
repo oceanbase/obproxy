@@ -53,8 +53,6 @@ public:
   //                                         |                                        |
   //                                         +<---------------------------------------+
   const ObProxyReplicaLocation *get_next_avail_replica();
-  const ObProxyReplicaLocation *get_next_replica(const uint32_t cur_ip, const uint16_t cur_port,
-                                                 const bool is_force_retry);
   const ObProxyReplicaLocation *get_leader_replica_from_remote() const;
 
   ObTableEntry *get_dummy_entry();
@@ -435,27 +433,6 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
             "cur_chosen_route_type", get_route_type_string(cur_chosen_route_type_),
             K_(cur_chosen_server));
   return cur_chosen_server_.replica_;
-}
-
-inline const ObProxyReplicaLocation *ObServerRoute::get_next_replica(
-    const uint32_t cur_ip,
-    const uint16_t cur_port,
-    const bool is_force_retry)
-{
-  UNUSED(is_force_retry);
-  const ObProxyReplicaLocation *replica = NULL;
-  bool found = false;
-  leader_item_.is_used_ = true;
-  while (!found) {
-    replica = get_next_avail_replica();
-    if (NULL == replica) {
-      found = true;
-    } else if ((cur_ip != replica->server_.get_ipv4())
-                || (cur_port != static_cast<uint16_t>(replica->server_.get_port()))) {
-      found = true;
-    }
-  }
-  return replica;
 }
 
 inline bool ObServerRoute::is_partition_table() const

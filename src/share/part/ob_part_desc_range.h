@@ -15,6 +15,7 @@
 
 #include "share/part/ob_part_desc.h"
 #include "lib/container/ob_se_array.h"
+#include "proxy/route/obproxy_part_mgr.h"
 
 namespace oceanbase
 {
@@ -54,6 +55,11 @@ public:
     return common::OB_SUCCESS;
   }
 
+  int cast_key(ObRowkey &src_key,
+               ObRowkey &target_key,
+               ObIAllocator &allocator,
+               ObPartDescCtx &ctx);
+
   DECLARE_VIRTUAL_TO_STRING;
 private:
   int64_t get_start(const RangePartition *part_array,
@@ -64,15 +70,6 @@ private:
                   const int64_t size,
                   const ObNewRange &range);
 
-  int cast_key(ObRowkey &src_key,
-               ObRowkey &target_key,
-               ObIAllocator &allocator,
-               ObPartDescCtx &ctx);
-
-  int cast_obj(ObObj &src_obj,
-               ObObj &target_obj,
-               ObIAllocator &allocator,
-               ObPartDescCtx &ctx);
 private:
   RangePartition *part_array_;
   int64_t part_array_size_;

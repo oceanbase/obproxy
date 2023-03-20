@@ -154,6 +154,7 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::build_ob20_head_and_extra(ObMIOB
     uint8_t last_compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
     const bool is_new_extra_info = client_session->get_session_info().is_client_support_new_extra_info();
     bool is_extra_info_exist = false;
+    bool is_trans_internal_routing = false;
     
     if (OB_FAIL(ObProto20Utils::fill_proto20_extra_info(write_buf, &extra_info, is_new_extra_info, 
                                                         payload_len, tail_crc_, is_extra_info_exist))) {
@@ -165,9 +166,10 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::build_ob20_head_and_extra(ObMIOB
                                                            ob20_head.request_id_,
                                                            client_session->get_cs_id(),
                                                            is_last_packet,
-                                                           false,
+                                                           false, false,
                                                            is_extra_info_exist,
-                                                           is_new_extra_info))) {
+                                                           is_new_extra_info,
+                                                           is_trans_internal_routing))) {
       LOG_WARN("fail to fill ob20 head", K(ret));
     } else {
       client_session->set_compressed_seq(last_compressed_seq);

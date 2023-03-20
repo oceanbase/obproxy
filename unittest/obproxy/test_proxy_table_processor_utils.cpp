@@ -42,8 +42,8 @@ TEST_F(TestProxyTableProcessorUtils, test_get_proxy_local_addr)
   ASSERT_EQ(addr, addr_org);
 
   ObAddr my_addr;
-  char ip_str[OB_IP_STR_BUFF] = {'\0'};
-  int ret = ObProxyTableProcessorUtils::get_one_local_addr(ip_str, OB_IP_STR_BUFF);
+  char ip_str[MAX_IP_ADDR_LENGTH] = {'\0'};
+  int ret = ObProxyTableProcessorUtils::get_one_local_addr(ip_str, MAX_IP_ADDR_LENGTH);
   ASSERT_EQ(OB_SUCCESS, ret);
   my_addr.set_ipv4_addr(ip_str, static_cast<uint16_t>(config.listen_port));
 
@@ -63,15 +63,15 @@ TEST_F(TestProxyTableProcessorUtils, test_get_proxy_local_addr_inherited)
   int ret = OB_SUCCESS;
   ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
   info.is_inherited_ = true;
-  info.fd_ = NO_FD;
+  info.ipv4_fd_ = NO_FD;
   ObAddr addr;
   ret = ObProxyTableProcessorUtils::get_proxy_local_addr(addr);
   ASSERT_EQ(OB_ERR_UNEXPECTED, ret);
 
 
 
-  char ip_str[OB_IP_STR_BUFF] = {'\0'};
-  ret = ObProxyTableProcessorUtils::get_one_local_addr(ip_str, OB_IP_STR_BUFF);
+  char ip_str[MAX_IP_ADDR_LENGTH] = {'\0'};
+  ret = ObProxyTableProcessorUtils::get_one_local_addr(ip_str, MAX_IP_ADDR_LENGTH);
   ASSERT_EQ(OB_SUCCESS, ret);
 
   struct sockaddr_in s_add;
@@ -87,7 +87,7 @@ TEST_F(TestProxyTableProcessorUtils, test_get_proxy_local_addr_inherited)
     close(test_fd);
   }
   ASSERT_TRUE(-1 != bind_ret);
-  info.fd_ = test_fd;
+  info.ipv4_fd_ = test_fd;
   ret = ObProxyTableProcessorUtils::get_proxy_local_addr(addr);
   ASSERT_EQ(OB_SUCCESS, ret);
   ObAddr addr2(ObAddr::IPV4, ip_str, port);
@@ -107,7 +107,7 @@ TEST_F(TestProxyTableProcessorUtils, test_get_proxy_local_addr_inherited)
     close(test_fd);
   }
   ASSERT_TRUE(-1 != bind_ret);
-  info.fd_ = test_fd;
+  info.ipv4_fd_ = test_fd;
   ret = ObProxyTableProcessorUtils::get_proxy_local_addr(addr);
   ASSERT_EQ(OB_SUCCESS, ret);
   addr2.reset();

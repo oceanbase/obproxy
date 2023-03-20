@@ -102,6 +102,7 @@ public:
   CfgInt task_thread_num_;
   CfgInt block_thread_num_;
   CfgInt grpc_thread_num_;
+  CfgInt shard_scan_thread_num_;
   CfgBool automatic_match_work_thread_;
   CfgBool enable_congestion_;
   CfgBool enable_bad_route_reject_;
@@ -113,6 +114,7 @@ public:
   CfgBool enable_reroute_;
   CfgBool enable_index_route_;
   CfgBool enable_causal_order_read_;
+  CfgBool enable_transaction_internal_routing_;
   CfgIpPortList test_server_addr_;
 
   CfgInt sqlaudit_mem_limited_;
@@ -145,6 +147,8 @@ public:
   CfgInt client_max_memory_size_;
   CfgBool enable_cpu_isolate_;
   CfgBool enable_primary_zone_;
+  CfgInt ip_listen_mode_;
+  CfgIp local_bound_ipv6_ip_;
   char proxy_idc_name_[OB_PROXY_MAX_IDC_NAME_LENGTH + 1];
   char proxy_primary_zone_name_[common::MAX_ZONE_LENGTH + 1];
 };

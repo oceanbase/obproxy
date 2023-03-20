@@ -47,13 +47,20 @@ public:
   static int encode_header(event::ObMIOBuffer &write_buf, uint8_t &seq,
                            common::ObIArray<obmysql::ObMySQLField> &fields,
                            uint16_t status_flag = 0);
-  static int encode_row_packet(event::ObMIOBuffer &write_buf, uint8_t &seq,
+  static int encode_field_packet(event::ObMIOBuffer &write_buf,
+                                 uint8_t &seq,
+                                 obmysql::ObMySQLField &field);
+  static int encode_row_packet(event::ObMIOBuffer &write_buf,
+                               uint8_t &seq,
+                               const common::ObNewRow &row,
+                               common::ObIArray<common::ObField> *fields = NULL);
+  static int encode_row_packet(event::ObMIOBuffer &write_buf,
+                               obmysql::MYSQL_PROTOCOL_TYPE protocol_type,
+                               uint8_t &seq,
                                const common::ObNewRow &row,
                                common::ObIArray<common::ObField> *fields = NULL);
   static int encode_eof_packet(event::ObMIOBuffer &write_buf, uint8_t &seq,
                                uint16_t status_flag = 0);
-  static int encode_executor_response_packet(event::ObMIOBuffer *write_buf, uint8_t &seq,
-                                             engine::ObProxyResultResp *result_resp);
 
   static int encode_err_packet(event::ObMIOBuffer &write_buf, uint8_t &seq, const int errcode, const char *msg_buf);
 

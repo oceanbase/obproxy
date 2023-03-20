@@ -39,9 +39,6 @@ static inline void handle_stmt_end(ObProxyParseResult* result)
       case OBPROXY_T_SELECT_TX_RO:
         result->stmt_type_ = OBPROXY_T_SELECT;
         break;
-      case OBPROXY_T_SET_AC_0:
-        result->stmt_type_ = OBPROXY_T_OTHERS;
-        break;
       case OBPROXY_T_BEGIN:
         result->stmt_type_ = OBPROXY_T_OTHERS;
         break;
@@ -60,7 +57,7 @@ static inline void handle_stmt_end(ObProxyParseResult* result)
     }
   } else {
     result->stmt_type_ = result->cur_stmt_type_;
-  } 
+  }
 
   if (OBPROXY_T_TEXT_PS_PREPARE == result->text_ps_inner_stmt_type_) {
     ObProxyBasicStmtType tmp_type = result->cur_stmt_type_;
@@ -289,19 +286,19 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token FROM DUAL
 %token PREPARE EXECUTE USING DEALLOCATE
 %token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY QUERY_TIMEOUT READ_CONSISTENCY WEAK STRONG FROZEN PLACE_HOLDER
-%token END_P ERROR 
+%token END_P ERROR
 %token WHEN
  /* non-reserved keyword */
 %token<str> FLASHBACK AUDIT NOAUDIT
 %token<str> BEGI START TRANSACTION READ ONLY WITH CONSISTENT SNAPSHOT INDEX XA
 %token<str> WARNINGS ERRORS TRACE
 %token<str> QUICK COUNT AS WHERE VALUES ORDER GROUP HAVING INTO UNION FOR
-%token<str> TX_READ_ONLY AUTOCOMMIT_0 SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
+%token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
 %token<str> NAME_OB_DOT NAME_OB EXPLAIN DESC DESCRIBE NAME_STR
 %token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION
 %token<str> NUMBER_VAL
-%token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID
-%token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL PARALL SHARD_KEY
+%token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER
+%token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY
 %token<num> INT_NUM
 %type<str> right_string_val tracer_right_string_val name_right_string_val
 %type<node> call_expr
@@ -323,12 +320,13 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> SHOW_PROXYSTAT REFRESH
 %token<str> SHOW_PROXYTRACE
 %token<str> SHOW_PROXYINFO BINARY UPGRADE IDC
-%token<str> SHOW_TOPOLOGY GROUP_NAME SHOW_DB_VERSION
+%token<str> SHOW_ELASTIC_ID SHOW_TOPOLOGY GROUP_NAME SHOW_DB_VERSION
 %token<str> SHOW_DATABASES SHOW_TABLES SHOW_FULL_TABLES SELECT_DATABASE SHOW_CREATE_TABLE SELECT_PROXY_VERSION SHOW_COLUMNS SHOW_INDEX
 %token<str> ALTER_PROXYCONFIG
 %token<str> ALTER_PROXYRESOURCE
 %token<str> PING_PROXY
 %token<str> KILL_PROXYSESSION KILL_GLOBALSESSION KILL QUERY
+%token<str> SHOW_MASTER_STATUS SHOW_BINARY_LOGS SHOW_BINLOG_EVENTS PURGE_BINARY_LOGS RESET_MASTER SHOW_BINLOG_SERVER_FOR_TENANT
 
 %type<str> table_factor non_reserved_keyword var_name
 %start root
@@ -372,6 +370,7 @@ stmt: select_stmt                    {}
     | ddl_stmt                       {}
     | text_ps_stmt                   {}
     | merge_stmt                     {}
+    | binlog_stmt                    {}
     | other_stmt                     { result->cur_stmt_type_ = OBPROXY_T_OTHERS; }
 
 select_stmt: select_with_opt_hint select_expr_list opt_from
@@ -433,7 +432,7 @@ text_ps_prepare_args_stmt : text_ps_prepare_var_list
                           | text_ps_from_stmt
 
 
-text_ps_prepare_stmt: PREPARE var_name FROM 
+text_ps_prepare_stmt: PREPARE var_name FROM
                     {
                       result->text_ps_inner_stmt_type_ = OBPROXY_T_TEXT_PS_PREPARE;
                       result->text_ps_name_ = $2;
@@ -496,17 +495,14 @@ select_tx_read_only_stmt: SELECT TX_READ_ONLY { result->cur_stmt_type_ = OBPROXY
 select_proxy_version_stmt: SELECT_PROXY_VERSION
                          | SELECT_PROXY_VERSION AS var_name { result->col_name_ = $3; }
 
-set_autocommit_0_stmt: SET AUTOCOMMIT_0 { result->cur_stmt_type_ = OBPROXY_T_SET_AC_0; }
-                     | SET AUTOCOMMIT_0 expr_list
-
 hooked_stmt: select_tx_read_only_stmt       {}
            | select_proxy_version_stmt      {}
-           | set_autocommit_0_stmt          {}
            | select_obproxy_route_addr_stmt {}
            | set_obproxy_route_addr_stmt    {}
            | shard_special_stmt             {}
 
 shard_special_stmt: show_es_id_stmt {}
+                  | show_topology_stmt {}
                   | show_db_version_stmt {}
                   | SELECT_DATABASE { result->sub_stmt_type_ = OBPROXY_T_SUB_SELECT_DATABASE; }
                   | SHOW_DATABASES  { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_DATABASES; }
@@ -515,8 +511,9 @@ shard_special_stmt: show_es_id_stmt {}
                   | show_columns_stmt {}
                   | show_index_stmt {}
                   | SHOW_CREATE_TABLE routine_name_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_CREATE_TABLE; }
-                  | explain_or_desc routine_name_stmt
+                  | explain_or_desc var_name
                   {
+                      result->table_info_.table_name_ = $2;
                       result->cur_stmt_type_ = OBPROXY_T_DESC;
                       result->sub_stmt_type_ = OBPROXY_T_SUB_DESC_TABLE;
                   }
@@ -567,21 +564,28 @@ show_table_status_stmt: SHOW TABLE STATUS opt_show_from opt_show_like
 
 show_db_version_stmt: SHOW_DB_VERSION { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_DB_VERSION; }
 
-show_es_id_stmt: SHOW_TOPOLOGY { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY; }
-                 | SHOW_TOPOLOGY FROM NAME_OB
+show_es_id_stmt: SHOW_ELASTIC_ID { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_ELASTIC_ID; }
+                 | SHOW_ELASTIC_ID FROM NAME_OB
                  {
                      SET_ICMD_ONE_STRING($3);
-                     result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY;
+                     result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_ELASTIC_ID;
                  }
-                 | SHOW_TOPOLOGY WHERE GROUP_NAME '=' NAME_OB
+                 | SHOW_ELASTIC_ID WHERE GROUP_NAME '=' NAME_OB
                  {
                      SET_ICMD_SECOND_STRING($5);
-                     result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY;
+                     result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_ELASTIC_ID;
                  }
-                 | SHOW_TOPOLOGY FROM NAME_OB WHERE GROUP_NAME '=' NAME_OB
+                 | SHOW_ELASTIC_ID FROM NAME_OB WHERE GROUP_NAME '=' NAME_OB
                  {
                      SET_ICMD_ONE_STRING($3);
                      SET_ICMD_SECOND_STRING($7);
+                     result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_ELASTIC_ID;
+                 }
+
+show_topology_stmt: SHOW_TOPOLOGY { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY; }
+                 | SHOW_TOPOLOGY FROM NAME_OB
+                 {
+                     result->table_info_.table_name_ = $3;
                      result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY;
                  }
 
@@ -771,7 +775,7 @@ comment_expr: COMMENT_BEGIN comment_list COMMENT_END {}
             | COMMENT_BEGIN DISASTER_STATUS '=' right_string_val odp_comment_list COMMENT_END   { result->dbmesh_route_info_.disaster_status_str_ = $4; }
             | COMMENT_BEGIN DBP_COMMENT ROUTE_TAG '=' '{' dbp_comment_list '}' COMMENT_END  {}
             | COMMENT_BEGIN DBP_COMMENT SYS_TAG '=' '{' dbp_sys_comment '}' COMMENT_END  {}
-
+            | COMMENT_BEGIN TARGET_DB_SERVER '=' right_string_val odp_comment_list COMMENT_END { result->target_db_server_ = $4; }
 comment_list: /* empty */ {}
             | comment_list comment
 
@@ -794,6 +798,7 @@ dbp_comment: GROUP_ID '(' right_string_val ')'
             }
             | SCAN_ALL '(' ')'           { result->dbp_route_info_.scan_all_ = true; }
             | SCAN_ALL '(' PARALL '=' right_string_val ')' { result->dbp_route_info_.scan_all_ = true; }
+            | STICKY_SESSION '(' ')'           { result->dbp_route_info_.sticky_session_ = true; }
             | SHARD_KEY '(' dbp_kv_comment_list ')' {result->dbp_route_info_.has_shard_key_ = true;}
 
 dbp_sys_comment: TRACE '(' tracer_right_string_val')' { result->trace_id_ = $3; }
@@ -822,6 +827,7 @@ odp_comment: GROUP_ID '=' right_string_val   { result->dbmesh_route_info_.group_
            | RPC_ID '=' tracer_right_string_val     { result->rpc_id_ = $3; }
            | TNT_ID '=' right_string_val { result->dbmesh_route_info_.tnt_id_str_ = $3; }
            | DISASTER_STATUS '=' right_string_val { result->dbmesh_route_info_.disaster_status_str_ = $3; }
+           | TARGET_DB_SERVER '=' right_string_val { result->target_db_server_ = $3; }
            | NAME_OB '.' NAME_OB '=' name_right_string_val
            {
              malloc_shard_column_node($$, $1, $3, DBMESH_TOKEN_STR_VAL);
@@ -848,10 +854,10 @@ delete_with_opt_hint: DELETE
 insert_with_opt_hint: INSERT insert_all_when
                     | INSERT_HINT_BEGIN hint_list_with_end insert_all_when
 
-insert_all_when: 
+insert_all_when:
                | ALL
                | ALL WHEN
-       
+
 replace_with_opt_hint: REPLACE
                      | REPLACE_HINT_BEGIN hint_list_with_end
 merge_with_opt_hint: MERGE
@@ -910,6 +916,13 @@ icmd_stmt: show_proxynet
          | kill_proxysession
          | kill_globalsession
          | kill_mysql
+
+binlog_stmt: SHOW_MASTER_STATUS {}
+           | SHOW_BINARY_LOGS {}
+           | SHOW_BINLOG_EVENTS {}
+           | PURGE_BINARY_LOGS {}
+           | RESET_MASTER {}
+           | SHOW_BINLOG_SERVER_FOR_TENANT {}
 
  /* limit param stmt*/
 opt_limit:
@@ -1172,24 +1185,7 @@ non_reserved_keyword: START
                     | UPGRADE
                     | IDC
                     | QUERY
-                    | GROUP_ID
-                    | TABLE_ID
-                    | ELASTIC_ID
-                    | TESTLOAD
                     | GROUP_NAME
-                    | ODP_COMMENT
-                    | TNT_ID
-                    | DISASTER_STATUS
-                    | TRACE_ID
-                    | RPC_ID
-                    | DBP_COMMENT
-                    | ROUTE_TAG
-                    | SYS_TAG
-                    | TABLE_NAME
-                    | PARALL
-                    | SCAN_ALL
-                    | SHARD_KEY
-                    | INDEX
                     | FLASHBACK
                     | AUDIT
                     | NOAUDIT

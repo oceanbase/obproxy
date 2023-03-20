@@ -31,10 +31,13 @@
 #ifndef OB_PROXY_CONFIG_TABLE_PROCESSOR_H_
 #define OB_PROXY_CONFIG_TABLE_PROCESSOR_H_
 
+#include <sqlite/sqlite3.h>
+
 #include "lib/lock/ob_drw_lock.h"
 #include "obutils/ob_vip_tenant_cache.h"
 #include "lib/string/ob_fixed_length_string.h"
 #include "share/config/ob_config.h"
+#include "obutils/ob_proxy_string_utils.h"
 
 namespace oceanbase
 {
@@ -98,7 +101,8 @@ public:
 
 public:
   ObProxyConfigTableProcessor() : index_(0), proxy_config_lock_(obsys::WRITE_PRIORITY),
-                                  config_version_(0), need_sync_to_file_(false) {}
+                                  config_version_(0), need_sync_to_file_(false),
+                                  execute_sql_array_() {}
   ~ObProxyConfigTableProcessor() {}
 
   int init();
@@ -113,6 +117,8 @@ public:
   void inc_config_version() { config_version_++; }
   void set_need_sync_to_file(const bool bvalue) { need_sync_to_file_ = bvalue; }
   ProxyConfigHashMap& get_backup_hashmap() { return proxy_config_map_array_[(index_ + 1) % 2]; }
+  int commit_execute_sql(sqlite3 *db);
+  void clear_execute_sql();
 private:
   void clean_hashmap_with_lock(ProxyConfigHashMap &map);
   int backup_hashmap_with_lock();
@@ -120,6 +126,7 @@ private:
   bool is_config_in_service(const common::ObString &config_name);
   static int execute(void *arg);
   static int commit(void* arg, bool is_success);
+  static int before_commit(void * arg);
 
 private:
   ProxyConfigHashMap proxy_config_map_array_[2];
@@ -127,6 +134,7 @@ private:
   common::DRWLock proxy_config_lock_;
   uint64_t config_version_;
   bool need_sync_to_file_;
+  common::ObSEArray<obutils::ObProxyVariantString, 4> execute_sql_array_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyConfigTableProcessor);
 };

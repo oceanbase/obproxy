@@ -459,6 +459,15 @@ private:
         }
         break;
 
+      case VC_EVENT_DETECT_SERVER_DEAD:
+        PROXY_NET_LOG(WARN, "detect server addr dead", "addr", vc_->con_.addr_, K(this));
+        vc_->do_io_close();
+        if (!action_.cancelled_) {
+          action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED,
+                                              reinterpret_cast<void *>(-ENET_CONNECT_FAILED));
+        }
+        break;
+
       default:
         PROXY_NET_LOG(WARN, "unknown connect event");
         if (!action_.cancelled_) {

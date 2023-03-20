@@ -155,6 +155,8 @@ public:
   int spawn_net_threads(const int64_t thread_count, const char *et_name,
                            const int64_t stacksize);
 
+  virtual int init_thread(ObEThread *&t);
+
   /**
    * Schedules the continuation on a specific ObEThread to receive an event
    * at the given timeout.  Requests the ObEventProcessor to schedule
@@ -303,7 +305,7 @@ public:
    */
   int64_t allocate(const int64_t size);
 
-  ObEvent *schedule(ObEvent *e, const ObEventThreadType etype, const bool fast_signal = false);
+  virtual ObEvent *schedule(ObEvent *e, const ObEventThreadType etype, const bool fast_signal = false);
 
   ObEThread *assign_thread(const ObEventThreadType etype);
 
@@ -417,7 +419,7 @@ inline ObEThread *ObEventProcessor::assign_thread(const ObEventThreadType etype)
   return (event_thread_[etype][next]);
 }
 
-inline ObEvent *ObEventProcessor::schedule(
+ObEvent *ObEventProcessor::schedule(
     ObEvent *event, const ObEventThreadType etype, const bool fast_signal)
 {
   event->ethread_ = assign_thread(etype);

@@ -94,6 +94,15 @@ int ObMySQLField::serialize_pro41(char *buf, const int64_t len, int64_t &pos) co
       LOG_WARN("serialize 0 failed", K(ret));
     }
   }
+  if (OB_SUCC(ret) && OB_MYSQL_TYPE_COMPLEX == type_) {
+    if (OB_FAIL(ObMySQLUtil::store_str_v(buf, len, type_info_.relation_name_.ptr(), type_info_.relation_name_.length(), pos))) {
+      LOG_WARN("serialize relation_name_ failed", K(ret));
+    } else if (OB_FAIL(ObMySQLUtil::store_str_v(buf, len, type_info_.type_name_.ptr(), type_info_.type_name_.length(),pos))) {
+      LOG_WARN("serialize type_name_ failed", K(ret));
+    } else if (OB_FAIL(ObMySQLUtil::store_length(buf, len, type_info_.version_, pos))) {
+      LOG_WARN("serialize type_name_ failed", K(ret));
+    } else { /* succ to write complex type */ }
+  }
 
   return ret;
 }

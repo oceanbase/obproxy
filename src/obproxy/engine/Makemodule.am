@@ -11,4 +11,6 @@ obproxy/engine/ob_proxy_operator_agg.cpp\
 obproxy/engine/ob_proxy_operator_table_scan.h\
 obproxy/engine/ob_proxy_operator_table_scan.cpp\
 obproxy/engine/ob_proxy_operator_async_task.h\
-obproxy/engine/ob_proxy_operator_async_task.cpp
+obproxy/engine/ob_proxy_operator_async_task.cpp\
+obproxy/engine/ob_proxy_operator_cont.h\
+obproxy/engine/ob_proxy_operator_cont.cpp

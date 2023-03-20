@@ -40,7 +40,7 @@ public:
 
   // ob20 payload could contain more than one mysql packet, the total mysql packet len stored here
   int64_t remain_payload_len_;
-  bool ob20_request_received_done_;
+  bool ob20_request_received_done_;  // ob2.0 request from client received done, and tail crc not handled yet
   Ob20ProtocolHeader ob20_header_;
 
   TO_STRING_KV(K_(remain_payload_len), K_(ob20_request_received_done), K_(ob20_header));

@@ -330,17 +330,10 @@ int ObMysqlCompressOB20Analyzer::do_obobj_extra_info_decode(const char *buf,
       LOG_DEBUG("deserialize extra info", K(key), K(value));
 
       if (0 == key.get_string().case_compare(OB_V20_PRO_EXTRA_KV_NAME_SYNC_SESSION_INFO)) {
-        extra_info.sess_info_buf_.reset();
         const char *value_ptr = value.get_string().ptr();
         const int64_t value_len = value.get_string().length();
-        if (OB_FAIL(extra_info.sess_info_buf_.init(value_len))) {
-          LOG_WARN("fail int alloc mem", K(value_len), K(ret));
-        } else if (OB_FAIL(extra_info.sess_info_buf_.write(value_ptr, value_len))) {
+        if (OB_FAIL(extra_info.add_sess_info_buf(value_ptr, value_len))) {
           LOG_WARN("fail to write sess info to buf", K(ret), K(value));
-        } else {
-          extra_info.sess_info_.assign_ptr(extra_info.sess_info_buf_.ptr(),
-                                           static_cast<int32_t>(extra_info.sess_info_buf_.len()));
-          extra_info.is_exist_sess_info_ = true;
         }
       } else if (0 == key.get_string().case_compare(OB_V20_PRO_EXTRA_KV_NAME_FULL_LINK_TRACE)) {
         int64_t full_pos = 0;
@@ -380,14 +373,8 @@ int ObMysqlCompressOB20Analyzer::do_new_extra_info_decode(const char *buf,
     } else {
       Ob20NewExtraInfoProtocolKeyType type = static_cast<Ob20NewExtraInfoProtocolKeyType>(key_type);
       if (type == SESS_INFO) {
-        extra_info.sess_info_buf_.reset();
-        if (OB_FAIL(extra_info.sess_info_buf_.init(key_len))) {
-          LOG_WARN("fail to init sess info buf", K(ret), K(key_len));
-        } else if (OB_FAIL(extra_info.sess_info_buf_.write(buf + pos, key_len))) {
+        if (OB_FAIL(extra_info.add_sess_info_buf(buf+pos, key_len))) {
           LOG_WARN("fail to write sess info buf", K(ret), K(key_len));
-        } else {
-          extra_info.sess_info_.assign_ptr(extra_info.sess_info_buf_.ptr(), key_len);
-          extra_info.is_exist_sess_info_ = true;
         }
       } else if (type == FULL_TRC) {
         int64_t full_pos = 0;
@@ -570,7 +557,7 @@ int ObMysqlCompressOB20Analyzer::analyze_last_compress_packet(
   } else if (OB_FAIL(decompress_data(start, len, resp))) {
     LOG_WARN("fail to decompress last mysql packet", K(ret));
   }
-
+  resp.get_analyze_result().is_server_trans_internal_routing_ = curr_compressed_ob20_header_.flag_.is_trans_internal_routing();
   return ret;
 }
 

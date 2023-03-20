@@ -18,9 +18,11 @@
 #include "proxy/mysql/ob_mysql_client_session.h"
 #include "obutils/ob_resource_pool_processor.h"
 #include "proxy/mysql/ob_mysql_sm.h"
+#include "utils/ob_proxy_table_define.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
+using namespace oceanbase::obproxy;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::packet;
 using namespace oceanbase::obproxy::obutils;
@@ -43,7 +45,7 @@ static int64_t const RESCHEDULE_GET_NETHANDLER_LOCK_INTERVAL = HRTIME_MSECONDS(1
 
 ObClientVC::ObClientVC(ObMysqlClient &client_core)
   : ObNetVConnection(), magic_(CLIENT_MAGIC_ALIVE), disconnect_by_client_(false),
-    is_request_sent_(false), is_resp_received_(false), core_client_(&client_core),
+    is_request_sent_(false), core_client_(&client_core),
     pending_action_(NULL), read_state_(), write_state_(), addr_()
 {
   SET_HANDLER(&ObClientVC::main_handler);
@@ -82,9 +84,8 @@ int ObClientVC::main_handler(int event, void *data)
       }
       case CLIENT_INFORM_MYSQL_CLIENT_TRANSFER_RESP_EVENT: {
         pending_action_ = NULL;
-        // notify ObMysqlClient to read mysql response
-        if (NULL != core_client_) {
-          core_client_->handle_event(VC_EVENT_READ_READY, &write_state_.vio_);
+        if (OB_FAIL(transfer_bytes())) {
+          LOG_ERROR("fail to transfer bytes", K(ret));
         }
         break;
       }
@@ -177,7 +178,6 @@ void ObClientVC::do_io_close(const int lerrno)
   }
 
   is_request_sent_ = false;
-  is_resp_received_ = false;
 
   if (NULL != core_client_ && !disconnect_by_client_) {
     core_client_->handle_event(CLIENT_VC_DISCONNECT_EVENT, NULL);
@@ -195,21 +195,17 @@ void ObClientVC::reenable_re(ObVIO *vio)
       read_avail = reader->read_avail();
     }
     _LOG_DEBUG("client_vc reenable_re %s, read_avail=%ld, reader=%p, thread=%p, "
-               "is_request_sent=%d, is_resp_received=%d",
+               "is_request_sent=%d",
                (ObVIO::WRITE == vio->op_) ? "Write" : "Read", read_avail,
-               reader, this_ethread(), is_request_sent_, is_resp_received_);
+               reader, this_ethread(), is_request_sent_);
 
     if (ObVIO::WRITE == vio->op_) { // write_vio
-      if (NULL != core_client_) {
-        if (read_avail > 0 && !is_resp_received_) {
-          int ret = OB_SUCCESS;
-          if (OB_ISNULL(pending_action_ = mutex_->thread_holding_->schedule_imm(
-                  this, CLIENT_INFORM_MYSQL_CLIENT_TRANSFER_RESP_EVENT))) {
-            ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("fail to schedule imm", K(ret));
-          } else {
-            is_resp_received_ = true;
-          }
+      if (NULL != core_client_ && NULL == pending_action_ && read_avail > 0) {
+        int ret = OB_SUCCESS;
+        if (OB_ISNULL(pending_action_ = mutex_->thread_holding_->schedule_imm(
+                this, CLIENT_INFORM_MYSQL_CLIENT_TRANSFER_RESP_EVENT))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_ERROR("fail to schedule imm", K(ret));
         }
       }
     } else if (ObVIO::READ == vio->op_) { // read_vio
@@ -217,8 +213,7 @@ void ObClientVC::reenable_re(ObVIO *vio)
         if (!is_request_sent_) {
           if (addr_.is_valid()) {
             ObMysqlSM *sm = reinterpret_cast<ObMysqlSM*>(read_state_.vio_.cont_);
-            sm->trans_state_.server_info_.set_addr(addr_.get_ipv4(),
-                           static_cast<uint16_t>(addr_.get_port()));
+            sm->trans_state_.server_info_.set_addr(net::ops_ip_sa_cast(addr_.get_sockaddr()));
             sm->trans_state_.force_retry_congested_ = true;
             sm->trans_state_.need_retry_ = false;
           }
@@ -231,10 +226,59 @@ void ObClientVC::reenable_re(ObVIO *vio)
   }
 }
 
+int ObClientVC::transfer_bytes()
+{
+  int ret = OB_SUCCESS;
+
+  // Check the state of our write buffer as well as ntodo
+  ObVIO &vio = write_state_.vio_;
+  int64_t ntodo = vio.ntodo();
+  ObIOBufferReader *reader = vio.get_reader();
+  if (OB_ISNULL(reader)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to get reader", K(ret));
+  } else {
+    int64_t bytes_avail = reader->read_avail();
+    int64_t act_on = MIN(bytes_avail, ntodo);
+    int64_t total_added = 0;
+    ObMIOBuffer *transfer_to = core_client_->get_client_buf();
+
+    if (act_on <= 0) {
+      ret = OB_INVALID_ARGUMENT;
+      _LOG_WARN("act on data can not <= 0, avail=%ld, ntodo=%ld, "
+                "act_on=%ld, ret=%d", bytes_avail, ntodo, act_on, ret);
+    } else if (OB_ISNULL(transfer_to)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("resp buffer can not be NULL", K(transfer_to), K(ret));
+    } else if (OB_FAIL(transfer_to->write(reader, act_on, total_added, 0))
+        || act_on != total_added) {
+      LOG_WARN("failed to transfer data from iobuffer reader to iobfer",
+          K(act_on), K(total_added), K(ret));
+    } else if (OB_FAIL(reader->consume(total_added))) {
+      LOG_WARN("fail to consume", K(total_added), K(ret));
+    } else {
+      vio.ndone_ += total_added;
+      LOG_DEBUG("transfer_bytes succ", "ndone", vio.ndone_, "nbytes", vio.nbytes_);
+      if (write_state_.vio_.ntodo() > 0) {
+        if (NULL != write_state_.vio_.cont_) {
+          write_state_.vio_.cont_->handle_event(VC_EVENT_WRITE_READY, &write_state_.vio_);
+        }
+      } else {
+        // notify ObMysqlClient to read mysql response
+        if (NULL != core_client_) {
+          core_client_->handle_event(VC_EVENT_READ_READY, &write_state_.vio_);
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
 ObMysqlClient::ObMysqlClient()
   : ObContinuation(), magic_(CLIENT_MAGIC_ALIVE), reentrancy_count_(0), terminate_(false),
     is_inited_(false), in_use_(false), is_request_complete_(false), use_short_connection_(false),
-    client_vc_(NULL), pool_(NULL),
+    client_vc_(NULL), pool_(NULL), cr_(NULL),
     active_timeout_action_(NULL), common_mutex_(), action_(), active_timeout_ms_(0),
     next_action_(CLIENT_ACTION_UNDEFINED), request_buf_(NULL),
     request_reader_(NULL), mysql_resp_(NULL), info_(), is_session_pool_client_(false),
@@ -248,6 +292,7 @@ int ObMysqlClient::init(ObMysqlClientPool *pool,
                         const ObString &password,
                         const ObString &database,
                         const bool is_meta_mysql_client,
+                        const ObString &cluster_name,
                         const ObString &password1,
                         ClientPoolOption* client_pool_option)
 {
@@ -262,8 +307,8 @@ int ObMysqlClient::init(ObMysqlClientPool *pool,
   } else if (OB_ISNULL(mutex = new_proxy_mutex(CLIENT_VC_LOCK))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to allocate mutex", K(ret));
-  } else if (OB_FAIL(info_.set_names(user_name, password, database, password1))) {
-    LOG_WARN("fail to set names", K(user_name), K(password), K(database), K(ret));
+  } else if (OB_FAIL(info_.set_names(user_name, password, database, cluster_name, password1))) {
+    LOG_WARN("fail to set names", K(user_name), K(password), K(database), K(cluster_name), K(ret));
   } else {
     if (client_pool_option != NULL) {
       info_.set_need_skip_stage2(client_pool_option->need_skip_stage2_);
@@ -278,6 +323,31 @@ int ObMysqlClient::init(ObMysqlClientPool *pool,
     pool_ = pool;
     is_inited_ = true;
     use_short_connection_ = is_meta_mysql_client;
+  }
+  return ret;
+}
+
+int ObMysqlClient::init_detect_client(ObClusterResource *cr)
+{
+  int ret = OB_SUCCESS;
+  ObProxyMutex *mutex = NULL;
+  ObString password(get_global_proxy_config().observer_sys_password.str());
+  if (OB_UNLIKELY(is_inited_ ||NULL == cr)) {
+    ret = OB_INIT_TWICE;
+    LOG_WARN("init twice", K_(is_inited), K(ret));
+  } else if (OB_ISNULL(mutex = new_proxy_mutex(CLIENT_VC_LOCK))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to allocate mutex", K(ret));
+  } else if (OB_FAIL(info_.set_names(ObProxyTableInfo::DETECT_USERNAME_USER, password, "obproxy", "obproxy"))) {
+    LOG_WARN("fail to set names", K(ret));
+  } else {
+    common_mutex_ = mutex;
+    mutex_ = common_mutex_;
+    next_action_ = CLIENT_ACTION_CONNECT;
+    cr->inc_ref();
+    cr_ = cr;
+    is_inited_ = true;
+    use_short_connection_ = true;
   }
   return ret;
 }
@@ -378,7 +448,7 @@ int ObMysqlClient::post_request(
       mysql_resp_ = NULL;
     }
     action = NULL;
-    release();
+    release(false);
   }
 
   return ret;
@@ -439,12 +509,7 @@ int ObMysqlClient::main_handler(int event, void *data)
     }
   }
 
-  --reentrancy_count_;
-  if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-    LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count), K(this));
-  }
-
-  if (0 == reentrancy_count_) {
+  if (1 == reentrancy_count_) {
     // here common_mutex_ is free or held by this thread, so we can ensure lock it
     MUTEX_LOCK(lock, common_mutex_, this_ethread());
     if (OB_SUCCESS == ret && need_connect_retry_ && CLIENT_ACTION_CONNECT == next_action_) {
@@ -465,6 +530,11 @@ int ObMysqlClient::main_handler(int event, void *data)
       if (OB_SUCC(ret)) {
         do_post_request();
       }
+
+      --reentrancy_count_;
+      if (OB_UNLIKELY(reentrancy_count_ < 0)) {
+        LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count), K(this));
+      }
     } else {
       if (is_request_complete_) {
         if (OB_FAIL(handle_request_complete())) {
@@ -475,9 +545,20 @@ int ObMysqlClient::main_handler(int event, void *data)
       if (terminate_) {
         kill_this();
         he_ret = EVENT_DONE;
+      } else {
+        --reentrancy_count_;
+        if (OB_UNLIKELY(reentrancy_count_ < 0)) {
+          LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count), K(this));
+        }
       }
     }
+  } else {
+    --reentrancy_count_;
+    if (OB_UNLIKELY(reentrancy_count_ < 0)) {
+      LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count), K(this));
+    }
   }
+
   return he_ret;
 }
 
@@ -537,7 +618,7 @@ int ObMysqlClient::handle_request_complete()
         }
       }
 
-      release();
+      release(true);
       if (need_callback) {
         cont->handle_event(CLIENT_TRANSPORT_MYSQL_RESP_EVENT, mysql_resp);
       }
@@ -723,7 +804,9 @@ int ObMysqlClient::do_next_action(void *data)
         break;
       }
       case CLIENT_ACTION_READ_LOGIN_RESP: {
-        if (OB_FAIL(transfer_and_analyze_response(vio, OB_MYSQL_COM_LOGIN))) {
+        if (info_.get_request_param().is_detect_client_) {
+          is_request_complete_ = true;
+        } else if (OB_FAIL(transfer_and_analyze_response(vio, OB_MYSQL_COM_LOGIN))) {
           LOG_WARN("fail to transfer and analyze resposne", K(ret));
         } else if (!mysql_resp_->is_resp_completed()) {
           ret = OB_ERR_UNEXPECTED;
@@ -734,6 +817,12 @@ int ObMysqlClient::do_next_action(void *data)
           if (mysql_resp_->is_error_resp()) {
             if (OB_FAIL(transport_mysql_resp())) {
               LOG_WARN("fail to transfrom mysql resp", K(ret));
+            }
+          } else if (info_.get_request_param().ob_client_flags_.is_skip_autocommit()) {
+            if (OB_FAIL(setup_read_normal_resp())) {
+              LOG_WARN("fail to setup read normal resp", K(ret));
+            } else if (OB_FAIL(forward_mysql_request())) {
+              LOG_WARN("fail to schedule post request", K(ret));
             }
           } else {
             retry_times_ = 0;
@@ -797,61 +886,19 @@ int ObMysqlClient::do_next_action(void *data)
 int ObMysqlClient::transfer_and_analyze_response(ObVIO &vio, const obmysql::ObMySQLCmd cmd)
 {
   int ret = OB_SUCCESS;
-  // Check the state of our write buffer as well as ntodo
-  int64_t ntodo = vio.ntodo();
-  ObIOBufferReader *reader = vio.get_reader();
-  if (OB_ISNULL(reader)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get reader", K(ret));
-  } else {
-    int64_t bytes_avail = reader->read_avail();
-    int64_t act_on = MIN(bytes_avail, ntodo);
-    int64_t added = 0;
-    ObMIOBuffer *transfer_to = mysql_resp_->get_resp_miobuf();
 
-    if (act_on <= 0) {
-      ret = OB_INVALID_ARGUMENT;
-      _LOG_WARN("act on data can not <= 0, avail=%ld, ntodo=%ld, "
-                "act_on=%ld, ret=%d", bytes_avail, ntodo, act_on, ret);
-    } else if (OB_ISNULL(transfer_to)) {
+  if (vio.ndone_ == vio.nbytes_) {
+    LOG_DEBUG("transfer_and_analyze_response");
+    if (OB_FAIL(mysql_resp_->analyze_resp(cmd))) {
+      LOG_WARN("fail to analyze_trans_response", K(ret));
+    } else if (!mysql_resp_->is_resp_completed()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("resp buffer can not be NULL", K(transfer_to), K(ret));
-    } else if (OB_FAIL(transfer_bytes(*transfer_to, *reader, act_on, added))) {
-      LOG_WARN("fail to transfer_bytes", K(ret));
-    } else {
-      vio.ndone_ += added;
-      LOG_DEBUG("transfer_bytes succ", "ndone", vio.ndone_, "nbytes", vio.nbytes_);
-      if (vio.ndone_ == vio.nbytes_) {
-        LOG_DEBUG("transder_and_analyze_response", K(added));
-        if (OB_FAIL(mysql_resp_->analyze_resp(cmd))) {
-          LOG_WARN("fail to analyze_trans_response", K(ret));
-        } else if (!mysql_resp_->is_resp_completed()) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("mysql response must be received completed here", K(ret));
-        }
-      } else {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("ndone should be equal to nbytes",
-                 K_(vio.ndone), K_(vio.nbytes), K(ret));
-      }
+      LOG_WARN("mysql response must be received completed here", K(ret));
     }
-  }
-
-  return ret;
-}
-
-int ObMysqlClient::transfer_bytes(ObMIOBuffer &transfer_to,
-                                  ObIOBufferReader &transfer_from,
-                                  const int64_t act_on, int64_t &total_added)
-{
-  int ret = OB_SUCCESS;
-
-  if (OB_FAIL(transfer_to.write(&transfer_from, act_on, total_added, 0))
-      || act_on != total_added) {
-    LOG_WARN("failed to transfer data from iobuffer reader to iobfer",
-             K(act_on), K(total_added), K(ret));
-  } else if (OB_FAIL(transfer_from.consume(total_added))) {
-    LOG_WARN("fail to consume", K(total_added), K(ret));
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("ndone should be equal to nbytes",
+             K_(vio.ndone), K_(vio.nbytes), K(ret));
   }
 
   return ret;
@@ -864,7 +911,6 @@ int ObMysqlClient::forward_mysql_request()
 
   if (request_reader_->read_avail() > 0) {
     client_vc_->clear_request_sent();
-    client_vc_->clear_resp_received();
     client_vc_->reenable_read();
   }
 
@@ -1010,7 +1056,13 @@ int ObMysqlClient::do_new_connection_with_cr(ObMysqlClientSession *client_sessio
 {
   int ret = OB_SUCCESS;
 
-  ObClusterResource *cr = pool_->acquire_cluster_resource(); // inc ref
+  ObClusterResource *cr = NULL;
+  if (NULL != cr_) {
+    cr_->inc_ref();
+    cr = cr_;
+  } else {
+    cr = pool_->acquire_cluster_resource(); // inc ref
+  }
   LOG_DEBUG("new connection", K(cr), KPC(cr));
   if (OB_ISNULL(cr)) {
     ret = OB_ERR_UNEXPECTED;
@@ -1039,6 +1091,10 @@ int ObMysqlClient::setup_read_handshake()
   } else {
     client_vc_->mutex_ = mutex_;
     client_session->set_proxy_mysql_client();
+    if (info_.get_request_param().ob_client_flags_.is_send_request_direct()) {
+      client_session->set_can_send_request();
+      client_session->is_need_update_dummy_entry_ = true;
+    }
     client_session->set_session_pool_client(is_session_pool_client_);
     if (is_session_pool_client_) {
       // client_session->set_is_dbmesh_user(false);
@@ -1048,10 +1104,9 @@ int ObMysqlClient::setup_read_handshake()
     client_session->set_server_addr(server_addr_);
     client_session->set_first_dml_sql_got();
     client_session->inner_request_param_ = &info_.get_request_param();
-    client_vc_->clear_resp_received();
 
     next_action_ = CLIENT_ACTION_READ_HANDSHAKE;
-    if (pool_->is_cluster_param()) {
+    if ((NULL != pool_ && pool_->is_cluster_param()) || NULL != cr_) {
       if (OB_FAIL(do_new_connection_with_cr(client_session))) {
         LOG_WARN("fail to new connection with cr", K(ret));
       }
@@ -1079,9 +1134,9 @@ int ObMysqlClient::setup_read_handshake()
   return ret;
 }
 
-void ObMysqlClient::release()
+void ObMysqlClient::release(bool is_need_check_reentry)
 {
-  if (OB_LIKELY(0 == reentrancy_count_) && OB_LIKELY(!terminate_)) {
+  if (OB_LIKELY(!is_need_check_reentry || 1 == reentrancy_count_) && OB_LIKELY(!terminate_)) {
     int ret = OB_SUCCESS;
     if (OB_FAIL(cancel_active_timeout())) {
       LOG_ERROR("fail to cancel timeout action,"
@@ -1089,9 +1144,11 @@ void ObMysqlClient::release()
     } else {
       // for defense, make sure client vc's mutex is common mutex when release to client pool;
       // Never free client vc in mysql client, it will be free by mysql_sm
-      if (NULL != client_vc_ && client_vc_->mutex_ != common_mutex_) {
+      if (!info_.get_request_param().is_detect_client_ && NULL != client_vc_ && client_vc_->mutex_ != common_mutex_) {
         client_vc_->handle_event(CLIENT_VC_SWAP_MUTEX_EVENT, common_mutex_.ptr_);
-        client_vc_->mutex_ = common_mutex_;
+        if (NULL != client_vc_) {
+          client_vc_->mutex_ = common_mutex_;
+        }
       }
       action_.set_continuation(NULL);
       action_.cancelled_ = false;
@@ -1101,7 +1158,9 @@ void ObMysqlClient::release()
       in_use_ = false;
       is_request_complete_ = false;
       mutex_ = common_mutex_; // when idle, keep common_mutex_
-      pool_->release_mysql_client(this);
+      if (NULL != pool_) {
+        pool_->release_mysql_client(this);
+      }
     }
   }
 }
@@ -1130,6 +1189,11 @@ void ObMysqlClient::kill_this()
     pool_ = NULL;
   }
 
+  if (NULL != cr_) {
+    cr_->dec_ref();
+    cr_ = NULL;
+  }
+
   is_inited_ = false;
   in_use_ = false;
   use_short_connection_ = false;
@@ -1156,7 +1220,7 @@ void ObMysqlClient::kill_this()
 
 int ObMysqlClient::alloc(ObMysqlClientPool *pool, ObMysqlClient *&client,
     const ObString &user_name, const ObString &password,
-    const ObString &database, const bool is_meta_mysql_client,
+    const ObString &database, const bool is_meta_mysql_client, const ObString &cluster_name,
     const ObString &password1, ClientPoolOption* client_pool_option)
 {
   int ret = OB_SUCCESS;
@@ -1164,7 +1228,7 @@ int ObMysqlClient::alloc(ObMysqlClientPool *pool, ObMysqlClient *&client,
   if (OB_ISNULL(client = op_alloc(ObMysqlClient))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to allocate ObMysqlClient", K(ret));
-  } else if (OB_FAIL(client->init(pool, user_name, password, database, is_meta_mysql_client, password1, client_pool_option))) {
+  } else if (OB_FAIL(client->init(pool, user_name, password, database, is_meta_mysql_client, cluster_name, password1, client_pool_option))) {
     LOG_WARN("fail to init client", K(ret));
   }
   if (OB_FAIL(ret) && (NULL != client)) {

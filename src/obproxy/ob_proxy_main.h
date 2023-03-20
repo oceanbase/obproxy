@@ -86,7 +86,7 @@ private:
   int init_log();
   int init_signal();
 
-  int close_all_fd(const int32_t listen_fd);
+  int close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen_ipv6_fd);
 
   class ObLogLevel
   {

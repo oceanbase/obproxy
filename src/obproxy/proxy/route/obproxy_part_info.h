@@ -68,6 +68,8 @@ public:
 
   share::schema::ObPartitionLevel get_part_level() const { return part_level_; }
   common::ObCollationType get_table_cs_type() const { return table_cs_type_; }
+  common::ObIArray<common::ObString> &get_part_columns() { return part_columns_; }
+  common::ObIArray<common::ObString> &get_sub_part_columns() { return sub_part_columns_; }
   ObProxyPartOption &get_first_part_option() { return first_part_option_; }
   ObProxyPartOption &get_sub_part_option() { return sub_part_option_; }
   ObProxyPartMgr &get_part_mgr() { return part_mgr_; }
@@ -90,6 +92,9 @@ private:
   bool is_template_table_;
   share::schema::ObPartitionLevel part_level_;
   common::ObCollationType table_cs_type_;
+
+  common::ObSEArray<common::ObString, 2> part_columns_;
+  common::ObSEArray<common::ObString, 2> sub_part_columns_;
 
   common::ObArenaAllocator allocator_;
   ObProxyPartOption first_part_option_;

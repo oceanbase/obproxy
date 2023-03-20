@@ -38,8 +38,8 @@ public:
   static int write_request_packet(event::ObMIOBuffer &mio_buf, const obmysql::ObMySQLCmd cmd,
                                   const common::ObString &sql_str, const uint32_t conn_id,
                                   const uint32_t req_id, const uint8_t compressed_seq,
-                                  const uint8_t pkt_seq, bool is_last_packet,
-                                  bool is_need_reroute, bool is_new_extra_info,
+                                  const uint8_t pkt_seq, bool is_last_packet, bool is_weak_read,
+                                  bool is_need_reroute, bool is_new_extra_info, bool is_trans_internal_routing,
                                   const common::ObIArray<ObObJKV> *extra_info = NULL);
   static int write_packet(event::ObMIOBuffer &mio_buf, const char *buf, const int64_t buf_len,
                           const Ob20ProtocolHeaderParam &ob20_head_param);

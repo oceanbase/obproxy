@@ -49,8 +49,10 @@ public:
 
   int init(const uint64_t table_id, const int32_t partition_idx, const int32_t partition_cnt);
   int parse(const char* str);
-  void reset();
-  bool is_valid() const;
+  /* this function is defined for c driver client compile */
+  void reset() {};
+  /* this function is defined for c driver client compile */
+  bool is_valid() const {return true;};
   uint64_t hash() const;
   uint64_t inner_hash() const;
   int compare(const ObPartitionKey &other) const;

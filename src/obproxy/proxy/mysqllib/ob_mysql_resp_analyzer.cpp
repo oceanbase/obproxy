@@ -75,7 +75,10 @@ inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result, cons
       // paket will treat as ok packet.
       // so in ResultSet Protocol, a packet can be detemined as ok packet by
       // both 0x00 === pkt_type and 1 != has_already_recived_eof_pkt_cnt
-      if (OB_MYSQL_COM_STMT_PREPARE == result.get_cmd()) {
+      if (OB_MYSQL_COM_BINLOG_DUMP == result.get_cmd()
+          || OB_MYSQL_COM_BINLOG_DUMP_GTID == result.get_cmd()) {
+        break;
+      } else if (OB_MYSQL_COM_STMT_PREPARE == result.get_cmd()) {
         /* Preapre Request, in OCEANBASE, maybe error + ok. in this case, should set OK_PACKET_ENDING_TYPE */
         if (0 == prepare_ok_pkt_cnt && 0 == err_pkt_cnt) {
           cur_type_ = PREPARE_OK_PACKET_ENDING_TYPE;
@@ -176,7 +179,10 @@ ObRespResult::ObRespResult()
       mysql_mode_(UNDEFINED_MYSQL_PROTOCOL_MODE),
       resp_type_(MAX_RESP_TYPE),
       trans_state_(IN_TRANS_STATE_BY_DEFAULT),
-      reserved_len_(0)
+      reserved_len_(0),
+      all_pkt_cnt_(0),
+      expect_pkt_cnt_(0),
+      is_recv_resultset_(false)
 {
   MEMSET(pkt_cnt_, 0, sizeof(pkt_cnt_));
 }
@@ -477,6 +483,27 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
         if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
           finished = true;
           ending_type = ERROR_PACKET_ENDING_TYPE;
+        }
+        break;
+      }
+      case OB_MYSQL_COM_BINLOG_DUMP:
+      case OB_MYSQL_COM_BINLOG_DUMP_GTID : {
+        if (1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
+          finished = true;
+          ending_type = EOF_PACKET_ENDING_TYPE;
+        } else if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
+          finished = true;
+          ending_type = ERROR_PACKET_ENDING_TYPE;
+        }
+        break;
+      }
+      case OB_MYSQL_COM_REGISTER_SLAVE: {
+        if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
+          finished = true;
+          ending_type = ERROR_PACKET_ENDING_TYPE;
+        } else if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+          finished = true;
+          ending_type = OK_PACKET_ENDING_TYPE;
         }
         break;
       }

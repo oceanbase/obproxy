@@ -117,6 +117,7 @@ inline int ObUnixNetVConnection::read_signal_and_update(const int event)
     case VC_EVENT_ERROR:
     case VC_EVENT_ACTIVE_TIMEOUT:
     case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       PROXY_NET_LOG(DEBUG, "null read.vio cont, closing vc", K(event), K(this));
       closed_ = 1;
       break;
@@ -151,6 +152,7 @@ inline int ObUnixNetVConnection::write_signal_and_update(const int event)
     case VC_EVENT_ERROR:
     case VC_EVENT_ACTIVE_TIMEOUT:
     case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       PROXY_NET_LOG(DEBUG, "null write.vio cont, closing vc", K(event), K(this));
       closed_ = 1;
       break;
@@ -1192,6 +1194,32 @@ void ObUnixNetVConnection::remove_from_keep_alive_lru()
   }
 }
 
+int ObUnixNetVConnection::set_virtual_addr()
+{
+  int ret = OB_SUCCESS;
+  get_remote_addr();
+
+  if (OB_UNLIKELY(get_global_proxy_config().enable_qa_mode)) {
+    // Simulate public cloud SLB to assign IP addresses
+    // Get the real client address first, then modify the virutal address
+    do_set_virtual_addr();
+    if (OB_FAIL(ops_ip_pton(get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, virtual_addr_))) {
+      PROXY_CS_LOG(WARN, "fail to ops ip pton", "qa_mode_mock_public_cloud_slb_addr",
+                   get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, K(ret));
+    } else {
+      virtual_vid_ = static_cast<uint32_t>(get_global_proxy_config().qa_mode_mock_public_cloud_vid);
+    }
+  } else if (remote_addr_.is_ip4()) {
+    ret = do_set_virtual_addr();
+  } else {
+    real_client_addr_ = remote_addr_;
+    virtual_addr_ = remote_addr_;
+    virtual_addr_.sin6_.sin6_port = htons(2883);
+  }
+
+  return ret;
+}
+
 int ObUnixNetVConnection::do_set_virtual_addr()
 {
   int ret = OB_SUCCESS;
@@ -1231,27 +1259,6 @@ int ObUnixNetVConnection::do_set_virtual_addr()
                       "vaddr", virtual_addr_,
                       "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
                       "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
-  return ret;
-}
-
-int ObUnixNetVConnection::set_virtual_addr()
-{
-  int ret = OB_SUCCESS;
-
-  if (OB_UNLIKELY(get_global_proxy_config().enable_qa_mode)) {
-    // SLB to simulate public cloud allocation of IP addresses
-    // First obtain the real client address, and then modify the virutal address
-    do_set_virtual_addr();
-    if (OB_FAIL(ops_ip_pton(get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, virtual_addr_))) {
-      PROXY_CS_LOG(WARN, "fail to ops ip pton", "qa_mode_mock_public_cloud_slb_addr",
-                   get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, K(ret));
-    } else {
-      virtual_vid_ = static_cast<uint32_t>(get_global_proxy_config().qa_mode_mock_public_cloud_vid);
-    }
-  } else {
-    ret = do_set_virtual_addr();
-  }
-
   return ret;
 }
 
@@ -1465,7 +1472,7 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
   if (OB_ISNULL(e)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "occur fatal error", K(event), K(e), K(ret));
-  } else if (OB_UNLIKELY(EVENT_IMMEDIATE != event && EVENT_INTERVAL != event)) {
+  } else if (OB_UNLIKELY(EVENT_IMMEDIATE != event && EVENT_INTERVAL != event && EVENT_ERROR != event)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "occur fatal error", K(event), K(e), K(ret));
   } else if (thread_ != this_ethread()) {
@@ -1506,6 +1513,8 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
           signal_event = VC_EVENT_INACTIVITY_TIMEOUT;
           signal_timeout_at = &next_inactivity_timeout_at_;
         }
+      } else if (EVENT_ERROR == event) {
+        signal_event = VC_EVENT_DETECT_SERVER_DEAD;
       } else {
         signal_event = VC_EVENT_ACTIVE_TIMEOUT;
         signal_timeout = &active_timeout_action_;

@@ -349,7 +349,7 @@ public:
   virtual bool parse_range(const char *range);
   virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true; }
 
-protected:
+public:
   //use current value to do input operation
   bool set(const char *str);
   virtual int64_t parse(const char *str, bool &valid) const = 0;

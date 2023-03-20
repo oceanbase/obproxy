@@ -154,7 +154,8 @@ public:
   int get_rowkey_for_heap_organized_table(ObIArray<ObObj> &rowkey);
   int get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
                                              obproxy::opsql::ObExprResolverResult &resolve_result,
-                                             int64_t &partition_id);
+                                             int64_t &partition_id,
+                                             common::ObIAllocator &allocator);
 
   // if highest bit is 1, lower 7 bits of version filed indicates how many primar key obj
   static bool is_valid_part_gen_col_version(int64_t v)
@@ -231,7 +232,8 @@ private:
   int parse_ext_heap_organized_table_rowid(uint64_t &tablet_id, uint64_t &auto_inc);
 
   int get_obobj_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
-                             obproxy::opsql::ObExprResolverResult &resolve_result);
+                             obproxy::opsql::ObExprResolverResult &resolve_result,
+                             common::ObIAllocator &allocator);
   
 };
 } // end namespace common

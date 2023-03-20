@@ -67,10 +67,16 @@ public:
   static const char *READ_ONLY_USERNAME_USER;
   static const char *READ_ONLY_USERNAME;
   static const char *READ_ONLY_DATABASE;
+  static const char *READ_ONLY_PASSWD_STAGED1;
+
+  static const char *OBSERVER_SYS_PASSWORD;
+  static const char *OBSERVER_SYS_PASSWORD1;
 
   static const char *TEST_MODE_USERNAME;
   static const char *TEST_MODE_PASSWORD;
   static const char *TEST_MODE_DATABASE;
+
+  static const char *DETECT_USERNAME_USER;
 };
 
 } // end of namespace obproxy

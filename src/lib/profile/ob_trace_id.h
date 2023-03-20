@@ -37,6 +37,7 @@ struct ObCurTraceId
     inline bool is_invalid() { return id_.seq_ == 0 ? true : false; }
     inline void init(const ObAddr &ip_port)
     {
+      // TODO: Consider whether to support IPv6
       id_.seq_ = ATOMIC_AAF(&(SeqGenerator::seq_generator_), 1);
       id_.ip_ = ip_port.get_ipv4();
       id_.reserved_ = 0;
@@ -113,6 +114,8 @@ struct ObCurTraceId
     return TRACE_ID;
   }
 };
+
+uint64_t ObCurTraceId::SeqGenerator::seq_generator_ = 0;
 
 int32_t LogExtraHeaderCallback(char *buf, int32_t buf_size,
                                int level, const char *file,

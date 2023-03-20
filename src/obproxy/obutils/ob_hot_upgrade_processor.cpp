@@ -110,7 +110,7 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
 {
   static const int64_t OBPROXY_ENVP_MAX_SIZE = 128;
   int ret = OB_SUCCESS;
-  int64_t count = 1;  // envp's valid items count
+  int64_t count = 2;  // envp's valid items count
   bool is_obproxy_root_set = false;
   char *obproxy_root = NULL;
   if (NULL != (obproxy_root = getenv("OBPROXY_ROOT"))) {
@@ -128,7 +128,8 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
     memset(var, 0, size);
     envp = reinterpret_cast<char **>(var);
     envp[0] = reinterpret_cast<char *>(malloc(OBPROXY_ENVP_MAX_SIZE));
-    if (OB_ISNULL(envp[0])) {
+    envp[1] = reinterpret_cast<char *>(malloc(OBPROXY_ENVP_MAX_SIZE));
+    if (OB_ISNULL(envp[0]) || OB_ISNULL(envp[1])) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       free(var);
       var = NULL;
@@ -137,16 +138,23 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
     } else {
       const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
       int64_t length = snprintf(envp[0], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
-                                OBPROXY_INHERITED_FD"=%d", info.fd_);
+                                OBPROXY_INHERITED_IPV4_FD"=%d", info.ipv4_fd_);
       if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
         ret = OB_BUF_NOT_ENOUGH;
         LOG_WARN("buf not enought", K(length), "envp[0]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[0]), K(ret));
+      } else {
+        int64_t length = snprintf(envp[1], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
+                                  OBPROXY_INHERITED_IPV6_FD"=%d", info.ipv6_fd_);
+        if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
+          ret = OB_BUF_NOT_ENOUGH;
+          LOG_WARN("buf not enought", K(length), "envp[0]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[1]), K(ret));
+        }
       }
     }
     //set OBPROXY_ROOT
     if (OB_SUCC(ret) && is_obproxy_root_set) {
-      envp[1] = reinterpret_cast<char *>(malloc(OBPROXY_ENVP_MAX_SIZE));
-      if (OB_ISNULL(envp[1])) {
+      envp[2] = reinterpret_cast<char *>(malloc(OBPROXY_ENVP_MAX_SIZE));
+      if (OB_ISNULL(envp[2])) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         free(envp[0]);
         free(var);
@@ -154,11 +162,11 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
         envp = NULL;
         LOG_ERROR("fail to malloc", K(ret));
       } else {
-        int64_t length = snprintf(envp[1], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
+        int64_t length = snprintf(envp[2], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
                                   "OBPROXY_ROOT=%s", obproxy_root);
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
           ret = OB_BUF_NOT_ENOUGH;
-          LOG_WARN("buf not enought", K(length), "envp[1]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[1]), K(ret));
+          LOG_WARN("buf not enought", K(length), "envp[2]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[2]), K(ret));
         }
       }
     }
@@ -1289,6 +1297,8 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
   char passwd_staged1_buf[ENC_STRING_BUF_LEN] = {0}; // 1B '*' + 40B octal num
   ObProxyLoginInfo login_info;
   int64_t pos = 0;
+  char cluster_name_buf[OB_PROXY_FULL_USER_NAME_MAX_LEN + 1];
+  ObString cluster_name;
 
   switch (type) {
     case USER_TYPE_METADB: {
@@ -1311,14 +1321,13 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
       break;
     }
     case USER_TYPE_PROXYRO: {
-      char cluster_name[OB_PROXY_FULL_USER_NAME_MAX_LEN + 1];
-      cluster_name[0] = '\0';
-      if (OB_FAIL(get_global_config_server_processor().get_default_cluster_name(cluster_name, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1))) {
+      cluster_name_buf[0] = '\0';
+      if (OB_FAIL(get_global_config_server_processor().get_default_cluster_name(cluster_name_buf, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1))) {
         LOG_WARN("fail to get default cluster name", K(ret));
       } else {
-        ObString default_cname = '\0' == cluster_name[0]
+        ObString default_cname = '\0' == cluster_name_buf[0]
                                  ? ObString::make_string(OB_PROXY_DEFAULT_CLUSTER_NAME)
-                                 : ObString::make_string(cluster_name);
+                                 : ObString::make_string(cluster_name_buf);
         if (OB_FAIL(databuff_printf(full_user_name, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1, pos, "%s#%.*s",
             ObProxyTableInfo::READ_ONLY_USERNAME, default_cname.length(), default_cname.ptr()))) {
           LOG_WARN("fail to databuff_printf", "username", ObProxyTableInfo::READ_ONLY_USERNAME, K(default_cname), K(ret));
@@ -1330,6 +1339,7 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
                                    static_cast<ObString::obstr_size_t>(strlen(get_global_proxy_config().observer_sys_password1.str())));
           string_db.assign_ptr(ObProxyTableInfo::READ_ONLY_DATABASE,
                                static_cast<ObString::obstr_size_t>(STRLEN(ObProxyTableInfo::READ_ONLY_DATABASE)));
+          cluster_name.assign_ptr(cluster_name_buf, static_cast<ObString::obstr_size_t>(strlen(cluster_name_buf)));
         }
       }
       break;
@@ -1357,12 +1367,12 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
   if (OB_SUCC(ret)) {
     ObSEArray<ObAddr, 1> local_addrs;
     ObAddr addr;
-    if (OB_UNLIKELY(!addr.set_ipv4_addr(proxy_ip_, proxy_port_))) {
+    if (OB_UNLIKELY(!addr.set_ip_addr(proxy_ip_, proxy_port_))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("fail to set addr", K(proxy_ip_), K(proxy_port_), K(ret));
     } else if (OB_FAIL(local_addrs.push_back(addr))) {
       LOG_WARN("fail to push addr to local_addrs", K(addr), K(ret));
-    } else if (OB_FAIL(raw_client.init(string_username, string_passwd, string_db, string_passwd1))) {
+    } else if (OB_FAIL(raw_client.init(string_username, string_passwd, string_db, cluster_name, string_passwd1))) {
       LOG_WARN("fail to init raw mysql client", K(string_username), K(string_db), K(ret));
     } else if (OB_FAIL(raw_client.set_server_addr(local_addrs))) {
       LOG_WARN("fail to set server addr", K(ret));

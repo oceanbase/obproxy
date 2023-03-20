@@ -343,6 +343,7 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
         break;
       }
       case OB_MYSQL_TYPE_GEOMETRY:
+      case OB_MYSQL_TYPE_JSON:
       case OB_MYSQL_TYPE_BLOB:
       case OB_MYSQL_TYPE_LONG_BLOB:
       case OB_MYSQL_TYPE_MEDIUM_BLOB:

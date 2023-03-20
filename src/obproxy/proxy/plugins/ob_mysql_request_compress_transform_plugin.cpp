@@ -149,9 +149,12 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
       PROXY_API_LOG(WARN, "fail to build related extra info all", K(ret));
     } else {
       ObMysqlServerSession *server_session = sm_->get_server_session();
+      ObMysqlClientSession *client_session = sm_->get_client_session();
+      const bool is_weak_read = (WEAK == sm_->trans_state_.get_trans_consistency_level(client_session->get_session_info()));
       Ob20ProtocolHeaderParam ob20_head_param(server_session->get_server_sessid(), request_id_, compressed_seq_,
-                                              compressed_seq_, is_last_segment, is_need_reroute,
-                                              server_session->get_session_info().is_new_extra_info_supported());
+                                              compressed_seq_, is_last_segment, is_weak_read, is_need_reroute,
+                                              server_session->get_session_info().is_new_extra_info_supported(),
+                                              client_session->is_trans_internal_routing());
       if (OB_FAIL(ObProto20Utils::consume_and_compress_data(local_reader_, mio_buffer_, local_reader_->read_avail(),
                                                             ob20_head_param, &extra_info))) {
         PROXY_API_LOG(WARN, "fail to consume and compress data with OB20", K(ret));

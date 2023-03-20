@@ -135,7 +135,8 @@ int ObURowIDData::inner_get_pk_value<ObURowIDType>(const uint8_t *rowid_buf,
           *(reinterpret_cast<const ObNumberDesc *>(rowid_buf + pos));          \
       pos += sizeof(ObNumberDesc);                                             \
       int64_t digits_len = sizeof(uint32_t) * num_desc.len_;                   \
-      if (OB_LIKELY(pos + digits_len <= rowid_buf_len)) {                      \
+      if (OB_LIKELY(0 <= digits_len && digits_len <= rowid_buf_len             \
+          && pos + digits_len <= rowid_buf_len)) {                             \
         const uint32_t *digits = reinterpret_cast<const uint32_t *>(rowid_buf + pos); \
         pos += digits_len;                                                     \
         pk_val.set_##type(num_desc, const_cast<uint32_t *>(digits));           \
@@ -161,7 +162,7 @@ int ObURowIDData::inner_get_pk_value<ObURowIDType>(const uint8_t *rowid_buf,
       int32_t char_len =                                                       \
           *(reinterpret_cast<const int32_t *>(rowid_buf + pos));               \
       pos += 4;                                                                \
-      if (OB_LIKELY(pos + char_len <= rowid_buf_len)) {                        \
+      if (OB_LIKELY(0 <= char_len && pos + char_len <= rowid_buf_len)) {       \
         const char *str_val = (const char *)rowid_buf + pos;                   \
         pos += char_len;                                                       \
         ObString str_value(char_len, str_val);                                 \
@@ -208,19 +209,19 @@ DEF_GET_POD_PK_VALUE(ObIntType, int, int64_t);
 DEF_GET_POD_PK_VALUE(ObFloatType, float, float);
 DEF_GET_POD_PK_VALUE(ObDoubleType, double, double);
 DEF_GET_POD_PK_VALUE(ObDateTimeType, datetime, int64_t);
-// DEF_GET_POD_PK_VALUE(ObIntervalYMType, interval_ym, int64_t);
+//DEF_GET_POD_PK_VALUE(ObIntervalYMType, interval_ym, int64_t);
 
 DEF_GET_NUMBER_PK_VALUE(ObNumberType, number);
 DEF_GET_NUMBER_PK_VALUE(ObNumberFloatType, number_float);
 
 DEF_GET_CHAR_PK_VALUE(ObVarcharType, varchar);
 DEF_GET_CHAR_PK_VALUE(ObCharType, char);
-// DEF_GET_CHAR_PK_VALUE(ObNVarchar2Type, nvarchar2);
-// DEF_GET_CHAR_PK_VALUE(ObNCharType, nchar);
+DEF_GET_CHAR_PK_VALUE(ObNVarchar2Type, nvarchar2);
+DEF_GET_CHAR_PK_VALUE(ObNCharType, nchar);
 
-// DEF_GET_OTIME_PK_VALUE(ObTimestampTZType, timestamp_tz, uint32_t);
-// DEF_GET_OTIME_PK_VALUE(ObTimestampLTZType, timestamp_ltz, uint16_t);
-// DEF_GET_OTIME_PK_VALUE(ObTimestampNanoType, timestamp_nano, uint16_t);
+DEF_GET_OTIME_PK_VALUE(ObTimestampTZType, timestamp_tz, uint32_t);
+DEF_GET_OTIME_PK_VALUE(ObTimestampLTZType, timestamp_ltz, uint16_t);
+DEF_GET_OTIME_PK_VALUE(ObTimestampNanoType, timestamp_nano, uint16_t);
 
 #define ALL_TYPES_USED_IN_INNER_FUNC \
   ObNullType,                        \
@@ -937,7 +938,8 @@ int ObURowIDData::get_rowkey_for_heap_organized_table(ObIArray<ObObj> &rowkey)
 
 int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
                                                          obproxy::opsql::ObExprResolverResult &resolve_result,
-                                                         int64_t &partition_id)
+                                                         int64_t &partition_id,
+                                                         common::ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
 
@@ -970,7 +972,7 @@ int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxy
     case NO_PK_ROWID_VERSION:
     case PK_ROWID_VERSION: {
       // ob2.x 3.x
-      if (OB_FAIL(get_obobj_from_decoded(part_info, resolve_result))) {
+      if (OB_FAIL(get_obobj_from_decoded(part_info, resolve_result, allocator))) {
         COMMON_LOG(WARN, "fail to get obobj from decoded", K(ret));
       }
       break;
@@ -986,7 +988,8 @@ int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxy
 
 // used for ob2.x 3.x
 int ObURowIDData::get_obobj_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
-                                         obproxy::opsql::ObExprResolverResult &resolve_result)
+                                         obproxy::opsql::ObExprResolverResult &resolve_result,
+                                         common::ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
 
@@ -995,43 +998,55 @@ int ObURowIDData::get_obobj_from_decoded(obproxy::proxy::ObProxyPartInfo &part_i
     COMMON_LOG(WARN, "fail to get pk vals", K(ret));
   } else {
     ObProxyPartKeyInfo &key_info = part_info.get_part_key_info();
-    bool set_level_one_obj = false;
-    bool set_level_two_obj = false;
 
     for (int64_t i = 0; OB_SUCC(ret) && i < key_info.key_num_; ++i) {
       ObProxyPartKey &part_key = key_info.part_keys_[i];
-      int8_t idx = -1;
-      if ((part_key.level_ == PART_KEY_LEVEL_ONE || part_key.level_ == PART_KEY_LEVEL_BOTH)
-          && !set_level_one_obj) {
-        idx = 0;
-      } else if (part_key.level_ == PART_KEY_LEVEL_TWO
-                 && !set_level_two_obj) {
-        idx = 1;
+      if (PART_KEY_LEVEL_ONE == part_key.level_ && !resolve_result.ranges_[0].start_key_.is_valid()) {
+        if (OB_FAIL(resolve_result.ranges_[0].build_row_key(part_info.get_part_columns().count(), allocator))) {
+          COMMON_LOG(WARN, "fail to build row key", K(ret));
+        }
+      } else if (PART_KEY_LEVEL_TWO == part_key.level_ && !resolve_result.ranges_[1].start_key_.is_valid()) {
+        if (OB_FAIL(resolve_result.ranges_[1].build_row_key(part_info.get_sub_part_columns().count(), allocator))) {
+          COMMON_LOG(WARN, "fail to build row key", K(ret));
+        }
       }
 
-      if (idx != -1) {
-        if (part_key.idx_in_rowid_ >= 0
-            && part_key.idx_in_rowid_ < pk_vals.count()) {
-          ObObj &obj = pk_vals.at(part_key.idx_in_rowid_);
-          if (is_valid_obj_type(obj.get_type())) {
-            resolve_result.ranges_[idx].start_key_.assign(&obj, 1);
-            resolve_result.ranges_[idx].end_key_.assign(&obj, 1);
-            resolve_result.ranges_[idx].border_flag_.set_inclusive_start();
-            resolve_result.ranges_[idx].border_flag_.set_inclusive_end();
-            if (idx == 0) {
-              set_level_one_obj = true;
+      if (part_key.idx_in_rowid_ >= 0
+          && part_key.idx_in_rowid_ < pk_vals.count()) {
+        ObObj &obj = pk_vals.at(part_key.idx_in_rowid_);
+        ObObjType type = obj.get_type();
+        if (ObCharType == type || ObNCharType == type) {
+          int32_t val_len = obj.get_val_len();
+          const char* obj_str = obj.get_string_ptr();
+          while (val_len > 1) {
+            if (OB_PADDING_CHAR == *(obj_str + val_len - 1)) {
+              --val_len;
             } else {
-              set_level_two_obj = true;
+              break;
             }
-            COMMON_LOG(DEBUG, "succ to get obobj from rowid", K(idx), K(part_key.idx_in_rowid_), K(obj));
-          } else {
-            ret = OB_ERR_UNEXPECTED;
-            COMMON_LOG(WARN, "invalid obj type resolved from rowid content", K(ret), K(obj.get_type()));
           }
-        } else {
-          ret = OB_ERR_UNEXPECTED;
-          COMMON_LOG(WARN, "calc partition id using rowid failed", K(part_key.idx_in_rowid_), K(pk_vals.count()));
+          obj.set_string(type, obj.get_string_ptr(), val_len);
         }
+
+        if (part_key.level_ == 0 || part_key.level_ > 2) {
+          ret = OB_ERR_UNEXPECTED;
+          COMMON_LOG(WARN, "part key level unexpected", K(part_key.level_));
+        } else {
+          int level = static_cast<int>(part_key.level_ - 1);
+          ObObj *target_start = const_cast<ObObj*>(resolve_result.ranges_[level].start_key_.get_obj_ptr())
+                                + part_key.idx_in_part_columns_;
+          ObObj *target_end = const_cast<ObObj*>(resolve_result.ranges_[level].end_key_.get_obj_ptr())
+                              + part_key.idx_in_part_columns_;
+          // no need to deep copy
+          *target_start = obj;
+          *target_end = obj;
+          resolve_result.ranges_[level].border_flag_.set_inclusive_start();
+          resolve_result.ranges_[level].border_flag_.set_inclusive_end();
+          COMMON_LOG(DEBUG, "succ to get val from rowid", K(obj), K(level), K(part_key.idx_in_part_columns_));
+        }
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        COMMON_LOG(WARN, "calc partition id using rowid failed", K(part_key.idx_in_rowid_), K(pk_vals.count()));
       }
     } // for
   } // else

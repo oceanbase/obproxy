@@ -25,6 +25,12 @@ class ObNewRange;
 }
 namespace obproxy
 {
+
+namespace obutils
+{
+struct SqlFieldResult;
+}
+
 namespace proxy
 {
 class ObProxyPartInfo;
@@ -38,7 +44,8 @@ namespace opsql
 struct ObExprResolverContext
 {
   ObExprResolverContext() : relation_info_(NULL), part_info_(NULL), client_request_(NULL),
-                            ps_id_entry_(NULL), text_ps_entry_(NULL), client_info_(NULL) {}
+                            ps_id_entry_(NULL), text_ps_entry_(NULL), client_info_(NULL),
+                            sql_field_result_(NULL) {}
   // parse result
   ObProxyRelationInfo *relation_info_;
   proxy::ObProxyPartInfo *part_info_;
@@ -47,6 +54,9 @@ struct ObExprResolverContext
   proxy::ObPsIdEntry *ps_id_entry_;
   proxy::ObTextPsEntry *text_ps_entry_;
   proxy::ObClientSessionInfo *client_info_;
+  obutils::SqlFieldResult *sql_field_result_;
+  ObExprParseResult *parse_result_;
+  bool is_insert_stm_;
 };
 
 class ObExprResolverResult
@@ -73,12 +83,21 @@ public:
                          proxy::ObClientSessionInfo *client_info,
                          proxy::ObPsIdEntry *ps_entry,
                          proxy::ObTextPsEntry *text_ps_entry,
-                         common::ObNewRange &range,
+                         common::ObObj *target_obj,
+                         obutils::SqlFieldResult *sql_field_result,
                          const bool has_rowid = false);
 private:
+  int preprocess_range(common::ObNewRange &range, common::ObIArray<common::ObBorderFlag> &border_flags);
+  int place_obj_to_range(ObProxyFunctionType type,
+                         int64_t idx_in_part_columns,
+                         common::ObObj *target_obj,
+                         common::ObNewRange *range,
+                         common::ObIArray<common::ObBorderFlag> &border_flags);
   int calc_token_func_obj(ObProxyTokenNode *token,
                           proxy::ObClientSessionInfo *client_session_info,
-                          common::ObObj &target_obj);
+                          common::ObObj &target_obj,
+                          obutils::SqlFieldResult *sql_field_result,
+                          const bool is_oracle_mode);
   int calc_generated_key_value(common::ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode);
   int get_obj_with_param(common::ObObj &target_obj,
                          proxy::ObProxyMysqlRequest *client_request,
@@ -86,6 +105,24 @@ private:
                          proxy::ObProxyPartInfo *part_info,
                          proxy::ObPsIdEntry *ps_entry,
                          const int64_t param_index);
+  int convert_token_node_to_param_node(ObProxyTokenNode *token,
+                                       ObProxyParamNode *&param);
+  int recursive_convert_func_token(ObProxyTokenNode *token,
+                                   ObProxyParamNode *param);
+  int handle_default_value(ObProxyPartKeyInfo &part_info,
+                           proxy::ObClientSessionInfo *client_info,
+                           common::ObNewRange range[],
+                           obutils::SqlFieldResult *sql_field_result,
+                           common::ObIArray<common::ObBorderFlag> &part_border_flags,
+                           common::ObIArray<common::ObBorderFlag> &sub_part_border_flags,
+                           bool is_oracle_mode);
+  int parse_and_resolve_default_value(ObProxyParseString &default_value_expr,
+                                      proxy::ObClientSessionInfo *client_session_info,
+                                      obutils::SqlFieldResult *sql_field_result,
+                                      common::ObObj *target_obj,
+                                      bool is_oracle_mode);
+
+  ObProxyExprType get_expr_token_func_type(common::ObString *func);
   common::ObIAllocator &allocator_;
 
   DISALLOW_COPY_AND_ASSIGN(ObExprResolver);

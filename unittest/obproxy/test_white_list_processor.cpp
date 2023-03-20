@@ -53,19 +53,33 @@ TEST_F(TestWhiteListProcessor, test_ip_net)
   char ip2[32] = "127.0.0.3";
   char ip3[32] = "127.0.0.4";
   char ip4[32] = "127.0.0.5";
-  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, ip1));
-  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, ip2));
-  ASSERT_EQ(false, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, ip3));
-  ASSERT_EQ(false, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, ip4));
+  ObAddr addr1(ObAddr::VER::IPV4, ip1, 0);
+  ObAddr addr2(ObAddr::VER::IPV4, ip2, 0);
+  ObAddr addr3(ObAddr::VER::IPV4, ip3, 0);
+  ObAddr addr4(ObAddr::VER::IPV4, ip4, 0);
+  struct sockaddr_storage ss = addr1.get_sockaddr();
+  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, *reinterpret_cast<sockaddr*>(&ss)));
+  ss = addr2.get_sockaddr();
+  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, *reinterpret_cast<sockaddr*>(&ss)));
+  ss = addr3.get_sockaddr();
+  ASSERT_EQ(false, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, *reinterpret_cast<sockaddr*>(&ss)));
+  ss = addr4.get_sockaddr();
+  ASSERT_EQ(false, white_list_processor_.can_ip_pass(cluster_name, tenant_name, user_name, *reinterpret_cast<sockaddr*>(&ss)));
   ObString cluster_name2 = "cluster2";
   ObString tenant_name2 = "tenant2";
   ObString user_name2 = "user2";
   char ip5[32] = "127.0.0.1";
   char ip6[32] = "127.0.0.2";
   char ip7[32] = "127.0.0.3";
-  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name2, tenant_name2, user_name2, ip5));
-  ASSERT_EQ(false, white_list_processor_.can_ip_pass(cluster_name2, tenant_name2, user_name2, ip6));
-  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name2, tenant_name2, user_name2, ip7));
+  ObAddr addr5(ObAddr::VER::IPV4, ip5, 0);
+  ObAddr addr6(ObAddr::VER::IPV4, ip6, 0);
+  ObAddr addr7(ObAddr::VER::IPV4, ip7, 0);
+  ss = addr5.get_sockaddr();
+  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name2, tenant_name2, user_name2, *reinterpret_cast<sockaddr*>(&ss)));
+  ss = addr6.get_sockaddr();
+  ASSERT_EQ(false, white_list_processor_.can_ip_pass(cluster_name2, tenant_name2, user_name2, *reinterpret_cast<sockaddr*>(&ss)));
+  ss = addr7.get_sockaddr();
+  ASSERT_EQ(true, white_list_processor_.can_ip_pass(cluster_name2, tenant_name2, user_name2, *reinterpret_cast<sockaddr*>(&ss)));
 }
 
 int main(int argc, char **argv)

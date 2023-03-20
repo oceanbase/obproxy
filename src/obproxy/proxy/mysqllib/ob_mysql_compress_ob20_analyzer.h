@@ -54,7 +54,7 @@ public:
   ObMysqlCompressOB20Analyzer()
     : ObMysqlCompressAnalyzer(), last_ob20_seq_(0), request_id_(0), sessid_(0), remain_head_checked_len_(0),
       extra_header_len_(0), extra_len_(0), extra_checked_len_(0), payload_checked_len_(0), tail_checked_len_(0),
-      ob20_analyzer_state_(OB20_ANALYZER_MAX), crc64_(0), curr_compressed_ob20_header_()
+      ob20_analyzer_state_(OB20_ANALYZER_MAX), crc64_(0), result_(), curr_compressed_ob20_header_()
     {}
   virtual ~ObMysqlCompressOB20Analyzer() { reset(); }
 

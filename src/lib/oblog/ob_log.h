@@ -283,7 +283,7 @@ private:
 
 public:
   ~ObLogger();
-  void destory_async_log_thread();
+  void destroy_async_log_thread();
 
   int init_async_log_thread(const int64_t stacksize = 0);
   void destroy_free_litem_queue();

@@ -15,6 +15,7 @@
 #include "prometheus/ob_sql_prometheus.h"
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
 #include "obutils/ob_proxy_config.h"
+#include "utils/ob_proxy_table_define.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -142,7 +143,15 @@ void ObMysqlServerSession::do_io_shutdown(const ShutdownHowToType howto)
 
 void ObMysqlServerSession::do_io_close(const int alerrno)
 {
-  PROXY_SS_LOG(INFO, "server session do_io_close", K(*this), KP(server_vc_), KP(this));
+  bool need_print = true;
+  if(NULL != client_session_ &&
+     client_session_->get_session_info().get_priv_info().user_name_ == ObProxyTableInfo::DETECT_USERNAME_USER) {
+    need_print = false;
+  }
+
+  if (need_print) {
+    PROXY_SS_LOG(INFO, "server session do_io_close", K(*this), KP(server_vc_), KP(this));
+  }
   if (MSS_ACTIVE == state_) {
     MYSQL_DECREMENT_DYN_STAT(CURRENT_SERVER_TRANSACTIONS);
     --server_trans_stat_;
@@ -174,9 +183,14 @@ void ObMysqlServerSession::do_io_close(const int alerrno)
     if (this == client_session_->get_last_bound_server_session()) {
       client_session_->set_last_bound_server_session(NULL);
     }
-    PROXY_SS_LOG(INFO, "server session is closing", K_(ss_id), K_(server_sessid), K_(server_ip),
-                 "cs_id", client_session_->get_cs_id(),
-                 "proxy_sessid", client_session_->get_proxy_sessid());
+    if (server_ip_ == client_session_->get_trans_coordinator_ss_addr()) {
+      client_session_->get_trans_coordinator_ss_addr().reset();
+    }
+    if (need_print) {
+      PROXY_SS_LOG(INFO, "server session is closing", K_(ss_id), K_(server_sessid), K_(server_ip),
+          "cs_id", client_session_->get_cs_id(),
+          "proxy_sessid", client_session_->get_proxy_sessid());
+    }
   } else {
     PROXY_SS_LOG(INFO, "server session has not bound to client session", K(*this));
   }

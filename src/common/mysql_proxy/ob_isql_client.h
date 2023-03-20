@@ -58,10 +58,13 @@ public:
   public:
     friend class ObISQLClient;
 
-    ReadResult();
-    virtual ~ReadResult();
+  /* this function is defined for c driver client compile */
+    ReadResult() {}
+  /* this function is defined for c driver client compile */
+    virtual ~ReadResult() {}
 
-    sqlclient::ObMySQLResult *mysql_result();
+  /* this function is defined for c driver client compile */
+    sqlclient::ObMySQLResult *mysql_result() {return nullptr;}
     // FIXME : remove
     sqlclient::ObMySQLResult *get_result() { return mysql_result(); }
 

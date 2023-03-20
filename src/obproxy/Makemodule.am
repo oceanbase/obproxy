@@ -10,7 +10,11 @@ AM_CPPFLAGS += -I${top_srcdir}/src/obproxy\
 obproxy_libobproxy_la_LIBADD := dbconfig/libdbconfig.la lib/regex/regex/libregex.la prometheus/libprometheus_exporter.la
 noinst_LTLIBRARIES += obproxy/libobproxy.la
 
-bin_PROGRAMS += obproxy/obproxy
+if HAVE_SO
+    lib_LTLIBRARIES += obproxy/libobproxy_so.la
+else
+    bin_PROGRAMS += obproxy/obproxy
+endif
 
 include obproxy/iocore/eventsystem/Makemodule.am
 include obproxy/iocore/net/Makemodule.am
@@ -30,6 +34,7 @@ include obproxy/opsql/Makemodule.am
 include obproxy/packet/Makemodule.am
 include obproxy/dbconfig/Makemodule.am
 include obproxy/engine/Makemodule.am
+include obproxy/driver/c/Makemodule.am
 include obproxy/optimizer/Makemodule.am
 include obproxy/executor/Makemodule.am
 include obproxy/qos/Makemodule.am
@@ -41,6 +46,9 @@ pub_source =                            \
         obproxy/ob_proxy_main.cpp       \
         obproxy/ob_proxy.h              \
         obproxy/ob_proxy.cpp
+init_so_source =\
+         obproxy/ob_proxy_init.h\
+         obproxy/ob_proxy_init.cpp
 
 obproxy_sources :=\
 ${iocore_eventsystem_sources}\
@@ -51,6 +59,7 @@ ${proxy_api_sources}\
 ${proxy_plugins_sources}\
 ${proxy_mysqllib_sources}\
 ${proxy_mysql_client_sources}\
+${obproxy_c_driver_sources}\
 ${proxy_mysql_route_sources}\
 ${proxy_mysql_shard_sources}\
 ${obutils_sources}\
@@ -70,6 +79,8 @@ ${obproxy_executor_sources}\
 ${obproxy_optimizer_sources}\
 ${obproxy_engine_sources}\
 ${qos_sources}\
+${init_so_source}\
+${pub_source}\
 ${omt_sources}
 
 obproxy_libobproxy_la_SOURCES :=\
@@ -80,8 +91,15 @@ ${rpc_obmysql_packet_sources} ${obproxy_rpc_obmysql_sources} ${rpc_common_source
 ${obproxy_sql_sources}\
 ${obproxy_sources}
 
+if HAVE_SO
+  obproxy_libobproxy_so_la_SOURCES :=
+  obproxy_libobproxy_so_la_LIBADD := obproxy/libobproxy.la lib/compress/libzlib_1.0.la lib/compress/libzstd_1.3.8.la ${BIN_LDFLAGS} ${DEP_DIR}/lib64/libprometheus-cpp-pull.a ${DEP_DIR}/lib64/libprometheus-cpp-core.a ${RUNTIME_DIR}/lib/libob_sql_proxy_parser_static.a ${DEP_DIR}/lib/libssl.a ${DEP_DIR}/lib/libcrypto.a -lpthread
+
+  obproxy_libobproxy_so_la_LDFLAGS :=${AM_LDFLAGS} ${DEP_DIR}/lib/libgrpc++.a -lpthread -lc -lm -lrt ${DEP_DIR}/lib/libcurl.a -ldl -L${DEP_DIR}/lib -llber ${DEP_DIR}/lib/sqlite/libsqlite3.a ${DEP_DIR}/lib/libgrpc_cronet.a ${DEP_DIR}/lib/libgrpc++_cronet.a -shared ${DEP_DIR}/lib64/libprotobuf.a -fPIC
+endif
+
 nodist_obproxy_libobproxy_la_SOURCES = build_version.c
-obproxy_obproxy_SOURCES := obproxy/main.cpp ${pub_source}
+obproxy_obproxy_SOURCES := obproxy/main.cpp
 
 obproxy_obproxy_LDADD_BASE := obproxy/libobproxy.la lib/compress/libzlib_1.0.la lib/compress/libzstd_1.3.8.la ${BIN_LDFLAGS} ${DEP_DIR}/lib64/libprotobuf.a ${DEP_DIR}/lib/libgrpc.a ${DEP_DIR}/lib/libgrpc++.a ${DEP_DIR}/lib/libgrpc_unsecure.a ${DEP_DIR}/lib/libgrpc++_unsecure.a ${DEP_DIR}/lib/libgrpc++_reflection.a ${DEP_DIR}/lib/libgrpcpp_channelz.a ${DEP_DIR}/lib/libgrpc++_error_details.a ${DEP_DIR}/lib/libgrpc_cronet.a ${DEP_DIR}/lib/libgrpc++_cronet.a ${DEP_DIR}/lib/libgpr.a ${DEP_DIR}/lib/libaddress_sorting.a ${DEP_DIR}/lib/libcares.a ${DEP_DIR}/lib64/libprometheus-cpp-pull.a ${DEP_DIR}/lib64/libprometheus-cpp-core.a ${RUNTIME_DIR}/lib/libob_sql_proxy_parser_static.a ${DEP_DIR}/lib/libssl.a ${DEP_DIR}/lib/libcrypto.a -lpthread ${DEP_DIR}/lib/libcurl.a ${DEP_DIR}/lib/libcrypto.a ${DEP_DIR}/lib/sqlite/libsqlite3.a
 obproxy_obproxy_LDFLAGS :=${AM_LDFLAGS} -lpthread -lc -lm -lrt -ldl -L${DEP_DIR}/lib

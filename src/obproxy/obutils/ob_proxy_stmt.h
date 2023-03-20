@@ -56,6 +56,39 @@ private:
   ObProxyExprTable* table_expr_;
 };
 
+enum ShardingPosType {
+  SHARDING_POS_NONE = 0,
+  SHARDING_POS_DB,
+  SHARDING_POS_TABLE,
+};
+
+class ObProxyDbTablePos {
+public:
+  ObProxyDbTablePos() : pos_(-1), name_(), type_(SHARDING_POS_NONE) {}
+  virtual ~ObProxyDbTablePos() {}
+
+  void set_pos(const int32_t pos) { pos_ = pos; }
+  int32_t get_pos() { return pos_; }
+
+  void set_type(const ShardingPosType type) { type_ = type; }
+  ShardingPosType get_type() { return type_; }
+
+  void set_name(const ObString &name) { name_ = name; }
+  ObString &get_name() { return name_; }
+
+  bool operator<(ObProxyDbTablePos &db_table_pos)
+  {
+    return pos_ < db_table_pos.get_pos();
+  }
+
+  TO_STRING_KV(K_(pos), K_(name), K_(type));
+
+private:
+  int32_t pos_;
+  ObString name_;
+  ShardingPosType type_;
+};
+
 class ObProxyStmt {
 public:
   ObProxyStmt(common::ObIAllocator& allocator) : stmt_type_(OBPROXY_T_INVALID), allocator_(allocator) {}
@@ -71,11 +104,19 @@ protected:
   common::ObString sql_string_;
 };
 
+enum SortListType {
+  SORT_LIST_NONE = 0,
+  SORT_LIST_IN_GROUP_BY,
+  SORT_LSIT_IN_ORDER_BY,
+  SORT_LIST_TYPE_MAX,
+};
+
 class ObProxyDMLStmt : public ObProxyStmt
 {
 public:
   typedef common::hash::ObHashMap<common::ObString, opsql::ObProxyExpr *, common::hash::NoPthreadDefendMode> ExprMap;
   typedef common::ObSEArray<ObProxyExprTablePos, 4> TablePosArray;
+  typedef common::ObSEArray<ObProxyDbTablePos, 4> DbTablePosArray;
 
 public:
   ObProxyDMLStmt(common::ObIAllocator& allocator);
@@ -96,6 +137,7 @@ public:
   bool has_unsupport_expr_type() const { return has_unsupport_expr_type_; }
   ExprMap& get_table_exprs_map() { return table_exprs_map_; }
   TablePosArray& get_table_pos_array() { return table_pos_array_; }
+  DbTablePosArray& get_db_table_pos_array() { return db_table_pos_array_; }
 
 protected:
   ObProxyExprType get_expr_type_by_node_type(const ObItemType& item_type);
@@ -103,7 +145,7 @@ protected:
 
   //for from
   int handle_from_list(ParseNode* node);
-  virtual int handle_table_node_to_expr(ParseNode* node);
+  int handle_table_node_to_expr(ParseNode* node);
   int get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &expr_table);
   int handle_table_and_db_node(ParseNode* node, ObProxyExprTable* &expr_table);
   //for from in delete and update
@@ -120,7 +162,7 @@ protected:
   int handle_varchar_node_in_column_value(ParseNode* node, SqlField& sql_field);
   int handle_expr_list_node_in_column_value(ParseNode* node, SqlField& sql_field);
   int handle_column_ref_in_list(ParseNode *node);
-  virtual int column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObProxyExprTable* &expr_table);
+  int column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObProxyExprTable* &expr_table);
 
   int condition_exprs_to_sql_string(common::ObSqlString& sql_string);
   int limit_to_sql_string(common::ObSqlString& sql_string);
@@ -146,21 +188,10 @@ protected:
   ExprMap table_exprs_map_;
   ExprMap alias_table_map_;
   common::ObSEArray<ObProxyExprTablePos, 4> table_pos_array_;
-};
+  common::ObSEArray<ObProxyDbTablePos, 4> db_table_pos_array_;
 
-enum SortListType {
-  SORT_LIST_NONE = 0,
-  SORT_LIST_IN_GROUP_BY,
-  SORT_LSIT_IN_ORDER_BY,
-  SORT_LIST_TYPE_MAX,
-};
-
-class ObProxySelectStmt : public ObProxyDMLStmt
-{
+/*for sub select*/
 public:
-  ObProxySelectStmt(common::ObIAllocator& allocator);
-  virtual ~ObProxySelectStmt();
-  virtual int handle_parse_result(const ParseResult &parse_result);
   int handle_project_list(ParseNode* node);
   int handle_project_string(ParseNode* node);
   int handle_hint_clause(ParseNode* node);
@@ -173,7 +204,7 @@ public:
   bool has_for_update() const { return has_for_update_; }
   int64_t get_from_token_off() { return from_token_off_; }
 
-private:
+protected:
   int project_string_to_expr(ParseNode* node, ObProxyExpr* &expr);
   int string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  ParseNode* string_node = NULL);
   int alias_node_to_expr(ParseNode* node, ObProxyExpr* &expr, ParseNode* string_node = NULL);
@@ -186,11 +217,9 @@ private:
   int max_node_to_expr(ParseNode* node, ObProxyExpr* &expr);
   int min_node_to_expr(ParseNode* node, ObProxyExpr* &expr);
 
-  int column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObProxyExprTable* &expr_table);
   int get_const_expr(ParseNode* node, ObProxyExpr* &expr);
   int get_sharding_const_expr(ParseNode* node, ObProxyExpr* &expr);
 
-  int handle_table_node_to_expr(ParseNode* node);
   int handle_table_and_db_in_hint(ParseNode* node);
 
   //for group by
@@ -198,7 +227,7 @@ private:
   int handle_sort_list_node(ParseNode* node, const SortListType& sort_list_type);
   int handle_sort_key_node(ParseNode* node, ObProxyExpr* &expr, const SortListType& sort_list_type);
 
-private:
+protected:
   int do_handle_parse_result(ParseNode* node);
   int comments_to_sql_string(common::ObSqlString& sql_string);
   int hint_exprs_to_sql_string(common::ObSqlString& sql_string);
@@ -206,16 +235,25 @@ private:
   int table_exprs_to_sql_string(common::ObSqlString& sql_string);
   int group_by_exprs_to_sql_string(common::ObSqlString& sql_string);
   int order_by_exprs_to_sql_string(common::ObSqlString& sql_string);
-private:
+
   int check_node_has_agg(ParseNode* node);
 public:
   common::ObSEArray<opsql::ObProxyExpr*, 4> select_exprs_;
   common::ObSEArray<opsql::ObProxyGroupItem*, 4> group_by_exprs_; //select groupby expression
   common::ObSEArray<opsql::ObProxyOrderItem*, 4> order_by_exprs_;
-private:
+protected:
   bool has_rollup_;
   bool has_for_update_;
   int64_t from_token_off_;
+  int64_t t_case_level_;
+};
+
+class ObProxySelectStmt : public ObProxyDMLStmt
+{
+public:
+  ObProxySelectStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
+  virtual ~ObProxySelectStmt() {}
+  virtual int handle_parse_result(const ParseResult &parse_result);
 };
 
 class ObProxyInsertStmt : public ObProxyDMLStmt

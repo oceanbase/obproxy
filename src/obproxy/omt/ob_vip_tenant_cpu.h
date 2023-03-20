@@ -73,7 +73,7 @@ public:
 
   int set_unit_max_cpu(double cpu);
   int acquire_more_worker(const int64_t tid);
-  
+
   TO_STRING_KV(K_(tenant_name), K_(cluster_name), K_(vip_name), K_(full_name),
       K_(max_thread_num), K_(backup_max_thread_num), K_(max_cpu_usage), K_(backup_max_cpu_usage),
       K_(index), K_(is_inited), K_(instance_status));
@@ -92,14 +92,14 @@ public:
   bool is_inited_;
   ObTenantCpuStatus instance_status_;
   common::ObSEArray<event::ObEThread*, 16> thread_array_;
-  
+
   LINK(ObTenantCpu, cpu_link_);
 
 private:
-  char tenant_name_str_[common::OB_MAX_TENANT_NAME_LENGTH];  
+  char tenant_name_str_[common::OB_MAX_TENANT_NAME_LENGTH];
   char cluster_name_str_[OB_PROXY_MAX_CLUSTER_NAME_LENGTH];
-  char vip_name_str_[common::OB_IP_STR_BUFF];
-  char full_name_str_[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF];
+  char vip_name_str_[common::MAX_IP_ADDR_LENGTH];
+  char full_name_str_[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH];
   DISALLOW_COPY_AND_ASSIGN(ObTenantCpu);
 };
 

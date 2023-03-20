@@ -2103,7 +2103,7 @@ int ObProxyJsonUtils::rslist_to_json(const LocationList &addr_list, const char *
     }
   }
   if (OB_SUCC(ret)) {
-    char ip_buf[OB_IP_STR_BUFF];
+    char ip_buf[MAX_IP_ADDR_LENGTH];
     for (int64_t i = 0; OB_SUCC(ret) && i < addr_list.count(); ++i) {
       ip_buf[0] = '\0';
       if (i > 0) {

@@ -49,7 +49,7 @@ using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::json;
 
 extern int build_tenant_cluster_vip_name(const ObString &tenant_name, const ObString &cluster_name, const ObString &vip_name,
-    ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> &key_string);
+    ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> &key_string);
 
 int ObConnTableProcessor::commit(bool is_success)
 {
@@ -111,7 +111,7 @@ int ObConnTableProcessor::inc_conn(ObString& cluster_name, ObString& tenant_name
   int ret = OB_SUCCESS;
   ObString key_name;
   ObUsedConn* used_conn = NULL;
-  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF> key_string;
+  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
   if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name, cluster_name, ip_name, key_string))) {
     LOG_WARN("build tenant cluser vip name failed", K(tenant_name), K(cluster_name), K(ip_name), K(ret));
   } else {
@@ -131,7 +131,7 @@ void ObConnTableProcessor::dec_conn(
   int ret = OB_SUCCESS;
   ObUsedConn* used_conn = NULL;
   int64_t cur_used_connections = 0;
-  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF> key_string;
+  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
 
   if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name, cluster_name, ip_name, key_string))) {
     LOG_WARN("build tenant cluster vip name failed", K(ret), K(tenant_name), K(cluster_name), K(ip_name));
@@ -161,7 +161,7 @@ int ObConnTableProcessor::get_vt_conn_object(
 {
   int ret = OB_SUCCESS;
 
-  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF> key_string;
+  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
   if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name, cluster_name, vip_name, key_string))) {
     LOG_WARN("build tenant cluser vip name failed", K(ret), K(tenant_name), K(cluster_name), K(vip_name));
   } else {
@@ -193,7 +193,7 @@ int ObConnTableProcessor::alloc_and_init_vt_conn(
   } else if (OB_ISNULL(tmp_vt_conn = op_alloc(ObVipTenantConn))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to alloc memory for ObVipTenantConn", K(ret));
-  } else if (OB_FAIL(tmp_vt_conn->set(cluster_name, tenant_name, vip_name, max_connections))) {    
+  } else if (OB_FAIL(tmp_vt_conn->set(cluster_name, tenant_name, vip_name, max_connections))) {
     LOG_WARN("fail to set vip tenant connect info", K(ret));
   } else {
     vt_conn = tmp_vt_conn;
@@ -211,11 +211,11 @@ int ObConnTableProcessor::alloc_and_init_vt_conn(
 // local vip json format:
 //[
 //  {
-//    "vip" : "127.0.0.1", 
+//    "vip" : "127.0.0.1",
 //    "value" : "1000"
 //  },
 //  {
-//    "vip" : "0.0.0.1", 
+//    "vip" : "0.0.0.1",
 //    "value" : "2000"
 //  }
 //]
@@ -328,7 +328,7 @@ int ObConnTableProcessor::conn_handle_replace_config(
   return ret;
 }
 
-int ObConnTableProcessor::conn_handle_delete_config(ObString& cluster_name, ObString& tenant_name) 
+int ObConnTableProcessor::conn_handle_delete_config(ObString& cluster_name, ObString& tenant_name)
 {
   int ret = OB_SUCCESS;
 

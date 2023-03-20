@@ -25,7 +25,8 @@ namespace obutils
 class ObShowVipHandler : public ObInternalCmdHandler
 {
 public:
-	ObShowVipHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
+  ObShowVipHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
+                   const ObInternalCmdInfo &info);
   virtual ~ObShowVipHandler() {}
   int main_handler(int event, void *data);
 
@@ -33,6 +34,7 @@ private:
   int dump_header();
   int dump_body();
   int dump_item(const ObVipTenant &vip_tenant);
+  static int sqlite3_callback(void *data, int argc, char **argv, char **column_name);
 
   DISALLOW_COPY_AND_ASSIGN(ObShowVipHandler);
 };

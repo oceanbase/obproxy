@@ -286,7 +286,7 @@ inline int ObServerStateInfo::add_addr(const char *ip, const int64_t port)
 inline ObServerStateSimpleInfo &ObServerStateSimpleInfo::operator=(const ObServerStateSimpleInfo &other)
 {
   if (this != &other) {
-    addr_.set_ipv4_addr(other.addr_.get_ipv4(), other.addr_.get_port());
+    addr_ = other.addr_;
     is_merging_ = other.is_merging_;
     is_force_congested_ = other.is_force_congested_;
     zone_type_ = other.zone_type_;
@@ -329,8 +329,8 @@ inline int ObServerStateSimpleInfo::set_addr(const common::ObAddr &addr)
   if (OB_UNLIKELY(!addr.is_valid())) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_LOG(WARN, "invalid argument", K(addr), K(ret));
-  } else if (OB_UNLIKELY(!addr_.set_ipv4_addr(addr.get_ipv4(), addr.get_port()))) {
-    ret = common::OB_INVALID_ARGUMENT;
+  } else {
+    addr_ = addr;
   }
   return ret;
 }
@@ -338,7 +338,7 @@ inline int ObServerStateSimpleInfo::set_addr(const common::ObAddr &addr)
 inline int ObServerStateSimpleInfo::set_addr(const char *ip, const int64_t port)
 {
   int ret = common::OB_SUCCESS;
-  if (OB_UNLIKELY(!addr_.set_ipv4_addr(ip, static_cast<int32_t>(port)))) {
+  if (OB_UNLIKELY(!addr_.set_ip_addr(ip, static_cast<int32_t>(port)))) {
     ret = common::OB_INVALID_ARGUMENT;
   }
   return ret;

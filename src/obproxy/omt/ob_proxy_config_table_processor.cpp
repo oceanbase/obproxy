@@ -38,7 +38,17 @@
 #include "cmd/ob_internal_cmd_processor.h"
 
 static const char *config_name_array[] = {"proxy_route_policy", "proxy_idc_name", "enable_cloud_full_username",
-                                          "enable_client_ssl", "enable_server_ssl"};
+                                          "enable_client_ssl", "enable_server_ssl",
+                                          "obproxy_read_consistency", "obproxy_read_only",
+                                          "proxy_tenant_name", "rootservice_cluster_name",
+                                          "enable_read_write_split", "enable_transaction_split",
+                                          "target_db_server", "observer_sys_password",
+                                          "observer_sys_password1"};
+
+static const char *EXECUTE_SQL = 
+    "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
+    "'%.*s', %ld, %ld, '%.*s', '%.*s', '%s', '%s', '%.*s')";
+
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::obutils;
 namespace oceanbase
@@ -143,10 +153,17 @@ int ObProxyConfigTableProcessor::commit(void *arg, bool is_success)
     LOG_WARN("proxy config commit failed", K(is_success));
   }
 
+  get_global_proxy_config_table_processor().clear_execute_sql();
   get_global_proxy_config_table_processor().clean_hashmap(
     get_global_proxy_config_table_processor().get_backup_hashmap());
 
   return OB_SUCCESS;
+}
+
+int ObProxyConfigTableProcessor::before_commit(void *arg)
+{
+  sqlite3 *db = (sqlite3*)arg;
+  return get_global_proxy_config_table_processor().commit_execute_sql(db);
 }
 
 void ObProxyConfigTableProcessor::inc_index()
@@ -167,6 +184,7 @@ int ObProxyConfigTableProcessor::init()
   ObConfigHandler handler;
   handler.execute_func_ = &ObProxyConfigTableProcessor::execute;
   handler.commit_func_ = &ObProxyConfigTableProcessor::commit;
+  handler.before_commit_func_ = &ObProxyConfigTableProcessor::before_commit;
   if (OB_FAIL(get_global_config_processor().register_callback("proxy_config", handler))) {
     LOG_WARN("register proxy config table callback failed", K(ret));
   }
@@ -237,15 +255,15 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
     ObString name;
     SqlFieldResult *sql_fields = static_cast<SqlFieldResult*>(arg);
     for (int i = 0; OB_SUCC(ret) && i < sql_fields->field_num_; i++) {
-      SqlField &sql_field = sql_fields->fields_.at(i);
-      if (0 == sql_field.column_name_.string_.case_compare("vip")) {
+      SqlField &sql_field = *(sql_fields->fields_.at(i));
+      if (0 == sql_field.column_name_.config_string_.case_compare("vip")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           vip = sql_field.column_value_.config_string_;
         }
-      } else if (0 == sql_field.column_name_.string_.case_compare("vport")) {
+      } else if (0 == sql_field.column_name_.config_string_.case_compare("vport")) {
         if (TOKEN_STR_VAL == sql_field.value_type_) {
           vport = atoi(sql_field.column_value_.config_string_.ptr());
         } else if (TOKEN_INT_VAL == sql_field.value_type_) {
@@ -254,7 +272,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("invalid value type", K(sql_field.value_type_), K(ret));
         }
-      } else if (0 == sql_field.column_name_.string_.case_compare("vid")) {
+      } else if (0 == sql_field.column_name_.config_string_.case_compare("vid")) {
         if (TOKEN_STR_VAL == sql_field.value_type_) {
           vid = atoi(sql_field.column_value_.config_string_.ptr());
         } else if (TOKEN_INT_VAL == sql_field.value_type_) {
@@ -263,28 +281,28 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("invalid value type", K(sql_field.value_type_), K(ret));
         }
-      } else if (0 == sql_field.column_name_.string_.case_compare("config_level")) {
+      } else if (0 == sql_field.column_name_.config_string_.case_compare("config_level")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           item->config_level_.assign(sql_field.column_value_.config_string_.ptr());
         }
-      } else if (0 == sql_field.column_name_.string_.case_compare("tenant_name")) {
+      } else if (0 == sql_field.column_name_.config_string_.case_compare("tenant_name")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           item->tenant_name_.assign(sql_field.column_value_.config_string_.ptr());
         }
-      } else if (0 == sql_field.column_name_.string_.case_compare("cluster_name")) {
+      } else if (0 == sql_field.column_name_.config_string_.case_compare("cluster_name")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           item->cluster_name_.assign(sql_field.column_value_.config_string_.ptr());
         }
-      } else if (0 == sql_field.column_name_.string_.case_compare("name")) {
+      } else if (0 == sql_field.column_name_.config_string_.case_compare("name")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
@@ -292,7 +310,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
           ObString &name = sql_field.column_value_.config_string_;
           item->config_item_.set_name(name.ptr());
         }
-      } else if (0 == sql_field.column_name_.string_.case_compare("value")) {
+      } else if (0 == sql_field.column_name_.config_string_.case_compare("value")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
@@ -301,12 +319,12 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected column name", K(sql_field.column_name_.string_));
+        LOG_WARN("unexpected column name", K(sql_field.column_name_.config_string_));
       }
     }
 
     if (OB_SUCC(ret)) {
-      item->vip_addr_.set(ObAddr::convert_ipv4_addr(vip.ptr()), static_cast<int32_t>(vport), vid);
+      item->vip_addr_.set(vip.ptr(), static_cast<int32_t>(vport), vid);
       if (0 != strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())
           && !is_config_in_service(item->config_item_.name())) {
         ret = OB_NOT_SUPPORTED;
@@ -321,7 +339,45 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
           tmp_item = NULL;
         }
 
-        if (need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr()) &&
+        // need_sync_to_file_ indicates that it is not a command set by alter proxyconfig,
+        // but a configuration item set by proxy_config
+        if (need_sync_to_file_) {
+          if ((0 == strcasecmp("obproxy_sys_password", item->config_item_.name())
+              || 0 == strcasecmp("observer_sys_password", item->config_item_.name())
+              || 0 == strcasecmp("observer_sys_password1", item->config_item_.name()))
+              && (NULL != item->config_item_.str() && '\0' != *item->config_item_.str())) {
+            char value_str[common::OB_MAX_CONFIG_VALUE_LEN + 1];
+            char passwd_staged1_buf[ENC_STRING_BUF_LEN];
+            ObString tmp_value_string;
+            ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
+            if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(item->config_item_.str(), passwd_string))) {
+              LOG_WARN("encrypt_passwd_to_stage1 failed", K(ret));
+            } else {
+              MEMCPY(value_str, passwd_staged1_buf + 1, 40);
+              value_str[40] = '\0';
+              tmp_value_string.assign(value_str, 40);
+              item->config_item_.set_value(tmp_value_string);
+              char sql[1024];
+              int64_t len = static_cast<int64_t>(snprintf(sql, 1024, EXECUTE_SQL, vip.length(), vip.ptr(), vid, vport,
+                                                item->cluster_name_.size(), item->cluster_name_.ptr(), 
+                                                item->tenant_name_.size(), item->tenant_name_.ptr(),
+                                                item->config_item_.name(), item->config_item_.str(),
+                                                item->config_level_.size(), item->config_level_.ptr()));
+              if (OB_UNLIKELY(len <= 0 || len >= 1024)) {
+                ret = OB_ERR_UNEXPECTED;
+                LOG_WARN("get execute sql failed", K(len), K(ret));
+              } else {
+                ObProxyVariantString buf_string;
+                buf_string.set_value(sql);
+                if (OB_FAIL(execute_sql_array_.push_back(buf_string))) {
+                  LOG_WARN("execute_sql_array push back failed", K(ret));
+                }
+              }
+            }
+          }
+        }
+
+        if (OB_SUCC(ret) && need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr()) &&
             OB_FAIL(alter_proxy_config(item->config_item_.name(), item->config_item_.str()))) {
           LOG_WARN("alter proxyconfig failed", K(ret));
         } else if (OB_FAIL(backup_map.unique_set(item))) {
@@ -359,22 +415,22 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg)
       bool need_delete = true;
       ++it;
       for (int i = 0; OB_SUCC(ret) && need_delete && i < fields->field_num_; i++) {
-        SqlField &sql_field = fields->fields_.at(i);
-        if (0 == sql_field.column_name_.string_.case_compare("vip")) {
+        SqlField* sql_field = fields->fields_.at(i);
+        if (0 == sql_field->column_name_.config_string_.case_compare("vip")) {
           char ip_buf[256];
           item.vip_addr_.addr_.ip_to_string(ip_buf, 256);
-          if (TOKEN_STR_VAL != sql_field.value_type_) {
+          if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
-          } else if (0 != strcasecmp(ip_buf, sql_field.column_value_.config_string_.ptr())) {
+            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+          } else if (0 != strcasecmp(ip_buf, sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
-        } else if (0 == sql_field.column_name_.string_.case_compare("vport")) {
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("vport")) {
           int64_t vport = 0;
-          if (TOKEN_STR_VAL == sql_field.value_type_) {
-            vport = atoi(sql_field.column_value_.config_string_.ptr());
-          } else if (TOKEN_INT_VAL == sql_field.value_type_) {
-            vport = sql_field.column_int_value_;
+          if (TOKEN_STR_VAL == sql_field->value_type_) {
+            vport = atoi(sql_field->column_value_.config_string_.ptr());
+          } else if (TOKEN_INT_VAL == sql_field->value_type_) {
+            vport = sql_field->column_int_value_;
           } else {
             ret = OB_ERR_UNEXPECTED;
             LOG_WARN("invalid value type", K(ret));
@@ -384,12 +440,12 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg)
               need_delete = false;
             }
           }
-        } else if (0 == sql_field.column_name_.string_.case_compare("vid")) {
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("vid")) {
           int64_t vid = 0;
-          if (TOKEN_STR_VAL == sql_field.value_type_) {
-            vid = atoi(sql_field.column_value_.config_string_.ptr());
-          } else if (TOKEN_INT_VAL == sql_field.value_type_) {
-            vid = sql_field.column_int_value_;
+          if (TOKEN_STR_VAL == sql_field->value_type_) {
+            vid = atoi(sql_field->column_value_.config_string_.ptr());
+          } else if (TOKEN_INT_VAL == sql_field->value_type_) {
+            vid = sql_field->column_int_value_;
           } else {
             ret = OB_ERR_UNEXPECTED;
             LOG_WARN("invalid value type", K(ret));
@@ -399,44 +455,44 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg)
               need_delete = false;
             }
           }
-        } else if (0 == sql_field.column_name_.string_.case_compare("config_level")) {
-          if (TOKEN_STR_VAL != sql_field.value_type_) {
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("config_level")) {
+          if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
-          } else if (0 != strcasecmp(item.config_level_.ptr(), sql_field.column_value_.config_string_.ptr())) {
+            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+          } else if (0 != strcasecmp(item.config_level_.ptr(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
-        } else if (0 == sql_field.column_name_.string_.case_compare("tenant_name")) {
-          if (TOKEN_STR_VAL != sql_field.value_type_) {
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("tenant_name")) {
+          if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
-          } else if (0 != strcasecmp(item.tenant_name_.ptr(), sql_field.column_value_.config_string_.ptr())) {
+            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+          } else if (0 != strcasecmp(item.tenant_name_.ptr(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
-        } else if (0 == sql_field.column_name_.string_.case_compare("cluster_name")) {
-          if (TOKEN_STR_VAL != sql_field.value_type_) {
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("cluster_name")) {
+          if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
-          } else if (0 != strcasecmp(item.cluster_name_.ptr(), sql_field.column_value_.config_string_.ptr())) {
+            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+          } else if (0 != strcasecmp(item.cluster_name_.ptr(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
-        } else if (0 == sql_field.column_name_.string_.case_compare("name")) {
-          if (TOKEN_STR_VAL != sql_field.value_type_) {
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("name")) {
+          if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
-          } else if (0 != strcasecmp(item.config_item_.name(), sql_field.column_value_.config_string_.ptr())) {
+            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+          } else if (0 != strcasecmp(item.config_item_.name(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
-        } else if (0 == sql_field.column_name_.string_.case_compare("value")) {
-          if (TOKEN_STR_VAL != sql_field.value_type_) {
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
+          if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
-          } else if (0 != strcasecmp(item.config_item_.str(), sql_field.column_value_.config_string_.ptr())) {
+            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+          } else if (0 != strcasecmp(item.config_item_.str(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected column name", K(sql_field.column_name_.string_));
+          LOG_WARN("unexpected column name", K(sql_field->column_name_));
         }
       }
 
@@ -482,7 +538,7 @@ int ObProxyConfigTableProcessor::get_config_item(const obutils::ObVipAddr &addr,
     LOG_WARN("proxy config item is null unexpected", K(ret));
   } else {
     item = *proxy_config_item;
-    LOG_DEBUG("get config item succ", K(addr), K(cluster_name), K(tenant_name), K(item));
+    LOG_TRACE("get config item succ", K(addr), K(cluster_name), K(tenant_name), K(item));
   }
 
   return ret;
@@ -501,22 +557,6 @@ int ObProxyConfigTableProcessor::alter_proxy_config(const common::ObString &key_
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid argument", K(key_string), K(value_string), K(ret));
   } else {
-    char value_str[common::OB_MAX_CONFIG_VALUE_LEN + 1];
-    if ((0 == key_string.case_compare("observer_sys_password")
-      || 0 == key_string.case_compare("obproxy_sys_password")
-      || 0 == key_string.case_compare("observer_sys_password1"))
-      && !value_string.empty()) {
-      char passwd_staged1_buf[ENC_STRING_BUF_LEN];
-      ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
-      if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(value_string, passwd_string))) {
-        LOG_WARN("encrypt_passwd_to_stage1 failed", K(ret));
-      } else {
-        MEMCPY(value_str, passwd_staged1_buf + 1, 40);
-        value_str[40] = '\0';
-        tmp_value_string.assign(value_str, 40);
-        LOG_DEBUG("alter password", K(key_string), K(value_string));
-      }
-    }
     if (OB_ISNULL(reload_config = get_global_internal_cmd_processor().get_reload_config())) {
     ret = OB_ERR_NULL_VALUE;
     LOG_WARN("fail to get reload config", K(ret));
@@ -584,6 +624,36 @@ bool ObProxyConfigTableProcessor::is_config_in_service(const ObString &config_na
   }
 
   return is_in_service;
+}
+
+int ObProxyConfigTableProcessor::commit_execute_sql(sqlite3 *db)
+{
+  int ret = OB_SUCCESS;
+  if (execute_sql_array_.count() > 0) {
+    if (OB_UNLIKELY(NULL == db)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("sqlite db is null unexpected", K(ret));
+    }
+    for (int64_t i = 0; OB_SUCC(ret) && i < execute_sql_array_.count(); i++) {
+      char *err_msg = NULL;
+      ObString sql = execute_sql_array_.at(i).config_string_;
+      if (SQLITE_OK != sqlite3_exec(db, sql.ptr(), NULL, 0, &err_msg)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("exec failed", K(ret), "err_msg", err_msg);
+      }
+
+      if (NULL != err_msg) {
+        sqlite3_free(err_msg);
+      }
+    }
+  }
+
+  return ret;
+}
+
+void ObProxyConfigTableProcessor::clear_execute_sql()
+{
+  execute_sql_array_.reset();
 }
 
 } // end of omt

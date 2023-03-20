@@ -382,6 +382,7 @@ int ObCongestionManager::add_new_server(const net::ObIpEndpoint &ip,
             break;
           case ObCongestionEntry::DETECT_ALIVE:
             entry->set_detect_congested_free();
+            entry->set_alive_congested_free();
             break;
           case ObCongestionEntry::DETECT_DEAD:
             entry->set_detect_congested();
@@ -607,6 +608,7 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
               break;
             case ObCongestionEntry::DETECT_ALIVE:
               entry->set_detect_congested_free();
+              entry->set_alive_congested_free();
               break;
             case ObCongestionEntry::DETECT_DEAD:
               entry->set_detect_congested();
@@ -985,6 +987,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
             break;
           case ObCongestionEntry::DETECT_ALIVE:
             entry->set_detect_congested_free();
+            entry->set_alive_congested_free();
             break;
           case ObCongestionEntry::DETECT_DEAD:
             entry->set_detect_congested();
@@ -1014,7 +1017,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
     }
   } else {
     LOG_DEBUG("failed to lock_bucket, add to todo_list", "server_state",
-              ObCongestionEntry::get_server_state_name(server_state), K(*entry));
+              ObCongestionEntry::get_server_state_name(server_state));
     ObCongestRequestParam *param = op_alloc(ObCongestRequestParam);
     if (OB_ISNULL(param)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;

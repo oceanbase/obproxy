@@ -53,7 +53,7 @@ const int64_t OB_MAX_CLUSTER_ID                                = 4294901759;
 const int64_t OB_INVALID_CLUSTER_ID                            = -1;
 const int64_t OB_INVALID_ORG_CLUSTER_ID                        = 0;
 const int64_t OB_MAX_ITERATOR                                  = 16;
-const int64_t MAX_IP_ADDR_LENGTH                               = 32;
+const int64_t MAX_IP_ADDR_LENGTH                               = 64;
 const int64_t MAX_IP_PORT_LENGTH                               = MAX_IP_ADDR_LENGTH + 5;
 const int64_t MAX_IP_PORT_SQL_LENGTH                           = MAX_IP_ADDR_LENGTH + 10;
 const int64_t OB_MAX_SQL_ID_LENGTH                             = 32;
@@ -178,7 +178,6 @@ const int64_t OB_MAX_BATCH_NUMBER                              = 100;
 const int64_t OB_MAX_TABLET_LIST_NUMBER                        = 64;
 const int64_t OB_MAX_DISK_NUMBER                               = 16; // must no more than ObTimer::MAX_TASK_NUM
 const int64_t OB_MAX_TIME_STR_LENGTH                           = 64;
-const int64_t OB_IP_STR_BUFF                                   = 30; //TODO:  uniform IP/PORR length
 const int64_t OB_IP_PORT_STR_BUFF                              = 64;
 const int64_t OB_RANGE_STR_BUFSIZ                              = 512;
 const int64_t OB_MAX_FETCH_CMD_LENGTH                          = 2048;
@@ -573,6 +572,9 @@ static const char *const OB_MYSQL_CLIENT_JDBC_CLIENT_MODE = "__ob_jdbc_client";
 // for java client
 static const char *const OB_MYSQL_JAVA_CLIENT_MODE_NAME     = "__ob_java_client";
 
+// conn attr which transparent transit to observer
+static const char *const OB_MYSQL_OB_CLIENT = "__ob_client";
+
 // for obproxy and observer compatibility
 enum ObCapabilityFlagShift
 {
@@ -592,6 +594,7 @@ enum ObCapabilityFlagShift
   OB_CAP_PROXY_SESSION_SYNC_SHIFT,                  // 13
   OB_CAP_PROXY_FULL_LINK_TRACING_SHIFT,             // 14
   OB_CAP_PROXY_NEW_EXTRA_INFO_SHIFT,                // 15
+  OB_CAP_PROXY_SESSION_VAR_SYNC_SHIFT,              // 16
 };
 
 #define OB_TEST_CAPABILITY(cap, tg_cap) (((cap) & (tg_cap)) == (tg_cap))
@@ -610,6 +613,7 @@ enum ObCapabilityFlagShift
 #define OB_CAP_PROXY_SESSION_SYNC OB_CAP_GET_TYPE(common::OB_CAP_PROXY_SESSION_SYNC_SHIFT)
 #define OB_CAP_PROXY_FULL_LINK_TRACING OB_CAP_GET_TYPE(common::OB_CAP_PROXY_FULL_LINK_TRACING_SHIFT)
 #define OB_CAP_PROXY_NEW_EXTRA_INFO OB_CAP_GET_TYPE(common::OB_CAP_PROXY_NEW_EXTRA_INFO_SHIFT)
+#define OB_CAP_PROXY_SESSION_VAR_SYNC OB_CAP_GET_TYPE(common::OB_CAP_PROXY_SESSION_VAR_SYNC_SHIFT)
 
 
 // for obproxy debug

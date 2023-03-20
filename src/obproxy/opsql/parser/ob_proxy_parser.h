@@ -152,6 +152,7 @@ inline int ObProxyParser::obparse(const common::ObString &sql_string,
     common::ObString parse_sql_string = sql_string;
     //set ; ob parse need end with ;
     bool add_semicolon = false;
+    char origin_byte = parse_sql_string.ptr()[sql_string.length() - 2];
     if (parse_sql_string.ptr()[sql_string.length() - 3] != ';') {
       parse_sql_string.ptr()[sql_string.length() - 2] = ';';
       add_semicolon = true;
@@ -169,7 +170,7 @@ inline int ObProxyParser::obparse(const common::ObString &sql_string,
       }
     }
     if (add_semicolon) {
-      parse_sql_string.ptr()[sql_string.length() - 2] = '\0';
+      parse_sql_string.ptr()[sql_string.length() - 2] = origin_byte;
     }
   }
   return ret;

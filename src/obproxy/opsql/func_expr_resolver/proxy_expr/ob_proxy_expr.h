@@ -13,10 +13,11 @@
 #ifndef OB_FUNC_EXPR_PROXY_EXPR_H
 #define OB_FUNC_EXPR_PROXY_EXPR_H
 
-#include "opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_type.h"
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "lib/allocator/ob_mod_define.h"
 #include "lib/ob_define.h"
+#include "opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_type.h"
+#include "proxy/mysqllib/ob_proxy_session_info.h"
 
 namespace oceanbase
 {
@@ -30,15 +31,26 @@ class ObProxyExprCtx
 {
 public:
   explicit ObProxyExprCtx(const int64_t physical_size, dbconfig::ObTestLoadType type,
-                          bool is_elastic_index, common::ObIAllocator* allocator)
+                          bool is_elastic_index, common::ObIAllocator *allocator)
       : sharding_physical_size_(physical_size), test_load_type_(type), is_elastic_index_(is_elastic_index),
-        allocator_(allocator), scale_(-1) {}
+        allocator_(allocator), scale_(-1), is_oracle_mode(false) {}
+  explicit ObProxyExprCtx(const int64_t physical_size,
+                          dbconfig::ObTestLoadType type, bool is_elastic_index,
+                          common::ObIAllocator *allocator,
+                          proxy::ObClientSessionInfo *client_session_info)
+      : sharding_physical_size_(physical_size), test_load_type_(type),
+        is_elastic_index_(is_elastic_index), allocator_(allocator), scale_(-1),
+        client_session_info_(client_session_info), is_oracle_mode(false) {}
   ~ObProxyExprCtx() {}
 
   void set_sharding_physical_size(const int64_t physical_size) { sharding_physical_size_ = physical_size; }
   void set_test_load_type(const dbconfig::ObTestLoadType type) { test_load_type_ = type; }
   void set_is_elastic_index(const bool is_elastic_index) { is_elastic_index_ = is_elastic_index; }
   void set_scale(const int64_t scale) { scale_ = scale; };
+  void set_client_session_info(proxy::ObClientSessionInfo *client_session_info)
+  {
+    client_session_info_ = client_session_info;
+  }
 
 public:
   int64_t sharding_physical_size_;
@@ -46,6 +58,8 @@ public:
   bool is_elastic_index_;
   common::ObIAllocator *allocator_;
   int64_t scale_;
+  proxy::ObClientSessionInfo *client_session_info_;
+  bool is_oracle_mode;
 };
 
 struct ObProxyExprCalcItem {
@@ -255,6 +269,8 @@ public:
   virtual ~ObProxyFuncExpr();
 
   int add_param_expr(ObProxyExpr* expr) { return param_array_.push_back(expr); }
+  int64_t get_param_conut() { return param_array_.count(); }
+
   int calc_param_expr(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
                       common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> &param_result,
                       int &cnt);
@@ -263,7 +279,7 @@ public:
   void set_param_array(common::ObSEArray<ObProxyExpr*, 4>& param_array) { param_array_ = param_array; }
 
 public:
-  static int get_int_obj(const common::ObObj &src, common::ObObj &dst);
+  static int get_int_obj(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator);
   static int get_varchar_obj(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator);
   int check_varchar_empty(const common::ObObj& result);
 
@@ -413,6 +429,56 @@ public:
 
   virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
                    common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+// include to_date and to_timestamp
+class ObProxyExprToTimeHandler : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprToTimeHandler() {}
+  explicit ObProxyExprToTimeHandler(ObObjType &target_type) : target_type_(target_type) {}
+  ~ObProxyExprToTimeHandler() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+  void set_target_type(ObObjType target_type) { target_type_ = target_type; }
+private:
+  ObObjType target_type_;
+};
+
+class ObProxyExprNvl : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprNvl() {}
+  ~ObProxyExprNvl() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprToChar : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprToChar() {}
+  ~ObProxyExprToChar() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprSysdate : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprSysdate() {}
+  ~ObProxyExprSysdate() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprMod : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprMod() {}
+  ~ObProxyExprMod() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
 };
 
 } // end opsql

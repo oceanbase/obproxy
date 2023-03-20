@@ -88,7 +88,7 @@ private:
   obutils::ObAsyncCommonTask *prometheus_sync_cont_;
 
   char version_[100];
-  char proxy_ip_[common::OB_IP_STR_BUFF]; // ip primary key
+  char proxy_ip_[common::MAX_IP_ADDR_LENGTH]; // ip primary key
   common::ObVector<ObPrometheusLabel> default_constant_labels_;
 
   ObPrometheusFamilyHashTable family_hash_;

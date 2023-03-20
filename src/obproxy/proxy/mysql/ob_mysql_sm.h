@@ -33,6 +33,7 @@
 
 #include "utils/ob_proxy_lib.h"
 #include "utils/ob_proxy_monitor_utils.h"
+#include "utils/ob_target_db_server.h"
 #include "iocore/eventsystem/ob_event_system.h"
 #include "proxy/mysqllib/ob_mysql_request_analyzer.h"
 #include "proxy/mysqllib/ob_mysql_compress_analyzer.h"
@@ -157,14 +158,15 @@ public:
   int process_shard_ddl_result(ObShardDDLStatus *ddl_status);
   int setup_handle_execute_plan();
   int state_handle_execute_plan(int event, void *data);
-  int process_executor_result(engine::ObProxyResultResp *result_resp);
-  
+  int process_executor_result(event::ObIOBufferReader *resp_reader);
+
   int handle_shard_request(bool &need_response_for_stmt, bool &need_wait_callback);
 
   int check_user_identity(const ObString &user_name, const ObString &tenant_name, const ObString &cluster_name);
   int save_user_login_info(ObClientSessionInfo &session_info, ObHSRResult &hsr_result);
   void analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool is_mysql_req_in_ob20 = false);
   int analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeStatus &status);
+  int analyze_change_user_request();
   int analyze_ps_prepare_request();
   int do_analyze_ps_prepare_request(const ObString &ps_sql);
   int analyze_ps_execute_request(bool is_large_request = false);
@@ -306,6 +308,7 @@ public:
   int state_watch_for_client_abort(int event, void *data);
   int state_server_addr_lookup(int event, void *data);
   int state_partition_location_lookup(int event, void *data);
+  int state_binlog_location_lookup(int event, void *data);
   int state_add_to_list(int event, void *data);
   int state_remove_from_list(int event, void *data);
 
@@ -336,6 +339,7 @@ public:
   int tunnel_handler_plugin_client(int event, ObMysqlTunnelConsumer &c);
 
   void do_partition_location_lookup();
+  void do_binlog_location_lookup();
   void do_congestion_control_lookup();
   void do_server_addr_lookup();
   int do_observer_open();
@@ -348,6 +352,7 @@ public:
   int do_internal_request_for_sharding_show_db(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_show_table(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_show_table_status(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_show_elastic_id(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_show_topology(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_select_db(event::ObMIOBuffer *buf);
   int connect_observer();
@@ -438,7 +443,8 @@ public:
   int handle_req_to_generate_root_span_by_proxy();
   int handle_for_end_proxy_trace(trace::UUID &trace_id);
   int handle_resp_for_end_flt_trace(bool is_trans_completed);
-
+  void set_enable_ob_protocol_v2(const bool enable_ob_protocol_v2) { enable_ob_protocol_v2_ = enable_ob_protocol_v2; }
+  bool is_enable_ob_protocol_v2() const { return enable_ob_protocol_v2_; }
 private:
   static const int64_t HISTORY_SIZE = 32;
 
@@ -486,7 +492,11 @@ public:
   bool enable_cloud_full_username_;
   bool enable_client_ssl_;
   bool enable_server_ssl_;
+  bool enable_read_write_split_;
+  bool enable_transaction_split_;
+  bool enable_ob_protocol_v2_; // limit the scope of changing enable_protocol_v2_ to client session level 
   uint64_t config_version_;
+  ObTargetDbServer *target_db_server_;
 
 private:
   // private functions
@@ -589,16 +599,16 @@ inline void ObMysqlSM::set_internal_cmd_timeout(const ObHRTime timeout)
 inline int64_t ObMysqlSM::get_query_timeout()
 {
   int64_t timeout = HRTIME_NSECONDS(trans_state_.mysql_config_params_->observer_query_timeout_delta_);
-  if (OB_LIKELY(NULL != client_session_) && OB_LIKELY(NULL != server_session_)) {
-    dbconfig::ObShardProp *shard_prop = client_session_->get_session_info().get_shard_prop();
-    if (OB_NOT_NULL(shard_prop)) {
-      timeout = HRTIME_MSECONDS(shard_prop->get_socket_timeout());
+  if (OB_LIKELY(NULL != client_session_)) {
+    int64_t hint_query_timeout = trans_state_.trans_info_.client_request_.get_parse_result().get_hint_query_timeout();
+    // if the request contains query_timeout in hint, we use it
+    if (hint_query_timeout > 0) {
+      // the query timeout in hint is in microseconds(us), so convert it into nanoseconds
+      timeout += HRTIME_USECONDS(hint_query_timeout);
     } else {
-      int64_t hint_query_timeout = trans_state_.trans_info_.client_request_.get_parse_result().get_hint_query_timeout();
-      // if the request contains query_timeout in hint, we use it
-      if (hint_query_timeout > 0) {
-        // the query timeout in hint is in microseconds(us), so convert it into nanoseconds
-        timeout += HRTIME_USECONDS(hint_query_timeout);
+      dbconfig::ObShardProp *shard_prop = client_session_->get_session_info().get_shard_prop();
+      if (OB_NOT_NULL(shard_prop)) {
+        timeout = HRTIME_MSECONDS(shard_prop->get_socket_timeout());
       } else {
         // we do parse in trans now, so we can use query_timeout in anycase
         timeout += client_session_->get_session_info().get_query_timeout();

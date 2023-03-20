@@ -13,6 +13,9 @@
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysqllib/ob_mysql_response_builder.h"
 #include "rpc/obmysql/packet/ompk_ok.h"
+#include "rpc/obmysql/packet/ompk_prepare_execute.h"
+#include "rpc/obmysql/packet/ompk_prepare_execute_req.h"
+#include "rpc/obmysql/packet/ompk_eof.h"
 #include "packet/ob_proxy_cached_packets.h"
 #include "packet/ob_mysql_packet_writer.h"
 #include "packet/ob_mysql_packet_util.h"
@@ -38,6 +41,7 @@ const ObString ObMysqlResponseBuilder::OBPROXY_PROXY_VERSION_NAME = "proxy_versi
 int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
                                           ObProxyMysqlRequest &client_request,
                                           ObMysqlClientSession &client_session,
+                                          const ObProxyProtocol protocol,
                                           const bool is_in_trans,
                                           const bool is_state_changed)
 {
@@ -60,8 +64,8 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
     if (is_state_changed) {
       ssf.status_flags_.OB_SERVER_SESSION_STATE_CHANGED = 1;
     }
-    if (0 != autocommit) {
-      ssf.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = 1;
+    if (0 == autocommit) {
+      ssf.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = 0;
     }
     //ok_packet.set_server_status(ssf.status_flags_);
     ok_packet->set_status_flags(ssf.flags_);
@@ -69,7 +73,7 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
     ObString pkt_str;
     if (OB_FAIL(ok_packet->get_packet_str(pkt_str))) {
       LOG_WARN("fail to get ok packet str", K(ret));
-    } else if (OB_FAIL(ObProxyPacketWriter::write_raw_packet(mio_buf, client_session, pkt_str))) {
+    } else if (OB_FAIL(ObProxyPacketWriter::write_raw_packet(mio_buf, client_session, protocol, pkt_str))) {
       LOG_WARN("fail to write packet", K(ret));
     }
   }
@@ -77,9 +81,187 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
   return ret;
 }
 
+/**
+ * @brief build OB_MYSQL_COM_STMT_PREPARE_EXECUTE response of XA_START request
+ *  OB_MYSQL_COM_STMT_PREPARE_EXECUTE
+ *  struct of OB_MYSQL_COM_STMT_PREPARE_EXECUTE RESPONSE:
+ *  Prepare
+ *  param_num > 0 ? ColDef * param_num
+ *  Eof
+ *  col_num > 0 ? ColDef * col_num
+ *  Eof
+ *  Row
+ *  Eof
+ *  Ok
+ * 
+ * @param mio_buf 
+ * @param client_request 
+ * @param info 
+ * @return int 
+ */
+int ObMysqlResponseBuilder::build_prepare_execute_xa_start_resp(ObMIOBuffer &mio_buf,
+                                                                ObProxyMysqlRequest &client_request,
+                                                                ObMysqlClientSession &client_session,
+                                                                const ObProxyProtocol protocol)
+{
+  int ret = OB_SUCCESS;
+  ObClientSessionInfo &info = client_session.get_session_info();
+  OMPKPrepareExecuteReq prepare_req_pkt;
+  ObIOBufferReader *tmp_mio_reader = NULL;
+  ObMIOBuffer *tmp_mio_buf = &mio_buf;
+  
+  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+    if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer())) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to new miobuffer", K(ret));
+    } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to alloc reader", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    // decode the prepare execute request
+    prepare_req_pkt.set_content(client_request.get_req_pkt().ptr() + MYSQL_NET_HEADER_LENGTH,
+                                static_cast<uint32_t>(client_request.get_packet_len()));
+    if (OB_FAIL(prepare_req_pkt.decode())) {
+      LOG_WARN("fail to decode the xa start prepare execute", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    // get seq
+    uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+    uint32_t sid = info.get_client_ps_id();
+    int64_t autocommit = info.get_cached_variables().get_autocommit();
+    // write prepare execute resp 
+    OMPKPrepareExecute prepare_pkt;
+    prepare_pkt.set_seq(seq++);
+    prepare_pkt.set_status(0);
+    prepare_pkt.set_statement_id(sid);
+    prepare_pkt.set_column_num(1);
+    prepare_pkt.set_param_num(static_cast<uint16_t>(prepare_req_pkt.get_param_num()));
+    prepare_pkt.set_warning_count(0);
+    prepare_pkt.set_extend_flag(0);
+    prepare_pkt.set_has_result_set(1);
+    if (OB_FAIL(ObMysqlPacketWriter::write_packet(*tmp_mio_buf, prepare_pkt))) {
+      seq--;
+      LOG_WARN("fail to write prepare pkt of resp of xa start hold", K(ret));
+    }
+    // write params Coldef 
+    for (int32_t i = 0; OB_SUCC(ret) && i < prepare_req_pkt.get_param_num(); i++) {
+      ObMySQLField param_field;
+      param_field.cname_ = "?";
+      param_field.type_ = prepare_req_pkt.get_param_types().at(i);
+      param_field.type_info_ = prepare_req_pkt.get_type_infos().at(i);
+      param_field.flags_ = 0;
+      param_field.charsetnr_ = static_cast<uint16_t>(info.get_collation_connection());
+      param_field.length_ = 0;
+      if (OB_FAIL(ObMysqlPacketUtil::encode_field_packet(*tmp_mio_buf, seq, param_field))) {
+        LOG_WARN("fail to write field pkt of resp of xa start hold", K(ret), K(param_field));
+      }
+    }
+    // write Eof
+    if (prepare_req_pkt.get_param_num() > 0 && OB_SUCC(ret)) {
+      uint16_t status_flag_0 = 0;
+      status_flag_0 |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+      if (0 != autocommit) {
+        status_flag_0 |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+      }
+      if (OB_FAIL(ObMysqlPacketUtil::encode_eof_packet(*tmp_mio_buf, seq, status_flag_0))){
+        LOG_WARN("fail to write eof pkt of resp of xa start hold", K(ret));
+      }
+    }    
+    // ColDef: row field
+    if (OB_SUCC(ret)) {
+    ObMySQLField row_col_field;
+    row_col_field.cname_ = client_request.get_parse_sql();
+    row_col_field.org_cname_ = client_request.get_parse_sql();
+    row_col_field.type_ = OB_MYSQL_TYPE_LONG;
+    row_col_field.flags_ = OB_MYSQL_BINARY_FLAG;
+    row_col_field.charsetnr_ = CS_TYPE_BINARY;
+    row_col_field.length_ = 0;
+    if (OB_FAIL(ObMysqlPacketUtil::encode_field_packet(*tmp_mio_buf, seq, row_col_field))) {
+        LOG_WARN("fail to write field pkt of resp of xa start hold", K(ret));
+      }
+    }
+    // Eof
+    if (OB_SUCC(ret)) {
+      uint16_t status_flag_1 = 0;
+      if (0 != autocommit) {
+        status_flag_1 |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+      }
+      status_flag_1 |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+      status_flag_1 |= (1 << OB_SERVER_STATUS_CURSOR_EXISTS_POS);
+      if (OB_FAIL(ObMysqlPacketUtil::encode_eof_packet(*tmp_mio_buf, seq, status_flag_1))) {
+        LOG_WARN("fail to write eof pkt of resp of xa start hold", K(ret));
+      }
+    }
+    // Row
+    if (OB_SUCC(ret)) {
+      ObObj field_value;
+      field_value.set_int32(0);
+      ObNewRow row;
+      row.cells_ = &field_value;
+      row.count_ = 1;
+      if (ObMysqlPacketUtil::encode_row_packet(*tmp_mio_buf, BINARY, seq, row)) {
+        LOG_WARN("fail to write row pkt", K(ret));
+      }
+    }
+    // write Eof
+    if (OB_SUCC(ret)) {
+      uint16_t status_flag_2 = 0;
+      if (0 != autocommit) {
+        status_flag_2 |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+      }
+      status_flag_2 |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+      status_flag_2 |= (1 << OB_SERVER_STATUS_LAST_ROW_SENT_POS);
+      if (OB_FAIL(ObMysqlPacketUtil::encode_eof_packet(*tmp_mio_buf, seq, status_flag_2))) {
+        LOG_WARN("fail to write eof pkt of resp of xa start hold", K(ret));
+      }
+    }
+    // Ok
+    if (OB_SUCC(ret)) {
+      uint16_t status_flag_3 = 0;
+      if (0 != autocommit) {
+        status_flag_3 |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+      }
+      status_flag_3 |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+      status_flag_3 |= (1 << OB_SERVER_STATUS_NO_INDEX_USED_POS);
+      status_flag_3 |= (1 << OB_SERVER_STATUS_CURSOR_EXISTS_POS);
+      status_flag_3 |= (1 << OB_SERVER_STATUS_LAST_ROW_SENT_POS);
+      status_flag_3 |= (1 << OB_SERVER_SESSION_STATE_CHANGED_POS);
+      if (OB_FAIL(ObMysqlPacketUtil::encode_ok_packet(*tmp_mio_buf, seq, 0, info.get_orig_capability_flags(), status_flag_3))) {
+        LOG_WARN("fail to write last ok pkt of resp of xa start hold", K(ret));
+      } else {
+        LOG_DEBUG("succ to write prepare execute packets of resp of xa start hold");
+      }
+    } else {
+      LOG_WARN("fail to write prepare execute packets of resp of xa start hold", K(ret));
+    }
+
+    if (OB_SUCC(ret) && protocol == ObProxyProtocol::PROTOCOL_OB20) {
+      Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
+      uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
+      Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                              compressed_seq, true, false, false,
+                                              client_session.is_client_support_new_extra_info(),
+                                              client_session.is_trans_internal_routing());
+      if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
+                                                            tmp_mio_reader->read_avail(), ob20_head_param))) {
+        LOG_WARN("fail to consume and compress data for executor response packet in ob20", K(ret));
+      } else {
+        LOG_DEBUG("succ to executor response in ob20 packet");
+      }
+    }
+  } 
+  return ret;
+}
+
 int ObMysqlResponseBuilder::build_select_tx_ro_resp(ObMIOBuffer &mio_buf,
                                                     ObProxyMysqlRequest &client_request,
                                                     ObMysqlClientSession &client_session,
+                                                    const ObProxyProtocol protocol,
                                                     const bool is_in_trans)
 {
   int ret = OB_SUCCESS;
@@ -111,7 +293,7 @@ int ObMysqlResponseBuilder::build_select_tx_ro_resp(ObMIOBuffer &mio_buf,
   }
 
   // encode to mio_buf
-  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, seq,
+  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, protocol, seq,
                                                       field, field_value, status_flag))) {
     LOG_WARN("fail to write kv resultset", K(ret));
   }
@@ -122,8 +304,9 @@ int ObMysqlResponseBuilder::build_select_tx_ro_resp(ObMIOBuffer &mio_buf,
 int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
                                                          ObProxyMysqlRequest &client_request,
                                                          ObMysqlClientSession &client_session,
+                                                         const ObProxyProtocol protocol,
                                                          const bool is_in_trans,
-                                                         int64_t addr)
+                                                         const struct sockaddr &addr)
 {
   int ret = OB_SUCCESS;
   ObClientSessionInfo &info = client_session.get_session_info();
@@ -135,13 +318,16 @@ int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
   ObMySQLField field;
   field.cname_ = OBPROXY_ROUTE_ADDR_NAME;
   field.org_cname_ = OBPROXY_ROUTE_ADDR_NAME;
-  field.type_ = OB_MYSQL_TYPE_LONGLONG;
+  field.type_ = OB_MYSQL_TYPE_VARCHAR;
   field.charsetnr_ = CS_TYPE_BINARY;
   field.flags_ = OB_MYSQL_BINARY_FLAG;
 
   // get filed value
   ObObj field_value;
-  field_value.set_int(addr);
+  char buf[MAX_IP_ADDR_LENGTH];
+  memset(buf, 0, sizeof(buf));
+  net::ops_ip_ntop(addr, buf, MAX_IP_ADDR_LENGTH);
+  field_value.set_varchar(buf);
 
   // get status flag
   uint16_t status_flag = 0;
@@ -154,7 +340,7 @@ int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
   }
 
   // encode to mio_buf
-  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, seq,
+  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, protocol, seq,
                                                       field, field_value, status_flag))) {
     LOG_WARN("fail to write kv resultset", K(ret));
   }
@@ -165,6 +351,7 @@ int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
 int ObMysqlResponseBuilder::build_select_proxy_version_resp(ObMIOBuffer &mio_buf,
                                                             ObProxyMysqlRequest &client_request,
                                                             ObMysqlClientSession &client_session,
+                                                            const ObProxyProtocol protocol,
                                                             const bool is_in_trans)
 {
   int ret = OB_SUCCESS;
@@ -201,7 +388,8 @@ int ObMysqlResponseBuilder::build_select_proxy_version_resp(ObMIOBuffer &mio_buf
   }
 
   // encode to mio_buf
-  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, seq, field, field_value, status_flag))) {
+  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, protocol,
+                                                      seq, field, field_value, status_flag))) {
     LOG_WARN("fail to write kv resultset", K(ret));
   }
 

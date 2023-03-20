@@ -244,9 +244,10 @@ void ob_proxy_parser_gbk_yyfree (void * ,yyscan_t yyscanner );
 #define prepare 22
 #define insert_all_expr 23
 #define set_expr 24
-#define show_topology 25
-#define show_tables 26
-#define proxy_icmd_state 27
+#define show_elastic_id 25
+#define show_topology 26
+#define show_tables 27
+#define proxy_icmd_state 28
 
 #endif
 
@@ -364,9 +365,9 @@ extern int ob_proxy_parser_gbk_yylex \
 #undef YY_DECL
 #endif
 
-#line 1191 "ob_proxy_parser_gbk.l"
+#line 1213 "ob_proxy_parser_gbk.l"
 
 
-#line 371 "ob_proxy_parser_gbk_lex.h"
+#line 372 "ob_proxy_parser_gbk_lex.h"
 #undef ob_proxy_parser_gbk_yyIN_HEADER
 #endif /* ob_proxy_parser_gbk_yyHEADER_H */

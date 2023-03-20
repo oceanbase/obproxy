@@ -75,6 +75,7 @@
 #include "obutils/ob_session_pool_processor.h"
 #include "obutils/ob_config_processor.h"
 #include "iocore/net/ob_ssl_processor.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
@@ -194,9 +195,11 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       } else if (OB_FAIL(app_config_processor.init())) {
         LOG_ERROR("fail to init app config processor", K(ret));
       } else {
-        // if fail to init prometheus, do not stop the startup of obproxy
-        if (g_ob_prometheus_processor.init()) {
-          LOG_WARN("fail to init prometheus processor");
+        if (RUN_MODE_PROXY == g_run_mode) {
+          // if fail to init prometheus, do not stop the startup of obproxy
+          if (OB_FAIL(g_ob_prometheus_processor.init())) {
+            LOG_WARN("fail to init prometheus processor", K(ret));
+          }
         }
 
 #if OB_HAS_TESTS
@@ -247,9 +250,33 @@ void ObProxy::destroy()
     if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(mmp_init_cont_))) {
       LOG_WARN("fail to destroy meta proxy init task", K(ret));
     }
+    ObThreadId tid = 0;
+    for (int64_t i = 0; i < g_event_processor.dedicate_thread_count_ && OB_SUCC(ret); ++i) {
+      tid = g_event_processor.all_dedicate_threads_[i]->tid_;
+      if (OB_FAIL(thread_cancel(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_cancel", K(tid), K(ret));
+      } else if (OB_FAIL(thread_join(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_join", K(tid), K(ret));
+      } else {
+        PROXY_NET_LOG(INFO, "graceful exit, dedicated thread exited", K(tid));
+      }
+      ret = OB_SUCCESS;//ignore error
+    }
 
-    proxy_opts_ = NULL;
-    mysql_config_params_ = NULL;
+    for (int64_t i = 0; i < g_event_processor.event_thread_count_ && OB_SUCC(ret); ++i) {
+      tid = g_event_processor.all_event_threads_[i]->tid_;
+      if (OB_FAIL(thread_cancel(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_cancel", K(tid), K(ret));
+      } else if (OB_FAIL(thread_join(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_join", K(tid), K(ret));
+      } else {
+        PROXY_NET_LOG(INFO, "graceful exit, event thread exited", K(tid));
+      }
+      ret = OB_SUCCESS;//ignore error
+    }
+
+    OB_LOGGER.destroy_async_log_thread();
+    _exit(0);
   }
 }
 
@@ -347,9 +374,11 @@ int ObProxy::start()
     } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_acceptor())) {
       LOG_ERROR("fail to start accept server", K(ret));
     } else {
-      // if fail to init prometheus, do not stop the startup of obproxy
-      if (g_ob_prometheus_processor.start_prometheus()) {
-        LOG_WARN("fail to start prometheus");
+      if (RUN_MODE_PROXY == g_run_mode) {
+        // if fail to init prometheus, do not stop the startup of obproxy
+        if (OB_FAIL(g_ob_prometheus_processor.start_prometheus())) {
+          LOG_WARN("fail to start prometheus", K(ret));
+        }
       }
 
       mysql_config_params_ = NULL;
@@ -373,7 +402,9 @@ int ObProxy::start()
         }
         info.is_parent_ = true;
       }
-      this_ethread()->execute();
+      if (RUN_MODE_PROXY == g_run_mode) {
+        this_ethread()->execute();
+      }
     }
   }
   return ret;
@@ -411,7 +442,7 @@ int ObProxy::init_user_specified_config()
 {
   int ret = OB_SUCCESS;
   //1. set config from cmd -o name=value
-  if (NULL != proxy_opts_->optstr_ && OB_FAIL(config_->add_extra_config(proxy_opts_->optstr_))) {
+  if (NULL != proxy_opts_->optstr_ && OB_FAIL(config_->add_extra_config_from_opt(proxy_opts_->optstr_))) {
     LOG_WARN("fail to add extra config", K(ret));
 
   //2. set config from cmd other opts
@@ -958,7 +989,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
     if (rs_list.count() <= 0) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("rs_list count must > 0", K(ret));
-    } else if (OB_FAIL(raw_client.init(user_name, password, database, password1))) {
+    } else if (OB_FAIL(raw_client.init(user_name, password, database, cluster_name, password1))) {
       LOG_WARN("fail to init raw mysql client", K(ret));
     } else if (OB_FAIL(raw_client.set_server_addr(rs_list))) {
       LOG_WARN("fail to set server addr", K(ret));

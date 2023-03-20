@@ -37,6 +37,9 @@ int64_t ObCmdTimeStat::to_string(char *buf, const int64_t buf_len) const
   TO_STRING_TIME_US(pl_lookup_time_);
   TO_STRING_TIME_US(pl_process_time_);
 
+  TO_STRING_TIME_US(bl_lookup_time_);
+  TO_STRING_TIME_US(bl_process_time_);
+
 #if OB_DETAILED_SLOW_QUERY
   TO_STRING_TIME_US(debug_assign_time_);
   TO_STRING_TIME_US(debug_consistency_time_);
@@ -58,9 +61,10 @@ int64_t ObCmdTimeStat::to_string(char *buf, const int64_t buf_len) const
   TO_STRING_TIME_US(server_send_saved_login_time_);
   TO_STRING_TIME_US(server_send_use_database_time_);
   TO_STRING_TIME_US(server_send_session_variable_time_);
+  TO_STRING_TIME_US(server_send_session_user_variable_time_);
   TO_STRING_TIME_US(server_send_all_session_variable_time_);
-  TO_STRING_TIME_US(server_send_last_insert_id_time_);
   TO_STRING_TIME_US(server_send_start_trans_time_);
+  TO_STRING_TIME_US(server_send_xa_start_time_);
   TO_STRING_TIME_US(build_server_request_time_);
   TO_STRING_TIME_US(plugin_compress_request_time_);
   TO_STRING_TIME_US(prepare_send_request_to_server_time_);
@@ -100,9 +104,10 @@ int64_t ObTransactionStat::to_string(char *buf, const int64_t buf_len) const
   TO_STRING_TIME_US(send_saved_login_time_);
   TO_STRING_TIME_US(send_use_database_time_);
   TO_STRING_TIME_US(send_session_vars_time_);
+  TO_STRING_TIME_US(send_session_user_vars_time_);
   TO_STRING_TIME_US(send_all_session_vars_time_);
-  TO_STRING_TIME_US(send_last_insert_id_time_);
   TO_STRING_TIME_US(send_start_trans_time_);
+  TO_STRING_TIME_US(send_xa_start_time_);
   TO_STRING_TIME_US(build_server_request_time_);
   TO_STRING_TIME_US(plugin_compress_request_time_);
   TO_STRING_TIME_US(prepare_send_request_to_server_time_);

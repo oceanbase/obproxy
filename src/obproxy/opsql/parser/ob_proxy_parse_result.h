@@ -87,7 +87,6 @@ typedef enum ObProxyBasicStmtType
   // internal request
   OBPROXY_T_BEGIN,
   OBPROXY_T_SELECT_TX_RO,
-  OBPROXY_T_SET_AC_0,
   OBPROXY_T_PING_PROXY,
   OBPROXY_T_SELECT_ROUTE_ADDR,
   OBPROXY_T_SET_ROUTE_ADDR,
@@ -125,6 +124,14 @@ typedef enum ObProxyBasicStmtType
 
   // only for print obproxy_stat log
   OBPROXY_T_LOGIN,
+
+  // binglog related
+  OBPROXY_T_SHOW_MASTER_STATUS,
+  OBPROXY_T_SHOW_BINARY_LOGS,
+  OBPROXY_T_SHOW_BINLOG_EVENTS,
+  OBPROXY_T_PURGE_BINARY_LOGS,
+  OBPROXY_T_RESET_MASTER,
+  OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT,
 
   OBPROXY_T_MAX
 } ObProxyBasicStmtType;
@@ -196,6 +203,7 @@ typedef enum ObProxyBasicStmtSubType
   OBPROXY_T_SUB_SHOW_FULL_TABLES,
   OBPROXY_T_SUB_SHOW_TABLE_STATUS,
   OBPROXY_T_SUB_SHOW_CREATE_TABLE,
+  OBPROXY_T_SUB_SHOW_ELASTIC_ID,
   OBPROXY_T_SUB_SHOW_TOPOLOGY,
   OBPROXY_T_SUB_SHOW_DB_VERSION,
   OBPROXY_T_SUB_SHOW_COLUMNS,
@@ -332,7 +340,7 @@ typedef struct _ObDbMeshRouteInfo
 
 typedef enum _ObProxySetValueType
 {
-  SET_VALUE_TYPE_ONE = 0,
+  SET_VALUE_TYPE_NONE = 0,
   SET_VALUE_TYPE_STR,
   SET_VALUE_TYPE_INT,
   SET_VALUE_TYPE_NUMBER,
@@ -379,6 +387,7 @@ typedef struct _ObDbpRouteInfo
   ObProxyParseString  table_name_;
   ObProxyParseString  group_idx_str_;
   bool scan_all_;
+  bool sticky_session_;
   bool has_shard_key_;
   ObDbpShardKeyInfo shard_key_infos_[OBPROXY_MAX_DBP_SHARD_KEY_NUM];
   int shard_key_count_;
@@ -426,6 +435,9 @@ typedef struct _ObProxyParseResult
   ObProxyParseString col_name_;
   ObProxyParseString trace_id_;
   ObProxyParseString rpc_id_;
+
+  // store the route server address in sql comment
+  ObProxyParseString target_db_server_;
   // read_consistency
   ObProxyReadConsistencyType read_consistency_type_;
   // db/table name

@@ -187,6 +187,7 @@ int ObServerSessionPool::event_handler(int event, void *data)
       case VC_EVENT_ERROR:
       case VC_EVENT_INACTIVITY_TIMEOUT:
       case VC_EVENT_ACTIVE_TIMEOUT:
+      case VC_EVENT_DETECT_SERVER_DEAD:
         net_vc = static_cast<ObNetVConnection*>((static_cast<ObVIO*>(data))->vc_server_);
         break;
 

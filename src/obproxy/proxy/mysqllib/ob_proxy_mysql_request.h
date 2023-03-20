@@ -78,6 +78,7 @@ public:
   static common::ObString get_print_sql(const common::ObString &req_sql, const int64_t sql_len = PRINT_SQL_LEN);
   common::ObString get_req_pkt();
   obutils::ObSqlParseResult &get_parse_result();
+  const obutils::ObSqlParseResult &get_parse_result() const;
   obutils::ObSqlParseResult *get_ps_parse_result() { return ps_result_; }
   void set_ps_parse_result(obutils::ObSqlParseResult *ps_result) { ps_result_ = ps_result; }
   void set_text_ps_parse_result(obutils::ObSqlParseResult *text_ps_result)
@@ -111,6 +112,7 @@ public:
   int64_t get_packet_len() { return meta_.pkt_len_; }
 
   ObMysqlPacketMeta &get_packet_meta() { return meta_; }
+  const ObMysqlPacketMeta &get_packet_meta() const { return meta_; }
   void set_packet_meta(const ObMysqlPacketMeta &meta) { meta_ = meta; }
 
   // add received request
@@ -196,7 +198,17 @@ inline void ObProxyMysqlRequest::reset(bool is_reset_origin_db_table /* true */)
 inline obutils::ObSqlParseResult &ObProxyMysqlRequest::get_parse_result()
 {
   obutils::ObSqlParseResult *result = &result_;
-  if ((obmysql::OB_MYSQL_COM_STMT_EXECUTE == meta_.cmd_  || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
+  if ((obmysql::OB_MYSQL_COM_STMT_EXECUTE == meta_.cmd_ || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
+      && NULL != ps_result_) {
+    result = ps_result_;
+  }
+  return *result;
+}
+
+const obutils::ObSqlParseResult &ObProxyMysqlRequest::get_parse_result() const
+{
+  const obutils::ObSqlParseResult *result = &result_;
+  if ((obmysql::OB_MYSQL_COM_STMT_EXECUTE == meta_.cmd_ || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
       && NULL != ps_result_) {
     result = ps_result_;
   }

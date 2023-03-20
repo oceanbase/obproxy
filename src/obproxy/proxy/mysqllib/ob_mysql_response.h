@@ -78,7 +78,7 @@ struct ObRespAnalyzeResult
   bool is_server_can_use_compress() const { return (1 == server_capabilities_lower_.capability_flag_.OB_SERVER_CAN_USE_COMPRESS); }
   void set_server_trace_id(const common::ObString &trace_id);
   bool support_ssl() const { return 1 == server_capabilities_lower_.capability_flag_.OB_SERVER_SSL; }
-
+  bool is_server_trans_internal_routing() const { return is_server_trans_internal_routing_; }
   bool is_not_supported_error() const
   {
     return (is_error_resp() && ER_NOT_SUPPORTED_YET == error_pkt_.get_err_code());
@@ -135,6 +135,18 @@ struct ObRespAnalyzeResult
   {
     return (is_error_resp() && -common::OB_STANDBY_WEAK_READ_ONLY == error_pkt_.get_err_code());
   }
+  bool is_trans_free_route_not_supported_error() const 
+  {
+    return (is_error_resp() && -common::OB_TRANS_FREE_ROUTE_NOT_SUPPORTED == error_pkt_.get_err_code());
+  }
+  bool is_mysql_wrong_arguments_error() const
+  {
+    return (is_error_resp() && ER_WRONG_ARGUMENTS == error_pkt_.get_err_code());
+  }
+  bool is_internal_error() const
+  {
+    return (is_error_resp() && -common::OB_INTERNAL_ERROR == error_pkt_.get_err_code());
+  }
 
   inline uint32_t get_server_capability() const
   {
@@ -186,7 +198,7 @@ struct ObRespAnalyzeResult
 
   Ob20ExtraInfo extra_info_;
   common::FLTObjManage flt_;
-
+  bool is_server_trans_internal_routing_;
   DISALLOW_COPY_AND_ASSIGN(ObRespAnalyzeResult);
 };
 
@@ -235,6 +247,7 @@ inline void ObRespAnalyzeResult::reset()
   server_trace_id_.reset();
   extra_info_.reset();
   flt_.reset();
+  is_server_trans_internal_routing_ = false;
 }
 
 inline void ObRespAnalyzeResult::set_server_trace_id(const common::ObString &trace_id)

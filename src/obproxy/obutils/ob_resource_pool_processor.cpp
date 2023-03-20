@@ -27,6 +27,7 @@
 #include "obutils/ob_async_common_task.h"
 #include "lib/container/ob_array_iterator.h"
 #include "lib/container/ob_se_array_iterator.h"
+#include "lib/encrypt/ob_encrypted_helper.h"
 
 using namespace obsys;
 using namespace oceanbase::common;
@@ -511,7 +512,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
     const int64_t MAX_DISPLAY_STATUS_LEN = 64;
     char display_status_str[MAX_DISPLAY_STATUS_LEN];
     ObServerStatus::DisplayStatus server_status = ObServerStatus::OB_DISPLAY_MAX;
-    char ip_str[OB_IP_STR_BUFF];
+    char ip_str[MAX_IP_ADDR_LENGTH];
     int64_t port = 0;
     int64_t tmp_real_str_len = 0;
     int64_t start_service_time = 0;
@@ -548,7 +549,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
 
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "zone", zone_name);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "zone_status", zone_status);
-      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "svr_ip", ip_str, OB_IP_STR_BUFF, tmp_real_str_len);
+      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "svr_ip", ip_str, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "svr_port", port, int64_t);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "start_service_time", start_service_time, int64_t);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "stop_time", stop_time, int64_t);
@@ -1591,6 +1592,8 @@ int ObClusterResource::init(const common::ObString &cluster_name, int64_t cluste
   } else if (OB_FAIL(pending_list_.init("cr init pending list",
           reinterpret_cast<int64_t>(&(reinterpret_cast<ObClusterResourceCreateCont *> (0))->link_)))) {
     LOG_WARN("fail to init pending list", K(ret));
+  } else if (OB_FAIL(alive_addr_set_.create(4))) {
+    LOG_WARN("alive_addr_set create failed", K(ret));
   } else {
     is_inited_ = true;
     version_ = version;
@@ -1619,10 +1622,34 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
   int64_t timeout_ms = usec_to_msec(config.short_async_task_timeout_);
   const ObString user_name(ObProxyTableInfo::READ_ONLY_USERNAME);
   const ObString database(ObProxyTableInfo::READ_ONLY_DATABASE);
-  ObString password(get_global_proxy_config().observer_sys_password.str());
-  ObString password1(get_global_proxy_config().observer_sys_password1.str());
+  ObString cluster_name = cluster_info_key_.cluster_name_.config_string_;
+  ObConfigItem item;
+  char password[ENC_STRING_BUF_LEN];
+  char password1[ENC_STRING_BUF_LEN];
+  memset(password, 0, sizeof (password));
+  memset(password1, 0, sizeof (password1));
 
-  if (OB_FAIL(mysql_proxy_.init(timeout_ms, user_name, password, database, password1))) {
+  ObVipAddr addr;
+  if (OB_FAIL(get_global_config_processor().get_proxy_config(
+          addr, cluster_name, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD, item))) {
+    LOG_WARN("get observer_sys_password config failed", K(cluster_name), K(ret));
+  } else {
+    MEMCPY(password, item.str(), strlen(item.str()));
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+            addr, cluster_name, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD1, item))) {
+      LOG_WARN("get observer_sys_password1 config failed", K(cluster_name), K(ret));
+    } else {
+      MEMCPY(password1, item.str(), strlen(item.str()));
+    }
+  }
+
+
+  if (OB_FAIL(ret)) {
+    // do nothing
+  } else if (OB_FAIL(mysql_proxy_.init(timeout_ms, user_name, password, database, cluster_name, password1))) {
     LOG_WARN("fail to init mysql proxy", K(ret));
   } else if (OB_FAIL(rebuild_mysql_client_pool(
              get_global_resource_pool_processor().get_default_cluster_resource()))) {
@@ -1956,7 +1983,7 @@ int ObClusterResource::update_location_tenant_info(ObSEArray<ObString, 4> &tenan
       }
     } // for
   } // if in wlock
-  
+
   return ret;
 }
 
@@ -2017,7 +2044,7 @@ uint64_t ObClusterResource::get_location_tenant_version(const ObString &tenant_n
 int ObClusterResource::get_location_tenant_info(const ObString &tenant_name, ObLocationTenantInfo *&info_out)
 {
   int ret = OB_SUCCESS;
-  
+
   if (!tenant_name.empty() && tenant_name != OB_SYS_TENANT_NAME) {
     ObLocationTenantInfo *info = NULL;
     DRWLock::RDLockGuard lock(location_tenant_info_lock_);
@@ -2057,52 +2084,16 @@ int ObLocationTenantInfo::resolve_location_tenant_info_primary_zone(ObString &pr
 
     // resolve to zone priority array
     // resolve to zone weight priority array
-    int i = 0;
-    int j = i;
-    int total_len = primary_zone_.length();
-    const char *ptr = primary_zone_.ptr();
-    ObSEArray<ObString, MAX_ZONE_NUM> tmp_pz_prio_array;
-    int8_t weight = 1;
-    
-    while (i < total_len && j < total_len) {
-      j++;
-      if (j >= total_len || ptr[j] == ';') {
-        if (j > i) {
-          ObString each_zone(j - i, ptr + i);
-          tmp_pz_prio_array.push_back(each_zone);
-        }
-
-        if (tmp_pz_prio_array.count() > 0) {
-          for (int64_t k = 0; k < tmp_pz_prio_array.count(); k++) {
-            primary_zone_prio_array_.push_back(tmp_pz_prio_array.at(k));
-            primary_zone_prio_weight_array_.push_back(weight);
-          }
-          tmp_pz_prio_array.reset();
-          weight++;
-        }
-        i = j + 1;
-        j = i;
-      } else if (ptr[j] == ',') {
-        if (j > i) {
-          ObString each_zone(j - i, ptr + i);
-          tmp_pz_prio_array.push_back(each_zone);
-        }
-        i = j + 1;
-        j = i;
-      } else {
-        // nothing
-      }
-    } // while
-
-
-    if (primary_zone_prio_array_.count() != primary_zone_prio_weight_array_.count()) {
+    if (OB_FAIL(split_weight_group(primary_zone_, primary_zone_prio_array_, primary_zone_prio_weight_array_))) {
+      LOG_WARN("fail to resolve primary zone", K(ret), K(primary_zone_));
+    } else if (primary_zone_prio_array_.count() != primary_zone_prio_weight_array_.count()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected array count check", K(tenant_name_), K(version_), K(primary_zone_prio_array_.count()), 
+      LOG_WARN("unexpected array count check", K(tenant_name_), K(version_), K(primary_zone_prio_array_.count()),
                                                K(primary_zone_prio_weight_array_.count()));
     } else {
       LOG_DEBUG("succ to resolve primary zone", KPC(this));
     }
-  }  
+  }
 
   return ret;
 }
@@ -2202,11 +2193,12 @@ int ObResourcePoolProcessor::init(ObProxyConfig &config, proxy::ObMysqlProxy &me
     // impossible
   } else if (OB_FAIL(default_cr_->init_local_config(config_))) {
     LOG_WARN("fail to build local default cluster resource", K(ret));
+  } else if (OB_FAIL(ip_set_.create(8))) {
+    LOG_WARN("ip_set create failed", K(ret));
   } else {
     default_cr_->inc_ref();
     default_sysvar_set_->inc_ref();
     meta_client_proxy_ = &meta_client_proxy;
-    ip_set_.create(8);
     is_inited_ = true;
   }
 

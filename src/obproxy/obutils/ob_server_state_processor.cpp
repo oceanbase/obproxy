@@ -91,6 +91,8 @@ private:
 private:
   ObClusterResource *cluster_resource_;
   ObAddr addr_;
+  ObMysqlClient *mysql_client_;
+  ObMysqlProxy mysql_proxy_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObDetectOneServerStateCont);
@@ -606,7 +608,7 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
         }
       }
     }
-    
+
     if (ret != OB_ITER_END) {
       // handle case of fail to access __all_tenant on alipay main site: do not exec error handling process
       if (ER_TABLEACCESS_DENIED_ERROR == resp->get_err_code()) {
@@ -623,7 +625,7 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
       }
       ret = OB_SUCCESS;
     }
-    
+
     if (OB_SUCC(ret) && OB_FAIL(schedule_refresh_server_state())) {
       LOG_WARN("fail to schedule refresh server state", K(ret));
     }
@@ -1236,8 +1238,7 @@ int ObServerStateRefreshCont::do_update_server(const ObServerStateInfo &ss_info)
     }
   }
 
-  ObIpEndpoint ip;
-  ops_ip_copy(ip.sa_, ss_info.replica_.server_.get_ipv4(), static_cast<uint16_t>(ss_info.replica_.server_.get_port()));
+  ObIpEndpoint ip(ss_info.replica_.server_.get_sockaddr());
   if (!need_update && ObCongestionEntry::ACTIVE == ss_info.cgt_server_state_) {
     if (OB_HASH_EXIST == get_global_resource_pool_processor().ip_set_.exist_refactored(ip)) {
       need_update = true;
@@ -1504,8 +1505,7 @@ int ObServerStateRefreshCont::handle_deleted_server(ObIArray<ObServerStateInfo> 
     }
     if (!found) {
       LOG_INFO("deleted server", "ss_info", last_ss_info);
-      ops_ip_copy(ip.sa_, last_ss_info.replica_.server_.get_ipv4(),
-                  static_cast<uint16_t>(last_ss_info.replica_.server_.get_port()));
+      ip.assign(last_ss_info.replica_.server_.get_sockaddr());
       int64_t cr_version = cluster_resource_->version_;
       if (OB_FAIL(congestion_manager_->update_server(ip, cr_version, ObCongestionEntry::DELETED,
           last_ss_info.zone_state_->zone_name_,
@@ -1666,7 +1666,7 @@ int ObServerStateRefreshUtils::get_server_state_info(
 {
   int ret = OB_SUCCESS;
 
-  char ip_str[OB_IP_STR_BUFF];
+  char ip_str[MAX_IP_ADDR_LENGTH];
   int64_t port = 0;
   ObServerStateInfo server_state;
   const int64_t MAX_DISPLAY_STATUS_LEN = 64;
@@ -1682,7 +1682,7 @@ int ObServerStateRefreshUtils::get_server_state_info(
     display_status_str[0] = '\0';
     zone_name[0] = '\0';
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "svr_ip", ip_str,
-                                     OB_IP_STR_BUFF, tmp_real_str_len);
+                                     MAX_IP_ADDR_LENGTH, tmp_real_str_len);
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "svr_port", port, int64_t);
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "zone", zone_name,
                                      MAX_ZONE_LENGTH + 1, zone_name_len);
@@ -1921,7 +1921,7 @@ DEF_TO_STRING(ObDetectServerStateCont)
 int ObDetectServerStateCont::schedule_detect_server_state()
 {
   int ret = OB_SUCCESS;
-  bool enable_server_detect = (0 < get_global_proxy_config().server_detect_mode);
+  const int64_t server_detect_mode = get_global_proxy_config().server_detect_mode;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
     LOG_WARN("not init", K_(is_inited), K(ret));
@@ -1931,7 +1931,7 @@ int ObDetectServerStateCont::schedule_detect_server_state()
   } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_CALL))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_ERROR("server state refresh cont must be scheduled in work thread", K(ret));
-  } else if (enable_server_detect) {
+  } else if (server_detect_mode > 0) {
     int64_t ss_version = cluster_resource_->server_state_version_;
     common::DRWLock &server_state_lock = cluster_resource_->get_server_state_lock(ss_version);
     server_state_lock.rdlock();
@@ -1942,11 +1942,14 @@ int ObDetectServerStateCont::schedule_detect_server_state()
 
     for (int i = 0; i < server_state_info.count(); i++) {
       ObServerStateSimpleInfo &info = server_state_info.at(i);
-      bool need_check = common::ObTimeUtility::current_time() - info.last_response_time_ >= 5 * 1000 * 1000;
-      int64_t cnt = info.request_sql_cnt_;
+      bool check_pass = true;
+      // Accurate detection method
+      if (1 == server_detect_mode) {
+        check_pass = (info.request_sql_cnt_ > 0);
+        LOG_DEBUG("check detect one server", K(server_detect_mode), K_(info.request_sql_cnt), K(check_pass));
+      }
 
-      LOG_DEBUG("check need schedule one server", K(info), K(need_check), K(cnt));
-      if ((cnt > 0 && need_check) || info.detect_fail_cnt_ > 0) {
+      if (check_pass || info.detect_fail_cnt_ > 0) {
         // There is no need to judge whether the push_back is successful here
         ObDetectOneServerStateCont *cont = NULL;
         if (OB_ISNULL(cont = op_alloc(ObDetectOneServerStateCont))) {
@@ -1960,12 +1963,10 @@ int ObDetectServerStateCont::schedule_detect_server_state()
         }
         LOG_DEBUG("schedule detect one server state", K(info), K(ss_version));
       } else {
-        struct sockaddr_in in;
-        in.sin_family = AF_INET;
-        in.sin_port = (htons)(static_cast<uint16_t>(info.addr_.get_port()));
-        in.sin_addr.s_addr = htonl(info.addr_.ip_.v4_);
-        ObIpEndpoint point(*reinterpret_cast<struct sockaddr*>(&in));
+        ObIpEndpoint point(info.addr_.get_sockaddr());
         if (OB_HASH_EXIST == get_global_resource_pool_processor().ip_set_.exist_refactored(point)) {
+          addr_set.set_refactored(info.addr_);
+        } else if (OB_HASH_EXIST == cluster_resource_->alive_addr_set_.exist_refactored(point)) {
           addr_set.set_refactored(info.addr_);
         }
       }
@@ -1997,11 +1998,11 @@ int ObDetectServerStateCont::schedule_detect_server_state()
               HRTIME_USECONDS(server_detect_state_interval_us_), DETECT_SERVER_STATE_EVENT))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to schedule refresh server state", K_(server_detect_state_interval_us),
-              K(enable_server_detect), KPC_(cluster_resource), K(ret));
+              K(server_detect_mode), KPC_(cluster_resource), K(ret));
   }
 
   LOG_DEBUG("schedule detect server state", K_(server_detect_state_interval_us),
-             K(enable_server_detect), KPC_(cluster_resource), K(ret));
+             K(server_detect_mode), KPC_(cluster_resource), K(ret));
 
   return ret;
 }
@@ -2096,7 +2097,8 @@ int ObDetectServerStateCont::set_detect_server_state_interval(const int64_t refr
 
 ObDetectOneServerStateCont::ObDetectOneServerStateCont()
       : ObAsyncCommonTask(NULL, "detect_server_state_task"),
-        cluster_resource_(NULL), addr_()
+        cluster_resource_(NULL), addr_(), mysql_client_(NULL),
+        mysql_proxy_()
 {
   SET_HANDLER(&ObDetectOneServerStateCont::main_handler);
 }
@@ -2104,13 +2106,33 @@ ObDetectOneServerStateCont::ObDetectOneServerStateCont()
 int ObDetectOneServerStateCont::init(ObClusterResource *cluster_resource, ObAddr addr)
 {
   int ret = OB_SUCCESS;
+  const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().detect_server_timeout);
   if (OB_UNLIKELY(NULL == cluster_resource || !addr.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("init obdetectserverstate cont failed", K(cluster_resource), K(ret));
+    // The detection only depends on whether OBServer returns OB_MYSQL_COM_HANDSHAKE,
+    // and will not log in. The following parameters will not be actually used,
+    // only for the initialization of class objects
+    // user_name : detect_username
+    // password : detect_password
+    // database : detect_database
+  } else if (OB_FAIL(mysql_proxy_.init(timeout_ms, ObProxyTableInfo::DETECT_USERNAME_USER, "detect_password", "detect_database"))) {
+    LOG_WARN("fail to init mysql proxy", K(ret));
   } else {
     cluster_resource->inc_ref();
     cluster_resource_ = cluster_resource;
     addr_ = addr;
+    if (OB_ISNULL(mysql_client_ = op_alloc(ObMysqlClient))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to allocate ObMysqlClient", K(ret));
+    } else if (OB_FAIL(mysql_client_->init_detect_client(cluster_resource_))) {
+      LOG_WARN("fail to init detect client", K(ret));
+    }
+
+    if (OB_FAIL(ret) && (NULL != mysql_client_)) {
+      mysql_client_->kill_this();
+      mysql_client_ = NULL;
+    }
   }
 
   return ret;
@@ -2123,6 +2145,10 @@ void ObDetectOneServerStateCont::kill_this()
   if (OB_LIKELY(NULL != cluster_resource_)) {
     cluster_resource_->dec_ref();
     cluster_resource_ = NULL;
+  }
+  if (OB_LIKELY(NULL != mysql_client_)) {
+    mysql_client_->kill_this();
+    mysql_client_ = NULL;
   }
   if (OB_FAIL(cancel_timeout_action())) {
     LOG_WARN("fail to cancel timeout action", K(ret));
@@ -2174,14 +2200,15 @@ int ObDetectOneServerStateCont::main_handler(int event, void *data)
 int ObDetectOneServerStateCont::detect_server_state_by_sql()
 {
   int ret = OB_SUCCESS;
-  ObMysqlProxy *mysql_proxy = &cluster_resource_->mysql_proxy_;
-  char sql[] = "select 'detect server alive' from dual";
+  char sql[] = "select 'detect server' from dual";
   LOG_DEBUG("begin to detect server", K_(addr));
   ObMysqlRequestParam request_param(sql);
   request_param.set_target_addr(addr_);
+  request_param.set_mysql_client(mysql_client_);
+  request_param.set_is_detect_client(true);
   const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().detect_server_timeout);
-  if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_, timeout_ms))) {
-    LOG_WARN("fail to nonblock read", K(sql), K(ret));
+  if (OB_FAIL(mysql_proxy_.async_read(this, request_param, pending_action_, timeout_ms))) {
+    LOG_WARN("fail to async read", K(ret));
   }
 
   return ret;
@@ -2199,24 +2226,26 @@ int ObDetectOneServerStateCont::handle_client_resp(void *data)
   bool found = false;
   for (int i = 0; !found && i < server_state_info.count(); i++) {
     ObServerStateSimpleInfo &info = server_state_info.at(i);
-    ObIpEndpoint ip;
+    ObIpEndpoint ip(info.addr_.get_sockaddr());
     ObCongestionEntry::ObServerState state = ObCongestionEntry::ObServerState::ACTIVE;
-    ops_ip_copy(ip.sa_, info.addr_.get_ipv4(), static_cast<uint16_t>(info.addr_.get_port()));
     if (addr_ == info.addr_) {
       if (NULL != data) {
         (void)ATOMIC_SET(&info.detect_fail_cnt_, 0);
         state = ObCongestionEntry::ObServerState::DETECT_ALIVE;
-        LOG_DEBUG("succe to get resp from server", K(info));
+        cluster_resource_->alive_addr_set_.erase_refactored(ip);
+        get_global_resource_pool_processor().ip_set_.erase_refactored(ip);
+        LOG_DEBUG("detect server alive", K(info));
       } else {
         int64_t fail_cnt = ATOMIC_AAF(&info.detect_fail_cnt_, 1);
-        LOG_WARN("detect server alive failed", K(info));
+        LOG_WARN("detect server dead", K(info));
         if (fail_cnt >= get_global_proxy_config().server_detect_fail_threshold) {
           // If the detection failure exceeds the number of retries, the server needs to be added to the blacklist
           (void)ATOMIC_SET(&info.detect_fail_cnt_, 0);
           state = ObCongestionEntry::ObServerState::DETECT_DEAD;
+          get_global_resource_pool_processor().ip_set_.set_refactored(ip);
         }
       }
-      
+
       if (ObCongestionEntry::ObServerState::DETECT_DEAD == state
           || ObCongestionEntry::ObServerState::DETECT_ALIVE == state) {
         ObCongestionManager &congestion_manager = cluster_resource_->congestion_manager_;
@@ -2232,9 +2261,9 @@ int ObDetectOneServerStateCont::handle_client_resp(void *data)
   }
 
   if (!found) {
-    ObIpEndpoint ip;
-    ops_ip_copy(ip.sa_, addr_.get_ipv4(), static_cast<uint16_t>(addr_.get_port()));
+    ObIpEndpoint ip(addr_.get_sockaddr());
     get_global_resource_pool_processor().ip_set_.erase_refactored(ip);
+    cluster_resource_->alive_addr_set_.erase_refactored(ip);
     LOG_WARN("server not in cluster", K(ip), KPC_(cluster_resource));
   }
   server_state_lock2.rdunlock();

@@ -60,7 +60,7 @@ namespace obutils
 
 //the table name need to be lower case, or func'handle_dml_stmt' will get error
 #define MAX_INIT_SQL_LEN 1024
-static const char* sqlite3_db_name = "etc/proxyconfig.db";
+static const char* sqlite3_db_name = "proxyconfig.db";
 static const char* all_table_version_table_name = "all_table_version";
 static const char* white_list_table_name = "white_list";
 static const char* resource_unit_table_name = "resource_unit";
@@ -124,12 +124,28 @@ ObConfigProcessor::~ObConfigProcessor()
 int ObConfigProcessor::init()
 {
   int ret = OB_SUCCESS;
+  const char *dir = NULL;
   if (OB_FAIL(table_handler_map_.create(32, ObModIds::OB_HASH_BUCKET))) {
     LOG_WARN("create hash map failed", K(ret));
-  } else if (SQLITE_OK != sqlite3_open_v2(
-    sqlite3_db_name, &proxy_config_db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL)) {
+  } else if (OB_ISNULL(dir = get_global_layout().get_etc_dir())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("sqlite3 open failed", K(ret), "err_msg", sqlite3_errmsg(proxy_config_db_));
+    LOG_WARN("get etc dir failed", K(ret));
+  } else {
+    char *path = NULL;
+    ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
+    if (OB_FAIL(ObLayout::merge_file_path(dir, sqlite3_db_name, allocator, path))) {
+      LOG_WARN("fail to merge file path", K(sqlite3_db_name), K(ret));
+    } else if (OB_ISNULL(path)) {
+      ret = OB_ERR_UNEXPECTED;
+    } else if (SQLITE_OK != sqlite3_open_v2(
+        path, &proxy_config_db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("sqlite3 open failed", K(ret), "path", path, "err_msg", sqlite3_errmsg(proxy_config_db_));
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    // do nothing
   } else if (OB_FAIL(check_and_create_table())) {
     LOG_WARN("check create table failed", K(ret));
   } else {
@@ -175,14 +191,20 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
       if (NULL == argv[i]) {
         continue;
       } else {
-        SqlField sql_field;
-        sql_field.column_name_.set_string(column_name[i], static_cast<int32_t>(strlen(column_name[i])));
-        sql_field.value_type_ = TOKEN_STR_VAL;
-        sql_field.column_value_.set_value(static_cast<int32_t>(strlen(argv[i])), argv[i]);
-        if (OB_FAIL(field_result.fields_.push_back(sql_field))) {
-          LOG_WARN("push back failed", K(ret));
+        SqlField *sql_field = NULL;
+        if (OB_FAIL(SqlField::alloc_sql_field(sql_field))) {
+          LOG_WARN("fail to alloc sql field", K(ret));
         } else {
-          field_result.field_num_++;
+          sql_field->column_name_.set_value(static_cast<int32_t>(strlen(column_name[i])), column_name[i]);
+          sql_field->value_type_ = TOKEN_STR_VAL;
+          sql_field->column_value_.set_value(static_cast<int32_t>(strlen(argv[i])), argv[i]);
+          if (OB_FAIL(field_result.fields_.push_back(sql_field))) {
+            sql_field->reset();
+            sql_field = NULL;
+            LOG_WARN("push back failed", K(ret));
+          } else {
+            field_result.field_num_++;
+          }
         }
       }
     }
@@ -192,11 +214,11 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
       const char* cluster_name_str = "cluster_name";
       const char* tenant_name_str = "tenant_name";
       for (int64_t i = 0; i < field_result.field_num_; i++) {
-        SqlField &field = field_result.fields_.at(i);
-        if (field.column_name_.string_ == cluster_name_str) {
-          params.cluster_name_ = field.column_value_.config_string_;
-        } else if (field.column_name_.string_ == tenant_name_str) {
-          params.tenant_name_ = field.column_value_.config_string_;
+        SqlField* field = field_result.fields_.at(i);
+        if (field->column_name_.config_string_ == cluster_name_str) {
+          params.cluster_name_ = field->column_value_.config_string_;
+        } else if (field->column_name_.config_string_ == tenant_name_str) {
+          params.tenant_name_ = field->column_value_.config_string_;
         }
       }
 
@@ -370,11 +392,11 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
       const char* cluster_name_str = "cluster_name";
       const char* tenant_name_str = "tenant_name";
       for (int64_t i = 0; i < params.fields_->field_num_; i++) {
-        SqlField &field = params.fields_->fields_.at(i);
-        if (field.column_name_.string_ == cluster_name_str) {
-          params.cluster_name_ = field.column_value_.config_string_;
-        } else if (field.column_name_.string_ == tenant_name_str) {
-          params.tenant_name_ = field.column_value_.config_string_;
+        SqlField* field = params.fields_->fields_.at(i);
+        if (field->column_name_.config_string_ == cluster_name_str) {
+          params.cluster_name_ = field->column_value_.config_string_;
+        } else if (field->column_name_.config_string_ == tenant_name_str) {
+          params.tenant_name_ = field->column_value_.config_string_;
         }
       }
       //table name is UPPER CASE in stmt, need convert to lower case as origin
@@ -404,12 +426,31 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
       } else {
         memcpy(sql_buf, sql.ptr(), sql.length());
         sql_buf[sql.length()] = '\0';
-        if (SQLITE_OK != sqlite3_exec(proxy_config_db_, sql_buf, NULL, 0, &err_msg)) {
+        if (SQLITE_OK != sqlite3_exec(proxy_config_db_, "begin;", NULL, 0, &err_msg)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+          sqlite3_free(err_msg);
+        }
+
+        if (OB_SUCC(ret) && SQLITE_OK != sqlite3_exec(proxy_config_db_, sql_buf, NULL, 0, &err_msg)) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
           sqlite3_free(err_msg);
         }
         ob_free(sql_buf);
+
+        if (OB_SUCC(ret) && NULL != handler.before_commit_func_) {
+          if (OB_FAIL(handler.before_commit_func_(proxy_config_db_))) {
+            LOG_WARN("before commit func failed", K_(params.table_name), K(ret));
+          }
+        }
+
+        const char *end_sql = OB_SUCCESS == ret ? "commit;" : "rollback;";
+        if (SQLITE_OK != sqlite3_exec(proxy_config_db_, end_sql, NULL, 0, &err_msg)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+          sqlite3_free(err_msg);
+        }
       }
       tmp_ret = ret;
     }
@@ -523,6 +564,18 @@ bool ObConfigProcessor::is_table_in_service(const ObString &table_name)
   return is_in_service;
 }
 
+int ObConfigProcessor::execute(const char* sql, int (*callback)(void*, int, char**, char**), void* handler)
+{
+  int ret = OB_SUCCESS;
+  char *err_msg = NULL;
+  if (SQLITE_OK != sqlite3_exec(proxy_config_db_, sql, callback, handler, &err_msg)) {
+    ret = OB_ERR_UNEXPECTED;
+    WARN_ICMD("exec sql failed", K(ret), "err_msg", err_msg);
+    sqlite3_free(err_msg);
+  }
+  return ret;
+}
+
 int ObConfigProcessor::store_global_ssl_config(const ObString &name, const ObString &value)
 {
   int ret = OB_SUCCESS;
@@ -559,27 +612,42 @@ int ObConfigProcessor::store_global_ssl_config(const ObString &name, const ObStr
   return ret;
 }
 
-int ObConfigProcessor::store_global_proxy_config(const ObString &name, const ObString &value)
+int ObConfigProcessor::store_proxy_config_with_level(int64_t vid, const ObString &vip, int64_t vport,
+                                                     const ObString &tenant_name, const ObString &cluster_name,
+                                                     const ObString &name, const ObString& value, const ObString &level)
 {
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(name.empty())) {
+  if (OB_UNLIKELY(name.empty() || level.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(name), K(value));
+    LOG_WARN("invalid argument", K(name), K(level));
   } else {
-    const char *sql = "replace into proxy_config(name, value, config_level) values('%.*s', '%.*s', 'LEVEL_GLOBAL')";
-    int64_t buf_len = name.length() + value.length() + strlen(sql);
+    const char *sql =
+      "replace into proxy_config(vid, vip, vport, cluster_name, tenant_name, name, value, config_level) "
+      "values(%ld, '%.*s', %ld, '%.*s', '%.*s', '%.*s', '%.*s', '%.*s')";
+    char vid_buf[64];
+    char vport_buf[64];
+    int32_t vid_len = snprintf(vid_buf, sizeof(vid_buf), "%ld", vid);
+    int32_t vport_len = snprintf(vport_buf, sizeof(vport_buf), "%ld", vport);
+    int64_t buf_len = vid_len + vport_len + vip.length() + tenant_name.length() + cluster_name.length() + name.length() + value.length() + level.length() + strlen(sql);
     char *sql_buf = (char*)ob_malloc(buf_len + 1, ObModIds::OB_PROXY_CONFIG_TABLE);
     if (OB_ISNULL(sql_buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("allocate memory failed", K(ret), K(buf_len));
     } else {
       ObString sql_string;
-      int64_t len = 0;
+      int32_t len = 0;
       get_global_proxy_config_table_processor().set_need_sync_to_file(false);
-      len = static_cast<int64_t>(snprintf(sql_buf, buf_len, sql,
+      len = static_cast<int32_t>(snprintf(sql_buf, buf_len, sql,
+                                 vid,
+                                 vip.length(), vip.ptr(),
+                                 vport,
+                                 cluster_name.length(), cluster_name.ptr(),
+                                 tenant_name.length(), tenant_name.ptr(),
                                  name.length(), name.ptr(),
-                                 value.length(), value.ptr()));
-      sql_string.assign_ptr(sql_buf, static_cast<int32_t>(len));
+                                 value.length(), value.ptr(),
+                                 level.length(), level.ptr()));
+      sql_string.assign_ptr(sql_buf, len);
+      LOG_DEBUG("execute sql", K(sql_string));
       if (OB_UNLIKELY(len <= 0)) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("fail to fill sql", K(len), K(ret));
@@ -594,6 +662,15 @@ int ObConfigProcessor::store_global_proxy_config(const ObString &name, const ObS
     }
   }
 
+  return ret;
+}
+
+int ObConfigProcessor::store_global_proxy_config(const ObString &name, const ObString &value)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(store_proxy_config_with_level(-1, "", 0, "", "", name, value, "LEVEL_GLOBAL"))) {
+    LOG_WARN("store_proxy_config_with_level failed", K(ret));
+  }
   return ret;
 }
 
@@ -612,7 +689,7 @@ int ObConfigProcessor::get_proxy_config_with_level(const ObVipAddr &addr, const 
     }
   } else if (0 != strcasecmp(proxy_item.config_level_.ptr(), level.ptr())) {
     ret = OB_SUCCESS;
-    LOG_DEBUG("vip config level not match", K(proxy_item));
+    LOG_TRACE("vip config level not match", K(proxy_item), K(level));
   } else {
     found = true;
     ret_item = proxy_item.config_item_;
@@ -670,6 +747,22 @@ int ObConfigProcessor::get_proxy_config_bool_item(const ObVipAddr &addr, const O
   } else {
     ret_item.set(item.str());
     LOG_DEBUG("get bool item succ", K(ret_item));
+  }
+
+  return ret;
+}
+
+int ObConfigProcessor::get_proxy_config_int_item(const ObVipAddr &addr, const ObString &cluster_name,
+                                                  const ObString &tenant_name, const ObString& name,
+                                                  ObConfigIntItem &ret_item)
+{
+  int ret = OB_SUCCESS;
+  ObConfigItem item;
+  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item))) {
+    LOG_WARN("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+  } else {
+    ret_item.set(item.str());
+    LOG_DEBUG("get int item succ", K(ret_item));
   }
 
   return ret;

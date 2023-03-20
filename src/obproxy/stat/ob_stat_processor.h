@@ -586,7 +586,7 @@ private:
 
   ASLL(ObRecRawStatBlock, link_) all_blocks_;
 
-  char proxy_ip_[common::OB_IP_STR_BUFF]; // ip primary key
+  char proxy_ip_[common::MAX_IP_ADDR_LENGTH]; // ip primary key
   int32_t proxy_port_;                    // port primary key
   DISALLOW_COPY_AND_ASSIGN(ObStatProcessor);
 };

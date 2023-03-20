@@ -19,6 +19,8 @@
 #include "common/ob_range.h"
 #include "lib/utility/utility.h"
 #include "lib/regex/ob_regex.h"
+#include "lib/allocator/ob_allocator.h"
+#include "obproxy/opsql/expr_parser/ob_expr_parse_result.h"
 
 
 namespace oceanbase
@@ -96,6 +98,45 @@ public:
       end_key_ = rowkey;
       border_flag_.set_inclusive_start();
       border_flag_.set_inclusive_end();
+    }
+    return ret;
+  }
+
+  int build_row_key(int64_t columns_num, ObIAllocator &allocator) {
+    // build row key like (min, min, min : max, max, max)
+    int ret = OB_SUCCESS;
+    if (columns_num < 0 || columns_num > OBPROXY_MAX_PART_LEVEL) {
+      ret = OB_INVALID_ARGUMENT;
+      COMMON_LOG(WARN, "invalid", K(columns_num));
+    } else {
+      void *start_objs_buf = NULL;
+      void *end_objs_buf = NULL;
+      if (OB_ISNULL((start_objs_buf = allocator.alloc(sizeof(ObObj) * columns_num))) && columns_num != 0) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        COMMON_LOG(WARN, "fail to alloc new obj", K(ret), K(columns_num));
+      } else if (OB_ISNULL(end_objs_buf = allocator.alloc(sizeof(ObObj) * columns_num)) && columns_num !=0) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        COMMON_LOG(WARN, "fail to alloc new obj", K(ret), K(columns_num));
+      } else {
+        for (int i = 0; OB_SUCC(ret) && i < columns_num; i++) {
+          ObObj *start = NULL;
+          ObObj *end = NULL;
+          if (OB_ISNULL(start = new (reinterpret_cast<ObObj*>(start_objs_buf) + i) ObObj())) {
+            ret = OB_ERR_UNEXPECTED;
+            COMMON_LOG(WARN, "failed to do placement new", K(start_objs_buf), K(ret));
+          } else if (OB_ISNULL(end = new (reinterpret_cast<ObObj*>(end_objs_buf) + i) ObObj())) {
+            ret = OB_ERR_UNEXPECTED;
+            COMMON_LOG(WARN, "failed to do placement new", K(end_objs_buf), K(ret));
+          } else {
+            start->set_min_value();
+            end->set_max_value();
+          }
+        }
+        if (OB_SUCC(ret)) {
+          start_key_.assign(reinterpret_cast<ObObj*>(start_objs_buf), columns_num);
+          end_key_.assign(reinterpret_cast<ObObj*>(end_objs_buf), columns_num); 
+        }
+      }
     }
     return ret;
   }

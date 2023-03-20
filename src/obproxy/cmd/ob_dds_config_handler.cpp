@@ -361,7 +361,6 @@ int ObDdsConfigHandler::handle_parse_where_fields(ObArenaAllocator* allocator, O
     } else {
       ObExprParser expr_parser(*allocator, parse_mode);
       expr_result.part_key_info_.key_num_ = 0;
-      expr_result.target_mask_ = 0;
       if (OB_FAIL(expr_parser.parse_reqsql(sql,  sql_parse_result.get_parsed_length(),
                                            expr_result, sql_parse_result.get_stmt_type(),
                                            connection_collation))) {

@@ -47,6 +47,7 @@ lib/charset/ob_ctype_uca.c\
 lib/charset/ob_ctype_mb.c\
 lib/charset/ob_ctype_bin.c\
 lib/charset/ob_ctype_simple.c\
+lib/charset/ob_ctype_latin1.c\
 lib/charset/ob_mysql_global.h\
 lib/charset/ob_config.h\
 lib/charset/ob_dtoa.h\
@@ -157,6 +158,7 @@ lib/oblog/ob_trace_log.h\
 lib/oblog/ob_trace_log.cpp\
 lib/oblog/ob_warning_buffer.h\
 lib/oblog/ob_warning_buffer.cpp\
+lib/oblog/ob_simple_trace.h\
 lib/queue/ob_dedup_queue.h\
 lib/queue/ob_dedup_queue.cpp\
 lib/queue/ob_fixed_queue.h\

@@ -51,7 +51,7 @@ using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::json;
 
 extern int build_tenant_cluster_vip_name(const ObString &tenant_name, const ObString &cluster_name, const ObString &vip_name,
-    ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> &key_string);
+    ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> &key_string);
 
 void ObCpuTableProcessor::commit(bool is_success)
 {
@@ -214,7 +214,7 @@ int ObCpuTableProcessor::handle_cpu_config(
   int ret = OB_SUCCESS;
   ObString key_name;
   ObTenantCpu* tenant_cpu = NULL;
-  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF> key_string;
+  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
   if (max_cpu_usage <= 0) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("max cpu usage error", K(max_cpu_usage), K(ret));

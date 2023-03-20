@@ -57,11 +57,11 @@ ObTenantCpu::ObTenantCpu(ObString& cluster_name, ObString& tenant_name,
     MEMCPY(tenant_name_str_, tenant_name.ptr(), tenant_name.length());
     tenant_name_.assign_ptr(tenant_name_str_, tenant_name.length());
   }
-  if (vip_name.length() < OB_IP_STR_BUFF) {
+  if (vip_name.length() < MAX_IP_ADDR_LENGTH) {
     MEMCPY(vip_name_str_, vip_name.ptr(), vip_name.length());
     vip_name_.assign_ptr(vip_name_str_, vip_name.length());
   }
-  if (full_name.length() < OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF) {
+  if (full_name.length() < OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH) {
     MEMCPY(full_name_str_, full_name.ptr(), full_name.length());
     full_name_.assign_ptr(full_name_str_, full_name.length());
   }
@@ -176,7 +176,7 @@ int64_t ObTenantCpuCache::get_cpu_map_count()
 int ObTenantCpuCache::get(ObString& key_name, ObTenantCpu*& tenant_cpu)
 {
   int ret = OB_SUCCESS;
-  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF) {
+  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("name invalid", K(key_name), K(ret));
   } else if (OB_FAIL(vt_cpu_map_.get_refactored(key_name, tenant_cpu))) {

@@ -70,6 +70,7 @@ private:
   static int start_processor_threads(const ObMysqlConfigParams &config_params);
 
   static int init_mysql_proxy_port(const ObMysqlConfigParams &config_params);
+  static int init_inherited_info(ObMysqlProxyPort &proxy_port, const int fd);
 };
 
 } // end of namespace proxy

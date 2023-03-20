@@ -18,6 +18,7 @@
 #include "lib/timezone/ob_time_convert.h"
 #include "share/part/ob_part_mgr_util.h"
 #include "obproxy/opsql/expr_parser/ob_expr_parse_result.h"
+#include "common/ob_row.h"
 
 namespace oceanbase
 {
@@ -82,12 +83,25 @@ public:
   int build_dtc_params(obproxy::proxy::ObClientSessionInfo *session_info,
                        ObObjType obj_type,
                        ObDataTypeCastParams &dtc_params);
-  void set_accuracy(const ObProxyPartKeyAccuracy &accuracy);
+  ObIArray<ObAccuracy> &get_accuracies() { return accuracies_; }
 
+  int cast_obj(ObObj &src_obj,
+               ObObj &target_obj,
+               ObIAllocator &allocator,
+               ObPartDescCtx &ctx,
+               ObAccuracy &accuracy);
+
+  int cast_obj(ObObj &src_obj,
+               ObObjType obj_type,
+               ObCollationType cs_type,
+               ObIAllocator &allocator,
+               ObPartDescCtx &ctx,
+               ObAccuracy &accuracy);
+  
   DECLARE_VIRTUAL_TO_STRING = 0;
   share::schema::ObPartitionLevel part_level_;
   share::schema::ObPartitionFuncType part_func_type_;
-  ObProxyPartKeyAccuracy accuracy_;
+  ObSEArray<ObAccuracy, 4> accuracies_;
   int64_t *tablet_id_array_;
 };
 

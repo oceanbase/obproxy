@@ -19,6 +19,8 @@ obproxy/iocore/eventsystem/ob_priority_event_queue.h\
 obproxy/iocore/eventsystem/ob_processor.h\
 obproxy/iocore/eventsystem/ob_protected_queue.h\
 obproxy/iocore/eventsystem/ob_protected_queue.cpp\
+obproxy/iocore/eventsystem/ob_protected_queue_thread_pool.cpp\
+obproxy/iocore/eventsystem/ob_protected_queue_thread_pool.h\
 obproxy/iocore/eventsystem/ob_thread.h\
 obproxy/iocore/eventsystem/ob_thread.cpp\
 obproxy/iocore/eventsystem/ob_vconnection.h\
@@ -32,4 +34,6 @@ obproxy/iocore/eventsystem/ob_grpc_task.h\
 obproxy/iocore/eventsystem/ob_grpc_task.cpp\
 obproxy/iocore/eventsystem/ob_shard_watch_task.h\
 obproxy/iocore/eventsystem/ob_shard_watch_task.cpp\
+obproxy/iocore/eventsystem/ob_shard_scan_all_task.h\
+obproxy/iocore/eventsystem/ob_shard_scan_all_task.cpp\
 obproxy/iocore/eventsystem/ob_thread_impl.h

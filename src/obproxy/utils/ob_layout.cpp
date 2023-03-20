@@ -11,8 +11,11 @@
  */
 
 #define USING_LOG_PREFIX PROXY
-#include "utils/ob_layout.h"
 #include <unistd.h>
+#include "utils/ob_layout.h"
+#include "ob_proxy_init.h"
+
+#define UNIX_PATH_LENGTH_MAX (sizeof(struct sockaddr_un) - sizeof(sa_family_t))
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -22,6 +25,9 @@ namespace oceanbase
 namespace obproxy
 {
 
+static const char* obproxy_domain = "obproxy.domain";
+static const char* obproxy_dir = "./.obproxy";
+
 ObLayout &get_global_layout()
 {
   static ObLayout g_layout;
@@ -30,7 +36,8 @@ ObLayout &get_global_layout()
 
 ObLayout::ObLayout()
     : is_inited_(false), prefix_(NULL), bin_dir_(NULL), etc_dir_(NULL),
-      log_dir_(NULL), conf_dir_(NULL), control_config_dir_(NULL), dbconfig_dir_(NULL)
+      log_dir_(NULL), conf_dir_(NULL), control_config_dir_(NULL),
+      dbconfig_dir_(NULL), unix_domain_path_(NULL)
 {
 }
 
@@ -60,6 +67,8 @@ int ObLayout::init(const char *start_cmd)
     MPRINT("fail to init proxy bin dir, ret=%d", ret);
   } else if (OB_FAIL(init_dir_prefix(cwd))) {
     MPRINT("fail to init proxy dir prefix, ret=%d", ret);
+  } else if (RUN_MODE_CLIENT == g_run_mode && OB_FAIL(handle_client_dirs())) {
+    MPRINT("fail to construct client dirs, ret=%d", ret);
   } else if (OB_FAIL(construct_dirs())) {
     MPRINT("fail to construct dirs, ret=%d", ret);
   } else {
@@ -168,6 +177,42 @@ int ObLayout::init_bin_dir(const char *cwd, const char *start_cmd)
 }
 
 int ObLayout::init_dir_prefix(const char *cwd)
+{
+  int ret = OB_SUCCESS;
+  if (RUN_MODE_PROXY == g_run_mode) {
+    if (OB_FAIL(init_dir_prefix_proxy_mode(cwd))) {
+      LOG_WARN("init dir prefix proxy mode failed", K(ret));
+    }
+  } else if (RUN_MODE_CLIENT == g_run_mode) {
+    if (OB_FAIL(init_dir_prefix_client_mode())) {
+      LOG_WARN("init_dir_prefix_client_mode", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObLayout::init_dir_prefix_client_mode()
+{
+  int ret = OB_SUCCESS;
+  int64_t prefix_len = 0;
+
+  prefix_len = strlen(obproxy_dir);
+
+  if (OB_SUCC(ret)) {
+    if (OB_ISNULL(prefix_ = static_cast<char *>(allocator_.alloc(prefix_len + 1)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      MPRINT("fail to alloc memeory, prefix_len=%ld, ret=%d", prefix_len, ret);
+    } else {
+      MEMCPY(prefix_, obproxy_dir, prefix_len);
+      prefix_[prefix_len] = '\0';
+    }
+  }
+
+  return ret;
+}
+
+int ObLayout::init_dir_prefix_proxy_mode(const char *cwd)
 {
   int ret = OB_SUCCESS;
   char *env_path = NULL;
@@ -287,6 +332,57 @@ int ObLayout::construct_single_dir(const char *sub_dir, char *&full_path)
     allocator_.free(actual_path);
   }
   actual_path = NULL;
+  return ret;
+}
+
+int ObLayout::handle_client_dirs()
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(construct_client_obproxy_dirs())) {
+    LOG_WARN("construct_client_obproxy_dirs failed", K(ret));
+  } else if (OB_FAIL(remove_unix_domain())) {
+    LOG_WARN("remove unix domain failed", K(ret));
+  }
+
+  return ret;
+}
+
+int ObLayout::construct_client_obproxy_dirs()
+{
+  int ret = OB_SUCCESS;
+  char *actual_path = NULL;
+  // Create the .obproxy directory
+  if (OB_FAIL(extract_actual_path(prefix_, actual_path))) {
+    MPRINT("fail to extract_actual_path, prefix_path=%s, ret=%d", prefix_, ret);
+  } else if (OB_FAIL(FileDirectoryUtils::create_full_path(actual_path))) {
+    MPRINT("fail to create_full_path, actual_path=%s, ret=%d", actual_path, ret);
+  }
+
+  if (NULL != actual_path && prefix_ != actual_path) {
+    allocator_.free(actual_path);
+  }
+  actual_path = NULL;
+
+
+  return ret;
+}
+
+int ObLayout::remove_unix_domain()
+{
+  int ret = OB_SUCCESS;
+  char *actual_path = NULL;
+
+  if (OB_FAIL(merge_file_path(prefix_, obproxy_domain, allocator_, unix_domain_path_))) {
+    MPRINT("fail to merge file path, sub_dir=%s, ret=%d", obproxy_domain, ret);
+  } else if (OB_FAIL(extract_actual_path(unix_domain_path_, actual_path))) {
+    MPRINT("fail to extract_actual_path, full_path=%s, ret=%d", unix_domain_path_, ret);
+  } else {
+    remove(actual_path);
+    if (NULL != actual_path && unix_domain_path_ != actual_path) {
+      allocator_.free(actual_path);
+    }
+    actual_path = NULL;
+  }
   return ret;
 }
 

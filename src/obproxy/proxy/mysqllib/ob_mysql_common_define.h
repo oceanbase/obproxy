@@ -176,17 +176,18 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_STMT_FETCH:
     case obmysql::OB_MYSQL_COM_CHANGE_USER:
+    // binlog related
+    case obmysql::OB_MYSQL_COM_REGISTER_SLAVE:
+    case obmysql::OB_MYSQL_COM_BINLOG_DUMP:
+    case obmysql::OB_MYSQL_COM_BINLOG_DUMP_GTID:
     // pieceinfo
     case obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
     case obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA:
       ret = true;
       break;
     // Replication Protocol
-    case obmysql::OB_MYSQL_COM_BINLOG_DUMP:
     case obmysql::OB_MYSQL_COM_TABLE_DUMP:
     case obmysql::OB_MYSQL_COM_CONNECT_OUT:
-    case obmysql::OB_MYSQL_COM_REGISTER_SLAVE:
-    case obmysql::OB_MYSQL_COM_BINLOG_DUMP_GTID:
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_SET_OPTION:
       ret = false;

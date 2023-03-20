@@ -88,8 +88,7 @@ int ObCmdHandler::reset()
   } else {
     internal_buf_->reset();
     seq_ = original_seq_;
-    protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
-    ob20_param_.reset();
+    // could not reset protocol and ob20 param, cause we need fill external buf according to protocol
   }
   return ret;
 }

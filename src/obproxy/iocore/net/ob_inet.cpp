@@ -41,14 +41,27 @@ namespace obproxy
 namespace net
 {
 
+uint64_t ObIpEndpoint::hash(const uint64_t hash) const
+{
+  char buf[MAX_IP_ADDR_LENGTH];
+  int64_t pos = to_string(buf, MAX_IP_ADDR_LENGTH);
+  return murmurhash(buf, static_cast<int32_t>(pos), hash);
+}
+
 int64_t ObIpEndpoint::to_string(char *buf, const int64_t buf_len) const
 {
-  char ip_buff[INET6_ADDRSTRLEN];
+  char ip_buff[MAX_IP_ADDR_LENGTH];
   int64_t pos = 0;
   J_OBJ_START();
-  databuff_printf(buf, buf_len, pos, "%s:%u",
-                  ops_ip_ntop(*this, ip_buff, sizeof(ip_buff)),
-                  ops_ip_port_host_order(*this));
+  if (is_ip6()) {
+    databuff_printf(buf, buf_len, pos, "[%s]:%u",
+                    ops_ip_ntop(*this, ip_buff, sizeof(ip_buff)),
+                    ops_ip_port_host_order(*this));
+  } else {
+    databuff_printf(buf, buf_len, pos, "%s:%u",
+                    ops_ip_ntop(*this, ip_buff, sizeof(ip_buff)),
+                    ops_ip_port_host_order(*this));
+  }
   J_OBJ_END();
   return pos;
 }

@@ -101,10 +101,10 @@ public:
     PROXY_API_LOG(DEBUG, "need_enable_plugin",
                   "request_content_length", sm->trans_state_.trans_info_.request_content_length_,
                   "enable_compression_protocol", sm->trans_state_.mysql_config_params_->enable_compression_protocol_,
-                  "enable_ob_protocol_v2", sm->trans_state_.mysql_config_params_->enable_ob_protocol_v2_);
+                  "enable_ob_protocol_v2", sm->is_enable_ob_protocol_v2());
     return (sm->trans_state_.trans_info_.request_content_length_ > 0
             && (sm->trans_state_.mysql_config_params_->enable_compression_protocol_
-                || sm->trans_state_.mysql_config_params_->enable_ob_protocol_v2_));
+                || sm->is_enable_ob_protocol_v2()));
   }
 
 private:

@@ -77,15 +77,15 @@ function do_config()
       ./configure --with-gcc-version=9.3.0 --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
       echo -e "\033[31m ===build gcov version=== \033[0m"
       ;;
-    xperf)
-      # configure for perf
-      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-perf
-      echo -e "\033[31m ===build perf version=== \033[0m"
-      ;;
     xasan)
       # configure for asan
      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-asan
       echo -e "\033[31m ===build asan version=== \033[0m"
+      ;;
+    xso)
+      # configure for obproxy_so
+      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-so
+      echo -e "\033[31m ===build so version=== \033[0m"
       ;;
     *)
       # configure for release
@@ -121,7 +121,7 @@ function do_rpm()
   cd ${TMP_DIR}/BUILD
 
   echo "[BUILD] make rpms..._prefix=${PREFIX} spec_file=${SPEC_FILE}"
-  rpmbuild --define "_topdir ${TMP_DIR}" --define "NAME ${PACKAGE}" --define "VERSION ${VERSION}" --define "_prefix ${PREFIX}" --define "RELEASE ${RELEASE}" -ba ${TOPDIR}/deps/3rd/${SPEC_FILE} || exit 2
+  rpmbuild --define "_topdir ${TMP_DIR}" --define "NAME ${PACKAGE}" --define "VERSION ${VERSION}" --define "_prefix ${PREFIX}" --define "RELEASE ${RELEASE}" --define "rpm_path ${TOPDIR}" -ba ${TOPDIR}/deps/3rd/${SPEC_FILE} || exit 2
   echo "[BUILD] make rpms done."
 
   cd ${TOPDIR}

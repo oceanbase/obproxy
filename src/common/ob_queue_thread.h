@@ -40,11 +40,19 @@ class ObCond
   static const int64_t SPIN_WAIT_NUM = 0;
   static const int64_t BUSY_INTERVAL = 1000;
 public:
-  explicit ObCond(const int64_t spin_wait_num = SPIN_WAIT_NUM);
-  ~ObCond();
+  /* this function is defined for c driver client compile */
+  explicit ObCond(const int64_t spin_wait_num = SPIN_WAIT_NUM) :spin_wait_num_(spin_wait_num) {}
+  /* this function is defined for c driver client compile */
+  ~ObCond() {}
 public:
-  void signal();
-  int timedwait(const int64_t time_us);
+  /* this function is defined for c driver client compile */
+  void signal() {}
+  /* this function is defined for c driver client compile */
+  int timedwait(const int64_t time_us)
+  {
+    UNUSED(time_us);
+    return OB_NOT_IMPLEMENT;
+  }
   int wait();
 private:
   const int64_t spin_wait_num_;

@@ -18,8 +18,10 @@
 #include "utils/ob_layout.h"
 #include "obutils/ob_proxy_config.h"
 #include "proxy/client/ob_mysql_proxy.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
+using namespace oceanbase::obproxy;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::proxy;
 
@@ -569,7 +571,9 @@ int ObProxyConfigUtils::load_config_from_file(ObProxyConfig &proxy_config)
   if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(OB_PROXY_CONFIG_BUFFER_SIZE, mem_attr)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("ob tc malloc memory for buf fail", K(ret));
-  } else if (OB_FAIL(ObProxyFileUtils::read(CFG_DUMP_NAME, buf, OB_PROXY_CONFIG_BUFFER_SIZE, read_len))) {
+  // If it is a rich client mode, the configuration will not be read from the local file
+  } else if (RUN_MODE_PROXY == g_run_mode
+             && OB_FAIL(ObProxyFileUtils::read(CFG_DUMP_NAME, buf, OB_PROXY_CONFIG_BUFFER_SIZE, read_len))) {
     // no need to print warn log, the caller will do it
   } else {
     obsys::CWLockGuard guard(proxy_config.rwlock_);

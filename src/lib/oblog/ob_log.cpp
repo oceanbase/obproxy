@@ -375,7 +375,7 @@ ObLogger::~ObLogger()
   (void)pthread_mutex_destroy(&file_size_mutex_);
 }
 
-void ObLogger::destory_async_log_thread()
+void ObLogger::destroy_async_log_thread()
 {
   set_enable_async_log(false);
   set_stop_flush();

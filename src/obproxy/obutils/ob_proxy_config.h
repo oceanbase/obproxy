@@ -148,6 +148,8 @@ private:
 public:
   // FIXME: DEF_INT can not compare with 0(<, >, >=, <=)
   mutable obsys::CRWLock rwlock_;
+  // xa transaction
+  DEF_BOOL(enable_xa_route, "true", "whether to enable hold XA_START and route to the partition that the next dml will visit",CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   // refresh local config
   DEF_BOOL(refresh_json_config, "false", "force update json info if refresh_json_config is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
   DEF_BOOL(refresh_rslist, "false", "when refresh config server, update all rslist if refresh_rslist is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
@@ -218,7 +220,7 @@ public:
   DEF_INT(server_tcp_keepcnt, "5", "[0,9]", "tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(server_tcp_user_timeout, "0", "[0,20]", "tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
-  DEF_INT(client_sock_option_flag_out, "2", "[0,]","client sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_sock_option_flag_out, "3", "[0,]","client sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(client_tcp_keepidle, "5", "[0,7200]", "client tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(client_tcp_keepintvl, "5", "[0,75]", "client tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(client_tcp_keepcnt, "5", "[0,9]", "client tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -233,6 +235,7 @@ public:
   DEF_INT(block_thread_num, "1", "[1,4]", "proxy block thread num, [1, 4]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(grpc_thread_num, "8", "[8,16]", "proxy grpc thread num, [8, 16]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(grpc_client_num, "9", "[9,16]", "proxy grpc client num, [9, 16]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(shard_scan_thread_num, "0", "[0,128]", "proxy shard scan thread num, if 0, use (real work thread num/2), [0, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(automatic_match_work_thread, "true", "ignore work_thread_num configuration item, use the count of cpu for current proxy work thread num", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_strict_kernel_release, "true", "If is true, proxy only support 5u/6u/7u redhat. Otherwise no care kernel release, and proxy maybe unstable", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_CAP(max_log_file_size, "256MB", "[1MB,1G]", "max size of log file, [1MB, 1G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -264,6 +267,8 @@ public:
   DEF_BOOL(ignore_local_config, "true", "ignore all local cached files, start proxy with remote json", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_IP(local_bound_ip, "0.0.0.0", "local bound ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_INT(listen_port, "6688", "(1024,65536)", "obproxy listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_INT(ip_listen_mode, "1", "[1, 3]", "1 means ipv4 listen mode, 2 means ipv6 listen mode, 3 means ipv4 and ipv6 listen mode", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_IP(local_bound_ipv6_ip, "::", "local bound ipv6 ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_STR(obproxy_config_server_url, "", "url of config info(rs list and so on)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_STR(proxy_service_mode, "client", "proxy deploy and service mode: 1.client(default); 2.server", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_INT(proxy_id, "0", "[0, 255]", "used to identify each obproxy, it can not be zero if proxy_service_mode is server", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -284,15 +289,17 @@ public:
   DEF_TIME(congestion_retry_interval, "20s", "[1s,1h]", "congestion retry interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(min_congested_connect_timeout, "100ms", "[1ms,1h]", "if client connect timeout after the time, proxy set target server alive congested, [1ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_congestion, "true", "enable congestion feature or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_detect_mode, "0", "[0,1]", "0 means no detect, 1 means target detect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(server_detect_mode, "1", "[0,2]", "0 means no detect, 1 means target server detect, 2 means all server detect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(server_detect_fail_threshold, "3", "[1,10000]", "server detect try times", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(server_detect_refresh_interval, "10s", "[1ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(server_detect_refresh_interval, "1s", "[1ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(detect_server_timeout, "5s", "[1s,1h]", "detect server sql timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   DEF_BOOL(enable_bad_route_reject, "false", "if enabled, bad route request will be rejected, e.g. first statement of transaction opened by BEGIN(or START TRANSACTION) without table name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_partition_table_route, "true", "if enabled, partition table will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_compression_protocol, "true", "if enabled, proxy will use compression protocol with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_ob_protocol_v2, "true", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_ob_protocol_v2_with_client, "true", "if enabled, proxy will use oceanbase protocol 2.0 with client", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_transaction_internal_routing, "true", "if enabled, proxy will route the dml statement in a transaction to different servers", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -305,6 +312,9 @@ public:
   // sqlaudit
   DEF_CAP(sqlaudit_mem_limited, "0", "[0,1G]", "sqlaudit memory limited, [0, 1GB]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_CAP(internal_cmd_mem_limited, "16M", "[0,64MB]", "internal cmd response memory limited, [0, 64MB], 0 means unlimited", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+
+  // target db servers
+  DEF_STR(target_db_server, "", "proxy will choose to route target db server addr forcibly, format ip0:port0,ip1:port1,ip2:port2;ip3:port3;ip4:port4", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   //debug
   DEF_STR(test_server_addr, "", "proxy will choose this addr(if not empty) as observer addr forcibly, format ip1:sql_port1;ip2:sql_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -449,14 +459,10 @@ public:
 
   // beyond trust sdk
   DEF_STR(domain_name, "", "app domain name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(bt_use_antvip, "true", "if enabled, will use ant vip for bt sdk", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_STR(bt_server_addr, "", "beyond trust server address or hostname", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(bt_antvip_server_addr, "", "beyond trust antvip server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(bt_server_antvip, "", "beyond trust server antvip", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(bt_local_work_mode, "false", "true means LOCAL_CERT_MODE and false means CITADEL_CERT_MODE", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(bt_env_mode, "TENANT_MODE", "beyond trust env mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(bt_instance_id, "", "beyond trust instance id for INSTANCEID env mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(bt_retry_times, "3", "[0,100]", "beyond trust sdk retry times", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(bt_mode, "", "beyond trust mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(citadel_agent_ip, "", "bkmi citadel agent ip", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   // proxyro@sys and root@proxysys passwd
   DEF_STR(inspector_password, "", "password for inspector user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -471,6 +477,18 @@ public:
   DEF_BOOL(enable_stat, "true", "if enabled, will collect stat info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   DEF_INT(digest_sql_length, "1024", "0 means use default print sql len, otherwise is digest_sql_length", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+
+  DEF_INT(obproxy_read_only, "1", "[0,1]", "read write type: 0 means ReadOnly, 1 means ReadWrite", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_INT(obproxy_read_consistency, "0", "[0,1]", "request target: 0 means leader; 1 means follower", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+
+  DEF_BOOL(enable_global_ps_cache, "true", "if enabled, use global ps cache", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+
+  DEF_BOOL(enable_read_write_split, "false", "if enabled, use read write split mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_transaction_split, "false", "if enabled, support transaction split", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+
+  // binlog service
+  DEF_STR(binlog_service_ip, "", "binlog service ip, format ip1:sql_port1", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_binlog_service, "false", "if enabled, obproxy will send binlog request to OBLogProxy",  CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 };
 
 ObProxyConfig &get_global_proxy_config();

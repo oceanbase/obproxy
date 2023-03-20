@@ -173,56 +173,28 @@ int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t
 }
 
 int ObPartDescRange::cast_key(ObRowkey &src_key,
-                              ObRowkey &target_key,
-                              ObIAllocator &allocator,
-                              ObPartDescCtx &ctx)
+                         ObRowkey &target_key,
+                         ObIAllocator &allocator,
+                         ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
   int64_t min_col_cnt = std::min(src_key.get_obj_cnt(), target_key.get_obj_cnt());
   for (int64_t i = 0; i < min_col_cnt && OB_SUCC(ret); ++i) {
+    if (src_key.get_obj_ptr()[i].is_max_value() ||
+        src_key.get_obj_ptr()[i].is_min_value()) {
+      COMMON_LOG(DEBUG, "skip min/max obj");
+      continue;
+    }
     if (OB_FAIL(cast_obj(const_cast<ObObj &>(src_key.get_obj_ptr()[i]),
                          const_cast<ObObj &>(target_key.get_obj_ptr()[i]),
                          allocator,
-                         ctx))) {
+                         ctx,
+                         accuracies_.at(i)))) {
       COMMON_LOG(INFO, "fail to cast obj", K(i), K(ret));
     } else {
       // do nothing
     }
   }
-  return ret;
-}
-
-inline int ObPartDescRange::cast_obj(ObObj &src_obj,
-                                     ObObj &target_obj,
-                                     ObIAllocator &allocator,
-                                     ObPartDescCtx &ctx)
-{
-  int ret = OB_SUCCESS;
-  COMMON_LOG(DEBUG, "begin to cast obj for range", K(src_obj), K(target_obj));
-
-  ObTimeZoneInfo tz_info;
-  ObDataTypeCastParams dtc_params;
-  ObObjType obj_type = target_obj.get_type();
-
-  if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
-                                                                            obj_type, tz_info, dtc_params))) {
-    COMMON_LOG(WARN, "fail to build dtc params with ctx session", K(ret), K(obj_type));
-  } else {
-    ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, target_obj.get_collation_type());
-    const ObObj *res_obj = &src_obj;
-    ObAccuracy accuracy(accuracy_.valid_, accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
-    
-    // use src_obj as buf_obj
-    if (OB_FAIL(ObObjCasterV2::to_type(obj_type, target_obj.get_collation_type(), cast_ctx, src_obj, src_obj))) {
-      COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(target_obj));
-    } else if (ctx.need_accurate()
-               && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, target_obj.get_collation_type(), *res_obj, src_obj, res_obj))) {
-      COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj));
-    } else {
-      COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(target_obj));
-    }
-  }
-
   return ret;
 }
 

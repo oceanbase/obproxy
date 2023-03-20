@@ -68,6 +68,10 @@ const char *ObMysqlDebugNames::get_event_name(const int event)
       ret = "VC_EVENT_ACTIVE_TIMEOUT";
       break;
 
+    case VC_EVENT_DETECT_SERVER_DEAD:
+      ret = "VC_EVENT_DETECT_SERVER_DEAD";
+      break;
+
     case EVENT_INTERVAL:
       ret = "VC_EVENT_INTERVAL";
       break;

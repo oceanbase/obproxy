@@ -182,7 +182,7 @@ void ObServerSessionInfo::reuse_text_ps_version_set()
 
 ObClientSessionInfo::ObClientSessionInfo()
     : is_inited_(false), is_trans_specified_(false), is_global_vars_changed_(false),
-      is_user_idc_name_set_(false), is_read_consistency_set_(false), is_oracle_mode_(false), 
+      is_user_idc_name_set_(false), is_read_consistency_set_(false), is_oracle_mode_(false),
       is_proxy_route_policy_set_(false),
       enable_shard_authority_(false), enable_reset_db_(true), client_cap_(0), server_cap_(0),
       safe_read_snapshot_(0),
@@ -192,7 +192,8 @@ ObClientSessionInfo::ObClientSessionInfo()
       var_set_processor_(NULL), cluster_id_(OB_INVALID_CLUSTER_ID),
       real_meta_cluster_name_(), real_meta_cluster_name_str_(NULL),
       server_type_(DB_OB_MYSQL), shard_conn_(NULL), shard_prop_(NULL),
-      group_id_(OBPROXY_MAX_DBMESH_ID), is_allow_use_last_session_(true),
+      group_id_(OBPROXY_MAX_DBMESH_ID), table_id_(OBPROXY_MAX_DBMESH_ID), es_id_(OBPROXY_MAX_DBMESH_ID),
+      is_allow_use_last_session_(true),
       consistency_level_prop_(INVALID_CONSISTENCY),
       recv_client_ps_id_(0), ps_id_(0), ps_entry_(NULL), ps_id_entry_(NULL), ps_id_entry_map_(),
       text_ps_name_entry_(NULL), text_ps_name_entry_map_(), cursor_id_(0), cursor_id_addr_map_(),
@@ -200,14 +201,13 @@ ObClientSessionInfo::ObClientSessionInfo()
       is_read_only_user_(false),
       is_request_follower_user_(false)
 {
-  const int BUCKET_SIZE = 8;
   is_session_pool_client_ = true;
   MEMSET(scramble_buf_, 0, sizeof(scramble_buf_));
   MEMSET(idc_name_buf_, 0, sizeof(idc_name_buf_));
   MEMSET(client_host_buf_, 0, sizeof(client_host_buf_));
   MEMSET(username_buf_, 0, sizeof(username_buf_));
 
-  request_send_addrs_.create(BUCKET_SIZE);  ob20_request_.reset();
+  ob20_request_.reset();
 }
 
 ObClientSessionInfo::~ObClientSessionInfo()
@@ -319,7 +319,7 @@ int ObClientSessionInfo::set_tenant_name(const ObString &tenant_name)
 int ObClientSessionInfo::set_vip_addr_name(const common::ObAddr &vip_addr)
 {
   int ret = OB_SUCCESS;
-  char vip_name[OB_IP_STR_BUFF];
+  char vip_name[MAX_IP_ADDR_LENGTH];
   if (OB_UNLIKELY(!vip_addr.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to covert ip to string", K(vip_name), K(ret));
@@ -377,19 +377,25 @@ int ObClientSessionInfo::set_ldg_logical_tenant_name(const ObString &tenant_name
   return field_mgr_.set_ldg_logical_tenant_name(tenant_name);
 }
 
-int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info)
+int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, common::ObSimpleTrace<4096> &trace_log)
 {
   int ret = OB_SUCCESS;
   const char *buf = sess_info.ptr();
   const int64_t len = sess_info.length();
   const char *end = buf + len;
   // decode sess_info
+  const int MAX_TYPE_RECORD = 32;
+  char type_record[MAX_TYPE_RECORD];
+  memset(type_record, '0', MAX_TYPE_RECORD);
   if (NULL != sess_info.ptr()) {
     while (OB_SUCC(ret) && buf < end) {
       int16_t info_type = 0;
       int32_t info_len = 0;
       ObMySQLUtil::get_int2(buf, info_type);
       ObMySQLUtil::get_int4(buf, info_len);
+      if(info_type < MAX_TYPE_RECORD) {
+        type_record[info_type] = '1';
+      }
       if (buf + info_len > end) {
         ret = OB_ERR_UNEXPECTED;
         LOG_ERROR("data is error", K(info_type), K(info_len), K(len), K(ret));
@@ -397,10 +403,18 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info)
         LOG_DEBUG("extra info", K(info_type), K(info_len), K(len));
         char* info_value = NULL;
         ObString info_value_string;
+        if (OB_FAIL(inc_sess_field_version(info_type))) {
+          LOG_WARN("fail to update sess field versoin", K(info_type), K(ret));
+        } 
         if (OB_SUCC(sess_info_hash_map_.get_refactored(info_type, info_value_string))) {
           sess_info_hash_map_.erase_refactored(info_type);
           int64_t total_len = info_value_string.length();
           op_fixed_mem_free(info_value_string.ptr(), total_len);
+        }
+        int64_t client_version = 0;
+        if (OB_FAIL(ObProxyTraceUtils::get_sess_field_version(client_version , info_type, version_.sess_field_version_))) {
+          LOG_WARN("fail to set client session field version", K(info_type), K(ret));
+        } else {
         }
         info_value_string.reset();
         if (OB_ISNULL(info_value = static_cast<char*>(op_fixed_mem_alloc(info_len + 6)))) {
@@ -417,6 +431,8 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info)
         }
       }
     }
+    type_record[MAX_TYPE_RECORD - 1] = '\0';
+    trace_log.log_it("[get_sess]", "type", type_record);
     if (OB_SUCC(ret)) {
       version_.inc_sess_info_version();
       LOG_DEBUG("update sess info succ", K(sess_info));
@@ -879,6 +895,46 @@ int ObClientSessionInfo::extract_all_variable_reset_sql(ObSqlString &sql)
   return ret;
 }
 
+int ObClientSessionInfo::extract_user_variable_reset_sql(ObServerSessionInfo &server_info,
+                                                         ObSqlString &sql)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WARN("client session is not inited", K(ret));
+  } else {
+    bool need_reset = false;
+    if (OB_FAIL(sql.append_fmt("SET"))) {
+      LOG_WARN("fail to append_fmt 'SET'", K(ret));
+    } else if (!is_oceanbase_server()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("extract user variable reset sql only for oceanbase server");
+    } else { /* do nothing */ }
+
+    //reset user variable
+    if (OB_SUCC(ret)) {
+      if (need_reset_user_session_vars(server_info)) {
+        need_reset = true;
+        if (OB_FAIL(field_mgr_.format_user_var(sql))) {
+          LOG_WARN("fail to format_user_var.", K(sql), K(*this),
+                   K(server_info), K(ret));
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (need_reset) {
+        *(sql.ptr() + sql.length() - 1) = ';'; //replace ',' with ';'
+      } else {
+        sql.reset();
+      }
+    } else {
+      sql.reset();
+    }
+  }
+  return ret;
+}
+
 int ObClientSessionInfo::extract_variable_reset_sql(ObServerSessionInfo &server_info,
                                                     ObSqlString &sql)
 {
@@ -1215,7 +1271,7 @@ void ObClientSessionInfo::destroy()
     field_mgr_.destroy();
     login_req_.destroy();
     destroy_sess_info_map();
-    is_inited_ = false;  
+    is_inited_ = false;
   }
   if (NULL != var_set_processor_) {
     ObDefaultSysVarSet *sys_set = field_mgr_.get_sys_var_set();
@@ -1267,6 +1323,8 @@ void ObClientSessionInfo::destroy()
     shard_prop_ = NULL;
   }
   group_id_ = OBPROXY_MAX_DBMESH_ID;
+  table_id_ = OBPROXY_MAX_DBMESH_ID;
+  es_id_ = OBPROXY_MAX_DBMESH_ID;
   is_allow_use_last_session_ = true;
   up_info_.reset();
 }

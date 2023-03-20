@@ -16,6 +16,8 @@
 #include "utils/ob_proxy_utils.h"
 #include "iocore/eventsystem/ob_task.h"
 #include "iocore/eventsystem/ob_event_processor.h"
+#include "share/config/ob_config.h"
+#include "obutils/ob_config_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
@@ -68,7 +70,6 @@ int ObShowVipHandler::main_handler(int event, void *data)
   } else if (OB_FAIL(dump_header())) {
     WARN_ICMD("fail to dump header", K(ret));
   } else {
-    ObVipTenantCache &vt_cache = get_global_vip_tenant_processor().get_vt_cache();
     ObVipTenant vip_tenant;
     if (!like_name_.empty()) {
       //dump one vip tenant
@@ -87,9 +88,9 @@ int ObShowVipHandler::main_handler(int event, void *data)
           WARN_ICMD("unexpected argument", K(vip_string), K(match_name), K(ret));
         } else if (OB_FAIL(get_int_value(match_name, vport))) {
           WARN_ICMD("fail to get_int_value", K(match_name), K(vport), K(ret));
-        } else if (!vip_addr.addr_.set_ipv4_addr(vip_string, static_cast<int32_t>(vport))) {
+        } else if (!vip_addr.addr_.set_ip_addr(vip_string, static_cast<int32_t>(vport))) {
           ret = OB_INVALID_ARGUMENT;
-          WARN_ICMD("fail to set_ipv4_addr", K(vip_string), K(vport), K(ret));
+          WARN_ICMD("fail to set_ip_addr", K(vip_string), K(vport), K(ret));
         } else if (!vip_addr.is_valid()) {
           ret = OB_INVALID_ARGUMENT;
           WARN_ICMD("invalid vip_addr", K(vip_addr), K(match_name), K(ret));
@@ -99,32 +100,38 @@ int ObShowVipHandler::main_handler(int event, void *data)
       }
 
       if (OB_SUCC(ret)) {
-        if (OB_FAIL(vt_cache.get(vip_addr, vip_tenant))) {
-          WARN_ICMD("fail to get vip_tenant", K(ret));
-          if (OB_ENTRY_NOT_EXIST == ret) {
-            //empty result
-            ret = OB_SUCCESS;
+        ObConfigItem tenant_item;
+        ObConfigItem cluster_item;
+        bool found = false;
+        vip_tenant.vip_addr_ = vip_addr;
+        if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
+          vip_tenant.vip_addr_, "", "", "proxy_tenant_name", tenant_item, "LEVEL_VIP", found))) {
+          WARN_ICMD("get proxy tenant name config failed", K(vip_tenant.vip_addr_), K(ret));
+        } 
+        if (OB_SUCC(ret) && found) {
+          if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
+            vip_tenant.vip_addr_, "", "", "rootservice_cluster_name", cluster_item, "LEVEL_VIP", found))) {
+            WARN_ICMD("get cluster name config failed", K(vip_tenant.vip_addr_), K(ret));
           }
-        } else if (OB_FAIL(dump_item(vip_tenant))) {
-          WARN_ICMD("fail to dump item", K(vip_tenant), K(ret));
+        }
+        if (OB_SUCC(ret) && found) {
+          if (OB_FAIL(vip_tenant.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
+            WARN_ICMD("set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
+          } else if (OB_FAIL(dump_item(vip_tenant))) {
+            WARN_ICMD("fail to dump item", K(vip_tenant), K(ret));
+          }
+        } else {
+          WARN_ICMD("fail to get vip_tenant", K(ret));
         }
       } else {
         ret = OB_ERR_OPERATOR_UNKNOWN;//return this errno
       }
     } else {
       //dump all vip tenant
-      ObVipTenantCache::VTHashMap *cache_map = NULL;
-      obsys::CRLockGuard guard(vt_cache.rwlock_);
-      if (OB_ISNULL(cache_map = vt_cache.get_cache_map())) {
-        ret = OB_ERR_UNEXPECTED;
-        WARN_ICMD("cache_map is null", K(ret));
-      } else {
-        for (ObVipTenantCache::VTHashMap::iterator it = cache_map->begin();
-             OB_SUCC(ret) && it != cache_map->end(); ++it) {
-          if (OB_FAIL(dump_item(*it))) {
-            WARN_ICMD("fail to dump item", K(*it), K(ret));
-          }
-        }
+      const char* select_sql = "SELECT a.vid, a.vip, a.vport, a.value, b.value FROM proxy_config as a, proxy_config as b "
+          "where a.name = 'proxy_tenant_nane' and b.name = 'rootservice_cluster_name';";
+      if (get_global_config_processor().execute(select_sql, ObShowVipHandler::sqlite3_callback, this)) {
+        WARN_ICMD("fail to execute sql", K(ret));
       }
     }
   }
@@ -175,6 +182,40 @@ int ObShowVipHandler::dump_item(const ObVipTenant &vip_tenant)
     row.count_ = OB_VC_MAX_VIP_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
       WARN_ICMD("fail to encode row packet", K(row), K(ret));
+    }
+  }
+  return ret;
+}
+
+int ObShowVipHandler::sqlite3_callback(void *data, int argc, char **argv, char **column_name)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(NULL == data || NULL == argv || NULL == column_name || 5 != argc)) {
+    ret = OB_ERR_UNEXPECTED;
+    WARN_ICMD("argument is unexpected", K(argc), K(ret));
+  } else {
+    ObShowVipHandler *handler = reinterpret_cast<ObShowVipHandler*>(data);
+    char* vip;
+    int64_t vport = 0;
+    int64_t vid = -1;
+    ObVipTenant vip_tenant;
+    ObString tenant;
+    ObString cluster;
+    if (OB_UNLIKELY(NULL == argv[0] || NULL == argv[1] || NULL == argv[2] || NULL == argv[3] || NULL == argv[4])) {
+      ret = OB_ERR_UNEXPECTED;
+      WARN_ICMD("argument is unexpected", K(ret));
+    } else {
+      vid = atoi(argv[0]);
+      vip = argv[1];
+      vport = atoi(argv[2]);
+      tenant = argv[3];
+      cluster = argv[4];
+      vip_tenant.vip_addr_.set(vip, static_cast<int32_t>(vport), vid);
+      if (OB_FAIL(vip_tenant.set_tenant_cluster(tenant, cluster))) {
+        WARN_ICMD("fail to set tenant cluster", K(vip_tenant), K(ret));
+      } else if (OB_FAIL(handler->dump_item(vip_tenant))) {
+        WARN_ICMD("fail to dump item", K(vip_tenant), K(ret));
+      }
     }
   }
   return ret;

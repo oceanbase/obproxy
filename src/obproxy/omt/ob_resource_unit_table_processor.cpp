@@ -69,11 +69,11 @@ int ObResourceUnitTableProcessor::get_config_params(void* args,
     } else {
       // The storage format is:[cluster|tenant|name|value]
       for (int64_t i = 0; i < fields->field_num_; i++) {
-        SqlField& sql_field = fields->fields_.at(i);
-        if (0 == sql_field.column_name_.string_.case_compare("name")) {
-          name_str = sql_field.column_value_.config_string_;
-        } else if (0 == sql_field.column_name_.string_.case_compare("value")) {
-          value_str = sql_field.column_value_.config_string_;
+        SqlField* sql_field = fields->fields_.at(i);
+        if (0 == sql_field->column_name_.config_string_.case_compare("name")) {
+          name_str = sql_field->column_value_.config_string_;
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
+          value_str = sql_field->column_value_.config_string_;
         }
       }
     }
@@ -216,16 +216,16 @@ int ObResourceUnitTableProcessor::handle_delete_config(
 }
 
 int build_tenant_cluster_vip_name(const ObString &tenant_name, const ObString &cluster_name,
-    const ObString &vip_name, ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> &key_string)
+    const ObString &vip_name, ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> &key_string)
 {
   int ret = OB_SUCCESS;
-  char buf[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF];
+  char buf[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH];
   int64_t len = 0;
-  len = static_cast<int64_t>(snprintf(buf, OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF, "%.*s#%.*s|%.*s",
+  len = static_cast<int64_t>(snprintf(buf, OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH, "%.*s#%.*s|%.*s",
     tenant_name.length(), tenant_name.ptr(),
     cluster_name.length(), cluster_name.ptr(),
     vip_name.length(), vip_name.ptr()));
-  if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF)) {
+  if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill buf", K(ret), K(tenant_name), K(cluster_name), K(vip_name));
   } else if (OB_FAIL(key_string.assign(buf))) {

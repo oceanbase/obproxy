@@ -33,16 +33,18 @@ public:
   // packet
   static int write_packet(event::ObMIOBuffer &write_buf,
                           proxy::ObMysqlClientSession &client_session,
+                          const proxy::ObProxyProtocol protocol,
                           obmysql::ObMySQLPacket &packet);
-  static int write_raw_packet(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession &client_session,
+  static int write_raw_packet(event::ObMIOBuffer &write_buf,
+                              proxy::ObMysqlClientSession &client_session,
+                              const proxy::ObProxyProtocol protocol,
                               ObString &pkt_str);
   static int write_kv_resultset(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession &client_session,
-                                uint8_t &seq, const obmysql::ObMySQLField &field, ObObj &field_value,
-                                const uint16_t status_flag);
-  static int write_ok_packet(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession &client_session, uint8_t &seq,
-                             const int64_t affected_rows, const obmysql::ObMySQLCapabilityFlags &capability);
-  static int write_executor_resp_packet(event::ObMIOBuffer *write_buf, proxy::ObMysqlClientSession *client_session,
-                                        uint8_t &seq, engine::ObProxyResultResp *result_resp);
+                                const proxy::ObProxyProtocol protocol, uint8_t &seq,
+                                const obmysql::ObMySQLField &field, ObObj &field_value, const uint16_t status_flag);
+  static int write_ok_packet(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession &client_session,
+                             const proxy::ObProxyProtocol protocol, uint8_t &seq, const int64_t affected_rows,
+                             const obmysql::ObMySQLCapabilityFlags &capability);
   
   // get thread err buffer
   static int get_err_buf(int err_code, char *&buf);
@@ -74,9 +76,11 @@ public:
   }
   
   static int write_error_packet(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession *client_session,
-                                uint8_t &seq, const int err_code, const char *msg_buf);
+                                const proxy::ObProxyProtocol protocol, uint8_t &seq,
+                                const int err_code, const char *msg_buf);
   static int write_error_packet(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession *client_session,
-                                uint8_t &seq, const int err_code, const ObString &msg_buf);
+                                const proxy::ObProxyProtocol protocol, uint8_t &seq, const int err_code,
+                                const ObString &msg_buf);
 
 };
 

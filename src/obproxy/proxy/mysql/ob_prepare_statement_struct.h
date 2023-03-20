@@ -45,19 +45,9 @@ public:
   static const int BUCKET_SIZE = 8;
   static const int NODE_NUM = 8;
 
-  // use SimpleAllocer to save mem
-  typedef common::hash::ObHashSet<net::ObIpEndpoint,
-                                  common::hash::ReadWriteDefendMode,
-                                  common::hash::hash_func<net::ObIpEndpoint>,
-                                  common::hash::equal_to<net::ObIpEndpoint>,
-                                  common::hash::SimpleAllocer<common::hash::HashSetTypes<net::ObIpEndpoint>::AllocType, NODE_NUM>
-                                 > ADDR_HASH_SET;
-
   ObPsIdAddrs() : ps_id_(0), addrs_() {
-    addrs_.create(BUCKET_SIZE);
   }
   ObPsIdAddrs(uint32_t ps_id) : ps_id_(ps_id), addrs_() {
-    addrs_.create(BUCKET_SIZE);
   }
   ~ObPsIdAddrs() {};
 
@@ -65,13 +55,12 @@ public:
   void destroy();
   int add_addr(const struct sockaddr &socket_addr);
   int remove_addr(const struct sockaddr &socket_addr);
-  ADDR_HASH_SET &get_addrs() { return addrs_; }
+  ObIArray<net::ObIpEndpoint> &get_addrs() { return addrs_; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 public:
   uint32_t ps_id_; // client ps id
-  ADDR_HASH_SET addrs_;
-
+  ObSEArray<net::ObIpEndpoint, 4> addrs_;
   LINK(ObPsIdAddrs, ps_id_addrs_link_);
 };
 
@@ -115,8 +104,7 @@ public:
 
   const common::ObString &get_base_ps_sql() { return base_ps_sql_; }
 
-  virtual void free() { destroy(); }
-
+  virtual void free() {}
   virtual void destroy();
 
 public:
@@ -189,13 +177,14 @@ public:
   ObPsEntry() : ObBasePsEntry() {}
   ~ObPsEntry() {}
 
+  template <typename T>
   static int alloc_and_init_ps_entry(const common::ObString &ps_sql,
                                      const obutils::ObSqlParseResult &parse_result,
-                                     ObPsEntry *&entry);
+                                     T *&entry);
   int init(char *buf_start, int64_t buf_len);
-  void destroy();
+  virtual void free();
+  virtual void destroy();
   int set_sql(const common::ObString &ps_sql);
-
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 private:
@@ -205,6 +194,61 @@ public:
   DISALLOW_COPY_AND_ASSIGN(ObPsEntry);
 };
 
+class ObGlobalPsEntry : public ObPsEntry
+{
+public:
+  ObGlobalPsEntry() : ObPsEntry() {}
+  ~ObGlobalPsEntry() {}
+  virtual void free();
+  template <typename T>
+  static int alloc_and_init_ps_entry(const common::ObString &ps_sql,
+                                     const obutils::ObSqlParseResult &parse_result,
+                                     T *&entry);
+};
+
+template <typename T>
+int ObGlobalPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
+                                             const obutils::ObSqlParseResult &parse_result,
+                                             T *&entry)
+{
+  return ObPsEntry::alloc_and_init_ps_entry(ps_sql, parse_result, entry);
+}
+
+template <typename T>
+int ObPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
+                                       const obutils::ObSqlParseResult &parse_result,
+                                       T *&entry)
+{
+  int ret = OB_SUCCESS;
+  int64_t alloc_size = 0;
+  char *buf = NULL;
+
+  int64_t obj_size = sizeof(T);
+  int64_t sql_len = ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
+
+  alloc_size += sizeof(T) + sql_len;
+  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_SM_LOG(WARN, "fail to alloc mem for ps entry", K(alloc_size), K(ret));
+  } else {
+    entry = new (buf) T();
+    if (OB_FAIL(entry->init(buf + obj_size, alloc_size - obj_size))) {
+      PROXY_SM_LOG(WARN, "fail to init ps entry", K(ret));
+    } else if (OB_FAIL(entry->set_sql(ps_sql))) {
+      PROXY_SM_LOG(WARN, "fail to set ps sql", K(ret));
+    } else {
+      entry->set_base_ps_parse_result(parse_result);
+    }
+  }
+
+  if (OB_FAIL(ret) && NULL != buf) {
+    op_fixed_mem_free(buf, alloc_size);
+    entry = NULL;
+    alloc_size = 0;
+  }
+  return ret;
+}
+
 // stored in client session info
 class ObPsIdEntry
 {
@@ -212,7 +256,6 @@ public:
   ObPsIdEntry() : ps_id_(0), ps_entry_(NULL), ps_meta_() {}
   ObPsIdEntry(uint32_t client_id, ObPsEntry *entry)
       : ps_id_(client_id), ps_entry_(entry) {
-    ps_entry_->inc_ref();
   }
   ~ObPsIdEntry() {}
 
@@ -268,19 +311,76 @@ public:
 class ObTextPsEntry : public ObBasePsEntry
 {
 public:
-  ObTextPsEntry() : ObBasePsEntry() {} 
-  ~ObTextPsEntry() { destroy(); }
+  ObTextPsEntry() : ObBasePsEntry() {}
+  ~ObTextPsEntry() { }
 
-  static int alloc_and_init_text_ps_entry(const common::ObString &sql,
-                                          const obutils::ObSqlParseResult &parse_result,
-                                          ObTextPsEntry *&entry);
+  template <typename T>
+  static int alloc_and_init_ps_entry(const common::ObString &sql,
+                                     const obutils::ObSqlParseResult &parse_result,
+                                     T *&entry);
   int init(char *buf_start, int64_t buf_len, const common::ObString &text_ps_sql);
-  void destroy();
+  virtual void free();
+  virtual void destroy();
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObTextPsEntry);
 };
+
+template <typename T>
+int ObTextPsEntry::alloc_and_init_ps_entry(const ObString &text_ps_sql,
+                                           const obutils::ObSqlParseResult &parse_result,
+                                           T *&entry)
+{
+  int ret = OB_SUCCESS;
+  int64_t alloc_size = 0;
+  char *buf = NULL;
+
+  int64_t obj_size = sizeof(T);
+  int64_t sql_len = text_ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
+
+  alloc_size = obj_size + sql_len;
+  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_SM_LOG(WARN, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
+  } else {
+    entry = new (buf) T();
+    if (OB_FAIL(entry->init(buf + obj_size, alloc_size - obj_size, text_ps_sql))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_SM_LOG(WARN, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
+    } else {
+      entry->set_base_ps_parse_result(parse_result);
+    }
+  }
+
+  if (OB_FAIL(ret) && NULL != buf) {
+    op_fixed_mem_free(buf, alloc_size);
+    entry = NULL;
+    alloc_size = 0;
+  }
+
+  return ret;
+}
+
+class ObGlobalTextPsEntry : public ObTextPsEntry
+{
+public:
+  ObGlobalTextPsEntry() : ObTextPsEntry() {}
+  ~ObGlobalTextPsEntry() {}
+  virtual void free();
+  template <typename T>
+  static int alloc_and_init_ps_entry(const common::ObString &sql,
+                                     const obutils::ObSqlParseResult &parse_result,
+                                     T *&entry);
+};
+
+template <typename T>
+int ObGlobalTextPsEntry::alloc_and_init_ps_entry(const ObString &sql,
+                                                 const obutils::ObSqlParseResult &parse_result,
+                                                 T *&entry)
+{
+  return ObTextPsEntry::alloc_and_init_ps_entry(sql, parse_result, entry);
+}
 
 class ObTextPsNameEntry
 {
@@ -291,7 +391,6 @@ public:
   {
     text_ps_name_.assign_ptr(buf, static_cast<int32_t>(buf_len));
     text_ps_entry_ = entry;
-    text_ps_entry_->inc_ref();
   }
 
   static int alloc_text_ps_name_entry(const ObString &text_ps_name,
@@ -315,13 +414,28 @@ public:
 class ObBasePsEntryCache
 {
 public:
-  ObBasePsEntryCache() : base_ps_map_() {}
-  ~ObBasePsEntryCache() { destroy(); }
+  ObBasePsEntryCache() {}
+  virtual ~ObBasePsEntryCache() { destroy(); }
+  virtual void destroy() {}
+
+public:
+  virtual void delete_base_ps_entry(ObBasePsEntry *base_ps_entry) {
+    UNUSED(base_ps_entry);
+  }
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObBasePsEntryCache);
+};
+
+class ObBasePsEntryThreadCache : public ObBasePsEntryCache
+{
+public:
+  ObBasePsEntryThreadCache() : ObBasePsEntryCache(), ps_entry_thread_map_() {}
+  ~ObBasePsEntryThreadCache() { destroy(); }
   void destroy();
 
 public:
   static const int64_t HASH_BUCKET_SIZE = 64;
-
   struct ObBasePsEntryHashing
   {
     typedef const common::ObString &Key;
@@ -332,71 +446,210 @@ public:
     static Key key(Value const *value) { return value->base_ps_sql_;  }
     static bool equal(Key lhs, Key rhs) { return lhs == rhs;  }
   };
-
   typedef common::hash::ObBuildInHashMap<ObBasePsEntryHashing, HASH_BUCKET_SIZE> ObBasePsEntryMap;
 
 public:
-  int get_ps_entry(const common::ObString &sql, ObPsEntry *&ps_entry)
-  {
-    int ret = common::OB_SUCCESS;
-    ObBasePsEntry *tmp_entry = NULL;
-    if (OB_FAIL(base_ps_map_.get_refactored(sql, tmp_entry))) {
-      //do nothing
-    } else {
-      ps_entry = static_cast<ObPsEntry*>(tmp_entry);
-    }
-    return ret;
-  }
+  template <typename T>
+  int acquire_ps_entry(const common::ObString &sql, T *&ps_entry);
 
-  int set_ps_entry(ObPsEntry *ps_entry)
-  {
-    ObBasePsEntry *tmp_entry = static_cast<ObBasePsEntry*>(ps_entry);
-    tmp_entry->set_ps_entry_cache(this);
-    return base_ps_map_.unique_set(tmp_entry);
-  }
+  template <typename T>
+  int create_ps_entry(const common::ObString &sql,
+                      const obutils::ObSqlParseResult &parse_result,
+                      T *&ps_entry);
 
-  int get_text_ps_entry(const common::ObString &sql, ObTextPsEntry *&text_ps_entry)
-  {
-    int ret = common::OB_SUCCESS;
-    ObBasePsEntry *tmp_entry = NULL;
-    if (OB_FAIL(base_ps_map_.get_refactored(sql, tmp_entry))) {
-      //do nothing
-    } else {
-      text_ps_entry = static_cast<ObTextPsEntry*>(tmp_entry);
-    }
-    return ret;
-  }
+  template <typename T>
+  int acquire_or_create_ps_entry(const common::ObString &sql,
+                                 const obutils::ObSqlParseResult &parse_result,
+                                 T *&ps_entry);
 
-  int set_text_ps_entry(ObTextPsEntry *text_ps_entry)
-  {
-    ObBasePsEntry *tmp_entry = text_ps_entry;
-    tmp_entry->set_ps_entry_cache(this);
-    return base_ps_map_.unique_set(tmp_entry);
-  }
-
-  int delete_text_ps_entry(ObTextPsEntry *text_ps_entry)
-  {
-    if (NULL != text_ps_entry) {
-      base_ps_map_.remove(text_ps_entry->base_ps_sql_);
-      text_ps_entry->destroy();
-    }
-    return common::OB_SUCCESS;
-  }
-
-  void delete_base_ps_entry(ObBasePsEntry *base_ps_entry)
-  {
-    base_ps_map_.remove(base_ps_entry);
-  }
+  void delete_base_ps_entry(ObBasePsEntry *base_ps_entry);
 
 private:
-  ObBasePsEntryMap base_ps_map_;
-  DISALLOW_COPY_AND_ASSIGN(ObBasePsEntryCache);
+  ObBasePsEntryMap ps_entry_thread_map_;
+  DISALLOW_COPY_AND_ASSIGN(ObBasePsEntryThreadCache);
 };
+
+template <typename T>
+int ObBasePsEntryThreadCache::acquire_ps_entry(const ObString &sql, T *&ps_entry)
+{
+  int ret = OB_SUCCESS;
+  ObBasePsEntry *tmp_entry = NULL;
+  if (OB_FAIL(ps_entry_thread_map_.get_refactored(sql, tmp_entry))) {
+    //do nothing
+  } else {
+    ps_entry = static_cast<T*>(tmp_entry);
+    ps_entry->inc_ref();
+  }
+  return ret;
+}
+
+template <typename T>
+int ObBasePsEntryThreadCache::create_ps_entry(const common::ObString &sql,
+                                        const obutils::ObSqlParseResult &parse_result,
+                                        T *&ps_entry)
+{
+  int ret = OB_SUCCESS;
+  ObBasePsEntry* tmp_ps_entry = NULL;
+  if (OB_FAIL(ps_entry_thread_map_.get_refactored(sql, tmp_ps_entry))) {
+    if (OB_HASH_NOT_EXIST == ret) {
+      if (OB_FAIL(T::alloc_and_init_ps_entry(sql, parse_result, ps_entry))) {
+        PROXY_SM_LOG(WARN, "fail to alloc and init ps entry", K(ret));
+      } else if (OB_FAIL(ps_entry_thread_map_.unique_set(ps_entry))) {
+        PROXY_SM_LOG(WARN, "fail to add ps entry to cache", K(ret));
+        if (OB_LIKELY(NULL != ps_entry)) {
+          ps_entry->destroy();
+          ps_entry = NULL;
+        }
+      } else {
+        ObBasePsEntry *tmp_entry = static_cast<ObBasePsEntry*>(ps_entry);
+        tmp_entry->set_ps_entry_cache(this);
+      }
+    }
+  } else {
+    ps_entry = static_cast<T*>(tmp_ps_entry);
+  }
+  if (OB_SUCC(ret)) {
+    ps_entry->inc_ref();
+  }
+  return ret;
+}
+
+template <typename T>
+int ObBasePsEntryThreadCache::acquire_or_create_ps_entry(const ObString &sql,
+                                                         const obutils::ObSqlParseResult &parse_result,
+                                                         T *&ps_entry)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(acquire_ps_entry(sql, ps_entry))) {
+    if (OB_HASH_NOT_EXIST == ret) {
+      if (OB_FAIL(create_ps_entry(sql, parse_result, ps_entry))) {
+        PROXY_SM_LOG(WARN, "fail to create ps entry", K(sql), K(ret));
+      } else {
+        PROXY_SM_LOG(DEBUG, "succ to create ps entry", K(sql), KPC(ps_entry));
+      }
+    } else {
+      PROXY_SM_LOG(WARN, "fail to get ps entry", K(sql), K(ret));
+    }
+  }
+  return ret;
+}
+
+class ObBasePsEntryGlobalCache : public ObBasePsEntryCache
+{
+public:
+  ObBasePsEntryGlobalCache() : ObBasePsEntryCache(), lock_(), ps_entry_global_map_() {}
+  ~ObBasePsEntryGlobalCache() { destroy(); }
+  void destroy();
+
+public:
+  static const int64_t HASH_BUCKET_SIZE = 64;  
+  struct ObBasePsEntryHashing
+  {
+    typedef const common::ObString &Key;
+    typedef ObBasePsEntry Value;
+    typedef ObDLList(ObBasePsEntry, base_ps_entry_link_) ListHead;
+
+    static uint64_t hash(Key key) { return key.hash();  }
+    static Key key(Value const *value) { return value->base_ps_sql_; }
+    static bool equal(Key lhs, Key rhs) { return lhs == rhs;  }
+    static int64_t inc_ref(Value* value) { return ATOMIC_AAF(&value->ref_count_, 1); }
+    static bool bcas_ref(Value* value, int64_t cmpv, int64_t newv) { return ATOMIC_BCAS(&value->ref_count_, cmpv, newv); }
+    static int64_t get_ref(Value* value) { return ATOMIC_LOAD(&value->ref_count_); }
+    static void destroy(Value* value) { value->destroy(); }
+  };
+  typedef common::hash::ObBuildInHashMapForRefCount<ObBasePsEntryHashing, HASH_BUCKET_SIZE> ObBasePsEntryGlobalMap;
+
+public:
+  template <typename T>
+  int acquire_ps_entry(const common::ObString &sql, T *&ps_entry);
+
+  template <typename T>
+  int create_ps_entry(const common::ObString &sql,
+                      const obutils::ObSqlParseResult &parse_result,
+                      T *&ps_entry);
+
+  template <typename T>
+  int acquire_or_create_ps_entry(const common::ObString &sql,
+                                 const obutils::ObSqlParseResult &parse_result,
+                                 T *&ps_entry);
+
+  void delete_base_ps_entry(ObBasePsEntry *base_ps_entry);
+
+private:
+  common::DRWLock lock_;
+  ObBasePsEntryGlobalMap ps_entry_global_map_;
+  DISALLOW_COPY_AND_ASSIGN(ObBasePsEntryGlobalCache);
+};
+
+template <typename T>
+int ObBasePsEntryGlobalCache::acquire_ps_entry(const ObString &sql, T *&ps_entry)
+{
+  int ret = OB_SUCCESS;
+  common::DRWLock::RDLockGuard guard(lock_);
+  ObBasePsEntry *tmp_entry = NULL;
+  if (OB_FAIL(ps_entry_global_map_.get_refactored(sql, tmp_entry))) {
+    //do nothing
+  } else {
+    ps_entry = static_cast<T*>(tmp_entry);
+  }
+  return ret;
+}
+
+template <typename T>
+int ObBasePsEntryGlobalCache::create_ps_entry(const common::ObString &sql,
+                                        const obutils::ObSqlParseResult &parse_result,
+                                        T *&ps_entry)
+{
+  int ret = OB_SUCCESS;
+  DRWLock::WRLockGuard guard(lock_);
+  ObBasePsEntry* tmp_ps_entry = NULL;
+  if (OB_FAIL(ps_entry_global_map_.get_refactored(sql, tmp_ps_entry))) {
+    if (OB_HASH_NOT_EXIST == ret) {
+      if (OB_FAIL(T::alloc_and_init_ps_entry(sql, parse_result, ps_entry))) {
+        PROXY_SM_LOG(WARN, "fail to alloc and init ps entry", K(ret));
+      } else if (OB_FAIL(ps_entry_global_map_.unique_set(ps_entry))) {
+        PROXY_SM_LOG(WARN, "fail to add ps entry to cache", K(ret));
+        if (OB_LIKELY(NULL != ps_entry)) {
+          ps_entry->destroy();
+          ps_entry = NULL;
+        }
+      } else {
+        ObBasePsEntry *tmp_entry = static_cast<ObBasePsEntry*>(ps_entry);
+        tmp_entry->set_ps_entry_cache(this);
+      }
+    }
+  } else {
+    ps_entry = static_cast<T*>(tmp_ps_entry);
+  }
+  return ret;
+}
+
+template <typename T>
+int ObBasePsEntryGlobalCache::acquire_or_create_ps_entry(const ObString &sql,
+                                                         const obutils::ObSqlParseResult &parse_result,
+                                                         T *&ps_entry)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(acquire_ps_entry(sql, ps_entry))) {
+    if (OB_HASH_NOT_EXIST == ret) {
+      if (OB_FAIL(create_ps_entry(sql, parse_result, ps_entry))) {
+        PROXY_SM_LOG(WARN, "fail to create ps entry", K(sql), K(ret));
+      } else {
+        PROXY_SM_LOG(DEBUG, "succ to create ps entry", K(sql), KPC(ps_entry));
+      }
+    } else {
+      PROXY_SM_LOG(WARN, "fail to get ps entry", K(sql), K(ret));
+    }
+  }
+  return ret;
+}
 
 int init_ps_entry_cache_for_thread();
 int init_ps_entry_cache_for_one_thread(int64_t index);
 int init_text_ps_entry_cache_for_thread();
 int init_text_ps_entry_cache_for_one_thread(int64_t index);
+ObBasePsEntryGlobalCache &get_global_ps_entry_cache();
+ObBasePsEntryGlobalCache &get_global_text_ps_entry_cache();
 
 } // end of namespace proxy
 } // end of namespace obproxy

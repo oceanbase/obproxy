@@ -588,7 +588,8 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
     case VC_EVENT_READ_COMPLETE:
     case MYSQL_TUNNEL_EVENT_PRECOMPLETE:
     case VC_EVENT_INACTIVITY_TIMEOUT:
-    case VC_EVENT_EOS: {
+    case VC_EVENT_EOS:
+    case VC_EVENT_DETECT_SERVER_DEAD: {
       p.packet_analyzer_.last_server_event_ = event;
 
       // If we couldn't understand the encoding, return an error
@@ -765,6 +766,7 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
     case VC_EVENT_ERROR:
     case VC_EVENT_ACTIVE_TIMEOUT:
     case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
     case MYSQL_TUNNEL_EVENT_CONSUMER_DETACH:
       p.alive_ = false;
       p.bytes_read_ = p.read_vio_->ndone_;
@@ -915,7 +917,8 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
     case VC_EVENT_EOS:
     case VC_EVENT_ERROR:
     case VC_EVENT_ACTIVE_TIMEOUT:
-    case VC_EVENT_INACTIVITY_TIMEOUT: {
+    case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD: {
       c.alive_ = false;
       c.bytes_written_ = c.write_vio_ ? c.write_vio_->ndone_ : 0;
 

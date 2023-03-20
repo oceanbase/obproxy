@@ -50,6 +50,7 @@ enum ObTableEntryLookupState
   LOOKUP_PART_INFO_STATE,
   LOOKUP_FIRST_PART_STATE,
   LOOKUP_SUB_PART_STATE,
+  LOOKUP_BINLOG_ENTRY_STATE,
   LOOKUP_DONE_STATE,
 };
 
@@ -142,6 +143,7 @@ private:
   int handle_sub_part_resp(ObResultSetFetcher &rs_fetcher);
   int handle_lookup_remote();
   int handle_lookup_remote_done();
+  int handle_binlog_entry_resp(ObResultSetFetcher &rs_fetcher);
 
   int handle_lookup_remote_for_update();
   int add_to_global_cache(bool &add_succ);

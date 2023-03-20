@@ -15,6 +15,7 @@
 #include "rpc/obmysql/ob_mysql_packet.h"
 #include "utils/ob_proxy_lib.h"
 #include "proxy/mysqllib/ob_2_0_protocol_struct.h"
+#include "lib/oblog/ob_simple_trace.h"
 
 namespace oceanbase
 {
@@ -73,6 +74,7 @@ public:
                                        const bool need_handle_sysvar,
                                        obmysql::OMPKOK &ok_pkt,
                                        ObRespAnalyzeResult &resp_result,
+                                       common::ObSimpleTrace<4096> &trace_log,
                                        const bool is_save_to_common_sys = false);
 
   // The @reader must has only one receive completed ok packet,
@@ -85,13 +87,15 @@ public:
                                const bool is_auth_request,
                                const bool need_handle_sysvar,
                                ObRespAnalyzeResult &resp_result,
+                               common::ObSimpleTrace<4096> &trace_log,
                                const bool is_save_to_common_sys);
 
   static int analyze_extra_ok_packet(event::ObIOBufferReader &reader,
                                      ObClientSessionInfo &client_info,
                                      ObServerSessionInfo &server_info,
                                      const bool need_handle_sysvar,
-                                     ObRespAnalyzeResult &resp_result);
+                                     ObRespAnalyzeResult &resp_result,
+                                     common::ObSimpleTrace<4096> &trace_log);
 
   static int rewrite_query_req_by_sharding(ObClientSessionInfo &client_info,
                                            ObProxyMysqlRequest &client_request,
@@ -171,7 +175,9 @@ public:
                                                       bool &need_save);
   static int save_changed_sess_info(ObClientSessionInfo& client_info,
                                     ObServerSessionInfo& server_info,
-                                    Ob20ExtraInfo& extra_info);
+                                    Ob20ExtraInfo& extra_info,
+                                    common::ObSimpleTrace<4096> &trace_log,
+                                    bool is_only_sync_trans_sess);
 
 private:
   static ObProxySysVarType get_sys_var_type(const common::ObString &var_name);

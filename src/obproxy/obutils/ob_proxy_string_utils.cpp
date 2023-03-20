@@ -23,7 +23,7 @@ namespace obproxy
 {
 namespace obutils
 {
-ObProxyVariantString::ObProxyVariantString():data_(NULL), data_size_(0)
+ObProxyVariantString::ObProxyVariantString(): config_string_(), data_(NULL), data_size_(0)
 {
 
 }
@@ -47,7 +47,7 @@ ObProxyVariantString& ObProxyVariantString::operator=(const ObProxyVariantString
 {
   if (&vstr != this) {
     reset();
-    set_value(vstr.data_size_, vstr.data_);
+    set_value(vstr.config_string_.length(), vstr.config_string_.ptr());
   }
   return *this;
 }
@@ -90,6 +90,41 @@ bool ObProxyVariantString::set_value(const int32_t len, const char *value)
   data_[len] = '\0';
   config_string_.assign_ptr(data_, len);
   return true;
+}
+
+bool ObProxyVariantString::set_value_with_quote(const common::ObString &value, const char quote)
+{
+  return set_value_with_quote(value.length(), value.ptr(), quote);
+}
+
+bool ObProxyVariantString::set_value_with_quote(const int32_t len, const char *value, const char quote)
+{
+  reset();
+  data_size_ = len + 3;
+  data_ = (char*)ob_malloc(data_size_);
+  if (OB_ISNULL(data_)) {
+    LOG_WARN("ob_malloc failed", K_(data_size));
+    return false;
+  } else {
+    data_[0] = quote;
+    MEMCPY(data_ + 1, value, len);
+    data_[len + 1] = quote;
+    data_[len + 2] = '\0';
+    config_string_.assign_ptr(data_, len + 2);
+  }
+
+  return true;
+}
+
+void ObProxyVariantString::set_integer(const int64_t other)
+{
+  char buf[1024];
+  const int32_t len = snprintf(buf, 1024, "%ld", other);
+  if (len <= 0 || len >= 1024) {
+    LOG_ERROR("snprintf failed", K(other));
+  } else {
+    set_value(len, buf);
+  }
 }
 
 } // end of namespace obutils

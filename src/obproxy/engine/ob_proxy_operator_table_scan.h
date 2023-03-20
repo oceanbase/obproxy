@@ -32,7 +32,7 @@ public:
     set_op_type(PHY_TABLE_SCAN);
   }
 
-  virtual ~ObProxyTableScanOp() {};
+  virtual ~ObProxyTableScanOp();
 
   virtual int open(event::ObContinuation *cont, event::ObAction *&action, const int64_t timeout_ms = 0);
   virtual int get_next_row();
@@ -53,6 +53,7 @@ private:
 
 protected:
   int64_t sub_sql_count_;
+  common::ObSEArray<executor::ObProxyParallelResp*, 4> pres_array_;
 };
 
 class ObProxyTableScanInput : public ObProxyOpInput

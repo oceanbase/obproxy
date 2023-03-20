@@ -16,6 +16,7 @@
 #include "share/part/ob_part_desc.h"
 #include "common/ob_row.h"
 #include "lib/container/ob_se_array.h"
+#include "proxy/route/obproxy_part_mgr.h"
 
 namespace oceanbase
 {
@@ -54,12 +55,13 @@ public:
     return OB_SUCCESS;
   }
 
-  DECLARE_VIRTUAL_TO_STRING;
-private:
-  int cast_obj(ObObj &src_obj,
-               ObObj &target_obj,
+  int cast_row(ObNewRow &src_row,
+               ObNewRow &target_row,
                ObIAllocator &allocator,
                ObPartDescCtx &ctx);
+
+  DECLARE_VIRTUAL_TO_STRING;
+
 private:
   ListPartition *part_array_;
   int64_t part_array_size_;

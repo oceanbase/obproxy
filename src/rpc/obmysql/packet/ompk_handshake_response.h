@@ -49,7 +49,7 @@ public:
   inline const ObString &get_auth_response() const { return auth_response_; }
   inline const ObString &get_database() const { return database_; }
   inline const ObString &get_auth_plugin_name() const { return auth_plugin_name_; }
-  inline const common::ObIArray<ObStringKV> &get_connect_attrs() const { return connect_attrs_; }
+  inline common::ObIArray<ObStringKV> &get_connect_attrs() { return connect_attrs_; }
   bool is_obproxy_client_mod() const;
 
   inline void set_capability_flags(const ObMySQLCapabilityFlags &cap) { capability_ = cap; }

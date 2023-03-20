@@ -124,7 +124,6 @@ void ObExprParserChecker::build_schema(std::string &extra_str, ObExprParseResult
   }
 
   result.part_key_info_.key_num_ = 0;
-  result.target_mask_ = 0;
   while (true) {
     ObProxyParseString part_key_name = get_value(extra_str, "part_key", pos);
     ObProxyParseString part_key_level = get_value(extra_str, "part_level", pos);
@@ -143,11 +142,6 @@ void ObExprParserChecker::build_schema(std::string &extra_str, ObExprParseResult
         result.part_key_info_.part_keys_[result.part_key_info_.key_num_].idx_ = part_key_idx.str_[0] - '0';
       }
       ++result.part_key_info_.key_num_;
-      if (PART_KEY_LEVEL_ONE == level) {
-        result.target_mask_ |= BOTH_BOUND_FLAG;
-      } else {
-        result.target_mask_ |= (BOTH_BOUND_FLAG << 2);
-      }
     }
   }
 }

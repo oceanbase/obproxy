@@ -111,8 +111,7 @@ int ObInternalCmdHandler::reset()
   } else {
     internal_buf_->reset();
     seq_ = original_seq_;
-    protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
-    ob20_param_.reset();
+    // could not reset protocol and ob20_param in handler, cause we need filll external buf according to protocol
   }
   return ret;
 }
@@ -621,7 +620,8 @@ int ObInternalCmdHandler::handle_callback(int event, void *data)
       MUTEX_TRY_LOCK(lock, action_.mutex_, submit_thread_);
       if (lock.is_locked()) {
         if (!action_.cancelled_) {
-          if (INTERNAL_CMD_EVENTS_SUCCESS == saved_event_ && OB_SUCCESS != fill_external_buf()) {
+          if (INTERNAL_CMD_EVENTS_SUCCESS == saved_event_
+              && OB_SUCCESS != fill_external_buf()) {
             saved_event_ = INTERNAL_CMD_EVENTS_FAILED;
           }
           DEBUG_ICMD("do callback now", K_(saved_event));

@@ -203,9 +203,7 @@ int ObProxyRerouteInfo::deserialize_struct_content(const char *buf, const int64_
     if (ObAddr::IPV4 == version) {
       replica_.server_.set_ipv4_addr(ipv4, port);
     } else {
-      // must IPV6, not support yet, TODO open below later
-      //server_.set_ipv6_addr(ipv6_high, ipv6_low, port);
-      replica_.server_.reset();
+      replica_.server_.set_ipv6_addr(ipv6_high, ipv6_low, port);
     }
   }
   int64_t table_name_len = 0;
@@ -233,7 +231,7 @@ inline int ObProxyReplicaLocation::add_addr(const char *ip, const int64_t port)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(NULL == ip || port <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-  } else if (OB_UNLIKELY(!server_.set_ipv4_addr(ip, static_cast<int32_t>(port)))) {
+  } else if (OB_UNLIKELY(!server_.set_ip_addr(ip, static_cast<int32_t>(port)))) {
     ret = common::OB_INVALID_ARGUMENT;
   }
   return ret;
@@ -517,6 +515,7 @@ public:
   bool is_sys_tenant() const;
   bool is_oceanbase_db() const;
   bool is_all_dummy_table() const;
+  bool is_binlog_table() const;
   int deep_copy(const ObTableEntryName &name, char *buf, const int64_t buf_len);
   void shallow_copy(const ObTableEntryName &name);
   void shallow_copy(const common::ObString &cluster_name, const common::ObString &tenant_name,
@@ -524,7 +523,6 @@ public:
   void shallow_copy(const common::ObString &cluster_name, const common::ObString &tenant_name,
                     const common::ObString &database_name, const common::ObString &package_name,
                     const common::ObString &table_name);
-
 
   common::ObString cluster_name_;
   common::ObString tenant_name_;
@@ -583,6 +581,12 @@ inline bool ObTableEntryName::is_all_dummy_table() const
 {
   static const common::ObString all_dummy_tname_str(share::OB_ALL_DUMMY_TNAME);
   return is_valid() && table_name_[0] == '_' && all_dummy_tname_str == table_name_;
+}
+
+inline bool ObTableEntryName::is_binlog_table() const
+{
+  static const common::ObString binlog_tname_str(share::OB_ALL_BINLOG_DUMMY_TNAME);
+  return is_valid() && binlog_tname_str == table_name_;
 }
 
 inline bool ObTableEntryName::is_ob_dummy() const

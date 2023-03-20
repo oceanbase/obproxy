@@ -463,8 +463,6 @@ int ObShowRouteHandler::dump_table_item(const ObTableEntry &entry)
   int ret = OB_SUCCESS;
   const int64_t count = entry.get_server_count();
   ObSqlString server_addr;
-  uint32_t ipv4 = 0;
-  int32_t port = 0;
   ObRole role = INVALID_ROLE;
   ObReplicaType replica_type = REPLICA_TYPE_MAX;
   const ObTenantServer *ts = NULL;
@@ -479,30 +477,24 @@ int ObShowRouteHandler::dump_table_item(const ObTableEntry &entry)
     part_info = entry.get_part_info();
   }
   for (int64_t i = 0; i < count && OB_SUCC(ret); ++i) {
+    char ip_port_buf[MAX_IP_ADDR_LENGTH];
+    memset(ip_port_buf, 0, sizeof(ip_port_buf));
     if (NULL != ts) {
-      ipv4 = ts->get_replica_location(i)->server_.get_ipv4();
-      port = ts->get_replica_location(i)->server_.get_port();
       role = ts->get_replica_location(i)->role_;
       replica_type = ts->get_replica_location(i)->replica_type_;
+      ts->get_replica_location(i)->server_.ip_port_to_string(ip_port_buf, sizeof(ip_port_buf));
     } else if (NULL != pl) {
-      ipv4 = pl->get_replica(i)->server_.get_ipv4();
-      port = pl->get_replica(i)->server_.get_port();
       role = pl->get_replica(i)->role_;
       replica_type = pl->get_replica(i)->replica_type_;
+      pl->get_replica(i)->server_.ip_port_to_string(ip_port_buf, sizeof(ip_port_buf));
     } else {
-      ipv4 = 0;
-      port = -1;
       role = INVALID_ROLE;
       replica_type = REPLICA_TYPE_MAX;
     }
     const ObString &string = ObProxyReplicaLocation::get_replica_type_string(replica_type);
-    if (OB_FAIL(server_addr.append_fmt("server[%ld]=%d.%d.%d.%d:%d,%s,%.*s; ",
+    if (OB_FAIL(server_addr.append_fmt("server[%ld]=%s,%s,%.*s; ",
                                         i,
-                                        (ipv4 >> 24) & 0XFF,
-                                        (ipv4 >> 16) & 0xFF,
-                                        (ipv4 >> 8) & 0xFF,
-                                        (ipv4) & 0xFF,
-                                        port,
+                                        ip_port_buf,
                                         role2str(role),
                                         string.length(), string.ptr()))) {
       WARN_ICMD("fail to append server_addr", K(i), K(ret));
@@ -674,24 +666,18 @@ int ObShowRouteHandler::dump_partition_item(const ObPartitionEntry &entry)
   int ret = OB_SUCCESS;
   const int64_t count = entry.get_server_count();
   ObSqlString server_addr;
-  uint32_t ipv4 = 0;
-  int32_t port = 0;
   ObRole role = INVALID_ROLE;
   ObReplicaType replica_type = REPLICA_TYPE_MAX;
   const ObProxyPartitionLocation &pl = entry.get_pl();
   for (int64_t i = 0; i < count && OB_SUCC(ret); ++i) {
-    ipv4 = pl.get_replica(i)->server_.get_ipv4();
-    port = pl.get_replica(i)->server_.get_port();
     role = pl.get_replica(i)->role_;
     replica_type = pl.get_replica(i)->replica_type_;
     const ObString &string = ObProxyReplicaLocation::get_replica_type_string(replica_type);
-    if (OB_FAIL(server_addr.append_fmt("server[%ld]=%d.%d.%d.%d:%d,%s,%.*s; ",
+    char ip_port_buf[MAX_IP_ADDR_LENGTH];
+    pl.get_replica(i)->server_.ip_port_to_string(ip_port_buf, sizeof(ip_port_buf));
+    if (OB_FAIL(server_addr.append_fmt("server[%ld]=%s,%s,%.*s; ",
                                         i,
-                                        (ipv4 >> 24) & 0XFF,
-                                        (ipv4 >> 16) & 0xFF,
-                                        (ipv4 >> 8) & 0xFF,
-                                        (ipv4) & 0xFF,
-                                        port,
+                                        ip_port_buf,
                                         role2str(role),
                                         string.length(), string.ptr()))) {
       WARN_ICMD("fail to append server_addr", K(i), K(ret));

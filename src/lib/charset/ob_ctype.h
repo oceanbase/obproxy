@@ -36,6 +36,10 @@ extern "C" {
 #define OB_UTF16_BIN        OB_UTF16 "_bin"
 #define OB_UTF16_UNICODE_CI OB_UTF16 "_unicode_ci"
 
+#define OB_LATIN1 "latin1"
+#define OB_LATIN1_SWEDISH_CI OB_LATIN1 "_swedish_ci"
+#define OB_LATIN1_BIN OB_LATIN1 "_bin"
+
 /* wm_wc and wc_mb return codes */
 #define OB_CS_ILSEQ 0     // mb_wc wrong sequence
 #define OB_CS_ILUNI 0     // wc_mb fail to encode Unicode to charset
@@ -376,6 +380,7 @@ typedef struct ObCharsetInfo
 #define ob_toprint(c)	((c) | 64)
 #define ob_toupper(s,c)	(char) ((s)->to_upper[(uchar) (c)])
 #define ob_tolower(s,c)	(char) ((s)->to_lower[(uchar) (c)])
+#define ob_sort_order(s,c) (char)((s)->sort_order[(uchar)(c)])
 #define	ob_isalpha(s, c)  ((s)->ctype != NULL ? ((s)->ctype+1)[(uchar) (c)] & (_MY_U | _MY_L) : 0)
 #define	ob_isupper(s, c)  ((s)->ctype != NULL ? ((s)->ctype+1)[(uchar) (c)] & _MY_U : 0)
 #define	ob_islower(s, c)  ((s)->ctype != NULL ? ((s)->ctype+1)[(uchar) (c)] & _MY_L : 0)
@@ -412,6 +417,7 @@ extern ObCharsetInfo ob_charset_bin;
 extern ObCharsetInfo ob_charset_utf8mb4_bin;
 extern ObCharsetInfo ob_charset_utf8mb4_general_ci;
 extern ObCharsetInfo ob_charset_latin1;
+extern ObCharsetInfo ob_charset_latin1_bin;
 extern ObCharsetInfo ob_charset_gbk_chinese_ci;
 extern ObCharsetInfo ob_charset_gbk_bin;
 extern ObCharsetInfo ob_charset_utf16_general_ci;
@@ -422,6 +428,8 @@ extern ObCharsetInfo ob_charset_gb18030_bin;
 extern ObCollationHandler ob_collation_mb_bin_handler;
 extern ObCharsetHandler ob_charset_utf8mb4_handler;
 extern ObCharsetHandler ob_charset_utf16_handler;
+extern ObCollationHandler ob_collation_binary_handler;
+extern ObCollationHandler ob_collation_8bit_simple_ci_handler;
 
 //=============================================================================
 
@@ -581,6 +589,43 @@ int ob_wildcmp_unicode(const ObCharsetInfo *cs,
 
 size_t ob_strxfrm_pad(const ObCharsetInfo *cs, uchar *str, uchar *frmend,
                       uchar *strend, uint nweights, uint flags);
+
+uint ob_mbcharlen_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                       uint c __attribute__((unused)));
+
+size_t ob_numchars_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                                   const char *b, const char *e);
+
+size_t ob_charpos_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                       const char *b  __attribute__((unused)),
+                       const char *e  __attribute__((unused)),
+                       size_t pos);
+
+
+size_t ob_max_bytes_charpos_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                                 const char *b  __attribute__((unused)),
+                                 const char *e  __attribute__((unused)),
+                                 size_t max_bytes,
+                                 size_t *char_len);
+
+size_t ob_well_formed_len_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                               const char *start, const char *end,
+                               size_t nchars, int *error);
+
+size_t ob_lengthsp_binary(const ObCharsetInfo *cs __attribute__((unused)),
+                          const char *ptr __attribute__((unused)),
+                          size_t length);
+
+int ob_mb_ctype_8bit(const ObCharsetInfo *cs, int *ctype,
+                     const uchar *s, const uchar *e);
+
+size_t ob_caseup_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                      char* src __attribute__((unused)), size_t srclen __attribute__((unused)),
+                      char* dst __attribute__((unused)), size_t dstlen __attribute__((unused)));
+
+size_t ob_casedn_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                      char* src __attribute__((unused)), size_t srclen __attribute__((unused)),
+                      char* dst __attribute__((unused)), size_t dstlen __attribute__((unused)));
 
 #ifdef	__cplusplus
 }

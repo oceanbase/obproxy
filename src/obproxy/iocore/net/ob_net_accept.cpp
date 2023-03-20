@@ -32,6 +32,7 @@
 #include "iocore/net/ob_net_accept.h"
 #include "iocore/net/ob_net.h"
 #include "iocore/net/ob_event_io.h"
+#include "ob_proxy_init.h"
 #include "omt/ob_resource_unit_table_processor.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
 #include "proxy/route/ob_table_cache.h"
@@ -264,7 +265,6 @@ int ObNetAccept::init_accept_per_thread()
 
 int ObNetAccept::do_listen(const bool non_blocking)
 {
-
   int ret = OB_SUCCESS;
   PROXY_NET_LOG(DEBUG, "ObNetAccept::do_listen", K(server_.fd_), K(non_blocking));
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
@@ -323,22 +323,34 @@ int ObNetAccept::do_listen(const bool non_blocking)
 int ObNetAccept::fetch_vip_tenant(ObUnixNetVConnection* vc, ObVipTenant& vip_tenant, bool& lookup_success)
 {
   int ret = OB_SUCCESS;
-  int32_t ip;
-  int32_t port;
   int64_t vid;
+  bool found = false;
+  ObConfigItem tenant_item;
+  ObConfigItem cluster_item;
   if (OB_ISNULL(vc)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "vc pointer is null", K(ret));
   } else {
-    ip = ntohl(vc->get_virtual_ip());
-    port = static_cast<int32_t>(vc->get_virtual_port());
     vid = static_cast<int64_t>(vc->get_virtual_vid());
-    vip_tenant.vip_addr_.set(ip, port, vid);
-    if (OB_FAIL(get_global_vip_tenant_processor().get_vip_tenant(vip_tenant))) {
-      PROXY_NET_LOG(DEBUG, "fail to get vip tenant", K(ret));
-      ret = OB_SUCCESS;
-    } else {
-      lookup_success = true;
+    vip_tenant.vip_addr_.set(vc->get_virtual_addr(), vid);
+    if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
+      vip_tenant.vip_addr_, "", "", "proxy_tenant_name", tenant_item, "LEVEL_VIP", found))) {
+      PROXY_NET_LOG(WARN, "get proxy tenant name config failed", K(vip_tenant.vip_addr_), K(ret));
+    }
+
+    if (OB_SUCC(ret) && found) {
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
+        vip_tenant.vip_addr_, "", "", "rootservice_cluster_name", cluster_item, "LEVEL_VIP", found))) {
+        PROXY_NET_LOG(WARN, "get cluster name config failed", K(vip_tenant.vip_addr_), K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret) && found) {
+      if (OB_FAIL(vip_tenant.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
+        PROXY_CS_LOG(WARN, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
+      } else {
+        lookup_success = true;
+      }
     }
   }
   return ret;
@@ -348,8 +360,8 @@ int ObNetAccept::fetch_tenant_cpu(ObVipTenant& vip_tenant, ObTenantCpu*& tenant_
 {
   int ret = OB_SUCCESS;
   ObString key_name;
-  char vip_name[OB_IP_STR_BUFF];
-  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> key_string;
+  char vip_name[MAX_IP_ADDR_LENGTH];
+  common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> key_string;
   if (OB_UNLIKELY(!vip_tenant.vip_addr_.addr_.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "fail to covert ip to string", K(vip_name), K(ret));

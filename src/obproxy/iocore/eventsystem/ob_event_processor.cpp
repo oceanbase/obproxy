@@ -34,6 +34,7 @@
 #include "iocore/eventsystem/ob_event_system.h"
 #include <unistd.h>
 #include "utils/ob_cpu_affinity.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
 
@@ -44,6 +45,18 @@ namespace obproxy
 namespace event
 {
 class ObEventProcessor g_event_processor;
+
+int ObEventProcessor::init_thread(ObEThread *&t)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(t->init())) {
+    LOG_WARN("fail to init event", K(ret));
+    delete t;
+    t = NULL;
+  }
+
+  return ret;
+}
 
 int ObEventProcessor::spawn_event_threads(
     const int64_t thread_count, const char *et_name,
@@ -76,10 +89,8 @@ int ObEventProcessor::spawn_event_threads(
       if (OB_ISNULL(t = new(std::nothrow) ObEThread(REGULAR, MAX_THREADS_IN_EACH_TYPE + event_thread_count_ - net_thread_count + i))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_ERROR("fail to allocator memory for REGULAR ObEThread", K(i), K(thread_count), K(ret));
-      } else if (OB_FAIL(t->init())) {
-        LOG_WARN("fail to init event", K(i), K(ret));
-        delete t;
-        t = NULL;
+      } else if (OB_FAIL(init_thread(t))) {
+        LOG_WARN("fail to init thread", K(i), K(ret));
       } else {
         all_event_threads_[event_thread_count_ + i] = t;
         event_thread_[new_thread_group_id][i] = t;
@@ -134,10 +145,8 @@ int ObEventProcessor::spawn_net_threads(const int64_t thread_count,
       if (OB_ISNULL(t = new(std::nothrow) ObEThread(REGULAR, net_thread_count + i))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_ERROR("fail to allocate memory for REGULAR ObEThread", K(i), K(thread_count), K(ret));
-      } else if (OB_FAIL(t->init())) {
-        LOG_WARN("fail to init event", K(i), K(ret));
-        delete t;
-        t = NULL;
+      } else if (OB_FAIL(init_thread(t))) {
+        LOG_WARN("fail to init thread", K(i), K(ret));
       } else {
         all_event_threads_[event_thread_count_ + i] = t;
         event_thread_[ET_CALL][net_thread_count + i] = t;
@@ -182,6 +191,7 @@ inline int ObEventProcessor::init_one_event_thread(const int64_t index)
     delete t;
     t = NULL;
   } else {
+    // It should be noted here that the thread with index 0 in rich client mode will be created
     if (0 == index) {
       this_thread() = t;
       global_mutex = t->mutex_;
@@ -235,7 +245,6 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid parameters", K(stacksize), K(ret));
   } else {
-
     if (!automatic_match_work_thread
         || OB_UNLIKELY((cpu_num = get_cpu_count()) <= 0)
         || cpu_num > net_thread_count) {
@@ -297,7 +306,7 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int32_t>(sizeof(thr_name)))) {
           ret = OB_SIZE_OVERFLOW;
           LOG_WARN("fail format thread name", K(length), K(ret));
-        } else if ((0 != i) && OB_FAIL(all_event_threads_[i]->start(thr_name, stacksize))) {
+        } else if ((0 != i || RUN_MODE_CLIENT == g_run_mode) && OB_FAIL(all_event_threads_[i]->start(thr_name, stacksize))) {
           LOG_WARN("fail to start event thread", K(thr_name), K(ret));
         } else {
           if (bind_cpu) {

@@ -44,6 +44,7 @@ public:
   ObMysqlField *get_field() const { return rs_fetcher_->get_field(); }
   int64_t get_column_count() { return column_count_; }
   int64_t get_cont_index() { return cont_index_; }
+  int64_t to_string(char *buf, int64_t buf_len) const;
 
 private:
   proxy::ObClientMysqlResp *resp_;

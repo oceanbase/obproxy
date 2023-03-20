@@ -69,7 +69,8 @@ struct ObTransactionMilestones
   ObTransactionMilestones()
       : last_client_cmd_end_(0), server_connect_begin_(0), server_connect_end_(0),
         server_first_write_begin_(0), pl_lookup_begin_(0), pl_lookup_end_(0),
-        pl_process_begin_(0), pl_process_end_(0), congestion_control_begin_(0),
+        pl_process_begin_(0), pl_process_end_(0), bl_lookup_begin_(0), bl_lookup_end_(0),
+        bl_process_begin_(0), bl_process_end_(0), congestion_control_begin_(0),
         congestion_control_end_(0), congestion_process_begin_(0), congestion_process_end_(0),
         cluster_resource_create_begin_(0), cluster_resource_create_end_(0),
         trans_start_(0), trans_finish_(0), do_observer_open_begin_(0), do_observer_open_end_(0)
@@ -110,6 +111,14 @@ struct ObTransactionMilestones
   // pl process
   ObHRTime pl_process_begin_;
   ObHRTime pl_process_end_;
+
+  // binlog location lookup
+  ObHRTime bl_lookup_begin_;
+  ObHRTime bl_lookup_end_;
+
+  // binlog location process
+  ObHRTime bl_process_begin_;
+  ObHRTime bl_process_end_;
 
   // congestion_control_lookup
   ObHRTime congestion_control_begin_;
@@ -154,6 +163,8 @@ struct ObCmdTimeStat
   ObHRTime cluster_resource_create_time_;
   ObHRTime pl_lookup_time_;
   ObHRTime pl_process_time_;
+  ObHRTime bl_lookup_time_;
+  ObHRTime bl_process_time_;
 
 #if OB_DETAILED_SLOW_QUERY
   ObHRTime debug_assign_time_;
@@ -177,9 +188,10 @@ struct ObCmdTimeStat
   ObHRTime server_send_saved_login_time_;
   ObHRTime server_send_use_database_time_;
   ObHRTime server_send_session_variable_time_;
+  ObHRTime server_send_session_user_variable_time_;
   ObHRTime server_send_all_session_variable_time_;
-  ObHRTime server_send_last_insert_id_time_;
   ObHRTime server_send_start_trans_time_;
+  ObHRTime server_send_xa_start_time_;
 
   ObHRTime build_server_request_time_;
   ObHRTime plugin_compress_request_time_;
@@ -241,9 +253,10 @@ struct ObTransactionStat
   ObHRTime send_saved_login_time_;
   ObHRTime send_use_database_time_;
   ObHRTime send_session_vars_time_;
+  ObHRTime send_session_user_vars_time_;
   ObHRTime send_all_session_vars_time_;
-  ObHRTime send_last_insert_id_time_;
   ObHRTime send_start_trans_time_;
+  ObHRTime send_xa_start_time_;
 
   ObHRTime build_server_request_time_;
   ObHRTime plugin_compress_request_time_;

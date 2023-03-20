@@ -49,7 +49,8 @@ int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,
                                                        ObClientSessionInfo &client_info,
                                                        ObServerSessionInfo &server_info,
                                                        const bool need_handle_sysvar,
-                                                       ObRespAnalyzeResult &resp_result)
+                                                       ObRespAnalyzeResult &resp_result,
+                                                       common::ObSimpleTrace<4096> &trace_log)
 {
   int ret = OB_SUCCESS;
 
@@ -65,7 +66,7 @@ int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,
       LOG_WARN("fail to get ok packet", K(ret));
     // save changed info
     } else if (OB_FAIL(save_changed_session_info(client_info, server_info, false,
-                                                 need_handle_sysvar, src_ok, resp_result, false))) {
+                                                 need_handle_sysvar, src_ok, resp_result, trace_log, false))) {
       LOG_WARN("fail to save changed session info", K(ret));
     } else {
       LOG_DEBUG("analyze_extra_ok_packet", K(src_ok));
@@ -95,6 +96,7 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
                                                  const bool is_auth_request,
                                                  const bool need_handle_sysvar,
                                                  ObRespAnalyzeResult &resp_result,
+                                                 common::ObSimpleTrace<4096> &trace_log,
                                                  const bool is_save_to_common_sys)
 {
   int ret = OB_SUCCESS;
@@ -118,6 +120,7 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
                                           need_handle_sysvar,
                                           src_ok,
                                           resp_result,
+                                          trace_log,
                                           is_save_to_common_sys))) {
       LOG_WARN("fail to save changed session info", K(is_auth_request), K(ret));
     } else {
@@ -173,6 +176,7 @@ int ObProxySessionInfoHandler::rewrite_query_req_by_sharding(ObClientSessionInfo
   obmysql::ObMySQLCmd tmp_req_cmd = obmysql::OB_MYSQL_COM_MAX_NUM;
 
   client_request.reset(false);
+  client_request.set_user_identity(USER_TYPE_SHARDING);
   ObMysqlRequestAnalyzer::analyze_request(target_ctx, tmp_auth_req,
                                           client_request, tmp_req_cmd, status);
 
@@ -605,9 +609,9 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
   }
 
   if (param.use_ob_protocol_v2_) {
-    cap |= (OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_NEW_EXTRA_INFO | OB_CAP_PROXY_REROUTE | OB_CAP_PROXY_SESSION_SYNC);
+    cap |= (OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_NEW_EXTRA_INFO | OB_CAP_PROXY_REROUTE | OB_CAP_PROXY_SESSION_SYNC | OB_CAP_PROXY_SESSION_VAR_SYNC);
   } else {
-    cap &= ~(OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_NEW_EXTRA_INFO | OB_CAP_PROXY_REROUTE | OB_CAP_PROXY_SESSION_SYNC);
+    cap &= ~(OB_CAP_OB_PROTOCOL_V2 | OB_CAP_PROXY_NEW_EXTRA_INFO | OB_CAP_PROXY_REROUTE | OB_CAP_PROXY_SESSION_SYNC | OB_CAP_PROXY_SESSION_VAR_SYNC);
   }
 
   param.cluster_name_ = cluster_name;
@@ -727,7 +731,9 @@ int ObProxySessionInfoHandler::handle_capability_flag_var(ObClientSessionInfo &c
     client_info.set_client_ob_capability(client_cap);
     client_info.set_server_ob_capability(server_cap);
 
-    LOG_INFO("succ to set ob_capability_flag", K(client_cap), K(server_cap), K(orig_client_cap), K(orig_server_cap),
+    LOG_INFO("succ to set ob_capability_flag in negotiation",
+             K(client_cap), K(server_cap), K(orig_client_cap), K(orig_server_cap),
+             "client_support_ob_v2", client_info.is_client_support_ob20_protocol(),
              "server_support_checksum", server_info.is_checksum_supported(), 
              "server_support_ob_v2", server_info.is_ob_protocol_v2_supported(),
              K(is_auth_request));
@@ -1113,10 +1119,13 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
                                                          const bool need_handle_sysvar,
                                                          OMPKOK &ok_pkt,
                                                          ObRespAnalyzeResult &resp_result,
+                                                         common::ObSimpleTrace<4096> &trace_log,
                                                          const bool is_save_to_common_sys)
 {
   int ret = OB_SUCCESS;
   // 1. save server status
+  trace_log.log_it("[svr_status]", "in_trans", ok_pkt.get_server_status().status_flags_.OB_SERVER_STATUS_IN_TRANS,
+                   "ac", ok_pkt.get_server_status().status_flags_.OB_SERVER_STATUS_AUTOCOMMIT);
   if (is_auth_request) {
     bool is_oracle_mode = 1 == ok_pkt.get_server_status().status_flags_.OB_SERVER_STATUS_RESERVED;
     LOG_DEBUG("will set oracle mode ", K(is_oracle_mode));
@@ -1384,19 +1393,48 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
 }
 
 int ObProxySessionInfoHandler::save_changed_sess_info(ObClientSessionInfo& client_info,
-    ObServerSessionInfo& server_info, Ob20ExtraInfo& extra_info)
+    ObServerSessionInfo& server_info, Ob20ExtraInfo& extra_info, common::ObSimpleTrace<4096> &trace_log, bool is_only_sync_trans_sess)
 {
   int ret = OB_SUCCESS;
   if (extra_info.exist_sess_info()) {
-    if (OB_FAIL(client_info.update_sess_sync_info(extra_info.get_sess_info()))) {
-      LOG_WARN("failed to update sess sync info", K(ret), K(extra_info));
+    ObString sess_info;
+    extra_info.reset_sess_info_iterate_idx();
+    for (uint32_t i = 0; OB_SUCC(ret) && i < extra_info.get_sess_info_count(); i++) {
+      if (OB_FAIL(extra_info.get_next_sess_info(sess_info))) {
+        LOG_WARN("fail to update sess sync info", K(ret));
+      } else if (OB_FAIL(client_info.update_sess_sync_info(sess_info, trace_log))) {
+        LOG_WARN("fail to update sess sync info", K(ret), K(extra_info));
+      }
     }
   }
+  bool need_update_version = true;
   if (OB_SUCC(ret)) {
-    int64_t c_sess_info_version = client_info.get_sess_info_version();
-    server_info.set_sess_info_version(c_sess_info_version);
+    SessFieldVersionHashMap::iterator last = client_info.get_sess_field_version().end();
+    SessFieldVersionHashMap::iterator it = client_info.get_sess_field_version().begin();
+    for (; it != last && OB_SUCC(ret); ++it) {
+      int16_t sess_info_type = it->first;
+      int64_t client_version = 0;
+
+      if (OB_FAIL(ObProxyTraceUtils::get_sess_field_version(client_version , sess_info_type, client_info.get_sess_field_version()))) {
+        LOG_WARN("fail to set client session field version", K(ret), K(sess_info_type));
+      } else if (is_only_sync_trans_sess && !ObProto20Utils::is_trans_related_sess_info(sess_info_type)) {
+        // internal routing trans not support sync session info idempotent
+        // here keep session info syncing in some case for only internal routing trans as temporary processing
+        int64_t server_version = 0;
+        if (OB_FAIL(ObProxyTraceUtils::get_sess_field_version(server_version, sess_info_type, server_info.get_sess_field_version()))) {
+          LOG_WARN("fail to get server session field version", K(ret), K(sess_info_type));
+        } else if (client_version > server_version) {
+          need_update_version = false;
+        }
+      } else if (OB_FAIL(server_info.get_sess_field_version().set_refactored(sess_info_type, client_version, 1))) {
+        LOG_WARN("fail to set sess field versoin", K(sess_info_type), K(ret));
+      }
+    }
   }
 
+  if (OB_SUCC(ret) && need_update_version) {
+    server_info.set_sess_info_version(client_info.get_sess_info_version());
+  }
   return ret;
 }
 

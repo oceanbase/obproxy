@@ -53,6 +53,13 @@ public:
                                      ObClientSessionInfo &client_info,
                                      ObMysqlServerSession *server_session,
                                      const ObProxyProtocol ob_proxy_protocol);
+  
+  // build binlog login request
+  static int build_binlog_login_packet(ObMysqlSM *sm,
+                                       event::ObMIOBuffer &mio_buf,
+                                       ObClientSessionInfo &client_info,
+                                       ObMysqlServerSession *server_session,
+                                       const ObProxyProtocol ob_proxy_protocol);
 
   // build saved login packet to send saved login request
   static int build_saved_login_packet(ObMysqlSM *sm,
@@ -88,12 +95,12 @@ public:
                                             ObMysqlServerSession *server_session,
                                             const ObProxyProtocol ob_proxy_protocol);
 
-  // build OB_MYSQL_COM_QUERY packet to sync last_insert_id var
-  static int build_last_insert_id_sync_packet(ObMysqlSM *sm,
-                                              event::ObMIOBuffer &mio_buf,
-                                              ObClientSessionInfo &client_info,
-                                              ObMysqlServerSession *server_session,
-                                              const ObProxyProtocol ob_proxy_protocol);
+  // build OB_MYSQL_COM_QUERY packet to sync session user vars
+  static int build_session_user_vars_sync_packet(ObMysqlSM *sm,
+                                                 event::ObMIOBuffer &mio_buf,
+                                                 ObClientSessionInfo &client_info,
+                                                 ObMysqlServerSession *server_session,
+                                                 const ObProxyProtocol ob_proxy_protocol);
 
   // build start transaction request packet
   static int build_start_trans_request(ObMysqlSM *sm,
@@ -101,6 +108,12 @@ public:
                                        ObClientSessionInfo &client_info,
                                        ObMysqlServerSession *server_session,
                                        const ObProxyProtocol ob_proxy_protocol);
+  
+  static int build_xa_start_request(ObMysqlSM *sm,
+                                    event::ObMIOBuffer &mio_buf,
+                                    ObClientSessionInfo &client_info,
+                                    ObMysqlServerSession *server_session,
+                                    const ObProxyProtocol ob_proxy_protocol);
 
   // build mysql request packet
   static int build_mysql_request(event::ObMIOBuffer &mio_buf,

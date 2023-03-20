@@ -74,6 +74,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     task_thread_num_(0),
     block_thread_num_(0),
     grpc_thread_num_(0),
+    shard_scan_thread_num_(0),
     automatic_match_work_thread_(true),
 
     enable_congestion_(false),
@@ -86,6 +87,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     enable_reroute_(false),
     enable_index_route_(false),
     enable_causal_order_read_(true),
+    enable_transaction_internal_routing_(true),
 
     sqlaudit_mem_limited_(0),
     internal_cmd_mem_limited_(0),
@@ -116,7 +118,9 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     proxy_id_(0),
     client_max_memory_size_(0),
     enable_cpu_isolate_(false),
-    enable_primary_zone_(true)
+    enable_primary_zone_(true),
+    ip_listen_mode_(0),
+    local_bound_ipv6_ip_()
 {
   proxy_idc_name_[0] = '\0';
 }
@@ -169,6 +173,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(task_thread_num);
   CONFIG_ITEM_ASSIGN(block_thread_num);
   CONFIG_ITEM_ASSIGN(grpc_thread_num);
+  CONFIG_ITEM_ASSIGN(shard_scan_thread_num);
   CONFIG_ITEM_ASSIGN(automatic_match_work_thread);
 
   CONFIG_ITEM_ASSIGN(enable_congestion);
@@ -178,6 +183,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(enable_proxy_scramble);
   CONFIG_ITEM_ASSIGN(enable_compression_protocol);
   CONFIG_ITEM_ASSIGN(enable_ob_protocol_v2);
+  CONFIG_ITEM_ASSIGN(enable_transaction_internal_routing);
   CONFIG_ITEM_ASSIGN(enable_reroute);
   CONFIG_ITEM_ASSIGN(enable_index_route);
   CONFIG_ITEM_ASSIGN(enable_causal_order_read);
@@ -210,6 +216,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(client_max_memory_size);
   CONFIG_ITEM_ASSIGN(enable_cpu_isolate);
   CONFIG_ITEM_ASSIGN(enable_primary_zone);
+  CONFIG_ITEM_ASSIGN(ip_listen_mode);
 
   if (OB_SUCC(ret)) {
     obsys::CRLockGuard guard(proxy_config.rwlock_);
@@ -255,6 +262,9 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
     if(OB_UNLIKELY(0 != local_bound_ip_.load(proxy_config.local_bound_ip))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("fail to assign ip value", K(proxy_config.local_bound_ip.str()), K(ret));
+    } else if (OB_UNLIKELY(0 != local_bound_ipv6_ip_.load(proxy_config.local_bound_ipv6_ip))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to assign ipv6 value", K(proxy_config.local_bound_ipv6_ip.str()), K(ret));
     }
   }
 
@@ -308,7 +318,7 @@ DEF_TO_STRING(ObMysqlConfigParams)
   J_COMMA();
   J_KV(K_(short_async_task_timeout), K_(short_async_task_timeout), K_(min_congested_connect_timeout),
        K_(tenant_location_valid_time), K_(local_bound_ip), K_(listen_port), K_(stack_size), K_(work_thread_num),
-       K_(task_thread_num), K_(block_thread_num), K_(grpc_thread_num), K_(automatic_match_work_thread),
+       K_(task_thread_num), K_(block_thread_num), K_(grpc_thread_num), K_(shard_scan_thread_num), K_(automatic_match_work_thread),
        K_(enable_congestion), K_(enable_bad_route_reject), K_(test_server_addr),
        K_(sqlaudit_mem_limited), K_(max_connections), K_(client_max_connections),
        K_(enable_client_connection_lru_disconnect), K_(connect_observer_max_retries),
@@ -324,7 +334,8 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(default_inactivity_timeout), K_(enable_partition_table_route), K_(enable_pl_route),
        K_(enable_cluster_checkout), K_(enable_client_ip_checkout), K_(enable_proxy_scramble),
        K_(enable_compression_protocol), K_(enable_ob_protocol_v2),
-       K_(enable_reroute), K_(enable_index_route), K_(enable_causal_order_read));
+       K_(enable_reroute), K_(enable_index_route), K_(enable_causal_order_read),
+       K_(ip_listen_mode), K_(local_bound_ipv6_ip));
   J_OBJ_END();
   return pos;
 }

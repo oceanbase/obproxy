@@ -493,35 +493,33 @@ inline int ObMysqlRoute::check_and_rebuild_call_params()
     ObSessionSysField *sys_filed = NULL;
     ObSessionUserField *user_filed = NULL;
     for (int32_t i = 0; OB_SUCC(ret) && i < call_info.param_count_; ++i) {
-      ObProxyCallParam &call_param = call_info.params_.at(i);
-      if (CALL_TOKEN_SYS_VAR == call_param.type_) {
+      ObProxyCallParam* call_param = call_info.params_.at(i);
+      if (CALL_TOKEN_SYS_VAR == call_param->type_) {
         sys_filed = NULL;
-        if (OB_FAIL(client_info.get_sys_variable(call_param.str_value_.string_, sys_filed))) {
-          LOG_INFO("fail to find sys variables", "name", call_param.str_value_.string_, K(ret));
+        if (OB_FAIL(client_info.get_sys_variable(call_param->str_value_.config_string_, sys_filed))) {
+          LOG_INFO("fail to find sys variables", "name", call_param->str_value_.config_string_, K(ret));
         } else if (NULL != sys_filed) {
-          char *buf = call_param.str_value_.buf_;
-          const int64_t max_size = call_param.str_value_.get_max_size();
+          char buf[OBPROXY_MAX_STRING_VALUE_LENGTH];
           int64_t pos = 0;
-          if (OB_FAIL(sys_filed->value_.print_sql_literal(buf, max_size, pos))) {
+          if (OB_FAIL(sys_filed->value_.print_sql_literal(buf, OBPROXY_MAX_STRING_VALUE_LENGTH, pos))) {
             LOG_INFO("fail to print sql literal", K(pos), K(i), KPC(sys_filed), K(ret));
           } else {
             ObString new_value(pos, buf);
-            call_param.str_value_.set(new_value);
+            call_param->str_value_.set_value(new_value);
           }
         }
-      } else if (CALL_TOKEN_USER_VAR == call_param.type_) {
+      } else if (CALL_TOKEN_USER_VAR == call_param->type_) {
         user_filed = NULL;
-        if (OB_FAIL(client_info.get_user_variable(call_param.str_value_.string_, user_filed))) {
-          LOG_INFO("fail to find sys variables, ignore", "name", call_param.str_value_.string_, K(ret));
+        if (OB_FAIL(client_info.get_user_variable(call_param->str_value_.config_string_, user_filed))) {
+          LOG_INFO("fail to find sys variables", K_(call_param->str_value_.config_string), K(ret));
         } else if (NULL != user_filed) {
-          char *buf = call_param.str_value_.buf_;
-          const int64_t max_size = call_param.str_value_.get_max_size();
+          char buf[OBPROXY_MAX_STRING_VALUE_LENGTH];
           int64_t pos = 0;
-          if (OB_FAIL(user_filed->value_.print_plain_str_literal(buf, max_size, pos))) {
+          if (OB_FAIL(user_filed->value_.print_plain_str_literal(buf, OBPROXY_MAX_STRING_VALUE_LENGTH, pos))) {
             LOG_INFO("fail to print sql literal, ignore", K(pos), K(i), KPC(user_filed), K(ret));
           } else {
             ObString new_value(pos, buf);
-            call_param.str_value_.set(new_value);
+            call_param->str_value_.set_value(new_value);
           }
         }
       }

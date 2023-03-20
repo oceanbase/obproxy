@@ -77,6 +77,15 @@ public:
   virtual int add_extra_config(const char *config_str,
                                const int64_t version = 0,
                                const bool check_name = false);
+  int add_extra_config_from_opt(const char *config_str,
+                                const int64_t version = 0,
+                                const bool check_name = false);
+  int add_config(const char *config_str,
+                 int64_t version,
+                 bool check_name,
+                 const char* delim,
+                 const char* ignore_conf[]);
+
   virtual bool is_debug_sync_enabled() const { return false; }
 
   NEED_SERIALIZE_AND_DESERIALIZE;

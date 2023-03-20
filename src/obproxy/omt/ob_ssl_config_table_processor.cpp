@@ -72,11 +72,11 @@ int ObSSLConfigTableProcessor::execute(void *arg)
       LOG_WARN("execute failed, tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
     } else {
       for (int64_t i = 0; i < params->fields_->field_num_; i++) {
-        SqlField &sql_field = params->fields_->fields_.at(i);
-        if (sql_field.column_name_.string_ == "value") {
-          value = sql_field.column_value_.config_string_;
-        } else if (sql_field.column_name_.string_ == "name") {
-          name = sql_field.column_value_.config_string_;
+        SqlField *sql_field = params->fields_->fields_.at(i);
+        if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
+          value = sql_field->column_value_.config_string_;
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("name")) {
+          name = sql_field->column_value_.config_string_;
         }
       }
 

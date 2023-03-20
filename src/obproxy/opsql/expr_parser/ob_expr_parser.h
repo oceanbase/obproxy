@@ -76,7 +76,6 @@ inline int ObExprParser::init_result(ObExprParseResult &parse_result, const char
   parse_result.tmp_buf_ = NULL;
   parse_result.tmp_len_ = 0;
   parse_result.end_pos_ = NULL;
-  parse_result.cur_mask_ = 0;
   parse_result.column_idx_ = 0;
   parse_result.values_list_idx_ = 0;
   parse_result.multi_param_values_ = 0;
@@ -87,12 +86,13 @@ inline int ObExprParser::init_result(ObExprParseResult &parse_result, const char
   parse_result.relation_info_.relation_num_ = 0;
   parse_result.all_relation_info_.relation_num_ = 0;
   parse_result.all_relation_info_.right_value_num_ = 0;
+  for (int64_t i = 0; i < parse_result.part_key_info_.key_num_; ++i) {
+    parse_result.part_key_info_.part_keys_[i].is_exist_in_sql_ = false;
+  }
 
-  if (0 == parse_result.target_mask_
-      || INVALID_PARSE_MODE == parse_result.parse_mode_) {
+  if (INVALID_PARSE_MODE == parse_result.parse_mode_) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_LOG(DEBUG, "failed to initialized parser, maybe parse sql for shard user",
-              K(parse_result.target_mask_),
               K(parse_result.parse_mode_),
               K(ret));
   }

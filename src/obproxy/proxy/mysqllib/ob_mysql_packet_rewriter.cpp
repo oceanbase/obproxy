@@ -132,7 +132,7 @@ int ObHandshakeResponseParam::write_client_addr_buf(const common::ObAddr &addr)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!addr.is_valid())) {
     //do not write
-  } else if (OB_UNLIKELY(!addr.ip_to_string(client_ip_buf_, OB_MAX_IP_BUF_LEN))) {
+  } else if (OB_UNLIKELY(!addr.ip_to_string(client_ip_buf_, MAX_IP_ADDR_LENGTH))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to ip_to_string", K(addr), K(ret));
   }
@@ -188,7 +188,7 @@ int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
       if (OB_FAIL(des_ok.add_system_var(str_kv))) {
         LOG_WARN("fail to add system var while rewrite ok packet", K(ret));
       } else {
-        LOG_DEBUG("succ to add system var in ok packet", K(str_kv));
+        LOG_DEBUG("succ to add system var in ok packet back to client", K(str_kv), K(cap));
       }
     }
   }
@@ -239,13 +239,13 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
   }
 
   // find client_ip
-  if (param.enable_client_ip_checkout_) {
+  if (RUN_MODE_PROXY == g_run_mode && param.enable_client_ip_checkout_) {
     ObStringKV string_kv;
     for (int64_t i = 0; OB_SUCC(ret) && i <  tg_hsr.get_connect_attrs().count(); ++i) {
       string_kv = tg_hsr.get_connect_attrs().at(i);
       if (0 == string_kv.key_.case_compare(OB_MYSQL_CLIENT_IP)) {
         if (!string_kv.value_.empty()) {
-          snprintf(param.client_ip_buf_, ObHandshakeResponseParam::OB_MAX_IP_BUF_LEN, "%.*s", string_kv.value_.length(), string_kv.value_.ptr());
+          snprintf(param.client_ip_buf_, MAX_IP_ADDR_LENGTH, "%.*s", string_kv.value_.length(), string_kv.value_.ptr());
         }
         break;
       }
@@ -254,6 +254,26 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
 
   // reset before add
   tg_hsr.reset_connect_attr();
+  // add transparent transit conn attrs & find client_ip
+  OMPKHandshakeResponse &orig_hsr = orig_auth_req.get_hsr_result().response_;
+  bool find_client_ip = false;
+  for (int64_t i = 0; OB_SUCC(ret) && i < orig_hsr.get_connect_attrs().count(); ++i) {
+    ObStringKV kv;
+    // transit conn attrs OB_MYSQL_OB_CLIENT
+    if (OB_FAIL(orig_hsr.get_connect_attrs().at(i, kv))) {
+      LOG_WARN("fail access handshake response connect attrs", K(i), K(ret));
+    } else if (kv.key_.prefix_match(OB_MYSQL_OB_CLIENT)) {
+      if (OB_FAIL(tg_hsr.get_connect_attrs().push_back(kv))) {
+        LOG_WARN("fail push back transparent transmit connect attrs", K(kv), K(ret));
+      } else { /* succ */ }
+    } else if (!find_client_ip 
+                && param.enable_client_ip_checkout_
+                && 0 == kv.key_.case_compare(OB_MYSQL_CLIENT_IP)
+                && !kv.value_.empty()){ 
+      snprintf(param.client_ip_buf_, MAX_IP_ADDR_LENGTH, "%.*s", kv.value_.length(), kv.value_.ptr());
+      find_client_ip = true;
+    } else { /* do nothing */ }
+  }
   // 4. add obproxy specified connect attrs:
   // a. proxy_mode
   // b. connection id
@@ -281,9 +301,7 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
     LOG_WARN("fail to add client ip", K(param.client_ip_buf_), K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_VERSION, param.proxy_version_buf_, tg_hsr))) {
     LOG_WARN("fail to add proxy version", K(param.proxy_version_buf_), K(ret));
-  } else {
-    //do nothing
-  }
+  } else { /* succ */ }
 
 
   return ret;

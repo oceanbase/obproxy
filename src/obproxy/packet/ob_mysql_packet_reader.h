@@ -15,6 +15,8 @@
 
 #include "utils/ob_proxy_lib.h"
 #include "iocore/eventsystem/ob_io_buffer.h"
+#include "proxy/mysqllib/ob_mysql_common_define.h"
+#include "rpc/obmysql/ob_mysql_util.h"
 
 namespace oceanbase
 {
@@ -44,6 +46,8 @@ public:
   // === GET function will not comsume the packet
   int get_content_len_and_seq(event::ObIOBufferReader &buf_reader, const int64_t offset, int64_t &content_len, uint8_t &seq);
 
+  int is_eof_packet(event::ObIOBufferReader &buf_reader, const int64_t offset, bool &is_eof);
+
   // DESC: get the next ok packet from MIOBuffer
   // NOTE: 1. get function will NOT consume buffer as packet may hold some string int mio_buf
   //       2. if mio_buf.consume or reader.reset is called, do NOT use the packet any more
@@ -70,6 +74,9 @@ public:
                     const obmysql::ObMySQLCapabilityFlags &cap,
                     obmysql::OMPKOK &ok_pkt);
   int get_packet(event::ObIOBufferReader &buf_reader,
+                 obmysql::ObMySQLPacket &packet);
+  int get_packet(event::ObIOBufferReader &buf_reader,
+                 const int64_t offset,
                  obmysql::ObMySQLPacket &packet);
   int get_ok_packet_server_status(event::ObIOBufferReader &buf_reader,
                                   obmysql::ObServerStatusFlags &server_status);
@@ -131,6 +138,26 @@ inline int ObMysqlPacketReader::read_packet_str(event::ObIOBufferReader &buf_rea
       PROXY_LOG(WARN, "fail to consume ", K(pkt_len), K(ret));
     }
   }
+  return ret;
+}
+
+inline int ObMysqlPacketReader::get_content_len_and_seq(event::ObIOBufferReader &buf_reader,
+                                                        const int64_t offset, 
+                                                        int64_t &content_len, 
+                                                        uint8_t &seq)
+{
+  int ret = OB_SUCCESS;
+  char *pbuf = NULL;
+  if (OB_FAIL(get_buf(buf_reader, OB_MYSQL_NET_HEADER_LENGTH, offset, pbuf))) {
+    PROXY_LOG(WARN, "fail to get header buf", K(ret));
+  } else if (OB_ISNULL(pbuf)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_LOG(WARN, "pbuf is null, which is unexpected", K(pbuf), K(ret));
+  } else {
+    content_len = static_cast<int64_t>(uint3korr(pbuf));
+    seq = static_cast<int64_t>(uint1korr(pbuf + 3));
+  }
+
   return ret;
 }
 

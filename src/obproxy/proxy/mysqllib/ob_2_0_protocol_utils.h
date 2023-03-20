@@ -54,9 +54,6 @@ public:
                                  const uint16_t status_flag = 0);
   static int encode_err_packet(event::ObMIOBuffer &write_buf, const Ob20ProtocolHeaderParam &ob20_head_param,
                                uint8_t &seq, const int err_code, const ObString &msg_buf);
-  static int encode_executor_response_packet(event::ObMIOBuffer *write_buf,
-                                             const Ob20ProtocolHeaderParam &ob20_head_param,
-                                             uint8_t &seq, engine::ObProxyResultResp *result_resp);
   // analyze utils
   static int analyze_ok_packet_and_get_reroute_info(event::ObIOBufferReader *reader,
                                                     const int64_t pkt_len,
@@ -81,9 +78,11 @@ public:
   static int fill_proto20_header(char *hdr_start, const int64_t payload_len,
                                  const uint8_t compressed_seq, const uint8_t packet_seq,
                                  const uint32_t request_id, const uint32_t connid,
-                                 const bool is_last_packet, const bool is_need_reroute,
-                                 const bool is_extra_info_exist, const bool is_new_extra_info);
+                                 const bool is_last_packet, const bool is_weak_read,
+                                 const bool is_need_reroute, const bool is_extra_info_exist,
+                                 const bool is_new_extra_info, const bool is_trans_internal_routing);
   static int reserve_proto20_hdr(event::ObMIOBuffer *write_buf, char *&hdr_start);
+  static bool is_trans_related_sess_info(int16_t type);
   
 private:
   inline static int analyze_compressed_packet_header(const char *start, const int64_t len,
@@ -107,12 +106,17 @@ public:
   static int build_extra_info_for_client(ObMysqlSM *sm, char *buf, const int64_t len,
                                          common::ObIArray<ObObJKV> &extra_info);
   static int build_sync_sess_info(common::ObIArray<ObObJKV> &extra_info,
-                                  common::hash::ObHashMap<int16_t, ObString>& sess_info_hash_map,
-                                  common::ObSqlString& info_value);
+                                  common::ObSqlString &info_value,
+                                  common::hash::ObHashMap<int16_t, ObString> &sess_info_hash_map,
+                                  common::hash::ObHashMap<int16_t, int64_t> &client_sess_field_version,
+                                  common::hash::ObHashMap<int16_t, int64_t> &server_sess_field_version,
+                                  ObMysqlSM *sm);
   static int build_related_extra_info_all(common::ObIArray<ObObJKV> &extra_info, ObMysqlSM *sm,
                                           char *ip_buf, const int64_t ip_buf_len,
                                           char *extra_info_buf, const int64_t extra_info_buf_len,
                                           common::ObSqlString &info_value, const bool is_last_packet);
+  static int get_sess_field_version(int64_t &version, int16_t type, common::hash::ObHashMap<int16_t, int64_t> &map);
+
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyTraceUtils);
 };

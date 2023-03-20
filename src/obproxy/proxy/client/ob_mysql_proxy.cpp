@@ -173,7 +173,7 @@ int ObMysqlProxyCont::async_post_request(const ObMysqlRequestParam &request_para
   action = NULL;
   if (OB_UNLIKELY(!request_param.is_valid())
       || OB_UNLIKELY(timeout_ms <= 0)
-      || OB_ISNULL(client_pool)) {
+      || (!request_param.is_detect_client_ && OB_ISNULL(client_pool))) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", K(request_param), K(timeout_ms), K(ret));
   } else if (OB_FAIL(request_param_.deep_copy(request_param))) {
@@ -181,8 +181,10 @@ int ObMysqlProxyCont::async_post_request(const ObMysqlRequestParam &request_para
   } else {
     is_nonblock_ = true;
     timeout_ms_ = timeout_ms;
-    client_pool->inc_ref();
-    client_pool_ = client_pool;
+    if (NULL != client_pool) {
+      client_pool->inc_ref();
+      client_pool_ = client_pool;
+    }
   }
 
   if (OB_SUCC(ret)) {
@@ -322,7 +324,13 @@ int ObMysqlProxyCont::do_post_request()
     if (OB_SUCC(ret)) {
       ret = OB_EAGAIN;
       if (NULL == mysql_client_) {
-        mysql_client_ = client_pool_->acquire_mysql_client();
+        // For probing requests, in order to prevent competition for connection pool connections,
+        // use a separate mysql_client
+        if (NULL != request_param_.mysql_client_) {
+          mysql_client_ = request_param_.mysql_client_;
+        } else {
+          mysql_client_ = client_pool_->acquire_mysql_client();
+        }
       }
       if (NULL != mysql_client_) {
         ObAction *action = NULL;
@@ -463,6 +471,7 @@ int ObMysqlProxy::init(const int64_t timeout_ms,
                        const ObString &user_name,
                        const ObString &password,
                        const ObString &database,
+                       const ObString &cluster_name,
                        const ObString &password1)
 {
   int ret = OB_SUCCESS;
@@ -472,7 +481,7 @@ int ObMysqlProxy::init(const int64_t timeout_ms,
   } else if (OB_UNLIKELY(timeout_ms <= 0)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", K(timeout_ms), K(ret));
-  } else if (OB_FAIL(raw_mysql_client_.init(user_name, password, database, password1))) {
+  } else if (OB_FAIL(raw_mysql_client_.init(user_name, password, database, cluster_name, password1))) {
     LOG_WARN("fail to init raw mysql client", K(ret));
   } else {
     timeout_ms_ = timeout_ms;
@@ -500,7 +509,7 @@ int ObMysqlProxy::rebuild_client_pool(ObShardConnector *shard_conn,
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input value", K(user_name));
   } else {
-    if (OB_FAIL(alloc_client_pool(is_meta_mysql_client, user_name, password, database, password1, client_pool_option))) {
+    if (OB_FAIL(alloc_client_pool(is_meta_mysql_client, user_name, password, database, "", password1, client_pool_option))) {
       LOG_WARN("fail to alloc client pool", K(is_meta_mysql_client), K(user_name), K(database), K(ret));
     } else {
       client_pool_->set_shard_conn(shard_conn);
@@ -539,7 +548,7 @@ int ObMysqlProxy::rebuild_client_pool(ObClusterResource *cluster_resource,
     } else {
       ObString full_username(full_user_name);
       if (OB_FAIL(alloc_client_pool(is_meta_mysql_client, full_username,
-                                             password, database, password1, client_pool_option))) {
+                                             password, database, cluster_name, password1, client_pool_option))) {
         LOG_WARN("fail to alloc client pool", K(user_name), K(database), K(ret));
       } else {
         client_pool_->set_cluster_resource(cluster_resource);
@@ -613,7 +622,7 @@ int ObMysqlProxy::async_execute(ObContinuation *cont,
     LOG_DEBUG("ObMysqlProxy::async_execute", K(cont), K(request_param), K(timeout_ms), K(ret));
     ObMysqlProxyCont *mp_cont = NULL;
     ObMysqlClientPool *pool = NULL;
-    if (OB_ISNULL(pool = acquire_client_pool())) {
+    if (!request_param.is_detect_client_ && OB_ISNULL(pool = acquire_client_pool())) {
       ret = OB_ENTRY_NOT_EXIST;
       LOG_WARN("client pool is null", K(ret));
     } else {
@@ -825,6 +834,7 @@ int ObMysqlProxy::alloc_client_pool(const bool is_meta_mysql_client,
                                     const ObString &user_name,
                                     const ObString &password,
                                     const ObString &database,
+                                    const ObString &cluster_name,
                                     const ObString &password1,
                                     ClientPoolOption* client_pool_option)
 {
@@ -839,7 +849,7 @@ int ObMysqlProxy::alloc_client_pool(const bool is_meta_mysql_client,
   } else if (FALSE_IT(client_pool->inc_ref())) {
     // will dec_ref in destroy()
   } else if (OB_FAIL(client_pool->init(is_meta_mysql_client, user_name,
-             password, database, password1, client_pool_option))) {
+             password, database, cluster_name, password1, client_pool_option))) {
     LOG_WARN("fail to init client pool", K(user_name), K(password),
              K(database), K(is_meta_mysql_client), K(ret));
   } else {
@@ -851,14 +861,14 @@ int ObMysqlProxy::alloc_client_pool(const bool is_meta_mysql_client,
     client_pool_ = client_pool;
 
     // update raw mysql client info
-    ObClientReuqestInfo &info = raw_mysql_client_.get_request_info();
+    ObClientRequestInfo &info = raw_mysql_client_.get_request_info();
     info.reset_names();
     bool need_skip_stage2 = false;
     if (client_pool_option) {
       need_skip_stage2 = client_pool_option->need_skip_stage2_;
     }
     info.set_need_skip_stage2(need_skip_stage2);
-    if (OB_FAIL(info.set_names(user_name, password, database))) {
+    if (OB_FAIL(info.set_names(user_name, password, database, cluster_name))) {
       LOG_WARN("fail to set raw mysql client request info", K(ret));
     }
   }

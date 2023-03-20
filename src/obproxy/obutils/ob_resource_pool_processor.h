@@ -228,7 +228,7 @@ public:
       cluster_info_key_(), last_access_time_ns_(0), deleting_completed_thread_num_(0),
       version_(0), fetch_rslist_task_count_(0), fetch_idc_list_task_count_(0),
       last_idc_list_refresh_time_ns_(0), last_rslist_refresh_time_ns_(0),
-      pending_list_(), cluster_version_(0), is_inited_(false), cr_state_(CR_BORN), sys_ldg_info_map_(),
+      pending_list_(), cluster_version_(0), alive_addr_set_(), is_inited_(false), cr_state_(CR_BORN), sys_ldg_info_map_(),
       sys_ldg_info_lock_(), location_tenant_info_lock_(), location_tenant_info_map_() {}
   virtual ~ObClusterResource() {}
   virtual void free();
@@ -358,6 +358,7 @@ public:
   int64_t last_rslist_refresh_time_ns_;
   common::ObAtomicList pending_list_;
   int64_t cluster_version_;
+  common::hash::ObHashSet<net::ObIpEndpoint> alive_addr_set_;
   LINK(ObClusterResource, cr_link_);
 
 private:

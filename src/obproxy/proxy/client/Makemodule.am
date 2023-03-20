@@ -8,4 +8,6 @@ obproxy/proxy/client/ob_mysql_client_pool.cpp\
 obproxy/proxy/client/ob_raw_mysql_client.h\
 obproxy/proxy/client/ob_raw_mysql_client.cpp\
 obproxy/proxy/client/ob_mysql_proxy.h\
-obproxy/proxy/client/ob_mysql_proxy.cpp
+obproxy/proxy/client/ob_mysql_proxy.cpp\
+obproxy/proxy/client/ob_driver_client.h\
+obproxy/proxy/client/ob_driver_client.cpp

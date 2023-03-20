@@ -131,8 +131,10 @@ enum ObKVCachePolicy
 struct ObKVCacheConfig
 {
 public:
-  ObKVCacheConfig();
-  void reset();
+  /* this function is defined for c driver client compile */
+  ObKVCacheConfig() {};
+  /* this function is defined for c driver client compile */
+  void reset() {};
   bool is_valid_;
   int64_t priority_;
   char cache_name_[MAX_CACHE_NAME_LENGTH];
@@ -267,9 +269,12 @@ class ObKVCacheInstMap;
 class ObKVCacheInstHandle
 {
 public:
-  ObKVCacheInstHandle();
-  virtual ~ObKVCacheInstHandle();
-  void reset();
+  /* this function is defined for c driver client compile */
+  ObKVCacheInstHandle() {};
+  /* this function is defined for c driver client compile */
+  virtual ~ObKVCacheInstHandle() {};
+  /* this function is defined for c driver client compile */
+  void reset() {};
   inline ObKVCacheInst *get_inst() { return inst_; }
 private:
   friend class ObKVCacheInstMap;
@@ -291,8 +296,10 @@ struct ObKVCacheInfo
 class ObKVCacheInstMap
 {
 public:
-  ObKVCacheInstMap();
-  virtual ~ObKVCacheInstMap();
+  /* this function is defined for c driver client compile */
+  ObKVCacheInstMap() {};
+  /* this function is defined for c driver client compile */
+  virtual ~ObKVCacheInstMap() {};
   int init(const int64_t max_entry_cnt, const ObKVCacheConfig *configs);
   void destroy();
   int get_cache_inst(
@@ -319,8 +326,10 @@ private:
 class ObKVCacheStore
 {
 public:
-  ObKVCacheStore();
-  virtual ~ObKVCacheStore();
+  /* this function is defined for c driver client compile */
+  ObKVCacheStore() {};
+  /* this function is defined for c driver client compile */
+  virtual ~ObKVCacheStore() {};
   int init(ObKVCacheInstMap &insts, const int64_t max_cache_size, const int64_t block_size);
   void destroy();
   int set_priority(const int64_t cache_id, const int64_t old_priority, const int64_t new_priority);
@@ -394,8 +403,10 @@ private:
 class ObKVCacheMap
 {
 public:
-  ObKVCacheMap();
-  virtual ~ObKVCacheMap();
+  /* this function is defined for c driver client compile */
+  ObKVCacheMap() {};
+  /* this function is defined for c driver client compile */
+  virtual ~ObKVCacheMap() {};
   int init(const int64_t bucket_num, ObKVCacheStore *store);
   void destroy();
   int erase_all();
@@ -452,19 +463,23 @@ class ObKVCacheHandle;
 class ObKVGlobalCache
 {
 public:
-  static ObKVGlobalCache &get_instance();
+  /* this function is defined for c driver client compile */
+  static ObKVGlobalCache &get_instance() {return *(new ObKVGlobalCache());};
   int init(const int64_t bucket_num = DEFAULT_BUCKET_NUM,
       const int64_t max_cache_size = DEFAULT_MAX_CACHE_SIZE,
       const int64_t block_size = common::OB_MALLOC_BIG_BLOCK_SIZE);
   void destroy();
-  void reload_priority();
+  /* this function is defined for c driver client compile */
+  void reload_priority() {};
   int get_tenant_cache_info(const uint64_t tenant_id, ObIArray<ObKVCacheInfo> &infos);
   int get_all_cache_info(ObIArray<ObKVCacheInfo> &infos);
 private:
   template<class Key, class Value> friend class ObKVCache;
   friend class ObKVCacheHandle;
-  ObKVGlobalCache();
-  virtual ~ObKVGlobalCache();
+  /* this function is defined for c driver client compile */
+  ObKVGlobalCache() {}
+  /* this function is defined for c driver client compile */
+  virtual ~ObKVGlobalCache() {}
   int register_cache(const char *cache_name, const int64_t priority, int64_t &cache_id);
   void deregister_cache(const int64_t cache_id);
   int set_priority(const int64_t cache_id, const int64_t priority);
@@ -482,7 +497,8 @@ private:
     ObKVMemBlockHandle *&mb_handle);
   int erase(const int64_t cache_id, const ObIKVCacheKey &key);
   void revert(ObKVMemBlockHandle *mb_handle);
-  void wash();
+  /* this function is defined for c driver client compile */
+  void wash() {};
 private:
   static const int64_t DEFAULT_BUCKET_NUM = 10000000L;
   static const int64_t DEFAULT_MAX_CACHE_SIZE = 1024L * 1024L * 1024L * 1024L;  //1T

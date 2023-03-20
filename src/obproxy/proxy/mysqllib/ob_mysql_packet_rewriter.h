@@ -64,7 +64,6 @@ public:
 
   static const int64_t OB_MAX_UINT32_BUF_LEN = 11; // string length of max uint32_t(2**32 - 1)
   static const int64_t OB_MAX_VERSION_BUF_LEN = 22; // string length of (xxx.xxx.xxx.xxx.xxx)
-  static const int64_t OB_MAX_IP_BUF_LEN = 20; // string length of (xxx.xxx.xxx.xxx.xxx)
 
   bool is_saved_login_;
   bool use_compress_;
@@ -81,7 +80,7 @@ public:
   char global_vars_version_buf_[OB_MAX_UINT64_BUF_LEN];
   char cap_buf_[OB_MAX_UINT64_BUF_LEN];
   char proxy_scramble_buf_[obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE];
-  char client_ip_buf_[OB_MAX_IP_BUF_LEN];
+  char client_ip_buf_[MAX_IP_ADDR_LENGTH];
   char cluster_id_buf_[OB_MAX_UINT64_BUF_LEN];
 
 private:

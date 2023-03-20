@@ -95,8 +95,6 @@ public:
   {
     return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && NULL != sm->client_session_
-            // inner sql will received compeleted, no need plugin
-            && !sm->client_session_->is_proxy_mysql_client_
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && !sm->trans_state_.trans_info_.server_response_.get_analyze_result().is_decompressed()
             && (ObProxyProtocol::PROTOCOL_CHECKSUM == sm->get_server_session_protocol()

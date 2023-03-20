@@ -78,10 +78,10 @@ public:
   LINK(ObVipTenantConn, vt_link_);
 
 private:
-  char tenant_name_str_[common::OB_MAX_TENANT_NAME_LENGTH];  
+  char tenant_name_str_[common::OB_MAX_TENANT_NAME_LENGTH];
   char cluster_name_str_[OB_PROXY_MAX_CLUSTER_NAME_LENGTH];
-  char vip_name_str_[common::OB_IP_STR_BUFF];
-  char full_name_str_[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF];
+  char vip_name_str_[common::MAX_IP_ADDR_LENGTH];
+  char full_name_str_[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH];
   DISALLOW_COPY_AND_ASSIGN(ObVipTenantConn);
 };
 
@@ -109,7 +109,7 @@ public:
   typedef common::hash::ObBuildInHashMap<VTCacheHashing, HASH_BUCKET_SIZE> VTHashMap;
 
 public:
-  
+
   int set(ObVipTenantConn* vt);
   int get(common::ObString& key_name, ObVipTenantConn*& vt_conn);
   int erase(common::ObString& cluster_name, common::ObString& tenant_name);
@@ -132,7 +132,7 @@ private:
 class ObUsedConn : public common::ObSharedRefCount {
 public:
   ObUsedConn(common::ObString& full_name) : max_used_connections_(0), is_in_map_(false) {
-    if (full_name.length() < OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF) {
+    if (full_name.length() < OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH) {
       MEMCPY(full_name_str_, full_name.ptr(), full_name.length());
       full_name_.assign_ptr(full_name_str_, (int32_t)full_name.length());
     }
@@ -158,7 +158,7 @@ public:
   bool is_in_map_;
 
 private:
-  char full_name_str_[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF];
+  char full_name_str_[OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH];
   DISALLOW_COPY_AND_ASSIGN(ObUsedConn);
 };
 

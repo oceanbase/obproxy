@@ -155,8 +155,10 @@ int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf,
                                                   const uint8_t compressed_seq,
                                                   const uint8_t pkt_seq,
                                                   bool is_last_packet,
+                                                  bool is_weak_read,
                                                   bool is_need_reroute,
                                                   bool is_new_extra_info,
+                                                  bool is_trans_internal_routing,
                                                   const common::ObIArray<ObObJKV> *extra_info)
 {
   int ret = OB_SUCCESS;
@@ -168,8 +170,9 @@ int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf,
     LOG_WARN("we cannot support packet which is larger than 16MB", K(sql_str),
              K(MYSQL_PACKET_MAX_LENGTH), K(ret));
   } else {
-    Ob20ProtocolHeaderParam ob20_head_param(conn_id, req_id, compressed_seq, pkt_seq, is_last_packet, is_need_reroute,
-                                            is_new_extra_info);
+    Ob20ProtocolHeaderParam ob20_head_param(conn_id, req_id, compressed_seq, pkt_seq, is_last_packet,
+                                            is_weak_read, is_need_reroute,
+                                            is_new_extra_info, is_trans_internal_routing);
     ObMySQLRawPacket com_pkt(cmd);
     com_pkt.set_content(sql_str.ptr(), static_cast<uint32_t>(sql_str.length()));
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_compressed_packet(mio_buf, com_pkt, ob20_head_param, extra_info))) {

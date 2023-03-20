@@ -33,7 +33,7 @@ public:
   ObRawMysqlClientActor();
   ~ObRawMysqlClientActor() { destroy(); }
 
-  int init(ObClientReuqestInfo &info);
+  int init(ObClientRequestInfo &info);
   int sync_raw_execute(const char *sql, const int64_t timeout_ms, ObClientMysqlResp *&resp);
   void reset() { destroy(); }
   bool is_avail() { return is_avail_; }
@@ -51,7 +51,7 @@ private:
 private:
   bool is_inited_;
   bool is_avail_;
-  ObClientReuqestInfo *info_;
+  ObClientRequestInfo *info_;
   ObClientMysqlResp *resp_;
   net::ObConnection con_;
   common::ObAddr addr_;
@@ -82,13 +82,14 @@ public:
   int init(const common::ObString &user_name,
            const common::ObString &password,
            const common::ObString &database,
+           const common::ObString &cluster_name,
            const common::ObString &password1 = "");
 
   int sync_raw_execute(const char *sql, const int64_t timeout_ms, ObClientMysqlResp *&resp);
 
   int set_server_addr(const common::ObIArray<common::ObAddr> &addrs);
   int set_target_server(const common::ObIArray<ObProxyReplicaLocation> &replicas);
-  ObClientReuqestInfo &get_request_info() { return info_; }
+  ObClientRequestInfo &get_request_info() { return info_; }
 
   int disconnect();
   void destroy();
@@ -98,7 +99,7 @@ public:
 private:
   static const int64_t DEFAULT_SERVER_ADDRS_COUNT = 3;
   bool is_inited_;
-  ObClientReuqestInfo info_;
+  ObClientRequestInfo info_;
   ObProxyReplicaLocation target_server_[DEFAULT_SERVER_ADDRS_COUNT];
   ObRawMysqlClientActor actor_;
   ObMutex mutex_;

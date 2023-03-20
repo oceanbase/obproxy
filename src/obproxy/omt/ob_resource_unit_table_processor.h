@@ -62,7 +62,7 @@ private:
 ObResourceUnitTableProcessor &get_global_resource_unit_table_processor();
 int build_tenant_cluster_vip_name(const common::ObString &tenant_name,
     const common::ObString &cluster_name, const common::ObString &vip_name,
-    common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::OB_IP_STR_BUFF>& key_string);
+    common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH>& key_string);
 } // end of namespace omt
 } // end of namespace obproxy
 } // end of namespace oceanbase

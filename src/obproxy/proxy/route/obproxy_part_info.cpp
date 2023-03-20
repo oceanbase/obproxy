@@ -94,6 +94,7 @@ int ObProxyPartInfo::alloc(ObProxyPartInfo *&part_info)
 
 void ObProxyPartInfo::free()
 {
+  part_mgr_.destroy();
   allocator_.reset();
   op_fixed_mem_free(this, sizeof(ObProxyPartInfo));
 }

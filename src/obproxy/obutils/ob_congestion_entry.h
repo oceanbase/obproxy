@@ -290,6 +290,7 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   void set_detect_congested_free();
   void set_dead_failed_at(const ObHRTime t);
   void set_alive_failed_at(const ObHRTime t);
+  void set_client_feedback_failed_at(const ObHRTime t);
 
   // Connection controls
   bool alive_need_retry(const ObHRTime t);
@@ -300,6 +301,7 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   void reset_fail_history();
   bool check_dead_congested();
   bool check_alive_congested();
+  bool check_client_feedback_congested();
 
   // ObCongestionEntry and ObCongestionControl config interaction helper functions
   int validate_config(ObCongestionControlConfig *config);
@@ -337,6 +339,11 @@ struct ObCongestionEntry : public ObCongestionRefCnt
 
   ObHRTime last_detect_congested_;
   volatile int64_t detect_congested_;
+
+  ObFailHistory client_feedback_fail_history_;
+  ObHRTime last_client_feedback_congested_;
+  volatile int64_t stat_client_feedback_failures_;
+  int64_t client_feedback_congested_;
 
   volatile int64_t stat_conn_failures_;
   volatile int64_t stat_alive_failures_;
@@ -437,12 +444,27 @@ inline bool ObCongestionEntry::check_alive_congested()
   return bret;
 }
 
+inline bool ObCongestionEntry::check_client_feedback_congested()
+{
+  bool bret = false;
+  if (1 == client_feedback_congested_) {
+    bret = true;
+  } else if (control_config_->alive_failure_threshold_ < 0) {
+    bret = false;
+  } else {
+    bret = control_config_->alive_failure_threshold_ <= client_feedback_fail_history_.events_;
+  }
+
+  return bret;
+}
+
 inline void ObCongestionEntry::reset_fail_history()
 {
   conn_fail_history_.init(control_config_->fail_window_sec_);
   dead_congested_ = 0;
   alive_fail_history_.init(control_config_->fail_window_sec_);
   alive_congested_ = 0;
+  client_feedback_fail_history_.init(control_config_->fail_window_sec_);
 }
 
 void ObCongestionEntry::free()

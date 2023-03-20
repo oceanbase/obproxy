@@ -128,7 +128,7 @@ static int ob_wc_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
   return OB_CS_ILUNI;
 }
 
-static int ob_mb_ctype_8bit(const ObCharsetInfo *cs, int *ctype,
+int ob_mb_ctype_8bit(const ObCharsetInfo *cs, int *ctype,
                    const unsigned char *str, const unsigned char *end)
 {
   if (str >= end) {
@@ -375,7 +375,7 @@ static ObCharsetHandler ob_charset_handler=
   ob_scan_8bit
 };
 
-static ObCollationHandler ob_collation_binary_handler =
+ObCollationHandler ob_collation_binary_handler =
 {
   ob_strnncoll_binary,
   ob_strnncollsp_binary,

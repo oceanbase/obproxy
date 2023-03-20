@@ -142,12 +142,13 @@ class ObProxyMemMergeSortUnit
 {
 public:
   ObProxyMemMergeSortUnit(common::ObIAllocator &allocator)
-    : allocator_(allocator), row_(NULL),
+    : allocator_(allocator), row_(NULL), result_fields_(NULL),
       order_values_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
       order_exprs_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
   ~ObProxyMemMergeSortUnit() {}
 
-  int init(ResultRow *row, common::ObIArray<ObProxyOrderItem*> &order_exprs);
+  int init(ResultRow *row, ResultFields *result_fields,
+           common::ObIArray<ObProxyOrderItem*> &order_exprs);
   virtual bool compare(const ObProxyMemMergeSortUnit* sort_unit) const;
   int calc_order_values();
 
@@ -159,6 +160,7 @@ public:
 protected:
   common::ObIAllocator &allocator_;
   ResultRow *row_;
+  ResultFields *result_fields_;
   common::ObSEArray<ObObj, 4> order_values_;
   common::ObSEArray<ObProxyOrderItem*, 4> order_exprs_;
 };
@@ -188,7 +190,8 @@ public:
     : ObProxyMemMergeSortUnit(allocator), result_set_(NULL) {}
   ~ObProxyStreamSortUnit() {}
 
-  int init(ObProxyResultResp* result_set, common::ObIArray<ObProxyOrderItem*> &order_exprs);
+  int init(ObProxyResultResp* result_set, ResultFields *result_fields,
+           common::ObIArray<ObProxyOrderItem*> &order_exprs);
   virtual bool compare(const ObProxyStreamSortUnit* sort_unit) const;
   int next();
 

@@ -38,6 +38,7 @@ enum ObLogFDType {
   FD_POOL_FILE,
   FD_POOL_STAT_FILE,
   FD_TRACE_FILE,      // ob20 full link trace interface
+  FD_DRIVER_CLIENT_FILE,
   MAX_FD_FILE,
 };
 

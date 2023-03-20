@@ -12,10 +12,16 @@
 
 #define USING_LOG_PREFIX PROXY
 
-#include "common/ob_obj_cast.h"
 #include "opsql/func_expr_resolver/proxy_expr/ob_proxy_expr.h"
-#include "utils/ob_proxy_utils.h"
+#include "common/ob_obj_cast.h"
+#include "common/ob_obj_type.h"
 #include "dbconfig/ob_proxy_db_config_info.h"
+#include "lib/time/ob_time_utility.h"
+#include "proxy/route/obproxy_expr_calculator.h"
+#include "utils/ob_proxy_utils.h"
+#include "common/expression/ob_expr_regexp_context.h"
+#include "lib/utility/utility.h"
+#include <time.h>
 
 namespace oceanbase
 {
@@ -226,10 +232,10 @@ int ObProxyExprColumn::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem
   } else if (result_obj_array.count() == len && ObProxyExprCalcItem::FROM_SQL_FIELD == calc_item.source_) {
     bool found = false;
     for (int64_t i = 0; OB_SUCC(ret) && i < calc_item.sql_result_->field_num_; i++) {
-      SqlField &field = calc_item.sql_result_->fields_.at(i);
-      if (0 == field.column_name_.string_.case_compare(column_name_)) {
+      SqlField* field = calc_item.sql_result_->fields_.at(i);
+      if (0 == field->column_name_.config_string_.case_compare(column_name_)) {
         found = true;
-        common::ObSEArray<SqlColumnValue, 3> &column_values = field.column_values_;
+        common::ObSEArray<SqlColumnValue, 3> &column_values = field->column_values_;
         for (int64_t j = 0; OB_SUCC(ret) && j < column_values.count(); j++) {
           ObObj result_obj;
           SqlColumnValue &sql_column_value = column_values.at(j);
@@ -240,7 +246,7 @@ int ObProxyExprColumn::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem
               LOG_WARN("push back obj failed", K(ret), K(result_obj));
             }
           } else if (TOKEN_STR_VAL == sql_column_value.value_type_) {
-            ObString value = sql_column_value.column_value_.string_;
+            ObString value = sql_column_value.column_value_.config_string_;
             result_obj.set_varchar(value);
             result_obj.set_collation_type(CS_TYPE_UTF8MB4_GENERAL_CI);
             if (OB_FAIL(result_obj_array.push_back(result_obj))) {
@@ -362,26 +368,19 @@ int ObProxyFuncExpr::calc_param_expr(const ObProxyExprCtx &ctx,
   return ret;
 }
 
-int ObProxyFuncExpr::get_int_obj(const ObObj &src, ObObj &dst)
+int ObProxyFuncExpr::get_int_obj(const ObObj &src, ObObj &dst, common::ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
 
-  if (src.is_varchar()) {
-    ObString str;
-    int64_t val;
-    if (OB_FAIL(src.get_varchar(str))) {
-      LOG_WARN("get varchar failed", K(ret));
-    } else if (OB_FAIL(get_int_value(str, val))) {
-      LOG_WARN("get int value failed", K(ret), K(src));
-    } else {
-      dst.set_int(val);
+  if (!src.is_int()) {
+    ObCollationType collation = ObCharset::get_default_collation(ObCharset::get_default_charset());
+    ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, collation);
+    if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, collation, cast_ctx, src, dst))) {
+      LOG_WARN("cast obj to varchar obj fail", K(ret));
     }
-  } else if (src.is_int()) {
-    dst = src;
   } else {
-    ret = OB_EXPR_CALC_ERROR;
-    LOG_WARN("invalid type to int", K(ret));
-  }
+    dst = src;
+  } 
 
   return ret;
 }
@@ -389,22 +388,14 @@ int ObProxyFuncExpr::get_int_obj(const ObObj &src, ObObj &dst)
 int ObProxyFuncExpr::get_varchar_obj(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
-  if (src.is_int()) {
-    char *buf = NULL;
-    const int64_t buf_len = 256;
-    if (OB_ISNULL(buf = static_cast<char*>(allocator.alloc(buf_len)))) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("alloc buf failed", K(ret), K(buf_len));
-    } else {
-      snprintf(buf, buf_len, "%ld", src.get_int());
-      dst.set_varchar(buf, static_cast<ObString::obstr_size_t>(strlen(buf)));
-      dst.set_collation_type(CS_TYPE_UTF8MB4_GENERAL_CI);
+  if (!src.is_varchar()) {
+    ObCollationType collation = ObCharset::get_default_collation(ObCharset::get_default_charset());
+    ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, collation);
+    if (OB_FAIL(ObObjCasterV2::to_type(ObVarcharType, collation, cast_ctx, src, dst))) {
+      LOG_WARN("cast obj to varchar obj fail", K(ret));
     }
   } else if (src.is_varchar()) {
     dst = src;
-  } else {
-    ret = OB_EXPR_CALC_ERROR;
-    LOG_INFO("get varchar obj failed", K(src), K(ret));
   }
 
   return ret;
@@ -456,7 +447,7 @@ int ObProxyExprHash::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -475,7 +466,7 @@ int ObProxyExprHash::calc(const ObProxyExprCtx &ctx,
             LOG_DEBUG("test load type", K(test_load_obj));
           }
 
-          if (OB_FAIL(get_int_obj(test_load_obj, obj1))) {
+          if (OB_FAIL(get_int_obj(test_load_obj, obj1, *ctx.allocator_))) {
             LOG_WARN("get int obj failed", K(ret), K(test_load_obj));
           } else if (OB_FAIL(obj1.get_int(index))) {
             LOG_WARN("get int failed", K(ret), K(obj1));
@@ -483,7 +474,7 @@ int ObProxyExprHash::calc(const ObProxyExprCtx &ctx,
 
           if (OB_SUCC(ret) && param_array_.count() == 2) {
             ObObj obj2;
-            if (OB_FAIL(get_int_obj(param_result.at(1), obj2))) {
+            if (OB_FAIL(get_int_obj(param_result.at(1), obj2, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else if (OB_FAIL(obj2.get_int(num))) {
               LOG_WARN("get int failed", K(ret));
@@ -507,7 +498,7 @@ int ObProxyExprHash::calc(const ObProxyExprCtx &ctx,
             }
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -544,7 +535,7 @@ int ObProxyExprSubStr::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -555,6 +546,9 @@ int ObProxyExprSubStr::calc(const ObProxyExprCtx &ctx,
           int64_t start_pos = 0;
           int64_t substr_len = -1;
           ObObj first_obj;
+
+          // substr retrun NULL on out of bounds params
+          bool is_invalid_params = false;
 
           if (OB_FAIL(get_varchar_obj(param_result.at(0), first_obj, *ctx.allocator_))) {
             LOG_WARN("get varchar obj failed", K(ret));
@@ -567,26 +561,33 @@ int ObProxyExprSubStr::calc(const ObProxyExprCtx &ctx,
 
           if (OB_SUCC(ret)) {
             ObObj obj;
-            if (OB_FAIL(get_int_obj(param_result.at(1), obj))) {
+            if (OB_FAIL(get_int_obj(param_result.at(1), obj, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else if (OB_FAIL(obj.get_int(start_pos))) {
               LOG_WARN("get int failed", K(ret));
             }
           }
-
+          if (start_pos == 0) {
+            if (ctx.is_oracle_mode) {
+              // 1 and 0 treated as thr first character in oracle
+              start_pos = 1;
+            } else {
+              is_invalid_params = true;
+            }
+          }
           if (OB_SUCC(ret) && 3 == param_result.count()) {
             ObObj obj;
-            if (OB_FAIL(get_int_obj(param_result.at(2), obj))) {
+            if (OB_FAIL(get_int_obj(param_result.at(2), obj, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else if (OB_FAIL(obj.get_int(substr_len))) {
               LOG_WARN("get int failed", K(ret));
             } else if (substr_len <= 0) {
-              ret = OB_INVALID_ARGUMENT_FOR_SUBSTR;
-              LOG_WARN("substr function param 3 is less than 1", K(ret));
+              is_invalid_params = true;
+              LOG_DEBUG("substr function param 3 is less than 1", K(ret));
             }
           }
 
-          if (OB_SUCC(ret)) {
+          if (OB_SUCC(ret) && !is_invalid_params) {
             value_length = value.length();
             if (start_pos < 0) {
               start_pos = value_length + start_pos + 1;
@@ -597,26 +598,37 @@ int ObProxyExprSubStr::calc(const ObProxyExprCtx &ctx,
             }
 
             if (start_pos <= 0 || start_pos > value_length || substr_len <= 0 || substr_len > value_length || start_pos + substr_len - 1 > value_length) {
-              ret = OB_INVALID_ARGUMENT_FOR_SUBSTR;
-              LOG_WARN("column value length does not match", K(start_pos),
-                  K(substr_len), K(value_length), K(value), K(ret));
+              is_invalid_params = true;
+              LOG_DEBUG("invalid substr params", K(start_pos), K(substr_len), K(value_length), K(value), K(ret));
             }
+          }
 
-            if (OB_SUCC(ret)) {
+          if (OB_SUCC(ret)) {
+            if(is_invalid_params) {
+              if (ctx.is_oracle_mode) {
+                result_obj.set_null();
+              } else {
+                result_obj.set_varchar(ObString());
+              }
+            } else {
               ObString result_str;
               result_str.assign_ptr(value.ptr() + start_pos - 1, static_cast<int32_t>(substr_len));
               result_obj.set_varchar(result_str);
               result_obj.set_collation_type(CS_TYPE_UTF8MB4_GENERAL_CI);
-
               if (OB_FAIL(check_varchar_empty(result_obj))) {
                 LOG_WARN("check varchar emtpy failed", K(ret));
-              } else if (OB_FAIL(result_obj_array.push_back(result_obj))) {
-                LOG_WARN("result obj array push back failed", K(ret));
-              }
+              } 
             }
           }
+
+          if (OB_SUCC(ret)) {
+            if (OB_FAIL(result_obj_array.push_back(result_obj))) {
+              LOG_WARN("result obj array push back failed", K(ret));
+            }
+          }
+
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -653,7 +665,7 @@ int ObProxyExprConcat::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -709,7 +721,7 @@ int ObProxyExprConcat::calc(const ObProxyExprCtx &ctx,
             }
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -746,19 +758,19 @@ int ObProxyExprToInt::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
         if (OB_SUCC(ret)) {
           ObObj result_obj;
           ObObj &obj = param_result.at(0);
-          if (OB_FAIL(get_int_obj(obj, result_obj))) {
+          if (OB_FAIL(get_int_obj(obj, result_obj, *ctx.allocator_))) {
             LOG_WARN("get int obj failed", K(ret));
           } else if (OB_FAIL(result_obj_array.push_back(result_obj))) {
             LOG_WARN("result obj array push back failed", K(ret));
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -774,7 +786,7 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
   common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
   int cnt = 0;
   int64_t len = result_obj_array.count();
- 
+
   if (-1 != index_ && ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_ && !has_agg_) {
     if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
       LOG_WARN("calc expr failed", K(ret));
@@ -799,7 +811,7 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -810,7 +822,7 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
           if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
             if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
-            } else if (fabs(obj2.get_double()) == 0.0) {
+            } else if (fabs(obj2.get_double()) < DBL_EPSILON) {
               result_obj.set_null();
             } else {
               double obj1_d = obj1.get_double();
@@ -820,6 +832,8 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
           } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
             if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+            } else if (fabs(obj2.get_float()) < FLT_EPSILON) {
+              result_obj.set_null();
             } else {
               float obj1_f = obj1.get_float();
               float obj2_f = obj2.get_float();
@@ -846,9 +860,9 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
               }
             }
           } else {
-            if (OB_FAIL(get_int_obj(param_result.at(0), obj1))) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
-            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2))) {
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else {
               int64_t num1 = obj1.get_int();
@@ -866,7 +880,7 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
             LOG_WARN("result obj array push back failed", K(ret));
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -907,7 +921,7 @@ int ObProxyExprAdd::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -950,9 +964,9 @@ int ObProxyExprAdd::calc(const ObProxyExprCtx &ctx,
               }
             }
           } else {
-            if (OB_FAIL(get_int_obj(param_result.at(0), obj1))) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
-            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2))) {
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else {
               int64_t num1 = obj1.get_int();
@@ -970,7 +984,7 @@ int ObProxyExprAdd::calc(const ObProxyExprCtx &ctx,
             LOG_WARN("result obj array push back failed", K(ret));
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -1011,7 +1025,7 @@ int ObProxyExprSub::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -1054,9 +1068,9 @@ int ObProxyExprSub::calc(const ObProxyExprCtx &ctx,
               }
             }
           } else {
-            if (OB_FAIL(get_int_obj(param_result.at(0), obj1))) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
-            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2))) {
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else {
               int64_t num1 = obj1.get_int();
@@ -1074,7 +1088,7 @@ int ObProxyExprSub::calc(const ObProxyExprCtx &ctx,
             LOG_WARN("result obj array push back failed", K(ret));
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -1115,7 +1129,7 @@ int ObProxyExprMul::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -1158,9 +1172,9 @@ int ObProxyExprMul::calc(const ObProxyExprCtx &ctx,
               }
             }
           } else {
-            if (OB_FAIL(get_int_obj(param_result.at(0), obj1))) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
-            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2))) {
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else {
               int64_t num1 = obj1.get_int();
@@ -1178,7 +1192,7 @@ int ObProxyExprMul::calc(const ObProxyExprCtx &ctx,
             LOG_WARN("result obj array push back failed", K(ret));
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -1215,7 +1229,7 @@ int ObProxyExprTestLoad::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -1236,7 +1250,7 @@ int ObProxyExprTestLoad::calc(const ObProxyExprCtx &ctx,
             }
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -1273,7 +1287,7 @@ int ObProxyExprSplit::calc(const ObProxyExprCtx &ctx,
             tmp_obj = param_result_array.at(j).at(i);
           }
           if (OB_FAIL(param_result.push_back(tmp_obj))) {
-            LOG_WARN("push back obj faile", K(ret), K(i), K(j));
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
           }
         }
 
@@ -1303,7 +1317,7 @@ int ObProxyExprSplit::calc(const ObProxyExprCtx &ctx,
 
           if (OB_SUCC(ret)) {
             ObObj obj;
-            if (OB_FAIL(get_int_obj(param_result.at(2), obj))) {
+            if (OB_FAIL(get_int_obj(param_result.at(2), obj, *ctx.allocator_))) {
               LOG_WARN("get int obj failed", K(ret));
             } else if (OB_FAIL(obj.get_int(index))) {
               LOG_WARN("get int failed", K(ret));
@@ -1374,7 +1388,7 @@ int ObProxyExprSplit::calc(const ObProxyExprCtx &ctx,
             }
           }
         }
-      } while (++i < cnt);
+      } while (OB_SUCC(ret) && ++i < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);
@@ -1404,7 +1418,7 @@ int ObProxyExprAvg::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &c
         if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
           if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
             LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
-          } else if (fabs(obj2.get_double()) == 0.0) {
+          } else if (fabs(obj2.get_double()) < DBL_EPSILON) {
             result_obj.set_null();
           } else {
             double obj1_d = obj1.get_double();
@@ -1414,6 +1428,8 @@ int ObProxyExprAvg::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &c
         } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
           if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
             LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+          } else if (fabs(obj2.get_float() < FLT_EPSILON)) {
+            result_obj.set_null();
           } else {
             float obj1_f = obj1.get_float();
             float obj2_f = obj2.get_float();
@@ -1440,9 +1456,9 @@ int ObProxyExprAvg::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &c
             }
           }
         } else {
-          if (OB_FAIL(get_int_obj(param_result.at(0), obj1))) {
+          if (OB_FAIL(get_int_obj(param_result.at(0), obj1, *ctx.allocator_))) {
             LOG_WARN("get int obj failed", K(ret));
-          } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2))) {
+          } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, *ctx.allocator_))) {
             LOG_WARN("get int obj failed", K(ret));
           } else {
             int64_t num1 = obj1.get_int();
@@ -1468,6 +1484,383 @@ int ObProxyExprAvg::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &c
 
   ObProxyExpr::print_proxy_expr(this);
 
+  return ret;
+}
+
+/*
+ * for to_date and to_timestamp, only support at least one param, at most two params 
+ */
+int ObProxyExprToTimeHandler::calc(const ObProxyExprCtx &ctx,
+                                   const ObProxyExprCalcItem &calc_item,
+                                   common::ObIArray<common::ObObj> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
+  int cnt = 0;
+  int64_t len = result_obj_array.count();
+
+  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+    LOG_WARN("calc expr failed", K(ret), K(param_array_.count()));
+  } else if (len == result_obj_array.count()) {
+    if (OB_UNLIKELY(param_array_.count() < 1)) {
+      ret = OB_EXPR_CALC_ERROR;
+      LOG_WARN("to_date should have at least one param", K(ret));
+    } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
+      LOG_WARN("calc param expr failed", K(ret));
+    } else {
+      int i = 0;
+      do {
+        common::ObSEArray<common::ObObj, 4> param_result;
+        for (int64_t j = 0; OB_SUCC(ret) && j < param_result_array.count(); j++) {
+          ObObj tmp_obj;
+          if (param_result_array.at(j).count() == 1) {
+            tmp_obj = param_result_array.at(j).at(0);
+          } else {
+            tmp_obj = param_result_array.at(j).at(i);
+          }
+          if (OB_FAIL(param_result.push_back(tmp_obj))) {
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
+          }
+        }
+
+        ObObjTypeClass type = param_result.at(0).get_type_class();
+        if (OB_SUCC(ret) && type != ObStringTC && type != ObIntTC && type != ObNumberTC) {
+          ret = OB_EXPR_CALC_ERROR;
+          LOG_WARN("unexpected the first param type of to_date", K(type));
+        }
+
+        ObTimeZoneInfo tz_info;
+        ObDataTypeCastParams dtc_params;
+        if (OB_SUCC(ret)) {
+          ObObj second_obj;
+          ObString nls_format;
+
+          if (2 == param_result.count()) {
+            if(OB_FAIL(get_varchar_obj(param_result.at(1), second_obj, *ctx.allocator_))){
+              LOG_WARN("get varchar obj failed", K(ret));
+            } else if (OB_FAIL(second_obj.get_varchar(nls_format))) {
+              LOG_WARN("get varchar failded", K(ret));
+            } else {
+              if (!nls_format.empty()) {
+                dtc_params.tz_info_ = &tz_info;
+                dtc_params.set_nls_format_by_type(target_type_, nls_format);
+              } else {
+                dtc_params.tz_info_ = &tz_info;
+                if (OB_FAIL(proxy::ObExprCalcTool::build_dtc_params(
+                    ctx.client_session_info_, target_type_, dtc_params))) {
+                  LOG_WARN("fail to build dtc params", K(ret), K(target_type_));
+                }
+              }
+            }
+          }
+        }
+
+        ObCollationType collation = ObCharset::get_default_collation(ObCharset::get_default_charset());
+        ObCastCtx cast_ctx(ctx.allocator_, &dtc_params, CM_NULL_ON_WARN, collation);
+        param_result.at(0).set_collation_type(collation);
+        if (OB_SUCC(ret) && OB_FAIL(ObObjCasterV2::to_type(target_type_, collation, cast_ctx,
+                                                           param_result.at(0), param_result.at(0)))) {
+          LOG_WARN("fail to cast obj", K(ret), K(target_type_), K(collation));
+        }
+        if (OB_SUCC(ret) && OB_FAIL(result_obj_array.push_back(param_result.at(0)))) {
+          LOG_WARN("result obj array push back failed", K(ret));
+        }
+      } while (OB_SUCC(ret) && ++i < cnt);
+    }
+  }
+  ObProxyExpr::print_proxy_expr(this);
+  return ret;
+}
+
+int ObProxyExprNvl::calc(const ObProxyExprCtx &ctx,
+                         const ObProxyExprCalcItem &calc_item,
+                         common::ObIArray<common::ObObj> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
+  int cnt = 0;
+  int64_t len = result_obj_array.count();
+
+  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+    LOG_WARN("calc expr failed", K(ret), K(param_array_.count()));
+  } else if (len == result_obj_array.count()) {
+    if (OB_UNLIKELY(param_array_.count() != 2)) {
+      ret = OB_EXPR_CALC_ERROR;
+      LOG_WARN("nvl should have two param", K(ret));
+    } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
+      LOG_WARN("calc param expr failed", K(ret));
+    } else {
+      int i = 0;
+      do {
+        common::ObSEArray<common::ObObj, 4> param_result;
+        for (int64_t j = 0; OB_SUCC(ret) && j < param_result_array.count(); j++) {
+          ObObj tmp_obj;
+          if (param_result_array.at(j).count() == 1) {
+            tmp_obj = param_result_array.at(j).at(0);
+          } else {
+            tmp_obj = param_result_array.at(j).at(i);
+          }
+          if (OB_FAIL(param_result.push_back(tmp_obj))) {
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
+          }
+        }
+
+        ObObj result_obj = param_result.at(0);
+        ObObj second_obj = param_result.at(1);
+        if (OB_SUCC(ret)) {
+          // null expr or empty varchar treated as null
+          if (result_obj.is_null()) {
+            result_obj = second_obj;
+          } else if (result_obj.is_string_type()) {
+            ObString str;
+            if (OB_FAIL(result_obj.get_string(str))) {
+              LOG_WARN("get varchar of param failed", K(ret));
+            } else if (str.empty()) {
+              result_obj = second_obj;
+            }
+          }
+        }
+
+        if (OB_SUCC(ret) && OB_FAIL(result_obj_array.push_back(result_obj))) {
+          LOG_WARN("result obj array push back failed", K(ret));
+        }
+      } while (OB_SUCC(ret) && ++i < cnt);
+    }
+  }
+  ObProxyExpr::print_proxy_expr(this);
+  return ret;
+}
+
+/*
+ * only support datetime format.
+ */
+int ObProxyExprToChar::calc(const ObProxyExprCtx &ctx,
+                            const ObProxyExprCalcItem &calc_item,
+                            common::ObIArray<common::ObObj> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
+  int cnt = 0;
+  int64_t len = result_obj_array.count();
+
+  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+    LOG_WARN("calc expr failed", K(ret), K(param_array_.count()));
+  } else if (len == result_obj_array.count()) {
+    if (OB_UNLIKELY(param_array_.count() < 1) || OB_UNLIKELY(param_array_.count() > 2)) {
+      ret = OB_EXPR_CALC_ERROR;
+      LOG_WARN("to_char should have one or two param", K(ret), K(param_array_.count()));
+    } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
+      LOG_WARN("calc param expr failed", K(ret));
+    } else {
+      int i = 0;
+      do {
+        common::ObSEArray<common::ObObj, 4> param_result;
+        for (int64_t j = 0; OB_SUCC(ret) && j < param_result_array.count(); j++) {
+          ObObj tmp_obj;
+          if (param_result_array.at(j).count() == 1) {
+            tmp_obj = param_result_array.at(j).at(0);
+          } else {
+            tmp_obj = param_result_array.at(j).at(i);
+          }
+          if (OB_FAIL(param_result.push_back(tmp_obj))) {
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
+          }
+        }
+        if (OB_SUCC(ret)) {
+          ObObjType target_type = ObVarcharType;
+          ObObj result_obj = param_result.at(0);
+          ObObj second_obj;
+          ObString nls_format;
+          ObTimeZoneInfo tz_info;
+          ObDataTypeCastParams dtc_params = ObDataTypeCastParams();
+
+          // to_char(datetime) return NULL when nls_format parmas is '' 
+          bool is_empty_format = false;
+
+          ObCollationType collation = ObCharset::get_default_collation(ObCharset::get_default_charset());
+          dtc_params.tz_info_ = &tz_info;
+
+          if (ObDateTimeTC != param_result.at(0).get_type_class() && ObOTimestampTC != param_result.at(0).get_type_class()) {
+            ret = OB_EXPR_CALC_ERROR;
+            LOG_WARN("unsupported first param type of to_char", K(param_result.at(0).get_type_class()));
+          } else if (2 == param_result.count()) {
+            if (OB_FAIL(get_varchar_obj(param_result.at(1), second_obj, *ctx.allocator_))) {
+              LOG_WARN("get varchar obj failed", K(ret));
+            } else if (OB_FAIL(second_obj.get_varchar(nls_format))) {
+              LOG_WARN("get varchar failed", K(ret));
+            } else {
+              if (!nls_format.empty()) {
+                // ObObjCasterV2 only support ObOTimestampTC to format by nls_format, here convert ObDateTimeTC to ObTimestampTZType
+                dtc_params.set_nls_format_by_type(ObTimestampTZType, nls_format);
+                ObCastCtx cast_ctx_otimestamp(ctx.allocator_, &dtc_params, CM_NULL_ON_WARN, collation);
+                if (OB_FAIL(ObObjCasterV2::to_type(ObTimestampTZType, collation, cast_ctx_otimestamp,
+                                                   result_obj, result_obj))) {
+                  LOG_WARN("cast DateTime to ObTimestampTZTType failed", K(ret));
+                }
+              } else {
+                is_empty_format = true;
+              }
+            }
+          }
+
+          if (OB_SUCC(ret)) {
+            ObCastCtx cast_ctx(ctx.allocator_, &dtc_params, CM_NULL_ON_WARN, collation);
+            if (param_array_.count() == 1) {
+              // do nothing
+            } else if (is_empty_format) {
+              result_obj.set_null();
+            } else if (OB_FAIL(ObObjCasterV2::to_type(target_type, collation, cast_ctx, result_obj, result_obj))) {
+              LOG_WARN("fail to cast obj to timestamp", K(ret), K(result_obj), K(target_type), K(collation));
+            }
+          }
+
+          if (OB_SUCC(ret) && OB_FAIL(result_obj_array.push_back(result_obj))) {
+            LOG_WARN("result obj array push back failed", K(ret));
+          }
+        }
+      } while (OB_SUCC(ret) && ++i < cnt);
+    }
+  }
+  ObProxyExpr::print_proxy_expr(this);
+  return ret;
+}
+
+int ObProxyExprSysdate::calc(const ObProxyExprCtx &ctx,
+                             const ObProxyExprCalcItem &calc_item,
+                             common::ObIArray<common::ObObj> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  int cnt = 0;
+  int64_t len = result_obj_array.count();
+
+  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+    LOG_WARN("calc expr failed", K(ret));
+  } else if (len == result_obj_array.count()) {
+    if (OB_UNLIKELY(param_array_.count() > 0)) {
+      ret = OB_EXPR_CALC_ERROR;
+      LOG_WARN("sysdate should have no param", K(ret));
+    } else {
+      int i = 0;
+      do {
+        common::ObSEArray<common::ObObj, 4> param_result;
+        if (OB_SUCC(ret)) {
+          ObObjType target_type = ObDateTimeType;
+
+          int64 now = common::ObTimeUtility::current_time();
+          // calc timezone offset to correct the time zone info
+          int64 gm_time_buf = (int64)((time_t)now - mktime(gmtime((time_t *)&now))) * 1000000;
+
+          ObObj result_obj;
+          result_obj.set_timestamp(now + gm_time_buf);
+          ObTimeZoneInfo tz_info;
+          ObCollationType collation = ObCharset::get_default_collation(ObCharset::get_default_charset());
+          if (OB_SUCC(ret)) {
+            ObCastCtx cast_ctx(ctx.allocator_, NULL, CM_NULL_ON_WARN, collation);
+            if (OB_FAIL(ObObjCasterV2::to_type(target_type, collation, cast_ctx, result_obj, result_obj))) {
+              LOG_WARN("fail to cast obj to timestamp", K(ret), K(result_obj), K(target_type), K(collation));
+            } else if (OB_FAIL(result_obj_array.push_back(result_obj))) {
+              LOG_WARN("result obj array push back failed", K(ret));
+            }
+          }
+        }
+      } while (OB_SUCC(ret) && ++i < cnt);
+    }
+  }
+  ObProxyExpr::print_proxy_expr(this);
+  return ret;
+}
+
+/*
+ * refer to the implementation of oracle
+ * mod calculate: MOD(n1, n2) = n1 - n2 * FLOOR(n1/n2)
+ *                when ( n2 = 0 ), return n1
+ */
+int ObProxyExprMod::calc(const ObProxyExprCtx &ctx,
+                         const ObProxyExprCalcItem &calc_item,
+                         common::ObIArray<common::ObObj> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
+  int cnt = 0;
+  int64_t len = result_obj_array.count();
+
+  if (-1 != index_ &&
+      ObProxyExprCalcItem::FROM_OBJ_ARRAY == calc_item.source_ && !has_agg_) {
+    if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+      LOG_WARN("calc expr failed", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && len == result_obj_array.count()) {
+    if (2 != param_array_.count()) {
+      ret = OB_EXPR_CALC_ERROR;
+      LOG_WARN("mod should have two param", K(ret), K(param_array_.count()));
+    } else if (OB_FAIL(
+        calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
+      LOG_WARN("calc param result failed", K(ret));
+    } else {
+      int i = 0;
+      do {
+        common::ObSEArray<common::ObObj, 4> param_result;
+        for (int64_t j = 0; OB_SUCC(ret) && j < param_result_array.count(); j++) {
+          ObObj tmp_obj;
+          if (param_result_array.at(j).count() == 1) {
+            tmp_obj = param_result_array.at(j).at(0);
+          } else {
+            tmp_obj = param_result_array.at(j).at(i);
+          }
+          if (OB_FAIL(param_result.push_back(tmp_obj))) {
+            LOG_WARN("push back obj failed", K(ret), K(i), K(j));
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          ObObj obj1 = param_result.at(0);
+          ObObj obj2 = param_result.at(1);
+          ObObj result_obj;
+
+          if (ObDoubleTC == obj1.get_type_class() ||
+              ObDoubleTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get double obj failed", K(obj1), K(obj2), K(ret));
+            } else if (fabs(obj2.get_double()) < DBL_EPSILON) {
+              result_obj.set_double(obj1.get_double());
+            } else {
+              double obj1_d = obj1.get_double();
+              double obj2_d = obj2.get_double();
+              result_obj.set_double(obj1_d - obj2_d * floor(obj1_d / obj1_d));
+            }
+          } else if (ObFloatTC == obj1.get_type_class() || ObFloatTC == obj2.get_type_class()) {
+            if (OB_FAIL((get_obj_for_calc<ObFloatTC, ObFloatType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get float obj failed", K(obj1), K(obj2), K(ret));
+            } else if (fabs(obj2.get_float()) < FLT_EPSILON) {
+              result_obj.set_float(obj1.get_float());
+            } else {
+              float obj1_f = obj1.get_float();
+              float obj2_f = obj2.get_float();
+              result_obj.set_float(obj1_f - obj2_f * floor(obj1_f / obj1_f));
+            }
+          } else {
+            number::ObNumber res_nmb;
+            if (OB_FAIL((get_obj_for_calc<ObNumberTC, ObNumberType>(ctx.allocator_, obj1, obj2)))) {
+              LOG_WARN("get number obj failed", K(ret), K(obj1), K(obj2));
+            } else if (obj2.get_number().is_zero()) {
+              result_obj.set_number(obj1.get_number());
+            } else if (OB_FAIL(obj1.get_number().rem(obj2.get_number(), res_nmb, *ctx.allocator_))) {
+              LOG_WARN("failed to mod numbers", K(ret), K(obj1), K(obj2));
+            } else if (OB_SUCC(ret)) {
+              result_obj.set_number(res_nmb);
+            }
+          }
+
+          if (OB_SUCC(ret) && OB_FAIL(result_obj_array.push_back(result_obj))) {
+            LOG_WARN("result obj array push back failed", K(ret));
+          }
+        }
+      } while (OB_SUCC(ret) && ++i < cnt);
+    }
+  }
+  ObProxyExpr::print_proxy_expr(this);
   return ret;
 }
 

@@ -16,6 +16,7 @@
 #include "lib/hash_func/ob_hash_func.h"
 #include "lib/hash/ob_hashutils.h"
 #include "lib/list/ob_intrusive_list.h"
+#include "lib/lock/ob_drw_lock.h"
 
 namespace oceanbase
 {
@@ -240,11 +241,117 @@ public:
     return ret;
   }
 
-private:
+protected:
   ObBuildInBucket buckets_[bucket_num];
   int64_t count_; // of elements stored in the map.
   BucketChain bucket_chain_;
 };
+
+template <typename H, int64_t bucket_num = 16>
+class ObBuildInHashMapForRefCount : public ObBuildInHashMap <H, bucket_num> {
+public:
+  // Make embedded types easier to use by importing them to the class namespace.
+  typedef H Hasher; // Rename and promote.
+  typedef typename Hasher::Key Key; // Key type.
+  typedef typename Hasher::Value Value; // Stored value (element) type.
+  typedef typename Hasher::ListHead ListHead; // Anchor for value chain.
+
+  ObBuildInHashMapForRefCount() : ObBuildInHashMap<H, bucket_num>() {}
+
+  // put a key value pair into HashMap
+  // @retval OB_SUCCESS for success
+  // @retval OB_HASH_EXIST when the value's pointer already exist
+  int set_refactored(Value *value)
+  {
+    int ret = OB_SUCCESS;
+    Key key = Hasher::key(value);
+    obsys::CWLockGuard wlock(locks_[Hasher::hash(key) % bucket_num]);
+    ret = ObBuildInHashMap<H, bucket_num>::set_refactored(value);
+    if (OB_SUCC(ret)) {
+      Hasher::inc_ref(value);
+    }
+    return ret;
+  }
+
+  // put a key value pair into HashMap
+  // @retval OB_SUCCESS for success
+  // @retval OB_HASH_EXIST when the value's key already exist
+  int unique_set(Value *value)
+  {
+    int ret = OB_SUCCESS;
+    Key key = Hasher::key(value);
+    obsys::CWLockGuard wlock(locks_[Hasher::hash(key) % bucket_num]);
+    struct ObBuildInHashMap<H, bucket_num>::ObBuildInBucket &bucket = ObBuildInHashMap<H, bucket_num>::buckets_[Hasher::hash(key) % bucket_num];
+    if (!bucket.chain_.in(value)) {
+      Value *v = bucket.chain_.head_;
+      while (NULL != v && ((!Hasher::equal(key, Hasher::key(v)) && (v != value)) || 0 == Hasher::get_ref(v))) {
+        v = ListHead::next(v);
+      }
+      if (NULL == v) {
+        bucket.chain_.push(value);
+        ++ObBuildInHashMap<H, bucket_num>::count_;
+        // not empty, put it on the non-empty list.
+        if (1 == ++(bucket.count_)) {
+          ObBuildInHashMap<H, bucket_num>::bucket_chain_.push(&bucket);
+        }
+      } else {
+        ret = OB_HASH_EXIST;
+      }
+    } else {
+      ret = OB_HASH_EXIST;
+    }
+    if (OB_SUCC(ret)) {
+      Hasher::inc_ref(value);
+    }
+    return ret;
+  }
+
+  // @retval OB_SUCCESS for success
+  // @retval OB_HASH_NOT_EXIST for key not exist
+  int get_refactored(Key key, Value *&value)
+  {
+    int ret = OB_HASH_NOT_EXIST;
+    obsys::CRLockGuard rlock(locks_[Hasher::hash(key) % bucket_num]);
+    const struct ObBuildInHashMap<H, bucket_num>::ObBuildInBucket &bucket = ObBuildInHashMap<H, bucket_num>::buckets_[Hasher::hash(key) % bucket_num];
+    Value *v = bucket.chain_.head_;
+    while (NULL != v && (!Hasher::equal(key, Hasher::key(v)) || 0 == Hasher::get_ref(v))) {
+      v = ListHead::next(v);
+    }
+    if (NULL != (value = v)) {
+      ret = OB_SUCCESS;;
+    }
+    if (OB_SUCC(ret)) {
+      while (true) {
+        int64_t ref = Hasher::get_ref(v);
+        if(ref > 0) {
+          if (!Hasher::bcas_ref(value, ref, ref + 1)) {
+            PAUSE();
+          } else {
+            break;
+          }
+        } else {
+          ret = OB_HASH_NOT_EXIST;
+          value = NULL;
+          break;
+        }
+      }
+    }
+    return ret;
+  }
+
+  void remove(Value* value)
+  {
+    if (NULL != value) {
+      obsys::CWLockGuard wlock(locks_[Hasher::hash(Hasher::key(value)) % bucket_num]);
+      ObBuildInHashMap<H, bucket_num>::remove(value);
+      Hasher::destroy(value);
+    }
+  }
+
+protected:
+  mutable obsys::CRWLock locks_[bucket_num];
+};
+
 } // namespace hash
 } // namespace common
 } // namespace oceanbase

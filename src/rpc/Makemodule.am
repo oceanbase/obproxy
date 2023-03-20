@@ -20,6 +20,10 @@ rpc/obmysql/packet/ompk_handshake_response.h\
 rpc/obmysql/packet/ompk_handshake_response.cpp\
 rpc/obmysql/packet/ompk_prepare.h\
 rpc/obmysql/packet/ompk_prepare.cpp\
+rpc/obmysql/packet/ompk_prepare_execute.h\
+rpc/obmysql/packet/ompk_prepare_execute.cpp\
+rpc/obmysql/packet/ompk_prepare_execute_req.h\
+rpc/obmysql/packet/ompk_prepare_execute_req.cpp\
 rpc/obmysql/packet/ompk_ping.h\
 rpc/obmysql/packet/ompk_ssl_request.h\
 rpc/obmysql/packet/ompk_ssl_request.cpp

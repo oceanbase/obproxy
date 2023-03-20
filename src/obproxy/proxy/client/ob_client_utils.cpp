@@ -17,7 +17,7 @@
 #include "rpc/obmysql/packet/ompk_handshake_response.h"
 #include "packet/ob_mysql_packet_reader.h"
 #include "packet/ob_mysql_packet_writer.h"
-
+#include "omt/ob_proxy_config_table_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -25,6 +25,8 @@ using namespace oceanbase::obproxy;
 using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::packet;
+using namespace oceanbase::obproxy::omt;
+using namespace oceanbase::obproxy::obutils;
 
 namespace oceanbase
 {
@@ -41,7 +43,10 @@ void ObMysqlRequestParam::reset()
   current_idc_name_.reset();
   is_user_idc_name_set_ = false;
   need_print_trace_stat_ = false;
-
+  target_addr_.reset();
+  ob_client_flags_.flags_ = 0;
+  mysql_client_ = NULL;
+  is_detect_client_ = false;
 }
 
 void ObMysqlRequestParam::reset_sql()
@@ -81,6 +86,9 @@ int ObMysqlRequestParam::deep_copy(const ObMysqlRequestParam &other)
     is_user_idc_name_set_ = other.is_user_idc_name_set_;
     need_print_trace_stat_ = other.need_print_trace_stat_;
     target_addr_ = other.target_addr_;
+    ob_client_flags_.flags_ = other.ob_client_flags_.flags_;
+    mysql_client_ = other.mysql_client_;
+    is_detect_client_ = other.is_detect_client_;
     if (other.is_user_idc_name_set_ && !other.current_idc_name_.empty()) {
       MEMCPY(current_idc_name_buf_, other.current_idc_name_.ptr(), other.current_idc_name_.length());
       current_idc_name_.assign_ptr(current_idc_name_buf_, other.current_idc_name_.length());
@@ -265,15 +273,15 @@ int64_t ObMysqlResultHandler::to_string(char *buf, const int64_t buf_len) const
   return pos;
 }
 
-//------------------------- ObClientReuqestInfo--------------------------------//
-void ObClientReuqestInfo::reset()
+//------------------------- ObClientRequestInfo --------------------------------//
+void ObClientRequestInfo::reset()
 {
   reset_names();
   need_skip_stage2_ = false;
   request_param_.reset();
 }
 
-void ObClientReuqestInfo::reset_names()
+void ObClientRequestInfo::reset_names()
 {
   if ((NULL != name_) && (name_len_ > 0)) {
     op_fixed_mem_free(name_, name_len_);
@@ -282,31 +290,35 @@ void ObClientReuqestInfo::reset_names()
   name_len_ = 0;
   user_name_.reset();
   database_name_.reset();
+  cluster_name_.reset();
   password_.reset();
   password0_.reset();
   password1_.reset();
   using_password_num_ = -1;
+  password_version_ = 0;
 }
 
-void ObClientReuqestInfo::reset_sql()
+void ObClientRequestInfo::reset_sql()
 {
   request_param_.reset();
 }
 
-int64_t ObClientReuqestInfo::to_string(char *buf, const int64_t buf_len) const
+int64_t ObClientRequestInfo::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
   J_KV(K_(user_name),
        K_(database_name),
+       K_(cluster_name),
        K_(request_param));
   J_OBJ_END();
   return pos;
 }
 
-int ObClientReuqestInfo::set_names(const ObString &user_name,
+int ObClientRequestInfo::set_names(const ObString &user_name,
                                    const ObString &password,
                                    const ObString &database_name,
+                                   const ObString &cluster_name,
                                    const ObString &password1)
 {
   int ret = OB_SUCCESS;
@@ -315,13 +327,24 @@ int ObClientReuqestInfo::set_names(const ObString &user_name,
     LOG_WARN("user_name can not be NULL", K(user_name), K(ret));
   } else {
     reset_names();
-    int64_t total_len = user_name.length() + password.length() + password1.length() + database_name.length();
+    int64_t total_len = user_name.length() + password.length() + password1.length()
+                        + database_name.length() + cluster_name.length();
+    if (user_name.prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME)) {
+      if (password.empty()) {
+        total_len += ENC_STRING_BUF_LEN - 2;
+      }
+      if (password1.empty()) {
+        total_len += ENC_STRING_BUF_LEN - 2;
+      }
+    }
+
     if (OB_ISNULL(name_ = static_cast<char *>(op_fixed_mem_alloc(total_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("fail to allocate mem", "alloc size", total_len, K(ret));
     } else {
       int64_t pos = 0;
       name_len_ = total_len;
+      memset(name_, 0, total_len);
       MEMCPY(name_, user_name.ptr(), user_name.length());
       user_name_.assign_ptr(name_, user_name.length());
       pos += user_name.length();
@@ -329,24 +352,40 @@ int ObClientReuqestInfo::set_names(const ObString &user_name,
       if (!password.empty()) {
         MEMCPY(name_ + pos, password.ptr(), password.length());
         password_.assign_ptr(name_ + pos, password.length());
+        using_password_num_ = 0;
         password0_ = password_;
         pos += password.length();
+      } else if (user_name.prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME)) {
+        password0_.assign_ptr(name_ + pos, ENC_STRING_BUF_LEN - 2);
+        pos += ENC_STRING_BUF_LEN - 2;
       }
 
       if (!password1.empty()) {
         MEMCPY(name_ + pos, password1.ptr(), password1.length());
         password1_.assign_ptr(name_ + pos, password1.length());
         pos += password1.length();
+        if (password_.empty()) {
+          password_ = password1_;
+          using_password_num_ = 1;
+        }
+      } else if (user_name.prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME)) {
+        password1_.assign_ptr(name_ + pos, ENC_STRING_BUF_LEN - 2);
+        pos+= ENC_STRING_BUF_LEN - 2;
       }
 
-      if (!password.empty() && !password1.empty()) {
+      if (user_name.prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME) && password0_.empty() && password1_.empty()) {
         using_password_num_ = 0;
       }
-
       if (!database_name.empty()) {
         MEMCPY(name_ + pos, database_name.ptr(), database_name.length());
         database_name_.assign_ptr(name_ + pos, database_name.length());
         pos += database_name.length();
+      }
+
+      if (!cluster_name.empty()) {
+        MEMCPY(name_ + pos, cluster_name.ptr(), cluster_name.length());
+        cluster_name_.assign_ptr(name_ + pos, cluster_name.length());
+        pos += cluster_name.length();
       }
       if (pos != total_len) {
         ret = OB_ERR_UNEXPECTED;
@@ -358,7 +397,7 @@ int ObClientReuqestInfo::set_names(const ObString &user_name,
   return ret;
 }
 
-int ObClientReuqestInfo::set_request_param(const ObMysqlRequestParam &request_param)
+int ObClientRequestInfo::set_request_param(const ObMysqlRequestParam &request_param)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!request_param.is_valid())) {
@@ -418,7 +457,7 @@ int ObClientUtils::get_scramble(ObIOBufferReader *response_reader, char *buf,
 
 int ObClientUtils::build_handshake_response_packet(
     ObClientMysqlResp *handshake,
-    ObClientReuqestInfo *info,
+    ObClientRequestInfo *info,
     ObMIOBuffer *handshake_resp_buf)
 {
   int ret = OB_SUCCESS;
@@ -484,6 +523,45 @@ int ObClientUtils::build_handshake_response_packet(
     }
   }
   return ret;
+}
+
+const ObString& ObClientRequestInfo::get_password()
+{
+  int ret = OB_SUCCESS;
+  uint64_t global_version = get_global_proxy_config_table_processor().get_config_version();
+  if (!cluster_name_.empty() && password_version_ != global_version && user_name_.prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME)) {
+    ObConfigItem item;
+    ObVipAddr addr;
+    password_.reset();
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+            addr, cluster_name_, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD, item))) {
+      LOG_WARN("get observer_sys_password config failed", K_(cluster_name), K(ret));
+    } else if (40 == strlen(item.str())) {
+      MEMCPY(password0_.ptr(), item.str(), strlen(item.str()));
+      password_ = password0_;
+    } else {
+      memset(password0_.ptr(), 0, password0_.length());
+    }
+
+    using_password_num_ = 0;
+
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(get_global_config_processor().get_proxy_config(
+              addr, cluster_name_, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD1, item))) {
+        LOG_WARN("get observer_sys_password1 config failed", K_(cluster_name), K(ret));
+      } else if (40 == strlen(item.str())) {
+        MEMCPY(password1_.ptr(), item.str(), strlen(item.str()));
+      } else {
+        memset(password1_.ptr(), 0, sizeof(password1_.length()));
+      }
+    }
+    if (OB_SUCC(ret)) {
+      password_version_ = global_version;
+    }
+    LOG_DEBUG("get new password success", K(password0_), K(password1_));
+  }
+
+  return password_;
 }
 
 } // end of namespace proxy

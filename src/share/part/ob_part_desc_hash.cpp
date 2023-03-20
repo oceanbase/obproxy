@@ -27,10 +27,15 @@ ObPartDescHash::ObPartDescHash() : is_oracle_mode_(false)
 {
 }
 
-/*
+/**
   GET PARTITION ID
-
-  If input is not single int value, get all partition ids; otherwise, get the particular one.
+  Hash partition only route like 'by hash(c1,c2) ... where c1=xx and c2=xx',
+  only use range.start_key_ to calc, because when condition is like 'c1=xx', 
+  start_key_[i] == end_key_[i] 
+  @param range (xxx,yyy,min,min ; xxx,yyy,max,max)
+  @param allocator
+  @param part_ids[out]
+  @param ctx
  */
 int ObPartDescHash::get_part(ObNewRange &range,
                              ObIAllocator &allocator,
@@ -38,30 +43,72 @@ int ObPartDescHash::get_part(ObNewRange &range,
                              ObPartDescCtx &ctx,
                              ObIArray<int64_t> &tablet_ids)
 {
-  int ret = OB_SUCCESS;
-  if (1 != range.get_start_key().get_obj_cnt()) { // single value
-    ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(DEBUG, "hash part should be single key",
-                      "obj_cnt", range.get_start_key().get_obj_cnt(), K(ret));
-  } else {
-    int64_t part_idx = -1;
-    ObObj &src_obj = const_cast<ObObj &>(range.get_start_key().get_obj_ptr()[0]);
-    if (is_oracle_mode_) {
-      ret = calc_value_for_oracle(src_obj, allocator, part_idx, ctx);
+  int ret = OB_SUCCESS; 
+  // 1. Cast obj
+  // provide all objs are valid. 
+  // "valid" means the obj not min or max
+  int64_t valid_obj_cnt = range.start_key_.get_obj_cnt();
+  for (int64_t i = 0; OB_SUCC(ret) && i < range.start_key_.get_obj_cnt(); i++) {
+    // if obj is min or max, means all valid obj has been casted
+    if (range.start_key_.get_obj_ptr()[i].is_max_value() || 
+        range.start_key_.get_obj_ptr()[i].is_min_value()) {
+      // minus the number of invalid obj
+      valid_obj_cnt = valid_obj_cnt - (range.start_key_.get_obj_cnt() - i);
+      // not need to cast any more and break loop
+      if (valid_obj_cnt == 0) {
+        ret = OB_INVALID_ARGUMENT;
+        COMMON_LOG(WARN, "not support hash partition calc with range", K(range));
+      }
+      break;
     } else {
-      ret = calc_value_for_mysql(src_obj, allocator, part_idx);
-    }
-
-    if (OB_SUCC(ret)) {
-      int64_t part_id = -1;
-      if (OB_FAIL(get_part_hash_idx(part_idx, part_id))) {
-        COMMON_LOG(WARN, "fail to get part hash id", K(ret));
-      } else if (OB_FAIL(part_ids.push_back(part_id))) {
-        COMMON_LOG(WARN, "fail to push part_id", K(ret));
-      } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
-        COMMON_LOG(WARN, "fail to push tablet_id", K(ret));
+      ObObj *src_obj = const_cast<ObObj*>(&range.start_key_.get_obj_ptr()[i]);
+      if (OB_ISNULL(src_obj)) {
+        // here src_obj shouldn't be null
+        ret = OB_ERR_NULL_VALUE;
+        COMMON_LOG(ERROR, "unexpected null pointer src_obj");
+      } else if (src_obj->is_null()) {
+        // here src_obj shouldn't be null type
+        ret = OB_OBJ_TYPE_ERROR;
+        COMMON_LOG(ERROR, "unexpected null type", K(src_obj));
+      // oracle mode cast all valid objs to target type
+      } else if (is_oracle_mode_) {
+        if(OB_FAIL(cast_obj(*src_obj, obj_types_[i], cs_types_[i], allocator, ctx, accuracies_.at(i)))) {
+          COMMON_LOG(WARN, "cast obj failed", K(src_obj), "obj_type", obj_types_[i], "cs_type", cs_types_[i]);
+          // TODO: handle failure
+        }
+      // mysql mode only cast first valid obj to int type then break loop
+      } else /*if (is_mysql_mode_) */ {
+        ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, CS_TYPE_INVALID);
+        if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, cs_types_[i], cast_ctx, *src_obj, *src_obj))) {
+          COMMON_LOG(WARN, "failed to cast to ObIntType", K(src_obj), K(ret));
+        }
+        break;
       }
     }
+  }
+
+  // 2. Calc partition id
+  int64_t part_idx = -1;
+  if (OB_SUCC(ret)) {
+    // hash val
+    int64_t result = 0;
+    if (is_oracle_mode_) {
+      // oracle mode: use obj to calc hash val
+      ret = calc_value_for_oracle(range.start_key_.get_obj_ptr(), valid_obj_cnt, result, ctx);
+    } else {
+      // mysql mode: use single obj to calc hash val
+      ret = calc_value_for_mysql(range.start_key_.get_obj_ptr(), result);
+    }
+    int64_t part_id = -1;
+    if (OB_SUCC(ret) && OB_FAIL(calc_hash_part_idx(result, part_num_, part_idx))) {
+      COMMON_LOG(WARN, "fail to cal hash part idx", K(ret), K(result), K(part_num_));
+    } else if (OB_FAIL(get_part_hash_idx(part_idx, part_id))) {
+      COMMON_LOG(WARN, "fail to get part hash id", K(part_idx), K(ret));
+    } else if (OB_FAIL(part_ids.push_back(part_id))) {
+      COMMON_LOG(WARN, "fail to push part_id", K(ret));
+    } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+      COMMON_LOG(WARN, "fail to push tablet_id", K(ret));
+    } else {}
   }
 
   return ret;
@@ -152,103 +199,91 @@ uint64_t ObPartDescHash::calc_hash_value_with_seed(const ObObj &obj, const int64
 
   return hval;
 }
-
-int ObPartDescHash::calc_value_for_oracle(ObObj &src_obj,
-                                          ObIAllocator &allocator,
-                                          int64_t &part_idx,
+int ObPartDescHash::calc_value_for_oracle(const ObObj *objs,
+                                          int64_t objs_cnt,
+                                          int64_t &result,
                                           ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
-
-  ObTimeZoneInfo tz_info;
-  ObDataTypeCastParams dtc_params;
-
-  if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
-                                                                            obj_type_, tz_info, dtc_params))) {
-    COMMON_LOG(WARN, "fail to build dtc params with tz info", K(ret));
-  } else {
-    lib::set_oracle_mode(true);
-
-    uint64_t hash_val = 0;
-    ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type_);
-    const ObObj *res_obj = &src_obj;
-
-    ObAccuracy accuracy(accuracy_.valid_, accuracy_.length_, accuracy_.precision_, accuracy_.scale_);
-
-    // use src_obj as buf_obj
-    COMMON_LOG(DEBUG, "begin to cast value for hash oracle", K(src_obj), K(cs_type_));
-    if (OB_FAIL(ObObjCasterV2::to_type(obj_type_, cs_type_, cast_ctx, src_obj, src_obj))) {
-      COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(obj_type_), K(cs_type_));
-    } else if (ctx.need_accurate()
-               && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type_, *res_obj, src_obj, res_obj))) {
-      COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj), K(obj_type_));
+  uint64_t hash_code = 0;
+  if (OB_ISNULL(objs) || 0 == objs_cnt) {
+    ret = OB_ERR_UNEXPECTED;
+    COMMON_LOG(WARN, "objs_stack is null or number incorrect", K(objs), K(objs_cnt), K(ret));
+  }
+  for (int64_t i = 0; OB_SUCC(ret) && i < objs_cnt; ++i) {
+    const ObObj &obj = objs[i];
+    const ObObjType type = obj.get_type();
+    if (ObNullType == type) {
+      //do nothing, hash_code not changed
+    } else if (!is_oracle_supported_type(type)) {
+      ret = OB_INVALID_ARGUMENT;
+      COMMON_LOG(WARN, "type is wrong", K(ret), K(obj), K(type));
     } else {
-      COMMON_LOG(DEBUG, "finish to cast and accuracy values for hash oracle", K(src_obj), K(obj_type_), K(cs_type_));
-      // calculate hash value
-      const ObObjType type = src_obj.get_type();
-      if (ObNullType == type) {
-        //do nothing, hash_code not changed
-      } else if (!is_oracle_supported_type(type)) {
-        ret = OB_INVALID_ARGUMENT;
-        COMMON_LOG(WARN, "type is wrong", K(ret), K(src_obj), K(type));
-      } else {
-        hash_val = calc_hash_value_with_seed(src_obj, ctx.get_cluster_version(), hash_val);
-      }
-    }
-
-    lib::set_oracle_mode(false);
-
-    // calculate logic partition
-    if (OB_SUCC(ret)) {
-      int64_t N = 0;
-      int64_t powN = 0;
-      const static int64_t max_part_num_log2 = 64;
-
-      int64_t result_num = static_cast<int64_t>(hash_val);
-      result_num = result_num < 0 ? -result_num : result_num;
-
-      N = static_cast<int64_t>(std::log(part_num_) / std::log(2));
-      if (N >= max_part_num_log2) {
-        ret = OB_ERR_UNEXPECTED;
-        COMMON_LOG(WARN, "result is too big", K(N), K(part_num_), K(result_num));
-      } else {
-        powN = (1ULL << N);
-        part_idx = result_num % powN;
-        if (part_idx + powN < part_num_ && (result_num & powN) == powN) {
-          part_idx += powN;
-        }
-      }
-      COMMON_LOG(DEBUG, "get hash part idx for oracle mode",
-        K(ret), K(result_num), K(part_num_), K(N), K(powN), K(part_idx));
+      hash_code = calc_hash_value_with_seed(obj, ctx.get_cluster_version(), hash_code);
     }
   }
-
+  result = static_cast<int64_t>(hash_code);
+  result = result < 0 ? -result : result;
+  if (OB_SUCC(ret)) {
+    COMMON_LOG(TRACE, "succ to calc hash value with oracle mode", KP(objs), K(objs[0]), K(objs_cnt), K(result), K(ret));
+  } else {
+    COMMON_LOG(WARN, "fail to calc hash value with oracle mode", KP(objs), K(objs_cnt), K(result), K(ret));
+  }
   return ret;
 }
 
-int ObPartDescHash::calc_value_for_mysql(ObObj &src_obj, ObIAllocator &allocator, int64_t &part_idx)
+int ObPartDescHash::calc_value_for_mysql(const ObObj *obj, int64_t &result)
 {
   int ret = OB_SUCCESS;
-
-  ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, CS_TYPE_INVALID);
-  ObObjType target_type = ObIntType;
-  if (OB_FAIL(ObObjCasterV2::to_type(target_type, cs_type_, cast_ctx, src_obj, src_obj))) {
-    COMMON_LOG(INFO, "failed to cast to target type", K(target_type), K(src_obj), K(ret));
+  if (OB_ISNULL(obj)) {
+    ret = OB_ERR_UNEXPECTED;
+    COMMON_LOG(WARN, "unexpected null ptr", K(ret));
+  } else if (OB_UNLIKELY(obj->is_null())) {
+    result = 0;
   } else {
-    int64_t val = 0;
-    if (OB_FAIL(src_obj.get_int(val))) {
-      COMMON_LOG(WARN, "fail to get int", K(src_obj), K(ret));
+    int64_t num = 0;
+    if (OB_FAIL(obj->get_int(num))) {
+      COMMON_LOG(WARN, "fail to get int", K(obj), K(ret));
     } else {
-      if (OB_UNLIKELY(INT64_MIN == val)) {
-        val = INT64_MAX;
+      if (OB_UNLIKELY(INT64_MIN == num)) {
+        num = INT64_MAX;
       } else {
-        val = val < 0 ? -val : val;
+        num = num < 0 ? -num : num;
       }
-      part_idx = val % part_num_;
-      COMMON_LOG(DEBUG, "get hash part idx for mysql mode", K(ret), K(val), K(part_num_), K(part_idx));
+      result = num;
     }
   }
+  COMMON_LOG(TRACE, "calc hash value with mysql mode", K(ret));
+  return ret;
+}
 
+int ObPartDescHash::calc_hash_part_idx(const uint64_t val,
+                                       const int64_t part_num,
+                                       int64_t &partition_idx)
+{
+  int ret = OB_SUCCESS;
+  int64_t N = 0;
+  int64_t powN = 0;
+  const static int64_t max_part_num_log2 = 64;
+  // This function is used by SQL. Should ensure SQL runs in MySQL mode when query sys table.
+  if (is_oracle_mode_) {
+    // It will not be a negative number, so use forced conversion instead of floor
+    N = static_cast<int64_t>(std::log(part_num) / std::log(2));
+    if (N >= max_part_num_log2) {
+      ret = OB_ERR_UNEXPECTED;
+      COMMON_LOG(WARN, "result is too big", K(N), K(part_num), K(val));
+    } else {
+      powN = (1ULL << N);
+      partition_idx = val & (powN - 1); //pow(2, N));
+      if (partition_idx + powN < part_num && (val & powN) == powN) {
+        partition_idx += powN;
+      }
+    }
+    COMMON_LOG(DEBUG, "get hash part idx", K(lbt()), K(ret), K(val), K(part_num), K(N), K(powN), K(partition_idx));
+  } else {
+    partition_idx = val % part_num;
+    COMMON_LOG(DEBUG, "get hash part idx", K(lbt()), K(ret), K(val), K(part_num), K(partition_idx));
+  }
   return ret;
 }
 

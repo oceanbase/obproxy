@@ -38,6 +38,12 @@ typedef enum ObProxyExprType
   OB_PROXY_EXPR_TYPE_FUNC_ORDER,
   OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD,
   OB_PROXY_EXPR_TYPE_FUNC_SPLIT,
+  OB_PROXY_EXPR_TYPE_FUNC_TO_DATE,
+  OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP,
+  OB_PROXY_EXPR_TYPE_FUNC_NVL,
+  OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR,
+  OB_PROXY_EXPR_TYPE_FUNC_SYSDATE,
+  OB_PROXY_EXPR_TYPE_FUNC_MOD,
 
   OB_PROXY_EXPR_TYPE_MAX,
 }ObProxyExprType;
@@ -111,6 +117,24 @@ const char* get_expr_type_name(int expr_type)
       break;
     case OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD:
       type_name = "OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TO_DATE:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_DATE";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_NVL:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_NVL";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_SYSDATE:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_SYSDATE";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_MOD:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_MOD";
       break;
     case OB_PROXY_EXPR_TYPE_MAX:
       type_name = "OB_PROXY_EXPR_TYPE_MAX";

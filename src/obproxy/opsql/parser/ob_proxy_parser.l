@@ -269,6 +269,7 @@ do {\
 %x                      prepare
 %x                      insert_all_expr
 %x                      set_expr
+%x                      show_elastic_id 
 %x                      show_topology
 %x                      show_tables
 %x                      proxy_icmd_state
@@ -281,8 +282,10 @@ multi_byte_right_parenthesis  [\uff09]
 multi_byte_connect_char       /*According to connection character to set by gen_parse.sh*/
 space                   [ \t\n\r\f]
 identifer               (([A-Za-z0-9$_#]|{multi_byte_connect_char})*)
-int_num                 [\-\+]?[0-9]+
-number                  ([0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*E[-+]?[0-9]+)|("."[0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*)|("."[0-9]+)
+
+/* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
+int_num                 [\-\+]?[0-9]{1,17}
+number                  ([\-]?[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*E[-+]?[0-9]+)|([\-]?"."[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*)|([\-]?"."[0-9]+)|([\-\+]?[0-9]{18,})
 comment_identifer       [\-\+]?{identifer}
 odp_comment_identifer   ([\-\+]?[A-Za-z0-9$_\-]*)
 
@@ -301,7 +304,6 @@ c_cmt_end               \*+\/
 
 tx_read_only            (@@session{space}*\.{space}*tx_read_only|@@tx_read_only)
 autocommit              (@@session{space}*\.{space}*autocommit|@@autocommit|autocommit)
-autocommit_0            ({autocommit}{space}*={space}*0)
 set_names               (set{space}+names{space}+)
 set_charset             (set{space}+charset{space}+|set{space}+character{space}+set{space}+)
 set_password            (set{space}+password{space}+)
@@ -357,7 +359,8 @@ show_full_tables          (show{space}+full{space}+tables)
 show_create_table         (show{space}+create{space}+table)
 show_columns              (show{space}+(full{space}+)?(columns|fields))
 show_index                (show{space}+(index|indexes|keys))
-show_topology             (show{space}+elastic_id)
+show_elastic_id           (show{space}+elastic_id)
+show_topology             (show{space}+topology)
 show_db_version           (show{space}+database_version)
 select_database           (select{space}+database({leftbracket}|{multi_byte_left_parenthesis})({rightbracket}|{multi_byte_right_parenthesis}))
 alter_proxyconfig         (alter{space}+proxyconfig)
@@ -369,6 +372,15 @@ select_proxy_version       (select{space}+proxy_version{space}*({leftbracket}|{m
 
 select_obproxy_route_addr (select{space}+@obproxy_route_addr)
 set_obproxy_route_addr    (set{space}+@obproxy_route_addr)
+
+/* binlog relate SQL */
+show_master_status (show{space}+master{space}+status)
+show_binary_logs (show{space}+binary{space}+logs)
+show_binlog_events (show{space}+binlog{space}+events)
+purge_binary_logs (purge{space}+binary{space}+logs)
+reset_master (reset{space}+master)
+show_binlog_server_for_tenant (show{space}+binlog{space}+server{space}+for{space}+tenant)
+
 %%
 
  /* basic dml stmt: */
@@ -390,7 +402,7 @@ CALL             { SET_BASIC_STMT(OBPROXY_T_CALL); return CALL; }
 DECLARE          { SET_HAS_ANONYMOUS_BLOCK(); PUSH_STATE(in_anonymous_block); }
 WHEN             { ObProxyParseResult *p = yyget_extra(yyscanner);
                    if (OB_NOTNULL(p)) {
-                     if (OBPROXY_T_INSERT == p->cur_stmt_type_) 
+                     if (OBPROXY_T_INSERT == p->cur_stmt_type_)
                        PUSH_STATE(insert_all_expr);
                    }
                    return WHEN; }
@@ -411,7 +423,7 @@ UNIQUE           { return UNIQUE; }
 USING            { return USING; }
 PREPARE          { PUSH_STATE(prepare); return PREPARE; }
 EXECUTE          { return EXECUTE; }
-DEALLOCATE       { return DEALLOCATE; }   
+DEALLOCATE       { return DEALLOCATE; }
 
 
  /* oracle ddl stmt */
@@ -445,7 +457,7 @@ ALL              { return ALL; }
 LIKE             { return LIKE; }
 PARTITION        { return PARTITION; }
 BINARY           { return BINARY; }
-GROUP_NAME       { return GROUP_NAME; }
+GROUP_NAME       { RETURN_NON_RESERVED_KEYWORD(GROUP_NAME); }
 
  /* to make bison easy, do not return these reserved keyword in non strict mode */
 IGNORE           { RETURN_IGNORED_WORD(); }
@@ -549,13 +561,15 @@ REFRESH             { RETURN_NON_RESERVED_KEYWORD(REFRESH); }
 UPGRADE             { RETURN_NON_RESERVED_KEYWORD(UPGRADE); }
 IDC                 { RETURN_NON_RESERVED_KEYWORD(IDC); }
 
-{show_topology}    { SET_BASIC_STMT(OBPROXY_T_SHOW); PUSH_STATE(show_topology); return SHOW_TOPOLOGY; }
-<show_topology>"FROM"                        { POP_STATE(); PUSH_STATE(INITIAL); return FROM; }
-<show_topology>"WHERE"                       { POP_STATE(); PUSH_STATE(INITIAL); return WHERE; }
-<show_topology><<EOF>>                       { return END_P; }
-<show_topology>{whitespace}                  { }
-<show_topology>;                             { POP_STATE(); PUSH_STATE(INITIAL); return yytext[0]; }
-<show_topology>.                             { return ERROR; }
+{show_elastic_id}    { SET_BASIC_STMT(OBPROXY_T_SHOW); PUSH_STATE(show_elastic_id ); return SHOW_ELASTIC_ID; }
+<show_elastic_id>"FROM"                        { POP_STATE(); PUSH_STATE(INITIAL); return FROM; }
+<show_elastic_id>"WHERE"                       { POP_STATE(); PUSH_STATE(INITIAL); return WHERE; }
+<show_elastic_id><<EOF>>                       { return END_P; }
+<show_elastic_id>{whitespace}                  { }
+<show_elastic_id>;                             { POP_STATE(); PUSH_STATE(INITIAL); return yytext[0]; }
+<show_elastic_id>.                             { return ERROR; }
+
+{show_topology} { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_TOPOLOGY; }
 
 {show_db_version}  { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_DB_VERSION; }
 {show_databases}    { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_DATABASES; }
@@ -647,7 +661,13 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   return MERGE_HINT_BEGIN;
 }
 
-<set_expr>{autocommit_0}                { return AUTOCOMMIT_0; }
+{show_master_status} { SET_BASIC_STMT(OBPROXY_T_SHOW_MASTER_STATUS); return SHOW_MASTER_STATUS; }
+{show_binary_logs} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINARY_LOGS); return SHOW_BINARY_LOGS; }
+{show_binlog_events} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINLOG_EVENTS); return SHOW_BINLOG_EVENTS; }
+{purge_binary_logs} { SET_BASIC_STMT(OBPROXY_T_PURGE_BINARY_LOGS); return PURGE_BINARY_LOGS; }
+{reset_master} { SET_BASIC_STMT(OBPROXY_T_RESET_MASTER); return RESET_MASTER; }
+{show_binlog_server_for_tenant} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT); return SHOW_BINLOG_SERVER_FOR_TENANT; }
+
 <set_expr>"global"                      { return GLOBAL; }
 <set_expr>"session"                     { return SESSION; }
 <set_expr>{int_num}                     { RETURN_INT_NUM(); }
@@ -802,6 +822,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_comment_expr>{space}*"trace_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TRACE_ID); }
 <in_comment_expr>{space}*{comment_identifer}"." { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT_NAME_OB_DOT(NAME_OB_DOT); }
 <in_comment_expr>{space}*"rpc_id"            { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(RPC_ID); }
+<in_comment_expr>{space}*"target_db_server"  { PUSH_STATE(in_odp_comment_expr); return TARGET_DB_SERVER; }
 
 <in_odp_comment_expr>"group_id"          { return GROUP_ID; }
 <in_odp_comment_expr>"table_id"          { return TABLE_ID; }
@@ -812,6 +833,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_odp_comment_expr>"tnt_id"            { return TNT_ID; }
 <in_odp_comment_expr>"trace_id"          { return TRACE_ID; }
 <in_odp_comment_expr>"rpc_id"            { return RPC_ID; }
+<in_odp_comment_expr>"target_db_server"  { return TARGET_DB_SERVER; }
 <in_odp_comment_expr>{sqbegin}           { ENTER_QUOTE_STATE(comment_sq); }
 <in_odp_comment_expr>{comma}|{multi_byte_comma}  { return ','; }
 <in_odp_comment_expr>{odp_comment_identifer} { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
@@ -882,6 +904,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_dbp_comment_expr>"$ROUTE"            { return ROUTE_TAG; }
 <in_dbp_comment_expr>"$SYS"              { return SYS_TAG; }
 <in_dbp_comment_expr>"SCAN_ALL"          { return SCAN_ALL; }
+<in_dbp_comment_expr>"STICKY_SESSION"    { return STICKY_SESSION; }
 <in_dbp_comment_expr>"SHARDING_KEY"      { return SHARD_KEY; }
 <in_dbp_comment_expr>"table_name"        { return TABLE_NAME;}
 <in_dbp_comment_expr>"parallelism"       { return PARALL; }
@@ -1135,7 +1158,6 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"last_insert_id"              { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>"global"                      { SET_GLOBAL_SET_STMT(); RETURN_IGNORED_WORD(); }
 <in_expr>{tx_read_only}                { RETURN_COL_NAME(TX_READ_ONLY); }
-<in_expr>{autocommit_0}                { return AUTOCOMMIT_0; }
 <in_expr>{identifer}                   { RETURN_IGNORED_WORD(); }
 <in_expr><<EOF>>                       { return END_P; }
 <in_expr>{whitespace}                  { }
@@ -1169,7 +1191,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <prepare>{dquote}                      { POP_STATE(); }
 <prepare>{quote}                       { POP_STATE(); }
 
-<in_anonymous_block>"BEGIN"            { POP_STATE(); return BEGI;}
+<in_anonymous_block>"BEGIN"            { POP_STATE(); RETURN_NON_RESERVED_KEYWORD(BEGI);}
 <in_anonymous_block>.                  {}
 
 <<EOF>>                     { return END_P; }

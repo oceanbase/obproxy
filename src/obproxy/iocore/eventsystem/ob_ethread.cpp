@@ -67,6 +67,8 @@ ObEThread::ObEThread()
       ps_entry_cache_(NULL),
       text_ps_entry_cache_(NULL),
       random_seed_(NULL),
+      is_need_thread_pool_event_(false),
+      thread_pool_event_queue_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(REGULAR),
@@ -105,6 +107,8 @@ ObEThread::ObEThread(const ObThreadType att, const int64_t anid)
       ps_entry_cache_(NULL),
       text_ps_entry_cache_(NULL),
       random_seed_(NULL),
+      is_need_thread_pool_event_(false),
+      thread_pool_event_queue_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(att),
@@ -143,6 +147,8 @@ ObEThread::ObEThread(const ObThreadType att, ObEvent *e)
       ps_entry_cache_(NULL),
       text_ps_entry_cache_(NULL),
       random_seed_(NULL),
+      is_need_thread_pool_event_(false),
+      thread_pool_event_queue_(NULL),
       warn_log_buf_(NULL),
       warn_log_buf_start_(NULL),
       tt_(att),
@@ -275,6 +281,9 @@ inline void ObEThread::process_event(ObEvent *e, const int calling_code)
       event_queue_external_.enqueue_local(e);
     } else {
       if (e->cancelled_) {
+        if (e->is_thread_pool_event_) {
+          is_need_thread_pool_event_ = true;
+        }
         free_event(*e);
       } else {
         const ObContinuation *c_temp = e->continuation_;
@@ -444,7 +453,16 @@ void ObEThread::execute()
           if (ethreads_to_be_signalled_count_ > 0) {
             flush_signals(this);
           }
-          if (OB_UNLIKELY(OB_SUCCESS != event_queue_external_.dequeue_timed(next_time, true))) {
+
+          if (is_need_thread_pool_event_ && NULL != thread_pool_event_queue_) {
+            if (OB_UNLIKELY(OB_SUCCESS != thread_pool_event_queue_->dequeue_timed(next_time, e))) {
+              LOG_WARN("fail to dequeue time in event_queue_external_");
+            } else if (NULL != e) {
+              is_need_thread_pool_event_ = false;
+              e->ethread_ = this;
+              process_event(e, e->callback_event_);
+            }
+          } else if (OB_UNLIKELY(OB_SUCCESS != event_queue_external_.dequeue_timed(next_time, true))) {
             LOG_WARN("fail to dequeue time in event_queue_external_");
           }
         }

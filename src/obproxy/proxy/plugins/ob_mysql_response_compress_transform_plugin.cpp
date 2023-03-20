@@ -152,13 +152,31 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       // get consume size again, for trim the last packet
       consume_size = local_transfer_reader_->read_avail() - analyze_result.get_reserved_len_for_ob20_ok();
 
-      // just send all data in local_transfer_reader_
-      if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
-        ret = OB_ERR_UNEXPECTED;
-        PROXY_API_LOG(WARN, "fail to produce", "expected size", consume_size,
-                      "actual size", produce_size, K(ret));
-      } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
-        PROXY_API_LOG(WARN, "fail to consume local transfer reader", K(consume_size), K(ret));
+      // Here is a situation:
+      //   under the 2.0 protocol, the last 4 tail checksum bytes were not read,
+      //   but the Tunnel sent all the MySQL content.
+      //   For ClientVC, after receiving all MySQL content,
+      //   it does not judge the end of the response based on the content,
+      //   but judges based on write_state_.vio_.ntodo(),
+      //   but because Tunnel has not read the last 4 tail checksum bytes,
+      //   Tunnel will not modify nbytes in ntodo,
+      //   causing ClientVC to think Have not finished receiving, continue to wait, do not continue to process.
+      //   After the Tunnel receives the last 4 tail checksum bytes,
+      //   since these 4 bytes are not sent to the Client,
+      //   the Client VC will not be triggered again.
+      //   As a result, the Tunnel ends directly, and the ClientVC How Hung lives
+      //
+      // Therefore, it is modified here that if the entire Tunnel is not over,
+      //   the last bit of MySQL packet content will not be sent, and will not be sent until the entire Tunnel is over
+      if (!analyze_result.is_last_ok_handled() || analyzer_->is_stream_finished()) {
+        // just send all data in local_transfer_reader_
+        if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
+          ret = OB_ERR_UNEXPECTED;
+          PROXY_API_LOG(WARN, "fail to produce", "expected size", consume_size,
+                        "actual size", produce_size, K(ret));
+        } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
+          PROXY_API_LOG(WARN, "fail to consume local transfer reader", K(consume_size), K(ret));
+        }
       }
     }
   }
