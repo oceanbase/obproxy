@@ -396,7 +396,7 @@ public:
   DEF_BOOL(enable_mysql_proxy_pool, "true", "if enabled, will long conn for  sequence ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   // sidecar
-  DEF_BOOL(enable_sharding, "false", "if enabled means use beyond trust", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_sharding, "false", "if enabled means use logic db", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_STR(sidecar_node_id, "", "node id for dbmesh", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_STR(dataplane_host, "", "dataplane address or hostname", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(use_local_dbconfig, "false", "if enabled, start dbmesh with local dbconfig", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
