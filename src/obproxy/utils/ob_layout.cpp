@@ -224,9 +224,10 @@ int ObLayout::construct_dirs()
   } else if (OB_FAIL(construct_single_dir(CONF_PATH, conf_dir_))) {
     MPRINT("fail to construct .conf dir, ret=%d", ret);
   } else if (OB_FAIL(construct_single_dir(CONTROL_CONFIG_PATH, control_config_dir_))) {
-    MPRINT("fail to construct .conf dir, ret=%d", ret);
+    MPRINT("fail to construct control-config dir, ret=%d", ret);
   } else if (OB_FAIL(construct_single_dir(DBCONFIG_PATH, dbconfig_dir_))) {
-  } else { }
+    MPRINT("fail to construct sharding-config dir, ret=%d", ret);
+  }
 
   return ret;
 }
