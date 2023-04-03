@@ -24,11 +24,11 @@ namespace obutils
 class ObShowDBVersionHandler : public ObCmdHandler
 {
 public:
-  ObShowDBVersionHandler(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit);
+  ObShowDBVersionHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
   virtual ~ObShowDBVersionHandler() {}
   int handle_show_db_version(const ObString &logic_tenant_name, const ObString &logic_db_name);
 
-  static int show_db_version_cmd_callback(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit,
+  static int show_db_version_cmd_callback(event::ObMIOBuffer *buf, ObCmdInfo &info,
                                           const ObString &logic_tenant_name,
                                           const ObString &logic_db_name);
 

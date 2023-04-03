@@ -272,6 +272,9 @@ int init_mysql_stats()
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "send_changed_session_vars_requests",
                             RECD_INT, SEND_CHANGED_SESSION_VARS_REQUESTS, SYNC_SUM, RECP_NULL);
 
+    MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "send_changed_session_user_vars_requests",
+                            RECD_INT, SEND_CHANGED_SESSION_USER_VARS_REQUESTS, SYNC_SUM, RECP_NULL);
+
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "send_last_insert_id_requests",
                             RECD_INT, SEND_LAST_INSERT_ID_REQUESTS, SYNC_SUM, RECP_PERSISTENT);
 
@@ -333,6 +336,9 @@ int init_mysql_stats()
 
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_send_changed_session_vars_time",
                             RECD_INT, TOTAL_SEND_CHANGED_SESSION_VARS_TIME, SYNC_SUM, RECP_NULL);
+
+    MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_send_changed_session_user_vars_time",
+                            RECD_INT, TOTAL_SEND_CHANGED_SESSION_USER_VARS_TIME, SYNC_SUM, RECP_NULL);
 
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_send_last_insert_id_time",
                             RECD_INT, TOTAL_SEND_LAST_INSERT_ID_TIME, SYNC_SUM, RECP_NULL);

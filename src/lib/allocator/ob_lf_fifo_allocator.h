@@ -54,8 +54,10 @@ private:
 class ObLfFIFOAllocator : public common::ObIAllocator
 {
 public:
-  ObLfFIFOAllocator();
-  virtual ~ObLfFIFOAllocator();
+  /* this function is defined for c driver client compile */
+  ObLfFIFOAllocator() {}
+  /* this function is defined for c driver client compile */
+  virtual ~ObLfFIFOAllocator() {}
 public:
   int init(const int64_t page_size,
            const int64_t mod_id,
@@ -64,8 +66,9 @@ public:
            const int64_t total_limit = INT64_MAX);
   void destroy();
 public:
-  void *alloc(const int64_t size);
-  void free(void *ptr);
+  /* this function is defined for c driver client compile */
+  void *alloc(const int64_t size) { UNUSED(size); return NULL; }
+  void free(void *ptr) { UNUSED(ptr); }
   bool is_fragment(void *ptr);
   int64_t allocated() { return allocated_size_; }
   void set_mod_id(const int64_t mod_id) { mem_attr_.mod_id_ = mod_id; }

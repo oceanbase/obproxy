@@ -75,8 +75,7 @@ const ObProxyColumnSchema SYSLOG_LEVEL_COLUMN_ARRAY[OB_SLC_MAX_SYSLOG_LEVEL_COLU
     ObProxyColumnSchema::make_schema(OB_SLC_USAGE,      "usage",      OB_MYSQL_TYPE_VARCHAR),
 };
 
-ObShowConfigHandler::ObShowConfigHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                         const ObInternalCmdInfo &info)
+ObShowConfigHandler::ObShowConfigHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type())
 {
   SET_HANDLER(&ObShowConfigHandler::handle_show_config);

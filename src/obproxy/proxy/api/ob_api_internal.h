@@ -93,6 +93,9 @@ public:
   // Remove all hooks.
   void destroy();
 
+  // Remove hooks indicated by id
+  void destroy(ID id);
+
   // Add the hook cont to the front of the hooks for id.
   int prepend(ID id, ObContInternal *cont);
 
@@ -120,7 +123,7 @@ public:
 
 private:
   bool hooks_p_; // Flag for (not) empty container.
-
+  
   // The array of hooks lists.
   ObAPIHooks hooks_[N];
 };
@@ -201,6 +204,23 @@ inline void ObFeatureAPIHooks<ID, N>::destroy()
   }
 
   hooks_p_ = false;
+}
+
+template <typename ID, ID N>
+inline void ObFeatureAPIHooks<ID, N>::destroy(ID id)
+{
+  if (is_valid(id)) {
+    hooks_[id].destroy();
+
+    bool has_hooks_or_not = false;
+    for (int i = 0; i < N; ++i) {
+      if (!hooks_[i].is_empty()) {
+        has_hooks_or_not = true;
+        break;
+      }
+    }
+    hooks_p_ = has_hooks_or_not;
+  }
 }
 
 template <typename ID, ID N>

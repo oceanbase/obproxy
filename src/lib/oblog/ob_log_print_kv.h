@@ -21,6 +21,7 @@
 #include "lib/utility/ob_macro_utils.h"
 #include "lib/utility/ob_template_utils.h"
 #include "lib/alloc/alloc_assist.h"
+#include "obproxy/ob_proxy_init.h"
 
 #define LOG_N_TRUE "true"
 #define LOG_N_FLASE "false"
@@ -37,8 +38,8 @@ int logdata_printf(char *buf, const int64_t buf_len, int64_t &pos, const char *f
 __attribute__((format(printf, 4, 5)));
 int logdata_vprintf(char *buf, const int64_t buf_len, int64_t &pos, const char *fmt, va_list args);
 
-#define LOG_STDERR(...) do {if(isatty(STDERR_FILENO)) {fprintf(stderr, __VA_ARGS__); }} while(0)
-#define LOG_STDOUT(...) do {if(isatty(STDOUT_FILENO)) {fprintf(stdout, __VA_ARGS__); }} while(0)
+#define LOG_STDERR(...) do { if(oceanbase::obproxy::RUN_MODE_PROXY == oceanbase::obproxy::g_run_mode && isatty(STDERR_FILENO)) {fprintf(stderr, __VA_ARGS__); }} while(0)
+#define LOG_STDOUT(...) do {if(oceanbase::obproxy::RUN_MODE_PROXY == oceanbase::obproxy::g_run_mode && isatty(STDOUT_FILENO)) {fprintf(stdout, __VA_ARGS__); }} while(0)
 
 //print errmsg of errno.As strerror not thread-safe, need
 //to call ERRMSG, KERRMSG which use this class.
@@ -370,6 +371,46 @@ int logdata_print_kv(char *buf, const int64_t buf_len, int64_t &pos, const char 
   return logdata_print_key_obj(buf, buf_len, pos, key, false, obj);
 }
 
+class ObILogKV
+{
+public:
+  virtual int print(char *buf, int64_t buf_len, int64_t &pos, const bool with_comma) const = 0;
+};
+
+template<typename T,  const bool is_rvalue>
+class ObLogKV;
+
+template<typename T>
+class ObLogKV<T, false> : public ObILogKV
+{
+public:
+  ObLogKV(const char *key, const T &value) : key_(key), value_(value) {}
+  int print(char *buf, int64_t buf_len, int64_t &pos, const bool with_comma) const override
+  {
+    return logdata_print_key_obj(buf, buf_len, pos, key_,
+                                 with_comma, value_);
+  }
+private:
+  const char *key_;
+  const T &value_;
+};
+
+template<typename T> T& unmove(T&& v) { return v; }
+
+template<typename T>
+class ObLogKV<T, true> : public ObILogKV
+{
+public:
+  ObLogKV(const char *key, const T &&value) : key_(key), value_(unmove(value)) {}
+  int print(char *buf, int64_t buf_len, int64_t &pos, const bool with_comma) const override
+  {
+    return logdata_print_key_obj(buf, buf_len, pos, key_,
+                                 with_comma, value_);
+  }
+private:
+  const char *key_;
+  const T &value_;
+};
 
 }
 }
@@ -678,5 +719,36 @@ int logdata_print_kv(char *buf, const int64_t buf_len, int64_t &pos, const char 
     }                                                                                       \
     log_buffer.check_and_unlock();                                                          \
   }
+
+#define LOG_KV(key, obj) \
+  (::oceanbase::common::ObILogKV&&)::oceanbase::common::ObLogKV<decltype(obj), \
+  std::is_rvalue_reference<decltype((obj))&&>::value>(key, obj)
+#define LOG_KVS_0()
+#define LOG_KVS_1()
+#define LOG_KVS_2(key, obj)           , LOG_KV(key, obj)
+#define LOG_KVS_4(key, obj, args...)  , LOG_KV(key, obj) LOG_KVS_2(args)
+#define LOG_KVS_6(key, obj, args...)  , LOG_KV(key, obj) LOG_KVS_4(args)
+#define LOG_KVS_8(key, obj, args...)  , LOG_KV(key, obj) LOG_KVS_6(args)
+#define LOG_KVS_10(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_8(args)
+#define LOG_KVS_12(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_10(args)
+#define LOG_KVS_14(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_12(args)
+#define LOG_KVS_16(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_14(args)
+#define LOG_KVS_18(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_16(args)
+#define LOG_KVS_20(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_18(args)
+#define LOG_KVS_22(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_20(args)
+#define LOG_KVS_24(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_22(args)
+#define LOG_KVS_26(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_24(args)
+#define LOG_KVS_28(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_26(args)
+#define LOG_KVS_30(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_28(args)
+#define LOG_KVS_32(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_30(args)
+#define LOG_KVS_34(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_32(args)
+#define LOG_KVS_36(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_34(args)
+#define LOG_KVS_38(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_36(args)
+#define LOG_KVS_40(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_38(args)
+#define LOG_KVS_42(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_40(args)
+#define LOG_KVS_44(key, obj, args...) , LOG_KV(key, obj) LOG_KVS_42(args)
+
+#define LOG_KVS_(N, ...) CONCAT(LOG_KVS_, N)(__VA_ARGS__)
+#define LOG_KVS(...) "placeholder" LOG_KVS_(ARGS_NUM(__VA_ARGS__), __VA_ARGS__)
 
 #endif

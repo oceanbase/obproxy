@@ -24,10 +24,12 @@
 #include "proxy/mysqllib/ob_mysql_config_processor.h"
 #include "proxy/route/ob_table_cache.h"
 #include "proxy/route/ob_server_route.h"
+#include "proxy/route/ob_tenant_server.h"
 #include "proxy/mysql/ob_mysql_proxy_port.h"
 #include "cmd/ob_show_sqlaudit_handler.h"
 #include "proxy/api/ob_transform.h"
-#include "proxy/mysqllib/ob_proxy_session_info.h"
+#include "proxy/mysqllib/ob_proxy_ob20_request.h"
+#include "lib/oblog/ob_simple_trace.h"
 
 namespace oceanbase
 {
@@ -51,7 +53,6 @@ class ObMysqlSM;
 class ObMysqlClientSession;
 class ObClientSessionInfo;
 class ObServerSessionInfo;
-struct ObTransactionStat;
 class ObSqlauditRecordQueue;
 
 enum
@@ -69,6 +70,12 @@ public:
     MAYBE_ABORTED,
     ABORTED
   };
+  enum ObPLLookupState 
+  {
+    NEED_PL_LOOKUP = 0,
+    USE_LAST_SERVER_SESSION,
+    USE_COORDINATOR_SESSION
+  };
 
   enum ObMysqlTransactMagic
   {
@@ -85,6 +92,8 @@ public:
   };
 
   static common::ObString get_retry_status_string(const ObSSRetryStatus status);
+  static common::ObString get_pl_lookup_state_string(const ObPLLookupState state);
+
 
   // Please do not forget to fix ObServerState
   // (ob_api.h) in case of any modifications in
@@ -104,6 +113,7 @@ public:
     TRANSACTION_COMPLETE,
     DEAD_CONGESTED,
     ALIVE_CONGESTED,
+    DETECT_CONGESTED,
     INTERNAL_ERROR
   };
 
@@ -127,6 +137,8 @@ public:
     RESET_SESSION_VARS_COMMON_ERROR,
     // sync start trans related
     START_TRANS_COMMON_ERROR,
+    // sync xa start related
+    START_XA_START_ERROR,
     // sync database related
     SYNC_DATABASE_COMMON_ERROR,
     // sync com_stmt_prepare
@@ -143,7 +155,7 @@ public:
     REQUEST_READ_ONLY_ERROR,
     REQUEST_REROUTE_ERROR,
     STANDBY_WEAK_READONLY_ERROR,
-
+    TRANS_FREE_ROUTE_NOT_SUPPORTED_ERROR,
     // attention!! add error type between MIN_RESP_ERROR and MAX_RESP_ERROR
     MAX_RESP_ERROR
   };
@@ -183,6 +195,8 @@ public:
     SM_ACTION_API_SEND_RESPONSE,
     SM_ACTION_API_CMD_COMPLETE,
     SM_ACTION_API_SM_SHUTDOWN,
+
+    SM_ACTION_BINLOG_LOCATION_LOOKUP,
   };
 
   enum ObAttachDummyEntryType
@@ -267,12 +281,13 @@ public:
     SERVER_SEND_ALL_SESSION_VARS,
     SERVER_SEND_USE_DATABASE,
     SERVER_SEND_SESSION_VARS,
-    SERVER_SEND_LAST_INSERT_ID,
+    SERVER_SEND_SESSION_USER_VARS,
     SERVER_SEND_START_TRANS,
+    SERVER_SEND_XA_START,
     SERVER_SEND_REQUEST,
     SERVER_SEND_PREPARE,
     SERVER_SEND_SSL_REQUEST,
-    SERVER_SEND_TEXT_PS_PREPARE,
+    SERVER_SEND_TEXT_PS_PREPARE 
   };
 
   struct ObCurrentInfo
@@ -381,15 +396,11 @@ public:
     {
       return route_.get_next_avail_replica();
     }
-    const ObProxyReplicaLocation *get_next_replica(const uint32_t cur_ip, const uint16_t cur_port,
-        const bool is_force_retry)
-    {
-      return route_.get_next_replica(cur_ip, cur_port, is_force_retry);
-    }
     const ObProxyReplicaLocation *get_leader_replica_from_remote()
     {
       return route_.get_leader_replica_from_remote();
     }
+    void reset_consistency();
     void reset_pl();
     void reset();
 
@@ -481,11 +492,12 @@ public:
           sm_(NULL),
           mysql_config_params_(NULL),
           is_rerouted_(false),
-          need_pl_lookup_(false),
+          pl_lookup_state_ (NEED_PL_LOOKUP),
           is_auth_request_(false),
           is_trans_first_request_(false),
           is_proxysys_tenant_(false),
           is_hold_start_trans_(false),
+          is_hold_xa_start_(false),
           send_reqeust_direct_(false),
           source_(SOURCE_NONE),
           pre_transform_source_(SOURCE_NONE),
@@ -513,7 +525,9 @@ public:
           is_congestion_entry_updated_(false),
           api_mysql_sm_shutdown_(false),
           api_server_addr_set_(false),
-          sqlaudit_record_queue_(NULL)
+          need_retry_(true),
+          sqlaudit_record_queue_(NULL),
+          trace_log_()
     {
       memset(user_args_, 0, sizeof(user_args_));
     }
@@ -529,9 +543,8 @@ public:
         PROXY_TXN_LOG(WARN, "invalid argument", K(sm), K(ret));
       } else {
         sm_ = sm;
-        need_pl_lookup_ = true;
+        pl_lookup_state_ = NEED_PL_LOOKUP;
         current_stats_ = &first_stats_;
-        refresh_mysql_config();
         trans_info_.reset();
       }
       return ret;
@@ -542,34 +555,11 @@ public:
       return ((mysql_config_params_->sqlaudit_mem_limited_ > 0) && (NULL != sqlaudit_record_queue_));
     }
 
-    void refresh_mysql_config()
-    {
-      if (OB_UNLIKELY(mysql_config_params_ != get_global_mysql_config_processor().get_config())) {
-        ObMysqlConfigParams *config = NULL;
-        if (OB_ISNULL(config = get_global_mysql_config_processor().acquire())) {
-          PROXY_TXN_LOG(WARN, "failed to acquire mysql config");
-        } else {
-          if (OB_LIKELY(NULL != mysql_config_params_)) {
-            mysql_config_params_->dec_ref();
-            mysql_config_params_ = NULL;
-          }
-          mysql_config_params_ = config;
-        }
-        ObMysqlTransact::handle_new_config_acquired(*this);
-      }
-
-      if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
-        if (NULL != sqlaudit_record_queue_) {
-          sqlaudit_record_queue_->refcount_dec();
-          sqlaudit_record_queue_ = NULL;
-        }
-
-        if (mysql_config_params_->sqlaudit_mem_limited_ > 0) {
-          sqlaudit_record_queue_ = get_global_sqlaudit_processor().acquire();
-        }
-      }
-    }
-
+    void refresh_mysql_config();
+    int get_config_item(const common::ObString& cluster_name,
+                        const common::ObString &tenant_name,
+                        const obutils::ObVipAddr &addr,
+                        const int64_t global_version = 0);
     void record_transaction_stats()
     {
       // Loop over our transaction stat blocks and record the stats
@@ -688,30 +678,19 @@ public:
       reroute_info_.reset();
 
       if (CMD_COMPLETE == current_.state_) {
-        if (!is_hold_start_trans_) {
+        if (!is_hold_start_trans_ && !is_hold_xa_start_) {
           is_trans_first_request_ = false;
         }
 
         if (obmysql::OB_MYSQL_COM_LOGIN == trans_info_.sql_cmd_) {
           is_auth_request_ = false;
         }
+        pll_info_.reset_consistency();
       } else if (TRANSACTION_COMPLETE == current_.state_) {
+        trace_log_.reset();
         is_trans_first_request_ = true;
         is_auth_request_ = false;
-
-        if (NULL != congestion_entry_) {
-          // if this trans succ, just set avlie this server;
-          if (!is_congestion_entry_updated_) {
-            congestion_entry_->set_alive_congested_free();
-          }
-          congestion_entry_->dec_ref();
-          congestion_entry_ = NULL;
-        }
-        is_congestion_entry_updated_ = false;
-        congestion_entry_not_exist_count_ = 0;
-        need_congestion_lookup_ = true;
-        congestion_lookup_success_ = false;
-        force_retry_congested_ = false;
+        reset_congestion_entry();
         mysql_errmsg_ = NULL;
         inner_errcode_ = 0;
         inner_errmsg_ = NULL;
@@ -722,12 +701,30 @@ public:
         }
 
         server_info_.reset();
+        pre_server_info_.reset();
         current_.reset();
         trans_info_.reset();
         pll_info_.reset();
         // needn't reset trans_info, we will reset it when using client request and server response
         // trans_info_.reset();
       } else { /* do nothing */ }
+    }
+
+    void reset_congestion_entry()
+    {
+      if (NULL != congestion_entry_) {
+        // if this trans succ, just set alive this server;
+        if (!is_congestion_entry_updated_) {
+          congestion_entry_->set_alive_congested_free();
+        }
+        congestion_entry_->dec_ref();
+        congestion_entry_ = NULL;
+      }
+      is_congestion_entry_updated_ = false;
+      congestion_entry_not_exist_count_ = 0;
+      need_congestion_lookup_ = true;
+      congestion_lookup_success_ = false;
+      force_retry_congested_ = false;
     }
 
     void destroy()
@@ -757,9 +754,11 @@ public:
 
     static bool is_for_update_sql(common::ObString src_sql);
     common::ObConsistencyLevel get_trans_consistency_level(ObClientSessionInfo &cs_info);
+    common::ObConsistencyLevel get_read_write_consistency_level(ObClientSessionInfo &session_info);
     bool is_request_readonly_zone_support(ObClientSessionInfo &cs_info);
     ObRoutePolicyEnum get_route_policy(ObMysqlClientSession &cs, const bool need_use_dup_replica);
     void get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePolicyEnum& ret_policy);
+    bool is_need_pl_lookup() { return pl_lookup_state_ == NEED_PL_LOOKUP; }
 
     event::ObFixedArenaAllocator<1024> arena_;
 
@@ -769,16 +768,20 @@ public:
     ObMysqlConfigParams *mysql_config_params_;
     ObConnectionAttributes client_info_;
     ObConnectionAttributes server_info_;
+    // fail-fast probe use
+    ObConnectionAttributes pre_server_info_;
 
     ObCurrentInfo current_;
     ObTransactInfo trans_info_;
 
     bool is_rerouted_;
-    bool need_pl_lookup_;
+    // determin if do pl lookup 
+    ObPLLookupState pl_lookup_state_;
     bool is_auth_request_;
     bool is_trans_first_request_;
     bool is_proxysys_tenant_;
     bool is_hold_start_trans_; // indicate whether hold begin(start transaction)
+    bool is_hold_xa_start_;
     bool send_reqeust_direct_; // when send sync all session variables, we can send user request directly
 
     ObSourceType source_;
@@ -820,8 +823,10 @@ public:
     bool is_congestion_entry_updated_;
     bool api_mysql_sm_shutdown_;
     bool api_server_addr_set_;
+    bool need_retry_;
 
     ObSqlauditRecordQueue *sqlaudit_record_queue_;
+    common::ObSimpleTrace<4096> trace_log_;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ObTransState);
@@ -833,7 +838,7 @@ public:
   static void handle_mysql_request(ObTransState &s);
   static int set_server_ip_by_shard_conn(ObTransState &s, dbconfig::ObShardConnector* shard_conn);
   static void handle_oceanbase_request(ObTransState &s);
-  static void handle_ps_close(ObTransState &s);
+  static void handle_ps_close_reset(ObTransState &s);
   static void handle_fetch_request(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,
@@ -843,6 +848,10 @@ public:
 
   static int build_oceanbase_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                           event::ObIOBufferReader *&reader, int64_t &request_len);
+  static int build_oceanbase_ob20_user_request(ObTransState &s, event::ObMIOBuffer &write_buffer,
+                                               event::ObIOBufferReader &request_buffer_reader,
+                                               int64_t client_request_len,
+                                               uint8_t &compress_seq);
   static int build_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                 event::ObIOBufferReader *&reader, int64_t &request_len);
   static int rewrite_stmt_id(ObTransState &s, event::ObIOBufferReader *client_buffer_reader);
@@ -856,11 +865,13 @@ public:
 
   static void handle_error_jump(ObTransState &s);
   static void handle_internal_request(ObTransState &s);
+  static void handle_binlog_request(ObTransState &s);
   static void handle_server_addr_lookup(ObTransState &s);
   static void get_region_name_and_server_info(ObTransState &s,
                                               common::ObIArray<obutils::ObServerStateSimpleInfo> &simple_servers_info,
                                               common::ObIArray<common::ObString> &region_names);
   static void handle_pl_lookup(ObTransState &s);
+  static void handle_bl_lookup(ObTransState &s);
   static void modify_pl_lookup(ObTransState &s);
   static void handle_congestion_control_lookup(ObTransState &s);
   static void handle_congestion_entry_not_exist(ObTransState &s);
@@ -883,6 +894,7 @@ public:
 
   static bool is_dbmesh_pool_user(ObTransState &s);
   static bool is_internal_request(ObTransState &s);
+  static bool is_binlog_request(const ObTransState &s);
   static bool is_single_shard_db_table(ObTransState &s);
   static bool can_direct_ok_for_login(ObTransState &s);
   static bool is_in_trans(ObTransState &s);
@@ -891,29 +903,28 @@ public:
   static bool is_bad_route_request(ObTransState &s);
   static bool is_session_memory_overflow(ObTransState &s);
   static bool need_use_dup_replica(const common::ObConsistencyLevel level, ObTransState &s);
-  static bool need_pl_lookup(ObTransState &s);
-  static bool need_use_last_server_session(ObTransState &s);
+  static ObPLLookupState need_pl_lookup(ObTransState &s);
+  static bool need_use_coordinator_session(ObTransState &s);
   static bool is_db_reset(ObTransState &s);
   static bool need_server_session_lookup(ObTransState &s);
   static int64_t get_max_connect_attempts_from_replica(const int64_t replica_size);
   static int64_t get_max_connect_attempts(ObTransState &s);
 
   static int build_table_entry_request_packet(ObTransState &s, event::ObIOBufferReader *&reader);
-  static void handle_resultset_resp(ObTransState &s);
+  static void handle_resultset_resp(ObTransState &s, bool &is_user_request);
   static int fetch_table_entry_info(ObTransState &s);
 
   static ObClientSessionInfo &get_client_session_info(ObTransState &s);
   static ObServerSessionInfo &get_server_session_info(ObTransState &s);
   static void consume_response_packet(ObTransState &s);
-  static int build_no_privilege_message(ObTransState &trans_state,
-                                        ObMysqlClientSession &client_session,
+  static int build_no_privilege_message(ObTransState &trans_state, ObMysqlClientSession &client_session,
                                         const common::ObString &database);
 
   static void handle_handshake_pkt(ObTransState &s);
   static int handle_oceanbase_handshake_pkt(ObTransState &s, uint32_t conn_id,
                                              ObAddr &client_addr);
-  static void handle_error_resp(ObTransState &s);
-  static void handle_ok_resp(ObTransState &s);
+  static void handle_error_resp(ObTransState &s, bool &is_user_request);
+  static void handle_ok_resp(ObTransState &s, bool &is_user_request);
   static void handle_db_reset(ObTransState &s);
   static void handle_first_response_packet(ObTransState &s);
 
@@ -924,7 +935,7 @@ public:
   static void update_sql_cmd(ObTransState &s);
   // check if the global_vars_version is changed, called when receive saved login responce
   static int check_global_vars_version(ObTransState &s, const obmysql::ObStringKV &str_kv);
-  static void handle_user_request_succ(ObTransState &s);
+  static void handle_user_request_succ(ObTransState &s, bool &is_user_request);
   static int handle_user_set_request_succ(ObTransState &s);
   static int handle_normal_user_request_succ(ObTransState &s);
   static void handle_saved_login_succ(ObTransState &s);
@@ -936,10 +947,15 @@ public:
   static void handle_execute_succ(ObTransState &s);
   static int do_handle_execute_succ(ObTransState &s);
   static void handle_prepare_execute_succ(ObTransState &s);
+  static int do_handle_prepare_execute_xa_succ(event::ObIOBufferReader &buf_reader);
   static void handle_text_ps_prepare_succ(ObTransState &s);
+  static int handle_text_ps_drop_succ(ObTransState &s, bool &is_user_request);
   static int handle_change_user_request_succ(ObTransState &s);
+  static int handle_reset_connection_request_succ(ObTransState &s);
+  static int clear_session_related_source(ObTransState &s);
+  static int handle_ps_reset_succ(ObTransState &s, bool &is_user_request);
 
-  static int build_error_packet(ObTransState &s);
+  static int build_error_packet(ObTransState &s, ObMysqlClientSession *client_session);
 
   static void handle_new_config_acquired(ObTransState &s);
 
@@ -967,12 +983,17 @@ public:
   static const char *get_send_action_name(ObMysqlTransact::ObServerSendActionType type);
   static const char *get_server_resp_error_name(ObMysqlTransact::ObServerRespErrorType type);
 
-  static int64_t build_addr_from_ip_port(const uint32_t ip, const uint16_t port);
   static void get_ip_port_from_addr(const int64_t addr, uint32_t &ip, uint16_t &port);
   static void check_safe_read_snapshot(ObTransState &s);
 
   static bool is_need_reroute(ObMysqlTransact::ObTransState &s);
   static bool is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s);
+  static bool handle_set_trans_internal_routing(ObMysqlTransact::ObTransState &s, bool server_transaction_routing_flag);
+  static bool is_sql_able_to_route_participant_in_trans(obutils::ObSqlParseResult& base_sql_parse_result, obmysql::ObMySQLCmd  sql_cmd);
+  static bool is_trans_specified(ObTransState &s);
+  static bool has_dependent_func(ObTransState &s);
+  static void record_trans_state(ObTransState &s, bool is_in_trans);
+  static bool is_addr_logonly(const net::ObIpEndpoint &addr, const ObTenantServer *ts);
 };
 
 inline bool ObMysqlTransact::is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s)
@@ -986,20 +1007,6 @@ inline bool ObMysqlTransact::is_need_use_sql_table_cache(ObMysqlTransact::ObTran
 
 typedef void (*TransactEntryFunc)(ObMysqlTransact::ObTransState &s);
 
-inline bool ObMysqlTransact::is_in_trans(ObTransState &s)
-{
-  // if a trans is commit, the state will be set to TRANSACTION_COMPLETE,
-  // so if current state is CMD_COMPLETE, it means that we have send a sql successfully and
-  // the trans has not commit, that is to say "in trans"
-  // so far, there are three cases NOT in trans:
-  // 1. handshake response (login packet) need pl lookup
-  // 2. the first sql of one transaction
-  // 3. the second sql of one transaction, if the first sql is 'begin' or 'start transaction'
-  return (!s.is_auth_request_
-          && ObMysqlTransact::CMD_COMPLETE == s.current_.state_
-          && !s.is_hold_start_trans_);
-}
-
 inline bool ObMysqlTransact::is_user_trans_complete(ObTransState &s)
 {
   return (!s.is_trans_first_request_
@@ -1010,7 +1017,7 @@ inline bool ObMysqlTransact::is_user_trans_complete(ObTransState &s)
 inline bool ObMysqlTransact::is_bad_route_request(ObTransState &s)
 {
   bool bret = false;
-  if (s.mysql_config_params_->enable_bad_route_reject_ && s.is_hold_start_trans_) {
+  if (s.mysql_config_params_->enable_bad_route_reject_ && (s.is_hold_start_trans_ || s.is_hold_xa_start_)) {
     obutils::ObSqlParseResult &parse_result = s.trans_info_.client_request_.get_parse_result();
     const ObString &table_name = parse_result.get_table_name();
     bret = table_name.empty();
@@ -1048,11 +1055,6 @@ inline int64_t ObMysqlTransact::get_max_connect_attempts_from_replica(const int6
   return (replica_size * 2 + 1);
 }
 
-inline int64_t ObMysqlTransact::get_max_connect_attempts(ObTransState &s)
-{
-  return std::max(s.mysql_config_params_->connect_observer_max_retries_,
-                  get_max_connect_attempts_from_replica(s.pll_info_.replica_size()));
-}
 
 inline bool ObMysqlTransact::is_in_auth_process(ObTransState &s)
 {
@@ -1099,6 +1101,11 @@ inline int64_t milestone_diff(const ObHRTime start, const ObHRTime end)
   return (start > 0 && end > start) ? (end - start) : 0;
 }
 
+inline void ObMysqlTransact::ObPartitionLookupInfo::reset_consistency()
+{
+  route_.set_consistency_level(common::INVALID_CONSISTENCY);
+}
+
 inline void ObMysqlTransact::ObPartitionLookupInfo::reset_pl()
 {
   route_.reset();
@@ -1141,10 +1148,15 @@ inline void ObMysqlTransact::update_sql_cmd(ObTransState &s)
 
     case SERVER_SEND_ALL_SESSION_VARS:
     case SERVER_SEND_SESSION_VARS:
-    case SERVER_SEND_LAST_INSERT_ID:
+    case SERVER_SEND_SESSION_USER_VARS:
     case SERVER_SEND_START_TRANS:
     case SERVER_SEND_TEXT_PS_PREPARE:
       s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_QUERY;
+      break;
+    
+    case SERVER_SEND_XA_START:
+      PROXY_TXN_LOG(DEBUG, "[ObMysqlTransact::update_sql_cmd] set s.trans_info_.sql_cmd OB_MYSQL_COM_STMT_PREPARE_EXECUTE for sync xa start");
+      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE;
       break;
 
     case SERVER_SEND_PREPARE:
@@ -1189,9 +1201,23 @@ inline common::ObString ObMysqlTransact::get_retry_status_string(const ObSSRetry
   return common::ObString::make_string(str);
 }
 
-inline int64_t ObMysqlTransact::build_addr_from_ip_port(const uint32_t ip, const uint16_t port)
+inline common::ObString ObMysqlTransact::get_pl_lookup_state_string(const ObPLLookupState state)
 {
-  return (static_cast<int64_t>(port) << 32) | ip;
+  const char *str = "";
+  switch (state) {
+    case NEED_PL_LOOKUP:
+      str = "NEED_PL_LOOKUP";
+      break;
+    case USE_LAST_SERVER_SESSION:
+      str = "USE_LAST_SERVER_SESSION";
+      break;
+    case USE_COORDINATOR_SESSION:
+      str = "USE_COORDINATOR_SESSION";
+      break;
+    default:
+      str = "UNKNOWN";
+  }
+  return common::ObString::make_string(str);
 }
 
 inline void ObMysqlTransact::get_ip_port_from_addr(const int64_t addr, uint32_t &ip, uint16_t &port)
@@ -1200,6 +1226,28 @@ inline void ObMysqlTransact::get_ip_port_from_addr(const int64_t addr, uint32_t 
   static const int64_t PORT_MASK = 0xffffffff00000000L;
   ip = static_cast<uint32_t>(addr & IP_MASK);
   port = static_cast<uint16_t>((addr & PORT_MASK) >> 32);
+}
+
+inline bool ObMysqlTransact::is_addr_logonly(const net::ObIpEndpoint &addr, const ObTenantServer *ts)
+{
+  bool ret = false;
+  if (OB_ISNULL(ts)) {
+    ret = false;
+  } else {
+    int64_t cnt = ts->server_count_;
+    ObAddr tmp_addr;
+    tmp_addr.reset();
+    tmp_addr.set_sockaddr(addr.sa_);
+    for (int64_t i = 0; i < cnt; ++i) {
+      if (tmp_addr == ts->get_replica_location(i)->server_
+          && (common::REPLICA_TYPE_LOGONLY == ts->get_replica_location(i)->get_replica_type()
+              || common::REPLICA_TYPE_ENCRYPTION_LOGONLY == ts->get_replica_location(i)->get_replica_type())) {
+        ret = true;
+        break;
+      }
+    }
+  }
+  return ret;
 }
 
 } // end of namespace proxy

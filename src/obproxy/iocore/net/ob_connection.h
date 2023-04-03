@@ -160,6 +160,22 @@ public:
   ObIpEndpoint accept_addr_;
 
 private:
+  int setup_fd_for_listen_proxy_mode(
+      const bool non_blocking = false,
+      const int32_t recv_bufsize = 0,
+      const int32_t send_bufsize = 0);
+  int setup_fd_for_listen_client_mode(
+      const bool non_blocking = false,
+      const int32_t recv_bufsize = 0,
+      const int32_t send_bufsize = 0);
+  int listen_proxy_mode(const bool non_blocking = false,
+                        const int32_t recv_bufsize = 0,
+                        const int32_t send_bufsize = 0);
+  int listen_client_mode(const bool non_blocking = false,
+                        const int32_t recv_bufsize = 0,
+                        const int32_t send_bufsize = 0);
+
+private:
   static const int32_t LISTEN_BACKLOG;
 };
 

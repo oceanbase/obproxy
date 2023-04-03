@@ -110,6 +110,36 @@ void ObConfigItem::init(const char *name,
   }
 }
 
+ObConfigItem::ObConfigItem(const ObConfigItem& item)
+{
+  set_name(item.name());
+  set_value(item.str());
+  set_info(item.info());
+  set_section(item.section());
+  set_visible_level(item.visible_level());
+  set_range_str(item.range_str());
+  set_version(item.version());
+  need_reboot_ = item.need_reboot();
+  is_initial_value_set_ = item.is_initial_value_set();
+}
+
+ObConfigItem& ObConfigItem::operator =(const ObConfigItem& item)
+{
+  if (this != &item) {
+    set_name(item.name());
+    set_value(item.str());
+    set_info(item.info());
+    set_section(item.section());
+    set_visible_level(item.visible_level());
+    set_range_str(item.range_str());
+    set_version(item.version());
+    need_reboot_ = item.need_reboot();
+    is_initial_value_set_ = item.is_initial_value_set();
+  }
+
+  return *this;
+}
+
 // ObConfigIntListItem
 ObConfigItem *ObConfigIntListItem::clone()
 {

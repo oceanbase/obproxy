@@ -118,6 +118,7 @@ int ObTableEntry::set_names(const ObTableEntryName &name)
     LOG_WARN("fail to deep copy table entry names", K(ret));
   } else {
     is_dummy_entry_ = name_.is_all_dummy_table();
+    is_binlog_entry_ = name_.is_binlog_table();
   }
   return ret;
 }

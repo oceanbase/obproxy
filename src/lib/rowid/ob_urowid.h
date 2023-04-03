@@ -20,6 +20,19 @@
 
 namespace oceanbase
 {
+namespace obproxy
+{
+namespace proxy
+{
+class ObProxyPartInfo;
+} // proxy
+
+namespace opsql
+{
+class ObExprResolverResult;
+} // opsql
+} // obproxy
+
 namespace common
 {
 class ObObj;
@@ -37,16 +50,42 @@ private:
   static get_pk_val_func inner_get_funcs_[ObMaxType];
   static set_pk_val_func inner_set_funcs_[ObMaxType];
 public:
-  const static int64_t PK_ROWID_VERSION = 1;
-  const static int64_t NO_PK_ROWID_VERSION = 2;
+  enum ObURowIDDataVersion {
+    INVALID_ROWID_VERSION = 0,
+    PK_ROWID_VERSION = 1,
+    NO_PK_ROWID_VERSION = 2,
+    HEAP_TABLE_ROWID_VERSION = 128,       // 0x80
+    EXT_HEAP_TABLE_ROWID_VERSION = 160,   // 0xA0
+  };
+  const static uint8_t OB40_ROWID_VERSION_OFFSET = 3;
+  static constexpr int64_t HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE = 10;
+  static constexpr int64_t EXT_HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE = 16;
+
+  static constexpr int64_t HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS = 32;
+  static constexpr int64_t EXT_HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS = 56;
+  
   int64_t rowid_len_;
   /*
-   *  memory layout
+   *  logical rowid (pk rowid and no pk rowid)
    *  +-----------+---------+---------+--------------+
    *  | 1 byte    | dba len | 1 bytye | pk_len bytes |
    *  +-----------+---------+---------+--------------+
    *  | dba len   |  dba    | version |  pk_content  |
    *  +-----------+---------+---------+--------------+
+   *
+   *  heap-organized table rowid
+   *  +--------------+-----------+----------------+
+   *  |    3 bit     |   37 bit  |     40 bit     |
+   *  +--------------+-----------+----------------+
+   *  | version >> 5 | tablet_id | auto_increment |
+   *  +--------------+-----------+----------------+
+   *
+   *  extended heap-organized table rowid
+   *  +--------------+-----------+----------------+
+   *  |    3 bit     |   61 bit  |     64 bit     |
+   *  +--------------+-----------+----------------+
+   *  | version >> 5 | tablet_id | auto_increment |
+   *  +--------------+-----------+----------------+
    */
   const uint8_t *rowid_content_;
 
@@ -74,12 +113,6 @@ public:
     return get_guess_dba_len() + 1;
   }
 
-  inline uint8_t get_version() const
-  {
-    OB_ASSERT(rowid_len_ >= get_version_offset() + 1);
-    return rowid_content_[get_version_offset()];
-  }
-
   inline int64_t get_pk_content_offset() const
   {
     return get_version_offset() + 1;
@@ -98,10 +131,18 @@ public:
   bool operator <=(const ObURowIDData &other) const;
   bool operator >=(const ObURowIDData &other) const;
 
+  inline bool is_physical_rowid() const
+  {
+    uint8_t version = get_version();
+    return HEAP_TABLE_ROWID_VERSION == version || EXT_HEAP_TABLE_ROWID_VERSION == version;
+  }
+
   int64_t needed_base64_buffer_size() const;
   int get_base64_str(char *buf, const int64_t buf_len, int64_t &pos) const;
   static int decode2urowid(const char *input, const int64_t input_len,
                            ObIAllocator &alloc, ObURowIDData &urowid_data);
+
+  static bool is_valid_version(int64_t v);
   bool is_valid_urowid() const;
 
   int set_rowid_content(const ObIArray<ObObj> &pk_vals,
@@ -110,16 +151,11 @@ public:
                         const int64_t dba_len = 0,
                         const uint8_t* guess_dba = NULL);
   int get_pk_vals(ObIArray<ObObj> &pk_vals);
-
-  static bool is_valid_version(int64_t v)
-  {
-    bool bret = true;
-    if (PK_ROWID_VERSION != v && NO_PK_ROWID_VERSION != v
-        && !is_valid_part_gen_col_version(v)) {
-      bret = false;
-    }
-    return bret;
-  }
+  int get_rowkey_for_heap_organized_table(ObIArray<ObObj> &rowkey);
+  int get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
+                                             obproxy::opsql::ObExprResolverResult &resolve_result,
+                                             int64_t &partition_id,
+                                             common::ObIAllocator &allocator);
 
   // if highest bit is 1, lower 7 bits of version filed indicates how many primar key obj
   static bool is_valid_part_gen_col_version(int64_t v)
@@ -146,11 +182,7 @@ public:
     return ret;
   }
 
-  int64_t get_part_gen_col_cnt()
-  {
-    uint8_t ver = get_version();
-    return (ver & 0x80) ? (ver & 0x7F) : 0;
-  }
+  uint8_t get_version() const;
 
   DECLARE_TO_STRING;
 private:
@@ -195,6 +227,14 @@ private:
     rowid_len_ = 0;
     rowid_content_ = NULL;
   }
+
+  int parse_heap_organized_table_rowid(uint64_t &tablet_id, uint64_t &auto_inc) const;
+  int parse_ext_heap_organized_table_rowid(uint64_t &tablet_id, uint64_t &auto_inc);
+
+  int get_obobj_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
+                             obproxy::opsql::ObExprResolverResult &resolve_result,
+                             common::ObIAllocator &allocator);
+  
 };
 } // end namespace common
 } // end namespace oceanbase

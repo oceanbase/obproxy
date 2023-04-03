@@ -419,35 +419,23 @@ protected:
   virtual int get_socket() = 0;
 
 public:
-  // Returns local ip.
-  // @deprecated get_local_addr() should be used instead for AF_INET6 compatibility.
-  in_addr_t get_local_ip();
   // Returns local port
   uint16_t get_local_port();
   // Returns local sockaddr storage
   const sockaddr &get_local_addr();
 
-  // Returns remote ip.
-  // @deprecated get_remote_addr() should be used instead for AF_INET6 compatibility.
-  in_addr_t get_remote_ip();
   // Returns remote port
   uint16_t get_remote_port();
   // Returns remote sockaddr storage
   const sockaddr &get_remote_addr();
 
-  // Returns virual ip.
-  // @deprecated get_virtual_addr() should be used instead for AF_INET6 compatibility.
-  in_addr_t get_virtual_ip();
   // Returns virtual port
   uint16_t get_virtual_port();
   // Returns virtual vid(vpc id)
   uint32_t get_virtual_vid();
   // Returns virtual sockaddr storage
   const sockaddr &get_virtual_addr();
-
   const sockaddr &get_real_client_addr();
-  in_addr_t get_real_client_ip();
-  uint16_t get_real_client_port();
 
   // Force an event if a write operation empties the write buffer.
   //
@@ -476,7 +464,7 @@ protected:
   ObIpEndpoint local_addr_;   // it is local proxy addr
   ObIpEndpoint remote_addr_;  // if from accept, it is client addr, otherwise it is server addr
   ObIpEndpoint real_client_addr_;
-  ObIpEndpoint virtual_addr_;
+  ObIpEndpoint virtual_addr_; // vip addr
   uint32_t virtual_vid_;
 
   bool got_local_addr_;
@@ -504,13 +492,6 @@ inline ObNetVConnection::ObNetVConnection()
   ob_zero(real_client_addr_);
 }
 
-// local
-inline in_addr_t ObNetVConnection::get_local_ip()
-{
-  const sockaddr addr = get_local_addr();
-  return ops_is_ip4(addr) ? ops_ip4_addr_cast(addr) : 0;
-}
-
 //@return The local port in host order.
 inline uint16_t ObNetVConnection::get_local_port()
 {
@@ -528,13 +509,6 @@ inline const sockaddr &ObNetVConnection::get_local_addr()
     }
   }
   return local_addr_.sa_;
-}
-
-// remote
-inline in_addr_t ObNetVConnection::get_remote_ip()
-{
-  const sockaddr &addr = get_remote_addr();
-  return ops_is_ip4(addr) ? ops_ip4_addr_cast(addr) : 0;
 }
 
 // @return The remote port in host order.
@@ -561,17 +535,6 @@ inline const sockaddr &ObNetVConnection::get_real_client_addr()
   return real_client_addr_.sa_;
 }
 
-inline in_addr_t ObNetVConnection::get_real_client_ip()
-{
-  const sockaddr addr = get_real_client_addr();
-  return ops_is_ip4(addr) ? ops_ip4_addr_cast(addr) : 0;
-}
-
-inline uint16_t ObNetVConnection::get_real_client_port()
-{
-  return ops_ip_port_host_order(get_real_client_addr());
-}
-
 // virtual
 inline const sockaddr &ObNetVConnection::get_virtual_addr()
 {
@@ -582,12 +545,6 @@ inline const sockaddr &ObNetVConnection::get_virtual_addr()
   return virtual_addr_.sa_;
 }
 
-inline in_addr_t ObNetVConnection::get_virtual_ip()
-{
-  const sockaddr addr = get_virtual_addr();
-  return ops_is_ip4(addr) ? ops_ip4_addr_cast(addr) : 0;
-}
-
 inline uint16_t ObNetVConnection::get_virtual_port()
 {
   return ops_ip_port_host_order(get_virtual_addr());
@@ -595,6 +552,10 @@ inline uint16_t ObNetVConnection::get_virtual_port()
 
 inline uint32_t ObNetVConnection::get_virtual_vid()
 {
+  if (!got_virtual_addr_) {
+    set_virtual_addr();
+    got_virtual_addr_ = true;
+  }
   return virtual_vid_;
 }
 

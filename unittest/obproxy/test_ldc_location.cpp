@@ -27,7 +27,7 @@
     EXPECT_TRUE(is_partition_server == item->is_partition_server_);\
     EXPECT_TRUE(item->is_used_);\
     EXPECT_FALSE(item->is_force_congested_);\
-    EXPECT_EQ(ObAddr::convert_ipv4_addr(addr), item->replica_->server_.get_ipv4());\
+    EXPECT_EQ(convert_ipv4_addr_utils(addr), item->replica_->server_.get_ipv4());\
     EXPECT_EQ(port, item->replica_->server_.get_port());\
     EXPECT_EQ(type1, test_ldc_route.get_curr_route_type());\
     EXPECT_TRUE(!test_ldc_route.is_reach_end());
@@ -40,6 +40,25 @@ namespace obproxy
 {
 namespace proxy
 {
+
+static uint32_t convert_ipv4_addr_utils(const char *ip)
+{
+  in_addr binary;
+  int iret = 0;
+  uint32_t result = 0;
+
+  if (!OB_ISNULL(ip)) {
+    memset(&binary, 0, sizeof (binary));
+    iret = inet_pton(AF_INET, ip, &binary);
+    if (iret == -1) {        // no support family
+      binary.s_addr = 0;
+    } else if (iret == 0) {  // invalid ip string
+      binary.s_addr = 0;
+    }
+    result = ntohl(binary.s_addr);
+  }
+  return result;
+}
 
 
 class TesLDCLocation : public ::testing::Test
@@ -182,7 +201,7 @@ void TesLDCLocation::test_get_next_item(ObLDCRoute &test_ldc_route,
   ASSERT_TRUE(test_ldc_route.disable_merge_status_check_ || is_merge == item->is_merging_);
   ASSERT_TRUE(zone_type == item->zone_type_);
   ASSERT_TRUE(is_partition == item->is_partition_server_);
-  ASSERT_EQ(ObAddr::convert_ipv4_addr(ip_str), item->replica_->server_.get_ipv4());
+  ASSERT_EQ(convert_ipv4_addr_utils(ip_str), item->replica_->server_.get_ipv4());
   ASSERT_EQ(port, item->replica_->server_.get_port());
   ASSERT_EQ(route_type, test_ldc_route.get_curr_route_type());
   ASSERT_TRUE(!test_ldc_route.is_reach_end());
@@ -206,7 +225,7 @@ void TesLDCLocation::test_get_next_item(ObLDCRoute &test_ldc_route,
     ASSERT_TRUE(role == item->replica_->role_);
   }
   ASSERT_TRUE(is_partition == item->is_partition_server_);
-  ASSERT_EQ(ObAddr::convert_ipv4_addr(ip_str), item->replica_->server_.get_ipv4());
+  ASSERT_EQ(convert_ipv4_addr_utils(ip_str), item->replica_->server_.get_ipv4());
   ASSERT_EQ(port, item->replica_->server_.get_port());
   ASSERT_EQ(route_type, test_ldc_route.get_curr_route_type());
   ASSERT_TRUE(!test_ldc_route.is_reach_end());
@@ -429,15 +448,15 @@ TEST_F(TesLDCLocation, assign)
   ObLDCItem *item_array = const_cast<ObLDCItem *>(test_ldc.get_item_array());
   for (int64_t i = 0; i < 10; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 10; i < 25; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 25; i < 40; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
   }
 
   //empty name treat as do not use
@@ -459,15 +478,15 @@ TEST_F(TesLDCLocation, assign)
   item_array = const_cast<ObLDCItem *>(test_ldc.get_item_array());
   for (int64_t i = 0; i < 10; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 10; i < 25; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 25; i < 40; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
   }
 
   //right name, but congestion is not available
@@ -489,19 +508,19 @@ TEST_F(TesLDCLocation, assign)
   item_array = const_cast<ObLDCItem *>(test_ldc.get_item_array());
   for (int64_t i = 0; i < 15; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 15; i < 30; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 30; i < 45; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 45; i < 60; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("4.4.4.4"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("4.4.4.4"), item_array[i].replica_->server_.get_ipv4());
   }
 
   //right name
@@ -522,15 +541,15 @@ TEST_F(TesLDCLocation, assign)
   item_array = const_cast<ObLDCItem *>(test_ldc.get_item_array());
   for (int64_t i = site_start_index_array[SAME_IDC]; i < site_start_index_array[SAME_REGION]; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = site_start_index_array[SAME_REGION]; i < site_start_index_array[OTHER_REGION]; i++) {
     EXPECT_EQ(SAME_REGION, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = site_start_index_array[OTHER_REGION]; i < site_start_index_array[MAX_IDC_TYPE]; i++) {
     EXPECT_EQ(OTHER_REGION, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
   }
 
   for (int64_t i = site_start_index_array[SAME_IDC]; i < site_start_index_array[SAME_IDC] + 5; i++) {
@@ -646,11 +665,11 @@ TEST_F(TesLDCLocation, assign_other_region)
   ObLDCItem *item_array = const_cast<ObLDCItem *>(test_ldc.get_item_array());
   for (int64_t i = site_start_index_array[SAME_IDC]; i < site_start_index_array[SAME_REGION]; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = site_start_index_array[OTHER_REGION]; i < site_start_index_array[MAX_IDC_TYPE]; i++) {
     EXPECT_EQ(OTHER_REGION, item_array[i].idc_type_);
-    EXPECT_NE(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_NE(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
   }
 
   for (int64_t i = site_start_index_array[SAME_IDC]; i < site_start_index_array[SAME_IDC] + 5; i++) {
@@ -747,15 +766,15 @@ TEST_F(TesLDCLocation, assign_non_ldc)
   ObLDCItem *item_array = const_cast<ObLDCItem *>(test_ldc.get_item_array());
   for (int64_t i = 0; i < 10; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 10; i < 25; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
   }
   for (int64_t i = 25; i < 40; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
   }
 
   for (int64_t i = 0; i < 10; i++) {
@@ -835,8 +854,10 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   ObSEArray<ObServerStateSimpleInfo, 5> servers_info;
   ObString proxy_primary_zone_name;
   bool need_skip_leader = false;
-  ASSERT_EQ(OB_ERR_UNEXPECTED, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item, target_ldc, entry_need_update, is_only_readwrite_zone,
-            need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
+  bool is_random_route_mode = false;
+  ASSERT_EQ(OB_ERR_UNEXPECTED, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item, target_ldc,
+            entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, is_random_route_mode,
+            servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
 
   ASSERT_EQ(OB_SUCCESS, dummy_ldc.assign(&ts, ss_info_, idc_name, true, cluster_name, OB_DEFAULT_CLUSTER_ID));
   ASSERT_TRUE(dummy_ldc.is_ldc_used());
@@ -876,7 +897,8 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   ASSERT_TRUE(!dummy_ldc.is_empty());
 
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
-      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader,
+      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(!entry_need_update);
   ASSERT_TRUE(!leader_item.is_valid());
@@ -896,7 +918,8 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
 
   is_only_readwrite_zone = true;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
-      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader,
+      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_TRUE(leader_item.is_valid());
@@ -912,7 +935,8 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
 
   is_only_readwrite_zone = false;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
-      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader,
+      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_TRUE(leader_item.is_valid());
@@ -932,7 +956,8 @@ TEST_F(TesLDCLocation, set_ldc_location)
   ObLDCLocation dummy_ldc;
   ObProxyPartitionLocation pl;
   ObSEArray<ObLDCItem, 10> tmp_item_array;
-  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array));
+  ObSEArray<ObLDCItem, 10> tmp_pz_item_array;
+  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array, tmp_pz_item_array));
   ASSERT_TRUE(!target_ldc.is_ldc_used());
   ASSERT_TRUE(target_ldc.is_empty());
 
@@ -954,7 +979,7 @@ TEST_F(TesLDCLocation, set_ldc_location)
   tmp_item_array.push_back(same_idc_item);
   tmp_item_array.push_back(same_region_item);
 
-  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array));
+  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array, tmp_pz_item_array));
   ASSERT_TRUE(!target_ldc.is_ldc_used());
   ASSERT_TRUE(!target_ldc.is_empty());
   ASSERT_EQ(12, target_ldc.count());
@@ -1337,19 +1362,19 @@ TEST_F(TesLDCLocation, get_next_item)
   item_array = const_cast<ObLDCItem *>(test_ldc.get_item_array());
   for (int64_t i = site_start_index_array[SAME_IDC]; i < site_start_index_array[SAME_REGION]; i++) {
     EXPECT_EQ(SAME_IDC, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("1.1.1.1"), item_array[i].replica_->server_.get_ipv4());
     EXPECT_EQ((i < 10 ? ZONE_TYPE_READWRITE : ZONE_TYPE_READONLY), item_array[i].zone_type_);
     EXPECT_TRUE((i % 10 < 5) == item_array[i].is_merging_);
   }
   for (int64_t i = site_start_index_array[SAME_REGION]; i < site_start_index_array[OTHER_REGION]; i++) {
     EXPECT_EQ(SAME_REGION, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("2.2.2.2"), item_array[i].replica_->server_.get_ipv4());
     EXPECT_EQ((i < (10 + site_start_index_array[SAME_REGION])? ZONE_TYPE_READWRITE : ZONE_TYPE_READONLY), item_array[i].zone_type_);
     EXPECT_TRUE((i % 10 < 5) == item_array[i].is_merging_);
   }
   for (int64_t i = site_start_index_array[OTHER_REGION]; i < site_start_index_array[MAX_IDC_TYPE]; i++) {
     EXPECT_EQ(OTHER_REGION, item_array[i].idc_type_);
-    EXPECT_EQ(ObAddr::convert_ipv4_addr("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
+    EXPECT_EQ(convert_ipv4_addr_utils("3.3.3.3"), item_array[i].replica_->server_.get_ipv4());
     EXPECT_EQ((i < (10 + site_start_index_array[OTHER_REGION]) ? ZONE_TYPE_READWRITE : ZONE_TYPE_READONLY), item_array[i].zone_type_);
     EXPECT_TRUE((i % 10 < 5) == item_array[i].is_merging_);
   }

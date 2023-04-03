@@ -20,6 +20,7 @@
 #include "executor/ob_proxy_parallel_cont.h"
 #include "executor/ob_proxy_parallel_execute_cont.h"
 #include "proxy/shard/obproxy_shard_utils.h"
+#include "proxy/mysqllib/ob_proxy_mysql_request.h"
 
 using namespace oceanbase::obproxy::executor;
 using namespace oceanbase::common;
@@ -27,6 +28,15 @@ using namespace oceanbase::common;
 namespace oceanbase {
 namespace obproxy {
 namespace engine {
+
+ObProxyTableScanOp::~ObProxyTableScanOp()
+{
+  for (int64_t i = 0; i < pres_array_.count(); i++) {
+    executor::ObProxyParallelResp *pres = pres_array_.at(i);
+    op_free(pres);
+    pres = NULL;
+  }
+}
 
 int ObProxyTableScanOp::open(event::ObContinuation *cont, event::ObAction *&action, const int64_t timeout_ms)
 {
@@ -77,7 +87,8 @@ int ObProxyTableScanOp::get_next_row()
                "phy table count", table_name_maps.count(),
                "shard prop count", shard_props.count(),
                "dbkey count", db_key_names.count(), K(ret));
-    } else if (OB_FAIL(sql_parser.parse_sql_by_obparser(request_sql, NORMAL_PARSE_MODE, parse_result, true))) {
+    } else if (OB_FAIL(sql_parser.parse_sql_by_obparser(proxy::ObProxyMysqlRequest::get_parse_sql(request_sql),
+                                                        NORMAL_PARSE_MODE, parse_result, true))) {
       LOG_WARN("parse_sql_by_obparser failed", K(request_sql), K(ret));
     }
 
@@ -88,10 +99,9 @@ int ObProxyTableScanOp::get_next_row()
       ObSqlString new_sql;
       char *tmp_buf = NULL;
       bool is_oracle_mode = db_key_name->server_type_ == common::DB_OB_ORACLE;
-      if (OB_FAIL(proxy::ObProxyShardUtils::do_rewrite_shard_select_request(request_sql, parse_result, is_oracle_mode,
-                                                                            table_name_map_warraper.get_hash_map(),
-                                                                            db_key_name->database_name_, false,
-                                                                            new_sql))) {
+      if (OB_FAIL(proxy::ObProxyShardUtils::rewrite_shard_dml_request(request_sql, new_sql, parse_result,
+                                            is_oracle_mode, table_name_map_warraper.get_hash_map(),
+                                            db_key_name->database_name_, false))) {
         LOG_WARN("fail to rewrite shard request", K(request_sql), K(is_oracle_mode), K(ret));
       } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(new_sql.length()))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
@@ -135,6 +145,8 @@ int ObProxyTableScanOp::handle_result(void *data, bool &is_final, ObProxyResultR
   } else if (OB_ISNULL(pres = reinterpret_cast<executor::ObProxyParallelResp*>(data))) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid input, pres type is not match", K(ret));
+  } else if (OB_FAIL(pres_array_.push_back(pres))) {
+    LOG_WARN("fail to push result resp to array", K(ret));
   } else {
     if (pres->is_ok_resp()) { // it is the OK packet
       // For the OK package, it is only necessary to construct an OK package in the case of
@@ -155,10 +167,6 @@ int ObProxyTableScanOp::handle_result(void *data, bool &is_final, ObProxyResultR
       }
     }
     LOG_DEBUG("handle_result success", K(ret), K(pres));
-  }
-  if (OB_NOT_NULL(pres)) {
-    op_free(pres);
-    pres = NULL;
   }
   return ret;
 }

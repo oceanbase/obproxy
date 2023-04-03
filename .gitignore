@@ -181,6 +181,8 @@ obproxy-tmp*
 src/.DS_Store
 unittest/.DS_Store
 ob_proxy_parser.output
+.vscode/*
+rpm/.dep_create
 deps/3rd/home
 deps/3rd/var
 deps/3rd/usr

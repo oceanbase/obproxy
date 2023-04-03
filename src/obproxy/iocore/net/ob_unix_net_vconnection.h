@@ -110,6 +110,7 @@ private:
   virtual bool get_data(const int32_t id, void *data); // unused !!!
   virtual int get_socket();
   virtual int set_tcp_init_cwnd(const int32_t init_cwnd);
+  int do_set_virtual_addr();
 
 public:
   int init();

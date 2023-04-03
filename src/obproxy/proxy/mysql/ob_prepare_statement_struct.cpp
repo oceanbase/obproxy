@@ -91,15 +91,13 @@ DEF_TO_STRING(ObTextPsNameEntry)
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(KP(this), K_(text_ps_name), KPC_(text_ps_entry));
+  J_KV(KP(this), K_(text_ps_name), KPC_(text_ps_entry), K_(version));
   J_OBJ_END();
   return pos;
 }
 
-void ObBasePsEntry::destroy() {
-  if (NULL != ps_entry_cache_) {
-    ps_entry_cache_->delete_base_ps_entry(this);
-  }
+void ObBasePsEntry::destroy()
+{
   base_ps_parse_result_.reset();
 }
 
@@ -125,16 +123,22 @@ int ObPsIdAddrs::alloc_ps_id_addrs(uint32_t ps_id, const struct sockaddr &addr, 
 int ObPsIdAddrs::add_addr(const struct sockaddr &socket_addr) {
   int ret = OB_SUCCESS;
   net::ObIpEndpoint addr(socket_addr);
-  if (OB_FAIL(addrs_.set_refactored(addr))) {
+  if (OB_FAIL(addrs_.push_back(addr))) {
     LOG_WARN("set refactored failed", K(addr), K(ret));
   }
   return ret;
 }
+
 int ObPsIdAddrs::remove_addr(const struct sockaddr &socket_addr) {
   int ret = OB_SUCCESS;
   net::ObIpEndpoint addr(socket_addr);
-  if (OB_FAIL(addrs_.erase_refactored(addr))) {
-    LOG_WARN("set refactored failed", K(addr), K(ret));
+  for(int64_t i = 0; OB_SUCC(ret) && i < addrs_.count(); i++) {
+    if (addr == addrs_.at(i)) {
+      if (OB_FAIL(addrs_.remove(i))) {
+        LOG_WARN("fail to remove", K(i), K(ret));
+      }
+      break;
+    }
   }
   return ret;
 }
@@ -217,40 +221,6 @@ int ObPsSqlMeta::set_param_type(const char *param_type, int64_t param_type_len)
   return ret;
 }
 
-int ObPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
-                                       const ObSqlParseResult &parse_result,
-                                       ObPsEntry *&entry)
-{
-  int ret = OB_SUCCESS;
-  int64_t alloc_size = 0;
-  char *buf = NULL;
-
-  int64_t obj_size = sizeof(ObPsEntry);
-  int64_t sql_len = ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
-
-  alloc_size += sizeof(ObPsEntry) + sql_len;
-  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for ps entry", K(alloc_size), K(ret));
-  } else {
-    entry = new (buf) ObPsEntry();
-    if (OB_FAIL(entry->init(buf + obj_size, alloc_size - obj_size))) {
-      LOG_WARN("fail to init ps entry", K(ret));
-    } else if (OB_FAIL(entry->set_sql(ps_sql))) {
-      LOG_WARN("fail to set ps sql", K(ret));
-    } else {
-      entry->set_base_ps_parse_result(parse_result);
-    }
-  }
-
-  if (OB_FAIL(ret) && NULL != buf) {
-    op_fixed_mem_free(buf, alloc_size);
-    entry = NULL;
-    alloc_size = 0;
-  }
-  return ret;
-}
-
 int ObPsEntry::init(char *buf_start, int64_t buf_len)
 {
   int ret = OB_SUCCESS;
@@ -287,9 +257,17 @@ int ObPsEntry::set_sql(const ObString &ps_sql)
   return ret;
 }
 
+void ObPsEntry::free()
+{
+  if (NULL != ps_entry_cache_) {
+    ps_entry_cache_->delete_base_ps_entry(this);
+  }
+  destroy();
+}
+
 void ObPsEntry::destroy()
 {
-  LOG_INFO("ps entry will be destroyed", KPC(this));
+  LOG_DEBUG("ps entry will be destroyed", KPC(this));
   if (OB_LIKELY(is_inited_)) {
     ObBasePsEntry::destroy();
     is_inited_ = false;
@@ -300,64 +278,12 @@ void ObPsEntry::destroy()
   }
 }
 
-void ObBasePsEntryCache::destroy()
+void ObGlobalPsEntry::free()
 {
-  ObBasePsEntryMap::iterator last = base_ps_map_.end();
-  ObBasePsEntryMap::iterator tmp_iter;
-  for (ObBasePsEntryMap::iterator base_ps_iter = base_ps_map_.begin(); base_ps_iter != last;) {
-    tmp_iter = base_ps_iter;
-    ++base_ps_iter;
-    tmp_iter->destroy();
+  LOG_DEBUG("global ps entry will be destroyed", KPC(this));
+  if (NULL != ps_entry_cache_) {
+    ps_entry_cache_->delete_base_ps_entry(this);
   }
-  base_ps_map_.reset();
-}
-
-int init_ps_entry_cache_for_thread()
-{
-  int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
-  for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
-    if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][i]->ps_entry_cache_
-      = new (std::nothrow) ObBasePsEntryCache())) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryCache", K(i), K(ret));
-    }
-  }
-  return ret;
-}
-
-int ObTextPsEntry::alloc_and_init_text_ps_entry(const ObString &text_ps_sql,
-                                                const ObSqlParseResult &parse_result,
-                                                ObTextPsEntry *&entry)
-{
-  int ret = OB_SUCCESS;
-  int64_t alloc_size = 0;
-  char *buf = NULL;
-
-  int64_t obj_size = sizeof(ObTextPsEntry);
-  int64_t sql_len = text_ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
-
-  alloc_size = obj_size + sql_len;
-  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for text ps entry", K(alloc_size), K(ret));
-  } else {
-    entry = new (buf) ObTextPsEntry();
-    if (OB_FAIL(entry->init(buf + obj_size, alloc_size - obj_size, text_ps_sql))) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem for text ps entry", K(alloc_size), K(ret));
-    } else {
-      entry->set_base_ps_parse_result(parse_result);
-    }
-  }
-
-  if (OB_FAIL(ret) && NULL != buf) {
-    op_fixed_mem_free(buf, alloc_size);
-    entry = NULL;
-    alloc_size = 0;
-  }
-
-  return ret;
 }
 
 int ObTextPsEntry::init(char *buf_start, int64_t buf_len, const ObString &text_ps_sql)
@@ -387,13 +313,32 @@ int ObTextPsEntry::init(char *buf_start, int64_t buf_len, const ObString &text_p
   return ret;
 }
 
+void ObTextPsEntry::free()
+{
+  if (NULL != ps_entry_cache_) {
+    ps_entry_cache_->delete_base_ps_entry(this);
+  }
+  destroy();
+}
+
 void ObTextPsEntry::destroy()
 {
   LOG_INFO("text ps entry will be destroyed", KPC(this));
   if (OB_LIKELY(is_inited_)) {
+    ObBasePsEntry::destroy();
     is_inited_ = false;
-    int64_t total_len = sizeof(ObTextPsEntry) + base_ps_sql_.length() + PARSE_EXTRA_CHAR_NUM;
+    int64_t total_len = sizeof(ObTextPsEntry) + buf_len_;
+    buf_start_ = NULL;
+    buf_len_ = 0;
     op_fixed_mem_free(this, total_len);
+  }
+}
+
+void ObGlobalTextPsEntry::free()
+{
+  LOG_INFO("global text ps entry will be destroyed", KPC(this));
+  if (NULL != ps_entry_cache_) {
+    ps_entry_cache_->delete_base_ps_entry(this);
   }
 }
 
@@ -408,7 +353,7 @@ int ObTextPsNameEntry::alloc_text_ps_name_entry(const ObString &text_ps_name,
     LOG_WARN("stmt name is empty", K(ret));
   } else {
     char *buf = NULL;
-    int64_t alloc_size = sizeof(ObTextPsNameEntry) + text_ps_name.size();
+    int64_t alloc_size = sizeof(ObTextPsNameEntry) + text_ps_name.length();
     if (OB_ISNULL(buf = static_cast<char*>(op_fixed_mem_alloc(alloc_size)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("fail to alloc mem for text ps name entry", K(alloc_size), K(ret));
@@ -424,9 +369,104 @@ int ObTextPsNameEntry::alloc_text_ps_name_entry(const ObString &text_ps_name,
 
 void ObTextPsNameEntry::destroy()
 {
-  LOG_INFO("text ps entry will be destroyed", KPC(this));
+  LOG_INFO("text ps name entry will be destroyed", KPC(this));
   int64_t total_len = sizeof(ObTextPsNameEntry) + text_ps_name_.length();
+  text_ps_entry_->dec_ref();
+  text_ps_entry_ = NULL;
   op_fixed_mem_free(this, total_len);
+}
+
+void ObBasePsEntryThreadCache::delete_base_ps_entry(ObBasePsEntry *base_ps_entry)
+{
+  ps_entry_thread_map_.remove(base_ps_entry);
+}
+
+void ObBasePsEntryThreadCache::destroy()
+{
+  ObBasePsEntryMap::iterator last = ps_entry_thread_map_.end();
+  ObBasePsEntryMap::iterator tmp_iter;
+  for (ObBasePsEntryMap::iterator base_ps_iter = ps_entry_thread_map_.begin(); base_ps_iter != last;) {
+    tmp_iter = base_ps_iter;
+    ++base_ps_iter;
+    tmp_iter->destroy();
+  }
+  ps_entry_thread_map_.reset();
+}
+
+void ObBasePsEntryGlobalCache::delete_base_ps_entry(ObBasePsEntry *base_ps_entry)
+{
+  common::DRWLock::WRLockGuard guard(lock_);
+  ps_entry_global_map_.remove(base_ps_entry);
+}
+
+void ObBasePsEntryGlobalCache::destroy()
+{
+  ObBasePsEntryGlobalMap::iterator last = ps_entry_global_map_.end();
+  ObBasePsEntryGlobalMap::iterator tmp_iter;
+  for (ObBasePsEntryGlobalMap::iterator base_ps_iter = ps_entry_global_map_.begin(); base_ps_iter != last;) {
+    tmp_iter = base_ps_iter;
+    ++base_ps_iter;
+    tmp_iter->destroy();
+  }
+  ps_entry_global_map_.reset();
+}
+
+int init_ps_entry_cache_for_thread()
+{
+  int ret = OB_SUCCESS;
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
+    if (OB_FAIL(init_ps_entry_cache_for_one_thread(i))) {
+      PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_text_ps_entry_cache_for_thread()
+{
+  int ret = OB_SUCCESS;
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
+    if (OB_FAIL(init_text_ps_entry_cache_for_one_thread(i))) {
+      PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_ps_entry_cache_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->ps_entry_cache_
+    = new (std::nothrow) ObBasePsEntryThreadCache())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
+  }
+  return ret;
+}
+
+int init_text_ps_entry_cache_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->text_ps_entry_cache_
+    = new (std::nothrow) ObBasePsEntryThreadCache())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
+  }
+  return ret;
+}
+
+ObBasePsEntryGlobalCache &get_global_ps_entry_cache()
+{
+  static ObBasePsEntryGlobalCache ps_entry_cache;
+  return ps_entry_cache;
+}
+
+ObBasePsEntryGlobalCache &get_global_text_ps_entry_cache()
+{
+  static ObBasePsEntryGlobalCache text_ps_entry_cache;
+  return text_ps_entry_cache;
 }
 
 } // end of namespace proxy

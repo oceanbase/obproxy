@@ -40,7 +40,7 @@ class ObTableEntry : public ObRouteEntry
 {
 public:
   ObTableEntry()
-    : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_entry_from_rslist_(false),
+    : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(NULL), is_entry_from_rslist_(false),
       is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), table_id_(common::OB_INVALID_ID),
       table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
       buf_len_(0), buf_start_(NULL), first_pl_(NULL)
@@ -70,7 +70,7 @@ public:
   bool is_dummy_entry() const { return is_dummy_entry_; }
   bool is_sys_dummy_entry() const { return is_dummy_entry_ && name_.is_sys_tenant(); }
   bool is_common_dummy_entry() const { return is_dummy_entry_ && !name_.is_sys_tenant(); }
-  bool is_location_entry() const { return !is_dummy_entry_ && 1 == part_num_; }
+  bool is_location_entry() const { return (!is_dummy_entry_ && 1 == part_num_) || is_binlog_entry_; }
   bool is_part_info_entry() const { return !is_dummy_entry_ && part_num_ > 1; }
   bool is_non_partition_table() const { return (1 == get_part_num()); }
   bool is_partition_table() const { return (get_part_num() > 1); }
@@ -125,6 +125,7 @@ public:
 private:
   bool is_inited_;
   bool is_dummy_entry_;
+  bool is_binlog_entry_;
   bool is_entry_from_rslist_;
   bool is_empty_entry_allowed_;
   bool is_need_force_flush_;
@@ -164,7 +165,7 @@ inline bool ObTableEntry::is_valid() const
                       || (is_location_entry() && NULL != first_pl_ && OB_LIKELY(first_pl_->is_valid()))
                       || (is_part_info_entry() && NULL != part_info_ && OB_LIKELY(part_info_->is_valid()))))
               )
-          );
+          ) || is_binlog_entry_;
 }
 
 inline int64_t ObTableEntry::get_server_count() const

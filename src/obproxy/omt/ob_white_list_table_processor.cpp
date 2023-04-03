@@ -63,9 +63,9 @@ int ObWhiteListTableProcessor::execute(void *arg)
     LOG_WARN("execute failed, tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
   } else {
     for (int64_t i = 0; i < params->fields_->field_num_; i++) {
-      SqlField &sql_field = params->fields_->fields_.at(i);
-      if (sql_field.column_name_.string_ == "value") {
-        ip_list = sql_field.column_value_.config_string_;
+      SqlField *sql_field = params->fields_->fields_.at(i);
+      if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
+        ip_list = sql_field->column_value_.config_string_;
       }
     }
 
@@ -86,8 +86,9 @@ int ObWhiteListTableProcessor::execute(void *arg)
   return ret;
 }
 
-int ObWhiteListTableProcessor::commit(bool is_success)
+int ObWhiteListTableProcessor::commit(void* arg, bool is_success)
 {
+  UNUSED(arg);
   if (is_success) {
     get_global_white_list_table_processor().inc_index();
     if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
@@ -96,6 +97,8 @@ int ObWhiteListTableProcessor::commit(bool is_success)
   } else {
     LOG_WARN("white list commit failed");
   }
+  get_global_white_list_table_processor().clean_hashmap(
+    get_global_white_list_table_processor().get_backup_hashmap());
 
   return OB_SUCCESS;
 }
@@ -112,7 +115,6 @@ int ObWhiteListTableProcessor::init()
   ObConfigHandler handler;
   handler.execute_func_ = &ObWhiteListTableProcessor::execute;
   handler.commit_func_ = &ObWhiteListTableProcessor::commit;
-  handler.config_type_ = OBPROXY_CONFIG_CLOUD;
   if (OB_FAIL(addr_hash_map_array_[0].create(32, ObModIds::OB_HASH_BUCKET))) {
     LOG_WARN("create hash map failed", K(ret));
   } else if (OB_FAIL(addr_hash_map_array_[1].create(32, ObModIds::OB_HASH_BUCKET))) {
@@ -140,6 +142,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
 {
   int ret = OB_SUCCESS;
 
+  DRWLock::WRLockGuard guard(white_list_lock_);
   if (cluster_name.empty() || tenant_name.empty() || ip_list.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("argument is unexpected", K(ret), K(cluster_name), K(tenant_name), K(ip_list));
@@ -151,6 +154,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
     int pos = 0;
     AddrStruct ip_addr;
     memset(&ip_addr, 0, sizeof(AddrStruct));
+    bool set_ip = false;
     while (OB_SUCC(ret) && pos < ip_list.length()) {
       if (ip_list[pos] == ',' || pos == ip_list.length() - 1 || ip_list[pos] == '/') {
         char buf[64];
@@ -161,10 +165,16 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
         }
         memcpy(buf, start, len);
         buf[len] = '\0';
-        if (ip_addr.ip_ == 0) {
-          if (OB_FAIL(ip_to_int(buf, ip_addr.ip_))) {
-            LOG_WARN("ip to int failed", K(ret));
+        if (!set_ip) {
+          if (false == ip_addr.addr_.set_ip_addr(buf, 0)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("set ip addr failed", K(buf), K(ret));
             break;
+          } else {
+            if (ObAddr::VER::IPV4 == ip_addr.addr_.version_) {
+              ip_addr.v4_ = to_little_endian(htonl(ip_addr.addr_.ip_.v4_));
+            }
+            set_ip = true;
           }
         } else {
           ip_addr.net_ = atoi(buf);
@@ -180,6 +190,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
             LOG_WARN("ip addr push back failed", K(ret));
           } else {
             memset(&ip_addr, 0, sizeof(AddrStruct));
+            set_ip = false;
           }
         }
         pos++;
@@ -196,7 +207,6 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
       if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
         LOG_WARN("paster tenant and cluser name failed", K(ret), K(tenant_name), K(cluster_name));
       } else {
-        DRWLock::WRLockGuard guard(white_list_lock_);
         WhiteListHashMap &backup_map = addr_hash_map_array_[(index_ + 1) % 2];
         if (OB_FAIL(backup_map.set_refactored(key_string, addr_array, 1))) {
           LOG_WARN("addr hash map set failed", K(ret));
@@ -210,6 +220,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
 int ObWhiteListTableProcessor::delete_ip_list(ObString &cluster_name, ObString &tenant_name)
 {
   int ret = OB_SUCCESS;
+  DRWLock::WRLockGuard guard(white_list_lock_);
   if (cluster_name.empty() || tenant_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("cluster name or tenant name empty unexpected", K(ret));
@@ -221,7 +232,6 @@ int ObWhiteListTableProcessor::delete_ip_list(ObString &cluster_name, ObString &
     if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
       LOG_WARN("paste tenant and cluster name failed", K(ret), K(tenant_name), K(cluster_name));
     } else {
-      DRWLock::WRLockGuard guard(white_list_lock_);
       WhiteListHashMap &backup_map = addr_hash_map_array_[(index_ + 1) % 2];
       if (OB_FAIL(backup_map.erase_refactored(key_string))) {
         LOG_WARN("addr hash map erase failed", K(ret));
@@ -232,26 +242,26 @@ int ObWhiteListTableProcessor::delete_ip_list(ObString &cluster_name, ObString &
   return ret;
 }
 
-bool ObWhiteListTableProcessor::can_ip_pass(ObString &cluster_name, ObString &tenant_name, ObString &user_name, char* ip)
+bool ObWhiteListTableProcessor::can_ip_pass(ObString &cluster_name, ObString &tenant_name,
+                                            ObString &user_name, const struct sockaddr& addr)
 {
-  uint32_t ip_value = 0;
-  int ret = OB_SUCCESS;
   bool can_pass = false;
-  if (OB_FAIL(ip_to_int(ip, ip_value))) {
-    LOG_WARN("ip to in failed", K(ret));
-  } else {
-    can_pass = can_ip_pass(cluster_name, tenant_name, user_name, ip_value, false);
+  if (net::ops_is_ip4(addr)) {
+    can_pass = can_ipv4_pass(cluster_name, tenant_name, user_name, addr);
+  } else if (net::ops_is_ip6(addr)) {
+    can_pass = can_ipv6_pass(cluster_name, tenant_name, user_name, addr);
   }
   return can_pass;
 }
 
-bool ObWhiteListTableProcessor::can_ip_pass(ObString &cluster_name, ObString &tenant_name,
-                                            ObString &user_name, uint32_t src_ip, bool is_big_endian)
+bool ObWhiteListTableProcessor::can_ipv4_pass(ObString &cluster_name, ObString &tenant_name,
+                                              ObString &user_name, const struct sockaddr& in_addr)
 {
   int ret = OB_SUCCESS;
   bool can_pass = false;
-  uint32_t ip = is_big_endian ? to_little_endian(src_ip) : src_ip;
-  LOG_DEBUG("check can ip pass", K(cluster_name), K(tenant_name), K(ip));
+  ObIpEndpoint endpoint(in_addr);
+  uint32_t ip = to_little_endian(endpoint.sin_.sin_addr.s_addr);
+  LOG_DEBUG("check can ip pass", K(cluster_name), K(tenant_name), K(endpoint));
   if (!cluster_name.empty() && !tenant_name.empty()) {
     ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
     if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
@@ -263,22 +273,13 @@ bool ObWhiteListTableProcessor::can_ip_pass(ObString &cluster_name, ObString &te
       if (OB_SUCC(current_map.get_refactored(key_string, ip_array))) {
         for (int64_t i = 0; !can_pass && i < ip_array.count(); i++) {
           AddrStruct addr = ip_array.at(i);
-          if (0 == addr.ip_) {
+          if (0 == addr.v4_) {
             can_pass = true;
           } else if (0 == addr.net_) {
-            can_pass = (addr.ip_ == ip);
+            can_pass = (addr.v4_ == ip);
           } else {
             uint32_t mask = 0xffffffff;
-            can_pass = (addr.ip_ == (ip & (mask << (32 - addr.net_))));
-          }
-          if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
-            ObIpEndpoint client_info;
-            ObIpEndpoint white_list_info;
-            client_info.sin_.sin_addr.s_addr = __bswap_32(ip);
-            client_info.sin_.sin_family = AF_INET;
-            white_list_info.sin_.sin_addr.s_addr = __bswap_32(addr.ip_);
-            white_list_info.sin_.sin_family = AF_INET;
-            LOG_DEBUG("ip check can pass", K(client_info), K(white_list_info), "mask", addr.net_, K(can_pass));
+            can_pass = (addr.v4_ == (ip & (mask << (32 - addr.net_))));
           }
         }
       } else if (OB_HASH_NOT_EXIST == ret) {
@@ -288,13 +289,69 @@ bool ObWhiteListTableProcessor::can_ip_pass(ObString &cluster_name, ObString &te
       }
     }
   } else {
-    LOG_WARN("cluster_name or tenant_name is empty", K(cluster_name), K(tenant_name), K(ip));
+    LOG_WARN("cluster_name or tenant_name is empty", K(cluster_name), K(tenant_name), K(endpoint));
   }
 
   if (!can_pass) {
-    struct sockaddr_in address;
-    address.sin_addr.s_addr = __bswap_32(ip);
-    LOG_WARN("can not pass white_list", K(cluster_name), K(tenant_name), K(user_name), "client_ip", inet_ntoa(address.sin_addr));
+    LOG_WARN("can not pass white_list", K(cluster_name), K(tenant_name), K(user_name), K(endpoint));
+  }
+
+  return can_pass;
+}
+
+bool ObWhiteListTableProcessor::can_ipv6_pass(ObString &cluster_name, ObString &tenant_name,
+                                              ObString &user_name, const struct sockaddr& in6_addr)
+{
+  int ret = OB_SUCCESS;
+  bool can_pass =false;
+  ObIpEndpoint endpoint(in6_addr);
+  LOG_DEBUG("check can ip pass", K(cluster_name), K(tenant_name), K(endpoint));
+  if (!cluster_name.empty() && !tenant_name.empty()) {
+    ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
+    if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
+      LOG_WARN("paste tenant and cluster name failed", K(ret), K(tenant_name), K(cluster_name));
+    } else {
+      ObSEArray<AddrStruct, 4> ip_array;
+      DRWLock::RDLockGuard guard(white_list_lock_);
+      WhiteListHashMap &current_map = addr_hash_map_array_[index_];
+      if (OB_SUCC(current_map.get_refactored(key_string, ip_array))) {
+        for (int64_t i = 0; !can_pass && i < ip_array.count(); i++) {
+          AddrStruct addr = ip_array.at(i);
+          if (addr.addr_.ip_.v6_[0] == 0 && addr.addr_.ip_.v6_[1] == 0
+              && addr.addr_.ip_.v6_[2] == 0 && addr.addr_.ip_.v6_[3] == 0) {
+            can_pass = true;
+          } else {
+            int64_t net = addr.net_;
+            int64_t index = 0;
+            can_pass = true;
+            sockaddr_storage ss = addr.addr_.get_sockaddr();
+            sockaddr_in6 &in6 = *(sockaddr_in6*)(&ss);
+            while ((net - 8) >= 0 && can_pass) {
+              if (in6.sin6_addr.s6_addr[index] != endpoint.sin6_.sin6_addr.s6_addr[index]) {
+                can_pass = false;
+              }
+              index++;
+              net -= 8;
+            }
+
+            if (net && can_pass) {
+              can_pass = in6.sin6_addr.s6_addr[index] ==
+                 (endpoint.sin6_.sin6_addr.s6_addr[index] & (0xff << (8 - net)));
+            }
+          }
+        }
+      } else if (OB_HASH_NOT_EXIST == ret) {
+        can_pass = true;
+      } else {
+        LOG_WARN("unexpected error", K(ret));
+      }
+    }
+  } else {
+    LOG_WARN("cluster_name or tenant_name is empty", K(cluster_name), K(tenant_name), K(endpoint));
+  }
+
+  if (!can_pass) {
+    LOG_WARN("can not pass white_list", K(cluster_name), K(tenant_name), K(user_name), K(endpoint));
   }
 
   return can_pass;
@@ -303,10 +360,8 @@ bool ObWhiteListTableProcessor::can_ip_pass(ObString &cluster_name, ObString &te
 int64_t AddrStruct::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
-  in_addr addr;
-  addr.s_addr = static_cast<in_addr_t>(ip_);
   J_OBJ_START();
-  J_KV("ip", inet_ntoa(addr), K_(net));
+  J_KV(K_(addr), K_(net));
   J_OBJ_END();
   return pos;
 }
@@ -336,6 +391,12 @@ void ObWhiteListTableProcessor::inc_index()
   index_ = (index_ + 1) % 2;
 }
 
+void ObWhiteListTableProcessor::clean_hashmap(WhiteListHashMap& whitelist_map)
+{
+  DRWLock::WRLockGuard guard(white_list_lock_);
+  whitelist_map.reuse();
+}
+
 void ObWhiteListTableProcessor::print_config()
 {
   DRWLock::RDLockGuard guard(white_list_lock_);
@@ -345,9 +406,7 @@ void ObWhiteListTableProcessor::print_config()
     LOG_DEBUG("white list map info", K(iter->first));
     for (int64_t i = 0; i < iter->second.count(); i++) {
       AddrStruct addr_info = iter->second.at(i);
-      struct sockaddr_in address;
-      address.sin_addr.s_addr = __bswap_32(addr_info.ip_);
-      LOG_DEBUG("ip/net info", "ip", inet_ntoa(address.sin_addr), "mask", addr_info.net_);
+      LOG_DEBUG("ip/net info", K(addr_info));
     }
   }
 }

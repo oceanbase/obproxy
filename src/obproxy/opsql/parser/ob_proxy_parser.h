@@ -24,6 +24,7 @@
 #include <parse_node.h>
 
 extern "C" int obproxy_parse_utf8_sql(ObProxyParseResult *p, const char *pszSql, size_t iLen);
+extern "C" int obproxy_parse_gbk_sql(ObProxyParseResult *p, const char *pszSql, size_t iLen);
 
 namespace oceanbase
 {
@@ -151,6 +152,7 @@ inline int ObProxyParser::obparse(const common::ObString &sql_string,
     common::ObString parse_sql_string = sql_string;
     //set ; ob parse need end with ;
     bool add_semicolon = false;
+    char origin_byte = parse_sql_string.ptr()[sql_string.length() - 2];
     if (parse_sql_string.ptr()[sql_string.length() - 3] != ';') {
       parse_sql_string.ptr()[sql_string.length() - 2] = ';';
       add_semicolon = true;
@@ -168,7 +170,7 @@ inline int ObProxyParser::obparse(const common::ObString &sql_string,
       }
     }
     if (add_semicolon) {
-      parse_sql_string.ptr()[sql_string.length() - 2] = '\0';
+      parse_sql_string.ptr()[sql_string.length() - 2] = origin_byte;
     }
   }
   return ret;
@@ -184,6 +186,16 @@ inline int ObProxyParser::parse(const common::ObString &sql_string,
     PROXY_LOG(WARN, "failed to initialized parser", KERRMSGS, K(ret));
   } else {
     switch (connection_collation) {
+      //case 28/*CS_TYPE_GBK_CHINESE_CI*/:
+      //case 87/*CS_TYPE_GBK_BIN*/:
+      case 248/*CS_TYPE_GB18030_CHINESE_CI*/:
+      case 249/*CS_TYPE_GB18030_BIN*/:
+        if (common::OB_SUCCESS != obproxy_parse_gbk_sql(&parse_result,
+                                                        sql_string.ptr(),
+                                                        static_cast<size_t>(sql_string.length()))) {
+          ret = common::OB_ERR_PARSE_SQL;
+        }
+        break;
       case 45/*CS_TYPE_UTF8MB4_GENERAL_CI*/:
       case 46/*CS_TYPE_UTF8MB4_BIN*/:
       default:

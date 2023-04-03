@@ -375,7 +375,7 @@ ObLogger::~ObLogger()
   (void)pthread_mutex_destroy(&file_size_mutex_);
 }
 
-void ObLogger::destory_async_log_thread()
+void ObLogger::destroy_async_log_thread()
 {
   set_enable_async_log(false);
   set_stop_flush();
@@ -748,6 +748,12 @@ void ObLogger::log_data(const ObLogFDType type,
          *    '###' is consultation flag for Inspection Module
          *    ${content} is value of config in json format. */
         head_size = snprintf(head, MAX_LOG_HEAD_SIZE, "###"); //just print '###'
+      } else if (FD_TRACE_FILE == type) {
+        head_size = snprintf(head, MAX_LOG_HEAD_SIZE,
+                             "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
+                             "%s (%s:%d) [%ld][" TRACE_ID_FORMAT "] ",
+                             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec,
+                             location.function_, base_file_name, location.line_, GETTID(), trace_id_0, trace_id_1);
       } else if (is_monitor_file(type)) {
         head_size = snprintf(head, MAX_LOG_HEAD_SIZE, "%04d-%02d-%02d %02d:%02d:%02d.%06ld,",
                              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
@@ -1625,6 +1631,16 @@ int ObLogger::async_log_data_header(const ObLogFDType type,
     ret = logdata_printf(data_buf, item.get_buf_size(), pos, "%04d-%02d-%02d %02d:%02d:%02d.%06ld,",
                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                          tm.tm_sec, tv.tv_usec);
+  } else if (item.is_trace_file()) {
+    const char *base_file_name = (NULL != file ? strrchr(file, '/') : NULL);
+    const uint64_t *trace_id = ObCurTraceId::get();
+    uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
+    uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
+    ret = logdata_printf(data_buf, item.get_buf_size(), pos,
+                         "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
+                         "%s (%s:%d) [%ld][" TRACE_ID_FORMAT "] ",
+                         tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec,
+                         function, base_file_name, line, GETTID(), trace_id_0, trace_id_1);
   } else {
     //only print base filename.
     const char *base_file_name = (NULL != file ? strrchr(file, '/') : NULL);
@@ -1693,14 +1709,11 @@ void ObLogger::get_pop_limit(const int32_t level, int64_t &timeout_us)
 {
   switch (level) {
     case OB_LOG_LEVEL_ERROR: {
-      timeout_us = 100;//100us
-      break;
-    }
-    case OB_LOG_LEVEL_WARN: {
       timeout_us = 10;//10us
       break;
     }
-    // if INFO Level, no wait
+    // if INFO/WARN Level, no wait
+    case OB_LOG_LEVEL_WARN:
     default: {
       timeout_us = 0;//0us
       break;
@@ -1729,7 +1742,7 @@ int ObLogger::check_error_log(ObLogItem &log_item)
 {
   static const char* const BACKTRACE_END = " BACKTRACE:";
   int ret = OB_SUCCESS;
-  if (OB_LIKELY(OB_LOG_LEVEL_ERROR == log_item.get_log_level())) {
+  if (OB_LIKELY(OB_LOG_LEVEL_ERROR == log_item.get_log_level()) && !log_item.is_trace_file()) {
     int64_t pos = (log_item.get_data_len() > 0 ? log_item.get_data_len() - 1 : 0);
     char *buf = log_item.get_buf();
     const int64_t buf_size = log_item.get_buf_size();

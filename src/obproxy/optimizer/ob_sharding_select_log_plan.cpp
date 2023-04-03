@@ -18,6 +18,7 @@
 #include "engine/ob_proxy_operator_table_scan.h"
 #include "engine/ob_proxy_operator_projection.h"
 #include "obutils/ob_proxy_stmt.h"
+#include "obproxy/proxy/mysqllib/ob_proxy_mysql_request.h"
 
 using namespace oceanbase::obproxy::engine;
 using namespace oceanbase::common;
@@ -154,7 +155,7 @@ int ObShardingSelectLogPlan::do_handle_avg_expr(ObProxyExprAvg *agg_expr, T *&ex
       MEMCPY(buf, sql_string.ptr(), sql_string.length());
       expr->set_expr_name(buf, sql_string.length());
       if (OB_FAIL(handle_derived(expr))) {
-       LOG_WARN("fail to handle derived", K(ret));
+        LOG_WARN("fail to handle derived", K(ret));
       }
     }
   }
@@ -489,8 +490,8 @@ int ObShardingSelectLogPlan::handle_derived(ObProxyExpr *expr, bool column_first
     ObProxyExprType expr_type = expr->get_expr_type();
 
     if (OB_PROXY_EXPR_TYPE_COLUMN == expr_type || OB_PROXY_EXPR_TYPE_SHARDING_CONST == expr_type || expr->is_func_expr()) {
-      ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-      ObIArray<ObProxyExpr*> &select_expr_array = select_stmt->select_exprs_;
+      ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+      ObIArray<ObProxyExpr*> &select_expr_array = dml_stmt->select_exprs_;
 
       // Priority is given to finding derived columns, all derived columns have aliases and can be uniquely located
       if (bret && do_need_derived(derived_exprs_, expr, column_first, bret)) {
@@ -571,8 +572,8 @@ int ObShardingSelectLogPlan::analyze_group_by_clause()
 {
   int ret = OB_SUCCESS;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyGroupItem*> &group_by_exprs = select_stmt->group_by_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyGroupItem*> &group_by_exprs = dml_stmt->group_by_exprs_;
 
   for (int64_t i = 0; OB_SUCC(ret) && i < group_by_exprs.count(); i++) {
     ObProxyGroupItem *group_item = dynamic_cast<ObProxyGroupItem *>(group_by_exprs.at(i));
@@ -595,8 +596,8 @@ int ObShardingSelectLogPlan::analyze_order_by_clause()
 {
   int ret = OB_SUCCESS;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyOrderItem*> &order_by_exprs = select_stmt->order_by_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyOrderItem*> &order_by_exprs = dml_stmt->order_by_exprs_;
 
   for (int64_t i = 0; OB_SUCC(ret) && i < order_by_exprs.count(); i++) {
     ObProxyOrderItem *order_item = dynamic_cast<ObProxyOrderItem *>(order_by_exprs.at(i));
@@ -618,8 +619,8 @@ int ObShardingSelectLogPlan::analyze_order_by_clause()
 int ObShardingSelectLogPlan::analyze_select_clause()
 {
   int ret = OB_SUCCESS;
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyExpr*> &select_expr_array = select_stmt->select_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyExpr*> &select_expr_array = dml_stmt->select_exprs_;
 
   for (int64_t i = 0; OB_SUCC(ret) && i < select_expr_array.count(); i++) {
     ObProxyExpr *select_expr = select_expr_array.at(i);
@@ -635,9 +636,9 @@ int ObShardingSelectLogPlan::append_derived_order_by(bool &is_same_group_and_ord
 {
   int ret = OB_SUCCESS;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyGroupItem*> &group_by_exprs = select_stmt->group_by_exprs_;
-  ObIArray<ObProxyOrderItem*> &order_by_exprs = select_stmt->order_by_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyGroupItem*> &group_by_exprs = dml_stmt->group_by_exprs_;
+  ObIArray<ObProxyOrderItem*> &order_by_exprs = dml_stmt->order_by_exprs_;
 
   if (!group_by_exprs.empty() && order_by_exprs.empty()) {
     is_same_group_and_order = true;
@@ -679,28 +680,28 @@ int ObShardingSelectLogPlan::append_derived_order_by(bool &is_same_group_and_ord
 int ObShardingSelectLogPlan::rewrite_sql(ObSqlString &new_sql)
 {
   int ret = OB_SUCCESS;
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
   ObString sql = client_request_.get_sql();
 
   if (derived_columns_.empty() && derived_orders_.empty()
-      && (select_stmt->limit_size_ == -1 || select_stmt->limit_size_ == 0)) {
+      && (dml_stmt->limit_size_ == -1 || dml_stmt->limit_size_ == 0)) {
     new_sql.append(sql);
   } else {
     const char *sql_ptr = sql.ptr();
     int64_t sql_len = sql.length();
 
     if (derived_columns_.empty() && derived_orders_.empty()) {
-      int64_t limit_position = select_stmt->limit_token_off_;
+      int64_t limit_position = dml_stmt->limit_token_off_;
       new_sql.append(sql_ptr, limit_position);
       new_sql.append("LIMIT ");
-      if (select_stmt->limit_size_ == 0) {
-        new_sql.append_fmt("%d", select_stmt->limit_size_);
+      if (dml_stmt->limit_size_ == 0) {
+        new_sql.append_fmt("%d", dml_stmt->limit_size_);
       } else {
-        new_sql.append_fmt("%d", select_stmt->limit_offset_ + select_stmt->limit_size_);
+        new_sql.append_fmt("%d", dml_stmt->limit_offset_ + dml_stmt->limit_size_);
       }
     } else {
-      int64_t from_position = select_stmt->get_from_token_off();
-      int64_t limit_position = select_stmt->limit_token_off_;
+      int64_t from_position = dml_stmt->get_from_token_off();
+      int64_t limit_position = dml_stmt->limit_token_off_;
       new_sql.append(sql_ptr, from_position);
 
       if (!derived_columns_.empty()) {
@@ -746,10 +747,10 @@ int ObShardingSelectLogPlan::rewrite_sql(ObSqlString &new_sql)
 
       if (limit_position > 0) {
         new_sql.append("LIMIT ");
-        if (select_stmt->limit_size_ == 0) {
-          new_sql.append_fmt("%d", select_stmt->limit_size_);
+        if (dml_stmt->limit_size_ == 0) {
+          new_sql.append_fmt("%d", dml_stmt->limit_size_);
         } else {
-          new_sql.append_fmt("%d", select_stmt->limit_offset_ + select_stmt->limit_size_);
+          new_sql.append_fmt("%d", dml_stmt->limit_offset_ + dml_stmt->limit_size_);
         }
       }
     }
@@ -763,8 +764,8 @@ int ObShardingSelectLogPlan::add_agg_operator(bool need_set_limit)
 {
   int ret = OB_SUCCESS;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyGroupItem*> &group_by_exprs = select_stmt->group_by_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyGroupItem*> &group_by_exprs = dml_stmt->group_by_exprs_;
 
   T *agg_operator = NULL;
   ObProxyAggInput *agg_input = NULL;
@@ -778,8 +779,8 @@ int ObShardingSelectLogPlan::add_agg_operator(bool need_set_limit)
     LOG_WARN("set child failed", K(ret));
   } else {
     if (need_set_limit) {
-      agg_input->set_limit_offset(select_stmt->limit_offset_);
-      agg_input->set_limit_size(select_stmt->limit_size_);
+      agg_input->set_limit_offset(dml_stmt->limit_offset_);
+      agg_input->set_limit_size(dml_stmt->limit_size_);
       is_set_limit_ = true;
     }
     plan_root_ = agg_operator;
@@ -815,8 +816,8 @@ int ObShardingSelectLogPlan::add_sort_operator(bool need_set_limit)
 {
   int ret = OB_SUCCESS;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyOrderItem*> &order_by_exprs = select_stmt->order_by_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyOrderItem*> &order_by_exprs = dml_stmt->order_by_exprs_;
 
   T *sort_operator = NULL;
   ObProxySortInput *sort_input = NULL;
@@ -828,8 +829,8 @@ int ObShardingSelectLogPlan::add_sort_operator(bool need_set_limit)
     LOG_WARN("set child failed", K(ret));
   } else {
     if (need_set_limit) {
-      sort_input->set_limit_offset(select_stmt->limit_offset_);
-      sort_input->set_limit_size(select_stmt->limit_size_);
+      sort_input->set_limit_offset(dml_stmt->limit_offset_);
+      sort_input->set_limit_size(dml_stmt->limit_size_);
       is_set_limit_ = true;
     }
     plan_root_ = sort_operator;
@@ -864,9 +865,9 @@ int ObShardingSelectLogPlan::add_agg_and_sort_operator(bool is_same_group_and_or
 {
   int ret = OB_SUCCESS;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyGroupItem*> &group_by_exprs = select_stmt->group_by_exprs_;
-  ObIArray<ObProxyOrderItem*> &order_by_exprs = select_stmt->order_by_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyGroupItem*> &group_by_exprs = dml_stmt->group_by_exprs_;
+  ObIArray<ObProxyOrderItem*> &order_by_exprs = dml_stmt->order_by_exprs_;
 
   if (!group_by_exprs.empty() || !agg_exprs_.empty()) {
     if (!is_same_group_and_order) {
@@ -907,7 +908,7 @@ int ObShardingSelectLogPlan::add_table_scan_operator(ObIArray<dbconfig::ObShardC
   int ret = OB_SUCCESS;
   const uint32_t PARSE_EXTRA_CHAR_NUM = 2;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
   ObProxyTableScanOp *table_scan_op = NULL;
   ObProxyTableScanInput *table_scan_input = NULL;
   char *buf = NULL;
@@ -919,7 +920,7 @@ int ObShardingSelectLogPlan::add_table_scan_operator(ObIArray<dbconfig::ObShardC
   } else {
     MEMCPY(buf, new_sql.ptr(), new_sql.length());
     MEMSET(buf + new_sql.length(), '\0', PARSE_EXTRA_CHAR_NUM);
-    ObString request_sql(new_sql.length() + PARSE_EXTRA_CHAR_NUM, buf);
+    ObString request_sql(new_sql.length(), buf);
     if (OB_FAIL(table_scan_input->set_db_key_names(shard_connector_array))) {
       LOG_WARN("fail to set db key name", K(ret));
     } else if (OB_FAIL(table_scan_input->set_shard_props(shard_prop_array))) {
@@ -930,9 +931,9 @@ int ObShardingSelectLogPlan::add_table_scan_operator(ObIArray<dbconfig::ObShardC
       LOG_WARN("fail to set calc expr", K(ret));
     } else if (OB_FAIL(table_scan_input->set_agg_exprs(agg_exprs_))) {
       LOG_WARN("fail to set agg expr", K(ret));
-    } else if (OB_FAIL(table_scan_input->set_group_exprs(select_stmt->group_by_exprs_))) {
+    } else if (OB_FAIL(table_scan_input->set_group_exprs(dml_stmt->group_by_exprs_))) {
       LOG_WARN("fail to set group exprs", K(ret));
-    } else if (OB_FAIL(table_scan_input->set_order_exprs(select_stmt->order_by_exprs_))) {
+    } else if (OB_FAIL(table_scan_input->set_order_exprs(dml_stmt->order_by_exprs_))) {
       LOG_WARN("fail to set order exprs", K(ret));
     } else {
       table_scan_input->set_request_sql(request_sql);
@@ -947,7 +948,7 @@ int ObShardingSelectLogPlan::add_table_scan_operator(ObIArray<dbconfig::ObShardC
 int ObShardingSelectLogPlan::add_projection_operator()
 {
   int ret = OB_SUCCESS;
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
 
   ObProxyProOp *op = NULL;
   ObProxyProInput *input = NULL;
@@ -958,8 +959,8 @@ int ObShardingSelectLogPlan::add_projection_operator()
     input->set_calc_exprs(calc_exprs_);
     input->set_derived_column_count(derived_column_count_);
     if (!is_set_limit_) {
-      input->set_limit_offset(select_stmt->limit_offset_);
-      input->set_limit_size(select_stmt->limit_size_);
+      input->set_limit_offset(dml_stmt->limit_offset_);
+      input->set_limit_size(dml_stmt->limit_size_);
       is_set_limit_ = true;
     }
     if (OB_FAIL(op->set_child(0, plan_root_))) {
@@ -976,9 +977,9 @@ int ObShardingSelectLogPlan::compare_group_and_order(bool &is_same_group_and_ord
 {
   int ret = OB_SUCCESS;
 
-  ObProxySelectStmt *select_stmt = static_cast<ObProxySelectStmt*>(client_request_.get_parse_result().get_proxy_stmt());
-  ObIArray<ObProxyGroupItem*> &group_by_exprs = select_stmt->group_by_exprs_;
-  ObIArray<ObProxyOrderItem*> &order_by_exprs = select_stmt->order_by_exprs_;
+  ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  ObIArray<ObProxyGroupItem*> &group_by_exprs = dml_stmt->group_by_exprs_;
+  ObIArray<ObProxyOrderItem*> &order_by_exprs = dml_stmt->order_by_exprs_;
 
   if (!group_by_exprs.empty() && !order_by_exprs.empty()
       && group_by_exprs.count() == order_by_exprs.count()) {

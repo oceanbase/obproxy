@@ -380,6 +380,13 @@ int ObCongestionManager::add_new_server(const net::ObIpEndpoint &ip,
           case ObCongestionEntry::ACTIVE_CONGESTED:
             entry->set_dead_free_alive_congested();
             break;
+          case ObCongestionEntry::DETECT_ALIVE:
+            entry->set_detect_congested_free();
+            entry->set_alive_congested_free();
+            break;
+          case ObCongestionEntry::DETECT_DEAD:
+            entry->set_detect_congested();
+            break;
           case ObCongestionEntry::DELETED:
           case ObCongestionEntry::DELETING:
           case ObCongestionEntry::UPGRADE:
@@ -598,6 +605,13 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
                 entry->dec_ref();
                 entry = NULL;
               }
+              break;
+            case ObCongestionEntry::DETECT_ALIVE:
+              entry->set_detect_congested_free();
+              entry->set_alive_congested_free();
+              break;
+            case ObCongestionEntry::DETECT_DEAD:
+              entry->set_detect_congested();
               break;
             case ObCongestionEntry::DELETING:
             case ObCongestionEntry::UPGRADE:
@@ -971,6 +985,13 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
           case ObCongestionEntry::ACTIVE_CONGESTED:
             entry->set_dead_free_alive_congested();
             break;
+          case ObCongestionEntry::DETECT_ALIVE:
+            entry->set_detect_congested_free();
+            entry->set_alive_congested_free();
+            break;
+          case ObCongestionEntry::DETECT_DEAD:
+            entry->set_detect_congested();
+            break;
           case ObCongestionEntry::DELETED:
             entry = remove_entry(hash, ip);
             if (NULL != entry) {
@@ -996,7 +1017,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
     }
   } else {
     LOG_DEBUG("failed to lock_bucket, add to todo_list", "server_state",
-              ObCongestionEntry::get_server_state_name(server_state), K(*entry));
+              ObCongestionEntry::get_server_state_name(server_state));
     ObCongestRequestParam *param = op_alloc(ObCongestRequestParam);
     if (OB_ISNULL(param)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -1250,6 +1271,27 @@ int init_congestion_map_for_thread()
       } else if (OB_FAIL(ethreads[i]->congestion_map_->init())) {
         LOG_WARN("fail to init cgt_map", K(ret));
       }
+    }
+  }
+  return ret;
+}
+
+int init_congestion_map_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  ObEThread **ethreads = NULL;
+  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+  } else if (OB_ISNULL(ethreads[index])) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+  } else {
+    if (OB_ISNULL(ethreads[index]->congestion_map_ = new (std::nothrow) ObCongestionRefHashMap(ObModIds::OB_PROXY_CONGESTION_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to new ObCongestionRefHashMap", K(index), K(ethreads[index]), K(ret));
+    } else if (OB_FAIL(ethreads[index]->congestion_map_->init())) {
+      LOG_WARN("fail to init cgt_map", K(ret));
     }
   }
   return ret;

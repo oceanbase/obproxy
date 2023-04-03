@@ -21,7 +21,8 @@
 #include "prometheus/ob_sql_prometheus.h"
 #include "dbconfig/ob_proxy_pb_utils.h"
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
-#include "omt/ob_resource_unit_table_processor.h"
+#include "omt/ob_conn_table_processor.h"
+#include "omt/ob_white_list_table_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -62,22 +63,24 @@ ObMutex g_debug_cs_list_mutex;
 #endif
 
 ObMysqlClientSession::ObMysqlClientSession()
-    : can_direct_ok_(false), is_proxy_mysql_client_(false), active_(false), test_server_addr_(),
+    : can_direct_ok_(false), is_proxy_mysql_client_(false), can_direct_send_request_(false),
+      active_(false), test_server_addr_(),
       vc_ready_killed_(false), is_waiting_trans_first_request_(false),
       is_need_send_trace_info_(true), is_already_send_trace_info_(false),
-      is_first_handle_close_request_(true), is_in_trans_for_close_request_(false),
-      is_need_return_last_bound_ss_(false),
-      need_delete_cluster_(false), is_first_dml_sql_got_(false),
+      is_first_handle_request_(true), is_in_trans_for_close_request_(false), is_last_request_in_trans_(false),
+      is_trans_internal_routing_(false), is_need_return_last_bound_ss_(false), need_delete_cluster_(false),
+      is_first_dml_sql_got_(false), is_proxy_enable_trans_internal_routing_(false), compressed_seq_(0),
       cluster_resource_(NULL), dummy_entry_(NULL), is_need_update_dummy_entry_(false),
-      dummy_ldc_(),  dummy_entry_valid_time_ns_(0), server_state_version_(0),
+      dummy_ldc_(), dummy_entry_valid_time_ns_(0), server_state_version_(0),
       inner_request_param_(NULL), tcp_init_cwnd_set_(false), half_close_(false),
       conn_decrease_(false), conn_prometheus_decrease_(false), vip_connection_decrease_(false),
       magic_(MYSQL_CS_MAGIC_DEAD), create_thread_(NULL), is_local_connection_(false),
       client_vc_(NULL), in_list_stat_(LIST_INIT), current_tid_(-1),
-      cs_id_(0), proxy_sessid_(0), bound_ss_(NULL), cur_ss_(NULL), lii_ss_(NULL), last_bound_ss_(NULL), read_buffer_(NULL),
+      cs_id_(0), proxy_sessid_(0), bound_ss_(NULL), cur_ss_(NULL), lii_ss_(NULL), last_bound_ss_(NULL),
+      trans_coordinator_ss_addr_(), read_buffer_(NULL),
       buffer_reader_(NULL), mysql_sm_(NULL), read_state_(MCS_INIT), ka_vio_(NULL),
       server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
-      ps_id_(0), cursor_id_(CURSOR_ID_START), text_ps_cache_(), using_ldg_(false)
+      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false)
 {
   SET_HANDLER(&ObMysqlClientSession::main_handler);
   bool enable_session_pool = get_global_proxy_config().is_pool_mode
@@ -130,7 +133,7 @@ void ObMysqlClientSession::destroy()
 
   // here need place before session_info_.destroy, because use some session_info's data
   if (conn_prometheus_decrease_) {
-    SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);    
+    SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);
     SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_USED_CONNECTIONS, -1);
     conn_prometheus_decrease_ = false;
   }
@@ -142,7 +145,6 @@ void ObMysqlClientSession::destroy()
   test_server_addr_.reset();
   session_info_.destroy();
   // destroy ps_cache after destroy session, because client session info hold ps entry pointer
-  text_ps_cache_.destroy();
   if (NULL != trace_stats_) {
     trace_stats_->destory();
     trace_stats_ = NULL;
@@ -155,14 +157,19 @@ void ObMysqlClientSession::destroy()
 
   is_need_send_trace_info_ = true;
   is_already_send_trace_info_ = false;
-  is_first_handle_close_request_ = true;
+  is_first_handle_request_ = true;
   is_in_trans_for_close_request_ = false;
+  is_last_request_in_trans_ = false;
+  is_trans_internal_routing_ = false;
   is_need_return_last_bound_ss_ = false;
   is_first_dml_sql_got_ = false;
-
+  is_proxy_enable_trans_internal_routing_ = false;
+  compressed_seq_ = 0;
+  trans_coordinator_ss_addr_.reset();
   schema_key_.reset();
   ObProxyClientSession::cleanup();
   create_thread_ = NULL;
+  using_ldg_ = false;
   op_reclaim_free(this);
 }
 
@@ -181,7 +188,7 @@ inline void ObMysqlClientSession::decrease_used_connections()
     session_info_.get_tenant_name(tenant_name);
   }
 
-  get_global_resource_unit_table_processor().dec_conn(
+  get_global_conn_table_processor().dec_conn(
     cluster_name, tenant_name, ip_name);
 }
 
@@ -368,15 +375,22 @@ int ObMysqlClientSession::new_connection(
             if (OB_FAIL(fetch_tenant_by_vip())) {
               PROXY_CS_LOG(WARN, "fail to fetch tenant by vip", K(ret));
               ret = OB_SUCCESS;
-            } else {
-              session_info_.set_is_read_only_user(ct_info_.vip_tenant_.is_read_only());
-              session_info_.set_is_request_follower_user(ct_info_.vip_tenant_.is_request_follower());
-              session_info_.set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+            } else if (is_vip_lookup_success()) {
+              ObString user_name;
+              if (!get_global_white_list_table_processor().can_ip_pass(
+                ct_info_.vip_tenant_.cluster_name_, ct_info_.vip_tenant_.tenant_name_,
+                user_name, client_vc_->get_real_client_addr())) {
+                ret = OB_ERR_CAN_NOT_PASS_WHITELIST;
+                PROXY_CS_LOG(DEBUG, "can not pass white_list", K(ct_info_.vip_tenant_.cluster_name_),
+                             K(ct_info_.vip_tenant_.tenant_name_), K(client_addr), K(ret));
+              }
             }
           }
 
           // 2. handle_new_connection no matter convert vip to tenant result.
-          handle_new_connection();
+          if (OB_SUCC(ret)) {
+            handle_new_connection();
+          }
         }
       } // end if (OB_SUCC(ret))
     } else {
@@ -395,15 +409,30 @@ int ObMysqlClientSession::new_connection(
 int ObMysqlClientSession::fetch_tenant_by_vip()
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(get_global_vip_tenant_processor().get_vip_tenant(ct_info_.vip_tenant_))) {
-    //if login succ latter, we will desc cache miss stat.
-    MYSQL_SSN_INCREMENT_DYN_STAT(VIP_TO_TENANT_CACHE_MISS);
-    ct_info_.lookup_success_ = false;
-    PROXY_CS_LOG(INFO, "fail to get_vip_tenant", "vip_tenant", ct_info_.vip_tenant_, K(ret));
-  } else {
-    MYSQL_SSN_INCREMENT_DYN_STAT(VIP_TO_TENANT_CACHE_HIT);
-    ct_info_.lookup_success_ = true;
-    PROXY_CS_LOG(DEBUG, "succ to get_vip_tenant name", "vip_tenant", ct_info_.vip_tenant_);
+  ct_info_.lookup_success_ = false;
+  ObVipAddr addr = ct_info_.vip_tenant_.vip_addr_;
+  ObConfigItem tenant_item, cluster_item;
+  bool found = false;
+  if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
+    addr, "", "", "proxy_tenant_name", tenant_item, "LEVEL_VIP", found))) {
+    PROXY_CS_LOG(WARN, "get proxy tenant name config failed", K(addr), K(ret));
+  } 
+
+  if (OB_SUCC(ret) && found) {
+    if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
+      addr, "", "", "rootservice_cluster_name", cluster_item, "LEVEL_VIP", found))) {
+      PROXY_CS_LOG(WARN, "get cluster name config failed", K(addr), K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && found) {
+    if (OB_FAIL(ct_info_.vip_tenant_.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
+      PROXY_CS_LOG(WARN, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
+    } else {
+      session_info_.set_vip_addr_name(addr.addr_);
+      ct_info_.lookup_success_ = true;
+      PROXY_CS_LOG(DEBUG, "succ to get conn info", "vip_tenant", ct_info_.vip_tenant_);
+    }
   }
   return ret;
 }
@@ -411,24 +440,9 @@ int ObMysqlClientSession::fetch_tenant_by_vip()
 int ObMysqlClientSession::get_vip_addr()
 {
   int ret = OB_SUCCESS;
-  int32_t ip;
-  int32_t port;
   int64_t vid;
-  if (OB_UNLIKELY(obutils::get_global_proxy_config().enable_qa_mode)) {
-    // simulate pulic cloud SLB IP addr
-    ObAddr addr;
-    if (OB_FAIL(addr.parse_from_cstring(get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr))) {
-      PROXY_CS_LOG(WARN, "parse from string failed", K(ret));
-    } else {
-      ct_info_.vip_tenant_.vip_addr_.set(addr.get_ipv4(), addr.get_port(),
-              get_global_proxy_config().qa_mode_mock_public_cloud_vid);
-    }
-  } else {
-    ip = ntohl(client_vc_->get_virtual_ip());
-    port = static_cast<int32_t>(client_vc_->get_virtual_port());
-    vid = static_cast<int64_t>(client_vc_->get_virtual_vid());
-    ct_info_.vip_tenant_.vip_addr_.set(ip, port, vid);
-  }
+  vid = static_cast<int64_t>(client_vc_->get_virtual_vid());
+  ct_info_.vip_tenant_.vip_addr_.set(client_vc_->get_virtual_addr(), vid);
 
   // TODO, get client ip, slb ip from kernal
 
@@ -580,6 +594,7 @@ int ObMysqlClientSession::create_scramble()
 
 uint64_t ObMysqlClientSession::get_next_proxy_sessid()
 {
+  // TODO: Consider IPv6 support
   static uint64_t next_proxy_sessid = 1;
   const ObAddr &addr = get_global_hot_upgrade_info().local_addr_;
   int64_t ipv4 = static_cast<int64_t>(addr.get_ipv4());
@@ -634,9 +649,13 @@ void ObMysqlClientSession::do_io_shutdown(const ShutdownHowToType howto)
 
 void ObMysqlClientSession::do_io_close(const int alerrno)
 {
+  PROXY_SS_LOG(INFO, "client session do_io_close", K(*this), KP(client_vc_), KP(this));
   int ret = OB_SUCCESS;
   // Prevent double closing
   if (MCS_CLOSED != read_state_) {
+    if (NULL != mysql_sm_) {
+      mysql_sm_->set_detect_server_info(mysql_sm_->trans_state_.server_info_.addr_, -1, 0);
+    }
     if (MCS_ACTIVE_READER == read_state_) {
       if (LIST_ADDED == in_list_stat_ || is_proxy_mysql_client_) {
         MYSQL_DECREMENT_DYN_STAT(CURRENT_CLIENT_TRANSACTIONS);
@@ -796,6 +815,8 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
       case VC_EVENT_READ_READY:
       case VC_EVENT_EOS:
         // The server session closed or something is amiss
+      case VC_EVENT_DETECT_SERVER_DEAD:
+        // find server dead
 
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_INACTIVITY_TIMEOUT:
@@ -860,7 +881,8 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
       // fallthrough
       case VC_EVENT_ERROR:
       case VC_EVENT_ACTIVE_TIMEOUT:
-      case VC_EVENT_INACTIVITY_TIMEOUT: {
+      case VC_EVENT_INACTIVITY_TIMEOUT:
+      case VC_EVENT_DETECT_SERVER_DEAD: {
         if (MCS_HALF_CLOSED == read_state_) {
           half_close_ = false;
         }
@@ -960,7 +982,8 @@ int ObMysqlClientSession::attach_server_session(ObMysqlServerSession *session)
         || OB_UNLIKELY(0 != session->get_reader()->read_avail())
         || OB_UNLIKELY(session->get_netvc() == client_vc_)) {
       ret = OB_INVALID_ARGUMENT;
-      PROXY_CS_LOG(WARN, "invalid server session", K(session), K(client_vc_), K(bound_ss_), K(ret));
+      PROXY_CS_LOG(WARN, "invalid server session", K(bound_ss_), K(session), K(cur_ss_),
+                   K(session->get_reader()->read_avail()), K(session->get_netvc()), K(client_vc_));
     } else {
       session->state_ = MSS_KA_CLIENT_SLAVE;
       bound_ss_ = session;
@@ -1406,7 +1429,8 @@ bool ObMysqlClientSession::is_authorised_proxysys(const ObProxyLoginUserType typ
   int ret = OB_SUCCESS;
 
   //1.check ip
-  if (!get_global_proxy_config().skip_proxy_sys_private_check
+  if (RUN_MODE_PROXY == g_run_mode
+      && !get_global_proxy_config().skip_proxy_sys_private_check
       && !ops_is_ip_private(client_vc_->get_remote_addr())
       && !ops_is_ip_loopback(client_vc_->get_remote_addr())) {
     char src_ip[INET6_ADDRSTRLEN];
@@ -1458,7 +1482,9 @@ bool ObMysqlClientSession::is_authorised_proxysys(const ObProxyLoginUserType typ
 
 bool ObMysqlClientSession::is_need_convert_vip_to_tname()
 {
-  return (get_global_proxy_config().need_convert_vip_to_tname && !this->is_proxy_mysql_client_ );
+  return (get_global_proxy_config().need_convert_vip_to_tname
+          && !this->is_proxy_mysql_client_
+          && RUN_MODE_PROXY == g_run_mode);
 }
 
 inline bool ObMysqlClientSession::need_close() const
@@ -1531,9 +1557,8 @@ ObString ObMysqlClientSession::get_current_idc_name() const
         //if empty, return default empty
         ret_idc = session_info_.get_idc_name();
       }
-    } else if (OB_LIKELY(NULL != mysql_sm_)
-               && OB_LIKELY(NULL != mysql_sm_->trans_state_.mysql_config_params_)) {
-      ObString tmp_idc(mysql_sm_->trans_state_.mysql_config_params_->proxy_idc_name_);
+    } else if (OB_LIKELY(NULL != mysql_sm_)) {
+      ObString tmp_idc(mysql_sm_->proxy_idc_name_);
       if (!tmp_idc.empty()) {
         //if empty, return default empty
         ret_idc = tmp_idc;
@@ -1610,7 +1635,7 @@ int ObMysqlClientSession::check_update_ldc()
           } else {
             need_ignore = true;
           }
-          PROXY_CS_LOG(ERROR, "fail to tryrdlock server_state_lock, ignore this update",
+          PROXY_CS_LOG(WARN, "fail to tryrdlock server_state_lock, ignore this update",
                        K(err_no),
                        "old_idc_name", dummy_ldc_.get_idc_name(),
                        K(new_idc_name),
@@ -1716,10 +1741,19 @@ int init_cs_map_for_thread()
   int ret = OB_SUCCESS;
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
-    if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][i]->cs_map_ = new (std::nothrow) ObMysqlClientSessionMap())) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
+    if (OB_FAIL(init_cs_map_for_one_thread(i))) {
       PROXY_NET_LOG(WARN, "fail to new ObInactivityCop", K(i), K(ret));
     }
+  }
+  return ret;
+}
+
+int init_cs_map_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->cs_map_ = new (std::nothrow) ObMysqlClientSessionMap())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WARN, "fail to new ObInactivityCop", K(index), K(ret));
   }
   return ret;
 }
@@ -1751,6 +1785,39 @@ int init_random_seed_for_thread()
                          tmp + static_cast<uint64_t>(g_event_processor.event_thread_[ET_CALL][i]->tid_));
         g_event_processor.event_thread_[ET_CALL][i]->random_seed_ = tmp_random;
       }
+    }
+  }
+
+  if (OB_LIKELY(NULL != init_seed)) {
+    delete init_seed;
+  }
+  return ret;
+}
+
+int init_random_seed_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  //1. create init random seed
+  ObMysqlRandom *init_seed = new (std::nothrow) ObMysqlRandom();
+  if (OB_ISNULL(init_seed)) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WARN, "fail to new ObMysqlRandom", K(ret));
+  } else {
+    const uint64_t current_time = static_cast<uint64_t>(get_hrtime_internal());
+    init_seed->init(current_time, current_time / 2);
+  }
+
+  //2. create random seed of each ethread
+  if (OB_SUCC(ret)) {
+    ObMysqlRandom *tmp_random = NULL;
+    if (OB_ISNULL(tmp_random = new (std::nothrow) ObMysqlRandom())) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_NET_LOG(WARN, "fail to new ObMysqlRandom", K(index), K(ret));
+    } else {
+      const uint64_t tmp = init_seed->get_uint64();
+      tmp_random->init(tmp + reinterpret_cast<uint64_t>(tmp_random),
+                       tmp + static_cast<uint64_t>(g_event_processor.event_thread_[ET_CALL][index]->tid_));
+      g_event_processor.event_thread_[ET_CALL][index]->random_seed_ = tmp_random;
     }
   }
 

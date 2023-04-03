@@ -92,10 +92,15 @@ union ObIpEndpoint
     memset(this, 0, sizeof(ObIpEndpoint));
     assign(addr);
   }
+  explicit ObIpEndpoint(const sockaddr_storage &addr) {
+    memset(this, 0, sizeof(ObIpEndpoint));
+    assign(addr);
+  }
   ObIpEndpoint (const ObIpEndpoint &point) { MEMCPY(this, &point, sizeof(ObIpEndpoint)); }
   void operator= (const ObIpEndpoint &point) { MEMCPY(this, &point, sizeof(ObIpEndpoint)); }
 
   ObIpEndpoint &assign(const sockaddr &ip);
+  ObIpEndpoint &assign(const sockaddr_storage &ip);
 
   ObIpEndpoint &assign(const ObIpAddr &addr, const in_port_t port = 0);
   // Test for valid IP address.
@@ -106,6 +111,8 @@ union ObIpEndpoint
 
   // Test for IPv6.
   bool is_ip6() const;
+
+  bool is_unix_domain() const;
 
   uint16_t family() const;
   // Set to be any address for family family.
@@ -129,13 +136,14 @@ union ObIpEndpoint
   int64_t get_port_host_order() const;
   uint32_t get_ip4_host_order() const;
 
-  uint64_t hash(const uint64_t hash = 0) const { return common::murmurhash(&sa_, sizeof(sockaddr), hash); }
+  uint64_t hash(const uint64_t hash = 0) const;
 
   int64_t to_string(char *buffer, const int64_t size) const;
 
   struct sockaddr sa_; // Generic address.
   struct sockaddr_in sin_; // IPv4
   struct sockaddr_in6 sin6_; // IPv6
+  struct sockaddr_un unix_domain_; // unix_domain
 };
 
 // Reset an address to invalid.
@@ -485,8 +493,17 @@ inline const uint8_t *ops_ip_addr8_cast(const ObIpEndpoint &ip)
 // @return true if this is an IP loopback address, false otherwise.
 inline bool ops_is_ip_loopback(const sockaddr &ip)
 {
-  return (AF_INET == ip.sa_family && 0x7F == ops_ip_addr8_cast(ip)[0])
-         || (AF_INET6 == ip.sa_family && IN6_IS_ADDR_LOOPBACK(&ops_ip6_addr_cast(ip)));
+  bool zret = false;
+  if (ops_is_ip4(ip)) {
+    in_addr_t a = ops_ip4_addr_cast(ip);
+    zret = (a == 0x100007F);
+  } else if (ops_is_ip6(ip)) {
+    in6_addr a = ops_ip6_addr_cast(ip);
+    zret = ((a.s6_addr32[0] == 0 && a.s6_addr32[1] == 0 && a.s6_addr32[2] == 0
+           && a.s6_addr[12] == 0 && a.s6_addr[13] == 0 && a.s6_addr[14] == 0
+           && a.s6_addr[15] == 1));
+  }
+  return zret;
 }
 
 inline bool ops_is_ip_loopback(const ObIpEndpoint &ip)
@@ -555,6 +572,8 @@ inline bool ops_ip_copy(sockaddr &dst, const sockaddr &src)
 
     case AF_INET6:
       n = sizeof(sockaddr_in6);
+      break;
+    case AF_UNIX:
       break;
   }
   switch (dst.sa_family) {
@@ -1034,6 +1053,12 @@ inline ObIpEndpoint& ObIpEndpoint::assign(const sockaddr &ip)
   return *this;
 }
 
+inline ObIpEndpoint& ObIpEndpoint::assign(const sockaddr_storage &ip)
+{
+  ops_ip_copy(sa_, ops_ip_sa_cast(ip));
+  return *this;
+}
+
 inline in_port_t& ObIpEndpoint::port()
 {
   return ops_ip_port_cast(sa_);
@@ -1061,6 +1086,7 @@ inline bool ObIpEndpoint::is_valid() const
 
 inline bool ObIpEndpoint::is_ip4() const { return AF_INET == sa_.sa_family; }
 inline bool ObIpEndpoint::is_ip6() const { return AF_INET6 == sa_.sa_family; }
+inline bool ObIpEndpoint::is_unix_domain() const { return AF_UNIX == sa_.sa_family; }
 inline uint16_t ObIpEndpoint::family() const { return sa_.sa_family; }
 
 inline ObIpEndpoint& ObIpEndpoint::set_to_any_addr(const int family)

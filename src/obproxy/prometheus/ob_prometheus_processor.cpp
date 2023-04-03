@@ -61,6 +61,19 @@ int ObPrometheusProcessor::start_prometheus()
   return ret;
 }
 
+int ObPrometheusProcessor::start_one_prometheus(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  ObEThread **ethreads = g_event_processor.event_thread_[ET_NET];
+  if (OB_ISNULL(ethreads[index]->thread_prometheus_ = new(std::nothrow) ObThreadPrometheus())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to new ObThreadPrometheus", K(index), K(ret));
+  } else if (OB_FAIL(ethreads[index]->thread_prometheus_->init(ethreads[index]))) {
+    LOG_WARN("fail to init thread prometheus", K(index), K(ret));
+  }
+  return ret;
+}
+
 int ObPrometheusProcessor::start_prometheus_task()
 {
   int ret = OB_SUCCESS;

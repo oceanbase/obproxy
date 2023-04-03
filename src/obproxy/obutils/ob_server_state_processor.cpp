@@ -27,6 +27,7 @@
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::sqlclient;
+using namespace oceanbase::common::hash;
 using namespace oceanbase::share;
 using namespace oceanbase::obproxy::net;
 using namespace oceanbase::obproxy::proxy;
@@ -44,11 +45,22 @@ static const char *SELECT_ZONE_STATE_INFO_SQL                     =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
     "FROM oceanbase.%s LIMIT %ld";
 
+static const char *SELECT_ZONE_STATE_INFO_SQL_V4 =
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ zone, status, "
+    "0 AS is_merging, region, idc AS spare4, type AS spare5 "
+    "FROM oceanbase.%s LIMIT %ld";
+
 //when server fail to start, its status is inactive, but its port == 0.
 //it is design defect, but proxy need compatible with it.
 //so select svr_port > 0 one
 const static char *SELECT_SERVER_STATE_INFO_SQL                   =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ svr_ip, svr_port, zone, status, start_service_time, stop_time "
+    "FROM oceanbase.%s "
+    "WHERE svr_port > 0 ORDER BY zone LIMIT %ld";
+
+const static char *SELECT_SERVER_STATE_INFO_SQL_V4 =
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ svr_ip, sql_port AS svr_port, zone, status, "
+    "start_service_time is not null AS start_service_time, stop_time is not null as stop_time "
     "FROM oceanbase.%s "
     "WHERE svr_port > 0 ORDER BY zone LIMIT %ld";
 
@@ -60,11 +72,36 @@ const static char *SYS_LDG_INFO_SQL                               =
     "SELECT TENANT_ID, TENANT_NAME, CLUSTER_ID, CLUSTER_NAME, LDG_ROLE "
     "FROM oceanbase.ldg_standby_status";
 const static char *SELECT_ALL_TENANT_SQL                          =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ tenant_name, locality FROM oceanbase.__all_tenant "
-    "where previous_locality = '' and tenant_id != 1";
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ tenant_name, locality, previous_locality, primary_zone "
+    "FROM oceanbase.%s where %s and tenant_id != 1";
+
+class ObDetectOneServerStateCont : public obutils::ObAsyncCommonTask
+{
+public:
+  ObDetectOneServerStateCont();
+  virtual ~ObDetectOneServerStateCont() {}
+  virtual void destroy() { kill_this(); }
+  virtual int main_handler(int event, void *data);
+  void kill_this();
+  int init(ObClusterResource *cluster_resource, ObAddr addr);
+
+private:
+  int detect_server_state_by_sql();
+  int handle_client_resp(void *data);
+private:
+  ObClusterResource *cluster_resource_;
+  ObAddr addr_;
+  ObMysqlClient *mysql_client_;
+  ObMysqlProxy mysql_proxy_;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObDetectOneServerStateCont);
+};
 
 //-------------------------------ObServerStateRefreshCont----------------------------------------//
-int ObServerStateRefreshCont::init(ObClusterResource *cr, int64_t ss_refresh_interval_us)
+int ObServerStateRefreshCont::init(ObClusterResource *cr,
+                                   int64_t ss_refresh_interval_us,
+                                   uint64_t last_rs_list_hash)
 {
   int ret = OB_SUCCESS;
 
@@ -82,6 +119,7 @@ int ObServerStateRefreshCont::init(ObClusterResource *cr, int64_t ss_refresh_int
     ss_refresh_interval_us_ = ss_refresh_interval_us;
     cluster_name_.assign_ptr(cluster_resource_->get_cluster_name().ptr(), cluster_resource_->get_cluster_name().length());
     cluster_id_ = cluster_resource_->get_cluster_id();
+    last_server_list_hash_ = last_rs_list_hash;
     is_inited_ = true;
   }
   return ret;
@@ -152,7 +190,8 @@ int ObServerStateRefreshCont::schedule_refresh_server_state(const bool imm /*fal
     int64_t delay_us = 0;
     bool need_refresh_cluster_role = get_global_proxy_config().with_config_server_
                                      && get_global_proxy_config().enable_standby
-                                     && OB_DEFAULT_CLUSTER_ID == cluster_id_;
+                                     && OB_DEFAULT_CLUSTER_ID == cluster_id_
+                                     && IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_);
     if (imm) {
       if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(
               this,  need_refresh_cluster_role? REFRESH_CLUSTER_ROLE_EVENT : REFRESH_ZONE_STATE_EVENT))) {
@@ -231,7 +270,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       pending_action_ = NULL;
       cur_job_event_ = event;
       if (OB_FAIL(refresh_server_state())) {
-        LOG_WARN("fail to refresh zone state", K(ret));
+        LOG_WARN("fail to refresh server state", K(ret));
       }
       break;
     }
@@ -304,6 +343,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
     } else if (ss_refresh_failure_ >= MAX_REFRESH_FAILURE) {
       bool need_refresh_cluster_role = get_global_proxy_config().with_config_server_
                                        && get_global_proxy_config().enable_standby
+                                       && IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_)
                                        && OB_DEFAULT_CLUSTER_ID == cluster_id_
                                        && has_slave_clusters;
       imm_reschedule = false;
@@ -398,8 +438,15 @@ int ObServerStateRefreshCont::refresh_zone_state()
   int ret = OB_SUCCESS;
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
-  int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_ZONE_STATE_INFO_SQL,
-                         OB_ALL_VIRTUAL_ZONE_STAT_TNAME, INT64_MAX);
+  int64_t len = 0;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_)) {
+    len = snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_ZONE_STATE_INFO_SQL,
+                   OB_ALL_VIRTUAL_ZONE_STAT_TNAME, INT64_MAX);
+  } else {
+    len = snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_ZONE_STATE_INFO_SQL_V4,
+                   DBA_OB_ZONES_VNAME, INT64_MAX);
+  }
+
   if (OB_UNLIKELY(len <= 0 || len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
@@ -420,8 +467,14 @@ int ObServerStateRefreshCont::refresh_server_state()
   int ret = OB_SUCCESS;
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
-  const int64_t len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_SERVER_STATE_INFO_SQL,
-                                                    OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME, INT64_MAX));
+  int64_t len =0;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_)) {
+    len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_SERVER_STATE_INFO_SQL,
+                                        OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME, INT64_MAX));
+  } else {
+    len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_SERVER_STATE_INFO_SQL_V4,
+                                        DBA_OB_SERVERS_VNAME, INT64_MAX));
+  }
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
@@ -520,19 +573,42 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
     result_handler.set_resp(resp);
     ObString tenant_name;
     ObString locality;
+    ObString previous_locality;
+    ObString primary_zone;
     ObSEArray<ObString, 4> tenant_array;
     ObSEArray<ObString, 4> locality_array;
+    ObSEArray<ObString, 4> primary_zone_array;
     while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
       tenant_name.reset();
       locality.reset();
+      previous_locality.reset();
+      primary_zone.reset();
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "tenant_name", tenant_name);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "locality", locality);
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "previous_locality", previous_locality);
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "primary_zone", primary_zone);
+      
       if (OB_FAIL(tenant_array.push_back(tenant_name))) {
         LOG_WARN("tenant array push back failed", K(ret));
-      } else if (OB_FAIL(locality_array.push_back(locality))) {
-        LOG_WARN("locality array push back failed", K(ret));
+      } else if (OB_FAIL(primary_zone_array.push_back(primary_zone))) {
+        LOG_WARN("primary zone array push back failed", K(ret));
+      } else {
+        /*
+         * in oceanbase.__all_tenant, the column of previous_locality not empty
+         * means the locality is in changing state by the control of rootserver, otherwise the locality is stable.
+         */
+        if (previous_locality.empty()) {
+          if (OB_FAIL(locality_array.push_back(locality))) {
+            LOG_WARN("fail to push locality to array", K(ret));
+          }
+        } else {
+          if (OB_FAIL(locality_array.push_back(previous_locality))) {
+            LOG_WARN("fail to push previous locality to array", K(ret));
+          }
+        }
       }
     }
+
     if (ret != OB_ITER_END) {
       // handle case of fail to access __all_tenant on alipay main site: do not exec error handling process
       if (ER_TABLEACCESS_DENIED_ERROR == resp->get_err_code()) {
@@ -542,13 +618,14 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
         LOG_WARN("fail to get all tenant info", K(ret));
       }
     } else {
-      if (OB_FAIL(cluster_resource_->update_location_tenant_info(tenant_array, locality_array))) {
+      if (OB_FAIL(cluster_resource_->update_location_tenant_info(tenant_array, locality_array, primary_zone_array))) {
         LOG_WARN("update location tenant info failed", K(ret));
       } else {
         LOG_DEBUG("update location tenant info succ");
       }
       ret = OB_SUCCESS;
     }
+
     if (OB_SUCC(ret) && OB_FAIL(schedule_refresh_server_state())) {
       LOG_WARN("fail to schedule refresh server state", K(ret));
     }
@@ -710,7 +787,7 @@ int ObServerStateRefreshCont::handle_server_state(void *data)
       }
     }
   }
-  
+
   if (OB_SUCC(ret)) {
     if (get_global_proxy_config().check_tenant_locality_change) {
       if (OB_FAIL(schedule_imm(REFRESH_ALL_TENANT_EVENT))) {
@@ -752,7 +829,9 @@ int ObServerStateRefreshCont::refresh_all_tenant()
   int ret = OB_SUCCESS;
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
-  const int64_t len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_ALL_TENANT_SQL));
+  const int64_t len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_ALL_TENANT_SQL,
+    IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_) ? OB_ALL_TENANT_TNAME : DBA_OB_TENANTS_VNAME,
+    IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_) ? "previous_locality = ''" : "previous_locality is null"));
   if (OB_UNLIKELY(len <= 0)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
@@ -810,9 +889,10 @@ int ObServerStateRefreshCont::update_last_zs_state(
 
             if (cluster_resource_->is_avail()) {
               const uint64_t new_ss_version = cluster_resource_->server_state_version_ + 1;
-              common::ObIArray<ObServerStateSimpleInfo> &server_state_info = cluster_resource_->get_server_state_info(new_ss_version);
               common::DRWLock &server_state_lock = cluster_resource_->get_server_state_lock(new_ss_version);
               server_state_lock.wrlock();
+              common::ObIArray<ObServerStateSimpleInfo> &server_state_info = cluster_resource_->get_server_state_info(new_ss_version);
+              common::ObIArray<ObServerStateSimpleInfo> &old_server_state_info = cluster_resource_->get_server_state_info(new_ss_version - 1);
               server_state_info.reuse();
               ObServerStateSimpleInfo simple_server_info;
               for (int64_t i = 0; OB_SUCC(ret) && i < servers_state.count(); ++i) {
@@ -833,20 +913,35 @@ int ObServerStateRefreshCont::update_last_zs_state(
                     LOG_WARN("fail to set region name", "region_name", server_state.zone_state_->region_name_, K(ret));
                   } else if (OB_FAIL(simple_server_info.set_idc_name(server_state.zone_state_->idc_name_))) {
                     LOG_WARN("fail to set idc name", "idc_name", server_state.zone_state_->idc_name_, K(ret));
-                  } else if (OB_FAIL(server_state_info.push_back(simple_server_info))) {
-                    LOG_WARN("fail to push back server_info", K(simple_server_info), K(ret));
+                  }
+                  if (OB_SUCC(ret)) {
+                    for (int64_t i = 0; i < old_server_state_info.count(); i++) {
+                      ObServerStateSimpleInfo &tmp_info = old_server_state_info.at(i);
+                      if (simple_server_info.addr_ == tmp_info.addr_) {
+                        simple_server_info.request_sql_cnt_ = tmp_info.request_sql_cnt_;
+                        simple_server_info.last_response_time_ = tmp_info.last_response_time_;
+                        simple_server_info.detect_fail_cnt_ = tmp_info.detect_fail_cnt_;
+                        tmp_info.reset();
+                        break;
+                      }
+                    }
+                    LOG_DEBUG("update server state info", K(simple_server_info), K(new_ss_version));
+                    if (OB_FAIL(server_state_info.push_back(simple_server_info))) {
+                      LOG_WARN("fail to push back server_info", K(simple_server_info), K(ret));
+                    }
                   }
                 }
               }
               if (OB_SUCC(ret)) {
+                ATOMIC_AAF(&(cluster_resource_->server_state_version_), 1);
                 LOG_INFO("succ to update servers_info_version",
                          "cluster_info", cluster_name_,
                          "cluster_id", cluster_id_,
                          "server_state_version", cluster_resource_->server_state_version_,
+                         K(cluster_resource_),
                          K(server_state_info));
               }
               server_state_lock.wrunlock();
-              ATOMIC_AAF(&(cluster_resource_->server_state_version_), 1);
             }
           }
         }
@@ -1096,7 +1191,7 @@ int ObServerStateRefreshCont::handle_newest_server(
                   K(servers_state), K(cur_servers_state_hash), K_(cluster_name), K_(cluster_id));
       }
 
-      if (is_servers_state_changed) {
+      if (is_servers_state_changed || 0 != get_global_resource_pool_processor().ip_set_.size()) {
         // check rslist to see if need to update rslist, ignore ret
         if (OB_FAIL(handle_rs_changed(servers_state))) {
           LOG_WARN("fail to handle rslist changed", K(ret));
@@ -1143,9 +1238,14 @@ int ObServerStateRefreshCont::do_update_server(const ObServerStateInfo &ss_info)
     }
   }
 
+  ObIpEndpoint ip(ss_info.replica_.server_.get_sockaddr());
+  if (!need_update && ObCongestionEntry::ACTIVE == ss_info.cgt_server_state_) {
+    if (OB_HASH_EXIST == get_global_resource_pool_processor().ip_set_.exist_refactored(ip)) {
+      need_update = true;
+    }
+  }
+
   if (need_update) {
-    ObIpEndpoint ip;
-    ops_ip_copy(ip.sa_, ss_info.replica_.server_.get_ipv4(), static_cast<uint16_t>(ss_info.replica_.server_.get_port()));
     bool is_init = !congestion_manager_->is_base_servers_added();
     int64_t cr_version = cluster_resource_->version_;
     if (OB_FAIL(congestion_manager_->update_server(ip, cr_version, cgt_server_state, zone_name, region_name, is_init))) {
@@ -1405,8 +1505,7 @@ int ObServerStateRefreshCont::handle_deleted_server(ObIArray<ObServerStateInfo> 
     }
     if (!found) {
       LOG_INFO("deleted server", "ss_info", last_ss_info);
-      ops_ip_copy(ip.sa_, last_ss_info.replica_.server_.get_ipv4(),
-                  static_cast<uint16_t>(last_ss_info.replica_.server_.get_port()));
+      ip.assign(last_ss_info.replica_.server_.get_sockaddr());
       int64_t cr_version = cluster_resource_->version_;
       if (OB_FAIL(congestion_manager_->update_server(ip, cr_version, ObCongestionEntry::DELETED,
           last_ss_info.zone_state_->zone_name_,
@@ -1496,8 +1595,8 @@ int ObServerStateRefreshUtils::get_zone_state_info(ObMysqlResultHandler &result_
     idc_name.reset();
     zone_type.reset();
     PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "zone", zone_name);
-    PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "is_merging", zone_state.is_merging_, int64_t);
     PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "status", zone_status);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "is_merging", zone_state.is_merging_, int64_t);
 
     if (OB_SUCC(ret)) {
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "region", region_name);
@@ -1567,7 +1666,7 @@ int ObServerStateRefreshUtils::get_server_state_info(
 {
   int ret = OB_SUCCESS;
 
-  char ip_str[OB_IP_STR_BUFF];
+  char ip_str[MAX_IP_ADDR_LENGTH];
   int64_t port = 0;
   ObServerStateInfo server_state;
   const int64_t MAX_DISPLAY_STATUS_LEN = 64;
@@ -1583,7 +1682,7 @@ int ObServerStateRefreshUtils::get_server_state_info(
     display_status_str[0] = '\0';
     zone_name[0] = '\0';
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "svr_ip", ip_str,
-                                     OB_IP_STR_BUFF, tmp_real_str_len);
+                                     MAX_IP_ADDR_LENGTH, tmp_real_str_len);
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "svr_port", port, int64_t);
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "zone", zone_name,
                                      MAX_ZONE_LENGTH + 1, zone_name_len);
@@ -1763,6 +1862,418 @@ int ObServerStateRefreshUtils::order_servers_state(const ObIArray<ObServerStateI
       }
     }
   } //end of order servers
+
+  return ret;
+}
+
+int ObDetectServerStateCont::init(ObClusterResource *cr, int64_t server_detect_refresh_interval_us)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(server_detect_refresh_interval_us <= 0 || NULL == cr)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid argument", K(server_detect_refresh_interval_us), K(ret));
+  } else if (OB_ISNULL(mutex_ = new_proxy_mutex())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to allocate mutex", K(ret));
+  } else {
+    cr->inc_ref();
+    cluster_resource_ = cr;
+    server_detect_state_interval_us_ = server_detect_refresh_interval_us;
+    is_inited_ = true;
+  }
+  return ret;
+}
+
+void ObDetectServerStateCont::kill_this()
+{
+  if (is_inited_) {
+    LOG_INFO("ObDetectServerStateCont will kill self", KPC(this));
+    int ret = OB_SUCCESS;
+    // cancel pending action at first
+    // ignore ret
+    if (OB_FAIL(cancel_pending_action())) {
+      LOG_WARN("fail to cancel pending action", K(ret));
+    }
+
+    if (OB_LIKELY(NULL != cluster_resource_)) {
+      cluster_resource_->dec_ref();
+      cluster_resource_ = NULL;
+    }
+
+    server_detect_state_interval_us_ = 0;
+    kill_this_ = false;
+    is_inited_ = false;
+  }
+  mutex_.release();
+  op_free(this);
+}
+
+DEF_TO_STRING(ObDetectServerStateCont)
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV(K_(is_inited), K_(kill_this), K_(server_detect_state_interval_us), KP_(pending_action), KPC_(cluster_resource));
+  J_OBJ_END();
+  return pos;
+}
+
+int ObDetectServerStateCont::schedule_detect_server_state()
+{
+  int ret = OB_SUCCESS;
+  const int64_t server_detect_mode = get_global_proxy_config().server_detect_mode;
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WARN("not init", K_(is_inited), K(ret));
+  } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
+    ret = OB_SERVER_IS_STOPPING;
+    LOG_WARN("proxy need exit now", K(ret));
+  } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_CALL))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("server state refresh cont must be scheduled in work thread", K(ret));
+  } else if (server_detect_mode > 0) {
+    int64_t ss_version = cluster_resource_->server_state_version_;
+    common::DRWLock &server_state_lock = cluster_resource_->get_server_state_lock(ss_version);
+    server_state_lock.rdlock();
+    common::ObIArray<ObServerStateSimpleInfo> &server_state_info =
+        cluster_resource_->get_server_state_info(ss_version);
+    ObHashSet<ObAddr> addr_set;
+    addr_set.create(4);
+
+    for (int i = 0; i < server_state_info.count(); i++) {
+      ObServerStateSimpleInfo &info = server_state_info.at(i);
+      bool check_pass = true;
+      // Accurate detection method
+      if (1 == server_detect_mode) {
+        check_pass = (info.request_sql_cnt_ > 0);
+        LOG_DEBUG("check detect one server", K(server_detect_mode), K_(info.request_sql_cnt), K(check_pass));
+      }
+
+      if (check_pass || info.detect_fail_cnt_ > 0) {
+        // There is no need to judge whether the push_back is successful here
+        ObDetectOneServerStateCont *cont = NULL;
+        if (OB_ISNULL(cont = op_alloc(ObDetectOneServerStateCont))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WARN("fail to alloc ObDetectOneServerStateCont", K(ret));
+        } else if (OB_FAIL(cont->init(cluster_resource_, info.addr_))) {
+          LOG_WARN("fail to init detect server state cont", K(ret));
+        } else if (OB_ISNULL(self_ethread().schedule_imm(cont, DETECT_SERVER_STATE_EVENT))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("schedule detect one server state failed", K(ret));
+        }
+        LOG_DEBUG("schedule detect one server state", K(info), K(ss_version));
+      } else {
+        ObIpEndpoint point(info.addr_.get_sockaddr());
+        if (OB_HASH_EXIST == get_global_resource_pool_processor().ip_set_.exist_refactored(point)) {
+          addr_set.set_refactored(info.addr_);
+        } else if (OB_HASH_EXIST == cluster_resource_->alive_addr_set_.exist_refactored(point)) {
+          addr_set.set_refactored(info.addr_);
+        }
+      }
+    }
+
+    ObHashSet<ObAddr>::iterator it = addr_set.begin();
+    while (it != addr_set.end()) {
+      ObAddr &addr = it->first;
+      ObDetectOneServerStateCont *cont = NULL;
+      if (OB_ISNULL(cont = op_alloc(ObDetectOneServerStateCont))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("fail to alloc ObDetectOneServerStateCont", K(ret));
+      } else if (OB_FAIL(cont->init(cluster_resource_, addr))) {
+        LOG_WARN("fail to init detect server cont", K(ret));
+      } else if (OB_ISNULL(self_ethread().schedule_imm(cont, DETECT_SERVER_STATE_EVENT))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("schedule detect one server state failed", K(ret));
+      }
+      it++;
+      LOG_DEBUG("schedule detect one server state", K(addr), K(ss_version));
+    }
+    server_state_lock.rdunlock();
+  }
+
+  if (OB_UNLIKELY(server_detect_state_interval_us_ <= 0)) {
+    ret = OB_INNER_STAT_ERROR;
+    LOG_WARN("delay must greater than zero", K_(server_detect_state_interval_us), K(ret));
+  } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(this,
+              HRTIME_USECONDS(server_detect_state_interval_us_), DETECT_SERVER_STATE_EVENT))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to schedule refresh server state", K_(server_detect_state_interval_us),
+              K(server_detect_mode), KPC_(cluster_resource), K(ret));
+  }
+
+  LOG_DEBUG("schedule detect server state", K_(server_detect_state_interval_us),
+             K(server_detect_mode), KPC_(cluster_resource), K(ret));
+
+  return ret;
+}
+
+int ObDetectServerStateCont::main_handler(int event, void *data)
+{
+  UNUSED(data);
+  int event_ret = EVENT_CONT;
+  int ret = OB_SUCCESS;
+  LOG_DEBUG("[ObDetectServerStateCont::main_handler] ", K(event), K(kill_this_));
+
+  switch (event) {
+    case DESTROY_SERVER_STATE_EVENT: {
+      if (0 == ATOMIC_CAS(&set_interval_task_count_, 0, 0)) {
+        LOG_INFO("ObDetectServerStateCont will terminate", KPC_(cluster_resource));
+        kill_this_ = true;
+      } else {
+        LOG_INFO("there are still set_interval tasks which have been scheduled,"
+            " we should reschedule destroy event", KPC(this));
+        if (OB_ISNULL(self_ethread().schedule_imm(this, DESTROY_SERVER_STATE_EVENT))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("fail to schedule DESTROY_SERVER_STATE_EVENT", KPC(this), K(ret));
+        }
+      }
+      break;
+    }
+    case EVENT_IMMEDIATE: {
+      ATOMIC_DEC(&set_interval_task_count_);
+      if (OB_FAIL(cancel_pending_action())) {
+        LOG_WARN("cancel pending action failed", K(ret));
+      } else if (OB_FAIL(schedule_detect_server_state())) {
+        LOG_WARN("fail to schedule detect server state", K(ret));
+      }
+      break;
+    }
+    case DETECT_SERVER_STATE_EVENT: {
+      pending_action_ = NULL;
+      if (OB_FAIL(schedule_detect_server_state())) {
+        LOG_WARN("fail to schedule detect server state", K(ret));
+      }
+      break;
+    }
+    default: {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unknown event", K(event), K(ret));
+      break;
+    }
+  }
+
+  if (kill_this_) {
+    event_ret = EVENT_DONE;
+    kill_this();
+  }
+
+  return event_ret;
+}
+
+int ObDetectServerStateCont::cancel_pending_action()
+{
+  int ret = OB_SUCCESS;
+  if (NULL != pending_action_) {
+    if (OB_FAIL(pending_action_->cancel())) {
+      LOG_WARN("fail to cancel pending action", K_(pending_action), K(ret));
+    } else {
+      pending_action_ = NULL;
+    }
+  }
+
+  return ret;
+}
+
+int ObDetectServerStateCont::set_detect_server_state_interval(const int64_t refresh_interval)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(refresh_interval <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid detect server state interval", K(refresh_interval), K(ret));
+  } else {
+    server_detect_state_interval_us_ = refresh_interval;
+    ATOMIC_INC(&set_interval_task_count_);
+    if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL))) {
+      ATOMIC_DEC(&set_interval_task_count_);
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("schedule imm detect_server_state task error", K(ret));
+    }
+
+  }
+  LOG_DEBUG("set detect server state interval", K_(server_detect_state_interval_us), K(refresh_interval));
+
+  return ret;
+}
+
+ObDetectOneServerStateCont::ObDetectOneServerStateCont()
+      : ObAsyncCommonTask(NULL, "detect_server_state_task"),
+        cluster_resource_(NULL), addr_(), mysql_client_(NULL),
+        mysql_proxy_()
+{
+  SET_HANDLER(&ObDetectOneServerStateCont::main_handler);
+}
+
+int ObDetectOneServerStateCont::init(ObClusterResource *cluster_resource, ObAddr addr)
+{
+  int ret = OB_SUCCESS;
+  const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().detect_server_timeout);
+  if (OB_UNLIKELY(NULL == cluster_resource || !addr.is_valid())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("init obdetectserverstate cont failed", K(cluster_resource), K(ret));
+    // The detection only depends on whether OBServer returns OB_MYSQL_COM_HANDSHAKE,
+    // and will not log in. The following parameters will not be actually used,
+    // only for the initialization of class objects
+    // user_name : detect_username
+    // password : detect_password
+    // database : detect_database
+  } else if (OB_FAIL(mysql_proxy_.init(timeout_ms, ObProxyTableInfo::DETECT_USERNAME_USER, "detect_password", "detect_database"))) {
+    LOG_WARN("fail to init mysql proxy", K(ret));
+  } else {
+    cluster_resource->inc_ref();
+    cluster_resource_ = cluster_resource;
+    addr_ = addr;
+    if (OB_ISNULL(mysql_client_ = op_alloc(ObMysqlClient))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to allocate ObMysqlClient", K(ret));
+    } else if (OB_FAIL(mysql_client_->init_detect_client(cluster_resource_))) {
+      LOG_WARN("fail to init detect client", K(ret));
+    }
+
+    if (OB_FAIL(ret) && (NULL != mysql_client_)) {
+      mysql_client_->kill_this();
+      mysql_client_ = NULL;
+    }
+  }
+
+  return ret;
+}
+
+void ObDetectOneServerStateCont::kill_this()
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_LIKELY(NULL != cluster_resource_)) {
+    cluster_resource_->dec_ref();
+    cluster_resource_ = NULL;
+  }
+  if (OB_LIKELY(NULL != mysql_client_)) {
+    mysql_client_->kill_this();
+    mysql_client_ = NULL;
+  }
+  if (OB_FAIL(cancel_timeout_action())) {
+    LOG_WARN("fail to cancel timeout action", K(ret));
+  }
+
+  if (OB_FAIL(cancel_pending_action())) {
+    LOG_WARN("fail to cancel pending action", K(ret));
+  }
+
+  action_.set_continuation(NULL);
+  op_free(this);
+}
+
+int ObDetectOneServerStateCont::main_handler(int event, void *data)
+{
+  int he_ret = EVENT_CONT;
+  int ret = OB_SUCCESS;
+
+  switch (event) {
+    case EVENT_IMMEDIATE:
+    case DETECT_SERVER_STATE_EVENT: {
+      if (OB_FAIL(detect_server_state_by_sql())) {
+        LOG_WARN("detect server by sql failed", K(ret));
+      }
+      break;
+    }
+    case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
+      if (OB_FAIL(handle_client_resp(data))) {
+        LOG_WARN("fail to handle client resp", K(ret));
+      }
+      break;
+    }
+    default: {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unknown event", K(event), K(data), K(ret));
+      break;
+    }
+  }
+
+  if (OB_FAIL(ret) || terminate_) {
+    terminate_ = true;
+    kill_this();
+    he_ret = EVENT_DONE;
+  }
+
+  return he_ret;
+}
+
+int ObDetectOneServerStateCont::detect_server_state_by_sql()
+{
+  int ret = OB_SUCCESS;
+  char sql[] = "select 'detect server' from dual";
+  LOG_DEBUG("begin to detect server", K_(addr));
+  ObMysqlRequestParam request_param(sql);
+  request_param.set_target_addr(addr_);
+  request_param.set_mysql_client(mysql_client_);
+  request_param.set_is_detect_client(true);
+  const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().detect_server_timeout);
+  if (OB_FAIL(mysql_proxy_.async_read(this, request_param, pending_action_, timeout_ms))) {
+    LOG_WARN("fail to async read", K(ret));
+  }
+
+  return ret;
+}
+
+int ObDetectOneServerStateCont::handle_client_resp(void *data)
+{
+  int ret = OB_SUCCESS;
+  common::DRWLock &server_state_lock1 = cluster_resource_->get_server_state_lock(0);
+  common::DRWLock &server_state_lock2 = cluster_resource_->get_server_state_lock(1);
+  server_state_lock1.rdlock();
+  server_state_lock2.rdlock();
+  common::ObIArray<ObServerStateSimpleInfo> &server_state_info =
+       cluster_resource_->get_server_state_info(cluster_resource_->server_state_version_);
+  bool found = false;
+  for (int i = 0; !found && i < server_state_info.count(); i++) {
+    ObServerStateSimpleInfo &info = server_state_info.at(i);
+    ObIpEndpoint ip(info.addr_.get_sockaddr());
+    ObCongestionEntry::ObServerState state = ObCongestionEntry::ObServerState::ACTIVE;
+    if (addr_ == info.addr_) {
+      if (NULL != data) {
+        (void)ATOMIC_SET(&info.detect_fail_cnt_, 0);
+        state = ObCongestionEntry::ObServerState::DETECT_ALIVE;
+        cluster_resource_->alive_addr_set_.erase_refactored(ip);
+        get_global_resource_pool_processor().ip_set_.erase_refactored(ip);
+        LOG_DEBUG("detect server alive", K(info));
+      } else {
+        int64_t fail_cnt = ATOMIC_AAF(&info.detect_fail_cnt_, 1);
+        LOG_WARN("detect server dead", K(info));
+        if (fail_cnt >= get_global_proxy_config().server_detect_fail_threshold) {
+          // If the detection failure exceeds the number of retries, the server needs to be added to the blacklist
+          (void)ATOMIC_SET(&info.detect_fail_cnt_, 0);
+          state = ObCongestionEntry::ObServerState::DETECT_DEAD;
+          get_global_resource_pool_processor().ip_set_.set_refactored(ip);
+        }
+      }
+
+      if (ObCongestionEntry::ObServerState::DETECT_DEAD == state
+          || ObCongestionEntry::ObServerState::DETECT_ALIVE == state) {
+        ObCongestionManager &congestion_manager = cluster_resource_->congestion_manager_;
+        bool is_init = !congestion_manager.is_base_servers_added();
+        int64_t cr_version = cluster_resource_->version_;
+        if (OB_FAIL(congestion_manager.update_server(ip, cr_version, state,
+                info.zone_name_, info.region_name_, is_init))) {
+          LOG_WARN("fail to update update server", K(cr_version), K(ip),  K(is_init), K(ret));
+        }
+      }
+      found = true;
+    }
+  }
+
+  if (!found) {
+    ObIpEndpoint ip(addr_.get_sockaddr());
+    get_global_resource_pool_processor().ip_set_.erase_refactored(ip);
+    cluster_resource_->alive_addr_set_.erase_refactored(ip);
+    LOG_WARN("server not in cluster", K(ip), KPC_(cluster_resource));
+  }
+  server_state_lock2.rdunlock();
+  server_state_lock1.rdunlock();
+  if (NULL != data) {
+    ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
+    op_free(resp);
+    data = NULL;
+  }
+  terminate_ = true;
 
   return ret;
 }

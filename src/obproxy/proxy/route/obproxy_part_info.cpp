@@ -41,6 +41,7 @@ ObProxyPartInfo::ObProxyPartInfo() : is_oracle_mode_(false)
                                    , sub_part_option_()
                                    , part_key_info_()
                                    , part_mgr_(allocator_)
+                                   , cluster_version_()
 {
 }
 
@@ -93,6 +94,7 @@ int ObProxyPartInfo::alloc(ObProxyPartInfo *&part_info)
 
 void ObProxyPartInfo::free()
 {
+  part_mgr_.destroy();
   allocator_.reset();
   op_fixed_mem_free(this, sizeof(ObProxyPartInfo));
 }

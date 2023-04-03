@@ -261,43 +261,17 @@ bool ObProxyAuthParser::is_nonstandard_username(const ObString &full_name, const
   return bret;
 }
 
-int ObProxyAuthParser::parse_full_user_name(const ObString &full_name,
-                                            const ObString &default_tenant_name,
-                                            const ObString &default_cluster_name,
-                                            ObHSRResult &hsr)
+int ObProxyAuthParser::handle_full_user_name(ObString &full_user_name, const char separator,
+                                             ObString &user, ObString &tenant,
+                                             ObString &cluster, ObString &cluster_id_str)
 {
   int ret = OB_SUCCESS;
-  bool is_standard_username = false;
-  char separator = '\0';
 
-  analyze_user_name_attr(full_name, is_standard_username, separator);
-
-  if (OB_FAIL(do_parse_full_user_name(full_name, separator, default_tenant_name,
-                                      default_cluster_name, hsr))) {
-      LOG_WARN("fail to parse standard full username", K(full_name), K(ret));
-  }
-  return ret;
-}
-
-int ObProxyAuthParser::do_parse_full_user_name(const ObString &full_name,
-                                               const char separator,
-                                               const ObString &default_tenant_name,
-                                               const ObString &default_cluster_name,
-                                               ObHSRResult &hsr)
-{
-  int ret = OB_SUCCESS;
   const char *tenant_pos = NULL;
   const char *user_cluster_pos = NULL;
   const char *cluster_id_pos = NULL;
 
-  ObString full_user_name = full_name;
-  ObString user;
-  ObString tenant;
-  ObString cluster;
   ObString name_id_str;
-  ObString cluster_id_str;
-  char tenant_str[OB_MAX_TENANT_NAME_LENGTH];
-  char cluster_str[OB_PROXY_MAX_CLUSTER_NAME_LENGTH];
 
   if ('\0' == separator) {
     //standard full username: user@tenant#cluster:cluster_id
@@ -330,14 +304,54 @@ int ObProxyAuthParser::do_parse_full_user_name(const ObString &full_name,
     user_cluster_pos = full_user_name.find(separator);
     tenant = full_user_name.split_on(separator);
     user = full_user_name;
-    if (NULL != (cluster_id_pos = user.find(CLUSTER_ID_SEPARATOR))) {
+    if (NULL != (cluster_id_pos = user.find(separator))
+        || NULL != (cluster_id_pos = user.find(CLUSTER_ID_SEPARATOR))) {
       name_id_str = user;
       user = name_id_str.split_on(cluster_id_pos);
       cluster_id_str = name_id_str;
     }
   }
+  return ret;
+}
 
-  if (OB_SUCC(ret)) {
+int ObProxyAuthParser::parse_full_user_name(const ObString &full_name,
+                                            const ObString &default_tenant_name,
+                                            const ObString &default_cluster_name,
+                                            ObHSRResult &hsr)
+{
+  int ret = OB_SUCCESS;
+  bool is_standard_username = false;
+  char separator = '\0';
+
+  analyze_user_name_attr(full_name, is_standard_username, separator);
+
+  if (OB_FAIL(do_parse_full_user_name(full_name, separator, default_tenant_name,
+                                      default_cluster_name, hsr))) {
+      LOG_WARN("fail to parse standard full username", K(full_name), K(ret));
+  }
+  return ret;
+}
+
+int ObProxyAuthParser::do_parse_full_user_name(const ObString &full_name,
+                                               const char separator,
+                                               const ObString &default_tenant_name,
+                                               const ObString &default_cluster_name,
+                                               ObHSRResult &hsr)
+{
+  int ret = OB_SUCCESS;
+
+  ObString full_user_name = full_name;
+  ObString user;
+  ObString tenant;
+  ObString cluster;
+  ObString cluster_id_str;
+  char tenant_str[OB_MAX_TENANT_NAME_LENGTH];
+  char cluster_str[OB_PROXY_MAX_CLUSTER_NAME_LENGTH];
+
+  if (OB_FAIL(handle_full_user_name(full_user_name, separator, user, tenant,
+                                    cluster, cluster_id_str))) {
+    LOG_WARN("fail to handle full user name", K(full_user_name), K(separator), K(ret));
+  } else {
     if (tenant.empty() && cluster.empty()) {
       // if proxy start with specified tenant and cluster, just use them
       ObProxyConfig &proxy_config = get_global_proxy_config();
@@ -406,7 +420,6 @@ int ObProxyAuthParser::parse_handshake_response(ObMysqlAuthRequest &request,
       const char *start = auth.ptr() + MYSQL_NET_HEADER_LENGTH;
       uint32_t len = static_cast<uint32_t>(auth.length() - MYSQL_NET_HEADER_LENGTH);
       OMPKHandshakeResponse &hsr = result.response_;
-      OMPKHandshake handshake;
 
       hsr.set_content(start, len);
       if (OB_FAIL(hsr.decode())) {

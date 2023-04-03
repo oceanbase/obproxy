@@ -139,8 +139,7 @@ const ObProxyColumnSchema CONN_COLUMN_ARRAY[OB_CC_MAX_CONN_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_CC_COMMENTS,         "comments",                   OB_MYSQL_TYPE_VARCHAR)
 };
 
-ObShowNetHandler::ObShowNetHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                   const ObInternalCmdInfo &info)
+ObShowNetHandler::ObShowNetHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObInternalCmdHandler(cont, buf, info), thread_id_(info.get_thread_id()),
       limit_rows_(info.get_limit_rows()), limit_offset_(info.get_limit_offset()), next_thread_id_(0)
 {

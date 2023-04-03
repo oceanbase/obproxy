@@ -87,7 +87,8 @@ public:
                               ObProxyMysqlRequest &client_request,
                               obmysql::ObMySQLCmd &sql_cmd,
                               ObMysqlAnalyzeStatus &status,
-                              const bool is_oracle_mode = false);
+                              const bool is_oracle_mode = false,
+                              const bool is_client_support_ob20_protocol = false);
   static void extract_fileds(const ObExprParseResult& result, obutils::SqlFieldResult &sql_result);
   static int parse_sql_fileds(ObProxyMysqlRequest &client_request,
                               common::ObCollationType connection_collation);
@@ -100,6 +101,11 @@ public:
 
   static int parse_param_type(const int64_t param_num,
                               common::ObIArray<obmysql::EMySQLFieldType> &param_types,
+                              const char *&buf, int64_t &data_len);
+
+  static int parse_param_type(const int64_t param_num,
+                              common::ObIArray<obmysql::EMySQLFieldType> &param_types,
+                              common::ObIArray<obmysql::TypeInfo> &type_infos,
                               const char *&buf, int64_t &data_len);
 
   static int parse_param_type_from_reader(int64_t& param_offset,
@@ -133,17 +139,7 @@ public:
                                const char *&data, int64_t &buf_len, const uint8_t type,
                                const ObCharsetType charset, ObObj &param);
 
-  static int analyze_sql_id(ObProxyMysqlRequest &client_request, common::ObString &sql_id);
-
-private:
-  struct TypeInfo {
-    TypeInfo() : relation_name_(), type_name_(), is_elem_type_(false) {} ;
-    common::ObString relation_name_;
-    common::ObString type_name_;
-    ObObjType elem_type_;
-    bool is_elem_type_;
-    TO_STRING_KV(K_(relation_name), K_(type_name), K_(elem_type), K_(is_elem_type));
-  };
+  static int analyze_sql_id(const ObString &sql, ObProxyMysqlRequest &client_request, common::ObString &sql_id);
 
 private:
   int get_payload_length(const char *buffer);
@@ -171,11 +167,11 @@ private:
                                          const char *&data, int64_t &buf_len, ObObj &param);
   static int parse_mysql_time_value(const char *&data, int64_t &buf_len, ObObj &param);
 
-  static int decode_type_info(const char*& buf, int64_t &buf_len, TypeInfo &type_info);
+  static int decode_type_info(const char*& buf, int64_t &buf_len, obmysql::TypeInfo &type_info);
 
   static int decode_type_info_from_reader(event::ObIOBufferReader* reader,
                                           int64_t &decoded_offset,
-                                          TypeInfo &type_info);
+                                          obmysql::TypeInfo &type_info);
 
   static int get_uint1_from_reader(event::ObIOBufferReader* reader,
                                    int64_t &decoded_offset,

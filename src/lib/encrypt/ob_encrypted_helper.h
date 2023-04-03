@@ -20,7 +20,7 @@
 
 #define SCRAMBLE_LENGTH 20
 #define SHA1_HASH_SIZE 20 /* Hash size in bytes */
-#define ENC_STRING_BUF_LEN SCRAMBLE_LENGTH * 2 + 1 //strlen(hash str) + '*'
+#define ENC_STRING_BUF_LEN SCRAMBLE_LENGTH * 2 + 2 //strlen(hash str) + '*' + '\0'
 #define ENC_BUF_LEN SCRAMBLE_LENGTH * 2 + 2 //strlen(hash str) + '*' + '\0'
 #define SHA1CircularShift(bits,word) (((word) << (bits)) | ((word) >> (32-(bits))))
 

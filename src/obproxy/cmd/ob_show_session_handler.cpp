@@ -137,8 +137,7 @@ const ObProxyColumnSchema STAT_COLUMN_ARRAY[OB_SSC_MAX_STAT_COLUMN_ID]          
   ObProxyColumnSchema::make_schema(OB_SSC_VALUE,  "value",      OB_MYSQL_TYPE_LONGLONG),
 };
 
-ObShowSessionHandler::ObShowSessionHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                           const ObInternalCmdInfo &info)
+ObShowSessionHandler::ObShowSessionHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type()), list_bucket_(0),
       cs_id_array_()
 {

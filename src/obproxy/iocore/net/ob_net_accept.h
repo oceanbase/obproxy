@@ -44,6 +44,8 @@
 #include "utils/ob_proxy_hot_upgrader.h"
 #include "iocore/net/ob_unix_net.h"
 #include "iocore/net/ob_connection.h"
+#include "omt/ob_cpu_table_processor.h"
+#include "obutils/ob_vip_tenant_processor.h"
 
 namespace oceanbase
 {
@@ -118,9 +120,16 @@ private:
   void cancel();
   // for loading balance, get the ethread which has minimal client connections
   event::ObEThread *get_schedule_ethread();
+  event::ObEThread *get_schedule_vip_ethread();
+  event::ObEThread *get_schedule_other_ethread();
+  int create_one_net_ethread(event::ObEThread*& target_ethread);
   // for connection balance in each ethread,
   // only the ethread which has minimal client connections will do accept
   bool accept_balance(event::ObEThread *ethread);
+
+  int fetch_vip_tenant(ObUnixNetVConnection* vc, obutils::ObVipTenant& vip_tenant, bool& lookup_success);
+  int fetch_tenant_cpu(obutils::ObVipTenant& vip_tenant, omt::ObTenantCpu*& tenant_cpu, bool& lookup_success);
+  int handle_tenant_cpu_isolated(omt::ObTenantCpu* tenant_cpu, event::ObEThread*& ethread);
 
 public:
   ObServerConnection server_;

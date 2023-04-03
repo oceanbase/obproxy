@@ -17,6 +17,7 @@
 #include "proxy/mysqllib/ob_i_mysql_respone_analyzer.h"
 #include "proxy/mysqllib/ob_proxy_parser_utils.h"
 #include "utils/ob_zlib_stream_compressor.h"
+#include "obproxy/iocore/eventsystem/ob_io_buffer.h"
 
 namespace oceanbase
 {
@@ -28,6 +29,7 @@ class ObMIOBuffer;
 }
 namespace proxy
 {
+class ObProxyMysqlRequest;
 
 class ObMysqlCompressAnalyzer : public ObIMysqlRespAnalyzer
 {
@@ -76,6 +78,13 @@ public:
                                      ObMysqlResp &resp);
   int analyze_first_response(event::ObIOBufferReader &reader,
                              ObMysqlCompressedAnalyzeResult &result);
+  
+  int analyze_first_request(event::ObIOBufferReader &reader,
+                            ObMysqlCompressedAnalyzeResult &result,
+                            ObProxyMysqlRequest &req,
+                            ObMysqlAnalyzeStatus &status);
+  virtual int analyze_compress_packet_payload(event::ObIOBufferReader &reader,
+                                              ObMysqlCompressedAnalyzeResult &result);
 
   common::ObString get_last_packet_string();
 

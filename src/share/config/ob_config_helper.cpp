@@ -17,11 +17,16 @@ namespace oceanbase
 {
 namespace common
 {
+
 bool ObConfigIpChecker::check(const ObConfigItem &t) const
 {
-  struct sockaddr_in sa;
-  int result = inet_pton(AF_INET, t.str(), &(sa.sin_addr));
-  return result != 0;
+  struct in_addr in;
+  int result = inet_pton(AF_INET, t.str(), &in);
+  if (result != 1) {
+    struct in6_addr in6;
+    result = inet_pton(AF_INET6, t.str(), &in6);
+  }
+  return result == 1;
 }
 
 ObConfigConsChecker:: ~ObConfigConsChecker()

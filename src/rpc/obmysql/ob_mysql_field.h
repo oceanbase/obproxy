@@ -22,6 +22,17 @@ namespace oceanbase
 {
 namespace obmysql
 {
+
+struct TypeInfo {
+  TypeInfo() : relation_name_(), type_name_(), version_(0), is_elem_type_(false) {} ;
+  common::ObString relation_name_;
+  common::ObString type_name_;
+  uint64_t version_;
+  ObObjType elem_type_;
+  bool is_elem_type_;
+  TO_STRING_KV(K_(relation_name), K_(type_name), K_(version), K_(elem_type), K_(is_elem_type));
+};
+
 class ObMySQLField
 {
 public:
@@ -90,6 +101,7 @@ public:
   common::ObString org_cname_; // original column name
   common::ObAccuracy accuracy_;
   EMySQLFieldType type_;      // value type
+  TypeInfo type_info_;         // for complex type
   uint16_t flags_;            // unsigned and so on...
   EMySQLFieldType default_value_; //default value, only effective when command was OB_MYSQL_COM_FIELD_LIST
   uint16_t charsetnr_;    //character set of table

@@ -98,6 +98,8 @@ class ObProxyMutex;
 #define VC_EVENT_ACTIVE_TIMEOUT          (VC_EVENT_EVENTS_START+6)
 
 #define VC_EVENT_HELLO_PKT_READ_READY    (VC_EVENT_EVENTS_START+7)
+// OBProxy detect server dead, should close connection
+#define VC_EVENT_DETECT_SERVER_DEAD      (VC_EVENT_EVENTS_START+8)
 
 // ObEvent return codes
 #define VC_EVENT_DONE                CONTINUATION_DONE
@@ -184,6 +186,8 @@ public:
    *   No activity was performed for a certain period.
    * VC_EVENT_ACTIVE_TIMEOUT
    *   Write operation continued beyond a time limit.
+   * VC_EVENT_DETECT_SERVER_DEAD
+   *   find Server dead, close connection
    * VC_EVENT_ERROR
    *   An error occurred during the write
    *
@@ -620,6 +624,10 @@ static inline const char *get_vc_event_name(int32_t event)
 
     case VC_EVENT_ACTIVE_TIMEOUT:
       ret = "VC_EVENT_ACTIVE_TIMEOUT";
+      break;
+
+    case VC_EVENT_DETECT_SERVER_DEAD:
+      ret = "VC_EVENT_DETECT_SERVER_DEAD";
       break;
 
     default:

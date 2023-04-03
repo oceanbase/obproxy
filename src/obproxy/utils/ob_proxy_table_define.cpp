@@ -98,10 +98,14 @@ const char *ObProxyTableInfo::PROXY_VIP_TENANT_VERSION_NAME                 = "o
 const char *ObProxyTableInfo::READ_ONLY_USERNAME_USER                       = "proxyro";
 const char *ObProxyTableInfo::READ_ONLY_USERNAME                            = "proxyro@sys";
 const char *ObProxyTableInfo::READ_ONLY_DATABASE                            = "oceanbase";
+const char *ObProxyTableInfo::OBSERVER_SYS_PASSWORD                         = "observer_sys_password";
+const char *ObProxyTableInfo::OBSERVER_SYS_PASSWORD1                        = "observer_sys_password1";
 
 const char *ObProxyTableInfo::TEST_MODE_USERNAME                            = "root@sys";
 const char *ObProxyTableInfo::TEST_MODE_PASSWORD                            = "";
 const char *ObProxyTableInfo::TEST_MODE_DATABASE                            = "oceanbase";
+
+const char *ObProxyTableInfo::DETECT_USERNAME_USER                          = "detect_user";
 
 const ObString ObProxyTableInfo::PROXY_ALL_PROXY_HEADER                     = ObString::make_string("all_proxy");
 const ObString ObProxyTableInfo::PROXY_CONFIG_VERSION_NAME                  = ObString::make_string(".config_version");
@@ -132,7 +136,7 @@ int ObProxyTableInfo::get_create_proxy_table_sql(char *buf, const int64_t len)
   } else {
     int64_t w_len = snprintf(buf, len, CREATE_PROXY_TABLE_SQL,
                              PROXY_INFO_TABLE_NAME,
-                             OB_IP_STR_BUFF,                         // ip
+                             MAX_IP_ADDR_LENGTH,                         // ip
                              OB_MAX_APP_NAME_LENGTH,                 // app_name
                              OB_MAX_PROXY_BINARY_VERSION_LEN,        // binary_version
                              OB_MAX_UNAME_INFO_LEN,                  // system_info
@@ -239,7 +243,7 @@ int ObProxyTableInfo::get_create_proxy_vip_tenant_table_sql(char *buf, const int
   } else {
     int64_t w_len = snprintf(buf, len, CREATE_PROXY_VIP_TENANT_TABLE_SQL,
                              PROXY_VIP_TENANT_TABLE_NAME,           // table name
-                             OB_IP_STR_BUFF,                        // vip
+                             MAX_IP_ADDR_LENGTH,                        // vip
                              OB_MAX_TENANT_NAME_LENGTH,             // tenant_name length
                              OB_PROXY_MAX_CLUSTER_NAME_LENGTH,      // cluster_name length
                              OB_MAX_CONFIG_INFO_LEN                 // info length

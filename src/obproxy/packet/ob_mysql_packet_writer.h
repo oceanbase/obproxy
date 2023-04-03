@@ -39,15 +39,19 @@ public:
   ~ObMysqlPacketWriter() {}
 
   // write mysql packet to mio buffer
+  static int write_packet(event::ObMIOBuffer &mio_buf, const obmysql::ObMySQLPacket &packet);
   static int write_packet(event::ObMIOBuffer &mio_buf,
-                          const obmysql::ObMySQLPacket &packet);
+                          const obmysql::ObMySQLPacket &packet,
+                          const int64_t packet_len);
+  
   static int write_field_packet(event::ObMIOBuffer &mio_buf,
                                 const obmysql::OMPKField &field_packet);
   static int write_row_packet(event::ObMIOBuffer &mio_buf,
                               const obmysql::OMPKRow &row_packet);
   // write raw packet string to mio buffer
-  static int write_raw_packet(event::ObMIOBuffer &mio_buf,
-                              const common::ObString &raw_packet);
+  static int write_raw_packet(event::ObMIOBuffer &mio_buf, const common::ObString &raw_packet);
+  static int write_raw_packet(event::ObMIOBuffer &write_buf, const obmysql::ObMySQLRawPacket &packet);
+  
   // write request packet to mio buffer
   static int write_request_packet(event::ObMIOBuffer &mio_buf,
                                   const obmysql::ObMySQLCmd cmd,
@@ -56,9 +60,6 @@ public:
                                   const bool need_compress,
                                   const bool is_checksum_on);
 private:
-  static int write_packet(event::ObMIOBuffer &mio_buf,
-                          const obmysql::ObMySQLPacket &packet,
-                          const int64_t packet_len);
   // @packet, normal mysql packet
   // compress the packet and write compressed packet to mio_buf
   static int write_compressed_packet(event::ObMIOBuffer &mio_buf,
@@ -72,6 +73,8 @@ private:
                                      const obmysql::ObMySQLRawPacket &packet,
                                      uint8_t &compressed_seq,
                                      const bool is_checksum_on);
+  
+  DISALLOW_COPY_AND_ASSIGN(ObMysqlPacketWriter);
 };
 
 inline int ObMysqlPacketWriter::write_packet(event::ObMIOBuffer &mio_buf,

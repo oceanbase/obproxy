@@ -30,10 +30,10 @@ class ObProxyPartOption
 public:
   ObProxyPartOption();
   ~ObProxyPartOption() {}
-  bool is_range_part() const;
-  bool is_hash_part() const;
-  bool is_key_part() const;
-  bool is_list_part() const;
+  bool is_range_part(const int64_t cluster_version) const;
+  bool is_hash_part(const int64_t cluster_version) const;
+  bool is_key_part(const int64_t cluster_version) const;
+  bool is_list_part(const int64_t cluster_version) const;
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
@@ -68,6 +68,8 @@ public:
 
   share::schema::ObPartitionLevel get_part_level() const { return part_level_; }
   common::ObCollationType get_table_cs_type() const { return table_cs_type_; }
+  common::ObIArray<common::ObString> &get_part_columns() { return part_columns_; }
+  common::ObIArray<common::ObString> &get_sub_part_columns() { return sub_part_columns_; }
   ObProxyPartOption &get_first_part_option() { return first_part_option_; }
   ObProxyPartOption &get_sub_part_option() { return sub_part_option_; }
   ObProxyPartMgr &get_part_mgr() { return part_mgr_; }
@@ -76,6 +78,8 @@ public:
 
   void set_part_level(const share::schema::ObPartitionLevel level) { part_level_ = level; }
   void set_table_cs_type(const common::ObCollationType cs_type) { table_cs_type_ = cs_type; }
+  int64_t get_cluster_version() const { return cluster_version_; }
+  void set_cluster_version(const int64_t cluster_version) { cluster_version_ = cluster_version; }
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
@@ -89,31 +93,35 @@ private:
   share::schema::ObPartitionLevel part_level_;
   common::ObCollationType table_cs_type_;
 
+  common::ObSEArray<common::ObString, 2> part_columns_;
+  common::ObSEArray<common::ObString, 2> sub_part_columns_;
+
   common::ObArenaAllocator allocator_;
   ObProxyPartOption first_part_option_;
   ObProxyPartOption sub_part_option_;
   ObProxyPartKeyInfo part_key_info_;
   ObProxyPartMgr part_mgr_;
+  int64_t cluster_version_;
 };
 
-inline bool ObProxyPartOption::is_range_part() const
+inline bool ObProxyPartOption::is_range_part(const int64_t cluster_version) const
 {
-  return share::schema::is_range_part(part_func_type_);
+  return share::schema::is_range_part(part_func_type_, cluster_version);
 }
 
-inline bool ObProxyPartOption::is_hash_part() const
+inline bool ObProxyPartOption::is_hash_part(const int64_t cluster_version) const
 {
-  return share::schema::is_hash_part(part_func_type_);
+  return share::schema::is_hash_part(part_func_type_, cluster_version);
 }
 
-inline bool ObProxyPartOption::is_key_part() const
+inline bool ObProxyPartOption::is_key_part(const int64_t cluster_version) const
 {
-  return share::schema::is_key_part(part_func_type_);
+  return share::schema::is_key_part(part_func_type_, cluster_version);
 }
 
-inline bool ObProxyPartOption::is_list_part() const
+inline bool ObProxyPartOption::is_list_part(const int64_t cluster_version) const
 {
-  return share::schema::is_list_part(part_func_type_);
+  return share::schema::is_list_part(part_func_type_, cluster_version);
 }
 
 } // namespace proxy

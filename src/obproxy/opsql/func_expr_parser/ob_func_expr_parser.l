@@ -63,8 +63,11 @@ do {\
 
 space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
-int_num                 [\-\+]?[0-9]+
-number      ([0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*E[-+]?[0-9]+)|("."[0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*)|("."[0-9]+)
+
+/* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
+int_num                 [\-\+]?[0-9]{1,17}
+number      ([\-]?[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*E[-+]?[0-9]+)|([\-]?"."[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*)|([\-]?"."[0-9]+)|([\-\+]?[0-9]{18,})
+
 
 whitespace              ({space}+)
 c_cmt_begin             \/\*
@@ -97,16 +100,22 @@ rightbracket  \)
 endtoken \#
 
 %%
-substr      { return FUNC_SUBSTR; }
-substring   { return FUNC_SUBSTR; }
-concat      { return FUNC_CONCAT; }
-hash        { return FUNC_HASH; }
-toint       { return FUNC_TOINT; }
-div         { return FUNC_DIV; }
-add         { return FUNC_ADD; }
-sub         { return FUNC_SUB; }
-mul         { return FUNC_MUL; }
-testload    { return FUNC_TESTLOAD; }
+substr        { return FUNC_SUBSTR; }
+substring     { return FUNC_SUBSTR; }
+concat        { return FUNC_CONCAT; }
+hash          { return FUNC_HASH; }
+toint         { return FUNC_TOINT; }
+div           { return FUNC_DIV; }
+add           { return FUNC_ADD; }
+sub           { return FUNC_SUB; }
+mul           { return FUNC_MUL; }
+testload      { return FUNC_TESTLOAD; }
+to_date       { return FUNC_TO_DATE; }
+to_timestamp  { return FUNC_TO_TIMESTAMP; }
+nvl           { return FUNC_NVL; }
+to_char       { return FUNC_TO_CHAR; }
+mod           { return FUNC_MOD; }
+sysdate       { return FUNC_SYSDATE; }
 
 {endtoken}  { return TOKEN_SPECIAL; }
 

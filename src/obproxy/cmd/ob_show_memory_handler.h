@@ -29,8 +29,7 @@ namespace obutils
 class ObShowMemoryHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowMemoryHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                      const ObInternalCmdInfo &info);
+  ObShowMemoryHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowMemoryHandler() {}
   int handle_show_memory(int event, void *data);
   int handle_show_objpool(int event, void *data);

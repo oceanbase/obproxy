@@ -27,6 +27,7 @@
 #include "optimizer/ob_sharding_select_log_plan.h"
 #include "optimizer/ob_proxy_optimizer_processor.h"
 #include "iocore/net/ob_unix_net_vconnection.h"
+#include "ob_proxy_init.h"
 
 namespace oceanbase
 {
@@ -107,10 +108,12 @@ public:
   inline ObMysqlServerSession *get_cur_server_session() const { return cur_ss_; }
   inline ObMysqlServerSession *get_lii_server_session() const { return lii_ss_; }
   inline ObMysqlServerSession *get_last_bound_server_session() const { return last_bound_ss_; }
+  inline net::ObIpEndpoint &get_trans_coordinator_ss_addr() { return trans_coordinator_ss_addr_; }
   inline void set_server_session(ObMysqlServerSession *ssession) { bound_ss_ = ssession; }
   inline void set_cur_server_session(ObMysqlServerSession *ssession) { cur_ss_ = ssession; }
   inline void set_lii_server_session(ObMysqlServerSession *ssession) { lii_ss_ = ssession; }
   inline void set_last_bound_server_session(ObMysqlServerSession *ssession) { last_bound_ss_ = ssession; }
+  inline void set_trans_coordinator_ss_addr(const sockaddr &addr) { trans_coordinator_ss_addr_.assign(addr); }
   bool is_hold_conn_id(const uint32_t conn_id);
 
   // Functions for manipulating api hooks
@@ -132,6 +135,10 @@ public:
 
   //proxy inner mysql_client do need convert vip to tenant
   bool is_need_convert_vip_to_tname();
+
+  // client cap judgement
+  bool is_client_support_full_link_trace() const { return session_info_.is_client_support_full_link_trace(); }
+  bool is_client_support_new_extra_info() const { return session_info_.is_client_support_new_extra_info(); }
 
   int64_t get_current_tid() const { return current_tid_; }
 
@@ -225,6 +232,7 @@ public:
 
   void set_need_delete_cluster() { need_delete_cluster_ = true; }
   void set_proxy_mysql_client() { is_proxy_mysql_client_ = true; }
+  void set_can_send_request() { can_direct_send_request_ = true; }
   void set_session_pool_client(bool is_session_pool_client) {
     session_info_.is_session_pool_client_ = is_session_pool_client;
   }
@@ -233,18 +241,26 @@ public:
   void set_first_dml_sql_got() { is_first_dml_sql_got_ = true; }
   bool is_first_dml_sql_got() const { return is_first_dml_sql_got_; }
 
+  uint8_t get_compressed_seq() const { return compressed_seq_; }
+  void set_compressed_seq(const uint8_t seq) { compressed_seq_ = seq; }
+
   void set_need_send_trace_info(bool is_need_send_trace_info) { is_need_send_trace_info_ = is_need_send_trace_info; }
   bool is_need_send_trace_info() const { return is_need_send_trace_info_; }
   void set_already_send_trace_info(bool is_already_send_trace_info) { is_already_send_trace_info_ = is_already_send_trace_info; }
   bool is_already_send_trace_info() const { return is_already_send_trace_info_; }
 
-  void set_first_handle_close_request(bool is_first_handle_close_request) { is_first_handle_close_request_ = is_first_handle_close_request; }
-  bool is_first_handle_close_request() const { return is_first_handle_close_request_; }
+  void set_first_handle_request(bool is_first_handle_request) { is_first_handle_request_ = is_first_handle_request; }
+  bool is_first_handle_request() const { return is_first_handle_request_; }
   void set_in_trans_for_close_request(bool is_in_trans_for_close_request) { is_in_trans_for_close_request_ = is_in_trans_for_close_request; }
   bool is_in_trans_for_close_request() const { return is_in_trans_for_close_request_; }
+  void set_last_request_in_trans(bool is_in_trans) { is_last_request_in_trans_ = is_in_trans; }
+  bool is_last_request_in_trans() { return is_last_request_in_trans_; }
+  void set_trans_internal_routing(bool is_internal_routing) { is_trans_internal_routing_ = is_internal_routing; }
+  bool is_trans_internal_routing() const { return is_trans_internal_routing_; }
   void set_need_return_last_bound_ss(bool is_need_return_last_bound_ss) { is_need_return_last_bound_ss_ = is_need_return_last_bound_ss; }
   bool is_need_return_last_bound_ss() const { return is_need_return_last_bound_ss_; }
-
+  void set_proxy_enable_trans_internal_routing(bool is_enable_internal_route) { is_proxy_enable_trans_internal_routing_ = is_enable_internal_route; }
+  bool is_proxy_enable_trans_internal_routing() const { return is_proxy_enable_trans_internal_routing_; }
   bool enable_analyze_internal_cmd() const { return session_info_.enable_analyze_internal_cmd(); }
   bool is_metadb_user() const { return session_info_.is_metadb_user(); }
   bool is_proxysys_user() const { return session_info_.is_proxysys_user(); }
@@ -274,9 +290,6 @@ public:
   void set_can_direct_ok(bool val) { can_direct_ok_ = val; }
 
   // ps cache
-  ObTextPsEntry *get_text_ps_entry(const common::ObString &sql);
-  int add_text_ps_entry(ObTextPsEntry *entry) { return text_ps_cache_.set_text_ps_entry(entry); }
-  int delete_text_ps_entry(ObTextPsEntry *entry) { return text_ps_cache_.delete_text_ps_entry(entry); }
   uint32_t inc_and_get_ps_id() {
     uint32_t ps_id = ++ps_id_;
     if (ps_id >= (CURSOR_ID_START)) {
@@ -321,6 +334,7 @@ public:
 
   bool can_direct_ok_;
   bool is_proxy_mysql_client_; // used for ObMysqlClient
+  bool can_direct_send_request_; // used for ObMysqlClient
   bool can_server_session_release_;  //used for session release
   proxy::ObCommonAddr common_addr_; // session pool server_addr
 
@@ -337,12 +351,16 @@ public:
   bool is_waiting_trans_first_request_;
   bool is_need_send_trace_info_;
   bool is_already_send_trace_info_;
-  bool is_first_handle_close_request_;
+  bool is_first_handle_request_;
   bool is_in_trans_for_close_request_;
+  bool is_last_request_in_trans_;
+  bool is_trans_internal_routing_;
   bool is_need_return_last_bound_ss_;
   bool need_delete_cluster_;
   bool is_first_dml_sql_got_;//default false, will route with merge status careless
                              //it is true after user first dml sql arrived.
+  bool is_proxy_enable_trans_internal_routing_; // from config, update each tranasction start
+  uint8_t compressed_seq_;   // seq management between client & proxy
 
   obutils::ObClusterResource *cluster_resource_;
   ObTableEntry *dummy_entry_; // __all_dummy's table location entry
@@ -366,8 +384,6 @@ public:
 #endif
 
 private:
-  static const uint32_t LOCAL_IPV4_ADDR = 0x100007F;
-
   enum ObClientReadState
   {
     MCS_INIT = 0,
@@ -418,9 +434,14 @@ private:
   ObMysqlServerSession *lii_ss_;
   ObMysqlServerSession *last_bound_ss_;
 
+  // coordinator session address in transaction
+  net::ObIpEndpoint trans_coordinator_ss_addr_;
+
   event::ObMIOBuffer *read_buffer_;
   event::ObIOBufferReader *buffer_reader_;
+
   ObMysqlSM *mysql_sm_;
+  
   ObClientReadState read_state_;
 
   event::ObVIO *ka_vio_;
@@ -437,7 +458,6 @@ private:
   optimizer::ObShardingSelectLogPlan *select_plan_;
   uint32_t ps_id_;
   uint32_t cursor_id_;
-  ObBasePsEntryCache text_ps_cache_;
   bool using_ldg_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObMysqlClientSession);
@@ -445,11 +465,11 @@ private:
 
 inline void ObMysqlClientSession::set_local_connection()
 {
-  if (is_proxy_mysql_client_) {
+  if (is_proxy_mysql_client_ || RUN_MODE_CLIENT == g_run_mode) {
     is_local_connection_ = true;
   } else {
     if (OB_NOT_NULL(client_vc_)) {
-      is_local_connection_ = LOCAL_IPV4_ADDR == client_vc_->get_local_ip();
+      is_local_connection_ = net::ops_is_ip_loopback(client_vc_->get_local_addr());
     }
   }
 }
@@ -464,30 +484,16 @@ inline uint32_t ObMysqlClientSession::get_next_ps_stmt_id()
   return ret;
 }
 
-ObTextPsEntry *ObMysqlClientSession::get_text_ps_entry(const common::ObString &sql)
-{
-  int ret = OB_SUCCESS;
-  ObTextPsEntry *entry = NULL;
-  if (OB_FAIL(text_ps_cache_.get_text_ps_entry(sql, entry))) {
-    if (OB_HASH_NOT_EXIST != ret) {
-      _PROXY_LOG(WARN, "fail to get text ps entry with sql, ret =%d", ret);
-    } else {
-      _PROXY_LOG(WARN, "text ps entry not exist, ret=%d", ret);
-    }
-  }
-  return entry;
-}
-
 inline common::ObAddr ObMysqlClientSession::get_real_client_addr(net::ObNetVConnection *server_vc)
 {
   common::ObAddr ret_addr;
-  if (is_proxy_mysql_client_) {
+  if (is_proxy_mysql_client_ || RUN_MODE_CLIENT == g_run_mode) {
     if (OB_NOT_NULL(server_vc)) {
-      ret_addr.set_ipv4_addr(ntohl(server_vc->get_local_ip()), server_vc->get_local_port());
+      ret_addr.set_sockaddr(server_vc->get_local_addr());
     }
   } else {
     if (OB_NOT_NULL(client_vc_)) {
-      ret_addr.set_ipv4_addr(ntohl(client_vc_->get_real_client_ip()), client_vc_->get_real_client_port());
+      ret_addr.set_sockaddr(client_vc_->get_real_client_addr());
     }
   }
   PROXY_CS_LOG(DEBUG, "succ to get real client addr", K(ret_addr));
@@ -568,11 +574,14 @@ inline common::ObMysqlRandom &get_random_seed(const event::ObEThread &t)
 
 int init_cs_map_for_thread();
 int init_random_seed_for_thread();
+int init_random_seed_for_one_thread(int64_t index);
 
 bool is_proxy_conn_id_avail(const uint64_t conn_id);
 bool is_server_conn_id_avail(const uint64_t conn_id);
 bool is_conn_id_avail(const int64_t conn_id, bool &is_proxy_generated);
 int extract_thread_id(const uint32_t cs_id, int64_t &thread_id);
+
+int init_cs_map_for_one_thread(int64_t index);
 
 } // end of namespace proxy
 } // end of namespace obproxy

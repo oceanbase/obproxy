@@ -83,11 +83,12 @@ static inline void add_param_node(ObProxyParamNodeList *list, ObFuncExprParseRes
 %token DUMMY_FUNCTION_CLAUSE
  /* reserved keyword */
 %token TOKEN_SPECIAL FUNC_SUBSTR FUNC_CONCAT FUNC_HASH FUNC_TOINT FUNC_DIV FUNC_ADD FUNC_SUB FUNC_MUL FUNC_TESTLOAD
+%token FUNC_TO_DATE FUNC_TO_TIMESTAMP FUNC_NVL FUNC_TO_CHAR FUNC_MOD FUNC_SYSDATE
 %token END_P ERROR IGNORED_WORD
  /* type token */
 %token<str> NAME_OB STR_VAL NUMBER_VAL
 %token<num> INT_VAL
-%type<function_type> func_name
+%type<function_type> func_name reserved_func
 %type<list> param_list
 %type<func_node> func_expr
 %type<param_node> param
@@ -113,6 +114,11 @@ func_expr: func_name '(' param_list ')'
             malloc_func_expr_node($$, result, $1);
             $$->child_ = NULL;
           }
+          | reserved_func 
+          {
+            malloc_func_expr_node($$, result, $1);
+            $$->child_ = NULL;
+          }
 
 func_name: FUNC_SUBSTR { $$ = OB_PROXY_EXPR_TYPE_FUNC_SUBSTR; }
          | FUNC_CONCAT { $$ = OB_PROXY_EXPR_TYPE_FUNC_CONCAT; }
@@ -123,6 +129,13 @@ func_name: FUNC_SUBSTR { $$ = OB_PROXY_EXPR_TYPE_FUNC_SUBSTR; }
          | FUNC_SUB    { $$ = OB_PROXY_EXPR_TYPE_FUNC_SUB; }
          | FUNC_MUL    { $$ = OB_PROXY_EXPR_TYPE_FUNC_MUL; }
          | FUNC_TESTLOAD { $$ = OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD; }
+         | FUNC_TO_DATE { $$ = OB_PROXY_EXPR_TYPE_FUNC_TO_DATE; }
+         | FUNC_TO_TIMESTAMP { $$ = OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP; }
+         | FUNC_NVL { $$ = OB_PROXY_EXPR_TYPE_FUNC_NVL; }
+         | FUNC_TO_CHAR { $$ = OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR; }
+         | FUNC_MOD { $$ = OB_PROXY_EXPR_TYPE_FUNC_MOD; }
+
+reserved_func: FUNC_SYSDATE  { $$ = OB_PROXY_EXPR_TYPE_FUNC_SYSDATE; }
 
 param_list: param
           {

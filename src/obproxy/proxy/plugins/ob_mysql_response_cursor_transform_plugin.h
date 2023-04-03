@@ -115,9 +115,9 @@ public:
   {
     return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
-            && (obmysql::OB_MYSQL_COM_STMT_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_
-                && sm->trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()
-                && sm->trans_state_.trans_info_.server_response_.get_analyze_result().is_resultset_resp()));
+            && obmysql::OB_MYSQL_COM_STMT_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_
+            && !sm->trans_state_.trans_info_.client_request_.get_parse_result().is_dml_stmt()
+            && sm->trans_state_.trans_info_.server_response_.get_analyze_result().is_resultset_resp());
   }
 
 private:

@@ -1563,7 +1563,7 @@ static int double_float(const ObObjType expect_type, ObObjCastParams &params,
     ret = OB_ERR_UNEXPECTED;
     LOG_ERROR("invalid input type",
         K(ret), K(in), K(expect_type));
-  } else if (CAST_FAIL(real_range_check(expect_type, in.get_double(), value))) {
+  } else if (!lib::is_oracle_mode() && CAST_FAIL(real_range_check(expect_type, in.get_double(), value))) {
   } else {
     out.set_float(expect_type, value);
   }
@@ -2975,17 +2975,30 @@ static int string_datetime(const ObObjType expect_type, ObObjCastParams &params,
 {
   int ret = OB_SUCCESS;
   ObScale res_scale = -1;
+  ObString utf8_string;
+
   if (OB_UNLIKELY((ObStringTC != in.get_type_class()
                   && ObTextTC != in.get_type_class())
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
-     ret = OB_ERR_UNEXPECTED;
-     LOG_ERROR("invalid input type",
-         K(ret), K(in), K(expect_type));
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("invalid input type",
+        K(ret), K(in), K(expect_type));
+  } else if (lib::is_oracle_mode() && in.is_blob()) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_ERROR("invalid use of blob type", K(ret), K(in), K(expect_type));
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "Cast to blob type");
+  } else if (OB_FAIL(convert_string_collation(in.get_string(), in.get_collation_type(), utf8_string, ObCharset::get_system_collation(), params))) {
+    LOG_WARN("convert_string_collation", K(ret));
   } else {
-    const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
     int64_t value = 0;
-    if (CAST_FAIL(ObTimeConverter::str_to_datetime(in.get_string(), tz_info, value, &res_scale))) {
+    ObTimeConvertCtx cvrt_ctx(params.dtc_params_.tz_info_, ObTimestampType == expect_type);
+    if (lib::is_oracle_mode()) {
+      cvrt_ctx.oracle_nls_format_ = params.dtc_params_.get_nls_format(ObDateTimeType);
+      CAST_FAIL(ObTimeConverter::str_to_date_oracle(utf8_string, cvrt_ctx, value));
     } else {
+      CAST_FAIL(ObTimeConverter::str_to_datetime(utf8_string, cvrt_ctx.tz_info_, value, &res_scale));
+    }
+    if(OB_SUCC(ret)) {
       SET_RES_DATETIME(out);
     }
   }
@@ -3067,29 +3080,56 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
     ObString str;
     in.get_string(str);
     if (0 != str.length()
-        && CS_TYPE_BINARY != in.get_collation_type()
-        && CS_TYPE_BINARY != params.dest_collation_
+        // in mysql mode if charset is binary then not convert
+        // in oracle mode if charset is binary then convert
+        && ((CS_TYPE_BINARY != in.get_collation_type() && CS_TYPE_BINARY != params.dest_collation_)
+             || lib::is_oracle_mode())
         && CS_TYPE_INVALID != in.get_collation_type()
         && CS_TYPE_INVALID != params.dest_collation_
         && (ObCharset::charset_type_by_coll(in.get_collation_type())
             != ObCharset::charset_type_by_coll(params.dest_collation_))) {
       char *buf = NULL;
-      // buf_len is related to the encoding length, gbk uses 2 bytes to encode a character, utf8mb4 uses 1 to 4 bytes
-      // CharConvertFactorNum is a multiple of the requested memory size
-      const int32_t CharConvertFactorNum = 2;
+      const int32_t CharConvertFactorNum = 4;
       int32_t buf_len = str.length() * CharConvertFactorNum;
       uint32_t result_len = 0;
       if (OB_UNLIKELY(NULL == (buf = static_cast<char*>(params.alloc(buf_len))))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_ERROR("alloc memory failed", K(ret));
-      } else if (OB_FAIL(ObCharset::charset_convert(in.get_collation_type(),
-                                                    str.ptr(),
-                                                    str.length(),
-                                                    params.dest_collation_,
-                                                    buf,
-                                                    buf_len,
-                                                    result_len))) {
-        LOG_WARN("charset convert failed", K(ret), K(in.get_collation_type()), K(params.dest_collation_));
+      } else {
+        ret = ObCharset::charset_convert(in.get_collation_type(),
+                                         str.ptr(),
+                                         str.length(),
+                                         params.dest_collation_,
+                                         buf,
+                                         buf_len,
+                                         result_len);
+        if (OB_SUCCESS != ret) {
+          int32_t str_offset = 0;
+          int32_t buf_offset = 0;
+          ObString question_mark("?");
+          while (str_offset < str.length() && buf_offset + question_mark.length() <= buf_len) {
+            int64_t offset = ObCharset::charpos(in.get_collation_type(), str.ptr() + str_offset,
+                str.length() - str_offset, 1);
+            ret = ObCharset::charset_convert(in.get_collation_type(), str.ptr() + str_offset,
+              static_cast<uint32_t>(offset), params.dest_collation_, buf + buf_offset, buf_len - buf_offset, result_len);
+            str_offset += static_cast<int32_t>(offset);
+            if (OB_SUCCESS == ret && result_len > 0) {
+              buf_offset += result_len;
+            } else {
+              MEMCPY(buf + buf_offset, question_mark.ptr(), question_mark.length());
+              buf_offset += question_mark.length();
+            }
+          }
+          if (str_offset < str.length()) {
+            ret = OB_SIZE_OVERFLOW;
+            LOG_WARN("size overflow", K(ret), K(str));
+          } else {
+            // The log is printed here to remind that there are characters that fail to convert and are replaced by '?'
+            LOG_DEBUG("charset convert failed", K(ret), K(in.get_collation_type()), K(params.dest_collation_));
+            result_len = static_cast<uint32_t>(buf_offset);
+            ret = OB_SUCCESS;
+          }
+        }
       }
 
       LOG_DEBUG("convert result", K(str), "result", ObHexEscapeSqlStr(ObString(result_len, buf)));
@@ -4125,9 +4165,17 @@ int obj_accuracy_check(ObCastCtx &cast_ctx,
                        const ObObj *&res_obj)
 {
   int ret = OB_SUCCESS;
+  bool valid_accuracy = true;
+  ObObjType type = obj.get_type();
+  if (ob_is_number_tc(type) || ob_is_double_tc(type) || ob_is_float_tc(type)) {
+    if (accuracy.precision_ == -1 || accuracy.scale_ == -1) {
+      valid_accuracy = false;     // invalid accuracy
+    }
+  }
 
-  if (accuracy.is_valid()) {
-    LOG_DEBUG("obj_accuracy_check before", K(obj), K(accuracy), K(cs_type));
+  LOG_DEBUG("obj_accuracy_check before", K(obj), K(accuracy), K(cs_type), K(valid_accuracy));
+  
+  if (valid_accuracy && accuracy.is_valid()) {
     switch (obj.get_type_class()) {
       case ObFloatTC: {
         ret = float_range_check(cast_ctx, accuracy, obj, buf_obj, res_obj, cast_ctx.cast_mode_);

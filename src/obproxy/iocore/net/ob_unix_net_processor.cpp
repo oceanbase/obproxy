@@ -250,7 +250,7 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
   if (OB_FAIL(ret)) {
     if (NULL != na) {
       if (NULL != na->action_) {
-        delete na->action_;
+        // na->action is of type ObPtr
         na->action_ = NULL;
       } else {
         delete na;
@@ -456,6 +456,15 @@ private:
         if (!action_.cancelled_) {
           action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED,
                                               reinterpret_cast<void *>(-ENET_CONNECT_TIMEOUT));
+        }
+        break;
+
+      case VC_EVENT_DETECT_SERVER_DEAD:
+        PROXY_NET_LOG(WARN, "detect server addr dead", "addr", vc_->con_.addr_, K(this));
+        vc_->do_io_close();
+        if (!action_.cancelled_) {
+          action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED,
+                                              reinterpret_cast<void *>(-ENET_CONNECT_FAILED));
         }
         break;
 

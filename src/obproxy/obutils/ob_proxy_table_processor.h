@@ -68,7 +68,7 @@ public:
   DECLARE_TO_STRING;
 
 public:
-  char proxy_ip_[common::OB_IP_STR_BUFF];                       // ip primary key
+  char proxy_ip_[common::MAX_IP_ADDR_LENGTH];                       // ip primary key
   char regist_time_str_[common::OB_MAX_TIME_STR_LENGTH + 1];    // the time when one obproxy register to observer
   char app_name_[common::OB_MAX_APP_NAME_LENGTH + 1];           // application proxy used for
   char binary_version_[OB_MAX_PROXY_BINARY_VERSION_LEN + 1];    // man readable version

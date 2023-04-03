@@ -27,6 +27,16 @@ namespace obproxy
 namespace executor
 {
 
+int64_t ObProxyParallelResp::to_string(char *buf, int64_t buf_len) const
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV(K_(column_count), K_(cont_index),
+       KP_(resp), KP_(rs_fetcher));
+  J_OBJ_END();
+  return pos;
+}
+
 ObProxyParallelResp::~ObProxyParallelResp()
 {
   if (OB_NOT_NULL(resp_)) {
@@ -66,7 +76,6 @@ int ObProxyParallelResp::next(ObObj *&rows)
 {
   int ret = OB_SUCCESS;
 
-  ObMysqlField *fields = rs_fetcher_->get_field();
   int64_t buf_len = (sizeof(ObObj) * column_count_);
   char *buf = NULL;
 
@@ -79,50 +88,9 @@ int ObProxyParallelResp::next(ObObj *&rows)
     LOG_WARN("fail to alloc mem", K(buf_len), K(ret));
   } else {
     rows = new (buf) ObObj[column_count_];
-    ObObjType ob_type;
     for (int64_t i = 0; OB_SUCC(ret) && i < column_count_; i++) {
       if (OB_FAIL(rs_fetcher_->get_obj(i, rows[i]))) {
         LOG_WARN("fail to get varchar", K(i), K(ret));
-      } else if (rows[i].need_deep_copy()) {
-        int64_t copy_size = rows[i].get_deep_copy_size();
-        int64_t pos = 0;
-        buf = NULL;
-        if (OB_ISNULL(buf = static_cast<char *>(allocator_->alloc(copy_size)))) {
-          ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc mem", K(copy_size), K(ret));
-        } else if (OB_FAIL(rows[i].deep_copy(rows[i], buf, copy_size, pos))) {
-          LOG_WARN("fail to deep coy", "obj", rows[i], K(copy_size), K(ret));
-        }
-      }
-
-      if (OB_SUCC(ret) && rows[i].is_varchar()) {
-        ObCollationType cs_type = static_cast<ObCollationType>(fields[i].charsetnr_);
-        // utf8_general_ci => CS_TYPE_UTF8MB4_GENERAL_CI
-        if (33 == fields[i].charsetnr_) {
-          cs_type = CS_TYPE_UTF8MB4_GENERAL_CI;
-        // utf8_bin => CS_TYPE_UTF8MB4_BIN
-        } else if (83 == fields[i].charsetnr_) {
-          cs_type = CS_TYPE_UTF8MB4_BIN;
-        }
-
-        rows[i].set_collation_type(cs_type);
-
-        if (0 != rows[i].get_string_len()) {
-          // if can not convert, stay varchar type
-          if (OB_FAIL(ObSMUtils::get_ob_type(ob_type, fields[i].type_))) {
-            LOG_INFO("cast ob type from mysql type failed", K(ob_type), "elem_type", fields[i].type_, K(ret));
-            ret = OB_SUCCESS;
-          } else if (ObTimestampType == ob_type || ObTimeType == ob_type
-                     || ObDateType == ob_type || ObDateTimeType == ob_type) {
-            //do nothing
-          } else {
-            ObCastCtx cast_ctx(allocator_, NULL, CM_NULL_ON_WARN, cs_type);
-            // use src_obj as buf_obj
-            if (OB_FAIL(ObObjCasterV2::to_type(ob_type, cs_type, cast_ctx, rows[i], rows[i]))) {
-              COMMON_LOG(WARN, "failed to cast obj", "idx", i, "row", rows[i], K(ob_type), K(cs_type), K(ret));
-            }
-          }
-        }
       }
     }
   }
@@ -201,6 +169,8 @@ int ObProxyParallelExecuteCont::init_task()
   int ret = OB_SUCCESS;  
 
   ObMysqlRequestParam request_param;
+  request_param.ob_client_flags_.client_flags_.OB_CLIENT_SKIP_AUTOCOMMIT = 1;
+  request_param.ob_client_flags_.client_flags_.OB_CLIENT_SEND_REQUEST_DIRECT = 1;
   request_param.sql_ = request_sql_;
   if (OB_FAIL(mysql_proxy_->async_read(this, request_param, pending_action_))) {
     LOG_WARN("fail to async read", K_(request_sql), K(ret));

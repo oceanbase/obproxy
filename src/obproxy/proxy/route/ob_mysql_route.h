@@ -89,9 +89,9 @@ public:
   ObRouteParam()
     : cont_(NULL), name_(), force_renew_(false), use_lower_case_name_(false),
       is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false),
-      is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(),
+      is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(NULL),
       route_(NULL), cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
-      cr_(NULL) {}
+      cluster_version_(0), cr_(NULL) {}
   ~ObRouteParam() { reset(); }
 
   void reset();
@@ -121,6 +121,7 @@ public:
   int64_t timeout_us_;
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
+  int64_t cluster_version_;
 
 private:
   // for defense, ensure mysql_proxy_ is safely used
@@ -150,6 +151,7 @@ inline void ObRouteParam::reset()
   is_oracle_mode_ = false;
   is_need_force_flush_ = false;
   mysql_proxy_ = NULL;
+  client_request_ = NULL;
   route_ = NULL;
   cr_version_ = -1;
   cr_id_ = -1;
@@ -157,6 +159,7 @@ inline void ObRouteParam::reset()
   timeout_us_ = -1;
   set_cluster_resource(NULL);
   current_idc_name_.reset();
+  cluster_version_ = 0;
 }
 
 // all route related work, include table entry lookup, sql fast parse,

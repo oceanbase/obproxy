@@ -43,6 +43,12 @@ do {\
 #define RETURN_NAME_OB() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NAME_OB; }
 
+#define RETURN_ROW_ID() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return ROW_ID; }
+
+#define RETURN_REVERSED_EXPR_FUNC() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return REVERSED_EXPR_FUNC; }
+
 %}
 
 %x                      in_c_comment
@@ -57,8 +63,10 @@ multi_byte_left_parenthesis   [\uff08]
 multi_byte_right_parenthesis  [\uff09]
 space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
-int_num                 [\-\+]?[0-9]+
-number      ([\-]?[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*E[-+]?[0-9]+)|([\-]?"."[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*)|([\-]?"."[0-9]+)
+
+/* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
+int_num                 [\-\+]?[0-9]{1,17}
+number      ([\-]?[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*E[-+]?[0-9]+)|([\-]?"."[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*)|([\-]?"."[0-9]+)|([\-\+]?[0-9]{18,})
 
 non_newline             [^\n\r]
 sql_comment             ("--"{space}+{non_newline}*)|(#{non_newline}*)
@@ -101,7 +109,7 @@ FOR    { return END_WHERE; }
 LIMIT  { return END_WHERE; }
 GROUP  { return END_WHERE; }
 HAVING { return END_WHERE; }
-ROWID  { return ROWID; }
+ROWID  { RETURN_ROW_ID(); }
 
 JOIN      { return JOIN; }
 ON        { return ON; }
@@ -111,6 +119,9 @@ AND       { return AND_OP; }
 OR        { return OR_OP; }
 "||"      { return OR_OP; }
 IN        { return IN; }
+IS        { return IS; }
+NULL      { return TOKEN_NULL; }
+NOT       { return NOT; }
 "="       { return COMP_EQ; }
 "<=>"     { return COMP_NSEQ; }
 ">="      { return COMP_GE; }
@@ -120,6 +131,7 @@ IN        { return IN; }
 "!="|"<>" { return COMP_NE; }
 "?"       { return PLACE_HOLDER; }
 ":"{int_num} { store_pos_place_holder(yytext + 1, yyscanner); return POS_PLACE_HOLDER; }
+"SYSDATE" { RETURN_REVERSED_EXPR_FUNC();}
 
 {int_num}              { RETURN_INT_VAL(); }
 {number}               { RETURN_NUMBER_VAL(); }

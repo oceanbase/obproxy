@@ -39,7 +39,7 @@ ObRawMysqlClientActor::ObRawMysqlClientActor()
      addr_(), request_buf_(NULL), request_reader_(NULL)
 {}
 
-int ObRawMysqlClientActor::init(ObClientReuqestInfo &info)
+int ObRawMysqlClientActor::init(ObClientRequestInfo &info)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
@@ -149,7 +149,7 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
     options.f_blocking_ = true; // blocking read or send
 
     ObIpEndpoint ip;
-    ops_ip_copy(ip.sa_, addr.get_ipv4(), static_cast<uint16_t>(addr.get_port()));
+    ip.assign(addr.get_sockaddr());
     if (OB_FAIL(con_.open(options))) {
       LOG_WARN("fail to open connection", K(ret));
     } else if (OB_FAIL(con_.connect(ip.sa_, options))) {
@@ -401,6 +401,7 @@ int ObRawMysqlClientActor::read_response(const ObMySQLCmd cmd)
 int ObRawMysqlClient::init(const ObString &user_name,
                            const ObString &password,
                            const ObString &database,
+                           const ObString &cluster_name,
                            const ObString &password1)
 {
   int ret = OB_SUCCESS;
@@ -412,7 +413,7 @@ int ObRawMysqlClient::init(const ObString &user_name,
     LOG_WARN("init twice", K_(is_inited), K(ret));
   } else if (OB_FAIL(mutex_init(&mutex_))) {
     LOG_WARN("fail to init mutex", K(ret));
-  } else if (OB_FAIL(info_.set_names(user_name, password, database, password1))) {
+  } else if (OB_FAIL(info_.set_names(user_name, password, database, cluster_name, password1))) {
     LOG_WARN("fail to set names", K(user_name), K(password), K(password1), K(database), K(ret));
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = mutex_destroy(&mutex_))) {

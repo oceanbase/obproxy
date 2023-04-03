@@ -24,6 +24,19 @@ namespace obproxy
 namespace obutils
 {
 
+enum ObVipTenantRequestType
+{
+  InvalidRequestType = -1,
+  RequestLeader,
+  RequestFollower,
+};
+enum ObVipTenantRWType
+{
+  InvalidRWType = -1,
+  ReadOnly,
+  ReadWrite,
+};
+
 struct ObVipAddr
 {
 public:
@@ -33,7 +46,9 @@ public:
   bool is_valid() const { return (addr_.is_valid() && vid_ >= 0); }
   void reset() { vid_ = -1; addr_.reset(); }
   bool operator==(const ObVipAddr &vip_addr) const { return (vip_addr.vid_ == vid_ && vip_addr.addr_ == addr_); }
-  void set(const int32_t ip, const int32_t port, const int64_t vid);
+  void set(const char* ip, const int32_t port, const int64_t vid);
+  void set_ipv4(int32_t ip, const int32_t port, const int64_t vid);
+  void set(const struct sockaddr &addr, const int64_t vid);
   TO_STRING_KV(K_(addr), K_(vid));
 
 public:
@@ -43,20 +58,6 @@ public:
 
 struct ObVipTenant
 {
-private:
-  enum ObVipTenantRequestType
-  {
-    InvalidRequestType = -1,
-    RequestLeader,
-    RequestFollower,
-  };
-  enum ObVipTenantRWType
-  {
-    InvalidRWType = -1,
-    ReadOnly,
-    ReadWrite,
-  };
-
 public:
   ObVipTenant() : vip_addr_(), tenant_name_(), cluster_name_(),
             request_target_type_(InvalidRequestType), rw_type_(InvalidRWType)

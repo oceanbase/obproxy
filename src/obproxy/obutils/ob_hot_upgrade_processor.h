@@ -133,7 +133,7 @@ private:
   ObAsyncCommonTask *hu_cont_;
   ObAsyncCommonTask *hot_upgrade_cont_;
   ObHotUpgraderInfo &info_;
-  char proxy_ip_[common::OB_IP_STR_BUFF]; // ip primary key
+  char proxy_ip_[common::MAX_IP_ADDR_LENGTH]; // ip primary key
   char proxy_self_md5_[OB_DEFAULT_PROXY_MD5_LEN + 1];
   int32_t proxy_port_;                    // port primary key
   int64_t upgrade_failures_;              // upgrade failures when handling 'hot_upgrade' cmd

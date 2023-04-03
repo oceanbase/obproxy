@@ -368,9 +368,10 @@ enum
   OB_SSA_SERVER_SEND_SAVED_LOGIN_TIME,
   OB_SSA_SERVER_SEND_USE_DATABASE_TIME,
   OB_SSA_SERVER_SEND_SESSION_VARIABLE_TIME,
+  OB_SSA_SERVER_SEND_SESSION_USER_VARIABLE_TIME,
   OB_SSA_SERVER_SEND_ALL_SESSION_VARIABLE_TIME,
-  OB_SSA_SERVER_SEND_LAST_INSERT_ID_TIME,
   OB_SSA_SERVER_SEND_START_TRANS_TIME,
+  OB_SSA_SERVER_SEND_XA_START_TIME,
   OB_SSA_BUILD_SERVER_REQUEST_TIME,
   OB_SSA_PLUGIN_COMPRESS_REQUEST_TIME,
   OB_SSA_PREPARE_SEND_REQUEST_TO_SERVER_TIME,
@@ -408,9 +409,10 @@ const ObProxyColumnSchema SSA_COLUMN_ARRAY[OB_SSA_MAX_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_SAVED_LOGIN_TIME,        "server_send_saved_login_ns", obmysql::OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_USE_DATABASE_TIME,       "server_send_use_database_ns", obmysql::OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_SESSION_VARIABLE_TIME,   "server_send_session_variable_ns", obmysql::OB_MYSQL_TYPE_LONG),
+    ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_SESSION_USER_VARIABLE_TIME, "server_send_session_user_variable_ns", obmysql::OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_ALL_SESSION_VARIABLE_TIME, "server_send_all_session_variable_ns", obmysql::OB_MYSQL_TYPE_LONG),
-    ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_LAST_INSERT_ID_TIME,     "server_send_last_insert_id_ns", obmysql::OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_START_TRANS_TIME,        "server_send_start_trans_ns", obmysql::OB_MYSQL_TYPE_LONG),
+    ObProxyColumnSchema::make_schema(OB_SSA_SERVER_SEND_XA_START_TIME,           "server_send_xa_start_ns", obmysql::OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SSA_BUILD_SERVER_REQUEST_TIME,           "build_server_request_ns", obmysql::OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SSA_PLUGIN_COMPRESS_REQUEST_TIME,        "plugin_compress_request_ns", obmysql::OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SSA_PREPARE_SEND_REQUEST_TO_SERVER_TIME, "prepare_send_request_to_server_ns", obmysql::OB_MYSQL_TYPE_LONG),
@@ -424,8 +426,7 @@ const ObProxyColumnSchema SSA_COLUMN_ARRAY[OB_SSA_MAX_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_SSA_REQUEST_TOTAL_TIME,                  "request_total_ns", obmysql::OB_MYSQL_TYPE_LONG)
 };
 
-ObShowSqlauditHandler::ObShowSqlauditHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                             const ObInternalCmdInfo &info)
+ObShowSqlauditHandler::ObShowSqlauditHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObInternalCmdHandler(cont, buf, info),
       audit_id_offset_(info.get_limit_offset()), audit_id_limit_(info.get_limit_rows()),
       sm_id_(info.get_sm_id()), sub_cmd_type_(info.get_sub_cmd_type())
@@ -550,9 +551,10 @@ int ObShowSqlauditHandler::dump_sqlaudit_record(ObSqlauditRecord &record)
   cells[OB_SSA_SERVER_SEND_SAVED_LOGIN_TIME].set_int(record.cmd_time_stat_.server_send_saved_login_time_);
   cells[OB_SSA_SERVER_SEND_USE_DATABASE_TIME].set_int(record.cmd_time_stat_.server_send_use_database_time_);
   cells[OB_SSA_SERVER_SEND_SESSION_VARIABLE_TIME].set_int(record.cmd_time_stat_.server_send_session_variable_time_);
+  cells[OB_SSA_SERVER_SEND_SESSION_USER_VARIABLE_TIME].set_int(record.cmd_time_stat_.server_send_session_user_variable_time_);
   cells[OB_SSA_SERVER_SEND_ALL_SESSION_VARIABLE_TIME].set_int(record.cmd_time_stat_.server_send_all_session_variable_time_);
-  cells[OB_SSA_SERVER_SEND_LAST_INSERT_ID_TIME].set_int(record.cmd_time_stat_.server_send_last_insert_id_time_);
   cells[OB_SSA_SERVER_SEND_START_TRANS_TIME].set_int(record.cmd_time_stat_.server_send_start_trans_time_);
+  cells[OB_SSA_SERVER_SEND_XA_START_TIME].set_int(record.cmd_time_stat_.server_send_xa_start_time_);
   cells[OB_SSA_BUILD_SERVER_REQUEST_TIME].set_int(record.cmd_time_stat_.build_server_request_time_);
   cells[OB_SSA_PLUGIN_COMPRESS_REQUEST_TIME].set_int(record.cmd_time_stat_.plugin_compress_request_time_);
   cells[OB_SSA_PLUGIN_DECOMPRESS_RESPONSE_TIME].set_int(record.cmd_time_stat_.plugin_decompress_response_time_);

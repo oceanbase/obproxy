@@ -25,8 +25,7 @@ namespace obutils
 class ObAlterConfigSetHandler : public ObInternalCmdHandler
 {
 public:
-  ObAlterConfigSetHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                          const ObInternalCmdInfo &info);
+  ObAlterConfigSetHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObAlterConfigSetHandler() {}
 
   int handle_set_config(int event, void *data);

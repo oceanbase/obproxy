@@ -57,6 +57,7 @@ public:
   // the port data should have been created by
   // init_mysql_proxy_server()
   static int start_mysql_proxy_server(const ObMysqlConfigParams &config_params);
+  static int start_mysql_proxy_acceptor();
 
 private:
   static int make_net_accept_options(
@@ -69,6 +70,7 @@ private:
   static int start_processor_threads(const ObMysqlConfigParams &config_params);
 
   static int init_mysql_proxy_port(const ObMysqlConfigParams &config_params);
+  static int init_inherited_info(ObMysqlProxyPort &proxy_port, const int fd);
 };
 
 } // end of namespace proxy

@@ -64,6 +64,13 @@ static const int32_t OB20_PROTOCOL_EXTRA_INFO_LENGTH      = 4;  // for the lengt
 static const int16_t OB20_PROTOCOL_VERSION_VALUE          = 20;
 static const int64_t MYSQL_COMPRESSED_OB20_HEALDER_LENGTH = MYSQL_COMPRESSED_HEALDER_LENGTH + OB20_PROTOCOL_HEADER_LENGTH;
 
+enum class ObProxyProtocol
+{
+  PROTOCOL_NORMAL = 0,
+  PROTOCOL_CHECKSUM,
+  PROTOCOL_OB20,
+};
+
 // one of those types indicates that one mysql cmd response is finished
 enum ObMysqlRespEndingType
 {
@@ -158,30 +165,31 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     case obmysql::OB_MYSQL_COM_TIME:
     case obmysql::OB_MYSQL_COM_DELAYED_INSERT:
     case obmysql::OB_MYSQL_COM_DAEMON:
+    case obmysql::OB_MYSQL_COM_RESET_CONNECTION:
     // Prepared Statements(Binary Protocol)
     case obmysql::OB_MYSQL_COM_STMT_PREPARE:
     case obmysql::OB_MYSQL_COM_STMT_EXECUTE:
     case obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE:
     case obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA:
     case obmysql::OB_MYSQL_COM_STMT_CLOSE:
+    case obmysql::OB_MYSQL_COM_STMT_RESET:
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_STMT_FETCH:
     case obmysql::OB_MYSQL_COM_CHANGE_USER:
+    // binlog related
+    case obmysql::OB_MYSQL_COM_REGISTER_SLAVE:
+    case obmysql::OB_MYSQL_COM_BINLOG_DUMP:
+    case obmysql::OB_MYSQL_COM_BINLOG_DUMP_GTID:
     // pieceinfo
     case obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
     case obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA:
       ret = true;
       break;
     // Replication Protocol
-    case obmysql::OB_MYSQL_COM_BINLOG_DUMP:
     case obmysql::OB_MYSQL_COM_TABLE_DUMP:
     case obmysql::OB_MYSQL_COM_CONNECT_OUT:
-    case obmysql::OB_MYSQL_COM_REGISTER_SLAVE:
-    case obmysql::OB_MYSQL_COM_BINLOG_DUMP_GTID:
     // Stored Procedures
     case obmysql::OB_MYSQL_COM_SET_OPTION:
-    // mysql prepare statement
-    case obmysql::OB_MYSQL_COM_STMT_RESET:
       ret = false;
       break;
     default:

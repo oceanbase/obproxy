@@ -17,7 +17,7 @@
 #define CUTLIM  (UINT64_MAX % 10)
 #define DIGITS_IN_ULONGLONG 20
 
-static uint64_t d10[DIGITS_IN_ULONGLONG]=
+static ulonglong d10[DIGITS_IN_ULONGLONG]=
 {
   1,
   10,
@@ -41,143 +41,40 @@ static uint64_t d10[DIGITS_IN_ULONGLONG]=
   10000000000000000000ULL
 };
 
-int64_t ob_strntoll_8bit(const char *str, size_t len, int base, char **endptr, int *err)
+long ob_strntol_8bit(const ObCharsetInfo *cs,
+		     const char *nptr, size_t l, int base,
+		     char **end_ptr, int *err)
 {
-  int is_negative;
-  uint64_t cutoff;
-  unsigned int cutlim;
-  uint64_t tmp_res;
-  const char *s, *e;
-  const char *save;
+
+  const char *save, *s = nptr, *e = nptr+l;
+  unsigned char c;
+  unsigned int cut_lim;
+  *err= 0;				
+  uint32 cut_off;
+  while (s<e && ob_isspace(cs, *s)) {
+    s++;
+  }
+
   int overflow;
-
-  *err= 0;
-
-  s = str;
-  e = str + len;
-
-  for(; s < e && 0x20 == *s; s++);
+  uint32 i;
+  int neg;
 
   if (s == e) {
-    *err = EDOM;
-    if (endptr != NULL) {
-      *endptr = (char *) str;
-    }
-    return 0L;
-  }
-
-  if ('-' == *s) {
-    is_negative = 1;
-    ++s;
-  } else if ('+' == *s) {
-    is_negative = 0;
-    ++s;
-  } else {
-    is_negative = 0;
-  }
-
-  save = s;
-
-  cutoff = UINT64_MAX / (unsigned int) base;
-  cutlim = (unsigned int) (UINT64_MAX % (unsigned int) base);
-
-  overflow = 0;
-  tmp_res = 0;
-  for ( ; s != e; s++) {
-    unsigned char c = *s;
-    if (c>='0' && c<='9') {
-      c -= '0';
-    } else if (c>='A' && c<='Z') {
-      c = c - 'A' + 10;
-    } else if (c>='a' && c<='z') {
-      c = c - 'a' + 10;
-    } else {
-      break;
-    }
-    if (c >= base) {
-      break;
-    }
-    if (tmp_res > cutoff || (tmp_res == cutoff && c > cutlim)) {
-      overflow = 1;
-    } else {
-      tmp_res *= (uint64_t) base;
-      tmp_res += c;
-    }
-  }
-
-  if (s == save) {
-    *err = EDOM;
-    if (endptr != NULL) {
-      *endptr = (char *) str;
-    }
-    return 0L;
-  }
-
-  if (endptr != NULL) {
-    *endptr = (char *) s;
-  }
-
-  if (is_negative) {
-    if (tmp_res > (uint64_t) INT64_MIN) {
-      overflow = 1;
-    }
-  } else if (tmp_res > (uint64_t) INT64_MAX) {
-    overflow = 1;
-   }
-
-  if (overflow) {
-    *err= ERANGE;
-    return is_negative ? INT64_MIN : INT64_MAX;
-  }
-
-  return (is_negative ? -((int64_t) tmp_res) : (int64_t) tmp_res);
-}
-
-
-uint64_t ob_strntoull_8bit(const char *str, size_t len, int base, char **endptr, int *err)
-{
-  int is_negative;
-  uint64_t cutoff;
-  unsigned int cutlim;
-  uint64_t tmp_res;
-  const char *s, *e;
-  const char *save;
-  int overflow;
-
-  *err= 0;
-
-  s = str;
-  e = str + len;
-
-  for(; s < e && 0x20 == *s; s++);
-
-  if (s == e) {
-    *err = EDOM;
-    if (endptr != NULL) {
-      *endptr = (char *) str;
-    }
-    return 0L;
-  }
-
-  if (*s == '-') {
-    is_negative = 1;
+    goto NO_CONV;
+  } else if (*s == '-') {
+    neg = 1;
     ++s;
   } else if (*s == '+') {
-    is_negative = 0;
+    neg = 0;
     ++s;
   } else {
-    is_negative = 0;
+    neg = 0;
   }
 
+  cut_lim = (unsigned int) (((uint32)~0L) % (uint32) base);
+  cut_off = ((uint32)~0L) / (uint32) base;
   save = s;
-
-  cutoff = (UINT64_MAX / (unsigned int) base);
-  cutlim = (unsigned int) (UINT64_MAX % (unsigned int) base);
-
-  overflow = 0;
-  tmp_res = 0;
-  for ( ; s != e; s++) {
-    unsigned char c = *s;
+  for (i = 0, overflow = 0, c = *s; s != e; c = *++s) {
     if (c>='0' && c<='9') {
       c -= '0';
     } else if (c>='A' && c<='Z') {
@@ -187,355 +84,706 @@ uint64_t ob_strntoull_8bit(const char *str, size_t len, int base, char **endptr,
     } else {
       break;
     }
+
     if (c >= base) {
       break;
-    }
-    if (tmp_res > cutoff || (tmp_res == cutoff && c > cutlim)) {
+    } else if (i > cut_off || (i == cut_off && c > cut_lim)) {
       overflow = 1;
     } else {
-      tmp_res *= (unsigned int) base;
-      tmp_res += c;
+      i *= (uint32) base;
+      i += c;
     }
   }
 
   if (s == save) {
-    *err = EDOM;
-    if (endptr != NULL) {
-      *endptr = (char *) str;
-    }
-    return 0L;
+    goto NO_CONV;
+  } else if (end_ptr != NULL) {
+    *end_ptr = (char *) s;
   }
 
-  if (endptr != NULL) {
-    *endptr = (char *) s;
+  if (neg) { 
+    if (i  > (uint32) INT_MIN32) {
+      overflow = 1;
+    }
+  } else if (i > INT_MAX32) {
+    overflow = 1;
   }
 
   if (overflow) {
     err[0]= ERANGE;
-    return UINT64_MAX;
-  } else if (is_negative) {
-    err[0]= ERANGE;
-    return -((int64_t)tmp_res);
-  } else {
-    return ((int64_t)tmp_res);
+    return neg ? INT_MIN32 : INT_MAX32;
   }
 
-  return tmp_res;
+  return (neg ? -((long) i) : (long) i);
+
+NO_CONV:
+  err[0]= EDOM;
+  if (end_ptr != NULL) {
+    *end_ptr = (char *) nptr;
+  }
+  return 0L;
 }
 
-double ob_strntod_8bit(char *str, size_t len, char **end, int *err)
+
+ulong ob_strntoul_8bit(const ObCharsetInfo *cs,
+		       const char *nptr, size_t l, int base,
+		       char **end_ptr, int *err)
 {
-  if (len > UINT16_MAX) {
-    len = UINT16_MAX;
+  int neg;
+  unsigned char c;
+  const char *save, *e = nptr+l,  *s = nptr;
+  uint32 cut_off;
+  unsigned int cut_lim;
+
+  *err= 0;				
+
+  while (s<e && ob_isspace(cs, *s)) {
+    s++;
   }
+
+  int overflow = 0;
+  uint32 i = 0;
+
+  if (s==e) {
+    goto NO_CONV;
+  } else if (*s == '-') {
+    neg = 1;
+    ++s;
+  } else if (*s == '+') {
+    neg = 0;
+    ++s;
+  } else {
+    neg = 0;
+  }
+
+  save = s;
+  cut_off = ((uint32)~0L) / (uint32) base;
+  cut_lim = (unsigned int) (((uint32)~0L) % (uint32) base);
+
+  for (c = *s; s != e; c = *++s) {
+    if (c>='0' && c<='9') {
+      c -= '0';
+    } else if (c>='a' && c<='z') {
+      c = c - 'a' + 10;
+    } else if (c>='A' && c<='Z') {
+      c = c - 'A' + 10;
+    } else {
+      break;
+    }
+    if (c >= base) {
+      break;
+    } else if (i > cut_off || (i == cut_off && c > cut_lim)) {
+      overflow = 1;
+    } else {
+      i *= (uint32) base;
+      i += c;
+    }
+  }
+
+  if (s == save) {
+    goto NO_CONV;
+  } else if (end_ptr != NULL) {
+    *end_ptr = (char *) s;
+  }
+
+  if (neg) {
+    err[0]= ERANGE;
+    return 0;
+  } else if (overflow) {
+    err[0]= ERANGE;
+    return (~(uint32) 0);
+  } else {
+    return ((long) i);
+  }
+
+NO_CONV:
+  err[0]= EDOM;
+  if (end_ptr != NULL) {
+    *end_ptr = (char *) nptr;
+  }
+  return 0L;
+}
+
+
+longlong ob_strntoll_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+			  const char *nptr, size_t l, int base,
+			  char **end_ptr,int *err)
+{
+  ulonglong cut_off;
+  unsigned int cut_lim;
+  const char *s = nptr, *e = nptr+l, *save;
+  *err= 0;		
+
+  while (s<e && ob_isspace(cs,*s)) {
+    s++;
+  }
+
+  int overflow = 0;
+  ulonglong i = 0;
+  int neg;
+  if (s == e) {
+    goto NO_CONV;
+  } else if (*s == '-') {
+    neg = 1;
+    ++s;
+  } else if (*s == '+') {
+    neg = 0;
+    ++s;
+  } else {
+    neg = 0;
+  }
+
+  save = s;
+
+  cut_lim = (unsigned int) ((~(ulonglong) 0) % (unsigned long int) base);
+  cut_off = (~(ulonglong) 0) / (unsigned long int) base;
+
+
+  while (s != e) {
+    unsigned char c= *s;
+    if (c>='0' && c<='9')
+      c -= '0';
+    else if (c>='A' && c<='Z')
+      c = c - 'A' + 10;
+    else if (c>='a' && c<='z')
+      c = c - 'a' + 10;
+    else
+      break;
+    if (c >= base)
+      break;
+    if (i > cut_off || (i == cut_off && c > cut_lim))
+      overflow = 1;
+    else {
+      i *= (ulonglong) base;
+      i += c;
+    }
+    s++;
+  }
+
+  if (s == save) {
+    goto NO_CONV;
+  } else if (end_ptr != NULL) {
+    *end_ptr = (char *) s;
+  }
+
+  if (neg) {
+    if (i  > (ulonglong) LONGLONG_MIN) {
+      overflow = 1;
+    }
+  } else if (i > (ulonglong) LONGLONG_MAX) {
+    overflow = 1;
+  }
+
+  if (overflow) {
+    err[0]= ERANGE;
+    return neg ? LONGLONG_MIN : LONGLONG_MAX;
+  } else {
+    return (neg ? -((longlong) i) : (longlong) i);
+  }
+
+NO_CONV:
+  err[0]= EDOM;
+  if (end_ptr != NULL) {
+    *end_ptr = (char *) nptr;
+  }
+  return 0L;
+}
+
+
+ulonglong ob_strntoull_8bit(const ObCharsetInfo *cs,
+			   const char *nptr, size_t l, int base,
+			   char **end_ptr, int *err)
+{
+
+  ulonglong cut_off;
+  unsigned int cut_lim;
+  const char *s = nptr, *e = nptr + l, *save;
+  *err= 0;			
+
+  while (s<e && ob_isspace(cs,*s)) {
+    s++;
+  }
+
+  int overflow = 0;
+  ulonglong i = 0;
+  int neg;
+
+  if (s == e) {
+    goto NO_CONV;
+  } else if (*s == '-') {
+    neg = 1;
+    ++s;
+  } else if (*s == '+') {
+    neg = 0;
+    ++s;
+  } else {
+    neg = 0;
+  }
+
+  save = s;
+
+  cut_off = (~(ulonglong) 0) / (unsigned long int) base;
+  cut_lim = (unsigned int) ((~(ulonglong) 0) % (unsigned long int) base);
+
+
+  while (s != e) {
+    unsigned char c= *s;
+    if (c>='0' && c<='9') {
+      c -= '0';
+    } else if (c>='a' && c<='z') {
+      c = c - 'a' + 10;
+    } else if (c>='A' && c<='Z') {
+      c = c - 'A' + 10;
+    } else {
+      break;
+    }
+    if (c >= base) {
+      break;
+    } else if (i > cut_off || (i == cut_off && c > cut_lim)) {
+      overflow = 1;
+    } else {
+      i *= (ulonglong) base;
+      i += c;
+    }
+    s++;
+  }
+
+  if (s == save) {
+    goto NO_CONV;
+  } else if (NULL != end_ptr) {
+    *end_ptr = (char *) s;
+  }
+
+  if (overflow) {
+    err[0]= ERANGE;
+    return (~(ulonglong) 0);
+  } else if (neg) {
+    err[0]= ERANGE;
+    return -((longlong) i);
+  } else {
+    return ((longlong) i);
+  }
+
+NO_CONV:
+  err[0]= EDOM;
+  if (NULL != end_ptr) {
+    *end_ptr = (char *) nptr;
+  }
+  return 0L;
+}
+
+
+
+double ob_strntod_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+		       char *str, size_t len,
+		       char **end, int *err)
+{
+  if (len == INT_MAX32) {
+    len= 65535;          
+  }               
   *end= str + len;
   return ob_strtod(str, end, err);
 }
 
-uint64_t
-ob_strntoull10rnd_8bit(const char *str_ptr, size_t str_len, int unsigned_flag,
-                       char **end_ptr, int *error)
+ulonglong
+ob_strntoull10rnd_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                       const char *str, size_t len, int unsigned_flag,
+                       char **end_ptr, int *err)
 {
-  const char *dot_ptr, *end_ptr9, *beg_ptr, *end= str_ptr + str_len;
-  unsigned long long value_ull;
-  unsigned long value_ul;
+  const char *dot, *end9, *beg, *end= str + len;
+  ulonglong ull;
+  unsigned long int ul;
   unsigned char ch;
-  int shift_value= 0, digits_value= 0, negative_sign, addon_value;
+  int shift = 0, digits = 0, neg, addon;
 
-  for ( ; str_ptr < end && (*str_ptr == ' ' || *str_ptr == '\t') ; str_ptr++);
-
-  if (str_ptr >= end) {
-    goto ret_edom;
+  while (str < end && (*str == ' ' || *str == '\t')) {
+    str++;
   }
 
-  if ((negative_sign= (*str_ptr == '-')) || *str_ptr=='+') {
-    if (++str_ptr == end) {
-      goto ret_edom;
+  if (str >= end) {
+    goto RET_EDOM;
+  } else if ((neg= (*str == '-')) || *str=='+')    {
+    if (++str == end) {
+      goto RET_EDOM;
     }
   }
 
-  beg_ptr= str_ptr;
-  end_ptr9= (str_ptr + 9) > end ? end : (str_ptr + 9);
-  for (value_ul= 0 ; str_ptr < end_ptr9 && (ch= (unsigned char) (*str_ptr - '0')) < 10; str_ptr++) {
-    value_ul= value_ul * 10 + ch;
+  beg= str;
+  end9= (str + 9) > end ? end : (str + 9);
+    
+  for (ul= 0 ; str < end9 && (ch= (unsigned char) (*str - '0')) < 10; str++) {
+    ul= ul * 10 + ch;
   }
 
-  if (str_ptr >= end) {
-    *end_ptr= (char*) str_ptr;
-    if (negative_sign) {
+  if (str >= end) {
+    *end_ptr= (char*) str;
+    if (neg) {
       if (unsigned_flag) {
-        *error= value_ul ? MY_ERRNO_ERANGE : 0;
+        *err= ul ? OB_ERRNO_ERANGE : 0;
         return 0;
       } else {
-        *error= 0;
-        return (uint64_t) (int64_t) -(int64_t) value_ul;
+        *err= 0;
+        return (ulonglong) (longlong) -(long) ul;
       }
     } else {
-      *error=0;
-      return (uint64_t) value_ul;
+      *err=0;
+      return (ulonglong) ul;
     }
   }
 
-  digits_value= str_ptr - beg_ptr;
+  digits= str - beg;
 
-  for (dot_ptr= NULL, value_ull= value_ul; str_ptr < end; str_ptr++) {
-    if ((ch= (unsigned char) (*str_ptr - '0')) < 10) {
-      if (value_ull < CUTOFF || (value_ull == CUTOFF && ch <= CUTLIM)) {
-        value_ull= value_ull * 10 + ch;
-        digits_value++;
+  for (dot= NULL, ull= ul; str < end; str++) {
+    if ((ch= (unsigned char) (*str - '0')) < 10) {
+      if (ull < CUTOFF || (ull == CUTOFF && ch <= CUTLIM)) {
+        ull= ull * 10 + ch;
+        digits++;
         continue;
-      }
-
-      if (value_ull == CUTOFF) {
-        value_ull= UINT64_MAX;
-        addon_value= 1;
-        str_ptr++;
+      } else if (ull == CUTOFF) {
+        ull= ULONGLONG_MAX;
+        addon= 1;
+        str++;
       } else {
-        addon_value= (*str_ptr >= '5');
+        addon= (*str >= '5');
       }
-      if (!dot_ptr) {
-        for ( ; str_ptr < end && (ch= (unsigned char) (*str_ptr - '0')) < 10; shift_value++, str_ptr++);
-        if (str_ptr < end && *str_ptr == '.') {
-          str_ptr++;
-          for ( ; str_ptr < end && (ch= (unsigned char) (*str_ptr - '0')) < 10; str_ptr++);
+      if (!dot) {
+        while (str < end && (ch= (unsigned char) (*str - '0')) < 10) {
+          shift++;
+          str++;
+        }
+        if (str < end && *str == '.') {
+          str++;
+          while (str < end && (ch= (unsigned char) (*str - '0')) < 10) {
+            str++;
+          }
         }
       } else {
-        shift_value= dot_ptr - str_ptr;
-        for ( ; str_ptr < end && (ch= (unsigned char) (*str_ptr - '0')) < 10; str_ptr++);
+        shift= dot - str;
+        while (str < end && (ch= (unsigned char) (*str - '0')) < 10) {
+          str++;
+        }
       }
-      goto exp;
+      goto EXP;
     }
 
-    if (*str_ptr == '.') {
-      if (dot_ptr) {
-        addon_value= 0;
-        goto exp;
+    if (*str == '.') {
+      if (dot) {
+        addon= 0;
+        goto EXP;
       } else {
-        dot_ptr= str_ptr + 1;
+        dot= str + 1;
       }
       continue;
     }
-
     break;
   }
-  shift_value= dot_ptr ? dot_ptr - str_ptr : 0;
-  addon_value= 0;
+  shift= dot ? dot - str : 0;   
+  addon= 0;
 
-exp:
-
-  if (!digits_value) {
-    str_ptr= beg_ptr;
-    goto ret_edom;
-  }
-
-  if (negative_sign && unsigned_flag) {
-    goto ret_sign;
-  }
-  if (str_ptr < end && (*str_ptr == 'e' || *str_ptr == 'E')) {
-    str_ptr++;
-    if (str_ptr < end) {
-      int negative_sign_exp, exponent;
-      if ((negative_sign_exp= (*str_ptr == '-')) || *str_ptr=='+') {
-        if (++str_ptr == end)
-          goto ret_sign;
+EXP:      
+  if (!digits) {
+    str= beg;
+    goto RET_EDOM;
+  } else if (neg && unsigned_flag) {
+    goto RET_SIGN;
+  } else if (str < end && (*str == 'e' || *str == 'E')) {
+    str++;
+    if (str < end) {
+      int neg_exp, exponent;
+      if ((neg_exp= (*str == '-')) || *str=='+') {
+        if (++str == end) {
+          goto RET_SIGN;
+        }
       }
       for (exponent= 0 ;
-           str_ptr < end && (ch= (unsigned char) (*str_ptr - '0')) < 10;
-           str_ptr++) {
+           str < end && (ch= (unsigned char) (*str - '0')) < 10;
+           str++) {
         exponent= exponent * 10 + ch;
       }
-      shift_value+= negative_sign_exp ? -exponent : exponent;
+      shift+= neg_exp ? -exponent : exponent;
     }
   }
 
-  if (shift_value == 0) {
-    if (addon_value) {
-      if (value_ull == UINT64_MAX) {
-        goto ret_too_big;
+  if (shift == 0) {
+    if (addon) {
+      if (ull == ULONGLONG_MAX) {
+        goto RET_TOO_LARGE;
+      } else {
+        ull++;
       }
-      value_ull++;
     }
-    goto ret_sign;
+    goto RET_SIGN;
   }
 
-  if (shift_value < 0) {
-    uint64_t d, r, d_half;
+  if (shift < 0) {
+    ulonglong d, r, d_half;
 
-    if (-shift_value >= DIGITS_IN_ULONGLONG) {
-      goto ret_zero;
-    }
-
-    d= d10[-shift_value];
-    r= value_ull % d;
-    value_ull /= d;
-    d_half = d/2;
-    if (r >= d_half) {
-      value_ull++;
-    }
-    goto ret_sign;
-  }
-
-  if (shift_value > DIGITS_IN_ULONGLONG) {
-    if (!value_ull) {
-      goto ret_sign;
-    }
-    goto ret_too_big;
-  }
-
-  for ( ; shift_value > 0; shift_value--, value_ull*= 10) {
-    if (value_ull > CUTOFF) {
-      goto ret_too_big;
+    if (-shift >= DIGITS_IN_ULONGLONG) {
+      goto RET_ZERO;   
+    } else {
+      d= d10[-shift];
+      r= ull % d;
+      d_half = d / 2;
+      ull /= d;
+      if (r >= d_half) {
+        ull++;
+      }
+      goto RET_SIGN;
     }
   }
 
-ret_sign:
-  *end_ptr= (char*) str_ptr;
+  if (shift > DIGITS_IN_ULONGLONG)    {
+    if (!ull) {
+      goto RET_SIGN;
+    } else {
+      goto RET_TOO_LARGE;
+    }
+  }
+
+  while (shift > 0) {
+    if (ull > CUTOFF) {
+      goto RET_TOO_LARGE;
+    } else {
+      shift--;
+      ull*= 10;
+    }
+  }
+
+RET_SIGN:
+  *end_ptr= (char*) str;
 
   if (!unsigned_flag) {
-    if (negative_sign) {
-      if (value_ull > (uint64_t) INT64_MIN) {
-        *error= MY_ERRNO_ERANGE;
-        return (uint64_t) INT64_MIN;
+    if (neg) {
+      if (ull > (ulonglong) LONGLONG_MIN) {
+        *err= OB_ERRNO_ERANGE;
+        return (ulonglong) LONGLONG_MIN;
+      } else {
+        *err= 0;
+        return (ulonglong) -(longlong) ull;
       }
-      *error= 0;
-      return (uint64_t) -(int64_t) value_ull;
     } else {
-      if (value_ull > (uint64_t) INT64_MAX) {
-        *error= MY_ERRNO_ERANGE;
-        return (uint64_t) INT64_MAX;
+      if (ull > (ulonglong) LONGLONG_MAX) {
+        *err= OB_ERRNO_ERANGE;
+        return (ulonglong) LONGLONG_MAX;
+      } else {
+        *err= 0;
+        return ull;
       }
-      *error= 0;
-      return value_ull;
     }
   }
 
-  if (negative_sign && value_ull) {
-    *error= MY_ERRNO_ERANGE;
+    
+  if (neg && ull) {
+    *err= OB_ERRNO_ERANGE;
     return 0;
   }
-  *error= 0;
-  return value_ull;
 
-ret_zero:
-  *end_ptr= (char*) str_ptr;
-  *error= 0;
+RET_ZERO:
+  *end_ptr= (char*) str;
+  *err= 0;
   return 0;
 
-ret_edom:
-  *end_ptr= (char*) str_ptr;
-  *error= MY_ERRNO_EDOM;
+RET_EDOM:
+  *end_ptr= (char*) str;
+  *err= OB_ERRNO_EDOM;
   return 0;
 
-ret_too_big:
-  *end_ptr= (char*) str_ptr;
-  *error= MY_ERRNO_ERANGE;
+RET_TOO_LARGE:
+  *end_ptr= (char*) str;
+  *err= OB_ERRNO_ERANGE;
   return unsigned_flag ?
-         UINT64_MAX :
-         negative_sign ? (uint64_t) INT64_MIN : (uint64_t) INT64_MAX;
+         ULONGLONG_MAX :
+         neg ? (ulonglong) LONGLONG_MIN : (ulonglong) LONGLONG_MAX;
 }
 
-size_t ob_scan_8bit(const char *str, const char *end, int sq)
+void ob_strxfrm_desc_and_reverse(unsigned char *str, unsigned char *str_end,
+                            unsigned int flags, unsigned int level)
 {
-  const char *str_begin= str;
+  if (flags & (OB_STRXFRM_DESC_LEVEL1 << level)) {
+    if (flags & (OB_STRXFRM_REVERSE_LEVEL1 << level)) {
+      for (str_end--; str <= str_end;) {
+        unsigned char tmp= *str;
+        *str++= ~*str_end;
+        *str_end--= ~tmp;
+      }
+    } else {
+      while (str < str_end) {
+        *str= ~*str;
+        str++;
+      }
+    }
+  } else if (flags & (OB_STRXFRM_REVERSE_LEVEL1 << level)) {
+    for (str_end--; str < str_end;) {
+      unsigned char tmp= *str;
+      *str++= *str_end;
+      *str_end--= tmp;
+    }
+  }
+}
+
+size_t ob_scan_8bit(const ObCharsetInfo *cs, const char *str, const char *end,
+                    int sq)
+{
+  const char *str0= str;
   switch (sq) {
   case OB_SEQ_INTTAIL:
     if (str < end && *str == '.') {
-      for(str++; str != end && *str == '0'; str++);
-      return (size_t) (str - str_begin);
+      for(str++ ; str != end && *str == '0' ; str++);
+      return (size_t) (str - str0);
+    } else {
+      return 0;
     }
-    return 0;
 
   case OB_SEQ_SPACES:
-    for (; str < end; str++) {
-      if (' ' != *str) {
+    for ( ; str < end ; str++) {
+      if (!ob_isspace(cs,*str)) {
         break;
       }
     }
-    return (size_t) (str - str_begin);
+    return (size_t) (str - str0);
   default:
     return 0;
   }
 }
 
 
-//========================================================================
 
-int ob_like_range_simple(const ObCharsetInfo *cs,
-                         const char *str, size_t str_len,
-                         int escape, int w_one, int w_many,
-                         size_t res_length,
-                         char *min_str, char *max_str,
-                         size_t *min_length, size_t *max_length)
+size_t ob_strxfrm_pad_desc_and_reverse(const ObCharsetInfo *cs,
+                                unsigned char *str, unsigned char *frm_end, unsigned char *str_end,
+                                unsigned int nweights, unsigned int flags, unsigned int level)
 {
-  const char *end= str + str_len;
-  char *min_org=min_str;
-  char *min_end=min_str+res_length;
-  size_t charlen= res_length / cs->mbmaxlen;
+  if (nweights && frm_end < str_end && (flags & OB_STRXFRM_PAD_WITH_SPACE)) {
+    unsigned int fill_len= OB_MIN((unsigned int) (str_end - frm_end), nweights * cs->mbminlen);
+    cs->cset->fill(cs, (char*) frm_end, fill_len, cs->pad_char);
+    frm_end+= fill_len;
+  }
+  ob_strxfrm_desc_and_reverse(str, frm_end, flags, level);
+  if ((flags & OB_STRXFRM_PAD_TO_MAXLEN) && frm_end < str_end) {
+    unsigned int fill_len= str_end - frm_end;
+    cs->cset->fill(cs, (char*) frm_end, fill_len, cs->pad_char);
+    frm_end= str_end;
+  }
+  return frm_end - str;
+}
 
-  for (; str != end && min_str != min_end && charlen > 0 ; str++, charlen--) {
-    if (*str == escape && str+1 != end) {
-      str++;					/* Skip escape */
-      *min_str++= *max_str++ = *str;
+size_t ob_strnxfrmlen_simple(const ObCharsetInfo *cs, size_t len)
+{
+  return len * (cs->strxfrm_multiply ? cs->strxfrm_multiply : 1);
+}
+
+bool ob_like_range_simple(const ObCharsetInfo *cs,
+			     const char *ptr, size_t ptr_len,
+			     pbool escape_char, pbool w_one, pbool w_many,
+			     size_t res_len,
+			     char *min_str,char *max_str,
+			     size_t *min_len, size_t *max_len)
+{
+  const char *end= ptr + ptr_len;
+  char *min_org=min_str;
+  char *min_end=min_str+res_len;
+  size_t charlen= res_len / cs->mbmaxlen;
+
+  for (; ptr != end && min_str != min_end && charlen > 0 ; ptr++, charlen--) {
+    if (*ptr == escape_char && ptr+1 != end) {
+      ptr++;					  
+      *min_str++= *max_str++ = *ptr;
       continue;
-    }
-    if (*str == w_one) {			/* '_' in SQL */
-      *min_str++='\0';				/* This should be min char */
+    } else if (*ptr == w_one) {
+      *min_str++='\0';				  
       *max_str++= (char) cs->max_sort_char;
       continue;
-    }
-    if (*str == w_many)	{			/* '%' in SQL */
-      /* Calculate length of keys */
-      *min_length= ((cs->state & OB_CS_BINSORT) ?
+    } else if (*ptr == w_many) {
+      *min_len= ((cs->state & OB_CS_BINSORT) ?
                     (size_t) (min_str - min_org) :
-                    res_length);
-      *max_length= res_length;
+                    res_len);
+      *max_len= res_len;
       do {
         *min_str++= 0;
         *max_str++= (char) cs->max_sort_char;
       } while (min_str != min_end);
       return 0;
     }
-    *min_str++= *max_str++ = *str;
+    *min_str++= *max_str++ = *ptr;
   }
 
- *min_length= *max_length = (size_t) (min_str - min_org);
+  *min_len= *max_len = (size_t) (min_str - min_org);
   while (min_str != min_end) {
-    *min_str++= *max_str++ = ' ';      /* Because if key compression */
+    *min_str++= *max_str++ = ' ';        
   }
   return 0;
 }
 
-//=================================================================
+bool ob_propagate_simple(const ObCharsetInfo *cs __attribute__((unused)),
+                            const unsigned char *str __attribute__((unused)),
+                            size_t len __attribute__((unused)))
+{
+  return 1;
+}
 
+bool ob_propagate_complex(const ObCharsetInfo *cs __attribute__((unused)),
+                             const unsigned char *str __attribute__((unused)),
+                             size_t len __attribute__((unused)))
+{
+  return 0;
+}
 
 void ob_fill_8bit(const ObCharsetInfo *cs __attribute__((unused)),
-                  char *str, size_t len, int fill)
+		   char *s, size_t l, int fill)
 {
-  memset(str, fill, len);
+  memset(s, fill, l);
 }
 
-int64_t ob_strntoll(const char *str, size_t str_len, int base, char **end, int *err)
+int64_t ob_strntoll(const char *ptr, size_t len, int base, char **end, int *err)
 {
-  return ob_strntoll_8bit(str, str_len, base, end, err);
+  return ob_strntoll_8bit(&ob_charset_bin, ptr, len, base, end, err);
 }
 
-int64_t ob_strntoull(const char *str, size_t str_len, int base, char **end, int *err)
+int64_t ob_strntoull(const char *ptr, size_t len, int base, char **end, int *err)
 {
-  return ob_strntoull_8bit(str, str_len, base, end, err);
+  return ob_strntoull_8bit(&ob_charset_bin, ptr, len, base, end, err);
 }
 
-const unsigned char *skip_trailing_space(const unsigned char *str, size_t len)
+void ob_hash_sort_simple(const ObCharsetInfo *cs,
+			 const unsigned char *key, size_t len,
+			 unsigned long int *nr1, unsigned long int *nr2,
+       const bool calc_end_space, hash_algo hash_algo)
 {
-  const unsigned char *end = str + len;
-  const int64_t SIZEOF_INT = 4;
-  const int64_t SPACE_INT = 0x20202020;
+  unsigned char *sort_order=cs->sort_order;
+  const unsigned char *end;
+  unsigned char data[HASH_BUFFER_LENGTH];
+  int length = 0;
+  end= calc_end_space ? key + len : skip_trailing_space(key, len);
+
+  if (NULL == hash_algo) {
+    for (; key < (unsigned char*) end ; key++) {
+      nr1[0]^=(unsigned long int) ((((unsigned int) nr1[0] & 63)+nr2[0]) *
+        ((unsigned int) sort_order[(unsigned int) *key])) + (nr1[0] << 8);
+      nr2[0]+=3;
+    }
+  } else {
+    while (key < (unsigned char*)end) {
+      length = (int)((unsigned char*)end - key) > HASH_BUFFER_LENGTH ?
+                HASH_BUFFER_LENGTH : (int)((unsigned char*)end - key);
+      for (int i = 0; i < length; i++, key++) {
+        data[i] = sort_order[(unsigned int) *key];
+      }
+      nr1[0] = hash_algo(&data, length, nr1[0]);
+    }
+  }
+}
+
+#define SPACE_INT 0x20202020
+
+const uchar *skip_trailing_space(const uchar *ptr,size_t len)
+{
+  const unsigned char *end= ptr + len;
   if (len > 20) {
-    const unsigned char *end_words= (const unsigned char *)(int64_t)
-      (((uint64_t)(int64_t)end) / SIZEOF_INT * SIZEOF_INT);
-    const unsigned char *start_words= (const unsigned char *)(int64_t)
-       ((((uint64_t)(int64_t)str) + SIZEOF_INT - 1) / SIZEOF_INT * SIZEOF_INT);
-    ob_charset_assert(((uint64_t)(int64_t)str) >= SIZEOF_INT);
-    if (end_words > str) {
+    const unsigned char *end_words= (const unsigned char *)(int_ptr)
+      (((ulonglong)(int_ptr)end) / SIZEOF_INT * SIZEOF_INT);
+    const unsigned char *start_words= (const unsigned char *)(int_ptr)
+       ((((ulonglong)(int_ptr)ptr) + SIZEOF_INT - 1) / SIZEOF_INT * SIZEOF_INT);
+    ob_charset_assert(((ulonglong)(int_ptr)ptr) >= SIZEOF_INT);
+    if (end_words > ptr) {
       while (end > end_words && end[-1] == 0x20) {
         end--;
       }
@@ -546,8 +794,282 @@ const unsigned char *skip_trailing_space(const unsigned char *str, size_t len)
       }
     }
   }
-  while (end > str && end[-1] == 0x20) {
+  while (end > ptr && end[-1] == 0x20)
     end--;
-  }
   return (end);
 }
+
+size_t ob_strxfrm_pad(const ObCharsetInfo *cs, unsigned char *str, unsigned char *frm_end,
+                      unsigned char *str_end, unsigned int nweights, unsigned int flags) {
+  if (nweights && frm_end < str_end && (flags & OB_STRXFRM_PAD_WITH_SPACE)) {
+    unsigned int fill_len = OB_MIN((unsigned int)(str_end - frm_end), nweights * cs->mbminlen);
+    cs->cset->fill(cs, (char *)frm_end, fill_len, cs->pad_char);
+    frm_end += fill_len;
+  }
+  if ((flags & OB_STRXFRM_PAD_TO_MAXLEN) && frm_end < str_end) {
+    size_t fill_len = str_end - frm_end;
+    cs->cset->fill(cs, (char *)frm_end, fill_len, cs->pad_char);
+    frm_end = str_end;
+  }
+  return frm_end - str;
+}
+
+size_t ob_caseup_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+    char* src __attribute__((unused)), size_t srclen __attribute__((unused)),
+    char* dst __attribute__((unused)), size_t dstlen __attribute__((unused))){
+  const char *end = src + srclen;
+  ob_charset_assert(src == dst && srclen == dstlen);
+  for (; src != end; src++) *src = ob_toupper(cs,*src);
+  return srclen;
+}
+
+size_t ob_casedn_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+    char* src __attribute__((unused)), size_t srclen __attribute__((unused)),
+    char* dst __attribute__((unused)), size_t dstlen __attribute__((unused))){
+  char *end = src + srclen;
+  ob_charset_assert(src == dst && srclen == dstlen);
+  for (; src != end; src++) *src = ob_tolower(cs,*src);
+  return srclen;
+}
+
+int ob_strnncoll_simple(const ObCharsetInfo *cs __attribute__((unused)),
+                               const uchar *s, size_t slen,
+                               const uchar *t, size_t tlen,
+                               bool is_prefix)
+{
+  size_t len = (slen > tlen) ? tlen : slen;
+  if (is_prefix && slen > tlen) slen = tlen;
+  while (len--) {
+    if(ob_sort_order(cs,*s)!=ob_sort_order(cs,*t)) {
+      return (int)ob_sort_order(cs,*s) - (int)ob_sort_order(cs,*t);
+    }
+    s++;
+    t++;
+  }
+  return slen > tlen ? 1 : slen < tlen ? -1 : 0;
+}
+
+static int ob_strnncollsp_simple(const ObCharsetInfo *cs
+                          __attribute__((unused)),
+                          const uchar *s, size_t slen,
+                          const uchar *t, size_t tlen,
+                          bool diff_if_only_endspace_difference
+                          __attribute__((unused)))
+{
+  size_t len = (slen > tlen) ? tlen : slen;
+  for (size_t i = 0; i < len; i++){  
+     if(ob_sort_order(cs,*s)!=ob_sort_order(cs,*t)) {
+        return (int)ob_sort_order(cs,*s) - (int)ob_sort_order(cs,*t);
+     }
+      s++;
+      t++;
+  }
+  int res = 0;
+  if (slen != tlen) {
+    int swap = 1;
+    if (diff_if_only_endspace_difference){
+      res=1;
+    }
+    /*
+      Check the next not space character of the longer key. If it's < ' ',
+      then it's smaller than the other key.
+    */
+    if (slen < tlen) {
+      slen = tlen;
+
+      s = t;
+      swap = -1;
+      res = -res;
+    }
+    /*
+    "a"  == "a "
+    "a\0" < "a"
+    "a\0" < "a "
+    */
+    for (const unsigned char* end = s + slen - len; s < end; s++) {
+      if (ob_sort_order(cs,*s) != ob_sort_order(cs,(int)(' ')))
+        return ob_sort_order(cs,*s) < ob_sort_order(cs,(int)(' ')) ? -swap : swap;
+    }
+  }
+  return res;
+}
+
+
+
+static size_t ob_strnxfrm_simple(const ObCharsetInfo* cs __attribute__((unused)), unsigned char* dst, size_t dstlen,
+    uint nweights, const unsigned char* src, size_t srclen, unsigned int flags, bool* is_valid_unicode)
+{
+  uchar *dst0 = dst;
+  const uchar *end;
+  const uchar *remainder;
+  size_t frmlen;
+  frmlen = dstlen > nweights ? nweights : dstlen;
+  frmlen = frmlen > srclen ? srclen : frmlen; 
+  end = src + frmlen;
+  remainder = src + (frmlen % 8);
+  for (; src < remainder;) *dst++ = ob_sort_order(cs,*src++);
+  while(src < end) {
+    *dst++ = ob_sort_order(cs,*src++);
+    *dst++ = ob_sort_order(cs,*src++);
+    *dst++ = ob_sort_order(cs,*src++);
+    *dst++ = ob_sort_order(cs,*src++);
+    *dst++ = ob_sort_order(cs,*src++);
+    *dst++ = ob_sort_order(cs,*src++);
+    *dst++ = ob_sort_order(cs,*src++);
+    *dst++ = ob_sort_order(cs,*src++);
+  }
+  return ob_strxfrm_pad_desc_and_reverse(cs, dst0, dst, dst0 + dstlen, nweights - srclen, flags, 0);
+}
+
+#define likeconv(s, A) (A)
+#define INC_PTR(cs, A, B) (A)++
+
+static int ob_wildcmp_8bit_impl(const ObCharsetInfo* cs, const char* str_ptr, const char* str_end_ptr,
+    const char* wild_str, const char* wild_end, int escape_char, int w_one_char, int w_many_char, int recurse_level)
+{
+  int cmp_result = -1;
+
+  while (wild_str != wild_end) {
+    while (*wild_str != w_many_char && *wild_str != w_one_char) {
+      if (*wild_str == escape_char && wild_str + 1 != wild_end) {
+        wild_str++;
+      }
+      if (str_ptr == str_end_ptr || likeconv(cs, *wild_str++) != likeconv(cs, *str_ptr++)) {
+        return 1;
+      }
+      if (wild_str == wild_end) {
+        return str_ptr != str_end_ptr;
+      }
+      cmp_result = 1;
+    }
+    if (*wild_str == w_one_char) {
+      do {
+        if (str_ptr == str_end_ptr) {
+          return (cmp_result);
+        }
+        INC_PTR(cs, str_ptr, str_end_ptr);
+      } while (++wild_str < wild_end && *wild_str == w_one_char);
+      if (wild_str == wild_end) {
+        break;
+      }
+    }
+    if (*wild_str == w_many_char) {
+      unsigned char cmp = 0;
+      wild_str++;
+      for (; wild_str != wild_end; wild_str++) {
+        if (*wild_str == w_many_char) {
+          continue;
+        }
+        if (*wild_str == w_one_char) {
+          if (str_ptr == str_end_ptr) {
+            return (-1);
+          }
+          INC_PTR(cs, str_ptr, str_end_ptr);
+          continue;
+        }
+        break;
+      }
+      if (wild_str == wild_end) {
+        return (0);
+      }
+      if (str_ptr == str_end_ptr) {
+        return (-1);
+      }
+
+      if ((cmp = *wild_str) == escape_char && wild_str + 1 != wild_end) {
+        cmp = *++wild_str;
+      }
+
+      INC_PTR(cs, wild_str, wild_end);
+      cmp = likeconv(cs, cmp);
+      do {
+        while (str_ptr != str_end_ptr && (unsigned char)likeconv(cs, *str_ptr) != cmp) {
+          str_ptr++;
+        }
+        if (str_ptr++ == str_end_ptr) {
+          return -1;
+        }
+        do {
+          int tmp = ob_wildcmp_8bit_impl(
+              cs, str_ptr, str_end_ptr, wild_str, wild_end, escape_char, w_one_char, w_many_char, recurse_level + 1);
+          if (tmp <= 0) {
+            return tmp;
+          }
+        } while (0);
+      } while (str_ptr != str_end_ptr);
+      return -1;
+    }
+  }
+  return str_ptr != str_end_ptr ? 1 : 0;
+}
+
+int ob_wildcmp_8bit(const ObCharsetInfo* cs, const char* str, const char* str_end, const char* wildstr,
+    const char* wildend, int escape, int w_one, int w_many)
+{
+  return ob_wildcmp_8bit_impl(cs, str, str_end, wildstr, wildend, escape, w_one, w_many, 1);
+}
+
+
+uint ob_instr_simple(const ObCharsetInfo* cs __attribute__((unused)), const char* b, size_t b_length,
+    const char* s, size_t s_length, ob_match_t* match, uint nmatch)
+{
+  register const unsigned char *str, *search, *end, *search_end;
+
+  if (s_length <= b_length) {
+    if (!s_length) {
+      if (nmatch) {
+        match->beg = 0;
+        match->end = 0;
+        match->mb_len = 0;
+      }
+      return 1; /* Empty string is always found */
+    }
+
+    str = (const unsigned char*)b;
+    search = (const unsigned char*)s;
+    end = (const unsigned char*)b + b_length - s_length + 1;
+    search_end = (const unsigned char*)s + s_length;
+
+  skip:
+    while (str != end) {
+      if ((*str++) == (*search)) {
+        register const unsigned char *i, *j;
+
+        i = str;
+        j = search + 1;
+
+        while (j != search_end)
+          if ((*i++) != (*j++))
+            goto skip;
+
+        if (nmatch > 0) {
+          match[0].beg = 0;
+          match[0].end = (size_t)(str - (const unsigned char*)b - 1);
+          match[0].mb_len = match[0].end;
+
+          if (nmatch > 1) {
+            match[1].beg = match[0].end;
+            match[1].end = match[0].end + s_length;
+            match[1].mb_len = match[1].end - match[1].beg;
+          }
+        }
+        return 2;
+      }
+    }
+  }
+  return 0;
+}
+
+
+ObCollationHandler ob_collation_8bit_simple_ci_handler = {
+    // NULL /* init */
+    ob_strnncoll_simple,
+    ob_strnncollsp_simple,
+    ob_strnxfrm_simple,
+    //ob_strnxfrmlen_simple,
+    ob_like_range_simple,
+    ob_wildcmp_8bit,
+    //NULL,//ob_strcasecmp_8bit,
+    ob_instr_simple,
+    ob_hash_sort_simple,
+    ob_propagate_simple};

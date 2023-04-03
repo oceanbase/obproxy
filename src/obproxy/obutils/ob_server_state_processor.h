@@ -24,6 +24,7 @@
 #define REFRESH_CLUSTER_ROLE_EVENT (SERVER_STATE_EVENT_EVENTS_START + 4)
 #define REFRESH_LDG_INFO_EVENT (SERVER_STATE_EVENT_EVENTS_START + 5)
 #define REFRESH_ALL_TENANT_EVENT (SERVER_STATE_EVENT_EVENTS_START + 6)
+#define DETECT_SERVER_STATE_EVENT (SERVER_STATE_EVENT_EVENTS_START + 7)
 
 namespace oceanbase
 {
@@ -38,21 +39,24 @@ namespace obutils
 {
 class ObClusterResource;
 class ObCongestionManager;
+
 class ObServerStateRefreshCont : public event::ObContinuation
 {
 public:
   ObServerStateRefreshCont()
     : ObContinuation(NULL), is_inited_(false), kill_this_(false), need_reset_in_error_(false),
-      cur_job_event_(0), cluster_resource_(NULL),
-      mysql_proxy_(NULL), congestion_manager_(NULL), pending_action_(NULL),
-      ss_refresh_interval_us_(0), ss_refresh_failure_(0), set_interval_task_count_(0), cluster_id_(OB_INVALID_CLUSTER_ID), 
+      cur_job_event_(0), cluster_resource_(NULL), mysql_proxy_(NULL), congestion_manager_(NULL), pending_action_(NULL),
+      ss_refresh_interval_us_(0), ss_refresh_failure_(0),
+      set_interval_task_count_(0), cluster_id_(OB_INVALID_CLUSTER_ID),
       cluster_name_(), last_zones_state_hash_(0), last_servers_state_hash_(0), last_server_list_hash_(0)
   {
     SET_HANDLER(&ObServerStateRefreshCont::main_handler);
   }
   virtual ~ObServerStateRefreshCont() {}
 
-  int init(ObClusterResource *cr, int64_t ss_refresh_interval_us);
+  int init(ObClusterResource *cr,
+           int64_t ss_refresh_interval_us,
+           uint64_t last_rs_list_hash);
 
   int schedule_refresh_server_state(const bool imm = false);
   int set_server_state_refresh_interval(const int64_t interval);
@@ -153,6 +157,40 @@ public:
   static uint64_t get_servers_state_hash(common::ObIArray<ObServerStateInfo> &servers_state);
   static uint64_t get_servers_addr_hash(common::ObIArray<ObServerStateInfo> &servers_state);
   static int order_servers_state(const common::ObIArray<ObServerStateInfo> &servers_state, LocationList &server_list);
+};
+
+class ObDetectServerStateCont : public event::ObContinuation
+{
+public:
+  ObDetectServerStateCont() : is_inited_(false), kill_this_(false), cluster_resource_(NULL),
+         server_detect_state_interval_us_(0), pending_action_(NULL), set_interval_task_count_(0)
+  {
+     SET_HANDLER(&ObDetectServerStateCont::main_handler);
+  }
+  virtual ~ObDetectServerStateCont() {}
+  virtual void destroy() { kill_this(); }
+  virtual int main_handler(int event, void *data);
+  void kill_this();
+  int init(ObClusterResource *cluster_resource, int64_t server_detect_refresh_interval_us);
+
+  int schedule_detect_server_state();
+  int set_detect_server_state_interval(const int64_t refresth_interval);
+
+  DECLARE_TO_STRING;
+
+private:
+  int cancel_pending_action();
+
+private:
+  bool is_inited_;
+  bool kill_this_;
+  ObClusterResource *cluster_resource_;
+  int64_t server_detect_state_interval_us_;
+  event::ObAction *pending_action_;
+  volatile int64_t set_interval_task_count_;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObDetectServerStateCont);
 };
 
 } // end of namespace obutils

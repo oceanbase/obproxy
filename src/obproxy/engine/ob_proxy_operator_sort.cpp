@@ -405,7 +405,7 @@ int ObProxyMemMergeSortOp::handle_response_result(void *data, bool &is_final, Ob
       } else if (OB_ISNULL(sort_unit = new (tmp_buf) ObProxyMemMergeSortUnit(allocator_))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("fail to new merge sort unit", K(ret));
-      } else if (OB_FAIL(sort_unit->init(row, input->get_order_exprs()))) {
+      } else if (OB_FAIL(sort_unit->init(row, result_fields_, input->get_order_exprs()))) {
         LOG_WARN("fail to init sort unit", K(ret));
       } else if (OB_FAIL(sort_units_.push_back(sort_unit))) {
         LOG_WARN("fail to push back sort unit", K(ret));
@@ -460,7 +460,7 @@ int ObProxyMemMergeSortOp::handle_response_result(void *data, bool &is_final, Ob
   return ret;
 }
 
-int ObProxyMemMergeSortUnit::init(ResultRow *row, ObIArray<ObProxyOrderItem*> &order_exprs)
+int ObProxyMemMergeSortUnit::init(ResultRow *row, ResultFields *result_fields, ObIArray<ObProxyOrderItem*> &order_exprs)
 {
   int ret = OB_SUCCESS;
 
@@ -468,6 +468,7 @@ int ObProxyMemMergeSortUnit::init(ResultRow *row, ObIArray<ObProxyOrderItem*> &o
     LOG_WARN("fail to assign order exprs", K(ret));
   } else {
     row_ = row;
+    result_fields_ = result_fields;
     if (OB_FAIL(calc_order_values())) {
       LOG_WARN("fail to get order value", K(ret));
     }
@@ -487,6 +488,15 @@ int ObProxyMemMergeSortUnit::calc_order_values()
   for (int64_t i = 0; OB_SUCC(ret) && i < order_exprs_.count(); i++) {
     if (OB_FAIL(order_exprs_.at(i)->calc(ctx, calc_item, order_values_))) {
       LOG_WARN("fail to calc order exprs", K(ret));
+    } else {
+      int64_t index = order_exprs_.at(i)->get_expr()->get_index();
+      if (-1 != index) {
+        ObObj &value = order_values_.at(i);
+        if (OB_FAIL(change_sql_value(value, result_fields_->at(index), &allocator_))) {
+          LOG_WARN("fail to change sql value", K(value),
+                   "filed", result_fields_->at(index), K(ret));
+        }
+      }
     }
   }
 
@@ -566,7 +576,7 @@ int ObProxyStreamSortOp::handle_response_result(void *data, bool &is_final, ObPr
       } else if (OB_ISNULL(sort_unit = new (tmp_buf) ObProxyStreamSortUnit(allocator_))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("fail to new merge sort unit", K(ret));
-      } else if (OB_FAIL(sort_unit->init(opres, input->get_order_exprs()))) {
+      } else if (OB_FAIL(sort_unit->init(opres, result_fields_, input->get_order_exprs()))) {
         LOG_WARN("fail to init sort unit", K(ret));
       } else if (OB_FAIL(sort_units_.push_back(sort_unit))) {
         LOG_WARN("fail to push back sort unit", K(ret));
@@ -638,7 +648,8 @@ int ObProxyStreamSortOp::handle_response_result(void *data, bool &is_final, ObPr
   return ret;
 }
 
-int ObProxyStreamSortUnit::init(ObProxyResultResp* result_set, common::ObIArray<ObProxyOrderItem*> &order_exprs)
+int ObProxyStreamSortUnit::init(ObProxyResultResp* result_set, ResultFields *result_fields,
+                                common::ObIArray<ObProxyOrderItem*> &order_exprs)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(order_exprs_.assign((order_exprs)))) {
@@ -646,6 +657,9 @@ int ObProxyStreamSortUnit::init(ObProxyResultResp* result_set, common::ObIArray<
   } else if (OB_ISNULL(result_set_ = result_set)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("result set should not NULL", K(ret));
+  } else if (OB_ISNULL(result_fields_ = result_fields)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("result fields should not NULL", K(ret));
   } else if (OB_FAIL(next())) {
     // The first time, there must be a result, so it must not be OB_ITER_END
     LOG_WARN("fail to exec next", K(ret));

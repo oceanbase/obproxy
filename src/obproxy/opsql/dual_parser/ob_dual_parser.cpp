@@ -394,7 +394,6 @@ int ObProxyDualParser::parse_where_fields(ObCollationType connection_collation)
   }
   ObExprParseMode parse_mode = SELECT_STMT_PARSE_MODE;
   ObExprParseResult& expr_result = result_->expr_result_;
-  expr_result.target_mask_ = FIRST_PART_MASK; // set for init success
   if (OB_FAIL(ObProxySqlParser::get_parse_allocator(allocator_))) {
   } else if (OB_ISNULL(allocator_)) {
     ret = OB_ERR_UNEXPECTED;

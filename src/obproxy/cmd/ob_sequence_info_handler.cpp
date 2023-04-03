@@ -175,7 +175,8 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
   } else if (!param_.tnt_id_.empty() && param_.tnt_col_.empty()) {
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "tnt_col is empty while tnt_id used");
     ret = OB_ERR_UNEXPECTED;
-  } else if (OB_FAIL(ObProxyShardUtils::get_real_info(*logic_db_info,
+  } else if (OB_FAIL(ObProxyShardUtils::get_real_info(session_info,
+                     *logic_db_info,
                      sequence_table_name,
                      parse_result,
                      shard_conn,
@@ -211,6 +212,9 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
     table_id_ = table_id;
     group_id_ = group_id;
     eid_ = es_id;
+    session_info.set_group_id(group_id);
+    session_info.set_table_id(table_id);
+    session_info.set_es_id(es_id);
 
     snprintf(seq_id_buf_, 2048, "%.*s-%.*s-%.*s-%.*s-%.*s-%.*s-%02ld-%02ld-%02ld",
              logic_tenant_name_.config_string_.length(), logic_tenant_name_.config_string_.ptr(),
@@ -221,6 +225,11 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
              param_.tnt_id_.length(), param_.tnt_id_.ptr(),
              group_id_, table_id_, eid_);
     param_.seq_id_ = ObString(seq_id_buf_);
+  }
+
+  if (NULL != logic_db_info) {
+    logic_db_info->dec_ref();
+    logic_db_info = NULL;
   }
   LOG_DEBUG("Left handle_shard_sequence_params", K(param_), K(table_id_), K(group_id_), K(eid_));
   return ret;
@@ -294,7 +303,7 @@ int ObSequenceInfoHandler::encode_err_packet(const int errcode)
     } else {}
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet_buf(*internal_buf_, seq_, errcode, msg_buf))) {
+    if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, msg_buf))) {
       WARN_ICMD("fail to encode err packet", K(errcode), K(msg_buf), K(ret));
     } else {
       INFO_ICMD("succ to encode err packet", K(errcode), K(msg_buf));

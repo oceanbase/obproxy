@@ -14,6 +14,7 @@
 
 #include "utils/ob_proxy_hot_upgrader.h"
 #include "iocore/eventsystem/ob_event_processor.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -28,7 +29,8 @@ ObHotUpgraderInfo g_hot_upgrade_info;
 
 void ObHotUpgraderInfo::reset()
 {
-  fd_ = OB_INVALID_INDEX;
+  ipv4_fd_ = OB_INVALID_INDEX;
+  ipv6_fd_ = OB_INVALID_INDEX;
   received_sig_ = OB_INVALID_INDEX;
   sub_pid_ = OB_INVALID_INDEX;
   rc_status_ = RCS_NONE;
@@ -67,9 +69,9 @@ DEF_TO_STRING(ObHotUpgraderInfo)
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(is_inherited), K_(upgrade_version), K_(need_conn_accept), K_(user_rejected), K_(fd),
-       K_(received_sig), K_(sub_pid), K_(graceful_exit_end_time), K_(graceful_exit_start_time),
-       K_(active_client_vc_count), K_(local_addr),
+  J_KV(K_(is_inherited), K_(upgrade_version), K_(need_conn_accept), K_(user_rejected), K_(ipv4_fd),
+       K_(ipv6_fd), K_(received_sig), K_(sub_pid), K_(graceful_exit_end_time),
+       K_(graceful_exit_start_time), K_(active_client_vc_count), K_(local_addr),
        "rc_status", get_rc_status_string(rc_status_),
        "hu_cmd", get_cmd_string(cmd_),
        "state", get_state_string(state_),

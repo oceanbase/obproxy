@@ -92,7 +92,7 @@ int ObSessionStatTableSync::init(ObMysqlProxy &mysql_proxy, const char *cluster_
 {
   int ret = OB_SUCCESS;
   ObAddr addr;
-  char ip_str[OB_IP_STR_BUFF];
+  char ip_str[MAX_IP_ADDR_LENGTH];
   ip_str[0] = '\0';
 
   if (OB_ISNULL(cluster_name)
@@ -101,7 +101,7 @@ int ObSessionStatTableSync::init(ObMysqlProxy &mysql_proxy, const char *cluster_
     LOG_WARN("invalid parameter", K(cluster_name), K(stats), K(stat_names), K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(addr))) {
     LOG_WARN("fail to get proxy local addr", K(addr), K(ret));
-  } else if (!addr.ip_to_string(ip_str, OB_IP_STR_BUFF)) {
+  } else if (!addr.ip_to_string(ip_str, MAX_IP_ADDR_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to covert ip to string", K(addr), K(ret));
   } else if (OB_FAIL(sql_.append_fmt(ObStatProcessor::INSERT_PROXY_STAT_SQL_HEAD,

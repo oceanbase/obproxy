@@ -50,21 +50,18 @@ class ObConfigV2Handler;
 namespace obutils
 {
 
-enum ObConfigType
-{
-  OBPROXY_CONFIG_INVALID = -1,
-  OBPROXY_CONFIG_CLOUD,
-  OBPROXY_CONFIG_MAX
-};
+struct ObVipAddr;
 
 typedef int (*config_processor_execute) (void *);
-typedef int (*config_processor_commit) (bool is_success);
+typedef int (*config_processor_commit) (void*, bool is_success);
+typedef int (*config_processor_before_commit) (void *);
 
 struct ObConfigHandler
 {
+  ObConfigHandler() : execute_func_(NULL), commit_func_(NULL), before_commit_func_(NULL) {}
   config_processor_execute execute_func_;
   config_processor_commit commit_func_;
-  ObConfigType config_type_;
+  config_processor_before_commit before_commit_func_;
 };
 
 typedef common::hash::ObHashMap<common::ObFixedLengthString<common::OB_MAX_TABLE_NAME_LENGTH>, ObConfigHandler> ConfigHandlerHashMap;
@@ -76,7 +73,6 @@ public:
   ~ObFnParams();
 
 public:
-  ObConfigType config_type_;
   ObProxyBasicStmtType stmt_type_;
   common::ObString table_name_;
   SqlFieldResult *fields_;
@@ -93,21 +89,6 @@ public:
   common::ObString tenant_name_;
 };
 
-struct ResolveContext
-{
-  ResolveContext() : stmt_type_(OBPROXY_T_INVALID), table_name_(),
-      config_type_(OBPROXY_CONFIG_INVALID), column_name_array_(),
-      sql_field_(), handler_()   
-  {}
-
-  ObProxyBasicStmtType stmt_type_;
-  common::ObString table_name_;
-  ObConfigType config_type_;
-  common::ObSEArray<common::ObString, 4> column_name_array_;
-  obutils::SqlFieldResult sql_field_;
-  ObConfigHandler handler_;
-};
-
 class ObConfigProcessor
 {
 public:
@@ -118,20 +99,34 @@ public:
   int execute(common::ObString &sql, const ObProxyBasicStmtType stmt_type, obproxy::ObConfigV2Handler *handler);
   int register_callback(const common::ObString &table_name, ObConfigHandler&handler);
   bool is_table_in_service(const common::ObString &table_name);
-  int store_cloud_config(const common::ObString &table_name,
-                         const common::ObString &cluster_name,
-                         const common::ObString& tenant_name,
-                         const common::ObString& name,
-                         const common::ObString &value);
+  int store_global_ssl_config(const common::ObString& name, const common::ObString &value);
+  int store_global_proxy_config(const common::ObString &name, const common::ObString &value);
+  int store_vip_tenant_cluster_config(int64_t vid, const ObString &vip, int64_t vport,
+      const ObString &name, const ObString &value);
+  int store_proxy_config_with_level(int64_t vid, const ObString &vip, int64_t vport,
+      const ObString &cluster_name, const ObString &tenant_name,
+      const ObString &name, const ObString &value, const ObString &level);
+
+  int get_proxy_config(const ObVipAddr &addr, const common::ObString &cluster_name,
+                       const common::ObString &tenant_name, const common::ObString& name,
+                       common::ObConfigItem &ret_item);
+  int get_proxy_config_bool_item(const ObVipAddr &addr, const common::ObString &cluster_name,
+                                 const common::ObString &tenant_name, const common::ObString& name,
+                                 common::ObConfigBoolItem &ret_item);
+  int get_proxy_config_int_item(const ObVipAddr &addr, const common::ObString &cluster_name,
+                                 const common::ObString &tenant_name, const common::ObString& name,
+                                 common::ObConfigIntItem &ret_item);
+  int get_proxy_config_with_level(const ObVipAddr &addr, const common::ObString &cluster_name,
+                                  const common::ObString &tenant_name, const common::ObString& name,
+                                  common::ObConfigItem &ret_item, const ObString level, bool &found);
+  int execute(const char* sql, int (*callback)(void*, int, char**, char**), void* handler);
 
 private:
   int init_config_from_disk();
   int check_and_create_table();
-  int resolve_insert(const ParseNode* node, ResolveContext &ctx);
-  int resolve_delete(const ParseNode* node, ResolveContext &ctx);
-  int handle_dml_stmt(common::ObString &sql, ParseResult& parse_result);
+  int handle_dml_stmt(common::ObString &sql, ParseResult& parse_result, ObArenaAllocator&allocator);
   int handle_select_stmt(common::ObString &sql, obproxy::ObConfigV2Handler *v2_handler);
-  
+
   static int init_callback(void *data, int argc, char **argv, char **column_name);
   static int sqlite3_callback(void *data, int argc, char **argv, char **column_name);
 private:

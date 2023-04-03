@@ -25,11 +25,12 @@ namespace obutils
 class ObSelectDatabaseHandler : public ObCmdHandler
 {
 public:
-  ObSelectDatabaseHandler(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit);
+  ObSelectDatabaseHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
   virtual ~ObSelectDatabaseHandler() {}
   int handle_select_database(const ObString &logic_database_name);
 
-  static int select_database_cmd_callback(event::ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit, const ObString &logic_database_name);
+  static int select_database_cmd_callback(event::ObMIOBuffer *buf, ObCmdInfo &info,
+                                          const ObString &logic_database_name);
 
 private:
   int dump_header();

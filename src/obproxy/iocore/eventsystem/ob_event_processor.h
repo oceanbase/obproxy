@@ -35,6 +35,7 @@
 #include "iocore/eventsystem/ob_ethread.h"
 #include "iocore/eventsystem/ob_event.h"
 #include "iocore/eventsystem/ob_io_buffer.h"
+#include "lib/lock/ob_drw_lock.h"
 
 namespace oceanbase
 {
@@ -54,6 +55,8 @@ const int64_t MAX_EVENT_THREADS        = OB_MAX_NUMBER_EVENT_THREADS;
 #else
 const int64_t MAX_EVENT_THREADS        = 512;
 #endif
+
+const int64_t MAX_OTHER_GROUP_NET_THREADS = 8;
 
 #ifndef offsetof
 #define offsetof(TYPE, MEMBER) ((size_t) &((TYPE *)0)->MEMBER)
@@ -149,6 +152,10 @@ public:
    */
   int spawn_event_threads(const int64_t thread_count, const char *et_name,
                           const int64_t stacksize, ObEventThreadType &etype);
+  int spawn_net_threads(const int64_t thread_count, const char *et_name,
+                           const int64_t stacksize);
+
+  virtual int init_thread(ObEThread *&t);
 
   /**
    * Schedules the continuation on a specific ObEThread to receive an event
@@ -279,7 +286,8 @@ public:
    * @return 0 if successful, and a negative value otherwise.
    */
   virtual int start(const int64_t net_thread_count, const int64_t stacksize = DEFAULT_STACKSIZE,
-                    const bool enable_cpu_topology = false, const bool automatic_match_work_thread = true);
+                    const bool enable_cpu_topology = false, const bool automatic_match_work_thread = true,
+                    const bool enable_cpu_isolate = false);
 
   /**
    * Stop the ObEventProcessor. Attempts to stop the ObEventProcessor and
@@ -297,7 +305,7 @@ public:
    */
   int64_t allocate(const int64_t size);
 
-  ObEvent *schedule(ObEvent *e, const ObEventThreadType etype, const bool fast_signal = false);
+  virtual ObEvent *schedule(ObEvent *e, const ObEventThreadType etype, const bool fast_signal = false);
 
   ObEThread *assign_thread(const ObEventThreadType etype);
 
@@ -353,6 +361,7 @@ public:
   ObEThread *all_dedicate_threads_[MAX_EVENT_THREADS];
   int64_t dedicate_thread_count_;               // No. of dedicated threads
   volatile int64_t thread_data_used_;
+  common::DRWLock lock_;
 
 private:
   bool started_;
@@ -364,6 +373,7 @@ inline ObEventProcessor::ObEventProcessor()
       thread_group_count_(0),
       dedicate_thread_count_(0),
       thread_data_used_(0),
+      lock_(),
       started_(false)
 {
   memset(all_event_threads_, 0, sizeof(all_event_threads_));
@@ -409,7 +419,7 @@ inline ObEThread *ObEventProcessor::assign_thread(const ObEventThreadType etype)
   return (event_thread_[etype][next]);
 }
 
-inline ObEvent *ObEventProcessor::schedule(
+ObEvent *ObEventProcessor::schedule(
     ObEvent *event, const ObEventThreadType etype, const bool fast_signal)
 {
   event->ethread_ = assign_thread(etype);

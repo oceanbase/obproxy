@@ -214,6 +214,31 @@ int ObProxyConfig::dump_config_to_local()
   return ret;
 }
 
+int ObProxyConfig::dump_config_to_sqlite()
+{
+  int ret = OB_SUCCESS;
+  CRLockGuard guard(rwlock_);
+  ObConfigContainer::const_iterator it = container_.begin();
+  for (; OB_SUCC(ret) && it != container_.end(); ++it) {
+    const char *sql = "replace into proxy_config(name, value, config_level) values('%s', '%s', 'LEVEL_GLOBAL')";
+    char buf[1024];
+    char *err_msg = NULL;
+    int64_t len = static_cast<int64_t>(snprintf(buf, 1024, sql, it->first.str(), it->second->str()));
+    if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= 1024)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to fill sql", K(buf), K(len), K(ret));
+    } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, buf, NULL, 0, &err_msg)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("exec replace into proxy config failed", K(ret), "sql", buf, "err_msg", err_msg);
+    }
+
+    if (NULL != err_msg) {
+      sqlite3_free(err_msg);
+    }
+  }
+  return ret;
+}
+
 int ObProxyConfig::set_value_safe(ObConfigItem *item, const ObString &value,
     const bool allow_invalid_value/*true*/)
 {
@@ -353,6 +378,29 @@ int ObProxyConfig::get_old_config_value(const common::ObString &key_name, char *
   return ret;
 }
 
+int ObProxyConfig::get_config_item(const common::ObString &key_name, ObConfigItem &ret_item)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(key_name.empty())
+      || OB_UNLIKELY(key_name.length() >= static_cast<int32_t>(OB_MAX_CONFIG_NAME_LEN))) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid argument", K(key_name), K(ret));
+  } else {
+    ObConfigItem *const *item = NULL;
+    ObConfigStringKey key(key_name);
+
+    if (OB_ISNULL(item = container_.get(key))) {
+      ret = OB_ERR_SYS_CONFIG_UNKNOWN;
+      LOG_WARN("unknown key_name", K(key_name), K(ret));
+    } else {
+      //we need lock it whenever handle item->value
+      CRLockGuard guard(rwlock_);
+      ret_item = **item;
+    }
+  }
+  return ret;
+}
+
 void ObProxyConfig::update_log_level(const bool level_flag)
 {
   int ret = OB_SUCCESS;
@@ -368,7 +416,9 @@ void ObProxyConfig::update_log_level(const bool level_flag)
     LOG_WARN(" fail to update sys log level", K(ret));
   } else if (OB_FAIL(dump_config_to_local())) {
     LOG_WARN("dump config fail, inc log level fail", K(ret));
-  } else {
+  } else if (OB_FAIL(dump_config_to_sqlite())) {
+    LOG_WARN("dump config failed, inc log level fail", K(ret));
+  } {
     //do nothing
   }
 

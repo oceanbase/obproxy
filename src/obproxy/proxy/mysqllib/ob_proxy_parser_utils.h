@@ -16,8 +16,9 @@
 #include "lib/ob_define.h"
 #include "rpc/obmysql/ob_mysql_packet.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
-#include "proxy/mysqllib/ob_proxy_mysql_request.h"
 #include "proxy/mysqllib/ob_2_0_protocol_struct.h"
+#include "lib/utility/ob_2_0_full_link_trace_info.h"
+
 
 namespace oceanbase
 {
@@ -32,6 +33,7 @@ namespace proxy
 
 enum ObMysqlAnalyzeStatus
 {
+  ANALYZE_NOT_SUPPORT = -4,
   ANALYZE_CAN_NOT_PASS_WHITE_LIST_ERROR = -3,
   ANALYZE_OBPARSE_ERROR = -2,
   ANALYZE_ERROR = -1,
@@ -79,16 +81,22 @@ public:
 class ObMysqlCompressedOB20AnalyzeResult : public ObMysqlCompressedAnalyzeResult
 {
 public:
-  ObMysqlCompressedOB20AnalyzeResult() : ObMysqlCompressedAnalyzeResult(), ob20_header_() {}
-  ~ObMysqlCompressedOB20AnalyzeResult() {}
+  ObMysqlCompressedOB20AnalyzeResult()
+    : ObMysqlCompressedAnalyzeResult(), ob20_header_(), extra_info_(), flt_() {}
+  ~ObMysqlCompressedOB20AnalyzeResult() { reset(); }
   virtual void reset()
   {
     ObMysqlCompressedAnalyzeResult::reset();
     ob20_header_.reset();
+    extra_info_.reset();
+    flt_.reset();
   }
 
   Ob20ProtocolHeader ob20_header_;
-  TO_STRING_KV(K_(status), K_(header), K_(is_checksum_on), K_(ob20_header));
+  Ob20ExtraInfo extra_info_;
+  common::FLTObjManage flt_;
+  
+  TO_STRING_KV(K_(status), K_(header), K_(is_checksum_on), K_(ob20_header), K_(extra_info));
 };
 
 class ObProxyParserUtils

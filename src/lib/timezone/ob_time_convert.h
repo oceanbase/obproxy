@@ -251,6 +251,7 @@ public:
   static int int_to_time(int64_t int64, int64_t &value);
   static int int_to_year(int64_t int64, uint8_t &value);
   static int str_to_datetime(const ObString &str, const ObTimeZoneInfo *tz_info, int64_t &value, int16_t *scale = NULL);
+  static int str_to_date_oracle(const ObString &str, const ObTimeConvertCtx &cvrt_ctx, ObDateTime &value);
   static int str_to_datetime_format(const ObString &str, const ObString &fmt,
                                     const ObTimeZoneInfo *tz_info, int64_t &value, int16_t *scale = NULL);
   static int str_is_date_format(const ObString &str, bool &date_flag);
@@ -345,7 +346,7 @@ public:
                             ObDTMode mode, int32_t &delta);
   static int ob_time_to_str_oracle_dfm(const ObTime &ob_time, ObScale scale, const ObString &format,
                                        char *buf, int64_t buf_len, int64_t &pos);
-  static int ob_time_to_datetime(ObTime &ob_time, const ObTimeZoneInfo *sp, int64_t &value);
+  static int ob_time_to_datetime(ObTime &ob_time, const ObTimeZoneInfo *tz_info, int64_t &value);
   static int32_t ob_time_to_date(ObTime &ob_time);
   static int ob_time_to_otimestamp(ObTime &ob_time, ObOTimestampData &value);
   static int64_t ob_time_to_time(const ObTime &ob_time);

@@ -18,8 +18,10 @@
 #include "utils/ob_layout.h"
 #include "obutils/ob_proxy_config.h"
 #include "proxy/client/ob_mysql_proxy.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
+using namespace oceanbase::obproxy;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::proxy;
 
@@ -569,7 +571,9 @@ int ObProxyConfigUtils::load_config_from_file(ObProxyConfig &proxy_config)
   if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(OB_PROXY_CONFIG_BUFFER_SIZE, mem_attr)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("ob tc malloc memory for buf fail", K(ret));
-  } else if (OB_FAIL(ObProxyFileUtils::read(CFG_DUMP_NAME, buf, OB_PROXY_CONFIG_BUFFER_SIZE, read_len))) {
+  // If it is a rich client mode, the configuration will not be read from the local file
+  } else if (RUN_MODE_PROXY == g_run_mode
+             && OB_FAIL(ObProxyFileUtils::read(CFG_DUMP_NAME, buf, OB_PROXY_CONFIG_BUFFER_SIZE, read_len))) {
     // no need to print warn log, the caller will do it
   } else {
     obsys::CWLockGuard guard(proxy_config.rwlock_);
@@ -898,8 +902,20 @@ void ObProxyFileUtils::clear_dir(const char *dir)
         if (LOCAL_DIR == ent->d_name || PARENT_DIR == ent->d_name) {
           continue;
         }
+        bool is_dir = false;
         snprintf(tmp_path, FileDirectoryUtils::MAX_PATH, "%s/%s", dir, ent->d_name);
         if (ent->d_type == DT_DIR) {
+          is_dir = true;
+        } else if (ent->d_type == DT_UNKNOWN) {
+          struct stat st;
+          if (0 != (stat(tmp_path, &st))) {
+            LOG_WARN("fail to stat dir", K(tmp_path), KERRMSGS);
+          } else {
+            is_dir = S_ISDIR(st.st_mode);
+          }
+        }
+
+        if (is_dir) {
           clear_dir(tmp_path);
         } else {
           ::unlink(tmp_path);

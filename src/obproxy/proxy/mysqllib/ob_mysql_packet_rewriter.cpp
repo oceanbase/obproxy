@@ -15,6 +15,7 @@
 #include "proxy/mysqllib/ob_mysql_response.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
 #include "proxy/mysqllib/ob_session_field_mgr.h"
+#include "proxy/mysqllib/ob_proxy_session_info.h"
 #include "lib/encrypt/ob_encrypted_helper.h"
 
 using namespace oceanbase::common;
@@ -131,7 +132,7 @@ int ObHandshakeResponseParam::write_client_addr_buf(const common::ObAddr &addr)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!addr.is_valid())) {
     //do not write
-  } else if (OB_UNLIKELY(!addr.ip_to_string(client_ip_buf_, OB_MAX_IP_BUF_LEN))) {
+  } else if (OB_UNLIKELY(!addr.ip_to_string(client_ip_buf_, MAX_IP_ADDR_LENGTH))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to ip_to_string", K(addr), K(ret));
   }
@@ -141,9 +142,13 @@ int ObHandshakeResponseParam::write_client_addr_buf(const common::ObAddr &addr)
 int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
                                              const ObMySQLCapabilityFlags &des_cap,
                                              OMPKOK &des_ok,
-                                             const bool need_save_sys_var)
+                                             ObClientSessionInfo &client_info,
+                                             char *cap_buf,
+                                             const int64_t cap_buf_len,
+                                             const bool is_auth_request)
 {
   int ret = OB_SUCCESS;
+  
   des_ok.set_affected_rows(src_ok.get_affected_rows());
   des_ok.set_last_insert_id(src_ok.get_last_insert_id());
   des_ok.set_server_status(src_ok.get_server_status());
@@ -154,20 +159,42 @@ int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
 //  tmp_flags.cap_flags_.OB_CLIENT_SESSION_TRACK = 0;
 //  tmp_flags.cap_flags_.OB_CLIENT_DEPRECATE_EOF = 0;
 
-  if (need_save_sys_var) {
+  if (client_info.is_oracle_mode()) {
     des_ok.set_state_changed(true);
 //    tmp_flags.cap_flags_.OB_CLIENT_SESSION_TRACK = 1;
     const common::ObIArray<ObStringKV> &system_vars = src_ok.get_system_vars();
-    for (int64_t i = 0; i < system_vars.count(); ++i) {
+    for (int64_t i = 0; i < system_vars.count() && OB_SUCC(ret); ++i) {
       if (ObSessionFieldMgr::is_nls_date_timestamp_format_variable(system_vars.at(i).key_)) {
-        des_ok.add_system_var(system_vars.at(i));
+        if (OB_FAIL(des_ok.add_system_var(system_vars.at(i)))) {
+          LOG_WARN("fail to add system var", K(ret), "key:", system_vars.at(i).key_);
+        }
       }
     }
   }
+
   des_ok.set_capability(tmp_flags);
+  // cap.OB_CLIENT_SESSION_TRACK is already set in orig_cap
+  if (OB_SUCC(ret) && client_info.is_client_support_ob20_protocol() && is_auth_request) {
+    des_ok.set_state_changed(true);
+    uint64_t cap = client_info.get_client_ob_capability();
+    int64_t pos = 0;
+    
+    if (OB_FAIL(databuff_printf(cap_buf, cap_buf_len, pos, "%lu", cap))) {
+      LOG_WARN("fail to databuff printf", K(ret), K(pos));
+    } else {
+      ObStringKV str_kv;
+      str_kv.key_.assign_ptr(sql::OB_SV_CAPABILITY_FLAG, static_cast<int32_t>(STRLEN(sql::OB_SV_CAPABILITY_FLAG)));
+      str_kv.value_.assign_ptr(cap_buf, static_cast<int32_t>(STRLEN(cap_buf)));
+      if (OB_FAIL(des_ok.add_system_var(str_kv))) {
+        LOG_WARN("fail to add system var while rewrite ok packet", K(ret));
+      } else {
+        LOG_DEBUG("succ to add system var in ok packet back to client", K(str_kv), K(cap));
+      }
+    }
+  }
+  
   return ret;
 };
-
 
 int ObMysqlPacketRewriter::add_connect_attr(const char *key, const char *value,
                                             OMPKHandshakeResponse &tg_hsr)
@@ -212,19 +239,41 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
   }
 
   // find client_ip
-  ObStringKV string_kv;
-  for (int64_t i = 0; OB_SUCC(ret) && i <  tg_hsr.get_connect_attrs().count(); ++i) {
-    string_kv = tg_hsr.get_connect_attrs().at(i);
-    if (0 == string_kv.key_.case_compare(OB_MYSQL_CLIENT_IP)) {
-      if (!string_kv.value_.empty()) {
-        snprintf(param.client_ip_buf_, ObHandshakeResponseParam::OB_MAX_IP_BUF_LEN, "%.*s", string_kv.value_.length(), string_kv.value_.ptr());
+  if (RUN_MODE_PROXY == g_run_mode && param.enable_client_ip_checkout_) {
+    ObStringKV string_kv;
+    for (int64_t i = 0; OB_SUCC(ret) && i <  tg_hsr.get_connect_attrs().count(); ++i) {
+      string_kv = tg_hsr.get_connect_attrs().at(i);
+      if (0 == string_kv.key_.case_compare(OB_MYSQL_CLIENT_IP)) {
+        if (!string_kv.value_.empty()) {
+          snprintf(param.client_ip_buf_, MAX_IP_ADDR_LENGTH, "%.*s", string_kv.value_.length(), string_kv.value_.ptr());
+        }
+        break;
       }
-      break;
     }
   }
 
   // reset before add
   tg_hsr.reset_connect_attr();
+  // add transparent transit conn attrs & find client_ip
+  OMPKHandshakeResponse &orig_hsr = orig_auth_req.get_hsr_result().response_;
+  bool find_client_ip = false;
+  for (int64_t i = 0; OB_SUCC(ret) && i < orig_hsr.get_connect_attrs().count(); ++i) {
+    ObStringKV kv;
+    // transit conn attrs OB_MYSQL_OB_CLIENT
+    if (OB_FAIL(orig_hsr.get_connect_attrs().at(i, kv))) {
+      LOG_WARN("fail access handshake response connect attrs", K(i), K(ret));
+    } else if (kv.key_.prefix_match(OB_MYSQL_OB_CLIENT)) {
+      if (OB_FAIL(tg_hsr.get_connect_attrs().push_back(kv))) {
+        LOG_WARN("fail push back transparent transmit connect attrs", K(kv), K(ret));
+      } else { /* succ */ }
+    } else if (!find_client_ip 
+                && param.enable_client_ip_checkout_
+                && 0 == kv.key_.case_compare(OB_MYSQL_CLIENT_IP)
+                && !kv.value_.empty()){ 
+      snprintf(param.client_ip_buf_, MAX_IP_ADDR_LENGTH, "%.*s", kv.value_.length(), kv.value_.ptr());
+      find_client_ip = true;
+    } else { /* do nothing */ }
+  }
   // 4. add obproxy specified connect attrs:
   // a. proxy_mode
   // b. connection id
@@ -252,9 +301,7 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
     LOG_WARN("fail to add client ip", K(param.client_ip_buf_), K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_VERSION, param.proxy_version_buf_, tg_hsr))) {
     LOG_WARN("fail to add proxy version", K(param.proxy_version_buf_), K(ret));
-  } else {
-    //do nothing
-  }
+  } else { /* succ */ }
 
 
   return ret;

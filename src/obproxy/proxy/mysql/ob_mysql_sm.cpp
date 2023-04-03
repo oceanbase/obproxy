@@ -50,6 +50,7 @@
 #include "cmd/ob_select_database_handler.h"
 #include "cmd/ob_show_topology_handler.h"
 #include "cmd/ob_show_db_version_handler.h"
+#include "cmd/ob_show_table_status_handler.h"
 #include "obutils/ob_tenant_stat_manager.h"
 #include "prometheus/ob_net_prometheus.h"
 #include "prometheus/ob_sql_prometheus.h"
@@ -64,11 +65,18 @@
 #include "dbconfig/ob_proxy_pb_utils.h"
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
 #include "omt/ob_white_list_table_processor.h"
-#include "omt/ob_resource_unit_table_processor.h"
+#include "omt/ob_conn_table_processor.h"
 #include "omt/ob_ssl_config_table_processor.h"
 #include "iocore/net/ob_inet.h"
+#include "iocore/eventsystem/ob_shard_scan_all_task.h"
 #include "prometheus/ob_thread_prometheus.h"
+#include "ob_proxy_init.h"
 #include "common/obsm_utils.h"
+#include "proxy/mysqllib/ob_proxy_ob20_request.h"
+#include "proxy/mysqllib/ob_mysql_resp_analyzer.h"
+#include "obproxy/packet/ob_proxy_packet_writer.h"
+#include "obproxy/cmd/ob_internal_cmd_processor.h"
+#include "engine/ob_proxy_operator_cont.h"
 
 using namespace oceanbase::share;
 using namespace oceanbase::common;
@@ -192,13 +200,18 @@ ObMysqlSM::ObMysqlSM()
       terminate_sm_(false), kill_this_async_done_(false), handling_ssl_request_(false),
       need_renew_cluster_resource_(false), is_in_trans_(true),
       retry_acquire_server_session_count_(0), start_acquire_server_session_time_(0),
-      skip_plugin_(false)
+      skip_plugin_(false), add_detect_server_cnt_(false), enable_cloud_full_username_(false),
+      enable_client_ssl_(false), enable_server_ssl_(false), enable_read_write_split_(false),
+      enable_transaction_split_(false), enable_ob_protocol_v2_(false), config_version_(0), target_db_server_(NULL)
 {
   static bool scatter_inited = false;
 
   memset(&history_, 0, sizeof(history_));
   memset(&vc_table_, 0, sizeof(vc_table_));
+  memset(proxy_route_policy_, 0, sizeof(proxy_route_policy_));
 
+  memset(flt_trace_buffer_, 0, sizeof(flt_trace_buffer_));
+  
   if (!scatter_inited) {
     make_scatter_list(*this);
     scatter_inited = true;
@@ -220,6 +233,10 @@ inline void ObMysqlSM::cleanup()
     LOG_DEBUG("sm cluser resouce will dec ref", K_(sm_cluster_resource), KPC_(sm_cluster_resource));
     sm_cluster_resource_->dec_ref();
     sm_cluster_resource_ = NULL;
+  }
+  if (OB_NOT_NULL(target_db_server_)) {
+    op_free(target_db_server_);
+    target_db_server_ = NULL;
   }
 }
 
@@ -259,7 +276,7 @@ int ObMysqlSM::state_add_to_list(int event, void *data)
   // The list if for general debugging The config
   // variable exists mostly to allow us to
   // measure an performance drop during benchmark runs
-  if (trans_state_.mysql_config_params_->enable_mysqlsm_info_) {
+  if (get_global_proxy_config().enable_mysqlsm_info) {
     if (is_in_list_) {
       terminate_sm_ = true;
       LOG_ERROR("state_add_to_list, it should not arrive here again", K_(is_in_list), K_(sm_id));
@@ -381,7 +398,7 @@ int ObMysqlSM::attach_client_session(
 
     // assign dummy entry valid time
     client_session_->dummy_entry_valid_time_ns_ = ObRandomNumUtils::get_random_half_to_full(
-        trans_state_.mysql_config_params_->tenant_location_valid_time_);
+        get_global_proxy_config().tenant_location_valid_time * 1000);
 
     // Allocate a client entry in the state machine's vc table
     client_entry_ = vc_table_.new_entry();
@@ -469,12 +486,14 @@ inline int ObMysqlSM::setup_client_request_read()
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("client session failed to do_io_read", K_(sm_id), K(ret));
   } else {
-    if (client_buffer_reader_->read_avail() > 0
-        || (trans_state_.is_auth_request_ && trans_state_.is_trans_first_request_)) {
-      LOG_INFO("the request already in buffer, continue to handle it",
-               "buffer len", client_buffer_reader_->read_avail(),
-               "is_auth_rquest", trans_state_.is_auth_request_);
-      handle_event(VC_EVENT_READ_READY, client_entry_->read_vio_);
+    if (OB_SUCC(ret)) {
+      int64_t read_avail = client_buffer_reader_->read_avail();
+      if (read_avail > 0
+          || (trans_state_.is_auth_request_ && trans_state_.is_trans_first_request_)) {
+        LOG_INFO("the request already in buffer, continue to handle it",
+                 "buffer len", read_avail, "is_auth_rquest", trans_state_.is_auth_request_);
+        handle_event(VC_EVENT_READ_READY, client_entry_->read_vio_);
+      }
     }
   }
   return ret;
@@ -509,6 +528,9 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
         milestones_.trans_start_ = get_based_hrtime();
       }
     }
+
+    // record the config of enable_transaction_internal_routing
+    client_session_->set_proxy_enable_trans_internal_routing(trans_state_.mysql_config_params_->enable_transaction_internal_routing_ && is_enable_ob_protocol_v2());
   }
 
   if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
@@ -563,7 +585,8 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
       }
 
       case VC_EVENT_ERROR:
-      case VC_EVENT_ACTIVE_TIMEOUT: {
+      case VC_EVENT_ACTIVE_TIMEOUT:
+      case VC_EVENT_DETECT_SERVER_DEAD: {
         LOG_WARN("ObMysqlSM::state_client_request_read", "event",
                  ObMysqlDebugNames::get_event_name(event), K_(sm_id),
                  "client_vc", client_session_ == NULL ? "NULL" : P(client_session_->get_netvc()));
@@ -581,7 +604,8 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
   }
 
 
-  if (OB_SUCC(ret) && !client_session_->is_proxy_mysql_client_) {
+  if (OB_SUCC(ret) && !client_session_->is_proxy_mysql_client_
+      && RUN_MODE_PROXY == g_run_mode) {
     ObNetVConnection *vc = client_session_->get_netvc();
 
     if (OB_UNLIKELY(NULL != vc && vc->options_.sockopt_flags_ != trans_state_.mysql_config_params_->client_sock_option_flag_out_)) {
@@ -600,7 +624,10 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
 
   if (OB_SUCC(ret)) {
     ObMysqlAnalyzeStatus status = ANALYZE_CONT;
-    analyze_mysql_request(status);
+    int64_t first_packet_len = 0;       // the mysql packet total len or mysql compress packet total len
+    if (OB_FAIL(handle_first_request_packet(status, first_packet_len))) {
+      LOG_WARN("fail to handle first request packet", K(ret), K(status));
+    }
 
     cmd_size_stats_.client_request_bytes_ = client_buffer_reader_->read_avail();
 
@@ -619,7 +646,19 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
         //must read all data of the request, otherwise will read the remain request data when recv next request
         trans_state_.mysql_errcode_ = OB_ERR_PARSE_SQL;
         trans_state_.mysql_errmsg_ = ob_strerror(OB_ERR_PARSER_SYNTAX);
-        if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+        if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
+          LOG_WARN("fail to build err resp", K(ret));
+        } else if (OB_FAIL(client_buffer_reader_->consume_all())) {
+          LOG_WARN("fail to consume all", K_(sm_id), K(ret));
+        } else {
+          trans_state_.next_action_ = ObMysqlTransact::SM_ACTION_INTERNAL_NOOP;
+          callout_api_and_start_next_action(ObMysqlTransact::SM_ACTION_API_SEND_RESPONSE);
+        }
+        break;
+      case ANALYZE_NOT_SUPPORT:
+        trans_state_.mysql_errcode_ = OB_NOT_SUPPORTED;
+        trans_state_.mysql_errmsg_ = ob_strerror(OB_NOT_SUPPORTED);
+        if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
           LOG_WARN("fail to build err resp", K(ret));
         } else if (OB_FAIL(client_buffer_reader_->consume_all())) {
           LOG_WARN("fail to consume all", K_(sm_id), K(ret));
@@ -665,21 +704,24 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
           }
         } else {
           MYSQL_INCREMENT_DYN_STAT(TOTAL_CLIENT_REQUEST_REREAD_COUNT);
-          int64_t request_len = trans_state_.trans_info_.client_request_.get_packet_len();
-          if (request_len > 0 && request_len > client_buffer_reader_->mbuf_->water_mark_) {
+          int64_t mysql_req_len = trans_state_.trans_info_.client_request_.get_packet_len();
+          int64_t request_max = MAX(first_packet_len, mysql_req_len);
+          request_max = MAX(request_max, MYSQL_COMPRESSED_OB20_HEALDER_LENGTH);
+          if (request_max > 0 && request_max > client_buffer_reader_->mbuf_->water_mark_) {
             // ensure the read buffer can cache the whole reqeust
-            client_buffer_reader_->mbuf_->water_mark_ = request_len;
+            client_buffer_reader_->mbuf_->water_mark_ = request_max;
+            LOG_DEBUG("modify client buffer reader water mark", K(request_max));
           }
           if (trans_state_.trans_info_.client_request_.is_large_request()) {
             // Disable further I/O on the client since there could
             // be rest request body that we are tunneling, and we can't issue
             // another IO later for the rest request body with a different buffer
             client_entry_->read_vio_->nbytes_ = client_entry_->read_vio_->ndone_;
-            trans_state_.trans_info_.request_content_length_ = request_len;
+            trans_state_.trans_info_.request_content_length_ = mysql_req_len;
 
             MYSQL_INCREMENT_TRANS_STAT(CLIENT_LARGE_REQUESTS);
             LOG_DEBUG("large request",
-                      K_(sm_id), K(request_len),
+                      K_(sm_id), K(mysql_req_len),
                       "saved_request_len", client_buffer_reader_->read_avail());
 
             client_entry_->vc_handler_ = &ObMysqlSM::state_watch_for_client_abort;
@@ -720,8 +762,8 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
         set_client_wait_timeout();
 
         // no request data to read, reset read trigger and avoid unnecessary reading
-        ObUnixNetVConnection* vc = static_cast<ObUnixNetVConnection *>(client_session_->get_netvc());
         if (!client_session_->is_proxy_mysql_client_) {
+          ObUnixNetVConnection* vc = static_cast<ObUnixNetVConnection *>(client_session_->get_netvc());
           if (!handling_ssl_request_) {
             vc->reset_read_trigger();
           }
@@ -856,6 +898,7 @@ int ObMysqlSM::state_handle_shard_ddl(int event, void *data)
     case VC_EVENT_EOS:
     case VC_EVENT_ACTIVE_TIMEOUT:
     case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       LOG_WARN("handle shard ddl meet error, will disconnect", K_(sm_id),
                "event", ObMysqlDebugNames::get_event_name(event), K(ret));
       ret = OB_CONNECT_ERROR;
@@ -901,19 +944,26 @@ int ObMysqlSM::process_shard_ddl_result(ObShardDDLStatus *ddl_status)
   }
 
   if (OB_SUCC(ret)) {
+    ObProxyProtocol client_protocol = get_client_session_protocol();
+    ObMysqlClientSession *client_session = get_client_session();
+    
     if (ddl_status->is_success()) {
-      const ObMySQLCapabilityFlags &capability = client_session_->get_session_info().get_orig_capability_flags();
-      if (OB_FAIL(ObMysqlPacketUtil::encode_ok_packet(*buf, seq, 0, capability))) {
-        LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode login response ok packet",
+      const ObMySQLCapabilityFlags &capability = client_session->get_session_info().get_orig_capability_flags();
+      if (OB_FAIL(ObProxyPacketWriter::write_ok_packet(*buf, *client_session_, client_protocol, seq, 0, capability))) {
+        LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode shard ddl ok packet",
                  K_(sm_id), K(ret));
       }
     } else {
       int64_t error_code = 0;
       if (OB_FAIL(get_int_value(ddl_status->get_error_code(), error_code))) {
         LOG_WARN("fail to get int error code", "errcode", ddl_status->get_error_code(), K(ret));
-      } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet_buf(*buf, seq, static_cast<int>(-error_code), ddl_status->get_error_message()))) {
+      } else if (OB_FAIL(ObProxyPacketWriter::write_error_packet(*buf, client_session, client_protocol,
+                                                                 seq, static_cast<int>(-error_code),
+                                                                 ddl_status->get_error_message()))) {
         LOG_WARN("fail to encode err pacekt buf", K(seq), "errmsg", ddl_status->get_error_message(),
                  "errcode", error_code, K(ret));
+      } else {
+        // nothing
       }
     }
   }
@@ -930,19 +980,17 @@ int ObMysqlSM::setup_handle_execute_plan()
 
   ObShardingSelectLogPlan* plan = NULL;
   ObProxyOperator* operator_root = NULL;
+  ObProxyOperatorCont *operator_cont = NULL;
 
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
   int64_t total_len = client_buffer_reader_->read_avail();
-  if (total_len > trans_state_.trans_info_.client_request_.get_packet_meta().pkt_len_) {
-    total_len = trans_state_.trans_info_.client_request_.get_packet_meta().pkt_len_;
+  if (total_len > client_request.get_packet_meta().pkt_len_) {
+    total_len = client_request.get_packet_meta().pkt_len_;
   }
 
-  ObShardProp *shard_prop = client_session_->get_session_info().get_shard_prop();
-  ObHRTime execute_timeout = 0;
-  if (OB_NOT_NULL(shard_prop)) {
-    execute_timeout = HRTIME_MSECONDS(shard_prop->get_socket_timeout());
-  } else {
-    execute_timeout = client_session_->get_session_info().get_query_timeout();
-  }
+  uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+
+  ObHRTime execute_timeout = get_query_timeout();
 
   // consume data in client buffer reader
   if (OB_FAIL(client_buffer_reader_->consume(total_len))) {
@@ -956,14 +1004,21 @@ int ObMysqlSM::setup_handle_execute_plan()
   } else if (OB_NOT_NULL(pending_action_)){
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("pending_action must be NULL here", K_(pending_action), K_(sm_id), K(ret));
-  } else if (OB_FAIL(operator_root->open(this, pending_action_, hrtime_to_msec(execute_timeout)))) {
-    LOG_WARN("fail to open operator", K_(sm_id), K(execute_timeout), K(ret));
-  } else if (OB_FAIL(operator_root->get_next_row())) {
-    LOG_WARN("fail to get next row", K_(sm_id), K(ret));
-  } else if (OB_ISNULL(pending_action_)) {
-    LOG_WARN("pending action should not be null", K_(sm_id), K(ret));
+  } else if (OB_ISNULL(operator_cont = new(std::nothrow) ObProxyOperatorCont(this, &self_ethread()))) {
+    LOG_WARN("fail to alloc parallel execute cont", K(ret));
+  } else if (OB_FAIL(operator_cont->init(operator_root, seq, hrtime_to_msec(execute_timeout)))) {
+    LOG_WARN("fail to init execute cont", K(ret));
+  } else if (OB_ISNULL(g_shard_scan_all_task_processor.schedule_imm(operator_cont, ET_SHARD_SCAN_ALL))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to schedule parallel execute cont", K(ret));
   } else {
+    pending_action_ = &operator_cont->get_action();
     client_session_->set_inactivity_timeout(execute_timeout);
+  }
+
+  if (OB_FAIL(ret) && OB_LIKELY(NULL != operator_cont)) {
+    operator_cont->destroy();
+    operator_cont = NULL;
   }
 
   return ret;
@@ -977,14 +1032,14 @@ int ObMysqlSM::state_handle_execute_plan(int event, void *data)
 
   ObShardingSelectLogPlan* plan = NULL;
   ObProxyOperator* operator_root = NULL;
-  pending_action_ = NULL;
 
   switch (event) {
-    case VC_EVENT_READ_COMPLETE:
+    case ASYNC_PROCESS_DONE_EVENT:
+      pending_action_ = NULL;
       if (OB_ISNULL(data)) {
         ret = OB_ERR_NULL_VALUE;
         LOG_WARN("data is NULL", K_(sm_id), K(ret));
-      } else if (OB_FAIL(process_executor_result(reinterpret_cast<ObProxyResultResp*>(data)))) {
+      } else if (OB_FAIL(process_executor_result(reinterpret_cast<ObIOBufferReader*>(data)))) {
         LOG_WARN("fail to process executor result, will disconnect", K_(sm_id), K(ret));
       } else {
         trans_state_.next_action_ = ObMysqlTransact::SM_ACTION_INTERNAL_NOOP;
@@ -994,6 +1049,7 @@ int ObMysqlSM::state_handle_execute_plan(int event, void *data)
     case VC_EVENT_EOS:
     case VC_EVENT_ACTIVE_TIMEOUT:
     case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       LOG_WARN("handle execute plan meet error, will disconnect", K_(sm_id),
               "event", ObMysqlDebugNames::get_event_name(event), K(ret));
       ret = OB_CONNECT_ERROR;
@@ -1010,9 +1066,23 @@ int ObMysqlSM::state_handle_execute_plan(int event, void *data)
     }
   }
 
+  if (OB_NOT_NULL(pending_action_)) {
+    int tmp_ret = OB_SUCCESS;
+    if (OB_SUCCESS != (tmp_ret = pending_action_->cancel())) {
+      LOG_WARN("failed to cancel pending action", K_(pending_action), K_(sm_id), K(tmp_ret));
+    }
+
+    if (OB_SUCC(ret)) {
+      ret = tmp_ret;
+    }
+    pending_action_ = NULL;
+  }
+
   if (OB_ISNULL(plan = client_session_->get_sharding_select_log_plan())) {
+    ret = OB_ERR_UNEXPECTED;
     LOG_WARN("select log plan should not be null", K_(sm_id), K(ret));
   } else if (OB_ISNULL(operator_root = plan->get_plan_root())) {
+    ret = OB_ERR_UNEXPECTED;
     LOG_WARN("operator should not be null", K_(sm_id), K(ret));
   } else {
     operator_root->close();
@@ -1027,12 +1097,10 @@ int ObMysqlSM::state_handle_execute_plan(int event, void *data)
   return VC_EVENT_NONE;
 }
 
-int ObMysqlSM::process_executor_result(ObProxyResultResp *result_resp)
+int ObMysqlSM::process_executor_result(ObIOBufferReader *resp_reader)
 {
   int ret = OB_SUCCESS;
 
-  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
-  uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
   ObMIOBuffer *buf = NULL;
 
   if (NULL != trans_state_.internal_buffer_) {
@@ -1046,105 +1114,35 @@ int ObMysqlSM::process_executor_result(ObProxyResultResp *result_resp)
   }
 
   if (OB_SUCC(ret)) {
-    if (result_resp->is_resultset_resp()) {
-      if (OB_FAIL(build_executor_resp(buf, seq, result_resp))) {
-        LOG_WARN("fail to build shard scan resp", K(ret));
+    ObMysqlClientSession *client_session = get_client_session();
+    ObProxyProtocol client_protocol = get_client_session_protocol();
+
+    if (client_protocol == ObProxyProtocol::PROTOCOL_OB20) {
+      Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+      uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1); 
+      Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                              compressed_seq, true, false, false,
+                                              client_session->is_client_support_new_extra_info(),
+                                              client_session->is_trans_internal_routing());
+      if (OB_FAIL(ObProto20Utils::consume_and_compress_data(resp_reader, buf,
+                                                            resp_reader->read_avail(), ob20_head_param))) {
+        LOG_WARN("fail to consume and compress data for executor response packet in ob20", K(ret));
+      } else {
+        LOG_DEBUG("succ to executor response in ob20 packet");
       }
     } else {
-      if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet_buf(*buf, seq, result_resp->get_err_code(), result_resp->get_err_msg()))) {
-        LOG_WARN("fail to encode err pacekt buf", K(seq), "errmsg", result_resp->get_err_msg(),
-                 "errcode", result_resp->get_err_code(), K(ret));
+      int64_t data_size = resp_reader->read_avail();
+      int64_t bytes_written = 0;
+      if (OB_FAIL(buf->remove_append(resp_reader, bytes_written))) {
+        LOG_ERROR("Error while remove_append to buf", "Attempted size", data_size,
+                  "wrote size", bytes_written, K(ret));
+      } else if (OB_UNLIKELY(bytes_written != data_size)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("unexpected result", "Attempted size", data_size,
+                 "wrote size", bytes_written, K(ret));
+      } else {
+        LOG_DEBUG("succ to write to client", "Attempted size", bytes_written);
       }
-    }
-  }
-
-  return ret;
-}
-
-int ObMysqlSM::build_executor_resp(ObMIOBuffer *write_buf, uint8_t &seq, ObProxyResultResp *result_resp)
-{
-  int ret = OB_SUCCESS;
-  int64_t column_count = result_resp->get_column_count();
-  ObSEArray<ObMySQLField, 1, common::ObIAllocator&> *fields = NULL;
-  ObSEArray<ObField, 4> ob_fields;
-
-  // header , cols , first eof
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(result_resp->get_fields(fields))) {
-      LOG_WARN("faild to push field", K(fields), K(ret));
-    } else if (OB_ISNULL(fields)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fields should not be null", K(ret));
-    } else if (OB_UNLIKELY(fields->count() != column_count)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fields count should equal column_count", K(column_count), "fileds count", fields->count(), K(ret));
-    } else if (OB_FAIL(ObMysqlPacketUtil::encode_header(*write_buf, seq, *fields))) {
-      LOG_WARN("faild to encode header", K(fields), K(seq), K(ret));
-    } else {
-      for (int64_t i = 0; OB_SUCC(ret) && i < column_count; i++) {
-        ObMySQLField &mysql_field = fields->at(i);
-        ObField ob_field;
-        if (OB_FAIL(ObSMUtils::to_ob_field(mysql_field, ob_field))) {
-          LOG_WARN("faild to ob field", K(mysql_field), K(ret));
-        } else if (OB_FAIL(ob_fields.push_back(ob_field))) {
-          LOG_WARN("faild to push ob field", K(ob_field), K(ret));
-        }
-      }
-    }
-  }
-
-  // rows
-  if (OB_SUCC(ret)) {
-    ObObj *objs = NULL;
-    int64_t buf_len = sizeof(ObObj) * column_count;
-
-    if (OB_ISNULL(objs = static_cast<ObObj *>(op_fixed_mem_alloc(buf_len)))) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("faild to alloc obj array", K(column_count), K(ret));
-    } else {
-      ObNewRow row;
-      //ObSEArray<common::ObObj, 4> *row_array;
-      ObSEArray<common::ObObj*, 4, common::ObIAllocator&> *row_array;
-      while ((OB_SUCC(ret)) && (OB_SUCC(result_resp->next(row_array)))) {
-        if (OB_ISNULL(row_array)) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("row_array should not be null", K(ret));
-        } else if (OB_UNLIKELY(row_array->count() != column_count)) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("row_array count should equal column_count", K(column_count), "row_array count", row_array->count(), K(ret));
-        }
-
-        for (int64_t i = 0; OB_SUCC(ret) && i < column_count; i++) {
-          objs[i] = *(row_array->at(i));
-        }
-
-        if (OB_SUCC(ret)) {
-          row.cells_ = objs;
-          row.count_ = column_count;
-          if (OB_FAIL(ObMysqlPacketUtil::encode_row_packet(*write_buf, seq, row, &ob_fields))) {
-            LOG_WARN("faild to encode row", K(seq), K(row), K(ret));
-          } else {
-            row.reset();
-            row_array = NULL;
-          }
-        }
-      }
-
-      if (OB_ITER_END == ret) {
-        ret = OB_SUCCESS;
-      }
-    }
-
-    if (OB_NOT_NULL(objs)) {
-      op_fixed_mem_free(objs, buf_len);
-      objs = NULL;
-    }
-  }
-
-  // second eof
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(ObMysqlPacketUtil::encode_eof_packet(*write_buf, seq))) {
-      LOG_WARN("faild to encode row", K(seq), K(ret));
     }
   }
 
@@ -1168,8 +1166,7 @@ int ObMysqlSM::handle_shard_request(bool &need_response_for_stmt, bool &need_wai
   ObDbConfigLogicDb *db_info = NULL;
 
   if (!session_info.is_sharding_user()
-      || parse_result.is_shard_special_cmd()
-      || ObProxyShardUtils::is_special_db(trans_state_)) {
+      || parse_result.is_shard_special_cmd()) {
     // do nothing
   } else {
     if (obmysql::OB_MYSQL_COM_FIELD_LIST == req_cmd) {
@@ -1177,10 +1174,12 @@ int ObMysqlSM::handle_shard_request(bool &need_response_for_stmt, bool &need_wai
       LOG_WARN("com_field_list cmd is unsupported for sharding table", K(ret));
     } else if (obmysql::OB_MYSQL_COM_QUERY != req_cmd) {
       //do nothing
-    } else if (parse_result.is_invalid_stmt() && parse_result.has_shard_comment()) {
-      ret = OB_ERR_PARSER_SYNTAX;
-      LOG_WARN("fail to parse shard sql with shard comment",
-               "sql", client_request.get_sql(), K(ret));
+    } else if (ObProxyShardUtils::is_special_db(parse_result)) {
+      if (OB_FAIL(ObProxyShardUtils::handle_information_schema_request(*client_session_,
+                                                                       trans_state_,
+                                                                       *client_buffer_reader_))) {
+        LOG_WARN("fail to handle information schema request", K(ret));
+      }
     } else {
       //  get logic db and check auth
       if (OB_FAIL(ObProxyShardUtils::get_logic_db_info(trans_state_,
@@ -1195,20 +1194,30 @@ int ObMysqlSM::handle_shard_request(bool &need_response_for_stmt, bool &need_wai
         LOG_WARN("fail to check shard request", K(ret));
       } else if (parse_result.is_dual_request()) {
         //do nothing
+      } else if (parse_result.is_ddl_stmt()) {
+        const ObString runtime_env = get_global_proxy_config().runtime_env.str();
+        if (0 == runtime_env.case_compare(OB_PROXY_DBP_RUNTIME_ENV)) {
+          if (OB_FAIL(ObProxyShardUtils::handle_ddl_request(this, *client_session_, trans_state_, *db_info, need_wait_callback))) {
+            LOG_WARN("fail to handle ddl request", K(ret));
+          }
+        } else {
+          ret = OB_NOT_SUPPORTED;
+          LOG_WARN("ddl stmt is unsupported for sharding table", K(ret));
+        }
       } else if (db_info->is_single_shard_db_table()) {
         // sindle db table
-        if (OB_FAIL(ObProxyShardUtils::handle_single_shard_request(this, *client_session_,
-                        trans_state_, *client_buffer_reader_, *db_info, need_wait_callback))) {
+        if (OB_FAIL(ObProxyShardUtils::handle_single_shard_request(*client_session_,
+                        trans_state_, *client_buffer_reader_, *db_info))) {
           LOG_WARN("fail to handle single shard request", K(ret));
         }
-      } else if (OB_FAIL(ObProxyShardUtils::handle_shard_request(this, *client_session_,
-                      trans_state_, *client_buffer_reader_, *db_info, need_wait_callback))) {
+      } else if (OB_FAIL(ObProxyShardUtils::handle_shard_request(*client_session_,
+                      trans_state_, *client_buffer_reader_, *db_info))) {
           LOG_WARN("fail to handle shard request", K(ret));
       }
     }
 
     if (OB_FAIL(ret)) {
-      int tmp_ret = ObProxyShardUtils::build_error_packet(ret, need_response_for_stmt, trans_state_);
+      int tmp_ret = ObProxyShardUtils::build_error_packet(ret, need_response_for_stmt, trans_state_, client_session_);
       ret = OB_SUCC(tmp_ret) ? tmp_ret : ret;
     }
     if (OB_SUCC(ret) && !need_response_for_stmt && !need_wait_callback) {
@@ -1281,9 +1290,10 @@ int ObMysqlSM::handle_limit(bool &need_response_for_client)
         if (OB_FAIL(databuff_printf(err_msg_buf, OB_MAX_ERROR_MSG_LEN, pos, ob_str_user_error(OB_ERR_LIMIT),
                                     limit_name.length(), limit_name.ptr()))) {
         } else {
+          ObMysqlClientSession *client_session = get_client_session();
           trans_state_.mysql_errcode_ = OB_ERR_LIMIT;
           trans_state_.mysql_errmsg_ = err_msg_buf;
-          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session))) {
             LOG_WARN("fail to build err resp", K(ret));
           } else {
             need_response_for_client = true;
@@ -1469,7 +1479,8 @@ void ObMysqlSM::setup_get_cluster_resource()
           // return err packet to client "Access denied for ..."
           trans_state_.mysql_errcode_ = OB_CLUSTER_NOT_EXIST;
           int tmp_ret = OB_SUCCESS;
-          if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = ObMysqlTransact::build_error_packet(trans_state_)))) {
+          if (OB_UNLIKELY(OB_SUCCESS != 
+                          (tmp_ret = ObMysqlTransact::build_error_packet(trans_state_, client_session_)))) {
             LOG_WARN("fail to build err packet", K(tmp_ret));
           } else {
             trans_state_.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
@@ -1488,6 +1499,15 @@ void ObMysqlSM::setup_get_cluster_resource()
       } else {
         MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::state_get_cluster_resource);
         milestones_.cluster_resource_create_begin_ = get_based_hrtime();
+
+        if (enable_record_full_link_trace_info()) {
+          SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+          trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy_cluster_resource_create);
+          if (OB_NOT_NULL(ctx)) {
+            flt_.trace_log_info_.cluster_resource_create_ctx_ = ctx;
+            LOG_DEBUG("begin span ob_proxy_cluster_resource_create", K(ctx->span_id_));
+          }
+        }
 
         ret = get_global_resource_pool_processor().get_cluster_resource(*this,
               (process_async_task_pfn)&ObMysqlSM::process_cluster_resource,
@@ -1639,6 +1659,17 @@ int ObMysqlSM::state_get_cluster_resource(int event, void *data)
   milestones_.cluster_resource_create_end_ = get_based_hrtime();
   cmd_time_stats_.cluster_resource_create_time_ =
     milestone_diff(milestones_.cluster_resource_create_begin_, milestones_.cluster_resource_create_end_);
+
+  if (enable_record_full_link_trace_info()) {
+    trace::ObSpanCtx *ctx = flt_.trace_log_info_.cluster_resource_create_ctx_;
+    if (OB_NOT_NULL(ctx)) {
+      LOG_DEBUG("end span ob_proxy_cluster_resource_create", K(ctx->span_id_));
+      SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+      FLT_END_SPAN(ctx);
+      flt_.trace_log_info_.cluster_resource_create_ctx_ = NULL;   // logically free, mem still in OBTRACE
+    }
+  }
+
   switch (event) {
     case CLUSTER_RESOURCE_CREATE_COMPLETE_EVENT:
       pending_action_ = NULL;
@@ -1667,7 +1698,7 @@ int ObMysqlSM::state_get_cluster_resource(int event, void *data)
   return VC_EVENT_NONE;
 }
 
-inline int ObMysqlSM::init_request_content(ObRequestAnalyzeCtx &ctx)
+inline int ObMysqlSM::init_request_content(ObRequestAnalyzeCtx &ctx, const bool is_mysql_req_in_ob20)
 {
   int ret = OB_SUCCESS;
 
@@ -1685,10 +1716,12 @@ inline int ObMysqlSM::init_request_content(ObRequestAnalyzeCtx &ctx)
       }
     }
   } else {
-    trans_state_.trans_info_.client_request_.reuse();
+    ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+    client_request.reuse();
     const bool eaic = client_session_->enable_analyze_internal_cmd();
-    trans_state_.trans_info_.client_request_.set_enable_analyze_internal_cmd(eaic);
-    trans_state_.trans_info_.client_request_.set_user_identity(client_session_->get_user_identity());
+    client_request.set_enable_analyze_internal_cmd(eaic);
+    client_request.set_user_identity(client_session_->get_user_identity());
+    client_request.set_mysql_req_in_ob20_payload(is_mysql_req_in_ob20);
 
     ctx.is_sharding_mode_ = client_session_->get_session_info().is_sharding_user();
     ctx.connection_collation_ = static_cast<common::ObCollationType>(client_session_->get_session_info().get_collation_connection());
@@ -1733,36 +1766,85 @@ inline bool ObMysqlSM::check_connection_throttle()
 bool ObMysqlSM::can_pass_white_list()
 {
   bool can_pass = false;
-  bool need_check_white_list = true;
-  ObStringKV string_kv;
-  ObClientSessionInfo &session_info = client_session_->get_session_info();
-  ObHSRResult &hsr = session_info.get_login_req().get_hsr_result();
-  ObUnixNetVConnection* unix_vc = static_cast<ObUnixNetVConnection *>(client_session_->get_netvc());
-  if (OB_UNLIKELY(NULL == unix_vc)) {
-    LOG_WARN("invalid unix_vc");
+  if (RUN_MODE_CLIENT == g_run_mode) {
+    can_pass = true;
   } else {
-    for (int64_t i = 0; need_check_white_list && i <  hsr.response_.get_connect_attrs().count(); ++i) {
-      string_kv = hsr.response_.get_connect_attrs().at(i);
-      if (0 == string_kv.key_.case_compare(OB_MYSQL_CLIENT_IP)) {
-        if (!string_kv.value_.empty()) {
-          char client_ip_buf[256];
-          snprintf(client_ip_buf, ObHandshakeResponseParam::OB_MAX_IP_BUF_LEN, "%.*s", string_kv.value_.length(), string_kv.value_.ptr());
-          need_check_white_list = false;
-          if (get_global_white_list_table_processor().can_ip_pass(hsr.cluster_name_, hsr.tenant_name_, hsr.user_name_, client_ip_buf)) {
-            can_pass = true;
-          }
-        }
-        break;
-      }
-    }
-    if (need_check_white_list) {
-      if (get_global_white_list_table_processor().can_ip_pass(hsr.cluster_name_, hsr.tenant_name_, hsr.user_name_, unix_vc->get_remote_ip(), true)) {
+    ObStringKV string_kv;
+    ObClientSessionInfo &session_info = client_session_->get_session_info();
+    ObHSRResult &hsr = session_info.get_login_req().get_hsr_result();
+    ObUnixNetVConnection* unix_vc = static_cast<ObUnixNetVConnection *>(client_session_->get_netvc());
+    if (OB_UNLIKELY(NULL == unix_vc)) {
+        LOG_WARN("invalid unix_vc");
+    } else if (get_global_white_list_table_processor().can_ip_pass(hsr.cluster_name_, hsr.tenant_name_, hsr.user_name_, unix_vc->get_real_client_addr())) {
         can_pass = true;
-      }
     }
   }
 
   return can_pass;
+}
+
+/*
+ * support ob2.0 protocol between client and proxy
+ * client will send cap through CLIENT_CONNECT_ATTRS in mysql handshake response packet.
+ * key: "__proxy_capability_flag"
+ *
+ * client supported ob2.0 protocol or not
+ * while negotiate with client, not only the cap shift OB_CAP_OB_PROTOCOL_V2 should be set,
+   but also the CONN_ATTR kv of key:"__mysql_client_type" and value "__ob_libobclient"/"__ob_jdbc_client"
+   should be set, to indicate that client support ob2.0 protocol transfer.
+ */
+int ObMysqlSM::analyze_capacity_flag_from_client()
+{
+  int ret = OB_SUCCESS;
+
+  ObClientSessionInfo &session_info = client_session_->get_session_info();
+  ObHSRResult &hsr = session_info.get_login_req().get_hsr_result();
+  int64_t total_conn_attrs = hsr.response_.get_connect_attrs().count();
+  ObStringKV string_kv;
+  bool is_client_send_client_mode = false;
+  
+  for (int64_t i = 0; OB_SUCC(ret) && i < total_conn_attrs; ++i) {
+    string_kv = hsr.response_.get_connect_attrs().at(i);
+    if (0 == string_kv.key_.case_compare(OB_MYSQL_CAPABILITY_FLAG)) {
+      int64_t orig_client_cap = 0;
+      if (OB_FAIL(get_int_value(string_kv.value_, orig_client_cap))) {
+        LOG_WARN("fail to get int value from cap flag", K(ret), K(string_kv.key_), K(string_kv.value_));
+      } else {
+        uint64_t set_client_cap = orig_client_cap & OBPROXY_DEFAULT_CAPABILITY_FLAG;        
+        session_info.set_client_ob_capability(set_client_cap);
+        LOG_DEBUG("succ to analyze origin capability flag from client", K(orig_client_cap), K(set_client_cap));
+      }
+    } else if (0 == string_kv.key_.case_compare(OB_MYSQL_CLIENT_MODE)) {
+      // another tag for client to judge the support of ob2.0
+      if (0 == string_kv.value_.compare(OB_MYSQL_CLIENT_LIBOBCLIENT_MODE)
+          || 0 == string_kv.value_.compare(OB_MYSQL_CLIENT_JDBC_CLIENT_MODE)) {
+        is_client_send_client_mode = true;
+        LOG_DEBUG("client transfered mysql client mode", K(string_kv.value_)); 
+      }
+    } else {
+      continue;
+    }
+  }
+
+  // whether client truely support ob2.0 or not
+  // whether proxy config flag set or not
+  if (OB_SUCC(ret)) {
+    uint64_t origin_client_cap = session_info.get_client_ob_capability();
+    if (!session_info.is_client_support_ob20_protocol()
+        || !is_client_send_client_mode
+        || !get_global_proxy_config().enable_ob_protocol_v2_with_client) {
+      origin_client_cap &= ~(OB_CAP_OB_PROTOCOL_V2);
+      session_info.set_client_ob_capability(origin_client_cap);
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    const uint64_t last_client_cap = session_info.get_client_ob_capability();
+    const bool is_client_support_ob20 = session_info.is_client_support_ob20_protocol();
+    LOG_INFO("final client capability flag in negotiation", K(last_client_cap), K(is_client_support_ob20));
+  }
+  
+  return ret;
 }
 
 // chect weahter connections reach throttle
@@ -1784,7 +1866,7 @@ inline bool ObMysqlSM::check_vt_connection_throttle()
     cs_info.get_tenant_name(tenant_name);
   }
 
-  return get_global_resource_unit_table_processor().check_and_inc_conn(
+  return get_global_conn_table_processor().check_and_inc_conn(
     cluster_name, tenant_name, ip_name);
 }
 
@@ -1795,8 +1877,9 @@ int ObMysqlSM::encode_error_message(int err_code)
   if (OB_FAIL(client_buffer_reader_->consume_all())) {
     LOG_WARN("client buffer reader fail to consume all", K(ret));
   } else {
+    ObMysqlClientSession *client_session = get_client_session();
     trans_state_.mysql_errcode_ = err_code;
-    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session))) {
       LOG_WARN("[ObMysqlSM::encode_error_message] fail to encode error response",
                K_(sm_id), K(ret), "errcode", trans_state_.mysql_errcode_);
     }
@@ -1805,12 +1888,15 @@ int ObMysqlSM::encode_error_message(int err_code)
   return ret;
 }
 
+/*
+ * proxy will do parition route with observer, the cap is determined by proxy config
+ */
 inline bool ObMysqlSM::is_partition_table_route_supported()
 {
   bool bret = false;
   if (trans_state_.mysql_config_params_->enable_partition_table_route_) {
     if (NULL != client_session_
-        && client_session_->get_session_info().is_partition_table_supported()) {
+        && client_session_->get_session_info().is_server_support_partition_table()) {
       bret = true;
     }
   }
@@ -1822,7 +1908,7 @@ inline bool ObMysqlSM::is_pl_route_supported()
   bool bret = false;
   if (trans_state_.mysql_config_params_->enable_pl_route_) {
     if (NULL != client_session_
-        && client_session_->get_session_info().is_pl_route_supported()) {
+        && client_session_->get_session_info().is_server_support_pl_route()) {
       bret = true;
     }
   }
@@ -1925,11 +2011,12 @@ inline int ObMysqlSM::save_user_login_info(ObClientSessionInfo &session_info, Ob
     // no need add database name to client session info here,
     // because if login request has -D database option, obproxy
     // will get changed database name from response ok packet;
+    trans_state_.refresh_mysql_config();
   }
   return ret;
 }
 
-void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
+void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool is_mysql_req_in_ob20)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
@@ -1948,35 +2035,45 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
     LOG_WARN("client session is NULL in init_request_content", K_(sm_id), K(ret));
 
   // 1. init request content at first
-  } else if (OB_FAIL(init_request_content(ctx))) {
+  } else if (OB_FAIL(init_request_content(ctx, is_mysql_req_in_ob20))) {
     LOG_WARN("fail to init requtest content", K_(sm_id), K(ret));
   } else {
     // 2. analyze mysql request(auth request or common mysql request)
     ObClientSessionInfo &session_info = client_session_->get_session_info();
-    session_info.reset_text_ps_state();
     ObMysqlAuthRequest &orig_auth_req = session_info.get_login_req();
     ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
     ObMySQLCmd &req_cmd = trans_state_.trans_info_.sql_cmd_;
 
-    ObMysqlRequestAnalyzer::analyze_request(ctx, orig_auth_req, client_request, req_cmd, status, session_info.is_oracle_mode());
+    ObMysqlRequestAnalyzer::analyze_request(ctx, orig_auth_req, client_request, req_cmd, status,
+                                            session_info.is_oracle_mode(),
+                                            session_info.is_client_support_ob20_protocol());
 
     if (OB_LIKELY(ANALYZE_DONE == status)) {
       // 3. if BEGIN or START TRANSACTION, try to hold it
       if (OB_LIKELY(OB_MYSQL_COM_QUERY == req_cmd)) {
         MYSQL_INCREMENT_DYN_STAT(TOTAL_QUERY_COUNT);
-        if (OB_UNLIKELY(client_request.get_parse_result().need_hold_start_trans())) {
+        // Not set start trans sql
+        // 1. already in transaction
+        // 2. already hold xa start
+        if (OB_UNLIKELY(client_request.get_parse_result().need_hold_start_trans()
+                        && trans_state_.is_trans_first_request_
+                        && !trans_state_.is_hold_xa_start_)) {
           if (OB_FAIL(session_info.set_start_trans_sql(client_request.get_sql()))) {
             LOG_WARN("fail to set start transaction sqld", K_(sm_id), K(ret));
           }
         }
         if (OB_SUCC(ret)) {
           if (OB_UNLIKELY(client_request.get_parse_result().is_text_ps_prepare_stmt())) {
-            if (OB_FAIL(analyze_text_ps_prepare_request())) {
+            if (OB_FAIL(analyze_text_ps_prepare_request(ctx))) {
               LOG_WARN("analyze text ps prepare request failed", K(ret));
             }
           } else if (OB_UNLIKELY(client_request.get_parse_result().is_text_ps_execute_stmt())) {
             if (OB_FAIL(analyze_text_ps_execute_request())) {
               LOG_WARN("analyze text ps execute request failed", K(ret));
+            }
+          } else if (OB_UNLIKELY(client_request.get_parse_result().is_text_ps_drop_stmt())) {
+            if (OB_FAIL(analyze_text_ps_drop_request())) {
+              LOG_WARN("analyze text ps drop request failed", K(ret));
             }
           }
         }
@@ -1985,7 +2082,7 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
         if (OB_FAIL(analyze_login_request(ctx, status))) {
           LOG_WARN("fail to analyze login request", K(ret));
         }
-      } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd) {
+      } else if (OB_MYSQL_COM_RESET_CONNECTION == req_cmd) {
         if (session_info.is_sharding_user() || session_info.is_session_pool_client_) {
           if (OB_FAIL(encode_error_message(OB_NOT_SUPPORTED))) {
             LOG_WARN("fail to encode unsupport change user error message", K(ret));
@@ -2018,13 +2115,38 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
         if (OB_FAIL(analyze_fetch_request())) {
           LOG_WARN("fail to analyze fetch request", K(ret));
         }
-      } else if (OB_MYSQL_COM_STMT_CLOSE == req_cmd) {
-        if (OB_FAIL(analyze_close_request())) {
+      } else if (OB_MYSQL_COM_STMT_CLOSE == req_cmd || OB_MYSQL_COM_STMT_RESET == req_cmd) {
+        if (OB_FAIL(analyze_close_reset_request())) {
           LOG_WARN("fail to analyze fetch request", K(ret));
         }
       } else if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd) {
         if (OB_FAIL(analyze_ps_prepare_execute_request())) {
           LOG_WARN("fail to analyze ps prepare execute request", K(ret));
+        // Not set start trans sql
+        // 1. already in transaction
+        // 2. already hold xa start
+        // 3. already hold begin
+        } else if (get_global_proxy_config().enable_xa_route 
+                   && client_request.get_parse_result().need_hold_xa_start() 
+                   && trans_state_.is_trans_first_request_
+                   && !trans_state_.is_hold_start_trans_
+                   && !trans_state_.is_hold_xa_start_) {
+          LOG_DEBUG("[ObMysqlSM::analyze_mysql_request] save xa start request packet");
+          session_info.set_start_trans_sql(client_request.get_req_pkt());
+          // save the xa start ps id, session_info.ps_id_ will be reset at ObMysqlSM::setup_cmd_complete()
+          session_info.set_xa_start_ps_id(session_info.get_client_ps_id());
+        }   
+      } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd) {
+        if (OB_UNLIKELY(session_info.is_sharding_user() || client_session_->using_ldg())) {
+          if (OB_FAIL(encode_error_message(OB_NOT_SUPPORTED))) {
+            LOG_WARN("fail to encode unsupport change user error message", K(ret));
+          } else {
+            LOG_WARN("sharding or ldg not support change user", K(session_info.is_sharding_user()),
+                KPC_(client_session), K(ret));
+          }
+          status = ANALYZE_ERROR;
+        } else if (OB_FAIL(analyze_change_user_request())) {
+          LOG_WARN("fail to analyze change user request", K(ret));
         }
       } else {
         // do nothing
@@ -2041,6 +2163,11 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
       } else if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd && client_request.is_large_request()) {
         if (OB_FAIL(analyze_ps_prepare_execute_request())) {
           LOG_WARN("fail to analyze ps prepare execute request", K(ret));
+        }
+      } else if (client_request.get_parse_result().is_text_ps_execute_stmt() &&
+        client_request.is_large_request()) {
+        if (OB_FAIL(analyze_text_ps_execute_request())) {
+          LOG_WARN("fail to analyze text ps execute request", K(ret));
         }
       }
     } else {
@@ -2059,6 +2186,129 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status)
     milestone_diff(milestones_.client_.analyze_request_begin_, milestones_.client_.analyze_request_end_);
 }
 
+int ObMysqlSM::analyze_change_user_request()
+{
+  int ret = OB_SUCCESS;
+  ObClientSessionInfo& client_info = client_session_->get_session_info();
+  // len represents the size of the entire OB_MYSQL_COM_CHANGE_USER message
+  int64_t len = trans_state_.trans_info_.client_request_.get_packet_meta().pkt_len_;
+  if (OB_UNLIKELY(len <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid len", K(len), K(ret));
+  } else {
+    ObVariableLenBuffer<128> user_buffer;
+    if (OB_FAIL(user_buffer.init(len))) {
+      LOG_WARN("fail to init user buffer", K(ret));
+    } else {
+      char *start = const_cast<char *>(user_buffer.ptr());
+      char *written_pos = client_buffer_reader_->copy(start, len, 0);
+      if (OB_UNLIKELY(written_pos != start + len)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("write pos not expected", K(written_pos), K(start), K(len), K(ret));
+      } else if (OB_FAIL(client_buffer_reader_->consume_all())) {
+        LOG_WARN("client_buffer_reader consume_all failed", K(ret));
+      } else {
+        ObMIOBuffer *write_buffer = client_buffer_reader_->writer();
+        // buf points to the username part of OB_MYSQL_COM_CHANGE_USER
+        char *buf = start + MYSQL_NET_META_LENGTH;
+        ObString username = ObString::make_string(buf);
+        int64_t name_len = strlen(buf);
+        ObHSRResult result;
+        int64_t written_len = 0;
+        ObString& tenant_name = client_info.get_login_req().get_hsr_result().tenant_name_;
+        ObString& cluster_name = client_info.get_login_req().get_hsr_result().cluster_name_;
+        if (OB_FAIL(ObProxyAuthParser::parse_full_user_name(username, tenant_name, cluster_name, result))) {
+          LOG_WARN("parse full user name failed", K(ret));
+        } else if (OB_FAIL(write_buffer->write(start, MYSQL_NET_META_LENGTH, written_len))) {
+          LOG_WARN("fail to write header", K(ret));
+        } else if (OB_UNLIKELY(MYSQL_NET_META_LENGTH != written_len)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("not write completely", K(written_len), K(ret));
+        } 
+        // write username
+        if (OB_SUCC(ret)) {
+          if (OB_FAIL(write_buffer->write(result.user_name_.ptr(), result.user_name_.length(), written_len))) {
+            LOG_WARN("fail to write username", K(ret));
+          } else if (OB_UNLIKELY(result.user_name_.length() != written_len)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("not write completely", K(written_len), K(ret));
+          }
+        }
+        // write tenant name
+        int64_t new_name_len = 0;
+        if (OB_SUCC(ret)) {
+          if (result.has_tenant_username_ && result.has_cluster_username_) {
+            if (OB_UNLIKELY(tenant_name != result.tenant_name_ || cluster_name != result.cluster_name_)) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("name not match", K(result), K(tenant_name), K(cluster_name), K(ret));
+            }
+          } else if (result.has_tenant_username_ && !result.has_cluster_username_) {
+            if (OB_UNLIKELY(tenant_name != result.tenant_name_)) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("name not match", K(result), K(tenant_name), K(ret));
+            }
+          } else if (!result.has_tenant_username_ && !result.has_cluster_username_) {
+            // do nothing
+          } else {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("should not come here", K(result), K(ret));
+          }
+          if (OB_SUCC(ret)) {
+            if (OB_FAIL(write_buffer->write("@", 1, written_len))) {
+              LOG_WARN("fail to write @", K(ret));
+            } else if (1 != written_len) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("not write completely", K(written_len), K(ret));
+            } else if (OB_FAIL(write_buffer->write(tenant_name.ptr(), tenant_name.length(), written_len))) {
+              LOG_WARN("fail to write tenant_name", K(ret));
+            } else if (tenant_name.length() != written_len) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("not write completely", K(written_len), K(ret));
+            } else {
+              new_name_len = tenant_name.length() + result.user_name_.length() + 1;
+            }
+          }
+          LOG_DEBUG("change user name", K(result), K(tenant_name));
+        }
+        // Write the rest of the message
+        if (OB_SUCC(ret)) {
+          if (OB_FAIL(write_buffer->write("\0", 1, written_len))) {
+            LOG_WARN("fail to write string null", K(ret));
+          } else if (1 != written_len) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("not write completely", K(written_len), K(ret));
+          } else if (OB_FAIL(write_buffer->write(buf + name_len + 1, len - MYSQL_NET_META_LENGTH - name_len - 1, written_len))) {
+            LOG_WARN("fail to write left buffer", K(ret));
+          } else if (written_len != len - MYSQL_NET_META_LENGTH - name_len - 1) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("not write completely", K(written_len), K(ret));
+          } else if (get_client_session_protocol() == ObProxyProtocol::PROTOCOL_OB20) {
+            char crc_buf[4];
+            memset(crc_buf, 0, sizeof(crc_buf));
+            if (OB_FAIL(write_buffer->write(crc_buf, 4, written_len))) {
+              LOG_WARN("fail to write crc_buf", K(ret));
+            } else if (4 != written_len) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WARN("not write completely", K(written_len), K(ret));
+            }
+          }
+        }
+        // Re-modify the message length
+        if (OB_SUCC(ret)) {
+          uint32_t new_len = static_cast<uint32_t>(len - MYSQL_NET_HEADER_LENGTH + new_name_len - name_len);
+          client_buffer_reader_->replace(reinterpret_cast<const char*>(&new_len), 3, 0);
+          ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+          client_request.get_packet_meta().pkt_len_ =  new_len + MYSQL_NET_HEADER_LENGTH;
+          if (OB_FAIL(client_request.add_request(client_buffer_reader_, trans_state_.mysql_config_params_->request_buffer_length_))) {
+            LOG_WARN("fail to add com request", K(ret));
+          }
+        }
+      }
+    }
+  }
+  return ret;
+}
+
 int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeStatus &status)
 {
   int ret = OB_SUCCESS;
@@ -2070,7 +2320,7 @@ int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeSta
   if (NULL == unix_vc) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("client entry vc is null", K(ret));
-  } else if (hsr.response_.is_ssl_request() && !unix_vc->ssl_connected()) {
+  } else if (!client_session_->is_proxy_mysql_client_ && hsr.response_.is_ssl_request() && !unix_vc->ssl_connected()) {
     if (OB_FAIL(unix_vc->ssl_init(ObUnixNetVConnection::SSL_SERVER,
                                   client_session_->get_vip_cluster_name(),
                                   client_session_->get_vip_tenant_name()))) {
@@ -2098,7 +2348,7 @@ int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeSta
       LOG_WARN("fail to check user sharding", K_(sm_id), K(ret));
       // add some message for login error
       bool need_response_for_stmt = false;
-      ObProxyShardUtils::build_error_packet(ret, need_response_for_stmt, trans_state_);
+      ObProxyShardUtils::build_error_packet(ret, need_response_for_stmt, trans_state_, client_session_);
       // As long as the check user fails, the link will be broken
       trans_state_.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
       //save user name, tenant name, cluster name
@@ -2121,7 +2371,9 @@ int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeSta
           SESSION_PROMETHEUS_STAT(client_session_->get_session_info(), PROMETHEUS_CURRENT_SESSION, true, 1);
           SESSION_PROMETHEUS_STAT(client_session_->get_session_info(), PROMETHEUS_USED_CONNECTIONS, 1);
           client_session_->set_conn_prometheus_decrease(true);
-          if (!can_pass_white_list()) {
+          // Private cloud scenario is_vip_lookup_success is flase
+          // When the public cloud is_vip_lookup_success is false, you also need to go through the whitelist process
+          if (!client_session_->is_vip_lookup_success() && !can_pass_white_list()) {
             status = ANALYZE_CAN_NOT_PASS_WHITE_LIST_ERROR;
           } else if (check_connection_throttle()) {
             // check client connection throttle count
@@ -2129,17 +2381,21 @@ int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeSta
               LOG_WARN("fail to encode throttle message", K_(sm_id), K(ret));
             }
             status = ANALYZE_ERROR; // disconnect
-          } else if (check_vt_connection_throttle()) {
-            // check cloud vip connection throttle count
-            if (OB_FAIL(encode_error_message(OB_ERR_CON_COUNT_ERROR))) {
-              LOG_WARN("fail to encode vip throttle message", K_(sm_id), K(ret));
-            }
-            status = ANALYZE_ERROR; // disconnect
+          } else if (OB_FAIL(analyze_capacity_flag_from_client())) {
+            LOG_WARN("fail to analyze capacity flag from client", K(ret));
+            status = ANALYZE_ERROR;
           } else {
-            client_session_->set_vip_connection_decrease(true);
+            if (check_vt_connection_throttle()) {
+              // check cloud vip connection throttle count
+              if (OB_FAIL(encode_error_message(OB_ERR_CON_COUNT_ERROR))) {
+                LOG_WARN("fail to encode vip throttle message", K_(sm_id), K(ret));
+              }
+              status = ANALYZE_ERROR; // disconnect
+            } else {
+              client_session_->set_vip_connection_decrease(true);
+            }
           }
         }
-
 
         // the data which remains in client_buffer_reader_ is orig auth request,
         // and will not send to observer;
@@ -2151,11 +2407,7 @@ int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeSta
 
     if (!client_session_->is_proxy_mysql_client_) {
       net::ObIpEndpoint client_addr;
-      if (client_session_->is_need_convert_vip_to_tname()) {
-        net::ops_ip_copy(client_addr, client_session_->get_netvc()->get_real_client_addr());
-      } else {
-        net::ops_ip_copy(client_addr, client_session_->get_netvc()->get_remote_addr());
-      }
+      net::ops_ip_copy(client_addr, ops_ip_sa_cast(client_session_->get_real_client_addr().get_sockaddr()));
       LOG_INFO("client login audit", K(client_addr), K(hsr.cluster_name_), K(hsr.tenant_name_), K(hsr.user_name_),
                 "status", ret == OB_SUCCESS && status != ANALYZE_ERROR ? "success" : "failed");
     }
@@ -2174,24 +2426,19 @@ int ObMysqlSM::do_analyze_ps_prepare_request(const ObString &ps_sql)
   ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
 
   ObPsEntry *ps_entry = NULL;
+  ObGlobalPsEntry *global_ps_entry = NULL;
   ObPsIdEntry *ps_id_entry = NULL;
-  bool is_new_ps_entry = false;
-
-  ObBasePsEntryCache &ps_entry_cache = self_ethread().get_ps_entry_cache();
-  ps_entry_cache.get_ps_entry(ps_sql, ps_entry);
-
-  if (NULL == ps_entry) {
-    if (OB_FAIL(ObPsEntry::alloc_and_init_ps_entry(ps_sql, client_request.get_parse_result(), ps_entry))) {
-      LOG_WARN("fail to alloc and init ps entry", K(ret));
-    } else if (OB_FAIL(ps_entry_cache.set_ps_entry(ps_entry))) {
-      LOG_WARN("fail to add ps entry to cache", K(ret));
-      if (OB_LIKELY(NULL != ps_entry)) {
-        ps_entry->destroy();
-        ps_entry = NULL;
-      }
+  if (get_global_proxy_config().enable_global_ps_cache) {
+    ObBasePsEntryGlobalCache& ps_entry_global_cache = get_global_ps_entry_cache();
+    if (OB_FAIL(ps_entry_global_cache.acquire_or_create_ps_entry(ps_sql, client_request.get_parse_result(), global_ps_entry))) {
+      LOG_WARN("create ps entry failed", K(ps_sql), K(ret));
     } else {
-      ps_entry->inc_ref();
-      is_new_ps_entry = true;
+      ps_entry = global_ps_entry;
+    }
+  } else {
+    ObBasePsEntryThreadCache &ps_entry_thread_cache = self_ethread().get_ps_entry_cache();
+    if (OB_FAIL(ps_entry_thread_cache.acquire_or_create_ps_entry(ps_sql, client_request.get_parse_result(), ps_entry))) {
+      LOG_WARN("create ps entry failed", K(ps_sql), K(ret));
     }
   }
 
@@ -2201,21 +2448,20 @@ int ObMysqlSM::do_analyze_ps_prepare_request(const ObString &ps_sql)
       LOG_WARN("fail to alloc ps id entry", K(ret));
     } else if (OB_FAIL(session_info.add_ps_id_entry(ps_id_entry))) {
       LOG_WARN("fail to add ps id entry", KPC(ps_entry), K(ret));
-      if (OB_LIKELY(NULL != ps_id_entry)) {
-        ps_id_entry->destroy();
-        ps_id_entry = NULL;
-      }
     } else {
       // set current ps info
       session_info.set_ps_entry(ps_id_entry->ps_entry_);
       session_info.set_client_ps_id(ps_id_entry->ps_id_);
       session_info.set_ps_id_entry(ps_id_entry);
     }
-  }
-
-  if (is_new_ps_entry) {
-    ps_entry->dec_ref();
-    ps_entry = NULL;
+    if (OB_FAIL(ret)) {
+      if (OB_LIKELY(NULL != ps_id_entry)) {
+        ps_id_entry->destroy();
+        ps_id_entry = NULL;
+      } else if (OB_LIKELY(NULL == ps_id_entry && NULL != ps_entry)) {
+        ps_entry->dec_ref();
+      }
+    }
   }
   return ret;
 }
@@ -2228,6 +2474,8 @@ int ObMysqlSM::analyze_ps_prepare_request()
   ObString ps_sql = client_request.get_sql();
   char *ps_sql_buf = NULL;
   int64_t complete_sql_len = client_request.get_packet_len() - MYSQL_NET_META_LENGTH;
+  LOG_DEBUG("analyze ps prepare req", K(complete_sql_len), K(ps_sql.length()), K(ps_sql));
+  
   if (complete_sql_len > ps_sql.length()) {
     if (OB_ISNULL(ps_sql_buf = static_cast<char *>(op_fixed_mem_alloc(complete_sql_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -2235,6 +2483,7 @@ int ObMysqlSM::analyze_ps_prepare_request()
     } else {
       client_buffer_reader_->copy(ps_sql_buf, complete_sql_len, MYSQL_NET_META_LENGTH);
       ps_sql.assign_ptr(ps_sql_buf, static_cast<int32_t>(complete_sql_len));
+      LOG_DEBUG("after ps sql", K(ps_sql), K(complete_sql_len));
     }
   }
 
@@ -2473,15 +2722,16 @@ int ObMysqlSM::analyze_ps_execute_request(bool is_large_request)
   return ret;
 }
 
-int ObMysqlSM::analyze_text_ps_prepare_request()
+int ObMysqlSM::analyze_text_ps_prepare_request(const ObRequestAnalyzeCtx &ctx)
 {
   int ret = OB_SUCCESS;
-  ObClientSessionInfo &session_info = client_session_->get_session_info();
   ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
   ObString text_ps_sql = client_request.get_sql();
   char *text_ps_sql_buf = NULL;
-  int64_t complete_sql_len = client_request.get_packet_len() - MYSQL_NET_META_LENGTH;
+  char *text_ps_prepare_buf = NULL;
+  int64_t text_ps_prepare_buf_len = 0;
 
+  int64_t complete_sql_len = client_request.get_packet_len() - MYSQL_NET_META_LENGTH;
   if (complete_sql_len > text_ps_sql.length()) {
     if (OB_ISNULL(text_ps_sql_buf = static_cast<char*>(op_fixed_mem_alloc(complete_sql_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -2492,53 +2742,153 @@ int ObMysqlSM::analyze_text_ps_prepare_request()
     }
   }
 
-  ObTextPsNameEntry *text_ps_name_entry = session_info.get_text_ps_name_entry(client_request.get_parse_result().get_text_ps_name());
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(do_parse_text_ps_prepare_sql(text_ps_prepare_buf, text_ps_prepare_buf_len, text_ps_sql, ctx))) {
+      LOG_WARN("fail to do_parse_text_ps_prepare_sql", K(ret));
+    } else if (OB_FAIL(do_analyze_text_ps_prepare_request(text_ps_sql))) {
+      LOG_WARN("fail to do_analyze_text_ps_prepare_request", K(text_ps_sql), K(ret));
+    }
+  }
 
+  if (NULL != text_ps_sql_buf) {
+    op_fixed_mem_free(text_ps_sql_buf, complete_sql_len);
+  }
+  if (NULL != text_ps_prepare_buf) {
+    op_fixed_mem_free(text_ps_prepare_buf, text_ps_prepare_buf_len);
+  }
+  return ret;
+}
+
+int ObMysqlSM::do_parse_text_ps_prepare_sql(char*& text_ps_prepare_buf,
+    int64_t& text_ps_prepare_buf_len,
+    ObString& text_ps_sql, const ObRequestAnalyzeCtx& ctx)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObClientSessionInfo &cs_info = client_session_->get_session_info();
+
+  // If it is SET @s = CONCAT('SELECT * FROM ', 't1'); PREPARE stmt3 FROM @s;
+  // This prepare statement needs to be parsed once
+  ObProxyTextPsInfo prepare_info = client_request.get_parse_result().text_ps_info_;
+  if (1 == prepare_info.param_count_) {
+    ObProxyTextPsParam* param = prepare_info.params_.at(0);
+    ObString user_name = param->str_value_.config_string_;
+    ObObj user_value;
+    if (OB_FAIL(cs_info.get_user_variable_value(user_name, user_value))) {
+      LOG_WARN("get user variable failed", K(ret), K(user_name));
+    } else if (!user_value.is_varchar()) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("invalid extra info value type", K(ret), K(user_value));
+    } else {
+      const char* prepare_pos = text_ps_sql.find('@');
+      ObString prepare = text_ps_sql.split_on(prepare_pos);
+      text_ps_prepare_buf_len = prepare.length() + user_value.get_string().length() + 2;
+      text_ps_prepare_buf = reinterpret_cast<char *>(op_fixed_mem_alloc(text_ps_prepare_buf_len));
+      if (OB_UNLIKELY(NULL == text_ps_prepare_buf)) {
+        ret = common::OB_ALLOCATE_MEMORY_FAILED;
+        PROXY_LOG(ERROR, "fail to alloc mem", K(text_ps_prepare_buf_len), K(ret));
+      } else {
+        MEMCPY(text_ps_prepare_buf, prepare.ptr(), prepare.length());
+        MEMCPY(text_ps_prepare_buf + prepare.length(), user_value.get_string().ptr(), user_value.get_string().length());
+        text_ps_sql.reset();
+        text_ps_sql.assign_ptr(text_ps_prepare_buf, static_cast<int32_t>(text_ps_prepare_buf_len));
+        int64_t pos = prepare.length() + user_value.get_string().length();
+        MEMSET(text_ps_prepare_buf + pos, 0, 2);
+        ObProxySqlParser sql_parser;
+        ObSqlParseResult &sql_parse_result = client_request.get_parse_result();
+        sql_parse_result.reset();
+        bool use_lower_case_name = false;
+        if (!ctx.is_sharding_mode_ && !cs_info.is_oracle_mode())  {
+          use_lower_case_name = ctx.cached_variables_->need_use_lower_case_names();
+        }
+        if (OB_FAIL(sql_parser.parse_sql(text_ps_sql, ctx.parse_mode_, sql_parse_result,
+                                         use_lower_case_name,
+                                         ctx.connection_collation_,
+                                         ctx.drop_origin_db_table_name_,
+                                         client_request.is_sharding_user()))) {
+          LOG_WARN("fail to parse sql", K(text_ps_sql), K(ret));
+        } else {
+          LOG_DEBUG("succ to parse sql", K(text_ps_sql));
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+int ObMysqlSM::do_analyze_text_ps_prepare_request(const ObString& text_ps_sql)
+{
+  int ret = OB_SUCCESS;
+
+  // here we have the complete request in miobuffer, but client request buffer with
+  // configured request_buffer_length may be not enough to copy all data,
+  // we need copy complete ps sql
+  ObClientSessionInfo &session_info = client_session_->get_session_info();
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+
+  ObTextPsEntry *text_ps_entry = NULL;
+  ObGlobalTextPsEntry *global_text_ps_entry = NULL;
+  ObString text_ps_name = client_request.get_parse_result().get_text_ps_name();
+  ObTextPsNameEntry *text_ps_name_entry = session_info.get_text_ps_name_entry(text_ps_name);
+  LOG_DEBUG("prepare text ps name", K(client_request.get_parse_result().get_text_ps_name()));
   if (OB_SUCC(ret) && NULL != text_ps_name_entry) {
-    if (OB_FAIL(session_info.delete_text_ps_name_entry(text_ps_name_entry))) {
+    uint32_t client_ps_id = text_ps_name_entry->version_;
+    if (OB_FAIL(session_info.delete_text_ps_name_entry(text_ps_name))) {
       LOG_WARN("delete text ps name entry failed", K(ret), KPC(text_ps_name_entry));
     } else {
-      LOG_DEBUG("delete from text ps name entry", KPC(text_ps_name_entry));
+      session_info.remove_ps_id_addrs(client_ps_id);
+      ObMysqlServerSession* server_session = NULL;
+      server_session = client_session_->get_server_session();
+      if (OB_NOT_NULL(server_session)) {
+        server_session->get_session_info().remove_text_ps_version(client_ps_id);
+      }
+      int64_t svr_session_count = client_session_->get_session_manager().get_svr_session_count();
+      for (int64_t i = 0; i < svr_session_count; ++i) {
+        server_session = client_session_->get_session_manager().get_server_session(i);
+        if (OB_NOT_NULL(server_session)) {
+          server_session->get_session_info().remove_text_ps_version(client_ps_id);
+        }
+      }
+      LOG_DEBUG("delete text ps name entry succed", K(client_ps_id), KPC(text_ps_name_entry));
+    }
+  }
+
+  if (get_global_proxy_config().enable_global_ps_cache) {
+    ObBasePsEntryGlobalCache& text_ps_entry_global_cache = get_global_text_ps_entry_cache();
+    if (OB_FAIL(text_ps_entry_global_cache.acquire_or_create_ps_entry(text_ps_sql, client_request.get_parse_result(), global_text_ps_entry))) {
+      LOG_WARN("create text ps entry failed", K(text_ps_sql), K(ret));
+    } else {
+      text_ps_entry = global_text_ps_entry;
+    }
+  } else {
+    ObBasePsEntryThreadCache &text_ps_entry_thread_cache = self_ethread().get_text_ps_entry_cache();
+    if (OB_FAIL(text_ps_entry_thread_cache.acquire_or_create_ps_entry(text_ps_sql, client_request.get_parse_result(), text_ps_entry))) {
+      LOG_WARN("create text ps entry failed", K(text_ps_sql), K(ret));
     }
   }
 
   if (OB_SUCC(ret)) {
-    ObTextPsEntry *text_ps_entry = NULL;
-    if (OB_FAIL(ObTextPsEntry::alloc_and_init_text_ps_entry(
-            text_ps_sql, client_request.get_parse_result(), text_ps_entry))) {
-      LOG_WARN("fail to alloc and init text ps entry", K(ret));
-    } else if (OB_FAIL(client_session_->add_text_ps_entry(text_ps_entry))) {
-      LOG_WARN("fail to add text ps entry to cache", K(ret));
-      if (OB_LIKELY(NULL != text_ps_entry)) {
-        text_ps_entry->destroy();
-        text_ps_entry = NULL;
-      }
-    } else if (OB_FAIL(ObTextPsNameEntry::alloc_text_ps_name_entry(
-            client_request.get_parse_result().get_text_ps_name(),
-            text_ps_entry, text_ps_name_entry))) {
+    if (OB_FAIL(ObTextPsNameEntry::alloc_text_ps_name_entry(
+      client_request.get_parse_result().get_text_ps_name(), text_ps_entry, text_ps_name_entry))) {
       LOG_WARN("fail to alloc text ps name entry", K(ret));
     } else if (OB_FAIL(session_info.add_text_ps_name_entry(text_ps_name_entry))) {
       LOG_WARN("fail to add text ps name entry", KPC(text_ps_name_entry), K(ret));
+    } else {
+      text_ps_name_entry->version_ = client_session_->inc_and_get_ps_id();
+      session_info.set_client_ps_id(text_ps_name_entry->version_);
+      session_info.set_text_ps_name_entry(text_ps_name_entry);
+      LOG_DEBUG("session info add text ps name", K(client_request.get_parse_result().get_text_ps_name()));
+    }
+    if (OB_FAIL(ret)) {
       if (OB_LIKELY(NULL != text_ps_name_entry)) {
         text_ps_name_entry->destroy();
         text_ps_name_entry = NULL;
+      } else if (OB_LIKELY(NULL == text_ps_name_entry && NULL != text_ps_entry)) {
+        text_ps_entry->destroy();
       }
-    } else {
-      text_ps_entry->set_version(client_session_->inc_and_get_ps_id());
     }
   }
-
-  if (OB_SUCC(ret)) {
-    session_info.set_text_ps_entry(text_ps_name_entry->text_ps_entry_);
-    session_info.set_client_text_ps_name(client_request.get_parse_result().get_text_ps_name());
-    LOG_DEBUG("session info add text ps name", K(client_request.get_parse_result().get_text_ps_name()));
-
-    if (NULL != text_ps_sql_buf) {
-      op_fixed_mem_free(text_ps_sql_buf, complete_sql_len);
-      text_ps_sql_buf = NULL;
-    }
-  }
-
   return ret;
 }
 
@@ -2549,19 +2899,49 @@ int ObMysqlSM::analyze_text_ps_execute_request()
   ObClientSessionInfo &session_info = client_session_->get_session_info();
   ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
   const ObString &text_ps_name = client_request.get_parse_result().get_text_ps_name();
-  ObTextPsEntry *entry = NULL;
-
-  if (OB_ISNULL(entry = session_info.get_text_ps_entry(text_ps_name)) || !entry->is_valid()) {
-    LOG_WARN("text ps entry does not exist", K(text_ps_name), KPC(entry));
+  ObTextPsEntry* text_ps_entry = NULL;
+  ObTextPsNameEntry* text_ps_name_entry = NULL;
+  LOG_DEBUG("execute text ps name", K(text_ps_name));
+  if (OB_ISNULL(text_ps_name_entry = session_info.get_text_ps_name_entry(text_ps_name))) {
+    LOG_WARN("text ps name entry does not exist", K(text_ps_name), KPC(text_ps_entry));
+    // if not execute 'prepare stmt1', send 'execute stmt1' to server. server will return error msg
+    client_request.get_parse_result().set_stmt_type(OBPROXY_T_OTHERS);
+  } else if (OB_ISNULL(text_ps_entry = text_ps_name_entry->text_ps_entry_) || !text_ps_entry->is_valid()) {
+    LOG_WARN("text ps entry does not exist", K(text_ps_name), KPC(text_ps_entry));
     // if not execute 'prepare stmt1', send 'execute stmt1' to server. server will return error msg
     client_request.get_parse_result().set_stmt_type(OBPROXY_T_OTHERS);
   } else {
-    session_info.set_text_ps_entry(entry);
-    session_info.set_client_text_ps_name(text_ps_name);
-    session_info.set_text_ps_execute(true);
-    client_request.set_text_ps_parse_result(&entry->get_base_ps_parse_result());
+    session_info.set_client_ps_id(text_ps_name_entry->version_);
+    session_info.set_text_ps_name_entry(text_ps_name_entry);
+    client_request.set_text_ps_parse_result(&text_ps_entry->get_base_ps_parse_result());
   }
 
+  return ret;
+}
+
+int ObMysqlSM::analyze_text_ps_drop_request()
+{
+  int ret = OB_SUCCESS;
+
+  ObClientSessionInfo &session_info = client_session_->get_session_info();
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  const ObString &text_ps_name = client_request.get_parse_result().get_text_ps_name();
+  ObTextPsEntry* text_ps_entry = NULL;
+  ObTextPsNameEntry* text_ps_name_entry = NULL;
+  LOG_DEBUG("drop text ps name", K(text_ps_name));
+  if (OB_ISNULL(text_ps_name_entry = session_info.get_text_ps_name_entry(text_ps_name))) {
+    ret = OB_ERR_PREPARE_STMT_NOT_FOUND;
+    LOG_WARN("text ps name entry does not exist", K(text_ps_name), KPC(text_ps_entry));
+    if (OB_SUCCESS != encode_error_message(OB_ERR_PREPARE_STMT_NOT_FOUND)) {
+      LOG_WARN("fail to encode error message", K(ret));
+    }
+  } else if (OB_ISNULL(text_ps_entry = text_ps_name_entry->text_ps_entry_) || !text_ps_entry->is_valid()) {
+    LOG_WARN("text ps entry does not exist", K(text_ps_name), KPC(text_ps_entry));
+    // If drop stmt1, stmt1 does not have prepare and execute, send it directly to the server, and let the server return an error message
+    client_request.get_parse_result().set_stmt_type(OBPROXY_T_OTHERS);
+  } else {
+    session_info.set_client_ps_id(text_ps_name_entry->version_);
+  }
   return ret;
 }
 
@@ -2586,7 +2966,7 @@ int ObMysqlSM::analyze_fetch_request()
   return ret;
 }
 
-int ObMysqlSM::analyze_close_request()
+int ObMysqlSM::analyze_close_reset_request()
 {
   int ret = OB_SUCCESS;
 
@@ -2659,6 +3039,7 @@ int ObMysqlSM::state_watch_for_client_abort(int event, void *data)
       case VC_EVENT_ERROR:
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_INACTIVITY_TIMEOUT:
+      case VC_EVENT_DETECT_SERVER_DEAD:
         if (tunnel_.is_tunnel_active()) {
           // Check to see if the client is part of the tunnel.
           // If so forward the event to the tunnel. Otherwise,
@@ -2688,6 +3069,16 @@ int ObMysqlSM::state_watch_for_client_abort(int event, void *data)
         milestones_.client_.client_end_ = get_based_hrtime();
         set_client_abort(ObMysqlTransact::ABORTED, event);
         update_congestion_entry(event);
+        if (OB_MYSQL_COM_QUIT != trans_state_.trans_info_.client_request_.get_packet_meta().cmd_) {
+          if (NULL != trans_state_.congestion_entry_) {
+            trans_state_.congestion_entry_->set_client_feedback_failed_at(event::get_hrtime());
+            if (trans_state_.congestion_entry_->client_feedback_congested_) {
+              if (NULL != sm_cluster_resource_) {
+                sm_cluster_resource_->alive_addr_set_.set_refactored(trans_state_.congestion_entry_->server_ip_);
+              }
+            }
+          }
+        }
         terminate_sm_ = true;
         break;
 
@@ -2948,7 +3339,6 @@ int ObMysqlSM::state_observer_open(int event, void *data)
                 trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_HANDSHAKE;
               }
               LOG_DEBUG("succ to establish server sesssion", K_(sm_id));
-
               handle_observer_open();
             }
           }
@@ -3033,6 +3423,7 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
       // fall through
       case VC_EVENT_ERROR:
       case VC_EVENT_ACTIVE_TIMEOUT:
+      case VC_EVENT_DETECT_SERVER_DEAD:
         LOG_WARN("ObMysqlSM::state_server_response_read", "event",
                  ObMysqlDebugNames::get_event_name(event), K_(sm_id));
         // Error handling function
@@ -3050,6 +3441,28 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
     }
   }
 
+  if (enable_record_full_link_trace_info()) {
+    SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+    LOG_DEBUG("state server response read begin.");
+
+    // server process req end
+    trace::ObSpanCtx *server_process_req_ctx = flt_.trace_log_info_.server_process_req_ctx_;
+    if (OB_NOT_NULL(server_process_req_ctx)) {
+      LOG_DEBUG("end span ob_proxy_server_process_req", K(server_process_req_ctx->span_id_));
+      FLT_END_SPAN(server_process_req_ctx);
+      flt_.trace_log_info_.server_process_req_ctx_ = NULL;
+    }
+
+    // client response write begin, check inited or not, only init it once
+    if (flt_.trace_log_info_.client_response_write_ctx_ == NULL) {
+      trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy_client_response_write);
+      if (OB_NOT_NULL(ctx)) {
+        flt_.trace_log_info_.client_response_write_ctx_ = ctx;
+        LOG_DEBUG("begin span ob_proxy_client_response_write", K(ctx->span_id_));
+      }
+    }
+  }
+
   if (OB_SUCC(ret)) {
     // Reset the inactivity timeout if this is the first
     // time we've been called. The timeout had been set to
@@ -3062,8 +3475,7 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
     }
 
     bool need_receive_completed = false;
-    if (OB_UNLIKELY((NULL != client_session_ && client_session_->is_proxy_mysql_client_)
-        || ObMysqlTransact::SERVER_SEND_REQUEST != trans_state_.current_.send_action_)) {
+    if (ObMysqlTransact::SERVER_SEND_REQUEST != trans_state_.current_.send_action_) {
       need_receive_completed = true;
     }
 
@@ -3088,6 +3500,19 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
             milestone_diff(milestones_.server_.server_read_begin_, milestones_.server_.server_read_end_)
             - cmd_time_stats_.plugin_decompress_response_time_
             - cmd_time_stats_.server_response_analyze_time_);
+        }
+      }
+
+      ObMysqlResp &server_response = trans_state_.trans_info_.server_response_;
+      if (enable_record_full_link_trace_info()
+          && (server_response.get_analyze_result().is_resp_completed()
+              || server_response.get_analyze_result().is_trans_completed())) {
+        trace::ObSpanCtx *ctx = flt_.trace_log_info_.server_response_read_ctx_;
+        if (OB_NOT_NULL(ctx)) {
+          LOG_DEBUG("end span ob_proxy_server_response_read", K(ctx->span_id_));
+          SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+          FLT_END_SPAN(ctx);
+          flt_.trace_log_info_.server_response_read_ctx_ = NULL;
         }
       }
     }
@@ -3134,12 +3559,15 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
         if (ObMysqlTransact::SERVER_SEND_REQUEST == trans_state_.current_.send_action_) {
           set_client_wait_timeout();
         }
-
+        
+        // skip the response handling plugins or not
         trans_state_.current_.state_ = ObMysqlTransact::CONNECTION_ALIVE;
         trans_state_.transact_return_point = ObMysqlTransact::handle_response;
         if (OB_MYSQL_COM_QUERY == trans_state_.trans_info_.sql_cmd_
+            && (ObProxyProtocol::PROTOCOL_OB20 != get_client_session_protocol()
+                || ObMysqlTransact::SERVER_SEND_REQUEST != trans_state_.current_.send_action_)
             && (trans_state_.trans_info_.server_response_.get_analyze_result().is_decompressed()
-            || PROTOCOL_NORMAL == use_compression_protocol())) {
+                || ObProxyProtocol::PROTOCOL_NORMAL == get_server_session_protocol())) {
           skip_plugin_ = true;
         }
         callout_api_and_start_next_action(ObMysqlTransact::SM_ACTION_API_READ_RESPONSE);
@@ -3195,25 +3623,37 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
 
 ObMysqlCompressAnalyzer& ObMysqlSM::get_compress_analyzer()
 {
-  if (PROTOCOL_OB20 == use_compression_protocol()) {
+  if (ObProxyProtocol::PROTOCOL_OB20 == get_server_session_protocol()) {
     return compress_ob20_analyzer_;
   } else {
     return compress_analyzer_;
   }
 }
 
-ObProxyProtocol ObMysqlSM::use_compression_protocol() const
+ObProxyProtocol ObMysqlSM::get_server_session_protocol() const
 {
   // in auth, do not use compress prototcol
   if (NULL == server_session_ || (!server_session_->is_checksum_supported() && !server_session_->is_ob_protocol_v2_supported())
           || ObMysqlTransact::SERVER_SEND_SAVED_LOGIN == trans_state_.current_.send_action_
           || ObMysqlTransact::SERVER_SEND_LOGIN == trans_state_.current_.send_action_
-          || ObMysqlTransact::SERVER_SEND_HANDSHAKE == trans_state_.current_.send_action_) {
-    return PROTOCOL_NORMAL;
+          || ObMysqlTransact::SERVER_SEND_HANDSHAKE == trans_state_.current_.send_action_
+          || ObMysqlTransact::is_binlog_request(trans_state_)) {
+    return ObProxyProtocol::PROTOCOL_NORMAL;
   } else if (server_session_->is_ob_protocol_v2_supported()) {
-    return PROTOCOL_OB20;
+    return ObProxyProtocol::PROTOCOL_OB20;
   } else {
-    return PROTOCOL_CHECKSUM; // current checksum is supported by zlib
+    return ObProxyProtocol::PROTOCOL_CHECKSUM; // current checksum is supported by zlib
+  }
+}
+
+ObProxyProtocol ObMysqlSM::get_client_session_protocol() const
+{
+  if (client_session_ == NULL
+      || !client_session_->get_session_info().is_client_support_ob20_protocol()
+      || trans_state_.is_auth_request_) {
+    return ObProxyProtocol::PROTOCOL_NORMAL;
+  } else {
+    return ObProxyProtocol::PROTOCOL_OB20;
   }
 }
 
@@ -3252,7 +3692,7 @@ bool ObMysqlSM::need_reject_user_login(const ObString &user, const ObString &ten
     bret = (!get_global_proxy_config().skip_proxyro_check
             && tenant.case_compare(OB_SYS_TENANT_NAME) == 0
             && user.case_compare(ObProxyTableInfo::READ_ONLY_USERNAME_USER) == 0)
-           || (is_cloud_user && !get_global_proxy_config().enable_cloud_full_username
+           || (is_cloud_user && !enable_cloud_full_username_
                && (has_tenant_username || has_cluster_username))
            || (!is_cloud_user && get_global_proxy_config().enable_full_username
                           && (!has_cluster_username || !has_tenant_username));
@@ -3265,7 +3705,7 @@ uint8_t ObMysqlSM::get_request_seq()
 {
   uint8_t seq = 0;
 
-  if (use_compression_protocol() == PROTOCOL_CHECKSUM) {
+  if (get_server_session_protocol() == ObProxyProtocol::PROTOCOL_CHECKSUM) {
     if (ObMysqlTransact::SERVER_SEND_REQUEST == trans_state_.current_.send_action_) {
       seq = trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_;
     } else {
@@ -3337,9 +3777,10 @@ inline int ObMysqlSM::handle_oceanbase_first_response_packet(ObMysqlAnalyzeStatu
 {
   int ret = OB_SUCCESS;
 
-  ObProxyProtocol ob_proxy_protocol = use_compression_protocol();
+  ObProxyProtocol ob_proxy_protocol = get_server_session_protocol();
 
-  if (OB_UNLIKELY(PROTOCOL_CHECKSUM == ob_proxy_protocol || PROTOCOL_OB20 == ob_proxy_protocol)) { // compressed protocol
+  if (OB_UNLIKELY(ObProxyProtocol::PROTOCOL_CHECKSUM == ob_proxy_protocol
+                  || ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol)) { // compressed protocol
     if (OB_FAIL(handle_first_compress_response_packet(state, need_receive_completed, first_pkt_len))) {
       LOG_WARN("fail to handle_first_compress_response_packet", K(need_receive_completed), K(ret));
     }
@@ -3368,12 +3809,17 @@ inline int ObMysqlSM::handle_first_compress_response_packet(ObMysqlAnalyzeStatus
 
   if (server_buffer_reader_->is_read_avail_more_than(MYSQL_COMPRESSED_HEALDER_LENGTH)) {
     ObMysqlCompressAnalyzer::AnalyzeMode mode;
-    if (!need_receive_completed || ObMysqlTransact::SERVER_SEND_REQUEST != trans_state_.current_.send_action_) {
+    if (ObMysqlTransact::SERVER_SEND_XA_START == trans_state_.current_.send_action_) {
+      mode = ObMysqlCompressAnalyzer::DECOMPRESS_MODE;
+    } else if (!need_receive_completed || ObMysqlTransact::SERVER_SEND_REQUEST != trans_state_.current_.send_action_) {
       mode = ObMysqlCompressAnalyzer::SIMPLE_MODE;
     } else {
       mode = ObMysqlCompressAnalyzer::DECOMPRESS_MODE;
     }
 
+    LOG_DEBUG("handle first compress resp, print tag",
+              K(mode), K(need_receive_completed), K(trans_state_.current_.send_action_));
+    
     if (OB_FAIL(compress_analyzer->init(req_seq, mode, cmd, mysql_mode, enable_extra_ok_packet_for_stats,
                                         req_seq, server_session_->get_server_request_id(),
                                         server_session_->get_server_sessid()))) {
@@ -3383,20 +3829,198 @@ inline int ObMysqlSM::handle_first_compress_response_packet(ObMysqlAnalyzeStatus
       LOG_WARN("fail to analyze first response", K(server_buffer_reader_),
                K(need_receive_completed), K(server_response), K_(sm_id), K(ret));
     } else {
-      LOG_DEBUG("after first response", K(req_seq), K(result), "is_resp_finished",
-                server_response.get_analyze_result().is_resp_completed(),
-                "is_trans_finished", server_response.get_analyze_result().is_trans_completed());
-      if (ANALYZE_DONE == result.status_ && PROTOCOL_CHECKSUM == use_compression_protocol()) {
+      ObRespAnalyzeResult &analyze_result = server_response.get_analyze_result();
+      LOG_DEBUG("after first response", K(req_seq),
+                "is_resp_finished", analyze_result.is_resp_completed(),
+                "is_trans_finished", analyze_result.is_trans_completed(),
+                K(result), K(server_response));
+      if (ANALYZE_DONE == result.status_ && ObProxyProtocol::PROTOCOL_CHECKSUM == get_server_session_protocol()) {
         check_update_checksum_switch(result.is_checksum_on_);
       }
 
       state = result.status_;
       first_pkt_len = result.header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH;
       cmd_size_stats_.server_response_bytes_ = server_buffer_reader_->read_avail();
+
+      // save flt from response analyze result to sm
+      save_response_flt_result_to_sm(analyze_result.flt_);
     }
   } else {
     state = ANALYZE_CONT;
   }
+  return ret;
+}
+
+void ObMysqlSM::save_response_flt_result_to_sm(common::FLTObjManage &flt)
+{
+  // control info
+  if (flt.control_info_.is_valid() || flt.control_info_.is_need_send()) {
+    flt_.control_info_ = flt.control_info_;
+    flt.control_info_.reset();
+    LOG_DEBUG("update control info from server response", K(flt_.control_info_));
+  }
+
+  // query info
+  if (flt.query_info_.is_valid()) {
+    flt_.query_info_ = flt.query_info_;
+    flt.query_info_.reset();
+    LOG_DEBUG("update query info from server response", K(flt_.query_info_));
+  }
+
+  if (flt.span_info_.is_valid()) {
+    LOG_WARN("attention: span info in rsp valid!");
+  }
+  if (flt.app_info_.is_valid()) {
+    LOG_WARN("attention: app info in rsp valid!");
+  }
+  if (flt.driver_span_info_.is_valid()) {
+    LOG_WARN("attention: driver span info in rsp valid!");
+  }
+
+}
+
+bool ObMysqlSM::enable_record_full_link_trace_info()
+{
+  return flt_.span_info_.trace_enable_ && flt_.span_info_.is_valid();
+}
+
+bool ObMysqlSM::is_proxy_init_trace_log_info()
+{
+  return flt_.trace_log_info_.is_inited_;
+}
+
+int ObMysqlSM::handle_resp_for_end_proxy_root_span(trace::UUID &trace_id, bool is_in_trans)
+{
+  int ret = OB_SUCCESS;
+
+  LOG_DEBUG("end proxy root span begin", K(flt_.span_info_), K(is_in_trans));
+  
+  if (enable_record_full_link_trace_info()) {
+    SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+    trace_id = flt_.span_info_.trace_id_;
+
+    if (flt_.query_info_.is_valid()) {
+      // set tag to proxy root span and print with it
+      FLT_SET_TAG(query_start_ts, flt_.query_info_.query_start_ts_, query_end_ts, flt_.query_info_.query_end_ts_);
+      LOG_DEBUG("set observer query info tag to proxy root span", K(flt_.query_info_));
+      flt_.query_info_.reset();
+    }
+
+    ObMysqlClientSession *client_session = get_client_session();
+    if (!client_session->is_client_support_full_link_trace()) {
+      // add client ip and port to tag, inorder to classify the different io from client
+      net::ObIpEndpoint client_ip_point;
+      net::ops_ip_copy(client_ip_point, client_session->get_netvc()->get_real_client_addr());
+      char client_addr_buf[INET6_ADDRSTRLEN] = {0};
+      if (OB_FAIL(ops_ip_nptop(client_ip_point, client_addr_buf, INET6_ADDRSTRLEN))) {
+        LOG_WARN("fail to ops ip nptop", K(ret));
+      } else {
+        const char *client_addr_ptr = client_addr_buf;
+        FLT_SET_TAG(client_host, client_addr_ptr);
+        LOG_DEBUG("set client host tag to proxy root span", K(client_addr_ptr));
+      }
+    }
+
+    // accord to record policy and slow query, print the log
+    trace::ObSpanCtx *ctx = flt_.trace_log_info_.proxy_root_span_ctx_;
+    if (OB_NOT_NULL(ctx)) {
+      LOG_DEBUG("end span ob proxy root", K(trace_id), K(ctx->span_id_), K(OBTRACE->is_auto_flush()));
+      FLT_END_SPAN(ctx);
+      flt_.trace_log_info_.proxy_root_span_ctx_ = NULL;
+    }
+
+    // slow query check
+    int64_t slow_query_thres_in_control_info = flt_.control_info_.slow_query_threshold_;
+    if (!flt_.span_info_.force_print_                           // do not print repeatly
+        && flt_.trace_log_info_.proxy_root_span_begin_time_ > 0
+        && slow_query_thres_in_control_info > 0
+        && (flt_.control_info_.record_policy_ == RP_ONLY_SLOW_QUERY
+            || flt_.control_info_.record_policy_ == RP_SAMPLE_AND_SLOW_QUERY)) {
+      int64_t proxy_root_span_end_time = ObTimeUtility::current_time();
+      if (milestone_diff(flt_.trace_log_info_.proxy_root_span_begin_time_, proxy_root_span_end_time)
+                         > slow_query_thres_in_control_info) {
+        // slow query need to print
+        LOG_DEBUG("succ to print slow query trace log", K(slow_query_thres_in_control_info),
+                  K(proxy_root_span_end_time), K(flt_.trace_log_info_.proxy_root_span_begin_time_));
+        FLUSH_TRACE();
+        flt_.trace_log_info_.proxy_root_span_begin_time_ = -1;
+      }
+    }
+
+    /*
+     * clear obtrace instance, and re-init
+     * if it is not force print policy, only record the current SQL span in obtrace memory
+     * do not print other sql span info in obtrace
+     * for only slow query policy, only print slow query, do not print other sql in obtrace instance
+     * for sample and slow query policy, force print will print all sqls, while others only print slow query
+     */
+    if (flt_.span_info_.force_print_ == false) {
+      trace::UUID trace_id = OBTRACE->get_trace_id();
+      trace::UUID root_span_id = OBTRACE->get_root_span_id();
+      uint8_t policy = OBTRACE->get_policy();
+      OBTRACE->init(trace_id, root_span_id, policy);
+    }
+
+    // reset app info, after succeed to send request to observer
+    if (flt_.app_info_.is_valid()) {
+      flt_.app_info_.reset();
+    }
+
+    // reset span info, root obproxy span end, clear span info
+    bool trace_enable = flt_.span_info_.trace_enable_;
+    bool force_print = flt_.span_info_.force_print_;
+    flt_.span_info_.reset();
+    if (is_in_trans) {
+      flt_.span_info_.trace_id_ = trace_id;  // in trans, keep the trace id as the same before
+      if (is_proxy_init_trace_log_info()) {
+        // proxy generate trace, still in trans, save bool, save trace id, regenerate span id.
+        flt_.span_info_.trace_enable_ = trace_enable;
+        flt_.span_info_.force_print_ = force_print;
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObMysqlSM::handle_for_end_proxy_trace(trace::UUID &trace_id)
+{
+  int ret = OB_SUCCESS;
+
+  if (is_proxy_init_trace_log_info()) {
+    LOG_DEBUG("end trace generated by proxy", K(trace_id));
+  
+    SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+    FLT_END_TRACE();
+  
+    flt_.trace_log_info_.reset();
+  }
+
+  return ret;
+}
+
+int ObMysqlSM::handle_resp_for_end_flt_trace(bool is_trans_completed)
+{
+  int ret = OB_SUCCESS;
+  trace::UUID trace_id;
+
+  if (is_trans_completed) {
+    if (OB_FAIL(handle_resp_for_end_proxy_root_span(trace_id, false))) {
+      LOG_WARN("fail to handle resp for end span", K(ret));
+    } else if (OB_FAIL(handle_for_end_proxy_trace(trace_id))) {
+      LOG_WARN("fail to handle resp for end trace", K(ret));
+    } else {
+      // nothing
+    }
+  } else {
+    if (OB_FAIL(handle_resp_for_end_proxy_root_span(trace_id, true))) {
+      LOG_WARN("fail to handle resp for end span in plugin", K(ret));
+    } else {
+      // nothing
+      // proxy generate trace & still in trans, do not clear the OBTRACE memory
+    }
+  }
+
   return ret;
 }
 
@@ -3412,6 +4036,7 @@ inline int ObMysqlSM::handle_first_normal_response_packet(ObMysqlAnalyzeStatus &
   bool is_autocommit_0 = false;
   if (OB_FAIL(client_session_->get_session_info().field_mgr_.get_common_sys_variable_value("autocommit", obj))) {
     LOG_DEBUG("fail to get autocommit val", K(ret));
+    ret = OB_SUCCESS;
   } else if (obj.get_int() == 0) {
     LOG_DEBUG("autocommit is 0");
     is_autocommit_0 = true;
@@ -3419,7 +4044,8 @@ inline int ObMysqlSM::handle_first_normal_response_packet(ObMysqlAnalyzeStatus &
 
   if (OB_LIKELY(server_buffer_reader_->is_read_avail_more_than(MYSQL_NET_META_LENGTH))) {
     if (OB_UNLIKELY(!client_session_->get_session_info().is_oceanbase_server()
-        || trans_state_.mysql_config_params_->is_mysql_routing_mode())) {
+        || trans_state_.mysql_config_params_->is_mysql_routing_mode()
+        || ObMysqlTransact::is_binlog_request(trans_state_))) {
       LOG_DEBUG("handle_first_normal_response_packet", K(trans_state_.current_.state_),
                 K(is_in_trans_), K(is_autocommit_0));
       analyzer_.set_server_cmd(trans_state_.trans_info_.sql_cmd_, STANDARD_MYSQL_PROTOCOL_MODE,
@@ -3446,6 +4072,355 @@ inline int ObMysqlSM::handle_first_normal_response_packet(ObMysqlAnalyzeStatus &
     state = ANALYZE_CONT;
   }
   return ret;
+}
+
+int ObMysqlSM::handle_first_request_packet(ObMysqlAnalyzeStatus &status, int64_t &first_packet_len)
+{
+  int ret = OB_SUCCESS;
+  LOG_DEBUG("handle first request packet begin");
+
+  if (get_client_session_protocol() != ObProxyProtocol::PROTOCOL_OB20) {
+    analyze_mysql_request(status);
+  } else {
+    ObClientSessionInfo &client_session_info = get_client_session()->get_session_info();
+    if (client_session_info.ob20_request_.remain_payload_len_ == 0) {
+      LOG_DEBUG("handle ob20 req begin", K(client_buffer_reader_->read_avail()));
+      // analyze ob20 request here, do not copy mysql packet
+      // ensure the whole ob20 request received complete is enough
+      if (OB_FAIL(handle_first_compress_request_packet(status, first_packet_len))) {
+        LOG_WARN("fail to handle first compress request from client", K(ret), K(status), K(first_packet_len));
+      } else if (status == ANALYZE_DONE) {
+        analyze_mysql_request(status, true);
+        analyze_status_after_analyze_mysql_in_ob20_payload(status, client_session_info);
+      } else if (status == ANALYZE_CONT) {
+        LOG_DEBUG("handle first compress request continue.", K(first_packet_len));
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("unexpected ret status, handle ob20 first compress req", K(ret), K(status), K(first_packet_len));
+      }
+    } else {
+      // more than one mysql packet in ob20 payload, handle it one by one
+      // at last, consume the tail crc of ob20 in client_buffer_reader_
+      LOG_DEBUG("handle other mysql req in ob20 payload begin");
+      analyze_mysql_request(status, true);
+      analyze_status_after_analyze_mysql_in_ob20_payload(status, client_session_info);
+    }
+  }
+
+  LOG_DEBUG("after handle first request packet", K(status));
+
+  return ret;
+}
+
+/*
+ * analyze ob20 request from client
+ * all the reqs are saved in src: client_buffer_reader_, there could be more than one mysql packet in ob20 payload data
+ * the strategy to avoid copy buffer is:
+ * 1: resolve the necessary compressed head and ob20 head info from the begging of src buffer (7 + 24)
+ * 2: get extra len if extra info flag is set in ob20 head flag
+ * 3: remain payload len = ob20.head.payload_len - extra len - 4(extra len)
+ * 4: consume src buffer, len = compressed head + ob20 head (7 + 24) + 4(extra len) + extra len, make sure the ptr
+      point to basic info in ob20 payload data(several mysql packets)
+ * 5: analyze mysql packet
+ *
+ * the procedure of this is compatible with the current mysql buffer consume
+ * take care of the end crc judgement, by remain payload len
+ */
+int ObMysqlSM::handle_first_compress_request_packet(ObMysqlAnalyzeStatus &status, int64_t &first_packet_len)
+{
+  int ret = OB_SUCCESS;
+
+  if (client_buffer_reader_->is_read_avail_more_than(MYSQL_COMPRESSED_HEALDER_LENGTH)) {
+    ObMysqlCompressedOB20AnalyzeResult ob20_result;
+    ObMysqlCompressAnalyzer *compress_analyzer = &compress_ob20_analyzer_;  // to support more compress protocol here
+    compress_analyzer->reset();
+
+    if (OB_FAIL(compress_analyzer->init(0, ObMysqlCompressAnalyzer::DECOMPRESS_MODE, OB_MYSQL_COM_MAX_NUM,
+                                        UNDEFINED_MYSQL_PROTOCOL_MODE, false, 0, 0, 0))) {
+    	LOG_WARN("fail to init compress analyzer", K(ret));
+    	status = ANALYZE_ERROR;
+    } else if (OB_FAIL(compress_analyzer->analyze_first_request(*client_buffer_reader_,
+                                                                ob20_result,
+                                                                trans_state_.trans_info_.client_request_,
+                                                                status))) {
+    	LOG_WARN("fail to analyze first compress request", K(ret));
+    } else if (status == ANALYZE_DONE) {
+      if (OB_FAIL(handle_compress_request_analyze_done(ob20_result, first_packet_len, status))) {
+        LOG_WARN("fail to handle compress request analyze done", K(ret));
+      }     
+    } else if (status == ANALYZE_CONT) {
+      first_packet_len = ob20_result.header_.compressed_len_ > 0
+                         ? ob20_result.header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH
+                         : 0;
+      LOG_DEBUG("analyze first compress request continue.", K(status), K(first_packet_len));
+    }
+  } else {
+    status = ANALYZE_CONT;
+  }
+
+  return ret;
+}
+
+int ObMysqlSM::handle_compress_request_analyze_done(ObMysqlCompressedOB20AnalyzeResult &ob20_result,
+                                                    int64_t &first_packet_len,
+                                                    ObMysqlAnalyzeStatus &status)
+{
+  int ret = OB_SUCCESS;
+
+  // total mysql packet len in ob20 payload = payload_len - extra_len(4) - extra_info_len (if extra exist)
+  int64_t remain_mysql_packets_len = 0;
+  if (ob20_result.ob20_header_.flag_.is_extra_info_exist()) {
+    remain_mysql_packets_len = static_cast<int64_t>(ob20_result.ob20_header_.payload_len_
+                                                    - ob20_result.extra_info_.extra_len_
+                                                    - OB20_PROTOCOL_EXTRA_INFO_LENGTH); 
+  } else {
+    remain_mysql_packets_len = static_cast<int64_t>(ob20_result.ob20_header_.payload_len_);
+  }
+
+  if (remain_mysql_packets_len <= 0) {
+    ret = OB_INVALID_ARGUMENT;
+    status = ANALYZE_ERROR;
+    LOG_WARN("receive err mysql packet len in ob20 payload", K(ret), K(remain_mysql_packets_len), K(ob20_result));
+  } else {
+    first_packet_len = ob20_result.header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH;
+    ObClientSessionInfo &client_session_info = get_client_session()->get_session_info();
+    client_session_info.ob20_request_.remain_payload_len_ = remain_mysql_packets_len;
+    client_session_info.ob20_request_.ob20_request_received_done_ = true;
+    client_session_info.ob20_request_.ob20_header_ = ob20_result.ob20_header_;
+    get_client_session()->set_compressed_seq(ob20_result.ob20_header_.cp_hdr_.seq_);
+    LOG_DEBUG("analyze first ob20 packet finish", K(status), K(ob20_result), K(remain_mysql_packets_len),
+              "req compressed seq", get_client_session()->get_compressed_seq());
+
+    // save FLT to sm after analyze ob20 req done
+    save_request_flt_result_to_sm(ob20_result.flt_);
+    
+    // consume, make sure the beginning in reader_ is mysql packet
+    int64_t offset = MYSQL_COMPRESSED_OB20_HEALDER_LENGTH;
+    if (ob20_result.ob20_header_.flag_.is_extra_info_exist()) {
+      offset += OB20_PROTOCOL_EXTRA_INFO_LENGTH + ob20_result.extra_info_.extra_len_;
+    }
+                   
+    if (OB_FAIL(client_buffer_reader_->consume(offset))) {
+      status = ANALYZE_ERROR;
+      LOG_WARN("fail to consume buffer", K(ret));
+    } else {
+      LOG_DEBUG("consume the compress head and ob20 head in client buffer",
+                K(offset), K(client_buffer_reader_->read_avail()));
+    }
+  }
+
+  return ret;
+}
+
+void ObMysqlSM::analyze_status_after_analyze_mysql_in_ob20_payload(ObMysqlAnalyzeStatus &status,
+                                                                   ObClientSessionInfo &client_session_info)
+{
+  int64_t mysql_packet_len = trans_state_.trans_info_.client_request_.get_packet_len();
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(status == ANALYZE_DONE)) {
+    if (OB_UNLIKELY(mysql_packet_len == MYSQL_PACKET_MAX_LENGTH)) {
+      status = ANALYZE_NOT_SUPPORT;
+      LOG_WARN("do not support full mysql packet in ob2.0 payload now", K(status));
+    }
+  } else if (OB_UNLIKELY(status == ANALYZE_CONT)) {
+    status = ANALYZE_NOT_SUPPORT;
+    int64_t total_avail = client_buffer_reader_->read_avail();
+    LOG_WARN("compress packet received done, mysql packet not received done yet, or unexpected analyze status",
+             K(status), K(total_avail), K(mysql_packet_len));
+  } else {
+    LOG_WARN("unexpected status after analyze mysql in ob20 payload", K(status));
+  }  
+
+  if (OB_FAIL(analyze_ob20_remain_after_analyze_mysql_request_done(client_session_info))) {
+    if (OB_LIKELY(status == ANALYZE_DONE)) {
+      if (ret == OB_NOT_SUPPORTED) {
+        status = ANALYZE_NOT_SUPPORT;
+      } else {
+        status = ANALYZE_ERROR;
+        LOG_WARN("fail to analyze ob20 remain after mysql req done", K(ret), K(status));
+      }
+    }
+  }
+}
+
+int ObMysqlSM::analyze_ob20_remain_after_analyze_mysql_request_done(ObClientSessionInfo &client_session_info)
+{
+  int ret = OB_SUCCESS;
+  
+  int64_t mysql_packet_len = trans_state_.trans_info_.client_request_.get_packet_len();
+  int64_t remain_payload_len = client_session_info.ob20_request_.remain_payload_len_;
+  if (remain_payload_len < mysql_packet_len) {
+    ret = OB_NOT_SUPPORTED;
+    client_session_info.ob20_request_.remain_payload_len_ = 0;
+    LOG_WARN("unexpected situation after received total compress packet and total mysql packet",
+             K(ret), K(remain_payload_len), K(mysql_packet_len));
+  } else {
+    client_session_info.ob20_request_.remain_payload_len_ -= mysql_packet_len;
+    LOG_DEBUG("analyze other mysql reqs in compress payload", K(remain_payload_len), K(mysql_packet_len));
+  }
+
+  return ret;
+}
+
+int ObMysqlSM::handle_req_for_begin_proxy_root_span()
+{
+  int ret = OB_SUCCESS;
+
+  // according to client capability
+  if (get_client_session()->is_client_support_full_link_trace()) {
+    handle_req_to_generate_root_span_from_client();
+  } else {
+    // client do not support flt, proxy generate obtrace
+    if (OB_FAIL(handle_req_to_generate_root_span_by_proxy())) {
+      LOG_WARN("fail to do proxy generate proxy root span", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+void ObMysqlSM::handle_req_to_generate_root_span_from_client()
+{
+  // client pass span info to proxy, proxy use it directly
+  if (flt_.span_info_.is_valid() && flt_.control_info_.is_valid()) {
+    SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+    if (enable_record_full_link_trace_info()) {
+      OBTRACE->init(flt_.span_info_.trace_id_, flt_.span_info_.span_id_, flt_.control_info_.level_);
+      if (flt_.span_info_.force_print_) {
+        FLT_SET_AUTO_FLUSH(true);
+      } else {
+        FLT_SET_AUTO_FLUSH(false);
+      }
+
+      trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy);
+      if (OB_NOT_NULL(ctx)) {
+        flt_.trace_log_info_.proxy_root_span_ctx_ = ctx;
+        flt_.span_info_.span_id_ = ctx->span_id_;
+        flt_.span_info_.ref_type_ = common::SYNC;
+        flt_.trace_log_info_.proxy_root_span_begin_time_ = ObTimeUtility::current_time();
+        LOG_DEBUG("client gen, proxy use, begin span ob proxy root based on client trace",
+                  K(ctx->span_id_), K(flt_.span_info_), K(OBTRACE->is_auto_flush()));
+      }
+    } else {
+      FLT_SET_AUTO_FLUSH(false);
+      LOG_DEBUG("req flt trace not enable in this req, auto flush false.", K(flt_.span_info_));
+    }
+  }
+}
+
+/*
+ * global.enable_trace_ as the total switch to decide whether proxy will monitor or not
+ * including xflush, full link trace
+ */
+int ObMysqlSM::handle_req_to_generate_root_span_by_proxy()
+{
+  int ret = OB_SUCCESS;
+
+  if (flt_.control_info_.is_valid()
+      && get_global_performance_params().enable_trace_
+      && !client_session_->is_proxy_mysql_client_
+      && client_session_->get_session_info().is_server_support_full_link_trace()) {
+    if (!is_proxy_init_trace_log_info()) {
+      double pct = trace::get_random_percentage();
+      if (pct < flt_.control_info_.sample_percentage_) {
+        flt_.span_info_.trace_enable_ = true;
+      } else {
+        flt_.span_info_.trace_enable_ = false;
+      }
+
+      SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+      if (flt_.span_info_.trace_enable_) {
+        flt_.span_info_.trace_id_ = FLT_BEGIN_TRACE();
+        FLT_SET_TRACE_LEVEL(flt_.control_info_.level_);   // need set trace level after BEGIN TRACE
+        LOG_DEBUG("begin trace generated by proxy", K(flt_.span_info_.trace_id_), K(flt_.control_info_.level_));
+
+        if (flt_.control_info_.record_policy_ == RP_ALL) {
+          flt_.span_info_.force_print_ = true;
+        } else if (flt_.control_info_.record_policy_ == RP_SAMPLE_AND_SLOW_QUERY) {
+          double print_pct = trace::get_random_percentage();
+          if (print_pct < flt_.control_info_.print_sample_percentage_) {
+            flt_.span_info_.force_print_ = true;
+          } else {
+            flt_.span_info_.force_print_ = false;
+          }
+        } else if (flt_.control_info_.record_policy_ == RP_ONLY_SLOW_QUERY) {
+          flt_.span_info_.force_print_ = false;
+        } else {
+          flt_.span_info_.force_print_ = false;
+        }
+
+        // generate ob proxy root span
+        trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy);
+        if (OB_NOT_NULL(ctx)) {
+          flt_.trace_log_info_.proxy_root_span_ctx_ = ctx;
+          flt_.span_info_.span_id_ = ctx->span_id_;
+          flt_.span_info_.ref_type_ = common::SYNC;
+          flt_.trace_log_info_.proxy_root_span_begin_time_ = ObTimeUtility::current_time();
+          LOG_DEBUG("proxy gen, begin trace, begin span ob proxy root.",
+                    K(flt_.span_info_), K(flt_.trace_log_info_), K(flt_.control_info_));
+        } else {
+          LOG_DEBUG("proxy gen, begin, empty span ctx!");
+        }
+      } else {
+        flt_.span_info_.force_print_ = false;
+      }
+
+      if (flt_.span_info_.force_print_) {
+        FLT_SET_AUTO_FLUSH(true);
+      } else {
+        FLT_SET_AUTO_FLUSH(false);
+      }
+      
+      flt_.trace_log_info_.is_inited_ = true;
+      LOG_DEBUG("proxy init trace log info done", K(flt_.span_info_), K(flt_.trace_log_info_));
+    } else if (is_in_trans_) {
+      // still in trans, proxy has initede trace log info before.
+      // nothing, use the span generated before, regenerate root span id
+      if (flt_.span_info_.trace_enable_) {
+        SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+
+        trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy);
+        if (OB_NOT_NULL(ctx)) {
+          flt_.trace_log_info_.proxy_root_span_ctx_ = ctx;
+          flt_.span_info_.span_id_ = ctx->span_id_;
+          flt_.span_info_.ref_type_ = common::SYNC;
+          flt_.trace_log_info_.proxy_root_span_begin_time_ = ObTimeUtility::current_time();
+          LOG_DEBUG("proxy gen trace before, still in trans, begin span ob proxy root",
+                    K(flt_.span_info_), K(flt_.trace_log_info_));
+        } else {
+          LOG_DEBUG("proxy gen, in trans, empty span ctx!");
+        }
+      }
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected error, proxy has generate trace&span id at req, but not in trans",
+               K(ret), K(flt_.trace_log_info_));
+    }
+  }
+
+  return ret;
+}
+
+void ObMysqlSM::save_request_flt_result_to_sm(common::FLTObjManage &flt)
+{
+  // span info from client
+  if (flt.span_info_.is_valid()) {
+    flt_.span_info_ = flt.span_info_;
+    LOG_DEBUG("succ to save req span info to sm", K(flt_.span_info_));
+  }
+  
+  // app info
+  if (flt.app_info_.is_valid()) {
+    flt_.app_info_ = flt.app_info_;
+    LOG_DEBUG("succ to save req app info to sm", K(flt_.app_info_));
+  }
+
+  // driver span info, print right now
+  if (flt.driver_span_info_.is_valid()) {
+    SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+    _OBPROXY_TRACE_LOG(INFO, "%s", flt.driver_span_info_.curr_driver_span_.ptr());
+    LOG_DEBUG("succ get driver span info from req", K(flt.driver_span_info_.curr_driver_span_));
+  }
 }
 
 int ObMysqlSM::state_server_request_send(int event, void *data)
@@ -3475,6 +4450,17 @@ int ObMysqlSM::state_server_request_send(int event, void *data)
           milestones_.server_.server_write_end_ = get_based_hrtime();
           cmd_time_stats_.server_request_write_time_ += (milestones_.server_.server_write_end_ - milestones_.server_.server_write_begin_);
         }
+        
+        if (enable_record_full_link_trace_info()) {
+          trace::ObSpanCtx *ctx = flt_.trace_log_info_.server_request_write_ctx_;
+          if (OB_NOT_NULL(ctx)) {
+            LOG_DEBUG("end span ob_proxy_server_request_write", K(ctx->span_id_));
+            SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+            FLT_END_SPAN(ctx);
+            flt_.trace_log_info_.server_request_write_ctx_ = NULL;
+          }
+        }
+        
         // We are done sending the request, deallocate our
         // buffer and then decide what to do next
         if (OB_UNLIKELY(NULL != server_entry_->write_buffer_)) {
@@ -3496,17 +4482,16 @@ int ObMysqlSM::state_server_request_send(int event, void *data)
           ObClientSessionInfo &cs_info = client_session_->get_session_info();
           ObServerSessionInfo &ss_info = server_session_->get_session_info();
           uint32_t client_ps_id = cs_info.get_client_ps_id();
-          ObPsIdAddrs *ps_id_addrs = cs_info.get_ps_id_addrs(client_ps_id);
           // remove directly
           ss_info.remove_ps_id_pair(client_ps_id);
           ss_info.remove_cursor_id_pair(client_ps_id);
           cs_info.remove_cursor_id_addr(client_ps_id);
           cs_info.remove_piece_info(client_ps_id);
-          if (NULL != ps_id_addrs) {
-            ps_id_addrs->remove_addr(server_session_->get_netvc()->get_remote_addr());
+          if (OB_FAIL(cs_info.remove_request_send_addr(server_session_->get_netvc()->get_remote_addr()))) {
+            LOG_WARN("fail to erase server addr", K(ret));
+          } else {
+            call_transact_and_set_next_state(ObMysqlTransact::handle_request);
           }
-
-          call_transact_and_set_next_state(ObMysqlTransact::handle_request);
         } else if (OB_UNLIKELY(ObMysqlTransact::SERVER_SEND_SSL_REQUEST == trans_state_.current_.send_action_)) {
           ObUnixNetVConnection *vc = static_cast<net::ObUnixNetVConnection *>(server_session_->get_netvc());
           if (OB_FAIL(vc->ssl_init(ObUnixNetVConnection::SSL_CLIENT,
@@ -3560,6 +4545,7 @@ int ObMysqlSM::state_server_request_send(int event, void *data)
       case VC_EVENT_ERROR:
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_INACTIVITY_TIMEOUT:
+      case VC_EVENT_DETECT_SERVER_DEAD:
         LOG_WARN("ObMysqlSM::state_server_request_send", "event",
                  ObMysqlDebugNames::get_event_name(event), K_(sm_id));
         // if something unusual happened in sending request, also need to get request write time
@@ -3620,7 +4606,7 @@ int ObMysqlSM::handle_server_request_send_long_data()
     } else {
       trans_state_.current_.state_ = ObMysqlTransact::TRANSACTION_COMPLETE;
     }
-    
+
     LOG_DEBUG("send_long_data send finish, trans to handle request");
     release_server_session();
     callout_api_and_start_next_action(ObMysqlTransact::SM_ACTION_API_CMD_COMPLETE);
@@ -3652,9 +4638,11 @@ int ObMysqlSM::process_partition_location(ObMysqlRouteResult &result)
         LOG_WARN("can not get table entry, and dummy entry does not exist, will disconnect",
                  K_(sm_id), K(type), K(ret));
         // if failed, encode err packet and send to client, then disconnect
+        ObMysqlClientSession *client_session = get_client_session();
         int ret_tmp = OB_SUCCESS;
         trans_state_.mysql_errcode_ = OB_GET_LOCATION_TIME_OUT;
-        if (OB_UNLIKELY(OB_SUCCESS != (ret_tmp = ObMysqlTransact::build_error_packet(trans_state_)))) {
+        if (OB_UNLIKELY(OB_SUCCESS !=
+             (ret_tmp = ObMysqlTransact::build_error_packet(trans_state_, client_session)))) {
           LOG_WARN("fail to build err packet", K(ret_tmp));
         }
       }
@@ -3727,16 +4715,31 @@ bool ObMysqlSM::is_cached_dummy_entry_expired()
     } else if (cached_dummy_entry->is_need_update()) { // dirty, but not in punish time
       need_update = true;
     } else if (cached_dummy_entry->is_avail_state()) {
+      bool expired = false;
       if (valid_ns > 0) {
-        bool expired = ((get_hrtime_internal() - hrtime_from_usec(cached_dummy_entry->get_create_time_us())) > valid_ns);
-        if (expired
-            && !cached_dummy_entry->is_sys_dummy_entry()
-            && cached_dummy_entry->cas_set_dirty_state()) {
-          LOG_INFO("this cached dummy entry is expired, set to dirty", KPC(cached_dummy_entry),
-                   K(valid_ns));
-          MYSQL_INCREMENT_TRANS_STAT(DUMMY_ENTRY_EXPIRED_COUNT);
-          need_update = true;
+        expired = ((get_hrtime_internal() - hrtime_from_usec(cached_dummy_entry->get_create_time_us()))> valid_ns);
+      }
+
+      if (!expired) {
+        int64_t tenant_version = 0;
+        if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
+          tenant_version = sm_cluster_resource_->get_location_tenant_version(
+            client_session_->get_session_info().get_priv_info().tenant_name_);
         }
+
+        if (!(expired = get_global_table_cache().is_table_entry_expired(*cached_dummy_entry))) {
+          cached_dummy_entry->check_and_set_expire_time(tenant_version, cached_dummy_entry->is_sys_dummy_entry());
+          LOG_DEBUG("dummy entry expired", KPC(cached_dummy_entry));
+        }
+      }
+
+      if (expired
+          && !cached_dummy_entry->is_sys_dummy_entry()
+          && cached_dummy_entry->cas_set_dirty_state()) {
+        LOG_INFO("this cached dummy entry is expired, set to dirty", KPC(cached_dummy_entry),
+                   K(valid_ns));
+        MYSQL_INCREMENT_TRANS_STAT(DUMMY_ENTRY_EXPIRED_COUNT);
+        need_update = true;
       }
     }
   }
@@ -4079,20 +5082,24 @@ int ObMysqlSM::tunnel_handler_request_transfered(int event, void *data)
 int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
 {
   STATE_ENTER(ObMysqlSM::tunnel_handler_response_transfered, event);
+  int ret = OB_SUCCESS;
 
   if (OB_UNLIKELY(MYSQL_TUNNEL_EVENT_DONE != event) || OB_UNLIKELY(data != &tunnel_)) {
     terminate_sm_ = true;
     LOG_ERROR("unexpected event type", K(event), K_(sm_id));
+  } else if (OB_ISNULL(client_entry_)) {
+    ret = OB_INNER_STAT_ERROR;
+    LOG_WARN("client_entry or server entry is null, disconnect", K_(client_entry), K(ret));
   } else {
-    // only the first request in one transaction will need to update pl,
+    // only the first request in one transaction or internal routing transaction will need to update pl,
     // begin(start transaction), or set autocommit = 0 is not the first request;
-    if (trans_state_.is_trans_first_request_) {
+    if ((trans_state_.is_trans_first_request_ || client_session_->is_trans_internal_routing())
+        && !ObMysqlTransact::is_binlog_request(trans_state_)) {
       ObMysqlTransact::handle_pl_update(trans_state_);
     }
 
     if (obmysql::OB_MYSQL_COM_STMT_FETCH == trans_state_.trans_info_.sql_cmd_
         && client_session_->is_need_return_last_bound_ss()) {
-      int ret = OB_SUCCESS;
       ObMysqlServerSession *last_bound_session = client_session_->get_last_bound_server_session();
       if (NULL != last_bound_session) {
         // Since the tunnel_handler_server only releases server_session in a transaction,
@@ -4128,6 +5135,12 @@ int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
     }
   }
 
+  if (OB_FAIL(ret)) {
+    trans_state_.inner_errcode_ = ret;
+    trans_state_.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
+    call_transact_and_set_next_state(ObMysqlTransact::handle_response);
+  }
+
   return EVENT_DONE;
 }
 
@@ -4161,6 +5174,7 @@ int ObMysqlSM::tunnel_handler_server(int event, ObMysqlTunnelProducer &p)
     switch (event) {
       case VC_EVENT_INACTIVITY_TIMEOUT:
       case VC_EVENT_ACTIVE_TIMEOUT:
+      case VC_EVENT_DETECT_SERVER_DEAD:
       case VC_EVENT_ERROR:
         // fall through
       case VC_EVENT_EOS:
@@ -4172,6 +5186,7 @@ int ObMysqlSM::tunnel_handler_server(int event, ObMysqlTunnelProducer &p)
             trans_state_.current_.state_ = ObMysqlTransact::ACTIVE_TIMEOUT;
             break;
           case VC_EVENT_ERROR:
+          case VC_EVENT_DETECT_SERVER_DEAD:
             trans_state_.current_.state_ = ObMysqlTransact::CONNECTION_ERROR;
             break;
           case VC_EVENT_EOS:
@@ -4359,53 +5374,21 @@ void ObMysqlSM::print_mysql_complete_log(ObMysqlTunnelProducer *p)
     bool print_warn_log = false;
     bool print_info_log = false;
     if (OB_LIKELY(NULL != client_session_)) {
-      if (OB_UNLIKELY(result.is_error_resp())) {
-        // filtering some error code later
+      if (OB_UNLIKELY(result.is_error_resp() && client_session_->is_proxy_mysql_client_
+          && client_session_->get_session_info().get_priv_info().user_name_ != ObProxyTableInfo::DETECT_USERNAME_USER)) {
         if (result.is_not_supported_error()) {
           print_info_log = true;
-          OBPROXY_XF_LOG(INFO, XFH_SQL_NOT_SUPPORT,
-                         "client_ip", trans_state_.client_info_.addr_,
-                         "server_ip", trans_state_.server_info_.addr_,
-                         "proxy_user_name", client_session_->get_session_info().get_priv_info().get_proxy_user_name(),
-                         "database_name", client_session_->get_session_info().get_database_name(),
-                         "sql", trans_state_.trans_info_.client_request_.get_print_sql(),
-                         "sql_cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_));
         } else {
           print_warn_log = true;
-          OBPROXY_XF_LOG(WARN, XFH_SQL_ERROR_RESP,
-                         "client_ip", trans_state_.client_info_.addr_,
-                         "server_ip", trans_state_.server_info_.addr_,
-                         "proxy_user_name", client_session_->get_session_info().get_priv_info().get_proxy_user_name(),
-                         "database_name", client_session_->get_session_info().get_database_name(),
-                         "sql", trans_state_.trans_info_.client_request_.get_print_sql(),
-                         "sql_cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_),
-                         "sql_error", get_xflush_error_name(result.get_error_code()),
-                         "msg", result);
         }
       } else if (!result.is_partition_hit()
                  && trans_state_.is_trans_first_request_
                  && !client_session_->is_proxyro_user()) {//proxyro user no need print partition miss xflush_log
         print_info_log = true;
-        OBPROXY_XF_LOG(INFO, XFH_SQL_PARTITION_MISS,
-                       "client_ip", trans_state_.client_info_.addr_,
-                       "server_ip", trans_state_.server_info_.addr_,
-                       "proxy_user_name", client_session_->get_session_info().get_priv_info().get_proxy_user_name(),
-                       "database_name", client_session_->get_session_info().get_database_name(),
-                       "sql", trans_state_.trans_info_.client_request_.get_print_sql(),
-                       "sql_cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_));
       }
 
       if(NULL != p && p->is_flow_controlled()) {
         print_info_log = true;
-        OBPROXY_XF_LOG(INFO, XFH_SQL_FLOW_CTL,
-                       "client_ip", trans_state_.client_info_.addr_,
-                       "server_ip", trans_state_.server_info_.addr_,
-                       "proxy_user_name", client_session_->get_session_info().get_priv_info().get_proxy_user_name(),
-                       "database_name", client_session_->get_session_info().get_database_name(),
-                       "sql", trans_state_.trans_info_.client_request_.get_print_sql(),
-                       "sql_cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_),
-                       "cpu_ctl_count", p->cpu_flow_control_count_,
-                       "mem_ctl_count", p->memory_flow_control_count_);
       }
     }
 
@@ -4496,8 +5479,7 @@ void ObMysqlSM::update_safe_read_snapshot()
   ObSafeSnapshotEntry *entry = NULL;
   bool is_need_force_sync = true;
   ObAddr last_addr;
-  last_addr.set_ipv4_addr(trans_state_.server_info_.addr_.get_ip4_host_order(),
-                          static_cast<int32_t>(trans_state_.server_info_.addr_.get_port_host_order()));
+  last_addr.set_sockaddr(trans_state_.server_info_.addr_.sa_);
 
   if (result.is_partition_hit()) {
     entry = sm_cluster_resource_->safe_snapshot_mgr_.get(last_addr);
@@ -4611,7 +5593,7 @@ int ObMysqlSM::trim_ok_packet(ObIOBufferReader &reader)
     if (OK_PACKET_ACTION_CONSUME == analyze_result.get_ok_packet_action_type()) {
       if (OB_FAIL(ObProxySessionInfoHandler::analyze_extra_ok_packet(
           reader, client_session->get_session_info(),
-          server_session->get_session_info(), need_handle_sysvar, analyze_result))) {
+          server_session->get_session_info(), need_handle_sysvar, analyze_result, trans_state_.trace_log_))) {
         LOG_WARN("fail to analyze extra ok packet",  K_(sm_id), K(ret));
       }
     } else if (OK_PACKET_ACTION_REWRITE == analyze_result.get_ok_packet_action_type()) {
@@ -4620,10 +5602,14 @@ int ObMysqlSM::trim_ok_packet(ObIOBufferReader &reader)
       const ObProxyBasicStmtType type = trans_state_.trans_info_.client_request_.get_parse_result().get_stmt_type();
       bool is_save_to_common_sys = client_info.is_sharding_user()
                                    && (OBPROXY_T_SET == type || OBPROXY_T_SET_NAMES == type || OBPROXY_T_SET_CHARSET == type);
-      if (OB_FAIL(ObProxySessionInfoHandler::rebuild_ok_packet(
-          reader, client_session->get_session_info(),
-          server_session->get_session_info(), trans_state_.is_auth_request_,
-          need_handle_sysvar, analyze_result, is_save_to_common_sys))) {
+      if (OB_FAIL(ObProxySessionInfoHandler::rebuild_ok_packet(reader,
+                                                               client_session->get_session_info(),
+                                                               server_session->get_session_info(),
+                                                               trans_state_.is_auth_request_,
+                                                               need_handle_sysvar,
+                                                               analyze_result,
+                                                               trans_state_.trace_log_,
+                                                               is_save_to_common_sys))) {
         LOG_WARN("fail to analyze rewrite ok packet",  K_(sm_id), K(ret));
       }
     }
@@ -4631,18 +5617,25 @@ int ObMysqlSM::trim_ok_packet(ObIOBufferReader &reader)
     // reset route_addr
     client_session->get_session_info().set_obproxy_route_addr(0);
 
-    if (OB_UNLIKELY(is_causal_order_read_enabled())) {		
-      // handle safe snapshot version		
-      if (WEAK == trans_state_.get_trans_consistency_level(client_session->get_session_info())		
-          && trans_state_.trans_info_.client_request_.get_parse_result().is_select_stmt()) {		
-        update_safe_read_snapshot();		
-      }		
+    if (OB_UNLIKELY(is_causal_order_read_enabled())) {
+      // handle safe snapshot version
+      if (WEAK == trans_state_.get_trans_consistency_level(client_session->get_session_info())
+          && trans_state_.trans_info_.client_request_.get_parse_result().is_select_stmt()) {
+        update_safe_read_snapshot();
+      }
     }
 
     // handle other variables
     if (OB_SUCC(ret)) {
+      bool is_only_sync_trans_sess = trans_state_.trans_info_.server_response_.get_analyze_result().is_error_resp();
       if (OB_FAIL(handle_saved_session_variables())) {
         LOG_WARN("fail to handle saved session varialbes", K(ret));
+      } else if (OB_FAIL(ObProxySessionInfoHandler::save_changed_sess_info(client_session->get_session_info(),
+                                                                           server_session->get_session_info(),
+                                                                           analyze_result.get_extra_info(),
+                                                                           trans_state_.trace_log_,
+                                                                           is_only_sync_trans_sess))) {
+        LOG_WARN("fail to save changed session info", K(ret));
       }
     }
   }
@@ -4680,8 +5673,17 @@ int ObMysqlSM::tunnel_handler_client(int event, ObMysqlTunnelConsumer &c)
       case VC_EVENT_INACTIVITY_TIMEOUT:
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_ERROR:
-        LOG_WARN("ObMysqlSM::tunnel_handler_client", "event",
-                 ObMysqlDebugNames::get_event_name(event), K_(sm_id));
+      case VC_EVENT_DETECT_SERVER_DEAD: {
+        // Probe user does not print disconnection log
+        bool is_detect_user = false;
+        if (NULL != client_session_ && client_session_->get_session_info().get_priv_info().user_name_ == ObProxyTableInfo::DETECT_USERNAME_USER) {
+          is_detect_user = true;
+        }
+
+        if (!is_detect_user) {
+          LOG_WARN("ObMysqlSM::tunnel_handler_client", "event",
+              ObMysqlDebugNames::get_event_name(event), K_(sm_id));
+        }
         // The client died or aborted. Check to see
         // if we should setup a background fill
         set_client_abort(ObMysqlTransact::ABORTED, event);
@@ -4703,7 +5705,7 @@ int ObMysqlSM::tunnel_handler_client(int event, ObMysqlTunnelConsumer &c)
         // session and client session
         close_connection = true;
         break;
-
+      }
       case VC_EVENT_WRITE_COMPLETE: {
         c.write_success_ = true;
         trans_state_.client_info_.abort_ = ObMysqlTransact::DIDNOT_ABORT;
@@ -4778,6 +5780,7 @@ int ObMysqlSM::tunnel_handler_request_transfer_client(int event, ObMysqlTunnelPr
     case VC_EVENT_ERROR:
     case VC_EVENT_INACTIVITY_TIMEOUT:
     case VC_EVENT_ACTIVE_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       LOG_WARN("ObMysqlSM::tunnel_handler_request_transfer_client", "event",
                ObMysqlDebugNames::get_event_name(event), K_(sm_id));
       // Did not complete request transfer tunneling. Abort the
@@ -4865,6 +5868,7 @@ int ObMysqlSM::tunnel_handler_request_transfer_server(int event, ObMysqlTunnelCo
     case VC_EVENT_ERROR:
     case VC_EVENT_INACTIVITY_TIMEOUT:
     case VC_EVENT_ACTIVE_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
     {
       LOG_WARN("ObMysqlSM::tunnel_handler_request_transfer_server", "event",
                ObMysqlDebugNames::get_event_name(event), K_(sm_id));
@@ -5002,16 +6006,21 @@ void ObMysqlSM::do_congestion_control_lookup()
   // 2. cur congestion is avail(base servers has been added)
   // 3. need pl lookup
   // 4. not mysql route mode
-  //
+  // 5. need use coordinator session in transaction (included in 'need pl lookup')
   // Attention! when force_retry_congested_, also need do congestion lookup
   if (OB_UNLIKELY(enable_congestion
       && sm_cluster_resource_->is_congestion_avail()
-      && trans_state_.need_pl_lookup_
-      && !trans_state_.mysql_config_params_->is_mysql_routing_mode())) {
+      && trans_state_.is_need_pl_lookup()
+      && !trans_state_.mysql_config_params_->is_mysql_routing_mode()
+      && !trans_state_.mysql_config_params_->is_mock_routing_mode())) {
     trans_state_.need_congestion_lookup_ = true;
+    LOG_DEBUG("need to do congestion lookup",
+              K(trans_state_.is_need_pl_lookup()),
+              K(trans_state_.pl_lookup_state_));
   } else {
     LOG_DEBUG("no need do congestion lookup", K_(sm_id), K(enable_congestion),
-              K(sm_cluster_resource_->is_congestion_avail()), "need_pl_lookup", trans_state_.need_pl_lookup_,
+              K(sm_cluster_resource_->is_congestion_avail()),
+              "pl_lookup_state", ObMysqlTransact::get_pl_lookup_state_string(trans_state_.pl_lookup_state_),
               "force_retry_congestion", trans_state_.force_retry_congested_,
               "route_mode", trans_state_.mysql_config_params_->server_routing_mode_);
     trans_state_.need_congestion_lookup_ = false;
@@ -5070,6 +6079,15 @@ void ObMysqlSM::do_partition_location_lookup()
     milestones_.pl_lookup_end_ = 0;
   }
 
+  if (enable_record_full_link_trace_info()) {
+    SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+    trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy_partition_location_lookup);
+    if (OB_NOT_NULL(ctx)) {
+      flt_.trace_log_info_.partition_location_lookup_ctx_ = ctx;
+      LOG_DEBUG("begin span ob_proxy_partition_location_lookup", K(ctx->span_id_));
+    }
+  }
+
   if (OB_UNLIKELY(trans_state_.api_server_addr_set_)) {
     // If the API has set the server address before the partition
     // location lookup then we can skip the lookup
@@ -5102,12 +6120,20 @@ void ObMysqlSM::do_partition_location_lookup()
       ObAction *pl_lookup_action_handle = NULL;
       bool find_entry = false;
       int64_t tenant_version = 0;
+      bool is_random_routing_mode = trans_state_.mysql_config_params_->is_random_routing_mode();
       bool need_pl_route = (is_pl_route_supported() && (trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()
               || trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_call_stmt()));
+
+      if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
+        tenant_version = sm_cluster_resource_->get_location_tenant_version(
+            client_session_->get_session_info().get_priv_info().tenant_name_);
+      }
+
       // Get it from table_map first
       if (OB_LIKELY(!trans_state_.pll_info_.is_force_renew() && !name.is_all_dummy_table()
                     && !trans_state_.pll_info_.is_cached_dummy_force_renew())
-                    && !need_pl_route) {
+                    && !need_pl_route
+                    && !is_random_routing_mode) {
         ObTableRefHashMap &table_map = self_ethread().get_table_map();
         ObTableEntry *tmp_entry = NULL;
         int64_t cr_id = 0;
@@ -5118,15 +6144,11 @@ void ObMysqlSM::do_partition_location_lookup()
           cr_id = sm_cluster_resource_->get_cluster_id();
         }
         ObTableEntryKey key(name, sm_cluster_resource_->version_, cr_id);
-        if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
-          tenant_version = sm_cluster_resource_->get_location_tenant_version(
-              client_session_->get_session_info().get_priv_info().tenant_name_);
-        }
         tmp_entry = table_map.get(key);
         if (NULL != tmp_entry && !tmp_entry->is_partition_table()
             && (tmp_entry->is_avail_state() || tmp_entry->is_updating_state())
             && !(get_global_table_cache().is_table_entry_expired(*tmp_entry))) {
-          tmp_entry->check_and_set_expire_time(tenant_version, tmp_entry->is_dummy_entry());
+          tmp_entry->check_and_set_expire_time(tenant_version, tmp_entry->is_sys_dummy_entry());
 
           tmp_entry->renew_last_access_time();
           ObMysqlRouteResult result;
@@ -5151,6 +6173,7 @@ void ObMysqlSM::do_partition_location_lookup()
         param.use_lower_case_name_ = client_session_->get_session_info().need_use_lower_case_names();
         param.mysql_proxy_ = &sm_cluster_resource_->mysql_proxy_;
         param.cr_version_ = sm_cluster_resource_->version_;
+        param.cluster_version_ = sm_cluster_resource_->cluster_version_;
         if (get_global_resource_pool_processor().get_default_cluster_resource() == sm_cluster_resource_) {
           // default cluster resource cluster id is always 0, and it is used only for building cluster resource
           param.cr_id_ = client_session_->get_session_info().get_cluster_id();
@@ -5166,7 +6189,7 @@ void ObMysqlSM::do_partition_location_lookup()
         param.route_ = &trans_state_.pll_info_.route_;
         param.need_pl_route_ = need_pl_route;
         param.current_idc_name_ = client_session_->get_current_idc_name();//shallow copy
-        if (trans_state_.pll_info_.is_cached_dummy_force_renew()) {
+        if (trans_state_.pll_info_.is_cached_dummy_force_renew() || is_random_routing_mode) {
           param.need_pl_route_ = false;
           param.name_.shallow_copy(name.cluster_name_, name.tenant_name_,
                                   ObString::make_string(OB_SYS_DATABASE_NAME),
@@ -5196,6 +6219,75 @@ void ObMysqlSM::do_partition_location_lookup()
   }
 }
 
+void ObMysqlSM::do_binlog_location_lookup()
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+    milestones_.bl_lookup_begin_ = get_based_hrtime();
+    milestones_.bl_lookup_end_ = 0;
+  }
+
+  LOG_DEBUG("do binlog location lookup");
+  MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::state_binlog_location_lookup);
+  if (OB_UNLIKELY(NULL != pending_action_)) {
+    trans_state_.pll_info_.lookup_success_ = false;
+    LOG_ERROR("do_binlog_location_lookup, pending_action_ should be NULL",
+              K_(pending_action), K_(sm_id));
+    call_transact_and_set_next_state(NULL);
+  } else if (trans_state_.server_info_.addr_.is_valid()) {
+    trans_state_.pll_info_.lookup_success_ = true;
+    call_transact_and_set_next_state(NULL);
+  } else {
+    const ObTableEntryName &name = trans_state_.pll_info_.te_name_;
+    ObAction *bl_lookup_action_handle = NULL;
+    bool find_entry = false;
+    // Obtained from the cache, no longer retrieved from the remote end
+    ObTableRefHashMap &table_map = self_ethread().get_table_map();
+    ObTableEntry *tmp_entry = NULL;
+    ObTableEntryKey key(name, 0, 0);
+    tmp_entry = table_map.get(key);
+    if (OB_LIKELY(NULL != tmp_entry)) {
+      tmp_entry->renew_last_access_time();
+      ObMysqlRouteResult result;
+      result.table_entry_ = tmp_entry;
+      result.is_table_entry_from_remote_ = false;
+      tmp_entry->set_need_force_flush(false);
+      find_entry = true;
+      LOG_DEBUG("ObMysqlRoute get table entry succ", KPC(tmp_entry));
+      state_binlog_location_lookup(TABLE_ENTRY_EVENT_LOOKUP_DONE, &result);
+    }
+
+    if (OB_UNLIKELY(!find_entry)) {
+      ObRouteParam param;
+      param.cont_ = this;
+      param.need_pl_route_ = false;
+      param.force_renew_ = trans_state_.pll_info_.is_force_renew();
+      param.is_need_force_flush_ = trans_state_.pll_info_.is_need_force_flush();
+      param.mysql_proxy_ = &sm_cluster_resource_->mysql_proxy_;
+      param.timeout_us_ = hrtime_to_usec(trans_state_.mysql_config_params_->short_async_task_timeout_);
+      param.name_.shallow_copy(name);
+      param.cr_version_ = 0;
+      param.cr_id_ = 0;
+
+      LOG_DEBUG("Doing binlog location lookup", K_(sm_id), K(param));
+      bl_lookup_action_handle = NULL;
+      ret = ObMysqlRoute::get_route_entry(param, sm_cluster_resource_, bl_lookup_action_handle);
+    }
+
+    if (OB_SUCC(ret)) {
+      if (NULL == bl_lookup_action_handle) {
+        // do nothing
+      } else {
+        pending_action_ = bl_lookup_action_handle;
+      }
+    } else {
+      trans_state_.pll_info_.lookup_success_ = false;
+      LOG_WARN("fail to get binlog table entry", K_(sm_id), K(name), K(ret));
+      call_transact_and_set_next_state(NULL);
+    }
+  }
+}
+
 void ObMysqlSM::do_server_addr_lookup()
 {
   ObProxyKillQueryInfo *query_info = trans_state_.trans_info_.client_request_.query_info_;
@@ -5204,7 +6296,7 @@ void ObMysqlSM::do_server_addr_lookup()
     // call ObMysqlTransact::handle_server_addr_lookup() to handle fail / success
     call_transact_and_set_next_state(NULL);
 
-  } else if (!trans_state_.need_pl_lookup_) {
+  } else if (!trans_state_.is_need_pl_lookup()) {
     // need use last server session
     query_info->errcode_ = OB_NOT_SUPPORTED;
     LOG_WARN("[ObMysqlSM::do_server_addr_lookup] As we need use last server session, "
@@ -5234,7 +6326,7 @@ void ObMysqlSM::do_server_addr_lookup()
       // call ObMysqlTransact::handle_server_addr_lookup() to handle fail / success
       call_transact_and_set_next_state(NULL);
     }
-  }//end of trans_state_.need_pl_lookup_
+  }//end of is_need_pl_lookup
 }
 
 int ObMysqlSM::state_congestion_control_lookup(int event, void *data)
@@ -5260,6 +6352,52 @@ int ObMysqlSM::state_congestion_control_lookup(int event, void *data)
   return EVENT_DONE;
 }
 
+void ObMysqlSM::set_detect_server_info(net::ObIpEndpoint target_addr, int cnt, int64_t time)
+{
+  if (OB_LIKELY(target_addr.is_valid()
+      && NULL != sm_cluster_resource_
+      && NULL != client_session_
+      && !client_session_->is_proxy_mysql_client_
+      //Optimize the performance in closed scenes, 1 means accurate detection
+      && (1 == get_global_proxy_config().server_detect_mode || add_detect_server_cnt_))) {
+    bool found = false;
+    common::DRWLock &server_state_lock1 = sm_cluster_resource_->get_server_state_lock(0);
+    common::DRWLock &server_state_lock2 = sm_cluster_resource_->get_server_state_lock(1);
+    server_state_lock1.rdlock();
+    server_state_lock2.rdlock();
+    common::ObIArray<ObServerStateSimpleInfo> &server_state_info =
+      sm_cluster_resource_->get_server_state_info(sm_cluster_resource_->server_state_version_);
+    for (int i = 0; !found && i < server_state_info.count(); i++) {
+      ObServerStateSimpleInfo &info = server_state_info.at(i);
+      ObIpEndpoint addr(info.addr_.get_sockaddr());
+      if (addr == target_addr) {
+        // add_detect_server_cnt_ prevents do_observer_open from failing before, and subtracts 1 from cnt
+        if (cnt > 0 && 1 == get_global_proxy_config().server_detect_mode) {
+          add_detect_server_cnt_ = true;
+          (void)ATOMIC_AAF(&info.request_sql_cnt_, cnt);
+        } else if (cnt < 0) {
+          if (add_detect_server_cnt_) {
+            add_detect_server_cnt_ = false;
+            (void)ATOMIC_AAF(&info.request_sql_cnt_, cnt);
+          }
+        }
+        if (0 != time) {
+          (void)ATOMIC_SET(&info.last_response_time_, time);
+          (void)ATOMIC_SET(&info.detect_fail_cnt_, 0);
+        }
+        LOG_DEBUG("set detect server info", K(addr), K(cnt), K(time), K(info), K(sm_cluster_resource_->server_state_version_));
+        found = true;
+      }
+    }
+    server_state_lock2.rdunlock();
+    server_state_lock1.rdunlock();
+
+    if (!found) {
+      LOG_WARN("not found server", K(target_addr), K(cnt), KPC(sm_cluster_resource_));
+    }
+  }
+}
+
 int ObMysqlSM::do_observer_open()
 {
   int ret = OB_SUCCESS;
@@ -5268,6 +6406,15 @@ int ObMysqlSM::do_observer_open()
   if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
     milestones_.do_observer_open_begin_ = get_based_hrtime();
     milestones_.do_observer_open_end_ = 0;
+  }
+
+  if (enable_record_full_link_trace_info()) {
+    SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+    trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy_do_observer_open);
+    if (OB_NOT_NULL(ctx)) {
+      flt_.trace_log_info_.do_observer_open_ctx_ = ctx;
+      LOG_DEBUG("begin span ob_proxy_do_observer_open", K(ctx->span_id_));
+    }
   }
 
   // if sync all variables completed, send request directly through handle_observer_open
@@ -5283,6 +6430,13 @@ int ObMysqlSM::do_observer_open()
     if (OB_UNLIKELY(trans_state_.is_rerouted_)) {
       release_server_session();
     }
+
+    if (add_detect_server_cnt_) {
+      set_detect_server_info(trans_state_.pre_server_info_.addr_, -1, 0);
+    }
+    // Large requests will enter do_observer_open twice, and the second time will set send_request_direct to true
+    set_detect_server_info(trans_state_.server_info_.addr_, 1, 0);
+    trans_state_.pre_server_info_.addr_ = trans_state_.server_info_.addr_;
 
     if (OB_UNLIKELY(NULL != server_entry_)) {
       if (MYSQL_SERVER_VC != server_entry_->vc_type_) {
@@ -5418,10 +6572,11 @@ inline int ObMysqlSM::handle_retry_acquire_svr_session() {
         LOG_DEBUG("succ to retry acquire svr session", K(diff_time), K(interval));
       }
     } else {
+      ObMysqlClientSession *client_session = get_client_session();
       ret = OB_SESSION_POOL_FULL_ERROR;
       trans_state_.mysql_errcode_ = OB_SESSION_POOL_FULL_ERROR;
       trans_state_.mysql_errmsg_ = "No empty server session, acquire session failed";
-      if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+      if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session))) {
         LOG_WARN("fail to encode err pacekt buf",
                  K_(sm_id), "errcode", trans_state_.mysql_errcode_,
                  "user_err_msg", trans_state_.mysql_errmsg_, K(ret));
@@ -5466,40 +6621,47 @@ inline int ObMysqlSM::do_oceanbase_internal_observer_open(ObMysqlServerSession *
 
   last_session = client_session_->get_server_session();
   // if need_pl_lookup is false, we must use last server session
-  // allow no last server session when OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_FETCH and need_pl_lookup_ = false
-  if (!trans_state_.need_pl_lookup_
-      && ((OB_MYSQL_COM_STMT_CLOSE != trans_state_.trans_info_.sql_cmd_ && OB_MYSQL_COM_STMT_FETCH != trans_state_.trans_info_.sql_cmd_)
-           || !client_session_->is_need_return_last_bound_ss())) {
-    if (OB_ISNULL(last_session)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("last server session is NULL, disconnect", K_(sm_id), K(ret));
-    } else if (OB_UNLIKELY(last_session->server_ip_ != trans_state_.server_info_.addr_)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("last server session ip is unexpected",
-                K_(last_session->server_ip), K_(trans_state_.server_info_.addr), K_(sm_id), K(ret));
-    } else {
+  // allow no last server session when OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_FETCH and NEED_PL_LOOKUP
+  obmysql::ObMySQLCmd cmd = trans_state_.trans_info_.sql_cmd_;
+  bool is_text_ps_close = trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_drop_stmt();
+  if (!trans_state_.is_need_pl_lookup()
+      && ((OB_MYSQL_COM_STMT_CLOSE != cmd
+           && OB_MYSQL_COM_STMT_FETCH != cmd
+           && OB_MYSQL_COM_STMT_RESET != cmd
+           && OB_MYSQL_COM_STMT_GET_PIECE_DATA != cmd
+           && !is_text_ps_close)
+          || !client_session_->is_need_return_last_bound_ss())) {
+    ObMysqlServerSession *target_session = NULL;
+    if (trans_state_.pl_lookup_state_ == ObMysqlTransact::USE_COORDINATOR_SESSION) {
+      if (OB_FAIL(client_session_->acquire_svr_session(trans_state_.server_info_.addr_.sa_, false, target_session))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("acquire coordinator session fail, disconnect", K_(sm_id), K(ret));
+      }
+      LOG_DEBUG("use coordinator server session", K_(sm_id));
+    } else if (trans_state_.pl_lookup_state_ == ObMysqlTransact::USE_LAST_SERVER_SESSION){
+      target_session = last_session;
       LOG_DEBUG("use last server session", K_(sm_id));
-      selected_session = last_session;
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected pl lookup state", K(trans_state_.pl_lookup_state_));
     }
-  } else {
-    /*
-    if ((trans_state_.mysql_config_params_->is_mock_routing_mode() && !client_session_->is_proxy_mysql_client_)
-        || trans_state_.mysql_config_params_->is_mysql_routing_mode()) {
-      if (client_session_->test_server_addr_.is_valid()) {
-        trans_state_.server_info_.addr_ = client_session_->test_server_addr_;
-        LOG_DEBUG("use hacked server addr", K_(sm_id), "server addr", trans_state_.server_info_.addr_);
-      } else if (OB_FAIL(trans_state_.mysql_config_params_->get_one_test_server_addr(
-              client_session_->test_server_addr_))) {
-        LOG_INFO("mysql mode, but test server addr in not set, open conn to observer", K(ret));
-        ret = OB_SUCCESS;
+    if (OB_SUCC(ret)) {
+      if (OB_ISNULL(target_session)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("target server session is NULL, disconnect", K_(sm_id), K(ret));
+      } else if (OB_UNLIKELY(target_session->server_ip_ != trans_state_.server_info_.addr_)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_ERROR("target session ip is unexpected",
+                  K_(target_session->server_ip), K_(trans_state_.server_info_.addr), K_(sm_id), K(ret));
       } else {
-        trans_state_.server_info_.addr_ = client_session_->test_server_addr_;
-        LOG_DEBUG("use hacked server addr", K_(sm_id), "server addr", trans_state_.server_info_.addr_);
+        selected_session = target_session;
       }
     }
-    */
-    LOG_DEBUG("sql cmd", K(trans_state_.trans_info_.sql_cmd_), K(client_session_->is_session_pool_client()));
-    if (OB_UNLIKELY(trans_state_.trans_info_.sql_cmd_ == OB_MYSQL_COM_LOGIN && client_session_->is_session_pool_client() && !client_session_->can_direct_ok())) {
+  } else {
+    LOG_DEBUG("sql cmd", K(cmd), K(client_session_->is_session_pool_client()));
+    if (OB_UNLIKELY(OB_MYSQL_COM_LOGIN == cmd
+                    && client_session_->is_session_pool_client()
+                    && !client_session_->can_direct_ok())) {
       LOG_DEBUG("OB_MYSQL_COM_LOGIN here not use pool");
       // only proxy_mysql_client for session pool use pool_sever_addr
       // this logic is for pre connection create
@@ -5580,6 +6742,8 @@ inline int ObMysqlSM::do_internal_observer_open()
 {
   int ret = OB_SUCCESS;
   ObMysqlServerSession *selected_session = NULL;
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  bool is_in_trans = ObMysqlTransact::is_in_trans(trans_state_);
 
   if (OB_LIKELY(client_session_->get_session_info().is_oceanbase_server())) {
     if (OB_FAIL(do_oceanbase_internal_observer_open(selected_session))) {
@@ -5625,30 +6789,50 @@ inline int ObMysqlSM::do_internal_observer_open()
       // (6) send text ps prepare for text ps execute
       // (7) send request(including normal request, ps execute, first prepare);
 
+      obmysql::ObMySQLCmd cmd = trans_state_.trans_info_.client_request_.get_packet_meta().cmd_;
       LOG_DEBUG("get server session from connection pool", K_(sm_id),
                 "server addr", server_session_->server_ip_,
                 K(server_session_->ss_id_),
                 "client_session version", client_info.get_session_version(),
-                "server version", server_info.get_session_var_version());
-      if (OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)) {
+                "server version", server_info.get_session_var_version(),
+                "cmd", cmd);
+
+      trans_state_.trace_log_.log_it("[get_conn]",
+                                     "time", get_based_hrtime(),
+                                     "lookup", trans_state_.pl_lookup_state_,
+                                     "sql_cmd", trans_state_.trans_info_.sql_cmd_,
+                                     "stmt_type", trans_state_.trans_info_.client_request_.get_parse_result().get_stmt_type(),
+                                     "in_trans", is_in_trans,
+                                     "internal_route", get_client_session()->is_trans_internal_routing() && is_in_trans,
+                                     "svr", server_session_->server_ip_,
+                                     "sessid", server_session_->get_server_sessid());
+
+      if (OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == cmd
+                      || OB_MYSQL_COM_STMT_RESET == cmd
+                      || ObMysqlTransact::is_binlog_request(trans_state_)
+                      || client_session_->can_direct_send_request_)) {
         // no need sync var on OB_MYSQL_COM_STMT_CLOSE
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_REQUEST;
       } else if (OB_UNLIKELY(client_info.need_reset_database(server_info))) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_USE_DATABASE;
-      } else if (OB_UNLIKELY(client_info.need_reset_session_vars(server_info))) {
+      } else if (OB_UNLIKELY(client_info.is_server_support_session_var_sync() &&
+                             client_info.need_reset_user_session_vars(server_info))) {
+        trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_SESSION_USER_VARS;
+      } else if (OB_UNLIKELY(!(client_info.is_server_support_session_var_sync()) &&
+                               client_info.need_reset_session_vars(server_info))) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_SESSION_VARS;
-      } else if (OB_UNLIKELY(client_info.need_reset_last_insert_id(server_info))) {
-        // TODO: current version proxy parse can't judge last_insert_id exactly,
-        // so we do not judge, whether sql_reuslt has_last_insert_id here
-        trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_LAST_INSERT_ID;
       } else if (OB_UNLIKELY(trans_state_.is_hold_start_trans_)) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_START_TRANS;
-      } else if (OB_UNLIKELY(((OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)
-                  || (OB_MYSQL_COM_STMT_SEND_PIECE_DATA == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)
-                  || (OB_MYSQL_COM_STMT_SEND_LONG_DATA == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_))
-                 && client_info.need_do_prepare(server_info))) {
+      } else if (OB_UNLIKELY(trans_state_.is_hold_xa_start_)) {
+        trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_XA_START;
+        LOG_DEBUG("[ObMysqlSM::do_internal_observer_open] set send action SERVER_SEND_XA_START to sync xa start");
+      } else if (OB_UNLIKELY(((OB_MYSQL_COM_STMT_EXECUTE == cmd)
+                              || (OB_MYSQL_COM_STMT_SEND_PIECE_DATA == cmd)
+                              || (OB_MYSQL_COM_STMT_SEND_LONG_DATA == cmd))
+                             && client_info.need_do_prepare(server_info))) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_PREPARE;
-      } else if (OB_UNLIKELY(client_info.is_text_ps_execute() && client_info.need_do_text_ps_prepare(server_info))) {
+      } else if (OB_UNLIKELY(client_request.get_parse_result().is_text_ps_execute_stmt() &&
+        client_info.need_do_text_ps_prepare(server_info))) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_TEXT_PS_PREPARE;
       } else {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_REQUEST;
@@ -5657,6 +6841,16 @@ inline int ObMysqlSM::do_internal_observer_open()
     } else {
       if (OB_FAIL(connect_observer())) {
         LOG_WARN("failed to connection observer", K_(sm_id), K(ret));
+      } else {
+
+        trans_state_.trace_log_.log_it("[create_conn]",
+                                       "time", get_based_hrtime(),
+                                       "lookup", trans_state_.pl_lookup_state_,
+                                       "sql_cmd", trans_state_.trans_info_.sql_cmd_,
+                                       "stmt_type", trans_state_.trans_info_.client_request_.get_parse_result().get_stmt_type(),
+                                       "in_trans", is_in_trans,
+                                       "internal_route", get_client_session()->is_trans_internal_routing() && is_in_trans,
+                                       "svr", trans_state_.server_info_.addr_);
       }
     }
   }
@@ -5720,12 +6914,15 @@ inline int ObMysqlSM::connect_observer()
   return ret;
 }
 
-int ObMysqlSM::do_internal_request_for_sharding_init_db(ObMIOBuffer *buf,
-                                                        ObProxyMysqlRequest &client_request,
-                                                        ObClientSessionInfo &client_info)
+int ObMysqlSM::do_internal_request_for_sharding_init_db(ObMIOBuffer *buf)
 {
   int ret = OB_SUCCESS;
-
+  
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_procotol = get_client_session_protocol();
+  
   // handle use db stmt or OB_MYSQL_COM_INIT_DB cmd when sharding
   LOG_DEBUG("sharding init db");
   ObHSRResult &hsr = client_info.get_login_req().get_hsr_result();
@@ -5735,16 +6932,16 @@ int ObMysqlSM::do_internal_request_for_sharding_init_db(ObMIOBuffer *buf,
   } else {
     db_name = client_request.get_sql();
   }
-  if (OB_FAIL(ObProxyShardUtils::handle_shard_use_db(trans_state_, *client_session_, db_name))) {
+  if (OB_FAIL(ObProxyShardUtils::handle_shard_use_db(trans_state_, *client_session, db_name))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
       // response unknown db
       trans_state_.mysql_errcode_ = OB_ERR_BAD_DATABASE;
       trans_state_.mysql_errmsg_ = ob_strerror(OB_ERR_BAD_DATABASE);
-      if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+      if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session))) {
         LOG_WARN("[ObMysqlSM::do_internal_request] fail to build err resp", K_(sm_id), K(ret));
       }
     } else if (OB_ERR_NO_DB_PRIVILEGE == ret) {
-      if (OB_FAIL(ObMysqlTransact::build_no_privilege_message(trans_state_, *client_session_, db_name))) {
+      if (OB_FAIL(ObMysqlTransact::build_no_privilege_message(trans_state_, *client_session, db_name))) {
         LOG_WARN("fail to build_no_privilege_message", K(db_name), K(ret));
       }
     } else {
@@ -5754,9 +6951,11 @@ int ObMysqlSM::do_internal_request_for_sharding_init_db(ObMIOBuffer *buf,
     LOG_WARN("fail to save user login info", K_(sm_id), K(ret));
   } else {
     // if start trans is hold, we treat this resp is in trans
-    bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
-    if (OB_FAIL(ObMysqlResponseBuilder::build_ok_resq_with_state_changed(
-                *buf, client_request, client_info, is_in_trans))) {
+    bool is_in_trans = (trans_state_.is_hold_xa_start_
+                        || trans_state_.is_hold_start_trans_
+                        || ObMysqlTransact::is_in_trans(trans_state_));
+    if (OB_FAIL(ObMysqlResponseBuilder::build_ok_resq_with_state_changed(*buf, client_request, *client_session,
+                                                                         client_procotol, is_in_trans))) {
       LOG_WARN("[ObMysqlSM::do_internal_request] fail to build ok res", K_(sm_id), K(ret));
     }
   }
@@ -5764,11 +6963,22 @@ int ObMysqlSM::do_internal_request_for_sharding_init_db(ObMIOBuffer *buf,
   return ret;
 }
 
-int ObMysqlSM::do_internal_request_for_sharding_show_db_version(ObMIOBuffer *buf,
-                                                                ObProxyMysqlRequest &client_request,
-                                                                ObClientSessionInfo &client_info)
+int ObMysqlSM::do_internal_request_for_sharding_show_db_version(ObMIOBuffer *buf)
 {
   int ret = OB_SUCCESS;
+
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_protocol = get_client_session_protocol();
+  Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+  uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+  Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                          compressed_seq, true, false, false,
+                                          client_session->is_client_support_new_extra_info(),
+                                          client_session->is_trans_internal_routing());
+  ObCmdInfo info(static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
+                 trans_state_.mysql_config_params_->internal_cmd_mem_limited_, client_protocol, ob20_head_param);
 
   // handle show db version when sharding
   LOG_DEBUG("sharding show db_version");
@@ -5780,80 +6990,151 @@ int ObMysqlSM::do_internal_request_for_sharding_show_db_version(ObMIOBuffer *buf
     LOG_WARN("fail to get_logic_database_name", K(ret));
     trans_state_.mysql_errcode_ = OB_ERR_NO_DB_SELECTED;
     trans_state_.mysql_errmsg_ = ob_strerror(OB_ERR_NO_DB_SELECTED);
-    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session))) {
       LOG_WARN("[ObMysqlSM::do_internal_request] fail to build not err resp", K_(sm_id), K(ret));
     }
-  } else if (OB_FAIL(ObShowDBVersionHandler::show_db_version_cmd_callback(buf,
-                     static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
-                     trans_state_.mysql_config_params_->internal_cmd_mem_limited_,
-                     logic_tenant_name, logic_database_name))) {
+  } else if (OB_FAIL(ObShowDBVersionHandler::show_db_version_cmd_callback(buf, info, logic_tenant_name,
+                                                                          logic_database_name))) {
     LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle show db version", K_(sm_id), K(ret));
   }
 
   return ret;
 }
 
-int ObMysqlSM::do_internal_request_for_sharding_show_db(ObMIOBuffer *buf,
-                                                        ObProxyMysqlRequest &client_request,
-                                                        ObClientSessionInfo &client_info)
+int ObMysqlSM::do_internal_request_for_sharding_show_db(ObMIOBuffer *buf)
 {
   int ret = OB_SUCCESS;
+
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_protocol = get_client_session_protocol();
+  Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+  uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+  Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                          compressed_seq, true, false, false,
+                                          client_session->is_client_support_new_extra_info(),
+                                          client_session->is_trans_internal_routing());
+  ObCmdInfo info(static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
+                 trans_state_.mysql_config_params_->internal_cmd_mem_limited_, client_protocol, ob20_head_param);
 
   // handle show databases when sharding
   LOG_DEBUG("sharding show databases");
   ObString logic_tenant_name;
   if (OB_FAIL(client_info.get_logic_tenant_name(logic_tenant_name))) {
     LOG_WARN("fail to get_logic_tenant_name", K(ret));
-  } else if (OB_FAIL(ObShowDatabasesHandler::show_databases_cmd_callback(buf,
-                     static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
-                     trans_state_.mysql_config_params_->internal_cmd_mem_limited_, logic_tenant_name))) {
+  } else if (OB_FAIL(ObShowDatabasesHandler::show_databases_cmd_callback(buf, info, logic_tenant_name))) {
     LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle show databases", K_(sm_id), K(ret));
   }
 
   return ret;
 }
 
-int ObMysqlSM::do_internal_request_for_sharding_show_table(ObMIOBuffer *buf,
-                                                           ObProxyMysqlRequest &client_request,
-                                                           ObClientSessionInfo &client_info)
+int ObMysqlSM::do_internal_request_for_sharding_show_table(ObMIOBuffer *buf)
 {
   int ret = OB_SUCCESS;
+
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_protocol = get_client_session_protocol();
+  Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+  uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+  Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                          compressed_seq, true, false, false,
+                                          client_session->is_client_support_new_extra_info(),
+                                          client_session->is_trans_internal_routing());
+  ObCmdInfo info(static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
+                 trans_state_.mysql_config_params_->internal_cmd_mem_limited_, client_protocol, ob20_head_param);
 
   // handle show tables when sharding
   LOG_DEBUG("sharding show tables");
   ObString logic_tenant_name;
-  ObString logic_database_name;
+  ObString logic_database_name = client_request.get_parse_result().get_database_name();
+  ObString logic_table_name = client_request.get_parse_result().get_table_name();
+
   if (OB_FAIL(client_info.get_logic_tenant_name(logic_tenant_name))) {
     LOG_WARN("fail to get_logic_tenant_name", K(ret));
-  } else if (OB_FAIL(client_info.get_logic_database_name(logic_database_name))) {
+  } else if (logic_database_name.empty() &&
+             OB_FAIL(client_info.get_logic_database_name(logic_database_name))) {
     LOG_WARN("fail to get_logic_database_name", K(ret));
     trans_state_.mysql_errcode_ = OB_ERR_NO_DB_SELECTED;
     trans_state_.mysql_errmsg_ = ob_strerror(OB_ERR_NO_DB_SELECTED);
-    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session))) {
       LOG_WARN("[ObMysqlSM::do_internal_request] fail to build not err resp", K_(sm_id), K(ret));
     }
-  } else if (OB_FAIL(ObShowTablesHandler::show_tables_cmd_callback(buf,
-                     static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
-                     trans_state_.mysql_config_params_->internal_cmd_mem_limited_,
-                     logic_tenant_name, logic_database_name))) {
+  } else if (OB_FAIL(ObShowTablesHandler::show_tables_cmd_callback(buf, info, client_request.get_parse_result().get_cmd_sub_type(),
+                                                                   logic_tenant_name, logic_database_name, logic_table_name))) {
     LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle show databases", K_(sm_id), K(ret));
   }
 
   return ret;
 }
 
-int ObMysqlSM::do_internal_request_for_sharding_show_topology(ObMIOBuffer *buf,
-                                                              ObProxyMysqlRequest &client_request,
-                                                              ObClientSessionInfo &client_info)
+int ObMysqlSM::do_internal_request_for_sharding_show_table_status(ObMIOBuffer *buf)
+{
+  int ret = OB_SUCCESS;
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_protocol = get_client_session_protocol();
+  Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+  uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+
+  // handle show table status when sharding
+  LOG_DEBUG("sharding show table status");
+  ObString logic_database_name = client_request.get_parse_result().get_database_name();
+  ObString logic_table_name = client_request.get_parse_result().get_table_name();
+  ObString logic_tenant_name;
+
+  Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                          compressed_seq, true, false, false,
+                                          client_session->is_client_support_new_extra_info(),
+                                          client_session->is_trans_internal_routing());
+  ObCmdInfo info(static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
+                 trans_state_.mysql_config_params_->internal_cmd_mem_limited_, client_protocol, ob20_head_param);
+
+  if (OB_FAIL(client_info.get_logic_tenant_name(logic_tenant_name))) {
+    LOG_WARN("fail to get_logic_tenant_name", K(ret));
+  } else if (logic_database_name.empty() &&
+             OB_FAIL(client_info.get_logic_database_name(logic_database_name))) {
+    LOG_WARN("fail to get_logic_database_name", K(ret));
+    trans_state_.mysql_errcode_ = OB_ERR_NO_DB_SELECTED;
+    trans_state_.mysql_errmsg_ = ob_strerror(OB_ERR_NO_DB_SELECTED);
+    if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session))) {
+      LOG_WARN("[ObMysqlSM::do_internal_request] fail to build not err resp", K_(sm_id), K(ret));
+    }
+  } else if (OB_FAIL(ObShowTableStatusHandler::show_table_status_cmd_callback(buf, info,
+                     logic_tenant_name, logic_database_name, logic_table_name))) {
+    LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle show table status", K_(sm_id), K(ret));
+  }
+
+  return ret;
+}
+
+int ObMysqlSM::do_internal_request_for_sharding_show_elastic_id(ObMIOBuffer *buf)
 {
   int ret = OB_SUCCESS;
 
-  // handle show topology when sharding
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_protocol = get_client_session_protocol();
+  Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+  uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+  Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                          compressed_seq, true, false, false,
+                                          client_session->is_client_support_new_extra_info(),
+                                          client_session->is_trans_internal_routing());
+  ObCmdInfo info(static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
+                 trans_state_.mysql_config_params_->internal_cmd_mem_limited_, client_protocol, ob20_head_param);
+
+  // handle show elastic id when sharding
   ObInternalCmdInfo &cmd_info = *client_request.cmd_info_;
   ObString logic_db_name = cmd_info.get_like_string();
   ObString logic_tenant_name;
   ObString group_name = cmd_info.get_value_string();
-  LOG_DEBUG("sharding show topology", K(logic_db_name), K(group_name));
+  LOG_DEBUG("sharding show elastic id", K(logic_db_name), K(group_name));
   if (logic_db_name.empty()) {
     if (OB_FAIL(client_info.get_logic_database_name(logic_db_name))) {
       LOG_WARN("fail to get_logic_db_name", K(ret));
@@ -5861,30 +7142,75 @@ int ObMysqlSM::do_internal_request_for_sharding_show_topology(ObMIOBuffer *buf,
   }
   if (OB_FAIL(ret)) {
     // do nothing
-  } if (OB_FAIL(client_info.get_logic_tenant_name(logic_tenant_name))) {
+  } else if (OB_FAIL(client_info.get_logic_tenant_name(logic_tenant_name))) {
     LOG_WARN("fail to get_logic_tenant_name", K(ret));
-  } else if (OB_FAIL(ObShowTopologyHandler::show_topology_cmd_callback(buf,
-                     static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
-                     trans_state_.mysql_config_params_->internal_cmd_mem_limited_,
-                     logic_tenant_name, logic_db_name, group_name))) {
-    LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle show topology", K_(sm_id), K(ret));
+  } else if (OB_FAIL(ObShowTopologyHandler::show_elastic_id_cmd_callback(buf, info,
+                      logic_tenant_name, logic_db_name, group_name))) {
+    LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle show elastic id", K_(sm_id), K(ret));
   }
-
   return ret;
 }
 
-int ObMysqlSM::do_internal_request_for_sharding_select_db(ObMIOBuffer *buf,
-                                                          ObProxyMysqlRequest &client_request,
-                                                          ObClientSessionInfo &client_info)
+
+int ObMysqlSM::do_internal_request_for_sharding_show_topology(ObMIOBuffer *buf)
 {
   int ret = OB_SUCCESS;
 
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_protocol = get_client_session_protocol();
+  Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+  uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+  Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                          compressed_seq, true, false, false,
+                                          client_session->is_client_support_new_extra_info(),
+                                          client_session->is_proxy_enable_trans_internal_routing());
+  ObCmdInfo info(static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
+                 trans_state_.mysql_config_params_->internal_cmd_mem_limited_, client_protocol, ob20_head_param);
+
+  // handle show topology when sharding
+  ObString logic_db_name;
+  ObString logic_tenant_name;
+  ObString logic_table_name = client_request.get_parse_result().get_table_name();
+  LOG_DEBUG("sharding show topology", K(logic_db_name));
+  if (logic_db_name.empty()) {
+    if (OB_FAIL(client_info.get_logic_database_name(logic_db_name))) {
+      LOG_WARN("fail to get_logic_db_name", K(ret));
+    }
+  }
+  if (OB_FAIL(ret)) {
+    // do nothing
+  } else if (OB_FAIL(client_info.get_logic_tenant_name(logic_tenant_name))) {
+    LOG_WARN("fail to get_logic_tenant_name", K(ret));
+  } else if (OB_FAIL(client_info.get_logic_database_name(logic_db_name))) {
+  } else if (OB_FAIL(ObShowTopologyHandler::show_topology_cmd_callback(buf, info,
+                      logic_tenant_name, logic_db_name, logic_table_name))) {
+    LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle show topology", K_(sm_id), K(ret));
+  }
+  return ret;
+}
+
+int ObMysqlSM::do_internal_request_for_sharding_select_db(ObMIOBuffer *buf)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+  ObMysqlClientSession *client_session = get_client_session();
+  ObClientSessionInfo &client_info = client_session->get_session_info();
+  ObProxyProtocol client_protocol = get_client_session_protocol();
+  Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
+  uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+  Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                          compressed_seq, true, false, false,
+                                          client_session->is_client_support_new_extra_info(),
+                                          client_session->is_trans_internal_routing());
+  ObCmdInfo info(static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
+                 trans_state_.mysql_config_params_->internal_cmd_mem_limited_, client_protocol, ob20_head_param);
+
   ObString logic_database_name;
   client_info.get_logic_database_name(logic_database_name);
-  if (OB_FAIL(ObSelectDatabaseHandler::select_database_cmd_callback(buf,
-              static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1),
-              trans_state_.mysql_config_params_->internal_cmd_mem_limited_,
-              logic_database_name))) {
+  if (OB_FAIL(ObSelectDatabaseHandler::select_database_cmd_callback(buf, info, logic_database_name))) {
     LOG_WARN("[ObMysqlSM::do_internal_request] fail to handle select database()", K_(sm_id), K(ret));
   }
 
@@ -5916,14 +7242,16 @@ void ObMysqlSM::do_internal_request()
               K_(sm_id), K(ret));
   } else {
     buf = trans_state_.internal_buffer_;
+    ObProxyProtocol client_protocol = get_client_session_protocol();
+    
     switch (trans_state_.trans_info_.sql_cmd_) {
       case OB_MYSQL_COM_HANDSHAKE: {
         OMPKHandshake handshake;
-        if (!client_session_->is_proxy_mysql_client_ &&
-             get_global_ssl_config_table_processor().is_ssl_supported(
+        if (enable_client_ssl_
+            && !client_session_->is_proxy_mysql_client_ &&
+             get_global_ssl_config_table_processor().is_ssl_key_info_valid(
                               client_session_->get_vip_cluster_name(),
-                              client_session_->get_vip_tenant_name(),
-                              true)) {
+                              client_session_->get_vip_tenant_name())) {
           handshake.enable_ssl();
         }
         // current not support compress to client
@@ -5951,8 +7279,8 @@ void ObMysqlSM::do_internal_request()
           }
         }
 
-        if (FAILEDx(ObMysqlPacketWriter::write_packet(*buf, handshake))) {
-          LOG_WARN("fail to serialize handshake packet", K_(sm_id), K(ret));
+        if (FAILEDx(ObProxyPacketWriter::write_packet(*buf, *client_session_, client_protocol, handshake))) {
+          LOG_WARN("fail to build handshake packet", K_(sm_id), K(ret));
         } else {
           ObMySQLCapabilityFlags capability(handshake.get_server_capability());
           client_session_->get_session_info().save_orig_capability_flags(capability);
@@ -5971,27 +7299,20 @@ void ObMysqlSM::do_internal_request()
           ObMysqlAuthRequest &orig_auth_req = client_session_->get_session_info().get_login_req();
           const ObMySQLCapabilityFlags &capability = client_session_->get_session_info().get_orig_capability_flags();
           uint8_t pkt_seq = static_cast<uint8_t>(orig_auth_req.get_packet_meta().pkt_seq_ + 1);
-
-          if (OB_FAIL(ObMysqlPacketUtil::encode_ok_packet(*buf, pkt_seq, 0, capability))) {
-            LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode login response ok packet",
-                     K_(sm_id), K(ret));
+          if (OB_FAIL(ObProxyPacketWriter::write_ok_packet(*buf, *client_session_, client_protocol,
+                                                           pkt_seq, 0, capability))) {
+            LOG_WARN("fail to write ok packet", K(ret));
           }
         }
         break;
       }
       case OB_MYSQL_COM_PING: {
         LOG_DEBUG("proxy response OB_MYSQL_COM_PING ok packet", K_(sm_id), "cs_id", client_session_->get_cs_id());
-        if (OB_LIKELY(get_global_hot_upgrade_info().need_conn_accept_)) {
-          uint8_t pkt_seq = static_cast<uint8_t>(trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_ + 1);
-          const ObMySQLCapabilityFlags &capability = client_session_->get_session_info().get_orig_capability_flags();
-          if (OB_FAIL(ObMysqlPacketUtil::encode_ok_packet(*buf, pkt_seq, 0, capability))) {
-            LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode OB_MYSQL_COM_PING response ok packet",
-                     K_(sm_id), K(ret));
-          }
-        } else {
-          ret = OB_SERVER_IS_STOPPING;
-          LOG_INFO("proxy had been stop accepting new connection, "
-                   "disconnect here for OB_MYSQL_COM_PING", K_(sm_id), "cs_id", client_session_->get_cs_id(), K(ret));
+        uint8_t pkt_seq = static_cast<uint8_t>(trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_ + 1);
+        const ObMySQLCapabilityFlags &capability = client_session_->get_session_info().get_orig_capability_flags();
+        if (OB_FAIL(ObProxyPacketWriter::write_ok_packet(*buf, *client_session_, client_protocol,
+                                                         pkt_seq, 0, capability))) {
+          LOG_WARN("fail to encode OB_MYSQL_COM_PING response ok packet", K(ret));
         }
         break;
       }
@@ -6015,6 +7336,21 @@ void ObMysqlSM::do_internal_request()
         break;
       }
 
+      case OB_MYSQL_COM_STMT_RESET: {
+        ObClientSessionInfo &client_info = client_session_->get_session_info();
+        uint32_t client_ps_id = client_info.get_client_ps_id();
+
+        uint8_t pkt_seq = static_cast<uint8_t>(trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_ + 1);
+        const ObMySQLCapabilityFlags &capability = client_info.get_orig_capability_flags();
+        if (OB_FAIL(ObProxyPacketWriter::write_ok_packet(*buf, *client_session_, client_protocol,
+                                                         pkt_seq, 0, capability))) {
+          LOG_WARN("[ObMysqlSM::do_internal_request] fail to build OB_MYSQL_COM_STMT_RESET response ok packet",
+                   K_(sm_id), K(client_ps_id), K(ret));
+        }
+        LOG_DEBUG("proxy no response OB_MYSQL_COM_STMT_RESET", K_(sm_id), "cs_id", client_session_->get_cs_id());
+        break;
+      }
+
       case OB_MYSQL_COM_QUERY:
       case OB_MYSQL_COM_SLEEP:
       case OB_MYSQL_COM_INIT_DB:
@@ -6031,68 +7367,68 @@ void ObMysqlSM::do_internal_request()
       case OB_MYSQL_COM_DELAYED_INSERT:
       case OB_MYSQL_COM_CHANGE_USER:
       case OB_MYSQL_COM_SHUTDOWN:
+      case OB_MYSQL_COM_STMT_PREPARE_EXECUTE:
       case OB_MYSQL_COM_DAEMON: {
         ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
         ObClientSessionInfo &client_info = client_session_->get_session_info();
         uint8_t next_seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
         // 1. hold_start_trans
         if (client_request.get_parse_result().need_hold_start_trans()) {
+          // hold begin reset hold xa start
           trans_state_.is_hold_start_trans_ = true;
-          if (OB_FAIL(ObMysqlResponseBuilder::build_start_trans_resp(*buf, client_request, client_info))) {
+          if (OB_FAIL(ObMysqlResponseBuilder::build_start_trans_resp(*buf, client_request,
+                                                                     *client_session_, client_protocol))) {
             LOG_WARN("[ObMysqlSM::do_internal_request] fail to build start trans resp", K_(sm_id), K(ret));
           }
-
+        // hold_xa_start
+        } else if (client_request.get_parse_result().need_hold_xa_start()) {
+          LOG_DEBUG("[ObMysqlSM::do_internal_request] to build xa start resp");
+          // hold xa start reset hold begin
+          trans_state_.is_hold_xa_start_ = true;
+          if (OB_FAIL(ObMysqlResponseBuilder::build_prepare_execute_xa_start_resp(*buf, client_request,
+                                                                                  *client_session_, client_protocol))) {
+            LOG_WARN("[ObMysqlSM::do_internal_request] fail to build xa start resp", K_(sm_id), K(ret));
+          }
         // 2. bad_route_request
         } else if (ObMysqlTransact::is_bad_route_request(trans_state_)) {
           trans_state_.mysql_errcode_ = OB_NOT_SUPPORTED;
           trans_state_.mysql_errmsg_ = "Not supported, bad route request";
-          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
             LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode err pacekt buf",
                      K_(sm_id), K(next_seq), "errcode", trans_state_.mysql_errcode_,
                      "user_err_msg", trans_state_.mysql_errmsg_, K(ret));
           } else {
             // throw away the former 'begin' or 'start transaction'
             trans_state_.is_hold_start_trans_ = false;
+            trans_state_.is_hold_xa_start_ = false;
           }
 
          // 3. not_supported
         } else if (client_request.get_parse_result().is_not_supported()) {
           trans_state_.mysql_errcode_ = OB_NOT_SUPPORTED;
-          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
             LOG_WARN("[ObMysqlSM::do_internal_request] fail to build not supported err resp", K_(sm_id), K(ret));
           }
 
         // 4. select_tx_ro
         } else if (client_request.get_parse_result().is_select_tx_ro()) {
           // if start trans is hold, we treat this resp is in trans
-          bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
-          if (OB_FAIL(ObMysqlResponseBuilder::build_select_tx_ro_resp(
-                  *buf, client_request, client_info, is_in_trans))) {
+          bool is_in_trans = (trans_state_.is_hold_xa_start_
+                              || trans_state_.is_hold_start_trans_
+                              || ObMysqlTransact::is_in_trans(trans_state_));
+          if (OB_FAIL(ObMysqlResponseBuilder::build_select_tx_ro_resp(*buf, client_request, *client_session_,
+                                                                      client_protocol, is_in_trans))) {
             LOG_WARN("[ObMysqlSM::do_internal_request] fail to build select @@tx_read_only", K_(sm_id), K(ret));
           }
-
-        // 5. set_autocommit_0
-        } else if (client_request.get_parse_result().is_set_autocommit_0()) {
-          // if start trans is hold, we treat this resp is in trans
-          bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
-          ObObj value;
-          value.set_int(0);
-          if (client_info.update_common_sys_variable("autocommit", value, true, false)) {
-            LOG_WARN("fail to update sys variable", K_(sm_id), K(ret));
-          } else if (OB_FAIL(ObMysqlResponseBuilder::build_ok_resq_with_state_changed(
-                  *buf, client_request, client_info, is_in_trans))) {
-            LOG_WARN("[ObMysqlSM::do_internal_request] fail to build set autocommit = 0", K_(sm_id), K(ret));
-          }
-
         // 6. ping_proxy
         } else if (client_request.get_parse_result().is_ping_proxy_cmd()
                    && !client_request.get_parse_result().is_internal_error_cmd()) {
           if (OB_LIKELY(get_global_hot_upgrade_info().need_conn_accept_)) {
             uint8_t pkt_seq = static_cast<uint8_t>(trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_ + 1);
             const ObMySQLCapabilityFlags &capability = client_session_->get_session_info().get_orig_capability_flags();
-            if (OB_FAIL(ObMysqlPacketUtil::encode_ok_packet(*buf, pkt_seq, 0, capability))) {
-              LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode 'ping proxy' response ok packet",
-                       K_(sm_id), K(ret));
+            if (OB_FAIL(ObProxyPacketWriter::write_ok_packet(*buf, *client_session_, client_protocol,
+                                                             pkt_seq, 0, capability))) {
+              LOG_WARN("fail to write ok packet", K(ret));
             }
           } else {
             ret = OB_SERVER_IS_STOPPING;
@@ -6106,14 +7442,14 @@ void ObMysqlSM::do_internal_request()
             // python mysql will send 'SET autocommit=0' after connected, proxysys need resp ok packet
             uint8_t pkt_seq = static_cast<uint8_t>(trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_ + 1);
             const ObMySQLCapabilityFlags &capability = client_session_->get_session_info().get_orig_capability_flags();
-            if (OB_FAIL(ObMysqlPacketUtil::encode_ok_packet(*buf, pkt_seq, 0, capability))) {
-              LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode ok packet for internal cmd",
-                       K_(sm_id), K(ret));
+            if (OB_FAIL(ObProxyPacketWriter::write_ok_packet(*buf, *client_session_, client_protocol,
+                                                             pkt_seq, 0, capability))) {
+              LOG_WARN("fail to build ok packet", K(ret));
             }
           } else {
             trans_state_.mysql_errcode_ = OB_ERR_OPERATOR_UNKNOWN;
             trans_state_.mysql_errmsg_ = "Unknown operator, bad internal cmd";
-            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
               LOG_WARN("[ObMysqlSM::do_internal_request] fail to build not err resp", K_(sm_id), K(ret));
             }
           }
@@ -6121,21 +7457,20 @@ void ObMysqlSM::do_internal_request()
         // 8. select route_addr
         } else if (client_request.get_parse_result().is_select_route_addr()) {
           ObMysqlServerSession *last_session = client_session_->get_server_session();
-          int64_t addr = 0;
           if (NULL != last_session && NULL != last_session->get_netvc()) {
-            addr = ObMysqlTransact::build_addr_from_ip_port(
-                      ntohl(last_session->get_netvc()->get_remote_ip()),
-                      last_session->get_netvc()->get_remote_port());
             // if start trans is hold, we treat this resp is in trans
-            bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
-            if (OB_FAIL(ObMysqlResponseBuilder::build_select_route_addr_resp(
-                    *buf, client_request, client_info, is_in_trans, addr))) {
+            bool is_in_trans = (trans_state_.is_hold_xa_start_
+                                || trans_state_.is_hold_start_trans_
+                                || ObMysqlTransact::is_in_trans(trans_state_));
+            if (OB_FAIL(ObMysqlResponseBuilder::build_select_route_addr_resp(*buf, client_request,
+                                                        *client_session_, client_protocol, is_in_trans,
+                                                        last_session->get_netvc()->get_remote_addr()))) {
               LOG_WARN("[ObMysqlSM::do_internal_request] fail to build select @obproxy_route_addr", K_(sm_id), K(ret));
             }
           } else {
             trans_state_.mysql_errcode_ = OB_SERVER_NOT_ACTIVE;
             trans_state_.mysql_errmsg_ = "last session is invalid";
-            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
               LOG_WARN("[ObMysqlSM::do_internal_request] fail to build not err resp", K_(sm_id), K(ret));
             }
           }
@@ -6144,9 +7479,11 @@ void ObMysqlSM::do_internal_request()
         } else if (client_request.get_parse_result().is_set_route_addr()) {
           client_info.set_obproxy_route_addr(client_request.get_parse_result().cmd_info_.integer_[0]);
           // if start trans is hold, we treat this resp is in trans
-          bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
-          if (OB_FAIL(ObMysqlResponseBuilder::build_set_route_addr_resp(
-                  *buf, client_request, client_info, is_in_trans))) {
+          bool is_in_trans = (trans_state_.is_hold_xa_start_
+                              || trans_state_.is_hold_start_trans_
+                              || ObMysqlTransact::is_in_trans(trans_state_));
+          if (OB_FAIL(ObMysqlResponseBuilder::build_set_route_addr_resp(*buf, client_request, *client_session_,
+                                                                        client_protocol, is_in_trans))) {
             LOG_WARN("[ObMysqlSM::do_internal_request] fail to build set @obproxy_route_addr", K_(sm_id), K(ret));
           } else {
             LOG_DEBUG("@obproxy_route_addr is set", K(client_info.get_obproxy_route_addr()));
@@ -6156,7 +7493,7 @@ void ObMysqlSM::do_internal_request()
           if (client_session_->get_session_info().is_request_follower_user()) {
             trans_state_.mysql_errcode_ = OB_OP_NOT_ALLOW;
             trans_state_.mysql_errmsg_ = "set ob_read_consitency is not allowed";
-            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
               LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode err pacekt buf",
                      K_(sm_id), K(next_seq), "errcode", trans_state_.mysql_errcode_,
                      "user_err_msg", trans_state_.mysql_errmsg_, K(ret));
@@ -6170,7 +7507,7 @@ void ObMysqlSM::do_internal_request()
           if (client_session_->get_session_info().is_read_only_user()) {
             trans_state_.mysql_errcode_ = OB_OP_NOT_ALLOW;
             trans_state_.mysql_errmsg_ = "set ob_read_consitency is not allowed";
-            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+            if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
               LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode err pacekt buf",
                      K_(sm_id), K(next_seq), "errcode", trans_state_.mysql_errcode_,
                      "user_err_msg", trans_state_.mysql_errmsg_, K(ret));
@@ -6184,44 +7521,70 @@ void ObMysqlSM::do_internal_request()
         } else if (client_session_->get_session_info().is_sharding_user()
                    && (OB_MYSQL_COM_INIT_DB == trans_state_.trans_info_.sql_cmd_
                        || client_request.get_parse_result().is_use_db_stmt())) {
-          if (OB_FAIL(do_internal_request_for_sharding_init_db(buf, client_request, client_info))) {
+          if (OB_FAIL(do_internal_request_for_sharding_init_db(buf))) {
             LOG_WARN("fail to do internal request for sharding init db", K_(sm_id), K(ret));
           }
         } else if (client_session_->get_session_info().is_sharding_user()
                    && client_request.get_parse_result().is_show_db_version_stmt()) {
-          if (OB_FAIL(do_internal_request_for_sharding_show_db_version(buf, client_request, client_info))) {
+          if (OB_FAIL(do_internal_request_for_sharding_show_db_version(buf))) {
             LOG_WARN("fail to do internal request for sharding show db version", K_(sm_id), K(ret));
           }
         } else if (client_session_->get_session_info().is_sharding_user()
                    && client_request.get_parse_result().is_show_databases_stmt()) {
-          if (OB_FAIL(do_internal_request_for_sharding_show_db(buf, client_request, client_info))) {
+          if (OB_FAIL(do_internal_request_for_sharding_show_db(buf))) {
             LOG_WARN("fail to do internal request for sharding show db", K_(sm_id), K(ret));
           }
         } else if (client_session_->get_session_info().is_sharding_user()
-                   && client_request.get_parse_result().is_show_tables_stmt()) {
-          if (OB_FAIL(do_internal_request_for_sharding_show_table(buf, client_request, client_info))) {
+                   && (client_request.get_parse_result().is_show_tables_stmt()
+                       || client_request.get_parse_result().is_show_full_tables_stmt())) {
+          if (OB_FAIL(do_internal_request_for_sharding_show_table(buf))) {
+            LOG_WARN("fail to do internal request for sharding show db", K_(sm_id), K(ret));
+          }
+        } else if (client_session_->get_session_info().is_sharding_user()
+                   && (client_request.get_parse_result().is_show_table_status_stmt())) {
+          if (OB_FAIL(do_internal_request_for_sharding_show_table_status(buf))) {
+            LOG_WARN("fail to do internal request for sharding show db", K_(sm_id), K(ret));
+          }
+        } else if (client_session_->get_session_info().is_sharding_user()
+                   && client_request.get_parse_result().is_show_elastic_id_stmt()) {
+          if (OB_FAIL(do_internal_request_for_sharding_show_elastic_id(buf))) {
             LOG_WARN("fail to do internal request for sharding show db", K_(sm_id), K(ret));
           }
         } else if (client_session_->get_session_info().is_sharding_user()
                    && client_request.get_parse_result().is_show_topology_stmt()) {
-          if (OB_FAIL(do_internal_request_for_sharding_show_topology(buf, client_request, client_info))) {
+          if (OB_FAIL(do_internal_request_for_sharding_show_topology(buf))) {
             LOG_WARN("fail to do internal request for sharding show db", K_(sm_id), K(ret));
           }
         } else if (client_session_->get_session_info().is_sharding_user()
                    && client_request.get_parse_result().is_select_database_stmt()) {
-          if (OB_FAIL(do_internal_request_for_sharding_select_db(buf, client_request, client_info))) {
+          if (OB_FAIL(do_internal_request_for_sharding_select_db(buf))) {
             LOG_WARN("fail to do internal request for sharding show db", K_(sm_id), K(ret));
           }
         // 13. select_proxy_version
         } else if (client_request.get_parse_result().is_select_proxy_version()) {
           // if start trans is hold, we treat this resp is in trans
-          bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
-          if (OB_FAIL(ObMysqlResponseBuilder::build_select_proxy_version_resp(
-                  *buf, client_request, client_info, is_in_trans))) {
+          bool is_in_trans = (trans_state_.is_hold_xa_start_
+                              || trans_state_.is_hold_start_trans_
+                              || ObMysqlTransact::is_in_trans(trans_state_));
+          if (OB_FAIL(ObMysqlResponseBuilder::build_select_proxy_version_resp(*buf, client_request, *client_session_,
+                                                                              client_protocol, is_in_trans))) {
             LOG_WARN("[ObMysqlSM::do_internal_request] fail to build select proxy_version", K_(sm_id), K(ret));
           }
-
-        // 14. internal cmd
+        // 14. drop prepare stmt
+        } else if (client_request.get_parse_result().is_text_ps_drop_stmt()) {
+          ObString text_ps_name = client_request.get_parse_result().get_text_ps_name();
+          uint32_t client_ps_id = client_info.get_client_ps_id();
+          uint8_t pkt_seq = static_cast<uint8_t>(trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_ + 1);
+          const ObMySQLCapabilityFlags &capability = client_info.get_orig_capability_flags();
+          if (OB_FAIL(ObProxyPacketWriter::write_ok_packet(*buf, *client_session_, client_protocol,
+                                                           pkt_seq, 0, capability))) {
+            LOG_WARN("fail to write ok packet", K(ret));
+          } else {
+            client_info.delete_text_ps_name_entry(text_ps_name);
+            client_info.remove_ps_id_addrs(client_ps_id);
+            LOG_DEBUG("proxy no response text ps drop", K_(sm_id), "cs_id", client_session_->get_cs_id());
+          }
+        // 15. internal cmd
         } else {
           send_response_direct = false;
           if (OB_ISNULL(client_request.cmd_info_)) {
@@ -6235,6 +7598,16 @@ void ObMysqlSM::do_internal_request()
             cmd_info.session_priv_ = &client_session_->get_session_info().get_priv_info();
             cmd_info.set_memory_limit(trans_state_.mysql_config_params_->internal_cmd_mem_limited_);
             cmd_info.set_internal_user(client_request.is_proxysys_user());
+            
+            Ob20ProtocolHeader &ob20_head = client_session_->get_session_info().ob20_request_.ob20_header_;
+            uint8_t compressed_seq = static_cast<uint8_t>(client_session_->get_compressed_seq() + 1);
+            Ob20ProtocolHeaderParam ob20_head_param(client_session_->get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                                    compressed_seq, true, false, false,
+                                                    client_session_->is_client_support_new_extra_info(),
+                                                    client_session_->is_trans_internal_routing());
+            cmd_info.set_protocol(get_client_session_protocol());
+            cmd_info.set_ob20_head_param(ob20_head_param);
+
             ObAction *cmd_handler = NULL;
             if (OB_FAIL(get_global_internal_cmd_processor().execute_cmd(this, cmd_info, buf, cmd_handler))) {
               LOG_WARN("[ObMysqlSM::do_internal_request] fail to execute_cmd", K_(sm_id), K(ret));
@@ -6260,7 +7633,7 @@ void ObMysqlSM::do_internal_request()
         if (!is_supported_mysql_cmd(trans_state_.trans_info_.sql_cmd_)) {
           LOG_WARN("not supported mysql cmd", K_(sm_id), "cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_));
           trans_state_.mysql_errcode_ = OB_NOT_SUPPORTED;
-          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_))) {
+          if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state_, client_session_))) {
             LOG_WARN("[ObMysqlSM::do_internal_request] fail to build not supported err resp", K_(sm_id), K(ret));
           }
         } else {
@@ -6305,6 +7678,7 @@ inline void ObMysqlSM::set_client_abort(const ObMysqlTransact::ObAbortStateType 
       break;
 
     case VC_EVENT_ERROR:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       trans_state_.client_info_.state_ = ObMysqlTransact::CONNECTION_ERROR;
       xflush_head = XFH_CONNECTION_ERROR;
       break;
@@ -6345,7 +7719,7 @@ inline void ObMysqlSM::set_client_abort(const ObMysqlTransact::ObAbortStateType 
              "request_cmd", get_mysql_cmd_str(trans_state_.trans_info_.client_request_.get_packet_meta().cmd_),
              "sql_cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_),
              "sql", trans_state_.trans_info_.get_print_sql());
-  } else {
+  } else if (client_session_->get_session_info().get_priv_info().user_name_ != ObProxyTableInfo::DETECT_USERNAME_USER) {
     LOG_WARN("client will abort soon",
              K_(sm_id),
              K(cs_id),
@@ -6480,6 +7854,16 @@ void ObMysqlSM::handle_observer_open()
         milestones_.do_observer_open_end_);
   }
 
+  if (enable_record_full_link_trace_info()) {
+    trace::ObSpanCtx *ctx = flt_.trace_log_info_.do_observer_open_ctx_;
+    if (OB_NOT_NULL(ctx)) {
+      LOG_DEBUG("end span ob_proxy_do_observer_open", K(ctx->span_id_));
+      SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+      FLT_END_SPAN(ctx);
+      flt_.trace_log_info_.do_observer_open_ctx_ = NULL;
+    }
+  }
+
   // applying per-transaction observer netVC options
   // here IFF they differ from the netVC's current
   // options. This should keep this from being
@@ -6540,9 +7924,10 @@ void ObMysqlSM::handle_observer_open()
         //fall through
       case ObMysqlTransact::SERVER_SEND_SESSION_VARS:
         //fall through
-      case ObMysqlTransact::SERVER_SEND_LAST_INSERT_ID:
+      case ObMysqlTransact::SERVER_SEND_SESSION_USER_VARS:
         //fall through
       case ObMysqlTransact::SERVER_SEND_START_TRANS:
+      case ObMysqlTransact::SERVER_SEND_XA_START:
         //fall through
       case ObMysqlTransact::SERVER_SEND_PREPARE:
       case ObMysqlTransact::SERVER_SEND_TEXT_PS_PREPARE:
@@ -6573,13 +7958,16 @@ void ObMysqlSM::handle_observer_open()
 inline bool ObMysqlSM::need_setup_client_transfer()
 {
   bool need = false;
+  ObProxyProtocol server_protocol = get_server_session_protocol();
+    
   if (OB_LIKELY(client_session_->get_session_info().is_oceanbase_server())) {
     need = (!trans_state_.is_auth_request_
             && trans_state_.trans_info_.request_content_length_ > 0
-            && (PROTOCOL_CHECKSUM == use_compression_protocol()
-                || PROTOCOL_OB20 == use_compression_protocol()
+            && (ObProxyProtocol::PROTOCOL_CHECKSUM == server_protocol
+                || ObProxyProtocol::PROTOCOL_OB20 == server_protocol
                 || obmysql::OB_MYSQL_COM_STMT_PREPARE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_
-                || obmysql::OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_)
+                || obmysql::OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_
+                || trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_prepare_stmt())
             && NULL != api_.do_request_transform_open());
     if (need) {
       LOG_DEBUG("[need_setup_client_transfer] will setup client transfer", K_(sm_id));
@@ -6676,7 +8064,8 @@ void ObMysqlSM::handle_server_setup_error(int event, void *data)
                                           : ObMysqlTransact::CONNECTION_CLOSED);
           break;
         }
-        case VC_EVENT_ERROR: {
+        case VC_EVENT_ERROR:
+        case VC_EVENT_DETECT_SERVER_DEAD: {
           trans_state_.current_.state_ = ObMysqlTransact::CONNECTION_ERROR;
           break;
         }
@@ -6808,13 +8197,15 @@ int ObMysqlSM::setup_client_transfer(ObMysqlVCType to_vc_type)
       switch (to_vc_type) {
         case MYSQL_TRANSFORM_VC:
           MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::state_request_wait_for_transform_read);
-          if (OB_ISNULL(api_.request_transform_info_.entry_)
-              || api_.request_transform_info_.entry_->vc_ != api_.request_transform_info_.vc_) {
+          if (OB_ISNULL(api_.request_transform_info_.entry_)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("invalid internal state", KP_(api_.request_transform_info_.vc), K_(sm_id), K(ret));
+          } else if (api_.request_transform_info_.entry_->vc_ != api_.request_transform_info_.vc_) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WARN("invalid internal state",
-                     K_(api_.request_transform_info_.entry),
-                     K_(api_.request_transform_info_.entry_->vc),
-                     K_(api_.request_transform_info_.vc), K_(sm_id), K(ret));
+                     KP_(api_.request_transform_info_.entry),
+                     KP_(api_.request_transform_info_.entry_->vc),
+                     KP_(api_.request_transform_info_.vc), K_(sm_id), K(ret));
           } else if (OB_ISNULL(c = tunnel_.add_consumer(api_.request_transform_info_.entry_->vc_,
                                                         client_entry_->vc_,
                                                         &ObMysqlSM::tunnel_handler_transform_write,
@@ -6907,9 +8298,10 @@ int ObMysqlSM::attach_server_session(ObMysqlServerSession &s)
     server_entry_->vc_handler_ = &ObMysqlSM::state_server_request_send;
 
     if (OB_UNLIKELY(client_session_->is_session_pool_client() && client_session_->is_proxy_mysql_client_)) {
-      if (server_session_->get_session_info().get_ob_capability() == 0) {
-        server_session_->get_session_info().set_ob_capability(client_session_->get_session_info().get_ob_capability());
-        LOG_DEBUG("set_ob_capability", K(client_session_->get_session_info().get_ob_capability()));
+      if (server_session_->get_session_info().get_server_ob_capability() == 0) {
+        uint64_t ob_server_cap = client_session_->get_session_info().get_server_ob_capability();
+        server_session_->get_session_info().set_server_ob_capability(ob_server_cap);
+        LOG_DEBUG("set server session capability", K(ob_server_cap));
       }
     }
 
@@ -6976,7 +8368,8 @@ int ObMysqlSM::setup_server_request_send()
     LOG_ERROR("invalid send_action", "send_action", trans_state_.current_.send_action_, K_(sm_id), K(ret));
     dump_history_state();
   } else {
-    LOG_DEBUG("[ObMysqlSM::setup_server_request_send] send request to observer", K_(sm_id));
+    LOG_DEBUG("[ObMysqlSM::setup_server_request_send] send request to observer", K_(sm_id),
+              K(trans_state_.current_.send_action_));
 
     // Send the request header
     server_entry_->vc_handler_ = &ObMysqlSM::state_server_request_send;
@@ -7020,12 +8413,23 @@ int ObMysqlSM::setup_server_request_send()
         }
       }
 
+      if (enable_record_full_link_trace_info()) {
+        SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+        trace::ObSpanCtx *ctx = FLT_BEGIN_SPAN(ob_proxy_server_request_write);
+        if (OB_NOT_NULL(ctx)) {
+          flt_.trace_log_info_.server_request_write_ctx_ = ctx;
+          LOG_DEBUG("begin span ob_proxy_server_request_write", K(ctx->span_id_));
+        }
+      }
+      LOG_DEBUG("build server request finish", K(flt_.span_info_));
+
       // if write_buffer_ is not NULL, when clean server entry, will free the write_buffer_.
       // so the mio_buffer we alloc in build_server_request will free evently.
       server_entry_->write_buffer_ = (buf_start != client_buffer_reader_) ? buf_start->writer() : NULL;
 
       // set query_timeout to each request, ddl stmt will never timeout
-      if (OB_UNLIKELY(trans_state_.trans_info_.client_request_.get_parse_result().is_ddl_stmt())) {
+      if (OB_UNLIKELY(trans_state_.trans_info_.client_request_.get_parse_result().is_ddl_stmt()
+                      || ObMysqlTransact::is_binlog_request(trans_state_))) {
         cancel_server_query_timeout();
       // if PL/SQL:
       //  1. if in trans, use trx timeout
@@ -7034,8 +8438,11 @@ int ObMysqlSM::setup_server_request_send()
       //  1. if send begin or start, think as in trans
       //  2. if autocommit = 0, first SQL think as not in trans
       } else if (OB_UNLIKELY(trans_state_.trans_info_.client_request_.get_parse_result().is_call_stmt()
+                 || trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_call_stmt()
                  || trans_state_.trans_info_.client_request_.get_parse_result().has_anonymous_block())) {
-        if (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_)) {
+        if (trans_state_.is_hold_xa_start_
+            || trans_state_.is_hold_start_trans_
+            || ObMysqlTransact::is_in_trans(trans_state_)) {
           set_server_trx_timeout();
         } else {
           cancel_server_query_timeout();
@@ -7100,6 +8507,25 @@ int ObMysqlSM::setup_server_response_read()
     cmd_size_stats_.server_response_bytes_ = 0;
     milestones_.server_.server_read_end_ = 0;
 
+    LOG_DEBUG("setup server response read begin.");
+
+    // full link trace
+    if (enable_record_full_link_trace_info()) {
+      SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+
+      trace::ObSpanCtx *server_response_read_ctx = FLT_BEGIN_SPAN(ob_proxy_server_response_read);
+      if (OB_NOT_NULL(server_response_read_ctx)) {
+        flt_.trace_log_info_.server_response_read_ctx_ = server_response_read_ctx;
+        LOG_DEBUG("begin span ob_proxy_server_response_read", K(server_response_read_ctx->span_id_));
+      }
+
+      trace::ObSpanCtx *server_process_req_ctx = FLT_BEGIN_SPAN(ob_proxy_server_process_req);
+      if (OB_NOT_NULL(server_process_req_ctx)) {
+        flt_.trace_log_info_.server_process_req_ctx_ = server_process_req_ctx;
+        LOG_DEBUG("begin span ob_proxy_server_process_req", K(server_process_req_ctx->span_id_));
+      }
+    }
+
     // The tunnel from observer to client is now setup. Ready to read the response
     if (OB_UNLIKELY(NULL != trans_state_.cache_block_)) {
       // use the cached block to read server response
@@ -7155,13 +8581,9 @@ void ObMysqlSM::setup_error_transfer()
                  "sql_cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_),
                  "sql", trans_state_.trans_info_.get_print_sql());
       } else {
-        if (OB_MYSQL_COM_LOGIN == trans_state_.trans_info_.sql_cmd_) {
-          if (OB_ISNULL(client_session_)) {
-            LOG_DEBUG("OB_MYSQL_COM_LOGIN close, should close");
-            client_session_->can_server_session_release_ = false;
-          }
+        if (OB_NOT_NULL(client_session_)) {
+          client_session_->can_server_session_release_ = false;
         }
-        client_session_->can_server_session_release_ = false;
         LOG_WARN("[setup_error_transfer] Now closing connection", K_(sm_id),
                  "request_cmd", get_mysql_cmd_str(request_cmd),
                  "sql_cmd", get_mysql_cmd_str(trans_state_.trans_info_.sql_cmd_),
@@ -7231,7 +8653,9 @@ int ObMysqlSM::setup_internal_transfer(MysqlSMHandler handler_arg)
           // if the internal request is not the first request and not proxysys,
           // it means that it is in trans (or hold trans), in this case we do NOT change the trans_state_
           if (trans_state_.is_trans_first_request_) {
-            if (trans_state_.is_auth_request_ || trans_state_.is_hold_start_trans_) {
+            if (trans_state_.is_auth_request_
+                || trans_state_.is_hold_start_trans_
+                || trans_state_.is_hold_xa_start_) {
               trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
             } else {
               // proxysys && !OB_MYSQL_COM_LOGIN &&!OB_MYSQL_COM_HANDSHAKE will also enter here
@@ -7336,13 +8760,18 @@ int ObMysqlSM::setup_server_transfer()
     ObMysqlResp &server_response = trans_state_.trans_info_.server_response_;
     ObIMysqlRespAnalyzer *analyzer = NULL;
     bool is_resultset = server_response.get_analyze_result().is_resultset_resp();
-    if (OB_UNLIKELY((PROTOCOL_CHECKSUM == use_compression_protocol())
+    if (OB_UNLIKELY((ObProxyProtocol::PROTOCOL_CHECKSUM == get_server_session_protocol())
         && (NULL != client_session_)
         // inner sql's compressed response has tranfer to normal mysql packet
         && (!client_session_->is_proxy_mysql_client_))) {
       if (is_resultset) {
         LOG_ERROR("compress protocol's never reach here", K(is_resultset));
       }
+    } else if (get_global_proxy_config().enable_binlog_service
+        && (OB_MYSQL_COM_REGISTER_SLAVE == trans_state_.trans_info_.sql_cmd_
+        || OB_MYSQL_COM_BINLOG_DUMP == trans_state_.trans_info_.sql_cmd_
+        || OB_MYSQL_COM_BINLOG_DUMP_GTID == trans_state_.trans_info_.sql_cmd_)) {
+      analyzer = &analyzer_;
     } else {
       analyzer = is_resultset ? &analyzer_ : NULL;
     }
@@ -7378,6 +8807,13 @@ int ObMysqlSM::setup_cmd_complete()
               reinterpret_cast<const void*>(client_session_->get_last_bound_server_session()),
               K_(sm_id), K(ret));
   } else {
+    ObMysqlTransact::record_trans_state(trans_state_, ObMysqlTransact::is_in_trans(trans_state_));
+    set_detect_server_info(trans_state_.server_info_.addr_, -1, ObTimeUtility::current_time());
+    if (OB_UNLIKELY(add_detect_server_cnt_)) {
+      LOG_ERROR("setup_cmd_complete, add_detect_server_cnt_ should be false");
+      add_detect_server_cnt_ = false;
+      // abort();
+    }
     tunnel_.reset();
     client_entry_->in_tunnel_ = false;
     api_.reset();
@@ -7387,7 +8823,7 @@ int ObMysqlSM::setup_cmd_complete()
     if (client_session_->is_already_send_trace_info()) {
       client_session_->set_need_send_trace_info(false);
     }
-    client_session_->set_first_handle_close_request(true);
+    client_session_->set_first_handle_request(true);
     client_session_->set_in_trans_for_close_request(false);
     client_session_->set_sharding_select_log_plan(NULL);
     client_session_->set_need_return_last_bound_ss(false);
@@ -7431,30 +8867,78 @@ int ObMysqlSM::setup_cmd_complete()
       if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
         update_cmd_stats();
         milestones_.cmd_reset();
-      }
+      } 
       LOG_DEBUG("still in transaction, wait next request", K_(sm_id));
     }
-    cmd_size_stats_.reset();
-    if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
-      cmd_time_stats_.reset();
-    }
-    trans_state_.reset();
-    // reset ps info
-    if (NULL != server_session_) {
-      server_session_->get_session_info().reset_server_ps_id();
-    }
-    if (NULL != client_session_) {
-      client_session_->get_session_info().reset_recv_client_ps_id();
-      client_session_->get_session_info().reset_client_ps_id();
-      client_session_->get_session_info().reset_ps_entry();
-      client_session_->get_session_info().reset_client_cursor_id();
+
+    // end client response write span after cmd complete
+    if (enable_record_full_link_trace_info()) {
+      trace::ObSpanCtx *ctx = flt_.trace_log_info_.client_response_write_ctx_;
+      if (OB_NOT_NULL(ctx)) {
+        LOG_DEBUG("end span ob_proxy_client_response_write", K(ctx->span_id_));
+        SET_TRACE_BUFFER(flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+        FLT_END_SPAN(ctx);
+        flt_.trace_log_info_.client_response_write_ctx_ = NULL;
+      }
     }
 
-    // wait new client request
-    if (OB_FAIL(setup_client_request_read())) {
-      LOG_WARN("failed to setup_client_request_read", K_(sm_id), K(ret));
+    // consume the ob20 tail crc(4) in client buf reader while analyzed all the mysql packet in ob20 payload
+    ObClientSessionInfo &client_session_info = get_client_session()->get_session_info();
+    ObProxyProtocol client_proto = get_client_session_protocol();
+    bool ob20_req_received_done = client_session_info.ob20_request_.ob20_request_received_done_;
+    int64_t ob20_req_remain_payload_len = client_session_info.ob20_request_.remain_payload_len_;
+    if (client_proto == ObProxyProtocol::PROTOCOL_OB20
+        && ob20_req_received_done
+        && ob20_req_remain_payload_len == 0) {
+      client_session_info.ob20_request_.reset();
+      int64_t read_avail = client_buffer_reader_->read_avail();
+      LOG_DEBUG("before handle tail crc in setup cmd complete", K(read_avail));
+      if (OB_LIKELY(read_avail >= OB20_PROTOCOL_TAILER_LENGTH)) {
+        if (OB_FAIL(client_buffer_reader_->consume(OB20_PROTOCOL_TAILER_LENGTH))) {
+          LOG_WARN("fail to consume the last crc buffer in client request buffer", K(ret));
+        }
+      } else {
+        // nothing
+        // cause buffer could be consumed all before, eg: handle internal request
+      }
+    }
+
+    // it's necessary to end full link trace resource after trans/resp finished
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(handle_resp_for_end_flt_trace(ObMysqlTransact::TRANSACTION_COMPLETE
+                                                == trans_state_.current_.state_))) {
+        LOG_WARN("fail to handle resp for end flt trace", K(ret));
+      } else {
+        cmd_size_stats_.reset();
+        if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+          cmd_time_stats_.reset();
+        }
+        if (ObMysqlTransact::is_in_trans(trans_state_) && client_session_->is_trans_internal_routing()) {
+          trans_state_.server_info_.reset();
+          trans_state_.pll_info_.reset();
+          trans_state_.current_.attempts_ = 1;
+          trans_state_.reset_congestion_entry();
+        }
+        trans_state_.reset();
+        // reset ps info
+        if (NULL != server_session_) {
+          server_session_->get_session_info().reset_server_ps_id();
+        }
+        if (NULL != client_session_) {
+          client_session_->get_session_info().reset_recv_client_ps_id();
+          client_session_->get_session_info().reset_client_ps_id();
+          client_session_->get_session_info().reset_ps_entry();
+          client_session_->get_session_info().reset_client_cursor_id();
+        }
+
+        // wait new client request
+        if (OB_FAIL(setup_client_request_read())) {
+          LOG_WARN("failed to setup_client_request_read", K_(sm_id), K(ret));
+        }
+      }
     }
   }
+  
   return ret;
 }
 
@@ -7471,14 +8955,14 @@ bool ObMysqlSM::need_close_last_used_ss()
   if (OB_LIKELY(NULL != client_session_)
       && NULL != (last_ss = client_session_->get_server_session())
       && client_session_->get_session_info().is_read_consistency_set()
-      && client_session_->dummy_ldc_.is_readonly_zone_exist()) {
+      && client_session_->dummy_ldc_.is_readonly_zone_exist()
+      && !ObMysqlTransact::is_in_trans(trans_state_)) {
     common::ObAddr tmp_addr;
-    (void)tmp_addr.set_ipv4_addr(last_ss->server_ip_.get_ip4_host_order(), static_cast<int32_t>(last_ss->server_ip_.get_port_host_order()));
+    (void)tmp_addr.set_sockaddr(last_ss->server_ip_.sa_);
     const bool is_last_route_readonly_zone = client_session_->dummy_ldc_.is_readonly_zone(tmp_addr);
     const bool is_weak_read = (common::WEAK == static_cast<ObConsistencyLevel>(client_session_->get_session_info().get_read_consistency()));
     common::ObAddr current_addr;
-    (void)current_addr.set_ipv4_addr(trans_state_.server_info_.addr_.get_ip4_host_order(),
-        static_cast<int32_t>(trans_state_.server_info_.addr_.get_port_host_order()));
+    (void)current_addr.set_sockaddr(trans_state_.server_info_.addr_.sa_);
     const bool is_current_route_readonly_zone = client_session_->dummy_ldc_.is_readonly_zone(current_addr);
     // if readonly zone exist, should choose readonly zone when weak read and close connection which connect to readwrite zone
     if (is_last_route_readonly_zone != is_current_route_readonly_zone) {
@@ -7494,7 +8978,9 @@ bool ObMysqlSM::need_close_last_used_ss()
 bool ObMysqlSM::can_server_session_release()
 {
   bool result = false;
-  bool is_in_trans = (trans_state_.is_hold_start_trans_ || ObMysqlTransact::is_in_trans(trans_state_));
+  bool is_in_trans = (trans_state_.is_hold_start_trans_ 
+                      || trans_state_.is_hold_xa_start_
+                      || ObMysqlTransact::is_in_trans(trans_state_));
   bool is_allowed_state_  = (ObMysqlTransact::STATE_UNDEFINED == trans_state_.current_.state_ ||
     ObMysqlTransact::TRANSACTION_COMPLETE == trans_state_.current_.state_);
   // here should handle some case before release
@@ -7715,7 +9201,8 @@ inline void ObMysqlSM::update_congestion_entry(const int event)
   int64_t client_connect_timeout = 0;
   if ((VC_EVENT_EOS == event
        || VC_EVENT_INACTIVITY_TIMEOUT == event
-       || VC_EVENT_ACTIVE_TIMEOUT == event)
+       || VC_EVENT_ACTIVE_TIMEOUT == event
+       || VC_EVENT_DETECT_SERVER_DEAD)
       && ObMysqlTransact::SM_ACTION_OBSERVER_OPEN == trans_state_.next_action_
       && 0 == milestones_.server_connect_end_
       && OB_LIKELY(NULL != pending_action_)
@@ -7868,10 +9355,10 @@ inline void ObMysqlSM::get_monitor_error_info(int32_t &error_code, ObString &err
                         "%.*s,%.*s:%.*s:%.*s,%s,"  \
                         "%.*s,%.*s,%s,%s,%s,%s,%.*s,"  \
                         "%ldus,%ldus,%dus,%ldus," \
-                        TRACE_ID_FORMAT ",%s,%s," \
+                        TRACE_ID_FORMAT ",%.*s,%s," \
                         "%.*s,%s,%s"
 
-#define MONITOR_ERROR_LOG_FORMAT MONITOR_LOG_FORMAT ",%.*s"
+#define MONITOR_ERROR_LOG_FORMAT MONITOR_LOG_FORMAT ",%.*s,%.*s"
 
 #define MONITOR_LOG_PARAM \
           logic_tenant_name.length(), logic_tenant_name.ptr(),     \
@@ -7897,12 +9384,13 @@ inline void ObMysqlSM::get_monitor_error_info(int32_t &error_code, ObString &err
           0,                                           \
           hrtime_to_usec(cmd_time_stats_.server_process_request_time_),    \
                                                                            \
-          trace_id_0, trace_id_1, "", "",              \
-          shard_name.length(), shard_name.ptr(),       \
+          trace_id_0, trace_id_1, server_trace_id.length(), server_trace_id.ptr(), \
+          "", shard_name.length(), shard_name.ptr(),       \
           is_enc_beyond_trust ? "1" : "0",             \
           ip_port_buff
 
-#define MONITOR_ERROR_LOG_PARAM MONITOR_LOG_PARAM, error_msg.length(), error_msg.ptr()
+#define MONITOR_ERROR_LOG_PARAM MONITOR_LOG_PARAM, error_msg.length(), error_msg.ptr(),\
+                                server_trace_id.length(), server_trace_id.ptr()
 
 
 inline void ObMysqlSM::update_monitor_log()
@@ -8029,6 +9517,7 @@ inline void ObMysqlSM::update_monitor_log()
           char ip_buff_temp[INET6_ADDRSTRLEN] = "\0";
           snprintf(ip_port_buff, INET6_ADDRPORTSTRLEN, "%s:%u", ops_ip_ntop(server_addr, ip_buff_temp, INET6_ADDRSTRLEN), ops_ip_port_host_order(server_addr));
         }
+        const ObString &server_trace_id = get_server_trace_id();
 
         if ((slow_time_threshold > 0 && slow_time_threshold < cmd_time_stats_.request_total_time_)
             || is_error_resp) {
@@ -8043,6 +9532,7 @@ inline void ObMysqlSM::update_monitor_log()
         }
 
         if (is_error_resp) {
+          const ObString &server_trace_id = get_server_trace_id();
           _OBPROXY_ERROR_LOG(WARN, MONITOR_ERROR_LOG_FORMAT, MONITOR_ERROR_LOG_PARAM);
         }
       }
@@ -8088,7 +9578,7 @@ inline void ObMysqlSM::update_monitor_log()
         monitor_info.request_total_time_ = cmd_time_stats_.request_total_time_;
         monitor_info.server_process_request_time_ = cmd_time_stats_.server_process_request_time_;
         monitor_info.prepare_send_request_to_server_time_ = cmd_time_stats_.prepare_send_request_to_server_time_;
-        self_ethread().thread_prometheus_->set_sql_monitor_info(tenant_name, cluster_name, monitor_info); 
+        self_ethread().thread_prometheus_->set_sql_monitor_info(tenant_name, cluster_name, monitor_info);
       } else {
         if (!client_session_->is_need_convert_vip_to_tname()) {
           NET_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
@@ -8193,23 +9683,21 @@ inline void ObMysqlSM::update_cmd_stats()
   trans_stats_.send_all_session_vars_time_ += cmd_time_stats_.server_send_all_session_variable_time_;
   trans_stats_.send_use_database_time_ += cmd_time_stats_.server_send_use_database_time_;
   trans_stats_.send_session_vars_time_ += cmd_time_stats_.server_send_session_variable_time_;
-  trans_stats_.send_last_insert_id_time_ += cmd_time_stats_.server_send_last_insert_id_time_;
+  trans_stats_.send_session_user_vars_time_ += cmd_time_stats_.server_send_session_user_variable_time_;
   trans_stats_.send_start_trans_time_ += cmd_time_stats_.server_send_start_trans_time_;
+  trans_stats_.send_xa_start_time_ += cmd_time_stats_.server_send_xa_start_time_;
   trans_stats_.build_server_request_time_ += cmd_time_stats_.build_server_request_time_;
 
   int64_t slow_time_threshold = trans_state_.mysql_config_params_->slow_query_time_threshold_;
   int64_t proxy_process_time_threshold = trans_state_.mysql_config_params_->slow_proxy_process_time_threshold_;
   const char *SLOW_QUERY = "Slow Query: ";
   const char *TRACE_STAT = "Trace Stat: ";
-  const char *xf_head = NULL;
   const char *log_head = NULL;
   bool print_info_log = false;
 
   if (slow_time_threshold > 0 && slow_time_threshold < cmd_time_stats_.request_total_time_) {
-    xf_head = XFH_SQL_SLOW_QUERY;
     log_head = SLOW_QUERY;
   } else if (proxy_process_time_threshold > 0 && proxy_process_time_threshold < cmd_time_stats_.prepare_send_request_to_server_time_) {
-    xf_head = XFH_SQL_SLOW_QUERY;
     log_head = SLOW_QUERY;
     print_info_log = true;
   } else if (need_print_trace_stat()) {
@@ -8223,15 +9711,19 @@ inline void ObMysqlSM::update_cmd_stats()
     uint32_t cs_id = 0;
     uint32_t server_sessid = 0;
     int64_t ss_id = 0;
-    ObProxyProtocol ob_proxy_protocol = use_compression_protocol();
+    ObProxyProtocol ob_proxy_protocol = get_server_session_protocol();
     ObString user_name;
     ObString tenant_name;
     ObString cluster_name;
     ObString logic_tenant_name;
     ObString logic_database_name;
+    ObString trans_internal_routing_state;
+    bool is_in_trans = ObMysqlTransact::is_in_trans(trans_state_);
+    bool is_trans_internal_routing = false;
     if (NULL != client_session_) {
       proxy_sessid = client_session_->get_proxy_sessid();
       cs_id = client_session_->get_cs_id();
+      is_trans_internal_routing = client_session_->is_trans_internal_routing();
       const ObClientSessionInfo &cs_info = client_session_->get_session_info();
       cs_info.get_user_name(user_name);
       cs_info.get_tenant_name(tenant_name);
@@ -8239,6 +9731,7 @@ inline void ObMysqlSM::update_cmd_stats()
       cs_info.get_logic_database_name(logic_database_name);
       cs_info.get_logic_tenant_name(logic_tenant_name);
     }
+    trans_internal_routing_state = is_in_trans ? (is_trans_internal_routing ? "trans internal routing" : "trans not internal routing") : "not in trans";
     get_server_session_ids(server_sessid, ss_id);
 
     if (print_info_log) {
@@ -8262,7 +9755,8 @@ inline void ObMysqlSM::update_cmd_stats()
                K_(sm_id),
                K_(cmd_size_stats),
                K_(cmd_time_stats),
-               "sql", trans_state_.trans_info_.get_print_sql());
+               "sql", trans_state_.trans_info_.get_print_sql(),
+               K(trans_internal_routing_state));
     } else {
       LOG_WARN(log_head,
                "client_ip", trans_state_.client_info_.addr_,
@@ -8283,24 +9777,8 @@ inline void ObMysqlSM::update_cmd_stats()
                K_(sm_id),
                K_(cmd_size_stats),
                K_(cmd_time_stats),
-               "sql", trans_state_.trans_info_.get_print_sql());
-    }
-
-    if (NULL != xf_head) {
-      OBPROXY_XF_LOG(INFO, xf_head,
-                     "client_ip", trans_state_.client_info_.addr_,
-                     "server_ip", trans_state_.server_info_.addr_,
-                     "obproxy_client_port", trans_state_.server_info_.obproxy_addr_,
-                     "route_type", get_route_type_string(trans_state_.pll_info_.route_.cur_chosen_route_type_),
-                     K(user_name),
-                     K(tenant_name),
-                     K(cluster_name),
-                     K(logic_database_name),
-                     K(logic_tenant_name),
-                     K(ob_proxy_protocol),
-                     "sql", trans_state_.trans_info_.get_print_sql(),
-                     K_(cmd_size_stats),
-                     K_(cmd_time_stats));
+               "sql", trans_state_.trans_info_.get_print_sql(),
+               K(trans_internal_routing_state));
     }
   }
 
@@ -8401,7 +9879,7 @@ inline void ObMysqlSM::update_stats()
         && trans_state_.mysql_config_params_->slow_transaction_time_threshold_ < trans_stats_.trans_time_) {
       uint32_t cs_id = (OB_ISNULL(client_session_) ? 0 : client_session_->get_cs_id());
       uint64_t proxy_sessid = (OB_ISNULL(client_session_) ? 0 : client_session_->get_proxy_sessid());
-      ObProxyProtocol ob_proxy_protocol = use_compression_protocol();
+      ObProxyProtocol ob_proxy_protocol = get_server_session_protocol();
       int64_t ss_id = 0;
       uint32_t server_sessid = 0;
 
@@ -8551,6 +10029,10 @@ inline void ObMysqlSM::set_next_state()
       do_partition_location_lookup();
       break;
 
+    case ObMysqlTransact::SM_ACTION_BINLOG_LOCATION_LOOKUP:
+      do_binlog_location_lookup();
+      break;
+
     case ObMysqlTransact::SM_ACTION_CONGESTION_CONTROL_LOOKUP:
       do_congestion_control_lookup();
       break;
@@ -8607,6 +10089,44 @@ inline void ObMysqlSM::set_next_state()
       setup_error_transfer();
       break;
   }
+}
+
+int ObMysqlSM::state_binlog_location_lookup(int event, void *data)
+{
+  int ret = OB_SUCCESS;
+  STATE_ENTER(ObMysqlSM::state_binlog_location_lookup, event);
+  pending_action_ = NULL;
+  if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+    milestones_.bl_lookup_end_ = get_based_hrtime();
+    cmd_time_stats_.bl_lookup_time_ += milestone_diff(milestones_.bl_lookup_begin_, milestones_.bl_lookup_end_);
+    milestones_.bl_process_begin_ = milestones_.bl_lookup_end_;
+  }
+
+  if (OB_UNLIKELY(TABLE_ENTRY_EVENT_LOOKUP_DONE != event) || OB_ISNULL(data)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_ERROR("unexpected event type, it should not happen", K(event), K(data), K(ret));
+  } else {
+    ObMysqlRouteResult *result = reinterpret_cast<ObMysqlRouteResult *>(data);
+    if (OB_UNLIKELY(NULL == result || NULL == result->table_entry_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("get binlog entry failed", K(result), K(ret));
+    } else {
+      trans_state_.pll_info_.set_route_info(*result);
+      trans_state_.pll_info_.lookup_success_ = true;
+      call_transact_and_set_next_state(NULL);
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    trans_state_.inner_errcode_ = ret;
+    // failed, disconnect
+    trans_state_.pll_info_.lookup_success_ = false;
+    trans_state_.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
+    // call ObMysqlTransact::handle_bl_lookup() to handle fail / success
+    call_transact_and_set_next_state(NULL);
+  }
+
+  return EVENT_DONE;
 }
 
 } // end of namespace proxy

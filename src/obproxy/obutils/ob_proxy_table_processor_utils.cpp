@@ -453,7 +453,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
   int64_t tmp_real_str_len = 0;
   int64_t vid = 0;
   int64_t vport = 0;
-  char vip[OB_IP_STR_BUFF];
+  char vip[MAX_IP_ADDR_LENGTH];
   vip[0] = '\0';
   ObString tenant_name;
   ObString cluster_name;
@@ -472,7 +472,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
 
   while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "vid", vid, int64_t);
-    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "vip", vip, OB_IP_STR_BUFF, tmp_real_str_len);
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "vip", vip, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "vport", vport, int64_t);
     PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "tenant_name", tenant_name);
     PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "cluster_name", cluster_name);
@@ -506,8 +506,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
       if (OB_ISNULL(vip_tenant = op_alloc(ObVipTenant))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WARN("fail to alloc memory for ObVipTenant", K(ret));
-      } else if (FALSE_IT(vip_tenant->vip_addr_.set(ObAddr::convert_ipv4_addr(vip),
-          static_cast<int32_t>(vport), vid))) {
+      } else if (FALSE_IT(vip_tenant->vip_addr_.set(vip, static_cast<int32_t>(vport), vid))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("fail to set vip_addr", K(vip), K(vport), K(vid), K(ret));
       } else if (OB_FAIL(vip_tenant->set_tenant_cluster(tenant_name, cluster_name))) {
@@ -522,16 +521,47 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
       } else if (OB_FAIL(cache_map.unique_set(vip_tenant))) {
         LOG_WARN("fail to insert one vip_tenant into cache_map", K(*vip_tenant), K(ret));
       } else {
-        LOG_DEBUG("succ to insert one vip_tenant into cache_map", K(*vip_tenant));
-        vip_tenant = NULL;
-        vid = 0;
-        vip[0] = '\0';
-        vport = 0;
-        tenant_name.reset();
-        cluster_name.reset();
-        info_config = NULL;
-        request_target_type = -1;
-        rw_type = -1;
+        char request_target_buf[32];
+        char rw_buf[32];
+        ObString request_target_string;
+        ObString rw_string;
+        int32_t request_len = snprintf(request_target_buf, sizeof(request_target_buf), "%ld", request_target_type);
+        int32_t rw_len = snprintf(rw_buf, sizeof(rw_buf), "%ld", rw_type);
+        request_target_string.assign_ptr(request_target_buf, request_len);
+        rw_string.assign_ptr(rw_buf, rw_len);
+        if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
+          vid, vip, vport, "", "", "proxy_tenant_name", tenant_name, "LEVEL_VIP"))) {
+          LOG_WARN("store proxy_tenant_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
+        } else if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
+          vid, vip, vport, "", "", "rootservice_cluster_name", cluster_name, "LEVEL_VIP"))) {
+          LOG_WARN("store rootservice_cluster_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
+        }
+        if (OB_SUCC(ret) && -1 != rw_type) {
+          if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
+            vid, vip, vport, tenant_name, cluster_name, "obproxy_read_only", rw_string, "LEVEL_VIP"))) {
+            LOG_WARN("store obporxy_read_only failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(rw_type), K(ret));
+          }
+        }
+        if (OB_SUCC(ret) && -1 != request_target_type) {
+          if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
+            vid, vip, vport, tenant_name, cluster_name, "obproxy_read_consistency", request_target_string, "LEVEL_VIP"))) {
+            LOG_WARN("store obproxy_read_consistency failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(request_target_type), K(ret));
+          }
+        }
+        if (OB_SUCC(ret)) {
+          LOG_DEBUG("succ to insert one vip_tenant into cache_map", K(*vip_tenant));
+          vip_tenant = NULL;
+          vid = 0;
+          vip[0] = '\0';
+          vport = 0;
+          tenant_name.reset();
+          cluster_name.reset();
+          info_config = NULL;
+          request_target_type = -1;
+          rw_type = -1;
+          request_target_string.reset();
+          rw_string.reset();
+        }
       }
     }//end if OB_SUCCESS
   }//end of while
@@ -554,23 +584,24 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
 int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
 {
   int ret = OB_SUCCESS;
-  char ip_str[OB_IP_STR_BUFF] = {'\0'};
+  char ip_str[MAX_IP_ADDR_LENGTH] = {'\0'};
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
   in_port_t port = 0;
   ObIpAddr inbound_ip;
 
   // get inbound ip and port
   if (OB_LIKELY(info.is_inherited_)) {
-    if (OB_UNLIKELY(NO_FD == info.fd_)) {
+    // Does not support ipv6 yet
+    if (OB_UNLIKELY(NO_FD == info.ipv4_fd_)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("this process is inherited born, but listen fd is invalid",
-               "is_inherited", info.is_inherited_, "fd", info.fd_, K(ret));
+               "is_inherited", info.is_inherited_, "fd", info.ipv4_fd_, K(ret));
     } else {
       struct sockaddr sock_addr;
       int64_t namelen = sizeof(sock_addr);
       memset(&sock_addr, 0, namelen);
-      if (OB_FAIL(ObSocketManager::getsockname(info.fd_, &sock_addr , &namelen))) {
-        LOG_WARN("fail to get sock name", K(info.fd_), K(ret));
+      if (OB_FAIL(ObSocketManager::getsockname(info.ipv4_fd_, &sock_addr , &namelen))) {
+        LOG_WARN("fail to get sock name", K(info.ipv4_fd_), K(ret));
       } else {
         struct sockaddr_in *ain = (sockaddr_in *)&sock_addr;
         inbound_ip.assign(sock_addr);
@@ -590,7 +621,7 @@ int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
 
   // check valid
   if (OB_SUCC(ret)) {
-    inbound_ip.get_ip_str(ip_str, OB_IP_STR_BUFF);
+    inbound_ip.get_ip_str(ip_str, MAX_IP_ADDR_LENGTH);
     ObAddr any_addr(ObAddr::IPV4, INADDR_ANY_IP, port);
     ObAddr local_addr(ObAddr::IPV4, INADDR_LOOPBACK_IP, port);
     ObAddr inbound_addr(ObAddr::IPV4, ip_str, port);
@@ -600,15 +631,15 @@ int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
     // if inbound_addr == 0.0.0.0 or 127.0.0.1, we treat it as not user specified ip,
     // and in this case, we get one local net addr;
     if (inbound_addr == any_addr || inbound_addr == local_addr) {
-      memset(ip_str, 0, OB_IP_STR_BUFF);
-      if (OB_FAIL(get_one_local_addr(ip_str, OB_IP_STR_BUFF))) {
+      memset(ip_str, 0, MAX_IP_ADDR_LENGTH);
+      if (OB_FAIL(get_one_local_addr(ip_str, MAX_IP_ADDR_LENGTH))) {
         LOG_WARN("fail to get one local addr", K(ret));
       }
     }
   }
 
   if (OB_SUCC(ret)) {
-    addr.set_ipv4_addr(ip_str, port);
+    addr.set_ip_addr(ip_str, port);
     if (OB_UNLIKELY(!addr.is_valid())) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("invalid addr", K(addr), K(ret));

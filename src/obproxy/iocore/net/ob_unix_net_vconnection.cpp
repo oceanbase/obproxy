@@ -117,6 +117,7 @@ inline int ObUnixNetVConnection::read_signal_and_update(const int event)
     case VC_EVENT_ERROR:
     case VC_EVENT_ACTIVE_TIMEOUT:
     case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       PROXY_NET_LOG(DEBUG, "null read.vio cont, closing vc", K(event), K(this));
       closed_ = 1;
       break;
@@ -151,6 +152,7 @@ inline int ObUnixNetVConnection::write_signal_and_update(const int event)
     case VC_EVENT_ERROR:
     case VC_EVENT_ACTIVE_TIMEOUT:
     case VC_EVENT_INACTIVITY_TIMEOUT:
+    case VC_EVENT_DETECT_SERVER_DEAD:
       PROXY_NET_LOG(DEBUG, "null write.vio cont, closing vc", K(event), K(this));
       closed_ = 1;
       break;
@@ -1195,11 +1197,44 @@ void ObUnixNetVConnection::remove_from_keep_alive_lru()
 int ObUnixNetVConnection::set_virtual_addr()
 {
   int ret = OB_SUCCESS;
+  get_remote_addr();
+
+  if (OB_UNLIKELY(get_global_proxy_config().enable_qa_mode)) {
+    // Simulate public cloud SLB to assign IP addresses
+    // Get the real client address first, then modify the virutal address
+    do_set_virtual_addr();
+    if (OB_FAIL(ops_ip_pton(get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, virtual_addr_))) {
+      PROXY_CS_LOG(WARN, "fail to ops ip pton", "qa_mode_mock_public_cloud_slb_addr",
+                   get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, K(ret));
+    } else {
+      virtual_vid_ = static_cast<uint32_t>(get_global_proxy_config().qa_mode_mock_public_cloud_vid);
+    }
+  } else if (remote_addr_.is_ip4()) {
+    ret = do_set_virtual_addr();
+  } else {
+    real_client_addr_ = remote_addr_;
+    virtual_addr_ = remote_addr_;
+    virtual_addr_.sin6_.sin6_port = htons(2883);
+  }
+
+  return ret;
+}
+
+int ObUnixNetVConnection::do_set_virtual_addr()
+{
+  int ret = OB_SUCCESS;
   struct vtoa_get_vs4rds vs;
   int vs_len = sizeof(struct vtoa_get_vs4rds);
 
   if (OB_FAIL(get_vip4rds(con_.fd_, &vs, &vs_len))) {
-    PROXY_NET_LOG(DEBUG, "fail to get_vip4rds", K(ret));
+    PROXY_NET_LOG(DEBUG, "fail to get_vip4rds, use remote ip as virtual ip", K(ret));
+
+    sockaddr_in sin_c;
+    sin_c.sin_family = AF_INET;
+    sin_c.sin_port = htons(2883);
+    sin_c.sin_addr.s_addr = vs.caddr;
+
+    virtual_addr_.assign(ops_ip_sa_cast(sin_c));
   } else {
     ObIpAddr ip_addr(vs.entrytable.vaddr);
     virtual_addr_.assign(ip_addr, vs.entrytable.vport);
@@ -1217,21 +1252,13 @@ int ObUnixNetVConnection::set_virtual_addr()
   sin_d.sin_port = vs.dport;
   sin_d.sin_addr.s_addr = vs.daddr;
 
-  if (OB_SUCCESS == ret) {
-    PROXY_NET_LOG(INFO, "vip connect",
-                        "protocol", vs.protocol,
-                        "fd", con_.fd_,
-                        "vid", virtual_vid_,
-                        "vaddr", virtual_addr_,
-                        "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
-                        "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
-  } else {
-    PROXY_NET_LOG(DEBUG, "tcp connect",
-                        "protocol", vs.protocol,
-                        "fd", con_.fd_,
-                        "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
-                        "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
-  }
+  PROXY_NET_LOG(INFO, "vip connect",
+                      "protocol", vs.protocol,
+                      "fd", con_.fd_,
+                      "vid", virtual_vid_,
+                      "vaddr", virtual_addr_,
+                      "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
+                      "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
   return ret;
 }
 
@@ -1445,7 +1472,7 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
   if (OB_ISNULL(e)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "occur fatal error", K(event), K(e), K(ret));
-  } else if (OB_UNLIKELY(EVENT_IMMEDIATE != event && EVENT_INTERVAL != event)) {
+  } else if (OB_UNLIKELY(EVENT_IMMEDIATE != event && EVENT_INTERVAL != event && EVENT_ERROR != event)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "occur fatal error", K(event), K(e), K(ret));
   } else if (thread_ != this_ethread()) {
@@ -1486,6 +1513,8 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
           signal_event = VC_EVENT_INACTIVITY_TIMEOUT;
           signal_timeout_at = &next_inactivity_timeout_at_;
         }
+      } else if (EVENT_ERROR == event) {
+        signal_event = VC_EVENT_DETECT_SERVER_DEAD;
       } else {
         signal_event = VC_EVENT_ACTIVE_TIMEOUT;
         signal_timeout = &active_timeout_action_;
@@ -1705,6 +1734,9 @@ int ObUnixNetVConnection::ssl_server_handshake(ObEThread &thread)
   if (NULL == ssl_) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "ssl server handshake event", K(ret));
+  } else if (!lock.is_locked()) {
+    nh_->write_ready_list_.in_or_enqueue(this);
+    nh_->read_ready_list_.in_or_enqueue(this);
   } else if (OB_FAIL(ObSocketManager::ssl_accept(ssl_, ssl_connected_, tmp_code))) {
     handle_ssl_err_code(tmp_code);
     read_.triggered_ = false;
@@ -1734,6 +1766,9 @@ int ObUnixNetVConnection::ssl_client_handshake(ObEThread &thread)
   if (NULL == ssl_) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WARN, "ssl client handshake event", K(ret));
+  } else if (!lock.is_locked()) {
+    nh_->write_ready_list_.in_or_enqueue(this);
+    nh_->read_ready_list_.in_or_enqueue(this);
   } else if (OB_FAIL(ObSocketManager::ssl_connect(ssl_, ssl_connected_, tmp_code))) {
     handle_ssl_err_code(tmp_code);
     write_.triggered_ = false;

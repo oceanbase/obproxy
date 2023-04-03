@@ -89,16 +89,26 @@ private:
   static const int64_t ALREADY_FREE = 0xf5eebef0;
   static const int64_t SPECIAL_FLAG = -1;
 public:
-  ObFIFOAllocator();
-  ~ObFIFOAllocator();
-
+  /* this function is defined for c driver client compile */
+  ObFIFOAllocator() {};
+  /* this function is defined for c driver client compile */
+  ~ObFIFOAllocator() {};
+ 
+  /* this function is defined for c driver client compile */
   int init(ObIAllocator *allocator, const int64_t page_size,
-           const int64_t page_hold_limit = 32);
-  void reset();
+           const int64_t page_hold_limit = 32)
+  {
+    UNUSED(allocator);
+    UNUSED(page_size);
+    UNUSED(page_hold_limit);
+    return OB_NOT_IMPLEMENT;
+  }
+  /* this function is defined for c driver client compile */
+  void reset() { /* not support */ }
   void reuse() { /* not support */ }
-  void *alloc(const int64_t size);
+  void *alloc(const int64_t size) { UNUSED(size); return NULL; }
   void *alloc_align(const int64_t size, const int64_t align);
-  void free(void *p);
+  void free(void *p) { UNUSED(p); }
   void set_mod_id(int64_t mod_id);
 
   inline int64_t used() const

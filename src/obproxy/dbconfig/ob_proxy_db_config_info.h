@@ -936,7 +936,8 @@ public:
                             char *real_table_name, int64_t tb_name_len,
                             int64_t &group_id, int64_t &table_id, int64_t &es_id,
                             const common::ObString &hint_table,
-                            ObTestLoadType testload_type, const bool is_read_stmt);
+                            ObTestLoadType testload_type, const bool is_read_stmt,
+                            const int64_t last_es_id = OBPROXY_MAX_DBMESH_ID);
   int get_shard_table_info(const common::ObString &table_name,
                            obutils::SqlFieldResult &sql_result,
                            ObShardConnector *&shard_conn,
@@ -944,7 +945,8 @@ public:
                            char *real_table_name, int64_t tb_name_len,
                            int64_t &group_index, int64_t &tb_index, int64_t &es_index,
                            const common::ObString &hint_table,
-                           ObTestLoadType testload_type, const bool is_read_stmt);
+                           ObTestLoadType testload_type, const bool is_read_stmt,
+                           const int64_t last_es_index = OBPROXY_MAX_DBMESH_ID);
   int get_shard_prop(const common::ObString & shard_name,
                       ObShardProp* &shard_prop);
   int get_real_table_name(const ObString &table_name, obutils::SqlFieldResult &sql_result,
@@ -968,6 +970,8 @@ public:
                                    int64_t es_index,
                                    common::ObIArray<int64_t> &group_index_array,
                                    common::ObIArray<ObShardConnector*> &shard_connector_array);
+  int get_first_group_shard_connector(ObShardConnector *&shard_conn, int64_t es_id,
+                                      bool is_read_stmt, ObTestLoadType testload_type);
   int get_table_name_by_index(obutils::ObSqlParseResult &parse_result,
                               ObTestLoadType testload_type,
                               ObIAllocator &allocator,

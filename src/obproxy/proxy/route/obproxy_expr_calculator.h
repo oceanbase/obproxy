@@ -31,6 +31,7 @@ namespace obproxy
 namespace opsql
 {
 class ObExprResolverResult;
+struct ObExprResolverContext;
 }
 namespace obutils
 {
@@ -58,6 +59,10 @@ public:
                              ObServerRoute &route,
                              ObProxyPartInfo &part_info,
                              int64_t &partition_id);
+  int calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
+                                               int64_t &first_part_id,
+                                               int64_t &sub_part_id,
+                                               int64_t &phy_part_id);
 private:
   // do parse -> do resolve -> do partition id calc
   int do_expr_parse(const common::ObString &req_sql,
@@ -73,7 +78,9 @@ private:
                       ObTextPsEntry *text_ps_entry,
                       ObProxyPartInfo &part_info,
                       common::ObIAllocator &allocator,
-                      opsql::ObExprResolverResult &resolve_result);
+                      opsql::ObExprResolverResult &resolve_result,
+                      const obutils::ObSqlParseResult &sql_parse_result,
+                      int64_t &partition_id);
   int do_partition_id_calc(opsql::ObExprResolverResult &resolve_result,
                            ObClientSessionInfo &client_info,
                            ObServerRoute &route,
@@ -90,14 +97,21 @@ private:
   int do_resolve_with_part_key(const obutils::ObSqlParseResult &parse_result,
                                common::ObIAllocator &allocator,
                                opsql::ObExprResolverResult &resolve_result);
-  int calc_partition_id_using_rowid(const ObExprParseResult &parse_result,
-                                    ObProxyPartInfo &part_info,
+  int calc_partition_id_using_rowid(opsql::ObExprResolverContext &ctx,
                                     opsql::ObExprResolverResult &resolve_result,
-                                    common::ObIAllocator &allocator);
-  int calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
-                                               int64_t &first_part_id,
-                                               int64_t &sub_part_id,
-                                               int64_t &phy_part_id);
+                                    common::ObIAllocator &allocator,
+                                    int64_t &partition_id);
+  int calc_partition_id_with_rowid(ObProxyRelationExpr *relation,
+                                   opsql::ObExprResolverContext &ctx,
+                                   common::ObIAllocator &allocator,
+                                   opsql::ObExprResolverResult &resolve_result,
+                                   int64_t &partition_id);
+  int calc_partition_id_with_rowid_str(const char *str,
+                                       const int64_t str_len,
+                                       common::ObIAllocator &allocator,
+                                       opsql::ObExprResolverResult &resolve_result,
+                                       ObProxyPartInfo &part_info,
+                                       int64_t &partition_id);
 };
 
 class ObExprCalcTool {
@@ -109,6 +123,9 @@ public:
   static int build_tz_info(ObClientSessionInfo *session_info,
                            common::ObObjType obj_type,
                            common::ObTimeZoneInfo &tz_info);
+
+  static int build_tz_info_for_all_type(ObClientSessionInfo *session_info,
+                                        common::ObTimeZoneInfo &tz_info);
   static int build_dtc_params(ObClientSessionInfo *session_info,
                               common::ObObjType obj_type,
                               common::ObDataTypeCastParams &dtc_params);

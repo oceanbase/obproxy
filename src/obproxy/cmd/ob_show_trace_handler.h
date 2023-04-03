@@ -25,8 +25,7 @@ namespace proxy
 class ObShowTraceHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowTraceHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                     const ObInternalCmdInfo &info);
+  ObShowTraceHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowTraceHandler() { cs_id_array_.destroy(); }
   int handle_trace(int event, void *data);
   virtual CSIDHanders *get_cs_id_array() { return &cs_id_array_; }

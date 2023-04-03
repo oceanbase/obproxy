@@ -89,7 +89,7 @@ int ObMysqlRequestPrepareTransformPlugin::consume(event::ObIOBufferReader *reade
               OB_FAIL(handle_ps_prepare())) {
             PROXY_API_LOG(WARN, "fail to handle ps prepare", K(ret));
           } else if (sm_->trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_prepare_stmt()
-              && handle_text_ps_prepare()) {
+              && OB_FAIL(handle_text_ps_prepare())) {
             PROXY_API_LOG(WARN, "fail to handle text ps prepare", K(ret));
           }
         }
@@ -143,52 +143,12 @@ int ObMysqlRequestPrepareTransformPlugin::handle_ps_prepare()
 int ObMysqlRequestPrepareTransformPlugin::handle_text_ps_prepare()
 {
   int ret = OB_SUCCESS;
-  ObClientSessionInfo &session_info = sm_->get_client_session()->get_session_info();
-  ObProxyMysqlRequest &client_request = sm_->trans_state_.trans_info_.client_request_;
   ObString text_ps_sql;
   text_ps_sql.assign_ptr(ps_or_text_ps_sql_buf_ + MYSQL_NET_META_LENGTH, static_cast<int32_t>(ps_pkt_len_ - MYSQL_NET_META_LENGTH));
-  ObTextPsEntry *text_ps_entry = sm_->get_client_session()->get_text_ps_entry(text_ps_sql);
-  ObTextPsNameEntry *text_ps_name_entry = session_info.get_text_ps_name_entry(text_ps_sql);
-
-  if (NULL == text_ps_entry) {
-    if (OB_FAIL(ObTextPsEntry::alloc_and_init_text_ps_entry(
-            text_ps_sql, client_request.get_parse_result(), text_ps_entry))) {
-      PROXY_API_LOG(WARN, "fail to alloc and init text ps entry", K(ret));
-    } else if (OB_FAIL(sm_->get_client_session()->add_text_ps_entry(text_ps_entry))) {
-      PROXY_API_LOG(WARN, "fail to add text ps entry to cache", K(ret));
-      if (OB_LIKELY(NULL != text_ps_entry)) {
-        text_ps_entry->destroy();
-        text_ps_entry = NULL;
-      }
-    } else if (OB_FAIL(ObTextPsNameEntry::alloc_text_ps_name_entry(
-                       client_request.get_parse_result().get_text_ps_name(),
-                       text_ps_entry, text_ps_name_entry))) {
-      PROXY_API_LOG(WARN, "fail to alloc text ps name entry", K(ret));
-    } else if (OB_FAIL(session_info.add_text_ps_name_entry(text_ps_name_entry))) {
-      PROXY_API_LOG(WARN, "fail to add text ps name entry", KPC(text_ps_entry), K(ret));
-      if (OB_LIKELY(NULL != text_ps_name_entry)) {
-        text_ps_name_entry->destroy();
-        text_ps_name_entry = NULL;
-      }
-    }
-  } else if (NULL == text_ps_name_entry) {
-    if (OB_FAIL(ObTextPsNameEntry::alloc_text_ps_name_entry(
-            client_request.get_parse_result().get_text_ps_name(),
-            text_ps_entry, text_ps_name_entry))) {
-      PROXY_API_LOG(WARN, "fail to alloc text ps name entry", K(ret));
-    } else if (OB_FAIL(session_info.add_text_ps_name_entry(text_ps_name_entry))) {
-      PROXY_API_LOG(WARN, "fail to add text ps name entry", KPC(text_ps_name_entry), K(ret));
-      if (OB_LIKELY(NULL != text_ps_name_entry)) {
-        text_ps_name_entry->destroy();
-        text_ps_name_entry = NULL;
-      }
-    }
-  } 
-
-  if (OB_SUCC(ret)) {
-    session_info.set_text_ps_entry(text_ps_name_entry->text_ps_entry_);
-    session_info.set_client_text_ps_name(client_request.get_parse_result().get_text_ps_name());
+  if (OB_FAIL(sm_->do_analyze_text_ps_prepare_request(text_ps_sql))) {
+    PROXY_API_LOG(WARN, "fail to do_analyze_text_ps_prepare_request", K(text_ps_sql), K(ret));
   }
+
   return ret;
 }
 
@@ -219,8 +179,8 @@ int ObMysqlRequestPrepareTransformPlugin::check_last_data_segment(
     if (read_avail >= (ntodo + MYSQL_NET_META_LENGTH)) {
       char tmp_buff[MYSQL_NET_META_LENGTH]; // print the next packet's meta
       reader.copy(tmp_buff, MYSQL_NET_META_LENGTH, ntodo);
-      int64_t payload_len = ob_uint3korr(tmp_buff);
-      int64_t seq = ob_uint1korr(tmp_buff + 3);
+      int64_t payload_len = uint3korr(tmp_buff);
+      int64_t seq = uint1korr(tmp_buff + 3);
       int64_t cmd = static_cast<uint8_t>(tmp_buff[4]);
       PROXY_API_LOG(ERROR, "next packet meta is", K(payload_len), K(seq), K(cmd));
     }

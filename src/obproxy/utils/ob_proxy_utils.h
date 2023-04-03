@@ -16,6 +16,7 @@
 #include "common/ob_object.h"
 #include "lib/string/ob_fixed_length_string.h"
 #include "utils/ob_proxy_lib.h"
+#include "iocore/net/ob_inet.h"
 
 namespace oceanbase
 {
@@ -79,6 +80,12 @@ int convert_timestamp_to_version(int64_t time_us, char *buf, int64_t len);
 int paste_tenant_and_cluster_name(const common::ObString &tenant_name, const common::ObString &cluster_name,
                                   common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> &key_string);
 
+// split str like val0,val1;val2;val3 into
+// item:    val0  val1  val2  val3
+// weight:    0     0     1     2
+int split_weight_group(common::ObString weight_group_str, 
+                       common::ObIArray<common::ObString> &item, 
+                       common::ObIArray<int8_t> &weights);
 } // end of namespace obproxy
 } // end of namespace oceanbase
 

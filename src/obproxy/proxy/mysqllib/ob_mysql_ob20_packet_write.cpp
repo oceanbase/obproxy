@@ -15,6 +15,8 @@
 #include "proxy/mysqllib/ob_mysql_common_define.h"
 #include "proxy/mysqllib/ob_mysql_ob20_packet_write.h"
 #include "proxy/mysqllib/ob_2_0_protocol_utils.h"
+#include "obproxy/packet/ob_mysql_packet_writer.h"
+#include "obproxy/proxy/mysqllib/ob_mysql_analyzer_utils.h"
 
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::common;
@@ -26,68 +28,138 @@ namespace obproxy
 {
 namespace proxy
 {
-// only compress ObMysqlRawPacket,
+
 int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
                                                      const ObMySQLRawPacket &packet,
-                                                     uint8_t &compressed_seq,
-                                                     const uint32_t request_id,
-                                                     const uint32_t sessid)
+                                                     const Ob20ProtocolHeaderParam &ob20_head_param,
+                                                     const common::ObIArray<ObObJKV> *extra_info)
 {
   int ret = OB_SUCCESS;
-  char meta_buf[MYSQL_NET_META_LENGTH];
-  int64_t pos = 0;
-  int64_t meta_buf_len = MYSQL_NET_META_LENGTH;
-  // 1. encode mysql packet meta(header + cmd)
-  if (OB_FAIL(packet.encode_packet_meta(meta_buf, meta_buf_len, pos))) {
-    LOG_WARN("fail to encode packet meta", K(pos), K(packet), K(meta_buf_len), K(ret));
-  } else {
-    ObIOBufferReader *tmp_reader = NULL;
-    ObMIOBuffer *tmp_mio_buf = NULL;
-    const char *buf = packet.get_cdata();
-    int64_t buf_len = packet.get_clen();
-    int64_t written_len = 0;
-    const bool is_last_packet = true;
-    const bool is_need_reroute = false;
-    if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer())) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new miobuffer", K(ret));
-    } else if (OB_ISNULL(tmp_reader = tmp_mio_buf->alloc_reader())) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to alloc reader", K(ret));
-    // 2. write the meta buf, the first part of mysql packet
-    } else if (OB_FAIL(tmp_mio_buf->write(meta_buf, meta_buf_len, written_len))) {
-      LOG_WARN("fail to write", K(meta_buf_len), K(ret));
-    } else if (OB_UNLIKELY(written_len != MYSQL_NET_META_LENGTH)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("written_len dismatch", K(written_len), K(MYSQL_NET_META_LENGTH), K(ret));
-    // 3. write the request buf, the second part of mysql packet
-    } else if (OB_FAIL(tmp_mio_buf->write(buf, buf_len, written_len))) {
-      LOG_WARN("fail to write", K(buf_len), K(ret));
-    } else if (OB_UNLIKELY(written_len != buf_len)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("written_len dismatch", K(written_len), K(buf_len), K(ret));
-    // 4. make up compress packet
-    } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_reader,
-               &mio_buf, tmp_reader->read_avail(), compressed_seq, compressed_seq,
-               request_id, sessid, is_last_packet, is_need_reroute))) {
-      LOG_WARN("fail to consume_and_compress_data", K(ret));
-    }
 
-    if (NULL != tmp_mio_buf) {
-      free_miobuffer(tmp_mio_buf);
-      tmp_mio_buf = NULL;
-      tmp_reader = NULL;
-    }
+  ObIOBufferReader *tmp_mio_reader = NULL;
+  ObMIOBuffer *tmp_mio_buf = NULL;
+  const int64_t packet_len = packet.get_clen() + MYSQL_NET_META_LENGTH;
+  if (OB_ISNULL(tmp_mio_buf = new_miobuffer(packet_len))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to new miobuffer", K(ret));
+  } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to alloc reader", K(ret));
+  } else if (OB_FAIL(packet::ObMysqlPacketWriter::write_raw_packet(*tmp_mio_buf, packet))) {
+    LOG_WARN("fail to write raw packet", K(ret));
+  } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
+                       tmp_mio_reader->read_avail(), ob20_head_param, extra_info))) {
+    LOG_WARN("fail to consume and compress data", K(ret));
+  } else {
+    // nothing
+  }
+
+  if (OB_LIKELY(NULL != tmp_mio_buf)) {
+    free_miobuffer(tmp_mio_buf);
+    tmp_mio_buf = NULL;
+    tmp_mio_reader = NULL;
   }
 
   return ret;
 }
 
-int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf, const ObMySQLCmd cmd,
+int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
+                                                     const obmysql::ObMySQLPacket &packet,
+                                                     const Ob20ProtocolHeaderParam &ob20_head_param)
+{
+  int ret = OB_SUCCESS;
+
+  const int64_t serialize_size = packet.get_serialize_size();
+  const int64_t packet_len = serialize_size + MYSQL_NET_HEADER_LENGTH;
+  int64_t tmp_len = packet_len;
+  int64_t pos = 0;
+  ObMIOBuffer *tmp_mio_buf = NULL;
+  ObIOBufferReader *tmp_mio_reader = NULL;
+
+  if (OB_ISNULL(tmp_mio_buf = new_miobuffer(packet_len))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to new miobuffer", K(ret), K(packet_len));
+  } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to alloc reader", K(ret));
+  } else if (ObMySQLPacket::encode_packet(tmp_mio_buf->end(), tmp_len, pos, packet)) {
+    LOG_WARN("fail to encode packet",  K(ret), K(tmp_len), K(pos), K(pos), K(packet_len), K(packet));
+  } else if (OB_FAIL(tmp_mio_buf->fill(pos))) {
+    // move start pointer
+    LOG_WARN("fail to fill iobuffer", K(ret), K(pos));
+  } else if (ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
+                                                       tmp_mio_reader->read_avail(), ob20_head_param)) {
+    LOG_WARN("fail to consume and compress data", K(ret));
+  } else {
+    // nothing
+  }
+
+  // free mio buf
+  if (OB_LIKELY(tmp_mio_buf != NULL)) {
+    free_miobuffer(tmp_mio_buf);
+    tmp_mio_buf = NULL;
+    tmp_mio_reader = NULL;
+  }
+
+  return ret;
+}
+
+int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const common::ObString &packet_str,
+                                              const Ob20ProtocolHeaderParam &ob20_head_param)
+{
+  int ret = OB_SUCCESS;
+
+  // write to buffer directly
+  const char *buf = packet_str.ptr();
+  const int64_t buf_len = packet_str.length(); 
+  if (OB_UNLIKELY(buf == NULL) || OB_UNLIKELY(buf_len <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid argument before write raw packet", K(ret), K(buf), K(buf_len));
+  } else {
+    ObMIOBuffer *tmp_mio_buf = NULL;
+    ObIOBufferReader *tmp_mio_reader = NULL;
+    int64_t written_len = 0;
+    if (OB_ISNULL(tmp_mio_buf = new_miobuffer(buf_len))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to new miobuffer", K(ret), K(buf_len));
+    } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to alloc reader", K(ret));
+    } else if (OB_FAIL(tmp_mio_buf->write(buf, buf_len, written_len))) {
+      LOG_WARN("fail to write", K(buf_len), K(ret));
+    } else if (OB_UNLIKELY(written_len != buf_len)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("written_len dismatch", K(written_len), K(buf_len), K(ret));
+    } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
+                                                                 tmp_mio_reader->read_avail(), ob20_head_param))) {
+      LOG_WARN("fail to consume and compress data", K(ret));
+    } else {
+      LOG_DEBUG("succ to write raw packet in ob20 format");
+    }
+
+    if (OB_LIKELY(NULL != tmp_mio_buf)) {
+      free_miobuffer(tmp_mio_buf);
+      tmp_mio_buf = NULL;
+      tmp_mio_reader = NULL;
+    }
+  }
+  
+  return ret;
+}
+
+int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf,
+                                                  const ObMySQLCmd cmd,
                                                   const common::ObString &sql_str,
-                                                  uint8_t &compressed_seq,
-                                                  const uint32_t request_id,
-                                                  const uint32_t sessid)
+                                                  const uint32_t conn_id,
+                                                  const uint32_t req_id,
+                                                  const uint8_t compressed_seq,
+                                                  const uint8_t pkt_seq,
+                                                  bool is_last_packet,
+                                                  bool is_weak_read,
+                                                  bool is_need_reroute,
+                                                  bool is_new_extra_info,
+                                                  bool is_trans_internal_routing,
+                                                  const common::ObIArray<ObObJKV> *extra_info)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(sql_str.empty())) {
@@ -98,12 +170,48 @@ int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf, const Ob
     LOG_WARN("we cannot support packet which is larger than 16MB", K(sql_str),
              K(MYSQL_PACKET_MAX_LENGTH), K(ret));
   } else {
+    Ob20ProtocolHeaderParam ob20_head_param(conn_id, req_id, compressed_seq, pkt_seq, is_last_packet,
+                                            is_weak_read, is_need_reroute,
+                                            is_new_extra_info, is_trans_internal_routing);
     ObMySQLRawPacket com_pkt(cmd);
     com_pkt.set_content(sql_str.ptr(), static_cast<uint32_t>(sql_str.length()));
-    if (OB_FAIL(ObMysqlOB20PacketWriter::write_compressed_packet(mio_buf, com_pkt, compressed_seq, request_id, sessid))) {
+    if (OB_FAIL(ObMysqlOB20PacketWriter::write_compressed_packet(mio_buf, com_pkt, ob20_head_param, extra_info))) {
       LOG_WARN("write packet failed", K(sql_str), K(ret));
     }
   }
+  return ret;
+}
+
+int ObMysqlOB20PacketWriter::write_packet(ObMIOBuffer &mio_buf,
+                                          const char *buf,
+                                          const int64_t buf_len,
+                                          const Ob20ProtocolHeaderParam &ob20_head_param)
+{
+  int ret = OB_SUCCESS;
+
+  obmysql::ObMySQLPacket packet;
+  packet.set_content(buf, static_cast<uint32_t>(buf_len));
+  ret = write_packet(mio_buf, packet, ob20_head_param);
+
+  return ret;
+}
+
+int ObMysqlOB20PacketWriter::write_packet(ObMIOBuffer &mio_buf,
+                                          const obmysql::ObMySQLPacket &packet,
+                                          const Ob20ProtocolHeaderParam &ob20_head_param)
+{
+  int ret = OB_SUCCESS;
+  
+  int64_t serialize_size = packet.get_serialize_size();
+  if (OB_UNLIKELY(serialize_size < 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid serialize size", K(ret), K(serialize_size));
+  } else if (OB_FAIL(write_compressed_packet(mio_buf, packet, ob20_head_param))) {
+    LOG_WARN("fail to write compressed packet", K(ret), K(serialize_size));
+  } else {
+    // nothing
+  }
+
   return ret;
 }
 

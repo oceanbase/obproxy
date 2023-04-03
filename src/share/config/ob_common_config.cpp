@@ -15,6 +15,7 @@
 #include "share/config/ob_server_config.h"
 #include "common/ob_record_header.h"
 
+static const char *ignore_config_opt_str[] = {"target_db_server"};
 namespace oceanbase
 {
 namespace common
@@ -44,9 +45,26 @@ ObCommonConfig::~ObCommonConfig()
 {
 }
 
+// tmp use for opt str
+int ObCommonConfig::add_extra_config_from_opt(const char *config_str,
+                                              int64_t version /* = 0 */ ,
+                                              bool check_name /* = false */)
+{
+  return add_config(config_str, version, check_name, ",\n", ignore_config_opt_str);
+}
+
 int ObCommonConfig::add_extra_config(const char *config_str,
                                      int64_t version /* = 0 */ ,
                                      bool check_name /* = false */)
+{
+  return add_config(config_str, version, check_name, "\n", NULL);
+}
+
+int ObCommonConfig::add_config(const char *config_str,
+                               int64_t version /* = 0 */ ,
+                               bool check_name /* = false */,
+                               const char* delim,
+                               const char* ignore_conf[])
 {
   int ret = OB_SUCCESS;
   const int64_t MAX_OPTS_LENGTH = sysconf(_SC_ARG_MAX);
@@ -67,7 +85,7 @@ int ObCommonConfig::add_extra_config(const char *config_str,
   } else {
     MEMCPY(buf, config_str, config_str_length);
     buf[config_str_length] = '\0';
-    token = STRTOK_R(buf, ",\n", &saveptr);
+    token = STRTOK_R(buf, delim, &saveptr);
   }
 
   while (OB_SUCC(ret) && OB_LIKELY(NULL != token)) {
@@ -86,7 +104,21 @@ int ObCommonConfig::add_extra_config(const char *config_str,
       value = saveptr_one;
     }
 
+    bool ignore = false;
+    if (OB_SUCC(ret) && OB_NOT_NULL(ignore_conf)) {
+      int64_t ignore_conf_num = sizeof(ignore_config_opt_str)/sizeof(char*);
+      for (int64_t i = 0; i < ignore_conf_num; i++) {
+        ObString conf(ignore_conf[i]);
+        if (OB_NOT_NULL(ignore_conf[i]) && conf.case_compare(name) == 0) {
+          ignore = true;
+          break;
+        }
+      }
+    }
+
     if (OB_FAIL(ret)) {
+    } else if (ignore) {
+      LOG_INFO("Ignore config", K(name), K(value));
     } else if (OB_ISNULL(pp_item = container_.get(ObConfigStringKey(name)))) {
       /* make compatible with previous configuration */
       ret = check_name ? OB_INVALID_CONFIG : OB_SUCCESS;
@@ -101,7 +133,7 @@ int ObCommonConfig::add_extra_config(const char *config_str,
       (*pp_item)->set_version(version);
       LOG_INFO("Load config succ", K(name), K(value));
     }
-    token = STRTOK_R(NULL, ",\n", &saveptr);
+    token = STRTOK_R(NULL, delim, &saveptr);
   }
 
   if (NULL != buf) {

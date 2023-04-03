@@ -32,7 +32,7 @@
 
 #include "ob_vip_tenant_conn.h"
 #include "lib/oblog/ob_log.h"
-#include "omt/ob_resource_unit_table_processor.h"
+#include "omt/ob_conn_table_processor.h"
 
 namespace oceanbase
 {
@@ -43,6 +43,9 @@ namespace omt
 
 using namespace obsys;
 using namespace oceanbase::common;
+
+extern int build_tenant_cluster_vip_name(const ObString &tenant_name, const ObString &cluster_name, const ObString &vip_name,
+    ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> &key_string);
 
 int ObVipTenantConn::set_tenant_cluster(const ObString &tenant_name, const ObString &cluster_name)
 {
@@ -63,7 +66,7 @@ int ObVipTenantConn::set_tenant_cluster(const ObString &tenant_name, const ObStr
 int ObVipTenantConn::set_addr(const common::ObString addr)
 {
   int ret = OB_SUCCESS;
-  if (addr.empty() || addr.length() > OB_IP_STR_BUFF) {
+  if (addr.empty() || addr.length() > MAX_IP_ADDR_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("name invalid", K(addr), K(ret));
   } else {
@@ -77,9 +80,8 @@ int ObVipTenantConn::set_full_name()
 {
   int ret = OB_SUCCESS;
 
-  ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF> full_name;
-  if (OB_FAIL(get_global_resource_unit_table_processor().build_tenant_cluster_vip_name(
-    tenant_name_, cluster_name_, vip_name_, full_name))) {
+  ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> full_name;
+  if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name_, cluster_name_, vip_name_, full_name))) {
     LOG_WARN("build tenant cluser and vip name failed", K(ret), K_(tenant_name), K_(cluster_name), K_(vip_name));
   } else {
     MEMCPY(full_name_str_, full_name.ptr(), full_name.size());
@@ -147,7 +149,7 @@ int ObVipTenantConnCache::get(ObString& key_name, ObVipTenantConn*& vt_conn)
   int ret = OB_SUCCESS;
   ObVipTenantConn *tmp_vt_conn = NULL;
 
-  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF) {
+  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("name invalid", K(key_name), K(ret));
   } else {
@@ -229,19 +231,19 @@ int ObVipTenantConnCache::backup()
 
   //CWLockGuard guard(rwlock_);
   // Initialization state:
-  // vt_conn_map_ = vt_conn_map_array[0]; 
+  // vt_conn_map_ = vt_conn_map_array[0];
   // replica_vt_conn_map = vt_conn_map_array[1];
   VTHashMap& replica_vt_conn_map = get_conn_map_replica();
   clear_conn_map(replica_vt_conn_map);
   // Even if an error occurs in the backup process and an error is returned to the cloud platform, vt_conn_map_ is still the previous configuration information
   VTHashMap::iterator last = vt_conn_map_->end();
   for (VTHashMap::iterator it = vt_conn_map_->begin(); it != last; ++it) {
-    ObVipTenantConn* tmp_vt_conn = NULL; 
+    ObVipTenantConn* tmp_vt_conn = NULL;
     if (OB_ISNULL(tmp_vt_conn = op_alloc(ObVipTenantConn))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("fail to alloc memory for ObVipTenantConn", K(ret));
     } else if (OB_FAIL(tmp_vt_conn->set(
-      it->cluster_name_, it->tenant_name_, it->vip_name_, it->max_connections_))) {    
+      it->cluster_name_, it->tenant_name_, it->vip_name_, it->max_connections_))) {
       LOG_WARN("fail to set vip tenant connect info", K(ret));
     } else if (OB_FAIL(replica_vt_conn_map.unique_set(tmp_vt_conn))) {
       LOG_WARN("insert vip tenant connection failed", K(ret));
@@ -300,7 +302,7 @@ void ObVipTenantConnCache::dump_conn_map(VTHashMap &cache_map)
 int ObUsedConnCache::get(ObString& key_name, ObUsedConn*& used_conn)
 {
   int ret = OB_SUCCESS;
-  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF) {
+  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("name invalid", K(key_name), K(ret));
   } else if (OB_FAIL(used_conn_map_.get_refactored(key_name, used_conn))) {
@@ -324,7 +326,7 @@ int ObUsedConnCache::set(ObUsedConn* used_conn)
 int ObUsedConnCache::erase(ObString& key_name)
 {
   int ret = OB_SUCCESS;
-  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + OB_IP_STR_BUFF) {
+  if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("name invalid", K(key_name), K(ret));
   } else if (OB_FAIL(used_conn_map_.erase_refactored(key_name))) {

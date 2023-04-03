@@ -55,7 +55,8 @@ public:
   net::ObIpAddr inbound_ip_;
 };
 
-ObMysqlProxyPort &get_global_proxy_port();
+ObMysqlProxyPort &get_global_proxy_ipv4_port();
+ObMysqlProxyPort &get_global_proxy_ipv6_port();
 
 } // end of namespace proxy
 } // end of namespace obproxy

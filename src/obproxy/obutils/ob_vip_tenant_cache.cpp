@@ -23,7 +23,19 @@ namespace obproxy
 namespace obutils
 {
 
-void ObVipAddr::set(const int32_t ip, const int32_t port, const int64_t vid)
+void ObVipAddr::set(const char* ip, const int32_t port, const int64_t vid)
+{
+  if (NULL == ip || 0 == strcasecmp(ip, "") || port <= 0) {
+    addr_.reset();
+  } else if (OB_UNLIKELY(!addr_.set_ip_addr(ip, port))) {
+    LOG_WARN("fail to set_ip_addr", K(ip), K(port), K(addr_));
+    addr_.reset();
+  } else {
+    vid_ = vid;
+  }
+}
+
+void ObVipAddr::set_ipv4(int32_t ip, const int32_t port, const int64_t vid)
 {
   if (OB_UNLIKELY(!addr_.set_ipv4_addr(ip, port))) {
     LOG_WARN("fail to set_ipv4_addr", K(ip), K(port), K(addr_));
@@ -31,6 +43,12 @@ void ObVipAddr::set(const int32_t ip, const int32_t port, const int64_t vid)
   } else {
     vid_ = vid;
   }
+}
+
+void ObVipAddr::set(const struct sockaddr &addr, const int64_t vid)
+{
+  addr_.set_sockaddr(addr);
+  vid_ = vid;
 }
 
 int ObVipTenant::set_tenant_cluster(const ObString &tenant_name, const ObString &cluster_name)

@@ -344,5 +344,39 @@ int paste_tenant_and_cluster_name(const ObString &tenant_name, const ObString &c
   return ret;
 }
 
+// split str like 'val0,val1;val2;val3' to
+// item:    val0  val1  val2  val3
+// weight:    0     0     1     2
+int split_weight_group(ObString weight_group_str, 
+                       ObIArray<ObString> &items, 
+                       ObIArray<int8_t> &weights) {
+  int ret = OB_SUCCESS;
+  int8_t weight = 0;
+  bool finish = false;
+  while (OB_SUCC(ret) && !weight_group_str.empty() && !finish) {
+    ObString group = weight_group_str.split_on(';');
+    if (group.empty()) {
+      group = weight_group_str;
+      finish = true;
+    }
+    // split by ',' 
+    bool group_finish = false;
+    while (OB_SUCC(ret) && !group.empty() && !group_finish) {
+      ObString item = group.split_on(',');
+      if (item.empty()) {
+        item = group;
+        group_finish = true;
+      }
+      if (OB_FAIL(items.push_back(item))) {
+        LOG_WARN("fail to push back item", K(item), K(ret));
+      } else if (OB_FAIL(weights.push_back(weight))) {
+        LOG_WARN("fail to push back weight", K(weight), K(ret));
+      } else { /* succ */}
+    }
+    weight++; 
+  }
+  return ret;
+}
+
 } // end of namespace obproxy
 } // end of namespace oceanbase

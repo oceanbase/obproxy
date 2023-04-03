@@ -29,21 +29,23 @@ namespace obutils
 enum
 {
   OB_CC_NAME = 0,
+  OB_CC_TYPE,
   OB_CC_MAX_TABLE_COLUMN_ID,
 };
 
-ObShowTablesHandler::ObShowTablesHandler(ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit)
-  : ObCmdHandler(buf, pkg_seq, memory_limit)
+ObShowTablesHandler::ObShowTablesHandler(ObMIOBuffer *buf, ObCmdInfo &info, ObProxyBasicStmtSubType sub_type)
+  : ObCmdHandler(buf, info), sub_type_(sub_type)
 {
 }
 
-int ObShowTablesHandler::handle_show_tables(const ObString &logic_tenant_name, const ObString &logic_database_name)
+int ObShowTablesHandler::handle_show_tables(const ObString &logic_tenant_name, const ObString &logic_database_name,
+                                            ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(dump_table_header(logic_database_name))) {
     WARN_CMD("fail to dump tables header", K(ret));
-  } else if (OB_FAIL(dump_table(logic_tenant_name, logic_database_name))) {
+  } else if (OB_FAIL(dump_table(logic_tenant_name, logic_database_name, logic_table_name))) {
     WARN_CMD("fail to dump tables", K(ret));
   } else if (OB_FAIL(encode_eof_packet())) {
     WARN_CMD("fail to encode eof packet", K(ret));
@@ -72,54 +74,77 @@ int ObShowTablesHandler::dump_table_header(const ObString &logic_database_name)
 {
   int ret = OB_SUCCESS;
 
+  ObProxyColumnSchema SHOW_TABLES_ARRAY[OB_CC_MAX_TABLE_COLUMN_ID] = {
+    ObProxyColumnSchema::make_schema(OB_CC_NAME,   "",   OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_CC_TYPE,   "Table_type",   OB_MYSQL_TYPE_VARCHAR),
+  };
+
   char column_name[OB_MAX_DATABASE_NAME_LENGTH] = "Tables_in_";
   logic_database_name.to_string(column_name + strlen(column_name), OB_MAX_DATABASE_NAME_LENGTH - strlen(column_name));
+  SHOW_TABLES_ARRAY[0].cname_ = ObString(column_name);
 
-  const ObString &column_name_str = ObString(column_name);
-  const EMySQLFieldType column_type = OB_MYSQL_TYPE_VARCHAR;
+  int64_t size = OB_CC_MAX_TABLE_COLUMN_ID;
+  if (OBPROXY_T_SUB_SHOW_TABLES == sub_type_) {
+    size = OB_CC_MAX_TABLE_COLUMN_ID - 1;
+  }
 
-  if (OB_FAIL(encode_header(&column_name_str, &column_type, OB_CC_MAX_TABLE_COLUMN_ID))) {
+  if (OB_FAIL(encode_header(SHOW_TABLES_ARRAY, size))) {
     WARN_CMD("fail to encode header", K(ret));
   }
 
   return ret;
 }
 
-int ObShowTablesHandler::dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name)
+int ObShowTablesHandler::dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
+                                    ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
   typedef ObArray<ObString> ObStringArray;
   ObStringArray table_names;
   ObNewRow row;
   ObObj cells[OB_CC_MAX_TABLE_COLUMN_ID];
+  int64_t size = OB_CC_MAX_TABLE_COLUMN_ID;
+  if (OBPROXY_T_SUB_SHOW_TABLES == sub_type_) {
+    size = OB_CC_MAX_TABLE_COLUMN_ID - 1;
+  }
 
   if (OB_FAIL(ObProxyShardUtils::get_all_schema_table(logic_tenant_name, logic_database_name, table_names))) {
     WARN_CMD("fail to get all tables", K(logic_tenant_name), K(ret));
   } else {
-    for (ObStringArray::iterator it = table_names.begin(); it != table_names.end(); it++) {
-      cells[OB_CC_NAME].set_varchar(*it);
+    string_to_upper_case(logic_table_name.ptr(), logic_table_name.length());
+    for (ObStringArray::iterator it = table_names.begin(); OB_SUCC(ret) && it != table_names.end(); it++) {
+      if (match_like(*it, logic_table_name)) {
+        cells[OB_CC_NAME].set_varchar(*it);
+        if (OBPROXY_T_SUB_SHOW_FULL_TABLES == sub_type_) {
+          cells[OB_CC_TYPE].set_varchar("BASE TABLE");
+        }
 
-      row.cells_ = cells;
-      row.count_ = OB_CC_MAX_TABLE_COLUMN_ID;
-      if (OB_FAIL(encode_row_packet(row))) {
-        WARN_CMD("fail to encode row packet", K(row), K(ret));
+        row.cells_ = cells;
+        row.count_ = size;
+        if (OB_FAIL(encode_row_packet(row))) {
+          WARN_CMD("fail to encode row packet", K(row), K(ret));
+        }
       }
     }
   }
   return ret;
 }
 
-int ObShowTablesHandler::show_tables_cmd_callback(ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit, const ObString &logic_tenant_name, const ObString &logic_database_name)
+int ObShowTablesHandler::show_tables_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
+                                                  ObProxyBasicStmtSubType sub_type,
+                                                  const ObString &logic_tenant_name,
+                                                  const ObString &logic_database_name,
+                                                  ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
   ObShowTablesHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObShowTablesHandler(buf, pkg_seq, memory_limit))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObShowTablesHandler(buf, info, sub_type))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     ERROR_CMD("fail to new ObShowTablesHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
     WARN_CMD("fail to init for ObShowTablesHandler");
-  } else if (OB_FAIL(handler->handle_show_tables(logic_tenant_name, logic_database_name))) {
+  } else if (OB_FAIL(handler->handle_show_tables(logic_tenant_name, logic_database_name, logic_table_name))) {
     DEBUG_CMD("succ to schedule ObShowTablesHandler");
   }
 

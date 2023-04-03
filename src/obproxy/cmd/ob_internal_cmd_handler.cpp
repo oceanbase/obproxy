@@ -16,6 +16,7 @@
 #include "iocore/eventsystem/ob_ethread.h"
 #include "iocore/net/ob_net_def.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
+#include "obproxy/proxy/mysqllib/ob_2_0_protocol_utils.h"
 
 using namespace oceanbase::obmysql;
 using namespace oceanbase::share::schema;
@@ -26,10 +27,10 @@ namespace oceanbase
 {
 namespace obproxy
 {
-ObInternalCmdHandler::ObInternalCmdHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                           const ObInternalCmdInfo &info)
+ObInternalCmdHandler::ObInternalCmdHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObContinuation(), cs_handler_(NULL), cs_id_(info.get_cs_id()), external_buf_(buf),
       internal_buf_(NULL), internal_reader_(NULL), internal_buf_limited_(info.get_memory_limit()),
+      protocol_(info.get_protocol()), ob20_param_(info.get_ob20_head_param()), 
       is_inited_(false), header_encoded_(false),
       seq_(info.get_pkt_seq()), original_seq_(seq_), saved_event_(-1), like_name_()
 {
@@ -50,17 +51,9 @@ ObInternalCmdHandler::~ObInternalCmdHandler()
   action_.mutex_.release();
   mutex_.release();
   cs_handler_ = NULL;
-  if (OB_LIKELY(NULL != internal_reader_)) {
-    int ret = OB_SUCCESS;
-    if (OB_FAIL(internal_reader_->consume(internal_reader_->read_avail()))) {
-      WARN_ICMD("fail to consume ", K(ret));
-    }
-    internal_reader_ = NULL;
-  }
-  if (OB_LIKELY(NULL != internal_buf_)) {
-    free_miobuffer(internal_buf_);
-    internal_buf_ = NULL;
-  }
+  destroy_internal_buf();
+  protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
+  ob20_param_.reset();
 }
 
 int ObInternalCmdHandler::init(const bool is_query_cmd/*true*/)
@@ -118,8 +111,25 @@ int ObInternalCmdHandler::reset()
   } else {
     internal_buf_->reset();
     seq_ = original_seq_;
+    // could not reset protocol and ob20_param in handler, cause we need filll external buf according to protocol
   }
   return ret;
+}
+
+void ObInternalCmdHandler::destroy_internal_buf()
+{
+  if (OB_LIKELY(NULL != internal_reader_)) {
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(internal_reader_->consume(internal_reader_->read_avail()))) {
+      WARN_ICMD("fail to consume ", K(ret));
+    }
+    internal_reader_ = NULL;
+  }
+  
+  if (OB_LIKELY(NULL != internal_buf_)) {
+    free_miobuffer(internal_buf_);
+    internal_buf_ = NULL;
+  }
 }
 
 int ObInternalCmdHandler::encode_header(const ObString *cname, const EMySQLFieldType *ctype, const int64_t size)
@@ -221,36 +231,27 @@ int ObInternalCmdHandler::encode_eof_packet()
   return ret;
 }
 
+// write packet in mysql format to internal buf, then trans it to external buf as ob20/mysql
 int ObInternalCmdHandler::encode_err_packet(const int errcode)
 {
   int ret = OB_SUCCESS;
-  const int32_t MAX_MSG_BUF_SIZE = 256;
-  char msg_buf[MAX_MSG_BUF_SIZE];
+
   if (IS_NOT_INIT) {
     ret = OB_NOT_INIT;
     WARN_ICMD("it has not inited", K(ret));
-  } else if (OB_FAIL(reset())) {//before encode_err_packet, we need clean buf
+  } else if (OB_FAIL(reset())) {  // before encode err packet, we need clean buf
     WARN_ICMD("fail to do reset", K(errcode), K(ret));
   } else {
-    const char *errmsg = ob_strerror(errcode);
-    int32_t length = 0;
-    if (OB_ISNULL(errmsg)) {
-      length = snprintf(msg_buf, sizeof(msg_buf), "Unknown user error");
+    char *err_msg = NULL;
+    if (OB_FAIL(packet::ObProxyPacketWriter::get_err_buf(errcode, err_msg))) {
+      WARN_ICMD("fail to get err buf", K(ret));
+    } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, err_msg))) {
+      WARN_ICMD("fail to encode err packet", K(errcode), K(err_msg), K(ret));
     } else {
-      length = snprintf(msg_buf, sizeof(msg_buf), errmsg);
-    }
-    if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= MAX_MSG_BUF_SIZE)) {
-      ret = OB_BUF_NOT_ENOUGH;
-      WARN_ICMD("msg_buf is not enough", K(length), K(errmsg), K(ret));
-    } else {}
-  }
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet_buf(*internal_buf_, seq_, errcode, msg_buf))) {
-      WARN_ICMD("fail to encode err packet", K(errcode), K(msg_buf), K(ret));
-    } else {
-      INFO_ICMD("succ to encode err packet", K(errcode), K(msg_buf));
+      INFO_ICMD("succ to encode err packet", K(errcode), K(err_msg));
     }
   }
+  
   return ret;
 }
 
@@ -543,9 +544,6 @@ int ObInternalCmdHandler::internal_error_callback(int errcode)
   int ret = OB_SUCCESS;
   int event_ret = EVENT_NONE;
 
-  if (OB_BUF_NOT_ENOUGH != errcode && OB_ERR_OPERATOR_UNKNOWN != errcode && OB_SEQUENCE_ERROR != errcode) {
-    errcode = OB_RESULT_UNKNOWN;
-  }
   if (OB_FAIL(encode_err_packet(errcode))) {
     WARN_ICMD("fail to encode internal err packet, callback", K(errcode), K(ret));
     event_ret = handle_callback(INTERNAL_CMD_EVENTS_FAILED, NULL);
@@ -559,19 +557,33 @@ int ObInternalCmdHandler::internal_error_callback(int errcode)
 int ObInternalCmdHandler::fill_external_buf()
 {
   int ret = OB_SUCCESS;
-  int64_t data_size = internal_reader_->read_avail();
-  int64_t bytes_written = 0;
-  if (OB_FAIL(external_buf_->remove_append(internal_reader_, bytes_written))) {
-    ERROR_ICMD("Error while remove_append to external_buf_!", "Attempted size", data_size,
-               "wrote size", bytes_written, K(ret));
-  } else if (OB_UNLIKELY(bytes_written != data_size)) {
-    ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("unexpected result", "Attempted size", data_size,
-               "wrote size", bytes_written, K(ret));
+
+  if (OB_LIKELY(protocol_ == ObProxyProtocol::PROTOCOL_OB20)) {
+    if (OB_FAIL(ObProto20Utils::consume_and_compress_data(internal_reader_, external_buf_,
+                                                          internal_reader_->read_avail(), ob20_param_))) {
+      WARN_ICMD("fail to consume and compress to ob20 packet", K(ret), K_(ob20_param));
+    } else {
+      DEBUG_ICMD("succ to write to client in ob20", K_(ob20_param));
+    }
+  } else if (protocol_ == ObProxyProtocol::PROTOCOL_NORMAL) {
+    // mysql
+    int64_t data_size = internal_reader_->read_avail();
+    int64_t bytes_written = 0;
+    if (OB_FAIL(external_buf_->remove_append(internal_reader_, bytes_written))) {
+      ERROR_ICMD("Error while remove_append to external_buf_!", "Attempted size", data_size,
+                 "wrote size", bytes_written, K(ret));
+    } else if (OB_UNLIKELY(bytes_written != data_size)) {
+      ret = OB_ERR_UNEXPECTED;
+      WARN_ICMD("unexpected result", "Attempted size", data_size, "wrote size", bytes_written, K(ret));
+    } else {
+      internal_reader_ = NULL;
+      DEBUG_ICMD("succ to write to client in mysql", "Attempted size", bytes_written);
+    }
   } else {
-    internal_reader_ = NULL;
-    DEBUG_ICMD("succ to write to client", "Attempted size", bytes_written);
+    ret = OB_ERR_UNEXPECTED;
+    WARN_ICMD("unexpected protocol type", K(ret), K_(protocol));
   }
+
   return ret;
 }
 
@@ -608,7 +620,8 @@ int ObInternalCmdHandler::handle_callback(int event, void *data)
       MUTEX_TRY_LOCK(lock, action_.mutex_, submit_thread_);
       if (lock.is_locked()) {
         if (!action_.cancelled_) {
-          if (INTERNAL_CMD_EVENTS_SUCCESS == saved_event_ && OB_SUCCESS != fill_external_buf()) {
+          if (INTERNAL_CMD_EVENTS_SUCCESS == saved_event_
+              && OB_SUCCESS != fill_external_buf()) {
             saved_event_ = INTERNAL_CMD_EVENTS_FAILED;
           }
           DEBUG_ICMD("do callback now", K_(saved_event));

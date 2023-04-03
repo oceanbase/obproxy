@@ -116,9 +116,6 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_SELECT_TX_RO:
       str_ret = "SELECT_TX_RO";
       break;
-    case OBPROXY_T_SET_AC_0:
-      str_ret = "SET";
-      break;
     case OBPROXY_T_PING_PROXY:
       str_ret = "PING";
       break;
@@ -181,11 +178,33 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_TEXT_PS_EXECUTE:
       str_ret = "TEXT_PS_EXECUTE";
       break;
+    case OBPROXY_T_TEXT_PS_DROP:
+      str_ret = "TEXT_PS_DROP";
+      break;
     case OBPROXY_T_LOGIN:
       str_ret = "LOGIN";
       break;
     case OBPROXY_T_DESC:
       str_ret = "DESC";
+      break;
+
+    case OBPROXY_T_SHOW_MASTER_STATUS:
+      str_ret = "SHOW_MASTER_STATUS";
+      break;
+    case OBPROXY_T_SHOW_BINLOG_EVENTS:
+      str_ret = "SHOW_BINLOG_EVENTS";
+      break;
+    case OBPROXY_T_PURGE_BINARY_LOGS:
+      str_ret = "PURGE_BINARY_LOGS";
+      break;
+    case OBPROXY_T_RESET_MASTER:
+      str_ret = "RESET_MASTER";
+      break;
+    case OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT:
+      str_ret = "SHOW_BINLOG_SERVER_FOR_TENANT";
+      break;
+    case OBPROXY_T_SHOW_BINARY_LOGS:
+      str_ret = "SHOW_BINARY_LOGS";
       break;
 
     case OBPROXY_T_INVALID:
@@ -345,9 +364,6 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_SELECT_PROXY_VERSION:
       str_ret = "OBPROXY_T_SELECT_PROXY_VERSION";
       break;
-    case OBPROXY_T_SET_AC_0:
-      str_ret = "OBPROXY_T_SET_AC_0";
-      break;
     case OBPROXY_T_SHOW_WARNINGS:
       str_ret = "OBPROXY_T_SHOW_WARNINGS";
       break;
@@ -404,6 +420,15 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
       break;
     case OBPROXY_T_TEXT_PS_EXECUTE:
       str_ret = "OBPROXY_T_TEXT_PS_EXECUTE";
+      break;
+    case OBPROXY_T_TEXT_PS_DROP:
+      str_ret = "OBPROXY_T_TEXT_PS_DROP";
+      break;
+    case OBPROXY_T_LOGIN:
+      str_ret = "OBPROXY_T_LOGIN";
+      break;
+    case OBPROXY_T_DESC:
+      str_ret = "OBPROXY_T_DESC";
       break;
     case OBPROXY_T_MAX:
       str_ret = "OBPROXY_T_MAX";
@@ -500,6 +525,9 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
     case OBPROXY_T_SUB_ROUTE_ROUTINE:
       str_ret = "OBPROXY_T_SUB_ROUTE_ROUTINE";
       break;
+    case OBPROXY_T_SUB_SHOW_ELASTIC_ID:
+      str_ret = "OBPROXY_T_SUB_SHOW_ELASTIC_ID";
+      break;
     case OBPROXY_T_SUB_SHOW_TOPOLOGY:
       str_ret = "OBPROXY_T_SUB_SHOW_TOPOLOGY";
       break;
@@ -508,6 +536,27 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
       break;
     case OBPROXY_T_SUB_SELECT_DATABASE:
       str_ret = "OBPROXY_T_SUB_SELECT_DATABASE";
+      break;
+    case OBPROXY_T_SUB_SHOW_DATABASES:
+      str_ret = "OBPROXY_T_SUB_SHOW_DATABASES";
+      break;
+    case OBPROXY_T_SUB_SHOW_TABLES:
+      str_ret = "OBPROXY_T_SUB_SHOW_TABLES";
+      break;
+    case OBPROXY_T_SUB_SHOW_FULL_TABLES:
+      str_ret = "OBPROXY_T_SUB_SHOW_FULL_TABLES";
+      break;
+    case OBPROXY_T_SUB_SHOW_TABLE_STATUS:
+      str_ret = "OBPROXY_T_SUB_SHOW_TABLE_STATUS";
+      break;
+    case OBPROXY_T_SUB_SHOW_CREATE_TABLE:
+      str_ret = "OBPROXY_T_SUB_SHOW_CREATE_TABLE";
+      break;
+    case OBPROXY_T_SUB_SHOW_COLUMNS:
+      str_ret = "OBPROXY_T_SUB_SHOW_COLUMNS";
+      break;
+    case OBPROXY_T_SUB_SHOW_INDEX:
+      str_ret = "OBPROXY_T_SUB_SHOW_INDEX";
       break;
     case OBPROXY_T_SUB_DESC_TABLE:
       str_ret = "OBPROXY_T_SUB_DESC_TABLE";

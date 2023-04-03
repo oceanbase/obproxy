@@ -34,10 +34,10 @@ ObMysqlResponseCompressTransformPlugin::ObMysqlResponseCompressTransformPlugin(O
     local_reader_(NULL), local_transfer_reader_(NULL), compress_analyzer_(),
     compress_ob20_analyzer_(), analyzer_(NULL)
 {
-  ObProxyProtocol ob_proxy_protocol = sm_->use_compression_protocol();
-  if (ob_proxy_protocol == PROTOCOL_CHECKSUM) {
+  ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
+  if (ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM) {
     analyzer_ = &compress_analyzer_;
-  } else if (ob_proxy_protocol == PROTOCOL_OB20) {
+  } else if (ob_proxy_protocol == ObProxyProtocol::PROTOCOL_OB20) {
     analyzer_ = &compress_ob20_analyzer_;
   }
 
@@ -108,6 +108,9 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       int64_t plugin_decompress_response_end = sm_->get_based_hrtime();
       sm_->cmd_time_stats_.plugin_decompress_response_time_ +=
         milestone_diff(plugin_decompress_response_begin, plugin_decompress_response_end);
+
+      // save flt from response analyze result to sm
+      sm_->save_response_flt_result_to_sm(server_response.get_analyze_result().flt_);
     }
   }
 
@@ -134,16 +137,46 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
         sm_->trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
       }
 
+      if (analyze_result.is_trans_completed() || analyze_result.is_resp_completed()) {
+        if (sm_->enable_record_full_link_trace_info()) {
+          trace::ObSpanCtx *ctx = sm_->flt_.trace_log_info_.server_response_read_ctx_;
+          if (OB_NOT_NULL(ctx)) {
+            PROXY_API_LOG(DEBUG, "end span ob_proxy_server_response_read", K(ctx->span_id_));
+            SET_TRACE_BUFFER(sm_->flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
+            FLT_END_SPAN(ctx);
+            sm_->flt_.trace_log_info_.server_response_read_ctx_ = NULL;
+          }
+        }
+      }
+
       // get consume size again, for trim the last packet
       consume_size = local_transfer_reader_->read_avail() - analyze_result.get_reserved_len_for_ob20_ok();
 
-      // just send all data in local_transfer_reader_
-      if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
-        ret = OB_ERR_UNEXPECTED;
-        PROXY_API_LOG(WARN, "fail to produce", "expected size", consume_size,
-                      "actual size", produce_size, K(ret));
-      } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
-        PROXY_API_LOG(WARN, "fail to consume local transfer reader", K(consume_size), K(ret));
+      // Here is a situation:
+      //   under the 2.0 protocol, the last 4 tail checksum bytes were not read,
+      //   but the Tunnel sent all the MySQL content.
+      //   For ClientVC, after receiving all MySQL content,
+      //   it does not judge the end of the response based on the content,
+      //   but judges based on write_state_.vio_.ntodo(),
+      //   but because Tunnel has not read the last 4 tail checksum bytes,
+      //   Tunnel will not modify nbytes in ntodo,
+      //   causing ClientVC to think Have not finished receiving, continue to wait, do not continue to process.
+      //   After the Tunnel receives the last 4 tail checksum bytes,
+      //   since these 4 bytes are not sent to the Client,
+      //   the Client VC will not be triggered again.
+      //   As a result, the Tunnel ends directly, and the ClientVC How Hung lives
+      //
+      // Therefore, it is modified here that if the entire Tunnel is not over,
+      //   the last bit of MySQL packet content will not be sent, and will not be sent until the entire Tunnel is over
+      if (!analyze_result.is_last_ok_handled() || analyzer_->is_stream_finished()) {
+        // just send all data in local_transfer_reader_
+        if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
+          ret = OB_ERR_UNEXPECTED;
+          PROXY_API_LOG(WARN, "fail to produce", "expected size", consume_size,
+                        "actual size", produce_size, K(ret));
+        } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
+          PROXY_API_LOG(WARN, "fail to consume local transfer reader", K(consume_size), K(ret));
+        }
       }
     }
   }

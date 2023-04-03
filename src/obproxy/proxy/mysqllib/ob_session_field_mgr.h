@@ -108,10 +108,10 @@ enum ObSessionFieldStat
 
 enum ObSessionVarType
 {
-  OB_SESSION_USER_VAR = 0,
-  OB_SESSION_SYS_VAR,
-  OB_SESSION_COMMON_SYS_VAR,
-  OB_SESSION_MYSQL_SYS_VAR,
+  OB_SESSION_USER_VAR = 0,   // user variable
+  OB_SESSION_SYS_VAR,        // system variable only oceanbase supported
+  OB_SESSION_COMMON_SYS_VAR, // system variable oceanbase and mysql both supported
+  OB_SESSION_MYSQL_SYS_VAR,  // system variable only mysql supported
   OB_SESSION_VAR_MAX,
 };
 

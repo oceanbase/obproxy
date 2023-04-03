@@ -75,6 +75,7 @@
 #include "obutils/ob_session_pool_processor.h"
 #include "obutils/ob_config_processor.h"
 #include "iocore/net/ob_ssl_processor.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
@@ -173,7 +174,7 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_ERROR("fail to init ssl processor", K(ret));
     } else if (OB_FAIL(init_config())) {
       LOG_ERROR("fail to init config", K(ret));
-    } else if (get_global_config_processor().init()) {
+    } else if (OB_FAIL(get_global_config_processor().init())) {
       LOG_ERROR("fail to init config processor", K(ret));
     } else if (OB_FAIL(config_->enable_sharding
                        && dbconfig_processor.init(config_->grpc_client_num, ObProxyMain::get_instance()->get_startup_time()))) {
@@ -194,9 +195,11 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       } else if (OB_FAIL(app_config_processor.init())) {
         LOG_ERROR("fail to init app config processor", K(ret));
       } else {
-        // if fail to init prometheus, do not stop the startup of obproxy
-        if (g_ob_prometheus_processor.init()) {
-          LOG_WARN("fail to init prometheus processor");
+        if (RUN_MODE_PROXY == g_run_mode) {
+          // if fail to init prometheus, do not stop the startup of obproxy
+          if (OB_FAIL(g_ob_prometheus_processor.init())) {
+            LOG_WARN("fail to init prometheus processor", K(ret));
+          }
         }
 
 #if OB_HAS_TESTS
@@ -247,9 +250,33 @@ void ObProxy::destroy()
     if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(mmp_init_cont_))) {
       LOG_WARN("fail to destroy meta proxy init task", K(ret));
     }
+    ObThreadId tid = 0;
+    for (int64_t i = 0; i < g_event_processor.dedicate_thread_count_ && OB_SUCC(ret); ++i) {
+      tid = g_event_processor.all_dedicate_threads_[i]->tid_;
+      if (OB_FAIL(thread_cancel(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_cancel", K(tid), K(ret));
+      } else if (OB_FAIL(thread_join(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_join", K(tid), K(ret));
+      } else {
+        PROXY_NET_LOG(INFO, "graceful exit, dedicated thread exited", K(tid));
+      }
+      ret = OB_SUCCESS;//ignore error
+    }
 
-    proxy_opts_ = NULL;
-    mysql_config_params_ = NULL;
+    for (int64_t i = 0; i < g_event_processor.event_thread_count_ && OB_SUCC(ret); ++i) {
+      tid = g_event_processor.all_event_threads_[i]->tid_;
+      if (OB_FAIL(thread_cancel(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_cancel", K(tid), K(ret));
+      } else if (OB_FAIL(thread_join(tid))) {
+        PROXY_NET_LOG(WARN, "fail to do thread_join", K(tid), K(ret));
+      } else {
+        PROXY_NET_LOG(INFO, "graceful exit, event thread exited", K(tid));
+      }
+      ret = OB_SUCCESS;//ignore error
+    }
+
+    OB_LOGGER.destroy_async_log_thread();
+    _exit(0);
   }
 }
 
@@ -262,7 +289,7 @@ int ObProxy::start()
   } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_server(*mysql_config_params_))) {
     LOG_ERROR("fail to start mysql proxy server", K(ret));
   } else if (OB_FAIL(ObProxyMain::get_instance()->schedule_detect_task())) {
-    LOG_ERROR("fail to schedule detech task", K(ret));
+    LOG_ERROR("fail to schedule detect task", K(ret));
   } else {
 
     // we can't strongly dependent on the OCP.
@@ -326,7 +353,7 @@ int ObProxy::start()
     } else if (OB_FAIL(ObCacheCleaner::schedule_cache_cleaner())) {
       LOG_WARN("fail to alloc and schedule cache cleaner", K(ret));
     } else if (config_->is_metadb_used() && OB_FAIL(proxy_table_processor_.start_check_table_task())) {
-      LOG_WARN("fail to start check table check", K(ret));
+      LOG_WARN("fail to start check table task", K(ret));
     } else if (OB_FAIL(hot_upgrade_processor_.start_hot_upgrade_task())) {
       LOG_WARN("fail to start hot upgrade task", K(ret));
     } else if (OB_FAIL(log_file_processor_->start_cleanup_log_file())) {
@@ -338,22 +365,20 @@ int ObProxy::start()
     } else if (OB_FAIL(tenant_stat_mgr_->start_tenant_stat_dump_task())) {
       LOG_ERROR("fail to start_tenant_stat_dump_task", K(ret));
     } else if (OB_FAIL(g_ob_qos_stat_processor.start_qos_stat_clean_task())) {
-      LOG_ERROR("fail to start_tenant_stat_dump_task", K(ret));
+      LOG_ERROR("fail to start_qos_stat_clean_task", K(ret));
     } else if (config_->enable_sharding
-               && config_->is_control_plane_used()
-               && !config_->use_local_dbconfig
-               && OB_FAIL(get_global_db_config_processor().start_watch_parent_crd())) {
-      LOG_WARN("fail to start watch parent crd", K(ret));
-    } else if (config_->enable_sharding
-               && config_->use_local_dbconfig
-               && OB_FAIL(get_global_inotify_processor().start_watch_sharding_config())) {
-      LOG_WARN("fail to start inotify watch sharding config", K(ret));
+               && OB_FAIL(get_global_db_config_processor().start())) {
+      LOG_WARN("fail to start sharding", K(ret));
     } else if (OB_FAIL(config_->is_pool_mode && get_global_session_pool_processor().start_session_pool_task())) {
       LOG_WARN("fail to start_session_pool_task", K(ret));
+    } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_acceptor())) {
+      LOG_ERROR("fail to start accept server", K(ret));
     } else {
-      // if fail to init prometheus, do not stop the startup of obproxy
-      if (g_ob_prometheus_processor.start_prometheus()) {
-        LOG_WARN("fail to start prometheus");
+      if (RUN_MODE_PROXY == g_run_mode) {
+        // if fail to init prometheus, do not stop the startup of obproxy
+        if (OB_FAIL(g_ob_prometheus_processor.start_prometheus())) {
+          LOG_WARN("fail to start prometheus", K(ret));
+        }
       }
 
       mysql_config_params_ = NULL;
@@ -377,7 +402,9 @@ int ObProxy::start()
         }
         info.is_parent_ = true;
       }
-      this_ethread()->execute();
+      if (RUN_MODE_PROXY == g_run_mode) {
+        this_ethread()->execute();
+      }
     }
   }
   return ret;
@@ -415,7 +442,7 @@ int ObProxy::init_user_specified_config()
 {
   int ret = OB_SUCCESS;
   //1. set config from cmd -o name=value
-  if (NULL != proxy_opts_->optstr_ && OB_FAIL(config_->add_extra_config(proxy_opts_->optstr_))) {
+  if (NULL != proxy_opts_->optstr_ && OB_FAIL(config_->add_extra_config_from_opt(proxy_opts_->optstr_))) {
     LOG_WARN("fail to add extra config", K(ret));
 
   //2. set config from cmd other opts
@@ -942,6 +969,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
   ObString password(config_->observer_sys_password.str());
   ObString password1(config_->observer_sys_password1.str());
   ObSEArray<ObAddr, 5> rs_list;
+  int64_t cluster_version = 0;
 
   // first get from local
   if (OB_FAIL(cs_processor_->get_cluster_rs_list(cluster_name, OB_DEFAULT_CLUSTER_ID, rs_list))) {
@@ -961,11 +989,47 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
     if (rs_list.count() <= 0) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WARN("rs_list count must > 0", K(ret));
-    } else if (OB_FAIL(raw_client.init(user_name, password, database, password1))) {
+    } else if (OB_FAIL(raw_client.init(user_name, password, database, cluster_name, password1))) {
       LOG_WARN("fail to init raw mysql client", K(ret));
     } else if (OB_FAIL(raw_client.set_server_addr(rs_list))) {
       LOG_WARN("fail to set server addr", K(ret));
-    } else {
+    }
+
+    if (OB_SUCC(ret)) {
+      const char *sql = "select ob_version() as cluster_version";
+      ObClientMysqlResp *resp = NULL;
+      ObResultSetFetcher *rs_fetcher = NULL;
+      if (OB_FAIL(raw_client.sync_raw_execute(sql, timeout_ms, resp))) {
+        LOG_WARN("fail to sync raw execute", K(resp), K(timeout_ms), K(ret));
+      } else if (OB_ISNULL(resp)) {
+        ret = OB_NO_RESULT;
+        LOG_WARN("resp is null", K(ret));
+      } else if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher))) {
+        LOG_WARN("fail to get resultset fetcher", K(ret));
+      } else if (OB_ISNULL(rs_fetcher)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("rs fetcher is NULL", K(ret));
+      }
+
+      while (OB_SUCC(ret) && OB_SUCC(rs_fetcher->next())) {
+        ObString cluster_version_str;
+        PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(*rs_fetcher, "cluster_version", cluster_version_str);
+        int64_t version = 0;
+        for (int64_t i = 0; i < cluster_version_str.length() && cluster_version_str[i] != '.'; i++) {
+          version = version * 10 + cluster_version_str[i] - '0';
+        }
+        cluster_version = version;
+      }
+
+      ret = OB_SUCCESS;
+
+      if (NULL != resp) {
+        op_free(resp);
+        resp = NULL;
+      }
+    }
+
+    if (OB_SUCC(ret)) {
       ObString meta_tenant_name = username.after('@');
       if (meta_tenant_name.empty()) {
         meta_tenant_name.assign_ptr(OB_SYS_TENANT_NAME,
@@ -983,7 +1047,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
       ObResultSetFetcher *rs_fetcher = NULL;
       ObTableEntry *entry = NULL;
       ObProxyPartitionLocation pl;
-      if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, name))) {
+      if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, name, false, cluster_version))) {
         LOG_WARN("fail to get table entry sql", K(sql), K(ret));
       } else if (OB_FAIL(raw_client.sync_raw_execute(sql, timeout_ms, resp))) {
         LOG_WARN("fail to sync raw execute", K(sql), K(resp), K(timeout_ms), K(ret));
@@ -997,7 +1061,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
         LOG_WARN("rs fetcher is NULL", K(ret));
       } else if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(name, 0, OB_DEFAULT_CLUSTER_ID, entry))) {
         LOG_WARN("fail to alloc and init table entry", K(name), K(ret));
-      } else if (OB_FAIL(ObRouteUtils::fetch_table_entry(*rs_fetcher, *entry))) {
+      } else if (OB_FAIL(ObRouteUtils::fetch_table_entry(*rs_fetcher, *entry, cluster_version))) {
         LOG_WARN("fail to fetch one table entry info", K(ret));
       } else if (OB_FAIL(entry->get_random_servers(pl))) {
         LOG_WARN("fail to get random servers", K(ret));

@@ -33,8 +33,8 @@ enum
 const static ObString &column_name = ObString::make_string("database()");
 const static EMySQLFieldType column_type = OB_MYSQL_TYPE_VARCHAR;
 
-ObSelectDatabaseHandler::ObSelectDatabaseHandler(ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit)
-  : ObCmdHandler(buf, pkg_seq, memory_limit)
+ObSelectDatabaseHandler::ObSelectDatabaseHandler(ObMIOBuffer *buf, ObCmdInfo &info)
+  : ObCmdHandler(buf, info)
 {
 }
 
@@ -100,12 +100,13 @@ int ObSelectDatabaseHandler::dump_payload(const ObString &logic_database_name)
   return ret;
 }
 
-int ObSelectDatabaseHandler::select_database_cmd_callback(ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit, const ObString &logic_database_name)
+int ObSelectDatabaseHandler::select_database_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
+                                                          const ObString &logic_database_name)
 {
   int ret = OB_SUCCESS;
   ObSelectDatabaseHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObSelectDatabaseHandler(buf, pkg_seq, memory_limit))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObSelectDatabaseHandler(buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     ERROR_CMD("fail to new ObSelectDatabaseHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {

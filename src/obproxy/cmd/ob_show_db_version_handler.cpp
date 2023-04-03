@@ -42,8 +42,8 @@ static const EMySQLFieldType column_type[OB_CC_MAX_DATABASE_COLUMN_ID] = {
     OB_MYSQL_TYPE_VARCHAR
 };
 
-ObShowDBVersionHandler::ObShowDBVersionHandler(ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit)
-  : ObCmdHandler(buf, pkg_seq, memory_limit)
+ObShowDBVersionHandler::ObShowDBVersionHandler(ObMIOBuffer *buf, ObCmdInfo &info)
+  : ObCmdHandler(buf, info)
 {
 }
 
@@ -111,14 +111,14 @@ int ObShowDBVersionHandler::dump_db_version(const ObString &logic_tenant_name, c
   return ret;
 }
 
-int ObShowDBVersionHandler::show_db_version_cmd_callback(ObMIOBuffer *buf, uint8_t pkg_seq, int64_t memory_limit,
+int ObShowDBVersionHandler::show_db_version_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
                                                          const ObString &logic_tenant_name,
                                                          const ObString &logic_db_name)
 {
   int ret = OB_SUCCESS;
   ObShowDBVersionHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObShowDBVersionHandler(buf, pkg_seq, memory_limit))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObShowDBVersionHandler(buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     ERROR_CMD("fail to new ObShowDBVersionHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {

@@ -35,6 +35,7 @@
 #include "lib/container/ob_se_array.h"
 #include "lib/lock/ob_drw_lock.h"
 #include "utils/ob_proxy_lib.h"
+#include "lib/net/ob_addr.h"
 
 namespace oceanbase
 {
@@ -45,7 +46,8 @@ namespace omt
 
 struct AddrStruct
 {
-  uint32_t ip_;
+  common::ObAddr addr_;
+  uint32_t v4_;
   uint32_t net_;
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
@@ -53,35 +55,40 @@ struct AddrStruct
 
 class ObWhiteListTableProcessor
 {
+typedef common::hash::ObHashMap<common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH>, common::ObSEArray<AddrStruct, 4> > WhiteListHashMap;
 public:
   ObWhiteListTableProcessor() : index_(0), white_list_lock_(obsys::WRITE_PRIORITY) {}
   ~ObWhiteListTableProcessor() {}
 
   int init();
   bool can_ip_pass(common::ObString &cluster_name, common::ObString &tenant_name,
-                   common::ObString &user_name, uint32_t src_ip, bool is_big_endian);
-  bool can_ip_pass(common::ObString &cluster_name, common::ObString &tenant_name, common::ObString &user_name, char *ip);
+                   common::ObString &user_name, const struct sockaddr& addr);
   int set_ip_list(common::ObString &cluster_name, common::ObString &tenant_name, common::ObString &ip_list);
   int delete_ip_list(common::ObString &cluster_name, common::ObString &tenant_name);
   void inc_index();
   void print_config();
+  WhiteListHashMap& get_backup_hashmap() { return addr_hash_map_array_[(index_ + 1) % 2]; }
+  void clean_hashmap(WhiteListHashMap& whitelist_map);
 private:
   int32_t ip_to_int(char *addr, uint32_t &value);
   int backup_hash_map();
   uint32_t to_little_endian(uint32_t value);
+  bool can_ipv4_pass(common::ObString &cluster_name, common::ObString &tenant_name,
+                     common::ObString &user_name, const struct sockaddr& in_addr);
+  bool can_ipv6_pass(common::ObString &cluster_name, common::ObString &tenant_name,
+                     common::ObString &user_name, const struct sockaddr& in6_addr);
 private:
   static int execute(void *arg);
-  static int commit(bool is_success);
+  static int commit(void* arg, bool is_success);
 
 private:
-  typedef common::hash::ObHashMap<common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH>, common::ObSEArray<AddrStruct, 4> > WhiteListHashMap;
   WhiteListHashMap addr_hash_map_array_[2];
   int64_t index_;
 private:
   common::DRWLock white_list_lock_;
 };
 
-ObWhiteListTableProcessor &get_global_white_list_table_processor();
+extern ObWhiteListTableProcessor &get_global_white_list_table_processor();
 
 } // end of omt
 } // end of obproxy

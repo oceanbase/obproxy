@@ -25,6 +25,9 @@
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
 #include "proxy/client/ob_mysql_proxy.h"
 #include "obutils/ob_async_common_task.h"
+#include "lib/container/ob_array_iterator.h"
+#include "lib/container/ob_se_array_iterator.h"
+#include "lib/encrypt/ob_encrypted_helper.h"
 
 using namespace obsys;
 using namespace oceanbase::common;
@@ -44,7 +47,8 @@ namespace obutils
 {
 ObResourcePoolProcessor g_rp_processor;
 
-const static char *CHEK_CLUSTER_ROLE_SQL    =
+const static char *CHECK_VERSION_SQL = "SELECT ob_version() AS cluster_version";
+const static char *CHEK_CLUSTER_INFO_SQL    =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster_role, cluster_status FROM oceanbase.%s LIMIT 1";
 const static char *OBPROXY_V_DATABASE_TNAME = "v$ob_cluster";
 const static char *INIT_SS_INFO_SQL         =
@@ -52,6 +56,13 @@ const static char *INIT_SS_INFO_SQL         =
     "FROM oceanbase.%s ss left join oceanbase.%s zs "
     "ON zs.zone = ss.zone "
     "WHERE ss.svr_port > 0 ORDER BY ss.zone LIMIT %ld;";
+const static char *INIT_SS_INFO_SQL_V4 =
+    "SELECT /*READ_CONSISTENCY(WEAK)*/ parameters.value as cluster, zs.zone AS zone, zs.status AS zone_status, ss.status AS server_status, "
+    "zs.region AS region, zs.idc AS spare4, zs.type AS spare5, ss.svr_ip AS svr_ip, ss.sql_port AS svr_port, "
+    "ss.start_service_time is not null AS start_service_time, ss.stop_time is not null as stop_time "
+    "FROM oceanbase.%s ss left join oceanbase.%s zs "
+    "ON zs.zone = ss.zone join V$OB_PARAMETERS parameters "
+    "WHERE ss.svr_port > 0 and parameters.name = 'cluster' ORDER BY ss.zone LIMIT %ld;";
 
 const static char *PRIMARY_ROLE             = "PRIMARY";
 const static char *ROLE_VALID               = "VALID";
@@ -219,14 +230,15 @@ int ObIDCListFetchCont::init_task()
   return ret;
 }
 
-//---------------------ObClusterCheckRoleCont---------------------//
-class ObClusterRoleCheckCont : public ObAsyncCommonTask
+//---------------------ObCheckVersionCont-------------------------//
+class ObCheckVersionCont : public ObAsyncCommonTask
 {
 public:
-  ObClusterRoleCheckCont(ObClusterResource *cr, ObContinuation *cb_cont, ObEThread *submit_thread)
+  ObCheckVersionCont(ObClusterResource *cr, const int64_t cluster_id,
+                       ObContinuation *cb_cont, ObEThread *submit_thread)
     : ObAsyncCommonTask(cb_cont->mutex_, "cluster_role_check_task", cb_cont, submit_thread),
-      check_result_(false), cr_(cr) {}
-  virtual ~ObClusterRoleCheckCont() {}
+      check_result_(false), cr_(cr), cluster_id_(cluster_id) {}
+  virtual ~ObCheckVersionCont() {}
 
   virtual void destroy();
   virtual int init_task();
@@ -236,10 +248,11 @@ public:
 private:
   bool check_result_;
   ObClusterResource *cr_;
-  DISALLOW_COPY_AND_ASSIGN(ObClusterRoleCheckCont);
+  int64_t cluster_id_;
+  DISALLOW_COPY_AND_ASSIGN(ObCheckVersionCont);
 };
 
-void ObClusterRoleCheckCont::destroy()
+void ObCheckVersionCont::destroy()
 {
   if (NULL != cr_) {
     // inc_ref() in add_async_task()
@@ -249,12 +262,100 @@ void ObClusterRoleCheckCont::destroy()
   ObAsyncCommonTask::destroy();
 }
 
-int ObClusterRoleCheckCont::init_task()
+int ObCheckVersionCont::init_task()
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(cr_->mysql_proxy_.async_read(this, CHECK_VERSION_SQL, pending_action_))) {
+    LOG_WARN("fail to async read", K(ret));
+  } else if (OB_ISNULL(pending_action_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("pending action can not be NULL", K_(pending_action), K(ret));
+  }
+
+  return ret;
+}
+
+int ObCheckVersionCont::finish_task(void *data)
+{
+  int ret = OB_SUCCESS;
+  const ObString &cluster_name = cr_->cluster_info_key_.cluster_name_.config_string_;
+  if (OB_ISNULL(data)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("data is null, fail to check clsuter version", K(cluster_name), K(ret));
+  } else {
+    ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
+    ObMysqlResultHandler handler;
+    handler.set_resp(resp);
+    if (OB_FAIL(handler.next())) {
+      check_result_ = true;
+      ret = OB_SUCCESS;
+    } else {
+      ObString cluster_version;
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(handler, "cluster_version", cluster_version);
+      int64_t version = 0;
+      for (int64_t i = 0; i < cluster_version.length() && cluster_version[i] != '.'; i++) {
+        version = version * 10 + cluster_version[i] - '0';
+      }
+
+      cr_->cluster_version_ = version;
+
+      if (OB_SUCC(ret)) {
+        if (OB_UNLIKELY(OB_ITER_END != handler.next())) { // check if this is only one
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WARN("fail to get cluster version, there is more than one record", K(ret));
+        } else {
+          check_result_ = true;
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+inline void *ObCheckVersionCont::get_callback_data()
+{
+  return static_cast<void *>(&check_result_);
+}
+
+//---------------------ObClusterCheckRoleCont---------------------//
+class ObClusterInfoCheckCont : public ObAsyncCommonTask
+{
+public:
+  ObClusterInfoCheckCont(ObClusterResource *cr, const int64_t cluster_id,
+                       ObContinuation *cb_cont, ObEThread *submit_thread)
+    : ObAsyncCommonTask(cb_cont->mutex_, "cluster_role_check_task", cb_cont, submit_thread),
+      check_result_(false), cr_(cr), cluster_id_(cluster_id) {}
+  virtual ~ObClusterInfoCheckCont() {}
+
+  virtual void destroy();
+  virtual int init_task();
+  virtual int finish_task(void *data);
+  virtual void *get_callback_data();
+
+private:
+  bool check_result_;
+  ObClusterResource *cr_;
+  int64_t cluster_id_;
+  DISALLOW_COPY_AND_ASSIGN(ObClusterInfoCheckCont);
+};
+
+void ObClusterInfoCheckCont::destroy()
+{
+  if (NULL != cr_) {
+    // inc_ref() in add_async_task()
+    cr_->dec_ref();
+    cr_ = NULL;
+  }
+  ObAsyncCommonTask::destroy();
+}
+
+int ObClusterInfoCheckCont::init_task()
 {
   int ret = OB_SUCCESS;
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
-  int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, CHEK_CLUSTER_ROLE_SQL, OBPROXY_V_DATABASE_TNAME);
+  int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, CHEK_CLUSTER_INFO_SQL, OBPROXY_V_DATABASE_TNAME);
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill sql", K(len), K(ret));
@@ -268,7 +369,7 @@ int ObClusterRoleCheckCont::init_task()
   return ret;
 }
 
-int ObClusterRoleCheckCont::finish_task(void *data)
+int ObClusterInfoCheckCont::finish_task(void *data)
 {
   int ret = OB_SUCCESS;
   const ObString &cluster_name = cr_->cluster_info_key_.cluster_name_.config_string_;
@@ -301,16 +402,23 @@ int ObClusterRoleCheckCont::finish_task(void *data)
         if (OB_UNLIKELY(OB_ITER_END != handler.next())) { // check if this is only one
           ret = OB_ERR_UNEXPECTED;
           LOG_WARN("fail to get cluster role, there is more than one record", K(ret));
-        } else if (OB_UNLIKELY(0 != cluster_role.case_compare(PRIMARY_ROLE))
-                   || OB_UNLIKELY(0 != cluster_status.case_compare(ROLE_VALID))) {
-          ret = OB_OBCONFIG_APPNAME_MISMATCH;
-          LOG_WARN("fail to check cluster role", "expected cluster role", PRIMARY_ROLE,
-                   "remote cluster role", cluster_role,
-                   "expected cluster status", ROLE_VALID,
-                   "remore cluster status", cluster_status, K(ret));
+        } else if (OB_DEFAULT_CLUSTER_ID == cluster_id_
+            && get_global_proxy_config().with_config_server_
+            && get_global_proxy_config().enable_standby) {
+          if (OB_UNLIKELY(0 != cluster_role.case_compare(PRIMARY_ROLE))
+                    || OB_UNLIKELY(0 != cluster_status.case_compare(ROLE_VALID))) {
+            ret = OB_OBCONFIG_APPNAME_MISMATCH;
+            LOG_WARN("fail to check cluster role", "expected cluster role", PRIMARY_ROLE,
+                    "remote cluster role", cluster_role,
+                    "expected cluster status", ROLE_VALID,
+                    "remote cluster status", cluster_status, K(ret));
+          } else {
+            check_result_ = true;
+          }
         } else {
           check_result_ = true;
         }
+
       }
     }
   }
@@ -318,7 +426,7 @@ int ObClusterRoleCheckCont::finish_task(void *data)
   return ret;
 }
 
-inline void *ObClusterRoleCheckCont::get_callback_data()
+inline void *ObClusterInfoCheckCont::get_callback_data()
 {
   return static_cast<void *>(&check_result_);
 }
@@ -360,10 +468,18 @@ int ObServerStateInfoInitCont::init_task()
   int ret = OB_SUCCESS;
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
-  int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL,
-                         OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME,
-                         OB_ALL_VIRTUAL_ZONE_STAT_TNAME,
-                         INT64_MAX);
+  int64_t len = 0;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cr_->cluster_version_)) {
+    len = snprintf(sql, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL,
+                          OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME,
+                          OB_ALL_VIRTUAL_ZONE_STAT_TNAME,
+                          INT64_MAX);
+  } else {
+    len = snprintf(sql, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL_V4,
+                          DBA_OB_SERVERS_VNAME,
+                          DBA_OB_ZONES_VNAME,
+                          INT64_MAX);
+  }
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill sql", K(len), K(ret));
@@ -396,7 +512,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
     const int64_t MAX_DISPLAY_STATUS_LEN = 64;
     char display_status_str[MAX_DISPLAY_STATUS_LEN];
     ObServerStatus::DisplayStatus server_status = ObServerStatus::OB_DISPLAY_MAX;
-    char ip_str[OB_IP_STR_BUFF];
+    char ip_str[MAX_IP_ADDR_LENGTH];
     int64_t port = 0;
     int64_t tmp_real_str_len = 0;
     int64_t start_service_time = 0;
@@ -425,10 +541,15 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       server_state.reset();
       zone_state.reset();
 
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cr_->cluster_version_)) {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "is_merging", ss_info.is_merging_, int64_t);
+      } else {
+       ss_info.is_merging_ = 0;
+      }
+
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "zone", zone_name);
-      PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "is_merging", ss_info.is_merging_, int64_t);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "zone_status", zone_status);
-      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "svr_ip", ip_str, OB_IP_STR_BUFF, tmp_real_str_len);
+      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "svr_ip", ip_str, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "svr_port", port, int64_t);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "start_service_time", start_service_time, int64_t);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "stop_time", stop_time, int64_t);
@@ -533,7 +654,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
             ret = OB_SUCCESS;
             continue;
           } else if (OB_ISNULL(ObServerStateRefreshUtils::get_zone_info_ptr(zones_state, zone_name))) {
-            LOG_INFO("this server can not find it's zone, maybe it's zone has been "		
+            LOG_INFO("this server can not find it's zone, maybe it's zone has been "
                      "deleted, so treat this server as deleted also", K(server_state), K(zone_name), K(zones_state));
             ret = OB_SUCCESS;
             continue;
@@ -562,7 +683,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
     for (int i = 0; (OB_SUCC(ret)) && (i < zone_names.count()); ++i) {
       ObString &each_zone_name = zone_names.at(i);
       ObServerStateInfo &each_servers_state = servers_state.at(i);
-      if (OB_ISNULL(each_servers_state.zone_state_ = 
+      if (OB_ISNULL(each_servers_state.zone_state_ =
             ObServerStateRefreshUtils::get_zone_info_ptr(zones_state, each_zone_name))) {
         ret = OB_INVALID_ARGUMENT;
         LOG_WARN("unexpected situation, the corresponding zone_state has been searched before.",
@@ -833,10 +954,15 @@ int ObClusterResourceCreateCont::add_async_task()
                                                            this, &self_ethread());
         }
         break;
-      case CHECK_CLUSTER_ROLE:
-        LOG_INFO("will add CHECK_CLUSTER_ROLE task", K(this), K_(cluster_name), K_(cluster_id));
+      case CHECK_VERSION:
+        LOG_INFO("will add CHECK_VERSION task", K(this), K_(cluster_name), K_(cluster_id));
         created_cr_->inc_ref();
-        async_cont = new(std::nothrow) ObClusterRoleCheckCont(created_cr_, this, &self_ethread());
+        async_cont = new(std::nothrow) ObCheckVersionCont(created_cr_, cluster_id_, this, &self_ethread());
+        break;
+      case CHECK_CLUSTER_INFO:
+        LOG_INFO("will add CHECK_CLUSTER_INFO task", K(this), K_(cluster_name), K_(cluster_id));
+        created_cr_->inc_ref();
+        async_cont = new(std::nothrow) ObClusterInfoCheckCont(created_cr_, cluster_id_, this, &self_ethread());
         break;
       case INIT_SS_INFO:
         LOG_INFO("will add  INIT_SS_INFO task", K(this), K_(cluster_name), K_(cluster_id));
@@ -1060,14 +1186,17 @@ int ObClusterResourceCreateCont::handle_async_task_complete(void *data)
     result = *(static_cast<bool *>(data));
     if (result) {
       if (INIT_RS == init_status_) {
+        init_status_ = CHECK_VERSION;
+      } else if (CHECK_VERSION == init_status_) {
         if (OB_DEFAULT_CLUSTER_ID == cluster_id_
             && get_global_proxy_config().with_config_server_
-            && get_global_proxy_config().enable_standby) {
-          init_status_ = CHECK_CLUSTER_ROLE;
+            && get_global_proxy_config().enable_standby
+            && IS_CLUSTER_VERSION_LESS_THAN_V4(created_cr_->cluster_version_)) {
+          init_status_ = CHECK_CLUSTER_INFO;
         } else {
           init_status_ = INIT_SS_INFO;
         }
-      } else if (CHECK_CLUSTER_ROLE == init_status_) {
+      } else if (CHECK_CLUSTER_INFO == init_status_) {
         init_status_ = INIT_SS_INFO;
       } else if (INIT_SS_INFO == init_status_) {
         init_status_ = INIT_IDC_LIST;
@@ -1102,7 +1231,7 @@ int ObClusterResourceCreateCont::handle_async_task_complete(void *data)
         LOG_WARN("fail to add rslist fetch task", K_(cluster_name), K(ret));
         init_status_ = old_status;
       }
-    } else if (CHECK_CLUSTER_ROLE == init_status_) {
+    } else if (CHECK_CLUSTER_INFO == init_status_) {
       // 2. master cluster role is not primary, try to loop all sub cluster rs list
       result = true;
       const bool is_rslist = false;
@@ -1350,7 +1479,7 @@ int ObClusterResourceCreateCont::build()
 
   if (OB_SUCC(ret) && INIT_BORN == init_status_) {
     if (OB_FAIL(created_cr_->init_local_config(rp_processor_.config_))) {
-      LOG_WARN("fail to build local");
+      LOG_WARN("fail to build local", K(ret));
     } else {
       init_status_ = INIT_RS;
     }
@@ -1393,13 +1522,7 @@ int ObClusterResourceCreateCont::build()
         } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list, is_rslist))) {
           LOG_WARN("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
         } else {
-          if (OB_DEFAULT_CLUSTER_ID == cluster_id_
-              && get_global_proxy_config().with_config_server_
-              && get_global_proxy_config().enable_standby) {
-            init_status_ = CHECK_CLUSTER_ROLE;
-          } else {
-            init_status_ = INIT_SS_INFO;
-          }
+          init_status_ = CHECK_VERSION;
           LOG_DEBUG("try next status",
                    K_(cluster_name), K_(cluster_id), K(new_failure_count), K(rs_list), K(is_rslist_from_local_), K(init_status_));
         }
@@ -1407,18 +1530,22 @@ int ObClusterResourceCreateCont::build()
     }
   }
 
-  if (OB_SUCC(ret) && CHECK_CLUSTER_ROLE == init_status_) {
-    int64_t cluster_id = OB_DEFAULT_CLUSTER_ID;
-    ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
-    if (OB_FAIL(cs_processor.get_master_cluster_id(cluster_name_, cluster_id)
-        || OB_DEFAULT_CLUSTER_ID == cluster_id)) {
-      // mayby no master on config server, here try a cluster rs list by random
-      const bool is_rslist = false;
-      ObSEArray<ObAddr, 5> rs_list;
-      if (OB_FAIL(cs_processor.get_next_master_cluster_rslist(cluster_name_, rs_list))) {
-        LOG_WARN("fail to get next master cluster rslist", K_(cluster_name));
-      } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list, is_rslist))) {
-        LOG_WARN("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
+  if (OB_SUCC(ret) && CHECK_CLUSTER_INFO == init_status_) {
+    if (OB_DEFAULT_CLUSTER_ID == cluster_id_
+        && get_global_proxy_config().with_config_server_
+        && get_global_proxy_config().enable_standby) {
+      int64_t cluster_id = OB_DEFAULT_CLUSTER_ID;
+      ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
+      if (OB_FAIL(cs_processor.get_master_cluster_id(cluster_name_, cluster_id)
+          || OB_DEFAULT_CLUSTER_ID == cluster_id)) {
+        // mayby no master on config server, here try a cluster rs list by random
+        const bool is_rslist = false;
+        ObSEArray<ObAddr, 5> rs_list;
+        if (OB_FAIL(cs_processor.get_next_master_cluster_rslist(cluster_name_, rs_list))) {
+          LOG_WARN("fail to get next master cluster rslist", K_(cluster_name));
+        } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list, is_rslist))) {
+          LOG_WARN("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
+        }
       }
     }
 
@@ -1428,7 +1555,8 @@ int ObClusterResourceCreateCont::build()
   }
 
   if (OB_SUCC(ret)
-      && (INIT_SYSVAR == init_status_
+      && (CHECK_VERSION == init_status_
+          || INIT_SYSVAR == init_status_
           || INIT_SS_INFO == init_status_
           || INIT_IDC_LIST == init_status_)) {
     if (OB_FAIL(add_async_task())) {
@@ -1464,6 +1592,8 @@ int ObClusterResource::init(const common::ObString &cluster_name, int64_t cluste
   } else if (OB_FAIL(pending_list_.init("cr init pending list",
           reinterpret_cast<int64_t>(&(reinterpret_cast<ObClusterResourceCreateCont *> (0))->link_)))) {
     LOG_WARN("fail to init pending list", K(ret));
+  } else if (OB_FAIL(alive_addr_set_.create(4))) {
+    LOG_WARN("alive_addr_set create failed", K(ret));
   } else {
     is_inited_ = true;
     version_ = version;
@@ -1492,10 +1622,34 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
   int64_t timeout_ms = usec_to_msec(config.short_async_task_timeout_);
   const ObString user_name(ObProxyTableInfo::READ_ONLY_USERNAME);
   const ObString database(ObProxyTableInfo::READ_ONLY_DATABASE);
-  ObString password(get_global_proxy_config().observer_sys_password.str());
-  ObString password1(get_global_proxy_config().observer_sys_password1.str());
+  ObString cluster_name = cluster_info_key_.cluster_name_.config_string_;
+  ObConfigItem item;
+  char password[ENC_STRING_BUF_LEN];
+  char password1[ENC_STRING_BUF_LEN];
+  memset(password, 0, sizeof (password));
+  memset(password1, 0, sizeof (password1));
 
-  if (OB_FAIL(mysql_proxy_.init(timeout_ms, user_name, password, database, password1))) {
+  ObVipAddr addr;
+  if (OB_FAIL(get_global_config_processor().get_proxy_config(
+          addr, cluster_name, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD, item))) {
+    LOG_WARN("get observer_sys_password config failed", K(cluster_name), K(ret));
+  } else {
+    MEMCPY(password, item.str(), strlen(item.str()));
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+            addr, cluster_name, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD1, item))) {
+      LOG_WARN("get observer_sys_password1 config failed", K(cluster_name), K(ret));
+    } else {
+      MEMCPY(password1, item.str(), strlen(item.str()));
+    }
+  }
+
+
+  if (OB_FAIL(ret)) {
+    // do nothing
+  } else if (OB_FAIL(mysql_proxy_.init(timeout_ms, user_name, password, database, cluster_name, password1))) {
     LOG_WARN("fail to init mysql proxy", K(ret));
   } else if (OB_FAIL(rebuild_mysql_client_pool(
              get_global_resource_pool_processor().get_default_cluster_resource()))) {
@@ -1542,24 +1696,42 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
 int ObClusterResource::init_server_state_processor(const ObResourcePoolConfig &config)
 {
   int ret = OB_SUCCESS;
+  ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
+  uint64_t last_rs_list_hash = 0;
   bool is_metadb = (0 == cluster_info_key_.cluster_name_.get_string().case_compare(OB_META_DB_CLUSTER_NAME));
-  if (OB_ISNULL(ss_refresh_cont_ = op_alloc(ObServerStateRefreshCont))) {
+  if (OB_FAIL(cs_processor.get_rs_list_hash(cluster_info_key_.cluster_name_.config_string_,
+                                            cluster_info_key_.cluster_id_, last_rs_list_hash))) {
+    LOG_WARN("fail to get_last_rs_list_hash", K_(cluster_info_key), K(ret));
+  } else if (OB_ISNULL(ss_refresh_cont_ = op_alloc(ObServerStateRefreshCont))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to alloc ObServerStateRefreshCont", K(ret));
-  } else if (!is_metadb && OB_FAIL(ss_refresh_cont_->init(this, config.server_state_refresh_interval_))) {
+  } else if (!is_metadb && OB_FAIL(ss_refresh_cont_->init(this, config.server_state_refresh_interval_, last_rs_list_hash))) {
     LOG_WARN("fail to init server state processor", K_(cluster_info_key), K(ret));
-  } else if (is_metadb && OB_FAIL(ss_refresh_cont_->init(this, config.metadb_server_state_refresh_interval_))) {
+  } else if (is_metadb && OB_FAIL(ss_refresh_cont_->init(this, config.metadb_server_state_refresh_interval_, last_rs_list_hash))) {
     LOG_WARN("fail to init metadb server state processor", K_(cluster_info_key), K(ret));
+  } else if (!is_metadb && OB_ISNULL(detect_server_state_cont_ = op_alloc(ObDetectServerStateCont))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to alloc ObDetectServerStateCont", K(ret));
+  } else if (!is_metadb && OB_FAIL(detect_server_state_cont_->init(this, config.server_detect_refresh_interval_))) {
+    LOG_WARN("fail to init detect server state cont", K_(config.server_detect_refresh_interval), K(ret));
   } else {
     bool imm = true;
-    if (OB_FAIL(ss_refresh_cont_->schedule_refresh_server_state(imm))){
-      LOG_WARN("fail to start refresh server state", K(ret));
+    if (OB_FAIL(ss_refresh_cont_->schedule_refresh_server_state(imm))) {
+      LOG_WARN("fail to start schedule refresh server state", K(ret));
+    } else if (!is_metadb && OB_FAIL(detect_server_state_cont_->schedule_detect_server_state())) {
+      LOG_WARN("fail to start schedule detect server state", K(ret));
     }
   }
 
   if (OB_FAIL(ret)) {
-    ss_refresh_cont_->kill_this();
-    ss_refresh_cont_ = NULL;
+    if (NULL != ss_refresh_cont_) {
+      ss_refresh_cont_->kill_this();
+      ss_refresh_cont_ = NULL;
+    }
+    if (NULL != detect_server_state_cont_) {
+      detect_server_state_cont_->kill_this();
+      detect_server_state_cont_ = NULL;
+    }
   }
   return ret;
 }
@@ -1655,6 +1827,8 @@ void ObClusterResource::destroy()
     int ret = OB_SUCCESS;
     if (OB_FAIL(stop_refresh_server_state())) {
       LOG_WARN("fail to stop refresh server state", K(ret));
+    } else if (OB_FAIL(stop_detect_server_state())) {
+      LOG_WARN("fail to stop detect server state", K(ret));
     }
     destroy_location_tenant_info();
 
@@ -1699,6 +1873,20 @@ int ObClusterResource::stop_refresh_server_state()
   return ret;
 }
 
+int ObClusterResource::stop_detect_server_state()
+{
+  int ret = OB_SUCCESS;
+  if (NULL != detect_server_state_cont_) {
+    if (OB_ISNULL(g_event_processor.schedule_imm(detect_server_state_cont_, ET_CALL, DESTROY_SERVER_STATE_EVENT))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(detect_server_state_cont), K(ret));
+    }
+    LOG_DEBUG("stop detect server state", KPC(this));
+    detect_server_state_cont_ = NULL;
+  }
+  return ret;
+}
+
 int ObClusterResource::update_sys_ldg_info(ObSysLdgInfo *sys_ldg_info)
 {
   int ret = OB_SUCCESS;
@@ -1722,53 +1910,80 @@ void ObClusterResource::destroy_location_tenant_info()
       iter != location_tenant_info_map_.end();) {
     tmp_iter = iter;
     ++iter;
-    op_free(&(*tmp_iter));
+    ObLocationTenantInfo *tmp_ptr = &(*tmp_iter);
+    tmp_ptr->dec_ref();
+    tmp_ptr = NULL;
   }
 
   location_tenant_info_map_.reset();
 }
 
-int ObClusterResource::update_location_tenant_info(ObSEArray<ObString, 4>& tenant_array,
-                                                   ObSEArray<ObString, 4>& locality_array)
+int ObClusterResource::update_location_tenant_info(ObSEArray<ObString, 4> &tenant_array,
+                                                   ObSEArray<ObString, 4> &locality_array,
+                                                   ObSEArray<ObString, 4> &primary_zone_array)
 {
   int ret = OB_SUCCESS;
-  if (tenant_array.count() != 0 && (tenant_array.count() == locality_array.count())) {
+
+  int64_t tenant_num = tenant_array.count();
+  int64_t locality_num = locality_array.count();
+  int64_t primary_zone_num = primary_zone_array.count();
+
+  if (tenant_num != 0
+      && (tenant_num == locality_num
+          && tenant_num == primary_zone_num)) {
     DRWLock::WRLockGuard lock(location_tenant_info_lock_);
     ObLocationTenantInfoHashMap::iterator tmp_iter;
     for (ObLocationTenantInfoHashMap::iterator iter = location_tenant_info_map_.begin();
-        iter != location_tenant_info_map_.end();) {
+         iter != location_tenant_info_map_.end();) {
       tmp_iter = iter;
       ++iter;
-      op_free(&(*tmp_iter));
+      ObLocationTenantInfo *tmp_ptr = &(*tmp_iter);
+      tmp_ptr->dec_ref();
+      tmp_ptr = NULL;
     }
 
     location_tenant_info_map_.reset();
+    LOG_DEBUG("reset location tenant info map done");
 
     for (int64_t i = 0; OB_SUCC(ret) && i < tenant_array.count(); i++) {
       ObString &tenant_name = tenant_array.at(i);
       ObString &locality = locality_array.at(i);
-      ObLocationTenantInfo *info = op_alloc(ObLocationTenantInfo);
-      if (OB_ISNULL(info)) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("update location tenant info allo memory failed", K(ret));
-      } else if (tenant_name.length() >= OB_MAX_TENANT_NAME_LENGTH) {
+      ObString &primary_zone = primary_zone_array.at(i);
+
+      if (tenant_name.length() >= OB_MAX_TENANT_NAME_LENGTH
+          || primary_zone.length() >= MAX_ZONE_LIST_LENGTH) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("tenant_name is too long", K(ret), K(tenant_name));
+        LOG_WARN("tenant name or primary zone string oversize", K(ret), K(tenant_name), K(primary_zone));
       } else {
-        MEMCPY(info->tenant_name_str_, tenant_name.ptr(), tenant_name.length());
-        info->tenant_name_.assign_ptr(info->tenant_name_str_, tenant_name.length());
-        info->version_ = locality.hash();
-        if (OB_FAIL(location_tenant_info_map_.unique_set(info))) {
-          LOG_ERROR("fail to add location tenant info, already exist, never happen",
-              K(tenant_name), K_(cluster_info_key));
-          if (NULL != info) {
-            op_free(info);
+        ObLocationTenantInfo *info = NULL;
+        if (OB_ISNULL(info = op_alloc(ObLocationTenantInfo))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WARN("update location tenant info alloc memory failed", K(ret));
+        } else {
+          info->inc_ref();
+          MEMCPY(info->tenant_name_str_, tenant_name.ptr(), tenant_name.length());
+          info->tenant_name_.assign_ptr(info->tenant_name_str_, tenant_name.length());
+          info->version_ = locality.hash();
+
+          // cut origin primary zone string to priority array & weight array
+          if (OB_FAIL(info->resolve_location_tenant_info_primary_zone(primary_zone))) {
+            LOG_ERROR("fail to resolve location tenant info primary zone", K(ret), K(primary_zone), K(tenant_name));
+          } else if (OB_FAIL(location_tenant_info_map_.unique_set(info))) {
+            LOG_ERROR("fail to add location tenant info, already exist, never happen",
+                      K(tenant_name), K_(cluster_info_key));
+          } else {
+            LOG_DEBUG("succ to add tenant location info to map", KPC(info));
+          }
+
+          if (OB_FAIL(ret) && OB_NOT_NULL(info)) {
+            info->dec_ref();
             info = NULL;
           }
         }
       }
-    }
-  }
+    } // for
+  } // if in wlock
+
   return ret;
 }
 
@@ -1813,13 +2028,74 @@ uint64_t ObClusterResource::get_location_tenant_version(const ObString &tenant_n
     ObLocationTenantInfo *info = NULL;
     DRWLock::RDLockGuard lock(location_tenant_info_lock_);
     if (OB_FAIL(location_tenant_info_map_.get_refactored(tenant_name, info))) {
-      LOG_WARN("get tenant version failed", K(tenant_name));
+      if (OB_LIKELY(ret == OB_HASH_NOT_EXIST)) {
+        LOG_DEBUG("get tenant version failed", K(tenant_name));
+      } else {
+        LOG_WARN("get tenant version failed, please check", K(ret), K(tenant_name));
+      }
     } else if (NULL != info) {
       version = info->version_;
     }
   }
 
   return version;
+}
+
+int ObClusterResource::get_location_tenant_info(const ObString &tenant_name, ObLocationTenantInfo *&info_out)
+{
+  int ret = OB_SUCCESS;
+
+  if (!tenant_name.empty() && tenant_name != OB_SYS_TENANT_NAME) {
+    ObLocationTenantInfo *info = NULL;
+    DRWLock::RDLockGuard lock(location_tenant_info_lock_);
+    if (OB_FAIL(location_tenant_info_map_.get_refactored(tenant_name, info))) {
+      LOG_DEBUG("do not find location tenant info from map, maybe no right to visit table", K(ret), K(tenant_name));
+    } else if (info != NULL) {
+      info->inc_ref();
+      info_out = info;
+      LOG_DEBUG("find location tenant info from map", K(info));
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected error, get null ptr from map", K(tenant_name));
+    }
+  }
+
+  return ret;
+}
+
+void ObLocationTenantInfo::destroy()
+{
+  op_free(this);
+}
+
+/*
+ * the primary_zone from __all_tenant of each tenant could be empty/RANDOM, do not save it
+ * use the tenant location cache while no primary zone appropriately
+ */
+int ObLocationTenantInfo::resolve_location_tenant_info_primary_zone(ObString &primary_zone)
+{
+  int ret = OB_SUCCESS;
+
+  if (!primary_zone.empty()
+      && 0 != primary_zone.case_compare(OB_RANDOM_PRIMARY_ZONE)) {
+    // save origin str
+    MEMCPY(primary_zone_str_, primary_zone.ptr(), primary_zone.length());
+    primary_zone_.assign_ptr(primary_zone_str_, primary_zone.length());
+
+    // resolve to zone priority array
+    // resolve to zone weight priority array
+    if (OB_FAIL(split_weight_group(primary_zone_, primary_zone_prio_array_, primary_zone_prio_weight_array_))) {
+      LOG_WARN("fail to resolve primary zone", K(ret), K(primary_zone_));
+    } else if (primary_zone_prio_array_.count() != primary_zone_prio_weight_array_.count()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected array count check", K(tenant_name_), K(version_), K(primary_zone_prio_array_.count()),
+                                               K(primary_zone_prio_weight_array_.count()));
+    } else {
+      LOG_DEBUG("succ to resolve primary zone", KPC(this));
+    }
+  }
+
+  return ret;
 }
 
 ObResourceDeleteActor *ObResourceDeleteActor::alloc(ObClusterResource *cr)
@@ -1886,6 +2162,10 @@ bool ObResourcePoolConfig::update(const ObProxyConfig &config)
     congestion_failure_threshold_ = config.congestion_failure_threshold;
     bret = true;
   }
+  if (server_detect_refresh_interval_ != config.server_detect_refresh_interval.get()) {
+    server_detect_refresh_interval_ = config.server_detect_refresh_interval;
+    bret = true;
+  }
   return bret;
 }
 
@@ -1913,6 +2193,8 @@ int ObResourcePoolProcessor::init(ObProxyConfig &config, proxy::ObMysqlProxy &me
     // impossible
   } else if (OB_FAIL(default_cr_->init_local_config(config_))) {
     LOG_WARN("fail to build local default cluster resource", K(ret));
+  } else if (OB_FAIL(ip_set_.create(8))) {
+    LOG_WARN("ip_set create failed", K(ret));
   } else {
     default_cr_->inc_ref();
     default_sysvar_set_->inc_ref();
@@ -2184,6 +2466,7 @@ int ObResourcePoolProcessor::update_config_param()
     const int64_t server_state_refresh_interval = config_.server_state_refresh_interval_;
     const int64_t metadb_server_state_refresh_interval = config_.metadb_server_state_refresh_interval_;
     const int64_t mysql_client_timeout_ms = (config_.short_async_task_timeout_ / 1000);
+    const int64_t detect_server_state_refresh_interval = config_.server_detect_refresh_interval_;
     ObCongestionControlConfig *control_config = NULL;
     if (OB_ISNULL(control_config = op_alloc(ObCongestionControlConfig))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -2213,7 +2496,11 @@ int ObResourcePoolProcessor::update_config_param()
             LOG_WARN("fail to update metadb state refresh task interval", K(cr_iter->cluster_info_key_), K(ret));
           } else if (OB_FAIL(cr_iter->mysql_proxy_.set_timeout_ms(mysql_client_timeout_ms))) {
             LOG_WARN("fail to update mysql proxy timeout", K(mysql_client_timeout_ms), K(ret));
-          } else {}
+          } else if ((NULL != cr_iter->ss_refresh_cont_)
+            && !is_metadb
+            && OB_FAIL(cr_iter->detect_server_state_cont_->set_detect_server_state_interval(detect_server_state_refresh_interval))) {
+            LOG_WARN("fail to set detect server state interval", K(ret));
+          }
         }
       } // end for
       control_config->dec_ref();
@@ -2391,6 +2678,8 @@ int ObResourcePoolProcessor::delete_cluster_resource(const ObString &cluster_nam
       RESOURCE_POOL_INCREMENT_DYN_STAT(DELETE_CLUSTER_RESOURCE_COUNT);
       if (OB_FAIL(cr->stop_refresh_server_state())) {
         LOG_WARN("fail to stop refresh server state", K(ret));
+      } else if (OB_FAIL(cr->stop_detect_server_state())) {
+        LOG_WARN("fail to stop detect server state", K(ret));
       } else {
         // push to every work thread
         int64_t thread_count = g_event_processor.thread_count_for_type_[ET_CALL];

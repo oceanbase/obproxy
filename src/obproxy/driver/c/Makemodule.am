@@ -1,0 +1,3 @@
+obproxy_c_driver_sources:=\
+obproxy/driver/c/ob_proxy_vc_c.h\
+obproxy/driver/c/ob_proxy_vc_c.cpp

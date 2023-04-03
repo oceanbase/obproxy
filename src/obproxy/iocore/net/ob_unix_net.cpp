@@ -34,9 +34,11 @@
 #include "iocore/net/ob_unix_net.h"
 #include "iocore/net/ob_event_io.h"
 #include "iocore/net/ob_timerfd_manager.h"
+#include "obutils/ob_resource_pool_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
+using namespace oceanbase::obproxy::obutils;
 
 namespace oceanbase
 {
@@ -80,6 +82,17 @@ static inline int net_signal_hook_function(ObEThread &thread)
   return ret;
 }
 
+void send_signal_when_exit_normally()
+{
+  if (g_proxy_fatal_errcode == OB_SUCCESS) {
+    pid_t parent_pid= getppid();
+    if (parent_pid != 1) {
+      PROXY_NET_LOG(INFO, "obproxy child will send SIGUSR2 to parent", K(parent_pid));
+      kill(parent_pid, SIGUSR2);
+    }
+  }
+}
+
 void proxy_exit_once()
 {
   // no connection opened, graceful exit flag is true, graceful exit timeout, exit!!
@@ -98,7 +111,7 @@ void proxy_exit_once()
     }
     ret = OB_SUCCESS;//ignore error
   }
-  OB_LOGGER.destory_async_log_thread();
+  OB_LOGGER.destroy_async_log_thread();
   _exit(1);
 }
 
@@ -307,6 +320,7 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
 
       if (global_connections > 0) {
         if (info.graceful_exit_end_time_ >= info.graceful_exit_start_time_ && info.graceful_exit_end_time_ <= now) {
+          send_signal_when_exit_normally();
           pthread_once(&g_exit_once, proxy_exit_once);
         } else {
           int64_t thread_local_client_connections = 0;
@@ -315,6 +329,7 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
                         K(global_connections), K(thread_local_client_connections), K(g_proxy_fatal_errcode));
         }
       } else {
+        send_signal_when_exit_normally();
         pthread_once(&g_exit_once, proxy_exit_once);
       }
     } else {
@@ -347,12 +362,22 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
           PROXY_NET_LOG(WARN, "fail to close unix net vconnection", K(vc), K(close_ret));
         }
       } else {
-
+        int32_t event = EVENT_NONE;
         if (vc->get_is_force_timeout()
             || (info.graceful_exit_end_time_ >= info.graceful_exit_start_time_
                 && info.graceful_exit_end_time_ > 0
                 && info.graceful_exit_end_time_ < now)) {
           vc->next_inactivity_timeout_at_ = now; // force the connection timeout
+        }
+
+        if (now != vc->next_inactivity_timeout_at_) {
+          ObIpEndpoint ip(vc->get_remote_addr());
+          if (0 < get_global_proxy_config().server_detect_mode
+              && vc->source_type_ == ObUnixNetVConnection::VC_CONNECT
+              && OB_HASH_EXIST == get_global_resource_pool_processor().ip_set_.exist_refactored(ip)) {
+            PROXY_NET_LOG(WARN, "detect server dead, close connection", K(ip));
+            event = EVENT_ERROR;
+          }
         }
 
         // set a default inactivity timeout if one is not set
@@ -378,6 +403,8 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
                         "next_inactivity_timeout_at", hrtime_to_sec(vc->next_inactivity_timeout_at_),
                         "inactivity_timeout_in", hrtime_to_sec(vc->inactivity_timeout_in_));
           vc->handle_event(EVENT_IMMEDIATE, e);
+        } else if (EVENT_NONE != event) {
+          vc->handle_event(event, e);
         }
       }
     }

@@ -13,6 +13,7 @@
 #include "share/part/ob_part_desc.h"
 #include "common/ob_obj_cast.h"
 #include "obproxy/proxy/mysqllib/ob_proxy_session_info.h"
+#include "obproxy/proxy/route/obproxy_expr_calculator.h"
 
 
 namespace oceanbase
@@ -23,19 +24,24 @@ namespace common
 int ObPartDesc::get_part(common::ObNewRange &range,
                          common::ObIAllocator &allocator,
                          common::ObIArray<int64_t> &part_ids,
-                         ObPartDescCtx &ctx)
+                         ObPartDescCtx &ctx,
+                         common::ObIArray<int64_t> &tablet_ids)
 {
   UNUSED(range);
   UNUSED(allocator);
   UNUSED(part_ids);
   UNUSED(ctx);
+  UNUSED(tablet_ids);
   return OB_NOT_IMPLEMENT;
 }
 
-int ObPartDesc::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids)
+int ObPartDesc::get_part_by_num(const int64_t num,
+                                common::ObIArray<int64_t> &part_ids,
+                                common::ObIArray<int64_t> &tablet_ids)
 {
   UNUSED(num);
   UNUSED(part_ids);
+  UNUSED(tablet_ids);
   return OB_NOT_IMPLEMENT;
 }
 
@@ -87,9 +93,47 @@ int ObPartDesc::build_dtc_params(obproxy::proxy::ObClientSessionInfo *session_in
   return ret;
 }
 
-void ObPartDesc::set_accuracy(const ObProxyPartKeyAccuracy &accuracy)
+int ObPartDesc::cast_obj(ObObj &src_obj,
+                         ObObj &target_obj,
+                         ObIAllocator &allocator,
+                         ObPartDescCtx &ctx,
+                         ObAccuracy &accuracy)
 {
-  accuracy_ = accuracy;
+  return cast_obj(src_obj, target_obj.get_type(), target_obj.get_collation_type(), allocator, ctx, accuracy);
+}
+
+int ObPartDesc::cast_obj(ObObj &src_obj,
+                         ObObjType obj_type,
+                         ObCollationType cs_type,
+                         ObIAllocator &allocator,
+                         ObPartDescCtx &ctx,
+                         ObAccuracy &accuracy)
+{
+  int ret = OB_SUCCESS;
+  COMMON_LOG(DEBUG, "begin to cast obj", K(src_obj), K(obj_type), K(cs_type));
+
+  ObTimeZoneInfo tz_info;
+  ObDataTypeCastParams dtc_params;
+
+  if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
+                                                                            obj_type, tz_info, dtc_params))) {
+    COMMON_LOG(WARN, "fail to build dtc params with ctx session", K(ret), K(obj_type));
+  } else {
+    ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type);
+    const ObObj *res_obj = &src_obj;
+ 
+    // use src_obj as buf_obj
+    if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cs_type, cast_ctx, src_obj, src_obj))) {
+      COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(obj_type), K(cs_type));
+    } else if (ctx.need_accurate()
+               && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type, *res_obj, src_obj, res_obj))) {
+      COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj));
+    } else {
+      COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(obj_type), K(cs_type));
+    }
+  }
+
+  return ret;
 }
 
 } // end of common

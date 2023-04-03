@@ -23,8 +23,10 @@ namespace common
 class ObBucketLock
 {
 public:
-  ObBucketLock();
-  virtual ~ObBucketLock();
+  /* this function is defined for c driver client compile */
+  ObBucketLock() {}
+  /* this function is defined for c driver client compile */
+  virtual ~ObBucketLock() {}
   int init(
       const uint64_t bucket_cnt,
       const uint32_t latch_id = ObLatchIds::DEFAULT_BUCKET_LOCK,

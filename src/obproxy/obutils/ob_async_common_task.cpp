@@ -117,7 +117,7 @@ int ObAsyncCommonTask::main_handler(int event, void *data)
   return EVENT_DONE;
 }
 
-inline int ObAsyncCommonTask::handle_event_start()
+int ObAsyncCommonTask::handle_event_start()
 {
   int ret = OB_SUCCESS;
   if (action_.cancelled_) {
@@ -134,7 +134,7 @@ inline int ObAsyncCommonTask::handle_event_start()
   return ret;
 }
 
-inline int ObAsyncCommonTask::handle_event_complete(void *data)
+int ObAsyncCommonTask::handle_event_complete(void *data)
 {
   int ret = OB_SUCCESS;
   if (action_.cancelled_) {

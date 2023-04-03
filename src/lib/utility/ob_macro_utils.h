@@ -556,6 +556,8 @@ for (__typeof__((c).at(0)) *it = ((c).count() > 0 ? &(c).at(0) : NULL), *__INNER
 #define IS_NOT_INIT (OB_UNLIKELY(!is_inited_))
 #define IS_INIT (OB_LIKELY(is_inited_))
 
+#define IS_CLUSTER_VERSION_LESS_THAN_V4(version) (version < 4)
+
 #define RETRY_FUNC(stop_flag, var, func, args...) \
   do {\
     if (OB_SUCC(ret)) \

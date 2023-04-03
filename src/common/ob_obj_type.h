@@ -90,6 +90,8 @@ enum ObObjType
   ObNCharType         = 44, // nchar
   ObURowIDType        = 45, // UROWID
   ObLobType           = 46, // Oracle Lob
+  ObJsonType          = 47, // Json Type
+  ObGeometryType      = 48, // Geometry type
   ObMaxType                 // invalid type, or count of obj type
 };
 
@@ -295,7 +297,7 @@ inline bool ob_is_blob(const ObObjType type, const ObCollationType cs_type)
 inline bool is_obj_type_supported(ObObjType type)
 {
   return (type > ObNullType && type < ObUnknownType)
-          || ob_is_otimestamp_type(type); 
+          || ob_is_otimestamp_type(type) || ob_is_number_tc(type);
 }
 
 // to_string adapter

@@ -150,8 +150,7 @@ private:
 class ObShowSqlauditHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowSqlauditHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                        const ObInternalCmdInfo &info);
+  ObShowSqlauditHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowSqlauditHandler() { }
 
   int handle_show_sqlaudit(int event, event::ObEvent *e);

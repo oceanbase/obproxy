@@ -19,6 +19,13 @@
 
 namespace oceanbase
 {
+
+namespace common
+{
+class ObObj;
+class FLTObjManage;
+}
+
 namespace obproxy
 {
 namespace proxy
@@ -33,13 +40,21 @@ enum OB20AnalyzerState
   OB20_ANALYZER_MAX
 };
 
+enum OB20ReqAnalyzeState
+{
+  OB20_REQ_ANALYZE_HEAD,
+  OB20_REQ_ANALYZE_EXTRA,
+  OB20_REQ_ANALYZE_END,
+  OB20_REQ_ANALYZE_MAX
+};
+
 class ObMysqlCompressOB20Analyzer : public ObMysqlCompressAnalyzer
 {
 public:
   ObMysqlCompressOB20Analyzer()
-    : ObMysqlCompressAnalyzer(), last_ob20_seq_(0), request_id_(0), sessid_(0),
-      extra_len_(0), extra_checked_len_(0), payload_checked_len_(0), tail_checked_len_(0),
-      ob20_analyzer_state_(OB20_ANALYZER_MAX), crc64_(0), curr_compressed_ob20_header_()
+    : ObMysqlCompressAnalyzer(), last_ob20_seq_(0), request_id_(0), sessid_(0), remain_head_checked_len_(0),
+      extra_header_len_(0), extra_len_(0), extra_checked_len_(0), payload_checked_len_(0), tail_checked_len_(0),
+      ob20_analyzer_state_(OB20_ANALYZER_MAX), crc64_(0), result_(), curr_compressed_ob20_header_()
     {}
   virtual ~ObMysqlCompressOB20Analyzer() { reset(); }
 
@@ -58,6 +73,13 @@ public:
                                      const bool need_receive_completed,
                                      ObMysqlCompressedAnalyzeResult &result,
                                      ObMysqlResp &resp);
+  virtual int analyze_compress_packet_payload(event::ObIOBufferReader &reader,
+                                              ObMysqlCompressedAnalyzeResult &result);
+  int decompress_request_packet(common::ObString &req_buf,
+                                ObMysqlCompressedOB20AnalyzeResult &ob20_result);
+  int do_req_head_decode(const char* &buf_start, int64_t &buf_len);
+  int do_req_extra_decode(const char* &buf_start, int64_t &buf_len, ObMysqlCompressedOB20AnalyzeResult &ob20_result);
+    
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 protected:
@@ -72,22 +94,29 @@ protected:
 private:
   int do_header_decode(const char *start);
   int do_header_checksum(const char *header_start);
-  int do_extra_info_decode(const char *&payload_start, uint64_t &payload_len);
-  int do_body_checksum(const char *&payload_start, uint64_t &payload_len);
-  int do_body_decode(const char *&payload_start, uint64_t &payload_len, ObMysqlResp &resp);
+  int do_extra_info_decode(const char *&payload_start, int64_t &payload_len, ObMysqlResp &resp);
+  int do_body_checksum(const char *&payload_start, int64_t &payload_len);
+  int do_body_decode(const char *&payload_start, int64_t &payload_len, ObMysqlResp &resp);
   int do_analyzer_end(ObMysqlResp &resp);
+  int do_obobj_extra_info_decode(const char *buf, const int64_t len, Ob20ExtraInfo &extra_info,
+                                 common::FLTObjManage &flt_manage);
+  int do_new_extra_info_decode(const char *buf, const int64_t len, Ob20ExtraInfo &extra_info,
+                               common::FLTObjManage &flt_manage);
 
 private:
   uint8_t last_ob20_seq_;
   uint32_t request_id_;
   uint32_t sessid_;
+  int64_t remain_head_checked_len_;
+  uint32_t extra_header_len_;
   uint32_t extra_len_;
   uint32_t extra_checked_len_;
   uint32_t payload_checked_len_;
   uint32_t tail_checked_len_;
+  enum OB20ReqAnalyzeState ob20_req_analyze_state_;
   enum OB20AnalyzerState ob20_analyzer_state_;
-  char temp_buf_[4];
-  char header_buf_[MYSQL_COMPRESSED_OB20_HEALDER_LENGTH];
+  char temp_buf_[OB20_PROTOCOL_EXTRA_INFO_LENGTH];          // temp 4 extra len buffer
+  char header_buf_[MYSQL_COMPRESSED_OB20_HEALDER_LENGTH];   // temp 7+24 head buffer
   uint64_t crc64_;
   ObRespResult result_;
   ObMysqlRespAnalyzer analyzer_;

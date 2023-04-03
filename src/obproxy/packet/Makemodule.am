@@ -8,4 +8,6 @@ obproxy/packet/ob_mysql_packet_writer.cpp\
 obproxy/packet/ob_mysql_packet_reader.h\
 obproxy/packet/ob_mysql_packet_reader.cpp\
 obproxy/packet/ob_mysql_packet_util.cpp\
-obproxy/packet/ob_mysql_packet_util.h
+obproxy/packet/ob_mysql_packet_util.h\
+obproxy/packet/ob_proxy_packet_writer.h\
+obproxy/packet/ob_proxy_packet_writer.cpp

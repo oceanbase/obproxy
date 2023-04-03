@@ -107,6 +107,11 @@ public:
   common::ObZoneType zone_type_;
   bool is_merging_;
   bool is_force_congested_;
+  // The number of SQLs currently being executed by the server
+  int64_t request_sql_cnt_;
+  // The last time the request was sent
+  int64_t last_response_time_;
+  int64_t detect_fail_cnt_;
 private:
   char zone_name_buf_[common::MAX_ZONE_LENGTH];
   char region_name_buf_[common::MAX_REGION_LENGTH];
@@ -281,10 +286,13 @@ inline int ObServerStateInfo::add_addr(const char *ip, const int64_t port)
 inline ObServerStateSimpleInfo &ObServerStateSimpleInfo::operator=(const ObServerStateSimpleInfo &other)
 {
   if (this != &other) {
-    addr_.set_ipv4_addr(other.addr_.get_ipv4(), other.addr_.get_port());
+    addr_ = other.addr_;
     is_merging_ = other.is_merging_;
     is_force_congested_ = other.is_force_congested_;
     zone_type_ = other.zone_type_;
+    request_sql_cnt_ = other.request_sql_cnt_;
+    last_response_time_ = other.last_response_time_;
+    detect_fail_cnt_ = other.detect_fail_cnt_;
     if (other.zone_name_.empty()) {
       zone_name_.reset();
     } else {
@@ -321,8 +329,8 @@ inline int ObServerStateSimpleInfo::set_addr(const common::ObAddr &addr)
   if (OB_UNLIKELY(!addr.is_valid())) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_LOG(WARN, "invalid argument", K(addr), K(ret));
-  } else if (OB_UNLIKELY(!addr_.set_ipv4_addr(addr.get_ipv4(), addr.get_port()))) {
-    ret = common::OB_INVALID_ARGUMENT;
+  } else {
+    addr_ = addr;
   }
   return ret;
 }
@@ -330,7 +338,7 @@ inline int ObServerStateSimpleInfo::set_addr(const common::ObAddr &addr)
 inline int ObServerStateSimpleInfo::set_addr(const char *ip, const int64_t port)
 {
   int ret = common::OB_SUCCESS;
-  if (OB_UNLIKELY(!addr_.set_ipv4_addr(ip, static_cast<int32_t>(port)))) {
+  if (OB_UNLIKELY(!addr_.set_ip_addr(ip, static_cast<int32_t>(port)))) {
     ret = common::OB_INVALID_ARGUMENT;
   }
   return ret;
@@ -385,7 +393,10 @@ inline int64_t ObServerStateSimpleInfo::to_string(char *buf, const int64_t buf_l
        K_(idc_name),
        "zone_type", common::zone_type_to_str(zone_type_),
        K_(is_merging),
-       K_(is_force_congested));
+       K_(is_force_congested),
+       K_(request_sql_cnt),
+       K_(last_response_time),
+       K_(detect_fail_cnt));
   J_OBJ_END();
   return pos;
 }

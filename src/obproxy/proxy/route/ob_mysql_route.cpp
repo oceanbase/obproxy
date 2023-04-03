@@ -59,7 +59,8 @@ int64_t ObRouteParam::to_string(char *buf, const int64_t buf_len) const
        K_(is_need_force_flush),
        K_(tenant_version),
        K_(timeout_us),
-       K_(current_idc_name));
+       K_(current_idc_name),
+       K_(cluster_version));
   J_OBJ_END();
   return pos;
 }
@@ -435,7 +436,7 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
       param_.is_need_force_flush_ = result->is_need_force_flush_;
     }
     if (NULL != table_entry_) {
-      table_entry_->check_and_set_expire_time(param_.tenant_version_, table_entry_->is_dummy_entry());
+      table_entry_->check_and_set_expire_time(param_.tenant_version_, table_entry_->is_sys_dummy_entry());
     }
 
     result->target_entry_ = NULL;
@@ -492,35 +493,33 @@ inline int ObMysqlRoute::check_and_rebuild_call_params()
     ObSessionSysField *sys_filed = NULL;
     ObSessionUserField *user_filed = NULL;
     for (int32_t i = 0; OB_SUCC(ret) && i < call_info.param_count_; ++i) {
-      ObProxyCallParam &call_param = call_info.params_.at(i);
-      if (CALL_TOKEN_SYS_VAR == call_param.type_) {
+      ObProxyCallParam* call_param = call_info.params_.at(i);
+      if (CALL_TOKEN_SYS_VAR == call_param->type_) {
         sys_filed = NULL;
-        if (OB_FAIL(client_info.get_sys_variable(call_param.str_value_.string_, sys_filed))) {
-          LOG_INFO("fail to find sys variables", "name", call_param.str_value_.string_, K(ret));
+        if (OB_FAIL(client_info.get_sys_variable(call_param->str_value_.config_string_, sys_filed))) {
+          LOG_INFO("fail to find sys variables", "name", call_param->str_value_.config_string_, K(ret));
         } else if (NULL != sys_filed) {
-          char *buf = call_param.str_value_.buf_;
-          const int64_t max_size = call_param.str_value_.get_max_size();
+          char buf[OBPROXY_MAX_STRING_VALUE_LENGTH];
           int64_t pos = 0;
-          if (OB_FAIL(sys_filed->value_.print_sql_literal(buf, max_size, pos))) {
+          if (OB_FAIL(sys_filed->value_.print_sql_literal(buf, OBPROXY_MAX_STRING_VALUE_LENGTH, pos))) {
             LOG_INFO("fail to print sql literal", K(pos), K(i), KPC(sys_filed), K(ret));
           } else {
             ObString new_value(pos, buf);
-            call_param.str_value_.set(new_value);
+            call_param->str_value_.set_value(new_value);
           }
         }
-      } else if (CALL_TOKEN_USER_VAR == call_param.type_) {
+      } else if (CALL_TOKEN_USER_VAR == call_param->type_) {
         user_filed = NULL;
-        if (OB_FAIL(client_info.get_user_variable(call_param.str_value_.string_, user_filed))) {
-          LOG_INFO("fail to find sys variables, ignore", "name", call_param.str_value_.string_, K(ret));
+        if (OB_FAIL(client_info.get_user_variable(call_param->str_value_.config_string_, user_filed))) {
+          LOG_INFO("fail to find sys variables", K_(call_param->str_value_.config_string), K(ret));
         } else if (NULL != user_filed) {
-          char *buf = call_param.str_value_.buf_;
-          const int64_t max_size = call_param.str_value_.get_max_size();
+          char buf[OBPROXY_MAX_STRING_VALUE_LENGTH];
           int64_t pos = 0;
-          if (OB_FAIL(user_filed->value_.print_plain_str_literal(buf, max_size, pos))) {
+          if (OB_FAIL(user_filed->value_.print_plain_str_literal(buf, OBPROXY_MAX_STRING_VALUE_LENGTH, pos))) {
             LOG_INFO("fail to print sql literal, ignore", K(pos), K(i), KPC(user_filed), K(ret));
           } else {
             ObString new_value(pos, buf);
-            call_param.str_value_.set(new_value);
+            call_param->str_value_.set_value(new_value);
           }
         }
       }
@@ -664,6 +663,7 @@ inline void ObMysqlRoute::setup_partition_entry_lookup()
   part_param.set_table_entry(table_entry_);
   part_param.mysql_proxy_ = param_.mysql_proxy_;
   part_param.tenant_version_ = param_.tenant_version_;
+  part_param.cluster_version_ = param_.cluster_version_;
   if (!param_.current_idc_name_.empty()) {
     MEMCPY(part_param.current_idc_name_buf_, param_.current_idc_name_.ptr(), param_.current_idc_name_.length());
     part_param.current_idc_name_.assign_ptr(part_param.current_idc_name_buf_, param_.current_idc_name_.length());
@@ -929,6 +929,7 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       param_.need_pl_route_ = param.need_pl_route_;
       param_.is_oracle_mode_ = param.is_oracle_mode_;
       param_.is_need_force_flush_ = param.is_need_force_flush_;
+      param_.cluster_version_ = param.cluster_version_;
       if (!param.current_idc_name_.empty()) {
         MEMCPY(param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
         param_.current_idc_name_.assign_ptr(param_.current_idc_name_buf_, param.current_idc_name_.length());

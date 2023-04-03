@@ -568,6 +568,7 @@ int ObSocketManager::ssl_accept(SSL *ssl, bool &is_connected, int &tmp_code)
 {
   int ret = common::OB_SUCCESS;
 
+  ERR_clear_error();
   if (OB_ISNULL(ssl) || is_connected) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_NET_LOG(WARN, "invalid argument", K(ret), K(is_connected));
@@ -578,6 +579,11 @@ int ObSocketManager::ssl_accept(SSL *ssl, bool &is_connected, int &tmp_code)
       if (SSL_ERROR_NONE == tmp_code) {
         PROXY_NET_LOG(DEBUG, "ssl server accept succ", K(ret));
         is_connected = true;
+      } else if (SSL_ERROR_WANT_WRITE == tmp_code || SSL_ERROR_WANT_READ == tmp_code) {
+        // do nothing
+      } else if (SSL_ERROR_ZERO_RETURN == tmp_code || ERR_peek_error() == 0) {
+        ret = common::OB_SSL_ERROR;
+        PROXY_NET_LOG(WARN, "peer closed connection in ssl accept", K(ret));
       } else {
         ret = handle_ssl_error(tmp_code);
       }
@@ -593,7 +599,8 @@ int ObSocketManager::ssl_accept(SSL *ssl, bool &is_connected, int &tmp_code)
 int ObSocketManager::ssl_connect(SSL *ssl, bool &is_connected, int &tmp_code)
 {
   int ret = common::OB_SUCCESS;
-  
+
+  ERR_clear_error();
   if (OB_ISNULL(ssl) || is_connected) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_NET_LOG(WARN, "invalid argument", K(ret), K(is_connected));
@@ -604,6 +611,11 @@ int ObSocketManager::ssl_connect(SSL *ssl, bool &is_connected, int &tmp_code)
       if (SSL_ERROR_NONE == tmp_code) {
         PROXY_NET_LOG(DEBUG, "ssl client connect succ", K(ret));
         is_connected = true;
+      } else if (SSL_ERROR_WANT_WRITE == tmp_code || SSL_ERROR_WANT_READ == tmp_code) {
+        // do nothing
+      } else if (SSL_ERROR_ZERO_RETURN == tmp_code || ERR_peek_error() == 0) {
+        ret = common::OB_SSL_ERROR;
+        PROXY_NET_LOG(WARN, "peer closed connection in ssl connect", K(ret));
       } else {
         ret = handle_ssl_error(tmp_code);
       }
@@ -620,6 +632,7 @@ int ObSocketManager::ssl_read(SSL *ssl, void *buf, const size_t size,
                               int64_t &count, int &tmp_code)
 {
   int ret = common::OB_SUCCESS;
+  ERR_clear_error();
   if (OB_ISNULL(ssl) || OB_ISNULL(buf)) {
     ret = common::OB_INVALID_ARGUMENT;
   } else if (0 == size) {
@@ -642,6 +655,7 @@ int ObSocketManager::ssl_write(SSL *ssl, const void *buf, const size_t size,
                                int64_t &count, int &tmp_code)
 {
   int ret = common::OB_SUCCESS;
+  ERR_clear_error();
   if (OB_ISNULL(ssl) || OB_ISNULL(buf)) {
     ret = common::OB_INVALID_ARGUMENT;
   } else if (0 == size) {
@@ -671,12 +685,38 @@ inline int ObSocketManager::handle_ssl_error(int tmp_code)
       ret = common::OB_SSL_ERROR;
       PROXY_NET_LOG(WARN, "the ssl peer has closed", K(ret));
       break;
+    case SSL_ERROR_SYSCALL: {
+      unsigned long e = ERR_peek_error();
+      if (e == 0) {
+        ret = common::OB_SSL_ERROR;
+        PROXY_NET_LOG(WARN, "the ssl peer has closed", K(ret));
+      } else {
+        ret = ob_get_sys_errno();
+        // Shouldn't have come here, be defensive
+        if (common::OB_SUCCESS == ret) {
+          ret = common::OB_SSL_ERROR;
+        }
+        char temp_buf[512];
+        ERR_error_string_n(e, temp_buf, sizeof(temp_buf));
+        PROXY_NET_LOG(WARN, "system error happen", K(ret), K(temp_buf), K(tmp_code));
+      }
+      break;
+    }
+    case SSL_ERROR_SSL: {
+      unsigned long e = ERR_peek_error();
+      ret = common::OB_SSL_ERROR;
+      if (e == 0) {
+        PROXY_NET_LOG(WARN, "the ssl peer has closed", K(ret));
+      } else {
+        char temp_buf[512];
+        ERR_error_string_n(e, temp_buf, sizeof(temp_buf));
+        PROXY_NET_LOG(WARN, "system error happen", K(ret), K(temp_buf), K(tmp_code));
+      }
+      break;
+    }
     default:
       ret = common::OB_SSL_ERROR;
-      char temp_buf[512];
-      unsigned long e = ERR_peek_last_error();
-      ERR_error_string_n(e, temp_buf, sizeof(temp_buf));
-      PROXY_NET_LOG(WARN, "SSL error", K(e), K(temp_buf), K(errno), K(strerror(errno)));
+      PROXY_NET_LOG(WARN, "unexpected error", K(ret), K(tmp_code));
       break;
   }
 

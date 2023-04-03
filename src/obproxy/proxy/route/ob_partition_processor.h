@@ -50,7 +50,8 @@ public:
     : cont_(NULL), partition_id_(common::OB_INVALID_ID),
       force_renew_(false), is_need_force_flush_(false),
       result_(), mysql_proxy_(NULL),
-      current_idc_name_(), tenant_version_(0), table_entry_(NULL) {}
+      current_idc_name_(), tenant_version_(0),
+      cluster_version_(0), table_entry_(NULL) {}
   ~ObPartitionParam() { reset(); }
 
   void reset();
@@ -70,6 +71,7 @@ public:
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
   uint64_t tenant_version_;
+  int64_t cluster_version_;
 
 private:
   ObTableEntry *table_entry_;
@@ -95,6 +97,7 @@ inline void ObPartitionParam::reset()
   set_table_entry(NULL);
   current_idc_name_.reset();
   tenant_version_ = 0;
+  cluster_version_ = 0;
 }
 
 inline void ObPartitionParam::set_table_entry(ObTableEntry *entry)

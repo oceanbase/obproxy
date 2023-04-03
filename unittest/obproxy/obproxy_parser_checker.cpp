@@ -12,6 +12,7 @@
 
 #include "obproxy_parser_checker.h"
 #include "lib/utility/ob_print_utils.h"
+#include "obproxy/obutils/ob_proxy_sql_parser.h"
 #include <fstream>
 #include <iterator>
 #include <vector>
@@ -196,6 +197,8 @@ int main(int argc, char **argv)
       case 'c':
         if (strcmp(optarg, "utb8") == 0) {
           connection_collation = CS_TYPE_UTF8MB4_GENERAL_CI;
+        } else if (strcmp(optarg, "gb18030") == 0) {
+          connection_collation = CS_TYPE_GB18030_CHINESE_CI;
         }
         break;
       case 'r':

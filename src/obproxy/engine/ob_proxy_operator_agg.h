@@ -350,12 +350,13 @@ class ObProxyGroupUnit
 {
 public:
   ObProxyGroupUnit(common::ObIAllocator &allocator)
-    : allocator_(allocator), row_(NULL),
+    : allocator_(allocator), row_(NULL), result_fields_(NULL),
       group_values_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE),
       agg_units_(ObModIds::OB_SE_ARRAY_ENGINE, ENGINE_ARRAY_NEW_ALLOC_SIZE) {}
   ~ObProxyGroupUnit();
 
-  int init(ResultRow *row, const common::ObIArray<ObProxyGroupItem*>& group_by_exprs);
+  int init(ResultRow *row, ResultFields *result_fields,
+           const common::ObIArray<ObProxyGroupItem*>& group_by_exprs);
 
   uint64_t hash() const;
   bool operator==(const ObProxyGroupUnit &group_unit) const;
@@ -366,6 +367,7 @@ public:
   int set_agg_value();
 
   ResultRow *get_row() const { return row_; }
+  ResultFields *get_result_fields() const { return result_fields_; }
   const common::ObIArray<ObObj>& get_group_values() const { return group_values_; }
   const common::ObIArray<ObProxyAggUnit*>& get_agg_units() { return agg_units_;; }
 
@@ -385,6 +387,7 @@ public:
 private:
   common::ObIAllocator &allocator_;
   ResultRow *row_;
+  ResultFields *result_fields_;
   common::ObSEArray<ObObj, 4> group_values_;
   common::ObSEArray<ObProxyAggUnit*, 4> agg_units_;
 };

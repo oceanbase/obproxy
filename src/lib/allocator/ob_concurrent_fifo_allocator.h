@@ -21,17 +21,36 @@ namespace common
 class ObConcurrentFIFOAllocator : public common::ObIAllocator
 {
 public:
-  ObConcurrentFIFOAllocator();
-  virtual ~ObConcurrentFIFOAllocator();
+  /* this function is defined for c driver client compile */
+  ObConcurrentFIFOAllocator() {};
+  /* this function is defined for c driver client compile */
+  virtual ~ObConcurrentFIFOAllocator() {};
 public:
+  /* this function is defined for c driver client compile */
   int init(const int64_t total_limit,
            const int64_t hold_limit,
-           const int64_t page_size);
-  void destroy();
+           const int64_t page_size)
+  {
+    UNUSED(total_limit);
+    UNUSED(hold_limit);
+    UNUSED(page_size);
+    return OB_NOT_IMPLEMENT;
+  }
+  /* this function is defined for c driver client compile */
+  void destroy() {};
 public:
   void set_mod_id(const int64_t mod_id);
-  void *alloc(const int64_t size);
-  void free(void *ptr);
+  /* this function is defined for c driver client compile */
+  void *alloc(const int64_t size)
+  {
+    UNUSED(size);
+    return nullptr;
+  }
+  /* this function is defined for c driver client compile */
+  void free(void *ptr)
+  {
+    UNUSED(ptr);
+  }
   int64_t allocated();
   int64_t hold() const {return 0;}
   int64_t get_direct_alloc_count();

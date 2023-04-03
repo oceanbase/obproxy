@@ -14,11 +14,14 @@
 
 #include "ob_mysql_packet_util.h"
 #include "common/obsm_row.h"
+#include "common/obsm_utils.h"
 #include "rpc/obmysql/packet/ompk_eof.h"
 #include "rpc/obmysql/packet/ompk_ok.h"
 #include "rpc/obmysql/packet/ompk_error.h"
 #include "rpc/obmysql/packet/ompk_resheader.h"
 #include "packet/ob_mysql_packet_writer.h"
+#include "obproxy/engine/ob_proxy_operator_result.h"
+#include "obproxy/iocore/eventsystem/ob_buf_allocator.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -69,14 +72,37 @@ int ObMysqlPacketUtil::encode_header(ObMIOBuffer &write_buf,
   return ret;
 }
 
+int ObMysqlPacketUtil::encode_field_packet(ObMIOBuffer &write_buf,
+                                           uint8_t &seq,
+                                           ObMySQLField &field) {
+  int ret = OB_SUCCESS;
+  OMPKField field_packet(field);
+  field_packet.set_seq(seq++);
+  if (OB_FAIL(ObMysqlPacketWriter::write_field_packet(write_buf, field_packet))) {
+    LOG_WARN("fail to write field", K(field_packet), K(field), K(ret));
+    --seq;
+  }
+  return ret;
+}
+
 int ObMysqlPacketUtil::encode_row_packet(ObMIOBuffer &write_buf,
+                                         uint8_t &seq,
+                                         const ObNewRow &row,
+                                         ObIArray<ObField> *fields)
+{
+  return encode_row_packet(write_buf, TEXT, seq, row, fields);
+}
+
+int ObMysqlPacketUtil::encode_row_packet(ObMIOBuffer &write_buf,
+                                         MYSQL_PROTOCOL_TYPE protocol_type,
                                          uint8_t &seq,
                                          const ObNewRow &row,
                                          ObIArray<ObField> *fields)
 {
   int ret = OB_SUCCESS;
 
-  OMPKRow row_packet(ObSMRow(TEXT, row, NULL, fields));
+  ObSMRow sm_row(protocol_type, row, NULL, fields);
+  OMPKRow row_packet(sm_row);
   row_packet.set_seq(seq++);
 
   if (OB_FAIL(ObMysqlPacketWriter::write_row_packet(write_buf, row_packet))) {
@@ -104,14 +130,13 @@ int ObMysqlPacketUtil::encode_eof_packet(ObMIOBuffer &write_buf,
   return ret;
 }
 
-int ObMysqlPacketUtil::encode_err_packet_buf(ObMIOBuffer &write_buf, uint8_t &seq,
-                                             const int errcode, const char *msg_buf)
+int ObMysqlPacketUtil::encode_err_packet(ObMIOBuffer &write_buf, uint8_t &seq, const int errcode, const char *msg_buf)
 {
-  return encode_err_packet_buf(write_buf, seq, errcode, ObString::make_string(msg_buf));
+  return encode_err_packet(write_buf, seq, errcode, ObString::make_string(msg_buf));
 }
 
-int ObMysqlPacketUtil::encode_err_packet_buf(ObMIOBuffer &write_buf, uint8_t &seq,
-                                             const int errcode, ObString msg_buf)
+int ObMysqlPacketUtil::encode_err_packet(ObMIOBuffer &write_buf, uint8_t &seq, const int errcode,
+                                         const ObString &msg_buf)
 {
   int ret = OB_SUCCESS;
 
@@ -129,36 +154,10 @@ int ObMysqlPacketUtil::encode_err_packet_buf(ObMIOBuffer &write_buf, uint8_t &se
   return ret;
 }
 
-int ObMysqlPacketUtil::encode_err_packet(ObMIOBuffer &write_buf, uint8_t &seq,
-                                         int errcode)
-{
-  int ret = OB_SUCCESS;
-  const int32_t MAX_MSG_BUF_SIZE = 256;
-  if (OB_SUCCESS == errcode) {
-    BACKTRACE(ERROR, (OB_SUCCESS == errcode), "BUG send error packet but err code is 0");
-    errcode = OB_ERR_UNEXPECTED;
-  }
-  char msg_buf[MAX_MSG_BUF_SIZE];
-  const char *errmsg = ob_strerror(errcode);
-  int32_t length = 0;
-  if (OB_ISNULL(errmsg)) {
-    length = snprintf(msg_buf, sizeof(msg_buf), "Unknown user error");
-  } else {
-    length = snprintf(msg_buf, sizeof(msg_buf), errmsg);
-  }
-  if (length < 0 || length >= MAX_MSG_BUF_SIZE) {
-    ret = OB_BUF_NOT_ENOUGH;
-    PROXY_LOG(WARN, "msg_buf is not enough", K(length), K(errmsg), K(ret));
-  } else {
-    ret = encode_err_packet_buf(write_buf, seq, errcode, msg_buf);
-  }
-  return ret;
-}
-
 int ObMysqlPacketUtil::encode_ok_packet(ObMIOBuffer &write_buf, uint8_t &seq,
                                         const int64_t affected_rows,
                                         const ObMySQLCapabilityFlags &capability,
-                                        uint16_t status_flag /* 0 */)
+                                        const uint16_t status_flag /* 0 */)
 {
   int ret = OB_SUCCESS;
 

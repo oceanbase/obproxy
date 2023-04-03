@@ -409,6 +409,32 @@ int ObTimeConverter::str_to_datetime(const ObString &str, const ObTimeZoneInfo *
   return ret;
 }
 
+/**
+ * @brief cast str to oracle date with format
+ *
+ * @param str input string of date
+ * @param cvrt_ctx
+ * @param value out param, oracle DATE result
+ * @return int
+ */
+int ObTimeConverter::str_to_date_oracle(const ObString &str,
+                                        const ObTimeConvertCtx &cvrt_ctx,
+                                        ObDateTime &value)
+{
+  int ret = OB_SUCCESS;
+  ObTime ob_time;
+  ObDateTime result_value = 0;
+  ObScale scale = 0;
+  if (OB_FAIL(str_to_ob_time_oracle_dfm(str, cvrt_ctx, ObDateTimeType, ob_time, scale))) {
+    LOG_WARN("failed to convert str to ob_time", K(str), K(cvrt_ctx.oracle_nls_format_));
+  } else if (OB_FAIL(ob_time_to_datetime(ob_time, cvrt_ctx.tz_info_, result_value))) {
+    LOG_WARN("convert ob_time to datetime failed", K(ret), K(ob_time));
+  } else {
+    value = result_value;
+  }
+  return ret;
+}
+
 int ObTimeConverter::str_to_datetime_format(const ObString &str, const ObString &fmt,
                                             const ObTimeZoneInfo *tz_info, int64_t &value, int16_t *scale)
 {
@@ -3111,7 +3137,7 @@ int ObTimeConverter::ob_time_to_str(const ObTime &ob_time, ObDTMode mode, int16_
 int ObTimeConverter::data_fmt_nd(char *buffer, int64_t buf_len, int64_t &pos, const int64_t n, int64_t target)
 {
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(n <= 0 || target < 0 || target > 999999)) {
+  if (OB_UNLIKELY(n <= 0 || target < 0 || target > 999999999)) {
     ret = OB_ERR_UNEXPECTED;
     LIB_TIME_LOG(ERROR, "invalid argument", K(ret), K(n), K(target));
   } else if (OB_UNLIKELY(n > buf_len - pos)) {
@@ -3698,6 +3724,8 @@ int ObTimeConverter::ob_time_to_str_oracle_dfm(const ObTime &ob_time,
             break;
           }
           case ObDFMFlag::FF: {
+            // FF default FF9 in oracle
+            int64_t scale = ObDFMFlag::FF9 - ObDFMFlag::FF1 + 1;
             if (OB_UNLIKELY(!HAS_TYPE_ORACLE(ob_time.mode_))) {
               ret = OB_INVALID_DATE_FORMAT;
             } else if (0 == scale) {

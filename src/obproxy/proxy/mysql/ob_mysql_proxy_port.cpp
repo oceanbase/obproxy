@@ -23,10 +23,16 @@ namespace obproxy
 {
 namespace proxy
 {
-ObMysqlProxyPort &get_global_proxy_port()
+ObMysqlProxyPort &get_global_proxy_ipv4_port()
 {
-  static ObMysqlProxyPort g_proxy_port;
-  return g_proxy_port;
+  static ObMysqlProxyPort g_proxy_ipv4_port;
+  return g_proxy_ipv4_port;
+}
+
+ObMysqlProxyPort &get_global_proxy_ipv6_port()
+{
+  static ObMysqlProxyPort g_proxy_ipv6_port;
+  return g_proxy_ipv6_port;
 }
 
 void ObMysqlProxyPort::reset()

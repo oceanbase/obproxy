@@ -334,7 +334,8 @@ enum ObNameId
 };
 
 // get name at runtime
-const char* get_name(int32_t id);
+/* this function is defined for c driver client compile */
+inline const char* get_name(int32_t id) {((void)(id)); return nullptr;};
 const char* get_description(int32_t id);
 } // end namespace name_id_map
 } // end namespace oceanbase

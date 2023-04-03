@@ -131,31 +131,32 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
   const bool is_need_reroute = false; //large request don't save, so can't reroute;
   // local_reader_ will consume in consume_and_compress_data(),
   //  compressed_seq_ will inc in consume_and_compress_data
-  ObProxyProtocol ob_proxy_protocol = sm_->use_compression_protocol();
-  if (PROTOCOL_OB20 == ob_proxy_protocol) {
+  ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
+  if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
     if (request_id_ > UINT24_MAX) {
       request_id_ = sm_->get_server_session()->get_next_server_request_id();
     }
 
-    ObSEArray<ObObJKV, 8> extro_info;
+    ObSEArray<ObObJKV, 3> extra_info;
+    ObSqlString sess_info_value;
     char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
-    ObMysqlClientSession *client_session = sm_->get_client_session();
-    if (!client_session->is_proxy_mysql_client_
-        && client_session->is_need_send_trace_info()
-        && is_last_segment) {
-      ObAddr client_ip = client_session->get_real_client_addr();
-      if (OB_FAIL(ObProxyTraceUtils::build_client_ip(extro_info, client_ip_buf, client_ip))) {
-        PROXY_API_LOG(WARN, "fail to build client ip", K(client_ip), K(ret));
-      } else {
-        client_session->set_already_send_trace_info(true);
-      }
-    }
+    char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
 
-    if (OB_SUCC(ret)) {
-      if (OB_FAIL(ObProto20Utils::consume_and_compress_data(local_reader_,
-                  mio_buffer_, local_reader_->read_avail(), compressed_seq_,
-                  compressed_seq_, request_id_, sm_->get_server_session()->get_server_sessid(),
-                  is_last_segment, is_need_reroute, &extro_info))) {
+    if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm_,
+                                                                client_ip_buf, MAX_IP_BUFFER_LEN,
+                                                                server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
+                                                                sess_info_value, is_last_segment))) {
+      PROXY_API_LOG(WARN, "fail to build related extra info all", K(ret));
+    } else {
+      ObMysqlServerSession *server_session = sm_->get_server_session();
+      ObMysqlClientSession *client_session = sm_->get_client_session();
+      const bool is_weak_read = (WEAK == sm_->trans_state_.get_trans_consistency_level(client_session->get_session_info()));
+      Ob20ProtocolHeaderParam ob20_head_param(server_session->get_server_sessid(), request_id_, compressed_seq_,
+                                              compressed_seq_, is_last_segment, is_weak_read, is_need_reroute,
+                                              server_session->get_session_info().is_new_extra_info_supported(),
+                                              client_session->is_trans_internal_routing());
+      if (OB_FAIL(ObProto20Utils::consume_and_compress_data(local_reader_, mio_buffer_, local_reader_->read_avail(),
+                                                            ob20_head_param, &extra_info))) {
         PROXY_API_LOG(WARN, "fail to consume and compress data with OB20", K(ret));
       }
     }
@@ -209,8 +210,8 @@ int ObMysqlRequestCompressTransformPlugin::check_last_data_segment(
     if (read_avail >= (ntodo + MYSQL_NET_META_LENGTH)) {
       char tmp_buff[MYSQL_NET_META_LENGTH]; // print the next packet's meta
       reader.copy(tmp_buff, MYSQL_NET_META_LENGTH, ntodo);
-      int64_t payload_len = ob_uint3korr(tmp_buff);
-      int64_t seq = ob_uint1korr(tmp_buff + 3);
+      int64_t payload_len = uint3korr(tmp_buff);
+      int64_t seq = uint1korr(tmp_buff + 3);
       int64_t cmd = static_cast<uint8_t>(tmp_buff[4]);
       PROXY_API_LOG(ERROR, "next packet meta is", K(payload_len), K(seq), K(cmd));
     }

@@ -298,6 +298,7 @@ const char *const OB_HELP_KEYWORD_TNAME                             = "help_keyw
 const char *const OB_HELP_RELATION_TNAME                            = "help_relation";
 const char *const OB_ALL_LOCAL_INDEX_STATUS_TNAME                   = "__all_local_index_status";
 const char *const OB_ALL_DUMMY_TNAME                                = "__all_dummy";
+const char *const OB_ALL_BINLOG_DUMMY_TNAME                         = "__all_binlog_dummy";
 const char *const OB_ALL_FROZEN_MAP_TNAME                           = "__all_frozen_map";
 const char *const OB_ALL_CLOG_HISTORY_INFO_TNAME                    = "__all_clog_history_info";
 const char *const OB_ALL_CLOG_HISTORY_INFO_V2_TNAME                 = "__all_clog_history_info_v2";
@@ -485,6 +486,12 @@ const char *const OB_ALL_VIRTUAL_SYSTEM_EVENT_I1_TNAME              = "__idx_109
 const char *const OB_ALL_VIRTUAL_SESSTAT_I1_TNAME                   = "__idx_1099511638796_i1";
 const char *const OB_ALL_VIRTUAL_SYSSTAT_I1_TNAME                   = "__idx_1099511638797_i1";
 const char *const OB_ALL_VIRTUAL_SQL_AUDIT_I1_TNAME                 = "__idx_1099511638807_i1";
+
+// 4.0 schema
+const char* const OB_ALL_VIRTUAL_PROXY_ROUTINE_TNAME = "__all_virtual_proxy_routine";
+const char* const DBA_OB_ZONES_VNAME = "DBA_OB_ZONES";
+const char* const DBA_OB_SERVERS_VNAME = "DBA_OB_SERVERS";
+const char* const DBA_OB_TENANTS_VNAME = "DBA_OB_TENANTS";
 
 // initial data for __all_privilege
 struct PrivilegeRow {

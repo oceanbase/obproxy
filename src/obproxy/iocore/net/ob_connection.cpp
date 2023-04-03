@@ -30,6 +30,8 @@
 
 #include "iocore/net/ob_connection.h"
 #include "utils/ob_proxy_hot_upgrader.h"
+#include "utils/ob_layout.h"
+#include "ob_proxy_init.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -390,6 +392,50 @@ int ObServerConnection::setup_fd_for_listen(
     const int32_t send_bufsize)
 {
   int ret = OB_SUCCESS;
+  if (RUN_MODE_PROXY == g_run_mode) {
+    if (OB_FAIL(setup_fd_for_listen_proxy_mode(non_blocking, recv_bufsize, send_bufsize))) {
+      PROXY_SOCK_LOG(WARN, "setup_fd_for_listen_proxy_mode failed", K(ret));
+    }
+  } else if (RUN_MODE_CLIENT == g_run_mode) {
+    if (OB_FAIL(setup_fd_for_listen_client_mode(non_blocking, recv_bufsize, send_bufsize))) {
+      PROXY_SOCK_LOG(WARN, "setup_fd_for_listen_client_mode failed", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObServerConnection::setup_fd_for_listen_client_mode(
+    const bool non_blocking,
+    const int32_t recv_bufsize,
+    const int32_t send_bufsize)
+{
+  UNUSED(recv_bufsize);
+  UNUSED(send_bufsize);
+  int ret = OB_SUCCESS;
+
+  if (non_blocking && OB_FAIL(ObSocketManager::nonblocking(fd_))) {
+    PROXY_SOCK_LOG(WARN, "fail to set fd nonblocking", K(fd_), K(ret));
+  }
+
+  if (OB_FAIL(ret)) {
+    // make coverity happy
+    int tmp_ret = ret;
+    if (OB_FAIL(close())) {
+      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
+    }
+    ret = tmp_ret;
+  }
+  return ret;
+}
+
+
+int ObServerConnection::setup_fd_for_listen_proxy_mode(
+    const bool non_blocking,
+    const int32_t recv_bufsize,
+    const int32_t send_bufsize)
+{
+  int ret = OB_SUCCESS;
 
   if (OB_FAIL(ObSocketManager::set_sndbuf_and_rcvbuf_size(fd_,
       send_bufsize, recv_bufsize, SNDBUF_AND_RCVBUF_PREC))) {
@@ -458,7 +504,7 @@ int ObServerConnection::setup_fd_for_listen(
     // make coverity happy
     int tmp_ret = ret;
     if (OB_FAIL(close())) {
-      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(tmp_ret));
+      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
     }
     ret = tmp_ret;
   }
@@ -467,6 +513,55 @@ int ObServerConnection::setup_fd_for_listen(
 
 int ObServerConnection::listen(const bool non_blocking, const int32_t recv_bufsize,
                                const int32_t send_bufsize)
+{
+  int ret = OB_SUCCESS;
+  if (RUN_MODE_PROXY == g_run_mode) {
+    if (OB_FAIL(listen_proxy_mode(non_blocking, recv_bufsize, send_bufsize))) {
+      PROXY_SOCK_LOG(WARN, "listen proxy mode failed", K(ret));
+    }
+  } else if (RUN_MODE_CLIENT == g_run_mode) {
+    if (OB_FAIL(listen_client_mode(non_blocking, recv_bufsize, send_bufsize))) {
+      PROXY_SOCK_LOG(WARN, "listen client mode failed", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObServerConnection::listen_client_mode(const bool non_blocking, const int32_t recv_bufsize,
+                                           const int32_t send_bufsize)
+{
+  int ret = OB_SUCCESS;
+  struct sockaddr_un *addr = (struct sockaddr_un*)&addr_.unix_domain_;
+  addr->sun_family = AF_UNIX;
+  memset(addr->sun_path, 0, sizeof(addr->sun_path));
+  strncpy(addr->sun_path, get_global_layout().get_unix_domain_path(), sizeof(addr->sun_path) - 1);
+  if (OB_FAIL(ObSocketManager::socket(AF_UNIX, SOCK_STREAM, 0, fd_))) {
+    PROXY_SOCK_LOG(WARN, "fail to create socket", K(ret), KERRMSGS);
+  } else if (OB_FAIL(setup_fd_for_listen_client_mode(non_blocking, recv_bufsize, send_bufsize))) {
+    PROXY_SOCK_LOG(WARN, "fail to setup_fd_for_listen", K(ret));
+  } else if (OB_FAIL(ObSocketManager::bind(fd_, &addr_.sa_, sizeof(*addr)))) {
+    PROXY_SOCK_LOG(WARN, "fail to bind", K(ret));
+  } else if (OB_FAIL(ObSocketManager::listen(fd_, LISTEN_BACKLOG))) {
+    PROXY_SOCK_LOG(WARN, "fail to listen", KERRMSGS, K(ret));
+  } else {
+    ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+    info.ipv4_fd_ = fd_;
+  }
+
+  if (OB_FAIL(ret)) {
+    // make coverity happy
+    int tmp_ret = ret;
+    if (OB_FAIL(close())) {
+      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
+    }
+    ret = tmp_ret;
+  }
+  return ret;
+}
+
+int ObServerConnection::listen_proxy_mode(const bool non_blocking, const int32_t recv_bufsize,
+                                          const int32_t send_bufsize)
 {
   int ret = OB_SUCCESS;
   if (!ops_is_ip(accept_addr_)) {
@@ -478,21 +573,23 @@ int ObServerConnection::listen(const bool non_blocking, const int32_t recv_bufsi
   ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
 
   if (OB_FAIL(ObSocketManager::socket(addr_.sa_.sa_family, SOCK_STREAM, IPPROTO_TCP, fd_))) {
-    PROXY_SOCK_LOG(WARN, "failed to create socket", K(addr_), KERRMSGS, K(ret));
+    PROXY_SOCK_LOG(WARN, "fail to create socket", K(addr_), KERRMSGS, K(ret));
   } else if (OB_FAIL(setup_fd_for_listen(non_blocking, recv_bufsize, send_bufsize))) {
-    PROXY_SOCK_LOG(WARN, "failed to setup_fd_for_listen", K(addr_), K(ret));
+    PROXY_SOCK_LOG(WARN, "fail to setup_fd_for_listen", K(addr_), K(ret));
   } else if (OB_FAIL(ObSocketManager::bind(fd_, &addr_.sa_,
       static_cast<int64_t>(ops_ip_size(addr_.sa_))))) {
-    PROXY_SOCK_LOG(WARN, "failed to bind", K(addr_), KERRMSGS, K(ret));
+    PROXY_SOCK_LOG(WARN, "fail to bind", K(addr_), KERRMSGS, K(ret));
   } else if (OB_FAIL(ObSocketManager::listen(fd_, LISTEN_BACKLOG))) {
-    PROXY_SOCK_LOG(WARN, "failed to listen", K(addr_), KERRMSGS, K(ret));
+    PROXY_SOCK_LOG(WARN, "fail to listen", K(addr_), KERRMSGS, K(ret));
   } else {
     // Original just did this on port == 0.
     int64_t namelen = sizeof(addr_);
     if (OB_FAIL(ObSocketManager::getsockname(fd_, &addr_.sa_, &namelen))) {
       PROXY_SOCK_LOG(WARN, "failed to getsockname", K(addr_), KERRMSGS, K(ret));
-    } else {
-      info.fd_ = fd_;
+    } else if (addr_.is_ip4()) {
+      info.ipv4_fd_ = fd_;
+    } else if (addr_.is_ip6()) {
+      info.ipv6_fd_ = fd_;
     }
   }
 
@@ -500,7 +597,7 @@ int ObServerConnection::listen(const bool non_blocking, const int32_t recv_bufsi
     // make coverity happy
     int tmp_ret = ret;
     if (OB_FAIL(close())) {
-      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(tmp_ret));
+      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
     }
     ret = tmp_ret;
   }

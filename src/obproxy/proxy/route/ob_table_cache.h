@@ -122,7 +122,7 @@ bool ObTableCache::is_table_entry_expired_in_time_mode(const ObTableEntry &entry
 {
   bool is_expire = (!entry.is_sys_dummy_entry() && (entry.get_create_time_us() <= expire_time_us_));
   if (!is_expire) {
-    is_expire = (!entry.is_dummy_entry()) && entry.get_time_for_expired() > 0
+    is_expire = (!entry.is_sys_dummy_entry()) && entry.get_time_for_expired() > 0
                  && entry.get_time_for_expired() <= common::ObTimeUtility::current_time();
   }
 
@@ -161,6 +161,7 @@ private:
 };
 
 int init_table_map_for_thread();
+int init_table_map_for_one_thread(int64_t index);
 
 } // end of namespace proxy
 } // end of namespace obproxy

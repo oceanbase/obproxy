@@ -116,6 +116,7 @@ public:
   void txn_hook_append(const ObMysqlHookID id, ObContInternal *cont);
   void txn_hook_prepend(const ObMysqlHookID id, ObContInternal *cont);
   ObAPIHook *txn_hook_get(const ObMysqlHookID id);
+  void txn_destroy_hook(const ObMysqlHookID id);
 
 public:
   // Tunneling request to plugin
@@ -178,6 +179,11 @@ inline void ObMysqlSMApi::txn_hook_prepend(const ObMysqlHookID id, ObContInterna
 inline ObAPIHook *ObMysqlSMApi::txn_hook_get(const ObMysqlHookID id)
 {
   return api_hooks_.get(id);
+}
+
+inline void ObMysqlSMApi::txn_destroy_hook(const ObMysqlHookID id)
+{
+  api_hooks_.destroy(id);
 }
 
 } // end of namespace proxy

@@ -14,7 +14,6 @@
 #define OBPROXY_SERVER_SESSION_H
 
 #include "iocore/net/ob_net.h"
-#include "proxy/mysqllib/ob_proxy_session_info.h"
 #include "cmd/ob_internal_cmd_handler.h"
 #include "obutils/ob_proxy_json_config_info.h"
 #include "proxy/mysql/ob_mysql_global_session_utils.h"
@@ -28,7 +27,6 @@ namespace proxy
 #define  SERVER_ADDR_LOOKUP_EVENT_DONE   INTERNAL_CMD_EVENTS_START + 3
 #define  UINT24_MAX (16777215U)
 
-class ObMysqlSM;
 class ObMysqlClientSession;
 
 enum ObMSSState
@@ -143,10 +141,12 @@ public:
   // cancel the inactivity timeout
   void cancel_inactivity_timeout();
 
+  // server cap judgement
   bool is_ob_protocol_v2_supported() const { return session_info_.is_ob_protocol_v2_supported(); }
   bool is_checksum_supported() const { return session_info_.is_checksum_supported(); }
   bool is_checksum_on() const { return session_info_.is_checksum_on(); }
   bool is_extra_ok_packet_for_stats_enabled() const { return session_info_.is_extra_ok_packet_for_stats_enabled(); }
+  bool is_full_link_trace_supported() const { return session_info_.is_full_link_trace_supported(); }
 
   uint32_t get_server_sessid() const { return server_sessid_; }
   void set_server_sessid(const uint32_t server_sessid) { server_sessid_ = server_sessid; }

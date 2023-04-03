@@ -22,7 +22,11 @@ namespace common
 const ObCharsetWrapper ObCharset::charset_wrap_arr_[CHARSET_WRAPPER_COUNT] =
 {
   {CHARSET_BINARY, "Binary pseudo charset", CS_TYPE_BINARY, 1},
-  {CHARSET_UTF8MB4, "UTF-8 Unicode", CS_TYPE_UTF8MB4_GENERAL_CI, 4}
+  {CHARSET_UTF8MB4, "UTF-8 Unicode", CS_TYPE_UTF8MB4_GENERAL_CI, 4},
+  {CHARSET_GBK, "GBK charset", CS_TYPE_GBK_CHINESE_CI, 2},
+  {CHARSET_UTF16, "UTF-16 Unicode", CS_TYPE_UTF16_GENERAL_CI, 2},
+  {CHARSET_GB18030, "GB18030 charset", CS_TYPE_GB18030_CHINESE_CI, 4},
+  {CHARSET_LATIN1, "cp1252 West European", CS_TYPE_LATIN1_SWEDISH_CI, 1}
 };
 
 const ObCollationWrapper ObCharset::collation_wrap_arr_[COLLATION_WRAPPER_COUNT] =
@@ -30,21 +34,63 @@ const ObCollationWrapper ObCharset::collation_wrap_arr_[COLLATION_WRAPPER_COUNT]
   {CS_TYPE_UTF8MB4_GENERAL_CI, CHARSET_UTF8MB4, CS_TYPE_UTF8MB4_GENERAL_CI, true, true, 1},
   {CS_TYPE_UTF8MB4_BIN, CHARSET_UTF8MB4, CS_TYPE_UTF8MB4_BIN, false, true, 1},
   {CS_TYPE_BINARY, CHARSET_BINARY, CS_TYPE_BINARY, true, true, 1},
+  {CS_TYPE_GBK_CHINESE_CI, CHARSET_GBK, CS_TYPE_GBK_CHINESE_CI, true, true, 1},
+  {CS_TYPE_GBK_BIN, CHARSET_GBK, CS_TYPE_GBK_BIN, false, true, 1},
+  {CS_TYPE_UTF16_GENERAL_CI, CHARSET_UTF16, CS_TYPE_UTF16_GENERAL_CI, true, true, 1},
+  {CS_TYPE_UTF16_BIN, CHARSET_UTF16, CS_TYPE_UTF16_BIN, false, true, 1},
+  {CS_TYPE_INVALID, CHARSET_INVALID, CS_TYPE_INVALID, false, false, 1},
+  {CS_TYPE_INVALID, CHARSET_INVALID, CS_TYPE_INVALID, false, false, 1},
+  {CS_TYPE_GB18030_CHINESE_CI, CHARSET_GB18030, CS_TYPE_GB18030_CHINESE_CI, true, true, 1},
+  {CS_TYPE_GB18030_BIN, CHARSET_GB18030, CS_TYPE_GB18030_BIN, false, true, 1},
+  {CS_TYPE_LATIN1_SWEDISH_CI, CHARSET_LATIN1, CS_TYPE_LATIN1_SWEDISH_CI,true, true, 1},
+  {CS_TYPE_LATIN1_BIN, CHARSET_LATIN1, CS_TYPE_LATIN1_BIN,false, true, 1}
 };
 
 void *ObCharset::charset_arr[CS_TYPE_MAX] = {
   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 0 ~ 7
-  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 8
+  &ob_charset_latin1, NULL, NULL, NULL, NULL, NULL, NULL, NULL,   // 8
   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 16
-  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 24
+  NULL, NULL, NULL, NULL, &ob_charset_gbk_chinese_ci,             // 24
+                                NULL, NULL, NULL,                 // 29
   NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 32
   NULL, NULL, NULL, NULL, NULL,                                   // 40
                                 &ob_charset_utf8mb4_general_ci,   // 45
                                       &ob_charset_utf8mb4_bin,    // 46
-                                            NULL,                 // 47
-  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 48
+                                      &ob_charset_latin1_bin,     // 47
+  NULL, NULL, NULL, NULL, NULL, NULL,                             // 48
+                                     &ob_charset_utf16_general_ci,// 54
+                                     &ob_charset_utf16_bin,       // 55
   NULL, NULL, NULL, NULL, NULL, NULL, NULL,                       // 56
                                             &ob_charset_bin,      // 63
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 64
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 72
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL,                       // 80
+                                           &ob_charset_gbk_bin,   // 87
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 88
+  NULL, NULL, NULL, NULL, NULL,                                   // 96
+                                NULL,                             // 101
+                                NULL, NULL,                       // 102
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 104
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 112
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 120
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 128
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 136
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 144
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 152
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 160
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 168
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 176
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 184
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 192
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 200
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 208
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 216
+  NULL,                                                           // 224
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 225
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL,                 // 233
+  NULL, NULL, NULL, NULL, NULL, NULL, NULL,                       // 241
+  &ob_charset_gb18030_chinese_ci,                                 // 248
+  &ob_charset_gb18030_bin,                                        // 249
 };
 
 double ObCharset::strntod(const char *str,
@@ -55,7 +101,7 @@ double ObCharset::strntod(const char *str,
   ObCharsetInfo *cs = &ob_charset_bin;
   double result = 0.0;
   if (is_argument_valid(cs, str, str_len)) {
-    result = cs->cset->strntod(const_cast<char *>(str), str_len, endptr, err);
+    result = cs->cset->strntod(cs, const_cast<char *>(str), str_len, endptr, err);
   }
   return result;
 }
@@ -70,7 +116,7 @@ int64_t ObCharset::strntoll(const char *str,
   *end_ptr = const_cast<char*>(str);
   int64_t result = 0;
   if (is_argument_valid(cs, str, str_len)) {
-    result = cs->cset->strntoll(str, str_len, base, end_ptr, err);
+    result = cs->cset->strntoll(cs, str, str_len, base, end_ptr, err);
   }
   return result;
 }
@@ -85,7 +131,8 @@ uint64_t ObCharset::strntoull(const char *str,
   *end_ptr = const_cast<char*>(str);
   uint64_t result = 0;
   if (is_argument_valid(cs, str, str_len)) {
-    result = cs->cset->strntoull(str,
+    result = cs->cset->strntoull(cs,
+                             str,
                              str_len,
                              base,
                              end_ptr,
@@ -102,7 +149,7 @@ int64_t ObCharset::strntoll(const char *str,
   char *end_ptr = NULL;
   int64_t result = 0;
   if (is_argument_valid(cs, str, str_len)) {
-    result = cs->cset->strntoll(str, str_len, base, &end_ptr, err);
+    result = cs->cset->strntoll(cs, str, str_len, base, &end_ptr, err);
   }
   return result;
 }
@@ -116,7 +163,8 @@ uint64_t ObCharset::strntoull(const char *str,
   char *end_ptr = NULL;
   uint64_t result = 0;
   if (is_argument_valid(cs, str, str_len)) {
-    result = cs->cset->strntoull(str,
+    result = cs->cset->strntoull(cs,
+                             str,
                              str_len,
                              base,
                              &end_ptr,
@@ -133,7 +181,8 @@ uint64_t ObCharset::strntoullrnd(const char *str,
   ObCharsetInfo *cs = &ob_charset_bin;
   uint64_t result = 0;
   if (is_argument_valid(cs, str, str_len)) {
-    result = cs->cset->strntoull10rnd(str,
+    result = cs->cset->strntoull10rnd(cs,
+                                  str,
                                   str_len,
                                   unsigned_fl,
                                   endptr,
@@ -150,7 +199,7 @@ size_t ObCharset::scan_str(const char *str,
   if (OB_ISNULL(str) || OB_ISNULL(end) || OB_ISNULL(cs)) {
     BACKTRACE(ERROR, true, "invalid argument. str = %p, end = %p, cs = %p", str, end, cs);
   } else {
-    result = cs->cset->scan(str, end, sq);
+    result = cs->cset->scan(cs, str, end, sq);
   }
   return result;
 }
@@ -163,9 +212,9 @@ uint32_t ObCharset::instr(ObCollationType collation_type,
   uint32_t result = 0;
   if (is_argument_valid(collation_type, str1, str1_len, str2, str2_len)) {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
-    ob_match_info m_match_t[2];
-    unsigned int nmatch = 1;
-    unsigned int m_ret = cs->coll->instr(cs, str1, str1_len, str2, str2_len, m_match_t, nmatch);
+    ob_match_t m_match_t[2];
+    uint nmatch = 1;
+    uint m_ret = cs->coll->instr(cs, str1, str1_len, str2, str2_len, m_match_t, nmatch);
     if (0 == m_ret ) {
       result = 0;
     } else {
@@ -190,13 +239,16 @@ uint32_t ObCharset::locate(ObCollationType collation_type,
     if (OB_UNLIKELY(start < 0 || start > str1_len)) {
       result = 0;
     } else {
-      start = static_cast<int64_t>(charpos(collation_type, str1, str1_len, start));
-      if (static_cast<int64_t>(start) + str2_len > str1_len) {
+      int ret = OB_SUCCESS;
+      start = static_cast<int64_t>(charpos(collation_type, str1, str1_len, start, &ret));
+      if (OB_FAIL(ret)) {
+        result = 0;
+      } else if (static_cast<int64_t>(start) + str2_len > str1_len) {
         result = 0;
       } else if (0 == str2_len) {
         result = static_cast<uint32_t>(start) + 1;
       } else {
-        ob_match_info match_t;
+        ob_match_t match_t;
         uint32_t nmatch = 1;
         uint32_t m_ret = cs->coll->instr(cs, str1 + start, str1_len - start, str2, str2_len, &match_t, nmatch);
         if (0 == m_ret) {
@@ -219,11 +271,12 @@ int ObCharset::strcmp(ObCollationType collation_type,
   int result = 0;
   if (is_argument_valid(collation_type, str1, str1_len, str2, str2_len)) {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
+    const bool t_is_prefix = false;
     result = cs->coll->strnncoll(cs,
-                              reinterpret_cast<const unsigned char *>(str1),
+                              reinterpret_cast<const uchar *>(str1),
                               str1_len,
-                              reinterpret_cast<const unsigned char *>(str2),
-                              str2_len);
+                              reinterpret_cast<const uchar *>(str2),
+                              str2_len, t_is_prefix);
   }
   return result;
 }
@@ -238,17 +291,12 @@ int ObCharset::strcmpsp(ObCollationType collation_type,
   int result = 0;
   if (is_argument_valid(collation_type, str1, str1_len, str2, str2_len)) {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
-    result = cmp_endspace ?
-          cs->coll->strnncoll(cs,
-                              reinterpret_cast<const unsigned char *>(str1),
-                              str1_len,
-                              reinterpret_cast<const unsigned char *>(str2),
-                              str2_len)
-        : cs->coll->strnncollsp(cs,
-                                reinterpret_cast<const unsigned char *>(str1),
+    result = cs->coll->strnncollsp(cs,
+                                reinterpret_cast<const uchar *>(str1),
                                 str1_len,
-                                reinterpret_cast<const unsigned char *>(str2),
-                                str2_len);
+                                reinterpret_cast<const uchar *>(str2),
+                                str2_len,
+                                cmp_endspace);
   }
   return result;
 }
@@ -284,16 +332,17 @@ size_t ObCharset::sortkey(ObCollationType collation_type,
                           bool &is_valid_unicode)
 {
   size_t result = 0;
-  int is_valid_unicode_tmp = 0;
+  bool is_valid_unicode_tmp = 0;
   if (is_argument_valid(collation_type, str, str_len, key, key_len)) {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
 
     result = cs->coll->strnxfrm(cs,
-                             reinterpret_cast<unsigned char *>(key),
+                             reinterpret_cast<uchar *>(key),
                              key_len,
                              OB_MAX_WEIGHT,
-                             reinterpret_cast<const unsigned char *>(str),
+                             reinterpret_cast<const uchar *>(str),
                              str_len,
+                             0,
                              &is_valid_unicode_tmp);
     is_valid_unicode = is_valid_unicode_tmp;
   }
@@ -318,7 +367,7 @@ uint64_t ObCharset::hash(ObCollationType collation_type,
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->coll));
     } else {
       seed = 0xc6a4a7935bd1e995;
-      cs->coll->hash_sort(cs, reinterpret_cast<const unsigned char *>(str), str_len,
+      cs->coll->hash_sort(cs, reinterpret_cast<const uchar *>(str), str_len,
                           &ret, &seed, calc_end_space, hash_algo);
     }
   }
@@ -386,7 +435,7 @@ size_t ObCharset::strlen_char(const ObCollationType collation_type,
     if (OB_ISNULL(cs->cset)) {
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
-      ret = cs->cset->numchars(cs, str, str_len);
+      ret = cs->cset->numchars(cs, str, str + str_len);
     }
   }
   return ret;
@@ -406,7 +455,7 @@ size_t ObCharset::strlen_byte_no_sp(const ObCollationType collation_type,
     if (OB_ISNULL(cs->cset)) {
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
-      ret = cs->cset->lengthsp(str, str_len);
+      ret = cs->cset->lengthsp(cs, str, str_len);
     }
   }
   return ret;
@@ -432,11 +481,11 @@ int ObCharset::well_formed_len(ObCollationType collation_type, const char *str,
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       int32_t error = 0;
-      well_formed_len = cs->cset->well_formed_len(str, str_len, UINT64_MAX, &error);
+      well_formed_len = cs->cset->well_formed_len(cs, str, str + str_len, UINT64_MAX, &error);
       if (0 != error) {
         ret = OB_ERR_INCORRECT_STRING_VALUE;
         LOG_WARN("well_formed_len failed. invalid char found",
-                 K(ret), "str", ObString(str_len, str));
+                 K(ret), K(error), "str", ObString(str_len, str));
       }
     }
   } else {
@@ -465,17 +514,20 @@ int ObCharset::well_formed_len(ObCollationType collation_type, const char *str,
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
-      well_formed_len = cs->cset->well_formed_len(str, str_len, UINT64_MAX, &well_formed_error);
+      well_formed_len = cs->cset->well_formed_len(cs, str, str + str_len, UINT64_MAX, &well_formed_error);
     }
   }
   return ret;
 }
+
+// Be careful with this function. The return value may be out of range.
 size_t ObCharset::charpos(const ObCollationType collation_type,
-                              const char *str,
-                              const int64_t str_len,
-                              const int64_t length)
+                          const char *str,
+                          const int64_t str_len,
+                          const int64_t length,
+                          int *ret)
 {
-  size_t ret = 0;
+  size_t res_pos = 0;
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
@@ -485,10 +537,16 @@ size_t ObCharset::charpos(const ObCollationType collation_type,
     if (OB_ISNULL(cs->cset)) {
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
-      ret = cs->cset->charpos(cs, str, str_len, length);
+      res_pos = cs->cset->charpos(cs, str, str + str_len, length);
+      if (res_pos > str_len) {
+        res_pos = str_len;
+        if (OB_NOT_NULL(ret)) {
+          *ret = OB_ERROR_OUT_OF_RANGE;
+        }
+      }
     }
   }
-  return ret;
+  return res_pos;
 }
 
 bool ObCharset::wildcmp(ObCollationType collation_type,
@@ -535,20 +593,18 @@ int ObCharset::mb_wc(ObCollationType collation_type,
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
-    ob_wc_t res_wc;
+    ob_wc_t my_wc;
     if (OB_ISNULL(cs->cset)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
-      int tmp = cs->cset->mb_wc(
-            reinterpret_cast<const unsigned char*>(mb),
-            reinterpret_cast<const unsigned char*>(mb + mb_size),
-            &res_wc);
+      int tmp = cs->cset->mb_wc(cs, &my_wc, reinterpret_cast<const uchar*>(mb),
+                                reinterpret_cast<const uchar*>(mb + mb_size));
       if (tmp <= 0) {
         ret = OB_ERROR;
       } else {
         ret = OB_SUCCESS;
-        wc = static_cast<int32_t>(res_wc);
+        wc = static_cast<int32_t>(my_wc);
         length = static_cast<int32_t>(tmp);
       }
     }
@@ -569,10 +625,10 @@ int ObCharset::wc_mb(ObCollationType collation_type, int32_t wc, char *buff, int
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(ret));
     } else {
-      int tmp = cs->cset->wc_mb(wc, reinterpret_cast<unsigned char*>(buff),
-                                reinterpret_cast<unsigned char*>(buff + buff_len));
+      int tmp = cs->cset->wc_mb(cs, wc, reinterpret_cast<uchar*>(buff),
+                                reinterpret_cast<uchar*>(buff + buff_len));
       if (tmp <= 0) {
-        ret = OB_ERROR;
+        ret = OB_ERR_INCORRECT_STRING_VALUE;
       } else {
         ret = OB_SUCCESS;
         length = tmp;
@@ -592,6 +648,22 @@ const char *ObCharset::charset_name(ObCharsetType charset_type)
     }
     case CHARSET_UTF8MB4: {
       ret_name = "utf8mb4";
+      break;
+    }
+    case CHARSET_GBK: {
+      ret_name = "gbk";
+      break;
+    }
+    case CHARSET_UTF16: {
+      ret_name = "utf16";
+      break;
+    }
+    case CHARSET_GB18030: {
+      ret_name = "gb18030";
+      break;
+    }
+    case CHARSET_LATIN1: {
+      ret_name = "latin1";
       break;
     }
     default: {
@@ -684,6 +756,16 @@ ObCharsetType ObCharset::charset_type(const ObString &cs_name)
     charset_type = CHARSET_UTF8MB4;
   } else if (0 == cs_name.case_compare(ob_charset_bin.csname)) {
     charset_type = CHARSET_BINARY;
+  } else if (0 == cs_name.case_compare(ob_charset_gb18030_chinese_ci.csname)) {
+    charset_type = CHARSET_GB18030;
+  } else if (0 == cs_name.case_compare(ob_charset_gbk_chinese_ci.csname)) {
+    charset_type = CHARSET_GBK;
+  } else if (0 == cs_name.case_compare(ob_charset_utf16_general_ci.csname)) {
+    charset_type = CHARSET_UTF16;
+  } else if (0 == cs_name.case_compare(ob_charset_latin1.csname)) {
+    charset_type = CHARSET_LATIN1;
+  } else if (0 == cs_name.case_compare(ob_charset_latin1_bin.csname)) {
+    charset_type = CHARSET_LATIN1;
   }
   return charset_type;
 }
@@ -714,6 +796,22 @@ ObCollationType ObCharset::collation_type(const ObString &cs_name)
     collation_type = CS_TYPE_UTF8MB4_GENERAL_CI;
   } else if (0 == cs_name.case_compare(ob_charset_bin.name)) {
     collation_type = CS_TYPE_BINARY;
+  } else if (0 == cs_name.case_compare(ob_charset_gb18030_bin.name)) {
+    collation_type = CS_TYPE_GB18030_BIN;
+  } else if (0 == cs_name.case_compare(ob_charset_gb18030_chinese_ci.name)) {
+    collation_type = CS_TYPE_GB18030_CHINESE_CI;
+  } else if (0 == cs_name.case_compare(ob_charset_gbk_bin.name)) {
+    collation_type = CS_TYPE_GBK_BIN;
+  } else if (0 == cs_name.case_compare(ob_charset_gbk_chinese_ci.name)) {
+    collation_type = CS_TYPE_GBK_CHINESE_CI;
+  } else if (0 == cs_name.case_compare(ob_charset_utf16_bin.name)) {
+    collation_type = CS_TYPE_UTF16_BIN;
+  } else if (0 == cs_name.case_compare(ob_charset_utf16_general_ci.name)) {
+    collation_type = CS_TYPE_UTF16_GENERAL_CI;
+  } else if (0 == cs_name.case_compare(ob_charset_latin1.name)) {
+    collation_type = CS_TYPE_LATIN1_SWEDISH_CI;
+  } else if (0 == cs_name.case_compare(ob_charset_latin1_bin.name)) {
+    collation_type = CS_TYPE_LATIN1_BIN;
   }
   return collation_type;
 }
@@ -735,6 +833,26 @@ bool ObCharset::is_valid_collation(ObCharsetType charset_type, ObCollationType c
   } else if (CHARSET_BINARY == charset_type
       && CS_TYPE_BINARY == collation_type) {
     ret = true;
+  } else if (CHARSET_GB18030 == charset_type) {
+    if (CS_TYPE_GB18030_BIN == collation_type
+        || CS_TYPE_GB18030_CHINESE_CI == collation_type) {
+      ret = true;
+    }
+  } else if (CHARSET_GBK == charset_type) {
+    if (CS_TYPE_GBK_BIN == collation_type
+        || CS_TYPE_GBK_CHINESE_CI == collation_type) {
+      ret = true;
+    }
+  } else if (CHARSET_UTF16 == charset_type) {
+    if (CS_TYPE_UTF16_BIN == collation_type
+        || CS_TYPE_UTF16_GENERAL_CI == collation_type) {
+      ret = true;
+    }
+  } else if (CHARSET_LATIN1 == charset_type) {
+    if (CS_TYPE_LATIN1_BIN == collation_type
+        || CS_TYPE_LATIN1_SWEDISH_CI == collation_type) {
+      ret = true;
+    }
   }
   return ret;
 }
@@ -744,14 +862,26 @@ bool ObCharset::is_valid_collation(int64_t collation_type_int)
   ObCollationType collation_type = static_cast<ObCollationType>(collation_type_int);
   return CS_TYPE_UTF8MB4_GENERAL_CI == collation_type
     || CS_TYPE_UTF8MB4_BIN == collation_type
-    || CS_TYPE_BINARY == collation_type;
+    || CS_TYPE_BINARY == collation_type
+    || CS_TYPE_GB18030_BIN == collation_type
+    || CS_TYPE_GB18030_CHINESE_CI == collation_type
+    || CS_TYPE_GBK_BIN == collation_type
+    || CS_TYPE_GBK_CHINESE_CI == collation_type
+    || CS_TYPE_UTF16_BIN == collation_type
+    || CS_TYPE_UTF16_GENERAL_CI == collation_type
+    || CS_TYPE_LATIN1_BIN == collation_type
+    || CS_TYPE_LATIN1_SWEDISH_CI == collation_type;
 }
 
 bool ObCharset::is_valid_charset(int64_t cs_type_int)
 {
   ObCharsetType charset_type = static_cast<ObCharsetType>(cs_type_int);
   return CHARSET_BINARY == charset_type
-    || CHARSET_UTF8MB4 == charset_type;
+    || CHARSET_UTF8MB4 == charset_type
+    || CHARSET_GBK == charset_type
+    || CHARSET_UTF16 == charset_type
+    || CHARSET_GB18030 == charset_type
+    || CHARSET_LATIN1 == charset_type;
 }
 
 ObCharsetType ObCharset::charset_type_by_coll(ObCollationType collation_type)
@@ -766,6 +896,26 @@ ObCharsetType ObCharset::charset_type_by_coll(ObCollationType collation_type)
     }
     case CS_TYPE_BINARY: {
       charset_type = CHARSET_BINARY;
+      break;
+    }
+    case CS_TYPE_GB18030_BIN:
+    case CS_TYPE_GB18030_CHINESE_CI: {
+      charset_type = CHARSET_GB18030;
+      break;
+    }
+    case CS_TYPE_GBK_BIN:
+    case CS_TYPE_GBK_CHINESE_CI: {
+      charset_type = CHARSET_GBK;
+      break;
+    }
+    case CS_TYPE_UTF16_BIN:
+    case CS_TYPE_UTF16_GENERAL_CI: {
+      charset_type = CHARSET_UTF16;
+      break;
+    }
+    case CS_TYPE_LATIN1_SWEDISH_CI:
+    case CS_TYPE_LATIN1_BIN: {
+      charset_type = CHARSET_LATIN1;
       break;
     }
     default: {
@@ -982,6 +1132,22 @@ ObCollationType ObCharset::get_default_collation(ObCharsetType charset_type)
       collation_type = CS_TYPE_BINARY;
       break;
     }
+    case CHARSET_GB18030: {
+      collation_type = CS_TYPE_GB18030_CHINESE_CI;
+      break;
+    }
+    case CHARSET_GBK: {
+      collation_type = CS_TYPE_GBK_CHINESE_CI;
+      break;
+    }
+    case CHARSET_UTF16: {
+      collation_type = CS_TYPE_UTF16_GENERAL_CI;
+      break;
+    }
+    case CHARSET_LATIN1: {
+      collation_type = CS_TYPE_LATIN1_SWEDISH_CI;
+      break;
+    }
     default: {
       break;
     }
@@ -999,6 +1165,22 @@ ObCollationType ObCharset::get_default_collation_oracle(ObCharsetType charset_ty
     }
     case CHARSET_BINARY: {
       collation_type = CS_TYPE_BINARY;
+      break;
+    }
+    case CHARSET_GB18030: {
+      collation_type = CS_TYPE_GB18030_BIN;
+      break;
+    }
+    case CHARSET_GBK: {
+      collation_type = CS_TYPE_GBK_BIN;
+      break;
+    }
+    case CHARSET_UTF16: {
+      collation_type = CS_TYPE_UTF16_BIN;
+      break;
+    }
+    case CHARSET_LATIN1: {
+      collation_type = CS_TYPE_LATIN1_BIN;
       break;
     }
     default: {
@@ -1020,6 +1202,22 @@ int ObCharset::get_default_collation(ObCharsetType charset_type, ObCollationType
       collation_type = CS_TYPE_BINARY;
       break;
     }
+    case CHARSET_GB18030: {
+      collation_type = CS_TYPE_GB18030_CHINESE_CI;
+      break;
+    }
+    case CHARSET_GBK: {
+      collation_type = CS_TYPE_GBK_CHINESE_CI;
+      break;
+    }
+    case CHARSET_UTF16: {
+      collation_type = CS_TYPE_UTF16_GENERAL_CI;
+      break;
+    }
+    case CHARSET_LATIN1: {
+      collation_type = CS_TYPE_LATIN1_SWEDISH_CI;
+      break;
+    }
     default: {
       ret = OB_INVALID_ARGUMENT;
       LOG_WARN("invalid charset type", K(ret), K(charset_type));
@@ -1039,6 +1237,22 @@ ObCollationType ObCharset::get_bin_collation(ObCharsetType charset_type)
     }
     case CHARSET_BINARY: {
       collation_type = CS_TYPE_BINARY;
+      break;
+    }
+    case CHARSET_GB18030: {
+      collation_type = CS_TYPE_GB18030_BIN;
+      break;
+    }
+    case CHARSET_GBK: {
+      collation_type = CS_TYPE_GBK_BIN;
+      break;
+    }
+    case CHARSET_UTF16: {
+      collation_type = CS_TYPE_UTF16_BIN;
+      break;
+    }
+    case CHARSET_LATIN1: {
+      collation_type = CS_TYPE_LATIN1_BIN;
       break;
     }
     default: {
@@ -1095,7 +1309,7 @@ int ObCharset::first_valid_char(
       ret = OB_ERR_UNEXPECTED;
       LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
-      len = static_cast<int64_t>(cs->cset->well_formed_len(buf, buf_size, 1, &error));
+      len = static_cast<int64_t>(cs->cset->well_formed_len(cs, buf, buf + buf_size, 1, &error));
       if (OB_LIKELY(0 == error)) {
         char_len = len;
       } else {
@@ -1127,7 +1341,7 @@ int ObCharset::last_valid_char(
       for (len = cs->mbminlen; len <= cs->mbmaxlen; ++len) {
         int error = 0;
         int real_len =
-            static_cast<int>(cs->cset->well_formed_len(buf + buf_size - len, len, len, &error));
+            cs->cset->well_formed_len(cs, buf + buf_size - len, buf + buf_size, len, &error);
         if (0 == error && real_len == len) {
           char_len = len;
           break;
@@ -1166,7 +1380,10 @@ bool ObCharset::is_default_collation(ObCollationType collation_type)
   bool ret = false;
   switch (collation_type) {
     case CS_TYPE_UTF8MB4_GENERAL_CI:
-    case CS_TYPE_BINARY: {
+    case CS_TYPE_BINARY:
+    case CS_TYPE_GB18030_CHINESE_CI:
+    case CS_TYPE_GBK_CHINESE_CI:
+    case CS_TYPE_UTF16_GENERAL_CI: {
       ret = true;
       break;
     }
@@ -1268,7 +1485,8 @@ bool ObCharset::is_space(const ObCollationType collation_type, char c)
     LOG_ERROR("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
-    ret = (' ' == c);
+    ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
+    ret = ob_isspace(cs, c);
   }
   return ret;
 }
@@ -1283,7 +1501,7 @@ bool ObCharset::is_graph(const ObCollationType collation_type, char c)
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
-    ret = !!(((cs)->ctype+1)[(unsigned char) (c)] & (_MY_PNT | _MY_U | _MY_L | _MY_NMR));
+    ret = ob_isgraph(cs, c);
   }
   return ret;
 }
@@ -1298,7 +1516,7 @@ bool ObCharset::usemb(const ObCollationType collation_type)
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
-    ret = (NULL != cs->cset->ismbchar);
+    ret = use_mb(cs);
   }
   return ret;
 }
@@ -1313,9 +1531,7 @@ int ObCharset::is_mbchar(const ObCollationType collation_type, const char *str, 
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
-    if (NULL != cs->cset->ismbchar) {
-      ret = cs->cset->ismbchar(str, end - str);
-    }
+    ret = ob_ismbchar(cs, str, end);
   }
   return ret;
 }
@@ -1393,7 +1609,7 @@ int ObCharset::fit_string(const ObCollationType collation_type,
     int64_t char_len = 0;
     int error = 0;
     while(buf_start < buf_end) {
-      char_len = static_cast<int64_t>(cs->cset->well_formed_len(buf_start, buf_end - buf_start, 1, &error));
+      char_len = static_cast<int64_t>(cs->cset->well_formed_len(cs, buf_start, buf_end, 1, &error));
       if (OB_UNLIKELY(0 != error || char_len <= 0)) {
         ret = OB_INVALID_ARGUMENT;
         break;
@@ -1481,11 +1697,16 @@ int ObCharset::charset_convert(const ObCollationType from_type,
     ObCharsetInfo *from_cs = static_cast<ObCharsetInfo*>(ObCharset::charset_arr[from_type]);
     ObCharsetInfo *to_cs = static_cast<ObCharsetInfo*>(ObCharset::charset_arr[to_type]);
     unsigned int errors;
-    result_len = ob_convert(to_str, to_len, to_cs, from_str, from_len, from_cs, &errors);
-    if (errors != 0) {
-      ret = OB_ERR_INCORRECT_STRING_VALUE;
-      LOG_WARN("ob_convert failed", K(ret), K(errors),
-               K(from_type), K(to_type), K(ObString(from_len, from_str)), K(to_len));
+    if (NULL == from_cs || NULL == to_cs || NULL == from_str || NULL == to_str) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("invalid arugment", K(from_cs), K(to_cs), K(from_str), K(to_str));
+    } else {
+      result_len = ob_convert(to_str, to_len, to_cs, from_str, from_len, from_cs, &errors);
+      if (errors != 0) {
+        ret = OB_ERR_INCORRECT_STRING_VALUE;
+        LOG_WARN("ob_convert failed", K(ret), K(errors),
+                 K(from_type), K(to_type), K(ObString(from_len, from_str)), K(to_len));
+      }
     }
   }
 

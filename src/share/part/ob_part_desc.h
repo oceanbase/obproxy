@@ -18,6 +18,7 @@
 #include "lib/timezone/ob_time_convert.h"
 #include "share/part/ob_part_mgr_util.h"
 #include "obproxy/opsql/expr_parser/ob_expr_parse_result.h"
+#include "common/ob_row.h"
 
 namespace oceanbase
 {
@@ -35,26 +36,31 @@ namespace common
 
 class ObPartDescCtx {
 public:
-  ObPartDescCtx() : session_info_(NULL), need_accurate_(false) {}
+  ObPartDescCtx() : session_info_(NULL), need_accurate_(false), cluster_version_(0) {}
   ObPartDescCtx(obproxy::proxy::ObClientSessionInfo *session_info)
-    : session_info_(session_info), need_accurate_(false) {}
-  ObPartDescCtx(obproxy::proxy::ObClientSessionInfo *session_info, bool need_accurate)
-    : session_info_(session_info), need_accurate_(need_accurate) {}
+    : session_info_(session_info), need_accurate_(false), cluster_version_(0) {}
+  ObPartDescCtx(obproxy::proxy::ObClientSessionInfo *session_info, bool need_accurate, const int64_t cluster_version)
+    : session_info_(session_info), need_accurate_(need_accurate), cluster_version_(cluster_version) {}
   ~ObPartDescCtx() {}
-  
+
   obproxy::proxy::ObClientSessionInfo *get_session_info() { return session_info_; }
   bool need_accurate() { return need_accurate_; }
+  int64_t get_cluster_version() const { return cluster_version_; }
 
 private:
   obproxy::proxy::ObClientSessionInfo *session_info_;
 
   /* need accurate the part key result or not, currently only support insert stmt, need to support update set=x stmt */
-  bool need_accurate_;                
+  bool need_accurate_;
+  int64_t cluster_version_;
 };
 
 class ObPartDesc
 {
 public:
+  ObPartDesc() : part_level_(share::schema::PARTITION_LEVEL_ZERO), tablet_id_array_(NULL) {}
+  virtual ~ObPartDesc() {}
+
   /*
    * get partition id according to range
    * @in param  range
@@ -66,8 +72,10 @@ public:
   virtual int get_part(common::ObNewRange &range,
                        common::ObIAllocator &allocator,
                        common::ObIArray<int64_t> &part_ids,
-                       ObPartDescCtx &ctx);
-  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
+                       ObPartDescCtx &ctx,
+                       common::ObIArray<int64_t> &tablet_ids);
+  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids,
+                              common::ObIArray<int64_t> &tablet_ids);
   void set_part_level(share::schema::ObPartitionLevel part_level) { part_level_ = part_level; }
   share::schema::ObPartitionLevel get_part_level() { return part_level_; }
   void set_part_func_type(share::schema::ObPartitionFuncType part_func_type) { part_func_type_ = part_func_type; }
@@ -75,15 +83,26 @@ public:
   int build_dtc_params(obproxy::proxy::ObClientSessionInfo *session_info,
                        ObObjType obj_type,
                        ObDataTypeCastParams &dtc_params);
-  void set_accuracy(const ObProxyPartKeyAccuracy &accuracy);
+  ObIArray<ObAccuracy> &get_accuracies() { return accuracies_; }
 
-  ObPartDesc() : part_level_(share::schema::PARTITION_LEVEL_ZERO) {};
-  virtual ~ObPartDesc() {};
+  int cast_obj(ObObj &src_obj,
+               ObObj &target_obj,
+               ObIAllocator &allocator,
+               ObPartDescCtx &ctx,
+               ObAccuracy &accuracy);
 
+  int cast_obj(ObObj &src_obj,
+               ObObjType obj_type,
+               ObCollationType cs_type,
+               ObIAllocator &allocator,
+               ObPartDescCtx &ctx,
+               ObAccuracy &accuracy);
+  
   DECLARE_VIRTUAL_TO_STRING = 0;
   share::schema::ObPartitionLevel part_level_;
   share::schema::ObPartitionFuncType part_func_type_;
-  ObProxyPartKeyAccuracy accuracy_;
+  ObSEArray<ObAccuracy, 4> accuracies_;
+  int64_t *tablet_id_array_;
 };
 
 }

@@ -27,15 +27,29 @@ enum ObCharsetType
   CHARSET_INVALID = 0,
   CHARSET_BINARY = 1,
   CHARSET_UTF8MB4 = 2,
+  CHARSET_GBK = 3,
+  CHARSET_UTF16 = 4,
+  CHARSET_GB18030 = 5,
+  CHARSET_LATIN1 = 6,
   CHARSET_MAX,
 };
 
 enum ObCollationType
 {
   CS_TYPE_INVALID = 0,
+  CS_TYPE_LATIN1_SWEDISH_CI = 8,
+  CS_TYPE_GBK_CHINESE_CI = 28,
   CS_TYPE_UTF8MB4_GENERAL_CI = 45,
   CS_TYPE_UTF8MB4_BIN = 46,
+  CS_TYPE_LATIN1_BIN = 47,
+  CS_TYPE_UTF16_GENERAL_CI = 54,
+  CS_TYPE_UTF16_BIN = 55,
   CS_TYPE_BINARY = 63,
+  CS_TYPE_GBK_BIN = 87,
+  CS_TYPE_UTF16_UNICODE_CI = 101,
+  CS_TYPE_UTF8MB4_UNICODE_CI = 224,
+  CS_TYPE_GB18030_CHINESE_CI = 248,
+  CS_TYPE_GB18030_BIN = 249,
   CS_TYPE_MAX,
 };
 /*
@@ -89,8 +103,8 @@ private:
   virtual ~ObCharset() {};
 
 public:
-  static const int64_t CHARSET_WRAPPER_COUNT = 2;
-  static const int64_t COLLATION_WRAPPER_COUNT = 3;
+  static const int64_t CHARSET_WRAPPER_COUNT = 6;
+  static const int64_t COLLATION_WRAPPER_COUNT = 13;
 
   static double strntod(const char *str,
                         size_t str_len,
@@ -190,7 +204,8 @@ public:
   static size_t charpos(ObCollationType collation_type,
                         const char *str,
                         const int64_t str_len,
-                        const int64_t length);
+                        const int64_t length,
+                        int *ret = NULL);
   // match like pattern
   static bool wildcmp(ObCollationType collation_type,
                       const ObString &str,

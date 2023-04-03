@@ -20,7 +20,8 @@ namespace oceanbase
 {
 namespace obproxy
 {
-#define OBPROXY_INHERITED_FD "OBPROXY_INHERITED_FD"
+#define OBPROXY_INHERITED_IPV4_FD "OBPROXY_INHERITED_FD"
+#define OBPROXY_INHERITED_IPV6_FD "OBPROXY_INHERITED_IPV6_FD"
 extern volatile int g_proxy_fatal_errcode;
 
 enum ObReloadConfigStatus
@@ -196,7 +197,8 @@ public:
   static const int64_t MAX_RESTART_BUF_SIZE = 64;
   static const int64_t OB_MAX_INHERITED_ARGC = 4;
 
-  int fd_;                              // listen fd, which to be passed to sub process
+  int ipv4_fd_;                              // listen fd, which to be passed to sub process
+  int ipv6_fd_;
   int received_sig_;
   ObReloadConfigStatus rc_status_;      // identify the current status for reload config
   volatile pid_t sub_pid_;              // sub process pid if fork succeed

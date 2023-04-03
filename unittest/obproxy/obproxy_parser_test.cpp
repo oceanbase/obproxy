@@ -23,6 +23,7 @@
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
 #include "opsql/expr_parser/ob_expr_parser.h"
 #include "opsql/expr_parser/ob_expr_parser_utils.h"
+#include "obproxy/obutils/ob_proxy_sql_parser.h"
 #include "lib/allocator/page_arena.h"
 #include "obutils/ob_proxy_stmt.h"
 
@@ -50,19 +51,19 @@ void show_sql_result(SqlFieldResult& sql_result) {
   fprintf(stdout, "========== sql_result is ===========\n");
   for(int i = 0; i < sql_result.field_num_; i++) {
     char buf[256];
-    printf("column_name:length:%d\t", sql_result.fields_[i].column_name_.string_.length());
+    printf("column_name:length:%d\t", sql_result.fields_[i]->column_name_.config_string_.length());
     snprintf(buf, 256, "column_name:%.*s",
-      sql_result.fields_[i].column_name_.string_.length(),
-      sql_result.fields_[i].column_name_.string_.ptr());
+      sql_result.fields_[i]->column_name_.config_string_.length(),
+      sql_result.fields_[i]->column_name_.config_string_.ptr());
     printf("%s\t", buf);
     //printf(" %s ", function_type_to_string(sql_result.fields_[i].type_).c_str());
-    printf(" (%s) ", token_type_to_string(sql_result.fields_[i].value_type_).c_str());
-    if(sql_result.fields_[i].value_type_ == TOKEN_INT_VAL) {
-      snprintf(buf, 256, "column_value:%ld", sql_result.fields_[i].column_int_value_);
-    } else if (sql_result.fields_[i].value_type_ == TOKEN_STR_VAL){
-     snprintf(buf, sql_result.fields_[i].column_value_.config_string_.length()+1, "column_value:%.*s",
-      sql_result.fields_[i].column_value_.config_string_.length(),
-      sql_result.fields_[i].column_value_.config_string_.ptr());
+    printf(" (%s) ", token_type_to_string(sql_result.fields_[i]->value_type_).c_str());
+    if(sql_result.fields_[i]->value_type_ == TOKEN_INT_VAL) {
+      snprintf(buf, 256, "column_value:%ld", sql_result.fields_[i]->column_int_value_);
+    } else if (sql_result.fields_[i]->value_type_ == TOKEN_STR_VAL){
+     snprintf(buf, sql_result.fields_[i]->column_value_.config_string_.length()+1, "column_value:%.*s",
+      sql_result.fields_[i]->column_value_.config_string_.length(),
+      sql_result.fields_[i]->column_value_.config_string_.ptr());
    }
    printf("%s\n", buf);
   //   fprintf(stdout, "%s %s %s\n", sql_result.fields_[i].column_name_,
@@ -136,7 +137,6 @@ void build_schema(std::string &extra_str, ObExprParseResult &result)
   pos = 0;
 
   result.part_key_info_.key_num_ = 0;
-  result.target_mask_ = 0;
   while (true) {
     ObProxyParseString part_key_name = get_value(extra_str, "part_key", pos);
     ObProxyParseString part_key_level = get_value(extra_str, "part_level", pos);
@@ -161,11 +161,6 @@ void build_schema(std::string &extra_str, ObExprParseResult &result)
         result.part_key_info_.part_keys_[result.part_key_info_.key_num_].idx_ = part_key_idx.str_[0] - '0';
       }
       ++result.part_key_info_.key_num_;
-      if (PART_KEY_LEVEL_ONE == level) {
-        result.target_mask_ |= BOTH_BOUND_FLAG;
-      } else {
-        result.target_mask_ |= (BOTH_BOUND_FLAG << 2);
-      }
     }
   }
 }
@@ -206,8 +201,8 @@ void extract_local_fileds(const ObExprParseResult& result, ObProxyMysqlRequest &
       printf("Got an empty relation_expr");
       continue;
     }
-    SqlField field;
-    field.reset();
+    SqlField *field = NULL;
+    SqlField::alloc_sql_field(field);
     //sql_result.fields_[sql_result.field_num_].type_ = relation_expr->type_;
     if(relation_expr->left_value_ != NULL 
       && relation_expr->left_value_->head_ != NULL
@@ -216,9 +211,9 @@ void extract_local_fileds(const ObExprParseResult& result, ObProxyMysqlRequest &
         ObString tmp_column(relation_expr->left_value_->head_->column_name_.str_len_,
           relation_expr->left_value_->head_->column_name_.str_);
         LOG_DEBUG("column_name is ", K(tmp_column));
-        field.column_name_.set(tmp_column);
+        field->column_name_.set_value(tmp_column);
 
-        LOG_DEBUG("field.column", K(field.column_name_));
+        LOG_DEBUG("field->column", K(field->column_name_));
         // strncpy(sql_result.fields_[sql_result.field_num_].column_name_,
         //           relation_expr->left_value_->head_->column_name_.str_,
         //           relation_expr->left_value_->head_->column_name_.str_len_);
@@ -233,19 +228,19 @@ void extract_local_fileds(const ObExprParseResult& result, ObProxyMysqlRequest &
     if(relation_expr->right_value_ != NULL
       && relation_expr->right_value_->head_ != NULL) {
       if(relation_expr->right_value_->head_->type_ == TOKEN_INT_VAL) {
-        field.value_type_ = TOKEN_INT_VAL;
-        field.column_int_value_ = relation_expr->right_value_->head_->int_value_;
-        LOG_DEBUG("field.value", K(field.column_int_value_));
+        field->value_type_ = TOKEN_INT_VAL;
+        field->column_int_value_ = relation_expr->right_value_->head_->int_value_;
+        LOG_DEBUG("field->value", K(field->column_int_value_));
           // snprintf(sql_result.fields_[sql_result.field_num_].column_value_,
           //            32, "%ld", relation_expr->right_value_->head_->int_value_);
           // sql_result.fields_[sql_result.field_num_].column_value_ = "";
           // sql_result.fields_[sql_result.field_num_].column_value_ = std::string(buf);
       } else if(relation_expr->right_value_->head_->type_ == TOKEN_STR_VAL) {
-       field.value_type_ = TOKEN_STR_VAL;
-       field.column_value_.config_string_.assign_ptr(
+       field->value_type_ = TOKEN_STR_VAL;
+       field->column_value_.config_string_.assign_ptr(
         relation_expr->right_value_->head_->str_value_.str_,
         relation_expr->right_value_->head_->str_value_.str_len_);
-        LOG_DEBUG("field.column_value", K(field.column_value_));
+        LOG_DEBUG("field->column_value", K(field->column_value_));
 
           // strncpy(sql_result.fields_[sql_result.field_num_].column_value_,
           //           relation_expr->right_value_->head_->str_value_.str_,

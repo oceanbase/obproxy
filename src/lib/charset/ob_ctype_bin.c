@@ -14,366 +14,316 @@
 
 static unsigned char ctype_bin[]=
 {
-  0x00,  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,
-  0x20,  0x20,  0x28,  0x28,  0x28,  0x28,  0x28,  0x20,
-  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,
-  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,  0x20,
-  0x20,  0x48,  0x10,  0x10,  0x10,  0x10,  0x10,  0x10,
-  0x10,  0x10,  0x10,  0x10,  0x10,  0x10,  0x10,  0x10,
-  0x10,  0x84,  0x84,  0x84,  0x84,  0x84,  0x84,  0x84,
-  0x84,  0x84,  0x84,  0x10,  0x10,  0x10,  0x10,  0x10,
-  0x10,  0x10,  0x81,  0x81,  0x81,  0x81,  0x81,  0x81,
-  0x01,  0x01,  0x01,  0x01,  0x01,  0x01,  0x01,  0x01,
-  0x01,  0x01,  0x01,  0x01,  0x01,  0x01,  0x01,  0x01,
-  0x01,  0x01,  0x01,  0x01,  0x10,  0x10,  0x10,  0x10,
-  0x10,  0x10,  0x82,  0x82,  0x82,  0x82,  0x82,  0x82,
-  0x02,  0x02,  0x02,  0x02,  0x02,  0x02,  0x02,  0x02,
-  0x02,  0x02,  0x02,  0x02,  0x02,  0x02,  0x02,  0x02,
-  0x02,  0x02,  0x02,  0x02,  0x10,  0x10,  0x10,  0x10,
-  0x20,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,
-  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00,  0x00
+  0,
+  32, 32, 32, 32, 32, 32, 32, 32, 32, 40, 40, 40, 40, 40, 32, 32,
+  32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32, 32,
+  72, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16, 16,
+  132,132,132,132,132,132,132,132,132,132, 16, 16, 16, 16, 16, 16,
+  16,129,129,129,129,129,129,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1, 16, 16, 16, 16, 16,
+  16,130,130,130,130,130,130,  2,  2,  2,  2,  2,  2,  2,  2,  2,
+  2,  2,  2,  2,  2,  2,  2,  2,  2,  2,  2, 16, 16, 16, 16, 32,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
 };
-
-/* Dummy array for toupper / tolower / sortorder */
 
 static unsigned char bin_char_array[] =
 {
-  0x00,  0x01,  0x02,  0x03,  0x04,  0x05,  0x06,  0x07,
-  0x08,  0x09,  0x0a,  0x0b,  0x0c,  0x0d,  0x0e,  0x0f,
-  0x10,  0x11,  0x12,  0x13,  0x14,  0x15,  0x16,  0x17,
-  0x18,  0x19,  0x1a,  0x1b,  0x1c,  0x1d,  0x1e,  0x1f,
-  0x20,  0x21,  0x22,  0x23,  0x24,  0x25,  0x26,  0x27,
-  0x28,  0x29,  0x2a,  0x2b,  0x2c,  0x2d,  0x2e,  0x2f,
-  0x30,  0x31,  0x32,  0x33,  0x34,  0x35,  0x36,  0x37,
-  0x38,  0x39,  0x3a,  0x3b,  0x3c,  0x3d,  0x3e,  0x3f,
-  0x40,  0x41,  0x42,  0x43,  0x44,  0x45,  0x46,  0x47,
-  0x48,  0x49,  0x4a,  0x4b,  0x4c,  0x4d,  0x4e,  0x4f,
-  0x50,  0x51,  0x52,  0x53,  0x54,  0x55,  0x56,  0x57,
-  0x58,  0x59,  0x5a,  0x5b,  0x5c,  0x5d,  0x5e,  0x5f,
-  0x60,  0x61,  0x62,  0x63,  0x64,  0x65,  0x66,  0x67,
-  0x68,  0x69,  0x6a,  0x6b,  0x6c,  0x6d,  0x6e,  0x6f,
-  0x70,  0x71,  0x72,  0x73,  0x74,  0x75,  0x76,  0x77,
-  0x78,  0x79,  0x7a,  0x7b,  0x7c,  0x7d,  0x7e,  0x7f,
-  0x80,  0x81,  0x82,  0x83,  0x84,  0x85,  0x86,  0x87,
-  0x88,  0x89,  0x8a,  0x8b,  0x8c,  0x8d,  0x8e,  0x8f,
-  0x90,  0x91,  0x92,  0x93,  0x94,  0x95,  0x96,  0x97,
-  0x98,  0x99,  0x9a,  0x9b,  0x9c,  0x9d,  0x9e,  0x9f,
-  0xa0,  0xa1,  0xa2,  0xa3,  0xa4,  0xa5,  0xa6,  0xa7,
-  0xa8,  0xa9,  0xaa,  0xab,  0xac,  0xad,  0xae,  0xaf,
-  0xb0,  0xb1,  0xb2,  0xb3,  0xb4,  0xb5,  0xb6,  0xb7,
-  0xb8,  0xb9,  0xba,  0xbb,  0xbc,  0xbd,  0xbe,  0xbf,
-  0xc0,  0xc1,  0xc2,  0xc3,  0xc4,  0xc5,  0xc6,  0xc7,
-  0xc8,  0xc9,  0xca,  0xcb,  0xcc,  0xcd,  0xce,  0xcf,
-  0xd0,  0xd1,  0xd2,  0xd3,  0xd4,  0xd5,  0xd6,  0xd7,
-  0xd8,  0xd9,  0xda,  0xdb,  0xdc,  0xdd,  0xde,  0xdf,
-  0xe0,  0xe1,  0xe2,  0xe3,  0xe4,  0xe5,  0xe6,  0xe7,
-  0xe8,  0xe9,  0xea,  0xeb,  0xec,  0xed,  0xee,  0xef,
-  0xf0,  0xf1,  0xf2,  0xf3,  0xf4,  0xf5,  0xf6,  0xf7,
-  0xf8,  0xf9,  0xfa,  0xfb,  0xfc,  0xfd,  0xfe,  0xff
+    0,  1,  2,  3,  4,  5,  6,  7,  8,  9, 10, 11, 12, 13, 14, 15,
+   16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31,
+   32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47,
+   48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63,
+   64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79,
+   80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95,
+   96, 97, 98, 99,100,101,102,103,104,105,106,107,108,109,110,111,
+  112,113,114,115,116,117,118,119,120,121,122,123,124,125,126,127,
+  128,129,130,131,132,133,134,135,136,137,138,139,140,141,142,143,
+  144,145,146,147,148,149,150,151,152,153,154,155,156,157,158,159,
+  160,161,162,163,164,165,166,167,168,169,170,171,172,173,174,175,
+  176,177,178,179,180,181,182,183,184,185,186,187,188,189,190,191,
+  192,193,194,195,196,197,198,199,200,201,202,203,204,205,206,207,
+  208,209,210,211,212,213,214,215,216,217,218,219,220,221,222,223,
+  224,225,226,227,228,229,230,231,232,233,234,235,236,237,238,239,
+  240,241,242,243,244,245,246,247,248,249,250,251,252,253,254,255
 };
 
-size_t ob_numchars_8bit(const ObCharsetInfo *cs __attribute__((unused)),
-                         const char *str __attribute__((unused)), size_t len)
+
+unsigned int ob_mbcharlen_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                      unsigned int c __attribute__((unused)))
 {
-  return len;
+  return 1;
+}
+
+size_t ob_numchars_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+		      const char *begin, const char *end)
+{
+  return (size_t) (end - begin);
 }
 
 size_t ob_charpos_8bit(const ObCharsetInfo *cs __attribute__((unused)),
-                        const char *str  __attribute__((unused)),
-                        size_t len __attribute__((unused)),
-                        size_t pos)
+                       const char *begin  __attribute__((unused)),
+                       const char *end  __attribute__((unused)),
+                       size_t pos)
 {
   return pos;
 }
 
 size_t ob_max_bytes_charpos_8bit(const ObCharsetInfo *cs __attribute__((unused)),
-                                  const char *str  __attribute__((unused)),
-                                  size_t len  __attribute__((unused)),
-                                  size_t max_bytes,
-                                  size_t *char_len)
+                       const char *begin  __attribute__((unused)),
+                       const char *end  __attribute__((unused)),
+                       size_t max_bytes,
+                       size_t *char_len)
 {
   *char_len = max_bytes;
   return max_bytes;
 }
 
-size_t ob_well_formed_len_8bit(const char *str, size_t len, size_t nchars, int *error)
+size_t ob_well_formed_len_8bit(const ObCharsetInfo *cs __attribute__((unused)),
+                               const char *start, const char *end,
+                               size_t nchars, int *error)
 {
-  size_t nbytes= len;
+  size_t nbytes= (size_t) (end-start);
   *error= 0;
-  return nbytes < nchars ? nbytes : nchars;
+  return OB_MIN(nbytes, nchars);
 }
 
-size_t ob_lengthsp_binary(const char *str __attribute__((unused)),
-                          size_t len)
+size_t ob_lengthsp_binary(const ObCharsetInfo *cs __attribute__((unused)),
+                          const char *ptr __attribute__((unused)),
+                          size_t length)
 {
-  return len;
+  return length;
 }
 
-static int ob_mb_wc_bin(const unsigned char *str,
-                        const unsigned char *end __attribute__((unused)),
-                        ob_wc_t *wc)
+static int ob_mb_wc_bin(const ObCharsetInfo *cs __attribute__((unused)),
+			ob_wc_t *wc,
+			const unsigned char *str,
+			const unsigned char *end __attribute__((unused)))
 {
   if (str >= end) {
-    return OB_CS_ERR_TOOSMALL;
+    return OB_CS_TOOSMALL;
+  } else {
+    *wc=str[0];
   }
-
-  *wc=str[0];
   return 1;
 }
 
-static int ob_wc_mb_bin(ob_wc_t wc, unsigned char *s,
-                        unsigned char *e __attribute__((unused)))
-{
-  if (s >= e) {
-    return OB_CS_ERR_TOOSMALL;
-  }
 
-  if (wc < 256) {
-    s[0]= (char) wc;
+static int ob_wc_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
+			ob_wc_t wc,
+			unsigned char *str,
+			unsigned char *end __attribute__((unused)))
+{
+  if (str >= end) {
+    return OB_CS_TOOSMALL;
+  } else if (wc < 256) {
+    str[0] = (char) wc;
     return 1;
   }
-  return OB_CS_ERR_ILLEGAL_UNICODE;
+  return OB_CS_ILUNI;
 }
 
-static int ob_mb_ctype_8bit(const ObCharsetInfo *cs, int *ctype,
-                            const unsigned char *s, const unsigned char *e)
+int ob_mb_ctype_8bit(const ObCharsetInfo *cs, int *ctype,
+                   const unsigned char *str, const unsigned char *end)
 {
-  if (s >= e) {
+  if (str >= end) {
     *ctype= 0;
-    return OB_CS_ERR_TOOSMALL;
+    return OB_CS_TOOSMALL;
   }
-  *ctype= cs->ctype[*s + 1];
+  *ctype= cs->ctype[*str + 1];
   return 1;
 }
 
 static size_t ob_case_bin(const ObCharsetInfo *cs __attribute__((unused)),
-                            char *src __attribute__((unused)), size_t srclen,
-                            char *dst __attribute__((unused)),
-                            size_t dstlen __attribute__((unused)))
+                          char *src __attribute__((unused)),
+                          size_t srclen,
+                          char *dst __attribute__((unused)),
+                          size_t dstlen __attribute__((unused)))
 {
   return srclen;
 }
 
-//========================================================================
+ 
 
 static int ob_strnncoll_binary(const ObCharsetInfo *cs __attribute__((unused)),
-                               const unsigned char *s, size_t slen,
-                               const unsigned char *t, size_t tlen)
+                               const unsigned char *str, size_t s_len,
+                               const unsigned char *t, size_t t_len,
+                               bool t_is_prefix)
 {
-  size_t len= slen < tlen ? slen : tlen;
-  int cmp= memcmp(s,t,len);
-  return cmp ? cmp : (int)(slen - tlen);
+  size_t len = OB_MIN(s_len,t_len);
+  int cmp = memcmp(str,t,len);
+  return cmp ? cmp : (int)((t_is_prefix ? len : s_len) - t_len);
 }
-
-/*
-  Compare two strings. Result is sign(first_argument - second_argument)
-
-  SYNOPSIS
-    ob_strnncollsp_binary()
-    cs			Chararacter set
-    s			String to compare
-    slen		Length of 's'
-    t			String to compare
-    tlen		Length of 't'
-
-  NOTE
-   This function is used for real binary strings, i.e. for
-   BLOB, BINARY(N) and VARBINARY(N).
-   It compares trailing spaces as spaces.
-
-  RETURN
-  < 0	s < t
-  0	s == t
-  > 0	s > t
-*/
 
 static int ob_strnncollsp_binary(const ObCharsetInfo *cs
                                  __attribute__((unused)),
-                                 const unsigned char *s, size_t slen,
-                                 const unsigned char *t, size_t tlen)
+                                 const unsigned char *str, size_t s_len,
+                                 const unsigned char *t, size_t t_len,
+                                 bool diff_if_only_endspace_difference
+                                 __attribute__((unused)))
 {
-  return ob_strnncoll_binary(cs,s,slen,t,tlen);
+  return ob_strnncoll_binary(cs,str,s_len,t,t_len,0);
 }
 
 static size_t
 ob_strnxfrm_8bit_bin(const ObCharsetInfo *cs,
-                     unsigned char * dst, size_t dstlen, uint32_t nweights,
-                     const unsigned char *src, size_t srclen,
-                     int *is_valid_unicode)
+                     unsigned char * dst, size_t dstlen, unsigned int nweights,
+                     const unsigned char *src, size_t srclen, unsigned int flags,
+                     bool *is_valid_unicode __attribute__((unused)))
 {
-  *is_valid_unicode = 1;
-  srclen = (srclen < dstlen ? srclen : dstlen);
-  srclen = (srclen < nweights ? srclen : nweights);
-  if (dst != src && srclen > 0) {
+  set_if_smaller(srclen, dstlen);
+  set_if_smaller(srclen, nweights);
+  if (dst != src) {
     memcpy(dst, src, srclen);
   }
-  return srclen;
+  return ob_strxfrm_pad_desc_and_reverse(cs, dst, dst + srclen, dst + dstlen,
+                                         nweights - srclen, flags, 0);
 }
 
-#define likeconv(s,A) (A)
+#define likeconv(str,A) (A)
 #define INC_PTR(cs,A,B) (A)++
 
 static
 int ob_wildcmp_bin_impl(const ObCharsetInfo *cs,
-                        const char *str_ptr,const char *str_end_ptr,
+                        const char *str,const char *str_end,
                         const char *wild_str,const char *wild_end,
-                        int escape_char, int w_one_char, int w_many_char, int recurse_level)
+                        int escape_char, int w_one, int w_many, int recurse_level)
 {
-  int cmp_result= -1;
+  int result= -1;			 
 
   while (wild_str != wild_end) {
-    while (*wild_str != w_many_char && *wild_str != w_one_char) {
+    while (*wild_str != w_many && *wild_str != w_one) {
       if (*wild_str == escape_char && wild_str+1 != wild_end) {
-        wild_str++;
+	      wild_str++;
       }
-      if (str_ptr == str_end_ptr || likeconv(cs,*wild_str++) != likeconv(cs,*str_ptr++)) {
-        return 1;
+      if (str == str_end || likeconv(cs,*wild_str++) != likeconv(cs,*str++)) {
+        return(1);			 
+      } else if (wild_str == wild_end) {
+	      return(str != str_end);		 
+      } else {
+        result=1;				 
       }
-      if (wild_str == wild_end) {
-        return str_ptr != str_end_ptr;
-      }
-      cmp_result=1;
     }
-    if (*wild_str == w_one_char) {
+    if (*wild_str == w_one) {
       do {
-        if (str_ptr == str_end_ptr) {
-          return(cmp_result);
+        if (str == str_end) {
+          return(result);
+        } else {
+          INC_PTR(cs,str,str_end);
         }
-        INC_PTR(cs,str_ptr,str_end_ptr);
-      } while (++wild_str < wild_end && *wild_str == w_one_char);
-      if (wild_str == wild_end) {
-        break;
-      }
+      } while (++wild_str < wild_end && *wild_str == w_one);
+      if (wild_str == wild_end) break;
     }
-    if (*wild_str == w_many_char) {
-      unsigned char cmp = 0;
-      wild_str++;
+    if (*wild_str == w_many) {					 
+      unsigned char cmp;
+      wild_str++;  
       for (; wild_str != wild_end ; wild_str++) {
-        if (*wild_str == w_many_char) {
+        if (*wild_str == w_many) {
           continue;
-        }
-        if (*wild_str == w_one_char) {
-          if (str_ptr == str_end_ptr) {
+        } else if (*wild_str == w_one) {
+          if (str == str_end) {
             return(-1);
+          } else {
+            INC_PTR(cs,str,str_end);
+            continue;
           }
-          INC_PTR(cs,str_ptr,str_end_ptr);
-          continue;
         }
-        break;
+        break;				 
       }
       if (wild_str == wild_end) {
-        return(0);
-      }
-      if (str_ptr == str_end_ptr) {
-        return(-1);
-      }
-
-      if ((cmp= *wild_str) == escape_char && wild_str+1 != wild_end) {
-        cmp= *++wild_str;
+	      return(0);			 
+      } else if (str == str_end) {
+	      return(-1);
+      } else if ((cmp= *wild_str) == escape_char && wild_str+1 != wild_end) {
+	      cmp= *++wild_str;
       }
 
-      INC_PTR(cs,wild_str,wild_end);
+      INC_PTR(cs,wild_str,wild_end);	 
       cmp=likeconv(cs,cmp);
       do {
-        while (str_ptr != str_end_ptr && (unsigned char) likeconv(cs,*str_ptr) != cmp) {
-          str_ptr++;
+        while (str != str_end && (unsigned char) likeconv(cs,*str) != cmp) {
+          str++;
         }
-        if (str_ptr++ == str_end_ptr) {
-          return -1;
+        if (str++ == str_end) {
+	        return(-1);
         }
-        do {
-          int tmp=ob_wildcmp_bin_impl(cs,str_ptr,str_end_ptr,
-                                          wild_str,wild_end,escape_char,
-                                          w_one_char, w_many_char, recurse_level + 1);
-          if (tmp <= 0) {
-            return tmp;
-          }
-        } while (0);
-      } while (str_ptr != str_end_ptr && wild_str[0] != w_many_char);
-      return -1;
+        {
+          int tmp=ob_wildcmp_bin_impl(cs,str,str_end,
+                                            wild_str,wild_end,escape_char,
+                                            w_one, w_many, recurse_level + 1);
+          if (tmp <= 0)
+            return(tmp);
+        }
+      } while (str != str_end && wild_str[0] != w_many);
+      return(-1);
     }
   }
-  return str_ptr != str_end_ptr ? 1 : 0;
+  return(str != str_end ? 1 : 0);
 }
 
 int ob_wildcmp_bin(const ObCharsetInfo *cs,
                    const char *str,const char *str_end,
-                   const char *wildstr,const char *wildend,
-                   int escape, int w_one, int w_many)
+                   const char *wild_str,const char *wild_end,
+                   int escape_char, int w_one, int w_many)
 {
   return ob_wildcmp_bin_impl(cs, str, str_end,
-                             wildstr, wildend,
-                             escape, w_one, w_many, 1);
+                             wild_str, wild_end,
+                             escape_char, w_one, w_many, 1);
 }
 
 static
-uint32_t ob_instr_bin(const ObCharsetInfo *cs __attribute__((unused)),
-		  const char *b, size_t b_length,
+unsigned int ob_instr_bin(const ObCharsetInfo *cs __attribute__((unused)),
+		  const char *begin, size_t b_length,
 		  const char *s, size_t s_length,
-          ob_match_info *match, uint32_t nmatch)
+		  ob_match_t *match, unsigned int nmatch)
 {
-  register const unsigned char *str, *search, *end, *search_end;
+  const unsigned char *str, *search, *end, *search_end;
 
-  if (s_length <= b_length)
-  {
-    if (!s_length)
-    {
-      if (nmatch)
-      {
+  if (s_length <= b_length) {
+    if (!s_length) {
+      if (nmatch) {
         match->beg= 0;
         match->end= 0;
         match->mb_len= 0;
       }
-      return 1;		/* Empty string is always found */
+      return 1;		 
     }
 
-    str= (const unsigned char*) b;
+    str= (const unsigned char*) begin;
     search= (const unsigned char*) s;
-    end= (const unsigned char*) b+b_length-s_length+1;
+    end= (const unsigned char*) begin+b_length-s_length+1;
     search_end= (const unsigned char*) s + s_length;
 
-skip:
-    while (str != end)
-    {
-      if ( (*str++) == (*search))
-      {
-    register const unsigned char *i,*j;
+loop:
+    while (str != end) {
+      if ( (*str++) == (*search)) {
+        const unsigned char *i, *j;
+        i= str;
+        j= search+1;
 
-	i= str;
-	j= search+1;
+        while (j != search_end) {
+          if ((*i++) != (*j++))  {
+            goto loop;
+          }
+        }
 
-	while (j != search_end)
-	  if ((*i++) != (*j++))
-            goto skip;
+        if (nmatch > 0) {
+          match[0].beg= 0;
+          match[0].end= (size_t) (str- (const unsigned char*)begin-1);
+          match[0].mb_len= match[0].end;
 
-        if (nmatch > 0)
-	{
-	  match[0].beg= 0;
-      match[0].end= (size_t) (str- (const unsigned char*)b-1);
-	  match[0].mb_len= match[0].end;
-
-	  if (nmatch > 1)
-	  {
-	    match[1].beg= match[0].end;
-	    match[1].end= match[0].end+s_length;
-	    match[1].mb_len= match[1].end-match[1].beg;
-	  }
-	}
-	return 2;
+          if (nmatch > 1) {
+            match[1].beg= match[0].end;
+            match[1].end= match[0].end+s_length;
+            match[1].mb_len= match[1].end-match[1].beg;
+          }
+        }
+	      return 2;
       }
     }
   }
@@ -381,30 +331,30 @@ skip:
 }
 
 void ob_hash_sort_bin(const ObCharsetInfo *cs __attribute__((unused)),
-                      const unsigned char *key, size_t len,uint64_t *nr1, uint64_t *nr2,
-                      const int calc_end_space __attribute__((unused)), hash_algo hash_algo)
+		      const unsigned char *key, size_t len, unsigned long int *nr1, unsigned long int *nr2, 
+          const bool calc_end_space,
+          hash_algo hash_algo)
 {
   const unsigned char *pos = key;
-
   key+= len;
-  if (NULL == hash_algo)
-  {
-    for (; pos < (unsigned char*) key ; pos++)
-    {
-      nr1[0]^=(uint64_t) ((((uint64_t) nr1[0] & 63)+nr2[0]) *
-        ((uint32_t)*pos)) + (nr1[0] << 8);
+  if (NULL == hash_algo) {
+    while (pos < (unsigned char*) key) {
+      nr1[0]^=(unsigned long int) ((((unsigned int) nr1[0] & 63)+nr2[0]) *
+        ((unsigned int)*pos)) + (nr1[0] << 8);
       nr2[0]+=3;
+      pos++;
     }
   } else {
     nr1[0] = hash_algo((void*)pos, (int)(key - pos), nr1[0]);
   }
 }
 
-//========================================================================
+ 
 
 static ObCharsetHandler ob_charset_handler=
 {
-  NULL,
+  NULL,			 
+  ob_mbcharlen_8bit,	 
   ob_numchars_8bit,
   ob_charpos_8bit,
   ob_max_bytes_charpos_8bit,
@@ -416,6 +366,8 @@ static ObCharsetHandler ob_charset_handler=
   ob_case_bin,
   ob_case_bin,
   ob_fill_8bit,
+  ob_strntol_8bit,
+  ob_strntoul_8bit,
   ob_strntoll_8bit,
   ob_strntoull_8bit,
   ob_strntod_8bit,
@@ -423,7 +375,7 @@ static ObCharsetHandler ob_charset_handler=
   ob_scan_8bit
 };
 
-static ObCollationHandler ob_collation_binary_handler =
+ObCollationHandler ob_collation_binary_handler =
 {
   ob_strnncoll_binary,
   ob_strnncollsp_binary,
@@ -432,34 +384,36 @@ static ObCollationHandler ob_collation_binary_handler =
   ob_wildcmp_bin,
   ob_instr_bin,
   ob_hash_sort_bin,
+  ob_propagate_simple
 };
 
 ObCharsetInfo ob_charset_bin =
 {
-    63,0,0,			/* number        */
-    OB_CS_COMPILED|OB_CS_BINSORT|OB_CS_PRIMARY,/* state */
-    "binary",			/* cs name    */
-    "binary",			/* name          */
-    "",				/* comment       */
-    NULL,			/* tailoring     */
-    ctype_bin,			/* ctype         */
-    bin_char_array,		/* to_lower      */
-    bin_char_array,		/* to_upper      */
-    NULL,			/* sort_order    */
-    NULL,        /* caseinfo     */
-    NULL,			/* state_map    */
-    NULL,			/* ident_map    */
-    1,				/* strxfrm_multiply */
-    1,                          /* caseup_multiply  */
-    1,                          /* casedn_multiply  */
-    1,				/* mbminlen      */
-    1,				/* mbmaxlen      */
-    0,				/* min_sort_char */
-    255,			/* max_sort_char */
-    0,                          /* pad char      */
-    0,                          /* escape_with_backslash_is_dangerous */
-    1,                          /* levels_for_compare */
-    1,                          /* levels_for_order   */
+    63,0,0,
+    OB_CS_COMPILED|OB_CS_BINSORT|OB_CS_PRIMARY,
+    "binary",
+    "binary",
+    "",
+    NULL,
+    ctype_bin,
+    bin_char_array,
+    bin_char_array,
+    NULL,
+    NULL,
+    &ob_unicase_default,
+    NULL,
+    NULL,
+    1,
+    1,
+    1,
+    1,
+    1,
+    0,
+    255,
+    0,
+    0,
+    1,
+    1,
     &ob_charset_handler,
     &ob_collation_binary_handler
 };

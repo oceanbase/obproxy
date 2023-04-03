@@ -67,13 +67,19 @@ extern int obfuncexprdebug;
      FUNC_SUB = 266,
      FUNC_MUL = 267,
      FUNC_TESTLOAD = 268,
-     END_P = 269,
-     ERROR = 270,
-     IGNORED_WORD = 271,
-     NAME_OB = 272,
-     STR_VAL = 273,
-     NUMBER_VAL = 274,
-     INT_VAL = 275
+     FUNC_TO_DATE = 269,
+     FUNC_TO_TIMESTAMP = 270,
+     FUNC_NVL = 271,
+     FUNC_TO_CHAR = 272,
+     FUNC_MOD = 273,
+     FUNC_SYSDATE = 274,
+     END_P = 275,
+     ERROR = 276,
+     IGNORED_WORD = 277,
+     NAME_OB = 278,
+     STR_VAL = 279,
+     NUMBER_VAL = 280,
+     INT_VAL = 281
    };
 #endif
 

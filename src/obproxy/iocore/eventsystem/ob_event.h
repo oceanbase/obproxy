@@ -208,6 +208,7 @@ public:
   uint32_t in_the_prot_queue_:1;
   uint32_t in_the_priority_queue_:1;
   uint32_t in_heap_:4;
+  uint32_t is_thread_pool_event_;
   int32_t callback_event_;
 
   ObHRTime timeout_at_;
@@ -235,6 +236,7 @@ inline ObEvent::ObEvent()
       in_the_prot_queue_(false),
       in_the_priority_queue_(false),
       in_heap_(0),
+      is_thread_pool_event_(false),
       callback_event_(EVENT_NONE),
       timeout_at_(0),
       period_(0),

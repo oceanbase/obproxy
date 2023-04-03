@@ -279,7 +279,10 @@ int ObLatchWaitQueue::try_lock(
           COMMON_LOG(ERROR, "Fail to add proc to wait list, ", K(ret));
         }
       }
-      proc.wait_ = 1;
+
+      if (OB_EAGAIN == ret) {
+        proc.wait_ = 1;
+      }
     }
 
     unlock_bucket(bucket);

@@ -20,7 +20,6 @@
 #include <sys/stat.h>
 #include <algorithm>
 #include "lib/ob_errno.h"
-#include "lib/oblog/ob_log_module.h"
 #include "lib/utility/ob_macro_utils.h"
 
 namespace oceanbase
@@ -38,6 +37,8 @@ enum ObLogFDType {
   FD_CONFIG_FILE, //obproxy_config.file
   FD_POOL_FILE,
   FD_POOL_STAT_FILE,
+  FD_TRACE_FILE,      // ob20 full link trace interface
+  FD_DRIVER_CLIENT_FILE,
   MAX_FD_FILE,
 };
 
@@ -96,6 +97,7 @@ public:
   void set_fd_type(const ObLogFDType fd_type) { fd_type_ = fd_type;}
   bool is_xflush_file() const { return FD_XFLUSH_FILE == fd_type_; }
   bool is_default_file() const { return FD_DEFAULT_FILE == fd_type_; }
+  bool is_trace_file() const { return FD_TRACE_FILE == fd_type_; }
   void deep_copy_header_only(const ObLogItem &other);
 
 private:

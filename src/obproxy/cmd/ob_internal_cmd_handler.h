@@ -19,6 +19,8 @@
 #include "common/obsm_row.h"
 #include "packet/ob_mysql_packet_util.h"
 #include "iocore/eventsystem/ob_io_buffer.h"
+#include "obproxy/packet/ob_proxy_packet_writer.h"
+
 
 namespace oceanbase
 {
@@ -27,6 +29,7 @@ namespace obproxy
 namespace proxy
 {
 class ObMysqlClientSession;
+class Ob20ProtocolHeaderParam;
 }
 class ObInternalCmdHandler;
 
@@ -88,8 +91,7 @@ typedef common::ObSEArray<ObCSIDHandler, 1> CSIDHanders;
 class ObInternalCmdHandler : public event::ObContinuation
 {
 public:
-  ObInternalCmdHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                       const ObInternalCmdInfo &info);
+  ObInternalCmdHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObInternalCmdHandler();
 
   static bool is_constructor_argument_valid(const event::ObContinuation *cont,
@@ -103,6 +105,7 @@ public:
 
   int init(const bool is_query_cmd = true);
   int reset();//clean buf and reset seq
+  void destroy_internal_buf();
   int fill_external_buf();
   event::ObAction &get_action() { return action_; }
   bool is_inited() const { return is_inited_; };
@@ -137,12 +140,17 @@ protected:
     if (IS_NOT_INIT){
       ret = OB_NOT_INIT;
       WARN_ICMD("it has not inited", K(ret));
-    } else if (OB_FAIL(reset())) { //before encode_err_packet, we need clean buf
+    } else if (OB_FAIL(reset())) { // before encode err packet, we need clean buf
       WARN_ICMD("fail to do reset", K(errcode), K(ret));
-    } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, param))) {
-      WARN_ICMD("fail to encode err packet", K(errcode), K(ret));
     } else {
-      INFO_ICMD("succ to encode err packet", K(errcode));
+      char *err_msg = NULL;
+      if (OB_FAIL(packet::ObProxyPacketWriter::get_user_err_buf(errcode, err_msg, param))) {
+        WARN_ICMD("fail to get user err buf", K(errcode), K(ret));
+      } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, err_msg))) {
+        WARN_ICMD("fail to encode err packet buf", K(errcode), K(ret));
+      } else {
+        INFO_ICMD("succ to encode err packet", K(errcode));
+      }
     }
     return ret;
   }
@@ -174,6 +182,9 @@ protected:
   event::ObMIOBuffer *internal_buf_;
   event::ObIOBufferReader *internal_reader_;
   int64_t internal_buf_limited_;
+  
+  proxy::ObProxyProtocol protocol_;
+  proxy::Ob20ProtocolHeaderParam ob20_param_;
 
   bool is_inited_;
   bool header_encoded_;

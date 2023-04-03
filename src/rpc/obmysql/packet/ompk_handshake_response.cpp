@@ -48,7 +48,7 @@ int OMPKHandshakeResponse::decode()
     }
 
     if (OB_SUCC(ret) && pos < end) {
-      capability_.capability_ = ob_uint2korr(pos);
+      capability_.capability_ = uint2korr(pos);
       if (4 == len && !capability_.cap_flags_.OB_CLIENT_PROTOCOL_41) {
         ret = OB_NOT_SUPPORTED;
         LOG_ERROR("ob only support mysql client protocol 4.1", K(ret));

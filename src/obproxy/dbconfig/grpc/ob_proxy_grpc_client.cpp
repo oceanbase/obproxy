@@ -156,15 +156,15 @@ int ObGrpcClient::fill_request_node(DiscoveryRequest &request)
 
     const char *is_sidecar = getenv("IS_SIDECAR");
     if (OB_NOT_NULL(is_sidecar) && OB_UNLIKELY(strncmp(is_sidecar, "false", strlen(is_sidecar)) == 0)) {// app is not in sidecar
-      char ipstr[OB_IP_STR_BUFF];
-      MEMSET(ipstr, 0, OB_IP_STR_BUFF);
+      char ipstr[MAX_IP_ADDR_LENGTH];
+      MEMSET(ipstr, 0, MAX_IP_ADDR_LENGTH);
 
       ObSEArray<ObStringKV, LABELS_NUMS> labels;
 
       char json[MAX_REQUEST_LABELS_LENGTH];
       MEMSET(json, 0, sizeof(json));
 
-      if (OB_FAIL(getip_from_nodeid(ipstr, OB_IP_STR_BUFF))) {
+      if (OB_FAIL(getip_from_nodeid(ipstr, MAX_IP_ADDR_LENGTH))) {
         LOG_WARN("can not get ip from node id", K(ret));
       } else if (OB_UNLIKELY(strlen(ipstr) == 0)) {
         ret = OB_ERR_UNEXPECTED;
@@ -227,7 +227,7 @@ int ObGrpcClient::getip_from_nodeid(char *ipstr, int64_t length)
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(length < ip.length())) {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WARN("IP string in node id is longer than OB_IP_STR_BUFF", K(length), K(ip.length()), K(ret));
+        LOG_WARN("IP string in node id is longer than MAX_IP_ADDR_LENGTH", K(length), K(ip.length()), K(ret));
       } else {
         memcpy(ipstr, ip.ptr(), ip.length());
         ipstr[ip.length()] = '\0';
@@ -321,7 +321,17 @@ int ObGrpcClient::to_json(ObIArray<obmysql::ObStringKV>& labels, char *json, int
 
 bool ObGrpcClient::sync_read(DiscoveryResponse &response)
 {
-  return stream_->Read(&response);
+  bool status = false;
+  int ret = OB_SUCCESS;
+  status = stream_->Read(&response);
+  if (!status) {
+    LOG_INFO("the stream has been closed, will rebuild the grpc client stream");
+    finish_rpc();
+    if (OB_FAIL(init_stream())) {
+      LOG_WARN("fail to init stream", K(ret));
+    }
+  }
+  return status;
 }
 
 void ObGrpcClient::finish_rpc()

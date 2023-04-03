@@ -34,8 +34,7 @@ namespace proxy
 class ObShowInfoHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowInfoHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
-                    const ObInternalCmdInfo &info);
+  ObShowInfoHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowInfoHandler() {};
 
 private:

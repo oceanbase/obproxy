@@ -36,14 +36,20 @@ public:
   const char *get_control_config_dir() const { return control_config_dir_; }
   const char *get_dbconfig_dir() const { return dbconfig_dir_; }
   const char *get_proxy_root_dir() const { return prefix_; }
+  const char *get_unix_domain_path() const { return unix_domain_path_; }
   static int merge_file_path(const char *root, const char *file, common::ObIAllocator &allocator, char *&buf);
 
 private:
   int init_bin_dir(const char *cwd, const char *start_cmd);
   int init_dir_prefix(const char *cwd);
+  int init_dir_prefix_proxy_mode(const char *cwd);
+  int init_dir_prefix_client_mode();
   int construct_dirs();
   int construct_single_dir(const char *sub_dir, char *&full_path);
   int extract_actual_path(const char * const full_path, char *&actual_path);
+  int handle_client_dirs();
+  int construct_client_obproxy_dirs();
+  int remove_unix_domain();
 
 private:
   bool is_inited_;
@@ -54,6 +60,7 @@ private:
   char *conf_dir_;
   char *control_config_dir_;
   char *dbconfig_dir_;
+  char *unix_domain_path_;
   event::ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator_;
 };
 

@@ -24,8 +24,11 @@ char *ObRequest::easy_alloc(int64_t size) const
   if (NULL == ez_req_ || NULL == ez_req_->ms) {
     RPC_LOG(ERROR, "ez_req_ is not corret");
   } else {
-    buf = easy_pool_alloc(
-        ez_req_->ms->pool, static_cast<uint32_t>(size));
+  /* this function is defined for c driver client compile */
+    UNUSED(size);
+    buf = NULL;
+    // buf = easy_pool_alloc(
+    //     ez_req_->ms->pool, static_cast<uint32_t>(size));
   }
   return static_cast<char*>(buf);
 }

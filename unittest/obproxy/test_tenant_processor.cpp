@@ -28,11 +28,11 @@
  * limitations under the License.
  */
 
-//#define private public
 #define USING_LOG_PREFIX PROXY
 #include <gtest/gtest.h>
 #include <sqlite/sqlite3.h>
 #include "lib/objectpool/ob_concurrency_objpool.h"
+#include "obproxy/omt/ob_conn_table_processor.h"
 #include "obproxy/omt/ob_resource_unit_table_processor.h"
 #include "obproxy/obutils/ob_config_processor.h"
 #include "lib/oblog/ob_log.h"
@@ -53,7 +53,7 @@ struct conn_map_def {
 class TestTenantProcessor : public ::testing::Test
 {
 public:
-  TestTenantProcessor(): t_processor_(get_global_resource_unit_table_processor()) {}
+  TestTenantProcessor(): t_processor_(get_global_conn_table_processor()) {}
   int init_env();
   int check_map_value(conn_map_def* conn_map, uint32_t size);
 
@@ -64,7 +64,7 @@ public:
     //t_processor_.destroy();
   }
 
-  ObResourceUnitTableProcessor& t_processor_;
+  ObConnTableProcessor& t_processor_;
 };
 
 static int callback(void *NotUsed, int argc, char **argv, char **azColName)
@@ -184,7 +184,7 @@ TEST_F(TestTenantProcessor, test_multi_vt_conn)
   char *zErrMsg = 0;
 
   ASSERT_EQ(0, init_env());
-  
+
   /* replace SQL statement */
   sql = (char*)"replace into resource_unit(name, value, cluster_name, tenant_name)"  \
         "values('resource_max_connections', '[{\"vip\": \"127.0.0.1\", \"value\": 2000}, {\"vip\": \"127.0.0.2\", \"value\": 3000}]', 'ob_cluster', 'ob_tenant');";
@@ -213,7 +213,7 @@ TEST_F(TestTenantProcessor, test_multi_row_vt_conn)
   char *zErrMsg = 0;
 
   ASSERT_EQ(0, init_env());
-  
+
   /* replace SQL statement */
   sql = (char*)"replace into resource_unit(name, value, cluster_name, tenant_name)"  \
         "values('resource_max_connections', '[{\"vip\": \"127.0.0.1\", \"value\": 2000}, {\"vip\": \"127.0.0.2\", \"value\": 3000}]', 'ob_cluster', 'ob_tenant');";
@@ -254,7 +254,7 @@ TEST_F(TestTenantProcessor, test_repeat_key)
   char *zErrMsg = 0;
 
   ASSERT_EQ(0, init_env());
-  
+
   /* replace SQL statement */
   sql = (char*)"replace into resource_unit(name, value, cluster_name, tenant_name)"  \
         "values('resource_max_connections', '[{\"vip\": \"127.0.0.1\", \"value\": 2000}," \
@@ -284,8 +284,9 @@ TEST_F(TestTenantProcessor, test_diff_key)
   char *zErrMsg = 0;
 
   ASSERT_EQ(0, init_env());
-  
+
   // Insert connection related information
+
   sql = (char*)"replace into resource_unit(name, value, cluster_name, tenant_name)"  \
         "values('resource_max_connections', '[{\"vip\": \"127.0.0.1\", \"value\": 2000}," \
         "{\"vip\": \"127.0.0.2\", \"value\": 4450}]', 'ob_cluster', 'ob_tenant');";
@@ -352,28 +353,31 @@ TEST_F(TestTenantProcessor, test_no_conn_key)
 TEST_F(TestTenantProcessor, test_execute)
 {
   ASSERT_EQ(0, init_env());
-  
+
   SqlFieldResult sql_result;
   sql_result.field_num_ = 4;
-  SqlField sql_field;
-  sql_field.column_name_.set("cluster");
-  sql_field.column_value_.set_value("ob_cluster");
-  sql_result.fields_.push_back(sql_field);
-  
-  sql_field.column_name_.set("tenant");
-  sql_field.column_value_.set_value("ob_tenant");
+  SqlField *sql_field = NULL;
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("cluster");
+  sql_field->column_value_.set_value("ob_cluster");
   sql_result.fields_.push_back(sql_field);
 
-  sql_field.column_name_.set("name");
-  sql_field.column_value_.set_value("resource_max_connections");
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("tenant");
+  sql_field->column_value_.set_value("ob_tenant");
   sql_result.fields_.push_back(sql_field);
 
-  sql_field.column_name_.set("value");
-  sql_field.column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}]");
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("name");
+  sql_field->column_value_.set_value("resource_max_connections");
   sql_result.fields_.push_back(sql_field);
-  
+
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("value");
+  sql_field->column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}]");
+  sql_result.fields_.push_back(sql_field);
+
   ObCloudFnParams cloud_params;
-  cloud_params.config_type_ = OBPROXY_CONFIG_CLOUD;
   cloud_params.stmt_type_ = OBPROXY_T_REPLACE;
   cloud_params.fields_ = &sql_result;
   cloud_params.cluster_name_ = "ob_cluster";
@@ -399,28 +403,31 @@ TEST_F(TestTenantProcessor, test_execute)
 TEST_F(TestTenantProcessor, test_rollback)
 {
   ASSERT_EQ(0, init_env());
-  
+
   SqlFieldResult sql_result;
   sql_result.field_num_ = 4;
-  SqlField sql_field;
-  sql_field.column_name_.set("cluster");
-  sql_field.column_value_.set_value("ob_cluster");
-  sql_result.fields_.push_back(sql_field);
-  
-  sql_field.column_name_.set("tenant");
-  sql_field.column_value_.set_value("ob_tenant");
+  SqlField *sql_field = NULL;
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("cluster");
+  sql_field->column_value_.set_value("ob_cluster");
   sql_result.fields_.push_back(sql_field);
 
-  sql_field.column_name_.set("name");
-  sql_field.column_value_.set_value("resource_max_connections");
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("tenant");
+  sql_field->column_value_.set_value("ob_tenant");
   sql_result.fields_.push_back(sql_field);
 
-  sql_field.column_name_.set("value");
-  sql_field.column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}]");
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("name");
+  sql_field->column_value_.set_value("resource_max_connections");
   sql_result.fields_.push_back(sql_field);
-  
+
+  SqlField::alloc_sql_field(sql_field);
+  sql_field->column_name_.set_value("value");
+  sql_field->column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}]");
+  sql_result.fields_.push_back(sql_field);
+
   ObCloudFnParams cloud_params;
-  cloud_params.config_type_ = OBPROXY_CONFIG_CLOUD;
   cloud_params.stmt_type_ = OBPROXY_T_REPLACE;
   cloud_params.fields_ = &sql_result;
   cloud_params.cluster_name_ = "ob_cluster";
@@ -439,7 +446,7 @@ TEST_F(TestTenantProcessor, test_rollback)
   ASSERT_EQ(0, check_map_value(conn_map, 1));
 
   // vt_conn_map is empty after rollback
-  ObResourceUnitTableProcessor::commit(false);
+  ObResourceUnitTableProcessor::commit(&cloud_params, false);
   ObVipTenantConnCache::dump_conn_map(*vt_conn_map);
   LOG_DEBUG("conn map", "count", t_processor_.get_conn_map_count());
   ASSERT_EQ(0, t_processor_.get_conn_map_count());
@@ -448,28 +455,27 @@ TEST_F(TestTenantProcessor, test_rollback)
 TEST_F(TestTenantProcessor, test_execute_update_value)
 {
   ASSERT_EQ(0, init_env());
-  
+
   SqlFieldResult sql_result;
   sql_result.field_num_ = 4;
   SqlField sql_field[4];
-  sql_field[0].column_name_.set("cluster");
+  sql_field[0].column_name_.set_value("cluster");
   sql_field[0].column_value_.set_value("ob_cluster");
-  sql_result.fields_.push_back(sql_field[0]);
-  
-  sql_field[1].column_name_.set("tenant");
+  sql_result.fields_.push_back(&sql_field[0]);
+
+  sql_field[1].column_name_.set_value("tenant");
   sql_field[1].column_value_.set_value("ob_tenant");
-  sql_result.fields_.push_back(sql_field[1]);
+  sql_result.fields_.push_back(&sql_field[1]);
 
-  sql_field[2].column_name_.set("name");
+  sql_field[2].column_name_.set_value("name");
   sql_field[2].column_value_.set_value("resource_max_connections");
-  sql_result.fields_.push_back(sql_field[2]);
+  sql_result.fields_.push_back(&sql_field[2]);
 
-  sql_field[3].column_name_.set("value");
-  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}, {\"vip\": \"127.0.0.2\", \"value\": 6000}]");
-  sql_result.fields_.push_back(sql_field[3]);
-  
+  sql_field[3].column_name_.set_value("value");
+  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}, {\"vip\": \"10.8.17.120\", \"value\": 6000}]");
+  sql_result.fields_.push_back(&sql_field[3]);
+
   ObCloudFnParams cloud_params;
-  cloud_params.config_type_ = OBPROXY_CONFIG_CLOUD;
   cloud_params.stmt_type_ = OBPROXY_T_REPLACE;
   cloud_params.fields_ = &sql_result;
   cloud_params.cluster_name_ = "ob_cluster";
@@ -485,20 +491,25 @@ TEST_F(TestTenantProcessor, test_execute_update_value)
     {"ob_tenant#ob_cluster|127.0.0.1", 5000}
   };
   ASSERT_EQ(0, check_map_value(conn_map, 2));
-  ObResourceUnitTableProcessor::commit(true);
+  ObResourceUnitTableProcessor::commit(&cloud_params, true);
   LOG_DEBUG("success1");
-  
+
+  SqlField tmp_field[4];
+  tmp_field[0] = sql_field[0];
+  tmp_field[1] = sql_field[1];
+  tmp_field[2] = sql_field[2];
+  tmp_field[3] = sql_field[3];
   sql_result.reset();
   sql_result.field_num_ = 4;
-  sql_result.fields_.push_back(sql_field[0]);
-  sql_result.fields_.push_back(sql_field[1]);
-  sql_result.fields_.push_back(sql_field[2]);
-  sql_field[3].column_name_.set("value");
-  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.3\", \"value\": 4000}, {\"vip\": \"127.0.0.2\", \"value\": 7777}]");
-  sql_result.fields_.push_back(sql_field[3]);
+  sql_result.fields_.push_back(&tmp_field[0]);
+  sql_result.fields_.push_back(&tmp_field[1]);
+  sql_result.fields_.push_back(&tmp_field[2]);
+  sql_field[3].column_name_.set_value("value");
+  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.3\", \"value\": 4000}, {\"vip\": \"10.8.17.120\", \"value\": 7777}]");
+  sql_result.fields_.push_back(&tmp_field[3]);
   cloud_params.fields_ = &sql_result;
 
-  ASSERT_EQ(0, ObResourceUnitTableProcessor::execute(&cloud_params));  
+  ASSERT_EQ(0, ObResourceUnitTableProcessor::execute(&cloud_params));
   LOG_DEBUG("conn map", "count", t_processor_.get_conn_map_count());
   ASSERT_EQ(3, t_processor_.get_conn_map_count());
   conn_map_def conn_map_1[3] = {
@@ -509,7 +520,7 @@ TEST_F(TestTenantProcessor, test_execute_update_value)
   ASSERT_EQ(0, check_map_value(conn_map_1, 3));
   LOG_DEBUG("success2");
 
-  ObResourceUnitTableProcessor::commit(false);
+  ObResourceUnitTableProcessor::commit(&cloud_params, false);
   ObVipTenantConnCache::VTHashMap* vt_conn_map = t_processor_.get_conn_map();
   ObVipTenantConnCache::dump_conn_map(*vt_conn_map);
   conn_map_def conn_map_2[2] = {
@@ -524,28 +535,27 @@ TEST_F(TestTenantProcessor, test_execute_update_value)
 TEST_F(TestTenantProcessor, test_delete_tenant)
 {
   ASSERT_EQ(0, init_env());
-  
+
   SqlFieldResult sql_result;
   sql_result.field_num_ = 4;
   SqlField sql_field[4];
-  sql_field[0].column_name_.set("cluster");
+  sql_field[0].column_name_.set_value("cluster");
   sql_field[0].column_value_.set_value("ob_cluster");
-  sql_result.fields_.push_back(sql_field[0]);
-  
-  sql_field[1].column_name_.set("tenant");
+  sql_result.fields_.push_back(&sql_field[0]);
+
+  sql_field[1].column_name_.set_value("tenant");
   sql_field[1].column_value_.set_value("ob_tenant");
-  sql_result.fields_.push_back(sql_field[1]);
+  sql_result.fields_.push_back(&sql_field[1]);
 
-  sql_field[2].column_name_.set("name");
+  sql_field[2].column_name_.set_value("name");
   sql_field[2].column_value_.set_value("resource_max_connections");
-  sql_result.fields_.push_back(sql_field[2]);
+  sql_result.fields_.push_back(&sql_field[2]);
 
-  sql_field[3].column_name_.set("value");
-  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}, {\"vip\": \"127.0.0.2\", \"value\": 6000}]");
-  sql_result.fields_.push_back(sql_field[3]);
-  
+  sql_field[3].column_name_.set_value("value");
+  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 5000}, {\"vip\": \"10.8.17.120\", \"value\": 6000}]");
+  sql_result.fields_.push_back(&sql_field[3]);
+
   ObCloudFnParams cloud_params;
-  cloud_params.config_type_ = OBPROXY_CONFIG_CLOUD;
   cloud_params.stmt_type_ = OBPROXY_T_REPLACE;
   cloud_params.fields_ = &sql_result;
   cloud_params.cluster_name_ = "ob_cluster";
@@ -563,19 +573,24 @@ TEST_F(TestTenantProcessor, test_delete_tenant)
   ASSERT_EQ(0, check_map_value(conn_map, 2));
   LOG_DEBUG("success1");
 
+  SqlField tmp_field[4];
+  tmp_field[0] = sql_field[0];
+  tmp_field[1] = sql_field[1];
+  tmp_field[2] = sql_field[2];
+  tmp_field[3] = sql_field[3];
   sql_result.reset();
   sql_result.field_num_ = 4;
-  sql_result.fields_.push_back(sql_field[0]);
-  sql_field[1].column_name_.set("tenant");
+  sql_result.fields_.push_back(&tmp_field[0]);
+  sql_field[1].column_name_.set_value("tenant");
   sql_field[1].column_value_.set_value("ob_tenant_1");
-  sql_result.fields_.push_back(sql_field[1]);
-  sql_result.fields_.push_back(sql_field[2]);
-  sql_field[3].column_name_.set("value");
-  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.3\", \"value\": 4000}, {\"vip\": \"127.0.0.2\", \"value\": 7777}]");
-  sql_result.fields_.push_back(sql_field[3]);
+  sql_result.fields_.push_back(&tmp_field[1]);
+  sql_result.fields_.push_back(&tmp_field[2]);
+  sql_field[3].column_name_.set_value("value");
+  sql_field[3].column_value_.set_value("[{\"vip\": \"127.0.0.1\", \"value\": 4000}, {\"vip\": \"10.8.17.120\", \"value\": 7777}]");
+  sql_result.fields_.push_back(&tmp_field[3]);
   cloud_params.fields_ = &sql_result;
   cloud_params.tenant_name_ = "ob_tenant_1";
-  
+
   ASSERT_EQ(0, ObResourceUnitTableProcessor::execute(&cloud_params));
   ObVipTenantConnCache::VTHashMap* vt_conn_map = t_processor_.get_conn_map();
   ObVipTenantConnCache::dump_conn_map(*vt_conn_map);

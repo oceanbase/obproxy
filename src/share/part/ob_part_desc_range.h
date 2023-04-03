@@ -15,6 +15,7 @@
 
 #include "share/part/ob_part_desc.h"
 #include "lib/container/ob_se_array.h"
+#include "proxy/route/obproxy_part_mgr.h"
 
 namespace oceanbase
 {
@@ -44,14 +45,20 @@ public:
   virtual int get_part(common::ObNewRange &range,
                        common::ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids,
-                       ObPartDescCtx &ctx);
-  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids);
+                       ObPartDescCtx &ctx,
+                       ObIArray<int64_t> &tablet_ids);
+  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids);
   RangePartition* get_part_array() { return part_array_; }
   int set_part_array(RangePartition *part_array, int64_t size) {
     part_array_ = part_array;
     part_array_size_ = size;
     return common::OB_SUCCESS;
   }
+
+  int cast_key(ObRowkey &src_key,
+               ObRowkey &target_key,
+               ObIAllocator &allocator,
+               ObPartDescCtx &ctx);
 
   DECLARE_VIRTUAL_TO_STRING;
 private:
@@ -63,15 +70,6 @@ private:
                   const int64_t size,
                   const ObNewRange &range);
 
-  int cast_key(ObRowkey &src_key,
-               ObRowkey &target_key,
-               ObIAllocator &allocator,
-               ObPartDescCtx &ctx);
-
-  int cast_obj(ObObj &src_obj,
-               ObObj &target_obj,
-               ObIAllocator &allocator,
-               ObPartDescCtx &ctx);
 private:
   RangePartition *part_array_;
   int64_t part_array_size_;

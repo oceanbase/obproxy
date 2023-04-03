@@ -57,6 +57,7 @@ public:
            const common::ObString &user_name,
            const common::ObString &password,
            const common::ObString &database,
+           const common::ObString &cluster_name = "",
            const common::ObString &password1 = "");
   bool is_inited() const { return is_inited_; }
   void destroy();
@@ -93,6 +94,8 @@ public:
   // Attention!! async_read or async_write must be called by ObEThread
   int async_read(event::ObContinuation *cont, const char *sql, event::ObAction *&action);
   int async_read(event::ObContinuation *cont, const ObMysqlRequestParam &request_param, event::ObAction *&action);
+  int async_read(event::ObContinuation *cont, const ObMysqlRequestParam &request_param,
+                 event::ObAction *&action, const int64_t timeout_ms);
   int async_write(event::ObContinuation *cont, const char *sql, event::ObAction *&action);
 
   // raw execute related
@@ -114,6 +117,7 @@ private:
                         const common::ObString &user_name,
                         const common::ObString &password,
                         const common::ObString &database,
+                        const common::ObString &cluster_name = "",
                         const common::ObString &password1 = "",
                         ClientPoolOption* client_pool_option = NULL);
 public:

@@ -50,8 +50,7 @@ const ObProxyColumnSchema SM_COLUMN_ARRAY[OB_SMC_MAX_SM_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_SMC_SM_INFO,          "sm_info",        obmysql::OB_MYSQL_TYPE_VARCHAR),
 };
 
-ObShowSMHandler::ObShowSMHandler(ObContinuation *cont, ObMIOBuffer *buf,
-                                 const ObInternalCmdInfo &info)
+ObShowSMHandler::ObShowSMHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObInternalCmdHandler(cont, buf, info), is_hash_set_inited_(false), list_bucket_(0),
       sm_id_(info.get_sm_id())
 {

@@ -233,7 +233,9 @@ struct ObCongestionEntry : public ObCongestionRefCnt
     DELETING,
     DELETED,
     UPGRADE,
-    REPLAY
+    REPLAY,
+    DETECT_ALIVE,
+    DETECT_DEAD,
   };
 
   enum ObEntryState
@@ -265,6 +267,7 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   bool is_dead_congested() const;
   bool is_force_alive_congested() const;
   bool is_alive_congested() const;
+  bool is_detect_congested() const;
   bool is_congested() const;
   bool is_zone_merging() const;
   bool is_zone_upgrading() const;
@@ -283,8 +286,11 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   void set_alive_congested_free();
   void set_dead_congested();
   void set_dead_congested_free();
+  void set_detect_congested();
+  void set_detect_congested_free();
   void set_dead_failed_at(const ObHRTime t);
   void set_alive_failed_at(const ObHRTime t);
+  void set_client_feedback_failed_at(const ObHRTime t);
 
   // Connection controls
   bool alive_need_retry(const ObHRTime t);
@@ -295,6 +301,7 @@ struct ObCongestionEntry : public ObCongestionRefCnt
   void reset_fail_history();
   bool check_dead_congested();
   bool check_alive_congested();
+  bool check_client_feedback_congested();
 
   // ObCongestionEntry and ObCongestionControl config interaction helper functions
   int validate_config(ObCongestionControlConfig *config);
@@ -329,6 +336,14 @@ struct ObCongestionEntry : public ObCongestionRefCnt
 
   ObHRTime last_alive_congested_; // unit second
   volatile int64_t alive_congested_;
+
+  ObHRTime last_detect_congested_;
+  volatile int64_t detect_congested_;
+
+  ObFailHistory client_feedback_fail_history_;
+  ObHRTime last_client_feedback_congested_;
+  volatile int64_t stat_client_feedback_failures_;
+  int64_t client_feedback_congested_;
 
   volatile int64_t stat_conn_failures_;
   volatile int64_t stat_alive_failures_;
@@ -369,6 +384,11 @@ inline bool ObCongestionEntry::is_dead_congested() const
   return (1 == dead_congested_);
 }
 
+inline bool ObCongestionEntry::is_detect_congested() const
+{
+  return (1 == detect_congested_);
+}
+
 inline bool ObCongestionEntry::is_zone_merging() const
 {
   bool bret = false;
@@ -392,7 +412,8 @@ inline bool ObCongestionEntry::is_congested() const
   // watch out the priority below:
   return (is_dead_congested()
           || is_force_alive_congested()
-          || is_alive_congested());
+          || is_alive_congested()
+          || is_detect_congested());
 }
 
 inline bool ObCongestionEntry::check_dead_congested()
@@ -423,12 +444,27 @@ inline bool ObCongestionEntry::check_alive_congested()
   return bret;
 }
 
+inline bool ObCongestionEntry::check_client_feedback_congested()
+{
+  bool bret = false;
+  if (1 == client_feedback_congested_) {
+    bret = true;
+  } else if (control_config_->alive_failure_threshold_ < 0) {
+    bret = false;
+  } else {
+    bret = control_config_->alive_failure_threshold_ <= client_feedback_fail_history_.events_;
+  }
+
+  return bret;
+}
+
 inline void ObCongestionEntry::reset_fail_history()
 {
   conn_fail_history_.init(control_config_->fail_window_sec_);
   dead_congested_ = 0;
   alive_fail_history_.init(control_config_->fail_window_sec_);
   alive_congested_ = 0;
+  client_feedback_fail_history_.init(control_config_->fail_window_sec_);
 }
 
 void ObCongestionEntry::free()

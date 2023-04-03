@@ -13,6 +13,8 @@
 #ifndef OBPROXY_MYSQL_RESPONSE_BUILDER_H
 #define OBPROXY_MYSQL_RESPONSE_BUILDER_H
 #include "utils/ob_proxy_lib.h"
+#include "common/obsm_row.h"
+#include "proxy/mysqllib/ob_mysql_common_define.h"
 
 namespace oceanbase
 {
@@ -24,6 +26,7 @@ class ObMIOBuffer;
 }
 namespace proxy
 {
+class ObMysqlClientSession;
 class ObClientSessionInfo;
 class ObProxyMysqlRequest;
 class ObMysqlResponseBuilder
@@ -32,68 +35,78 @@ public:
   static const common::ObString OBPROXY_ROUTE_ADDR_NAME;
   static const common::ObString OBPROXY_PROXY_VERSION_NAME;
 
-  static int build_ok_resp(event::ObMIOBuffer &mio_buf,
-                           ObProxyMysqlRequest &client_request,
-                           ObClientSessionInfo &info,
-                           const bool is_in_trans,
-                           const bool is_state_changed);
+  static int build_ok_resp(event::ObMIOBuffer &mio_buf, ObProxyMysqlRequest &client_request,
+                           ObMysqlClientSession &client_session, const ObProxyProtocol protocol,
+                           const bool is_in_trans, const bool is_state_changed);
 
-  static int build_start_trans_resp(event::ObMIOBuffer &mio_buf,
-                                    ObProxyMysqlRequest &client_request,
-                                    ObClientSessionInfo &info);
+  static int build_start_trans_resp(event::ObMIOBuffer &mio_buf, ObProxyMysqlRequest &client_request,
+                                    ObMysqlClientSession &client_session, const ObProxyProtocol protocol);
+
+  static int build_prepare_execute_xa_start_resp(event::ObMIOBuffer &mio_buf,
+                                 ObProxyMysqlRequest &client_request,
+                                 ObMysqlClientSession &client_session,
+                                 const ObProxyProtocol protocol);
 
   static int build_select_tx_ro_resp(event::ObMIOBuffer &mio_buf,
                                      ObProxyMysqlRequest &client_request,
-                                     ObClientSessionInfo &info,
+                                     ObMysqlClientSession &client_session,
+                                     const ObProxyProtocol protocol,
                                      const bool is_in_trans);
 
   static int build_ok_resq_with_state_changed(event::ObMIOBuffer &mio_buf,
                                               ObProxyMysqlRequest &client_request,
-                                              ObClientSessionInfo &info,
+                                              ObMysqlClientSession &client_session,
+                                              const ObProxyProtocol protocol,
                                               const bool is_in_trans);
 
   static int build_select_route_addr_resp(event::ObMIOBuffer &mio_buf,
                                           ObProxyMysqlRequest &client_request,
-                                          ObClientSessionInfo &info,
+                                          ObMysqlClientSession &client_session,
+                                          const ObProxyProtocol protocol,
                                           const bool is_in_trans,
-                                          int64_t addr);
+                                          const struct sockaddr &addr);
 
   static int build_set_route_addr_resp(event::ObMIOBuffer &mio_buf,
                                        ObProxyMysqlRequest &client_request,
-                                       ObClientSessionInfo &info,
+                                       ObMysqlClientSession &client_session,
+                                       const ObProxyProtocol protocol,
                                        const bool is_in_trans);
 
   static int build_select_proxy_version_resp(event::ObMIOBuffer &mio_buf,
                                              ObProxyMysqlRequest &client_request,
-                                             ObClientSessionInfo &info,
+                                             ObMysqlClientSession &client_session,
+                                             const ObProxyProtocol protocol,
                                              const bool is_in_trans);
 };
 
 inline int ObMysqlResponseBuilder::build_start_trans_resp(event::ObMIOBuffer &mio_buf,
                                                           ObProxyMysqlRequest &client_request,
-                                                          ObClientSessionInfo &info)
+                                                          ObMysqlClientSession &client_session,
+                                                          const ObProxyProtocol protocol)
 {
   static const bool is_in_trans = true;
   static const bool is_state_changed = false;
-  return build_ok_resp(mio_buf, client_request, info, is_in_trans, is_state_changed);
+  return build_ok_resp(mio_buf, client_request, client_session, protocol, is_in_trans, is_state_changed);
 }
 
 inline int ObMysqlResponseBuilder::build_ok_resq_with_state_changed(event::ObMIOBuffer &mio_buf,
                                                                     ObProxyMysqlRequest &client_request,
-                                                                    ObClientSessionInfo &info,
+                                                                    ObMysqlClientSession &client_session,
+                                                                    const ObProxyProtocol protocol,
                                                                     const bool is_in_trans)
 {
   static const bool is_state_changed = true;
-  return build_ok_resp(mio_buf, client_request, info, is_in_trans, is_state_changed);
+  return build_ok_resp(mio_buf, client_request, client_session, protocol, is_in_trans, is_state_changed);
 }
 
 inline int ObMysqlResponseBuilder::build_set_route_addr_resp(event::ObMIOBuffer &mio_buf,
                                                              ObProxyMysqlRequest &client_request,
-                                                             ObClientSessionInfo &info,
+                                                             ObMysqlClientSession &client_session,
+                                                             const ObProxyProtocol protocol,
                                                              const bool is_in_trans)
 {
   static const bool is_state_changed = false;
-  return build_ok_resp(mio_buf, client_request, info, is_in_trans, is_state_changed);
+  return build_ok_resp(mio_buf, client_request, client_session, protocol, is_in_trans, is_state_changed);
 }
 
 } // end of namespace proxy

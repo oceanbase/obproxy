@@ -383,6 +383,13 @@ public:
   void set_time_value(const int64_t value);
   void set_year_value(const uint8_t value);
 
+  void set_timestamp_tz(const int64_t time_us, const uint32_t time_ctx_desc) { set_otimestamp_value(ObTimestampTZType, time_us, time_ctx_desc); }
+  void set_timestamp_ltz(const int64_t time_us, const uint16_t time_desc) { set_otimestamp_value(ObTimestampLTZType, time_us, time_desc); }
+  void set_timestamp_nano(const int64_t time_us, const uint16_t time_desc) { set_otimestamp_value(ObTimestampNanoType, time_us, time_desc); }
+  void set_timestamp_tz(const ObOTimestampData &value) { set_otimestamp_value(ObTimestampTZType, value); }
+  void set_timestamp_ltz(const ObOTimestampData &value) { set_otimestamp_value(ObTimestampLTZType, value); }
+  void set_timestamp_nano(const ObOTimestampData &value) { set_otimestamp_value(ObTimestampNanoType, value); }
+
   void set_string(const ObObjType type, const char *ptr, const ObString::obstr_size_t size);
   void set_string(const ObObjType type, const ObString &value);
   void set_varchar(const ObString &value);

@@ -23,6 +23,8 @@ obproxy/utils/ob_cpu_affinity.cpp\
 obproxy/utils/ob_proxy_blowfish.h\
 obproxy/utils/ob_proxy_blowfish.cpp\
 obproxy/utils/ob_proxy_monitor_utils.h\
-obproxy/utils/ob_proxy_monitor_utils.cpp
+obproxy/utils/ob_proxy_monitor_utils.cpp\
+obproxy/utils/ob_target_db_server.h\
+obproxy/utils/ob_target_db_server.cpp
 
 utils_sources:= ${utils_common_sources}

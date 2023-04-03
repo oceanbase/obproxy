@@ -44,7 +44,10 @@ public:
   bool init(common::ObMalloc* allocator, const int64_t mod_id);
   bool set_value(const common::ObString &value);
   bool set_value(const int32_t len, const char *value);
+  bool set_value_with_quote(const common::ObString &value, const char quote);
+  bool set_value_with_quote(const int32_t len, const char *value, const char quote);
   uint64_t hash(uint64_t seed = 0) const { return config_string_.hash(seed); }
+  void set_integer(const int64_t other);
   common::ObString config_string_;
   DECLARE_TO_STRING;
 private:

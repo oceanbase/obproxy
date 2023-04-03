@@ -45,6 +45,7 @@
     } \
   }
 
+// limit max length
 #define PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result, column_name, field, max_length, real_length) \
   if (OB_SUCCESS == ret) { \
     ObString str_value; \
@@ -65,6 +66,27 @@
       PROXY_LOG(WARN, "fail to extract strbuf field mysql", K(column_name), K(real_length), K(ret)); \
     } \
   }
+
+// unlimit max length
+#define PROXY_EXTRACT_STRBUF_FIELD_MYSQL_UNLIMIT_LENGTH(result, column_name, field, real_length, allocator) \
+if (OB_SUCCESS == ret) { \
+  ObString str_value; \
+  if (OB_SUCCESS == (ret = (result).get_varchar(column_name, str_value))) { \
+    if (str_value.empty()) { \
+      real_length = 0;             \
+      field = NULL; \
+    } else if (OB_ISNULL(field = static_cast<char *>(allocator.alloc(str_value.length() + 1)))) { \
+      ret = OB_ALLOCATE_MEMORY_FAILED; \
+      LOG_WARN("fail to allc part key name", K(field), K(str_value.length()), K(ret)); \
+    } else { \
+      MEMCPY(field, str_value.ptr(), str_value.length()); \
+      real_length = str_value.length();                   \
+      field[str_value.length()] = '\0'; \
+    } \
+  } else { \
+    PROXY_LOG(WARN, "fail to extract strbuf field mysql", K(column_name), K(real_length), K(ret)); \
+  } \
+}
 
 namespace oceanbase
 {

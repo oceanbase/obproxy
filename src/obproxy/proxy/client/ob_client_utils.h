@@ -16,6 +16,7 @@
 #include "iocore/net/ob_net.h"
 #include "proxy/mysqllib/ob_mysql_transaction_analyzer.h"
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
+#include "utils/ob_proxy_table_define.h"
 
 namespace oceanbase
 {
@@ -23,23 +24,50 @@ namespace obproxy
 {
 namespace proxy
 {
+class ObMysqlClient;
+
+union ObClientFlags
+{
+  ObClientFlags() : flags_(0) {}
+  explicit ObClientFlags(uint32_t flag) : flags_(flag) {}
+
+  bool is_skip_autocommit() const { return 1 == client_flags_.OB_CLIENT_SKIP_AUTOCOMMIT; }
+  bool is_send_request_direct() const { return 1 == client_flags_.OB_CLIENT_SEND_REQUEST_DIRECT; }
+
+  uint32_t flags_;
+  struct ClinetFlags
+  {
+    uint32_t OB_CLIENT_SKIP_AUTOCOMMIT:          1;
+    uint32_t OB_CLIENT_SEND_REQUEST_DIRECT:      1;
+    uint32_t OB_CLIENT_FLAG_RESERVED_NOT_USE:   30;
+  } client_flags_;
+};
+
 class ObMysqlRequestParam
 {
 public:
   ObMysqlRequestParam() : sql_(), is_deep_copy_(false), is_user_idc_name_set_(false),
-                          need_print_trace_stat_(false), current_idc_name_() {};
+                          need_print_trace_stat_(false), current_idc_name_(),
+                          target_addr_(), ob_client_flags_(0), mysql_client_(NULL),
+                          is_detect_client_(false) {};
   explicit ObMysqlRequestParam(const char *sql)
     : sql_(sql), is_deep_copy_(false), is_user_idc_name_set_(false),
-      need_print_trace_stat_(false), current_idc_name_() {};
+      need_print_trace_stat_(false), current_idc_name_(), target_addr_(),
+      ob_client_flags_(0), mysql_client_(NULL), is_detect_client_(false) {};
   ObMysqlRequestParam(const char *sql, const ObString &idc_name)
     : sql_(sql), is_deep_copy_(false), is_user_idc_name_set_(true),
-      need_print_trace_stat_(true), current_idc_name_(idc_name) {};
+      need_print_trace_stat_(true), current_idc_name_(idc_name), target_addr_(),
+      ob_client_flags_(0), mysql_client_(NULL), is_detect_client_(false) {};
   void reset();
   void reset_sql();
+  void set_target_addr(const common::ObAddr addr) { target_addr_ = addr; }
+  void set_mysql_client(ObMysqlClient *mysql_client) { mysql_client_ = mysql_client; }
+  void set_is_detect_client(const bool is_detect_client) { is_detect_client_ = is_detect_client; }
   bool is_valid() const { return !sql_.empty(); }
   int deep_copy(const ObMysqlRequestParam &other);
   int deep_copy_sql(const common::ObString &sql);
-  TO_STRING_KV(K_(sql), K_(is_deep_copy), K_(current_idc_name), K_(is_user_idc_name_set), K_(need_print_trace_stat));
+  TO_STRING_KV(K_(sql), K_(is_deep_copy), K_(current_idc_name), K_(is_user_idc_name_set),
+               K_(need_print_trace_stat), K_(target_addr), K(ob_client_flags_.flags_), K_(is_detect_client));
 
   common::ObString sql_;
   bool is_deep_copy_;
@@ -47,6 +75,12 @@ public:
   bool need_print_trace_stat_;
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
+  common::ObAddr target_addr_;
+  // using flags to affect client_vc acition
+  // bit 1: whether set autocommit
+  ObClientFlags ob_client_flags_;
+  ObMysqlClient* mysql_client_;
+  bool is_detect_client_;
 };
 
 class ObClientMysqlResp
@@ -150,15 +184,15 @@ inline int ObMysqlResultHandler::get_double(const char *col_name, double &double
   return (NULL == rs_fetcher_) ? (common::OB_INNER_STAT_ERROR) : (rs_fetcher_->get_double(col_name, double_val));
 }
 
-class ObClientReuqestInfo
+class ObClientRequestInfo
 {
 public:
-   ObClientReuqestInfo()
-    : user_name_(), database_name_(), password_(),
+   ObClientRequestInfo()
+    : user_name_(), database_name_(), cluster_name_(), password_(),
       password0_(), password1_(), using_password_num_(-1),
       request_param_(), name_(NULL), name_len_(0),
-      need_skip_stage2_(false) {}
-  ~ObClientReuqestInfo() { reset(); }
+      need_skip_stage2_(false), password_version_(0) {}
+  ~ObClientRequestInfo() { reset(); }
 
   void reset();
   void reset_names();
@@ -170,21 +204,28 @@ public:
   int set_names(const common::ObString &user_name,
                 const common::ObString &password,
                 const common::ObString &database_name,
+                const common::ObString &cluster_name,
                 const common::ObString &password1 = "");
   int set_request_param(const ObMysqlRequestParam &request_param);
 
   const common::ObString &get_user_name() const { return user_name_; }
   const common::ObString &get_database_name() const { return database_name_; }
-  const common::ObString &get_password() const { return password_; }
+  const common::ObString &get_password();
   bool change_password()
   {
     bool bret = false;
-    if (using_password_num_ != -1) {
+    if (using_password_num_ != -1 && user_name_.prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME)) {
       using_password_num_ = (using_password_num_ + 1) % 2;
       if (using_password_num_ == 0) {
         password_ = password0_;
+        if ('\0' == *password0_.ptr()) {
+          password_.reset();
+        }
       } else {
         password_ = password1_;
+        if ('\0' == *password1_.ptr()) {
+          password_.reset();
+        }
       }
       bret = true;
     }
@@ -199,6 +240,7 @@ public:
 private:
   common::ObString user_name_;
   common::ObString database_name_;
+  common::ObString cluster_name_;
   common::ObString password_;
   common::ObString password0_;
   common::ObString password1_;
@@ -207,8 +249,9 @@ private:
   char *name_;
   int64_t name_len_;
   bool need_skip_stage2_;
+  int64_t password_version_;
 
-  DISALLOW_COPY_AND_ASSIGN(ObClientReuqestInfo);
+  DISALLOW_COPY_AND_ASSIGN(ObClientRequestInfo);
 };
 
 class ObClientUtils
@@ -224,7 +267,7 @@ public:
                           const int64_t buf_len, int64_t &copy_len);
 
   static int build_handshake_response_packet(ObClientMysqlResp *handshake,
-                                             ObClientReuqestInfo *info,
+                                             ObClientRequestInfo *info,
                                              event::ObMIOBuffer *handshake_resp_buf);
 };
 

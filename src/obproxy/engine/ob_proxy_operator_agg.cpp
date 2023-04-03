@@ -604,7 +604,7 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
     ResultRow *row = NULL;
     while (OB_SUCC(ret) && OB_SUCC(opres->next(row))) {
       ObProxyGroupUnit group_unit(allocator_);
-      if (OB_FAIL(group_unit.init(row, group_exprs))) {
+      if (OB_FAIL(group_unit.init(row, result_fields_, group_exprs))) {
         LOG_WARN("fail to init group unit", K(ret));
       } else if (NULL == current_group_unit_) {
         if (OB_FAIL(ObProxyGroupUnit::create_group_unit(allocator_, current_group_unit_, group_unit))) {
@@ -732,7 +732,7 @@ int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObP
     while (OB_SUCC(ret) && OB_SUCC(opres->next(row))) {
       ObProxyGroupUnit group_unit(allocator_);
       ObProxyGroupUnit *current_group_unit = NULL;
-      if (OB_FAIL(group_unit.init(row, group_exprs))) {
+      if (OB_FAIL(group_unit.init(row, result_fields_, group_exprs))) {
         LOG_WARN("fail to init group unit", K(ret));
       } else if (OB_FAIL(group_unit_map_.get_refactored(group_unit, current_group_unit))) {
         if (OB_HASH_NOT_EXIST == ret) {
@@ -827,7 +827,8 @@ ObProxyGroupUnit::~ObProxyGroupUnit()
   }
 }
 
-int ObProxyGroupUnit::init(ResultRow *row, const ObIArray<ObProxyGroupItem*>& group_exprs)
+int ObProxyGroupUnit::init(ResultRow *row, ResultFields *result_fields,
+                           const ObIArray<ObProxyGroupItem*>& group_exprs)
 {
   int ret = OB_SUCCESS;
 
@@ -837,11 +838,21 @@ int ObProxyGroupUnit::init(ResultRow *row, const ObIArray<ObProxyGroupItem*>& gr
   for (int64_t i = 0; OB_SUCC(ret) && i < group_exprs.count(); i++) {
     if (OB_FAIL(group_exprs.at(i)->calc(ctx, calc_item, group_values_))) {
       LOG_WARN("fail to calc group exprs", K(ret));
+    } else {
+      int64_t index = group_exprs.at(i)->get_expr()->get_index();
+      if (-1 != index) {
+        ObObj &value = group_values_.at(i);
+        if (OB_FAIL(change_sql_value(value, result_fields->at(index), &allocator_))) {
+          LOG_WARN("fail to change sql value", K(value),
+                   "filed", result_fields->at(index), K(ret));
+        }
+      }
     }
   }
 
   if (OB_SUCC(ret)) {
     row_ = row;
+    result_fields_ = result_fields;
   }
 
   return ret;
@@ -880,6 +891,7 @@ int ObProxyGroupUnit::assign(const ObProxyGroupUnit &group_unit)
     LOG_WARN("fail to assign group value", K(ret));
   } else {
     row_ = group_unit.get_row();
+    result_fields_ = group_unit.get_result_fields();
   }
 
   return ret;
@@ -898,8 +910,19 @@ int ObProxyGroupUnit::do_aggregate(ResultRow *row)
     agg_values.reuse();
     if (OB_FAIL(agg_unit->get_agg_expr()->calc(ctx, calc_item, agg_values))) {
       LOG_WARN("fail to calc agg expr", K(ret));
-    } else if (OB_FAIL(agg_unit->merge(agg_values))) {
-      LOG_WARN("fail to merge agg value", K(ret));
+    } else {
+      int64_t index = agg_unit->get_agg_expr()->get_index();
+      if (-1 != index) {
+        ObObj &value = agg_values.at(0);
+        if (OB_FAIL(change_sql_value(value, result_fields_->at(index), &allocator_))) {
+          LOG_WARN("fail to change sql value", K(value),
+                   "filed", result_fields_->at(index), K(ret));
+        }
+      }
+
+      if (OB_SUCC(ret) && OB_FAIL(agg_unit->merge(agg_values))) {
+        LOG_WARN("fail to merge agg value", K(ret));
+      }
     }
   }
 

@@ -178,7 +178,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   {
     int32_t value = va_arg(args, int32_t);
 
-    ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, vip_addr_name, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, vip_addr_name, true);
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(USED_CONNECTIONS, USED_CONNECTIONS_HELP,
                                                        label_vector, value, false))) {

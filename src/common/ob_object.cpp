@@ -249,7 +249,7 @@ int64_t ObObj::get_deep_copy_size() const
   int64_t ret = 0;
   if (is_string_type()) {
     ret += val_len_;
-  } else if (ObNumberType == meta_.get_type() || ObUNumberType == meta_.get_type()) {
+  } else if (ob_is_number_tc(get_type())) {
     ret += (sizeof(uint32_t) * nmb_desc_.len_);
   }
   return ret;
@@ -443,7 +443,7 @@ ObObjTypeFuncs OBJ_FUNCS[ObMaxType] =
   DEF_FUNC_ENTRY(ObRawType),           // 39, raw
   DEF_FUNC_ENTRY(ObNullType),          // 40
   DEF_FUNC_ENTRY(ObNullType),          // 41
-  DEF_FUNC_ENTRY(ObNullType),          // 42
+  DEF_FUNC_ENTRY(ObNumberFloatType),   // 42
   DEF_FUNC_ENTRY(ObNVarchar2Type),     // 43, nvarchar2
   DEF_FUNC_ENTRY(ObNCharType),         // 44, nchar
 };

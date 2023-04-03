@@ -23,6 +23,8 @@
 #include "rpc/obmysql/packet/ompk_handshake.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
 #include "proxy/mysqllib/ob_mysql_resp_analyzer.h"
+#include "proxy/mysqllib/ob_2_0_protocol_struct.h"
+#include "lib/utility/ob_2_0_full_link_trace_info.h"
 
 namespace oceanbase
 {
@@ -41,7 +43,8 @@ enum ObOKPacketActionType {
 struct ObRespAnalyzeResult
 {
   ObRespAnalyzeResult() { reset(); }
-  ~ObRespAnalyzeResult() { }
+  ~ObRespAnalyzeResult() { destroy(); }
+  
   void reset();
   void destroy() { reset(); }
 
@@ -75,7 +78,7 @@ struct ObRespAnalyzeResult
   bool is_server_can_use_compress() const { return (1 == server_capabilities_lower_.capability_flag_.OB_SERVER_CAN_USE_COMPRESS); }
   void set_server_trace_id(const common::ObString &trace_id);
   bool support_ssl() const { return 1 == server_capabilities_lower_.capability_flag_.OB_SERVER_SSL; }
-
+  bool is_server_trans_internal_routing() const { return is_server_trans_internal_routing_; }
   bool is_not_supported_error() const
   {
     return (is_error_resp() && ER_NOT_SUPPORTED_YET == error_pkt_.get_err_code());
@@ -132,14 +135,30 @@ struct ObRespAnalyzeResult
   {
     return (is_error_resp() && -common::OB_STANDBY_WEAK_READ_ONLY == error_pkt_.get_err_code());
   }
+  bool is_trans_free_route_not_supported_error() const 
+  {
+    return (is_error_resp() && -common::OB_TRANS_FREE_ROUTE_NOT_SUPPORTED == error_pkt_.get_err_code());
+  }
+  bool is_mysql_wrong_arguments_error() const
+  {
+    return (is_error_resp() && ER_WRONG_ARGUMENTS == error_pkt_.get_err_code());
+  }
+  bool is_internal_error() const
+  {
+    return (is_error_resp() && -common::OB_INTERNAL_ERROR == error_pkt_.get_err_code());
+  }
 
   inline uint32_t get_server_capability() const
   {
     return ((server_capabilities_upper_.capability_ << 16) | server_capabilities_lower_.capability_);
   }
 
-  int64_t to_string(char *buf, const int64_t buf_len) const;
+  Ob20ExtraInfo &get_extra_info() { return extra_info_; }
+  const Ob20ExtraInfo &get_extra_info() const { return extra_info_; }
 
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+  
+  /* define elements */
   bool has_more_compress_packet_;
   bool is_decompressed_;
   bool is_trans_completed_;
@@ -165,9 +184,7 @@ struct ObRespAnalyzeResult
   obmysql::OMPKHandshake::ServerCapabilitiesUpper server_capabilities_upper_;
   bool is_resultset_resp_;
   char scramble_buf_[obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE + 1];
-
   ObOKPacketActionType ok_packet_action_type_;
-
   int64_t reserved_len_;
   int64_t reserved_len_for_ob20_ok_;
   int64_t last_ok_pkt_len_;
@@ -176,10 +193,12 @@ struct ObRespAnalyzeResult
   // only one of structs below is valid, according to ending_type_
   obmysql::OMPKError error_pkt_;
   obutils::ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> error_pkt_buf_; // only store error pkt
-
   common::ObString server_trace_id_;
   char server_trace_id_buf_[common::OB_MAX_TRACE_ID_LENGTH];
 
+  Ob20ExtraInfo extra_info_;
+  common::FLTObjManage flt_;
+  bool is_server_trans_internal_routing_;
   DISALLOW_COPY_AND_ASSIGN(ObRespAnalyzeResult);
 };
 
@@ -190,6 +209,7 @@ public:
   ~ObMysqlResp() { destroy(); }
   void reset() { analyze_result_.reset(); }
   void destroy() { analyze_result_.destroy(); }
+  
   ObRespAnalyzeResult &get_analyze_result() { return analyze_result_; }
   const ObRespAnalyzeResult &get_analyze_result() const { return analyze_result_; }
 
@@ -225,6 +245,9 @@ inline void ObRespAnalyzeResult::reset()
   server_capabilities_upper_.capability_ = 0;
   is_resultset_resp_ = false;
   server_trace_id_.reset();
+  extra_info_.reset();
+  flt_.reset();
+  is_server_trans_internal_routing_ = false;
 }
 
 inline void ObRespAnalyzeResult::set_server_trace_id(const common::ObString &trace_id)
@@ -240,6 +263,7 @@ inline void ObRespAnalyzeResult::set_server_trace_id(const common::ObString &tra
     }
   }
 }
+
 
 } // end of namespace proxy
 } // end of namespace obproxy

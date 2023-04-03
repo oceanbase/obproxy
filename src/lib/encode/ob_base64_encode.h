@@ -26,12 +26,21 @@ private:
 template<int N>
 friend class InitBase64Values;
 static char BASE64_CHARS[];
+static int FROM_BASE64_TABLE[];
 
   static uint8_t BASE64_VALUES[256];
 
   static inline bool is_base64_char(char c)
   {
     return std::isalnum(c) || c == '+' || c == '/';
+  }
+
+  static inline bool my_base64_decoder_skip_spaces(char c)
+  {
+    if (FROM_BASE64_TABLE[(uint8_t) c] != -2) {
+      return false;
+    }
+    return true;
   }
 public:
   static int64_t needed_encoded_length(const int64_t buf_size)
@@ -48,7 +57,8 @@ public:
                     char* output, const int64_t output_len, int64_t &pos);
 
   static int decode(const char* input, const int64_t input_len,
-                    uint8_t* output, const int64_t output_len, int64_t &pos);
+                    uint8_t* output, const int64_t output_len,
+                    int64_t &pos, bool skip_spaces = false);
 };
 } // end namespace common
 } // end namespace oceanbase

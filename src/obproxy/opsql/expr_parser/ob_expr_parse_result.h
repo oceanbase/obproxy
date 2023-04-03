@@ -16,6 +16,8 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include <setjmp.h>
+#include <strings.h>
+#include <stddef.h>
 #include "opsql/ob_proxy_parse_type.h"
 #include "opsql/func_expr_parser/ob_func_expr_parse_result.h"
 
@@ -122,9 +124,18 @@ typedef struct _ObProxyTokenList
   ObProxyTokenNode *tail_;
 } ObProxyTokenList;
 
+/**
+ * @brief If level_ == PART_KEY_LEVEL_ONE, first_part_column_idx_ will be set.
+ *        If level_ == PART_KEY_LEVEL_TWO, second_part_column_idx_ will be set.
+ *        If level_ == PART_KEY_LEVEL_BOTH, both of them will be set.
+ *        first_part_column_idx_: the column's idx in partition expression
+ *        second_part_column_idx_: the column's idx in subpartition expression
+ */
 typedef struct _ObProxyRelationExpr
 {
   int64_t column_idx_;
+  int64_t first_part_column_idx_;
+  int64_t second_part_column_idx_;
   ObProxyTokenList *left_value_;
   ObProxyTokenList *right_value_;
   ObProxyFunctionType type_;
@@ -148,17 +159,21 @@ typedef struct _ObProxyPartKeyAccuracy {
 typedef struct _ObProxyPartKey
 {
   ObProxyParseString name_;
+  ObProxyParseString default_value_; // serialized value
   ObProxyPartKeyLevel level_;
-  int64_t idx_; // column position
+  int64_t idx_; // pos in schema columns 
   int64_t obj_type_; // ObObjType
   int64_t cs_type_; // ObCollationType 
+  bool is_exist_in_sql_;  // is part key exist in sql
 
   bool is_generated_;
   int64_t generated_col_idx_;
   int64_t param_num_;
   ObProxyExprType func_type_;
   ObProxyParamNode *params_[OBPROXY_MAX_PARAM_NUM]; // used to store generated func param
-  int64_t idx_in_rowid_;
+  int64_t real_source_idx_; // the real source idx of generated key, have no params_
+  int64_t idx_in_rowid_;        // pos in rowid
+  int64_t idx_in_part_columns_; // pos in part expr columns
   ObProxyPartKeyAccuracy accuracy_;
 } ObProxyPartKey;
 
@@ -183,7 +198,6 @@ typedef struct _ObExprParseResult
   ObExprParseMode parse_mode_;
   ObProxyTableInfo table_info_;
   ObProxyPartKeyInfo part_key_info_;
-  int64_t target_mask_;
 
   // scanner buffer
   void *yyscan_info_; // yy_scan_t
@@ -193,7 +207,6 @@ typedef struct _ObExprParseResult
   jmp_buf jmp_buf_; // handle fatal error
   const char *start_pos_;
   const char *end_pos_;
-  int64_t cur_mask_; // if cur_flag_ == target_flag_ means we will finish parse
   int64_t column_idx_;
   int64_t values_list_idx_;
   int64_t multi_param_values_;
@@ -203,10 +216,22 @@ typedef struct _ObExprParseResult
   // result argument
   ObProxyRelationInfo relation_info_;
   ObProxyRelationInfo all_relation_info_;
-  // oracle rowid
+
+  // hash rowid or not
   bool has_rowid_;
-  ObProxyParseString rowid_str_;
 } ObExprParseResult;
+
+static const char *g_ROWID = "ROWID";
+static inline bool is_equal_to_rowid(ObProxyParseString *str)
+{
+  bool bret = false;
+  if (str == NULL || str->str_ == NULL || str->str_len_ != 5) {
+    // ret
+  } else {
+    bret = (strncasecmp(str->str_, g_ROWID, 5) == 0) ? true : false;
+  }
+  return bret;
+}
 
 #ifdef __cplusplus
 extern "C" const char* get_expr_parse_mode(const ObExprParseMode mode);
