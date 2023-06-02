@@ -6131,36 +6131,47 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
   }
 
   if (OB_SUCC(ret)) {
-    bool is_weak_read_user = false;
-    int64_t total_size = get_global_proxy_config().weak_read_user_list.size();
-    if (OB_UNLIKELY(total_size > 0)) {
-      ObMysqlAuthRequest &auth_req = session_info.get_login_req();
-      ObHSRResult &hsr = auth_req.get_hsr_result();
-      char user_buf[MAX_VALUE_LENGTH];
-      for (int64_t i = 0; OB_SUCC(ret) && i < total_size; ++i) {
-        user_buf[0] = '\0';
-        if (OB_FAIL(get_global_proxy_config().weak_read_user_list.get(i, user_buf, static_cast<int64_t>(sizeof(user_buf))))) {
-          LOG_WARN("get weak read user list variables failed", K(ret));
-        } else{
-          if (hsr.response_.get_username().prefix_match(user_buf)){
-            is_weak_read_user = true;
-            break;
+    ObConfigStrListItem strlist_item;
+    if (OB_FAIL(get_global_config_processor().get_proxy_config_list_item(
+         addr, cluster_name, tenant_name, "weak_read_user_list", strlist_item))) {
+      LOG_WARN("get vip weak_read_user_list failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+    } else {
+      bool is_weak_read_user = false;
+      int64_t total_size = strlist_item.size();
+      if (OB_UNLIKELY(total_size > 0)) {
+        ObMysqlAuthRequest &auth_req = session_info.get_login_req();
+        ObHSRResult &hsr = auth_req.get_hsr_result();
+        char user_buf[MAX_VALUE_LENGTH];
+        for (int64_t i = 0; OB_SUCC(ret) && i < total_size; ++i) {
+          user_buf[0] = '\0';
+          if (OB_FAIL(strlist_item.get(i, user_buf, static_cast<int64_t>(sizeof(user_buf))))) {
+            LOG_WARN("get weak read user list variables failed", K(ret));
+          } else{
+            if (hsr.response_.get_username().prefix_match(user_buf)){
+              is_weak_read_user = true;
+              break;
+            }
           }
         }
       }
-    }
-    ObConfigIntItem int_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
+      bool is_request_follower = false;
+      if (is_weak_read_user){
+        is_request_follower = (RequestFollower == 1);
+      } else{
+        ObConfigIntItem int_item;
+        if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
          addr, cluster_name, tenant_name, "obproxy_read_consistency", int_item))) {
-      LOG_WARN("get vip obproxy_read_consistency failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      bool is_request_follower = (RequestFollower == int_item.get_value());
+           LOG_WARN("get vip obproxy_read_consistency failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+        } else{
+          is_request_follower = (RequestFollower == int_item.get_value());
+        }
+      }
       bool is_sys_var_update = (session_info.is_request_follower_user() != is_request_follower);
       session_info.set_is_request_follower_user(is_request_follower);
-      if (is_sys_var_update || is_weak_read_user) {
+      if (is_sys_var_update) {
         ObString ob_read_consistency("ob_read_consistency");
         ObString weak;
-        if (session_info.is_request_follower_user() || is_weak_read_user) {
+        if (session_info.is_request_follower_user()) {
           weak = "2";
         } else {
           weak = "3";
