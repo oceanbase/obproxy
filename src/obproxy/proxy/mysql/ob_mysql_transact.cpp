@@ -6132,7 +6132,7 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
 
   if (OB_SUCC(ret)) {
     ObConfigStrListItem strlist_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_list_item(
+    if (OB_FAIL(get_global_config_processor().get_proxy_config_strlist_item(
          addr, cluster_name, tenant_name, "weak_read_user_list", strlist_item))) {
       LOG_WARN("get vip weak_read_user_list failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
     } else {

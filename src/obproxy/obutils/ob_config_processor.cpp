@@ -768,7 +768,7 @@ int ObConfigProcessor::get_proxy_config_int_item(const ObVipAddr &addr, const Ob
   return ret;
 }
 
-int ObConfigProcessor::get_proxy_config_list_item(const ObVipAddr &addr, const ObString &cluster_name,
+int ObConfigProcessor::get_proxy_config_strlist_item(const ObVipAddr &addr, const ObString &cluster_name,
                                                   const ObString &tenant_name, const ObString& name,
                                                   ObConfigStrListItem &ret_item)
 {
