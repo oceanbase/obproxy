@@ -116,7 +116,7 @@ public:
   int get_proxy_config_int_item(const ObVipAddr &addr, const common::ObString &cluster_name,
                                  const common::ObString &tenant_name, const common::ObString& name,
                                  common::ObConfigIntItem &ret_item);
-  int get_proxy_config_list_item(const ObVipAddr &addr, const common::ObString &cluster_name,
+  int get_proxy_config_strlist_item(const ObVipAddr &addr, const common::ObString &cluster_name,
                                  const common::ObString &tenant_name, const common::ObString& name,
                                  common::ObConfigStrListItem &ret_item);
   int get_proxy_config_with_level(const ObVipAddr &addr, const common::ObString &cluster_name,
