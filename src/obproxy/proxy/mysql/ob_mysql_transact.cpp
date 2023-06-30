@@ -6154,7 +6154,7 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
           }
         }
       }
-      bool is_request_follower = false;
+      bool is_request_follower = true;
       if (is_weak_read_user){
         is_request_follower = (RequestFollower == 1);
       } else{
@@ -6166,20 +6166,22 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
           is_request_follower = (RequestFollower == int_item.get_value());
         }
       }
-      bool is_sys_var_update = (session_info.is_request_follower_user() != is_request_follower);
-      session_info.set_is_request_follower_user(is_request_follower);
-      if (is_sys_var_update) {
-        ObString ob_read_consistency("ob_read_consistency");
-        ObString weak;
-        if (session_info.is_request_follower_user()) {
-          weak = "2";
-        } else {
-          weak = "3";
-        }
-        if (OB_FAIL(session_info.update_sys_variable(ob_read_consistency, weak))) {
-          LOG_WARN("replace user variables failed", K(weak), K(ret));
-        } else {
-          session_info.set_read_consistency_set_flag(true);
+      if (OB_SUCC(ret)) {
+        bool is_sys_var_update = (session_info.is_request_follower_user() != is_request_follower);
+        session_info.set_is_request_follower_user(is_request_follower);
+        if (is_sys_var_update) {
+          ObString ob_read_consistency("ob_read_consistency");
+          ObString weak;
+          if (session_info.is_request_follower_user()) {
+            weak = "2";
+          } else {
+            weak = "3";
+          }
+          if (OB_FAIL(session_info.update_sys_variable(ob_read_consistency, weak))) {
+            LOG_WARN("replace user variables failed", K(weak), K(ret));
+          } else {
+            session_info.set_read_consistency_set_flag(true);
+          }
         }
       }
     }
