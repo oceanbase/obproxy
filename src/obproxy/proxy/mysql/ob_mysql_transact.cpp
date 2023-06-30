@@ -6154,9 +6154,9 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
           }
         }
       }
-      bool is_request_follower = true;
+      bool is_request_follower = false;
       if (is_weak_read_user){
-        is_request_follower = (RequestFollower == 1);
+        is_request_follower = true;
       } else{
         ObConfigIntItem int_item;
         if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
