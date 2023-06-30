@@ -768,6 +768,22 @@ int ObConfigProcessor::get_proxy_config_int_item(const ObVipAddr &addr, const Ob
   return ret;
 }
 
+int ObConfigProcessor::get_proxy_config_strlist_item(const ObVipAddr &addr, const ObString &cluster_name,
+                                                  const ObString &tenant_name, const ObString& name,
+                                                  ObConfigStrListItem &ret_item)
+{
+  int ret = OB_SUCCESS;
+  ObConfigItem item;
+  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item))) {
+    LOG_WARN("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+  } else {
+    ret_item = item.str();
+    LOG_DEBUG("get list item succ", K(ret_item));
+  }
+
+  return ret;
+}
+
 } // end of obutils
 } // end of obproxy
 } // end of oceanbase
