@@ -9530,8 +9530,7 @@ inline void ObMysqlSM::update_monitor_log()
           is_slow_query = true;
           _OBPROXY_SLOW_LOG(WARN, MONITOR_LOG_FORMAT, MONITOR_LOG_PARAM);
         }
-
-        if (is_error_resp) {
+        if (is_error_resp && OB_MYSQL_COM_LOGIN ！= request_cmd) {
           const ObString &server_trace_id = get_server_trace_id();
           _OBPROXY_ERROR_LOG(WARN, MONITOR_ERROR_LOG_FORMAT, MONITOR_ERROR_LOG_PARAM);
         }
