@@ -22,12 +22,14 @@
 #include "proxy/mysqllib/ob_proxy_session_info.h"
 #include "obproxy/packet/ob_proxy_packet_writer.h"
 #include "obproxy/proxy/mysql/ob_mysql_client_session.h"
+#include "stat/ob_net_stats.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
 using namespace oceanbase::sql;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::packet;
+using namespace oceanbase::obproxy::net;
 
 namespace oceanbase
 {
@@ -37,6 +39,7 @@ namespace proxy
 {
 const ObString ObMysqlResponseBuilder::OBPROXY_ROUTE_ADDR_NAME = "@obproxy_route_addr";
 const ObString ObMysqlResponseBuilder::OBPROXY_PROXY_VERSION_NAME = "proxy_version()";
+const ObString ObMysqlResponseBuilder::OBPROXY_PROXY_STATUS_NAME = "proxy_status";
 
 int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
                                           ObProxyMysqlRequest &client_request,
@@ -246,7 +249,7 @@ int ObMysqlResponseBuilder::build_prepare_execute_xa_start_resp(ObMIOBuffer &mio
       Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
                                               compressed_seq, true, false, false,
                                               client_session.is_client_support_new_extra_info(),
-                                              client_session.is_trans_internal_routing());
+                                              client_session.is_trans_internal_routing(), false);
       if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
                                                             tmp_mio_reader->read_avail(), ob20_head_param))) {
         LOG_WARN("fail to consume and compress data for executor response packet in ob20", K(ret));
@@ -393,6 +396,60 @@ int ObMysqlResponseBuilder::build_select_proxy_version_resp(ObMIOBuffer &mio_buf
     LOG_WARN("fail to write kv resultset", K(ret));
   }
 
+  return ret;
+}
+
+int ObMysqlResponseBuilder::build_select_proxy_status_resp(ObMIOBuffer &mio_buf,
+                                                            ObProxyMysqlRequest &client_request,
+                                                            ObClientSessionInfo &info,
+                                                            const bool is_in_trans)
+{
+  int ret = OB_SUCCESS;
+
+  // get seq
+  uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+
+  // get field
+  ObMySQLField field;
+  field.cname_ = OBPROXY_PROXY_STATUS_NAME;
+  field.org_cname_ = OBPROXY_PROXY_STATUS_NAME;
+  field.type_ = OB_MYSQL_TYPE_VARCHAR;
+  field.charsetnr_ = CS_TYPE_BINARY;
+  field.flags_ = OB_MYSQL_BINARY_FLAG;
+
+  // get filed value
+  ObString rolling_upgrade_state;
+  const ObHotUpgraderInfo& hot_upgrade_info = get_global_hot_upgrade_info();
+  if (OB_LIKELY(hot_upgrade_info.is_active_for_rolling_upgrade_)) {
+    rolling_upgrade_state = "ACTIVE";
+  } else {
+    bool timeout = hot_upgrade_info.is_graceful_offline_timeout(get_hrtime());
+    int64_t global_connections = 0;
+    NET_READ_GLOBAL_DYN_SUM(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, global_connections);
+    if ((global_connections <= 1) || timeout) {
+      rolling_upgrade_state = "INACTIVE";
+    } else {
+      rolling_upgrade_state = "BE_INACTIVE";
+    }
+  }
+  ObObj field_value;
+  field_value.set_varchar(rolling_upgrade_state);
+
+  // get status flag
+  uint16_t status_flag = 0;
+  int64_t autocommit = info.get_cached_variables().get_autocommit();
+  if (0 != autocommit) {
+    status_flag |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+  }
+  if (is_in_trans) {
+    status_flag |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+  }
+
+  // encode to mio_buf
+  if (OB_FAIL(ObMysqlPacketUtil::encode_kv_resultset(mio_buf, seq,
+                                                     field, field_value, status_flag))) {
+    LOG_WARN("fail to encode kv resultset", K(seq), K(ret));
+  }
   return ret;
 }
 

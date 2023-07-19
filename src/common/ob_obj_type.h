@@ -297,7 +297,10 @@ inline bool ob_is_blob(const ObObjType type, const ObCollationType cs_type)
 inline bool is_obj_type_supported(ObObjType type)
 {
   return (type > ObNullType && type < ObUnknownType)
-          || ob_is_otimestamp_type(type) || ob_is_number_tc(type);
+          || ob_is_otimestamp_type(type) 
+          || ob_is_number_tc(type)
+          || ob_is_nvarchar2(type)
+          || ob_is_nchar(type);
 }
 
 // to_string adapter

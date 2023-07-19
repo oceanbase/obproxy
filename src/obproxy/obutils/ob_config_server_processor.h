@@ -90,7 +90,7 @@ public:
   int get_idc_url(const common::ObString &cluster_name, common::ObIAllocator &allocator, char *&buf, const int64_t cluster_id = OB_DEFAULT_CLUSTER_ID) const;
   static int get_idc_url(const char *rs_url_buf, const int64_t rs_url_buf_len,
                          char *&idc_url_buf, const int64_t idc_url_buf_len, const int64_t cluster_id = OB_DEFAULT_CLUSTER_ID);
-
+  int get_real_cluster_name(common::ObString &real_cluster_name, const common::ObString &cluster_name) const;
   //if user hasn't specify a cluster to connect,
   //we will use the first cluster as the default cluster,
   //except the meta_db_cluster
@@ -98,6 +98,7 @@ public:
 
   bool is_real_meta_cluster_exist() const;
   bool is_cluster_name_exists(const common::ObString &cluster_name) const;
+  bool is_cluster_name_alias(const ObString &cluster_name) const;
   int get_cluster_info(const common::ObString &cluster_name,
                        const bool is_from_default, ObProxyConfigString &real_meta_cluster_name) const;
 

@@ -82,9 +82,12 @@ int ObTargetDbServer::get(net::ObIpEndpoint &dest)
       LOG_WARN("fail to access target db server array", K(ret), K(idx));
     } else if (OB_FAIL(ops_ip_pton(addr, dest))) {
       LOG_WARN("fail to do ops_ip_pton on target db server", K(ret), K(addr));
+    } else if (dest == obproxy_addr_ || (ops_is_ip_loopback(dest) && dest.port() == obproxy_addr_.port())) {
+      LOG_DEBUG("try to get next, since get obproxy itself as target db server", K(ret), K(addr));
+      return get_next(dest);
     } else {
       LOG_DEBUG("succ to get target db server", K(dest));
-    } 
+    }
   }
   return ret;
 }
@@ -108,6 +111,7 @@ void ObTargetDbServer::reset()
   }
   target_db_server_.reset();
   target_db_server_weight_.reset();
+  obproxy_addr_.reset();
 }
 
 bool ObTargetDbServer::contains(net::ObIpEndpoint &addr) 

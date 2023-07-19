@@ -353,9 +353,13 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
             LOG_WARN("insert stmt init failed", K(ret));
         } else if (OB_FAIL(insert_stmt->handle_parse_result(parse_result))) {
           LOG_WARN("insert stmt handle parse result failed", K(ret));
-        } else if (insert_stmt->has_unsupport_expr_type()) {
+        } else if (insert_stmt->has_unsupport_expr_type()
+                   || insert_stmt->has_unsupport_expr_type_for_config()) {
           ret = OB_NOT_SUPPORTED;
           LOG_WARN("insert stmt has unsupport expr type", K(ret));
+        } else if (insert_stmt->get_row_count() > 1) {
+          ret = OB_NOT_SUPPORTED;
+          LOG_WARN("proxy config cannot insert multi row now", K(ret));
         }
         stmt = insert_stmt;
         break;
@@ -368,7 +372,8 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
             LOG_WARN("delete stmt init failed", K(ret));
         } else if (OB_FAIL(delete_stmt->handle_parse_result(parse_result))) {
           LOG_WARN("delete stmt handle parse result failed", K(ret));
-        } else if (delete_stmt->has_unsupport_expr_type()) {
+        } else if (delete_stmt->has_unsupport_expr_type()
+                   || delete_stmt->has_unsupport_expr_type_for_config()) {
           ret = OB_NOT_SUPPORTED;
           LOG_WARN("insert stmt has unsupport expr type", K(ret));
         }
@@ -380,91 +385,93 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
         LOG_WARN("unsupported type", K(node->type_));
     }
 
-    ObCloudFnParams params;
-    bool is_success = true;
-    bool is_execute = false;
-    int tmp_ret = OB_SUCCESS;
-    ObConfigHandler handler;
     if (OB_SUCC(ret)) {
-      params.stmt_type_ = stmt->get_stmt_type();
-      params.table_name_ = stmt->get_table_name();
-      params.fields_ = &(stmt->get_dml_field_result());
-      const char* cluster_name_str = "cluster_name";
-      const char* tenant_name_str = "tenant_name";
-      for (int64_t i = 0; i < params.fields_->field_num_; i++) {
-        SqlField* field = params.fields_->fields_.at(i);
-        if (field->column_name_.config_string_ == cluster_name_str) {
-          params.cluster_name_ = field->column_value_.config_string_;
-        } else if (field->column_name_.config_string_ == tenant_name_str) {
-          params.tenant_name_ = field->column_value_.config_string_;
-        }
-      }
-      //table name is UPPER CASE in stmt, need convert to lower case as origin
-      //depends on the assumption that the table name in 'table_handler_map_' is lower case
-      string_to_lower_case(params.table_name_.ptr(), params.table_name_.length());
-      if (OB_FAIL(table_handler_map_.get_refactored(params.table_name_, handler))) {
-        if (params.table_name_ == all_table_version_table_name) {
-          ret = OB_SUCCESS;
-        } else {
-          LOG_WARN("get table handler failed", K_(params.table_name), K(ret));
-        }
-      } else if (OB_FAIL(handler.execute_func_(&params))) {
-        is_execute = true;
-        LOG_WARN("execute fn failed", K(ret));
-      } else {
-        is_execute = true;
-      }
-      tmp_ret = ret;
-    }
-
-    if (OB_SUCC(ret)) {
+      ObCloudFnParams params;
+      bool is_success = true;
+      bool is_execute = false;
+      int tmp_ret = OB_SUCCESS;
+      ObConfigHandler handler;
       char *err_msg = NULL;
-      char *sql_buf = (char*)ob_malloc(sql.length() + 1);
-      if (NULL == sql_buf) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("allocate memory failed", K(ret), K(sql.length()));
-      } else {
-        memcpy(sql_buf, sql.ptr(), sql.length());
-        sql_buf[sql.length()] = '\0';
-        if (SQLITE_OK != sqlite3_exec(proxy_config_db_, "begin;", NULL, 0, &err_msg)) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
-          sqlite3_free(err_msg);
-        }
 
-        if (OB_SUCC(ret) && SQLITE_OK != sqlite3_exec(proxy_config_db_, sql_buf, NULL, 0, &err_msg)) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
-          sqlite3_free(err_msg);
-        }
-        ob_free(sql_buf);
+      if (OB_SUCC(ret)) {
+        char *sql_buf = (char*)ob_malloc(sql.length() + 1);
+        if (NULL == sql_buf) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WARN("allocate memory failed", K(ret), K(sql.length()));
+        } else {
+          memcpy(sql_buf, sql.ptr(), sql.length());
+          sql_buf[sql.length()] = '\0';
+          if (SQLITE_OK != sqlite3_exec(proxy_config_db_, "begin;", NULL, 0, &err_msg)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+            sqlite3_free(err_msg);
+          }
 
-        if (OB_SUCC(ret) && NULL != handler.before_commit_func_) {
-          if (OB_FAIL(handler.before_commit_func_(proxy_config_db_))) {
-            LOG_WARN("before commit func failed", K_(params.table_name), K(ret));
+          if (OB_SUCC(ret) && SQLITE_OK != sqlite3_exec(proxy_config_db_, sql_buf, NULL, 0, &err_msg)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+            sqlite3_free(err_msg);
+          }
+          ob_free(sql_buf);
+        }
+        tmp_ret = ret;
+      }
+
+      if (OB_SUCC(ret)) {
+        params.stmt_type_ = stmt->get_stmt_type();
+        params.table_name_ = stmt->get_table_name();
+        params.fields_ = &(stmt->get_dml_field_result());
+        const char* cluster_name_str = "cluster_name";
+        const char* tenant_name_str = "tenant_name";
+        for (int64_t i = 0; i < params.fields_->field_num_; i++) {
+          SqlField* field = params.fields_->fields_.at(i);
+          if (field->column_name_.config_string_ == cluster_name_str) {
+            params.cluster_name_ = field->column_value_.config_string_;
+          } else if (field->column_name_.config_string_ == tenant_name_str) {
+            params.tenant_name_ = field->column_value_.config_string_;
           }
         }
+        //table name is UPPER CASE in stmt, need convert to lower case as origin
+        //depends on the assumption that the table name in 'table_handler_map_' is lower case
+        string_to_lower_case(params.table_name_.ptr(), params.table_name_.length());
+        if (OB_FAIL(table_handler_map_.get_refactored(params.table_name_, handler))) {
+          if (params.table_name_ == all_table_version_table_name) {
+            ret = OB_SUCCESS;
+          } else {
+            LOG_WARN("get table handler failed", K_(params.table_name), K(ret));
+          }
+        } else if (OB_FAIL(handler.execute_func_(&params))) {
+          is_execute = true;
+          LOG_WARN("execute fn failed", K(ret));
+        } else {
+          is_execute = true;
+          if (OB_SUCC(ret) && NULL != handler.before_commit_func_) {
+            if (OB_FAIL(handler.before_commit_func_(proxy_config_db_))) {
+              LOG_WARN("before commit func failed", K_(params.table_name), K(ret));
+            }
+          }
+        }
+        tmp_ret = ret;
+      }
 
-        const char *end_sql = OB_SUCCESS == ret ? "commit;" : "rollback;";
-        if (SQLITE_OK != sqlite3_exec(proxy_config_db_, end_sql, NULL, 0, &err_msg)) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
-          sqlite3_free(err_msg);
+      if (OB_FAIL(ret)) {
+        is_success = false;
+      }
+
+      if (is_execute) {
+        if (OB_FAIL(handler.commit_func_(&params, is_success))) {
+          LOG_WARN("commit failed", K(ret), K(is_success));
         }
       }
-      tmp_ret = ret;
-    }
 
-    if (OB_FAIL(ret)) {
-      is_success = false;
-    }
-
-    if (is_execute) {
-      if (OB_FAIL(handler.commit_func_(&params, is_success))) {
-        LOG_WARN("commit failed", K(ret), K(is_success));
+      ret = (!is_success ? tmp_ret : ret);
+      const char *end_sql = (is_success ? "commit;" : "rollback;");
+      if (SQLITE_OK != sqlite3_exec(proxy_config_db_, end_sql, NULL, 0, &err_msg)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+        sqlite3_free(err_msg);
       }
     }
-    ret = (OB_SUCCESS != tmp_ret ? tmp_ret : ret);
 
     if (NULL != insert_stmt) {
       op_free(insert_stmt);

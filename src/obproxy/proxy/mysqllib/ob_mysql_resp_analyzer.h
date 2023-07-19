@@ -239,6 +239,7 @@ private:
   // packet body(except packet type Byte above), when packet type is OK or
   // EOF, we should copy packet body data.
   obutils::ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> body_buf_;
+  int64_t pre_seq_;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlRespAnalyzer);
 }; // end of class ObMysqlRespAnalyzer
 
@@ -267,6 +268,7 @@ inline void ObMysqlRespAnalyzer::reset()
   reserved_len_ = 0;
   meta_analyzer_.reset();
   body_buf_.reset();
+  pre_seq_ = 0;
 }
 
 } // end of namespace proxy

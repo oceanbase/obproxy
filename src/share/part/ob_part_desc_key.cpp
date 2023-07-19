@@ -74,8 +74,6 @@ int ObPartDescKey::get_part(ObNewRange &range,
         // TODO: handle failure
       }
     }
-
-
   }
 
   int64_t part_idx = -1;
@@ -122,9 +120,9 @@ int ObPartDescKey::calc_value_for_mysql(const ObObj *objs,
   result = static_cast<int64_t>(hash_code);
   result = result < 0 ? -result : result;
   if (OB_SUCC(ret)) {
-    COMMON_LOG(TRACE, "succ to calc hash value with oracle mode", KP(objs), K(objs[0]), K(objs_cnt), K(result), K(ret));
+    COMMON_LOG(TRACE, "succ to calc hash value with mysql mode", KP(objs), K(objs[0]), K(objs_cnt), K(result), K(ret));
   } else {
-    COMMON_LOG(WARN, "fail to calc hash value with oracle mode", KP(objs), K(objs_cnt), K(result), K(ret));
+    COMMON_LOG(WARN, "fail to calc hash value with mysql mode", KP(objs), K(objs_cnt), K(result), K(ret));
   }
   return ret;
 }

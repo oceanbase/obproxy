@@ -642,6 +642,20 @@ int ObConfigServerProcessor::get_create_failure_count(const ObString &cluster_na
   return ret;
 }
 
+int ObConfigServerProcessor::get_real_cluster_name(ObString &real_cluster_name, const ObString &cluster_name) const
+{
+  int ret = OB_SUCCESS;
+  real_cluster_name = ObString::make_empty_string();
+  ObProxyClusterInfo *cluster_info;
+  CRLockGuard lock(json_info_lock_);
+  if (OB_FAIL(json_config_info_->get_cluster_info(cluster_name, cluster_info))) {
+    LOG_WARN("fail to get cluster info", K(cluster_name), K(ret));
+  } else {
+    real_cluster_name = cluster_info->real_cluster_name_;
+  }
+  return ret;
+}
+
 bool ObConfigServerProcessor::is_real_meta_cluster_exist() const
 {
   bool bret = false;
@@ -658,6 +672,16 @@ bool ObConfigServerProcessor::is_cluster_name_exists(const ObString &cluster_nam
   CRLockGuard lock(json_info_lock_);
   if (OB_LIKELY(NULL != json_config_info_)) {
     bret = json_config_info_->is_cluster_exists(cluster_name);
+  }
+  return bret;
+}
+
+bool ObConfigServerProcessor::is_cluster_name_alias(const ObString &cluster_name) const
+{
+  bool bret =false;
+  CRLockGuard lock(json_info_lock_);
+  if (OB_LIKELY(NULL != json_config_info_)) {
+    bret = json_config_info_->is_cluster_name_alias(cluster_name);
   }
   return bret;
 }
@@ -823,7 +847,9 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
           } else if (NULL != sub_cluster_info
                   && OB_FAIL(new_json_info->set_cluster_web_rs_list(old_cluster_info.cluster_name_, old_cluster_info.master_cluster_id_,
                                                                     sub_cluster_info->web_rs_list_, sub_cluster_info->origin_web_rs_list_,
-                                                                    ObString::make_string(cluster_role_to_str(sub_cluster_info->role_))))) {
+                                                                    ObString::make_string(cluster_role_to_str(sub_cluster_info->role_)),
+                                                                    old_cluster_info.real_cluster_name_,
+                                                                    old_cluster_info.is_cluster_name_alias()))) {
             if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
               LOG_WARN("fail to set cluster web rs_list", K(old_cluster_info), K(ret));
             } else {
@@ -865,7 +891,9 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
               if (OB_FAIL(ret)) {
               } else if (OB_FAIL(new_json_info->set_cluster_web_rs_list(old_it->cluster_name_, sub_it->cluster_id_,
                                                                         sub_it->web_rs_list_, sub_it->origin_web_rs_list_,
-                                                                        ObString::make_string(cluster_role_to_str(sub_it->role_))))) {
+                                                                        ObString::make_string(cluster_role_to_str(sub_it->role_)),
+                                                                        old_it->real_cluster_name_,
+                                                                        old_it->is_cluster_name_alias()))) {
                 if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
                   LOG_WARN("fail to set cluster web rs_list", KPC(old_it.value_), K(ret));
                 } else if (OB_EAGAIN == ret) {
@@ -1961,6 +1989,7 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
   ObString json;
   ObString cluster_name_from_url;
   int64_t cluster_id_from_url = OB_DEFAULT_CLUSTER_ID;
+  bool is_cluster_alias = is_cluster_name_alias(cluster_name);
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(OB_PROXY_CONFIG_BUFFER_SIZE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_ERROR("fail to alloc memory for region idc json info", K(ret));
@@ -1975,10 +2004,26 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
       LOG_INFO("fail to init json root for idc list", K(ret));
     } else if (OB_FAIL(ObProxyJsonConfigInfo::parse_remote_idc_list(root, cluster_name_from_url, cluster_id_from_url, idc_list))) {
       LOG_WARN("fail to parse remote idc list", K(root), K(ret));
-    } else if (cluster_name != OB_META_DB_CLUSTER_NAME && cluster_name_from_url != cluster_name) {
-      ret = OB_OBCONFIG_APPNAME_MISMATCH;
-      LOG_WARN("obconfig cluster name mismatch", K(cluster_name), K(cluster_name_from_url), K(ret));
-    } else if (cluster_id != OB_DEFAULT_CLUSTER_ID && cluster_id != cluster_id_from_url) {
+    } 
+  }
+  if (OB_SUCC(ret)){
+    if (!is_cluster_alias) {
+      if (cluster_name != OB_META_DB_CLUSTER_NAME && cluster_name_from_url != cluster_name) {
+        ret = OB_OBCONFIG_APPNAME_MISMATCH;
+        LOG_WARN("obconfig cluster name mismatch", K(cluster_name), K(cluster_name_from_url), K(ret));
+      }
+    } else {
+      ObString real_cluster_name;
+      if (OB_FAIL(get_real_cluster_name(real_cluster_name, cluster_name))) {
+        LOG_WARN("fail to get real cluster name", K(cluster_name), K(ret));
+      } else if (real_cluster_name != cluster_name) {
+        ret = OB_OBCONFIG_APPNAME_MISMATCH;
+        LOG_WARN("obconfig cluster name mismatch", K(cluster_name), K(real_cluster_name), K(cluster_name_from_url), K(ret));
+      }
+    }
+  }
+  if (OB_SUCC(ret)) {
+    if (cluster_id != OB_DEFAULT_CLUSTER_ID && cluster_id != cluster_id_from_url) {
       ret = OB_OBCONFIG_APPNAME_MISMATCH;
       LOG_WARN("obconfig cluster id mismatch", K(cluster_id), K(cluster_id_from_url), K(ret));
     } else {

@@ -1153,6 +1153,41 @@ int ObShardTpo::get_group_cluster(const ObString &gc_name, ObGroupCluster *&gc_i
   return ret;
 }
 
+int ObShardTpo::get_group_cluster_by_index(const int64_t &group_index, 
+                                           ObGroupCluster *&gc_info)
+{
+  int ret = OB_SUCCESS;
+
+  gc_info = NULL;
+  GCHashMap::iterator it = gc_map_.begin();
+  GCHashMap::iterator end = gc_map_.end();
+
+  for (; it != end; ++it) {
+    int store_index = 0;
+    int base = 1;
+    ObGroupCluster *tmp_gc_info = &(*it);
+    ObString& group_name = tmp_gc_info->gc_name_.config_string_;
+    int64_t index = group_name.length() - 1;
+    //Remove possible suffixes
+    while ((index >= 0) && ((group_name[index] > '9') || (group_name[index] < '0'))) {
+      --index;
+    }
+    for (; (index >= 0) 
+            && (group_name[index] <= '9')
+            && (group_name[index] >= '0'); --index) {
+      store_index += base * (group_name[index] - '0');
+      base *= 10;
+    }
+    
+    if (store_index == group_index) {
+      gc_info = tmp_gc_info;
+      break;
+    }
+  }
+
+  return ret;
+}
+
 int ObShardTpo::to_json_str(common::ObSqlString &buf) const
 {
   int ret = OB_SUCCESS;
@@ -2032,34 +2067,11 @@ int ObDbConfigLogicDb::get_first_group_shard_connector(ObShardConnector *&shard_
     ObShardTpo::GCHashMap::iterator it = (const_cast<ObShardTpo::GCHashMap &>(shard_tpo->gc_map_)).begin();
     gc_info = &(*it);
   } else {
-    ObShardRule *logic_tb_info = NULL;
-    {
-      ObDbConfigCache &dbconfig_cache = get_global_dbconfig_cache();
-      obsys::CRLockGuard guard(dbconfig_cache.rwlock_);
-      ObDbConfigChildArrayInfo<ObShardRouter>::CCRHashMap &map = const_cast<ObDbConfigChildArrayInfo<ObShardRouter>::CCRHashMap &>(sr_array_.ccr_map_);
-      for (ObDbConfigChildArrayInfo<ObShardRouter>::CCRHashMap::iterator it = map.begin(); it != map.end(); ++it) {
-        ObShardRouter::MarkedRuleHashMap &mr_map = it->mr_map_;
-        for (ObShardRouter::MarkedRuleHashMap::iterator sub_it = mr_map.begin();
-             sub_it != mr_map.end(); ++sub_it) {
-          logic_tb_info = &(*sub_it);
-          break;
-        }
-      }
-    }
-
-    if (OB_SUCC(ret)) {
-      char real_database_name[OB_MAX_DATABASE_NAME_LENGTH];
-      if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->db_size_, logic_tb_info->db_suffix_len_, 0,
-                                                        logic_tb_info->db_prefix_.config_string_,
-                                                        logic_tb_info->db_tail_.config_string_,
-                                                        real_database_name, OB_MAX_DATABASE_NAME_LENGTH))) {
-        LOG_WARN("fail to get real group name", KPC(logic_tb_info), K(ret));
-      } else if (OB_FAIL(shard_tpo->get_group_cluster(ObString::make_string(real_database_name), gc_info))) {
-        LOG_DEBUG("group does not exist", "phy_db_name", real_database_name, K(ret));
-      } else if (OB_ISNULL(gc_info)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("group cluster info is null", "phy_db_name", real_database_name, K(ret));
-      }
+    if (OB_FAIL(shard_tpo->get_group_cluster_by_index(0, gc_info))) {
+      LOG_DEBUG("group does not exist", K(ret));
+    } else if (OB_ISNULL(gc_info)) {
+      ret = OB_NOT_SUPPORTED;
+      LOG_WARN("group cluster info is null", K(ret));
     }
   }
 

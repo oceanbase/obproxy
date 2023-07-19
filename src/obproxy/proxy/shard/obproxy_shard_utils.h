@@ -64,7 +64,9 @@ public:
   static int check_login(const ObString &login_reply, const ObString &scramble_str, const ObString &stored_stage2);
   static bool check_shard_authority(const dbconfig::ObShardUserPrivInfo &up_info,
                                     const obutils::ObSqlParseResult &parse_result);
-
+  static int check_logic_db_priv_for_cur_user(const ObString &logic_tenant_name,
+                                              ObMysqlClientSession &client_session,
+                                              const ObString &db_name);
   static int get_shard_hint(const ObString &table_name,
                             ObClientSessionInfo &session_info,
                             dbconfig::ObDbConfigLogicDb &logic_db_info,
@@ -80,6 +82,8 @@ public:
                             dbconfig::ObTestLoadType &testload_type,
                             bool &is_sticky_session);
 
+  static int handle_possible_probing_stmt(const ObString& sql,
+                                          obutils::ObSqlParseResult &parse_result);
   static int check_shard_request(ObMysqlClientSession &client_session,
                                  obutils::ObSqlParseResult &parse_result,
                                  dbconfig::ObDbConfigLogicDb &logic_db_info);

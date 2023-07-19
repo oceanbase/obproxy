@@ -33,7 +33,7 @@ void TestWhiteListProcessor::init_white_list_processor()
   ASSERT_EQ(OB_SUCCESS, white_list_processor_.addr_hash_map_array_[1].create(32, ObModIds::OB_HASH_BUCKET));
   ObString cluster_name = "cluster1";
   ObString tenant_name = "tenant1";
-  ObString ip_list = "100.88.147.128/26";
+  ObString ip_list = "100.88.147.129/26";
   ASSERT_EQ(OB_SUCCESS, white_list_processor_.set_ip_list(cluster_name, tenant_name, ip_list));
   white_list_processor_.inc_index();
   ObString cluster_name2 = "cluster2";

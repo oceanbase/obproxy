@@ -496,6 +496,7 @@ int ObServerStateInfoInitCont::init_task()
 int ObServerStateInfoInitCont::finish_task(void *data)
 {
   int ret = OB_SUCCESS;
+  ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid data", K(data), K(ret));
@@ -559,11 +560,23 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       if (OB_SUCC(ret)) {
         if (OB_LIKELY(get_global_proxy_config().with_config_server_)
             && (cr_->get_cluster_name() != OB_META_DB_CLUSTER_NAME)) {
+          bool is_cluster_alias = cs_processor.is_cluster_name_alias(cr_->get_cluster_name());
+          ObString real_cluster_name;
           PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "cluster", cluster_name);
-          if (OB_UNLIKELY(cr_->get_cluster_name() != cluster_name)) {
-            ret = OB_OBCONFIG_APPNAME_MISMATCH;
-            LOG_WARN("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
-                "remote cluster name", cluster_name, K(ret));
+          if (!is_cluster_alias) {
+            if (cr_->get_cluster_name() != cluster_name) {
+              ret = OB_OBCONFIG_APPNAME_MISMATCH;
+              LOG_WARN("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
+                  "remote cluster name", cluster_name, K(ret));
+            }
+          } else {
+            if (OB_FAIL(cs_processor.get_real_cluster_name(real_cluster_name, cr_->get_cluster_name()))) {
+              LOG_WARN("fail to get main cluster name", "cluster_name", cr_->get_cluster_name(), "cluster_id", cr_->get_cluster_id());
+            } else if (real_cluster_name != cluster_name) {
+              ret = OB_OBCONFIG_APPNAME_MISMATCH;
+              LOG_WARN("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
+                  "remote cluster name", cluster_name, K(ret));
+            }
           }
         }
       }
@@ -1460,9 +1473,10 @@ int ObClusterResourceCreateCont::check_real_meta_cluster()
   // 1. this is OB_META_DB_CLUSTER_NAME
   // 2. enable cluster checkout
   // 3. real meta cluster do not exist
+  ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
   if (OB_LIKELY(get_global_proxy_config().enable_cluster_checkout)
       && cluster_name_ == OB_META_DB_CLUSTER_NAME
-      && !get_global_config_server_processor().is_real_meta_cluster_exist()) {
+      && !cs_processor.is_real_meta_cluster_exist()) {
     ret = OB_ENTRY_NOT_EXIST;
     LOG_WARN("real meta cluster is not exist", K(ret));
   }

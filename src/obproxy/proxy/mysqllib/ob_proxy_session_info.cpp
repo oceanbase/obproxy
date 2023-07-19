@@ -175,6 +175,43 @@ int ObServerSessionInfo::remove_text_ps_version(const int64_t text_ps_version)
   return ret;
 }
 
+
+int64_t ObServerSessionInfo::get_sess_field_version(int16_t type)
+{
+  int64_t version = 0;
+  int64_t count = sess_info_field_version_.count();
+  for (int i = 0; i < count; i++) {
+    SessionInfoFieldVersion &field_version = sess_info_field_version_.at(i);
+    if (field_version.get_sess_info_type() == type) {
+      version = field_version.get_version();
+      break;
+    }
+  }
+  return version;
+}
+
+
+int ObServerSessionInfo::update_sess_info_field_version(int16_t type, int64_t version)
+{
+  int ret = OB_SUCCESS;
+  bool is_type_exist = false;
+  int64_t count = sess_info_field_version_.count();
+  for (int i = 0; i < count; i++) {
+    SessionInfoFieldVersion &field_version = sess_info_field_version_.at(i);
+    if (field_version.get_sess_info_type() == type) {
+      is_type_exist = true;
+      field_version.set_version(version);
+      break;
+    }
+  }
+  if (!is_type_exist) {
+    if (OB_FAIL(sess_info_field_version_.push_back(SessionInfoFieldVersion(type, version)))) {
+      LOG_WARN("fail to record sess info field version", K(type), K(version), K(ret));
+    }
+  }
+  return ret;
+}  
+
 void ObServerSessionInfo::reuse_text_ps_version_set()
 {
   text_ps_version_set_.reuse();
@@ -197,9 +234,9 @@ ObClientSessionInfo::ObClientSessionInfo()
       consistency_level_prop_(INVALID_CONSISTENCY),
       recv_client_ps_id_(0), ps_id_(0), ps_entry_(NULL), ps_id_entry_(NULL), ps_id_entry_map_(),
       text_ps_name_entry_(NULL), text_ps_name_entry_map_(), cursor_id_(0), cursor_id_addr_map_(),
-      ps_id_addrs_map_(), request_send_addrs_(),
-      is_read_only_user_(false),
-      is_request_follower_user_(false)
+      ps_id_addrs_map_(), request_send_addrs_(), is_read_only_user_(false), is_request_follower_user_(false),
+      obproxy_force_parallel_query_dop_(1), ob_max_read_stale_time_(-1), last_server_addr_(),
+      last_server_sess_id_(0), sync_conf_sys_var_(false)
 {
   is_session_pool_client_ = true;
   MEMSET(scramble_buf_, 0, sizeof(scramble_buf_));
@@ -224,7 +261,8 @@ int64_t ObClientSessionInfo::to_string(char *buf, const int64_t buf_len) const
        K_(is_read_consistency_set), K_(idc_name), K_(cluster_id), K_(real_meta_cluster_name),
        K_(safe_read_snapshot), K_(syncing_safe_read_snapshot), K_(route_policy),
        K_(proxy_route_policy), K_(user_identity), K_(global_vars_version),
-       K_(is_read_only_user), K_(is_request_follower_user), K_(ob20_request), K_(client_cap), K_(server_cap));
+       K_(is_read_only_user), K_(is_request_follower_user), K_(obproxy_force_parallel_query_dop),
+       K_(ob20_request), K_(client_cap), K_(server_cap), K_(last_server_addr), K_(last_server_sess_id));
   J_OBJ_END();
   return pos;
 }
@@ -237,8 +275,6 @@ int ObClientSessionInfo::init()
     LOG_WARN("client session is inited", K(ret));
   } else if (OB_FAIL(field_mgr_.init())) {
     LOG_WARN("fail to init field_mgr", K(ret));
-  } else if (OB_FAIL(sess_info_hash_map_.create(32, ObModIds::OB_PROXY_SESS_SYNC))) {
-    LOG_WARN("create hash map failed", K(ret));
   } else {
     LOG_DEBUG("init session info success", K(cached_variables_));
     is_inited_ = true;
@@ -377,7 +413,7 @@ int ObClientSessionInfo::set_ldg_logical_tenant_name(const ObString &tenant_name
   return field_mgr_.set_ldg_logical_tenant_name(tenant_name);
 }
 
-int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, common::ObSimpleTrace<4096> &trace_log)
+int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, const bool is_error_packet, ObServerSessionInfo& server_info, common::ObSimpleTrace<4096> &trace_log)
 {
   int ret = OB_SUCCESS;
   const char *buf = sess_info.ptr();
@@ -385,8 +421,7 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, common
   const char *end = buf + len;
   // decode sess_info
   const int MAX_TYPE_RECORD = 32;
-  char type_record[MAX_TYPE_RECORD];
-  memset(type_record, '0', MAX_TYPE_RECORD);
+  int64_t type_record = 0;
   if (NULL != sess_info.ptr()) {
     while (OB_SUCC(ret) && buf < end) {
       int16_t info_type = 0;
@@ -394,7 +429,7 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, common
       ObMySQLUtil::get_int2(buf, info_type);
       ObMySQLUtil::get_int4(buf, info_len);
       if(info_type < MAX_TYPE_RECORD) {
-        type_record[info_type] = '1';
+        type_record |= 1 << info_type;
       }
       if (buf + info_len > end) {
         ret = OB_ERR_UNEXPECTED;
@@ -403,42 +438,99 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, common
         LOG_DEBUG("extra info", K(info_type), K(info_len), K(len));
         char* info_value = NULL;
         ObString info_value_string;
-        if (OB_FAIL(inc_sess_field_version(info_type))) {
-          LOG_WARN("fail to update sess field versoin", K(info_type), K(ret));
-        } 
-        if (OB_SUCC(sess_info_hash_map_.get_refactored(info_type, info_value_string))) {
-          sess_info_hash_map_.erase_refactored(info_type);
-          int64_t total_len = info_value_string.length();
-          op_fixed_mem_free(info_value_string.ptr(), total_len);
-        }
-        int64_t client_version = 0;
-        if (OB_FAIL(ObProxyTraceUtils::get_sess_field_version(client_version , info_type, version_.sess_field_version_))) {
-          LOG_WARN("fail to set client session field version", K(info_type), K(ret));
-        } else {
-        }
-        info_value_string.reset();
+        int64_t version = 0;
         if (OB_ISNULL(info_value = static_cast<char*>(op_fixed_mem_alloc(info_len + 6)))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
           LOG_WARN("fail to alloc memory", K(info_len), K(ret));
         } else if (FALSE_IT(MEMCPY(info_value, buf - 6, info_len + 6))) {
         } else if (FALSE_IT(info_value_string.assign_ptr(info_value, info_len + 6))) {
-        } else if (OB_FAIL(sess_info_hash_map_.set_refactored(info_type, info_value_string))) {
+        } else if (OB_FAIL(update_sess_info_field(info_type, info_value_string, version))) {
           LOG_WARN("fail to set to hash map", K(info_type), K(ret));
           op_fixed_mem_free(info_value, info_len + 6);
           info_value = NULL;
+        } else if (is_error_packet && OB_FAIL(server_info.update_sess_info_field_version(info_type, version))) {
+          // if proxy receive error packet, treat all types that server not delivered sync failed, only push up the version of the type that server delivered
+          // and duplicate sync the types server not delivered next time
+          LOG_WARN("fail to update server sess info type version", K(info_type), K(version), K(ret));
         } else {
           buf += info_len;
         }
       }
     }
-    type_record[MAX_TYPE_RECORD - 1] = '\0';
     trace_log.log_it("[get_sess]", "type", type_record);
     if (OB_SUCC(ret)) {
       version_.inc_sess_info_version();
       LOG_DEBUG("update sess info succ", K(sess_info));
     }
   }
+  return ret;
+}
 
+int ObClientSessionInfo::update_server_sess_info_version(ObServerSessionInfo &server_info, const bool is_error_packet) {
+  int ret = OB_SUCCESS;
+  int64_t sess_info_count = get_sess_info().count();
+  if (!is_error_packet) {
+   // not error packet,  push up all server sess info type version
+    for (int64_t i = 0; i < sess_info_count && OB_SUCC(ret); ++i) {
+      SessionInfoField &field = get_sess_info().at(i);
+      int16_t sess_info_type = field.get_sess_info_type();
+      int64_t client_version = field.get_version();
+      int64_t server_version = server_info.get_sess_field_version(sess_info_type);
+      if (client_version > server_version) {
+        if (OB_FAIL(server_info.update_sess_info_field_version(sess_info_type, client_version))) {
+          LOG_WARN("fail to set sess field versoin", K(sess_info_type), K(ret));
+        }
+      }
+    }
+    if (OB_SUCC(ret)) {
+      server_info.set_sess_info_version(get_sess_info_version());
+    }
+  } else {
+    // error packet, check if necessary to push up totoal version
+    bool need_update_global_version = true;
+    for (int64_t i = 0; i < sess_info_count && OB_SUCC(ret); ++i) {
+      SessionInfoField &field = get_sess_info().at(i);
+      int16_t sess_info_type = field.get_sess_info_type();
+      int64_t client_version = field.get_version();
+      int64_t server_version = server_info.get_sess_field_version(sess_info_type);
+      if (client_version > server_version) {
+        need_update_global_version = false;
+      }
+    }
+    if (OB_SUCC(ret) && need_update_global_version) {
+      server_info.set_sess_info_version(get_sess_info_version());
+    }
+  }
+  return ret;
+}
+
+int ObClientSessionInfo::update_server_sess_info_version_not_dup_sync(ObServerSessionInfo &server_info, const bool is_error_packet) {
+  // 4.1 early version, internal routing trans not support sync session info duplicatly
+  // here keep session info version pusing up for only internal routing trans
+  int ret = OB_SUCCESS;
+  bool need_update_global_version = true;
+  int64_t sess_info_count = get_sess_info().count();
+  if (OB_SUCC(ret)) {
+    for (int64_t i = 0; i < sess_info_count && OB_SUCC(ret); ++i) {
+      SessionInfoField &field = get_sess_info().at(i);
+      int16_t sess_info_type = field.get_sess_info_type();
+      int64_t client_version = field.get_version();
+
+      if (is_error_packet && !ObProto20Utils::is_trans_related_sess_info(sess_info_type)) {
+        int64_t server_version = server_info.get_sess_field_version(sess_info_type);
+        if (client_version > server_version) {
+          // exist sess info need duplicate sync, don't update total version
+          need_update_global_version = false;
+        }
+      } else if (OB_FAIL(server_info.update_sess_info_field_version(sess_info_type, client_version))) {
+        // push up all version of internal routing transaction sess info
+        LOG_WARN("fail to set sess field versoin", K(sess_info_type), K(ret));
+      }
+    }
+  }
+  if (OB_SUCC(ret) && need_update_global_version) {
+    server_info.set_sess_info_version(get_sess_info_version());
+  }
   return ret;
 }
 
@@ -1078,15 +1170,13 @@ int ObClientSessionInfo::extract_oceanbase_variable_reset_sql(ObServerSessionInf
     }
   }
 
+  // reset last insert id
   if (OB_SUCC(ret)) {
-    // if obproxy need to reset system variable, we reset last_insert_id in passing
-    // to improve efficiency.
-    if (need_reset) {
-      if (need_reset_last_insert_id(server_info)) {
-        if (OB_FAIL(field_mgr_.format_last_insert_id(sql))) {
+    if (need_reset_last_insert_id(server_info)) {
+      need_reset = true;
+      if (OB_FAIL(field_mgr_.format_last_insert_id(sql))) {
           LOG_WARN("fail to format_last_insert_id.", K(sql),
                    K(*this), K(server_info), K(ret));
-        }
       }
     }
   }
@@ -1270,7 +1360,7 @@ void ObClientSessionInfo::destroy()
   if (is_inited_)  {
     field_mgr_.destroy();
     login_req_.destroy();
-    destroy_sess_info_map();
+    destroy_sess_info_list();
     is_inited_ = false;
   }
   if (NULL != var_set_processor_) {
@@ -1301,6 +1391,8 @@ void ObClientSessionInfo::destroy()
 
   is_read_only_user_ = false;
   is_request_follower_user_ = false;
+  obproxy_force_parallel_query_dop_ = 1;
+  ob_max_read_stale_time_ = 0;
 
   global_vars_version_ = OB_INVALID_VERSION;
   obproxy_route_addr_ = 0;
@@ -1327,6 +1419,9 @@ void ObClientSessionInfo::destroy()
   es_id_ = OBPROXY_MAX_DBMESH_ID;
   is_allow_use_last_session_ = true;
   up_info_.reset();
+
+  last_server_addr_.reset();
+  last_server_sess_id_ = 0;
 }
 
 void ObClientSessionInfo::destroy_ps_id_entry_map()
@@ -1389,17 +1484,14 @@ void ObClientSessionInfo::destroy_text_ps_name_entry_map()
   text_ps_name_entry_map_.reset();
 }
 
-void ObClientSessionInfo::destroy_sess_info_map()
+void ObClientSessionInfo::destroy_sess_info_list()
 {
-  SessFieldHashMap::iterator last = sess_info_hash_map_.end();
-  SessFieldHashMap::iterator tmp_iter;
-  for (SessFieldHashMap::iterator iter = sess_info_hash_map_.begin(); iter != last;) {
-    tmp_iter = iter;
-    ++iter;
-    int64_t total_len = tmp_iter->second.length();
-    op_fixed_mem_free(tmp_iter->second.ptr(), total_len);
+  int64_t sess_info_count = sess_info_list_.count();
+  for (int64_t i = 0; i < sess_info_count; ++i) {
+    SessionInfoField &field = sess_info_list_.at(i);
+    field.reset_sess_info_value();
   }
-  sess_info_hash_map_.destroy();
+  sess_info_list_.destroy();
 }
 
 ObTextPsNameEntry *ObClientSessionInfo::get_text_ps_name_entry(const common::ObString &text_ps_name) const
@@ -1463,6 +1555,33 @@ ObPsIdAddrs *ObClientSessionInfo::get_ps_id_addrs(uint32_t client_ps_id) const
   }
   return ps_id_addrs;
 }
+
+int ObClientSessionInfo::update_sess_info_field(int16_t type, ObString &sess_info_value, int64_t &version)
+{
+  int ret = OB_SUCCESS;
+  version = 0;
+  bool is_field_exist = false;
+  int64_t count = sess_info_list_.count();
+  for(int64_t i = 0; i < count; i ++) {
+    SessionInfoField &field = sess_info_list_.at(i);
+    if (field.get_sess_info_type() == type) {
+      is_field_exist = true;
+      field.reset_sess_info_value();
+      field.inc_version();
+      field.set_sess_info_value(sess_info_value);
+      version = field.get_version();
+      break;
+    }
+  }
+  if (!is_field_exist) {
+    version = 1;
+    if (OB_FAIL(sess_info_list_.push_back(SessionInfoField(sess_info_value, type, version)))) {
+      LOG_WARN("fail to record sess info field version", K(type), K(sess_info_value), K(ret));
+    }
+  }
+  return ret;
+}
+
 
 }//end of namespace proxy
 }//end of namespace obproxy

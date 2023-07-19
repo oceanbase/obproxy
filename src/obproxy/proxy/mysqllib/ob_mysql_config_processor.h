@@ -112,6 +112,7 @@ public:
   CfgBool enable_compression_protocol_;
   CfgBool enable_ob_protocol_v2_;
   CfgBool enable_reroute_;
+  CfgBool enable_weak_reroute_;
   CfgBool enable_index_route_;
   CfgBool enable_causal_order_read_;
   CfgBool enable_transaction_internal_routing_;
@@ -149,6 +150,8 @@ public:
   CfgBool enable_primary_zone_;
   CfgInt ip_listen_mode_;
   CfgIp local_bound_ipv6_ip_;
+  CfgTime read_stale_retry_interval_;
+  CfgTime ob_max_read_stale_time_;
   char proxy_idc_name_[OB_PROXY_MAX_IDC_NAME_LENGTH + 1];
   char proxy_primary_zone_name_[common::MAX_ZONE_LENGTH + 1];
 };

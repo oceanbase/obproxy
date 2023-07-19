@@ -407,6 +407,8 @@ public:
         _PROXY_LOG(WARN, "cluster_info_key assign error, ret = [%d]", ret);
       } else {
         master_cluster_id_ = other.master_cluster_id_;
+        is_cluster_name_alias_ = other.is_cluster_name_alias_;
+        real_cluster_name_.assign(other.real_cluster_name_);
       }
     }
     return ret;
@@ -431,6 +433,9 @@ public:
 
   int get_sub_cluster_info(const int64_t cluster_id, ObProxySubClusterInfo *&sub_cluster_info) const;
 
+  bool is_cluster_name_alias() const { return is_cluster_name_alias_; }
+  void set_cluster_name_alias(bool is_cluster_name_alias) { is_cluster_name_alias_ = is_cluster_name_alias; }
+
   DECLARE_TO_STRING;
 
 public:
@@ -452,8 +457,10 @@ public:
 
   ObProxyConfigUrl rs_url_;
   ObProxyConfigString cluster_name_;
+  ObProxyConfigString real_cluster_name_;
   int64_t master_cluster_id_;
   SubCIHashMap sub_ci_map_;
+  bool is_cluster_name_alias_;
   LINK(ObProxyClusterInfo, cluster_link_);
 
 private:
@@ -548,6 +555,7 @@ public:
 
   bool is_cluster_exists(const common::ObString &name) const;
   bool is_idc_list_exists(const common::ObString &name) const;
+  bool is_cluster_name_alias(const common::ObString &cluster_name) const;
 
   int64_t count() const { return ci_map_.count(); }
 
@@ -733,6 +741,7 @@ public:
 
   bool is_real_meta_cluster_exist() const { return !data_info_.meta_table_info_.real_cluster_name_.empty(); }
   bool is_cluster_exists(const common::ObString &cluster_name) const { return data_info_.cluster_array_.is_cluster_exists(cluster_name); }
+  bool is_cluster_name_alias(const common::ObString &cluster_name) const { return data_info_.cluster_array_.is_cluster_name_alias(cluster_name); }
   int64_t get_cluster_count() const { return data_info_.cluster_array_.count(); }
   bool is_cluster_idc_list_exists(const common::ObString &cluster_name, const int64_t cluster_id) const;
 
@@ -759,6 +768,8 @@ public:
                               const LocationList &web_rs_list,
                               const LocationList &origin_web_rs_list,
                               const common::ObString &role,
+                              const common::ObString &real_cluster_name,
+                              const bool is_cluster_name_alias,
                               const uint64_t cur_rs_list_hash = 0);
   int set_master_cluster_id(const common::ObString &cluster_name, const int64_t cluster_id);
   int set_real_meta_cluster_name(const common::ObString &real_meta_cluster_name);
@@ -901,7 +912,7 @@ public:
                                     const char *real_meta_cluster = NULL);
   static int rslist_to_json(const LocationList &addr_list, const char *appname,
                             const int64_t cluster_id, const ObClusterRole role, char *buf, const int64_t buf_len, int64_t &pos,
-                            const char *real_meta_cluster = NULL);
+                            const char *real_cluster_name, const char *real_meta_cluster = NULL);
   static int cluster_idc_list_to_json(const ObProxyClusterInfo &cluster_info, char *buf, const int64_t buf_len, int64_t &pos,
                                       const char *real_meta_cluster = NULL);
   static int idc_list_to_json(const ObProxyIDCList &idc_list, const char *appname,

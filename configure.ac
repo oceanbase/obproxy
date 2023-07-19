@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.1.0.0],
+            [4.2.0.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.1.0.0"
+    obapi_version="4.2.0.0"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC
@@ -26,18 +26,18 @@
     if test "$withval" = "yes"; then
       case "$host_cpu" in
         *aarch64* )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer"
-          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=generic -Wno-psabi -Wno-sign-compare"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=generic -Wno-psabi -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
         ;;
         * )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer"
-          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=core2 -Wno-psabi -Wno-sign-compare"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=core2 -Wno-psabi -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
         ;;
       esac
     fi
     ],
-    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -Wno-deprecated -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic -Wno-psabi  -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member"
-      AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g -Wall -Wno-psabi  -Wno-sign-compare"
+    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -Wno-deprecated -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic -Wno-psabi  -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -Wl,-z,noexecstack,-z,relro,-z,now"
+      AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g -Wall -Wno-psabi  -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now"
         ]
     )
 
@@ -323,7 +323,7 @@
 
     dnl LDADD
     AM_LDFLAGS="${AM_LDFLAGS} -Wl,--no-as-needed -Wl,--allow-multiple-definition"
-    BIN_LDFLAGS="-lc -lrt"
+    BIN_LDFLAGS="-lc -lrt -pie"
 
     if test "X9.3.0" = "X$GCC_VERSION"; then
         AM_LDFLAGS="${AM_LDFLAGS} -static-libstdc++ -static-libgcc"
@@ -358,7 +358,7 @@
                        [with 7u support (default is NO)]),
                        [
                            if test "$withval" == "yes"; then
-                               BIN_LDFLAGS="-lc -lrt -pthread ${TOOLS_DIR}/lib64/libstdc++.a"
+                               BIN_LDFLAGS="-lc -lrt -pie -pthread ${TOOLS_DIR}/lib64/libstdc++.a"
                            fi
                        ],
                        [])

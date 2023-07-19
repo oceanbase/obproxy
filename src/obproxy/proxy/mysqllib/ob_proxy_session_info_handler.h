@@ -177,7 +177,7 @@ public:
                                     ObServerSessionInfo& server_info,
                                     Ob20ExtraInfo& extra_info,
                                     common::ObSimpleTrace<4096> &trace_log,
-                                    bool is_only_sync_trans_sess);
+                                    bool is_error_packet);
 
 private:
   static ObProxySysVarType get_sys_var_type(const common::ObString &var_name);

@@ -16,6 +16,7 @@
 #include <getopt.h>
 #include "lib/ob_define.h"
 #include "lib/profile/ob_trace_id.h"
+#include "lib/charset/ob_ctype.h"
 #include "ob_proxy.h"
 
 namespace oceanbase

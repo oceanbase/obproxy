@@ -38,6 +38,7 @@
 #include "obutils/ob_metadb_create_cont.h"
 #include "obutils/ob_tenant_stat_manager.h"
 #include "obutils/ob_proxy_config_processor.h"
+#include "obutils/ob_read_stale_processor.h"
 #include "dbconfig/ob_proxy_db_config_processor.h"
 #include "dbconfig/ob_proxy_inotify_processor.h"
 
@@ -371,6 +372,8 @@ int ObProxy::start()
       LOG_WARN("fail to start sharding", K(ret));
     } else if (OB_FAIL(config_->is_pool_mode && get_global_session_pool_processor().start_session_pool_task())) {
       LOG_WARN("fail to start_session_pool_task", K(ret));
+    } else if (OB_FAIL(get_global_read_stale_processor().start_read_stale_feedback_clean_task())) {
+      LOG_WARN("fail to start_read_stale_feedback_clean_task", K(ret));
     } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_acceptor())) {
       LOG_ERROR("fail to start accept server", K(ret));
     } else {

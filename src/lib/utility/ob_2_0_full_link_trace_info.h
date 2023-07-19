@@ -29,6 +29,7 @@ using namespace oceanbase::trace;
 
 #define FLT_APP_INFO_BUF_MAX (260)
 #define FLT_EXTRA_INFO_DEF(extra_id, id, type) extra_id = id,
+typedef common::ObSEArray<common::ObString, 3> FltShowTraceJsonArrayType;
 
 /*
  * oceanbase protocol 2.0, extra info id
@@ -58,6 +59,7 @@ enum FullLinkTraceExtraInfoId
   FLT_EXTRA_INFO_DEF(FLT_RECORD_POLICY, 2022, obmysql::OB_MYSQL_TYPE_TINY)
   FLT_EXTRA_INFO_DEF(FLT_PRINT_SAMPLE_PCT, 2023, obmysql::OB_MYSQL_TYPE_DOUBLE)
   FLT_EXTRA_INFO_DEF(FLT_SLOW_QUERY_THRES, 2024, obmysql::OB_MYSQL_TYPE_LONGLONG)
+  FLT_EXTRA_INFO_DEF(FLT_SHOW_TRACE_ENABLE, 2025, obmysql::OB_MYSQL_TYPE_TINY)     // show trace added
   
   // tdo print_sample_percentage && slow_query_threshold
 
@@ -67,6 +69,10 @@ enum FullLinkTraceExtraInfoId
   FLT_EXTRA_INFO_DEF(FLT_TRACE_ID, 2032, obmysql::OB_MYSQL_TYPE_VAR_STRING)  // uuid type
   FLT_EXTRA_INFO_DEF(FLT_REF_TYPE, 2033, obmysql::OB_MYSQL_TYPE_TINY)
   FLT_EXTRA_INFO_DEF(FLT_SPAN_ID, 2034, obmysql::OB_MYSQL_TYPE_VAR_STRING)   // uuid type
+
+  // show trace
+  FLT_EXTRA_INFO_DEF(FLT_DRV_SHOW_TRACE_SPAN, 2050, obmysql::OB_MYSQL_TYPE_VAR_STRING)
+  FLT_EXTRA_INFO_DEF(FLT_PROXY_SHOW_TRACE_SPAN, 2051, obmysql::OB_MYSQL_TYPE_VAR_STRING)
 
   // END
   FLT_EXTRA_INFO_DEF(FLT_EXTRA_INFO_END, 2040, obmysql::OB_MYSQL_TYPE_NOT_DEFINED)
@@ -80,9 +86,10 @@ enum FullLinkTraceExtraInfoType
   FLT_EXTRA_INFO_DRIVER_END = 1000,
   
   FLT_APP_INFO = 2001,
-  FLT_QUERY_INFO,
-  FLT_CONTROL_INFO,
-  FLT_SPAN_INFO,
+  FLT_QUERY_INFO = 2002,
+  FLT_CONTROL_INFO = 2003,
+  FLT_SPAN_INFO = 2004,
+  FLT_TYPE_SHOW_TRACE_SPAN = 2005,   // show trace
   
   FLT_EXTRA_TYPE_END
 };
@@ -92,6 +99,37 @@ enum FullLinkTraceRecordPolicy {
   RP_ONLY_SLOW_QUERY = 2,
   RP_SAMPLE_AND_SLOW_QUERY = 3,
   MAX_RECORD_POLICY = 4
+};
+
+/*
+ * full link trace context
+ */
+struct FLTCtx {
+public:
+  FLTCtx() : flt_ext_enable_(false), is_client_support_show_trace_(false), span_start_ts_(0), span_end_ts_(0) {}
+  FLTCtx(bool ext_enable, bool client_support_show_trace, int64_t span_start_ts = 0, int64_t span_end_ts = 0)
+    : flt_ext_enable_(ext_enable), is_client_support_show_trace_(client_support_show_trace),
+      span_start_ts_(span_start_ts), span_end_ts_(span_end_ts) {}
+  ~FLTCtx() {}
+  
+  void reset() {
+    flt_ext_enable_ = false;
+    is_client_support_show_trace_ = false;
+    span_start_ts_ = 0;
+    span_end_ts_ = 0;
+  }
+  
+  TO_STRING_KV(K_(flt_ext_enable), K_(is_client_support_show_trace), K_(span_start_ts), K_(span_end_ts));
+
+public:
+  bool flt_ext_enable_;                   // full link trace extend capability
+  bool is_client_support_show_trace_;     // client support show trace or not
+  
+  int64_t span_start_ts_;
+  int64_t span_end_ts_;
+  
+private:
+  DISALLOW_COPY_AND_ASSIGN(FLTCtx);
 };
 
 /*
@@ -105,10 +143,10 @@ public:
   virtual ~FLTExtraInfo() {}
 
   virtual int deserialize(const char *buf, const int64_t len, int64_t &pos);
-  virtual int serialize(char *buf, const int64_t len, int64_t &pos) = 0;
+  virtual int serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx) = 0;
   virtual int deserialize_field(FullLinkTraceExtraInfoId extra_id, const int64_t v_len,
                                 const char *buf, const int64_t len, int64_t &pos) = 0;
-  virtual int64_t get_serialize_size() = 0;
+  virtual int64_t get_serialize_size(FLTCtx &ctx) = 0;
 
   bool is_app_info() { return type_ == FLT_APP_INFO; }
   bool is_query_info() { return type_ == FLT_QUERY_INFO; }
@@ -129,6 +167,7 @@ public:
       record_policy_(MAX_RECORD_POLICY),
       print_sample_percentage_(-1),
       slow_query_threshold_(-1),
+      show_trace_enable_(false),
       is_need_send_(false)
       
   { type_ = FLT_CONTROL_INFO; }
@@ -154,19 +193,22 @@ public:
     record_policy_ = MAX_RECORD_POLICY;
     print_sample_percentage_ = -1;
     slow_query_threshold_ = -1;
+    show_trace_enable_ = false;
     is_need_send_ = false;
   }
 
   OB_INLINE void set_need_send(bool sent) { is_need_send_ = sent; }
   OB_INLINE bool is_need_send() const { return is_need_send_; }
+  OB_INLINE bool is_show_trace_enable() const { return show_trace_enable_; }
 
-  virtual int serialize(char *buf, const int64_t len, int64_t &pos);
+  virtual int serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx);
   virtual int deserialize_field(FullLinkTraceExtraInfoId extra_id, const int64_t v_len,
                                 const char *buf, const int64_t len, int64_t &pos);
-  virtual int64_t get_serialize_size();
+  virtual int64_t get_serialize_size(FLTCtx &ctx);
 
   TO_STRING_KV(K_(level), K_(sample_percentage), K_(record_policy),
-               K_(print_sample_percentage), K_(slow_query_threshold), K_(type), K_(is_need_send));
+               K_(print_sample_percentage), K_(slow_query_threshold), K_(show_trace_enable),
+               K_(is_need_send), K_(type));
                         
 public:
   int8_t level_;                                // span level
@@ -174,6 +216,7 @@ public:
   FullLinkTraceRecordPolicy record_policy_;     // record policy
   double print_sample_percentage_;              // control force print percentage
   int64_t slow_query_threshold_;                // slow query threshold (us)
+  bool show_trace_enable_;                      // show trace enabled or not, session switch
 
   /*
    * whether the control info needed sent to client,do not seri/deseri it
@@ -213,10 +256,12 @@ public:
            && ref_type_ != MAX_REF_TYPE;
   }
   
-  virtual int serialize(char *buf, const int64_t len, int64_t &pos);
+  virtual int serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx);
+  int serialize_as_json_format(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx);
   virtual int deserialize_field(FullLinkTraceExtraInfoId extra_id, const int64_t v_len,
                                 const char *buf, const int64_t len, int64_t &pos);
-  virtual int64_t get_serialize_size();
+  virtual int64_t get_serialize_size(FLTCtx &ctx);
+  int64_t get_show_trace_serialize_size();
 
   TO_STRING_KV(K_(trace_enable), K_(force_print), K_(ref_type), K_(trace_id), K_(span_id), K_(type));
 
@@ -235,10 +280,10 @@ public:
   FLTQueryInfo() : query_start_ts_(0), query_end_ts_(0) { type_ = FLT_QUERY_INFO; }
   ~FLTQueryInfo() {}
 
-  virtual int serialize(char *buf, const int64_t len, int64_t &pos);
+  virtual int serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx);
   virtual int deserialize_field(FullLinkTraceExtraInfoId extra_id, const int64_t v_len,
                                 const char *buf, const int64_t len, int64_t &pos);
-  virtual int64_t get_serialize_size();
+  virtual int64_t get_serialize_size(FLTCtx &ctx);
   
   void reset() {
     query_start_ts_ = 0;
@@ -266,10 +311,10 @@ public:
   ~FLTAppInfo() {}
 
   virtual int deserialize(const char *buf, const int64_t len, int64_t &pos);
-  virtual int serialize(char *buf, const int64_t len, int64_t &pos);
+  virtual int serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx);
   virtual int deserialize_field(FullLinkTraceExtraInfoId id, const int64_t v_len,
                         const char *buf, const int64_t len, int64_t &pos);
-  virtual int64_t get_serialize_size();
+  virtual int64_t get_serialize_size(FLTCtx &ctx);
   
   FLTAppInfo &operator=(const FLTAppInfo &other);
 
@@ -299,10 +344,10 @@ public:
   FLTDriverSpanInfo() { type_ = FLT_DRIVER_SPAN_INFO; }
   ~FLTDriverSpanInfo() {}
 
-  virtual int serialize(char *buf, const int64_t len, int64_t &pos);
+  virtual int serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx);
   virtual int deserialize_field(FullLinkTraceExtraInfoId extra_id, const int64_t v_len,
                                 const char *buf, const int64_t len, int64_t &pos);
-  virtual int64_t get_serialize_size();
+  virtual int64_t get_serialize_size(FLTCtx &ctx);
 
   void reset() {
     curr_driver_span_.reset();
@@ -365,27 +410,98 @@ private:
   DISALLOW_COPY_AND_ASSIGN(FLTTraceLogInfo);
 };
 
+class FLTDrvShowTraceSpanByProxy {
+public:
+  FLTDrvShowTraceSpanByProxy() {}
+  ~FLTDrvShowTraceSpanByProxy() {}
+  void reset();
+  void reset_curr();
+  void reset_last();
+  void move_curr_to_last();
+
+  TO_STRING_KV(K(curr_drv_span_info_), K(curr_drv_span_start_ts_), K(curr_drv_span_end_ts_),
+               K(last_drv_span_info_), K(last_drv_span_start_ts_), K(last_drv_span_end_ts_));
+
+public:
+  FLTSpanInfo curr_drv_span_info_;
+  int64_t curr_drv_span_start_ts_;
+  int64_t curr_drv_span_end_ts_;
+  
+  FLTSpanInfo last_drv_span_info_;
+  int64_t last_drv_span_start_ts_;
+  int64_t last_drv_span_end_ts_;
+  
+private:
+  DISALLOW_COPY_AND_ASSIGN(FLTDrvShowTraceSpanByProxy);
+};
+
+class FLTShowTraceJsonSpanInfo : public FLTExtraInfo {
+public:
+  FLTShowTraceJsonSpanInfo() : flt_drv_show_trace_span_(), span_is_alloc_(false), drv_show_by_proxy_(),
+    last_sql_json_span_array_(), curr_sql_json_span_array_() {
+    type_ = FLT_TYPE_SHOW_TRACE_SPAN;
+  }
+  ~FLTShowTraceJsonSpanInfo() { destroy(); }
+  int deep_copy_drv_show_trace_span(FLTShowTraceJsonSpanInfo &info);
+
+  virtual int deserialize(const char *buf, const int64_t len, int64_t &pos);
+  virtual int serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ctx);
+  virtual int deserialize_field(FullLinkTraceExtraInfoId extra_id, const int64_t v_len,
+                                  const char *buf, const int64_t len, int64_t &pos);
+  virtual int64_t get_serialize_size(FLTCtx &ctx);
+
+  void clear();
+  void reset();
+  void destroy();                             // get thread allocator and free each element
+  void move_curr_to_last_span_array();        // move each elem from curr to last
+
+  void reset_flt_drv_show_trace_span();
+  void reset_flt_show_trace_json_array(FltShowTraceJsonArrayType &json_array);
+
+  TO_STRING_KV(K_(flt_drv_show_trace_span), K_(span_is_alloc), K_(drv_show_by_proxy));
+  
+public:
+  // record driver show trace span json from driver directly
+  ObString flt_drv_show_trace_span_;
+  bool span_is_alloc_;
+
+  // record driver show trace span generated by proxy
+  FLTDrvShowTraceSpanByProxy drv_show_by_proxy_;
+
+  // record proxy show trace json span for last and now
+  FltShowTraceJsonArrayType last_sql_json_span_array_;
+  FltShowTraceJsonArrayType curr_sql_json_span_array_;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(FLTShowTraceJsonSpanInfo);
+};
+
 struct FLTObjManage {
 public:
   FLTObjManage() {}
   ~FLTObjManage() {}
 
-  int deserialize(const char *buf, const int64_t len, int64_t &pos);  // deserialize from full_trc string
+  // deserialize from full_trc string
+  int deserialize(const char *buf, const int64_t len, int64_t &pos);
   int get_extra_info_ref_by_type(FullLinkTraceExtraInfoType type, FLTExtraInfo *&extra);
   
   void reset();
 
-  TO_STRING_KV(K_(span_info), K_(control_info), K_(query_info), K_(app_info),
+  TO_STRING_KV(K_(saved_control_info), K_(control_info), K_(span_info), K_(query_info), K_(app_info),
                K_(driver_span_info), K_(trace_log_info));
 
 public:
+  FLTControlInfo saved_control_info_;     // server->proxy->client, save it while reveive from server
+  FLTControlInfo control_info_;           // move saved to curr, use curr
+  
   FLTSpanInfo span_info_;                 // trace manage, client->proxy, proxy generate span_id ->server
-  FLTControlInfo control_info_;           // server->proxy->client
   FLTQueryInfo query_info_;               // server->proxy, proxy print
   FLTAppInfo app_info_;
   FLTDriverSpanInfo driver_span_info_;    // client->proxy, proxy print; need operator= or print immediately
-
+  
   FLTTraceLogInfo trace_log_info_;        // full link trace info
+
+  FLTShowTraceJsonSpanInfo show_trace_json_info_;   // show trace related
   
 private:
   DISALLOW_COPY_AND_ASSIGN(FLTObjManage);

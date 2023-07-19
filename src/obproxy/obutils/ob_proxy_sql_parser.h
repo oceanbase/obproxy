@@ -529,6 +529,7 @@ struct ObSqlParseResult
   bool is_start_trans_stmt() const { return OBPROXY_T_BEGIN == stmt_type_; }
   bool is_select_stmt() const { return OBPROXY_T_SELECT == stmt_type_; }
   bool is_select_database_stmt() const { return OBPROXY_T_SELECT == stmt_type_ && OBPROXY_T_SUB_SELECT_DATABASE == cmd_sub_type_; }
+  bool is_select_proxy_status_stmt() const { return OBPROXY_T_SELECT == stmt_type_ && OBPROXY_T_SUB_SELECT_PROXY_STATUS == cmd_sub_type_; }
   bool is_update_stmt() const { return OBPROXY_T_UPDATE == stmt_type_; }
   bool is_replace_stmt() const { return OBPROXY_T_REPLACE == stmt_type_; }
   bool is_insert_stmt() const { return OBPROXY_T_INSERT == stmt_type_; }
@@ -573,6 +574,8 @@ struct ObSqlParseResult
   bool is_alter_stmt() const { return OBPROXY_T_ALTER == stmt_type_; }
   bool is_truncate_stmt() const { return OBPROXY_T_TRUNCATE == stmt_type_; }
   bool is_rename_stmt() const { return OBPROXY_T_RENAME == stmt_type_; }
+  bool is_stop_ddl_task_stmt() const { return OBPROXY_T_STOP_DDL_TASK == stmt_type_; }
+  bool is_retry_ddl_task_stmt() const { return OBPROXY_T_RETRY_DDL_TASK == stmt_type_; }
   bool is_grant_stmt() const { return OBPROXY_T_GRANT == stmt_type_; }
   bool is_revoke_stmt() const { return OBPROXY_T_REVOKE == stmt_type_; }
   bool is_purge_stmt() const { return OBPROXY_T_PURGE == stmt_type_; }
@@ -588,6 +591,8 @@ struct ObSqlParseResult
            || is_alter_stmt()
            || is_truncate_stmt()
            || is_rename_stmt()
+           || is_stop_ddl_task_stmt()
+           || is_retry_ddl_task_stmt()
            || is_grant_stmt()
            || is_revoke_stmt()
            || is_purge_stmt()
@@ -645,6 +650,7 @@ struct ObSqlParseResult
   bool has_shard_comment() const { return has_shard_comment_; }
   bool has_anonymous_block() const { return has_anonymous_block_; }
   bool has_for_update() const { return has_for_update_; }
+  bool has_connection_id() const { return has_connection_id_;}
 
   bool is_simple_route_info_valid() const { return route_info_.is_valid(); }
 
@@ -751,6 +757,7 @@ struct ObSqlParseResult
       has_simple_route_info_ = other.has_simple_route_info_;
       has_anonymous_block_ = other.has_anonymous_block_;
       has_for_update_ = other.has_for_update_;
+      has_connection_id_ = other.has_connection_id_;
       is_xa_start_stmt_ = other.is_xa_start_stmt_;
       stmt_type_ = other.stmt_type_;
       hint_query_timeout_ = other.hint_query_timeout_;
@@ -886,6 +893,7 @@ private:
   ObProxyBasicStmtType stmt_type_;
   int64_t hint_query_timeout_;
   int64_t parsed_length_; // next parser can starts with (orig_sql + parsed_length_)
+  bool has_connection_id_;
 
   ObProxyBasicStmtSubType cmd_sub_type_;
   ObProxyErrorStmtType cmd_err_type_;
@@ -1005,6 +1013,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   hint_consistency_level_ = common::INVALID_CONSISTENCY;
   hint_query_timeout_ = 0;
   parsed_length_ = 0;
+  has_connection_id_ = false;
   table_name_.reset();
   package_name_.reset();
   database_name_.reset();
@@ -1065,7 +1074,8 @@ inline bool ObSqlParseResult::has_dependent_func() const
           || has_found_rows()
           || has_show_errors()
           || has_show_warnings()
-          || is_show_trace_stmt());
+          || is_show_trace_stmt()
+          || has_connection_id());
 }
 
 inline bool ObSqlParseResult::is_not_supported() const
@@ -1147,7 +1157,8 @@ inline bool ObSqlParseResult::is_internal_request() const
           || is_internal_select()
           || is_set_route_addr()
           || is_select_route_addr()
-          || is_ping_proxy_cmd());
+          || is_ping_proxy_cmd()
+          || is_select_proxy_status_stmt());
 }
 
 inline bool ObSqlParseResult::is_internal_cmd() const

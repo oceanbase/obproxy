@@ -105,7 +105,8 @@ static int copy_string(const ObObjCastParams &params,
                        const ObObjType type,
                        const char *str,
                        int64_t len,
-                       ObObj &obj)
+                       ObObj &obj,
+                       int64_t align_offset = 0)
 {
   int ret = OB_SUCCESS;
   char *buf = NULL;
@@ -125,10 +126,12 @@ static int copy_string(const ObObjCastParams &params,
         }
       }
     } else {
+      len += align_offset;
       if (OB_UNLIKELY(NULL == (buf = static_cast<char*>(params.alloc(len))))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
       } else {
-        MEMCPY(buf, str, len);
+        MEMSET(buf, 0, align_offset);
+        MEMCPY(buf + align_offset, str, len - align_offset);
       }
     }
   }
@@ -139,9 +142,10 @@ static int copy_string(const ObObjCastParams &params,
 static int copy_string(const ObObjCastParams &params,
                        const ObObjType type,
                        const ObString &str,
-                       ObObj &obj)
+                       ObObj &obj,
+                       int64_t align_offset = 0)
 {
-  return copy_string(params, type, str.ptr(), str.length(), obj);
+  return copy_string(params, type, str.ptr(), str.length(), obj, align_offset);
 }
 
 
@@ -301,10 +305,12 @@ OB_INLINE int numeric_range_check(const InType in_val,
                                   OutType &out_val)
 {
   int ret = OB_SUCCESS;
-  if (in_val < static_cast<InType>(min_out_val)) {
+  // Casting value from InType to OutType to prevent number overflow. 
+  OutType cast_in_val = static_cast<OutType>(in_val);
+  if (cast_in_val < min_out_val) {
     ret = OB_DATA_OUT_OF_RANGE;
     out_val = min_out_val;
-  } else if (in_val > static_cast<InType>(max_out_val)) {
+  } else if (cast_in_val > max_out_val) {
     ret = OB_DATA_OUT_OF_RANGE;
     out_val = max_out_val;
   }
@@ -3096,13 +3102,15 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_ERROR("alloc memory failed", K(ret));
       } else {
+        // in mysql mode, incomplete multi byte will be trimed
         ret = ObCharset::charset_convert(in.get_collation_type(),
                                          str.ptr(),
                                          str.length(),
                                          params.dest_collation_,
                                          buf,
                                          buf_len,
-                                         result_len);
+                                         result_len,
+                                         !lib::is_oracle_mode());
         if (OB_SUCCESS != ret) {
           int32_t str_offset = 0;
           int32_t buf_offset = 0;
@@ -3141,7 +3149,17 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
         }
       }
     } else {
-      ret = copy_string(params, expect_type, str, out);
+      int64_t align_offset = 0;
+      const ObCharsetInfo *cs = NULL;
+      if (CS_TYPE_BINARY == in.get_collation_type() && !lib::is_oracle_mode()
+          && NULL != (cs = ObCharset::get_charset(params.dest_collation_))) {
+        // When convert binary to other charset, need to align to mbminlen of destination charset
+        // by add '\0' prefix in mysql mode. (see mysql String::copy)
+        if (cs->mbminlen > 0 && in.get_string_len() % cs->mbminlen != 0) {
+          align_offset = cs->mbminlen - in.get_string_len() % cs->mbminlen;
+        }
+      }
+      ret = copy_string(params, expect_type, str, out, align_offset);
       if (CS_TYPE_INVALID != in.get_collation_type()) {
         out.set_collation_type(in.get_collation_type());
       }

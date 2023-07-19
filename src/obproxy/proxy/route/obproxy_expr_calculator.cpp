@@ -91,19 +91,19 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
     if (OB_SUCC(ret)) {
       if (OB_FAIL(do_expr_parse(req_sql, parse_result, part_info, allocator, expr_parse_result,
                                 static_cast<ObCollationType>(client_info.get_collation_connection())))) {
-        LOG_INFO("fail to do expr parse", K(print_sql), K(part_info), "expr_parse_result",
+        LOG_DEBUG("fail to do expr parse", K(print_sql), K(part_info), "expr_parse_result",
                  ObExprParseResultPrintWrapper(expr_parse_result));
       } else if (OB_FAIL(do_expr_resolve(expr_parse_result, client_request, &client_info, ps_id_entry,
                                          text_ps_entry, part_info, allocator, resolve_result,
                                          parse_result, partition_id))) {
-        LOG_INFO("fail to do expr resolve", K(print_sql), "expr_parse_result",
+        LOG_DEBUG("fail to do expr resolve", K(print_sql), "expr_parse_result",
                  ObExprParseResultPrintWrapper(expr_parse_result),
                  K(part_info), KPC(ps_id_entry), KPC(text_ps_entry), K(resolve_result));
       } else if (partition_id == OB_INVALID_INDEX) {
         if (OB_FAIL(do_partition_id_calc(resolve_result, client_info, route, part_info,
                                          parse_result, allocator, partition_id))) {
           if (OB_MYSQL_COM_STMT_PREPARE != cmd) {
-            LOG_INFO("fail to do expr resolve", K(print_sql), K(resolve_result), K(part_info));
+            LOG_DEBUG("fail to do expr resolve", K(print_sql), K(resolve_result), K(part_info));
           }
         }
       } else {
@@ -295,7 +295,7 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
                                         part_ids,
                                         ctx,
                                         tablet_ids))) {
-      LOG_DEBUG("fail to get first part", K(ret));
+      LOG_WARN("fail to get first part", K(ret));
     } else if (part_ids.count() >= 1) {
       first_part_id = part_ids[0];
     }
@@ -332,6 +332,13 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
 
     LOG_DEBUG("do partition id calc", K(sub_part_id), K(tablet_id), K(part_info.has_sub_part()));
 
+    if (OB_DATA_OUT_OF_RANGE == ret) {
+      first_part_id = 0;
+      sub_part_id = 0;
+      LOG_WARN("will route to p0sp0 since data out of range", K(ret));
+      ret = OB_SUCCESS;
+    }
+
     if (OB_SUCC(ret)
         && (tablet_id != -1 || (first_part_id != OB_INVALID_INDEX && (!part_info.has_sub_part() || sub_part_id != OB_INVALID_INDEX)))) {
       if (tablet_id == -1) {
@@ -367,7 +374,7 @@ int ObProxyExprCalculator::calc_part_id_by_random_choose_from_exist(ObProxyPartI
                                                                     int64_t &phy_part_id)
 {
   int ret = OB_SUCCESS;
-  int64_t tablet_id;
+  int64_t tablet_id = -1;
 
 	ObProxyPartMgr &part_mgr = part_info.get_part_mgr();
   if (part_info.has_first_part() && OB_INVALID_INDEX == first_part_id) {
@@ -408,11 +415,14 @@ int ObProxyExprCalculator::calc_part_id_by_random_choose_from_exist(ObProxyPartI
           LOG_WARN("fail to get sub part desc by first part id", K(first_part_id), K(ret));
         } else if (OB_FAIL(part_mgr.get_sub_part_by_random(sub_rand_num, sub_part_desc_ptr, part_ids, tablet_ids))) {
           LOG_WARN("fail to get sub part id by random", K(ret));
-        } else if (part_ids.count() >= 1) {
-          sub_part_id = part_ids[0];
-        } else if (tablet_ids.count() >= 1) {
-          tablet_id = tablet_ids[0];
-        }
+        } else {
+          if (part_ids.count() >= 1) {
+            sub_part_id = part_ids[0];
+          }
+          if (tablet_ids.count() >= 1) {
+            tablet_id = tablet_ids[0];
+          }
+        } 
       }
     }
   }

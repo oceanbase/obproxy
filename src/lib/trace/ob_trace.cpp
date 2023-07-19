@@ -20,6 +20,9 @@
 #include "lib/oblog/ob_log_module.h"
 #include "lib/time/ob_time_utility.h"
 
+#include "lib/allocator/page_arena.h"
+#include "lib/container/ob_se_array.h"
+
 using namespace oceanbase::trace;
 using namespace oceanbase::common;
 
@@ -43,12 +46,6 @@ int __attribute__((weak)) handle_span_record(char* buf, const int64_t buf_len, O
 
 namespace trace
 {
-#define UUID_PATTERN "%8.8lx-%4.4lx-%4.4lx-%4.4lx-%12.12lx"
-#define TRACE_PATTERN "{\"trace_id\":\""UUID_PATTERN"\",\"name\":\"%s\",\"id\":\""UUID_PATTERN"\",\"start_ts\":%ld,\"end_ts\":%ld,\"parent_id\":\""UUID_PATTERN"\",\"is_follow\":%s"
-#define UUID_TOSTRING(uuid) \
-((uuid).high_ >> 32), ((uuid).high_ >> 16 & 0xffff), ((uuid).high_ & 0xffff), \
-((uuid).low_ >> 48), ((uuid).low_ & 0xffffffffffff)
-
 
 static const char* __span_type_mapper[] = {
 #define FLT_DEF_SPAN(name, comment) #name,
@@ -61,7 +58,10 @@ static const char* __span_type_mapper[] = {
 #undef __HIGH_LEVEL_SPAN
 #undef FLT_DEF_SPAN
 };
+
 thread_local ObTrace* ObTrace::save_buffer = NULL;
+thread_local void *ObTrace::json_span_array_ = NULL;    // for show trace record json span
+
 
 void flush_trace()
 {
@@ -127,6 +127,8 @@ void flush_trace()
                            buf);
         buf[0] = '\0';
         IGNORE_RETURN sql::handle_span_record(buf, MAX_TRACE_LOG_SIZE, sql::get_flt_span_manager());
+        IGNORE_RETURN trace.record_each_span_buf_for_show_trace(buf, pos, &trace, span);
+
         if (0 != span->end_ts_) {
           current_span.remove(span);
           trace.freed_span_.add_first(span);
@@ -135,6 +137,9 @@ void flush_trace()
       }
       span = next;
     }
+    // reset ptr
+    trace.reset_show_trace_info();
+    
     //PRINT_OB_LOG_TRACE_BUF(OBTRACE, INFO);
     //CANCLE_OB_LOG_TRACE_MODE();
     trace.offset_ = trace.buffer_size_ / 2;
@@ -379,6 +384,126 @@ void ObTrace::set_trace_buffer(void* buffer, int64_t buffer_size)
     save_buffer = (ObTrace*)buffer;
   }
 }
+
+/*
+ * special set api for obproxy, set thread json span array before flush,
+ * to record every span while flush trace
+ */
+void ObTrace::set_show_trace_info(void *json_span_array)
+{
+  json_span_array_ = json_span_array;
+}
+
+/*
+ * special reset api for obproxy, reset thread json array ptr after each flush,
+ * avoid to record unexpected
+ */
+void ObTrace::reset_show_trace_info()
+{
+  json_span_array_ = NULL;
+}
+
+int ObTrace::record_each_span_buf_for_show_trace(const char *buf,
+                                                 const int64_t len,
+                                                 ObTrace *trace,
+                                                 oceanbase::trace::ObSpanCtx *span)
+{
+  int ret = common::OB_SUCCESS;
+
+  if (json_span_array_ == NULL
+      || buf == NULL
+      || len < 0
+      || trace == NULL
+      || span == NULL) {
+    // do nothing
+    _LIB_LOG(DEBUG, "ignore each span in record show trace:%s,%s,%ld,%s,%s",
+             json_span_array_ == NULL ? "empty" : "no",
+             buf == NULL ? "empty" : "no",
+             len,
+             trace == NULL ? "empty" : "no",
+             span == NULL ? "empty" : "no");
+  } else {
+    // calculate total buf len
+    int64_t dst_buf_len = calc_total_span_buf_len(len, span);
+    if (OB_UNLIKELY(dst_buf_len <= 0)) {
+      ret = common::OB_INVALID_ARGUMENT;
+      _LIB_LOG(WARN, "invalid total buf len:%ld", dst_buf_len);
+    } else {
+      common::ObSEArray<common::ObString, 10> *array = (common::ObSEArray<common::ObString, 10> *)json_span_array_;
+      char *dst_buf = NULL;
+    
+      // alloc buf
+      if (OB_ISNULL(dst_buf = (char *)ob_malloc(dst_buf_len, common::ObModIds::OB_PROXY_SHOW_TRACE_JSON))) {
+        ret = common::OB_ALLOCATE_MEMORY_FAILED;
+        _LIB_LOG(ERROR, "alloc mem failed: %ld", dst_buf_len);
+      } else {
+        // fill buf
+        IGNORE_RETURN snprintf(dst_buf, dst_buf_len, TRACE_PATTERN "%s}",
+                               UUID_TOSTRING(trace->get_trace_id()),
+                               __span_type_mapper[span->span_type_],
+                               UUID_TOSTRING(span->span_id_),
+                               span->start_ts_,
+                               span->end_ts_,
+                               UUID_TOSTRING(OB_ISNULL(span->source_span_) ?
+                                 OBTRACE->get_root_span_id() : span->source_span_->span_id_),
+                               span->is_follow_ ? "true" : "false",
+                               buf);
+        // record
+        ObString span_json(dst_buf_len, dst_buf);
+        if (OB_FAIL(array->push_back(span_json))) {
+          _LIB_LOG(ERROR, "fail to push back json span array:%d", ret);
+        } else {
+          // debug log
+          _LIB_LOG(DEBUG, "push each span to json span array:[%s], dst buf len:%ld", dst_buf, dst_buf_len);
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+int64_t ObTrace::calc_total_span_buf_len(const int64_t tag_len,
+                                         oceanbase::trace::ObSpanCtx *span)
+{
+  int64_t ret = 0;
+
+  // {
+  ret += 1;
+
+  // "trace_id":"..."
+  ret += 11 + 36 + 2;  // "trace_id": + " + uuid + "
+
+  // "name":"..."
+  int64_t name_len = strlen(trace::__span_type_mapper[span->span_type_]);
+  ret += 1 + 7 + 2 + name_len;  // , + "name": + " + name_len + "
+
+  // "id":"..."
+  ret += 1 + 5 + 36 + 2;  // , + "id": + uuid + " + " 
+
+  // start_ts:
+  ret += 1 + 11 + 16;   // , + "start_ts": + int64_t
+
+  // end_ts:
+  ret += 1 + 9 + 16;    // , + "end_ts": + int64_t
+
+  // "parent_id":"..."
+  ret += 1 + 12 + 36 + 2;   // , + "parent_id": + " + uuid + "
+
+  // "is_follow": "true"/"false"
+  ret += 1 + 12 + 7;    // , + "is_follow": + (" " + "true")/("false")
+
+  // tag
+  if (tag_len > 0) {  // tag buf + tag len
+    ret += 1 + 7 + tag_len;    // , + "tags": + tag_len
+  }
+  
+  // }
+  ret += 1;
+
+  return ret;
+}
+                                                 
 
 ObTrace::ObTrace(int64_t buffer_size)
   : magic_code_(MAGIC_CODE),

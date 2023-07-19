@@ -38,6 +38,7 @@
 #include "proxy/mysqllib/ob_proxy_ob20_request.h"
 #include "utils/ob_proxy_privilege_check.h"
 
+
 namespace oceanbase
 {
 namespace obproxy
@@ -49,8 +50,44 @@ class ObProxyConfigString;
 class ObDefaultSysVarSet;
 namespace proxy
 {
-typedef common::hash::ObHashMap<int16_t, ObString> SessFieldHashMap;
-typedef common::hash::ObHashMap<int16_t, int64_t> SessFieldVersionHashMap;
+
+struct SessionInfoField
+{
+public:
+  SessionInfoField (): sess_info_value_(), sess_info_type_(0), version_(0) {}
+  SessionInfoField (ObString &sess_info_value, int16_t type, int64_t version): sess_info_value_(sess_info_value), sess_info_type_(type), version_(version) {}
+  void set_sess_info_value(const ObString &sess_info_value) { sess_info_value_ = sess_info_value; }
+  void set_sess_info_type(const int16_t &type) { sess_info_type_ = type; }
+  void reset_sess_info_value() { op_fixed_mem_free(sess_info_value_.ptr(), sess_info_value_.length()); sess_info_value_.reset(); }
+  void inc_version () { version_++; }
+  ObString &get_sess_info_value() { return sess_info_value_; }
+  int16_t get_sess_info_type() { return sess_info_type_; }
+  int64_t get_version() { return version_; }
+  TO_STRING_KV(K_(sess_info_value), K_(version), K_(sess_info_type));
+  
+private:
+  ObString sess_info_value_;
+  int16_t sess_info_type_;
+  int64_t version_;
+};
+
+struct SessionInfoFieldVersion
+{
+public:
+  SessionInfoFieldVersion(): sess_info_type_(0), version_(0) {}
+  SessionInfoFieldVersion(int16_t type, int64_t version): sess_info_type_(type), version_(version) {}
+  int16_t get_sess_info_type() { return sess_info_type_; }
+  int64_t get_version() { return version_; }
+  void set_sess_info_type(int16_t type) { sess_info_type_ = type; }
+  void set_version(int64_t version) { version_ = version; }
+  TO_STRING_KV(K_(sess_info_type), K_(version));
+private:
+  int16_t sess_info_type_;
+  int64_t version_;
+};
+
+typedef common::ObSEArray<SessionInfoField, 16> SessInfoFieldList;
+typedef common::ObSEArray<SessionInfoFieldVersion, 16> SessInfoFieldVersionList;
 
 enum ObProxyChecksumSwitch
 {
@@ -62,7 +99,7 @@ enum ObProxyChecksumSwitch
 class ObSessionVarVersion
 {
 public:
-  ObSessionVarVersion() { reset(); sess_field_version_.create(32, ObModIds::OB_PROXY_SESS_SYNC); }
+  ObSessionVarVersion() { reset(); }
   ~ObSessionVarVersion() { reset(); }
   void reset();
 
@@ -76,9 +113,6 @@ public:
   void inc_db_name_version() { db_name_version_++; }
   void inc_last_insert_id_version() { last_insert_id_version_++; }
   void inc_sess_info_version() { sess_info_version_++; }
-  int inc_sess_field_version(int16_t type);
-  SessFieldVersionHashMap& get_sess_field_version() { return sess_field_version_; }
-
 
   TO_STRING_KV(K_(common_hot_sys_var_version), K_(common_sys_var_version),
                K_(mysql_hot_sys_var_version), K_(mysql_sys_var_version),
@@ -95,29 +129,10 @@ public:
   int64_t db_name_version_;
   int64_t last_insert_id_version_;
   int64_t sess_info_version_;
-  SessFieldVersionHashMap sess_field_version_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObSessionVarVersion);
 };
-
-
-inline int ObSessionVarVersion::inc_sess_field_version(int16_t type)
-{
-  int ret = OB_SUCCESS;
-  int64_t new_version = 0;
-  if (OB_FAIL(ObProxyTraceUtils::get_sess_field_version(new_version, type, sess_field_version_))) {
-    _PROXY_LOG(WARN, "fail to update session field versoin, query version failed, field type:%d, ret:%d",type, ret);
-  }
-  
-  if (OB_SUCC(ret)) {
-    new_version++;
-    if (OB_FAIL(sess_field_version_.set_refactored(type, new_version, 1))) {
-      _PROXY_LOG(WARN, "update session field versoin failed, field type:%d, ret:%d", type, ret);
-    }
-  } 
-  return ret;
-}
 
 inline void ObSessionVarVersion::reset() {
   common_hot_sys_var_version_ = 0;
@@ -130,7 +145,6 @@ inline void ObSessionVarVersion::reset() {
   db_name_version_ = 0;
   last_insert_id_version_ = 0;
   sess_info_version_ = 0;
-  sess_field_version_.clear();
 }
 
 class ObSessionVarValHash
@@ -198,7 +212,14 @@ public:
   bool is_new_extra_info_supported() const {
     return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_PROXY_NEW_EXTRA_INFO);
   }
+  bool is_full_link_trace_ext_supported() const {
+    return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_PROXY_FULL_LINK_TRACING_EXT);
+  }
   
+  bool is_server_dup_sess_info_sync_supported() const {
+    return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_SERVER_DUP_SESS_INFO_SYNC);
+  }
+
   const obmysql::ObMySQLCapabilityFlags get_compatible_capability_flags() const {
     // for compatible, OBServer 1479 handshake return SESSION_TRACK = 0, but still return session state info in ok packet
     if (is_oceanbase_server()) {
@@ -224,7 +245,8 @@ public:
   int64_t get_db_name_version() const { return version_.db_name_version_; }
   int64_t get_last_insert_id_version() const { return version_.last_insert_id_version_; }
   int64_t get_sess_info_version() const { return version_.sess_info_version_; }
-  SessFieldVersionHashMap& get_sess_field_version() { return version_.sess_field_version_; }
+  SessInfoFieldVersionList& get_sess_field_version() { return sess_info_field_version_; }
+  int64_t get_sess_field_version(int16_t type);
   void set_common_hot_sys_var_version(const int64_t version) { version_.common_hot_sys_var_version_ = version; }
   void set_common_sys_var_version(const int64_t version) { version_.common_sys_var_version_ = version; }
   void set_mysql_hot_sys_var_version(const int64_t version) { version_.mysql_hot_sys_var_version_ = version; }
@@ -235,6 +257,7 @@ public:
   void set_db_name_version(const int64_t version) { version_.db_name_version_ = version; }
   void set_last_insert_id_version(const int64_t version) { version_.last_insert_id_version_ = version; }
   void set_sess_info_version(const int64_t version) { version_.sess_info_version_ = version; }
+  int update_sess_info_field_version(int16_t type, int64_t version);
 
   ObProxyChecksumSwitch get_checksum_switch() const { return checksum_switch_; }
   void set_checksum_switch(const ObProxyChecksumSwitch checksum_switch) { checksum_switch_ = checksum_switch; }
@@ -329,7 +352,7 @@ private:
   ObCursorIdPairMap cursor_id_pair_map_;
   common::ObArenaAllocator allocator_;
   common::hash::ObHashSet<int64_t> text_ps_version_set_;
-
+  SessInfoFieldVersionList sess_info_field_version_;
   DISALLOW_COPY_AND_ASSIGN(ObServerSessionInfo);
 };
 
@@ -474,6 +497,10 @@ public:
   bool is_client_support_new_extra_info() const {
     return is_client_support_ob20_protocol() && OB_TEST_CAPABILITY(client_cap_, OB_CAP_PROXY_NEW_EXTRA_INFO);
   }
+  bool is_client_support_full_link_trace_ext() const {
+    return is_client_support_ob20_protocol()
+           && OB_TEST_CAPABILITY(client_cap_, OB_CAP_PROXY_FULL_LINK_TRACING_EXT);
+  }
 
   /* server session capability, filled in negotiation */
   void set_server_ob_capability(const uint64_t cap) { server_cap_ = cap; }
@@ -532,9 +559,6 @@ public:
   int64_t get_db_name_version() const { return version_.db_name_version_; }
   int64_t get_last_insert_id_version() const { return version_.last_insert_id_version_; }
   int64_t get_sess_info_version() const { return version_.sess_info_version_; }
-  SessFieldVersionHashMap& get_sess_field_version() { return version_.sess_field_version_; }
-  int inc_sess_field_version(int16_t type) { return version_.inc_sess_field_version(type); }
-
 
   void set_db_name_version(const int64_t version) { version_.db_name_version_ = version; }
 
@@ -548,7 +572,8 @@ public:
   int set_ldg_logical_tenant_name(const common::ObString &tenant_name);
   int set_logic_tenant_name(const common::ObString &logic_tenant_name);
   int set_logic_database_name(const common::ObString &logic_database_name);
-  int update_sess_sync_info(const common::ObString& sess_info, common::ObSimpleTrace<4096> &trace_log);
+  // sync sess info , push up version of all types in ok resp and push up version of types server synced in error resp
+  int update_sess_sync_info(const common::ObString& sess_info, const bool is_error_packet, ObServerSessionInfo &server_info, common::ObSimpleTrace<4096> &trace_log);
   int get_cluster_name(common::ObString &cluster_name) const;
   int get_tenant_name(common::ObString &tenant_name) const;
   int get_vip_addr_name(common::ObString &vip_addr_name) const;
@@ -561,7 +586,10 @@ public:
   int get_logic_tenant_name(common::ObString &logic_tenant_name) const;
   int get_logic_database_name(common::ObString &logic_database_name) const;
   int remove_database_name() { return field_mgr_.remove_database_name(); }
-  SessFieldHashMap& get_sess_info_map() { return sess_info_hash_map_; }
+  SessInfoFieldList& get_sess_info() { return sess_info_list_; }
+
+  // sess info related
+  int update_sess_info_field(int16_t type, ObString &sess_info_value, int64_t &version);
 
   // judge whether need reset session variables
   bool need_reset_database(const ObServerSessionInfo &server_info) const;
@@ -577,6 +605,7 @@ public:
   // not include last_insert_id system variable
   bool need_reset_session_vars(const ObServerSessionInfo &server_info) const;
   bool need_reset_sess_info_vars(const ObServerSessionInfo &server_info) const;
+  bool need_reset_conf_sys_vars() const;
   // include all
   bool need_reset_all_session_vars() const { return is_global_vars_changed_; }
   bool is_user_idc_name_set() const { return is_user_idc_name_set_; }
@@ -743,6 +772,7 @@ public:
 
   // get memory size(stat field_mgr_ only, add more later)
   int64_t get_memory_size() const { return field_mgr_.get_memory_size(); }
+
   void destroy();
 
   dbconfig::ObShardConnector *get_shard_connector() { return shard_conn_; }
@@ -862,6 +892,8 @@ public:
   uint32_t get_client_cursor_id() { return cursor_id_; }
   void set_client_cursor_id(uint32_t cursor_id) { cursor_id_ = cursor_id; }
   void reset_client_cursor_id() { cursor_id_ = 0; }
+  void set_sync_conf_sys_var() { sync_conf_sys_var_ = true; }
+  void reset_sync_conf_sys_var() { sync_conf_sys_var_ = false; }
   int add_cursor_id_addr(ObCursorIdAddr *cursor_id_addr) {
     set_client_cursor_id(cursor_id_addr->cursor_id_);
     return cursor_id_addr_map_.unique_set(cursor_id_addr);
@@ -916,7 +948,7 @@ public:
     }
   }
   void destroy_ps_id_addrs_map();
-  void destroy_sess_info_map();
+  void destroy_sess_info_list();
 
   common::ObIArray<net::ObIpEndpoint> &get_request_send_addrs() { return request_send_addrs_; }
   int remove_request_send_addr(const struct sockaddr &socket_addr) {
@@ -942,8 +974,30 @@ public:
     is_request_follower_user_ = is_request_follower_user;
   }
 
+  void set_obproxy_force_parallel_query_dop(const int64_t obproxy_force_parallel_query_dop)
+  {
+    obproxy_force_parallel_query_dop_ = obproxy_force_parallel_query_dop;
+  }
+
+  void set_ob_max_read_stale_time(const int64_t ob_max_read_stale_time)
+  {
+    ob_max_read_stale_time_ = ob_max_read_stale_time;
+  }
+
   bool is_read_only_user() const { return is_read_only_user_; }
   bool is_request_follower_user() const { return is_request_follower_user_; }
+  int64_t get_obproxy_force_parallel_query_dop() const { return obproxy_force_parallel_query_dop_; }
+  int64_t get_ob_max_read_stale_time() const { return ob_max_read_stale_time_; }
+  // record last server info for session verification
+  void set_last_server_addr(const net::ObIpEndpoint &addr) { last_server_addr_ = addr; }
+  const net::ObIpEndpoint &get_last_server_addr() const { return last_server_addr_; }
+  void set_last_server_sess_id(const uint32_t sess_id) { last_server_sess_id_ = sess_id; }
+  uint32_t get_last_server_sess_id() const { return last_server_sess_id_; }
+  // update all sess info version and global sess info version in ok resp, update global sess info version in error resp
+  int update_server_sess_info_version(ObServerSessionInfo &sever_info, const bool is_error_packet);
+
+  // update sess info where server not support duplicate sync sess info
+  int update_server_sess_info_version_not_dup_sync(ObServerSessionInfo &server_info, const bool is_error_packet);
 
 public:
   ObSessionFieldMgr field_mgr_;
@@ -954,7 +1008,6 @@ public:
 
 private:
   int load_all_cached_variable();
-
   bool is_inited_;
   // when exec set transaction xxx, it is true until the next transaction commit
   bool is_trans_specified_;
@@ -1064,10 +1117,17 @@ private:
 
   bool is_read_only_user_;
   bool is_request_follower_user_;
+  int64_t obproxy_force_parallel_query_dop_;
+  int64_t ob_max_read_stale_time_;
 
   char text_ps_name_buf_[common::OB_MAX_TEXT_PS_NAME_LENGTH];
 
-  SessFieldHashMap sess_info_hash_map_;
+  SessInfoFieldList sess_info_list_;
+
+  // record last server session addr and sess id for sess veri
+  net::ObIpEndpoint last_server_addr_;
+  uint32_t last_server_sess_id_;
+  bool sync_conf_sys_var_;
 
   DISALLOW_COPY_AND_ASSIGN(ObClientSessionInfo);
 };
@@ -1310,6 +1370,12 @@ inline bool ObClientSessionInfo::need_reset_session_vars(const ObServerSessionIn
            || need_reset_user_session_vars(server_info);
   }
   return bret;
+}
+
+inline bool ObClientSessionInfo::need_reset_conf_sys_vars() const
+{
+  PROXY_LOG(DEBUG, "need_reset_common_cold_session_vars", K(sync_conf_sys_var_));
+  return sync_conf_sys_var_;
 }
 
 inline bool ObClientSessionInfo::need_reset_sess_info_vars(const ObServerSessionInfo &server_info) const

@@ -24,7 +24,7 @@ namespace obutils
 {
 
 ObProxyDMLStmt::ObProxyDMLStmt(common::ObIAllocator& allocator): ObProxyStmt(allocator), limit_offset_(0), limit_size_(-1), limit_token_off_(-1), dml_field_results_(), comments_(),
-                column_name_array_(), table_name_(), is_inited_(false), has_unsupport_expr_type_(false), table_pos_array_(), has_rollup_(false), has_for_update_(false), from_token_off_(-1), t_case_level_(0)
+                column_name_array_(), table_name_(), is_inited_(false), has_unsupport_expr_type_(false), has_unsupport_expr_type_for_config_(false), table_pos_array_(), has_rollup_(false), has_for_update_(false), from_token_off_(-1), t_case_level_(0)
 {
   field_results_ = &dml_field_results_;
 }
@@ -176,7 +176,7 @@ int ObProxyDMLStmt::get_expr_by_type(ObProxyExpr* &expr, ObProxyExprType type)
     break;
   default:
     has_unsupport_expr_type_ = true;
-    LOG_WARN("unexpected type", K(type));
+    LOG_DEBUG("unexpected type", K(type));
     break;
   }
   return ret;
@@ -269,7 +269,7 @@ int ObProxyDMLStmt::handle_table_node_to_expr(ParseNode* node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unsupport type", "node_type", get_type_name(node->type_),  K(node->str_value_));
+          LOG_DEBUG("unsupport type", "node_type", get_type_name(node->type_),  K(node->str_value_));
       }
     }
   }
@@ -427,7 +427,7 @@ int ObProxyDMLStmt::handle_table_references(ParseNode *node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+          LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
       }
     }
   }
@@ -477,6 +477,14 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
               LOG_WARN("handle_where_nodes failed", K(sql_string_), K(ret));
             }
             break;
+        }
+        //Intercept unsupported expr for config management
+        switch(tmp_node->type_) {
+          case T_OP_EQ:
+          case T_OP_AND:
+            break;
+          default:
+            has_unsupport_expr_type_for_config_ = true;
         }
       }
     }
@@ -553,7 +561,7 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
           default:
             is_skip_field = true;
             has_unsupport_expr_type_ = true;
-            LOG_WARN("unexpected expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
+            LOG_DEBUG("unexpected expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
         }
       }
     }
@@ -575,7 +583,7 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
         }
       } else {
         SqlField *tmp_field = NULL;
-        if (OB_ISNULL(tmp_field = op_alloc(SqlField))) {
+        if (OB_FAIL(SqlField::alloc_sql_field(tmp_field))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
           LOG_WARN("fail to allocate memory for sqlfield", K(ret));
         } else {
@@ -702,7 +710,7 @@ int ObProxyDMLStmt::handle_assign_list(ParseNode *node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+          LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
           break;
       }
     }
@@ -757,7 +765,7 @@ int ObProxyDMLStmt::column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObPr
     } else if (T_IDENT != column_node->type_ && T_STAR != column_node->type_) {
       // now column_ref child should be T_IDENT
       has_unsupport_expr_type_ = true;
-      LOG_WARN("T_COLUMN_REF unexpected column entry", "node_type", get_type_name(column_node->type_), K(ret));
+      LOG_DEBUG("T_COLUMN_REF unexpected column entry", "node_type", get_type_name(column_node->type_), K(ret));
     } else if (T_IDENT == column_node->type_) {
       ObProxyExprColumn* expr_column = NULL;
       if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_COLUMN))) {
@@ -822,7 +830,7 @@ int ObProxyDMLStmt::do_handle_parse_result(ParseNode* node)
       // do nothing
     } else if (i == PARSE_SELECT_HAVING) {
       has_unsupport_expr_type_ = true;
-      LOG_WARN("having not support", K(ret), K(sql_string_));
+      LOG_DEBUG("having not support", K(ret), K(sql_string_));
     } else {
       switch(tmp_node->type_) {
         case T_FROM_LIST:
@@ -876,7 +884,7 @@ int ObProxyDMLStmt::do_handle_parse_result(ParseNode* node)
         case T_QEURY_EXPRESSION_LIST: //distinct not support now
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
+          LOG_DEBUG("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
       }
     }
   }
@@ -1101,7 +1109,7 @@ int ObProxyDMLStmt::handle_limit_clause(ParseNode* node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
+          LOG_DEBUG("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
       }
     }
   }
@@ -1129,7 +1137,7 @@ int ObProxyDMLStmt::handle_project_list(ParseNode* node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
+          LOG_DEBUG("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
       }
 
       if (OB_FAIL(ret) && OB_NOT_NULL(expr)) {
@@ -1313,7 +1321,7 @@ int ObProxyDMLStmt::check_node_has_agg(ParseNode* node)
         case T_FUN_MIN:
         case T_FUN_AVG:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("node has agg", "node_type", get_type_name(tmp_node->type_), K(ret), K(sql_string_));
+          LOG_DEBUG("node has agg", "node_type", get_type_name(tmp_node->type_), K(ret), K(sql_string_));
           break;
         default:
           if (OB_FAIL(check_node_has_agg(tmp_node))) {
@@ -1415,7 +1423,7 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
         LOG_WARN("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_));
       } else if (string_node == NULL) {
         has_unsupport_expr_type_ = true;
-        LOG_WARN("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_), K(sql_string_));
+        LOG_DEBUG("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_), K(sql_string_));
       } else if (OB_FAIL(get_sharding_const_expr(string_node, expr))) {
         LOG_WARN("get_sharding_const_expr failed", K(ret));
       }
@@ -1546,13 +1554,13 @@ int ObProxyDMLStmt::handle_sort_list_node(ParseNode* node, const SortListType& s
                 break;
               default:
                 has_unsupport_expr_type_ = true;
-                LOG_WARN("invalid sort_list_type", K(sort_list_type), K(sql_string_), K(ret));
+                LOG_DEBUG("invalid sort_list_type", K(sort_list_type), K(sql_string_), K(ret));
             }
           }
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
+          LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
       }
     }
   }
@@ -1582,7 +1590,7 @@ int ObProxyDMLStmt::handle_with_rollup_in_groupby(ParseNode* node)
         break;
       default:
         has_unsupport_expr_type_ = true;
-        LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
+        LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
       }
     }
   }
@@ -1599,7 +1607,7 @@ int ObProxyDMLStmt::handle_groupby_clause(ParseNode* node)
       //do nothing
     } else if (T_WITH_ROLLUP_CLAUSE != tmp_node->type_) {
       has_unsupport_expr_type_ = true;
-      LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
+      LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_with_rollup_in_groupby(tmp_node))) {
       LOG_WARN("handle_with_rollup_in_groupby failed", K(ret), K(i), K(sql_string_));
     }
@@ -1618,7 +1626,7 @@ int ObProxyDMLStmt::handle_orderby_clause(ParseNode* node)
       //do nothing
     } else if (T_SORT_LIST != tmp_node->type_) {
       has_unsupport_expr_type_ = true;
-      LOG_WARN("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
+      LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_sort_list_node(tmp_node, SORT_LSIT_IN_ORDER_BY))) {
       LOG_WARN("handle_sort_list_node", K(ret), K(i), K(sql_string_));
     }
@@ -1671,7 +1679,7 @@ int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
             break;
           default:
             has_unsupport_expr_type_ = true;
-            LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+            LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
             break;
         }
       }
@@ -1711,13 +1719,14 @@ int ObProxyInsertStmt::handle_single_table_insert(ParseNode *node)
           }
           break;
         case T_SELECT:
+          has_unsupport_expr_type_for_config_ = true;
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
             LOG_WARN("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           }
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+          LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
       }
     }
   }
@@ -1746,7 +1755,7 @@ int ObProxyInsertStmt::handle_insert_into(ParseNode *node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+          LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
           break;
       }
     }
@@ -1758,6 +1767,7 @@ int ObProxyInsertStmt::handle_insert_into(ParseNode *node)
 int ObProxyInsertStmt::handle_value_list(ParseNode *node)
 {
   int ret = OB_SUCCESS;
+  row_count_ = node->num_child_;
   for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
     ParseNode *tmp_node = node->children_[i];
     if (NULL == tmp_node) {
@@ -1771,7 +1781,7 @@ int ObProxyInsertStmt::handle_value_list(ParseNode *node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+          LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
           break;
       }
     }
@@ -1796,7 +1806,7 @@ int ObProxyInsertStmt::handle_column_list(ParseNode *node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unknown ndoe type", K_(tmp_node->type), K(ret));
+          LOG_DEBUG("unknown ndoe type", K_(tmp_node->type), K(ret));
       }
     }
   }
@@ -1818,12 +1828,14 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode *tmp_node = node->children_[i];
       SqlField *sql_field = NULL;
+      bool need_free_sql_field = false;
       if (NULL == tmp_node) {
         // do nothing
-      } else if (OB_ISNULL(sql_field = op_alloc(SqlField))) {
+      } else if (OB_FAIL(SqlField::alloc_sql_field(sql_field))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WARN("fail to allocate memory for sqlfield", K(ret));
       } else {
+        need_free_sql_field = true;
         is_skip_field = false;
         column_value.reset();
         sql_field->column_name_.set_value(column_name_array_.at(i));
@@ -1858,7 +1870,7 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
             column_value.value_type_ = TOKEN_NONE;
             ret = sql_field->column_values_.push_back(column_value);
             has_unsupport_expr_type_ = true;
-            LOG_WARN("unknown node type", "node type", tmp_node->type_, K(ret));
+            LOG_DEBUG("unknown node type", "node type", tmp_node->type_, K(ret));
             break;
         }
         if (OB_SUCC(ret) && !is_skip_field) {
@@ -1879,11 +1891,12 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
           } else if (OB_FAIL(field_results_->fields_.push_back(sql_field))) {
             LOG_WARN("push_back failed", K(ret), K(sql_string_));
           } else {
+            need_free_sql_field = false;
             ++field_results_->field_num_;
             LOG_DEBUG("add sql_field", KPC(sql_field), K(field_results_->field_num_));
           }
         }
-        if (OB_FAIL(ret) && NULL != sql_field) {
+        if (need_free_sql_field) {
           sql_field->reset();
           sql_field = NULL;
         }
@@ -1930,7 +1943,7 @@ int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
             break;
           default:
             has_unsupport_expr_type_ = true;
-            LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+            LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
             break;
         }
       }
@@ -1956,7 +1969,7 @@ int ObProxyDeleteStmt::handle_delete_table_node(ParseNode *node)
           break;
         default:
           has_unsupport_expr_type_ = true;
-          LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+          LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
       }
     }
   }
@@ -1998,7 +2011,7 @@ int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
             break;
           default:
             has_unsupport_expr_type_ = true;
-            LOG_WARN("unknown node type", K_(tmp_node->type), K(ret));
+            LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
             break;
         }
       }

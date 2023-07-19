@@ -112,6 +112,40 @@ int ObProxyShardUtils::check_logic_database(ObMysqlTransact::ObTransState &trans
   return ret;
 }
 
+int ObProxyShardUtils::check_logic_db_priv_for_cur_user(const ObString &logic_tenant_name,
+                                                        ObMysqlClientSession &client_session,
+                                                        const ObString &db_name)
+{
+  int ret = OB_SUCCESS;
+
+  ObDbConfigLogicDb *db_info = NULL;
+  ObClientSessionInfo &session_info = client_session.get_session_info();
+  const ObString &username = session_info.get_origin_username();
+  const ObString &host = session_info.get_client_host();
+  ObShardUserPrivInfo &saved_up_info = session_info.get_shard_user_priv();
+
+  if (OB_ISNULL(db_info = get_global_dbconfig_cache().get_exist_db_info(logic_tenant_name, db_name))) {
+    ret = OB_ENTRY_NOT_EXIST;
+    LOG_WARN("logic db does not exist", K(ret), K(db_name), K(logic_tenant_name));
+  } else if (session_info.enable_shard_authority()) {
+    ObShardUserPrivInfo new_up_info;
+    if (OB_FAIL(db_info->get_user_priv_info(username, host, new_up_info))) {
+      LOG_WARN("fail to get user priv info", K(db_name), K(username), K(host), K(ret));
+    } else if (saved_up_info.password_stage2_ != new_up_info.password_stage2_) {
+      ret = OB_PASSWORD_WRONG;
+      LOG_WARN("pass word is wrong", K(saved_up_info), K(new_up_info), K(ret));
+    }
+  } else if (!client_session.is_local_connection() && db_info->enable_remote_connection()) {
+    ret = OB_ERR_NO_DB_PRIVILEGE;
+    LOG_WARN("Access denied for database from remote addr", K(db_name), K(ret));
+  }
+
+  if (NULL != db_info) {
+    db_info->dec_ref();
+    db_info = NULL;
+  }
+  return ret;
+}
 int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
                                         ObMysqlClientSession &client_session,
                                         ObMysqlTransact::ObTransState &trans_state,
@@ -941,6 +975,35 @@ int ObProxyShardUtils::check_shard_request(ObMysqlClientSession &client_session,
   return ret;
 }
 
+int ObProxyShardUtils::handle_possible_probing_stmt(const ObString& sql,
+                                                    ObSqlParseResult &parse_result)
+{
+  int ret = OB_SUCCESS;
+
+  const ObHotUpgraderInfo& info = get_global_hot_upgrade_info();
+  if(OB_UNLIKELY(!info.is_active_for_rolling_upgrade_)) {
+    if (OB_UNLIKELY(parse_result.get_table_name().empty()
+                    && parse_result.is_select_stmt())) {
+      ObProxySqlParser sql_parser;
+      if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
+        LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
+      } else {
+        ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(parse_result.get_proxy_stmt());
+        ObIArray<ObProxyExpr*> &select_expr_array = dml_stmt->select_exprs_;
+        ObProxyExprConst *const_expr = NULL;
+        if (OB_UNLIKELY(1 == select_expr_array.count())
+            && OB_NOT_NULL(const_expr = dynamic_cast<ObProxyExprConst*>(select_expr_array.at(0)))
+            && OB_UNLIKELY(const_expr->get_object().is_int())
+            && OB_UNLIKELY(1 == const_expr->get_object().get_int())) {
+          return OB_ERR_UNEXPECTED;
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
 int ObProxyShardUtils::get_shard_hint(const ObString &table_name,
                                       ObClientSessionInfo &session_info,
                                       ObDbConfigLogicDb &logic_db_info,
@@ -1631,7 +1694,8 @@ int ObProxyShardUtils::handle_ddl_request(ObMysqlSM *sm,
   } else if (OB_ISNULL(cont = new(std::nothrow) ObShardDDLCont(sm, cb_thread))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to alloc memory for ObShardDDLCont", K(ret));
-  } else if (OB_FAIL(cont->init(logic_tenant_name, db_info.db_name_.config_string_, sql,
+  } else if (OB_FAIL(cont->init(logic_tenant_name, db_info.db_name_.config_string_,
+                                sql, parse_result.cmd_info_.integer_[0],
                                 parse_result.get_stmt_type(), parse_result.get_cmd_sub_type()))) {
     LOG_WARN("fail to init ObShardDDLCont", K(ret));
   } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_TASK))) {
@@ -2610,7 +2674,10 @@ bool ObProxyShardUtils::check_shard_authority(const ObShardUserPrivInfo &up_info
     bret = up_info.priv_set_ & (OB_PRIV_DELETE | OB_PRIV_INSERT);
   } else if (parse_result.is_delete_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_DELETE;
-  } else if (parse_result.is_create_stmt() || parse_result.is_rename_stmt()) {
+  } else if (parse_result.is_create_stmt() 
+             || parse_result.is_rename_stmt() 
+             || parse_result.is_stop_ddl_task_stmt() 
+             || parse_result.is_retry_ddl_task_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_CREATE;
   } else if (parse_result.is_alter_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_ALTER;

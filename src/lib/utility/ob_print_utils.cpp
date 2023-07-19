@@ -73,6 +73,8 @@ int hex_print(const char* in_buf, int64_t in_len,
   return ret;
 }
 
+// in_data like '123456' the number of numbers must be event
+// if in_data is '12345' you must convert to '012345' then pass in
 int32_t str_to_hex(const void *in_data, const int32_t data_length, void *buff,
                    const int32_t buff_size)
 {
@@ -86,13 +88,16 @@ int32_t str_to_hex(const void *in_data, const int32_t data_length, void *buff,
     c = 0;
     for (i = 0; i < data_length; i++) {
       c = static_cast<unsigned char>(c << 4);
-      if (*(p + i) > 'F' ||
+      if ((*(p + i) > 'F' && *(p + i) < 'a') ||
           (*(p + i) < 'A' && *(p + i) > '9') ||
-          *(p + i) < '0') {
+          *(p + i) < '0' ||
+          *(p + i) > 'f')  {
         break;
       }
       if (*(p + i) >= 'A') {
         c = static_cast<unsigned char>(c + (*(p + i) - 'A' + 10));
+      } else if (*(p + i) >= 'a') {
+        c = static_cast<unsigned char>(c + (*(p + i) - 'a' + 10));
       } else {
         c = static_cast<unsigned char>(c + (*(p + i) - '0'));
       }

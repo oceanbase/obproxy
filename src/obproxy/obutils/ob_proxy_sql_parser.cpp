@@ -613,6 +613,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   has_anonymous_block_ = parse_result.has_anonymous_block_;
   stmt_type_ = parse_result.stmt_type_;
   cmd_sub_type_ = parse_result.sub_stmt_type_;
+  has_connection_id_ = parse_result.has_connection_id_;
   hint_consistency_level_ = static_cast<ObConsistencyLevel>(parse_result.read_consistency_type_);
   parsed_length_ = static_cast<int64_t>(parse_result.end_pos_ - parse_result.start_pos_);
   text_ps_inner_stmt_type_ = parse_result.text_ps_inner_stmt_type_;
@@ -702,6 +703,9 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
     if (!tmp_string.empty()) {
       cmd_info_.string_[1].set(tmp_string);
     }
+  } else if (is_stop_ddl_task_stmt() || is_retry_ddl_task_stmt()) {
+    // cmd_integer_[0] stores the task id for sharding ddl
+    cmd_info_.integer_[0] = parse_result.cmd_info_.integer_[0];
   } else if (is_set_route_addr()) {
     // cmd_integer_[0] stores the obproxy_route_addr
     cmd_info_.integer_[0] = parse_result.cmd_info_.integer_[0];
@@ -1068,6 +1072,10 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
       LOG_INFO("fail to load result, will go on anyway", K(sql), K(use_lower_case_name), K(tmp_ret));
     } else {
       sql_parse_result.set_multi_semicolon_in_stmt(ObProxySqlParser::is_multi_semicolon_in_stmt(sql));
+      // if a start trans sql contains multi semicolon, do not hold it to avoid wrong sql syntax
+      if (sql_parse_result.is_start_trans_stmt() && sql_parse_result.is_multi_semicolon_in_stmt()) {
+        sql_parse_result.set_stmt_type(OBPROXY_T_INVALID);
+      }
       LOG_DEBUG("success to do proxy parse", K(sql_parse_result));
     }
 
@@ -1682,7 +1690,6 @@ bool ObProxySqlParser::is_multi_semicolon_in_stmt(const common::ObString &stmt)
   }
   return is_multi;
 }
-
 
 int64_t ObParseNode::to_string(char *buf, const int64_t buf_len) const
 {

@@ -434,6 +434,7 @@ public:
   virtual int to_json_str(common::ObSqlString &buf) const;
   virtual int parse_from_json(const json::Value &json_value);
   int get_group_cluster(const common::ObString &gc_name, ObGroupCluster *&gc_info);
+  int get_group_cluster_by_index(const int64_t &group_index, ObGroupCluster *&gc_info);
   void parse_tpo_specification(const common::ObString &specification);
 
 public:

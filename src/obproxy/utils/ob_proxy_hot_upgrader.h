@@ -190,6 +190,7 @@ public:
   bool need_report_info() const;
   bool need_report_status() const;
   bool is_graceful_exit_timeout(const ObHRTime cur_time) const;
+  bool is_graceful_offline_timeout(const ObHRTime cur_time) const;
   DECLARE_TO_STRING;
 
 public:
@@ -214,12 +215,14 @@ public:
   volatile ObHotUpgradeStatus last_sub_status_;   // identify last sub status in ob_all_proxy
   volatile bool is_parent_;                       // default false, indicate whether it is parent process
   bool is_inherited_;                             // is this process inherited from parent process
-
+  volatile bool is_active_for_rolling_upgrade_;    // default true
   volatile bool need_conn_accept_;                // whether need accept new connection
   volatile ObProxyLoginUserType user_rejected_;     // default NONE, indicate use which user need rejected
 
   ObHRTime graceful_exit_start_time_;             // graceful exit start time when receiving graceful exit
   ObHRTime graceful_exit_end_time_;               // graceful exit end time, after it, force exit process
+  ObHRTime graceful_offline_start_time_;          // graceful offline start time when receiving offline cmd
+  ObHRTime graceful_offline_end_time_;            // graceful offline end time, after it, force close connection
   int64_t active_client_vc_count_;                // active client session count when receive graceful exit
 
   int64_t upgrade_version_;             // mainly used for connection id during server service mode
@@ -352,6 +355,13 @@ inline bool ObHotUpgraderInfo::is_graceful_exit_timeout(const ObHRTime cur_time)
           && OB_LIKELY(graceful_exit_end_time_ >= graceful_exit_start_time_)
           && graceful_exit_end_time_ < cur_time
           && common::OB_SUCCESS != g_proxy_fatal_errcode);
+}
+
+inline bool ObHotUpgraderInfo::is_graceful_offline_timeout(const ObHRTime cur_time) const
+{
+  return (OB_LIKELY(graceful_offline_end_time_ > 0)
+          && OB_LIKELY(graceful_offline_end_time_ >= graceful_offline_start_time_)
+          && graceful_offline_end_time_ < cur_time);
 }
 
 ObHotUpgraderInfo &get_global_hot_upgrade_info();

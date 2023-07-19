@@ -745,6 +745,7 @@ namespace common
   static const int OB_SSL_ERROR = -8004;
   static const int OB_UNSUPPORTED_PS = -8005;
   static const int OB_ERR_LIMIT = -8009;
+  static const int OB_ERR_ABORTING_CONNECTION = -8010;
   static const int OB_SHARD_CONF_INVALID = -8055;
   static const int OB_SEQUENCE_ERROR = -8056;
   static const int OB_EXPR_CALC_ERROR = -8057;

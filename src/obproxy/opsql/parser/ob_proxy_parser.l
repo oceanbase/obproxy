@@ -176,6 +176,14 @@ do { \
   }\
 } while (0);
 
+#define SET_CONNECTION_ID() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    p->has_connection_id_ = true;\
+  }\
+} while (0);
+
 #define RETURN_SHARD_COMMENT_NAME_OB_DOT(word_type) \
 do {\
   ObProxyParseResult *p = yyget_extra(yyscanner);\
@@ -302,14 +310,14 @@ merge_hint_begin        (merge{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\
 
 c_cmt_end               \*+\/
 
-tx_read_only            (@@session{space}*\.{space}*tx_read_only|@@tx_read_only)
+tx_read_only            (@@session{space}*\.{space}*(tx|transaction)_read_only|@@(tx|transaction)_read_only)
 autocommit              (@@session{space}*\.{space}*autocommit|@@autocommit|autocommit)
 set_names               (set{space}+names{space}+)
 set_charset             (set{space}+charset{space}+|set{space}+character{space}+set{space}+)
 set_password            (set{space}+password{space}+)
 set_default             (set{space}+default{space}+)
 set_ob_read_consistency    (set{space}+(@@session{space}*\.{space}*ob_read_consistency|@@ob_read_consistency|ob_read_consistency){space}*)
-set_tx_read_only        (set{space}+(@@session{space}*\.{space}*tx_read_only|@@tx_read_only|tx_read_only){space}*)
+set_tx_read_only        (set{space}+(@@session{space}*\.{space}*(tx|transaction)_read_only|@@(tx|transaction)_read_only|(tx|transaction)_read_only){space}*)
 
 quote         '
 sqbegin       {quote}
@@ -367,8 +375,9 @@ alter_proxyconfig         (alter{space}+proxyconfig)
 alter_proxyresource       (alter{space}+proxyresource)
 ping_proxy                (ping{space}+proxy)
 kill_proxysession         (kill{space}+proxysession)
-kill_globalsession         (kill{space}+globalsession)
-select_proxy_version       (select{space}+proxy_version{space}*({leftbracket}|{multi_byte_left_parenthesis})({rightbracket}|{multi_byte_right_parenthesis}))
+kill_globalsession        (kill{space}+globalsession)
+select_proxy_version      (select{space}+proxy_version{space}*({leftbracket}|{multi_byte_left_parenthesis})({rightbracket}|{multi_byte_right_parenthesis}))
+select_proxy_status       (select{space}+proxy_status{space}*({leftbracket}|{multi_byte_left_parenthesis})({rightbracket}|{multi_byte_right_parenthesis}))
 
 select_obproxy_route_addr (select{space}+@obproxy_route_addr)
 set_obproxy_route_addr    (set{space}+@obproxy_route_addr)
@@ -381,6 +390,8 @@ purge_binary_logs (purge{space}+binary{space}+logs)
 reset_master (reset{space}+master)
 show_binlog_server_for_tenant (show{space}+binlog{space}+server{space}+for{space}+tenant)
 
+stop_ddl_task             (stop{space}+ddl{space}+task)
+retry_ddl_task            (retry{space}+ddl{space}+task)
 %%
 
  /* basic dml stmt: */
@@ -418,6 +429,8 @@ TABLE            { return TABLE; }
 STATUS           { return STATUS; }
 FROM             { return FROM; }
 UNIQUE           { return UNIQUE; }
+{stop_ddl_task}  { return STOP_DDL_TASK; }
+{retry_ddl_task} { return RETRY_DDL_TASK; }
 
  /* ps stmt */
 USING            { return USING; }
@@ -456,6 +469,7 @@ LIMIT            { return LIMIT; }
 ALL              { return ALL; }
 LIKE             { return LIKE; }
 PARTITION        { return PARTITION; }
+SUBPARTITION     { return SUBPARTITION; }
 BINARY           { return BINARY; }
 GROUP_NAME       { RETURN_NON_RESERVED_KEYWORD(GROUP_NAME); }
 
@@ -509,6 +523,7 @@ OFFSET           { RETURN_NON_RESERVED_KEYWORD(OFFSET); }
 {show_processlist}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_PROCESSLIST); return SHOW_PROCESSLIST; }
 ATTRIBUTE           { RETURN_NON_RESERVED_KEYWORD(ATTRIBUTE); }
 VARIABLES           { RETURN_NON_RESERVED_KEYWORD(VARIABLES); }
+READ_STALE     { RETURN_NON_RESERVED_KEYWORD(READ_STALE); }
 
 STAT                { RETURN_NON_RESERVED_KEYWORD(STAT); }
 
@@ -590,6 +605,9 @@ IDC                 { RETURN_NON_RESERVED_KEYWORD(IDC); }
 {select_database}   { SET_DML_STMT(OBPROXY_T_SELECT); return SELECT_DATABASE; }
 {select_proxy_version}   { SET_DML_STMT(OBPROXY_T_SELECT_PROXY_VERSION); return SELECT_PROXY_VERSION; }
 
+ /*probing SQL*/
+{select_proxy_status}   { SET_DML_STMT(OBPROXY_T_SELECT); return SELECT_PROXY_STATUS; }
+
  /*alter config*/
 {alter_proxyconfig} { SET_ICMD_STMT(OBPROXY_T_ICMD_ALTER_CONFIG); return ALTER_PROXYCONFIG; }
 
@@ -612,6 +630,7 @@ QUERY               { RETURN_NON_RESERVED_KEYWORD(QUERY); }
  /* identifer */
 FOUND_ROWS       { SET_FOUND_ROWS(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 ROW_COUNT        { SET_ROW_COUNT(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
+CONNECTION_ID    { SET_CONNECTION_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 {comma}|{multi_byte_comma} { return ','; }
 {int_num}        { RETURN_INT_NUM(); }
@@ -1157,6 +1176,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"row_count"                   { SET_ROW_COUNT(); RETURN_IGNORED_WORD(); }
 <in_expr>"last_insert_id"              { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>"global"                      { SET_GLOBAL_SET_STMT(); RETURN_IGNORED_WORD(); }
+<in_expr>"connection_id"               { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>{tx_read_only}                { RETURN_COL_NAME(TX_READ_ONLY); }
 <in_expr>{identifer}                   { RETURN_IGNORED_WORD(); }
 <in_expr><<EOF>>                       { return END_P; }
@@ -1180,6 +1200,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_no_select_query>"found_rows"       { SET_FOUND_ROWS(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"row_count"        { SET_ROW_COUNT(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"last_insert_id"   { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
+<in_no_select_query>"connection_id"    { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>{identifer}        { RETURN_IGNORED_WORD(); }
 <in_no_select_query><<EOF>>            { return END_P; }
 <in_no_select_query>{whitespace}       { }

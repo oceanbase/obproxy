@@ -391,7 +391,7 @@ bool ObAddr::set_ipv6_addr(const uint64_t ipv6_high, const uint64_t ipv6_low, co
 {
   bool ret = true;
   uint64_t *high = reinterpret_cast<uint64_t *>(&ip_.v6_[0]);
-  uint64_t *low = reinterpret_cast<uint64_t *>(&ip_.v6_[8]);
+  uint64_t *low = reinterpret_cast<uint64_t *>(&ip_.v6_[2]);
   *high = ipv6_high;
   *low = ipv6_low;
   version_ = IPV6;

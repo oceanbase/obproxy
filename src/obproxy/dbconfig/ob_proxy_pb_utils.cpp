@@ -791,7 +791,7 @@ int ObProxyPbUtils::do_parse_from_local_file(const char *dir, const char *file_n
     LOG_WARN("fail to get file size", K(dir), K(file_name), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WARN("fail to alloc memory", K(ret), K(buf_size));
   } else if (OB_FAIL(ObProxyFileUtils::read_from_file(dir, file_name, buf, buf_size, read_len))) {
     LOG_WARN("fail to read child config from file", K(ret), K(dir), K(file_name), K(buf_size));
   } else {

@@ -149,15 +149,17 @@ int OMPKHandshakeResponse::decode()
                   uint64_t value_len = 0;
                   ret = ObMySQLUtil::get_length(pos, value_len, value_inc_len);
                   //OB_ASSERT(OB_SUCC(ret) && all_attrs_len > value_inc_len);
-                  if (OB_SUCC(ret) && all_attrs_len > value_inc_len) {
+                  if (OB_SUCC(ret) && all_attrs_len >= value_inc_len && pos <= end) {
                     all_attrs_len -= value_inc_len;
                     str_kv.value_.assign_ptr(pos, static_cast<int32_t>(value_len));
                     //OB_ASSERT(all_attrs_len >= value_len);
                     if (all_attrs_len >= value_len) {
                       all_attrs_len -= value_len;
-                      pos += value_len;
-                      if (OB_FAIL(connect_attrs_.push_back(str_kv))) {
-                        LOG_WARN("fail to push back str_kv", K(str_kv), K(ret));
+                      if (end - pos >= value_len) {
+                        pos += value_len;
+                        if (OB_FAIL(connect_attrs_.push_back(str_kv))) {
+                          LOG_WARN("fail to push back str_kv", K(str_kv), K(ret));
+                        }
                       }
                     } else {
                       ret = OB_INVALID_ARGUMENT;

@@ -48,7 +48,7 @@ int ObProxyPacketWriter::write_packet(event::ObMIOBuffer &write_buf,
     Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
                                             compressed_seq, true, false, false,
                                             client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing());
+                                            client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_packet(write_buf, packet, ob20_head_param))) {
       LOG_WARN("fail to write ob20 packet", K(ret));
     } else {
@@ -76,7 +76,7 @@ int ObProxyPacketWriter::write_raw_packet(event::ObMIOBuffer &write_buf,
     Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_,
                                             compressed_seq, compressed_seq, true, false, false,
                                             client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing());
+                                            client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_raw_packet(write_buf, pkt_str, ob20_head_param))) {
       LOG_WARN("fail to write raw packet in ob20 format", K(ret));
     } else {
@@ -107,7 +107,7 @@ int ObProxyPacketWriter::write_kv_resultset(event::ObMIOBuffer &write_buf,
     Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
                                             compressed_seq, true, false, false,
                                             client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing());
+                                            client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObProto20Utils::encode_kv_resultset(write_buf, ob20_head_param, seq, field,
                                                     field_value, status_flag))) {
       LOG_WARN("fail to encode kv resultset", K(ret));
@@ -137,7 +137,7 @@ int ObProxyPacketWriter::write_ok_packet(event::ObMIOBuffer &write_buf,
     Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
                                             compressed_seq, true, false, false,
                                             client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing());
+                                            client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObProto20Utils::encode_ok_packet(write_buf, ob20_head_param, seq, affected_rows, capability))) {
       LOG_WARN("fail to encode ok packet in ob20 format", K(ret));
     } else {
@@ -211,7 +211,7 @@ int ObProxyPacketWriter::write_error_packet(event::ObMIOBuffer &write_buf,
       Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, 
                                               compressed_seq, compressed_seq, true, false, false,
                                               client_session->is_client_support_new_extra_info(),
-                                              client_session->is_trans_internal_routing());
+                                              client_session->is_trans_internal_routing(), false);
       if (OB_FAIL(ObProto20Utils::encode_err_packet(write_buf, ob20_head_param, seq, err_code, msg_buf))) {
         LOG_WARN("fail to encode err packet in ob20 format", K(ret));
       }

@@ -187,3 +187,6 @@ deps/3rd/home
 deps/3rd/var
 deps/3rd/usr
 deps/3rd/pkg
+.ccls-cache
+src/compile_commands.json
+.cache

@@ -97,19 +97,20 @@ public:
              && 0 == strcasecmp(lhs.config_item_.name(), rhs.config_item_.name());
     }
   };
-  typedef common::hash::ObBuildInHashMap<ObProxyConfigItemHashing> ProxyConfigHashMap;
+  typedef common::hash::ObBuildInHashMap<ObProxyConfigItemHashing, 1024> ProxyConfigHashMap;
 
 public:
   ObProxyConfigTableProcessor() : index_(0), proxy_config_lock_(obsys::WRITE_PRIORITY),
                                   config_version_(0), need_sync_to_file_(false),
-                                  execute_sql_array_() {}
+                                  execute_sql_array_(), need_rebuild_config_map_(false) {}
   ~ObProxyConfigTableProcessor() {}
 
   int init();
   void inc_index();
+  void set_need_rebuild_config_map(const bool need_rebuld) { need_rebuild_config_map_ = need_rebuld; }
   void clean_hashmap(ProxyConfigHashMap &map);
-  int set_proxy_config(void *arg);
-  int delete_proxy_config(void *arg);
+  int set_proxy_config(void *arg, const bool is_backup);
+  int delete_proxy_config(void *arg, const bool is_backup);
   int get_config_item(const obutils::ObVipAddr &addr, const common::ObString &cluster_name,
                       const common::ObString &teannt_name, const common::ObString &name,
                       ObProxyConfigItem &item);
@@ -119,9 +120,9 @@ public:
   ProxyConfigHashMap& get_backup_hashmap() { return proxy_config_map_array_[(index_ + 1) % 2]; }
   int commit_execute_sql(sqlite3 *db);
   void clear_execute_sql();
+  int backup_hashmap_with_lock();
 private:
   void clean_hashmap_with_lock(ProxyConfigHashMap &map);
-  int backup_hashmap_with_lock();
   int alter_proxy_config(const common::ObString &key_string, const common::ObString &value_string);
   bool is_config_in_service(const common::ObString &config_name);
   static int execute(void *arg);
@@ -135,6 +136,7 @@ private:
   uint64_t config_version_;
   bool need_sync_to_file_;
   common::ObSEArray<obutils::ObProxyVariantString, 4> execute_sql_array_;
+  bool need_rebuild_config_map_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyConfigTableProcessor);
 };

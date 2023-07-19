@@ -396,6 +396,7 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
         LOG_WARN("fail to fill item array from pl", K(ret));
       }
     } else if (cluster_resource != NULL
+               && !need_use_dup_replica
                && proxy_primary_zone_name.empty()
                && !tenant_name.empty()
                && !is_random_routing_mode

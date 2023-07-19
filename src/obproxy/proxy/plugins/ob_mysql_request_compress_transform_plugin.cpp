@@ -13,6 +13,8 @@
 #include "ob_mysql_request_compress_transform_plugin.h"
 #include "proxy/mysqllib/ob_mysql_analyzer_utils.h"
 #include "proxy/mysqllib/ob_2_0_protocol_utils.h"
+#include "lib/utility/ob_2_0_sess_veri.h"
+
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -140,12 +142,25 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
     ObSEArray<ObObJKV, 3> extra_info;
     ObSqlString sess_info_value;
     char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
-    char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
 
-    if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm_,
-                                                                client_ip_buf, MAX_IP_BUFFER_LEN,
-                                                                server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                                                                sess_info_value, is_last_segment))) {
+    char flt_info_buf[SERVER_FLT_INFO_BUF_MAX_LEN] = "\0";
+    char sess_info_veri_buf[OB_SESS_INFO_VERI_BUF_MAX] = "\0";
+    const bool is_proxy_switch_route = sm_->is_proxy_switch_route();
+
+    // buf to fill extra info
+    char *total_flt_info_buf = flt_info_buf;
+    int64_t total_flt_info_buf_len = SERVER_FLT_INFO_BUF_MAX_LEN;
+
+    // alloc show trace buffer
+    if (OB_FAIL(ObProxyTraceUtils::build_show_trace_info_buffer(sm_, is_last_segment, total_flt_info_buf,
+                                                                total_flt_info_buf_len))) {
+      PROXY_API_LOG(WARN, "fail to build show trace info buffer", K(ret));
+    } else if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm_,
+                                                                       client_ip_buf, MAX_IP_BUFFER_LEN,
+                                                                       total_flt_info_buf, total_flt_info_buf_len,
+                                                                       sess_info_veri_buf, OB_SESS_INFO_VERI_BUF_MAX,
+                                                                       sess_info_value, is_last_segment,
+                                                                       is_proxy_switch_route))) {
       PROXY_API_LOG(WARN, "fail to build related extra info all", K(ret));
     } else {
       ObMysqlServerSession *server_session = sm_->get_server_session();
@@ -154,11 +169,18 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
       Ob20ProtocolHeaderParam ob20_head_param(server_session->get_server_sessid(), request_id_, compressed_seq_,
                                               compressed_seq_, is_last_segment, is_weak_read, is_need_reroute,
                                               server_session->get_session_info().is_new_extra_info_supported(),
-                                              client_session->is_trans_internal_routing());
+                                              client_session->is_trans_internal_routing(), is_proxy_switch_route);
       if (OB_FAIL(ObProto20Utils::consume_and_compress_data(local_reader_, mio_buffer_, local_reader_->read_avail(),
                                                             ob20_head_param, &extra_info))) {
         PROXY_API_LOG(WARN, "fail to consume and compress data with OB20", K(ret));
       }
+    }
+
+    // free show trace buffer after use, in both succ and fail
+    if (total_flt_info_buf_len > SERVER_FLT_INFO_BUF_MAX_LEN
+        && total_flt_info_buf != NULL) {
+      ob_free(total_flt_info_buf);
+      total_flt_info_buf = NULL;
     }
   } else {
     if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(

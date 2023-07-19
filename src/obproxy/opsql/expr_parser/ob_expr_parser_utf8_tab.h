@@ -87,8 +87,9 @@ extern int ob_expr_parser_utf8_yydebug;
      STR_VAL = 286,
      ROW_ID = 287,
      REVERSED_EXPR_FUNC = 288,
-     INT_VAL = 289,
-     POS_PLACE_HOLDER = 290
+     HEX_VAL = 289,
+     INT_VAL = 290,
+     POS_PLACE_HOLDER = 291
    };
 #endif
 

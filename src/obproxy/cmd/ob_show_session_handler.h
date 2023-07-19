@@ -15,6 +15,7 @@
 
 #include "cmd/ob_internal_cmd_handler.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
+#include "obutils/ob_read_stale_processor.h"
 
 namespace oceanbase
 {
@@ -78,6 +79,10 @@ private:
   int dump_cs_stat_item(const char *name, const int64_t &value);
   int dump_cs_variables_item(const ObSessionBaseField *field, const ObSessionVariableType var_type);
 
+  int dump_cs_read_stale_replica_header();
+  int dump_cs_read_stale_replica(ObMysqlClientSession &cs);
+  int dump_cs_read_stale_replica_item(const obutils::ObReadStaleFeedback *feedback);
+  
   template<typename T>
   int dump_cs_variables_common(T &vars, const ObSessionVariableType var_type)
   {

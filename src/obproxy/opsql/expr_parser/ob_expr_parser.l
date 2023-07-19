@@ -49,6 +49,9 @@ do {\
 #define RETURN_REVERSED_EXPR_FUNC() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return REVERSED_EXPR_FUNC; }
 
+#define RETURN_HEX_VAL() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return HEX_VAL; }
+
 %}
 
 %x                      in_c_comment
@@ -61,6 +64,7 @@ multi_byte_space              [\u3000]
 multi_byte_comma              [\uff0c]
 multi_byte_left_parenthesis   [\uff08]
 multi_byte_right_parenthesis  [\uff09]
+hexval                  (x'([a-fA-F0-9]+)')|(0x([a-fA-F0-9]+))
 space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
 
@@ -135,6 +139,7 @@ NOT       { return NOT; }
 
 {int_num}              { RETURN_INT_VAL(); }
 {number}               { RETURN_NUMBER_VAL(); }
+{hexval}               { RETURN_HEX_VAL(); }
 {identifer}            { RETURN_NAME_OB(); }
 {whitespace}           { }
 {comma}|{multi_byte_comma} { return ','; }

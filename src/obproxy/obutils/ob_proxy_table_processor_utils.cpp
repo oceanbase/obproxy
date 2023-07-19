@@ -470,6 +470,11 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
     LOG_WARN("json parser init failed", K(ret));
   }
 
+  int64_t batch_size = get_global_proxy_config().metadb_batch_size;
+  int64_t cnt = 0;
+  int64_t sleep_time = get_global_proxy_config().metadb_batch_interval;
+  LOG_INFO("begin to fill_local_vt_cache", K(batch_size), K(sleep_time));
+
   while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "vid", vid, int64_t);
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "vip", vip, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
@@ -561,10 +566,16 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
           rw_type = -1;
           request_target_string.reset();
           rw_string.reset();
+          if (cnt % batch_size == 0) {
+            if (0 != sleep_time) {
+              usleep(static_cast<__useconds_t>(sleep_time));
+            }
+          }
         }
       }
     }//end if OB_SUCCESS
   }//end of while
+  LOG_INFO("end fill_local_vt_cache", K(cnt));
 
   if (OB_LIKELY(OB_ITER_END == ret)) {
     ret = OB_SUCCESS;

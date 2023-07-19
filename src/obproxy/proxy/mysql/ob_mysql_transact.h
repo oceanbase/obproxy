@@ -30,7 +30,7 @@
 #include "proxy/api/ob_transform.h"
 #include "proxy/mysqllib/ob_proxy_ob20_request.h"
 #include "lib/oblog/ob_simple_trace.h"
-
+#include "obutils/ob_read_stale_processor.h"
 namespace oceanbase
 {
 namespace obproxy
@@ -365,33 +365,13 @@ public:
     bool is_need_force_flush() { return is_need_force_flush_; }
     bool is_remote_readonly() { return route_.is_remote_readonly(); }
 
-    const ObProxyReplicaLocation *get_next_avail_replica(const bool is_force_retry,
-        int32_t &attempt_count, bool &found_leader_force_congested)
-    {
-      const ObProxyReplicaLocation *ret_replica = NULL;
-      attempt_count = 0;
-      bool need_try_next = true;
-      found_leader_force_congested = false;
-      while (need_try_next) {
-        ret_replica = route_.get_next_avail_replica();
-        if (!is_force_retry
-            && NULL != ret_replica
-            && route_.cur_chosen_server_.is_force_congested_) {
-          if (ret_replica->is_leader() && is_strong_read()) {
-            found_leader_force_congested = true;
-          }
-          PROXY_TXN_LOG(DEBUG, "this is force congested server, do not use it this time",
-                        "server", route_.cur_chosen_server_, K(attempt_count));
-          //if not force retry, we will do not use dead congested server
-          ret_replica = NULL;
-          ++attempt_count;
-        } else {
-          need_try_next = false;
-        }
-      }
-      return ret_replica;
-    }
 
+    int get_next_avail_replica(const bool is_force_retry,
+                               int32_t &attempt_count,
+                               bool &found_leader_force_congested,
+                               obutils::ObReadStaleParam &read_stale_param,
+                               bool &is_all_stale,
+                               const ObProxyReplicaLocation *&replica);
     const ObProxyReplicaLocation *get_next_avail_replica()
     {
       return route_.get_next_avail_replica();
@@ -527,7 +507,10 @@ public:
           api_server_addr_set_(false),
           need_retry_(true),
           sqlaudit_record_queue_(NULL),
-          trace_log_()
+          trace_log_(),
+          is_proxy_protocol_v2_request_(true),
+          use_cmnt_target_db_server_(false),
+          use_conf_target_db_server_(false)
     {
       memset(user_args_, 0, sizeof(user_args_));
     }
@@ -676,6 +659,8 @@ public:
       send_reqeust_direct_ = false;
       is_rerouted_ = false;
       reroute_info_.reset();
+      use_cmnt_target_db_server_ = false;
+      use_conf_target_db_server_ = false;
 
       if (CMD_COMPLETE == current_.state_) {
         if (!is_hold_start_trans_ && !is_hold_xa_start_) {
@@ -699,6 +684,7 @@ public:
           sqlaudit_record_queue_->refcount_dec();
           sqlaudit_record_queue_ = NULL;
         }
+        is_proxy_protocol_v2_request_ = false;
 
         server_info_.reset();
         pre_server_info_.reset();
@@ -749,6 +735,7 @@ public:
         sqlaudit_record_queue_->refcount_dec();
         sqlaudit_record_queue_ = NULL;
       }
+      is_proxy_protocol_v2_request_ = false;
       arena_.reset();
     }
 
@@ -827,6 +814,10 @@ public:
 
     ObSqlauditRecordQueue *sqlaudit_record_queue_;
     common::ObSimpleTrace<4096> trace_log_;
+    bool is_proxy_protocol_v2_request_;
+    // whether to use target db server from sql comment or multi level config
+    bool use_cmnt_target_db_server_;
+    bool use_conf_target_db_server_;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ObTransState);
@@ -840,6 +831,7 @@ public:
   static void handle_oceanbase_request(ObTransState &s);
   static void handle_ps_close_reset(ObTransState &s);
   static void handle_fetch_request(ObTransState &s);
+  static void handle_target_db_not_allow(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,
                                         int64_t &request_len);
@@ -947,6 +939,7 @@ public:
   static void handle_execute_succ(ObTransState &s);
   static int do_handle_execute_succ(ObTransState &s);
   static void handle_prepare_execute_succ(ObTransState &s);
+  static void handle_xa_start_sync_succ(ObTransState &s);
   static int do_handle_prepare_execute_xa_succ(event::ObIOBufferReader &buf_reader);
   static void handle_text_ps_prepare_succ(ObTransState &s);
   static int handle_text_ps_drop_succ(ObTransState &s, bool &is_user_request);
@@ -994,6 +987,8 @@ public:
   static bool has_dependent_func(ObTransState &s);
   static void record_trans_state(ObTransState &s, bool is_in_trans);
   static bool is_addr_logonly(const net::ObIpEndpoint &addr, const ObTenantServer *ts);
+  static void build_read_stale_param(const ObTransState &s, obutils::ObReadStaleParam &param);
+  static void set_route_leader_replica(ObTransState &s, const ObProxyReplicaLocation *&replica);
 };
 
 inline bool ObMysqlTransact::is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s)
@@ -1240,8 +1235,8 @@ inline bool ObMysqlTransact::is_addr_logonly(const net::ObIpEndpoint &addr, cons
     tmp_addr.set_sockaddr(addr.sa_);
     for (int64_t i = 0; i < cnt; ++i) {
       if (tmp_addr == ts->get_replica_location(i)->server_
-          && (common::REPLICA_TYPE_LOGONLY == ts->get_replica_location(i)->get_replica_type()
-              || common::REPLICA_TYPE_ENCRYPTION_LOGONLY == ts->get_replica_location(i)->get_replica_type())) {
+          && common::ObReplicaTypeCheck::is_logonly_replica(
+              ts->get_replica_location(i)->get_replica_type())) {
         ret = true;
         break;
       }

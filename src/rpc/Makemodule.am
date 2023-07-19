@@ -54,4 +54,6 @@ rpc/obrpc/ob_rpc_processor.h\
 rpc/obrpc/ob_rpc_stat.h\
 rpc/obrpc/ob_rpc_processor.ipp\
 rpc/obrpc/ob_rpc_req_context.h\
-rpc/obrpc/ob_rpc_stream_cond.h
+rpc/obrpc/ob_rpc_stream_cond.h\
+rpc/proxy_protocol/proxy_protocol_v2.cpp\
+rpc/proxy_protocol/proxy_protocol_v2.h

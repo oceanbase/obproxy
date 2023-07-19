@@ -365,7 +365,7 @@ extern int ob_proxy_parser_gbk_yylex \
 #undef YY_DECL
 #endif
 
-#line 1213 "ob_proxy_parser_gbk.l"
+#line 1234 "ob_proxy_parser_gbk.l"
 
 
 #line 372 "ob_proxy_parser_gbk_lex.h"

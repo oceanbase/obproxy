@@ -111,6 +111,8 @@ extern "C" {
 #define OB_STRXFRM_REVERSE_LEVEL6  0x00200000
 #define OB_STRXFRM_REVERSE_SHIFT   16
 
+void init_gb18030_2022();
+
 #define	_MY_U	01	/* Upper case */
 #define	_MY_L	02	/* Lower case */
 #define	_MY_NMR	04	/* Numeral (digit) */
@@ -424,6 +426,13 @@ extern ObCharsetInfo ob_charset_utf16_general_ci;
 extern ObCharsetInfo ob_charset_utf16_bin;
 extern ObCharsetInfo ob_charset_gb18030_chinese_ci;
 extern ObCharsetInfo ob_charset_gb18030_bin;
+extern ObCharsetInfo ob_charset_gb18030_2022_pinyin_ci;
+extern ObCharsetInfo ob_charset_gb18030_2022_pinyin_cs;
+extern ObCharsetInfo ob_charset_gb18030_2022_radical_ci;
+extern ObCharsetInfo ob_charset_gb18030_2022_radical_cs;
+extern ObCharsetInfo ob_charset_gb18030_2022_stroke_ci;
+extern ObCharsetInfo ob_charset_gb18030_2022_stroke_cs;
+extern ObCharsetInfo ob_charset_gb18030_2022_bin;
 
 extern ObCollationHandler ob_collation_mb_bin_handler;
 extern ObCharsetHandler ob_charset_utf8mb4_handler;
@@ -565,7 +574,7 @@ void ob_hash_sort_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
 
 uint32 ob_convert(char *to, uint32 to_length, const ObCharsetInfo *to_cs,
                   const char *from, uint32 from_length,
-                  const ObCharsetInfo *from_cs, uint *errors);
+                  const ObCharsetInfo *from_cs, uint *errors, ob_bool trim_incomplete_tail);
 
 size_t ob_strnxfrm_unicode_full_bin(const ObCharsetInfo *cs,
                              uchar *dst, size_t dstlen, uint nweights,

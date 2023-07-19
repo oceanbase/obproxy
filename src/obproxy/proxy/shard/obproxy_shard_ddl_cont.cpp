@@ -171,7 +171,9 @@ const char* ObShardDDLTableSourceDefinition::get_operation_name(ObShardDDLOperat
     "CREATE_INDEX",
     "ALTER",
     "DROP",
-    "RENAME"
+    "RENAME",
+    "STOP",
+    "RETRY"
   };
   const char *str_ret = "";
   if (operation >= SHARD_DDL_OPERATION_CREATE_TABLE && operation < SHARD_DDL_OPERATION_MAX) {
@@ -247,6 +249,10 @@ int ObShardDDLCont::covert_stmt_type_to_operation(const ObProxyBasicStmtType stm
     operation = SHARD_DDL_OPERATION_RENAME;
   } else if (stmt_type == OBPROXY_T_TRUNCATE) {
     operation = SHARD_DDL_OPERATION_TRUNCATE;
+  } else if (stmt_type == OBPROXY_T_STOP_DDL_TASK) {
+    operation = SHARD_DDL_OPERATION_STOP;
+  } else if (stmt_type == OBPROXY_T_RETRY_DDL_TASK) {
+    operation = SHARD_DDL_OPERATION_RETRY;
   } else {
     ret = OB_NOT_SUPPORTED;
   }
@@ -282,12 +288,10 @@ int ObShardDDLCont::get_ddl_url(const char *url_template, char *&buffer)
 }
 
 int ObShardDDLCont::init(const ObString &instance_id, const ObString &schema,
-                         const ObString &sql, const ObProxyBasicStmtType stmt_type,
+                         const ObString &sql, const int64_t task_id, const ObProxyBasicStmtType stmt_type,
                          const ObProxyBasicStmtSubType sub_stmt_type)
 {
   int ret = OB_SUCCESS;
-  char *async_ddl_url = NULL;
-  char *check_ddl_url = NULL;
 
   if (OB_FAIL(ob_write_string(allocator_, instance_id, instance_id_))) {
     LOG_WARN("fail to write string instance_id", K(instance_id), K(ret));
@@ -303,13 +307,11 @@ int ObShardDDLCont::init(const ObString &instance_id, const ObString &schema,
   } else if (OB_ISNULL(response_buf_ = static_cast<char *>(allocator_.alloc(OBPROXY_MAX_JSON_INFO_SIZE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to alloc memory", K(ret));
-  } else if (OB_FAIL(get_ddl_url(ASYNC_DDL_URL, async_ddl_url))) {
-    LOG_WARN("fail to get async ddl url", K(ret));
-  } else if (OB_FAIL(get_ddl_url(CHECK_DDL_URL, check_ddl_url))) {
-    LOG_WARN("fail to get check ddl url", K(ret));
   } else {
-    async_ddl_url_.assign_ptr(async_ddl_url, static_cast<int32_t>(strlen(async_ddl_url)));
-    check_ddl_url_.assign_ptr(check_ddl_url, static_cast<int32_t>(strlen(check_ddl_url)));
+    if (SHARD_DDL_OPERATION_STOP == operation_
+        || SHARD_DDL_OPERATION_RETRY == operation_) {
+      ddl_status_.ddl_task_id_list_.push_back(task_id);
+    }
     ddl_status_.set_error_code(ObShardDDLStatus::SHARD_DDL_JOB_ERROR);
     ddl_status_.set_error_message(ObShardDDLStatus::SHARD_DDL_JOB_ERROR_MSG);
   }
@@ -320,30 +322,32 @@ int ObShardDDLCont::init(const ObString &instance_id, const ObString &schema,
 int ObShardDDLCont::init_task()
 {
   int ret = OB_SUCCESS;
+
   bool need_reschedule = false;
+  char *async_ddl_url = NULL;
+  char *check_ddl_url = NULL;
   ObSqlString buf;
 
   response_string_.assign_buffer(response_buf_, static_cast<int32_t>(OBPROXY_MAX_JSON_INFO_SIZE));
   if (is_first_) {
-    ObShardDDLTableSourceDefinition table_source_definition;
-    if (OB_FAIL(table_source_definition.init(schema_, sql_, operation_))) {
-      LOG_WARN("fail to init table source definition", K_(schema), K_(sql), K_(operation), K(ret));
-    } else if (OB_FAIL(table_source_definition.set_table_options("InstanceId", instance_id_))) {
-      LOG_WARN("fail to set table options", K_(instance_id), K(ret));
-    } else if (OB_FAIL(table_source_definition.to_json(buf))) {
-      LOG_WARN("fail to get post json data", K(ret));
-    } else if (OB_FAIL(post_ddl_request(async_ddl_url_.ptr(), buf.ptr(), static_cast<void *>(&response_string_), write_data))) {
-      LOG_WARN("fail to post ddl request", K_(async_ddl_url), K(ret));
+    if (OB_FAIL(get_ddl_url_by_type(async_ddl_url))) {
+      LOG_WARN("fail to get async ddl url", K(ret));
+    } else if (OB_FAIL(get_ddl_json_by_type(buf))) {
+      LOG_WARN("fail to get ddl json", K(ret));
+    } else if (OB_FAIL(post_ddl_request(async_ddl_url, buf.ptr(), static_cast<void *>(&response_string_), write_data))) {
+      LOG_WARN("fail to post ddl request", K(async_ddl_url), K(ret));
     } else if (OB_FAIL(ddl_status_.parse_from_json(response_string_, is_first_))) {
       LOG_WARN("fail to parse ddl response", K_(response_string), K(ret));
     } else {
       is_first_ = false;
     }
   } else {
-    if (OB_FAIL(ddl_status_.to_json(buf))) {
+    if (OB_FAIL(get_ddl_url(CHECK_DDL_URL, check_ddl_url))) {
+      LOG_WARN("fail to get check ddl url", K(ret));
+    } else if (OB_FAIL(ddl_status_.to_json(buf))) {
       LOG_WARN("fail to get post json data", K(ret));
-    } else if (OB_FAIL(post_ddl_request(check_ddl_url_.ptr(), buf.ptr(), static_cast<void *>(&response_string_), write_data))) {
-      LOG_WARN("fail to post ddl request", K_(check_ddl_url), K(ret));
+    } else if (OB_FAIL(post_ddl_request(check_ddl_url, buf.ptr(), static_cast<void *>(&response_string_), write_data))) {
+      LOG_WARN("fail to post ddl request", K(check_ddl_url), K(ret));
     } else if (OB_FAIL(ddl_status_.parse_from_json(response_string_, is_first_))) {
       LOG_WARN("fail to parse ddl response", K_(response_string), K(ret));
     }
@@ -382,6 +386,44 @@ int ObShardDDLCont::init_task()
   if (OB_FAIL(ret)) {
     ddl_status_.set_error_code(ObShardDDLStatus::SHARD_DDL_JOB_ERROR);
     ddl_status_.set_error_message(ObShardDDLStatus::SHARD_DDL_JOB_ERROR_MSG);
+  }
+
+  return ret;
+}
+
+int ObShardDDLCont::get_ddl_url_by_type(char *&buf)
+{
+  int ret = OB_SUCCESS;
+
+  if (SHARD_DDL_OPERATION_STOP == operation_) {
+    ret = get_ddl_url(STOP_DDL_URL, buf);
+  } else if (SHARD_DDL_OPERATION_RETRY == operation_) {
+    ret = get_ddl_url(RETRY_DDL_URL, buf);
+  } else {
+    ret = get_ddl_url(ASYNC_DDL_URL, buf);
+  }
+
+  return ret;
+}
+
+int ObShardDDLCont::get_ddl_json_by_type(ObSqlString &buf)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(SHARD_DDL_OPERATION_STOP == operation_) 
+      || (SHARD_DDL_OPERATION_RETRY == operation_)) {
+    if (OB_FAIL(ddl_status_.to_json(buf))) {
+      LOG_WARN("fail to get post json data for stop/retry", K(ret));
+    }
+  } else {
+    ObShardDDLTableSourceDefinition table_source_definition;
+    if (OB_FAIL(table_source_definition.init(schema_, sql_, operation_))) {
+      LOG_WARN("fail to init table source definition", K_(schema), K_(sql), K_(operation), K(ret));
+    } else if (OB_FAIL(table_source_definition.set_table_options("InstanceId", instance_id_))) {
+      LOG_WARN("fail to set table options", K_(instance_id), K(ret));
+    } else if (OB_FAIL(table_source_definition.to_json(buf))) {
+      LOG_WARN("fail to get post json data", K(ret));
+    }
   }
 
   return ret;
@@ -428,7 +470,7 @@ int ObShardDDLCont::post_ddl_request(const char *url, void *postrequest, void *r
       LOG_WARN("set write data failed", K(cc));
     } else if (CURLE_OK != (cc = curl_easy_perform(curl))) {
       LOG_WARN("curl easy perform failed", K(cc));
-    } else if(CURLE_OK != (cc = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code))) {
+    } else if (CURLE_OK != (cc = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code))) {
       LOG_WARN("curl getinfo failed", K(cc));
     } else {
       // http status code 2xx means success

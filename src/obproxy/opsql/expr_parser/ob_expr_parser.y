@@ -463,7 +463,7 @@ static inline void add_right_relation_value(ObExprParseResult *result,
 %token PLACE_HOLDER
 %token END_P ERROR IGNORED_WORD
  /* type token */
-%token<str> NAME_OB STR_VAL ROW_ID REVERSED_EXPR_FUNC
+%token<str> NAME_OB STR_VAL ROW_ID REVERSED_EXPR_FUNC HEX_VAL
 %token<num> INT_VAL POS_PLACE_HOLDER
 %type<func> comp
 %type<node> token opt_column
@@ -547,6 +547,10 @@ token:
        $$->part_key_idx_ = 0;
        $$->column_name_ = $1;
        result->has_rowid_ = true;
+     }
+     | HEX_VAL 
+     { 
+      malloc_node($$, result, TOKEN_HEX_VAL); $$->str_value_ = $1; 
      }
      | NAME_OB
      {

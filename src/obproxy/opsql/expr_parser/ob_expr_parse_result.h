@@ -89,6 +89,7 @@ typedef enum ObProxyTokenType
   TOKEN_INT_VAL,
   TOKEN_COLUMN,
   TOKEN_PLACE_HOLDER,
+  TOKEN_HEX_VAL,
 } ObProxyTokenType;
 
 typedef enum ObProxyPartKeyLevel

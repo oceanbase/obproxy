@@ -140,10 +140,10 @@ int ObPartDescRange::get_part(ObNewRange &range,
     COMMON_LOG(WARN, "invalid argument", K_(part_array), K_(part_array_size), K(range), K(ret));
     // use the fisrt range as the type to cast
   } else if (OB_FAIL(cast_key(range.start_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
-    COMMON_LOG(INFO, "fail to cast start key ",
+    COMMON_LOG(DEBUG, "fail to cast start key ",
                      K(range), K(part_array_[0].high_bound_val_), K(ret));
   } else if (OB_FAIL(cast_key(range.end_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
-    COMMON_LOG(INFO, "fail to cast end key",
+    COMMON_LOG(DEBUG, "fail to cast end key",
                      K(range), K(part_array_[0].high_bound_val_), K(ret));
   } else {
     int64_t start = get_start(part_array_, part_array_size_, range);
@@ -190,7 +190,7 @@ int ObPartDescRange::cast_key(ObRowkey &src_key,
                          allocator,
                          ctx,
                          accuracies_.at(i)))) {
-      COMMON_LOG(INFO, "fail to cast obj", K(i), K(ret));
+      COMMON_LOG(DEBUG, "fail to cast obj", K(i), K(ret));
     } else {
       // do nothing
     }

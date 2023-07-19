@@ -49,6 +49,7 @@
 #include "obutils/ob_tenant_stat_struct.h"
 #include "engine/ob_proxy_operator_result.h"
 #include "lib/utility/ob_2_0_full_link_trace_info.h"
+#include "rpc/proxy_protocol/proxy_protocol_v2.h"
 
 namespace oceanbase
 {
@@ -434,7 +435,7 @@ public:
   int handle_ldg(bool &need_direct_response_for_client);
 
   void save_response_flt_result_to_sm(common::FLTObjManage &flt);
-  void save_request_flt_result_to_sm(common::FLTObjManage &flt);
+  int save_request_flt_result_to_sm(common::FLTObjManage &flt);
   bool enable_record_full_link_trace_info();
   bool is_proxy_init_trace_log_info();
   int handle_resp_for_end_proxy_root_span(trace::UUID &trace_id, bool is_in_trans);
@@ -445,6 +446,20 @@ public:
   int handle_resp_for_end_flt_trace(bool is_trans_completed);
   void set_enable_ob_protocol_v2(const bool enable_ob_protocol_v2) { enable_ob_protocol_v2_ = enable_ob_protocol_v2; }
   bool is_enable_ob_protocol_v2() const { return enable_ob_protocol_v2_; }
+
+  bool is_proxy_switch_route() const;
+private:
+  // private functions
+  int handle_server_request_send_long_data();
+  int do_analyze_ps_execute_request_with_remain_value(event::ObMIOBuffer *writer, int64_t read_avail,
+                                                      int64_t param_type_pos);
+  int handle_compress_request_analyze_done(ObMysqlCompressedOB20AnalyzeResult &ob20_result, int64_t &first_packet_len,
+                                           ObMysqlAnalyzeStatus &status);
+  void analyze_status_after_analyze_mysql_in_ob20_payload(ObMysqlAnalyzeStatus &status,
+                                                          ObClientSessionInfo &client_session_info);
+  int analyze_ob20_remain_after_analyze_mysql_request_done(ObClientSessionInfo &client_session_info);
+  int handle_proxy_protocol_v2_request(proxy_protocol_v2::ProxyProtocolV2 &v2, ObMysqlAnalyzeStatus &status);
+
 private:
   static const int64_t HISTORY_SIZE = 32;
 
@@ -484,6 +499,7 @@ private:
   int64_t start_acquire_server_session_time_;
   bool skip_plugin_;
   bool add_detect_server_cnt_;
+  proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
 public:
   // Multi-level configuration items: Because the most fine-grained configuration items
   // can take effect at the VIP level, each SM may need to be different
@@ -495,19 +511,10 @@ public:
   bool enable_read_write_split_;
   bool enable_transaction_split_;
   bool enable_ob_protocol_v2_; // limit the scope of changing enable_protocol_v2_ to client session level 
+  bool enable_read_stale_feedback_;
+  int64_t read_stale_retry_interval_;
   uint64_t config_version_;
   ObTargetDbServer *target_db_server_;
-
-private:
-  // private functions
-  int handle_server_request_send_long_data();
-  int do_analyze_ps_execute_request_with_remain_value(event::ObMIOBuffer *writer, int64_t read_avail,
-                                                      int64_t param_type_pos);
-  int handle_compress_request_analyze_done(ObMysqlCompressedOB20AnalyzeResult &ob20_result, int64_t &first_packet_len,
-                                           ObMysqlAnalyzeStatus &status);
-  void analyze_status_after_analyze_mysql_in_ob20_payload(ObMysqlAnalyzeStatus &status,
-                                                          ObClientSessionInfo &client_session_info);
-  int analyze_ob20_remain_after_analyze_mysql_request_done(ObClientSessionInfo &client_session_info);
 };
 
 inline ObMysqlSM *ObMysqlSM::allocate()

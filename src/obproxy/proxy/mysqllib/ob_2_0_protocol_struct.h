@@ -27,6 +27,7 @@ namespace proxy
 
 const char * const OB_V20_PRO_EXTRA_KV_NAME_SYNC_SESSION_INFO = "sess_inf";
 const char * const OB_V20_PRO_EXTRA_KV_NAME_FULL_LINK_TRACE = "full_trc";
+const char * const OB_SESSION_INFO_VERI = "sess_ver";
 const char * const OB_TRACE_INFO_VAR_NAME = "ob_trace_info";
 const char * const OB_TRACE_INFO_CLIENT_IP = "client_ip";
 
@@ -44,6 +45,7 @@ enum Ob20NewExtraInfoProtocolKeyType {
   TRACE_INFO = 2001,
   SESS_INFO = 2002,
   FULL_TRC = 2003,
+  SESS_INFO_VERI = 2004,
   OB20_SVR_END,
 };
 
@@ -67,7 +69,8 @@ union Ob20ProtocolFlags
     uint32_t OB_IS_NEW_EXTRA_INFO:                      1;
     uint32_t OB_IS_WEAK_READ:                           1;
     uint32_t OB_IS_TRANS_INTERNAL_ROUTING:              1;
-    uint32_t OB_FLAG_RESERVED_NOT_USE:                 26;
+    uint32_t OB_PROXY_SWITCH_ROUTE:                     1;
+    uint32_t OB_FLAG_RESERVED_NOT_USE:                 25;
   } st_flags_;
 };
 
@@ -203,6 +206,7 @@ public:
 };
 
 // used for transfer function argument
+// flag ref to Protocol20Flags
 class Ob20ProtocolHeaderParam {
 public:
   Ob20ProtocolHeaderParam() : connection_id_(0),
@@ -213,14 +217,15 @@ public:
                               is_weak_read_(false),
                               is_need_reroute_(false),
                               is_new_extra_info_(false),
-                              is_trans_internal_routing_(false) {}
+                              is_trans_internal_routing_(false),
+                              is_switch_route_(false) {}
   Ob20ProtocolHeaderParam(uint32_t conn_id, uint32_t req_id, uint8_t compressed_seq, uint8_t pkt_seq,
                           bool is_last_packet, bool is_weak_read, bool is_need_reroute,
-                          bool is_new_extra_info, bool is_trans_internal_routing)
-                          : connection_id_(conn_id), request_id_(req_id), compressed_seq_(compressed_seq),
-                            pkt_seq_(pkt_seq), is_last_packet_(is_last_packet),
-                            is_weak_read_(is_weak_read), is_need_reroute_(is_need_reroute),
-                            is_new_extra_info_(is_new_extra_info), is_trans_internal_routing_(is_trans_internal_routing) {}
+                          bool is_new_extra_info, bool is_trans_internal_routing, bool is_switch_route)
+    : connection_id_(conn_id), request_id_(req_id), compressed_seq_(compressed_seq), pkt_seq_(pkt_seq),
+      is_last_packet_(is_last_packet), is_weak_read_(is_weak_read), is_need_reroute_(is_need_reroute),
+      is_new_extra_info_(is_new_extra_info), is_trans_internal_routing_(is_trans_internal_routing),
+      is_switch_route_(is_switch_route) {}
   ~Ob20ProtocolHeaderParam() {}
 
   Ob20ProtocolHeaderParam(const Ob20ProtocolHeaderParam &param) {
@@ -238,6 +243,7 @@ public:
       is_need_reroute_ = param.is_need_reroute_;
       is_new_extra_info_ = param.is_new_extra_info_;
       is_trans_internal_routing_ = param.is_trans_internal_routing_;
+      is_switch_route_ = param.is_switch_route_;
     }
     return *this;
   }
@@ -251,6 +257,8 @@ public:
   bool is_need_reroute() const { return is_need_reroute_; }
   bool is_new_extra_info() const { return is_new_extra_info_; }
   bool is_trans_internal_routing() const { return is_trans_internal_routing_; }
+  bool is_switch_route() const { return is_switch_route_; }
+  
   void reset()
   {
     MEMSET(this, 0x0, sizeof(Ob20ProtocolHeaderParam));
@@ -259,10 +267,12 @@ public:
     is_need_reroute_ = false;
     is_new_extra_info_ = false;
     is_trans_internal_routing_ = false;
+    is_switch_route_ = false;
   }
 
   TO_STRING_KV(K_(connection_id), K_(request_id), K_(compressed_seq), K_(pkt_seq),
-               K_(is_last_packet), K_(is_need_reroute), K_(is_new_extra_info), K_(is_trans_internal_routing));
+               K_(is_last_packet), K_(is_weak_read), K_(is_need_reroute), K_(is_new_extra_info),
+               K_(is_trans_internal_routing), K_(is_switch_route));
 private:
   uint32_t connection_id_;
   uint32_t request_id_;
@@ -273,6 +283,7 @@ private:
   bool is_need_reroute_;
   bool is_new_extra_info_;
   bool is_trans_internal_routing_;
+  bool is_switch_route_;              // send to observer only
 };
 
 

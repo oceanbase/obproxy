@@ -154,11 +154,12 @@ int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf,
                                                   const uint32_t req_id,
                                                   const uint8_t compressed_seq,
                                                   const uint8_t pkt_seq,
-                                                  bool is_last_packet,
-                                                  bool is_weak_read,
-                                                  bool is_need_reroute,
-                                                  bool is_new_extra_info,
-                                                  bool is_trans_internal_routing,
+                                                  const bool is_last_packet,
+                                                  const bool is_weak_read,
+                                                  const bool is_need_reroute,
+                                                  const bool is_new_extra_info,
+                                                  const bool is_trans_internal_routing,
+                                                  const bool is_proxy_switch_route,
                                                   const common::ObIArray<ObObJKV> *extra_info)
 {
   int ret = OB_SUCCESS;
@@ -172,7 +173,7 @@ int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf,
   } else {
     Ob20ProtocolHeaderParam ob20_head_param(conn_id, req_id, compressed_seq, pkt_seq, is_last_packet,
                                             is_weak_read, is_need_reroute,
-                                            is_new_extra_info, is_trans_internal_routing);
+                                            is_new_extra_info, is_trans_internal_routing, is_proxy_switch_route);
     ObMySQLRawPacket com_pkt(cmd);
     com_pkt.set_content(sql_str.ptr(), static_cast<uint32_t>(sql_str.length()));
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_compressed_packet(mio_buf, com_pkt, ob20_head_param, extra_info))) {

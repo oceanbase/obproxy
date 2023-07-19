@@ -32,8 +32,8 @@ namespace obproxy
 namespace proxy
 {
 
-#define SERVER_EXTRA_INFO_BUF_MAX_LEN (335)   // FLTSpanInfo: 75 + FLTAppInfo: 260
-#define CLIENT_EXTRA_INFO_BUF_MAX_LEN (100)    // FLTControlInfo:62 + FLTQueryInfo: 34
+#define SERVER_FLT_INFO_BUF_MAX_LEN (335)   // FLTSpanInfo: 75 + FLTAppInfo: 260
+#define CLIENT_EXTRA_INFO_BUF_MAX_LEN (105)    // FLTControlInfo:62/69 + FLTQueryInfo: 34
 
 typedef obmysql::ObCommonKV<common::ObObj, common::ObObj> ObObJKV;
 class ObMysqlSM;
@@ -76,11 +76,8 @@ public:
                                   const int64_t data_len, int64_t &payload_len, uint64_t &crc64);
   static int fill_proto20_tailer(event::ObMIOBuffer *write_buf, const uint64_t crc64);
   static int fill_proto20_header(char *hdr_start, const int64_t payload_len,
-                                 const uint8_t compressed_seq, const uint8_t packet_seq,
-                                 const uint32_t request_id, const uint32_t connid,
-                                 const bool is_last_packet, const bool is_weak_read,
-                                 const bool is_need_reroute, const bool is_extra_info_exist,
-                                 const bool is_new_extra_info, const bool is_trans_internal_routing);
+                                 const Ob20ProtocolHeaderParam &ob20_head_param,
+                                 const bool is_extra_info_exist);
   static int reserve_proto20_hdr(event::ObMIOBuffer *write_buf, char *&hdr_start);
   static bool is_trans_related_sess_info(int16_t type);
   
@@ -101,22 +98,25 @@ class ObProxyTraceUtils
 public:
   static int build_client_ip(common::ObIArray<ObObJKV> &extra_info, char *buf, int64_t buf_len, ObMysqlSM *sm,
                              const bool is_last_packet_or_segment);
-  static int build_extra_info_for_server(ObMysqlSM *sm, char *buf, int64_t buf_len,
-                                         common::ObIArray<ObObJKV> &extra_info, const bool is_last_packet_or_segment);
+  static int build_flt_info_for_server(ObMysqlSM *sm, char *buf, int64_t buf_len,
+                                        common::ObIArray<ObObJKV> &extra_info, const bool is_last_packet_or_segment);
   static int build_extra_info_for_client(ObMysqlSM *sm, char *buf, const int64_t len,
-                                         common::ObIArray<ObObJKV> &extra_info);
+                                         common::ObIArray<ObObJKV> &extra_info, const bool is_last_packet);
   static int build_sync_sess_info(common::ObIArray<ObObJKV> &extra_info,
                                   common::ObSqlString &info_value,
-                                  common::hash::ObHashMap<int16_t, ObString> &sess_info_hash_map,
-                                  common::hash::ObHashMap<int16_t, int64_t> &client_sess_field_version,
-                                  common::hash::ObHashMap<int16_t, int64_t> &server_sess_field_version,
-                                  ObMysqlSM *sm);
+                                  ObMysqlSM *sm,
+                                  const bool is_last_packet);
+  static int build_sess_veri_for_server(ObMysqlSM *sm, common::ObIArray<ObObJKV> &extra_info,
+                                        char *sess_veri_buf, const int64_t sess_veri_buf_len,
+                                        const bool is_last_packet, const bool is_proxy_switch_route);
   static int build_related_extra_info_all(common::ObIArray<ObObJKV> &extra_info, ObMysqlSM *sm,
                                           char *ip_buf, const int64_t ip_buf_len,
-                                          char *extra_info_buf, const int64_t extra_info_buf_len,
-                                          common::ObSqlString &info_value, const bool is_last_packet);
-  static int get_sess_field_version(int64_t &version, int16_t type, common::hash::ObHashMap<int16_t, int64_t> &map);
-
+                                          char *flt_info_buf, const int64_t flt_info_buf_len,
+                                          char *sess_veri_buf, const int64_t sess_veri_buf_len,
+                                          common::ObSqlString &info_value, const bool is_last_packet,
+                                          const bool is_proxy_switch_route);
+  static int build_show_trace_info_buffer(ObMysqlSM *sm, const bool is_last_packet, char *&buf, int64_t &buf_len);
+  
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyTraceUtils);
 };

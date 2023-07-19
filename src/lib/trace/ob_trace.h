@@ -16,12 +16,16 @@
 #include "lib/list/ob_dlist.h"
 #include "lib/utility/utility.h"
 
-#include "lib/ob_errno.h"           // ?
-#include "lib/ob_define.h"          // ?
+#include "lib/ob_errno.h"
+#include "lib/ob_define.h"
+
 
 #define MAX_TRACE_LOG_SIZE (1L << 13) // 8K
 
 #define SET_TRACE_BUFFER(buffer, size) OBTRACE->set_trace_buffer(buffer, size)
+#define SET_SHOW_TRACE_INFO(json_span_array) OBTRACE->set_show_trace_info(json_span_array)
+#define RESET_SHOW_TRACE_INFO() OBTRACE->reset_show_trace_info()
+
 #define FLT_BEGIN_TRACE() (OBTRACE->begin())
 #define FLT_END_TRACE() (OBTRACE->end())
 #define FLT_BEGIN_SPAN(span_type) FLT_BEGIN_CHILD_SPAN(span_type)
@@ -47,6 +51,7 @@ if (OB_NOT_NULL(span) && 0 == span->span_id_.high_) { \
   span->span_id_.high_ = span->start_ts_; \
 }
 
+
 namespace oceanbase
 {
 namespace sql
@@ -62,12 +67,19 @@ extern int handle_span_record(char* buf, const int64_t buf_len, ObFLTSpanMgr* fl
 
 #define OBTRACE ::oceanbase::trace::ObTrace::get_instance()
 
+
 namespace oceanbase
 {
 namespace trace
 {
 extern void flush_trace();
 extern double get_random_percentage();
+
+#define UUID_PATTERN "%8.8lx-%4.4lx-%4.4lx-%4.4lx-%12.12lx"
+#define TRACE_PATTERN "{\"trace_id\":\""UUID_PATTERN"\",\"name\":\"%s\",\"id\":\""UUID_PATTERN"\",\"start_ts\":%ld,\"end_ts\":%ld,\"parent_id\":\""UUID_PATTERN"\",\"is_follow\":%s"
+#define UUID_TOSTRING(uuid) \
+((uuid).high_ >> 32), ((uuid).high_ >> 16 & 0xffff), ((uuid).high_ & 0xffff), \
+((uuid).low_ >> 48), ((uuid).low_ & 0xffffffffffff)
 
 struct UUID
 {
@@ -223,6 +235,17 @@ struct ObTrace
   static constexpr int64_t MIN_BUFFER_SIZE = (1L << 13);
   static ObTrace* get_instance();
   static void set_trace_buffer(void* buffer, int64_t buffer_size);
+
+  // add for proxy, show trace
+  static void set_show_trace_info(void *json_span_array);
+  static void reset_show_trace_info();
+  static int record_each_span_buf_for_show_trace(const char *buf,
+                                                 const int64_t len,
+                                                 ObTrace *trace,
+                                                 oceanbase::trace::ObSpanCtx *span);
+  static int64_t calc_total_span_buf_len(const int64_t tag_len,
+                                         oceanbase::trace::ObSpanCtx *span);
+  
   ObTrace(int64_t buffer_size);
   void init(FltTransCtx &flt_ctx)
   {
@@ -317,12 +340,17 @@ private:
 private:
   static thread_local ObTrace* save_buffer;
   uint64_t magic_code_;
+
+  // added by show trace for proxy
+  static thread_local void *json_span_array_;
+  
 public:
   int64_t buffer_size_;
   int64_t offset_;
   common::ObDList<ObSpanCtx> current_span_;
   common::ObDList<ObSpanCtx> freed_span_;
   ObSpanCtx* last_active_span_;
+
 private:
   UUID trace_id_;
   UUID root_span_id_;

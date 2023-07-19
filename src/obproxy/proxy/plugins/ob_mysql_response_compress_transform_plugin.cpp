@@ -71,11 +71,14 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
 
   if (!analyzer_->is_inited()) {
     const obmysql::ObMySQLCmd cmd = sm_->trans_state_.trans_info_.client_request_.get_packet_meta().cmd_;
-    const ObMysqlProtocolMode mysql_mode = sm_->client_session_->get_session_info().is_oracle_mode() ? OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
+    const ObMysqlProtocolMode mysql_mode = sm_->client_session_->get_session_info().is_oracle_mode() ?
+                                           OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
     const bool extra_ok_packet_for_stats_enabled = sm_->is_extra_ok_packet_for_stats_enabled();
-    // should decomrpess the data
+    
+    // should decompress the data
     if (OB_FAIL(analyzer_->init(req_seq_, ObMysqlCompressAnalyzer::DECOMPRESS_MODE,
-                cmd, mysql_mode, extra_ok_packet_for_stats_enabled, req_seq_, request_id_, server_sessid_))) {
+                                cmd, mysql_mode, extra_ok_packet_for_stats_enabled,
+                                req_seq_, request_id_, server_sessid_))) {
       PROXY_API_LOG(WARN, "fail to init compress analyzer", K_(req_seq), K_(request_id), K_(server_sessid),
                     K(cmd), K(extra_ok_packet_for_stats_enabled), K(ret));
     }
@@ -96,8 +99,8 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
     }
 
     int64_t plugin_decompress_response_begin = sm_->get_based_hrtime();
-
     read_avail = local_reader_->read_avail();
+    
     if (OB_FAIL(analyzer_->analyze_response(*local_reader_, &server_response))) {
       PROXY_API_LOG(ERROR, "fail to analyze mysql compress", K_(local_reader), K(ret));
     } else if (OB_FAIL(local_reader_->consume(read_avail))) {// consume all input data anyway
@@ -141,6 +144,10 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
         if (sm_->enable_record_full_link_trace_info()) {
           trace::ObSpanCtx *ctx = sm_->flt_.trace_log_info_.server_response_read_ctx_;
           if (OB_NOT_NULL(ctx)) {
+            // set show trace buffer before flush trace
+            if (sm_->flt_.control_info_.is_show_trace_enable()) {
+              SET_SHOW_TRACE_INFO(&sm_->flt_.show_trace_json_info_.curr_sql_json_span_array_);
+            }
             PROXY_API_LOG(DEBUG, "end span ob_proxy_server_response_read", K(ctx->span_id_));
             SET_TRACE_BUFFER(sm_->flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
             FLT_END_SPAN(ctx);
@@ -168,7 +175,9 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       //
       // Therefore, it is modified here that if the entire Tunnel is not over,
       //   the last bit of MySQL packet content will not be sent, and will not be sent until the entire Tunnel is over
-      if (!analyze_result.is_last_ok_handled() || analyzer_->is_stream_finished()) {
+      //   And with consume_size > 0 or analyze_result.get_reserved_len_for_ob20_ok() == 0
+      if ((!analyze_result.is_last_ok_handled() || analyzer_->is_stream_finished())
+          && (consume_size > 0 || analyze_result.get_reserved_len_for_ob20_ok() == 0)) {
         // just send all data in local_transfer_reader_
         if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
           ret = OB_ERR_UNEXPECTED;

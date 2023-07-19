@@ -477,6 +477,7 @@ int ObProxyMain::start(const int argc, char *const argv[])
     } else if (OB_FAIL(ObRandomNumUtils::init_seed())) {
       LOG_ERROR("fail to init random seed", K(ret));
     } else {
+      init_gb18030_2022();
       app_info_.setup(PACKAGE_STRING, APP_NAME, RELEASEID);
       _LOG_INFO("%s-%s", app_info_.full_version_info_str_, build_version());
       if (info.is_inherited_) {

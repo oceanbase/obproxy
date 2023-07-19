@@ -1625,6 +1625,24 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
       }
       break;
     }
+    case OB_LOCAL_CMD_OFFLINE: {
+      // Reuse hot_upgrade_exit_timeout as the timeout time for the rolling upgrade connection to enter INACTIVE
+      get_global_proxy_config().reset_local_cmd();
+      info_.graceful_offline_start_time_ = get_hrtime_internal();
+      info_.graceful_offline_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
+        + info_.graceful_offline_start_time_; // nanosecond
+      info_.is_active_for_rolling_upgrade_ = false;
+      LOG_INFO("rolling upgrade enter BE_INACTIVE from ACTIVE", K_(info));
+      break;
+    }
+    case OB_LOCAL_CMD_ONLINE: {
+      get_global_proxy_config().reset_local_cmd();
+      info_.graceful_offline_start_time_ =0;
+      info_.graceful_offline_end_time_= 0;
+      info_.is_active_for_rolling_upgrade_ = true;
+      LOG_INFO("rolling upgrade enter ACTIVE from INACTIVE", K_(info));
+      break;
+    }
     default: {
       LOG_WARN("unknown ObProxyLocalCMDType, reset it default value", K(cmd_type));
       get_global_proxy_config().reset_local_cmd();
@@ -1648,7 +1666,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
             info_.disable_net_accept();  // disable accecpt new connection
             info_.update_sub_status(HU_STATUS_NONE);
             info_.update_state(HU_STATE_WAIT_LOCAL_CR_FINISH);
-            LOG_INFO("succ to fork new proxy, start turn to HU_STATE_WAIT_CR_FINISH", K_(info));
+            LOG_INFO("succ to fork new proxy, start turn to HU_STATE_WAIT_LOCAL_CR_FINISH", K_(info));
           }
           break;
         }

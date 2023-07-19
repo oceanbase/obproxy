@@ -1456,8 +1456,8 @@ int ObProxyPartMgr::build_temp_sub_part_name_id_map(const PART_NAME_BUF * const 
 {
   int ret = OB_SUCCESS;
   all_sub_part_name_length_ = (all_first_part_name_length_ * part_num) //total length of first-part-name
-                                    + (all_sub_part_name_length_ * first_part_num_) //total length of sub-part-name
-                                    + (part_num * first_part_num_); //total length of 's' 
+                              + (all_sub_part_name_length_ * first_part_num_) //total length of sub-part-name
+                              + (part_num * first_part_num_); //total length of 's' 
   if (OB_ISNULL(name_buf) || OB_ISNULL(name_len_buf) || OB_ISNULL(part_id_buf)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("fail to get part name buf", K(ret));
@@ -1503,6 +1503,10 @@ int ObProxyPartMgr::alloc_name_buf(PART_NAME_BUF *&name_buf, int64_t *&name_len_
   } else if (OB_ISNULL(part_id_buf = (int64_t *)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WARN("part mgr reach memory limit when alloc part id buf", K(ret));
+  }
+
+  if (OB_NOT_NULL(name_len_buf)) {
+    MEMSET(name_len_buf, 0, sizeof(int64_t) * part_num);
   }
 
   return ret;

@@ -33,14 +33,16 @@ enum ObShardDDLOperation {
   SHARD_DDL_OPERATION_DROP,
   SHARD_DDL_OPERATION_RENAME,
   SHARD_DDL_OPERATION_TRUNCATE,
+  SHARD_DDL_OPERATION_STOP,
+  SHARD_DDL_OPERATION_RETRY,
   SHARD_DDL_OPERATION_MAX
 };
 
 class ObShardDDLStatus
 {
 public:
-  ObShardDDLStatus(common::ObArenaAllocator &allocator) : allocator_(&allocator),
-    ddl_task_id_list_(ObModIds::OB_PROXY_SHARDING_DDL, OB_MALLOC_NORMAL_BLOCK_SIZE) {}
+  ObShardDDLStatus(common::ObArenaAllocator &allocator) : 
+                  ddl_task_id_list_(ObModIds::OB_PROXY_SHARDING_DDL, OB_MALLOC_NORMAL_BLOCK_SIZE), allocator_(&allocator) {}
   virtual ~ObShardDDLStatus() {}
 
   int parse_id_list_from_json(const json::Value *json);
@@ -83,9 +85,9 @@ public:
   static constexpr char const *SHARD_DDL_ERROR_MSG = "errorMessage";
   static constexpr char const *SHARD_DDL_TASK_ID_LIST = "ddlTaskIdList";
 
+  common::ObSEArray<int64_t, 1> ddl_task_id_list_;
 private:
   common::ObArenaAllocator *allocator_;
-  common::ObSEArray<int64_t, 1> ddl_task_id_list_;
   ObString ddl_status_;
   ObString error_code_;
   ObString error_message_;
@@ -131,10 +133,12 @@ public:
   virtual void *get_callback_data() { return static_cast<void *>(&ddl_status_); }
 
   int init(const ObString &instance_id, const ObString &schema,
-           const ObString &sql, const ObProxyBasicStmtType stmt_type,
+           const ObString &sql, const int64_t task_id, const ObProxyBasicStmtType stmt_type,
            const ObProxyBasicStmtSubType sub_stmt_type);
 
 private:
+  int get_ddl_url_by_type(char *&buf);
+  int get_ddl_json_by_type(ObSqlString &buf);
   int covert_stmt_type_to_operation(const ObProxyBasicStmtType stmt_type,
                                     const ObProxyBasicStmtSubType sub_stmt_type,
                                     ObShardDDLOperation &operation);
@@ -150,6 +154,8 @@ private:
   static constexpr char const *JSON_HTTP_HEADER = "Content-Type:application/json;charset=UTF-8";
   static constexpr char const *ASYNC_DDL_URL = "%.*s/privateapi/v1/%s/zdalproxy/ddl/ddlAsyncByODP";
   static constexpr char const *CHECK_DDL_URL = "%.*s/privateapi/v1/%s/zdalproxy/ddl/checkDDLTaskStatus";
+  static constexpr char const *STOP_DDL_URL = "%.*s/privateapi/v1/%s/zdalproxy/ddl/stopDDLTask";
+  static constexpr char const *RETRY_DDL_URL = "%.*s/privateapi/v1/%s/zdalproxy/ddl/retryDDLTask";
 
 private:
   bool is_first_;
@@ -158,8 +164,6 @@ private:
   ObString schema_;
   ObString sql_;
   ObShardDDLOperation operation_;
-  ObString async_ddl_url_;
-  ObString check_ddl_url_;
   ObString response_string_;
   char *response_buf_;
   ObShardDDLStatus ddl_status_;

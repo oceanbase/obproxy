@@ -70,7 +70,7 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::consume(event::ObIOBufferReader 
     ObSEArray<ObObJKV, 1> extra_info;
     char client_extra_info_buf[CLIENT_EXTRA_INFO_BUF_MAX_LEN] = "\0";
       if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_client(sm_, client_extra_info_buf,
-                                                           CLIENT_EXTRA_INFO_BUF_MAX_LEN, extra_info))) {
+                                             CLIENT_EXTRA_INFO_BUF_MAX_LEN, extra_info, is_resp_finished))) {
       LOG_WARN("fail to build extra info for client", K(ret));
     } else if (OB_FAIL(build_ob20_head_and_extra(out_buffer_, extra_info, is_resp_finished))) {
       LOG_WARN("fail to build ob20 head and extra", K(ret));
@@ -152,25 +152,22 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::build_ob20_head_and_extra(ObMIOB
     ObMysqlClientSession *client_session = sm_->get_client_session();
     Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
     uint8_t last_compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
+    const bool is_weak_read = false;
+    const bool is_need_reroute = false;
     const bool is_new_extra_info = client_session->get_session_info().is_client_support_new_extra_info();
+    const bool is_trans_internal_routing = false;
+    const bool is_switch_route = false;
     bool is_extra_info_exist = false;
-    bool is_trans_internal_routing = false;
-    
+
+    Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, last_compressed_seq,
+                                            last_compressed_seq, is_last_packet, is_weak_read, is_need_reroute,
+                                            is_new_extra_info, is_trans_internal_routing, is_switch_route);
     if (OB_FAIL(ObProto20Utils::fill_proto20_extra_info(write_buf, &extra_info, is_new_extra_info, 
                                                         payload_len, tail_crc_, is_extra_info_exist))) {
       LOG_WARN("fail to fill ob20 extra info", K(ret));
-    } else if (OB_FAIL(ObProto20Utils::fill_proto20_header(head_start,
-                                                           payload_len,
-                                                           last_compressed_seq,
-                                                           last_compressed_seq,
-                                                           ob20_head.request_id_,
-                                                           client_session->get_cs_id(),
-                                                           is_last_packet,
-                                                           false, false,
-                                                           is_extra_info_exist,
-                                                           is_new_extra_info,
-                                                           is_trans_internal_routing))) {
-      LOG_WARN("fail to fill ob20 head", K(ret));
+    } else if (OB_FAIL(ObProto20Utils::fill_proto20_header(head_start, payload_len, ob20_head_param,
+                                                           is_extra_info_exist))) {
+      LOG_WARN("fail to fill ob20 head", K(ret), K(ob20_head_param));
     } else {
       client_session->set_compressed_seq(last_compressed_seq);
     }

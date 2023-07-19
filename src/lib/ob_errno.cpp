@@ -2832,6 +2832,10 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_ERR_LIMIT] = "HY000";
     STR_ERROR[-OB_ERR_LIMIT] = "The request is limited";
     STR_USER_ERROR[-OB_ERR_LIMIT] = "The request is limited by '%.*s'";
+    MYSQL_ERRNO[-OB_ERR_ABORTING_CONNECTION] = ER_ABORTING_CONNECTION;
+    SQLSTATE[-OB_ERR_ABORTING_CONNECTION] = "08S01";
+    STR_ERROR[-OB_ERR_ABORTING_CONNECTION] = "This session will be disconnected";
+    STR_USER_ERROR[-OB_ERR_ABORTING_CONNECTION] = "This session will be disconnected, server ip:'%.*s'";
     MYSQL_ERRNO[-OB_SEQUENCE_ERROR] = 7100;
     SQLSTATE[-OB_SEQUENCE_ERROR] = "HY000";
     STR_ERROR[-OB_SEQUENCE_ERROR] = "Sequence error";

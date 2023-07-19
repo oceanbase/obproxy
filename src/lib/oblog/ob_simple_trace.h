@@ -20,101 +20,188 @@ namespace oceanbase
 namespace common
 {
 
-template<int64_t BUFFER_SIZE>
+template<int64_t BASE_TRACE_SIZE>
 class ObSimpleTraceBase
 {
+public:
+  class Item
+  {
+  public:
+    const char *key;
+    int64_t value;
+    int flag;
+  };
+  enum flag
+  {
+    ST_INFO,
+    ST_INT_TYPE,
+    ST_STRING_TYPE
+  };
 public:
   ObSimpleTraceBase() { reset(); }
   ~ObSimpleTraceBase() { }
   void reset()
   {
-    pos_ = 0;
-    buf_[0] = '\0';
+    buf_pos_ = 0;
+    item_idx_ = 0;
+    log_count_ = 0;
   }
   template <typename ... Args>
   int log_it(const char *info, Args const & ... args)
   {
     int ret = common::OB_SUCCESS;
-    const int64_t saved_pos = pos_;
-    const char delimiter1[] = " | ";
-    const char delimiter2[] = "... | ";
-    if (OB_FAIL(fill_buffer(buf_, BUFFER_SIZE - sizeof(delimiter2), pos_, info, args...))) {
-      if ((BUFFER_SIZE - saved_pos) >= BUFFER_SIZE / 2) {
-        // rewrite ret
-        ret = OB_SUCCESS;
-        (void)databuff_printf(buf_, BUFFER_SIZE, pos_, delimiter2);
-      }
+    const int64_t saved_buf_pos = buf_pos_;
+    const int64_t saved_item_idx = item_idx_;
+    Item *item = NULL;
+    if (NULL == (item = get_item())) {
+      ret = common::OB_SIZE_OVERFLOW;
     } else {
-      (void)databuff_printf(buf_, BUFFER_SIZE, pos_, delimiter1);
+      item->key = info;
+      item->value = 0;
+      item->flag = ST_INFO;
+      ret = fill_kv(args...);
     }
     if (OB_FAIL(ret)) {
-      pos_ = saved_pos;
-      buf_[pos_] = '\0';
+      buf_pos_ = saved_buf_pos;
+      item_idx_ = saved_item_idx;
+    } else {
+      log_count_++;
     }
     return ret;
   }
+  int64_t get_log_count() const { return log_count_; }
   int64_t to_string(char *buf, const int64_t buf_len) const
   {
+    int ret = common::OB_SUCCESS;
     int64_t pos = 0;
-    databuff_printf(buf, buf_len, pos, "%s", buf_);
+    for (int64_t i = 0; OB_SUCC(ret) && i < item_idx_; i++) {
+      const Item *item = &(items_[i]);
+      if (ST_INFO == item->flag) {
+        if (i > 0) {
+          ret = databuff_printf(buf, buf_len, pos, "%s", " | ");
+        }
+        if (OB_SUCC(ret)) {
+          ret = databuff_printf(buf, buf_len, pos, "%s", item->key);
+        }
+      } else if (ST_INT_TYPE == item->flag) {
+        ret = databuff_printf(buf, buf_len, pos, ", %s:%ld", item->key, item->value);
+      } else if (ST_STRING_TYPE == item->flag) {
+        ret = databuff_printf(buf, buf_len, pos, ", %s:%s", item->key, (char *)(item->value));
+      } else {
+        // do nothing
+      }
+    }
+    if (OB_SUCC(ret)) {
+      (void)databuff_printf(buf, buf_len, pos, "%s", " | ");
+    }
     return pos;
   }
 private:
-  int fill_kv(char *buf, const int64_t buf_len, int64_t &pos,
-              const bool with_comma)
+  int fill_kv()
+  {
+    return common::OB_SUCCESS;
+  }
+
+  template <typename Value>
+  int fill_kv(const char *key, const Value &value)
+  {
+    int ret = common::OB_SUCCESS;
+    Item *item = NULL;
+    if (NULL == (item = get_item())) {
+      ret = common::OB_SIZE_OVERFLOW;
+    } else {
+      int64_t out = 0;
+      int flag = 0;
+      if (OB_SUCC(transform(buf_, BUFFER_SIZE, buf_pos_, value, out, flag))) {
+        item->key = key;
+        item->value = out;
+        item->flag = flag;
+      }
+    }
+    return ret;
+  }
+
+  template <typename Value, typename ... Args>
+  int fill_kv(const char *key, const Value &value, Args const & ... args)
+  {
+    int ret = OB_SUCCESS;
+    ret = fill_kv(key, value);
+    if (OB_SUCC(ret)) {
+      ret = fill_kv(args...);
+    }
+    return ret;
+  }
+private:
+  template<typename T>
+  int transform(char *buf, const int64_t buf_len, int64_t &pos,
+      const T &value, int64_t &out, int &flag)
+  {
+    int ret = common::OB_SUCCESS;
+    const int64_t saved_pos = pos;
+    const int64_t size = value.to_string(buf + pos, buf_len - pos);
+    pos = pos + size;
+    if (pos >= buf_len - 1) {
+      ret = amend(buf, buf_len - 1, pos, size);
+    }
+    if (OB_FAIL(ret)) {
+      pos = saved_pos;
+    } else {
+      buf[pos++] = '\0';
+      out = (int64_t)(buf + saved_pos);
+      flag = ST_STRING_TYPE;
+    }
+    return ret;
+  }
+  int transform(char *buf, const int64_t buf_len, int64_t &pos,
+      const int64_t &value, int64_t &out, int &flag)
   {
     UNUSED(buf);
     UNUSED(buf_len);
     UNUSED(pos);
-    UNUSED(with_comma);
+    out = value;
+    flag = ST_INT_TYPE;
     return common::OB_SUCCESS;
   }
-
-  int fill_kv(char *buf, const int64_t buf_len, int64_t &pos,
-              const bool with_comma,
-              const ObILogKV &kv)
+  int transform(char *buf, const int64_t buf_len, int64_t &pos,
+      const bool &value, int64_t &out, int &flag)
   {
-    return kv.print(buf, buf_len, pos, with_comma);
+    UNUSED(buf);
+    UNUSED(buf_len);
+    UNUSED(pos);
+    out = value;
+    flag = ST_INT_TYPE;
+    return common::OB_SUCCESS;
   }
-
-  template <typename Key, typename Value, typename ... Args>
-  int fill_kv(char *buf, const int64_t buf_len, int64_t &pos,
-              const bool with_comma,
-              const Key &key,
-              const Value &value,
-              Args const & ... args)
+  int amend(char *buf, const int64_t buf_len, int64_t &pos, const int64_t size)
   {
-    int ret = OB_SUCCESS;
-    ret = fill_kv(buf, buf_len, pos, with_comma, LOG_KV(key, value));
-    if (OB_SUCC(ret)) {
-      ret = fill_kv(buf, buf_len, pos, 1, args...);
+    int ret = common::OB_SUCCESS;
+    static const char ellipsis[] = "...";
+    if (size >= BUFFER_SIZE / 2) {
+      pos = pos - sizeof(ellipsis) - 1;
+      ret = databuff_printf(buf, buf_len, pos, "%s", ellipsis);
+    } else {
+      ret = common::OB_SIZE_OVERFLOW;
     }
     return ret;
   }
-  template <typename ... Args>
-  int fill_buffer(char *data, const int64_t buf_len,
-                  int64_t &pos,
-                  const char *info,
-                  Args const & ... args)
+  Item *get_item()
   {
-    int ret = OB_SUCCESS;
-    int64_t tmp_pos = pos;
-    ret = databuff_printf(data, buf_len, pos, "%s ", info);
-    if (OB_SUCC(ret)) {
-      ret = fill_kv(data, buf_len, pos, 0, args...);
+    Item *item = NULL;
+    if (item_idx_ < ITEM_COUNT) {
+      item = &(items_[item_idx_]);
+      item_idx_++;
     }
-    if (OB_SUCC(ret) && OB_UNLIKELY(OB_LOGGER.get_log_level() >= OB_LOG_LEVEL_TRACE)) {
-      char tmp_buf[1024];
-      memset(tmp_buf, 0, sizeof(tmp_buf));
-      int64_t copy_len = pos - tmp_pos > 1023 ? 1023 : pos - tmp_pos; 
-      MEMCPY(tmp_buf, data + tmp_pos, copy_len);
-      OB_LOG(TRACE, "trace_log", K(tmp_buf));
-    }
-    return ret;
+    return item;
   }
 private:
+  static const int64_t BUFFER_SIZE = BASE_TRACE_SIZE / 4;
+  static const int64_t ITEM_COUNT = (BASE_TRACE_SIZE - BUFFER_SIZE) / sizeof(Item);
+private:
   char buf_[BUFFER_SIZE];
-  int64_t pos_;
+  Item items_[ITEM_COUNT];
+  int64_t buf_pos_;
+  int64_t item_idx_;
+  int64_t log_count_;
 };
 
 template<int64_t TRACE_SIZE>
@@ -127,6 +214,7 @@ public:
   {
     first_idx_ = 0;
     cur_idx_ = 0;
+    dropped_ = 0;
     need_print_ = false;
     for (int64_t i = 0; i < BASE_TRACE_CNT; i++) {
       traces_[i].reset();
@@ -141,11 +229,8 @@ public:
         cur_idx_ = (cur_idx_ + i) % BASE_TRACE_CNT;
         if (1 == i) {
           if (cur_idx_ == first_idx_) {
-            if (OB_UNLIKELY(OB_LOGGER.get_log_level() >= OB_LOG_LEVEL_TRACE)) {
-              // _LOG(TRACE, "print_trace_log", K(*this));
-            } else {
-              first_idx_ = (first_idx_ + 1) % BASE_TRACE_CNT;
-            }
+            dropped_ = dropped_ + traces_[first_idx_].get_log_count();
+            first_idx_ = (first_idx_ + 1) % BASE_TRACE_CNT;
           }
           traces_[cur_idx_].reset();
         }
@@ -159,6 +244,7 @@ public:
   int64_t to_string(char *buf, const int64_t buf_len) const
   {
     int64_t pos = 0;
+    buf[pos] = '\0';
     for (int64_t i = 0; i < BASE_TRACE_CNT; i++) {
       if (pos < buf_len) {
         const int64_t idx = (first_idx_ + i) % BASE_TRACE_CNT;
@@ -171,16 +257,22 @@ public:
         break;
       }
     }
+    if (pos < buf_len) {
+      (void)databuff_printf(buf, buf_len, pos, "dropped=%ld", dropped_);
+    }
     return pos;
   }
+
   void set_need_print(const bool &need_print) { need_print_ = need_print; }
+
 private:
   static const int64_t BASE_TRACE_CNT = 4;
-  static const int64_t BUFFER_SIZE = TRACE_SIZE / BASE_TRACE_CNT;
+  static const int64_t BASE_TRACE_SIZE = TRACE_SIZE / BASE_TRACE_CNT;
 private:
-  ObSimpleTraceBase<BUFFER_SIZE> traces_[BASE_TRACE_CNT];
+  ObSimpleTraceBase<BASE_TRACE_SIZE> traces_[BASE_TRACE_CNT];
   int64_t first_idx_;
   int64_t cur_idx_;
+  int64_t dropped_;
   bool need_print_;
 };
 

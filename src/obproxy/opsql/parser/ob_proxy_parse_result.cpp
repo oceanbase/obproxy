@@ -82,6 +82,13 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_RENAME:
       str_ret = "RENAME";
       break;
+    case OBPROXY_T_STOP_DDL_TASK:
+      str_ret = "STOP_DDL_TASK";
+      break;
+    case OBPROXY_T_RETRY_DDL_TASK:
+      str_ret = "RETRY_DDL_TASK";
+      break;
+
 
     // oracle ddl
     case OBPROXY_T_GRANT:
@@ -331,6 +338,12 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_RENAME:
       str_ret = "OBPROXY_T_RENAME";
       break;
+    case OBPROXY_T_STOP_DDL_TASK:
+      str_ret = "OBPROXY_T_STOP_DDL_TASK";
+      break;
+    case OBPROXY_T_RETRY_DDL_TASK:
+      str_ret = "OBPROXY_T_RETRY_DDL_TASK";
+      break;
     case OBPROXY_T_REVOKE:
       str_ret = "OBPROXY_T_REVOKE";
       break;
@@ -403,6 +416,12 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_SET_DEFAULT:
       str_ret = "OBPROXY_T_SET_DEFAULT";
       break;
+    case OBPROXY_T_SET_TX_READ_ONLY:
+      str_ret = "OBPROXY_T_SET_TX_READ_ONLY";
+      break;
+   case OBPROXY_T_SET_OB_READ_CONSISTENCY:
+      str_ret = "OBPROXY_T_SET_OB_READ_CONSISTENCY";
+      break;
     case OBPROXY_T_OTHERS:
       str_ret = "OBPROXY_T_OTHERS";
       break;
@@ -471,6 +490,9 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
     case OBPROXY_T_SUB_SESSION_STAT:
       str_ret = "OBPROXY_T_SUB_SESSION_STAT";
       break;
+    case OBPROXY_T_SUB_SESSION_READ_STALE:
+      str_ret = "OBPROXY_T_SUB_SESSION_READ_STALE";
+      break;
     case OBPROXY_T_SUB_TRACE_LIMIT:
       str_ret = "OBPROXY_T_SUB_TRACE_LIMIT";
       break;
@@ -536,6 +558,9 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
       break;
     case OBPROXY_T_SUB_SELECT_DATABASE:
       str_ret = "OBPROXY_T_SUB_SELECT_DATABASE";
+      break;
+    case OBPROXY_T_SUB_SELECT_PROXY_STATUS:
+      str_ret = "OBPROXY_T_SUB_SELECT_PROXY_STATUS";
       break;
     case OBPROXY_T_SUB_SHOW_DATABASES:
       str_ret = "OBPROXY_T_SUB_SHOW_DATABASES";

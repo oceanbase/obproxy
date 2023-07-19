@@ -19,21 +19,29 @@ namespace oceanbase
 {
 namespace obproxy
 {
+
+namespace proxy
+{
+  class ObMysqlClientSession;
+}
 namespace obutils
 {
+
+class ObSqlParseResult;
 class ObShowDatabasesHandler : public ObCmdHandler
 {
 public:
   ObShowDatabasesHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
   virtual ~ObShowDatabasesHandler() {}
-  int handle_show_databases(const ObString &logic_tenant_name);
+  int handle_show_databases(const ObString &logic_tenant_name, proxy::ObMysqlClientSession &client_session);
 
   static int show_databases_cmd_callback(event::ObMIOBuffer *buf, ObCmdInfo &info,
-                                         const ObString &logic_tenant_name);
+                                         const ObString &logic_tenant_name,
+                                         proxy::ObMysqlClientSession &client_session);
 
 private:
   int dump_database_header();
-  int dump_database(const ObString &logic_tenant_name);
+  int dump_database(const ObString &logic_tenant_name, proxy::ObMysqlClientSession &client_session);
 
   DISALLOW_COPY_AND_ASSIGN(ObShowDatabasesHandler);
 };

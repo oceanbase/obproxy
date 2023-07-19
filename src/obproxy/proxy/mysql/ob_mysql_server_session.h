@@ -147,6 +147,9 @@ public:
   bool is_checksum_on() const { return session_info_.is_checksum_on(); }
   bool is_extra_ok_packet_for_stats_enabled() const { return session_info_.is_extra_ok_packet_for_stats_enabled(); }
   bool is_full_link_trace_supported() const { return session_info_.is_full_link_trace_supported(); }
+  bool is_full_link_trace_ext_enabled() const {
+    return session_info_.is_full_link_trace_ext_supported();
+  }
 
   uint32_t get_server_sessid() const { return server_sessid_; }
   void set_server_sessid(const uint32_t server_sessid) { server_sessid_ = server_sessid; }

@@ -13,6 +13,7 @@
 #define USING_LOG_PREFIX PROXY_ICMD
 
 #include "cmd/ob_show_session_handler.h"
+#include "obutils/ob_read_stale_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -102,6 +103,16 @@ const ObProxyColumnSchema LIST_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID]         
     ObProxyColumnSchema::make_schema(OB_SLC_PID,          "pid",                OB_MYSQL_TYPE_LONG),
 };
 
+// SessionWeakReadStaleColumnId
+enum
+{
+  OB_SWRS_ADDR = 0,
+  OB_SWRS_TABLE_ID,
+  OB_SWRS_PARTITION_ID,
+  OB_SWRS_FEEDBACK_TIME,
+  OB_SWRS_MAX_STALE_COLUMN_ID,
+};
+
 const ObProxyColumnSchema INTERNAL_LIST_COLUMN_ARRAY[OB_SILC_MAX_SLIST_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_SILC_PROXY_SESSID,  "proxy_sessid",       OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_SILC_ID,            "Id",                 OB_MYSQL_TYPE_LONGLONG),
@@ -135,6 +146,13 @@ const ObProxyColumnSchema VARIABLES_COLUMN_ARRAY[OB_SVC_MAX_VARIABLES_COLUMN_ID]
 const ObProxyColumnSchema STAT_COLUMN_ARRAY[OB_SSC_MAX_STAT_COLUMN_ID]            = {
   ObProxyColumnSchema::make_schema(OB_SSC_NAME,   "stat_name",  OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SSC_VALUE,  "value",      OB_MYSQL_TYPE_LONGLONG),
+};
+
+const ObProxyColumnSchema READ_STALE_ARRAY[OB_SWRS_MAX_STALE_COLUMN_ID] = {
+  ObProxyColumnSchema::make_schema(OB_SWRS_ADDR,           "server_addr",    OB_MYSQL_TYPE_VARCHAR),
+  ObProxyColumnSchema::make_schema(OB_SWRS_TABLE_ID,       "table_id",       OB_MYSQL_TYPE_LONGLONG),
+  ObProxyColumnSchema::make_schema(OB_SWRS_PARTITION_ID,   "partition_id",   OB_MYSQL_TYPE_LONGLONG),
+  ObProxyColumnSchema::make_schema(OB_SWRS_FEEDBACK_TIME,  "feedback_time",  OB_MYSQL_TYPE_VARCHAR),
 };
 
 ObShowSessionHandler::ObShowSessionHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
@@ -230,6 +248,14 @@ int ObShowSessionHandler::dump_cs_details(ObMysqlClientSession &cs)
         WARN_ICMD("fail to dump cs stat header", K(ret));
       } else if (OB_FAIL(dump_cs_stat(cs))) {
         WARN_ICMD("fail to dump cs stat body", K(ret));
+      }
+      break;
+    }
+    case OBPROXY_T_SUB_SESSION_READ_STALE: {
+      if (OB_FAIL(dump_cs_read_stale_replica_header())) {
+        WARN_ICMD("fail to dump weak read stale replica", K(ret));
+      } else if(OB_FAIL(dump_cs_read_stale_replica(cs))) {
+        WARN_ICMD("fail to dump weak read stale replica body", K(ret));
       }
       break;
     }
@@ -1110,6 +1136,76 @@ int show_session_cmd_init()
   }
   return ret;
 }
+
+int ObShowSessionHandler::dump_cs_read_stale_replica_header()
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(encode_header(READ_STALE_ARRAY, OB_SWRS_MAX_STALE_COLUMN_ID))) {
+    WARN_ICMD("fail to encode header", K(ret));
+  }
+  return ret;
+}
+
+int ObShowSessionHandler::dump_cs_read_stale_replica(ObMysqlClientSession &cs)
+{
+  int ret = OB_SUCCESS;
+  ObReadStaleProcessor &processor = get_global_read_stale_processor(); 
+  DRWLock::RDLockGuard guard(processor.get_lock());
+  ObVipReadStaleInfo *vip_read_stale_info = NULL;
+
+  const ObProxySessionPrivInfo &priv_info = cs.get_session_info().get_priv_info();
+  const ObString &tenant_name = priv_info.tenant_name_;
+  const ObString &cluster_name = priv_info.cluster_name_;
+  ObNetVConnection *client_vc = static_cast<ObNetVConnection*>(cs.get_netvc());
+  ObVipAddr vip_addr;
+  vip_addr.set(client_vc->get_virtual_addr(), client_vc->get_virtual_vid());
+
+  if (OB_FAIL(processor.acquire_vip_feedback_record(vip_addr, tenant_name, cluster_name, vip_read_stale_info))) {
+    WARN_ICMD("fail to acquire vip read stale feedback map", K(ret));
+  } 
+  if (OB_SUCC(ret) && vip_read_stale_info != NULL) {
+    DRWLock::RDLockGuard vip_guard(vip_read_stale_info->get_lock());
+    ObVipReadStaleInfo::ObReadStaleFeedbackMap ::iterator it = vip_read_stale_info->read_stale_feedback_map_.begin();
+    ObVipReadStaleInfo::ObReadStaleFeedbackMap::iterator end = vip_read_stale_info->read_stale_feedback_map_.end();
+    for(; OB_SUCC(ret) && it != end; ++it) {
+      ObReadStaleFeedback *feedback = it.value_;
+      if (OB_FAIL(dump_cs_read_stale_replica_item(feedback))) {
+        WARN_ICMD("fail to dump weak read stale replica item",K(feedback), K(ret));
+      }
+    }
+  }
+  return ret;
+}
+
+int ObShowSessionHandler::dump_cs_read_stale_replica_item(const ObReadStaleFeedback *feedback)
+{
+  int ret = OB_SUCCESS;
+  ObObj cells[OB_SWRS_MAX_STALE_COLUMN_ID];
+  ObNewRow row;
+  char time_buf[OB_MAX_TIMESTAMP_LENGTH];
+  int64_t pos = 0;
+  ip_port_text_buffer server_ip;
+
+  if (OB_FAIL(ops_ip_nptop(feedback->replica_.server_addr_, server_ip, sizeof(server_ip)))) {
+    WARN_ICMD("fail to convert server addr", K(feedback->replica_.server_addr_), K(ret));
+  } else if (OB_FAIL(ObTimeUtility::usec_to_str(feedback->feedback_time_, time_buf, OB_MAX_TIMESTAMP_LENGTH, pos))) {
+    WARN_ICMD("fail to convert feedback time", K(feedback->replica_.server_addr_), K(ret));
+  } else {
+    cells[OB_SWRS_ADDR].set_varchar(server_ip);
+    cells[OB_SWRS_TABLE_ID].set_int(feedback->replica_.table_id_);
+    cells[OB_SWRS_PARTITION_ID].set_int(feedback->replica_.partition_id_);
+    cells[OB_SWRS_FEEDBACK_TIME].set_varchar(time_buf);
+
+    row.cells_ = cells;
+    row.count_ = OB_SWRS_MAX_STALE_COLUMN_ID;
+    if (OB_FAIL(encode_row_packet(row))) {
+      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+    }
+  }
+  return ret;
+}
+
+
 
 } // end of namespace proxy
 } // end of namespace obproxy

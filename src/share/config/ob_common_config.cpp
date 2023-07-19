@@ -16,6 +16,7 @@
 #include "common/ob_record_header.h"
 
 static const char *ignore_config_opt_str[] = {"target_db_server"};
+
 namespace oceanbase
 {
 namespace common

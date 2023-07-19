@@ -19,6 +19,7 @@
 #include "obutils/ob_resource_pool_processor.h"
 #include "obutils/ob_task_flow_controller.h"
 #include "obutils/ob_proxy_sequence_entry_cont.h"
+#include "obutils/ob_proxy_table_processor_utils.h"
 #include "utils/ob_proxy_utils.h"
 #include "obutils/ob_proxy_config.h"
 #include "utils/ob_proxy_utils.h"
@@ -40,6 +41,9 @@
 #include "rpc/obmysql/packet/ompk_change_user.h"
 #include "rpc/obmysql/packet/ompk_prepare_execute.h"
 #include "omt/ob_proxy_config_table_processor.h"
+#include "obutils/ob_config_server_processor.h"
+#include "lib/utility/ob_2_0_sess_veri.h"
+#include "obutils/ob_read_stale_processor.h"
 
 using namespace oceanbase::share;
 using namespace oceanbase::common;
@@ -102,10 +106,10 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
       LOG_DEBUG("start internal routing transaction", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
       s.trace_log_.set_need_print(is_trans_internal_routing);
       s.trace_log_.log_it("[trans_start]",
-                          "proxy_sessid", client_session->get_proxy_sessid(),
+                          "proxy_sessid", static_cast<int64_t>(client_session->get_proxy_sessid()),
                           "coordinator", s.server_info_.addr_,
-                          "sql_cmd", s.trans_info_.sql_cmd_,
-                          "stmt_type", s.trans_info_.client_request_.get_parse_result().get_stmt_type());
+                          "sql_cmd", static_cast<int64_t>(s.trans_info_.sql_cmd_),
+                          "stmt_type", static_cast<int64_t>(s.trans_info_.client_request_.get_parse_result().get_stmt_type()));
     } else if (last_request_in_trans && !is_in_trans) {
       // close txn, refresh enable_transaction_internal_routing_
       LOG_DEBUG("internal routing transaction close", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
@@ -811,15 +815,17 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
   ObProxyMysqlRequest &client_request = s.trans_info_.client_request_;
   ObPLLookupState state = need_pl_lookup(s);
   // if target db server set
-  bool hint_target_db = OB_NOT_NULL(client_request.get_parse_result().get_target_db_server())  
-                               && !client_request.get_parse_result().get_target_db_server()->is_empty();
-  bool conf_target_db = OB_NOT_NULL(s.sm_->target_db_server_) 
-                                 && !s.sm_->target_db_server_->is_empty();
+  s.use_cmnt_target_db_server_ = OB_NOT_NULL(client_request.get_parse_result().get_target_db_server())  
+                                && !client_request.get_parse_result().get_target_db_server()->is_empty()
+                                && !s.sm_->client_session_->is_proxy_mysql_client_;
+  s.use_conf_target_db_server_ = OB_NOT_NULL(s.sm_->target_db_server_) 
+                                && !s.sm_->target_db_server_->is_empty()
+                                && !s.sm_->client_session_->is_proxy_mysql_client_;  
   s.pl_lookup_state_ = state;
   if (OB_UNLIKELY(!cs_info.is_allow_use_last_session())) {
     s.pl_lookup_state_ = NEED_PL_LOOKUP;
   }
-  // generate span before each request
+  // generate full link trace span before each request
   if (s.sm_->get_client_session()->is_first_handle_request()) {
     if (OB_FAIL(s.sm_->handle_req_for_begin_proxy_root_span())) {
       LOG_WARN("fail to handle req for begin proxy root span", K(ret));
@@ -917,45 +923,52 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
       if (OB_SUCC(ret) && !s.pll_info_.lookup_success_) {
         // Use target_db_server
         // exsit in sql comment parsed result
-        if (hint_target_db) {
+        if (s.use_cmnt_target_db_server_) {
+          client_request.get_parse_result().get_target_db_server()->set_obproxy_addr(s.sm_->client_session_->get_netvc()->get_local_addr());
           if (OB_FAIL(client_request.get_parse_result().get_target_db_server()->get(s.server_info_.addr_))) {
             LOG_WARN("fail to get target db server from sql comment", K(ret));
-            TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+            handle_target_db_not_allow(s);
           } else {
-            // in case of dummy entry is NULL
-            if (NULL == s.sm_->client_session_->dummy_entry_) {
-              s.sm_->client_session_->is_need_update_dummy_entry_ = true;
-            }
             s.pll_info_.lookup_success_ = true;
+            // in case of dummy entry is NULL
+            if (NULL == s.sm_->client_session_->dummy_entry_ || s.sm_->is_cached_dummy_entry_expired()) {
+              s.pll_info_.lookup_success_ = false;
+              s.pll_info_.set_cached_dummy_force_renew();
+              s.sm_->client_session_->is_need_update_dummy_entry_ = true;
+              LOG_WARN("set lookup_success_=false since dummy entry is NULL or expired");
+            }
             LOG_DEBUG("succ to get target db server from sql comment",
                     "address", s.server_info_.addr_);
           }
         // exist in multi level config target_db_server
-        } else if (conf_target_db) {
+        } else if (s.use_conf_target_db_server_) {
+          s.sm_->target_db_server_->set_obproxy_addr(s.sm_->client_session_->get_netvc()->get_local_addr());
           s.sm_->target_db_server_->reuse();
           if (OB_FAIL(s.sm_->target_db_server_->get(s.server_info_.addr_))) {
-            LOG_WARN("fail to get target db server from multi level config", K(ret));
-            TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+            LOG_WARN("fail to get target db server from config", K(ret));
+            handle_target_db_not_allow(s);
           } else {
-            // in case of dummy entry is NULL
-            if (NULL == s.sm_->client_session_->dummy_entry_) {
-              s.sm_->client_session_->is_need_update_dummy_entry_ = true;
-            }
             s.pll_info_.lookup_success_ = true;
+            // in case of dummy entry is NULL
+            if (NULL == s.sm_->client_session_->dummy_entry_ || s.sm_->is_cached_dummy_entry_expired()) {
+              s.pll_info_.lookup_success_ = false;
+              s.pll_info_.set_cached_dummy_force_renew();
+              s.sm_->client_session_->is_need_update_dummy_entry_ = true;            
+            }
             LOG_DEBUG("succ to get target db server from multi level config",
                       "address", s.server_info_.addr_);
           }
         } else { /* do nothing */}
       } else if (OB_SUCC(ret)) {
-        if ((hint_target_db && !client_request.get_parse_result().get_target_db_server()->contains(s.server_info_.addr_)) ||
-            (!hint_target_db && conf_target_db && !s.sm_->target_db_server_->contains(s.server_info_.addr_))) {
+        if ((s.use_cmnt_target_db_server_ && !client_request.get_parse_result().get_target_db_server()->contains(s.server_info_.addr_)) ||
+            (!s.use_cmnt_target_db_server_ && s.use_conf_target_db_server_ && !s.sm_->target_db_server_->contains(s.server_info_.addr_))) {
+          LOG_WARN("Not allow to route to target db server", "proxy current choosen", s.server_info_.addr_, K(ret));
           ret = OB_OP_NOT_ALLOW;
-          LOG_WARN("Not allow to route to", "choosen server", s.server_info_.addr_, K(ret));
-          TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+          handle_target_db_not_allow(s);
         }
       }
       // deprecated global config
-      if (OB_SUCC(ret) && !s.pll_info_.lookup_success_) {
+      if (OB_SUCC(ret) && !s.pll_info_.lookup_success_ && !s.use_cmnt_target_db_server_ && !s.use_conf_target_db_server_) {
         if ((s.mysql_config_params_->is_mock_routing_mode() && !s.sm_->client_session_->is_proxy_mysql_client_)
                    || s.mysql_config_params_->is_mysql_routing_mode()) {
           if (OB_FAIL(s.mysql_config_params_->get_one_test_server_addr(s.server_info_.addr_))) {
@@ -977,7 +990,9 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
         if (OB_UNLIKELY(!s.mysql_config_params_->is_random_routing_mode() 
                              && !s.api_server_addr_set_
                              && s.pll_info_.te_name_.is_all_dummy_table() 
-                             && cs_info.is_allow_use_last_session())) {
+                             && cs_info.is_allow_use_last_session()
+                             && !s.use_cmnt_target_db_server_ 
+                             && !s.use_conf_target_db_server_)) {
           acquire_cached_server_session(s);
         }
       }
@@ -1120,11 +1135,11 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
 
       if (OB_SUCC(ret)) {
         // if target db server set, then make sure target db server is the choosen server 
-        if ((hint_target_db && !client_request.get_parse_result().get_target_db_server()->contains(s.server_info_.addr_)) ||
-            (!hint_target_db && conf_target_db && !s.sm_->target_db_server_->contains(s.server_info_.addr_))) {
+        if ((s.use_cmnt_target_db_server_ && !client_request.get_parse_result().get_target_db_server()->contains(s.server_info_.addr_)) ||
+            (!s.use_cmnt_target_db_server_ && s.use_conf_target_db_server_ && !s.sm_->target_db_server_->contains(s.server_info_.addr_))) {
+          LOG_WARN("Not allow to route to target db server", "proxy current choosen", s.server_info_.addr_, K(ret));
           ret = OB_OP_NOT_ALLOW;
-          LOG_WARN("Not allow to route to", "choosen server", s.server_info_.addr_, K(ret));
-          TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+          handle_target_db_not_allow(s);
         } else { 
           start_access_control(s);
         }
@@ -1152,6 +1167,30 @@ void ObMysqlTransact::handle_fetch_request(ObTransState &s)
   if (OB_FAIL(s.sm_->get_client_buffer_reader()->consume_all())) {
     LOG_WARN("client buffer reader fail to consume all", K(ret));
   } else if (OB_FAIL(ObMysqlTransact::build_error_packet(s, client_session))) {
+    LOG_WARN("fail to build err packet", K(ret));
+  }
+
+  if (OB_SUCC(ret)) {
+    ret = tmp_ret;
+  } else {
+    /* if something error, disconnect */
+    s.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
+  }
+
+  s.inner_errcode_ = ret;
+  TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+}
+
+void ObMysqlTransact::handle_target_db_not_allow(ObTransState &s)
+{
+  int ret = OB_SUCCESS;
+
+  int tmp_ret = OB_OP_NOT_ALLOW;
+  s.mysql_errcode_ = OB_OP_NOT_ALLOW;
+  s.mysql_errmsg_ = "Not allow to route to target db server in the hint or configure";
+  if (OB_FAIL(s.sm_->get_client_buffer_reader()->consume_all())) {
+    LOG_WARN("client buffer reader fail to consume all for target db", K(ret));
+  } else if (OB_FAIL(ObMysqlTransact::build_error_packet(s, s.sm_->get_client_session()))) {
     LOG_WARN("fail to build err packet", K(ret));
   }
 
@@ -1333,13 +1372,13 @@ bool ObMysqlTransact::is_sql_able_to_route_participant_in_trans(obutils::ObSqlPa
     if (base_sql_parse_result.is_dual_request()) {
       able_to_route = false;
     } else {
-      able_to_route = (base_sql_parse_result.is_text_ps_prepare_stmt() 
-                      && base_sql_parse_result.is_text_ps_inner_dml_stmt()
-                      && !base_sql_parse_result.is_text_ps_call_stmt()
-                      && !base_sql_parse_result.is_multi_semicolon_in_stmt()
-                      && base_sql_parse_result.get_table_name_length() > 0)
-                    || (base_sql_parse_result.is_dml_stmt() 
+      able_to_route = (base_sql_parse_result.is_dml_stmt() 
                         && !base_sql_parse_result.is_multi_stmt()
+                        && !base_sql_parse_result.is_multi_semicolon_in_stmt()
+                        && base_sql_parse_result.get_table_name_length() > 0)
+                   || (base_sql_parse_result.is_text_ps_prepare_stmt() 
+                        && base_sql_parse_result.is_text_ps_inner_dml_stmt()
+                        && !base_sql_parse_result.is_text_ps_call_stmt()
                         && !base_sql_parse_result.is_multi_semicolon_in_stmt()
                         && base_sql_parse_result.get_table_name_length() > 0);
     }
@@ -1399,8 +1438,11 @@ inline bool ObMysqlTransact::is_need_reroute(ObMysqlTransact::ObTransState &s)
   int64_t total_request_packet_len = s.trans_info_.client_request_.get_packet_len();
   int64_t cached_request_packet_len = s.trans_info_.client_request_.get_req_pkt().length();
   bool is_need_reroute = false;
+  bool is_weak_read = (WEAK == s.sm_->trans_state_.get_trans_consistency_level(s.sm_->get_client_session()->get_session_info()));
 
-  is_need_reroute = s.mysql_config_params_->enable_reroute_
+  // if enable_reroute, strong read req allowed to reroute
+  // if enable_weak_reroute, weak read allowed to reroute
+  is_need_reroute = ((!is_weak_read && s.mysql_config_params_->enable_reroute_) || (is_weak_read && s.mysql_config_params_->enable_weak_reroute_))
                     && '\0' == s.mysql_config_params_->proxy_primary_zone_name_[0]
                     && !s.is_rerouted_ && s.is_need_pl_lookup()
                     && (s.is_trans_first_request_
@@ -1408,9 +1450,8 @@ inline bool ObMysqlTransact::is_need_reroute(ObMysqlTransact::ObTransState &s)
                             && s.sm_->client_session_->is_trans_internal_routing()))
                     && !s.trans_info_.client_request_.is_large_request()
                     && total_request_packet_len == cached_request_packet_len
-                    && (OB_ISNULL(s.trans_info_.client_request_.get_parse_result().get_target_db_server()) 
-                        || s.trans_info_.client_request_.get_parse_result().get_target_db_server()->is_empty())
-                    && (OB_ISNULL(s.sm_->target_db_server_) || s.sm_->target_db_server_->is_empty());
+                    && !s.use_cmnt_target_db_server_
+                    && !s.use_conf_target_db_server_;
 
 
   if (is_need_reroute
@@ -1806,6 +1847,71 @@ inline void ObMysqlTransact::ObPartitionLookupInfo::pl_update_if_necessary(const
   }
 }
 
+int ObMysqlTransact::ObPartitionLookupInfo::get_next_avail_replica(const bool is_force_retry,
+                                                                    int32_t &attempt_count,
+                                                                    bool &found_leader_force_congested,
+                                                                    ObReadStaleParam &read_stale_param,
+                                                                    bool &is_all_stale,
+                                                                    const ObProxyReplicaLocation *&replica)
+
+{
+  int ret = OB_SUCCESS;
+  attempt_count = 0;
+  found_leader_force_congested = false;
+  is_all_stale = false;
+  int weak_read_count = 0;
+  bool need_try_next = true;
+  const ObProxyReplicaLocation *ret_replica = NULL;
+
+  while (need_try_next) {
+    ret_replica = route_.get_next_avail_replica();
+    bool is_replica_avail = true;
+    if (is_weak_read() && NULL != ret_replica && read_stale_param.enable_read_stale_feedback_) {
+      read_stale_param.server_addr_.assign(ret_replica->server_.get_sockaddr());
+      ObReadStaleProcessor &read_stale_processor = get_global_read_stale_processor();
+      bool is_stale = false;
+      if (OB_FAIL(read_stale_processor.check_read_stale_state(read_stale_param, is_stale))){
+        need_try_next = false;
+        is_replica_avail = false;
+        LOG_WARN("fail to check replica read stale stale", K(ret));
+      } else if (is_stale) {
+        PROXY_TXN_LOG(DEBUG, "the replica is stale on weak read, do not use it this time",
+                      "server", route_.cur_chosen_server_, K(attempt_count));
+        ret_replica = NULL;
+        is_replica_avail = false;
+        ++weak_read_count;
+        ++attempt_count;
+      }
+    } else if (!is_force_retry
+        && NULL != ret_replica
+        && route_.cur_chosen_server_.is_force_congested_) {
+      if (ret_replica->is_leader() && is_strong_read()) {
+        found_leader_force_congested = true;
+      }
+      PROXY_TXN_LOG(DEBUG, "this is force congested server, do not use it this time",
+                    "server", route_.cur_chosen_server_, K(attempt_count));
+      //if not force retry, we will do not use dead congested server
+      ret_replica = NULL;
+      is_replica_avail = false;
+      ++attempt_count;
+    }
+
+    if (is_replica_avail) {
+      need_try_next = false;
+    }
+  }
+  if (OB_SUCC(ret)) {
+    replica = ret_replica;
+    if (NULL == ret_replica && is_all_iterate_once()) {
+      is_all_stale = (0 != attempt_count && weak_read_count == attempt_count);
+    }
+  } else {
+    ret_replica = NULL;
+  }
+
+  return ret;
+}
+
 inline void ObMysqlTransact::handle_internal_request(ObTransState &s)
 {
   LOG_DEBUG("[ObMysqlTransact::handle_internal_request] "
@@ -1872,7 +1978,9 @@ void ObMysqlTransact::handle_congestion_control_lookup(ObTransState &s)
           }
         }
 
-        if (is_in_dead_congested) {
+        if (is_in_detect_congested) {
+          get_global_resource_pool_processor().ip_set_.set_refactored(cgt_entry->server_ip_);
+        } else if (is_in_dead_congested) {
           //do nothing
         } else if (cgt_entry->is_force_alive_congested()) {
           is_in_alive_congested = true;
@@ -2117,7 +2225,12 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
   if (s.sm_->enable_record_full_link_trace_info()) {
     trace::ObSpanCtx *ctx = s.sm_->flt_.trace_log_info_.partition_location_lookup_ctx_;
     if (OB_NOT_NULL(ctx)) {
-      LOG_DEBUG("end span ob_proxy_partition_location_lookup", K(ctx->span_id_));
+      // set show trace buffer before flush trace
+      if (s.sm_->flt_.control_info_.is_show_trace_enable()) {
+        SET_SHOW_TRACE_INFO(&s.sm_->flt_.show_trace_json_info_.curr_sql_json_span_array_);
+      }
+      LOG_DEBUG("end span ob_proxy_partition_location_lookup", K(ctx->span_id_), K(s.sm_->flt_.span_info_.trace_id_),
+                K(s.sm_->flt_.control_info_.is_show_trace_enable()));
       SET_TRACE_BUFFER(s.sm_->flt_trace_buffer_, MAX_TRACE_LOG_SIZE);
       FLT_END_SPAN(ctx);
       s.sm_->flt_.trace_log_info_.partition_location_lookup_ctx_ = NULL;
@@ -2152,21 +2265,21 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
                 "attempts", s.current_.attempts_,
                 "sm_id", s.sm_->sm_id_);
     } else if (OB_UNLIKELY(is_server_addr_set 
-                           && ((OB_NOT_NULL(s.sm_->target_db_server_) && !s.sm_->target_db_server_->is_empty())
-                               || (OB_NOT_NULL(s.trans_info_.client_request_.get_parse_result().get_target_db_server())
-                                   && !s.trans_info_.client_request_.get_parse_result().get_target_db_server()->is_empty())))) {
+                           && (s.use_cmnt_target_db_server_ || s.use_conf_target_db_server_))) {
       if (OB_NOT_NULL(s.sm_->client_session_->dummy_entry_)
           && s.sm_->client_session_->dummy_entry_->is_avail_state()
           && s.sm_->client_session_->dummy_entry_->is_valid()
           && is_addr_logonly(s.server_info_.addr_, s.sm_->client_session_->dummy_entry_->get_tenant_servers())) {
+        LOG_WARN("Not allow to route to target db server", "which is logonly replica", s.server_info_.addr_, K(ret));
         ret = OB_OP_NOT_ALLOW;
-        LOG_WARN("Not allow to route to logonly replica", "choosen server", s.server_info_.addr_, K(ret));
-      }
-      LOG_DEBUG("[ObMysqlTransact::handle_pl_lookup] use target db server and server addr is set, "
+        handle_target_db_not_allow(s);
+      } else {
+        LOG_DEBUG("[ObMysqlTransact::handle_pl_lookup] use target db server and server addr is set, "
                 "use cached session",
                 "addr", s.server_info_.addr_,
                 "attempts", s.current_.attempts_,
                 "sm_id", s.sm_->sm_id_);
+      }
     } else {
       const ObProxyReplicaLocation *replica = NULL;
 #if OB_DETAILED_SLOW_QUERY
@@ -2198,20 +2311,9 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
           && !s.pll_info_.route_.table_entry_->is_dummy_entry()
           && !use_dup_replica
           && '\0' == s.mysql_config_params_->proxy_primary_zone_name_[0]) {
-          const ObProxyPartitionLocation *pl = s.pll_info_.route_.table_entry_->get_first_pl();
-          for (int64_t i = 0; OB_SUCC(ret) && NULL != pl && i < pl->replica_count(); i++) {
-            const ObProxyReplicaLocation *replica = pl->get_replica(i);
-            if (NULL != replica && replica->is_leader()) {
-              fill_addr = true;
-              s.server_info_.set_addr(ops_ip_sa_cast(replica->server_.get_sockaddr()));
-              LOG_DEBUG("set addr here", K(s.server_info_.addr_));
-              s.pll_info_.route_.cur_chosen_server_.replica_ = replica;
-              s.pll_info_.route_.leader_item_.is_used_ = true;
-              s.pll_info_.route_.skip_leader_item_ = true;
-              s.pll_info_.route_.cur_chosen_route_type_ = ROUTE_TYPE_LEADER;
-              break;
-            }
-          }
+          const ObProxyReplicaLocation *replica = NULL;
+          set_route_leader_replica(s, replica);
+          fill_addr = (replica != NULL);
         }
       }
 
@@ -2261,18 +2363,34 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
 
           int32_t attempt_count = 0;
           bool found_leader_force_congested = false;
-          replica = s.pll_info_.get_next_avail_replica(s.force_retry_congested_, attempt_count,
-                                                       found_leader_force_congested);
-          s.current_.attempts_ += attempt_count;
-          if ((NULL == replica) && s.pll_info_.is_all_iterate_once()) { // next round
-            // if we has tried all servers, do force retry in next round
-            LOG_INFO("all replica is force_congested, force retry congested now",
-                     "route", s.pll_info_.route_);
-            s.pll_info_.reset_cursor();
-            s.force_retry_congested_ = true;
-
-            // get replica again
-            replica = s.pll_info_.get_next_avail_replica();
+          bool is_all_stale = false;
+          ObReadStaleParam param;
+          build_read_stale_param(s, param);
+          if (OB_FAIL(s.pll_info_.get_next_avail_replica(s.force_retry_congested_, attempt_count, found_leader_force_congested, param, is_all_stale, replica))) {
+            LOG_WARN("fail to get next avail replica", K(ret));
+          } else {
+            s.current_.attempts_ += attempt_count;
+            if ((NULL == replica) && s.pll_info_.is_all_iterate_once()) { // next round
+              if (is_all_stale && common::WEAK == consistency_level) {
+                LOG_WARN("all fllower replica staled, route weak read request to leader", "route", s.pll_info_.route_);
+                s.pll_info_.reset_cursor();
+                if (NULL != s.pll_info_.route_.table_entry_) {
+                  set_route_leader_replica(s, replica);
+                }
+                if (replica == NULL) {
+                  LOG_INFO("no avail replica found, try again");
+                  replica = s.pll_info_.get_next_avail_replica();
+                }
+              } else {
+                // if we has tried all servers, do force retry in next round
+                LOG_INFO("all replica is force_congested, force retry congested now",
+                          "route", s.pll_info_.route_);
+                s.pll_info_.reset_cursor();
+                s.force_retry_congested_ = true;
+                // get replica again
+                replica = s.pll_info_.get_next_avail_replica();
+              }
+            }
           }
 
 #if OB_DETAILED_SLOW_QUERY
@@ -2323,6 +2441,35 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
     s.inner_errcode_ = ret;
     // disconnect
     TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+  }
+}
+
+void ObMysqlTransact::set_route_leader_replica(ObTransState &s, const ObProxyReplicaLocation *&replica)
+{
+  replica = NULL; 
+  const ObProxyPartitionLocation *pl = NULL;
+  if (s.pll_info_.route_.is_non_partition_table()) {
+    if (s.pll_info_.route_.table_entry_ != NULL) {
+      pl = s.pll_info_.route_.table_entry_->get_first_pl();
+    }
+  } else {
+    if (s.pll_info_.route_.part_entry_ != NULL) {
+      pl = &s.pll_info_.route_.part_entry_->get_pl();
+    }
+  }
+  if (pl != NULL){
+    for (int64_t i = 0; NULL != pl && i < pl->replica_count(); i++) {
+      const ObProxyReplicaLocation *tmp_replica = pl->get_replica(i);
+      if (NULL != tmp_replica && tmp_replica->is_leader()) {
+        s.server_info_.set_addr(ops_ip_sa_cast(tmp_replica->server_.get_sockaddr()));
+        s.pll_info_.route_.cur_chosen_server_.replica_ = tmp_replica;
+        s.pll_info_.route_.leader_item_.is_used_ = true;
+        s.pll_info_.route_.skip_leader_item_ = true;
+        s.pll_info_.route_.cur_chosen_route_type_ = ROUTE_TYPE_LEADER;
+        replica = tmp_replica;
+        break;
+      }
+    }
   }
 }
 
@@ -2605,9 +2752,8 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
                         LOG_WARN("fail to consume the last crc buffer in client request buffer", K(ret));
                       }
                     } else {
-                      ret = OB_ERR_UNEXPECTED;
-                      LOG_WARN("unexpected enter here, client-proxy use ob2.0, handled mysql packet in payload done,"
-                               " unexpected remain buffer len, expect tail crc 4", K(ret), K(read_avail));
+                      // nothing
+                      // cause buffer could be consumed all before, eg: handle internal request
                     }
                   }
                 }
@@ -2703,11 +2849,17 @@ int ObMysqlTransact::build_oceanbase_ob20_user_request(ObTransState &s, ObMIOBuf
     ObSEArray<ObObJKV, 3> extra_info;
     ObSqlString sess_info_value;
     char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
-    char server_extra_info_buf[SERVER_EXTRA_INFO_BUF_MAX_LEN] = "\0";
+    char flt_info_buf[SERVER_FLT_INFO_BUF_MAX_LEN] = "\0";
+    char sess_info_veri_buf[OB_SESS_INFO_VERI_BUF_MAX] = "\0";
     ObMysqlServerSession *server_session = s.sm_->get_server_session();
     ObMysqlClientSession *client_session = s.sm_->get_client_session();
     uint32_t req_id = server_session->get_next_server_request_id();
-    
+    const bool is_proxy_switch_route = s.sm_->is_proxy_switch_route();
+
+    // buf to fill extra info
+    char *total_flt_info_buf = flt_info_buf;
+    int64_t total_flt_info_buf_len = SERVER_FLT_INFO_BUF_MAX_LEN; 
+
     while (OB_SUCC(ret) && remain_req_len > 0) {
       curr_req_len = remain_req_len > split_request_len ? split_request_len : remain_req_len;
       remain_req_len -= curr_req_len;
@@ -2717,9 +2869,15 @@ int ObMysqlTransact::build_oceanbase_ob20_user_request(ObTransState &s, ObMIOBuf
       
       if (!generated_extra_info) {
         // cause observer could only resolve extra info in the first ob20 packet
-        if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, s.sm_,
-                      client_ip_buf, MAX_IP_BUFFER_LEN, server_extra_info_buf, SERVER_EXTRA_INFO_BUF_MAX_LEN,
-                      sess_info_value, true))) {
+        // alloc show trace buffer
+        if (OB_FAIL(ObProxyTraceUtils::build_show_trace_info_buffer(s.sm_, true, total_flt_info_buf,
+                                                                    total_flt_info_buf_len))) {
+          LOG_WARN("fail to build show trace info buffer", K(ret));
+        } else if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, s.sm_,
+                      client_ip_buf, MAX_IP_BUFFER_LEN,
+                      total_flt_info_buf, total_flt_info_buf_len,
+                      sess_info_veri_buf, OB_SESS_INFO_VERI_BUF_MAX,
+                      sess_info_value, true, is_proxy_switch_route))) {
           LOG_WARN("fail to build related extra info", K(ret));
         } else {
           generated_extra_info = true;
@@ -2730,9 +2888,10 @@ int ObMysqlTransact::build_oceanbase_ob20_user_request(ObTransState &s, ObMIOBuf
 
       if (OB_SUCC(ret)) {
         Ob20ProtocolHeaderParam ob20_head_param(server_session->get_server_sessid(),
-                                                req_id, compress_seq, compress_seq, is_last_packet, is_weak_read, need_reroute,
+                                                req_id, compress_seq, compress_seq,
+                                                is_last_packet, is_weak_read, need_reroute,
                                                 server_session->get_session_info().is_new_extra_info_supported(),
-                                                client_session->is_trans_internal_routing());
+                                                client_session->is_trans_internal_routing(), is_proxy_switch_route);
         if (OB_FAIL(ObProto20Utils::consume_and_compress_data(&request_buffer_reader, &write_buffer,
                                                               curr_req_len, ob20_head_param, &extra_info))) {
           LOG_WARN("fail to consume and compress ob20 data", K(ret));
@@ -2744,6 +2903,13 @@ int ObMysqlTransact::build_oceanbase_ob20_user_request(ObTransState &s, ObMIOBuf
       }
     } // while
     compress_seq--;
+
+    // free show trace buffer after use, in both succ and fail
+    if (total_flt_info_buf_len > SERVER_FLT_INFO_BUF_MAX_LEN
+        && total_flt_info_buf != NULL) {
+      ob_free(total_flt_info_buf);
+      total_flt_info_buf = NULL;
+    }
   } // else
 
   return ret;
@@ -3352,6 +3518,18 @@ inline void ObMysqlTransact::handle_prepare_execute_succ(ObTransState &s)
   }
 }
 
+void ObMysqlTransact::handle_xa_start_sync_succ(ObTransState &s) {
+  if (obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE == s.trans_info_.sql_cmd_) {
+    handle_prepare_execute_succ(s);
+  } else {
+    s.current_.state_ = INTERNAL_ERROR;
+    LOG_ERROR("unexpected sql cmd for sync xa start", K(s.trans_info_.sql_cmd_));
+  }
+  // consume response of non-user request
+  LOG_DEBUG("[ObMysqlTransact::handle_resultset_resp] reset xa start flag s.is_hold_xa_start_");
+  s.is_hold_xa_start_ = false;
+}
+
 void ObMysqlTransact::handle_text_ps_prepare_succ(ObTransState &s)
 {
   int ret = OB_SUCCESS;
@@ -3810,7 +3988,7 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
   ObServerStateType pre_state = s.current_.state_;
   s.current_.state_ = RESPONSE_ERROR;
 
-  s.trace_log_.log_it("[get_error]", "code", resp.error_pkt_.get_err_code(), "trace_id", resp.server_trace_id_);
+  s.trace_log_.log_it("[get_error]", "code", static_cast<int64_t>(resp.error_pkt_.get_err_code()), "trace_id", resp.server_trace_id_);
   if (resp.is_mysql_wrong_arguments_error()
       || resp.is_trans_free_route_not_supported_error()
       || resp.is_internal_error()) {
@@ -4110,6 +4288,16 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
           "sql", s.trans_info_.client_request_.get_print_sql());
         }
       }
+      
+      if (s.pll_info_.is_weak_read()) {
+        ObReadStaleParam param;
+        build_read_stale_param(s, param);
+        ObReadStaleProcessor &read_stale_processor = get_global_read_stale_processor();
+        if (OB_SUCCESS != read_stale_processor.create_or_update_vip_feedback_record(param)) {
+          LOG_WARN("fail to record read stale feedback", K(param));
+        }
+      }
+
       s.is_rerouted_ = true;
     }
   } else if (TRANS_FREE_ROUTE_NOT_SUPPORTED_ERROR == s.current_.error_type_) {
@@ -4228,6 +4416,10 @@ inline void ObMysqlTransact::handle_ok_resp(ObTransState &s, bool &is_user_reque
         handle_text_ps_prepare_succ(s);
         break;
 
+      case SERVER_SEND_XA_START:
+        handle_xa_start_sync_succ(s);
+        break;
+
       case SERVER_SEND_HANDSHAKE:
       case SERVER_SEND_NONE:
       default:
@@ -4338,7 +4530,7 @@ inline void ObMysqlTransact::handle_handshake_pkt(ObTransState &s)
           "proxy_sessid", client_session->get_proxy_sessid(),
           "is_proxy_mysql_client", client_session->is_proxy_mysql_client_,
           K(client_addr));
-      s.trace_log_.log_it("[handshake]", "svr", s.server_info_.addr_, "svr_sessid", server_session->get_server_sessid());
+      s.trace_log_.log_it("[handshake]", "svr", s.server_info_.addr_, "svr_sessid", static_cast<int64_t>(server_session->get_server_sessid()));
 
       if (s.mysql_config_params_->enable_client_ip_checkout_) {
         if (OB_UNLIKELY(!client_addr.is_valid())) {
@@ -4386,55 +4578,59 @@ inline int ObMysqlTransact::handle_oceanbase_handshake_pkt(ObTransState &s, uint
   if (!s.mysql_config_params_->is_mysql_routing_mode()) {
     //if not mysql routing mode, we need rewrite the first login request with newest connection id
     ObString user_cluster_name;
+    ObString cluster_name = client_session->get_real_cluster_name();
     int64_t cluster_id = OB_DEFAULT_CLUSTER_ID;
-    if (OB_LIKELY(s.mysql_config_params_->enable_cluster_checkout_)) {
-      user_cluster_name = client_session->get_real_cluster_name();
+    ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
+    if (OB_LIKELY(s.mysql_config_params_->enable_cluster_checkout_ && !cs_processor.is_cluster_name_alias(cluster_name))) {
+      user_cluster_name = cluster_name;
       if (OB_NOT_NULL(s.sm_->sm_cluster_resource_)) {
         cluster_id = s.sm_->sm_cluster_resource_->get_cluster_id();
       }
     }
+    if (OB_SUCC(ret)) {
     //if global_vars_version was inited, this must saved login
-    if (client_session->get_session_info().is_first_login_succ()) {
-      // if client vc create new connection, will change current conn id to new conn id
-      // from the newest handshake packet, mainly to avoid Session Already Exist
-      if (OB_FAIL(ObProxySessionInfoHandler::rewrite_saved_login_req(
-                  client_session->get_session_info(),
-                  user_cluster_name,
-                  cluster_id,
-                  conn_id,
-                  client_session->get_proxy_sessid(),
-                  server_scramble,
-                  proxy_scramble,
-                  client_addr,
-                  use_compress,
-                  use_ob_protocol_v2,
-                  use_ssl,
-                  enable_client_ip_checkout))) {
-        LOG_WARN("fail to handle rewrite saved hrs pkt, INTERNAL_ERROR", K(ret));
+      if (client_session->get_session_info().is_first_login_succ()) {
+        // if client vc create new connection, will change current conn id to new conn id
+        // from the newest handshake packet, mainly to avoid Session Already Exist
+        if (OB_FAIL(ObProxySessionInfoHandler::rewrite_saved_login_req(
+                    client_session->get_session_info(),
+                    user_cluster_name,
+                    cluster_id,
+                    conn_id,
+                    client_session->get_proxy_sessid(),
+                    server_scramble,
+                    proxy_scramble,
+                    client_addr,
+                    use_compress,
+                    use_ob_protocol_v2,
+                    use_ssl,
+                    enable_client_ip_checkout))) {
+          LOG_WARN("fail to handle rewrite saved hrs pkt, INTERNAL_ERROR", K(ret));
+        } else {
+          LOG_DEBUG("succ to rewrite saved hrs pkt");
+        }
       } else {
-        LOG_DEBUG("succ to rewrite saved hrs pkt");
+        if (OB_FAIL(ObProxySessionInfoHandler::rewrite_first_login_req(
+                    client_session->get_session_info(),
+                    user_cluster_name,
+                    cluster_id,
+                    conn_id,
+                    client_session->get_proxy_sessid(),
+                    server_scramble,
+                    proxy_scramble,
+                    client_addr,
+                    use_compress,
+                    use_ob_protocol_v2,
+                    use_ssl,
+                    enable_client_ip_checkout))) {
+          LOG_WARN("fail to handle rewrite first hrs pkt, INTERNAL_ERROR", K(ret));
+        } else {
+          LOG_DEBUG("succ to rewrite first hrs pkt");
+        }
       }
     } else {
-      if (OB_FAIL(ObProxySessionInfoHandler::rewrite_first_login_req(
-                  client_session->get_session_info(),
-                  user_cluster_name,
-                  cluster_id,
-                  conn_id,
-                  client_session->get_proxy_sessid(),
-                  server_scramble,
-                  proxy_scramble,
-                  client_addr,
-                  use_compress,
-                  use_ob_protocol_v2,
-                  use_ssl,
-                  enable_client_ip_checkout))) {
-        LOG_WARN("fail to handle rewrite first hrs pkt, INTERNAL_ERROR", K(ret));
-      } else {
-        LOG_DEBUG("succ to rewrite first hrs pkt");
-      }
+      //use orig login req, no need to rewrite it
     }
-  } else {
-    //use orig login req, no need to rewrite it
   }
 
   return ret;
@@ -4715,17 +4911,17 @@ void ObMysqlTransact::handle_oceanbase_server_resp_error(ObTransState &s, ObMySQ
     case LOGIN_SESSION_ENTRY_EXIST_ERROR:
     case SAVED_LOGIN_COMMON_ERROR:
     case RESET_SESSION_VARS_COMMON_ERROR:
-    case START_TRANS_COMMON_ERROR:
-    case START_XA_START_ERROR:
     case SYNC_DATABASE_COMMON_ERROR: {
       //current server session is still ok
       s.sm_->clear_server_entry();
       handle_retry_server_connection(s);
       break;
     }
+    case START_TRANS_COMMON_ERROR:
+    case START_XA_START_ERROR:
     case SYNC_PREPARE_COMMON_ERROR:
     case SYNC_TEXT_PS_PREPARE_COMMON_ERROR:
-      // no need retry, just disconnect connection for sync_prepare_error
+      // no need retry, just disconnect connection for sync_prepare_error and start_trans_error
       handle_server_connection_break(s);
       break;
     case ORA_FATAL_ERROR:
@@ -4930,7 +5126,6 @@ void ObMysqlTransact::handle_oceanbase_retry_server_connection(ObTransState &s)
       s.pll_info_.is_need_force_flush_ = false;
     }
     if (s.current_.error_type_ == TRANS_FREE_ROUTE_NOT_SUPPORTED_ERROR) {
-      // downgrade transaction internal routing, route the rest of request to coordinator session
       LOG_DEBUG("transaction internal routing retry", K(s.trans_info_.sql_cmd_));
       retry_status = FOUND_EXISTING_ADDR;
       s.server_info_.set_addr(s.sm_->get_client_session()->get_trans_coordinator_ss_addr());
@@ -5007,31 +5202,41 @@ void ObMysqlTransact::handle_oceanbase_retry_server_connection(ObTransState &s)
               "is reroute to coordinaotr", is_reroute_to_coordinator);
     TRANSACT_RETURN(SM_ACTION_CONGESTION_CONTROL_LOOKUP, handle_congestion_control_lookup);
   } else if (NOT_FOUND_EXISTING_ADDR == retry_status) {
-    // before retry another server, reset analyze result
-    s.trans_info_.server_response_.reset();
-    // before lookup pl, clear current server entry(close current server session)
-    s.sm_->clear_server_entry();
+    net::ObIpEndpoint &coordinator = s.sm_->client_session_->get_trans_coordinator_ss_addr();
+    if (s.server_info_.addr_ == coordinator) {
+      LOG_INFO("reroute on transaction coordinator and no valid replica found, disconnect",
+                K(coordinator),
+                "attempts now", s.current_.attempts_,
+                K(max_connect_attempts),
+                "force_retry_congested", s.force_retry_congested_);
+      handle_server_connection_break(s);
+    } else {
+      // before retry another server, reset analyze result
+      s.trans_info_.server_response_.reset();
+      // before lookup pl, clear current server entry(close current server session)
+      s.sm_->clear_server_entry();
 
-    s.pll_info_.reset_pl();
-    s.server_info_.reset();
-    s.sm_->trans_stats_.server_retries_ += 1;
-    s.sm_->trans_stats_.pl_lookup_retries_ += 1;
-    // reset error_type
-    s.current_.error_type_ = MIN_RESP_ERROR;
-    if (NULL != s.congestion_entry_) {
-      s.congestion_entry_->dec_ref();
-      s.congestion_entry_ = NULL;
+      s.pll_info_.reset_pl();
+      s.server_info_.reset();
+      s.sm_->trans_stats_.server_retries_ += 1;
+      s.sm_->trans_stats_.pl_lookup_retries_ += 1;
+      // reset error_type
+      s.current_.error_type_ = MIN_RESP_ERROR;
+      if (NULL != s.congestion_entry_) {
+        s.congestion_entry_->dec_ref();
+        s.congestion_entry_ = NULL;
+      }
+      s.congestion_lookup_success_ = false;
+      s.need_congestion_lookup_ = true;
+      s.congestion_entry_not_exist_count_ = 0; // every time lookup pl, set it to zero
+
+      LOG_DEBUG("NOT_FOUND_EXISTING_ADDR, Retrying..., "
+                "retry to choose exist observer addr failed, and will retry partition lookup",
+                "attempts now", s.current_.attempts_,
+                K(max_connect_attempts),
+                "force_retry_congested", s.force_retry_congested_);
+      TRANSACT_RETURN(SM_ACTION_PARTITION_LOCATION_LOOKUP, handle_pl_lookup);
     }
-    s.congestion_lookup_success_ = false;
-    s.need_congestion_lookup_ = true;
-    s.congestion_entry_not_exist_count_ = 0; // every time lookup pl, set it to zero
-
-    LOG_DEBUG("NOT_FOUND_EXISTING_ADDR, Retrying..., "
-              "retry to choose exist observer addr failed, and will retry partition lookup",
-              "attempts now", s.current_.attempts_,
-              K(max_connect_attempts),
-              "force_retry_congested", s.force_retry_congested_);
-    TRANSACT_RETURN(SM_ACTION_PARTITION_LOCATION_LOOKUP, handle_pl_lookup);
   } else if (NO_NEED_RETRY == retry_status) {
     LOG_DEBUG("NO_NEED_RETRY, No more retries, will disconnect soon.");
     handle_server_connection_break(s);
@@ -5120,18 +5325,19 @@ ObMysqlTransact::ObSSRetryStatus ObMysqlTransact::retry_server_connection_not_op
         handle_retry_last_time(s);
       }
       // target db server (sql comment & multi level config)
-      if (OB_NOT_NULL(s.trans_info_.client_request_.get_parse_result().get_target_db_server())
-          && !s.trans_info_.client_request_.get_parse_result().get_target_db_server()->is_empty()) {
+      if (s.use_cmnt_target_db_server_) {
         if (OB_FAIL(s.trans_info_.client_request_.get_parse_result().get_target_db_server()->get_next(s.server_info_.addr_))) {
-          LOG_WARN("fail to get target db server from sql comment, will disconnect", K(ret));
+          LOG_WARN("fail to get retry target db server from sql comment", K(ret));
+          handle_target_db_not_allow(s);
         } else {
           ret_status = FOUND_EXISTING_ADDR;
           LOG_DEBUG("succ to get target db server from sql comment, will retry",
                   "address", s.server_info_.addr_);
         } 
-      } else if (OB_NOT_NULL(s.sm_->target_db_server_) && !s.sm_->target_db_server_->is_empty()) {
+      } else if (s.use_conf_target_db_server_) {
         if (OB_FAIL(s.sm_->target_db_server_->get_next(s.server_info_.addr_))) {
-          LOG_WARN("fail to get target db server from multi level config, will disconnect", K(ret));
+          LOG_WARN("fail to get retry target db server from config", K(ret));
+          handle_target_db_not_allow(s);
         } else {
           ret_status = FOUND_EXISTING_ADDR;
           LOG_DEBUG("succ to get target db server from multi level config, will retry",
@@ -5151,45 +5357,60 @@ ObMysqlTransact::ObSSRetryStatus ObMysqlTransact::retry_server_connection_not_op
         int32_t attempt_count = 0;
         //as leader must first used, here found_leader_force_congested is usefull
         bool found_leader_force_congested = false;
-        const ObProxyReplicaLocation *replica = s.pll_info_.get_next_avail_replica(
-            s.force_retry_congested_, attempt_count, found_leader_force_congested);
-        s.current_.attempts_ += attempt_count;
 
-        if ((NULL == replica) && !s.pll_info_.is_all_iterate_once()) { // just defense
-          LOG_ERROR("expected error", K_(s.pll_info));
-          ret_status = NO_NEED_RETRY;
+        bool is_all_stale = false;
+        const ObProxyReplicaLocation *replica = NULL;
+        ObReadStaleParam param;
+        build_read_stale_param(s, param);
+
+        if (OB_FAIL(s.pll_info_.get_next_avail_replica(s.force_retry_congested_, attempt_count, found_leader_force_congested, param, is_all_stale, replica))) {
+          LOG_WARN("fail to get next avail replica", K(ret));
         } else {
-          if ((NULL == replica) && s.pll_info_.is_all_iterate_once()) { // next round
-            // if we has tried all servers, do force retry in next round
-            s.pll_info_.reset_cursor();
-            s.force_retry_congested_ = true;
-
-            // get replica again
-            replica = s.pll_info_.get_next_avail_replica();
-          }
-
-          if ((NULL != replica) && replica->is_valid()) {
-            struct sockaddr_storage sockaddr = replica->server_.get_sockaddr();
-            s.server_info_.set_addr(*(struct sockaddr*)(&(sockaddr)));
-            LOG_DEBUG("set addr here", K(s.server_info_.addr_));
-            ret_status = FOUND_EXISTING_ADDR;
-          } else {
-            // unavailalbe replica, just defense
-            LOG_ERROR("can not found avail replica, unexpected branch", KPC(replica));
-            replica = NULL;
-            s.force_retry_congested_ = true;
-            ret_status = NOT_FOUND_EXISTING_ADDR;
-          }
-
-          // if table entry is all dummy entry and comes from rslist
-          // and all of servers are not in server list, we will disconnect and delete this cluster resource
-          if (s.congestion_entry_not_exist_count_ == s.pll_info_.replica_size()
-              && s.pll_info_.is_server_from_rslist()) {
-            LOG_WARN("all servers of route which comes from rslist are not in congestion list,"
-                     "will disconnect and delete this cluster resource ",
-                     "route_info", s.pll_info_.route_);
-            s.sm_->client_session_->set_need_delete_cluster();
+          s.current_.attempts_ += attempt_count;
+          if ((NULL == replica) && !s.pll_info_.is_all_iterate_once()) { // just defense
+            LOG_ERROR("expected error", K_(s.pll_info));
             ret_status = NO_NEED_RETRY;
+          } else {
+            if ((NULL == replica) && s.pll_info_.is_all_iterate_once()) { // next round
+              s.pll_info_.reset_cursor();
+              if (s.pll_info_.is_weak_read() && is_all_stale && NULL != s.pll_info_.route_.table_entry_) {
+                LOG_INFO("all replica staled, no avail replica found, try again");
+                set_route_leader_replica(s, replica);
+                if (replica == NULL) {
+                  replica = s.pll_info_.get_next_avail_replica();
+                }
+              } else {
+                // if we has tried all servers, do force retry in next round
+                s.force_retry_congested_ = true;
+
+                // get replica again
+                replica = s.pll_info_.get_next_avail_replica();
+              }
+            }
+
+            if ((NULL != replica) && replica->is_valid()) {
+              struct sockaddr_storage sockaddr = replica->server_.get_sockaddr();
+              s.server_info_.set_addr(*(struct sockaddr*)(&(sockaddr)));
+              LOG_DEBUG("set addr here", K(s.server_info_.addr_));
+              ret_status = FOUND_EXISTING_ADDR;
+            } else {
+              // unavailalbe replica, just defense
+              LOG_ERROR("can not found avail replica, unexpected branch", KPC(replica));
+              replica = NULL;
+              s.force_retry_congested_ = true;
+              ret_status = NOT_FOUND_EXISTING_ADDR;
+            }
+
+            // if table entry is all dummy entry and comes from rslist
+            // and all of servers are not in server list, we will disconnect and delete this cluster resource
+            if (s.congestion_entry_not_exist_count_ == s.pll_info_.replica_size()
+                && s.pll_info_.is_server_from_rslist()) {
+              LOG_WARN("all servers of route which comes from rslist are not in congestion list,"
+                        "will disconnect and delete this cluster resource ",
+                        "route_info", s.pll_info_.route_);
+              s.sm_->client_session_->set_need_delete_cluster();
+              ret_status = NO_NEED_RETRY;
+            }
           }
         }
       } else {
@@ -5251,9 +5472,7 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
             "tenant", s.sm_->client_session_->get_session_info().get_priv_info().tenant_name_,
             "user", s.sm_->client_session_->get_session_info().get_priv_info().user_name_,
             "db", s.sm_->client_session_->get_session_info().get_database_name(),
-            "svr_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
-            "sql", s.trans_info_.client_request_.get_print_sql(),
-            "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_));
+            "sql", s.trans_info_.client_request_.get_print_sql());
         LOG_WARN("trace_log", K(s.trace_log_));
       }
     }
@@ -5277,9 +5496,7 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
       s.trace_log_.log_it("[svr_connection_break]",
                      "cli", s.client_info_.addr_,
                      "svr", s.server_info_.addr_,
-                     "svr_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
-                     "sql", s.trans_info_.client_request_.get_print_sql(),
-                     "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_));
+                     "sql", s.trans_info_.client_request_.get_print_sql());
       LOG_WARN("trace_log", K(s.trace_log_));
     }
   }
@@ -5409,8 +5626,10 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
           s.current_.send_action_ = SERVER_SEND_SESSION_USER_VARS;
           s.next_action_ = SM_ACTION_API_SEND_REQUEST;
           break;
-        } else if (!client_info.is_server_support_session_var_sync() &&
-                    client_info.need_reset_session_vars(server_info)) {
+        // sync the changed sys vars by config
+        } else if ((!client_info.is_server_support_session_var_sync() ||
+                     client_info.need_reset_conf_sys_vars())&&
+                     client_info.need_reset_session_vars(server_info)) {
           s.current_.send_action_ = SERVER_SEND_SESSION_VARS;
           s.next_action_ = SM_ACTION_API_SEND_REQUEST;
           break;
@@ -5897,6 +6116,29 @@ int ObMysqlTransact::build_error_packet(ObTransState &s, ObMysqlClientSession *c
           }
           break;
         }
+        case OB_ERR_ABORTING_CONNECTION: {
+          const int64_t BUF_LEN = OB_MAX_ERROR_MSG_LEN;
+          char err_msg_buf[BUF_LEN];
+          err_msg_buf[0] = '\0';
+          char *errmsg = err_msg_buf;
+          int64_t pos = 0;
+          char ip_buff[MAX_IP_ADDR_LENGTH];
+          ip_buff[0] = '\0';
+          ObAddr local_addr;
+
+          if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(local_addr))) {
+            LOG_WARN("fail to get proxy local addr", K(local_addr), K(ret));
+          } else if (OB_UNLIKELY(!local_addr.ip_to_string(ip_buff, MAX_IP_ADDR_LENGTH))) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("fail to covert ip to string", K(local_addr), K(ret));
+          } else if (OB_FAIL(databuff_printf(errmsg, BUF_LEN, pos, ob_str_user_error(errcode), strlen(ip_buff), ip_buff))) {
+            LOG_WARN("fail to fill err_msg", K(ret));
+          } else if (OB_FAIL(ObProxyPacketWriter::write_error_packet(*buf, client_session, client_protocol,
+                                                                     next_seq, errcode, errmsg))) {
+            LOG_WARN("[ObMysqlTransact::build_error_packet] fail to build not supported err resp", K(ret));
+          }
+          break;
+        }
         case OB_GET_LOCATION_TIME_OUT:
         case OB_CLUSTER_NOT_EXIST:
         case OB_ERR_OPERATOR_UNKNOWN:
@@ -5992,31 +6234,44 @@ void ObMysqlTransact::ObTransState::refresh_mysql_config()
     int64_t vid = static_cast<int64_t>(client_vc->get_virtual_vid());
     ObVipAddr addr;
     addr.set(client_vc->get_virtual_addr(), vid);
-    ObString tenant_name;
-    ObString cluster_name;
-    if (client_session->is_need_convert_vip_to_tname() && client_session->is_vip_lookup_success()) {
-      cluster_name = sm_->get_client_session()->get_vip_cluster_name();
-      tenant_name = sm_->get_client_session()->get_vip_tenant_name();
-      if (OB_FAIL(get_config_item(cluster_name, tenant_name, addr, global_version))) {
-        LOG_WARN("get config item failed", K(cluster_name), K(tenant_name), K(addr), K(ret));
-      }
-    } else {
-      if (OB_FAIL(session_info.get_cluster_name(cluster_name))) {
-        LOG_DEBUG("get tenant name failed", K(ret));
-      }
-      if (OB_SUCC(ret) && OB_FAIL(session_info.get_tenant_name(tenant_name))) {
-        LOG_DEBUG("get tenant name failed", K(ret));
-      }
 
-      if (trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_END) {
-        get_config_item(cluster_name, tenant_name, addr, 0);
+    ObString cluster_name;
+    ObString tenant_name;
+    if (OB_FAIL(session_info.get_cluster_name(cluster_name))) {
+      if (ret == OB_ENTRY_NOT_EXIST) {
+        ret = OB_SUCCESS;
       } else {
-        if (OB_SUCC(ret) && OB_FAIL(get_config_item(cluster_name, tenant_name, addr, global_version))) {
-          LOG_WARN("get config item failed", K(cluster_name), K(tenant_name), K(addr), K(ret));
-        }
+        LOG_WARN("get cluster name failed", K(ret));
+      }
+    }
+    if (OB_SUCC(ret) && OB_FAIL(session_info.get_tenant_name(tenant_name))) {
+      if (ret == OB_ENTRY_NOT_EXIST) {
+        ret = OB_SUCCESS;
+      } else {
+        LOG_WARN("get tenant name failed", K(ret));
       }
     }
 
+    if (OB_SUCC(ret)) {
+      // if user login with vip and specifying username, tenant name, cluster name
+      // we use vip clustet name and tenant name before OB_MYSQL_COM_LOGIN(clsuter name and tenant name empty) to get config while login info user specified not received
+      if (client_session->is_need_convert_vip_to_tname()
+          && client_session->is_vip_lookup_success()
+          && cluster_name.empty()
+          && tenant_name.empty()) {
+        cluster_name = sm_->get_client_session()->get_vip_cluster_name();
+        tenant_name = sm_->get_client_session()->get_vip_tenant_name();
+        if (OB_FAIL(get_config_item(cluster_name, tenant_name, addr, global_version))) {
+          LOG_WARN("get config item failed", K(cluster_name), K(tenant_name), K(addr), K(ret));
+        }
+      } else {
+        if (OB_SUCC(ret) || is_auth_request_) {
+          if (OB_FAIL(get_config_item(cluster_name, tenant_name, addr, global_version))) {
+            LOG_WARN("get config item failed", K(cluster_name), K(tenant_name), K(addr), K(ret));
+          }
+        }
+      }
+    }
     LOG_DEBUG("get config succ", K(addr), K(cluster_name), K(tenant_name),
         K_(sm_->proxy_route_policy), K_(sm_->proxy_idc_name),
         K_(sm_->enable_cloud_full_username), K_(sm_->enable_client_ssl),
@@ -6033,53 +6288,237 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
 {
   int ret = OB_SUCCESS;
   ObClientSessionInfo &session_info = sm_->get_client_session()->get_session_info();
-  if (OB_SUCC(ret)) {
-    ObConfigItem item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config(
-            addr, cluster_name, tenant_name, "proxy_route_policy", item))) {
-      LOG_WARN("get proxy route policy config failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      MEMCPY(sm_->proxy_route_policy_, item.str(), strlen(item.str()));
-    }
-  }
+  bool sync_conf_sys_var = false;
 
-  if (OB_SUCC(ret)) {
-    ObConfigItem item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config(
-            addr, cluster_name, tenant_name, "proxy_idc_name", item))) {
-      LOG_WARN("get proxy idc name config failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      MEMCPY(sm_->proxy_idc_name_, item.str(), strlen(item.str()));
+  if (is_auth_request_) {
+    if (OB_SUCC(ret)) {
+      ObConfigBoolItem bool_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
+              addr, cluster_name, tenant_name, "enable_cloud_full_username", bool_item))) {
+        LOG_WARN("get enable_cloud_full_username failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        sm_->enable_cloud_full_username_ = bool_item.get_value();
+      }
     }
-  }
 
-  if (OB_SUCC(ret)) {
-    ObConfigBoolItem bool_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
-            addr, cluster_name, tenant_name, "enable_cloud_full_username", bool_item))) {
-      LOG_WARN("get enable_cloud_full_username failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      sm_->enable_cloud_full_username_ = bool_item.get_value();
+    if (OB_SUCC(ret)) {
+      ObConfigBoolItem bool_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
+              addr, cluster_name, tenant_name, "enable_client_ssl", bool_item))) {
+        LOG_WARN("get enable_client_ssl failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        sm_->enable_client_ssl_ = bool_item.get_value();
+      }
     }
-  }
 
-  if (OB_SUCC(ret)) {
-    ObConfigBoolItem bool_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
-            addr, cluster_name, tenant_name, "enable_client_ssl", bool_item))) {
-      LOG_WARN("get enable_client_ssl failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      sm_->enable_client_ssl_ = bool_item.get_value();
+    if (OB_SUCC(ret)) {
+      ObConfigBoolItem bool_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
+              addr, cluster_name, tenant_name, "enable_server_ssl", bool_item))) {
+        LOG_WARN("get enable_server_ssl failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        sm_->enable_server_ssl_ = bool_item.get_value();
+      }
     }
-  }
+  } else {
+    if (OB_SUCC(ret)) {
+      ObConfigItem item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config(
+              addr, cluster_name, tenant_name, "proxy_route_policy", item))) {
+        LOG_WARN("get proxy route policy config failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        memset(sm_->proxy_route_policy_, 0, sizeof(sm_->proxy_route_policy_));
+        MEMCPY(sm_->proxy_route_policy_, item.str(), strlen(item.str()));
+      }
+    }
 
-  if (OB_SUCC(ret)) {
-    ObConfigBoolItem bool_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
-            addr, cluster_name, tenant_name, "enable_server_ssl", bool_item))) {
-      LOG_WARN("get enable_server_ssl failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      sm_->enable_server_ssl_ = bool_item.get_value();
+    if (OB_SUCC(ret)) {
+      ObConfigItem item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config(
+              addr, cluster_name, tenant_name, "proxy_idc_name", item))) {
+        LOG_WARN("get proxy idc name config failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        memset(sm_->proxy_idc_name_, 0, sizeof(sm_->proxy_idc_name_));
+        MEMCPY(sm_->proxy_idc_name_, item.str(), strlen(item.str()));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObConfigIntItem int_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
+              addr, cluster_name, tenant_name, "obproxy_read_only", int_item))) {
+        LOG_WARN("get vip obproxy_read_only failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        bool is_read_only = (ReadOnly == int_item.get_value());
+        bool is_sys_var_update = (session_info.is_read_only_user() != is_read_only);
+        if (is_sys_var_update) {
+          ObString tx_read_only("tx_read_only");
+          ObString tx_read_only_true;
+          if (is_read_only) {
+            tx_read_only_true = "1";
+          } else {
+            tx_read_only_true = "0";
+          }
+          if (OB_FAIL(session_info.update_sys_variable(tx_read_only, tx_read_only_true))) {
+            LOG_WARN("replace user variables failed", K(tx_read_only_true), K(ret));
+          } else {
+            sync_conf_sys_var = true;
+          }
+        }
+        if (OB_SUCC(ret)) {
+          session_info.set_is_read_only_user(is_read_only);
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObConfigStrListItem strlist_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_strlist_item(
+              addr, cluster_name, tenant_name, "weak_read_user_list", strlist_item))) {
+        LOG_WARN("get vip weak_read_user_list failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        bool is_weak_read_user = false;
+        int64_t total_size = strlist_item.size();
+        if (OB_UNLIKELY(total_size > 0)) {
+          ObMysqlAuthRequest &auth_req = session_info.get_login_req();
+          ObHSRResult &hsr = auth_req.get_hsr_result();
+          char user_buf[MAX_VALUE_LENGTH];
+          for (int64_t i = 0; OB_SUCC(ret) && i < total_size; ++i) {
+            user_buf[0] = '\0';
+            if (OB_FAIL(strlist_item.get(i, user_buf, static_cast<int64_t>(sizeof(user_buf))))) {
+              LOG_WARN("get weak read user list variables failed", K(ret));
+            } else{
+              if (hsr.response_.get_username().prefix_match(user_buf)){
+                is_weak_read_user = true;
+                break;
+              }
+            }
+          }
+        }
+        bool is_request_follower = false;
+        if (is_weak_read_user){
+          is_request_follower = true;
+        } else{
+          ObConfigIntItem int_item;
+          if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
+                  addr, cluster_name, tenant_name, "obproxy_read_consistency", int_item))) {
+            LOG_WARN("get vip obproxy_read_consistency failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+          } else{
+            is_request_follower = (RequestFollower == int_item.get_value());
+          }
+        }
+        if (OB_SUCC(ret)) {
+          bool is_sys_var_update = (session_info.is_request_follower_user() != is_request_follower);
+          if (is_sys_var_update) {
+            ObString ob_read_consistency("ob_read_consistency");
+            ObString weak;
+            if (is_request_follower) {
+              weak = "2";
+            } else {
+              weak = "3";
+            }
+            if (OB_FAIL(session_info.update_sys_variable(ob_read_consistency, weak))) {
+              LOG_WARN("replace user variables failed", K(weak), K(ret));
+            } else {
+              session_info.set_read_consistency_set_flag(true);
+              sync_conf_sys_var = true;
+            }
+          }
+          if (OB_SUCC(ret)) {
+            session_info.set_is_request_follower_user(is_request_follower);
+          }
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObConfigBoolItem bool_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
+              addr, cluster_name, tenant_name, "enable_read_write_split", bool_item))) {
+        LOG_WARN("get enable_read_write_split failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        sm_->enable_read_write_split_ = bool_item.get_value();
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObConfigBoolItem bool_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
+              addr, cluster_name, tenant_name, "enable_transaction_split", bool_item))) {
+        LOG_WARN("get enable_transaction_split failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        sm_->enable_transaction_split_ = bool_item.get_value();
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObConfigIntItem int_item;
+      if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
+              addr, cluster_name, tenant_name, "obproxy_force_parallel_query_dop", int_item))) {
+        LOG_WARN("get vip obproxy_force_parallel_query_dop failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        int64_t obproxy_force_parallel_query_dop = int_item.get_value();
+        bool is_query_dop_update = (session_info.get_obproxy_force_parallel_query_dop() != obproxy_force_parallel_query_dop);
+        if (is_query_dop_update) {
+          char value_str[32];
+          int64_t len = snprintf(value_str, sizeof(value_str), "%ld", obproxy_force_parallel_query_dop);
+          if (OB_UNLIKELY(len <=0 || len >= 32)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WARN("fail to convert value to string", K(obproxy_force_parallel_query_dop), K(len), K(ret));
+          } else if (OB_FAIL(session_info.update_sys_variable("_force_parallel_query_dop", value_str))) {
+            LOG_WARN("replace sys variables _force_parallel_query_dop failed", K(value_str), K(ret));
+          } else {
+            sync_conf_sys_var = true;
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+           session_info.set_obproxy_force_parallel_query_dop(obproxy_force_parallel_query_dop);
+          LOG_DEBUG("replace sys variables _force_parallel_query_dop success", K(obproxy_force_parallel_query_dop), K(ret));
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObConfigIntItem item;
+      bool is_variable_unknown = false;
+      ObString max_stale_time("ob_max_read_stale_time");
+      if (OB_FAIL(get_global_config_processor().get_proxy_config(
+              addr, cluster_name, tenant_name, max_stale_time, item))) {
+        LOG_WARN("get ob_max_read_stale_time failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      } else {
+        if (session_info.get_ob_max_read_stale_time() != item.get_value()) {
+          // update ob_max_read_stale_time
+          ObObj stale_time(item.get_value());
+          if (OB_FAIL(session_info.update_sys_variable(max_stale_time, stale_time))) {
+            // ObServer version <= 4.0.0.0 not exist var ob_max_read_stale_time
+            if (ret == OB_ERR_SYS_VARIABLE_UNKNOWN) {
+              LOG_DEBUG("unknown sys vartiable ob_max_read_stale_time", K(stale_time), K(ret));
+              is_variable_unknown = true;
+              ret = OB_SUCCESS;
+            } else {
+              LOG_WARN("replace sys variables ob_max_read_stale_time failed", K(stale_time), K(ret));
+            }
+          } else {
+            sync_conf_sys_var = true;
+          }
+        }
+      }
+      if (OB_SUCC(ret) && !is_variable_unknown) {
+        session_info.set_ob_max_read_stale_time(item.get_value());
+        sm_->enable_read_stale_feedback_ = mysql_config_params_->enable_weak_reroute_;
+        LOG_DEBUG("replace sys variables ob_max_read_stale_time success", K(item.get_value()), K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObConfigTimeItem item;
+      ObString stale_retry_interval("read_stale_retry_interval");
+      if (OB_FAIL(get_global_config_processor().get_proxy_config(
+              addr, cluster_name, tenant_name, stale_retry_interval, item))) {
+        LOG_WARN("get ob_max_read_stale_time failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      }
+      sm_->read_stale_retry_interval_ = item.get_value();
     }
   }
 
@@ -6088,16 +6527,16 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
     if (OB_FAIL(get_global_config_processor().get_proxy_config(
             addr, cluster_name, tenant_name, "target_db_server", item))) {
       LOG_WARN("fail to get target_db_server", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    // if config empty
+      // if config empty
     } else if (OB_ISNULL(item.str()) || strlen(item.str()) == 0 ) {
       // target db server not null, reset it
       if (OB_NOT_NULL(sm_->target_db_server_)) {
         op_free(sm_->target_db_server_);
         sm_->target_db_server_ = NULL;
-      // target db server is null, do nothing
+        // target db server is null, do nothing
       } else { /* do nothing */}
-    // if config not empty
-    // target db server is null, allocate and init one
+      // if config not empty
+      // target db server is null, allocate and init one
     } else if (OB_ISNULL(sm_->target_db_server_) && OB_ISNULL(sm_->target_db_server_ = op_alloc(ObTargetDbServer))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WARN("fail to alloc memory to for target db server", K(ret));
@@ -6107,108 +6546,12 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
   }
 
   if (OB_SUCC(ret)) {
-    ObConfigIntItem int_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
-         addr, cluster_name, tenant_name, "obproxy_read_only", int_item))) {
-      LOG_WARN("get vip obproxy_read_only failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      bool is_read_only = (ReadOnly == int_item.get_value());
-      bool is_sys_var_update = (session_info.is_read_only_user() != is_read_only);
-      session_info.set_is_read_only_user(is_read_only);
-      if (is_sys_var_update) {
-        ObString tx_read_only("tx_read_only");
-        ObString tx_read_only_true;
-        if (session_info.is_read_only_user()) {
-          tx_read_only_true = "1";
-        } else {
-          tx_read_only_true = "0";
-        }
-        if (OB_FAIL(session_info.update_sys_variable(tx_read_only, tx_read_only_true))) {
-          LOG_WARN("replace user variables failed", K(tx_read_only_true), K(ret));
-        }
-      }
+    if (sync_conf_sys_var) {
+      session_info.set_sync_conf_sys_var();
     }
-  }
-
-  if (OB_SUCC(ret)) {
-    ObConfigStrListItem strlist_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_strlist_item(
-         addr, cluster_name, tenant_name, "weak_read_user_list", strlist_item))) {
-      LOG_WARN("get vip weak_read_user_list failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      bool is_weak_read_user = false;
-      int64_t total_size = strlist_item.size();
-      if (OB_UNLIKELY(total_size > 0)) {
-        ObMysqlAuthRequest &auth_req = session_info.get_login_req();
-        ObHSRResult &hsr = auth_req.get_hsr_result();
-        char user_buf[MAX_VALUE_LENGTH];
-        for (int64_t i = 0; OB_SUCC(ret) && i < total_size; ++i) {
-          user_buf[0] = '\0';
-          if (OB_FAIL(strlist_item.get(i, user_buf, static_cast<int64_t>(sizeof(user_buf))))) {
-            LOG_WARN("get weak read user list variables failed", K(ret));
-          } else{
-            if (hsr.response_.get_username().prefix_match(user_buf)){
-              is_weak_read_user = true;
-              break;
-            }
-          }
-        }
-      }
-      bool is_request_follower = false;
-      if (is_weak_read_user){
-        is_request_follower = true;
-      } else{
-        ObConfigIntItem int_item;
-        if (OB_FAIL(get_global_config_processor().get_proxy_config_int_item(
-         addr, cluster_name, tenant_name, "obproxy_read_consistency", int_item))) {
-           LOG_WARN("get vip obproxy_read_consistency failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-        } else{
-          is_request_follower = (RequestFollower == int_item.get_value());
-        }
-      }
-      if (OB_SUCC(ret)) {
-        bool is_sys_var_update = (session_info.is_request_follower_user() != is_request_follower);
-        session_info.set_is_request_follower_user(is_request_follower);
-        if (is_sys_var_update) {
-          ObString ob_read_consistency("ob_read_consistency");
-          ObString weak;
-          if (session_info.is_request_follower_user()) {
-            weak = "2";
-          } else {
-            weak = "3";
-          }
-          if (OB_FAIL(session_info.update_sys_variable(ob_read_consistency, weak))) {
-            LOG_WARN("replace user variables failed", K(weak), K(ret));
-          } else {
-            session_info.set_read_consistency_set_flag(true);
-          }
-        }
-      }
+    if (global_version > 0 && !is_auth_request_) {
+      sm_->config_version_ = global_version;
     }
-  }
-
-  if (OB_SUCC(ret)) {
-    ObConfigBoolItem bool_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
-            addr, cluster_name, tenant_name, "enable_read_write_split", bool_item))) {
-      LOG_WARN("get enable_read_write_split failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      sm_->enable_read_write_split_ = bool_item.get_value();
-    }
-  }
-
-  if (OB_SUCC(ret)) {
-    ObConfigBoolItem bool_item;
-    if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
-            addr, cluster_name, tenant_name, "enable_transaction_split", bool_item))) {
-      LOG_WARN("get enable_transaction_split failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else {
-      sm_->enable_transaction_split_ = bool_item.get_value();
-    }
-  }
-
-  if (OB_SUCC(ret) && global_version > 0) {
-    sm_->config_version_ = global_version;
   }
 
   return ret;
@@ -6676,10 +7019,9 @@ bool ObMysqlTransact::is_internal_request(ObTransState &s)
 int64_t ObMysqlTransact::get_max_connect_attempts(ObTransState &s)
 {
   int64_t target_db_server_num = 0;
-  if (NULL != s.trans_info_.client_request_.get_parse_result().get_target_db_server()
-             && 0 < s.trans_info_.client_request_.get_parse_result().get_target_db_server()->num()) {
+  if (s.use_cmnt_target_db_server_) {
     target_db_server_num = s.trans_info_.client_request_.get_parse_result().get_target_db_server()->num();
-  } else if (NULL != s.sm_->target_db_server_ && 0 < s.sm_->target_db_server_->num()) {
+  } else if (s.use_conf_target_db_server_) {
     target_db_server_num = s.sm_->target_db_server_->num();
   }
   return std::max(target_db_server_num, std::max(s.mysql_config_params_->connect_observer_max_retries_,
@@ -6759,6 +7101,37 @@ void ObMysqlTransact::handle_bl_lookup(ObTransState &s)
     s.inner_errcode_ = ret;
     // disconnect
     TRANSACT_RETURN(SM_ACTION_SEND_ERROR_NOOP, NULL);
+  }
+}
+
+void ObMysqlTransact::build_read_stale_param(const ObTransState &s, ObReadStaleParam &param)
+{
+  ObNetVConnection *client_vc = static_cast<ObNetVConnection*>(s.sm_->get_client_session()->get_netvc());
+  ObVipAddr vip_addr;
+  vip_addr.set(client_vc->get_virtual_addr(), client_vc->get_virtual_vid());
+  param.vip_addr_ = vip_addr;
+  param.cluster_name_ = s.sm_->get_client_session()->get_session_info().get_priv_info().cluster_name_;
+  param.tenant_name_ = s.sm_->get_client_session()->get_session_info().get_priv_info().tenant_name_;
+  param.enable_read_stale_feedback_ = s.sm_->enable_read_stale_feedback_;
+  param.retry_interval_ = s.sm_->read_stale_retry_interval_;
+  param.table_id_ = OB_INVALID_INDEX;
+  param.partition_id_ = OB_INVALID_INDEX;
+  param.server_addr_ = s.server_info_.addr_;
+  if (s.pll_info_.route_.is_non_partition_table() ) {
+    if (s.pll_info_.route_.table_entry_ != NULL) {
+      param.table_id_ = s.pll_info_.route_.table_entry_->get_table_id();
+    } else {
+      // invalid table entry
+      param.enable_read_stale_feedback_ = false;
+    }
+  } else {
+    if (s.pll_info_.route_.part_entry_ != NULL) {
+      param.table_id_ = s.pll_info_.route_.part_entry_->get_table_id();
+      param.partition_id_ = s.pll_info_.route_.part_entry_->get_partition_id();
+    } else {
+      // invalid partition entry
+      param.enable_read_stale_feedback_ = false;
+    }
   }
 }
 

@@ -26,6 +26,7 @@
 #include "utils/ob_proxy_utils.h"
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "common/ob_obj_compare.h"
+#include "lib/utility/ob_print_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::proxy;
@@ -305,24 +306,28 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
     ret = OB_INVALID_ARGUMENT;
     LOG_INFO("token list or head is null", K(relation->right_value_), K(ret));
   } else {
-   ObProxyTokenNode *token = relation->right_value_->head_;
-   int64_t col_idx = relation->column_idx_;
-   if (TOKEN_STR_VAL == token->type_) {
-     target_obj->set_varchar(token->str_value_.str_, token->str_value_.str_len_);
-     target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
-   } else if (TOKEN_INT_VAL == token->type_) {
-     target_obj->set_int(token->int_value_);
-   } else if (TOKEN_PLACE_HOLDER == token->type_) {
-     int64_t param_index = token->placeholder_idx_;
-     if (OB_FAIL(get_obj_with_param(*target_obj, client_request, client_info,
-                                    part_info, ps_id_entry, param_index))) {
-       LOG_DEBUG("fail to get target obj with param", K(ret));
-     }
-   } else if (TOKEN_FUNC == token->type_) {
-     if (OB_FAIL(calc_token_func_obj(token, client_info, *target_obj, sql_field_result, part_info->is_oracle_mode()))) {
-       LOG_WARN("fail to calc token func obj", K(ret));
-     }
-   } else {
+    ObProxyTokenNode *token = relation->right_value_->head_;
+    int64_t col_idx = relation->column_idx_;
+    if (TOKEN_STR_VAL == token->type_) {
+      target_obj->set_varchar(token->str_value_.str_, token->str_value_.str_len_);
+      target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
+    } else if (TOKEN_INT_VAL == token->type_) {
+      target_obj->set_int(token->int_value_);
+    } else if (TOKEN_PLACE_HOLDER == token->type_) {
+      int64_t param_index = token->placeholder_idx_;
+      if (OB_FAIL(get_obj_with_param(*target_obj, client_request, client_info,
+                                     part_info, ps_id_entry, param_index))) {
+        LOG_DEBUG("fail to get target obj with param", K(ret));
+      }
+    } else if (TOKEN_FUNC == token->type_) {
+      if (OB_FAIL(calc_token_func_obj(token, client_info, *target_obj, sql_field_result, part_info->is_oracle_mode()))) {
+        LOG_WARN("fail to calc token func obj", K(ret));
+      }
+    } else if (TOKEN_HEX_VAL == token->type_) {
+      if (OB_FAIL(calc_token_hex_obj(token, *target_obj))) {
+        LOG_WARN("fail to calc token hex obj", K(ret));
+      }
+    } else {
      ret = OB_INVALID_ARGUMENT;
    }
 
@@ -354,8 +359,9 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
      }
    }
 
-   if (OB_SUCC(ret) && ObStringTC == target_obj->get_type_class()) {
-     // The character set of the string parsed from the parser uses the value of the variable collation_connection
+   if (OB_SUCC(ret) && ObStringTC == target_obj->get_type_class() && ObHexStringType != target_obj->get_type()) {
+     // 1. The character set of the string parsed from the parser uses the value of the variable collation_connection
+     // 2. Hex value charset is CS_TYPE_BINARY
      target_obj->set_collation_type(static_cast<common::ObCollationType>(client_info->get_collation_connection()));
    }
   } // end of else
@@ -651,6 +657,71 @@ int ObExprResolver::recursive_convert_func_token(ObProxyTokenNode *token,
   return ret;
 }
 
+int ObExprResolver::calc_token_hex_obj(ObProxyTokenNode *token, ObObj &target_obj)
+{
+  int ret = OB_SUCCESS;
+  ObString hex_str_format_val;
+  // may temp used
+  char* full_hex_str_format_val = NULL;
+  if (OB_ISNULL(token)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("hex token or str val is null pointer", K(ret));
+  } else if (TOKEN_HEX_VAL != token->type_) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("hex token type dismatch", K(ret));
+  } else if (3 > token->str_value_.str_len_) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("hex str val is too short", K(ret));
+  } else if (OB_ISNULL(token->str_value_.str_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("hex str val is null pointer", K(ret));
+  // like x'86adf554' which represents a sequence of memory '86 ad f5 54'
+  } else if (token->str_value_.str_[0] == 'x' || token->str_value_.str_[0] == 'X') {
+    hex_str_format_val.assign(token->str_value_.str_ + 2, token->str_value_.str_len_ - 3);
+  } else if (token->str_value_.str_[0] == '0' && (token->str_value_.str_[1] == 'x' || token->str_value_.str_[1] == 'X')) {
+    hex_str_format_val.assign(token->str_value_.str_ + 2, token->str_value_.str_len_ - 2);
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail calc token hex obj", K(hex_str_format_val));
+  }
+  LOG_DEBUG("to calc hex val token str", K(hex_str_format_val));
+  if (OB_SUCC(ret)) {
+    char* hex_byte_format_buf = NULL;
+    if (hex_str_format_val.empty()) {
+      target_obj.set_hex_string(hex_str_format_val);
+      LOG_WARN("hex str val invalid", K(hex_str_format_val));
+    } else {
+      // 0x12345 => 0x012345
+      if (hex_str_format_val.length() % 2 != 0) {
+        if (OB_ISNULL(full_hex_str_format_val = static_cast<char*>(allocator_.alloc(hex_str_format_val.length() + 1)))) {
+          LOG_WARN("fail to alloc buf", K(ret));
+        } else {
+          full_hex_str_format_val[0] = '0';
+          MEMCPY(full_hex_str_format_val + 1, hex_str_format_val.ptr(), hex_str_format_val.length());
+          hex_str_format_val.assign_ptr(full_hex_str_format_val, static_cast<ObString::obstr_size_t>(hex_str_format_val.length() + 1));
+          LOG_DEBUG("succ to calc hex val full format", K(hex_str_format_val));
+        }
+      }
+      int64_t byte_len = hex_str_format_val.length() / 2;
+      if (OB_SUCC(ret) && OB_ISNULL(hex_byte_format_buf = static_cast<char*>(allocator_.alloc(byte_len)))) {
+        LOG_WARN("fail to alloc buf", K(ret));
+      } else if (hex_str_format_val.length() != static_cast<int64_t>(str_to_hex(hex_str_format_val.ptr(), 
+                                                             hex_str_format_val.length(), 
+                                                             hex_byte_format_buf, static_cast<int32_t>(byte_len)))){
+        LOG_WARN("fail to str to hex byte", K(hex_str_format_val));
+      } else {
+        ObString hex_byte_val(byte_len, hex_byte_format_buf);
+        target_obj.set_hex_string(hex_byte_val);
+        LOG_DEBUG("calc hex val byte format", K(hex_byte_val));
+      }
+    }
+    if (OB_NOT_NULL(full_hex_str_format_val)) {
+      allocator_.free(full_hex_str_format_val);
+    }
+  }
+  return ret;
+}
+
 int ObExprResolver::calc_generated_key_value(ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode)
 {
   int ret = OB_SUCCESS;
@@ -769,6 +840,9 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj,
       } else {
         ObProxyTextPsParam* param = execute_info.params_.at(execute_param_index);
         ObString user_variable_name = param->str_value_.config_string_;
+        if (client_info->need_use_lower_case_names()) {
+          string_to_lower_case(user_variable_name.ptr(), user_variable_name.length());
+        }
         if (OB_FAIL(static_cast<const ObClientSessionInfo&>(*client_info).get_user_variable_value(user_variable_name, target_obj))) {
           LOG_WARN("get user variable failed", K(ret), K(user_variable_name));
         } else {

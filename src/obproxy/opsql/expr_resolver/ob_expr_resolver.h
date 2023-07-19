@@ -98,6 +98,7 @@ private:
                           common::ObObj &target_obj,
                           obutils::SqlFieldResult *sql_field_result,
                           const bool is_oracle_mode);
+  int calc_token_hex_obj(ObProxyTokenNode *token, common::ObObj &target_obj);
   int calc_generated_key_value(common::ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode);
   int get_obj_with_param(common::ObObj &target_obj,
                          proxy::ObProxyMysqlRequest *client_request,

@@ -281,7 +281,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
  /* dummy token */
 %token DUMMY_WHERE_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
-%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE STATUS UNIQUE
+%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE STATUS UNIQUE STOP_DDL_TASK RETRY_DDL_TASK
 %token GRANT REVOKE ANALYZE PURGE COMMENT
 %token FROM DUAL
 %token PREPARE EXECUTE USING DEALLOCATE
@@ -306,13 +306,13 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %type<var_node> set_expr set_var_value
  /*internal cmd keyword*/
 %token<str> SHOW_PROXYNET THREAD CONNECTION LIMIT OFFSET
-%token<str> SHOW_PROCESSLIST SHOW_PROXYSESSION SHOW_GLOBALSESSION ATTRIBUTE VARIABLES ALL STAT
+%token<str> SHOW_PROCESSLIST SHOW_PROXYSESSION SHOW_GLOBALSESSION ATTRIBUTE VARIABLES ALL STAT READ_STALE
 %token<str> SHOW_PROXYCONFIG DIFF USER LIKE
 %token<str> SHOW_PROXYSM
 %token<str> SHOW_PROXYCLUSTER
 %token<str> SHOW_PROXYRESOURCE
 %token<str> SHOW_PROXYCONGESTION
-%token<str> SHOW_PROXYROUTE PARTITION ROUTINE
+%token<str> SHOW_PROXYROUTE PARTITION ROUTINE SUBPARTITION
 %token<str> SHOW_PROXYVIP
 %token<str> SHOW_PROXYMEMORY OBJPOOL
 %token<str> SHOW_SQLAUDIT
@@ -321,7 +321,8 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> SHOW_PROXYTRACE
 %token<str> SHOW_PROXYINFO BINARY UPGRADE IDC
 %token<str> SHOW_ELASTIC_ID SHOW_TOPOLOGY GROUP_NAME SHOW_DB_VERSION
-%token<str> SHOW_DATABASES SHOW_TABLES SHOW_FULL_TABLES SELECT_DATABASE SHOW_CREATE_TABLE SELECT_PROXY_VERSION SHOW_COLUMNS SHOW_INDEX
+%token<str> SHOW_DATABASES SHOW_TABLES SHOW_FULL_TABLES SELECT_DATABASE SELECT_PROXY_STATUS
+%token<str> SHOW_CREATE_TABLE SELECT_PROXY_VERSION SHOW_COLUMNS SHOW_INDEX
 %token<str> ALTER_PROXYCONFIG
 %token<str> ALTER_PROXYRESOURCE
 %token<str> PING_PROXY
@@ -390,11 +391,25 @@ mysql_ddl_stmt: CREATE create_dll_expr { result->cur_stmt_type_ = OBPROXY_T_CREA
               | ALTER    { result->cur_stmt_type_ = OBPROXY_T_ALTER; }
               | TRUNCATE { result->cur_stmt_type_ = OBPROXY_T_TRUNCATE; }
               | RENAME   { result->cur_stmt_type_ = OBPROXY_T_RENAME; }
+              | stop_ddl_task_stmt   {}
+              | retry_ddl_task_stmt  {}
 
 create_dll_expr : /* empty */
                 | TABLE { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_TABLE; }
                 | INDEX { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_INDEX; }
                 | UNIQUE INDEX { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_INDEX; }
+
+stop_ddl_task_stmt: STOP_DDL_TASK INT_NUM
+          {
+            SET_ICMD_ONE_ID($2);
+            result->cur_stmt_type_ = OBPROXY_T_STOP_DDL_TASK;
+          }
+
+retry_ddl_task_stmt: RETRY_DDL_TASK INT_NUM
+          {
+            SET_ICMD_ONE_ID($2);
+            result->cur_stmt_type_ = OBPROXY_T_RETRY_DDL_TASK;
+          }
 
 text_ps_from_stmt: select_stmt {}
                  | insert_stmt {}
@@ -505,6 +520,7 @@ shard_special_stmt: show_es_id_stmt {}
                   | show_topology_stmt {}
                   | show_db_version_stmt {}
                   | SELECT_DATABASE { result->sub_stmt_type_ = OBPROXY_T_SUB_SELECT_DATABASE; }
+                  | SELECT_PROXY_STATUS { result->sub_stmt_type_ = OBPROXY_T_SUB_SELECT_PROXY_STATUS; }
                   | SHOW_DATABASES  { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_DATABASES; }
                   | show_tables_stmt {}
                   | show_table_status_stmt {}
@@ -891,6 +907,7 @@ opt_quick: /* empty */
 show_stmt: SHOW opt_count WARNINGS { result->cur_stmt_type_ = OBPROXY_T_SHOW_WARNINGS; }
          | SHOW opt_count ERRORS   { result->cur_stmt_type_ = OBPROXY_T_SHOW_ERRORS; }
          | SHOW TRACE              { result->cur_stmt_type_ = OBPROXY_T_SHOW_TRACE; }
+         | SHOW TRACE NAME_OB '=' NAME_OB { result->cur_stmt_type_ = OBPROXY_T_SHOW_TRACE; }
 
  /* internal cmd stmt */
 icmd_stmt: show_proxynet
@@ -991,6 +1008,7 @@ opt_show_session:
 | VARIABLES INT_NUM opt_like      { SET_ICMD_SUB_AND_ONE_ID(OBPROXY_T_SUB_SESSION_VARIABLES_LOCAL, $2); }
 | VARIABLES ALL opt_like          { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_SESSION_VARIABLES_ALL); }
 | VARIABLES ALL INT_NUM opt_like  { SET_ICMD_SUB_AND_ONE_ID(OBPROXY_T_SUB_SESSION_VARIABLES_ALL, $3); }
+| READ_STALE opt_like             { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_SESSION_READ_STALE); }
 
  /*show proxysm grammer*/
 show_proxysm:
@@ -1128,6 +1146,8 @@ help_stmt: HELP NAME_OB  { result->cur_stmt_type_ = OBPROXY_T_HELP; }
 other_stmt: NAME_OB
 
 partition_factor: /*empty*/ {}
+                | SUBPARTITION NAME_OB { result->part_name_ = $2; }
+                | SUBPARTITION '(' NAME_OB ')' { result->part_name_ = $3; }
                 | PARTITION NAME_OB { result->part_name_ = $2; }
                 | PARTITION '(' NAME_OB ')' { result->part_name_ = $3; }
 

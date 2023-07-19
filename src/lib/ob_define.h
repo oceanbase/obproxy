@@ -595,6 +595,9 @@ enum ObCapabilityFlagShift
   OB_CAP_PROXY_FULL_LINK_TRACING_SHIFT,             // 14
   OB_CAP_PROXY_NEW_EXTRA_INFO_SHIFT,                // 15
   OB_CAP_PROXY_SESSION_VAR_SYNC_SHIFT,              // 16
+  OB_CAP_PROXY_READ_STALE_FEEDBACK_SHIFT,           // 17
+  OB_CAP_PROXY_FULL_LINK_TRACING_EXT_SHIFT,         // 18
+  OB_CAP_SERVER_DUP_SESS_INFO_SYNC_SHIFT,           // 19
 };
 
 #define OB_TEST_CAPABILITY(cap, tg_cap) (((cap) & (tg_cap)) == (tg_cap))
@@ -614,7 +617,9 @@ enum ObCapabilityFlagShift
 #define OB_CAP_PROXY_FULL_LINK_TRACING OB_CAP_GET_TYPE(common::OB_CAP_PROXY_FULL_LINK_TRACING_SHIFT)
 #define OB_CAP_PROXY_NEW_EXTRA_INFO OB_CAP_GET_TYPE(common::OB_CAP_PROXY_NEW_EXTRA_INFO_SHIFT)
 #define OB_CAP_PROXY_SESSION_VAR_SYNC OB_CAP_GET_TYPE(common::OB_CAP_PROXY_SESSION_VAR_SYNC_SHIFT)
-
+#define OB_CAP_PROXY_READ_STALE_FEEDBACK   OB_CAP_GET_TYPE(common::OB_CAP_PROXY_READ_STALE_FEEDBACK_SHIFT)
+#define OB_CAP_PROXY_FULL_LINK_TRACING_EXT OB_CAP_GET_TYPE(common::OB_CAP_PROXY_FULL_LINK_TRACING_EXT_SHIFT)
+#define OB_CAP_SERVER_DUP_SESS_INFO_SYNC OB_CAP_GET_TYPE(common::OB_CAP_SERVER_DUP_SESS_INFO_SYNC_SHIFT)
 
 // for obproxy debug
 #define OBPROXY_DEBUG 0
@@ -1046,6 +1051,10 @@ public:
   {
     return  (dest_replica_type == src_replica_type
              || REPLICA_TYPE_FULL == src_replica_type); // TODO temporarily only supports the same type or F as the data source
+  }
+  static bool is_logonly_replica(const int32_t replica_type)
+  {
+    return REPLICA_TYPE_ENCRYPTION_LOGONLY == replica_type || REPLICA_TYPE_LOGONLY == replica_type;
   }
 };
 

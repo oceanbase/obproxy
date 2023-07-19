@@ -16,7 +16,8 @@ static uint32
 ob_convert_internal(char *to, uint32 to_length,
                     const ObCharsetInfo *to_cs,
                     const char *from, uint32 from_length,
-                    const ObCharsetInfo *from_cs, uint *errors)
+                    const ObCharsetInfo *from_cs, uint *errors,
+                    ob_bool trim_incomplete_tail)
 {
   unsigned int error_num= 0;
   int cnvres;
@@ -39,7 +40,14 @@ ob_convert_internal(char *to, uint32 to_length,
       wc= '?';
       error_num++;
     } else {
-      break;  
+      // Not enough characters
+      if (!trim_incomplete_tail && (const uchar*) from < from_end) {
+        error_num++;
+        from++;
+        wc= '?';
+      } else {
+        break;
+      }
     }
 
     pbool go = TRUE;
@@ -64,12 +72,13 @@ ob_convert_internal(char *to, uint32 to_length,
 uint32
 ob_convert(char *to, uint32 to_length, const ObCharsetInfo *to_cs,
            const char *from, uint32 from_length,
-           const ObCharsetInfo *from_cs, uint *errors)
+           const ObCharsetInfo *from_cs, uint *errors,
+           ob_bool trim_incomplete_tail)
 {
   uint32 length, length2;
 
   if ((to_cs->state | from_cs->state) & OB_CS_NONASCII) {
-    return ob_convert_internal(to, to_length, to_cs, from, from_length, from_cs, errors);
+    return ob_convert_internal(to, to_length, to_cs, from, from_length, from_cs, errors, trim_incomplete_tail);
   } else {
     length= length2= OB_MIN(to_length, from_length);
   }
@@ -94,7 +103,7 @@ ob_convert(char *to, uint32 to_length, const ObCharsetInfo *to_cs,
       from_length-= copied_length;
       return copied_length + ob_convert_internal(to, to_length, to_cs,
                                                  from, from_length, from_cs,
-                                                 errors);
+                                                 errors, trim_incomplete_tail);
     }
     *to++= *from++;
     length--;

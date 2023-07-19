@@ -85,6 +85,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     enable_compression_protocol_(false),
     enable_ob_protocol_v2_(false),
     enable_reroute_(false),
+    enable_weak_reroute_(true),
     enable_index_route_(false),
     enable_causal_order_read_(true),
     enable_transaction_internal_routing_(true),
@@ -120,7 +121,9 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     enable_cpu_isolate_(false),
     enable_primary_zone_(true),
     ip_listen_mode_(0),
-    local_bound_ipv6_ip_()
+    local_bound_ipv6_ip_(),
+    read_stale_retry_interval_(0),
+    ob_max_read_stale_time_(0)
 {
   proxy_idc_name_[0] = '\0';
 }
@@ -185,6 +188,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(enable_ob_protocol_v2);
   CONFIG_ITEM_ASSIGN(enable_transaction_internal_routing);
   CONFIG_ITEM_ASSIGN(enable_reroute);
+  CONFIG_ITEM_ASSIGN(enable_weak_reroute);
   CONFIG_ITEM_ASSIGN(enable_index_route);
   CONFIG_ITEM_ASSIGN(enable_causal_order_read);
 
@@ -217,6 +221,8 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(enable_cpu_isolate);
   CONFIG_ITEM_ASSIGN(enable_primary_zone);
   CONFIG_ITEM_ASSIGN(ip_listen_mode);
+  CONFIG_TIME_ASSIGN(read_stale_retry_interval);
+  CONFIG_ITEM_ASSIGN(ob_max_read_stale_time);
 
   if (OB_SUCC(ret)) {
     obsys::CRLockGuard guard(proxy_config.rwlock_);
@@ -334,8 +340,11 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(default_inactivity_timeout), K_(enable_partition_table_route), K_(enable_pl_route),
        K_(enable_cluster_checkout), K_(enable_client_ip_checkout), K_(enable_proxy_scramble),
        K_(enable_compression_protocol), K_(enable_ob_protocol_v2),
-       K_(enable_reroute), K_(enable_index_route), K_(enable_causal_order_read),
-       K_(ip_listen_mode), K_(local_bound_ipv6_ip));
+       K_(enable_reroute), K_(enable_weak_reroute), K_(enable_index_route), K_(enable_causal_order_read),
+       K_(ip_listen_mode));
+  J_COMMA();
+  J_KV(K_(local_bound_ipv6_ip), K_(read_stale_retry_interval), K_(ob_max_read_stale_time));
+  J_COMMA();
   J_OBJ_END();
   return pos;
 }

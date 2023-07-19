@@ -178,9 +178,9 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
           }
         } else {
           ip_addr.net_ = atoi(buf);
-          if (ip_addr.net_ <= 0) {
+          if (ip_addr.net_ <= 0 || ip_addr.net_ >= 32) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("atoi failed", K(ret));
+            LOG_WARN("atoi failed", K(ip_addr.net_), K(ret));
             break;
           }
         }
@@ -279,7 +279,7 @@ bool ObWhiteListTableProcessor::can_ipv4_pass(ObString &cluster_name, ObString &
             can_pass = (addr.v4_ == ip);
           } else {
             uint32_t mask = 0xffffffff;
-            can_pass = (addr.v4_ == (ip & (mask << (32 - addr.net_))));
+            can_pass = ((addr.v4_ & (mask << (32 - addr.net_))) == (ip & (mask << (32 - addr.net_))));
           }
         }
       } else if (OB_HASH_NOT_EXIST == ret) {

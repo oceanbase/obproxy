@@ -64,6 +64,10 @@ void print_token_node(char *buf, const int64_t buf_len, int64_t &pos, const int6
         VBUF_PRINTF(" value:%ld,\n", node->placeholder_idx_);
         break;
 
+      case TOKEN_HEX_VAL:
+        VBUF_PRINTF(" value:%.*s,\n", node->str_value_.str_len_, node->str_value_.str_);
+        break;
+
       case TOKEN_NONE:
       default:
         break;

@@ -117,14 +117,14 @@ int ObPartDesc::cast_obj(ObObj &src_obj,
 
   if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
                                                                             obj_type, tz_info, dtc_params))) {
-    COMMON_LOG(WARN, "fail to build dtc params with ctx session", K(ret), K(obj_type));
+    COMMON_LOG(DEBUG, "fail to build dtc params with ctx session", K(ret), K(obj_type));
   } else {
     ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type);
     const ObObj *res_obj = &src_obj;
  
     // use src_obj as buf_obj
     if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cs_type, cast_ctx, src_obj, src_obj))) {
-      COMMON_LOG(WARN, "failed to cast obj", K(ret), K(src_obj), K(obj_type), K(cs_type));
+      COMMON_LOG(DEBUG, "failed to cast obj", K(ret), K(src_obj), K(obj_type), K(cs_type));
     } else if (ctx.need_accurate()
                && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type, *res_obj, src_obj, res_obj))) {
       COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj));

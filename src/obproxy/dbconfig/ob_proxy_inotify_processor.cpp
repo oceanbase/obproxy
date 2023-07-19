@@ -313,6 +313,8 @@ int ObInotifyProcessor::handle_inotify_event(ObWatchFile &wf, struct inotify_eve
         if (OB_FAIL(remove_watch(ObString::make_string(tmp_buf)))) {
           LOG_WARN("fail to remove watch logic tenant dir", "tenant", event.name, K(ret));
         }
+      } else {
+        LOG_INFO("inotify event happen, but nothing to do", K(wf), K(event.mask), K(event.len), K(event.name));
       }
       break;
     }
@@ -327,6 +329,8 @@ int ObInotifyProcessor::handle_inotify_event(ObWatchFile &wf, struct inotify_eve
         if (OB_FAIL(get_global_dbconfig_cache().load_logic_tenant_config(tenant_name))) {
           LOG_WARN("fail to load tenant config", K(tenant_name), K(ret));
         }
+      } else {
+        LOG_INFO("inotify event happen, but nothing to do", K(wf), K(event.mask), K(event.len), K(event.name));
       }
       break;
     }

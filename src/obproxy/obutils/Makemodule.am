@@ -72,4 +72,6 @@ obproxy/obutils/ob_task_flow_controller.cpp\
 obproxy/obutils/ob_proxy_config_processor.h\
 obproxy/obutils/ob_proxy_config_processor.cpp\
 obproxy/obutils/ob_config_processor.h\
-obproxy/obutils/ob_config_processor.cpp
+obproxy/obutils/ob_config_processor.cpp\
+obproxy/obutils/ob_read_stale_processor.h\
+obproxy/obutils/ob_read_stale_processor.cpp

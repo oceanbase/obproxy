@@ -73,6 +73,8 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_ALTER,
   OBPROXY_T_TRUNCATE,
   OBPROXY_T_RENAME,
+  OBPROXY_T_STOP_DDL_TASK,
+  OBPROXY_T_RETRY_DDL_TASK,
 
   // oracle ddl
   OBPROXY_T_GRANT,
@@ -152,6 +154,8 @@ typedef enum ObProxyBasicStmtSubType
   OBPROXY_T_SUB_SESSION_VARIABLES_LOCAL,
   OBPROXY_T_SUB_SESSION_VARIABLES_ALL,
   OBPROXY_T_SUB_SESSION_STAT,
+    // weak read stale node
+  OBPROXY_T_SUB_SESSION_READ_STALE,
 
   // global session
   OBPROXY_T_SUB_GLOBAL_SESSION_LIST,
@@ -211,6 +215,7 @@ typedef enum ObProxyBasicStmtSubType
 
   //select
   OBPROXY_T_SUB_SELECT_DATABASE,
+  OBPROXY_T_SUB_SELECT_PROXY_STATUS,
 
   //desc
   OBPROXY_T_SUB_DESC_TABLE,
@@ -424,6 +429,8 @@ typedef struct _ObProxyParseResult
   bool has_explain_;
   bool has_simple_route_info_;
   bool has_anonymous_block_;
+  bool has_connection_id_;
+
   ObProxyBasicStmtType stmt_type_;
   ObProxyBasicStmtSubType sub_stmt_type_; //for sharding
   int64_t stmt_count_;

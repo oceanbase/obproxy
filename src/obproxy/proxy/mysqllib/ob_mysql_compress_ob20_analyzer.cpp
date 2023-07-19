@@ -47,7 +47,7 @@ int ObMysqlCompressOB20Analyzer::init(
   last_ob20_seq_ = last_ob20_seq;
   request_id_ = request_id;
   sessid_ = sessid;
-  LOG_DEBUG("ObMysqlCompressOB20Analyzer init", K(request_id), "request_id_", request_id_);
+  LOG_DEBUG("ObMysqlCompressOB20Analyzer init", K(last_ob20_seq), K(request_id), K(sessid));
 
   result_.set_cmd(mysql_cmd);
   result_.set_mysql_mode(mysql_mode);
@@ -387,7 +387,7 @@ int ObMysqlCompressOB20Analyzer::do_new_extra_info_decode(const char *buf,
           LOG_DEBUG("succ to deserialize new extra info", K(flt_manage));
         }
       } else {
-        LOG_WARN("unexpected new extra info type", K(type), K(key_len));
+        LOG_DEBUG("unexpected new extra info type, ignore", K(type), K(key_len));
       }
       pos += key_len;     // pos offset at last
     }

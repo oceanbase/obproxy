@@ -139,6 +139,9 @@ public:
   // client cap judgement
   bool is_client_support_full_link_trace() const { return session_info_.is_client_support_full_link_trace(); }
   bool is_client_support_new_extra_info() const { return session_info_.is_client_support_new_extra_info(); }
+  bool is_client_support_full_link_trace_ext() const {
+    return session_info_.is_client_support_full_link_trace_ext();
+  }
 
   int64_t get_current_tid() const { return current_tid_; }
 

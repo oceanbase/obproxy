@@ -575,6 +575,17 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
   int ret = OB_SUCCESS;
   int64_t data_len = buf_reader.get_remain_len();
 
+  if(OB_MYSQL_COM_BINLOG_DUMP == result.get_cmd() || OB_MYSQL_COM_BINLOG_DUMP_GTID == result.get_cmd()) {
+    if (pre_seq_ < 255 && (pre_seq_ + 1 != meta_analyzer_.get_meta().pkt_seq_)) {
+      LOG_ERROR("BINLOG_DUMP seq is not expected", K(pre_seq_), K(meta_analyzer_.get_meta()));
+    } else if (pre_seq_ == 255 && 0 != meta_analyzer_.get_meta().pkt_seq_) {
+      LOG_ERROR("BINLOG_DUMP seq is not expected", K(pre_seq_), K(meta_analyzer_.get_meta()));
+    } else {
+      LOG_DEBUG("check binlog dump seq pass", K(pre_seq_), K(meta_analyzer_.get_meta().pkt_seq_));
+    }
+    pre_seq_ = meta_analyzer_.get_meta().pkt_seq_;
+  }
+
   // empty response packet, OB_MYSQL_COM_STATISTICS and multi packet can not read type
   if (OB_LIKELY(!is_in_multi_pkt_)
       && OB_LIKELY(OB_MYSQL_COM_STATISTICS != result.get_cmd())

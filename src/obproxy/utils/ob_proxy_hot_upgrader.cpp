@@ -42,9 +42,12 @@ void ObHotUpgraderInfo::reset()
   last_sub_status_ = HU_STATUS_NONE;
   is_parent_ = false;
   user_rejected_ = USER_TYPE_NONE;
+  is_active_for_rolling_upgrade_ = true;
   need_conn_accept_ = true;
   graceful_exit_end_time_ = 0;
   graceful_exit_start_time_ = 0;
+  graceful_offline_end_time_ = 0;
+  graceful_offline_start_time_ = 0;
   active_client_vc_count_ = -1;
   upgrade_version_ = -1;
   argc_ = 0;

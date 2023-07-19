@@ -36,6 +36,7 @@ public:
   ObTargetDbServer& operator=(const ObTargetDbServer &other) {
     if (this != &other) {
       reset();
+      obproxy_addr_ = other.obproxy_addr_;
       // other.target_db_server_buf_len_ - 1 to minus last '\0'
       init(other.target_db_server_buf_, other.target_db_server_buf_len_ - 1);
     }
@@ -60,14 +61,14 @@ public:
   inline bool is_init() const { return is_init_; }
   inline bool is_empty() const { return is_init_? target_db_server_.empty() : true; }
   inline void reuse() { is_rand_ = false; last_failed_idx_ = -1; }
-
+  inline void set_obproxy_addr(const sockaddr &sa) { net::ops_ip_copy(obproxy_addr_, sa); }
 private:
   bool is_init_;
   bool is_rand_;
   int64_t last_failed_idx_;
   char* target_db_server_buf_;
   uint64_t target_db_server_buf_len_;
-
+  net::ObIpEndpoint obproxy_addr_;
   ObTargetDbServerArray  target_db_server_;
   common::ObSEArray<int8_t, 4L> target_db_server_weight_;
 };

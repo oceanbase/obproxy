@@ -38,12 +38,13 @@
 #include "cmd/ob_internal_cmd_processor.h"
 
 static const char *config_name_array[] = {"proxy_route_policy", "proxy_idc_name", "enable_cloud_full_username",
-                                          "enable_client_ssl", "enable_server_ssl",
+                                          "enable_client_ssl", "enable_server_ssl", "target_db_server",
                                           "obproxy_read_consistency", "obproxy_read_only",
                                           "proxy_tenant_name", "rootservice_cluster_name",
                                           "enable_read_write_split", "enable_transaction_split",
                                           "target_db_server", "observer_sys_password",
-                                          "observer_sys_password1"};
+                                          "observer_sys_password1", "obproxy_force_parallel_query_dop",
+                                          "read_stale_retry_interval", "ob_max_read_stale_time"};
 
 static const char *EXECUTE_SQL = 
     "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
@@ -127,11 +128,11 @@ int ObProxyConfigTableProcessor::execute(void *arg)
       ret = OB_INVALID_ARGUMENT;
       LOG_WARN("fields is null unexpected", K(ret));
     } else if (params->stmt_type_ == OBPROXY_T_REPLACE) {
-      if (OB_FAIL(get_global_proxy_config_table_processor().set_proxy_config(params->fields_))) {
+      if (OB_FAIL(get_global_proxy_config_table_processor().set_proxy_config(params->fields_, true))) {
         LOG_WARN("set proxy config failed", K(ret));
       }
     } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
-      if (OB_FAIL(get_global_proxy_config_table_processor().delete_proxy_config(params->fields_))) {
+      if (OB_FAIL(get_global_proxy_config_table_processor().delete_proxy_config(params->fields_, true))) {
         LOG_WARN("delete proxy config failed", K(ret));
       }
     } else {
@@ -145,17 +146,36 @@ int ObProxyConfigTableProcessor::execute(void *arg)
 
 int ObProxyConfigTableProcessor::commit(void *arg, bool is_success)
 {
-  UNUSED(arg);
+  int ret = OB_SUCCESS;
   if (is_success) {
-    get_global_proxy_config_table_processor().inc_index();
     get_global_proxy_config_table_processor().inc_config_version();
+    ObCloudFnParams *params = reinterpret_cast<ObCloudFnParams*>(arg);
+    if (NULL == params->fields_) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WARN("fields is null unexpected", K(ret));
+    } else if (params->stmt_type_ == OBPROXY_T_REPLACE) {
+      if (OB_FAIL(get_global_proxy_config_table_processor().set_proxy_config(params->fields_, false))) {
+        LOG_WARN("set proxy config failed", K(ret));
+      }
+    } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
+      if (OB_FAIL(get_global_proxy_config_table_processor().delete_proxy_config(params->fields_, false))) {
+        LOG_WARN("delete proxy config failed", K(ret));
+      }
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("unexpected stmt type", K(params->stmt_type_), K(ret));
+    }
+    if (OB_FAIL(ret)) {
+      ret = OB_SUCCESS;
+      get_global_proxy_config_table_processor().inc_index();
+      get_global_proxy_config_table_processor().set_need_rebuild_config_map(true);
+    }
   } else {
+    get_global_proxy_config_table_processor().set_need_rebuild_config_map(true);
     LOG_WARN("proxy config commit failed", K(is_success));
   }
 
   get_global_proxy_config_table_processor().clear_execute_sql();
-  get_global_proxy_config_table_processor().clean_hashmap(
-    get_global_proxy_config_table_processor().get_backup_hashmap());
 
   return OB_SUCCESS;
 }
@@ -235,7 +255,7 @@ int ObProxyConfigTableProcessor::backup_hashmap_with_lock()
   return ret;
 }
 
-int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
+int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backup)
 {
   int ret = OB_SUCCESS;
   ObProxyConfigItem *item = NULL;
@@ -243,7 +263,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
   if (OB_ISNULL(arg)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid argument", K(ret));
-  } else if (OB_FAIL(backup_hashmap_with_lock())) {
+  } else if (need_rebuild_config_map_ && OB_FAIL(backup_hashmap_with_lock())) {
     LOG_WARN("backup hashmap failed", K(ret));
   } else if (OB_ISNULL(item = op_alloc(ObProxyConfigItem))) {
     ret = OB_ERR_UNEXPECTED;
@@ -330,10 +350,11 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
         ret = OB_NOT_SUPPORTED;
         LOG_WARN("multi level config not supported", K(item), K(ret));
       } else {
-        ProxyConfigHashMap &backup_map = proxy_config_map_array_[(index_ + 1) % 2];
+        int64_t index = is_backup ? (index_ + 1) % 2 : index_;
+        ProxyConfigHashMap &config_map = proxy_config_map_array_[index];
         // Unique_set needs to be guaranteed to be the last step,
         // and the previous failure needs to release the item memory
-        ObProxyConfigItem* tmp_item = backup_map.remove(*item);
+        ObProxyConfigItem* tmp_item = config_map.remove(*item);
         if (NULL != tmp_item) {
           tmp_item->destroy();
           tmp_item = NULL;
@@ -341,7 +362,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
 
         // need_sync_to_file_ indicates that it is not a command set by alter proxyconfig,
         // but a configuration item set by proxy_config
-        if (need_sync_to_file_) {
+        if (need_sync_to_file_ && is_backup) {
           if ((0 == strcasecmp("obproxy_sys_password", item->config_item_.name())
               || 0 == strcasecmp("observer_sys_password", item->config_item_.name())
               || 0 == strcasecmp("observer_sys_password1", item->config_item_.name()))
@@ -377,10 +398,10 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
           }
         }
 
-        if (OB_SUCC(ret) && need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr()) &&
+        if (OB_SUCC(ret) && !is_backup && need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr()) &&
             OB_FAIL(alter_proxy_config(item->config_item_.name(), item->config_item_.str()))) {
           LOG_WARN("alter proxyconfig failed", K(ret));
-        } else if (OB_FAIL(backup_map.unique_set(item))) {
+        } else if (OB_FAIL(config_map.unique_set(item))) {
           LOG_WARN("backup map unique_set failed", K(ret));
         }
       }
@@ -396,7 +417,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg)
   return ret;
 }
 
-int ObProxyConfigTableProcessor::delete_proxy_config(void *arg)
+int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_backup)
 {
   // todo: Intercept and delete global configuration items
   int ret = OB_SUCCESS;
@@ -404,13 +425,14 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg)
   if (OB_ISNULL(arg)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("invalid argument", K(ret));
-  } else if (OB_FAIL(backup_hashmap_with_lock())) {
+  } else if (need_rebuild_config_map_ && OB_FAIL(backup_hashmap_with_lock())) {
     LOG_WARN("backup hashmap failed", K(ret));
   } else {
     SqlFieldResult *fields = static_cast<SqlFieldResult*>(arg);
-    ProxyConfigHashMap &backup_map = proxy_config_map_array_[(index_ + 1) % 2];
-    ProxyConfigHashMap::iterator last = backup_map.end();
-    for (ProxyConfigHashMap::iterator it = backup_map.begin(); OB_SUCC(ret) && it != last;) {
+    int64_t index = is_backup ? (index_ + 1) % 2 : index_;
+    ProxyConfigHashMap &config_map = proxy_config_map_array_[index];
+    ProxyConfigHashMap::iterator last = config_map.end();
+    for (ProxyConfigHashMap::iterator it = config_map.begin(); OB_SUCC(ret) && it != last;) {
       ObProxyConfigItem &item = *it;
       bool need_delete = true;
       ++it;
@@ -497,11 +519,12 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg)
       }
 
       if (OB_SUCC(ret) && need_delete) {
-        if (item.config_level_ == "LEVEL_GLOBAL") {
+        const char *config_level_str = item.config_level_.ptr();
+        if (0 == strcasecmp("LEVEL_GLOBAL", config_level_str)) {
           ret = OB_NOT_SUPPORTED;
           LOG_WARN("delete global config unsupported", K(ret));
         } else {
-          backup_map.remove(&item);
+          config_map.remove(&item);
           item.destroy();
         }
       }

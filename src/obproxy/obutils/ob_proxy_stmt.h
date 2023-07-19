@@ -135,6 +135,7 @@ public:
   SqlFieldResult& get_dml_field_result() { return dml_field_results_; }
 
   bool has_unsupport_expr_type() const { return has_unsupport_expr_type_; }
+  bool has_unsupport_expr_type_for_config() const { return has_unsupport_expr_type_for_config_; }
   ExprMap& get_table_exprs_map() { return table_exprs_map_; }
   TablePosArray& get_table_pos_array() { return table_pos_array_; }
   DbTablePosArray& get_db_table_pos_array() { return db_table_pos_array_; }
@@ -185,6 +186,7 @@ public:
 protected:
   bool is_inited_;
   bool has_unsupport_expr_type_;
+  bool has_unsupport_expr_type_for_config_;
   ExprMap table_exprs_map_;
   ExprMap alias_table_map_;
   common::ObSEArray<ObProxyExprTablePos, 4> table_pos_array_;
@@ -259,7 +261,7 @@ public:
 class ObProxyInsertStmt : public ObProxyDMLStmt
 {
 public:
-  ObProxyInsertStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
+  ObProxyInsertStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator), row_count_(0) {}
   ~ObProxyInsertStmt() {}
   int handle_parse_result(const ParseResult &parse_result);
   int to_sql_string(common::ObSqlString& sql_string)
@@ -267,12 +269,15 @@ public:
     UNUSED(sql_string);
     return common::OB_SUCCESS;
   }
+  int64_t get_row_count() const { return row_count_; }
 private:
   int handle_single_table_insert(ParseNode *node);
   int handle_insert_into(ParseNode *node);
   int handle_value_list(ParseNode *node);
   int handle_column_list(ParseNode *node);
   int handle_value_vector(ParseNode *node);
+private:
+  int64_t row_count_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyInsertStmt);
 };

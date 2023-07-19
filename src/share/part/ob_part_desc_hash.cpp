@@ -80,7 +80,7 @@ int ObPartDescHash::get_part(ObNewRange &range,
       } else /*if (is_mysql_mode_) */ {
         ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, CS_TYPE_INVALID);
         if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, cs_types_[i], cast_ctx, *src_obj, *src_obj))) {
-          COMMON_LOG(WARN, "failed to cast to ObIntType", K(src_obj), K(ret));
+          COMMON_LOG(DEBUG, "failed to cast to ObIntType", K(src_obj), K(ret));
         }
         break;
       }

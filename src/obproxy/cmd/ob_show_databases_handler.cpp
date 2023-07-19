@@ -15,6 +15,8 @@
 #include "cmd/ob_show_databases_handler.h"
 #include "proxy/shard/obproxy_shard_utils.h"
 #include "lib/container/ob_array_iterator.h"
+#include "dbconfig/ob_proxy_db_config_info.h"
+#include "obproxy/proxy/mysqllib/ob_proxy_session_info.h"
 
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::proxy;
@@ -40,13 +42,14 @@ ObShowDatabasesHandler::ObShowDatabasesHandler(ObMIOBuffer *buf, ObCmdInfo &info
 {
 }
 
-int ObShowDatabasesHandler::handle_show_databases(const ObString &logic_tenant_name)
+int ObShowDatabasesHandler::handle_show_databases(const ObString &logic_tenant_name,
+                                                  ObMysqlClientSession &client_session)
 {
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(dump_database_header())) {
     WARN_CMD("fail to dump databases header", K(ret));
-  } else if (OB_FAIL(dump_database(logic_tenant_name))) {
+  } else if (OB_FAIL(dump_database(logic_tenant_name, client_session))) {
     WARN_CMD("fail to dump databases", K(ret));
   } else if (OB_FAIL(encode_eof_packet())) {
     WARN_CMD("fail to encode eof packet", K(ret));
@@ -82,10 +85,12 @@ int ObShowDatabasesHandler::dump_database_header()
   return ret;
 }
 
-int ObShowDatabasesHandler::dump_database(const ObString &logic_tenant_name)
+int ObShowDatabasesHandler::dump_database(const ObString &logic_tenant_name,
+                                          ObMysqlClientSession &client_session)
 {
   int ret = OB_SUCCESS;
   typedef ObArray<ObString> ObStringArray;
+
   ObStringArray db_names;
   ObNewRow row;
   ObObj cells[OB_CC_MAX_DATABASE_COLUMN_ID];
@@ -93,13 +98,19 @@ int ObShowDatabasesHandler::dump_database(const ObString &logic_tenant_name)
   if (OB_FAIL(ObProxyShardUtils::get_all_database(logic_tenant_name, db_names))) {
     WARN_CMD("fail to get all databases", K(logic_tenant_name), K(ret));
   } else {
-    for (ObStringArray::iterator it = db_names.begin(); it != db_names.end(); it++) {
-      cells[OB_CC_NAME].set_varchar(*it);
-
-      row.cells_ = cells;
-      row.count_ = OB_CC_MAX_DATABASE_COLUMN_ID;
-      if (OB_FAIL(encode_row_packet(row))) {
-        WARN_CMD("fail to encode row packet", K(row), K(ret));
+    for (ObStringArray::iterator it = db_names.begin(); OB_SUCC(ret) && it != db_names.end(); it++) {
+      ObString db_name = *it;
+      if (OB_FAIL(ObProxyShardUtils::check_logic_db_priv_for_cur_user(logic_tenant_name,
+                                                                      client_session, db_name))) {
+        ret = OB_SUCCESS;
+        LOG_DEBUG("no privilege to show this db", K(db_name), K(ret));
+      } else {
+        cells[OB_CC_NAME].set_varchar(*it);
+        row.cells_ = cells;
+        row.count_ = OB_CC_MAX_DATABASE_COLUMN_ID;
+        if (OB_FAIL(encode_row_packet(row))) {
+          WARN_CMD("fail to encode row packet", K(row), K(ret));
+        }
       }
     }
   }
@@ -107,7 +118,8 @@ int ObShowDatabasesHandler::dump_database(const ObString &logic_tenant_name)
 }
 
 int ObShowDatabasesHandler::show_databases_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
-                                                        const ObString &logic_tenant_name)
+                                                        const ObString &logic_tenant_name,
+                                                        ObMysqlClientSession &client_session)
 {
   int ret = OB_SUCCESS;
   ObShowDatabasesHandler *handler = NULL;
@@ -117,7 +129,7 @@ int ObShowDatabasesHandler::show_databases_cmd_callback(ObMIOBuffer *buf, ObCmdI
     ERROR_CMD("fail to new ObShowDatabasesHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
     WARN_CMD("fail to init for ObShowDatabasesHandler");
-  } else if (OB_FAIL(handler->handle_show_databases(logic_tenant_name))) {
+  } else if (OB_FAIL(handler->handle_show_databases(logic_tenant_name, client_session))) {
     DEBUG_CMD("succ to schedule ObShowDatabasesHandler");
   }
 

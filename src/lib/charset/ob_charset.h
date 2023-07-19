@@ -31,6 +31,7 @@ enum ObCharsetType
   CHARSET_UTF16 = 4,
   CHARSET_GB18030 = 5,
   CHARSET_LATIN1 = 6,
+  CHARSET_GB18030_2022 = 7,
   CHARSET_MAX,
 };
 
@@ -47,9 +48,45 @@ enum ObCollationType
   CS_TYPE_BINARY = 63,
   CS_TYPE_GBK_BIN = 87,
   CS_TYPE_UTF16_UNICODE_CI = 101,
+  CS_TYPE_GB18030_2022_BIN = 216, // unused in mysql
+  CS_TYPE_GB18030_2022_PINYIN_CI = 217, // unused in mysql
+  CS_TYPE_GB18030_2022_PINYIN_CS = 218, // unused in mysql
+  CS_TYPE_GB18030_2022_RADICAL_CI = 219, // unused in mysql
+  CS_TYPE_GB18030_2022_RADICAL_CS = 220, // unused in mysql
+  CS_TYPE_GB18030_2022_STROKE_CI = 221, // unused in mysql
+  CS_TYPE_GB18030_2022_STROKE_CS = 222, // unused in mysql
   CS_TYPE_UTF8MB4_UNICODE_CI = 224,
   CS_TYPE_GB18030_CHINESE_CI = 248,
   CS_TYPE_GB18030_BIN = 249,
+  CS_TYPE_GB18030_CHINESE_CS = 251,
+
+  CS_TYPE_EXTENDED_MARK = 256, //the cs types below can not used for storing
+  CS_TYPE_UTF8MB4_0900_BIN, //309 in mysql 8.0
+
+  //pinyin order (occupied)
+  CS_TYPE_PINYIN_BEGIN_MARK,
+  CS_TYPE_UTF8MB4_ZH_0900_AS_CS, //308 in mysql 8.0
+  CS_TYPE_GBK_ZH_0900_AS_CS,
+  CS_TYPE_UTF16_ZH_0900_AS_CS,
+  CS_TYPE_GB18030_ZH_0900_AS_CS,
+  CS_TYPE_latin1_ZH_0900_AS_CS, //invaid, not really used
+  CS_TYPE_GB18030_2022_ZH_0900_AS_CS,
+  //radical-stroke order
+  CS_TYPE_RADICAL_BEGIN_MARK,
+  CS_TYPE_UTF8MB4_ZH2_0900_AS_CS,
+  CS_TYPE_GBK_ZH2_0900_AS_CS,
+  CS_TYPE_UTF16_ZH2_0900_AS_CS,
+  CS_TYPE_GB18030_ZH2_0900_AS_CS,
+  CS_TYPE_latin1_ZH2_0900_AS_CS ,//invaid
+  CS_TYPE_GB18030_2022_ZH2_0900_AS_CS,
+  //stroke order
+  CS_TYPE_STROKE_BEGIN_MARK,
+  CS_TYPE_UTF8MB4_ZH3_0900_AS_CS,
+  CS_TYPE_GBK_ZH3_0900_AS_CS,
+  CS_TYPE_UTF16_ZH3_0900_AS_CS,
+  CS_TYPE_GB18030_ZH3_0900_AS_CS,
+  CS_TYPE_latin1_ZH3_0900_AS_CS, //invaid
+  CS_TYPE_GB18030_2022_ZH3_0900_AS_CS,
   CS_TYPE_MAX,
 };
 /*
@@ -103,8 +140,8 @@ private:
   virtual ~ObCharset() {};
 
 public:
-  static const int64_t CHARSET_WRAPPER_COUNT = 6;
-  static const int64_t COLLATION_WRAPPER_COUNT = 13;
+  static const int64_t CHARSET_WRAPPER_COUNT = 7;
+  static const int64_t COLLATION_WRAPPER_COUNT = 21;
 
   static double strntod(const char *str,
                         size_t str_len,
@@ -233,6 +270,12 @@ public:
   static bool is_valid_collation(ObCharsetType charset_type, ObCollationType coll_type);
   static bool is_valid_collation(int64_t coll_type_int);
   static bool is_valid_charset(int64_t cs_type_int);
+  static bool is_gb18030_2022(int64_t coll_type_int) {
+    ObCollationType coll_type = static_cast<ObCollationType>(coll_type_int);
+    return CS_TYPE_GB18030_2022_BIN <= coll_type && coll_type <= CS_TYPE_GB18030_2022_STROKE_CS;
+  }
+  
+  static bool is_gb_charset(int64_t cs_type_int);
   static ObCharsetType charset_type_by_coll(ObCollationType coll_type);
   static int charset_name_by_coll(const ObString &coll_name, common::ObString &cs_name);
   static int charset_name_by_coll(ObCollationType coll_type, common::ObString &cs_name);
@@ -316,7 +359,8 @@ public:
                              const ObCollationType to_type,
                              char *to_str,
                              uint32_t to_len,
-                             uint32_t &result_len);
+                             uint32_t &result_len,
+                             bool trim_incomplete_tail = true);
 public:
   static const int64_t VALID_COLLATION_TYPES = 3;
 private:

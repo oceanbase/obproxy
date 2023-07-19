@@ -36,9 +36,6 @@ int ObProxyOperatorCont::init(ObProxyOperator* operator_root, uint8_t seq, const
   } else if (OB_ISNULL(buf_ = new_empty_miobuffer())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WARN("fail to new_empty_miobuffer for buf", K(ret));
-  } else if (OB_ISNULL(buf_reader_ = buf_->alloc_reader())) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to allocate buffer reader", K(ret));
   } else {
     operator_root_ = operator_root;
     timeout_ms_ = timeout_ms;
@@ -162,13 +159,23 @@ int ObProxyOperatorCont::finish_task(void *data)
   int ret = OB_SUCCESS;
 
   ObProxyResultResp *result_resp = reinterpret_cast<ObProxyResultResp*>(data);
-  if (result_resp->is_resultset_resp()) {
-    if (OB_FAIL(build_executor_resp(buf_, seq_, result_resp))) {
-      LOG_WARN("fail to build shard scan resp", K(ret));
+  if (OB_ISNULL(buf_reader_ = buf_->alloc_reader())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("fail to allocate buffer reader", K(ret));
+  } else {
+    if (result_resp->is_resultset_resp()) {
+      if (OB_FAIL(build_executor_resp(buf_, seq_, result_resp))) {
+        LOG_WARN("fail to build shard scan resp", K(ret));
+      }
+    } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*buf_, seq_, result_resp->get_err_code(), result_resp->get_err_msg()))) {
+      LOG_WARN("fail to encode err pacekt buf", K_(seq), "errmsg", result_resp->get_err_msg(),
+               "errcode", result_resp->get_err_code(), K(ret));
     }
-  } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*buf_, seq_, result_resp->get_err_code(), result_resp->get_err_msg()))) {
-    LOG_WARN("fail to encode err pacekt buf", K_(seq), "errmsg", result_resp->get_err_msg(),
-             "errcode", result_resp->get_err_code(), K(ret));
+  }
+
+  if (OB_FAIL(ret) && OB_LIKELY(NULL != buf_reader_)) {
+    buf_reader_->dealloc();
+    buf_reader_ = NULL;
   }
 
   return ret;
