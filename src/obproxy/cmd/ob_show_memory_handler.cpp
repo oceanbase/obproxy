@@ -111,7 +111,7 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
     }
     if (OB_SUCC(ret)) {
       // dump memory allocated by glibc
-      struct mallinfo mi = mallinfo();
+      struct mallinfo2 mi = mallinfo2();
       int64_t allocated = mi.arena + mi.hblkhd;
       int64_t used = allocated - mi.fordblks;
       if (OB_FAIL(dump_mod_memory("GLIBC", "user", allocated, used, mi.hblks))) {

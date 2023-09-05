@@ -94,7 +94,7 @@ void ObModSet::print_mod_memory_usage(bool print_glibc) const
     _OB_LOG(INFO, "=== malloc_stats ===");
     malloc_stats();
     _OB_LOG(INFO, "=== main heap info ===");
-    struct mallinfo info = mallinfo();
+    struct mallinfo2 info = mallinfo2();
     _OB_LOG(INFO, "mmap_chunks=%d", info.hblks);
     _OB_LOG(INFO, "mmap_bytes=%d", info.hblkhd);
     _OB_LOG(INFO, "sbrk_sys_bytes=%d", info.arena);

@@ -909,7 +909,7 @@ void ObProxyMain::print_memory_usage()
 
 void ObProxyMain::print_glibc_memory_usage()
 {
-  struct mallinfo mi = mallinfo();
+  struct mallinfo2 mi = mallinfo2();
   int64_t hold = mi.arena + mi.hblkhd;
   int64_t used = hold - mi.fordblks;
   int64_t count = mi.hblks;

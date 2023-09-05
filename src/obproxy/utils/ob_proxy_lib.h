@@ -91,7 +91,7 @@ struct ifafilt;
 typedef unsigned int in_addr_t;
 #endif
 #include <sys/sysinfo.h>
-#include <sys/sysctl.h>
+//#include <sys/sysctl.h>
 #include <dlfcn.h>
 #include <math.h>
 #include <float.h>
