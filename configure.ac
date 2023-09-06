@@ -64,8 +64,8 @@
     #check el9, add -DEL9_PlATFORM for el9
     is_el9=`cat /proc/version | grep el9`
     if test "$is_el9" != ""; then
-        AM_CXXFLAGS="${AM_CXXFLAGS} -DEL9_PlATFORM"
-        AM_CXXFLAGS="${AM_CXXFLAGS} -DEL9_PlATFORM"
+        AM_CXXFLAGS="${AM_CXXFLAGS} -DEL9_PLATFORM"
+        AM_CFLAGS="${AM_CFLAGS} -DEL9_PLATFORM"
     fi
 
     #check gcc version, add -Wno-ignored-qualifiers flag for gcc version greater than 4.3.0
