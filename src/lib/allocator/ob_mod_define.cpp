@@ -94,6 +94,7 @@ void ObModSet::print_mod_memory_usage(bool print_glibc) const
     _OB_LOG(INFO, "=== malloc_stats ===");
     malloc_stats();
     _OB_LOG(INFO, "=== main heap info ===");
+#ifdef EL9_PLATFORM
     struct mallinfo2 info = mallinfo2();
     _OB_LOG(INFO, "mmap_chunks=%ld", info.hblks);
     _OB_LOG(INFO, "mmap_bytes=%ld", info.hblkhd);
@@ -102,7 +103,18 @@ void ObModSet::print_mod_memory_usage(bool print_glibc) const
     _OB_LOG(INFO, "sbrk_not_in_use_chunks=%ld", info.ordblks);
     _OB_LOG(INFO, "sbrk_not_in_use_chunk_bytes=%ld", info.fordblks);
     _OB_LOG(INFO, "sbrk_top_most_releasable_chunk_bytes=%ld", info.keepcost);
+#else
+    struct mallinfo info = mallinfo();
+    _OB_LOG(INFO, "mmap_chunks=%d", info.hblks);
+    _OB_LOG(INFO, "mmap_bytes=%d", info.hblkhd);
+    _OB_LOG(INFO, "sbrk_sys_bytes=%d", info.arena);
+    _OB_LOG(INFO, "sbrk_used_chunk_bytes=%d", info.uordblks);
+    _OB_LOG(INFO, "sbrk_not_in_use_chunks=%d", info.ordblks);
+    _OB_LOG(INFO, "sbrk_not_in_use_chunk_bytes=%d", info.fordblks);
+    _OB_LOG(INFO, "sbrk_top_most_releasable_chunk_bytes=%d", info.keepcost);
+#endif
     _OB_LOG(INFO, "=== detailed malloc_info ===");
+
     //malloc_info(0, stderr);
   }
   ObObjFreeListList::get_freelists().dump();

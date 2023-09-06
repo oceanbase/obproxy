@@ -909,7 +909,11 @@ void ObProxyMain::print_memory_usage()
 
 void ObProxyMain::print_glibc_memory_usage()
 {
+#ifdef EL9_PLATFORM
   struct mallinfo2 mi = mallinfo2();
+#else
+  struct mallinfo mi = mallinfo();
+#endif
   int64_t hold = mi.arena + mi.hblkhd;
   int64_t used = hold - mi.fordblks;
   int64_t count = mi.hblks;

@@ -991,7 +991,7 @@ int ObCacheCleaner::do_delete_cluster_resource()
         cr->destroy();
       }
       LOG_INFO("this thread has clean cluster resource complete",
-               "thread_id", gettid(), KPC(cr));
+               "thread_id", GETTID(), KPC(cr));
       cr_actor->free(); // will dec cr ref
       cr_actor = NULL;
       cr = NULL;

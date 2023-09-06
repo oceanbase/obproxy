@@ -35,7 +35,7 @@ int64_t ObRandom::rand(const int64_t a, const int64_t b)
 {
   static __thread uint16_t seed[3] = {0, 0, 0};
   if (0 == seed[0] && 0 == seed[1] && 0 == seed[2]) {
-    seed[0] = static_cast<uint16_t>(gettid());
+    seed[0] = static_cast<uint16_t>(GETTID());
     seed[1] = seed[0];
     seed[2] = seed[1];
     seed48(seed);

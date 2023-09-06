@@ -61,6 +61,13 @@
         AM_CFLAGS="${AM_CFLAGS} -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
     fi
 
+    #check el9, add -DEL9_PlATFORM for el9
+    is_el9=`cat /proc/version | grep el9`
+    if test "$is_el9" != ""; then
+        AM_CXXFLAGS="${AM_CXXFLAGS} -DEL9_PlATFORM"
+        AM_CXXFLAGS="${AM_CXXFLAGS} -DEL9_PlATFORM"
+    fi
+
     #check gcc version, add -Wno-ignored-qualifiers flag for gcc version greater than 4.3.0
     GCC_VERSION=`$CC -dumpfullversion -dumpversion`
     if test $? -eq 0; then
