@@ -1216,7 +1216,7 @@ inline void reset_tid_cache()
   get_tid_cache() = -1;
 }
 
-inline int64_t gettid()
+inline int64_t gettid_ob()
 {
   int64_t &tid = get_tid_cache();
   if (OB_UNLIKELY(tid <= 0)) {
@@ -1224,6 +1224,6 @@ inline int64_t gettid()
   }
   return tid;
 }
-#define GETTID() gettid()
+#define GETTID() gettid_ob()
 
 #endif // OCEANBASE_COMMON_DEFINE_H_
