@@ -307,7 +307,7 @@ public:
   DEF_BOOL(enable_transaction_internal_routing, "true", "if enabled, proxy will route the dml statement in a transaction to different servers", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_weak_reroute, "true", "if this and protocol_v2 enabled, proxy will reroute weak read request when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_weak_reroute, "true", "if this and protocol_v2 enabled, proxy will reroute weak read request when server ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_cached_server, "true", "if enabled, use cached server session when no table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
@@ -322,6 +322,7 @@ public:
   // target db servers
   DEF_STR(target_db_server, "", "proxy will choose to route target db server addr forcibly, format ip0:port0,ip1:port1,ip2:port2;ip3:port3;ip4:port4", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
+  DEF_INT(route_diagnosis_level, "2", "[0,4]", "'0' disable route diagnosis, greater level will collect more dedicated info of route", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   //debug
   DEF_STR(test_server_addr, "", "proxy will choose this addr(if not empty) as observer addr forcibly, format ip1:sql_port1;ip2:sql_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_STR(server_routing_mode, "oceanbase", "server routing mode: 1.oceanbase(default mode); 2.random; 3.mock; 4.mysql", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
@@ -391,12 +392,11 @@ public:
   DEF_BOOL(enable_full_username, "false", "used for non-cloud user, if set true, username must have tenant and cluster", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
   DEF_BOOL(skip_proxyro_check, "false", "used for proxro@sys, if set false, access denied", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
-  DEF_BOOL(skip_proxy_sys_private_check, "true", "skip_proxy_sys_private_check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  // SSL related config
-  DEF_BOOL(enable_client_ssl, "false", "if enabled, proxy will try best to connect client with ssl",
-             CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_server_ssl, "false", "if enabled, proxy will try best to connect server whith ssl",
-            CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(skip_proxy_sys_private_check, "false", "skip_proxy_sys_private_check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  // SSL 配置相关，包括开关和 SSL 相关属性，由于历史兼容性问题，设置密钥证书需要通过 ssl_config 表
+  DEF_BOOL(enable_client_ssl, "false", "if enabled, proxy will try best to connect client with ssl", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_server_ssl, "false", "if enabled, proxy will try best to connect server whith ssl", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(ssl_attributes, "", "store ssl config to control ssl behavior, works for new connection", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   // QOS
   DEF_BOOL(enable_qos, "false", "if enabled, proxy will be able to qos", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -497,7 +497,8 @@ public:
 
   // binlog service
   DEF_STR(binlog_service_ip, "", "binlog service ip, format ip1:sql_port1", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_binlog_service, "false", "if enabled, obproxy will send binlog request to OBLogProxy",  CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_binlog_service, "true", "if enabled, obproxy will send binlog request to OBLogProxy",  CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(init_sql, "", "proxy will send init sql to observer after login success", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
 
   // session info verification with server
   DEF_BOOL(enable_session_info_verification, "false", "if enabled, obproxy will send last server session info to the observer which is different to the last server session for session verification", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
@@ -505,6 +506,7 @@ public:
   DEF_TIME(read_stale_retry_interval, "5s", "[0, 600s]", "read stale retry interval", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_INT(ob_max_read_stale_time, "-1", "[-1,]", "max read stale time, unit us, -1 means close server read stale check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_TIME(read_stale_remove_interval, "6h", "[0s, 1d]", "read stale feedback remove interval", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_connection_diagnosis, "true", "if enable, obproxy will record disconenction info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 };
 
 ObProxyConfig &get_global_proxy_config();

@@ -51,7 +51,9 @@ void ObMysqlTransactionAnalyzer::reset()
 void ObMysqlTransactionAnalyzer::set_server_cmd(const ObMySQLCmd cmd,
                                                 const ObMysqlProtocolMode mode,
                                                 const bool enable_extra_ok_packet_for_stats,
-                                                const bool is_current_in_trans)
+                                                const bool is_current_in_trans,
+                                                const bool is_autocommit,
+                                                const bool is_binlog_related)
 {
   //when set server cmd, result_ must reset
   result_.reset();
@@ -65,6 +67,7 @@ void ObMysqlTransactionAnalyzer::set_server_cmd(const ObMySQLCmd cmd,
   result_.set_mysql_mode(mode);
   result_.set_enable_extra_ok_packet_for_stats(enable_extra_ok_packet_for_stats);
   analyzer_.set_mysql_mode(mode);
+  analyzer_.set_binlog_relate(is_current_in_trans, is_autocommit, is_binlog_related);
 }
 
 int ObMysqlTransactionAnalyzer::analyze_trans_response(const ObResultBuffer &buf,
@@ -303,7 +306,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
                   "status_flag", server_status.flags_,
                   K_(is_resultset_resp));
         if ((!is_resultset_resp_ && OB_MYSQL_COM_BINLOG_DUMP != result_.get_cmd() && OB_MYSQL_COM_BINLOG_DUMP_GTID != result_.get_cmd())
-            && OB_FAIL(analyze_trans_response(reader, resp))) {
+              && OB_FAIL(analyze_trans_response(reader, resp))) {
           result.status_ = ANALYZE_ERROR;
         }
       }

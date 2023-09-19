@@ -133,12 +133,13 @@ int ObProxyPartMgr::get_first_part(ObNewRange &range,
                                    ObIAllocator &allocator,
                                    ObIArray<int64_t> &part_ids,
                                    ObPartDescCtx &ctx,
-                                   ObIArray<int64_t> &tablet_ids)
+                                   ObIArray<int64_t> &tablet_ids,
+                                   int64_t &part_idx)
 {
   int ret = OB_SUCCESS;
 
   if (OB_NOT_NULL(first_part_desc_)) {
-    ret = first_part_desc_->get_part(range, allocator, part_ids, ctx, tablet_ids);
+    ret = first_part_desc_->get_part(range, allocator, part_ids, ctx, tablet_ids, part_idx);
   } else {
     ret = OB_INVALID_ARGUMENT;
   }
@@ -217,7 +218,8 @@ int ObProxyPartMgr::get_sub_part(ObNewRange &range,
                                  ObPartDesc *sub_part_desc_ptr,
                                  ObIArray<int64_t> &part_ids,
                                  ObPartDescCtx &ctx,
-                                 ObIArray<int64_t> &tablet_ids)
+                                 ObIArray<int64_t> &tablet_ids,
+                                 int64_t &sub_part_idx)
 {
   int ret = OB_SUCCESS;
 
@@ -225,7 +227,7 @@ int ObProxyPartMgr::get_sub_part(ObNewRange &range,
     ret = OB_INVALID_ARGUMENT;
     LOG_WARN("fail to get sub part, null ptr", K(ret));
   } else {
-    if (OB_FAIL(sub_part_desc_ptr->get_part(range, allocator, part_ids, ctx, tablet_ids))) {
+    if (OB_FAIL(sub_part_desc_ptr->get_part(range, allocator, part_ids, ctx, tablet_ids, sub_part_idx))) {
       LOG_WARN("fail to get sub part", K(sub_part_desc_ptr), K(ret));
     }
   }

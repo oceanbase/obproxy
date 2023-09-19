@@ -50,7 +50,8 @@ int ObPartDescList::get_part(ObNewRange &range,
                              ObIAllocator &allocator,
                              ObIArray<int64_t> &part_ids,
                              ObPartDescCtx &ctx,
-                             ObIArray<int64_t> &tablet_ids)
+                             ObIArray<int64_t> &tablet_ids,
+                             int64_t &part_idx)
 {
   int ret = OB_SUCCESS;
   ObNewRow src_row;
@@ -84,6 +85,7 @@ int ObPartDescList::get_part(ObNewRange &range,
           // if casted, then compare
           if (casted && src_row == part_array_[i].rows_.at(j)) {
             found = true;
+            part_idx = i;
             if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
               COMMON_LOG(WARN, "fail to push part id", K(ret));
             } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
@@ -96,6 +98,7 @@ int ObPartDescList::get_part(ObNewRange &range,
 
     if (!found && OB_INVALID_INDEX != default_part_array_idx_) {
       // if no row matches, use default partition
+      part_idx = default_part_array_idx_;
       COMMON_LOG(DEBUG, "will use default partition id", K(src_row), K(ret));
       if (OB_FAIL(part_ids.push_back(part_array_[default_part_array_idx_].part_id_))) {
         COMMON_LOG(WARN, "fail to push part id", K(ret));

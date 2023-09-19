@@ -211,19 +211,25 @@ public:
   bool is_oceanbase_mode() const { return OCEANBASE_MYSQL_PROTOCOL_MODE == mysql_mode_ || OCEANBASE_ORACLE_PROTOCOL_MODE == mysql_mode_; }
   bool is_mysql_mode() const { return STANDARD_MYSQL_PROTOCOL_MODE == mysql_mode_; }
   bool need_wait_more_data() const { return (next_read_len_ > 0); }
+  void set_binlog_relate(const bool is_in_trans, const bool is_autocommit, const bool is_binlog_related)
+  {
+    is_in_trans_ = is_in_trans;
+    is_autocommit_ = is_autocommit;
+    is_binlog_related_ = is_binlog_related;
+  }
 
 private:
   int analyze_prepare_ok_pkt(ObRespResult &result);
-  int analyze_ok_pkt(bool &is_in_trans);
-  int analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &is_in_trans, bool &is_last_eof_pkt);
+  int analyze_ok_pkt(bool &is_in_trans, ObBufferReader &buf_reader);
+  int analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &is_in_trans, bool &is_last_eof_pkt, ObBufferReader &buf_reader);
   int analyze_error_pkt(ObMysqlResp *resp);
   int analyze_hanshake_pkt(ObMysqlResp *resp);//extract connection id
 
   int read_pkt_hdr(ObBufferReader &buf_reader);
   int read_pkt_type(ObBufferReader &buf_reader, ObRespResult &result);
   int read_pkt_body(ObBufferReader &buf_reader, ObRespResult &result);
-  int analyze_resp_pkt(ObRespResult &result, ObMysqlResp *resp);
-  void handle_last_eof(uint32_t pkt_len);
+  int analyze_resp_pkt(ObRespResult &result, ObMysqlResp *resp, ObBufferReader &buf_reader);
+  void handle_last_eof(uint32_t pkt_len, ObBufferReader &buf_reader);
 
   int build_packet_content(obutils::ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> &content_buf);
 
@@ -240,6 +246,10 @@ private:
   // EOF, we should copy packet body data.
   obutils::ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> body_buf_;
   int64_t pre_seq_;
+  // for binlog to rewrite
+  bool is_in_trans_;
+  bool is_autocommit_;
+  bool is_binlog_related_;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlRespAnalyzer);
 }; // end of class ObMysqlRespAnalyzer
 
@@ -269,6 +279,9 @@ inline void ObMysqlRespAnalyzer::reset()
   meta_analyzer_.reset();
   body_buf_.reset();
   pre_seq_ = 0;
+  is_in_trans_ = false;
+  is_autocommit_ = true;
+  is_binlog_related_ = false;
 }
 
 } // end of namespace proxy

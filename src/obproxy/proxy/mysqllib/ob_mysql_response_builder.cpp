@@ -54,7 +54,7 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
   if (OB_FAIL(ObProxyCachedPackets::get_ok_packet(ok_packet, OB_OK_INTERNAL))) {
     LOG_WARN("fail to get thread cache ok packet", K(ret));
   } else {
-    const uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+    uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
     ok_packet->set_seq(seq);
 
     // default set of ok packet
@@ -301,6 +301,75 @@ int ObMysqlResponseBuilder::build_select_tx_ro_resp(ObMIOBuffer &mio_buf,
     LOG_WARN("fail to write kv resultset", K(ret));
   }
   
+  return ret;
+}
+
+int ObMysqlResponseBuilder::build_explain_route_resp(ObMIOBuffer &mio_buf,
+                                                    ObProxyMysqlRequest &client_request,
+                                                    ObMysqlClientSession &client_session,
+                                                    ObRouteDiagnosis *diagnosis,
+                                                    const ObProxyProtocol protocol,
+                                                    const bool is_in_trans)
+{
+  int ret = OB_SUCCESS;
+  ObClientSessionInfo &info = client_session.get_session_info();
+  
+  // get seq
+  uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+
+  // fill field
+  ObMySQLField field;
+  field.cname_ = "Route Plan";
+  field.type_ = OB_MYSQL_TYPE_LONGLONG;
+  field.charsetnr_ = OB_MYSQL_TYPE_VARCHAR;
+  field.flags_ = OB_MYSQL_BINARY_FLAG;
+
+  // fill filed value
+  ObObj route_plan;
+  char *plan_str = NULL;
+  static char disable[] = "Route diagnosis disabled\0";
+  static char not_support[] = "Route diagnosis not supports this query\0";
+  int64_t size = 1L << 20;
+  if (OB_NOT_NULL(diagnosis)) {
+    if (diagnosis->get_level() == 0) {
+      plan_str = disable;
+    } else if (!diagnosis->is_support_explain_route()) {
+      plan_str = not_support;
+    } else if (OB_ISNULL(plan_str = (char*) op_fixed_mem_alloc(size))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WARN("fail to alloc mem for route plan", K(size), K(ret));
+    } else {
+      diagnosis->to_format_string(plan_str, size);
+    }
+  } else {
+    plan_str = disable;
+  }
+  
+  if (OB_SUCC(ret)) {
+    route_plan.set_varchar(plan_str, (int) strlen(plan_str));
+    // get status flag
+    uint16_t status_flag = 0;
+    int64_t autocommit = info.get_cached_variables().get_autocommit();
+    if (0 != autocommit) {
+      status_flag |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+    }
+    if (is_in_trans) {
+      status_flag |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+    }
+
+    // encode to mio_buf
+    if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, protocol, seq,
+                                                        field, route_plan, status_flag))) {
+      LOG_WARN("fail to write kv resultset", K(ret));
+    }
+  }
+
+  if (OB_NOT_NULL(plan_str) && 
+      plan_str != disable &&
+      plan_str != not_support) {
+    op_fixed_mem_free(plan_str, size);
+  }
+
   return ret;
 }
 

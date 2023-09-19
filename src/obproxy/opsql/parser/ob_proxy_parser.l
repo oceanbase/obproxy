@@ -176,11 +176,35 @@ do { \
   }\
 } while (0);
 
+#define SET_HAS_EXPLAIN_ROUTE() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    p->has_explain_route_ = true;\
+  }\
+} while (0);
+
 #define SET_CONNECTION_ID() \
 do { \
   ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p)) {\
     p->has_connection_id_ = true;\
+  }\
+} while (0);
+
+#define SET_SYS_CONTEXT() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    p->has_sys_context_ = true;\
+  }\
+} while (0);
+
+#define SET_BINLOG_RELATED() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    p->is_binlog_related_ = true;\
   }\
 } while (0);
 
@@ -277,7 +301,7 @@ do {\
 %x                      prepare
 %x                      insert_all_expr
 %x                      set_expr
-%x                      show_elastic_id 
+%x                      show_elastic_id
 %x                      show_topology
 %x                      show_tables
 %x                      proxy_icmd_state
@@ -318,6 +342,22 @@ set_password            (set{space}+password{space}+)
 set_default             (set{space}+default{space}+)
 set_ob_read_consistency    (set{space}+(@@session{space}*\.{space}*ob_read_consistency|@@ob_read_consistency|ob_read_consistency){space}*)
 set_tx_read_only        (set{space}+(@@session{space}*\.{space}*(tx|transaction)_read_only|@@(tx|transaction)_read_only|(tx|transaction)_read_only){space}*)
+/* binlog related variables */
+binlog_variables (like{space}+'gtid_mode'|like{space}+"gtid_mode"|like{space}+'gtid_executed'|like{space}+"gtid_executed"|like{space}+'gtid_purged'|like{space}+"gtid_purged"|like{space}+'gtid_next'|like{space}+"gtid_next"|like{space}+'gtid_owned'|like{space}+"gtid_owned"|like{space}+'enforce_gtid_consistency'|like{space}+"enforce_gtid_consistency"|like{space}+'gtid_executed_compression_period'|like{space}+"gtid_executed_compression_period"|like{space}+'binlog_gtid_simple_recovery'|like{space}+"binlog_gtid_simple_recovery"|like{space}+'binlog_gtid_recovery_ordinal'|like{space}+"binlog_gtid_recovery_ordinal"|like{space}+'binlog_gtid_recovery_ignore_duplicates'|like{space}+"binlog_gtid_recovery_ignore_duplicates"|like{space}+'master_binlog_checksum'|like{space}+"master_binlog_checksum"|like{space}+'slave_uuid'|like{space}+"slave_uuid"|like{space}+'master_heartbeat_period'|like{space}+"master_heartbeat_period")
+show_binlog_variables (show{space}+global{space}+variables{space}+{binlog_variables}|show{space}+session{space}+variables{space}+{binlog_variables}|show{space}+local{space}+variables{space}+{binlog_variables}|show{space}+variables{space}+{binlog_variables})
+gtid_mode               (@@session{space}*\.{space}*gtid_mode|@@global{space}*\.{space}*gtid_mode|@@local{space}*\.{space}*gtid_mode|@@gtid_mode)
+gtid_executed           (@@session{space}*\.{space}*gtid_executed|@@global{space}*\.{space}*gtid_executed|@@local{space}*\.{space}*gtid_executed|@@gtid_executed)
+gtid_purged             (@@session{space}*\.{space}*gtid_purged|@@global{space}*\.{space}*gtid_purged|@@local{space}*\.{space}*gtid_purged|@@gtid_purged)
+gtid_next               (@@session{space}*\.{space}*gtid_next|@@global{space}*\.{space}*gtid_next|@@local{space}*\.{space}*gtid_next|@@gtid_next)
+gtid_owned              (@@session{space}*\.{space}*gtid_owned|@@global{space}*\.{space}*gtid_owned|@@local{space}*\.{space}*gtid_owned|@@gtid_owned)
+enforce_gtid_consistency (@@session{space}*\.{space}*enforce_gtid_consistency|@@global{space}*\.{space}*enforce_gtid_consistency|@@local{space}*\.{space}*enforce_gtid_consistency|@@enforce_gtid_consistency)
+gtid_executed_compression_period (@@session{space}*\.{space}*gtid_executed_compression_period|@@global{space}*\.{space}*gtid_executed_compression_period|@@local{space}*\.{space}*gtid_executed_compression_period|@@gtid_executed_compression_period)
+binlog_gtid_simple_recovery (@@session{space}*\.{space}*binlog_gtid_simple_recovery|@@global{space}*\.{space}*binlog_gtid_simple_recovery|@@local{space}*\.{space}*binlog_gtid_simple_recovery|@@binlog_gtid_simple_recovery)
+binlog_gtid_recovery_ordinal (@@session{space}*\.{space}*binlog_gtid_recovery_ordinal|@@global{space}*\.{space}*binlog_gtid_recovery_ordinal|@@local{space}*\.{space}*binlog_gtid_recovery_ordinal|@@binlog_gtid_recovery_ordinal)
+binlog_gtid_recovery_ignore_duplicates (@@session{space}*\.{space}*binlog_gtid_recovery_ignore_duplicates|@@global{space}*\.{space}*binlog_gtid_recovery_ignore_duplicates|@@local{space}*\.{space}*binlog_gtid_recovery_ignore_duplicates|@@binlog_gtid_recovery_ignore_duplicates)
+master_binlog_checksum (@master_binlog_checksum)
+slave_uuid             (@slave_uuid)
+master_heartbeat_period (@master_heartbeat_period)
 
 quote         '
 sqbegin       {quote}
@@ -343,7 +383,7 @@ btcontent     [^`]+
 comma         ,
 leftbracket   \(
 rightbracket  \)
-
+explain_route             (explain{space}+route)
 show_proxynet             (show{space}+proxynet)
 show_proxyconfig          (show{space}+proxyconfig)
 show_proxysession         (show{space}+proxysession)
@@ -389,6 +429,8 @@ show_binlog_events (show{space}+binlog{space}+events)
 purge_binary_logs (purge{space}+binary{space}+logs)
 reset_master (reset{space}+master)
 show_binlog_server_for_tenant (show{space}+binlog{space}+server{space}+for{space}+tenant)
+show_slave_status (show{space}+slave{space}+status)
+flush_binary_logs (flush{space}+binary{space}+logs)
 
 stop_ddl_task             (stop{space}+ddl{space}+task)
 retry_ddl_task            (retry{space}+ddl{space}+task)
@@ -510,6 +552,7 @@ HELP             { RETURN_NON_RESERVED_KEYWORD(HELP); }
 {set_tx_read_only} { SET_BASIC_STMT(OBPROXY_T_SET_TX_READ_ONLY); return SET_TX_READ_ONLY; }
 
  /*internal cmd*/
+{explain_route} { SET_HAS_EXPLAIN_ROUTE(); return EXPLAIN_ROUTE; }
  /*show net*/
 {show_proxynet}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_NET); return SHOW_PROXYNET; }
 THREAD           { RETURN_NON_RESERVED_KEYWORD(THREAD); }
@@ -631,6 +674,7 @@ QUERY               { RETURN_NON_RESERVED_KEYWORD(QUERY); }
 FOUND_ROWS       { SET_FOUND_ROWS(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 ROW_COUNT        { SET_ROW_COUNT(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 CONNECTION_ID    { SET_CONNECTION_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
+SYS_CONTEXT      { SET_SYS_CONTEXT(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 {comma}|{multi_byte_comma} { return ','; }
 {int_num}        { RETURN_INT_NUM(); }
@@ -680,12 +724,15 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   return MERGE_HINT_BEGIN;
 }
 
-{show_master_status} { SET_BASIC_STMT(OBPROXY_T_SHOW_MASTER_STATUS); return SHOW_MASTER_STATUS; }
-{show_binary_logs} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINARY_LOGS); return SHOW_BINARY_LOGS; }
-{show_binlog_events} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINLOG_EVENTS); return SHOW_BINLOG_EVENTS; }
-{purge_binary_logs} { SET_BASIC_STMT(OBPROXY_T_PURGE_BINARY_LOGS); return PURGE_BINARY_LOGS; }
-{reset_master} { SET_BASIC_STMT(OBPROXY_T_RESET_MASTER); return RESET_MASTER; }
-{show_binlog_server_for_tenant} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT); return SHOW_BINLOG_SERVER_FOR_TENANT; }
+{show_master_status} { SET_BINLOG_RELATED(); }
+{show_binary_logs} { SET_BINLOG_RELATED(); }
+{show_binlog_events} { SET_BINLOG_RELATED(); }
+{purge_binary_logs} { SET_BINLOG_RELATED(); }
+{reset_master} { SET_BINLOG_RELATED(); }
+{show_slave_status} { SET_BINLOG_RELATED(); }
+{flush_binary_logs} { SET_BINLOG_RELATED(); }
+{show_binlog_server_for_tenant} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT); SET_BINLOG_RELATED(); return SHOW_BINLOG_SERVER_FOR_TENANT; }
+{show_binlog_variables} { SET_BINLOG_RELATED(); }
 
 <set_expr>"global"                      { return GLOBAL; }
 <set_expr>"session"                     { return SESSION; }
@@ -1177,6 +1224,23 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"last_insert_id"              { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>"global"                      { SET_GLOBAL_SET_STMT(); RETURN_IGNORED_WORD(); }
 <in_expr>"connection_id"               { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
+<in_expr>"sys_context"                 { SET_SYS_CONTEXT(); RETURN_IGNORED_WORD(); }
+<in_expr>"gtid_subset"                 { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"gtid_subtract"               { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"wait_for_executed_gtid_set"  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{gtid_mode}                   { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{gtid_executed}               { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{gtid_purged}                 { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{gtid_next}                   { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{gtid_owned}                  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{enforce_gtid_consistency}    { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{gtid_executed_compression_period} { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{binlog_gtid_simple_recovery} { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{binlog_gtid_recovery_ordinal} { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{binlog_gtid_recovery_ignore_duplicates}    { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{master_binlog_checksum}      { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{slave_uuid}                  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>{master_heartbeat_period}     { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>{tx_read_only}                { RETURN_COL_NAME(TX_READ_ONLY); }
 <in_expr>{identifer}                   { RETURN_IGNORED_WORD(); }
 <in_expr><<EOF>>                       { return END_P; }
@@ -1201,6 +1265,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_no_select_query>"row_count"        { SET_ROW_COUNT(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"last_insert_id"   { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"connection_id"    { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
+<in_no_select_query>"sys_context"      { SET_SYS_CONTEXT(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>{identifer}        { RETURN_IGNORED_WORD(); }
 <in_no_select_query><<EOF>>            { return END_P; }
 <in_no_select_query>{whitespace}       { }

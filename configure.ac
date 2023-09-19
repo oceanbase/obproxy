@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.2.0.0],
+            [4.2.1.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.2.0.0"
+    obapi_version="4.2.1.0"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC
@@ -56,7 +56,8 @@
 
     AM_CONDITIONAL([HAVE_SO], test x$support_so = xyes )
 
-    if test "$support_so" == "no"; then
+    OSVER=`cat /etc/issue|head -1|awk -F. '{print $1}' | awk '{print $NF}'`
+    if test "$support_so" == "no" && test $OSVER -gt 6; then
         AM_CXXFLAGS="${AM_CXXFLAGS} -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
         AM_CFLAGS="${AM_CFLAGS} -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
     fi

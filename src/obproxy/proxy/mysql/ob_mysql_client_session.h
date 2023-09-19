@@ -28,6 +28,7 @@
 #include "optimizer/ob_proxy_optimizer_processor.h"
 #include "iocore/net/ob_unix_net_vconnection.h"
 #include "ob_proxy_init.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 namespace oceanbase
 {
@@ -207,11 +208,11 @@ public:
 
   // set timeout
   // set inactivity to the value timeout(in nanoseconds)
-  void set_inactivity_timeout(const ObHRTime timeout);
-  void set_connect_timeout() { set_inactivity_timeout(get_connect_timeout()); }
-  void set_wait_timeout() { set_inactivity_timeout(session_info_.get_wait_timeout()); }
-  void set_net_write_timeout() { set_inactivity_timeout(session_info_.get_net_write_timeout()); }
-  void set_net_read_timeout() { set_inactivity_timeout(session_info_.get_net_read_timeout()); }
+  void set_inactivity_timeout(const ObHRTime timeout, obutils::ObInactivityTimeoutEvent event);
+  void set_connect_timeout() { set_inactivity_timeout(get_connect_timeout(), obutils::OB_CLIENT_CONNECT_TIMEOUT); }
+  void set_wait_timeout() { set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_CLIENT_WAIT_TIMEOUT); }
+  void set_net_write_timeout() { set_inactivity_timeout(session_info_.get_net_write_timeout(), obutils::OB_CLIENT_NET_WRITE_TIMEOUT); }
+  void set_net_read_timeout() { set_inactivity_timeout(session_info_.get_net_read_timeout(), obutils::OB_CLIENT_NET_READ_TIMEOUT); }
   bool is_in_trans() { return !is_waiting_trans_first_request_; }
 
   void cancel_inactivity_timeout();
@@ -312,6 +313,10 @@ public:
 
   void set_using_ldg(const bool using_ldg) { using_ldg_ = using_ldg; }
   bool using_ldg() const { return using_ldg_; }
+  obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() { return timeout_event_;}
+  ObHRTime get_timeout() { return timeout_; }
+  bool is_request_transferring() const { return is_request_transferring_; }
+  void set_request_transferring(bool is_transferring) { is_request_transferring_ = is_transferring; }
 
 private:
   static uint32_t get_next_ps_stmt_id();
@@ -378,6 +383,8 @@ public:
   //when it is inner cs, it point to client_vc.info_.request_param actually and update real-time
   //the current idc name in it has higher priority than session_info_.idc_name_
   const ObMysqlRequestParam *inner_request_param_;
+
+  bool is_request_transferring_;
 
   ObProxySchemaKey schema_key_;
   LINK(ObMysqlClientSession, stat_link_);
@@ -462,6 +469,8 @@ private:
   uint32_t ps_id_;
   uint32_t cursor_id_;
   bool using_ldg_;
+  obutils::ObInactivityTimeoutEvent timeout_event_;
+  ObHRTime timeout_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObMysqlClientSession);
 };
@@ -503,8 +512,10 @@ inline common::ObAddr ObMysqlClientSession::get_real_client_addr(net::ObNetVConn
   return ret_addr;
 }
 
-inline void ObMysqlClientSession::set_inactivity_timeout(ObHRTime timeout)
+inline void ObMysqlClientSession::set_inactivity_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event)
 {
+  timeout_event_ = event;
+  timeout_ = timeout;
   if (OB_LIKELY(NULL != client_vc_)) {
     client_vc_->set_inactivity_timeout(timeout);
   }
@@ -512,6 +523,8 @@ inline void ObMysqlClientSession::set_inactivity_timeout(ObHRTime timeout)
 
 inline void ObMysqlClientSession::cancel_inactivity_timeout()
 {
+  timeout_event_ = obutils::OB_TIMEOUT_UNKNOWN_EVENT;
+  timeout_ = 0;
   if (OB_LIKELY(NULL != client_vc_)) {
     client_vc_->cancel_inactivity_timeout();
   }

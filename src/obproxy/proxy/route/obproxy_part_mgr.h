@@ -55,13 +55,15 @@ public:
                      common::ObIAllocator &allocator,
                      common::ObIArray<int64_t> &part_ids,
                      common::ObPartDescCtx &ctx,
-                     common::ObIArray<int64_t> &tablet_ids);
+                     common::ObIArray<int64_t> &tablet_ids,
+                     int64_t &part_idx);
   int get_sub_part(common::ObNewRange &range,
                    common::ObIAllocator &allocator,
                    common::ObPartDesc *sub_part_desc_ptr,
                    common::ObIArray<int64_t> &part_ids,
                    common::ObPartDescCtx &ctx,
-                   common::ObIArray<int64_t> &tablet_ids);
+                   common::ObIArray<int64_t> &tablet_ids,
+                   int64_t &sub_part_idx);
 
   int get_sub_part_by_random(const int64_t rand_num,
                              common::ObPartDesc *sub_part_desc_ptr,

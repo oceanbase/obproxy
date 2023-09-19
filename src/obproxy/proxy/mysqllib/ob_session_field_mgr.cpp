@@ -2851,9 +2851,10 @@ int ObDefaultSysVarSet::load_system_variable_snapshot(proxy::ObMysqlResultHandle
     ret = OB_NOT_INIT;
     LOG_WARN("not init", K(ret));
   } else {
+    ObArenaAllocator allocator;
     char name_buf[OB_MAX_COLUMN_NAME_LENGTH + 1] = "";
     int64_t name_len = 0;
-    char value_buf[OB_MAX_SYS_VAR_VAL_LENGTH + 1] = "";
+    char *value_buf = NULL;
     int64_t value_len = 0;
     int64_t vtype = 0;
     int64_t flag = 0;
@@ -2863,8 +2864,7 @@ int ObDefaultSysVarSet::load_system_variable_snapshot(proxy::ObMysqlResultHandle
       PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "name", name_buf,
                                        static_cast<int32_t>(sizeof(name_buf)), name_len);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "data_type", vtype, int64_t);
-      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "value", value_buf,
-                                       static_cast<int32_t>(sizeof(value_buf)), value_len);
+      PROXY_EXTRACT_STRBUF_FIELD_MYSQL_UNLIMIT_LENGTH(result_handler, "value", value_buf, value_len, allocator);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "modified_time", tmp_modified_time, int64_t);
       PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "flags", flag, int64_t);
       if (OB_SUCC(ret)) {
@@ -2874,9 +2874,13 @@ int ObDefaultSysVarSet::load_system_variable_snapshot(proxy::ObMysqlResultHandle
           LOG_ERROR("load sys var failed", K(ret), K(name), K(vtype), K(value), K(flag));
         } else {
           max_modified_time = (max_modified_time < tmp_modified_time ? tmp_modified_time : max_modified_time);
-          LOG_DEBUG("load sys var success", K(ret), K(name), K(vtype), K(value), K(flag),
+          LOG_DEBUG("load sys var success", K(ret), K(name), K(vtype), K(value), K(flag), K(value_len),
                     "modified_time", tmp_modified_time);
         }
+      }
+      if (value_buf != NULL) {
+        allocator.free(value_buf);
+        value_buf = NULL;
       }
     }
 

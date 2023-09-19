@@ -60,7 +60,7 @@ namespace obutils
 
 //the table name need to be lower case, or func'handle_dml_stmt' will get error
 #define MAX_INIT_SQL_LEN 1024
-static const char* sqlite3_db_name = "proxyconfig.db";
+static const char* sqlite3_db_name = "proxyconfig_v1.db";
 static const char* all_table_version_table_name = "all_table_version";
 static const char* white_list_table_name = "white_list";
 static const char* resource_unit_table_name = "resource_unit";
@@ -124,28 +124,10 @@ ObConfigProcessor::~ObConfigProcessor()
 int ObConfigProcessor::init()
 {
   int ret = OB_SUCCESS;
-  const char *dir = NULL;
   if (OB_FAIL(table_handler_map_.create(32, ObModIds::OB_HASH_BUCKET))) {
     LOG_WARN("create hash map failed", K(ret));
-  } else if (OB_ISNULL(dir = get_global_layout().get_etc_dir())) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("get etc dir failed", K(ret));
-  } else {
-    char *path = NULL;
-    ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
-    if (OB_FAIL(ObLayout::merge_file_path(dir, sqlite3_db_name, allocator, path))) {
-      LOG_WARN("fail to merge file path", K(sqlite3_db_name), K(ret));
-    } else if (OB_ISNULL(path)) {
-      ret = OB_ERR_UNEXPECTED;
-    } else if (SQLITE_OK != sqlite3_open_v2(
-        path, &proxy_config_db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("sqlite3 open failed", K(ret), "path", path, "err_msg", sqlite3_errmsg(proxy_config_db_));
-    }
-  }
-
-  if (OB_FAIL(ret)) {
-    // do nothing
+  } else if (OB_FAIL(open_sqlite3())) {
+    LOG_WARN("fail to open sqlite3", K(ret));
   } else if (OB_FAIL(check_and_create_table())) {
     LOG_WARN("check create table failed", K(ret));
   } else {
@@ -156,21 +138,18 @@ int ObConfigProcessor::init()
     // do nothing
   } else if (OB_FAIL(get_global_proxy_config().dump_config_to_sqlite())) {
     LOG_WARN("dump config to sqlite3 failed", K(ret));
+  } else if (OB_FAIL(get_global_white_list_table_processor().init())) {
+    LOG_WARN("white list table processor init failed", K(ret));
+  } else if (OB_FAIL(get_global_resource_unit_table_processor().init())) {
+    LOG_WARN("resource unit table processor init failed", K(ret));
+  } else if (OB_FAIL(get_global_ssl_config_table_processor().init())) {
+    LOG_WARN("ssl config table processor init failed", K(ret));
+  } else if (OB_FAIL(get_global_proxy_config_table_processor().init())) {
+    LOG_WARN("proxy config table processor init failed", K(ret));
+  } else if (OB_FAIL(init_config_from_disk())) {
+    LOG_WARN("init config from disk failed", K(ret));
   } else {
-    // TODO: Compatibility Check
-    if (OB_FAIL(get_global_white_list_table_processor().init())) {
-      LOG_WARN("white list table processor init failed", K(ret));
-    } else if (OB_FAIL(get_global_resource_unit_table_processor().init())) {
-      LOG_WARN("resource unit table processor init failed", K(ret));
-    } else if (OB_FAIL(get_global_ssl_config_table_processor().init())) {
-      LOG_WARN("ssl config table processor init failed", K(ret));
-    } else if (OB_FAIL(get_global_proxy_config_table_processor().init())) {
-      LOG_WARN("proxy config table processor init failed", K(ret));
-    } else if (OB_FAIL(init_config_from_disk())) {
-      LOG_WARN("init config from disk failed", K(ret));
-    } else {
-      get_global_proxy_config_table_processor().set_need_sync_to_file(true);
-    }
+    get_global_proxy_config_table_processor().set_need_sync_to_file(true);
   }
 
   return ret;
@@ -788,6 +767,43 @@ int ObConfigProcessor::get_proxy_config_strlist_item(const ObVipAddr &addr, cons
     LOG_DEBUG("get list item succ", K(ret_item));
   }
 
+  return ret;
+}
+
+int ObConfigProcessor::close_sqlite3()
+{
+  int ret = OB_SUCCESS;
+  DRWLock::WRLockGuard guard(config_lock_);
+  if (NULL != proxy_config_db_ && SQLITE_OK != sqlite3_close(proxy_config_db_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WARN("sqlite3_close failed", "err_msg", sqlite3_errmsg(proxy_config_db_), K(ret));
+  } else {
+    proxy_config_db_ = NULL;
+  }
+  return ret;
+}
+int ObConfigProcessor::open_sqlite3()
+{
+  int ret = OB_SUCCESS;
+  DRWLock::WRLockGuard guard(config_lock_);
+  if (NULL == proxy_config_db_) {
+    const char *dir = NULL;
+    if (OB_ISNULL(dir = get_global_layout().get_etc_dir())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WARN("get etc dir failed", K(ret));
+    } else {
+      char *path = NULL;
+      ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
+      if (OB_FAIL(ObLayout::merge_file_path(dir, sqlite3_db_name, allocator, path))) {
+        LOG_WARN("fail to merge file path", K(sqlite3_db_name), K(ret));
+      } else if (OB_ISNULL(path)) {
+        ret = OB_ERR_UNEXPECTED;
+      } else if (SQLITE_OK != sqlite3_open_v2(path, &proxy_config_db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("sqlite3 open failed", "path", path, "err_msg", sqlite3_errmsg(proxy_config_db_), K(ret));
+      }
+    }
+  }
   return ret;
 }
 

@@ -127,7 +127,8 @@ int ObPartDescRange::get_part(ObNewRange &range,
                               ObIAllocator &allocator,
                               ObIArray<int64_t> &part_ids,
                               ObPartDescCtx &ctx,
-                              ObIArray<int64_t> &tablet_ids)
+                              ObIArray<int64_t> &tablet_ids,
+                              int64_t &part_idx)
 {
   int ret = OB_SUCCESS;
   part_ids.reset();
@@ -148,7 +149,7 @@ int ObPartDescRange::get_part(ObNewRange &range,
   } else {
     int64_t start = get_start(part_array_, part_array_size_, range);
     int64_t end = get_end(part_array_, part_array_size_, range);
-
+    part_idx = start;
     for (int64_t i = start; OB_SUCC(ret) && i <= end; i ++) {
       if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
         COMMON_LOG(WARN, "fail to push part id", K(ret));
@@ -182,14 +183,15 @@ int ObPartDescRange::cast_key(ObRowkey &src_key,
   for (int64_t i = 0; i < min_col_cnt && OB_SUCC(ret); ++i) {
     if (src_key.get_obj_ptr()[i].is_max_value() ||
         src_key.get_obj_ptr()[i].is_min_value()) {
-      COMMON_LOG(DEBUG, "skip min/max obj");
-      continue;
-    }
-    if (OB_FAIL(cast_obj(const_cast<ObObj &>(src_key.get_obj_ptr()[i]),
-                         const_cast<ObObj &>(target_key.get_obj_ptr()[i]),
-                         allocator,
-                         ctx,
-                         accuracies_.at(i)))) {
+      COMMON_LOG(DEBUG, "ignore min or max obj resolved from sql", "is_max_value", src_key.get_obj_ptr()[i].is_max_value());
+    } else if (target_key.get_obj_ptr()[i].is_max_value() || 
+               target_key.get_obj_ptr()[i].is_min_value()) {
+      COMMON_LOG(DEBUG, "ignore min or max obj deserilzed from observer's high bound val", "is_max_value", target_key.get_obj_ptr()[i].is_max_value());
+    } else if (OB_FAIL(cast_obj(const_cast<ObObj &>(src_key.get_obj_ptr()[i]),
+                                const_cast<ObObj &>(target_key.get_obj_ptr()[i]),
+                                allocator,
+                                ctx,
+                                accuracies_.at(i)))) {
       COMMON_LOG(DEBUG, "fail to cast obj", K(i), K(ret));
     } else {
       // do nothing

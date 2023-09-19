@@ -123,6 +123,8 @@ public:
                                   const common::ObString &tenant_name, const common::ObString& name,
                                   common::ObConfigItem &ret_item, const ObString level, bool &found);
   int execute(const char* sql, int (*callback)(void*, int, char**, char**), void* handler);
+  int close_sqlite3();
+  int open_sqlite3();
 
 private:
   int init_config_from_disk();

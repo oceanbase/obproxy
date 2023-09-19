@@ -462,6 +462,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
   int64_t request_target_type = -1;
   int64_t rw_type = -1;
   json::Value *info_config = NULL;
+  bool need_free = true;
 
   ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
   json::Parser parser;
@@ -508,6 +509,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
     }
 
     if (OB_SUCC(ret)) {
+      need_free = true;
       if (OB_ISNULL(vip_tenant = op_alloc(ObVipTenant))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WARN("fail to alloc memory for ObVipTenant", K(ret));
@@ -526,6 +528,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
       } else if (OB_FAIL(cache_map.unique_set(vip_tenant))) {
         LOG_WARN("fail to insert one vip_tenant into cache_map", K(*vip_tenant), K(ret));
       } else {
+        need_free = false;
         char request_target_buf[32];
         char rw_buf[32];
         ObString request_target_string;
@@ -581,7 +584,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
     ret = OB_SUCCESS;
     LOG_DEBUG("succ to fill local vt cache", K(ret));
   } else {
-    if (OB_LIKELY(NULL != vip_tenant)) {
+    if (need_free && OB_LIKELY(NULL != vip_tenant)) {
       op_free(vip_tenant);
       vip_tenant = NULL;
     }

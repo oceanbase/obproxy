@@ -642,7 +642,13 @@ void ObLogger::log_head_info(const ObLogFDType type,
     const uint64_t *trace_id = ObCurTraceId::get();
     uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
     uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
-    if (FD_XFLUSH_FILE == type) {
+    if (FD_DIAGNOSIS_FILE == type) {
+      (void)logdata_printf(log_buffer.buffer_, MAX_LOG_SIZE, log_buffer.pos_,
+                           "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
+                           "[%ld][" TRACE_ID_FORMAT "] [T] ",
+                           tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
+                           tm.tm_sec, tv.tv_usec, GETTID(), trace_id_0, trace_id_1);
+    } else if (FD_XFLUSH_FILE == type) {
       (void)logdata_printf(log_buffer.buffer_, MAX_LOG_HEAD_SIZE, log_buffer.pos_,
                            "%04d-%02d-%02d %02d:%02d:%02d.%06ld [%s] ",
                            tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
@@ -739,7 +745,13 @@ void ObLogger::log_data(const ObLogFDType type,
       const uint64_t *trace_id = ObCurTraceId::get();
       uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
       uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
-      if (FD_XFLUSH_FILE == type) {
+      if (FD_DIAGNOSIS_FILE == type) {
+        head_size = snprintf(head, MAX_LOG_HEAD_SIZE,
+                             "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
+                             "[%ld][" TRACE_ID_FORMAT "] [T] ",
+                             tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
+                             tm.tm_sec, tv.tv_usec, GETTID(), trace_id_0, trace_id_1);
+      } if (FD_XFLUSH_FILE == type) {
         head_size = snprintf(head, MAX_LOG_HEAD_SIZE, "%04d-%02d-%02d %02d:%02d:%02d.%06ld [%s] ",
                              tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                              tm.tm_sec, tv.tv_usec, errstr_[level]);
@@ -1617,11 +1629,19 @@ int ObLogger::async_log_data_header(const ObLogFDType type,
   item.set_timestamp(tv);
   item.set_log_level(level);
   item.set_fd_type(type);
+  const uint64_t *trace_id = ObCurTraceId::get();
+  uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
+  uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
 
   char *data_buf = item.get_buf();
   int64_t pos = 0;
-
-  if (FD_XFLUSH_FILE == item.get_fd_type()) {
+  if (FD_DIAGNOSIS_FILE == type) {
+    ret = logdata_printf(data_buf, item.get_buf_size(), pos,
+                         "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
+                         "[%ld][" TRACE_ID_FORMAT "] ",
+                         tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
+                         tm.tm_sec, tv.tv_usec, GETTID(), trace_id_0, trace_id_1);
+  } else if (FD_XFLUSH_FILE == item.get_fd_type()) {
     ret = logdata_printf(data_buf, item.get_buf_size(), pos, "%04d-%02d-%02d %02d:%02d:%02d.%06ld [%s] ",
                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                          tm.tm_sec, tv.tv_usec, errstr_[level]);
@@ -1633,9 +1653,6 @@ int ObLogger::async_log_data_header(const ObLogFDType type,
                          tm.tm_sec, tv.tv_usec);
   } else if (item.is_trace_file()) {
     const char *base_file_name = (NULL != file ? strrchr(file, '/') : NULL);
-    const uint64_t *trace_id = ObCurTraceId::get();
-    uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
-    uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
     ret = logdata_printf(data_buf, item.get_buf_size(), pos,
                          "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
                          "%s (%s:%d) [%ld][" TRACE_ID_FORMAT "] ",

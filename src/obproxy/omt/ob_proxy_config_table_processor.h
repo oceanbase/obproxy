@@ -100,6 +100,15 @@ public:
   typedef common::hash::ObBuildInHashMap<ObProxyConfigItemHashing, 1024> ProxyConfigHashMap;
 
 public:
+  struct SSLAttributes {
+    SSLAttributes() : force_using_ssl_(false) {}
+    ~SSLAttributes() {
+      force_using_ssl_ = false;
+    }
+    bool force_using_ssl_;
+  };
+
+public:
   ObProxyConfigTableProcessor() : index_(0), proxy_config_lock_(obsys::WRITE_PRIORITY),
                                   config_version_(0), need_sync_to_file_(false),
                                   execute_sql_array_(), need_rebuild_config_map_(false) {}
@@ -120,6 +129,8 @@ public:
   ProxyConfigHashMap& get_backup_hashmap() { return proxy_config_map_array_[(index_ + 1) % 2]; }
   int commit_execute_sql(sqlite3 *db);
   void clear_execute_sql();
+
+  static int parse_ssl_attributes(const ObConfigItem &config_item, SSLAttributes &ssl_attributes);
   int backup_hashmap_with_lock();
 private:
   void clean_hashmap_with_lock(ProxyConfigHashMap &map);

@@ -46,7 +46,8 @@ public:
                        common::ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids,
                        ObPartDescCtx &ctx,
-                       ObIArray<int64_t> &tablet_ids);
+                       ObIArray<int64_t> &tablet_ids,
+                       int64_t &part_idx);
   virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids);
   RangePartition* get_part_array() { return part_array_; }
   int set_part_array(RangePartition *part_array, int64_t size) {

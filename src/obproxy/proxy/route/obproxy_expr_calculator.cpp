@@ -26,6 +26,7 @@
 #include "lib/timezone/ob_time_convert.h"
 #include "lib/timezone/ob_timezone_info.h"
 #include "proxy/route/ob_server_route.h"
+#include "proxy/route/ob_route_diagnosis.h"
 
 
 using namespace oceanbase::common;
@@ -43,12 +44,15 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
                                                   ObClientSessionInfo &client_info,
                                                   ObServerRoute &route,
                                                   ObProxyPartInfo &part_info,
-                                                  int64_t &partition_id)
+                                                  int64_t &partition_id,
+                                                  ObRouteDiagnosis *rd)
 {
   int ret = OB_SUCCESS;
   ObString part_name = parse_result.get_part_name();
   bool old_is_oracle_mode = lib::is_oracle_mode();
   lib::set_oracle_mode(client_info.is_oracle_mode());
+  int64_t part_idx = OB_INVALID_INDEX;
+  int64_t sub_part_idx = OB_INVALID_INDEX;
   if (!part_name.empty()) {
     if (OB_FAIL(part_info.get_part_mgr().get_part_with_part_name(part_name, partition_id, part_info, route, *this))) {
       LOG_WARN("fail to get part id with part name", K(part_name), K(ret));
@@ -56,7 +60,8 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
   }
   if (OB_INVALID_INDEX == partition_id && parse_result.has_simple_route_info()) {
     if (OB_FAIL(calc_part_id_with_simple_route_info(allocator, parse_result, client_info,
-                                                    route, part_info, partition_id))) {
+                                                    route, part_info, partition_id,
+                                                    part_idx, sub_part_idx))) {
       LOG_WARN("fail to calc part id with simple part info, will do calc in normal path", K(ret));
     }
   }
@@ -95,13 +100,14 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
                  ObExprParseResultPrintWrapper(expr_parse_result));
       } else if (OB_FAIL(do_expr_resolve(expr_parse_result, client_request, &client_info, ps_id_entry,
                                          text_ps_entry, part_info, allocator, resolve_result,
-                                         parse_result, partition_id))) {
+                                         parse_result, partition_id, rd))) {
         LOG_DEBUG("fail to do expr resolve", K(print_sql), "expr_parse_result",
                  ObExprParseResultPrintWrapper(expr_parse_result),
                  K(part_info), KPC(ps_id_entry), KPC(text_ps_entry), K(resolve_result));
       } else if (partition_id == OB_INVALID_INDEX) {
         if (OB_FAIL(do_partition_id_calc(resolve_result, client_info, route, part_info,
-                                         parse_result, allocator, partition_id))) {
+                                         parse_result, allocator, partition_id,
+                                         part_idx, sub_part_idx))) {
           if (OB_MYSQL_COM_STMT_PREPARE != cmd) {
             LOG_DEBUG("fail to do expr resolve", K(print_sql), K(resolve_result), K(part_info));
           }
@@ -130,6 +136,15 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
   }
 
   lib::set_oracle_mode(old_is_oracle_mode);
+  ROUTE_DIAGNOSIS(rd,
+                  PARTITION_ID_CALC_DONE,
+                  partition_id_calc,
+                  ret,
+                  req_sql,
+                  parse_result.get_part_name(),
+                  part_idx,
+                  sub_part_idx,
+                  part_info.get_part_level());
   return ret;
 }
 
@@ -138,7 +153,9 @@ int ObProxyExprCalculator::calc_part_id_with_simple_route_info(ObArenaAllocator 
                                                                ObClientSessionInfo &client_info,
                                                                ObServerRoute &route,
                                                                ObProxyPartInfo &part_info,
-                                                               int64_t &part_id)
+                                                               int64_t &part_id,  
+                                                               int64_t &part_idx,
+                                                               int64_t &sub_part_idx)
 {
   int ret = OB_SUCCESS;
   const ObProxySimpleRouteInfo &info = parse_result.route_info_;
@@ -152,7 +169,8 @@ int ObProxyExprCalculator::calc_part_id_with_simple_route_info(ObArenaAllocator 
     if (OB_FAIL(do_resolve_with_part_key(parse_result, allocator, resolve_result))) {
       LOG_WARN("fail to do_resolve_with_part_key", K(ret));
     } else if (OB_FAIL(do_partition_id_calc(resolve_result, client_info, route, part_info,
-                                            parse_result, allocator, part_id))) {
+                                            parse_result, allocator, part_id,
+                                            part_idx, sub_part_idx))) {
       LOG_INFO("fail to do_partition_id_calc", K(resolve_result), K(part_info));
     }
   }
@@ -244,7 +262,8 @@ int ObProxyExprCalculator::do_expr_resolve(ObExprParseResult &parse_result,
                                            ObIAllocator &allocator,
                                            ObExprResolverResult &resolve_result,
                                            const ObSqlParseResult &sql_parse_result,
-                                           int64_t &partition_id)
+                                           int64_t &partition_id,
+                                           ObRouteDiagnosis *rd)
 {
   int ret = OB_SUCCESS;
   ObExprResolverContext ctx;
@@ -256,6 +275,7 @@ int ObProxyExprCalculator::do_expr_resolve(ObExprParseResult &parse_result,
   ctx.client_info_ = client_info;
   ctx.parse_result_ = &parse_result;
   ctx.is_insert_stm_ = sql_parse_result.is_insert_stmt();
+  ctx.route_diagnosis_ = rd;
   ObSqlParseResult &result = const_cast<ObSqlParseResult &>(sql_parse_result);
   ctx.sql_field_result_ = &result.get_sql_filed_result();
   ObExprResolver expr_resolver(allocator);
@@ -279,7 +299,9 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
                                                 ObProxyPartInfo &part_info,
                                                 const ObSqlParseResult &parse_result,
                                                 ObIAllocator &allocator,
-                                                int64_t &partition_id)
+                                                int64_t &partition_id,
+                                                int64_t &part_idx,
+                                                int64_t &sub_part_idx)
 {
   int ret = OB_SUCCESS;
   ObProxyPartMgr &part_mgr = part_info.get_part_mgr();
@@ -294,7 +316,8 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
                                         allocator,
                                         part_ids,
                                         ctx,
-                                        tablet_ids))) {
+                                        tablet_ids,
+                                        part_idx))) {
       LOG_WARN("fail to get first part", K(ret));
     } else if (part_ids.count() >= 1) {
       first_part_id = part_ids[0];
@@ -319,7 +342,8 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
                                                sub_part_desc_ptr,
                                                sub_part_ids,
                                                ctx,
-                                               tablet_ids))) {
+                                               tablet_ids,
+                                               sub_part_idx))) {
         LOG_WARN("fail to get sub part", K(ret));
       } else if (sub_part_ids.count() >= 1) {
         sub_part_id = sub_part_ids[0];

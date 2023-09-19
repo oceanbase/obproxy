@@ -72,7 +72,9 @@ public:
   //before start analyze trans packets, must firstly set_sever_cmd and protocol mode
   void set_server_cmd(const obmysql::ObMySQLCmd cmd, const ObMysqlProtocolMode mode,
                       const bool enable_extra_ok_packet_for_stats,
-                      const bool is_current_in_trans);
+                      const bool is_current_in_trans,
+                      const bool is_autocommit = true,
+                      const bool is_binlog_related = false);
 
   //add for ut
   void set_server_cmd(const obmysql::ObMySQLCmd cmd, const ObMysqlProtocolMode mode,

@@ -502,6 +502,56 @@ int ObMysqlRequestBuilder::build_binlog_login_packet(ObMysqlSM *sm,
   return packet::ObMysqlPacketWriter::write_packet(mio_buf, tg_hsr);
 }
 
+int ObMysqlRequestBuilder::build_init_sql_request_packet(ObMysqlSM *sm,
+                                                         ObMIOBuffer &mio_buf,
+                                                         ObClientSessionInfo &client_info,
+                                                         ObMysqlServerSession *server_session,
+                                                         const ObProxyProtocol ob_proxy_protocol)
+{
+  int ret = OB_SUCCESS;
+  ObMySQLCmd cmd = OB_MYSQL_COM_QUERY;
+  uint8_t compressed_seq = 0;
+  ObServerSessionInfo &server_info = server_session->get_session_info();
+  if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
+    ObSEArray<ObObJKV, 3> extra_info;
+    ObSqlString sess_info_value;
+    char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
+    char flt_info_buf[SERVER_FLT_INFO_BUF_MAX_LEN] = "\0";
+    char sess_info_veri_buf[OB_SESS_INFO_VERI_BUF_MAX] = "\0";
+    const bool is_last_packet = true;
+    const bool is_proxy_switch_route = false;
+    if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
+            client_ip_buf, MAX_IP_BUFFER_LEN,
+            flt_info_buf, SERVER_FLT_INFO_BUF_MAX_LEN,
+            sess_info_veri_buf, OB_SESS_INFO_VERI_BUF_MAX,
+            sess_info_value, is_last_packet, is_proxy_switch_route))) {
+      LOG_WARN("fail to build related extra info", K(ret));
+    } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, client_info.get_init_sql(),
+            server_session->get_server_sessid(),
+            server_session->get_next_server_request_id(),
+            compressed_seq, compressed_seq, true, false, false,
+            server_info.is_new_extra_info_supported(), 
+            sm->get_client_session()->is_trans_internal_routing(),
+            is_proxy_switch_route, &extra_info))) {
+      LOG_WARN("fail to write request packet in ob20", K(ret));
+    } else { /* nothing */ }
+  } else {
+    ObServerSessionInfo &server_info = server_session->get_session_info();
+    const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM ? true : false;
+    ret = ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, client_info.get_init_sql(), compressed_seq,
+        need_compress, server_info.is_checksum_on());
+  }
+
+  if (OB_SUCC(ret)) {
+    server_session->set_compressed_seq(compressed_seq);
+    LOG_DEBUG("will send init sql");
+  } else {
+    LOG_WARN("fal to write packet", K(cmd), K(ob_proxy_protocol), K(ret));
+  }
+
+  return ret;
+}
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

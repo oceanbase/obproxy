@@ -222,6 +222,9 @@ LOG_MOD_END(STORAGETEST)
 #define _OBPROXY_ERROR_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_ERROR_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
+#define OBPROXY_DIAGNOSIS_LOG(level, infoString, args...)                                           \
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_DIAGNOSIS_FILE, NULL, level, infoString, ##args) : (void) 0)
+
 #define OBPROXY_SLOW_LOG(level, infoString, args...)                                           \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_SLOW_FILE, NULL, level, infoString, ##args) : (void) 0)
 #define _OBPROXY_SLOW_LOG(level, _fmt_, args...)                                               \

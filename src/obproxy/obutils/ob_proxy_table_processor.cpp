@@ -517,7 +517,15 @@ int ObProxyTableProcessor::build_proxy_info(ObProxyServerInfo &proxy_info)
 
 int ObProxyTableProcessor::do_repeat_task()
 {
-  return get_global_proxy_table_processor().do_check_work();
+  int ret = OB_SUCCESS;
+  const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+  if (OB_UNLIKELY(!info.need_conn_accept_)) {
+    // do nothing
+  } else {
+    ret = get_global_proxy_table_processor().do_check_work();
+  }
+
+  return ret;
 }
 
 void ObProxyTableProcessor::update_interval()
@@ -988,7 +996,8 @@ int ObProxyTableProcessor::check_update_vip_tenant_cache(const int64_t new_vt_ca
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
     LOG_WARN("it is not inited", K_(is_inited), K(ret));
-  } else if (!need_convert_vip_to_tname || new_vt_cache_version <= local_vt_cache_version) {
+  } else if ((!need_convert_vip_to_tname || new_vt_cache_version <= local_vt_cache_version)
+             && !get_global_proxy_config().enable_qa_mode) {
     LOG_DEBUG("there is no need to update vip tenant cache", K(need_convert_vip_to_tname),
               K(new_vt_cache_version), K(local_vt_cache_version));
   } else if (OB_FAIL(update_vip_tenant_cache())) {

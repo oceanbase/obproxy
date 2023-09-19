@@ -50,6 +50,8 @@
 #include "engine/ob_proxy_operator_result.h"
 #include "lib/utility/ob_2_0_full_link_trace_info.h"
 #include "rpc/proxy_protocol/proxy_protocol_v2.h"
+#include "proxy/route/ob_route_diagnosis.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 namespace oceanbase
 {
@@ -214,7 +216,6 @@ public:
   void set_server_query_timeout();
   void cancel_server_query_timeout();
   void set_server_trx_timeout();
-  void set_server_quit_timeout();
   void set_internal_cmd_timeout(const ObHRTime timeout);
 
   // record the transaction stats into client session stats
@@ -448,6 +449,7 @@ public:
   bool is_enable_ob_protocol_v2() const { return enable_ob_protocol_v2_; }
 
   bool is_proxy_switch_route() const;
+  void build_basic_connection_diagnossis_info();
 private:
   // private functions
   int handle_server_request_send_long_data();
@@ -501,8 +503,8 @@ private:
   bool add_detect_server_cnt_;
   proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
 public:
-  // Multi-level configuration items: Because the most fine-grained configuration items
-  // can take effect at the VIP level, each SM may need to be different
+  // 多级别配置项：因为配置项最细粒度可以在VIP级别生效，所以需要每个SM可能都不同
+  // 非配置相关的不要放在这里
   char proxy_route_policy_[OB_MAX_CONFIG_VALUE_LEN];
   char proxy_idc_name_[OB_MAX_CONFIG_VALUE_LEN];
   bool enable_cloud_full_username_;
@@ -513,8 +515,11 @@ public:
   bool enable_ob_protocol_v2_; // limit the scope of changing enable_protocol_v2_ to client session level 
   bool enable_read_stale_feedback_;
   int64_t read_stale_retry_interval_;
+  bool force_using_ssl_;
   uint64_t config_version_;
-  ObTargetDbServer *target_db_server_;
+  ObTargetDbServer *target_db_server_; 
+  ObRouteDiagnosis *route_diagnosis_;
+  obutils::ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
 };
 
 inline ObMysqlSM *ObMysqlSM::allocate()
@@ -599,7 +604,7 @@ inline void ObMysqlSM::set_client_net_read_timeout()
 inline void ObMysqlSM::set_internal_cmd_timeout(const ObHRTime timeout)
 {
   if (OB_LIKELY(NULL != client_session_)) {
-    client_session_->set_inactivity_timeout(timeout);
+    client_session_->set_inactivity_timeout(timeout, obutils::OB_CLIENT_INTERNAL_CMD_TIMEOUT);
   }
 }
 
@@ -629,7 +634,7 @@ inline int64_t ObMysqlSM::get_query_timeout()
 inline void ObMysqlSM::set_server_query_timeout()
 {
   if (OB_LIKELY(NULL != server_session_)) {
-    server_session_->set_inactivity_timeout(get_query_timeout());
+    server_session_->set_inactivity_timeout(get_query_timeout(), obutils::OB_SERVER_QUERY_TIMEOUT);
   }
 }
 
@@ -643,15 +648,7 @@ inline void ObMysqlSM::cancel_server_query_timeout()
 inline void ObMysqlSM::set_server_trx_timeout()
 {
   if (OB_LIKELY(NULL != server_session_) && OB_LIKELY(NULL != client_session_)) {
-    server_session_->set_inactivity_timeout(client_session_->get_session_info().get_trx_timeout());
-  }
-}
-
-inline void ObMysqlSM::set_server_quit_timeout()
-{
-  static const int64_t QUIT_TIMEOUT = HRTIME_MSECONDS(1);
-  if (OB_LIKELY(NULL != server_session_)) {
-    server_session_->set_inactivity_timeout(QUIT_TIMEOUT);
+    server_session_->set_inactivity_timeout(client_session_->get_session_info().get_trx_timeout(), obutils::OB_SERVER_TRX_TIMEOUT);
   }
 }
 

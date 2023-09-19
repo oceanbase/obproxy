@@ -28,6 +28,7 @@
 #include "lib/container/ob_array_iterator.h"
 #include "lib/container/ob_se_array_iterator.h"
 #include "lib/encrypt/ob_encrypted_helper.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 using namespace obsys;
 using namespace oceanbase::common;
@@ -167,6 +168,10 @@ void ObRslistFetchCont::destroy()
     cr_->dec_ref();
     cr_ = NULL;
   }
+  if (NULL != connection_diagnosis_trace_) {
+    connection_diagnosis_trace_->dec_ref();
+    connection_diagnosis_trace_ = NULL;
+  }
   ObAsyncCommonTask::destroy();
 }
 
@@ -180,6 +185,7 @@ int ObRslistFetchCont::init_task()
     ObSEArray<ObAddr, 5> rs_list;
     if (OB_FAIL(cs_processor.get_newest_cluster_rs_list(cr_->get_cluster_name(),
                                                         cr_->get_cluster_id(), rs_list, need_update_dummy_entry_))) {
+      COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, "", OB_PROXY_FETCH_RSLIST_FAIL, "fetch root server list from ocp failed");
       LOG_WARN("fail to get cluster rslist", K_(cr_->cluster_info_key), K(ret));
     } else {
       fetch_result_ = true;
@@ -190,6 +196,7 @@ int ObRslistFetchCont::init_task()
     // If rstlist is started, do not modify the rslist_hash value
     bool need_save_rslist_hash = get_global_proxy_config().with_config_server_;
     if (OB_FAIL(cs_processor.swap_origin_web_rslist_and_build_sys(cr_->get_cluster_name(), cr_->get_cluster_id(), need_save_rslist_hash))) {
+      COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, "", OB_PROXY_FETCH_RSLIST_FAIL, "fetch root server list from local failed");
       LOG_WARN("fail to swap origin web rslist", K_(cr_->cluster_info_key), K(ret));
     } else {
       fetch_result_ = true;
@@ -235,9 +242,14 @@ class ObCheckVersionCont : public ObAsyncCommonTask
 {
 public:
   ObCheckVersionCont(ObClusterResource *cr, const int64_t cluster_id,
-                       ObContinuation *cb_cont, ObEThread *submit_thread)
+                       ObContinuation *cb_cont, ObEThread *submit_thread, ObConnectionDiagnosisTrace *connection_diagnosis_trace)
     : ObAsyncCommonTask(cb_cont->mutex_, "cluster_role_check_task", cb_cont, submit_thread),
-      check_result_(false), cr_(cr), cluster_id_(cluster_id) {}
+      check_result_(false), cr_(cr), cluster_id_(cluster_id), connection_diagnosis_trace_(connection_diagnosis_trace)
+      {
+        if (connection_diagnosis_trace_ != NULL){
+          connection_diagnosis_trace_->inc_ref();
+        }
+      }
   virtual ~ObCheckVersionCont() {}
 
   virtual void destroy();
@@ -249,6 +261,7 @@ private:
   bool check_result_;
   ObClusterResource *cr_;
   int64_t cluster_id_;
+  ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
   DISALLOW_COPY_AND_ASSIGN(ObCheckVersionCont);
 };
 
@@ -258,6 +271,10 @@ void ObCheckVersionCont::destroy()
     // inc_ref() in add_async_task()
     cr_->dec_ref();
     cr_ = NULL;
+  }
+  if (NULL != connection_diagnosis_trace_) {
+    connection_diagnosis_trace_->dec_ref();
+    connection_diagnosis_trace_ = NULL;
   }
   ObAsyncCommonTask::destroy();
 }
@@ -280,6 +297,7 @@ int ObCheckVersionCont::finish_task(void *data)
   int ret = OB_SUCCESS;
   const ObString &cluster_name = cr_->cluster_info_key_.cluster_name_.config_string_;
   if (OB_ISNULL(data)) {
+    COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, CHECK_VERSION_SQL, OB_PROXY_INTERNAL_REQUEST_FAIL);
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("data is null, fail to check clsuter version", K(cluster_name), K(ret));
   } else {
@@ -323,9 +341,14 @@ class ObClusterInfoCheckCont : public ObAsyncCommonTask
 {
 public:
   ObClusterInfoCheckCont(ObClusterResource *cr, const int64_t cluster_id,
-                       ObContinuation *cb_cont, ObEThread *submit_thread)
+                       ObContinuation *cb_cont, ObEThread *submit_thread, ObConnectionDiagnosisTrace *connection_diagnosis_trace)
     : ObAsyncCommonTask(cb_cont->mutex_, "cluster_role_check_task", cb_cont, submit_thread),
-      check_result_(false), cr_(cr), cluster_id_(cluster_id) {}
+      check_result_(false), cr_(cr), cluster_id_(cluster_id), connection_diagnosis_trace_(connection_diagnosis_trace)
+      {
+        if (connection_diagnosis_trace_ != NULL){
+          connection_diagnosis_trace_->inc_ref();
+        }
+      }
   virtual ~ObClusterInfoCheckCont() {}
 
   virtual void destroy();
@@ -337,6 +360,8 @@ private:
   bool check_result_;
   ObClusterResource *cr_;
   int64_t cluster_id_;
+  char sql_[OB_SHORT_SQL_LENGTH];
+  ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
   DISALLOW_COPY_AND_ASSIGN(ObClusterInfoCheckCont);
 };
 
@@ -347,19 +372,22 @@ void ObClusterInfoCheckCont::destroy()
     cr_->dec_ref();
     cr_ = NULL;
   }
+  if (NULL != connection_diagnosis_trace_) {
+    connection_diagnosis_trace_->dec_ref();
+    connection_diagnosis_trace_ = NULL;
+  }
   ObAsyncCommonTask::destroy();
 }
 
 int ObClusterInfoCheckCont::init_task()
 {
   int ret = OB_SUCCESS;
-  char sql[OB_SHORT_SQL_LENGTH];
-  sql[0] = '\0';
-  int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, CHEK_CLUSTER_INFO_SQL, OBPROXY_V_DATABASE_TNAME);
+  sql_[0] = '\0';
+  int64_t len = snprintf(sql_, OB_SHORT_SQL_LENGTH, CHEK_CLUSTER_INFO_SQL, OBPROXY_V_DATABASE_TNAME);
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill sql", K(len), K(ret));
-  } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql, pending_action_))) {
+  } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql_, pending_action_))) {
     LOG_WARN("fail to async read", K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
@@ -375,6 +403,7 @@ int ObClusterInfoCheckCont::finish_task(void *data)
   const ObString &cluster_name = cr_->cluster_info_key_.cluster_name_.config_string_;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
+    COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, sql_, OB_PROXY_INTERNAL_REQUEST_FAIL);
     LOG_WARN("data is null, fail to check clsuter role", K(cluster_name), K(ret));
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
@@ -435,20 +464,26 @@ inline void *ObClusterInfoCheckCont::get_callback_data()
 class ObServerStateInfoInitCont : public ObAsyncCommonTask
 {
 public:
-  ObServerStateInfoInitCont(ObClusterResource *cr, ObContinuation *cb_cont, ObEThread *submit_thread)
+  ObServerStateInfoInitCont(ObClusterResource *cr, ObContinuation *cb_cont, ObEThread *submit_thread, ObConnectionDiagnosisTrace *connection_diagnosis_trace)
     : ObAsyncCommonTask(cb_cont->mutex_, "server_state_info_init_task", cb_cont, submit_thread),
-      ss_infos_(), check_result_(false), cr_(cr) {}
+      ss_infos_(), check_result_(false), cr_(cr), connection_diagnosis_trace_(connection_diagnosis_trace)
+      {
+        if (connection_diagnosis_trace_ != NULL){
+          connection_diagnosis_trace_->inc_ref();
+        }
+      }
   virtual ~ObServerStateInfoInitCont() {}
 
   virtual void destroy();
   virtual int init_task();
   virtual int finish_task(void *data);
   virtual void *get_callback_data();
-
 private:
   common::ObSEArray<ObServerStateSimpleInfo, ObServerStateRefreshCont::DEFAULT_SERVER_COUNT> ss_infos_;
   bool check_result_;
   ObClusterResource *cr_;
+  char sql_[OB_SHORT_SQL_LENGTH];
+  ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
   DISALLOW_COPY_AND_ASSIGN(ObServerStateInfoInitCont);
 };
 
@@ -459,6 +494,10 @@ void ObServerStateInfoInitCont::destroy()
     cr_->dec_ref();
     cr_ = NULL;
   }
+  if (OB_NOT_NULL(connection_diagnosis_trace_)) {
+    connection_diagnosis_trace_->dec_ref();
+    connection_diagnosis_trace_ = NULL;
+  }
   ss_infos_.reset();
   ObAsyncCommonTask::destroy();
 }
@@ -466,16 +505,15 @@ void ObServerStateInfoInitCont::destroy()
 int ObServerStateInfoInitCont::init_task()
 {
   int ret = OB_SUCCESS;
-  char sql[OB_SHORT_SQL_LENGTH];
-  sql[0] = '\0';
+  sql_[0] = '\0';
   int64_t len = 0;
   if (IS_CLUSTER_VERSION_LESS_THAN_V4(cr_->cluster_version_)) {
-    len = snprintf(sql, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL,
+    len = snprintf(sql_, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL,
                           OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME,
                           OB_ALL_VIRTUAL_ZONE_STAT_TNAME,
                           INT64_MAX);
   } else {
-    len = snprintf(sql, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL_V4,
+    len = snprintf(sql_, OB_SHORT_SQL_LENGTH, INIT_SS_INFO_SQL_V4,
                           DBA_OB_SERVERS_VNAME,
                           DBA_OB_ZONES_VNAME,
                           INT64_MAX);
@@ -483,7 +521,7 @@ int ObServerStateInfoInitCont::init_task()
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("fail to fill sql", K(len), K(ret));
-  } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql, pending_action_))) {
+  } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql_, pending_action_))) {
     LOG_WARN("fail to async read", K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
@@ -499,6 +537,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
   ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
+    COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, sql_, OB_PROXY_INTERNAL_REQUEST_FAIL);
     LOG_WARN("invalid data", K(data), K(ret));
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
@@ -794,10 +833,15 @@ enum
 class ObClusterResourceCreateCont : public ObAsyncCommonTask
 {
 public:
-  ObClusterResourceCreateCont(ObResourcePoolProcessor &rp_processor, ObContinuation *cb_cont, ObEThread *submit_thread)
-    : ObAsyncCommonTask(cb_cont->mutex_, "cluster_resource_create_task", cb_cont, submit_thread),
+  ObClusterResourceCreateCont(ObResourcePoolProcessor &rp_processor, ObContinuation *cb_cont, ObConnectionDiagnosisTrace *connection_diagnosis_trace, ObEThread *submit_thread)
+    : ObAsyncCommonTask(cb_cont->mutex_, "cluster_resource_create_task", cb_cont, submit_thread), connection_diagnosis_trace_(connection_diagnosis_trace),
       is_rslist_from_local_(true), magic_(CR_CONT_MAGIC_ALIVE), init_status_(INIT_BORN),
-      rp_processor_(rp_processor), created_cr_(NULL), callback_cr_(NULL), cluster_id_(OB_INVALID_CLUSTER_ID), cluster_name_() {}
+      rp_processor_(rp_processor), created_cr_(NULL), callback_cr_(NULL), cluster_id_(OB_INVALID_CLUSTER_ID), cluster_name_()
+      {
+        if (OB_NOT_NULL(connection_diagnosis_trace_)) {
+          connection_diagnosis_trace_->inc_ref();
+        }
+      }
 
   ~ObClusterResourceCreateCont() {}
 
@@ -834,7 +878,7 @@ private:
 
 public:
   static const int64_t OP_LOCAL_NUM = 16;
-
+  ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
 private:
   bool is_rslist_from_local_;
   uint32_t magic_;
@@ -964,23 +1008,24 @@ int ObClusterResourceCreateCont::add_async_task()
           bool need_update_dummy_entry = true;
           async_cont = new(std::nothrow) ObRslistFetchCont(created_cr_, mutex,
                                                            need_update_dummy_entry,
+                                                           connection_diagnosis_trace_,
                                                            this, &self_ethread());
         }
         break;
       case CHECK_VERSION:
         LOG_INFO("will add CHECK_VERSION task", K(this), K_(cluster_name), K_(cluster_id));
         created_cr_->inc_ref();
-        async_cont = new(std::nothrow) ObCheckVersionCont(created_cr_, cluster_id_, this, &self_ethread());
+        async_cont = new(std::nothrow) ObCheckVersionCont(created_cr_, cluster_id_, this, &self_ethread(), connection_diagnosis_trace_);
         break;
       case CHECK_CLUSTER_INFO:
         LOG_INFO("will add CHECK_CLUSTER_INFO task", K(this), K_(cluster_name), K_(cluster_id));
         created_cr_->inc_ref();
-        async_cont = new(std::nothrow) ObClusterInfoCheckCont(created_cr_, cluster_id_, this, &self_ethread());
+        async_cont = new(std::nothrow) ObClusterInfoCheckCont(created_cr_, cluster_id_, this, &self_ethread(), connection_diagnosis_trace_);
         break;
       case INIT_SS_INFO:
         LOG_INFO("will add  INIT_SS_INFO task", K(this), K_(cluster_name), K_(cluster_id));
         created_cr_->inc_ref();
-        async_cont = new(std::nothrow) ObServerStateInfoInitCont(created_cr_, this, &self_ethread());
+        async_cont = new(std::nothrow) ObServerStateInfoInitCont(created_cr_, this, &self_ethread(), connection_diagnosis_trace_);
         break;
       case INIT_IDC_LIST:
         LOG_INFO("will add  INIT_IDC_LIST task", K(this), K_(cluster_name), K_(cluster_id));
@@ -1422,6 +1467,11 @@ void ObClusterResourceCreateCont::destroy()
   }
   if (OB_FAIL(cancel_timeout_action())) {
     LOG_WARN("fail to cancel timeout action", K(ret));
+  }
+  if (OB_NOT_NULL(connection_diagnosis_trace_)) {
+    // inc_ref in constructor
+    connection_diagnosis_trace_->dec_ref();
+    connection_diagnosis_trace_ = NULL;
   }
   cb_cont_ = NULL;
   submit_thread_ = NULL;
@@ -2322,6 +2372,7 @@ int ObResourcePoolProcessor::get_cluster_resource(
     const bool is_proxy_mysql_client,
     const ObString &cluster_name,
     const int64_t cluster_id,
+    ObConnectionDiagnosisTrace *diagnosis_trace,
     ObAction *&action)
 {
   UNUSED(is_proxy_mysql_client);
@@ -2342,7 +2393,7 @@ int ObResourcePoolProcessor::get_cluster_resource(
     if (OB_ISNULL(cr)) {
       LOG_INFO("fail to acuqire avail cluster resource in local, will schedule task to"
                " create and init new cluster resource" , K(cluster_name), K(cluster_id));
-      if (OB_FAIL(init_cluster_resource_cont(cont, cluster_name, cluster_id, action))) {
+      if (OB_FAIL(init_cluster_resource_cont(cont, cluster_name, cluster_id, diagnosis_trace, action))) {
         LOG_WARN("fail to schedule cluster resource", K(&cont), K(cluster_name), K(cluster_id), K(ret));
       } else if (NULL == action) {
         ret = OB_ERR_UNEXPECTED;
@@ -2360,6 +2411,7 @@ int ObResourcePoolProcessor::init_cluster_resource_cont(
     ObContinuation &cont,
     const ObString &cluster_name,
     const int64_t cluster_id,
+    ObConnectionDiagnosisTrace *diagnosis_trace,
     ObAction *&action)
 {
   int ret = OB_SUCCESS;
@@ -2374,7 +2426,7 @@ int ObResourcePoolProcessor::init_cluster_resource_cont(
     ret = OB_SERVER_IS_STOPPING;
     LOG_WARN("proxy need exit now", K(ret));
   } else if (OB_ISNULL(cr_cont = op_alloc_args(
-          ObClusterResourceCreateCont, *this, &cont, &self_ethread()))) {
+          ObClusterResourceCreateCont, *this, &cont, diagnosis_trace, &self_ethread()))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_ERROR("fail to alloc ObClusterResourceCreateCont", K(ret));
   } else if (OB_FAIL(cr_cont->create_cluster_resource(cluster_name, cluster_id, action))) {

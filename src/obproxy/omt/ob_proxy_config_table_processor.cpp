@@ -36,22 +36,28 @@
 #include "obutils/ob_proxy_reload_config.h"
 #include "lib/encrypt/ob_encrypted_helper.h"
 #include "cmd/ob_internal_cmd_processor.h"
+#include "obutils/ob_proxy_json_config_info.h"
+#include "opsql/parser/ob_proxy_parser.h"
 
 static const char *config_name_array[] = {"proxy_route_policy", "proxy_idc_name", "enable_cloud_full_username",
-                                          "enable_client_ssl", "enable_server_ssl", "target_db_server",
+                                          "enable_client_ssl", "enable_server_ssl",
                                           "obproxy_read_consistency", "obproxy_read_only",
                                           "proxy_tenant_name", "rootservice_cluster_name",
                                           "enable_read_write_split", "enable_transaction_split",
                                           "target_db_server", "observer_sys_password",
                                           "observer_sys_password1", "obproxy_force_parallel_query_dop",
-                                          "read_stale_retry_interval", "ob_max_read_stale_time"};
+                                          "read_stale_retry_interval", "ob_max_read_stale_time",
+                                          "ssl_attributes", "init_sql"};
 
 static const char *EXECUTE_SQL = 
     "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
     "'%.*s', %ld, %ld, '%.*s', '%.*s', '%s', '%s', '%.*s')";
 
 using namespace oceanbase::common;
+using namespace oceanbase::json;
 using namespace oceanbase::obproxy::obutils;
+using namespace oceanbase::obproxy::opsql;
+
 namespace oceanbase
 {
 namespace obproxy
@@ -348,7 +354,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
       if (0 != strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())
           && !is_config_in_service(item->config_item_.name())) {
         ret = OB_NOT_SUPPORTED;
-        LOG_WARN("multi level config not supported", K(item), K(ret));
+        LOG_WARN("multi level config not supported", KPC(item), K(ret));
       } else {
         int64_t index = is_backup ? (index_ + 1) % 2 : index_;
         ProxyConfigHashMap &config_map = proxy_config_map_array_[index];
@@ -360,9 +366,43 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
           tmp_item = NULL;
         }
 
-        // need_sync_to_file_ indicates that it is not a command set by alter proxyconfig,
-        // but a configuration item set by proxy_config
-        if (need_sync_to_file_ && is_backup) {
+        if (0 == strcasecmp("init_sql", item->config_item_.name())
+            && NULL != item->config_item_.str()
+            && '\0' != *item->config_item_.str()) {
+          ObArenaAllocator allocator;
+          ParseResult parse_result;
+          ObSEArray<ObString, 4> sql_array;
+          const int64_t EXTRA_NUM = 2;
+          char buf[OB_MAX_CONFIG_VALUE_LEN + EXTRA_NUM];
+          memset(buf, 0, sizeof(buf));
+          MEMCPY(buf, item->config_item_.str(), strlen(item->config_item_.str()));
+          if (OB_FAIL(ObProxySqlParser::split_multiple_stmt(buf, sql_array))) {
+            LOG_WARN("fail to split multiple stmt", K(ret));
+          } else {
+            for (int64_t i = 0; OB_SUCC(ret) && i < sql_array.count(); i++) {
+              char tmp_buf[OB_MAX_CONFIG_VALUE_LEN + EXTRA_NUM];
+              memset(tmp_buf, 0, sizeof(tmp_buf));
+              MEMCPY(tmp_buf, sql_array.at(i).ptr(), sql_array.at(i).length());
+              ObString parse_sql(sql_array.at(i).length() + EXTRA_NUM, tmp_buf);
+              ObProxyParser obproxy_parser(allocator, NORMAL_PARSE_MODE);
+              if (OB_FAIL(obproxy_parser.obparse(parse_sql, parse_result))) {
+                LOG_WARN("fail to parse sql", K(buf), K(parse_sql), K(ret));
+              } else if (OB_ISNULL(parse_result.result_tree_)
+                  || OB_ISNULL(parse_result.result_tree_->children_)
+                  || OB_ISNULL(parse_result.result_tree_->children_[0])
+                  || OB_ISNULL(parse_result.result_tree_->children_[0]->children_)
+                  || OB_ISNULL(parse_result.result_tree_->children_[0]->children_[0])
+                  || (T_VARIABLE_SET != parse_result.result_tree_->children_[0]->type_
+                      && T_ALTER_SYSTEM_SET_PARAMETER != parse_result.result_tree_->children_[0]->type_)) {
+                ret = OB_NOT_SUPPORTED;
+                LOG_WARN("init sql is not expected", K(ret));
+              }
+            }
+          }
+        }
+
+        // need_sync_to_file_表示不是alter proxyconfig设置的命令，而是通过proxy_config设置的配置项
+        if (OB_SUCC(ret) && need_sync_to_file_) {
           if ((0 == strcasecmp("obproxy_sys_password", item->config_item_.name())
               || 0 == strcasecmp("observer_sys_password", item->config_item_.name())
               || 0 == strcasecmp("observer_sys_password1", item->config_item_.name()))
@@ -398,11 +438,22 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
           }
         }
 
-        if (OB_SUCC(ret) && !is_backup && need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr()) &&
-            OB_FAIL(alter_proxy_config(item->config_item_.name(), item->config_item_.str()))) {
-          LOG_WARN("alter proxyconfig failed", K(ret));
-        } else if (OB_FAIL(config_map.unique_set(item))) {
-          LOG_WARN("backup map unique_set failed", K(ret));
+        SSLAttributes ssl_attributes;
+        if (OB_SUCC(ret)
+            && 0 == strcasecmp("ssl_attributes", item->config_item_.name())
+            && NULL != item->config_item_.str()
+            && '\0' != *item->config_item_.str()
+            && OB_FAIL(ObProxyConfigTableProcessor::parse_ssl_attributes(item->config_item_, ssl_attributes))) {
+          LOG_WARN("parse ssl attributes failed", KPC(item), K(ret));
+        }
+
+        if (OB_SUCC(ret)) {
+          if (!is_backup && need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr()) &&
+              OB_FAIL(alter_proxy_config(item->config_item_.name(), item->config_item_.str()))) {
+            LOG_WARN("alter proxyconfig failed", K(ret));
+          } else if (OB_FAIL(config_map.unique_set(item))) {
+            LOG_WARN("backup map unique_set failed", K(ret));
+          }
         }
       }
     }
@@ -561,7 +612,6 @@ int ObProxyConfigTableProcessor::get_config_item(const obutils::ObVipAddr &addr,
     LOG_WARN("proxy config item is null unexpected", K(ret));
   } else {
     item = *proxy_config_item;
-    LOG_TRACE("get config item succ", K(addr), K(cluster_name), K(tenant_name), K(item));
   }
 
   return ret;
@@ -677,6 +727,38 @@ int ObProxyConfigTableProcessor::commit_execute_sql(sqlite3 *db)
 void ObProxyConfigTableProcessor::clear_execute_sql()
 {
   execute_sql_array_.reset();
+}
+
+int ObProxyConfigTableProcessor::parse_ssl_attributes(const ObConfigItem &config_item, SSLAttributes &ssl_attributes)
+{
+  int ret = OB_SUCCESS;
+  Parser parser;
+  json::Value *json_value = NULL;
+  ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
+  if (OB_FAIL(parser.init(&json_allocator))) {
+    LOG_WARN("json parser init failed", K(ret));
+  } else if (OB_FAIL(parser.parse(config_item.str(), strlen(config_item.str()), json_value))) {
+    LOG_WARN("json parse failed", K(ret));
+  } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, json::JT_OBJECT))) {
+    LOG_WARN("check config info type failed", K(ret));
+  } else {
+    DLIST_FOREACH(p, json_value->get_object()) {
+      if (0 == p->name_.case_compare("using_ssl")) {
+        if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
+          LOG_WARN("check config info type failed, using_ssl need string type", K(p->value_), K(ret));
+        } else if (0 == p->value_->get_string().case_compare("ENABLE_FORCE")) {
+          ssl_attributes.force_using_ssl_ = true;
+        } else if (0 == p->value_->get_string().case_compare("DISABLE_FORCE")) {
+          ssl_attributes.force_using_ssl_ = false;
+        } else {
+          ret = OB_NOT_SUPPORTED;
+          LOG_WARN("unsupport using_ssl config", K(p->value_->get_string()), K(ret));
+        }
+      }
+    }
+  }
+
+  return ret;
 }
 
 } // end of omt

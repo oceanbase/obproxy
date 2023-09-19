@@ -19,13 +19,30 @@ namespace oceanbase
 {
 namespace common
 {
+
+/**
+ * proxy new error code definition:
+ * proxy new error code scope: [10000， -11000)
+ * proxy common error code scope: [-10000, -10100)
+ * original proxy related error code scope: [-10000, -10300)
+ * sharding related error code scope: [-10300, -10500)
+ * kv related error code scope: [-10500, -10700)
+ * proxy client related error code scope: [-10700, -10900)
+ */
+ 
   static const int OB_INTERNAL_ERROR = -600;
   static const int OB_ORA_FATAL_ERROR = -603;
-  static const int64_t OB_MAX_ERROR_CODE = 10000;
+  static const int64_t OB_MAX_ERROR_CODE = 11000;
+  static const int64_t OB_PROXY_MAX_ERROR_CODE = -11000;
+  static const int64_t OB_PROXY_COMMON_MAX_ERROR_CODE = -10100;
+  static const int64_t OB_PROXY_ORIGINAL_MAX_ERROR_CODE = -10300;
+  static const int64_t OB_PROXY_SHARDING_MAX_ERROR_CODE = -10500;
+  static const int64_t OB_PROXY_KV_MAX_ERROR_CODE = -10700;
+  static const int64_t OB_PROXY_CLIENT_MAX_ERROR_CODE = -10900;
   static const int OB_LAST_ERROR_CODE = -8003;
   static const int OB_ERR_SQL_START = -5000;
   static const int OB_ERR_SQL_END = -5999;
-    static const int OB_SUCCESS = 0;
+  static const int OB_SUCCESS = 0;
   static const int OB_ERROR = -4000;
   static const int OB_OBJ_TYPE_ERROR = -4001;
   static const int OB_INVALID_ARGUMENT = -4002;
@@ -744,6 +761,8 @@ namespace common
   static const int OB_PACKET_CHECKSUM_ERROR = -8003;
   static const int OB_SSL_ERROR = -8004;
   static const int OB_UNSUPPORTED_PS = -8005;
+  static const int OB_SEND_INIT_SQL_ERROR = -8006;
+  static const int OB_INTERNAL_CMD_VALUE_TOO_LONG = -8007;
   static const int OB_ERR_LIMIT = -8009;
   static const int OB_ERR_ABORTING_CONNECTION = -8010;
   static const int OB_SHARD_CONF_INVALID = -8055;
@@ -766,6 +785,23 @@ namespace common
   static const int OB_ERR_DISTRIBUTED_TRANSACTION_NOT_SUPPORTED = -8203;
   static const int OB_ERR_SHARD_DDL_UNEXPECTED = -8204;
   static const int OB_ERR_CAN_NOT_PASS_WHITELIST = -8205;
+  static const int OB_PROXY_INTERNAL_ERROR = -10001;
+  static const int OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR = -10010;
+  static const int OB_CLIENT_HANDLING_RQUEST_CONNECITON_ERROR = -10011;
+  static const int OB_CLIENT_TRANSFERING_PACKET_CONNECTION_ERROR = -10012;
+  static const int OB_SERVER_BUILD_CONNECTION_ERROR = -10013;
+  static const int OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR = -10014;
+  static const int OB_SERVER_CONNECT_TIMEOUT = -10015;
+  static const int OB_SERVER_TRANSFERING_PACKET_CONNECTION_ERROR = -10016;
+  static const int OB_PLUGIN_TRANSFERING_ERROR = -10017;
+  static const int OB_PROXY_INTERNAL_REQUEST_FAIL = -10018;
+  static const int OB_PROXY_NO_NEED_RETRY = -10019;
+  static const int OB_PROXY_CHECK_CLUSTER_VERSION_FAIL = -10020;
+  static const int OB_PROXY_FETCH_RSLIST_FAIL = -10021;
+  static const int OB_PROXY_INACTIVITY_TIMEOUT = -10022;
+  static const int OB_PROXY_RECONNECT_COORDINATOR = -10023;
+  static const int OB_PROXY_INVALID_COORDINATOR = -10024;
+  static const int OB_CONNECT_BINLOG_ERROR = -10025;
 
 #define OB_SUCCESS__USER_ERROR_MSG "Success"
 #define OB_ERROR__USER_ERROR_MSG "Common error"
@@ -1465,8 +1501,22 @@ namespace common
 #define OB_SERVER_IS_INIT__USER_ERROR_MSG "Server is initializing"
 #define OB_SERVER_IS_STOPPING__USER_ERROR_MSG "Server is stopping"
 #define OB_PACKET_CHECKSUM_ERROR__USER_ERROR_MSG "Packet checksum error"
-
-
+#define OB_PROXY_INTERNAL_ERROR__USER_ERROR_MSG "An internal error occured in obproxy"
+#define OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event received from client while obproxy reading request"
+#define OB_CLIENT_HANDLING_RQUEST_CONNECITON_ERROR__USER_ERROR_MSG "An EOS event received from client while obproxy handling response"
+#define OB_CLIENT_TRANSFERING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event received from client while obproxy transfering response"
+#define OB_SERVER_BUILD_CONNECTION_ERROR__USER_ERROR_MSG "Fail to build connection to observer"
+#define OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event received while proxy reading response"
+#define OB_SERVER_CONNECT_TIMEOUT__USER_ERROR_MSG "An INACTIVITY_TIMEOUT event received while proxy reading response"
+#define OB_SERVER_TRANSFERING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event eceived while proxy transfering response"
+#define OB_PLUGIN_TRANSFERING_ERROR__USER_ERROR_MSG "OBProxy plugin transfering failed"
+#define OB_PROXY_INTERNAL_REQUEST_FAIL__USER_ERROR_MSG "OBProxy internal request execution failed"
+#define OB_PROXY_NO_NEED_RETRY__USER_ERROR_MSG  "OBProxy reached the maximum number of retrying request"
+#define OB_PROXY_CHECK_CLUSTER_VERSION_FAIL__USER_ERROR_MSG "OBProxy fetch root server list failed"
+#define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "OBProxy fetch root server list failed"
+#define OB_PROXY_INACTIVITY_TIMEOUT__USER_ERROR_MSG "OBProxy inactivity timeout"
+#define OB_PROXY_RECONNECT_COORDINATOR__USER_ERROR_MSG "OBproxy try to reconnect coordinator in transaction"
+#define OB_PROXY_INVALID_COORDINATOR__USER_ERROR_MSG "OBProxy coordinator is invalid"
   const char* ob_strerror(int oberr);
   const char* ob_sqlstate(int oberr);
   const char* ob_str_user_error(int oberr);

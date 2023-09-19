@@ -44,7 +44,8 @@ public:
                        ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids,
                        ObPartDescCtx &ctx,
-                       ObIArray<int64_t> &tablet_ids);
+                       ObIArray<int64_t> &tablet_ids,
+                       int64_t &part_idx);
   virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids);
   void set_default_part_array_idx(int64_t idx) { default_part_array_idx_ = idx; }
   int64_t get_default_part_array_idx() const { return default_part_array_idx_; }

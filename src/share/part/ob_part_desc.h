@@ -73,7 +73,8 @@ public:
                        common::ObIAllocator &allocator,
                        common::ObIArray<int64_t> &part_ids,
                        ObPartDescCtx &ctx,
-                       common::ObIArray<int64_t> &tablet_ids);
+                       common::ObIArray<int64_t> &tablet_ids,
+                       int64_t &part_idx);
   virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids,
                               common::ObIArray<int64_t> &tablet_ids);
   void set_part_level(share::schema::ObPartitionLevel part_level) { part_level_ = part_level; }

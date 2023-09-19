@@ -45,6 +45,7 @@ class ObClientSessionInfo;
 class ObPsIdEntry;
 class ObTextPsEntry;
 class ObServerRoute;
+class ObRouteDiagnosis;
 
 class ObProxyExprCalculator
 {
@@ -58,7 +59,8 @@ public:
                              ObClientSessionInfo &client_info,
                              ObServerRoute &route,
                              ObProxyPartInfo &part_info,
-                             int64_t &partition_id);
+                             int64_t &partition_id,
+                             ObRouteDiagnosis *rd);
   int calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
                                                int64_t &first_part_id,
                                                int64_t &sub_part_id,
@@ -80,20 +82,25 @@ private:
                       common::ObIAllocator &allocator,
                       opsql::ObExprResolverResult &resolve_result,
                       const obutils::ObSqlParseResult &sql_parse_result,
-                      int64_t &partition_id);
+                      int64_t &partition_id,
+                      ObRouteDiagnosis *rd);
   int do_partition_id_calc(opsql::ObExprResolverResult &resolve_result,
                            ObClientSessionInfo &client_info,
                            ObServerRoute &route,
                            ObProxyPartInfo &part_info,
                            const obutils::ObSqlParseResult &parse_result,
                            common::ObIAllocator &allocator,
-                           int64_t &partition_id);
+                           int64_t &partition_id,
+                           int64_t &part_idx,
+                           int64_t &sub_part_idx);
   int calc_part_id_with_simple_route_info(common::ObArenaAllocator &allocator,
                                           const obutils::ObSqlParseResult &parse_result,
                                           ObClientSessionInfo &client_info,
                                           ObServerRoute &route,
                                           ObProxyPartInfo &part_info,
-                                          int64_t &part_id);
+                                          int64_t &part_id,
+                                          int64_t &part_idx,
+                                          int64_t &sub_part_idx);
   int do_resolve_with_part_key(const obutils::ObSqlParseResult &parse_result,
                                common::ObIAllocator &allocator,
                                opsql::ObExprResolverResult &resolve_result);

@@ -1270,7 +1270,7 @@ int ObServerStateRefreshCont::add_refresh_rslist_task(const bool need_update_dum
       LOG_ERROR("fail to alloc memory for mutex", K(ret));
     } else if (FALSE_IT(cluster_resource_->inc_ref())) {
       // impossible
-    } else if (OB_ISNULL(cont = new(std::nothrow) ObRslistFetchCont(cluster_resource_, mutex, need_update_dummy_entry))) {
+    } else if (OB_ISNULL(cont = new(std::nothrow) ObRslistFetchCont(cluster_resource_, mutex, need_update_dummy_entry, NULL))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_ERROR("fail to alloc memory for ObRslist", K(ret));
       if (OB_LIKELY(NULL != mutex)) {

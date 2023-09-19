@@ -608,14 +608,9 @@ struct ObSqlParseResult
   bool is_text_ps_execute_stmt() const { return OBPROXY_T_TEXT_PS_EXECUTE == stmt_type_; }
   bool is_text_ps_drop_stmt() const { return OBPROXY_T_TEXT_PS_DROP == stmt_type_; }
 
-  bool is_binlog_stmt() const
+  bool is_show_binlog_server_for_tenant_stmt() const
   {
-    return OBPROXY_T_SHOW_MASTER_STATUS == stmt_type_
-           || OBPROXY_T_SHOW_BINARY_LOGS == stmt_type_
-           || OBPROXY_T_SHOW_BINLOG_EVENTS == stmt_type_
-           || OBPROXY_T_PURGE_BINARY_LOGS == stmt_type_
-           || OBPROXY_T_RESET_MASTER == stmt_type_
-           || OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT == stmt_type_;
+    return OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT == stmt_type_;
   }
 
   bool is_internal_select() const { return is_select_tx_ro() || is_select_proxy_version(); }
@@ -646,11 +641,14 @@ struct ObSqlParseResult
   bool has_found_rows() const { return has_found_rows_; }
   bool has_row_count() const { return has_row_count_; }
   bool has_explain() const { return has_explain_; }
+  bool has_explain_route() const { return has_explain_route_; }
   bool has_simple_route_info() const { return has_simple_route_info_; }
   bool has_shard_comment() const { return has_shard_comment_; }
   bool has_anonymous_block() const { return has_anonymous_block_; }
   bool has_for_update() const { return has_for_update_; }
   bool has_connection_id() const { return has_connection_id_;}
+  bool has_sys_context() const { return has_sys_context_; }
+  bool is_binlog_related() const { return is_binlog_related_; }
 
   bool is_simple_route_info_valid() const { return route_info_.is_valid(); }
 
@@ -754,10 +752,12 @@ struct ObSqlParseResult
       has_found_rows_ = other.has_found_rows_;
       has_row_count_ = other.has_row_count_;
       has_explain_ = other.has_explain_;
+      has_explain_route_ = other.has_explain_route_;
       has_simple_route_info_ = other.has_simple_route_info_;
       has_anonymous_block_ = other.has_anonymous_block_;
       has_for_update_ = other.has_for_update_;
       has_connection_id_ = other.has_connection_id_;
+      has_sys_context_ = other.has_sys_context_;
       is_xa_start_stmt_ = other.is_xa_start_stmt_;
       stmt_type_ = other.stmt_type_;
       hint_query_timeout_ = other.hint_query_timeout_;
@@ -775,6 +775,7 @@ struct ObSqlParseResult
       col_name_quote_ = other.col_name_quote_;
       text_ps_inner_stmt_type_ = other.text_ps_inner_stmt_type_;
       is_multi_semicolon_in_stmt_ = other.is_multi_semicolon_in_stmt_;
+      is_binlog_related_ = other.is_binlog_related_;
       table_name_.assign_ptr(dml_buf_.table_name_buf_, other.table_name_.length());
       package_name_.assign_ptr(dml_buf_.package_name_buf_, other.package_name_.length());
       database_name_.assign_ptr(dml_buf_.database_name_buf_, other.database_name_.length());
@@ -866,7 +867,7 @@ struct ObSqlParseResult
       if (OB_NOT_NULL(target_db_server_)) {
         op_free(target_db_server_);
         target_db_server_ = NULL;
-      }    
+      }
     } else if (OB_ISNULL(target_db_server_) && OB_ISNULL(target_db_server_ = op_alloc(ObTargetDbServer))) {
       PROXY_LOG(WARN, "fail to alloc memory target db server");
     } else {
@@ -884,6 +885,7 @@ private:
   bool has_found_rows_;
   bool has_row_count_;
   bool has_explain_;
+  bool has_explain_route_;
   bool has_simple_route_info_;
   bool has_shard_comment_;
   bool is_dual_request_;
@@ -894,7 +896,7 @@ private:
   int64_t hint_query_timeout_;
   int64_t parsed_length_; // next parser can starts with (orig_sql + parsed_length_)
   bool has_connection_id_;
-
+  bool has_sys_context_;
   ObProxyBasicStmtSubType cmd_sub_type_;
   ObProxyErrorStmtType cmd_err_type_;
 
@@ -947,6 +949,7 @@ private:
   };
   ParseResult *ob_parser_result_;
   ObProxyStmt* proxy_stmt_;
+  bool is_binlog_related_;
 };
 
 const int OB_T_IDENT_NUM_CHILD                   = 0;
@@ -1001,6 +1004,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_found_rows_ = false;
   has_row_count_ = false;
   has_explain_ = false;
+  has_explain_route_ = false;
   has_simple_route_info_ = false;
   has_shard_comment_ = false;
   is_dual_request_ = false;
@@ -1014,6 +1018,8 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   hint_query_timeout_ = 0;
   parsed_length_ = 0;
   has_connection_id_ = false;
+  has_sys_context_ = false;
+  is_binlog_related_ = false;
   table_name_.reset();
   package_name_.reset();
   database_name_.reset();
@@ -1022,7 +1028,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   part_name_.reset();
   trace_id_.reset();
   rpc_id_.reset();
-  
+
   if (OB_NOT_NULL(target_db_server_)) {
     op_free(target_db_server_);
     target_db_server_ = NULL;
@@ -1075,7 +1081,8 @@ inline bool ObSqlParseResult::has_dependent_func() const
           || has_show_errors()
           || has_show_warnings()
           || is_show_trace_stmt()
-          || has_connection_id());
+          || has_connection_id()
+          || has_sys_context());
 }
 
 inline bool ObSqlParseResult::is_not_supported() const

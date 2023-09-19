@@ -188,7 +188,7 @@ int ObProxySequenceEntryCont::handle_create_cluster_resouce()
 
   if (OB_FAIL(rp_processor.get_cluster_resource(*this,
               (process_async_task_pfn)&ObProxySequenceEntryCont::handle_create_cluster_resource_complete,
-              false, cluster_name, OB_DEFAULT_CLUSTER_ID, pending_action_))) {
+              false, cluster_name, OB_DEFAULT_CLUSTER_ID, NULL, pending_action_))) {
     LOG_WARN("fail to get cluster resource", "cluster name", cluster_name, K(ret));
     last_state_success_ = false;
   } else if (NULL == pending_action_) { // created succ

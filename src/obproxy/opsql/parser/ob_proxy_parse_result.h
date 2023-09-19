@@ -128,11 +128,6 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_LOGIN,
 
   // binglog related
-  OBPROXY_T_SHOW_MASTER_STATUS,
-  OBPROXY_T_SHOW_BINARY_LOGS,
-  OBPROXY_T_SHOW_BINLOG_EVENTS,
-  OBPROXY_T_PURGE_BINARY_LOGS,
-  OBPROXY_T_RESET_MASTER,
   OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT,
 
   OBPROXY_T_MAX
@@ -427,9 +422,11 @@ typedef struct _ObProxyParseResult
   bool has_found_rows_;
   bool has_row_count_;
   bool has_explain_;
+  bool has_explain_route_;
   bool has_simple_route_info_;
   bool has_anonymous_block_;
   bool has_connection_id_;
+  bool has_sys_context_;
 
   ObProxyBasicStmtType stmt_type_;
   ObProxyBasicStmtSubType sub_stmt_type_; //for sharding
@@ -470,6 +467,7 @@ typedef struct _ObProxyParseResult
   bool has_shard_comment_;
   ObDbMeshRouteInfo dbmesh_route_info_;
   ObDbpRouteInfo dbp_route_info_;
+  bool is_binlog_related_;
 } ObProxyParseResult;
 
 #ifdef __cplusplus
