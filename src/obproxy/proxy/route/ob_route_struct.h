@@ -414,6 +414,7 @@ public:
 
   static const char *get_route_entry_state(const ObRouteEntryState state);
   const char *get_route_entry_state() const { return get_route_entry_state(state_); }
+  ObRouteEntryState get_entry_state() { return state_; }
 
   void set_schema_version(const int64_t schema_version) { schema_version_ = schema_version;  }
   int64_t get_schema_version() const { return schema_version_;  }

@@ -17,6 +17,7 @@
 #include "cmd/ob_internal_cmd_handler.h"
 #include "obutils/ob_proxy_json_config_info.h"
 #include "proxy/mysql/ob_mysql_global_session_utils.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 namespace oceanbase
 {
@@ -83,11 +84,11 @@ class ObMysqlServerSession : public event::ObVConnection
 public:
   ObMysqlServerSession()
       : event::ObVConnection(NULL), server_sessid_(0), ss_id_(0), transact_count_(0),
-        state_(MSS_INIT), server_trans_stat_(0),
+        state_(MSS_INIT), compressed_seq_(0), server_trans_stat_(0),
         read_buffer_(NULL), is_pool_session_(false), has_global_session_lock_(false),
         create_time_(0), last_active_time_(0),
         is_inited_(false), magic_(MYSQL_SS_MAGIC_DEAD), server_vc_(NULL),
-        buf_reader_(NULL), client_session_(NULL)
+        buf_reader_(NULL), client_session_(NULL), timeout_event_(obutils::OB_TIMEOUT_UNKNOWN_EVENT), timeout_(0)
   {
     memset(&local_ip_, 0, sizeof(local_ip_));
     memset(&server_ip_, 0, sizeof(server_ip_));
@@ -137,7 +138,7 @@ public:
   const char *get_state_str() const;
 
   // set inactivity to the value timeout(in nanoseconds)
-  void set_inactivity_timeout(ObHRTime timeout);
+  void set_inactivity_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event);
   // cancel the inactivity timeout
   void cancel_inactivity_timeout();
 
@@ -166,7 +167,8 @@ public:
 
   uint8_t get_compressed_seq() const { return compressed_seq_; }
   void set_compressed_seq(const uint8_t compressed_seq) { compressed_seq_ = compressed_seq; }
-
+  obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() { return timeout_event_;}
+  ObHRTime get_timeout() { return timeout_; }
   ObMysqlServerSessionHashKey get_server_session_hash_key() const
   {
     ObMysqlServerSessionHashKey key;
@@ -235,6 +237,8 @@ private:
 
   ObServerSessionInfo session_info_;
   ObMysqlClientSession *client_session_;
+  obutils::ObInactivityTimeoutEvent timeout_event_;
+  ObHRTime timeout_;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlServerSession);
 };
 
@@ -248,9 +252,11 @@ inline int64_t ObMysqlServerSession::get_next_ss_id()
   return ret;
 }
 
-inline void ObMysqlServerSession::set_inactivity_timeout(ObHRTime timeout)
+inline void ObMysqlServerSession::set_inactivity_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event)
 {
   if (OB_LIKELY(NULL != server_vc_)) {
+    timeout_ = timeout;
+    timeout_event_ = event;
     // server timeout value is (session_timeout + 2 * RTT(proxy<->server))
     server_vc_->set_inactivity_timeout(timeout + (get_round_trip_time() * 2));
   }

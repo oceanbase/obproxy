@@ -24,6 +24,7 @@
 #include "obutils/ob_proxy_json_config_info.h"
 #include "lib/lock/ob_drw_lock.h"
 #include "lib/hash/ob_hashset.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 namespace oceanbase
 {
@@ -49,10 +50,16 @@ class ObRslistFetchCont : public ObAsyncCommonTask
 public:
   ObRslistFetchCont(ObClusterResource *cr, event::ObProxyMutex *m,
                     const bool need_update_dummy_entry,
+                    ObConnectionDiagnosisTrace *connection_diagnosis_trace,
                     event::ObContinuation *cb_cont = NULL,
                     event::ObEThread *submit_thread = NULL)
     : ObAsyncCommonTask(m, "rslist_fetch_task", cb_cont, submit_thread),
-      fetch_result_(false), need_update_dummy_entry_(need_update_dummy_entry), cr_(cr) {}
+      fetch_result_(false), need_update_dummy_entry_(need_update_dummy_entry), cr_(cr), connection_diagnosis_trace_(connection_diagnosis_trace)
+      {
+        if (connection_diagnosis_trace_ != NULL){
+          connection_diagnosis_trace_->inc_ref();
+        }
+      }
   virtual ~ObRslistFetchCont() {}
 
   virtual void destroy();
@@ -69,6 +76,7 @@ private:
   bool fetch_result_;
   bool need_update_dummy_entry_;
   ObClusterResource *cr_;
+  ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
   DISALLOW_COPY_AND_ASSIGN(ObRslistFetchCont);
 };
 
@@ -429,6 +437,7 @@ public:
                            const bool is_proxy_mysql_client,
                            const common::ObString &cluster_name,
                            const int64_t cluster_id,
+                           ObConnectionDiagnosisTrace *diagnosis_trace,
                            event::ObAction *&action);
   // Attention!! if succ, will inc_ref;
   ObClusterResource *acquire_avail_cluster_resource(const common::ObString &cluster_name, const int64_t cluster_id = OB_DEFAULT_CLUSTER_ID);
@@ -476,6 +485,7 @@ private:
   int init_cluster_resource_cont(event::ObContinuation &cont,
                                  const common::ObString &cluster_name,
                                  const int64_t cluster_id,
+                                 ObConnectionDiagnosisTrace *diagnosis_trace,
                                  event::ObAction *&action);
   ObClusterResource *acquire_last_used_cluster_resource();
 

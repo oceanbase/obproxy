@@ -2557,7 +2557,7 @@ int ObConfigServerProcessor::refresh_ldg_config_info()
   }
 
   if (OB_LIKELY(NULL != url)) {
-    op_fixed_mem_free(url, url_len);
+    op_fixed_mem_free(url, url_len + 1);
     url = NULL;
   }
 

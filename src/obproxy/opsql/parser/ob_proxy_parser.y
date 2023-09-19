@@ -294,7 +294,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> WARNINGS ERRORS TRACE
 %token<str> QUICK COUNT AS WHERE VALUES ORDER GROUP HAVING INTO UNION FOR
 %token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
-%token<str> NAME_OB_DOT NAME_OB EXPLAIN DESC DESCRIBE NAME_STR
+%token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR
 %token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION
 %token<str> NUMBER_VAL
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER
@@ -327,7 +327,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> ALTER_PROXYRESOURCE
 %token<str> PING_PROXY
 %token<str> KILL_PROXYSESSION KILL_GLOBALSESSION KILL QUERY
-%token<str> SHOW_MASTER_STATUS SHOW_BINARY_LOGS SHOW_BINLOG_EVENTS PURGE_BINARY_LOGS RESET_MASTER SHOW_BINLOG_SERVER_FOR_TENANT
+%token<str> SHOW_BINLOG_SERVER_FOR_TENANT
 
 %type<str> table_factor non_reserved_keyword var_name
 %start root
@@ -354,6 +354,7 @@ stmt: select_stmt                    {}
     | replace_stmt                   {}
     | update_stmt                    {}
     | delete_stmt                    {}
+    | explain_route_stmt             {}
     | explain_stmt                   {}
     | begin_stmt                     {}
     | show_stmt                      {}
@@ -382,6 +383,8 @@ explain_stmt: explain_or_desc_stmt select_stmt
             | explain_or_desc_stmt delete_stmt
             | explain_or_desc_stmt replace_stmt
             | explain_or_desc_stmt merge_stmt
+
+explain_route_stmt: explain_route stmt
 
 ddl_stmt: mysql_ddl_stmt
         | oracle_ddl_stmt
@@ -497,6 +500,8 @@ explain_or_desc: EXPLAIN  {}
                | DESC     {}
                | DESCRIBE {}
 
+explain_route: EXPLAIN_ROUTE
+
 opt_from: /* empty */
         | FROM fromlist
 
@@ -517,15 +522,15 @@ hooked_stmt: select_tx_read_only_stmt       {}
            | shard_special_stmt             {}
 
 shard_special_stmt: show_es_id_stmt {}
-                  | show_topology_stmt {}
+                  | SHOW_TOPOLOGY db_tb_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY; }
                   | show_db_version_stmt {}
                   | SELECT_DATABASE { result->sub_stmt_type_ = OBPROXY_T_SUB_SELECT_DATABASE; }
                   | SELECT_PROXY_STATUS { result->sub_stmt_type_ = OBPROXY_T_SUB_SELECT_PROXY_STATUS; }
                   | SHOW_DATABASES  { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_DATABASES; }
                   | show_tables_stmt {}
                   | show_table_status_stmt {}
-                  | show_columns_stmt {}
-                  | show_index_stmt {}
+                  | SHOW_COLUMNS db_tb_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_COLUMNS; }
+                  | SHOW_INDEX db_tb_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_INDEX; }
                   | SHOW_CREATE_TABLE routine_name_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_CREATE_TABLE; }
                   | explain_or_desc var_name
                   {
@@ -534,29 +539,20 @@ shard_special_stmt: show_es_id_stmt {}
                       result->sub_stmt_type_ = OBPROXY_T_SUB_DESC_TABLE;
                   }
 
-show_columns_stmt: SHOW_COLUMNS FROM NAME_OB
-                  {
-                    result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_COLUMNS;
-                    result->table_info_.table_name_ = $3;
-                  }
-                  | SHOW_COLUMNS FROM NAME_OB FROM NAME_OB
-                  {
-                    result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_COLUMNS;
-                    result->table_info_.table_name_ = $3;
-                    result->table_info_.database_name_ = $5;
-                  }
-
-show_index_stmt: SHOW_INDEX FROM NAME_OB
-               {
-                 result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_INDEX;
-                 result->table_info_.table_name_ = $3;
-               }
-               | SHOW_INDEX FROM NAME_OB FROM NAME_OB
-               {
-                 result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_INDEX;
-                 result->table_info_.table_name_ = $3;
-                 result->table_info_.database_name_ = $5;
-               }
+db_tb_stmt: FROM var_name
+          {
+            result->table_info_.table_name_ = $2;
+          }
+          | FROM var_name FROM var_name
+          {
+            result->table_info_.table_name_ = $2;
+            result->table_info_.database_name_ = $4;
+          }
+          | FROM var_name '.' var_name
+          {
+            result->table_info_.database_name_ = $2;
+            result->table_info_.table_name_ = $4;
+          }
 
 opt_show_like: /*empty*/            {}
              | LIKE NAME_OB         { result->table_info_.table_name_ = $2; }
@@ -596,13 +592,6 @@ show_es_id_stmt: SHOW_ELASTIC_ID { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_E
                      SET_ICMD_ONE_STRING($3);
                      SET_ICMD_SECOND_STRING($7);
                      result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_ELASTIC_ID;
-                 }
-
-show_topology_stmt: SHOW_TOPOLOGY { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY; }
-                 | SHOW_TOPOLOGY FROM NAME_OB
-                 {
-                     result->table_info_.table_name_ = $3;
-                     result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_TOPOLOGY;
                  }
 
 select_obproxy_route_addr_stmt: SELECT_OBPROXY_ROUTE_ADDR
@@ -934,12 +923,7 @@ icmd_stmt: show_proxynet
          | kill_globalsession
          | kill_mysql
 
-binlog_stmt: SHOW_MASTER_STATUS {}
-           | SHOW_BINARY_LOGS {}
-           | SHOW_BINLOG_EVENTS {}
-           | PURGE_BINARY_LOGS {}
-           | RESET_MASTER {}
-           | SHOW_BINLOG_SERVER_FOR_TENANT {}
+binlog_stmt: SHOW_BINLOG_SERVER_FOR_TENANT {}
 
  /* limit param stmt*/
 opt_limit:

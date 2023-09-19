@@ -35,6 +35,8 @@ class ObPartitionEntry;
 class ObProxyMysqlRequest;
 class ObClientSessionInfo;
 class ObServerRoute;
+
+class ObRouteDiagnosis;
 typedef int (ObMysqlRoute::*MysqlRouteHandler)(int event, void *data);
 
 class ObMysqlRouteResult
@@ -91,7 +93,7 @@ public:
       is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false),
       is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(NULL),
       route_(NULL), cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
-      cluster_version_(0), cr_(NULL) {}
+      cluster_version_(0), route_diagnosis_(NULL), cr_(NULL) {}
   ~ObRouteParam() { reset(); }
 
   void reset();
@@ -122,6 +124,7 @@ public:
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
   int64_t cluster_version_;
+  ObRouteDiagnosis *route_diagnosis_;
 
 private:
   // for defense, ensure mysql_proxy_ is safely used

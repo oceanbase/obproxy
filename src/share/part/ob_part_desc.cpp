@@ -25,13 +25,15 @@ int ObPartDesc::get_part(common::ObNewRange &range,
                          common::ObIAllocator &allocator,
                          common::ObIArray<int64_t> &part_ids,
                          ObPartDescCtx &ctx,
-                         common::ObIArray<int64_t> &tablet_ids)
+                         common::ObIArray<int64_t> &tablet_ids,
+                         int64_t &part_idx)
 {
   UNUSED(range);
   UNUSED(allocator);
   UNUSED(part_ids);
   UNUSED(ctx);
   UNUSED(tablet_ids);
+  UNUSED(part_idx);
   return OB_NOT_IMPLEMENT;
 }
 

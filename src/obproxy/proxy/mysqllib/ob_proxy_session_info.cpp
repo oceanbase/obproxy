@@ -236,7 +236,7 @@ ObClientSessionInfo::ObClientSessionInfo()
       text_ps_name_entry_(NULL), text_ps_name_entry_map_(), cursor_id_(0), cursor_id_addr_map_(),
       ps_id_addrs_map_(), request_send_addrs_(), is_read_only_user_(false), is_request_follower_user_(false),
       obproxy_force_parallel_query_dop_(1), ob_max_read_stale_time_(-1), last_server_addr_(),
-      last_server_sess_id_(0), sync_conf_sys_var_(false)
+      last_server_sess_id_(0), sync_conf_sys_var_(false), init_sql_()
 {
   is_session_pool_client_ = true;
   MEMSET(scramble_buf_, 0, sizeof(scramble_buf_));
@@ -262,7 +262,8 @@ int64_t ObClientSessionInfo::to_string(char *buf, const int64_t buf_len) const
        K_(safe_read_snapshot), K_(syncing_safe_read_snapshot), K_(route_policy),
        K_(proxy_route_policy), K_(user_identity), K_(global_vars_version),
        K_(is_read_only_user), K_(is_request_follower_user), K_(obproxy_force_parallel_query_dop),
-       K_(ob20_request), K_(client_cap), K_(server_cap), K_(last_server_addr), K_(last_server_sess_id));
+       K_(ob20_request), K_(client_cap), K_(server_cap), K_(last_server_addr), K_(last_server_sess_id),
+       K_(init_sql));
   J_OBJ_END();
   return pos;
 }
@@ -1170,7 +1171,7 @@ int ObClientSessionInfo::extract_oceanbase_variable_reset_sql(ObServerSessionInf
     }
   }
 
-  // reset last insert id
+  //reset last insert id
   if (OB_SUCC(ret)) {
     if (need_reset_last_insert_id(server_info)) {
       need_reset = true;
@@ -1373,7 +1374,8 @@ void ObClientSessionInfo::destroy()
     var_set_processor_ = NULL;
   }
   reset_start_trans_sql();
-
+  clear_init_sql();
+ 
   destroy_ps_id_entry_map();
   destroy_cursor_id_addr_map();
   destroy_ps_id_addrs_map();

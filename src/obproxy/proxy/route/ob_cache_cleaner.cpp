@@ -27,6 +27,7 @@
 #include "utils/ob_ref_hash_map.h"
 #include "stat/ob_processor_stats.h"
 #include "lib/lock/ob_drw_lock.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -1006,10 +1007,10 @@ int ObCacheCleaner::do_delete_cluster_resource()
     force_close = cs_handlers.at(i).force_close_;
     MUTEX_TRY_LOCK(lock, cs->mutex_, mutex_->thread_holding_);
     if (lock.is_locked()) {
-      if (!cs->is_in_trans() || force_close) {
+      if (!cs->is_request_transferring() && (!cs->is_in_trans() || force_close)) {
         LOG_INFO("because of deleting cluster resource, this client session"
                  " will timeout soon", K(force_close), KPC(cs), K(cs));
-        cs->set_inactivity_timeout(1); // 1ns, timeout imm
+        cs->set_inactivity_timeout(1, OB_CLIENT_DELETE_CLUSTER_RESOURCE); // 1ns, timeout imm
       } else {
         LOG_DEBUG("this client session is in trans, can not close", K(cs), KPC(cs));
       }

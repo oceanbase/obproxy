@@ -49,7 +49,7 @@ bool ObReadStaleReplica::operator == (const ObReadStaleReplica &replica) const
     bret = (partition_id_ == replica.partition_id_);
   }
   if (bret) {
-    bret = ops_ip_addr_eq(server_addr_, replica.server_addr_);
+    bret = (server_addr_ == replica.server_addr_);
   }
   return bret;
 }

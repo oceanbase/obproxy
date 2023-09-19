@@ -15,6 +15,7 @@
 #include "utils/ob_proxy_lib.h"
 #include "common/obsm_row.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
+#include "proxy/route/ob_route_diagnosis.h"
 
 namespace oceanbase
 {
@@ -53,6 +54,13 @@ public:
                                      ObMysqlClientSession &client_session,
                                      const ObProxyProtocol protocol,
                                      const bool is_in_trans);
+
+  static int build_explain_route_resp(event::ObMIOBuffer &mio_buf,
+                                      ObProxyMysqlRequest &client_request,
+                                      ObMysqlClientSession &client_session,
+                                      ObRouteDiagnosis *diagnosis,
+                                      const ObProxyProtocol protocol,
+                                      const bool is_in_trans);
 
   static int build_ok_resq_with_state_changed(event::ObMIOBuffer &mio_buf,
                                               ObProxyMysqlRequest &client_request,

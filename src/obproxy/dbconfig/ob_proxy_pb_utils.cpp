@@ -260,26 +260,33 @@ int ObProxyPbUtils::parse_rule_pattern(const std::string &pattern, ObProxyConfig
   if (std::regex_match(pattern, sm1, MULTI_PATTERN)) {
     // multi tb or db
     ObString start_str;
-    ObString end_str;
-    ObString tail_str;
-    start_str.assign_ptr(sm1.str(2).c_str(), static_cast<int32_t>(sm1.str(2).length()));
-    end_str.assign_ptr(sm1.str(3).c_str(), static_cast<int32_t>(sm1.str(3).length()));
-    tail_str.assign_ptr(sm1.str(4).c_str(), static_cast<int32_t>(sm1.str(4).length()));
-    if (!tail_str.empty()) {
-      name_tail.set_value(tail_str);
-      LOG_INFO("tail_str ", "pattern", pattern.c_str(),K(tail_str));
-    }
     int64_t start = -1;
     int64_t end = -1;
+    start_str.assign_ptr(sm1.str(2).c_str(), static_cast<int32_t>(sm1.str(2).length()));
     suffix_len = start_str.length();
     if (OB_FAIL(get_int_value(start_str, start))) {
       LOG_WARN("fail to get int value for start", K(start_str), K(ret));
-    } else if (OB_FAIL(get_int_value(end_str, end))) {
-      LOG_WARN("fail to get int value for end", K(end_str), K(ret));
-    } else {
-      count = end - start + 1;
-      name_prefix.set_value(sm1.str(1).length(), sm1.str(1).c_str());
     }
+
+    if (OB_SUCC(ret)) {
+      ObString end_str;
+      end_str.assign_ptr(sm1.str(3).c_str(), static_cast<int32_t>(sm1.str(3).length()));
+      if (OB_FAIL(get_int_value(end_str, end))) {
+        LOG_WARN("fail to get int value for end", K(end_str), K(ret));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObString tail_str;
+      tail_str.assign_ptr(sm1.str(4).c_str(), static_cast<int32_t>(sm1.str(4).length()));
+      if (!tail_str.empty()) {
+        name_tail.set_value(tail_str);
+        LOG_INFO("tail_str ", "pattern", pattern.c_str(),K(tail_str));
+      }
+    }
+
+    count = end - start + 1;
+    name_prefix.set_value(sm1.str(1).length(), sm1.str(1).c_str());
   } else {
     // single tb or db group
     count = 1;

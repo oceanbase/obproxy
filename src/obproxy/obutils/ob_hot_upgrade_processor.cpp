@@ -1658,15 +1658,23 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
       switch (info_.cmd_) {
         case HUC_LOCAL_RESTART: {
           g_ob_prometheus_processor.destroy_exposer();
-          if (OB_FAIL(ObProxyHotUpgrader::spawn_process())) {
+          if (OB_FAIL(get_global_config_processor().close_sqlite3())) {
+            LOG_WARN("fail to close sqlite3", K(ret));
+          } else if (OB_FAIL(ObProxyHotUpgrader::spawn_process())) {
             LOG_WARN("fail to spawn sub process", K_(info), K(ret));
-            g_ob_prometheus_processor.create_exposer();
           } else {
             schedule_timeout_rollback();
             info_.disable_net_accept();  // disable accecpt new connection
             info_.update_sub_status(HU_STATUS_NONE);
             info_.update_state(HU_STATE_WAIT_LOCAL_CR_FINISH);
             LOG_INFO("succ to fork new proxy, start turn to HU_STATE_WAIT_LOCAL_CR_FINISH", K_(info));
+          }
+
+          if (OB_FAIL(ret)) {
+            g_ob_prometheus_processor.create_exposer();
+            if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
+              LOG_WARN("fail to reopen sqlite3", K(ret));
+            }
           }
           break;
         }
@@ -1696,6 +1704,9 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
           g_ob_prometheus_processor.create_exposer();
           info_.update_sub_status(HU_STATUS_NONE);
           info_.update_state(HU_STATE_WAIT_HU_CMD);
+          if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
+            LOG_WARN("fail to reopen sqlite3", K(ret));
+          }
         } else {
           if (OB_LIKELY(!info_.parent_hot_upgrade_flag_)) {
             ObHRTime diff_time = 0;
@@ -1711,6 +1722,10 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
               info_.update_state(HU_STATE_WAIT_HU_CMD);
               info_.parent_hot_upgrade_flag_ = true;
               LOG_INFO("upgrade timeout, will send SIGKILL to subprocess", K_(info));
+            }
+
+            if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
+              LOG_WARN("fail to reopen sqlite3", K(ret));
             }
           }
         }

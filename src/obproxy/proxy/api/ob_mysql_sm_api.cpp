@@ -34,6 +34,7 @@
 #include "proxy/mysql/ob_mysql_debug_names.h"
 #include "proxy/api/ob_plugin_vc.h"
 #include "proxy/api/ob_api_utils_internal.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 using namespace oceanbase::share;
 using namespace oceanbase::common;
@@ -689,6 +690,12 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
         sm_->consume_all_internal_data();
         c.handler_state_ = MYSQL_SM_TRANSFORM_FAIL;
         c.vc_->do_io_close(EMYSQL_ERROR);
+        COLLECT_CONNECTION_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                                 vc,
+                                 obutils::OB_VC_DISCONNECT_TRACE,
+                                 event,
+                                 obutils::OB_CLIENT,
+                                 OB_PLUGIN_TRANSFERING_ERROR);
         break;
 
       case VC_EVENT_EOS:
@@ -763,6 +770,12 @@ int ObMysqlSMApi::tunnel_handler_transform_read(int event, ObMysqlTunnelProducer
         sm_->clear_entries();
         // consume all data, make sure will disconnect directly;
         sm_->consume_all_internal_data();
+        COLLECT_CONNECTION_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                                      vc,
+                                      obutils::OB_VC_DISCONNECT_TRACE,
+                                      event,
+                                      obutils::OB_CLIENT,
+                                      OB_PLUGIN_TRANSFERING_ERROR);
         break;
 
       case VC_EVENT_EOS:
@@ -810,6 +823,12 @@ int ObMysqlSMApi::tunnel_handler_plugin_client(int event, ObMysqlTunnelConsumer 
       if (c.producer_->alive_ && 1 == c.producer_->num_consumers_) {
         sm_->tunnel_.producer_handler(MYSQL_TUNNEL_EVENT_CONSUMER_DETACH, *c.producer_);
       }
+      COLLECT_CONNECTION_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                               vc,
+                               obutils::OB_VC_DISCONNECT_TRACE,
+                               event,
+                               obutils::OB_CLIENT,
+                               OB_PLUGIN_TRANSFERING_ERROR);
       break;
 
     case VC_EVENT_EOS:

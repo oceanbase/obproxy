@@ -45,4 +45,6 @@ obproxy/proxy/route/ob_routine_processor.cpp\
 obproxy/proxy/route/ob_sql_table_entry.h\
 obproxy/proxy/route/ob_sql_table_entry.cpp\
 obproxy/proxy/route/ob_sql_table_cache.h\
-obproxy/proxy/route/ob_sql_table_cache.cpp
+obproxy/proxy/route/ob_sql_table_cache.cpp\
+obproxy/proxy/route/ob_route_diagnosis.cpp\
+obproxy/proxy/route/ob_route_diagnosis.h

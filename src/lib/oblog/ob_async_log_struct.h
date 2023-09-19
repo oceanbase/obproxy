@@ -32,6 +32,7 @@ enum ObLogFDType {
   FD_DIGEST_FILE,
   FD_ERROR_FILE,
   FD_SLOW_FILE,
+  FD_DIAGNOSIS_FILE,
   FD_STAT_FILE,
   FD_LIMIT_FILE,
   FD_CONFIG_FILE, //obproxy_config.file

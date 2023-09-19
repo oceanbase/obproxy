@@ -740,13 +740,19 @@ int ObMysqlCompressAnalyzer::analyze_first_response(
           }
         }
       }
-
+      
+      // 这里 transfer_reader 不清理缓存可能会导致内存泄漏
+      int tmp_ret = OB_SUCCESS;
       if (NULL != transfer_reader) {
-        if (OB_FAIL(transfer_reader->consume_all())) {
+        if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = transfer_reader->consume_all()))) {
           LOG_WARN("fail to consume all", K(transfer_reader), K(ret));
         }
         transfer_reader->dealloc();
         transfer_reader = NULL;
+      }
+
+      if (OB_SUCC(ret)) {
+        ret = tmp_ret;
       }
     }
   }

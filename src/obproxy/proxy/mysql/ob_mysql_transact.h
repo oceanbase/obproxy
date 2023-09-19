@@ -1,4 +1,5 @@
 /**
+ * 
  * Copyright (c) 2021 OceanBase
  * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
  * You can use this software according to the terms and conditions of the Mulan PubL v2.
@@ -48,6 +49,23 @@ s.transact_return_point = r; \
 int64_t stack_start = event::self_ethread().stack_start_; \
 _PROXY_TXN_LOG(DEBUG, "sm_id=%u, stack_size=%ld, next_action=%s, return=%s", \
                s.sm_->sm_id_, stack_start - reinterpret_cast<int64_t>(&stack_start), #n, #r); \
+
+#define TRANSACT_RETURN_WITH_MSG(n, r)                                              \
+if (s.sm_ != NULL) {                                                                \
+  int32_t error_code = 0;                                                               \
+  ObString error_msg;                                                               \
+  bool is_error_resp = false;                                                       \
+  s.sm_->get_monitor_error_info(error_code, error_msg, is_error_resp);              \
+  COLLECT_CONNECTION_DIAGNOSIS(s.sm_->connection_diagnosis_trace_,                  \
+                          obproxy_internal,                                         \
+                          obutils::OB_PROXY_INTERNAL_TRACE,                         \
+                          s.trans_info_.get_print_sql(),                            \
+                          s.trans_info_.sql_cmd_,                                   \
+                          s.trans_info_.client_request_.get_packet_meta().cmd_,     \
+                          error_code,                                               \
+                          error_msg);                                               \
+}                                                                                   \
+TRANSACT_RETURN(n, r);                                                              \
 
 class ObMysqlSM;
 class ObMysqlClientSession;
@@ -117,7 +135,7 @@ public:
     INTERNAL_ERROR
   };
 
-  enum ObServerRespErrorType
+enum ObServerRespErrorType
   {
     // init status
     MIN_RESP_ERROR = 0,
@@ -155,7 +173,9 @@ public:
     REQUEST_READ_ONLY_ERROR,
     REQUEST_REROUTE_ERROR,
     STANDBY_WEAK_READONLY_ERROR,
+
     TRANS_FREE_ROUTE_NOT_SUPPORTED_ERROR,
+    SEND_INIT_SQL_ERROR,
     // attention!! add error type between MIN_RESP_ERROR and MAX_RESP_ERROR
     MAX_RESP_ERROR
   };
@@ -277,6 +297,7 @@ public:
     SERVER_SEND_NONE = 0,
     SERVER_SEND_HANDSHAKE,
     SERVER_SEND_LOGIN,
+    SERVER_SEND_INIT_SQL,
     SERVER_SEND_SAVED_LOGIN,
     SERVER_SEND_ALL_SESSION_VARS,
     SERVER_SEND_USE_DATABASE,
@@ -661,7 +682,7 @@ public:
       reroute_info_.reset();
       use_cmnt_target_db_server_ = false;
       use_conf_target_db_server_ = false;
-
+      pl_lookup_state_ = NEED_PL_LOOKUP;
       if (CMD_COMPLETE == current_.state_) {
         if (!is_hold_start_trans_ && !is_hold_xa_start_) {
           is_trans_first_request_ = false;
@@ -832,6 +853,7 @@ public:
   static void handle_ps_close_reset(ObTransState &s);
   static void handle_fetch_request(ObTransState &s);
   static void handle_target_db_not_allow(ObTransState &s);
+  static void handle_explain_route(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,
                                         int64_t &request_len);
@@ -943,6 +965,7 @@ public:
   static int do_handle_prepare_execute_xa_succ(event::ObIOBufferReader &buf_reader);
   static void handle_text_ps_prepare_succ(ObTransState &s);
   static int handle_text_ps_drop_succ(ObTransState &s, bool &is_user_request);
+   static void handle_send_init_sql_succ(ObTransState &s);
   static int handle_change_user_request_succ(ObTransState &s);
   static int handle_reset_connection_request_succ(ObTransState &s);
   static int clear_session_related_source(ObTransState &s);
@@ -965,7 +988,7 @@ public:
   static void update_sync_session_stat(ObTransState &s);
 
   // get partition location info from sql parse result
-  static int extract_partition_info(ObTransState &s);
+  static int extract_partition_info(ObTransState &s, int32_t &type);
 
   static bool is_in_auth_process(ObTransState &s);
   static bool is_in_internal_send_process(ObTransState &s);
@@ -1146,7 +1169,8 @@ inline void ObMysqlTransact::update_sql_cmd(ObTransState &s)
     case SERVER_SEND_SESSION_USER_VARS:
     case SERVER_SEND_START_TRANS:
     case SERVER_SEND_TEXT_PS_PREPARE:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_QUERY;
+    case SERVER_SEND_INIT_SQL:
+      s.trans_info_.sql_cmd_ = obmysql::COM_QUERY;
       break;
     
     case SERVER_SEND_XA_START:

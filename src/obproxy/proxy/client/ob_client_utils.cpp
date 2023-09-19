@@ -558,7 +558,7 @@ const ObString& ObClientRequestInfo::get_password()
     if (OB_SUCC(ret)) {
       password_version_ = global_version;
     }
-    LOG_DEBUG("get new password success", K(password0_), K(password1_));
+    LOG_DEBUG("get new password success", K(password0_), K(password1_), K(item), K(cluster_name_));
   }
 
   return password_;

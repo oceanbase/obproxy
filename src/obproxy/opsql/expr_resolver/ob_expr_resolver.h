@@ -38,6 +38,7 @@ class ObProxyMysqlRequest;
 class ObPsIdEntry;
 class ObTextPsEntry;
 class ObClientSessionInfo;
+class ObRouteDiagnosis;
 }
 namespace opsql
 {
@@ -45,7 +46,7 @@ struct ObExprResolverContext
 {
   ObExprResolverContext() : relation_info_(NULL), part_info_(NULL), client_request_(NULL),
                             ps_id_entry_(NULL), text_ps_entry_(NULL), client_info_(NULL),
-                            sql_field_result_(NULL) {}
+                            sql_field_result_(NULL), route_diagnosis_(NULL) {}
   // parse result
   ObProxyRelationInfo *relation_info_;
   proxy::ObProxyPartInfo *part_info_;
@@ -57,6 +58,7 @@ struct ObExprResolverContext
   obutils::SqlFieldResult *sql_field_result_;
   ObExprParseResult *parse_result_;
   bool is_insert_stm_;
+  proxy::ObRouteDiagnosis *route_diagnosis_;
 };
 
 class ObExprResolverResult

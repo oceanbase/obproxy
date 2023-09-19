@@ -72,7 +72,7 @@ ObMysqlClientSession::ObMysqlClientSession()
       is_first_dml_sql_got_(false), is_proxy_enable_trans_internal_routing_(false), compressed_seq_(0),
       cluster_resource_(NULL), dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(), dummy_entry_valid_time_ns_(0), server_state_version_(0),
-      inner_request_param_(NULL), tcp_init_cwnd_set_(false), half_close_(false),
+      inner_request_param_(NULL), is_request_transferring_(false), tcp_init_cwnd_set_(false), half_close_(false),
       conn_decrease_(false), conn_prometheus_decrease_(false), vip_connection_decrease_(false),
       magic_(MYSQL_CS_MAGIC_DEAD), create_thread_(NULL), is_local_connection_(false),
       client_vc_(NULL), in_list_stat_(LIST_INIT), current_tid_(-1),
@@ -80,7 +80,7 @@ ObMysqlClientSession::ObMysqlClientSession()
       trans_coordinator_ss_addr_(), read_buffer_(NULL),
       buffer_reader_(NULL), mysql_sm_(NULL), read_state_(MCS_INIT), ka_vio_(NULL),
       server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
-      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false)
+      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false), timeout_event_(OB_TIMEOUT_UNKNOWN_EVENT), timeout_(0)
 {
   SET_HANDLER(&ObMysqlClientSession::main_handler);
   bool enable_session_pool = get_global_proxy_config().is_pool_mode
@@ -1003,7 +1003,7 @@ int ObMysqlClientSession::attach_server_session(ObMysqlServerSession *session)
       if (OB_LIKELY(ka_vio_ != (server_ka_vio_ = session->do_io_read(this, INT64_MAX, session->read_buffer_)))) {
         // Transfer control of the write side as well
         session->do_io_write(this, 0, NULL);
-        session->set_inactivity_timeout(session_info_.get_wait_timeout());
+        session->set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_SERVER_WAIT_TIMEOUT);
       }
     }
   } else {

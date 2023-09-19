@@ -65,6 +65,7 @@ int64_t ObCmdTimeStat::to_string(char *buf, const int64_t buf_len) const
   TO_STRING_TIME_US(server_send_all_session_variable_time_);
   TO_STRING_TIME_US(server_send_start_trans_time_);
   TO_STRING_TIME_US(server_send_xa_start_time_);
+  TO_STRING_TIME_US(server_send_init_sql_time_);
   TO_STRING_TIME_US(build_server_request_time_);
   TO_STRING_TIME_US(plugin_compress_request_time_);
   TO_STRING_TIME_US(prepare_send_request_to_server_time_);

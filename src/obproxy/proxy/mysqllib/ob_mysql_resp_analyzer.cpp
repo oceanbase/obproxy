@@ -382,16 +382,18 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       }
       case OB_MYSQL_COM_STMT_PREPARE_EXECUTE: {
         if (RESULT_SET_RESP_TYPE == resp_type_ || OTHERS_RESP_TYPE == resp_type_) {
-          // only error packet is error resp, other is result set
-          if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE] && 0 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
-            finished = true;
-            ending_type = ERROR_PACKET_ENDING_TYPE;
-          } else if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
-            finished = true;
-            ending_type = EOF_PACKET_ENDING_TYPE;
-          } else if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
-            finished = true;
-            ending_type = EOF_PACKET_ENDING_TYPE;
+          if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+            /* 只有 error 包时, 才是 error resp, 其他时候都认为是 EOF 结尾, 既是一个结果集 */
+            if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE] && 0 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = ERROR_PACKET_ENDING_TYPE;
+            } else if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = EOF_PACKET_ENDING_TYPE;
+            } else if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+              finished = true;
+              ending_type = EOF_PACKET_ENDING_TYPE;
+            }
           } else {
             finished = false;
           }
@@ -625,7 +627,7 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
           }
         }
 
-        if (meta_analyzer_.is_need_copy(result)) {
+        if (meta_analyzer_.is_need_copy(result) || (is_binlog_related_ && EOF_PACKET_ENDING_TYPE == meta_analyzer_.get_cur_type())) {
           // if ok packet, just copy OK_PACKET_MAX_COPY_LEN(default is 20) len to improve efficiency
           int64_t mem_len = (OK_PACKET_ENDING_TYPE == meta_analyzer_.get_cur_type()
                              ? OK_PACKET_MAX_COPY_LEN : meta_analyzer_.get_meta().pkt_len_);
@@ -687,7 +689,7 @@ inline int ObMysqlRespAnalyzer::read_pkt_body(ObBufferReader &buf_reader,
     }
 
     if (OB_SUCC(ret)) {
-      if (meta_analyzer_.is_need_reserve_packet(result)) {
+      if (meta_analyzer_.is_need_reserve_packet(result) || (is_binlog_related_ && EOF_PACKET_ENDING_TYPE == meta_analyzer_.get_cur_type())) {
         // reserve eof, ok, error and handshake packet,
         //avoid sending part of these packet in more than one net io
         reserved_len_ += len;
@@ -704,7 +706,8 @@ inline int ObMysqlRespAnalyzer::read_pkt_body(ObBufferReader &buf_reader,
 
 inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
     ObRespResult &result,
-    ObMysqlResp *resp)
+    ObMysqlResp *resp,
+    ObBufferReader &buf_reader)
 {
   int ret = OB_SUCCESS;
   int64_t eof_pkt_cnt = result.get_pkt_cnt(EOF_PACKET_ENDING_TYPE);
@@ -723,7 +726,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
   switch (pkt_type) {
     case OK_PACKET_ENDING_TYPE : {
       // in any case, we should analyze packet
-      if (OB_FAIL(analyze_ok_pkt(is_in_trans))) {
+      if (OB_FAIL(analyze_ok_pkt(is_in_trans, buf_reader))) {
         LOG_WARN("fail to analyze_ok_pkt", K(ret));
       } else {
         if (is_in_trans) {
@@ -833,7 +836,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
       if (0 == eof_pkt_cnt) {
         // analyze the first eof packet
         bool is_in_trans = false;
-        if (OB_FAIL(analyze_eof_pkt(result.get_cmd(), is_in_trans, is_last_eof_pkt))) {
+        if (OB_FAIL(analyze_eof_pkt(result.get_cmd(), is_in_trans, is_last_eof_pkt, buf_reader))) {
           LOG_WARN("fail to analyze_eof_pkt", K(ret));
         } else {
           if (is_in_trans) {
@@ -843,15 +846,15 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
           }
 
           if (is_last_eof_pkt) {
-            handle_last_eof(pkt_len);
-            if (OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd()) {
+            handle_last_eof(pkt_len, buf_reader);
+            if (COM_STMT_EXECUTE == result.get_cmd()) {
               result.set_recv_resultset(true);
             }
           }
         }
       } else if (is_last_eof_pkt) {
-        handle_last_eof(pkt_len);
-      } else if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE != result.get_cmd()){
+        handle_last_eof(pkt_len, buf_reader);
+      } else if (COM_STMT_PREPARE_EXECUTE != result.get_cmd()){
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("unexpected eof packet", K(err_pkt_cnt), K(eof_pkt_cnt), K(ret));
         ok_packet_action_type = OK_PACKET_ACTION_SEND;
@@ -932,7 +935,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
   return ret;
 }
 
-void ObMysqlRespAnalyzer::handle_last_eof(uint32_t pkt_len)
+void ObMysqlRespAnalyzer::handle_last_eof(uint32_t pkt_len, ObBufferReader &buf_reader)
 {
   if (OB_LIKELY(is_oceanbase_mode())) {
     if (cur_stmt_has_more_result_) {
@@ -945,6 +948,20 @@ void ObMysqlRespAnalyzer::handle_last_eof(uint32_t pkt_len)
   } else {
     // in mysql mode send directly
     reserved_len_ = 0;
+    if (is_binlog_related_) {
+      int64_t len = body_buf_.len();
+      ObServerStatusFlags server_status;
+
+      // skip 2 bytes of warning_count, we don't care it
+      server_status.flags_ = uint2korr(body_buf_.ptr() + 2);
+
+      if (is_binlog_related_) {
+        server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = is_in_trans_;
+        server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = is_autocommit_;
+        char *ptr = buf_reader.get_ptr() - len + 2;
+        (*((unsigned short *) (ptr))) = server_status.flags_;
+      }
+    }
   }
 }
 
@@ -997,7 +1014,7 @@ int ObMysqlRespAnalyzer::analyze_mysql_resp(
           if (READ_HEADER != state_ && 0 == next_read_len_) { // the mysql packet has read completely
             reserved_len_ = 0; // after read one whole packet, we reset reserved_len_
             result.inc_all_pkt_cnt();
-            if (OB_FAIL(analyze_resp_pkt(result, resp))) {
+            if (OB_FAIL(analyze_resp_pkt(result, resp, buf_reader))) {
               LOG_WARN("fail to analyze resp packet", K(ret));
             } else {
               meta_analyzer_.reset();
@@ -1064,7 +1081,7 @@ inline int ObMysqlRespAnalyzer::build_packet_content(
 }
 
 // ref:http://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
-inline int ObMysqlRespAnalyzer::analyze_ok_pkt(bool &is_in_trans)
+inline int ObMysqlRespAnalyzer::analyze_ok_pkt(bool &is_in_trans, ObBufferReader &buf_reader)
 {
   int ret = OB_SUCCESS;
   // only need to get the OB_SERVER_STATUS_IN_TRANS bit
@@ -1097,6 +1114,12 @@ inline int ObMysqlRespAnalyzer::analyze_ok_pkt(bool &is_in_trans)
       cur_stmt_has_more_result_ = true;
     } else {
       cur_stmt_has_more_result_ = false;
+    }
+    if (is_binlog_related_) {
+      server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = is_in_trans_;
+      server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = is_autocommit_;
+      pos = buf_reader.get_ptr() - len + (pos - ptr) - 2;
+      (*((unsigned short *) (pos))) = server_status.flags_;
     }
   }
 
@@ -1134,7 +1157,7 @@ inline int ObMysqlRespAnalyzer::analyze_prepare_ok_pkt(ObRespResult &result)
 }
 
 // ref:http://dev.mysql.com/doc/internals/en/packet-EOF_Packet.html
-inline int ObMysqlRespAnalyzer::analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &is_in_trans, bool &is_last_eof_pkt)
+inline int ObMysqlRespAnalyzer::analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &is_in_trans, bool &is_last_eof_pkt, ObBufferReader &buf_reader)
 {
   int ret = OB_SUCCESS;
   int64_t len = body_buf_.len();
@@ -1161,6 +1184,13 @@ inline int ObMysqlRespAnalyzer::analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &i
 
     if (OB_MYSQL_COM_STMT_EXECUTE == cmd && server_status.status_flags_.OB_SERVER_STATUS_CURSOR_EXISTS) {
       is_last_eof_pkt = true;
+    }
+
+    if (is_binlog_related_) {
+      server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = is_in_trans_;
+      server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = is_autocommit_;
+      char *ptr = buf_reader.get_ptr() - len + 2;
+      (*((unsigned short *) (ptr))) = server_status.flags_;
     }
   }
 

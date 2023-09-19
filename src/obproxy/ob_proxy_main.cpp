@@ -389,6 +389,8 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_error.log");
     } else if (FD_SLOW_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_slow.log");
+    } else if (FD_DIAGNOSIS_FILE == type) {
+      ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_diagnosis.log");
     } else if (FD_STAT_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_stat.log");
     } else if (FD_LIMIT_FILE == type) {

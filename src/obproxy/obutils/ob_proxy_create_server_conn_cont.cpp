@@ -300,7 +300,7 @@ int ObProxyCreateServerConnCont::handle_create_cluster_resource()
   ObString cluster_name = schema_key.get_cluster_name();
   if (OB_FAIL(rp_processor.get_cluster_resource(*this,
               (process_async_task_pfn)&ObProxyCreateServerConnCont::handle_create_cluster_resource_complete,
-              false, cluster_name, OB_DEFAULT_CLUSTER_ID, pending_action_))) {
+              false, cluster_name, OB_DEFAULT_CLUSTER_ID, NULL, pending_action_))) {
     LOG_WARN("fail to get cluster resource", "cluster name", cluster_name, K(ret));
   } else if (NULL == pending_action_) { // created succ
     LOG_INFO("cluster resource was created by others, no need create again");

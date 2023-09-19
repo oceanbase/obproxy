@@ -129,7 +129,15 @@ public:
                                    ObMysqlServerSession *server_session,
                                    const ObProxyProtocol ob_proxy_protocol);
 
+  // build mysql text_ps prepare request packet
   static int build_text_ps_prepare_request(ObMysqlSM *sm,
+                                           event::ObMIOBuffer &mio_buf,
+                                           ObClientSessionInfo &client_info,
+                                           ObMysqlServerSession *server_session,
+                                           const ObProxyProtocol ob_proxy_protocol);
+
+  // build mysql init sql request packet
+  static int build_init_sql_request_packet(ObMysqlSM *sm,
                                            event::ObMIOBuffer &mio_buf,
                                            ObClientSessionInfo &client_info,
                                            ObMysqlServerSession *server_session,

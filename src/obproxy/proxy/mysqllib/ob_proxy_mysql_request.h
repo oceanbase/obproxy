@@ -124,7 +124,8 @@ public:
   int alloc_request_buf(int64_t buf_len);
   int free_prepare_execute_request_buf();
   int alloc_prepare_execute_request_buf(const int64_t buf_len);
-
+  // may lead memory leak
+  inline void borrow_req_buf(char *&req_buf, int64_t &req_buf_len_);
   common::ObIAllocator &get_param_allocator() { return allocator_; }
 
   ObInternalCmdInfo *cmd_info_;
@@ -280,6 +281,13 @@ inline int ObProxyMysqlRequest::alloc_prepare_execute_request_buf(const int64_t 
     }
   }
   return ret;
+}
+
+inline void ObProxyMysqlRequest::borrow_req_buf(char *&req_buf, int64_t &req_buf_len) {
+  req_buf = req_buf_;
+  req_buf_len = req_buf_len_;
+  req_buf_ = NULL;
+  req_buf_len_ = 0;
 }
 
 inline int ObProxyMysqlRequest::free_prepare_execute_request_buf()

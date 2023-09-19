@@ -607,6 +607,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   has_found_rows_ = parse_result.has_found_rows_;
   has_row_count_  = parse_result.has_row_count_;
   has_explain_ = parse_result.has_explain_;
+  has_explain_route_ = parse_result.has_explain_route_;
   has_shard_comment_ = parse_result.has_shard_comment_;
   has_last_insert_id_ = parse_result.has_last_insert_id_;
   hint_query_timeout_ = parse_result.query_timeout_;
@@ -614,9 +615,11 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   stmt_type_ = parse_result.stmt_type_;
   cmd_sub_type_ = parse_result.sub_stmt_type_;
   has_connection_id_ = parse_result.has_connection_id_;
+  has_sys_context_ = parse_result.has_sys_context_;
   hint_consistency_level_ = static_cast<ObConsistencyLevel>(parse_result.read_consistency_type_);
   parsed_length_ = static_cast<int64_t>(parse_result.end_pos_ - parse_result.start_pos_);
   text_ps_inner_stmt_type_ = parse_result.text_ps_inner_stmt_type_;
+  is_binlog_related_ = parse_result.is_binlog_related_;
 
   if (OB_UNLIKELY(is_sharding_request && NULL != parse_result.table_info_.table_name_.str_
                   && parse_result.table_info_.table_name_.str_len_ > 0)) {
@@ -649,10 +652,10 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
       LOG_WARN("fail to alloc memory for target db server", K(ret));
     } else if (OB_FAIL(target_db_server_->init(parse_result.target_db_server_.str_, parse_result.target_db_server_.str_len_))) {
       LOG_WARN("fail to init target db server from sql comment", K(ret));
-    } else { 
+    } else {
       LOG_DEBUG("succ to init target db server from sql comment", K(ret));
     }
-  } 
+  }
 
   // if is dml stmt, then set db/table name
   if (OB_LIKELY(is_dml_stmt() || is_call_stmt() || (is_text_ps_stmt() && is_text_ps_inner_dml_stmt())
@@ -715,7 +718,13 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
     for (int64_t i = 0; OB_SUCC(ret) && i < OBPROXY_ICMD_MAX_VALUE_COUNT; ++i) {
       cmd_info_.integer_[i] = parse_result.cmd_info_.integer_[i];
       const ObString tmp_string(parse_result.cmd_info_.string_[i].str_len_, parse_result.cmd_info_.string_[i].str_);
-      cmd_info_.string_[i].set(tmp_string);
+
+      if (tmp_string.length() >= OBPROXY_MAX_STRING_VALUE_LENGTH) {
+        ret = OB_INTERNAL_CMD_VALUE_TOO_LONG;
+        LOG_WARN("value is too long", K(tmp_string), K(ret));
+      } else {
+        cmd_info_.string_[i].set(tmp_string);
+      }
     }
   } else if (is_internal_select()) {
     if (OB_FAIL(set_col_name(parse_result.col_name_))) {
@@ -778,9 +787,11 @@ int64_t ObSqlParseResult::to_string(char *buf, const int64_t buf_len) const
        K_(has_row_count),
        K_(has_last_insert_id),
        K_(has_explain),
+       K_(has_explain_route),
        K_(has_shard_comment),
        K_(has_simple_route_info),
        K_(parsed_length),
+       K_(is_binlog_related),
        "database_name", get_database_name(),
        "database_quote_type", get_obproxy_quote_name(get_database_name_quote()),
        "package_name", get_package_name(),
@@ -835,7 +846,7 @@ ObProxyCallInfo::ObProxyCallInfo(const ObProxyCallInfo &other)
     if (OB_FAIL(ObProxyCallParam::alloc_call_param(tmp_param))) {
       LOG_WARN("fail to alloc call param", K(ret));
     } else {
-      *tmp_param = *param; 
+      *tmp_param = *param;
       if (OB_FAIL(params_.push_back(tmp_param))) {
         tmp_param->reset();
         tmp_param = NULL;
@@ -857,7 +868,7 @@ ObProxyCallInfo& ObProxyCallInfo::operator=(const ObProxyCallInfo &other)
       if (OB_FAIL(ObProxyCallParam::alloc_call_param(tmp_param))) {
         LOG_WARN("fail to alloc call param", K(ret));
       } else {
-        *tmp_param = *param; 
+        *tmp_param = *param;
         if (OB_FAIL(params_.push_back(tmp_param))) {
           tmp_param->reset();
           tmp_param = NULL;
@@ -1069,7 +1080,11 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
     } else if (OB_SUCCESS != (tmp_ret = sql_parse_result.load_result(obproxy_parse_result,
                                                                      use_lower_case_name,
                                                                      drop_origin_db_table_name, is_sharding_request))) {
-      LOG_INFO("fail to load result, will go on anyway", K(sql), K(use_lower_case_name), K(tmp_ret));
+      if (sql_parse_result.is_internal_cmd()  && OB_INTERNAL_CMD_VALUE_TOO_LONG == tmp_ret) {
+        ret = OB_ERR_PARSE_SQL;
+      } else {
+        LOG_INFO("fail to load result, will go on anyway", K(sql), K(use_lower_case_name), K(tmp_ret));
+      }
     } else {
       sql_parse_result.set_multi_semicolon_in_stmt(ObProxySqlParser::is_multi_semicolon_in_stmt(sql));
       // if a start trans sql contains multi semicolon, do not hold it to avoid wrong sql syntax
@@ -1543,7 +1558,7 @@ int ObProxySqlParser::split_multiple_stmt(const ObString &stmt,
 
     remain -= str_len;
     offset += str_len;
-  
+
     if (remain < 0 || offset > stmt.length()) {
       LOG_ERROR("split_multiple_stmt data error",
                 K(remain), K(offset), K(stmt.length()), K(ret));
@@ -1619,7 +1634,7 @@ void ObProxySqlParser::get_single_sql(const common::ObString &stmt, int64_t offs
       }
     }
     ++ str_len;
-    
+
     // update states.
     in_comment = comment_flag || c_comment_flag;
     in_string = sq_flag || bt_flag || dq_flag;
@@ -1632,7 +1647,7 @@ int ObProxySqlParser::preprocess_multi_stmt(ObArenaAllocator &allocator,
                                             ObSEArray<ObString, 4> &sql_array)
 {
   int ret = OB_SUCCESS;
-  
+
   const int64_t PARSE_EXTRA_CHAR_NUM = 2;
   const int64_t total_sql_length = origin_sql_length
                                    + (sql_array.count() * PARSE_EXTRA_CHAR_NUM);
@@ -1654,7 +1669,7 @@ int ObProxySqlParser::preprocess_multi_stmt(ObArenaAllocator &allocator,
   return ret;
 }
 
-void ObProxySqlParser::trim_multi_stmt(const common::ObString &stmt, int64_t &remain) 
+void ObProxySqlParser::trim_multi_stmt(const common::ObString &stmt, int64_t &remain)
 {
   // Bypass parser's unfriendly approach to empty query processing: remove the trailing spaces by yourself
   while (remain > 0 && ISSPACE(stmt[remain - 1])) {

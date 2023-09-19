@@ -33,7 +33,8 @@ public:
                        ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids,
                        ObPartDescCtx &ctx,
-                       ObIArray<int64_t> &tablet_ids);
+                       ObIArray<int64_t> &tablet_ids,
+                       int64_t &part_idx);
   virtual int get_part_by_num(const int64_t num, ObIArray<int64_t> &part_ids, ObIArray<int64_t> &tablet_ids);
   void set_part_num(int64_t part_num) { part_num_ = part_num; }
   void set_part_space(int64_t part_space) { part_space_ = part_space; }

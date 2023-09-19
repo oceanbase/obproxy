@@ -84,7 +84,7 @@ int ObMetadbCreateCont::handle_create_meta_db()
   // if metadb has not created, just do create;
   if (OB_FAIL(rp_processor.get_cluster_resource(*this,
           (process_async_task_pfn)&ObMetadbCreateCont::handle_create_complete,
-          false, tenant_name, OB_DEFAULT_CLUSTER_ID, pending_action_))) {
+          false, tenant_name, OB_DEFAULT_CLUSTER_ID, NULL, pending_action_))) {
     LOG_WARN("fail to get cluster resource", "cluster name", OB_META_DB_CLUSTER_NAME, K(ret));
   } else if (NULL == pending_action_) { // created succ
     LOG_INFO("metadb resource was created by others, no need create again");

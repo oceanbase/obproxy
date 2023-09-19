@@ -197,6 +197,7 @@ struct ObCmdTimeStat
   ObHRTime plugin_compress_request_time_;
 
   ObHRTime prepare_send_request_to_server_time_;
+  ObHRTime server_send_init_sql_time_;
   ObHRTime server_request_write_time_;
 
   ObHRTime server_process_request_time_;

@@ -560,6 +560,15 @@ public:
   int64_t get_last_insert_id_version() const { return version_.last_insert_id_version_; }
   int64_t get_sess_info_version() const { return version_.sess_info_version_; }
 
+  ObString& get_init_sql() { return init_sql_; }
+  void set_init_sql(const char *buf, const int32_t len) { init_sql_.assign_ptr(buf, len); }
+  void clear_init_sql() {
+    if (!init_sql_.empty() && NULL != init_sql_.ptr()) {
+      ob_free(init_sql_.ptr());
+      init_sql_.reset();
+    }
+  }
+
   void set_db_name_version(const int64_t version) { version_.db_name_version_ = version; }
 
   //set and get methord
@@ -1128,6 +1137,7 @@ private:
   net::ObIpEndpoint last_server_addr_;
   uint32_t last_server_sess_id_;
   bool sync_conf_sys_var_;
+  ObString init_sql_;
 
   DISALLOW_COPY_AND_ASSIGN(ObClientSessionInfo);
 };

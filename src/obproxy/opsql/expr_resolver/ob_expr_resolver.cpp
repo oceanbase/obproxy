@@ -27,6 +27,7 @@
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "common/ob_obj_compare.h"
 #include "lib/utility/ob_print_utils.h"
+#include "proxy/route/ob_route_diagnosis.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::proxy;
@@ -154,7 +155,6 @@ int ObExprResolver::resolve(ObExprResolverContext &ctx, ObExprResolverResult &re
     if (OB_SUCC(ret)) {
       ObObj *target_obj = NULL;
       void *tmp_buf = NULL;
-
       // ignore ret in for loop
       // resolve every relation
       for (int64_t i = 0; i < ctx.relation_info_->relation_num_; ++i) {

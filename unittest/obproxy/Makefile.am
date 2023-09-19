@@ -18,6 +18,7 @@ AM_CPPFLAGS += -I${top_srcdir}/src/obproxy/iocore/eventsystem               \
 							 -I${top_srcdir}/deps/easy/src/thread\
 							 -I${DEP_DIR}/include/mariadb\
                -I${top_srcdir}/src/obproxy
+							 -Wno-array-bounds
 LIBTOOLFLAGS=--preserve-dup-deps
 
 

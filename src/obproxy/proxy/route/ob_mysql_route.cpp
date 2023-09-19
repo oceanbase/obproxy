@@ -25,6 +25,7 @@
 #include "obutils/ob_resource_pool_processor.h"
 #include "obutils/ob_proxy_sql_parser.h"
 #include "opsql/parser/ob_proxy_parser.h"
+#include "proxy/route/ob_route_diagnosis.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -257,14 +258,40 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("[ObMysqlRoute::handle_routine_entry_lookup_done] fail to lookup routine entry",
              "routine name", param_.name_, K(ret));
+    if (OB_NOT_NULL(param_.route_diagnosis_)) {
+      ROUTE_DIAGNOSIS(param_.route_diagnosis_,
+                      ROUTINE_ENTRY_LOOKUP,
+                      routine_entry_lookup,
+                      ret,
+                      ObString(),
+                      false,
+                      false,
+                      ObRouteEntry::DELETED);
+    }
   } else {
     // table entry lookup succ
     if (NULL != routine_entry_
         && !routine_entry_->get_route_sql().empty()) {
+      ROUTE_DIAGNOSIS(param_.route_diagnosis_,
+                      ROUTINE_ENTRY_LOOKUP,
+                      routine_entry_lookup,
+                      ret,
+                      routine_entry_->get_route_sql(),
+                      is_routine_entry_from_remote_,
+                      is_routine_entry_lookup_succ_,
+                      routine_entry_->get_entry_state());
       set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_START);
     } else {
       LOG_DEBUG("can not find avai route sql, use default route",
                "routine name", param_.name_, K(ret));
+      ROUTE_DIAGNOSIS(param_.route_diagnosis_,
+                      ROUTINE_ENTRY_LOOKUP,
+                      routine_entry_lookup,
+                      ret,
+                      share::OB_ALL_DUMMY_TNAME,
+                      is_routine_entry_from_remote_,
+                      is_routine_entry_lookup_succ_,
+                      ObRouteEntry::DELETED);
       //if empty route sql, use __all_dummy instead
       param_.name_.package_name_.reset();
       rewrite_route_names(OB_SYS_DATABASE_NAME, share::OB_ALL_DUMMY_TNAME);
@@ -458,6 +485,33 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
 inline void ObMysqlRoute::handle_table_entry_lookup_done()
 {
   int ret = OB_SUCCESS;
+  if (OB_NOT_NULL(table_entry_)) {
+    ROUTE_DIAGNOSIS(param_.route_diagnosis_,
+                    TABLE_ENTRY_LOOKUP,
+                    table_entry_lookup,
+                    ret,
+                    table_entry_->get_table_name(),
+                    table_entry_->get_table_id(),
+                    table_entry_->get_part_num(),
+                    table_entry_->get_table_type(),
+                    table_entry_->get_entry_state(),
+                    is_table_entry_from_remote_,
+                    table_entry_->has_dup_replica(),
+                    is_table_entry_lookup_succ_)
+  } else {
+    ROUTE_DIAGNOSIS(param_.route_diagnosis_,
+                    TABLE_ENTRY_LOOKUP,
+                    table_entry_lookup,
+                    ret,
+                    param_.name_.table_name_,
+                    0,
+                    0,
+                    share::schema::MAX_TABLE_TYPE,
+                    ObRouteEntry::DELETED,
+                    false,
+                    false,
+                    false)
+  }
   if (!is_table_entry_lookup_succ_) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("[ObMysqlRoute::handle_table_entry_lookup_done] fail to lookup table entry",
@@ -595,7 +649,8 @@ inline void ObMysqlRoute::setup_partition_id_calc()
                                                                           *param_.client_info_,
                                                                           *param_.route_,
                                                                           *part_info,
-                                                                          part_id_))) {
+                                                                          part_id_,
+                                                                          param_.route_diagnosis_))) {
         LOG_INFO("fail to calculate partition id, just use tenant server", K(tmp_ret));
       } else {
         LOG_DEBUG("succ to calculate partition id", K(part_id_));
@@ -726,6 +781,30 @@ int ObMysqlRoute::state_partition_entry_lookup(int event, void *data)
 inline void ObMysqlRoute::handle_partition_entry_lookup_done()
 {
   int ret = OB_SUCCESS;
+  if (OB_NOT_NULL(part_entry_)) {
+    ROUTE_DIAGNOSIS(param_.route_diagnosis_,
+                    PARTITION_ENTRY_LOOKUP,
+                    partition_entry_lookup,
+                    ret,
+                    part_id_,
+                    is_part_entry_from_remote_,
+                    is_part_entry_lookup_succ_,
+                    part_entry_->has_dup_replica(),
+                    part_entry_->get_entry_state(),
+                    OB_NOT_NULL(part_entry_->get_pl().get_leader())? 
+                      *part_entry_->get_pl().get_leader() : ObProxyReplicaLocation())
+  } else {
+    ROUTE_DIAGNOSIS(param_.route_diagnosis_,
+                    PARTITION_ENTRY_LOOKUP,
+                    partition_entry_lookup,
+                    ret,
+                    part_id_,
+                    is_part_entry_from_remote_,
+                    is_part_entry_lookup_succ_,
+                    false,
+                    ObRouteEntry::DELETED,
+                    ObProxyReplicaLocation())
+  }
   if (!is_part_entry_lookup_succ_) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WARN("[ObMysqlRoute::handle_partition_entry_lookup_done] fail to lookup part entry", K(ret));
@@ -930,6 +1009,7 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       param_.is_oracle_mode_ = param.is_oracle_mode_;
       param_.is_need_force_flush_ = param.is_need_force_flush_;
       param_.cluster_version_ = param.cluster_version_;
+      param_.route_diagnosis_ = param.route_diagnosis_;
       if (!param.current_idc_name_.empty()) {
         MEMCPY(param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
         param_.current_idc_name_.assign_ptr(param_.current_idc_name_buf_, param.current_idc_name_.length());

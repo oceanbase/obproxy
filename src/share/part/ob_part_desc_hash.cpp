@@ -41,7 +41,8 @@ int ObPartDescHash::get_part(ObNewRange &range,
                              ObIAllocator &allocator,
                              ObIArray<int64_t> &part_ids,
                              ObPartDescCtx &ctx,
-                             ObIArray<int64_t> &tablet_ids)
+                             ObIArray<int64_t> &tablet_ids,
+                             int64_t &part_idx)
 {
   int ret = OB_SUCCESS; 
   // 1. Cast obj
@@ -88,7 +89,6 @@ int ObPartDescHash::get_part(ObNewRange &range,
   }
 
   // 2. Calc partition id
-  int64_t part_idx = -1;
   if (OB_SUCC(ret)) {
     // hash val
     int64_t result = 0;

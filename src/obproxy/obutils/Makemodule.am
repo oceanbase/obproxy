@@ -74,4 +74,7 @@ obproxy/obutils/ob_proxy_config_processor.cpp\
 obproxy/obutils/ob_config_processor.h\
 obproxy/obutils/ob_config_processor.cpp\
 obproxy/obutils/ob_read_stale_processor.h\
-obproxy/obutils/ob_read_stale_processor.cpp
+obproxy/obutils/ob_read_stale_processor.cpp\
+obproxy/obutils/ob_connection_diagnosis_trace.h\
+obproxy/obutils/ob_connection_diagnosis_trace.cpp\
+${ob_beyondtrust_sources}

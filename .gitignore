@@ -150,6 +150,8 @@ unittest/obproxy/etc/
 unittest/common/kv_storecache
 unittest/common/small_allocator
 unittest/lib/*.log*
+unittest/obproxy/foo_client
+unittest/obproxy/foo_server
 .dirstamp
 svn_version.c
 tools/deploy/collected_log/
@@ -189,4 +191,5 @@ deps/3rd/usr
 deps/3rd/pkg
 .ccls-cache
 src/compile_commands.json
+compile_commands.json
 .cache

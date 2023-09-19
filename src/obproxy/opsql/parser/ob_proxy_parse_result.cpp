@@ -195,23 +195,8 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
       str_ret = "DESC";
       break;
 
-    case OBPROXY_T_SHOW_MASTER_STATUS:
-      str_ret = "SHOW_MASTER_STATUS";
-      break;
-    case OBPROXY_T_SHOW_BINLOG_EVENTS:
-      str_ret = "SHOW_BINLOG_EVENTS";
-      break;
-    case OBPROXY_T_PURGE_BINARY_LOGS:
-      str_ret = "PURGE_BINARY_LOGS";
-      break;
-    case OBPROXY_T_RESET_MASTER:
-      str_ret = "RESET_MASTER";
-      break;
     case OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT:
       str_ret = "SHOW_BINLOG_SERVER_FOR_TENANT";
-      break;
-    case OBPROXY_T_SHOW_BINARY_LOGS:
-      str_ret = "SHOW_BINARY_LOGS";
       break;
 
     case OBPROXY_T_INVALID:
