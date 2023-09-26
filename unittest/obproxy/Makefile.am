@@ -2,7 +2,6 @@ AM_CPPFLAGS += -I${top_srcdir}/src\
                -I${top_srcdir}/src/lib\
                -I${top_srcdir}/unittest\
 							 -DSQL_PARSER_COMPILATION
-                                                         -Wno-array-bounds
 
 AM_CPPFLAGS += -I${top_srcdir}/src/obproxy/iocore/eventsystem               \
                -I${top_srcdir}/src/obproxy/iocore/net                       \
