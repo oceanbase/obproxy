@@ -873,8 +873,8 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
         s.pll_info_.lookup_success_ = true;
         LOG_DEBUG("@obproxy_route_addr is set", "address", s.server_info_.addr_, K(addr));
         route_info_type = ObDiagRouteInfo::USE_OBPROXY_ROUTE_ADDR;
-      } else if (obmysql::COM_STMT_FETCH == cmd
-                 || obmysql::COM_STMT_GET_PIECE_DATA == cmd) {
+      } else if (obmysql::OB_MYSQL_COM_STMT_FETCH == cmd
+                 || obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA == cmd) {
         ObCursorIdAddr *cursor_id_addr = NULL;
         if (OB_FAIL(cs_info.get_cursor_id_addr(cursor_id_addr))) {
           LOG_WARN("fail to get client cursor id addr", K(ret));
@@ -6708,7 +6708,7 @@ int ObMysqlTransact::ObTransState::get_config_item(const ObString& cluster_name,
       }
     }
 
-    if (OB_SUCC(ret) && COM_LOGIN == sm_->trans_state_.trans_info_.sql_cmd_) {
+    if (OB_SUCC(ret) && OB_MYSQL_COM_LOGIN == sm_->trans_state_.trans_info_.sql_cmd_) {
       ObConfigItem item;
       if (OB_FAIL(get_global_config_processor().get_proxy_config(addr, cluster_name, tenant_name, "init_sql", item))) {
         LOG_WARN("get init sql config failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
@@ -7452,9 +7452,9 @@ bool ObMysqlTransact::is_binlog_request(const ObTransState &s)
 {
   bool bret = false;
   if (get_global_proxy_config().enable_binlog_service
-      && (obmysql::COM_REGISTER_SLAVE == s.trans_info_.client_request_.get_packet_meta().cmd_
-      || obmysql::COM_BINLOG_DUMP == s.trans_info_.client_request_.get_packet_meta().cmd_
-      || obmysql::COM_BINLOG_DUMP_GTID == s.trans_info_.client_request_.get_packet_meta().cmd_
+      && (obmysql::OB_MYSQL_COM_REGISTER_SLAVE == s.trans_info_.client_request_.get_packet_meta().cmd_
+      || obmysql::OB_MYSQL_COM_BINLOG_DUMP == s.trans_info_.client_request_.get_packet_meta().cmd_
+      || obmysql::OB_MYSQL_COM_BINLOG_DUMP_GTID == s.trans_info_.client_request_.get_packet_meta().cmd_
       || s.trans_info_.client_request_.get_parse_result().is_binlog_related())) {
     bret = true;
   }

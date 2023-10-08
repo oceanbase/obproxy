@@ -305,7 +305,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
                   "cmd", result_.get_cmd(),
                   "status_flag", server_status.flags_,
                   K_(is_resultset_resp));
-        if ((!is_resultset_resp_ && COM_BINLOG_DUMP != result_.get_cmd() && COM_BINLOG_DUMP_GTID != result_.get_cmd())
+        if ((!is_resultset_resp_ && OB_MYSQL_COM_BINLOG_DUMP != result_.get_cmd() && OB_MYSQL_COM_BINLOG_DUMP_GTID != result_.get_cmd())
               && OB_FAIL(analyze_trans_response(reader, resp))) {
           result.status_ = ANALYZE_ERROR;
         }

@@ -18,6 +18,6 @@ ${google_rpc_status_sources}\
 ${validate_sources}
 
 dbconfig_protobuf_libobprotobuf_la_SOURCES := ${protobuf_sources}
-dbconfig_protobuf_libobprotobuf_la_CFLAGS := $(AM_CFLAGS) -std=c++11
-dbconfig_protobuf_libobprotobuf_la_CXXFLAGS := $(AM_CXXFLAGS) -std=c++11 -Iobproxy/dbconfig/protobuf -w
+dbconfig_protobuf_libobprotobuf_la_CFLAGS := $(AM_CFLAGS) -fPIC -std=c++11
+dbconfig_protobuf_libobprotobuf_la_CXXFLAGS := $(AM_CXXFLAGS) -fPIC -std=c++11 -Iobproxy/dbconfig/protobuf -w
 noinst_LTLIBRARIES += dbconfig/protobuf/libobprotobuf.la

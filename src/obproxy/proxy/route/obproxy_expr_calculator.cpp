@@ -108,7 +108,7 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
         if (OB_FAIL(do_partition_id_calc(resolve_result, client_info, route, part_info,
                                          parse_result, allocator, partition_id,
                                          part_idx, sub_part_idx))) {
-          if (COM_STMT_PREPARE != cmd) {
+          if (OB_MYSQL_COM_STMT_PREPARE != cmd) {
             LOG_DEBUG("fail to do expr resolve", K(print_sql), K(resolve_result), K(part_info));
           }
         }

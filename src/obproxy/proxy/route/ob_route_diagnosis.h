@@ -444,11 +444,11 @@ public:
   // whether need to be output to obproxy_diagnosis.log
   inline bool need_log() { return level_ != 0 && !is_support_explain_route_ && is_request_diagnostic_; }
   // diagnostic request cmd: 
-  // COM_QUERY/COM_STMT_PREPARE_EXECUTE/COM_STMT_PREPARE/COM_STMT_SEND_PIECE_DATA/
-  // COM_STMT_GET_PIECE_DATA/COM_STMT_FETCH/COM_STMT_SEND_LONG_DATA
+  // OB_MYSQL_COM_QUERY/COM_STMT_PREPARE_EXECUTE/COM_STMT_PREPARE/COM_STMT_SEND_PIECE_DATA/
+  // OB_MYSQL_COM_STMT_GET_PIECE_DATA/COM_STMT_FETCH/COM_STMT_SEND_LONG_DATA
   inline void set_is_request_diagnostic(const ObProxyMysqlRequest &cli_req);
   // `explain route <sql>` not support 
-  // COM_STMT_PREPARE/COM_STMT_PREPARE_EXECUTE/COM_STMT_CLOSE/
+  // OB_MYSQL_COM_STMT_PREPARE/COM_STMT_PREPARE_EXECUTE/COM_STMT_CLOSE/
   // OBPROXY_T_TEXT_PS_PREPARE/OBPROXY_T_TEXT_PS_DROP
   inline void set_is_support_explain_route(const ObProxyMysqlRequest &cli_req);
   // whether need to explain route respsone packet
@@ -642,13 +642,13 @@ inline void ObRouteDiagnosis::diagnosis_retry_connection(int ret, int64_t attemp
 
 inline void ObRouteDiagnosis::set_is_request_diagnostic(const ObProxyMysqlRequest &cli_req)
 {
-  is_request_diagnostic_ = (cli_req.get_packet_meta().cmd_ == obmysql::COM_QUERY || 
-                            cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_PREPARE_EXECUTE ||
-                            cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_PREPARE ||
-                            cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_SEND_PIECE_DATA ||
-                            cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_GET_PIECE_DATA ||
-                            cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_FETCH ||
-                            cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_SEND_LONG_DATA);
+  is_request_diagnostic_ = (cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_QUERY || 
+                            cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE ||
+                            cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_PREPARE ||
+                            cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA ||
+                            cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA ||
+                            cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_FETCH ||
+                            cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA);
 }
 
 inline void ObRouteDiagnosis::set_is_support_explain_route(const ObProxyMysqlRequest &cli_req)
@@ -656,10 +656,10 @@ inline void ObRouteDiagnosis::set_is_support_explain_route(const ObProxyMysqlReq
   is_support_explain_route_ = cli_req.get_parse_result().has_explain_route();
   if (is_support_explain_route_) {
     // for ps, only support execute
-    is_support_explain_route_ = !(cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_PREPARE ||
-                          cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_PREPARE_EXECUTE ||
-                          cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_CLOSE ||
-                          cli_req.get_packet_meta().cmd_ == obmysql::COM_STMT_RESET ||
+    is_support_explain_route_ = !(cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_PREPARE ||
+                          cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE ||
+                          cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_CLOSE ||
+                          cli_req.get_packet_meta().cmd_ == obmysql::OB_MYSQL_COM_STMT_RESET ||
                           cli_req.get_parse_result().get_stmt_type() == OBPROXY_T_TEXT_PS_PREPARE ||
                           cli_req.get_parse_result().get_stmt_type() == OBPROXY_T_TEXT_PS_DROP);
   }

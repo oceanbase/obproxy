@@ -1170,7 +1170,7 @@ inline void ObMysqlTransact::update_sql_cmd(ObTransState &s)
     case SERVER_SEND_START_TRANS:
     case SERVER_SEND_TEXT_PS_PREPARE:
     case SERVER_SEND_INIT_SQL:
-      s.trans_info_.sql_cmd_ = obmysql::COM_QUERY;
+      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_QUERY;
       break;
     
     case SERVER_SEND_XA_START:

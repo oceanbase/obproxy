@@ -320,9 +320,9 @@ int ObMysqlResponseBuilder::build_explain_route_resp(ObMIOBuffer &mio_buf,
   // fill field
   ObMySQLField field;
   field.cname_ = "Route Plan";
-  field.type_ = MYSQL_TYPE_LONGLONG;
-  field.charsetnr_ = MYSQL_TYPE_VARCHAR;
-  field.flags_ = BINARY_FLAG;
+  field.type_ = OB_MYSQL_TYPE_LONGLONG;
+  field.charsetnr_ = OB_MYSQL_TYPE_VARCHAR;
+  field.flags_ = OB_MYSQL_BINARY_FLAG;
 
   // fill filed value
   ObObj route_plan;

@@ -509,7 +509,7 @@ int ObMysqlRequestBuilder::build_init_sql_request_packet(ObMysqlSM *sm,
                                                          const ObProxyProtocol ob_proxy_protocol)
 {
   int ret = OB_SUCCESS;
-  ObMySQLCmd cmd = COM_QUERY;
+  ObMySQLCmd cmd = OB_MYSQL_COM_QUERY;
   uint8_t compressed_seq = 0;
   ObServerSessionInfo &server_info = server_session->get_session_info();
   if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {

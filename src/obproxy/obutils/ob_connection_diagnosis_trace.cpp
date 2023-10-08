@@ -198,8 +198,8 @@ void ObProxyInternalDiagnosisInfo::reset()
 {
   ObConnectionDiagnosisInfo::reset();
   sql_.reset();
-  sql_cmd_ = obmysql::COM_MAX_NUM;
-  request_cmd_ = obmysql::COM_MAX_NUM;
+  sql_cmd_ = obmysql::OB_MYSQL_COM_MAX_NUM;
+  request_cmd_ = obmysql::OB_MYSQL_COM_MAX_NUM;
 }
 
 DEF_TO_STRING(ObLoginDiagnosisInfo)

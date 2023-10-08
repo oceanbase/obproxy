@@ -951,10 +951,10 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
           }
         }
         if (connection_diagnosis_trace_ != NULL) {
-          if (OB_UNLIKELY(trans_state_.trans_info_.sql_cmd_ == COM_LOGIN)) {
+          if (OB_UNLIKELY(trans_state_.trans_info_.sql_cmd_ == OB_MYSQL_COM_LOGIN)) {
             connection_diagnosis_trace_->set_first_packet_received(true);
           }
-          if (OB_UNLIKELY(trans_state_.trans_info_.sql_cmd_ == COM_QUIT )) {
+          if (OB_UNLIKELY(trans_state_.trans_info_.sql_cmd_ == OB_MYSQL_COM_QUIT )) {
             connection_diagnosis_trace_->set_com_quit(true);
           }
         }
@@ -2275,7 +2275,7 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool i
           // save the xa start ps id, session_info.ps_id_ will be reset at ObMysqlSM::setup_cmd_complete()
           session_info.set_xa_start_ps_id(session_info.get_client_ps_id());
         }
-      } else if (COM_CHANGE_USER == req_cmd) {
+      } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd) {
         if (OB_UNLIKELY(session_info.is_sharding_user() || client_session_->using_ldg())) {
           if (OB_FAIL(encode_error_message(OB_NOT_SUPPORTED))) {
             LOG_WARN("fail to encode unsupport change user error message", K(ret));
@@ -5416,7 +5416,7 @@ int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
     }
 
     if (client_session_->is_need_return_last_bound_ss() &&
-        (obmysql::COM_STMT_FETCH == trans_state_.trans_info_.sql_cmd_
+        (obmysql::OB_MYSQL_COM_STMT_FETCH == trans_state_.trans_info_.sql_cmd_
          || ObMysqlTransact::is_binlog_request(trans_state_))) {
       ObMysqlServerSession *last_bound_session = client_session_->get_last_bound_server_session();
       if (NULL != last_bound_session) {
@@ -6997,10 +6997,10 @@ inline int ObMysqlSM::do_oceanbase_internal_observer_open(ObMysqlServerSession *
   bool is_text_ps_close = trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_drop_stmt();
   if (!trans_state_.is_need_pl_lookup()
       && !ObMysqlTransact::is_binlog_request(trans_state_)
-      && ((COM_STMT_CLOSE != cmd
-           && COM_STMT_FETCH != cmd
-           && COM_STMT_RESET != cmd
-           && COM_STMT_GET_PIECE_DATA != cmd
+      && ((OB_MYSQL_COM_STMT_CLOSE != cmd
+           && OB_MYSQL_COM_STMT_FETCH != cmd
+           && OB_MYSQL_COM_STMT_RESET != cmd
+           && OB_MYSQL_COM_STMT_GET_PIECE_DATA != cmd
            && !is_text_ps_close)
           || !client_session_->is_need_return_last_bound_ss())) {
     ObMysqlServerSession *target_session = NULL;
@@ -7179,8 +7179,8 @@ inline int ObMysqlSM::do_internal_observer_open()
                                      "svr", server_session_->server_ip_,
                                      "sessid", static_cast<int64_t>(server_session_->get_server_sessid()));
 
-      if (OB_UNLIKELY(COM_STMT_CLOSE == cmd
-                      || COM_STMT_RESET == cmd
+      if (OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == cmd
+                      || OB_MYSQL_COM_STMT_RESET == cmd
                       || client_session_->can_direct_send_request_)) {
         // no need sync var on OB_MYSQL_COM_STMT_CLOSE
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_REQUEST;
@@ -7313,7 +7313,7 @@ int ObMysqlSM::do_internal_request_for_sharding_init_db(ObMIOBuffer *buf)
   ObClientSessionInfo &client_info = client_session->get_session_info();
   ObProxyProtocol client_procotol = get_client_session_protocol();
 
-  // handle use db stmt or COM_INIT_DB cmd when sharding
+  // handle use db stmt or OB_MYSQL_COM_INIT_DB cmd when sharding
   LOG_DEBUG("sharding init db");
   ObHSRResult &hsr = client_info.get_login_req().get_hsr_result();
   ObString db_name;

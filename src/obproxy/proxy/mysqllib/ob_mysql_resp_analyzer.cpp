@@ -847,14 +847,14 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
 
           if (is_last_eof_pkt) {
             handle_last_eof(pkt_len, buf_reader);
-            if (COM_STMT_EXECUTE == result.get_cmd()) {
+            if (OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd()) {
               result.set_recv_resultset(true);
             }
           }
         }
       } else if (is_last_eof_pkt) {
         handle_last_eof(pkt_len, buf_reader);
-      } else if (COM_STMT_PREPARE_EXECUTE != result.get_cmd()){
+      } else if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE != result.get_cmd()){
         ret = OB_ERR_UNEXPECTED;
         LOG_WARN("unexpected eof packet", K(err_pkt_cnt), K(eof_pkt_cnt), K(ret));
         ok_packet_action_type = OK_PACKET_ACTION_SEND;
