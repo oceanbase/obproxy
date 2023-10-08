@@ -8,7 +8,7 @@ devdeps-openssl-static-1.0.1e-12.el8.aarch64.rpm
 devdeps-libcurl-static-7.29.0-16.el8.aarch64.rpm
 devdeps-mariadb-connector-c-3.1.12-16.el8.aarch64.rpm
 devdeps-gtest-1.8.0-16.el8.aarch64.rpm
-devdeps-prometheus-cpp-0.8.0-2.el8.aarch64.rpm
+devdeps-prometheus-cpp-0.8.0-8.el8.aarch64.rpm
 devdeps-grpc-1.20.1-9.el8.aarch64.rpm
 devdeps-sqlite-3.38.1-5.el8.aarch64.rpm
 
