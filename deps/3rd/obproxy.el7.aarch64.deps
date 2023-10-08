@@ -9,7 +9,7 @@ devdeps-libcurl-static-7.29.0-3.el7.aarch64.rpm
 devdeps-mariadb-connector-c-3.1.12-3.el7.aarch64.rpm
 devdeps-gtest-1.8.0-3.el7.aarch64.rpm
 devdeps-prometheus-cpp-0.8.0-2.el7.aarch64.rpm
-devdeps-grpc-1.20.1-8.el7.aarch64.rpm
+devdeps-grpc-1.20.1-9.el7.aarch64.rpm
 devdeps-sqlite-3.38.1-5.el7.aarch64.rpm
 
 [tools]
