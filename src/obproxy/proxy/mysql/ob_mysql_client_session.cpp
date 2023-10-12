@@ -296,7 +296,7 @@ int ObMysqlClientSession::new_connection(
     session_manager_new_.set_mutex(mutex_);
     MUTEX_TRY_LOCK(lock, mutex_, this_ethread());
     if (OB_LIKELY(lock.is_locked())) {
-      current_tid_ = gettid();
+      current_tid_ = GETTID();
       hooks_on_ = true;
 
       MYSQL_INCREMENT_DYN_STAT(CURRENT_CLIENT_CONNECTIONS);
