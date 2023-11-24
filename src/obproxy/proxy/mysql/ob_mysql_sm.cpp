@@ -10010,7 +10010,6 @@ inline void ObMysqlSM::update_monitor_log()
         }
 
         if (is_error_resp) {
-          const ObString &server_trace_id = get_server_trace_id();
           _OBPROXY_ERROR_LOG(WARN, MONITOR_ERROR_LOG_FORMAT, MONITOR_ERROR_LOG_PARAM);
         }
       }
