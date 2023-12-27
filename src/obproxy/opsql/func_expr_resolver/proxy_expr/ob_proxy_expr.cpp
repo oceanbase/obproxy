@@ -434,7 +434,7 @@ int ObProxyExprHash::calc(const ObProxyExprCtx &ctx,
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("hash should have one or two param", K(ret));
     } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
-      LOG_WARN("calc param expr failed", K(ret));
+      LOG_WARN("hash calc param expr failed", K(ret));
     } else {
       int i = 0;
       do {
@@ -522,7 +522,7 @@ int ObProxyExprSubStr::calc(const ObProxyExprCtx &ctx,
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("substr has no param", K(ret));
     } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
-      LOG_WARN("calc param expr failed", K(ret));
+      LOG_WARN("substr calc param expr failed", K(ret));
     } else {
       int i = 0;
       do {
@@ -652,7 +652,7 @@ int ObProxyExprConcat::calc(const ObProxyExprCtx &ctx,
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("concat has no param", K(ret));
     } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
-      LOG_WARN("calc param expr failed", K(ret));
+      LOG_WARN("concat calc param expr failed", K(ret));
     } else {
       int i = 0;
       do {
@@ -1506,7 +1506,7 @@ int ObProxyExprToTimeHandler::calc(const ObProxyExprCtx &ctx,
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("to_date should have at least one param", K(ret));
     } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
-      LOG_WARN("calc param expr failed", K(ret));
+      LOG_WARN("to_date calc param expr failed", K(ret));
     } else {
       int i = 0;
       do {
@@ -1588,7 +1588,7 @@ int ObProxyExprNvl::calc(const ObProxyExprCtx &ctx,
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("nvl should have two param", K(ret));
     } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
-      LOG_WARN("calc param expr failed", K(ret));
+      LOG_WARN("nvl calc param expr failed", K(ret));
     } else {
       int i = 0;
       do {
@@ -1650,7 +1650,7 @@ int ObProxyExprToChar::calc(const ObProxyExprCtx &ctx,
       ret = OB_EXPR_CALC_ERROR;
       LOG_WARN("to_char should have one or two param", K(ret), K(param_array_.count()));
     } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
-      LOG_WARN("calc param expr failed", K(ret));
+      LOG_WARN("to_char calc param expr failed", K(ret));
     } else {
       int i = 0;
       do {

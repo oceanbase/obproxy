@@ -836,7 +836,7 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
               client_session_->active_ = true;
               MYSQL_INCREMENT_DYN_STAT(CURRENT_ACTIVE_CLIENT_CONNECTIONS);
             }
-            // do not warry about cluster resource, large request will allways behind
+            // do not warry about cluster resource, large request will always behind
             // the auth request.
 
             call_transact_and_set_next_state(ObMysqlTransact::modify_request);

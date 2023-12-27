@@ -359,7 +359,7 @@ inline int ObMysqlRequestAnalyzer::handle_auth_request(ObIOBufferReader &reader,
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("it shoulde not happened", K(ret));
+    LOG_WARN("it should not happened", K(ret));
   }
   return ret;
 }
