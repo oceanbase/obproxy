@@ -444,7 +444,7 @@ public:
   DEF_BOOL(auto_scan_all, "false", "if enabled, need scan all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 
   // session pool
-  DEF_BOOL(is_pool_mode, "false", "if enabled means useing session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(is_pool_mode, "false", "if enabled means using session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_conn_precreate, "false", "if enabled means precreate conn for session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_session_pool_for_no_sharding, "false", "if enabled can use session pool for no sharding", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
   DEF_BOOL(enable_no_sharding_skip_real_conn, "false", "if enabled no sharding will use saved password check to skip real conn", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
