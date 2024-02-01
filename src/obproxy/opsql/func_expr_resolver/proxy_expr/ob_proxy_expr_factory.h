@@ -31,6 +31,8 @@ public:
   explicit ObProxyExprFactory(common::ObIAllocator &allocator) : allocator_(allocator) {}
   ~ObProxyExprFactory() {}
 
+  static void str_toupper(char *upper_str, const char *str, const int32_t str_len);
+  static int get_type_by_name(const ObString &name, ObProxyExprType &type);
   template<typename T>
   int create_proxy_expr(const ObProxyExprType type, T *&expr)
   {
@@ -51,6 +53,27 @@ public:
 
     return ret;
   }
+  template<typename ClassT>
+  int alloc_func_expr(const ObProxyExprType type, ObProxyFuncExpr *&expr)
+  {
+    int ret = common::OB_SUCCESS;
+    if (OB_UNLIKELY(OB_PROXY_EXPR_TYPE_NONE >= type || OB_PROXY_EXPR_TYPE_MAX <= type)) {
+      ret = common::OB_INVALID_ARGUMENT;
+    } else {
+      expr = NULL;
+      void *ptr = allocator_.alloc(sizeof(ClassT));
+
+      if (OB_UNLIKELY(OB_ISNULL(ptr))) {
+        ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      } else {
+        expr = new(ptr) ClassT();
+        expr->set_expr_type(type);
+      }
+    }
+    return ret;
+  }
+  int create_func_expr(const ObProxyExprType type, ObProxyFuncExpr *&func_expr);
+  static int register_proxy_expr();
 
 private:
   common::ObIAllocator &allocator_;

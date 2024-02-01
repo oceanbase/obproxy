@@ -32,7 +32,7 @@ int ObShardWatchProcessor::start(const int64_t shard_watch_threads, const int64_
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(g_event_processor.spawn_event_threads(shard_watch_threads, "ET_SHARD_WATCH", stacksize, ET_SHARD_WATCH))) {
-    LOG_WARN("fail to spawn event threads for ET_SHARD_WATCH", K(ret));
+    LOG_WDIAG("fail to spawn event threads for ET_SHARD_WATCH", K(ret));
   } else {
     LOG_INFO("succ to start shard watch threads", K(shard_watch_threads));
   }

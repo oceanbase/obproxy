@@ -69,7 +69,7 @@ int ObCpuTableProcessor::init()
   int tmp_ret = OB_SUCCESS;
   if (OB_SUCCESS != (tmp_ret = cgroup_ctrl_.init())) {
     // cgroup failure does not affect initialization
-    LOG_WARN("fail to init tenant cgroup ctrl", K(tmp_ret));
+    LOG_DEBUG("fail to init tenant cgroup ctrl", K(tmp_ret));
   }
   return ret;
 }
@@ -88,10 +88,10 @@ int ObCpuTableProcessor::cpu_handle_replace_config(
 
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("tenant or cluster is null", K(ret), K(cluster_name), K(tenant_name));
+    LOG_WDIAG("tenant or cluster is null", K(ret), K(cluster_name), K(tenant_name));
   } else if (FALSE_IT(backup_local_cpu_cache())) {
   } else if (OB_FAIL(fill_local_cpu_cache(cluster_name, tenant_name, value_str))) {
-    LOG_WARN("update vip tenant cpu cache failed", K(ret));
+    LOG_WDIAG("update vip tenant cpu cache failed", K(ret));
   } else {
     LOG_INFO("update vip tenant cpu cache succ", "count", get_cpu_map_count(), K(cluster_name), K(tenant_name), K(value_str));
   }
@@ -105,7 +105,7 @@ int ObCpuTableProcessor::cpu_handle_delete_config(ObString& cluster_name, ObStri
 
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
+    LOG_WDIAG("tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
   } else {
     backup_local_cpu_cache();
     DRWLock::WRLockGuard guard(tenant_cpu_rwlock_);
@@ -129,12 +129,12 @@ int ObCpuTableProcessor::check_json_value(bool has_set_vip, ObString vip_list_st
   int ret = OB_SUCCESS;
   if (has_set_vip && vip_list_str.empty()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("check json value failed", K(ret), K(has_set_vip), K(vip_list_str));
+    LOG_WDIAG("check json value failed", K(ret), K(has_set_vip), K(vip_list_str));
   }
   if (OB_SUCC(ret)) {
     if (!has_set_value || value.empty()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("check json value failed", K(ret), K(has_set_value), K(value));
+      LOG_WDIAG("check json value failed", K(ret), K(has_set_value), K(value));
     }
   }
   return ret;
@@ -155,22 +155,22 @@ int ObCpuTableProcessor::fill_local_cpu_cache(
   bool has_set_value = false;
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty()) || OB_UNLIKELY(vip_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("name is empty", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
+    LOG_WDIAG("name is empty", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
   } else if (OB_FAIL(parser.init(&json_allocator))) {
-    LOG_WARN("json parser init failed", K(ret));
+    LOG_WDIAG("json parser init failed", K(ret));
   } else if (OB_FAIL(parser.parse(vip_name.ptr(), vip_name.length(), info_config))) {
-    LOG_WARN("parse json failed", K(ret), "vip_json_str", get_print_json(vip_name));
+    LOG_WDIAG("parse json failed", K(ret), "vip_json_str", get_print_json(vip_name));
   } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(info_config, json::JT_ARRAY))) {
-    LOG_WARN("check config info type failed", K(ret));
+    LOG_WDIAG("check config info type failed", K(ret));
   } else {
     DLIST_FOREACH(it, info_config->get_array()) {
       if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it, json::JT_OBJECT))) {
-        LOG_WARN("check config info type failed", K(ret));
+        LOG_WDIAG("check config info type failed", K(ret));
       } else {
         DLIST_FOREACH(p, it->get_object()) {
           if (p->name_ == JSON_OBPROXY_VIP) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-              LOG_WARN("check config info type failed", K(ret));
+              LOG_WDIAG("check config info type failed", K(ret));
             } else {
               vip_list_str = p->value_->get_string();
               has_set_vip = true;
@@ -178,7 +178,7 @@ int ObCpuTableProcessor::fill_local_cpu_cache(
           } else if (p->name_ == JSON_OBPROXY_VALUE) {
             // note: Since json only supports integers but not doubles for numeric parsing, the JT_STRING type is used here
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-              LOG_WARN("check config info type failed", K(ret));
+              LOG_WDIAG("check config info type failed", K(ret));
             } else {
               max_cpu_usage = p->value_->get_string();
               has_set_value = true;
@@ -188,19 +188,19 @@ int ObCpuTableProcessor::fill_local_cpu_cache(
       }
       if (OB_SUCC(ret)) {
         if (OB_FAIL(check_json_value(has_set_vip, vip_list_str, has_set_value, max_cpu_usage))) {
-          LOG_WARN("check json value failed", K(cluster_name), K(tenant_name), K(vip_list_str), K(max_cpu_usage), K(ret));
+          LOG_WDIAG("check json value failed", K(cluster_name), K(tenant_name), K(vip_list_str), K(max_cpu_usage), K(ret));
         } else if (OB_FAIL(get_double_value(max_cpu_usage, double_max_cpu_usage))) {
-          LOG_WARN("fail to get double", K(max_cpu_usage), K(double_max_cpu_usage), K(ret));
+          LOG_WDIAG("fail to get double", K(max_cpu_usage), K(double_max_cpu_usage), K(ret));
         } else if (OB_FAIL(handle_cpu_config(cluster_name, tenant_name, vip_list_str, double_max_cpu_usage))) {
-          LOG_WARN("update config faild", K(cluster_name), K(tenant_name), K(vip_list_str), K(double_max_cpu_usage), K(ret));
+          LOG_WDIAG("update config faild", K(cluster_name), K(tenant_name), K(vip_list_str), K(double_max_cpu_usage), K(ret));
         }
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(check_cpu_config())) {
-        LOG_WARN("check config faild", K(ret));
+        LOG_WDIAG("check config faild", K(ret));
       } else if (OB_FAIL(update_cpu_config())) {
-        LOG_WARN("update cpu config faild", K(ret));
+        LOG_WDIAG("update cpu config faild", K(ret));
       }
     }
   }
@@ -217,13 +217,13 @@ int ObCpuTableProcessor::handle_cpu_config(
   common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
   if (max_cpu_usage <= 0) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("max cpu usage error", K(max_cpu_usage), K(ret));
+    LOG_WDIAG("max cpu usage error", K(max_cpu_usage), K(ret));
   } else if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name, cluster_name, vip_name, key_string))) {
-    LOG_WARN("build tenant cluser vip name failed", K(tenant_name), K(cluster_name), K(vip_name), K(ret));
+    LOG_WDIAG("build tenant cluser vip name failed", K(tenant_name), K(cluster_name), K(vip_name), K(ret));
   } else {
     key_name = ObString::make_string(key_string.ptr());
     if (OB_FAIL(get_or_create_tenant_cpu(cluster_name, tenant_name, vip_name, key_name, max_cpu_usage, tenant_cpu))) {
-      LOG_WARN("create tenant cpu failed", K(key_name), K(ret));
+      LOG_WDIAG("create tenant cpu failed", K(key_name), K(ret));
     } else {
       tenant_cpu->max_cpu_usage_ = max_cpu_usage;
       tenant_cpu->max_thread_num_ = (int64_t)ceil(tenant_cpu->max_cpu_usage_);
@@ -241,7 +241,7 @@ int ObCpuTableProcessor::check_cpu_config()
   int ret = OB_SUCCESS;
   DRWLock::RDLockGuard guard(tenant_cpu_rwlock_);
   if (OB_FAIL(tenant_cpu_cache_.check())) {
-    LOG_WARN("check cpu config failed", K(ret));
+    LOG_WDIAG("check cpu config failed", K(ret));
   }
   return ret;
 }
@@ -251,7 +251,7 @@ int ObCpuTableProcessor::update_cpu_config()
   int ret = OB_SUCCESS;
   DRWLock::WRLockGuard guard(tenant_cpu_rwlock_);
   if (OB_FAIL(tenant_cpu_cache_.update())) {
-    LOG_WARN("update cpu config failed", K(ret));
+    LOG_WDIAG("update cpu config failed", K(ret));
   }
   return ret;
 }
@@ -268,12 +268,12 @@ int ObCpuTableProcessor::create_tenant_cpu(ObString& cluster_name, ObString& ten
       int64_t alloc_size = sizeof(ObTenantCpu);
       if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for tenant cpu", K(alloc_size), K(ret));
+        LOG_WDIAG("fail to alloc memory for tenant cpu", K(alloc_size), K(ret));
       } else {
         tenant_cpu = new (buf) ObTenantCpu(cluster_name, tenant_name, vip_name, key_name, max_cpu_usage, cgroup_ctrl_);
         tenant_cpu->inc_ref();
         if (OB_FAIL(tenant_cpu_cache_.set(tenant_cpu))) {
-          LOG_WARN("fail to set tenant cpu map", K(key_name), KPC(tenant_cpu), K(ret));
+          LOG_WDIAG("fail to set tenant cpu map", K(key_name), KPC(tenant_cpu), K(ret));
         }
       }
       if (OB_SUCC(ret)) {
@@ -313,12 +313,12 @@ int ObCpuTableProcessor::get_or_create_tenant_cpu(ObString& cluster_name, ObStri
   if (OB_FAIL(get_tenant_cpu(key_name, tenant_cpu))) {
     if (OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(create_tenant_cpu(cluster_name, tenant_name, vip_name, key_name, max_cpu_usage, tenant_cpu))) {
-        LOG_WARN("fail to create tenant cpu", K(key_name), K(ret));
+        LOG_WDIAG("fail to create tenant cpu", K(key_name), K(ret));
       } else {
         LOG_DEBUG("succ to create tenant cpu", K(key_name), K(max_cpu_usage), KPC(tenant_cpu));
       }
     } else {
-      LOG_WARN("fail to get tenant cpu", K(key_name), K(ret));
+      LOG_WDIAG("fail to get tenant cpu", K(key_name), K(ret));
     }
   }
   return ret;

@@ -15,6 +15,7 @@
 #include "rpc/obmysql/ob_mysql_util.h"
 #include "rpc/obmysql/packet/ompk_prepare.h"
 #include "proxy/mysqllib/ob_mysql_response.h"
+#include "proxy/mysqllib/ob_protocol_diagnosis.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -31,10 +32,10 @@ inline int ObBufferReader::read(char *buf, const int64_t len)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid len", K(len), K(ret));
+    LOG_WDIAG("invalid len", K(len), K(ret));
   } else if (OB_UNLIKELY(len > get_remain_len())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("buf data not enough", K(len), K(ret));
+    LOG_WDIAG("buf data not enough", K(len), K(ret));
   } else {
     // if buf is NULL, will not copy and just add pos_
     if (OB_LIKELY(NULL != buf)) {
@@ -52,7 +53,6 @@ inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result, cons
   int64_t eof_pkt_cnt = result.get_pkt_cnt(EOF_PACKET_ENDING_TYPE);
   int64_t err_pkt_cnt = result.get_pkt_cnt(ERROR_PACKET_ENDING_TYPE);
   int64_t prepare_ok_pkt_cnt = result.get_pkt_cnt(PREPARE_OK_PACKET_ENDING_TYPE);
-
   cur_type_ = MAX_PACKET_ENDING_TYPE;
   switch (meta_.pkt_type_) {
     case MYSQL_ERR_PACKET_TYPE:
@@ -79,7 +79,7 @@ inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result, cons
           || OB_MYSQL_COM_BINLOG_DUMP_GTID == result.get_cmd()) {
         break;
       } else if (OB_MYSQL_COM_STMT_PREPARE == result.get_cmd()) {
-        /* Preapre Request, in OCEANBASE, maybe error + ok. in this case, should set OK_PACKET_ENDING_TYPE */
+        /* Preapre 请求, in OCEANBASE, 可能是 error + ok, 这时的 OK 应该是 OK_PACKET_ENDING_TYPE */
         if (0 == prepare_ok_pkt_cnt && 0 == err_pkt_cnt) {
           cur_type_ = PREPARE_OK_PACKET_ENDING_TYPE;
         } else {
@@ -129,6 +129,8 @@ inline int ObMysqlPacketMetaAnalyzer::update_cur_type(ObRespResult &result, cons
 
     case MYSQL_EOF_PACKET_TYPE:
       if (meta_.pkt_len_ < 9) {
+        cur_type_ = EOF_PACKET_ENDING_TYPE;
+      } else if (OB_MYSQL_COM_CHANGE_USER == result.get_cmd()) {
         cur_type_ = EOF_PACKET_ENDING_TYPE;
       }
       break;
@@ -200,7 +202,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       || OB_UNLIKELY(OB_MYSQL_COM_END == cmd_)
       || OB_UNLIKELY(UNDEFINED_MYSQL_PROTOCOL_MODE == mysql_mode_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", "ok pkt count", pkt_cnt_[OK_PACKET_ENDING_TYPE],
+    LOG_WDIAG("invalid argument", "ok pkt count", pkt_cnt_[OK_PACKET_ENDING_TYPE],
              "eof pkt count", pkt_cnt_[EOF_PACKET_ENDING_TYPE],
              "err pkt count", pkt_cnt_[ERROR_PACKET_ENDING_TYPE],
              K(cmd_), K(mysql_mode_), K(ret));
@@ -246,6 +248,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       case OB_MYSQL_COM_STMT_RESET:
       case OB_MYSQL_COM_INIT_DB :
       case OB_MYSQL_COM_CHANGE_USER:
+      case OB_MYSQL_COM_AUTH_SWITCH_RESP:
       case OB_MYSQL_COM_RESET_CONNECTION: {
         if (OB_UNLIKELY(is_mysql_mode())) {
           if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
@@ -264,10 +267,14 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
                      && 1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
             finished = true;
             ending_type = ERROR_PACKET_ENDING_TYPE;
+          // eof as auth switch response
+          } else if (OB_MYSQL_COM_CHANGE_USER == cmd_ && 1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
+            finished = true;
+            ending_type = EOF_PACKET_ENDING_TYPE;
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected mode error", K(ret), K(get_mysql_mode()));
+          LOG_WDIAG("unexpected mode error", K(ret), K(get_mysql_mode()));
         }
         break;
       }
@@ -278,7 +285,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
           ending_type = ERROR_PACKET_ENDING_TYPE;
         } else if (RESULT_SET_RESP_TYPE == resp_type_ || OTHERS_RESP_TYPE == resp_type_) {
           uint32_t expect_pkt_cnt = expect_pkt_cnt_;
-          // in oceanbase, have extra OK packet
+          /* 如果连的是 OB, 最后会多一个 OK 包 */
           if (OB_LIKELY(is_oceanbase_mode())) {
             expect_pkt_cnt += 1;
           }
@@ -293,7 +300,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
               ending_type = PREPARE_OK_PACKET_ENDING_TYPE;
             } else {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("unknown eof_pkt_cnt", K(eof_pkt_cnt), K(ret));
+              LOG_WDIAG("unknown eof_pkt_cnt", K(eof_pkt_cnt), K(ret));
             }
           }
         } else if (MAX_RESP_TYPE == resp_type_) {
@@ -301,7 +308,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
           finished = false;
         } else {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("infile not supported now", K(ret));
+          LOG_WDIAG("infile not supported now", K(ret));
         }
 
         break;
@@ -336,7 +343,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
           finished = false;
         } else {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("infile not supported now", K(ret));
+          LOG_WDIAG("infile not supported now", K(ret));
         }
         break;
       }
@@ -371,12 +378,16 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
               ending_type = OK_PACKET_ENDING_TYPE;
             }
           }
+        } else if (LOCAL_INFILE_RESP_TYPE == resp_type_) {
+          ending_type = LOCAL_INFILE_ENDING_TYPE;
+          finished = true;
+          LOG_DEBUG("succ to parse [0xFB - filename] packet from MySQL packet");
         } else if (MAX_RESP_TYPE == resp_type_) {
           // have not read resp type, as read data len less than MYSQL_PACKET_HEADER(4)
           finished = false;
         } else {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("infile not supported now", K(ret));
+          LOG_WDIAG("not supported now", K(ret), K_(resp_type));
         }
         break;
       }
@@ -402,7 +413,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
           finished = false;
         } else {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("infile not supported now", K(ret));
+          LOG_WDIAG("infile not supported now", K(ret));
         }
         break;
       }
@@ -499,7 +510,18 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
         }
         break;
       }
+      case OB_MYSQL_COM_SET_OPTION:
       case OB_MYSQL_COM_REGISTER_SLAVE: {
+        if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
+          finished = true;
+          ending_type = ERROR_PACKET_ENDING_TYPE;
+        } else if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+          finished = true;
+          ending_type = OK_PACKET_ENDING_TYPE;
+        }
+        break;
+      }
+      case OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT: {
         if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
           finished = true;
           ending_type = ERROR_PACKET_ENDING_TYPE;
@@ -512,7 +534,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
       default : {
         if (!is_supported_mysql_cmd(cmd_)) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("unsupport mysql server cmd", K_(cmd), K(ret));
+          LOG_WDIAG("unsupport mysql server cmd", K_(cmd), K(ret));
           // maybe supported in future version?
           if (OB_UNLIKELY(is_mysql_mode())) {
             if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
@@ -527,7 +549,7 @@ int ObRespResult::is_resp_finished(bool &finished, ObMysqlRespEndingType &ending
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unknown mysql server cmd", K_(cmd), K(ret));
+          LOG_WDIAG("unknown mysql server cmd", K_(cmd), K(ret));
         }
         break;
       }
@@ -550,9 +572,9 @@ inline int ObMysqlRespAnalyzer::read_pkt_hdr(ObBufferReader &buf_reader)
   } else {
     int64_t len = std::min(data_len, meta_analyzer_.get_remain_len());
     if (OB_FAIL(buf_reader.read(meta_analyzer_.get_insert_pos(), len))) {
-      LOG_WARN("fail to read resp buffer", K(len), K(ret));
+      LOG_WDIAG("fail to read resp buffer", K(len), K(ret));
     } else if (OB_FAIL(meta_analyzer_.add_valid_len(len))) {
-      LOG_WARN("fail to add valid cnt", K(len), K(ret));
+      LOG_WDIAG("fail to add valid cnt", K(len), K(ret));
     } else {
       // reserve the header, avoid sending part of packet header in more than one net io
       reserved_len_ += len;
@@ -579,16 +601,16 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
 
   if(OB_MYSQL_COM_BINLOG_DUMP == result.get_cmd() || OB_MYSQL_COM_BINLOG_DUMP_GTID == result.get_cmd()) {
     if (pre_seq_ < 255 && (pre_seq_ + 1 != meta_analyzer_.get_meta().pkt_seq_)) {
-      LOG_ERROR("BINLOG_DUMP seq is not expected", K(pre_seq_), K(meta_analyzer_.get_meta()));
+      LOG_EDIAG("BINLOG_DUMP seq is not expected", K(pre_seq_), K(meta_analyzer_.get_meta()));
     } else if (pre_seq_ == 255 && 0 != meta_analyzer_.get_meta().pkt_seq_) {
-      LOG_ERROR("BINLOG_DUMP seq is not expected", K(pre_seq_), K(meta_analyzer_.get_meta()));
+      LOG_EDIAG("BINLOG_DUMP seq is not expected", K(pre_seq_), K(meta_analyzer_.get_meta()));
     } else {
       LOG_DEBUG("check binlog dump seq pass", K(pre_seq_), K(meta_analyzer_.get_meta().pkt_seq_));
     }
     pre_seq_ = meta_analyzer_.get_meta().pkt_seq_;
   }
 
-  // empty response packet, OB_MYSQL_COM_STATISTICS and multi packet can not read type
+  // empty response packet, COM_STATISTICS and multi packet can not read type
   if (OB_LIKELY(!is_in_multi_pkt_)
       && OB_LIKELY(OB_MYSQL_COM_STATISTICS != result.get_cmd())
       && OB_LIKELY(meta_analyzer_.get_meta().pkt_len_ > 0)) {
@@ -606,7 +628,7 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
       }
 
       if (OB_FAIL(meta_analyzer_.update_cur_type(result, mysql_mode_))) {
-        LOG_WARN("fail to update ending type", K(ret));
+        LOG_WDIAG("fail to update ending type", K(ret));
       } else {
         if (OB_LIKELY(OB_MYSQL_COM_QUERY == result.get_cmd()
                    || OB_MYSQL_COM_PROCESS_INFO == result.get_cmd()
@@ -632,12 +654,13 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
           int64_t mem_len = (OK_PACKET_ENDING_TYPE == meta_analyzer_.get_cur_type()
                              ? OK_PACKET_MAX_COPY_LEN : meta_analyzer_.get_meta().pkt_len_);
           if (OB_FAIL(body_buf_.init(mem_len))) {
-            LOG_WARN("fail to alloc mem", K(ret), K(mem_len));
-          //need save first byte to paser in OMPKHandshake/OMPKPrepare
+            LOG_WDIAG("fail to alloc mem", K(ret), K(mem_len));
+          //解析 handshake/prepare ok 时是交给 OMPKHandshake/OMPKPrepare 类去解析的, 会按照标准格式解析
+          //所以这里要把第一个字节也保存下来
           } else if ((HANDSHAKE_PACKET_ENDING_TYPE == meta_analyzer_.get_cur_type()
                       || PREPARE_OK_PACKET_ENDING_TYPE == meta_analyzer_.get_cur_type())
                   && OB_FAIL(body_buf_.write(buf_reader.get_ptr() - 1 , 1))) {
-            LOG_WARN("fail to write handshake protocol version", K(ret));
+            LOG_WDIAG("fail to write handshake protocol version", K(ret));
           }
         }
       }
@@ -653,15 +676,15 @@ inline int ObMysqlRespAnalyzer::read_pkt_type(ObBufferReader &buf_reader, ObResp
           meta_analyzer_.set_cur_type(OK_PACKET_ENDING_TYPE);
           int64_t mem_len = OK_PACKET_MAX_COPY_LEN;
           if (OB_FAIL(body_buf_.init(mem_len))) {
-            LOG_WARN("fail to alloc mem", K(mem_len), K(ret));
+            LOG_WDIAG("fail to alloc mem", K(mem_len), K(ret));
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid string_eof_pkt_cnt", K(string_eof_pkt_cnt), K(ret));
+          LOG_WDIAG("invalid string_eof_pkt_cnt", K(string_eof_pkt_cnt), K(ret));
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid string_eof_pkt_cnt", K(string_eof_pkt_cnt), K(ret));
+        LOG_WDIAG("invalid string_eof_pkt_cnt", K(string_eof_pkt_cnt), K(ret));
       }
     } else {
       meta_analyzer_.set_cur_type(MAX_PACKET_ENDING_TYPE);
@@ -684,7 +707,7 @@ inline int ObMysqlRespAnalyzer::read_pkt_body(ObBufferReader &buf_reader,
     if (body_buf_.remain() > 0) {
       int64_t len_left = std::min(len, body_buf_.remain());
       if (OB_FAIL(body_buf_.write(buf_reader.get_ptr(), len_left))) {
-        LOG_WARN("fail to write", K(len_left), K(ret));
+        LOG_WDIAG("fail to write", K(len_left), K(ret));
       }
     }
 
@@ -722,12 +745,11 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
   // 2. the second eof packet (has more result)
   ObOKPacketActionType ok_packet_action_type = OK_PACKET_ACTION_SEND;
   bool is_in_trans = false;
-
   switch (pkt_type) {
     case OK_PACKET_ENDING_TYPE : {
       // in any case, we should analyze packet
       if (OB_FAIL(analyze_ok_pkt(is_in_trans, buf_reader))) {
-        LOG_WARN("fail to analyze_ok_pkt", K(ret));
+        LOG_WDIAG("fail to analyze_ok_pkt", K(ret));
       } else {
         if (is_in_trans) {
           result.set_trans_state(IN_TRANS_STATE_BY_PARSE);
@@ -745,7 +767,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
           } else {
             if (OB_MYSQL_COM_FIELD_LIST == result.get_cmd() && 1 == eof_pkt_cnt) {
               ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
-            /* stmt prepare execute's OK packet need pass to client, except OK packet after error packet */
+            /* stmt prepare execute 的 OK 包, 除了 error 包后的 OK 包之外, 都是要透传的 */
             } else if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE == result.get_cmd()) {
               if (1 == err_pkt_cnt) {
                 ok_packet_action_type = OK_PACKET_ACTION_CONSUME;
@@ -776,7 +798,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
             } else {
               // is not valid in mysql protocol
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("unexpected ok packet", K(err_pkt_cnt), K(eof_pkt_cnt), K(ret));
+              LOG_WDIAG("unexpected ok packet", K(err_pkt_cnt), K(eof_pkt_cnt), K(ret));
             }
           }
         } else {
@@ -810,7 +832,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
     }
     case PREPARE_OK_PACKET_ENDING_TYPE : {
       if (OB_FAIL(analyze_prepare_ok_pkt(result))) {
-        LOG_WARN("fail to analyze_prepare_ok_pkt", K(ret));
+        LOG_WDIAG("fail to analyze_prepare_ok_pkt", K(ret));
       } else {
         result.inc_pkt_cnt(PREPARE_OK_PACKET_ENDING_TYPE);
       }
@@ -818,7 +840,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
       break;
     }
     case EOF_PACKET_ENDING_TYPE : {
-      // normal protocol, the second EOF is last EOF
+      /* 普通协议下, 第二个 EOF 就是最后一个 EOF */
       bool is_last_eof_pkt = (1 == eof_pkt_cnt);
 
       if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE == result.get_cmd()) {
@@ -826,18 +848,20 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
         uint32_t all_pkt_cnt = result.get_all_pkt_cnt();
         if (all_pkt_cnt > expect_pkt_cnt) {
           is_last_eof_pkt = true;
-          // if last EOF, recv all ResultSet
+          /* 如果是最后一个 EOF 了, 那结果一定接收完了 */
           result.set_recv_resultset(true);
         } else {
           is_last_eof_pkt = false;
         }
+      } else if (OB_MYSQL_COM_CHANGE_USER == result.get_cmd()) {
+        resp->get_analyze_result().is_auth_switch_req_ = true;
       }
 
       if (0 == eof_pkt_cnt) {
         // analyze the first eof packet
         bool is_in_trans = false;
         if (OB_FAIL(analyze_eof_pkt(result.get_cmd(), is_in_trans, is_last_eof_pkt, buf_reader))) {
-          LOG_WARN("fail to analyze_eof_pkt", K(ret));
+          LOG_WDIAG("fail to analyze_eof_pkt", K(ret));
         } else {
           if (is_in_trans) {
             result.set_trans_state(IN_TRANS_STATE_BY_PARSE);
@@ -856,7 +880,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
         handle_last_eof(pkt_len, buf_reader);
       } else if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE != result.get_cmd()){
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected eof packet", K(err_pkt_cnt), K(eof_pkt_cnt), K(ret));
+        LOG_WDIAG("unexpected eof packet", K(err_pkt_cnt), K(eof_pkt_cnt), K(ret));
         ok_packet_action_type = OK_PACKET_ACTION_SEND;
       }
 
@@ -870,7 +894,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
     }
     case ERROR_PACKET_ENDING_TYPE : {
       if (OB_FAIL(analyze_error_pkt(resp))) {
-        LOG_WARN("fail to analyze_error_pkt", K(ret));
+        LOG_WDIAG("fail to analyze_error_pkt", K(ret));
       } else if (OB_LIKELY(is_oceanbase_mode())) {
         // resultset protocol, after read the error packet, hold it until the extra ok
         // packet is read completed.
@@ -885,7 +909,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
     case HANDSHAKE_PACKET_ENDING_TYPE: {
       if (OB_MYSQL_COM_HANDSHAKE == result.get_cmd()) {
         if (OB_FAIL(analyze_hanshake_pkt(resp))) {
-          LOG_WARN("fail to analyze_error_pkt", K(ret));
+          LOG_WDIAG("fail to analyze_error_pkt", K(ret));
         } else {
           result.inc_pkt_cnt(HANDSHAKE_PACKET_ENDING_TYPE);
         }
@@ -905,8 +929,6 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
     }
     case LOCAL_INFILE_ENDING_TYPE: {
       if (OB_UNLIKELY(LOCAL_INFILE_RESP_TYPE == result.get_resp_type())) {
-        ret = OB_NOT_SUPPORTED;
-        LOG_WARN("local infile not support now!", K(ret));
         result.inc_pkt_cnt(LOCAL_INFILE_ENDING_TYPE);
       }
       break;
@@ -921,7 +943,7 @@ inline int ObMysqlRespAnalyzer::analyze_resp_pkt(
       break;
     }
     default : {
-      LOG_WARN("invalid packet type", K(pkt_type));
+      LOG_WDIAG("invalid packet type", K(pkt_type));
       break;
     }
   }
@@ -968,37 +990,38 @@ void ObMysqlRespAnalyzer::handle_last_eof(uint32_t pkt_len, ObBufferReader &buf_
 int ObMysqlRespAnalyzer::analyze_mysql_resp(
     ObBufferReader &buf_reader,
     ObRespResult &result,
-    ObMysqlResp *resp)
+    ObMysqlResp *resp,
+    ObProtocolDiagnosis *&protocol_diagnosis)
 {
   int ret = OB_SUCCESS;
 
   if (OB_UNLIKELY(UNDEFINED_MYSQL_PROTOCOL_MODE == mysql_mode_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("mysql mod was not set", K_(mysql_mode), K(ret));
+    LOG_WDIAG("mysql mod was not set", K_(mysql_mode), K(ret));
   } else {
     while ((OB_SUCC(ret)) && !buf_reader.empty()) {
       switch (state_) {
         case READ_HEADER:
           if (OB_FAIL(read_pkt_hdr(buf_reader))) {
-            LOG_WARN("fail to read packet header", K(ret));
+            LOG_WDIAG("fail to read packet header", K(ret));
           }
           break;
 
         case READ_TYPE:
           if (OB_FAIL(read_pkt_type(buf_reader, result))) {
-            LOG_WARN("fail to read packet type", K(ret));
+            LOG_WDIAG("fail to read packet type", K(ret));
           }
           break;
 
         case READ_BODY:
           if (OB_FAIL(read_pkt_body(buf_reader, result))) {
-            LOG_WARN("fail to read packet body", K(ret));
+            LOG_WDIAG("fail to read packet body", K(ret));
           }
           break;
 
         default:
           ret = OB_INNER_STAT_ERROR;
-          LOG_WARN("unknown state", K_(state), K(ret));
+          LOG_WDIAG("unknown state", K_(state), K(ret));
           break;
       }
 
@@ -1015,8 +1038,14 @@ int ObMysqlRespAnalyzer::analyze_mysql_resp(
             reserved_len_ = 0; // after read one whole packet, we reset reserved_len_
             result.inc_all_pkt_cnt();
             if (OB_FAIL(analyze_resp_pkt(result, resp, buf_reader))) {
-              LOG_WARN("fail to analyze resp packet", K(ret));
+              LOG_WDIAG("fail to analyze resp packet", K(ret));
             } else {
+              PROTOCOL_DIAGNOSIS(SINGLE_MYSQL_WITH_FOLD, recv, protocol_diagnosis,
+                                 meta_analyzer_.get_meta().pkt_len_,
+                                 meta_analyzer_.get_meta().pkt_seq_,
+                                 meta_analyzer_.get_meta().pkt_type_,
+                                 (meta_analyzer_.get_cur_type() == MAX_PACKET_ENDING_TYPE) ?
+                                  ObMysqlPacketRecord::get_fold_type(result) : OB_PACKET_FOLD_TYPE_NONE);
               meta_analyzer_.reset();
               body_buf_.reset();
               next_read_len_ = 0;
@@ -1025,7 +1054,7 @@ int ObMysqlRespAnalyzer::analyze_mysql_resp(
             }
           } else if (OB_UNLIKELY(next_read_len_ < 0)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("next_read_len should not less than 0", K_(next_read_len), K(ret));
+            LOG_WDIAG("next_read_len should not less than 0", K_(next_read_len), K(ret));
           }
         }
       }
@@ -1047,23 +1076,23 @@ inline int ObMysqlRespAnalyzer::build_packet_content(
 
   if (OB_UNLIKELY(MYSQL_NET_TYPE_LENGTH != type_len)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("type_len is not MYSQL_NET_TYPE_LENGTH ", K(ret));
+    LOG_WDIAG("type_len is not MYSQL_NET_TYPE_LENGTH ", K(ret));
   } else {
     int64_t mem_len = body_len + type_len;
     if (OB_FAIL(content_buf.init(mem_len))) {
-      LOG_WARN("fail int alloc mem", K(mem_len), K(ret));
+      LOG_WDIAG("fail int alloc mem", K(mem_len), K(ret));
     } else {
       char *pos = content_buf.pos();
       *pos = static_cast<char>(meta_analyzer_.get_meta().pkt_type_);
       if (OB_FAIL(content_buf.consume(type_len))) {
-        LOG_WARN("failed to consume", K(type_len), K(ret));
+        LOG_WDIAG("failed to consume", K(type_len), K(ret));
       }
 
       if (OB_SUCC(ret)) {
         pos = content_buf.pos();
         MEMCPY(pos, body_ptr, body_len);
         if (OB_FAIL(content_buf.consume(body_len))) {
-          LOG_WARN("failed to consume", K(body_len), K(ret));
+          LOG_WDIAG("failed to consume", K(body_len), K(ret));
         }
       }
 
@@ -1072,7 +1101,7 @@ inline int ObMysqlRespAnalyzer::build_packet_content(
         LOG_DEBUG("build packet content", K(content_len), K(type_len), K(body_len));
         if (OB_UNLIKELY(content_len != type_len + body_len)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("content_len is not valid ", K(type_len), K(body_len), K(ret));
+          LOG_WDIAG("content_len is not valid ", K(type_len), K(body_len), K(ret));
         }
       }
     }
@@ -1094,15 +1123,15 @@ inline int ObMysqlRespAnalyzer::analyze_ok_pkt(bool &is_in_trans, ObBufferReader
   ObServerStatusFlags server_status;
 
   if (OB_FAIL(ObMySQLUtil::get_length(pos, affected_rows))) {
-    LOG_WARN("get length failed", K(ptr), K(pos), K(affected_rows), K(ret));
+    LOG_WDIAG("get length failed", K(ptr), K(pos), K(affected_rows), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::get_length(pos, last_insert_id))) {
-    LOG_WARN("get length failed", K(ptr), K(pos), K(last_insert_id), K(ret));
+    LOG_WDIAG("get length failed", K(ptr), K(pos), K(last_insert_id), K(ret));
   } else if (FALSE_IT(ObMySQLUtil::get_uint2(pos, server_status.flags_))) {
     // impossible
   } else if (OB_UNLIKELY((pos - ptr) > OK_PACKET_MAX_COPY_LEN)
              || OB_UNLIKELY((pos - ptr) > len)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected ptr pos", K(ptr), K(pos), K(len), K(ret));
+    LOG_WDIAG("unexpected ptr pos", K(ptr), K(pos), K(len), K(ret));
   } else {
     if (server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS) {
       is_in_trans = true;
@@ -1137,7 +1166,7 @@ inline int ObMysqlRespAnalyzer::analyze_prepare_ok_pkt(ObRespResult &result)
   OMPKPrepare prepare_packet;
   prepare_packet.set_content(ptr, static_cast<uint32_t>(body_buf_.len()));
   if (OB_FAIL(prepare_packet.decode())) {
-    LOG_WARN("decode packet failed", K(ret));
+    LOG_WDIAG("decode packet failed", K(ret));
   } else {
     int32_t expect_pkt_cnt = 1;
     if (prepare_packet.get_param_num() > 0) {
@@ -1149,7 +1178,7 @@ inline int ObMysqlRespAnalyzer::analyze_prepare_ok_pkt(ObRespResult &result)
     }
 
     result.set_expect_pkt_cnt(expect_pkt_cnt);
-    // if no resultSet, set true
+    /* 如果没结果集, 就设置为已接收 */
     result.set_recv_resultset(0 == prepare_packet.has_result_set());
   }
 
@@ -1165,7 +1194,7 @@ inline int ObMysqlRespAnalyzer::analyze_eof_pkt(obmysql::ObMySQLCmd cmd, bool &i
 
   if (len < 4) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("fail to build packet content", K(ret));
+    LOG_WDIAG("fail to build packet content", K(ret));
   } else {
     // skip 2 bytes of warning_count, we don't care it
     server_status.flags_ = uint2korr(body_buf_.ptr() + 2);
@@ -1206,7 +1235,7 @@ inline int ObMysqlRespAnalyzer::analyze_error_pkt(ObMysqlResp *resp)
     ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> &content_buf
       = resp->get_analyze_result().error_pkt_buf_;
     if (OB_FAIL(build_packet_content(content_buf))) {
-      LOG_WARN("fail to build packet content", K(ret));
+      LOG_WDIAG("fail to build packet content", K(ret));
     } else {
       int64_t len = content_buf.len();
       const char *ptr = content_buf.ptr();
@@ -1215,7 +1244,7 @@ inline int ObMysqlRespAnalyzer::analyze_error_pkt(ObMysqlResp *resp)
       OMPKError &err_pkt = analyze_result.get_error_pkt();
       err_pkt.set_content(ptr, static_cast<uint32_t>(len));
       if (OB_FAIL(err_pkt.decode())) {
-        LOG_WARN("fail to decode error packet", K(ret));
+        LOG_WDIAG("fail to decode error packet", K(ret));
       }
     }
   }
@@ -1238,7 +1267,7 @@ int ObMysqlRespAnalyzer::analyze_hanshake_pkt(ObMysqlResp *resp)
     OMPKHandshake packet;
     packet.set_content(ptr, static_cast<uint32_t>(body_buf_.len()));
     if (OB_FAIL(packet.decode())) {
-      LOG_WARN("decode packet failed", K(ret));
+      LOG_WDIAG("decode packet failed", K(ret));
     } else {
       analyze_result.server_capabilities_lower_.capability_ = packet.get_server_capability_lower();
       analyze_result.server_capabilities_upper_.capability_ = packet.get_server_capability_upper();
@@ -1247,10 +1276,10 @@ int ObMysqlRespAnalyzer::analyze_hanshake_pkt(ObMysqlResp *resp)
       if (OB_FAIL(packet.get_scramble(analyze_result.scramble_buf_,
                                       static_cast<int64_t>(sizeof(analyze_result.scramble_buf_)),
                                       copy_len))) {
-        LOG_WARN("fail to get scramble", K(ret));
+        LOG_WDIAG("fail to get scramble", K(ret));
       } else if (OB_UNLIKELY(copy_len >= static_cast<int64_t>(sizeof(analyze_result.scramble_buf_)))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("copy_len is too bigger", K(copy_len), K(ret));
+        LOG_WDIAG("copy_len is too bigger", K(copy_len), K(ret));
       } else {
         analyze_result.scramble_buf_[copy_len] = '\0';
       }

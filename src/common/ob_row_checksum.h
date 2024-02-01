@@ -62,7 +62,7 @@ const char *column_checksum2string(const ObRowChecksumValue &v)
   const char *result = buf;
   int ret = v.column_checksum2string(buf, BUFFER_SIZE, pos);
   if (OB_FAIL(ret)) {
-    COMMON_LOG(WARN, "column checksum to string failed", K(ret),
+    COMMON_LOG(WDIAG, "column checksum to string failed", K(ret),
         "column_count",  v.column_count_);
     result = NULL;
   }
@@ -82,7 +82,7 @@ int ObRowChecksumValue::deep_copy(const ObRowChecksumValue &src, Allocator &allo
     if (NULL == (column_checksum_array_ = reinterpret_cast<ObColumnIdChecksum *>(
         allocator.alloc(sizeof(ObColumnIdChecksum) * column_count_)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "allocate memory failed", K(ret),
+      COMMON_LOG(WDIAG, "allocate memory failed", K(ret),
           "size", sizeof(ObColumnIdChecksum) * column_count_);
     } else {
       MEMCPY(column_checksum_array_, src.column_checksum_array_,
@@ -110,7 +110,7 @@ int ObRowChecksumValue::string2column_checksum(Allocator &allocator, const char 
   } else if (NULL == (column_checksum_array_ = reinterpret_cast<ObColumnIdChecksum *>(
       allocator.alloc(sizeof(*column_checksum_array_) * count)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "allocate memory failed", K(ret),
+    COMMON_LOG(WDIAG, "allocate memory failed", K(ret),
         "size", sizeof(*column_checksum_array_) * count);
   } else {
     p = str;
@@ -119,7 +119,7 @@ int ObRowChecksumValue::string2column_checksum(Allocator &allocator, const char 
       column_checksum_array_[i].first = strtoul(p, &end, 10);
       if (*end != ':') {
         ret = OB_INVALID_DATE_FORMAT;
-        COMMON_LOG(WARN, "invalid column check string format", K(ret), K(str));
+        COMMON_LOG(WDIAG, "invalid column check string format", K(ret), K(str));
         break;
       }
       end++;
@@ -127,7 +127,7 @@ int ObRowChecksumValue::string2column_checksum(Allocator &allocator, const char 
       column_checksum_array_[i].second = strtoul(p, &end, 10);
       if (*end != ',' && *end != '\0') {
         ret = OB_INVALID_DATE_FORMAT;
-        COMMON_LOG(WARN, "invalid column check string format", K(ret), K(str));
+        COMMON_LOG(WDIAG, "invalid column check string format", K(ret), K(str));
         break;
       }
       end++;

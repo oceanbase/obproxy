@@ -99,7 +99,7 @@ int ObShowResourceHandler::handle_show_resource(int event, void *data)
       cr = cr_array.at(i);
       if (match_like(cr->get_cluster_name().ptr(), like_name_)) {
         if (OB_FAIL(dump_resource_item(cr))) {
-          LOG_WARN("fail to dump cluster resource", KPC(cr), K(ret));
+          LOG_WDIAG("fail to dump cluster resource", KPC(cr), K(ret));
         }
       }
     }

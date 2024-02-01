@@ -39,9 +39,9 @@ class ObSeqQueue
       ObMemAttr memattr;
       memattr.mod_id_ = ObModIds::OB_SEQ_QUEUE;
       if (NULL != buf_) {
-        _OB_LOG(ERROR, "buf_holder.get(size=%ld): not allowed to get second time", size);
+        _OB_LOG(EDIAG, "buf_holder.get(size=%ld): not allowed to get second time", size);
       } else if (NULL == (buf = ob_malloc(size, memattr))) {
-        _OB_LOG(ERROR, "ob_malloc(size=%ld)=>NULL", size);
+        _OB_LOG(EDIAG, "ob_malloc(size=%ld)=>NULL", size);
       } else {
         buf_ = buf;
       }

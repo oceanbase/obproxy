@@ -21,7 +21,7 @@
 #include "iocore/eventsystem/ob_event.h"
 #include "iocore/net/ob_inet.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
-#include "proxy/mysqllib/ob_2_0_protocol_struct.h"
+#include "proxy/mysqllib/ob_2_0_protocol_utils.h"
 
 #define  INTERNAL_CMD_EVENTS_SUCCESS   INTERNAL_CMD_EVENTS_START + 1
 #define  INTERNAL_CMD_EVENTS_FAILED    INTERNAL_CMD_EVENTS_START + 2
@@ -46,8 +46,8 @@ class ObProxySessionPrivInfo;
 
 #define DEBUG_ICMD(fmt...) PROXY_ICMD_LOG(DEBUG, ##fmt)
 #define INFO_ICMD(fmt...) PROXY_ICMD_LOG(INFO, ##fmt)
-#define WARN_ICMD(fmt...) PROXY_ICMD_LOG(WARN, ##fmt)
-#define ERROR_ICMD(fmt...) PROXY_ICMD_LOG(ERROR, ##fmt)
+#define WARN_ICMD(fmt...) PROXY_ICMD_LOG(WDIAG, ##fmt)
+#define ERROR_ICMD(fmt...) PROXY_ICMD_LOG(EDIAG, ##fmt)
 
 const int64_t PROXY_LIKE_NAME_MAX_SIZE = common::OB_MAX_CONFIG_NAME_LEN;
 
@@ -88,11 +88,11 @@ public:
   const common::ObString &get_large_key_string() const { return second_string_; }
 
   proxy::ObProxyProtocol get_protocol() const { return protocol_; }
-  proxy::Ob20ProtocolHeaderParam &get_ob20_head_param() { return ob20_param_; }
-  const proxy::Ob20ProtocolHeaderParam &get_ob20_head_param() const { return ob20_param_; }
+  proxy::Ob20HeaderParam &get_ob20_head_param() { return ob20_param_; }
+  const proxy::Ob20HeaderParam &get_ob20_head_param() const { return ob20_param_; }
 
   void set_protocol(const proxy::ObProxyProtocol protocol) { protocol_ = protocol; }
-  void set_ob20_head_param(const proxy::Ob20ProtocolHeaderParam &param) { ob20_param_ = param; }
+  void set_ob20_head_param(const proxy::Ob20HeaderParam &param) { ob20_param_ = param; }
 
   void set_pkt_seq(const uint8_t pkt_seq) { pkt_seq_ = pkt_seq; }
   void set_cmd_type(const ObProxyBasicStmtType type) { type_ = type; }
@@ -161,7 +161,7 @@ private:
   char second_str_[common::OB_MAX_CONFIG_VALUE_LEN];
 
   proxy::ObProxyProtocol protocol_;
-  proxy::Ob20ProtocolHeaderParam ob20_param_;
+  proxy::Ob20HeaderParam ob20_param_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObInternalCmdInfo);

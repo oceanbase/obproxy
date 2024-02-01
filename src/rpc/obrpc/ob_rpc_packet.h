@@ -296,7 +296,7 @@ int ObRpcPacket::encode(char *buf, int64_t len, int64_t &pos)
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(hdr_.serialize(buf, len, pos))) {
-    COMMON_LOG(WARN, "serialize ob packet header fail");
+    COMMON_LOG(WDIAG, "serialize ob packet header fail");
   } else if (clen_ > len - pos) {
     // buffer no enough to serialize packet
     ret = common::OB_BUF_NOT_ENOUGH;
@@ -311,7 +311,7 @@ int ObRpcPacket::encode_header(char *buf, int64_t len, int64_t &pos)
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(hdr_.serialize(buf, len, pos))) {
-    COMMON_LOG(WARN, "serialize ob packet header fail");
+    COMMON_LOG(WDIAG, "serialize ob packet header fail");
   }
   return ret;
 }

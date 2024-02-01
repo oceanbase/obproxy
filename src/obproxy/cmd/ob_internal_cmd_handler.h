@@ -29,7 +29,7 @@ namespace obproxy
 namespace proxy
 {
 class ObMysqlClientSession;
-class Ob20ProtocolHeaderParam;
+class Ob20HeaderParam;
 }
 class ObInternalCmdHandler;
 
@@ -184,7 +184,7 @@ protected:
   int64_t internal_buf_limited_;
   
   proxy::ObProxyProtocol protocol_;
-  proxy::Ob20ProtocolHeaderParam ob20_param_;
+  proxy::Ob20HeaderParam ob20_param_;
 
   bool is_inited_;
   bool header_encoded_;

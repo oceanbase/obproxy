@@ -63,7 +63,7 @@ int ObProxyPrometheusConvert::get_or_create_exporter_family(const ObString &name
   }
 
   if (OB_FAIL(ret)) {
-    LOG_WARN("fail to get or create faimyl", K(name), K(metric_type), K(ret));
+    LOG_WDIAG("fail to get or create faimyl", K(name), K(metric_type), K(ret));
   }
 
   return ret;
@@ -79,7 +79,7 @@ int ObProxyPrometheusConvert::create_counter_metric(void *family,
   build_label_map(label_map, label_array);
 
   if (OB_FAIL(get_obproxy_prometheus_exporter().create_metric<Counter>(family, label_map, metric))) {
-    LOG_WARN("fail to create metric", KP(family), K(label_array), K(ret));
+    LOG_WDIAG("fail to create metric", KP(family), K(label_array), K(ret));
   }
 
   return ret;
@@ -95,7 +95,7 @@ int ObProxyPrometheusConvert::create_gauge_metric(void *family,
   build_label_map(label_map, label_array);
 
   if (OB_FAIL(get_obproxy_prometheus_exporter().create_metric<Gauge>(family, label_map, metric))) {
-    LOG_WARN("fail to create metric", KP(family), K(label_array), K(ret));
+    LOG_WDIAG("fail to create metric", KP(family), K(label_array), K(ret));
   }
 
   return ret;
@@ -117,7 +117,7 @@ int ObProxyPrometheusConvert::create_histogram_metric(void *family,
   }
 
   if (OB_FAIL(get_obproxy_prometheus_exporter().create_metric<Histogram>(family, label_map, metric, bucket_boundaries))) {
-    LOG_WARN("fail to create metric", KP(family), K(label_array), K(ret));
+    LOG_WDIAG("fail to create metric", KP(family), K(label_array), K(ret));
   }
 
   return ret;
@@ -143,7 +143,7 @@ int ObProxyPrometheusConvert::remove_metric(void* family, void* metric,
   }
 
   if (OB_FAIL(ret)) {
-    LOG_WARN("fail to remove metric", KP(family), KP(metric), K(metric_type), K(ret));
+    LOG_WDIAG("fail to remove metric", KP(family), KP(metric), K(metric_type), K(ret));
   }
 
   return ret;

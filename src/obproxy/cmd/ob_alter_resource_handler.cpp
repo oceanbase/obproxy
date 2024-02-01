@@ -55,10 +55,10 @@ int ObAlterResourceHandler::handle_delete_cluster(int event, void *data)
     ObResourcePoolProcessor &rpp = get_global_resource_pool_processor();
     if (ObString::make_string(OB_META_DB_CLUSTER_NAME) == cluster_name) {
       if (OB_FAIL(rpp.rebuild_metadb())) { // metadb can not delete, but rebuilding is allowed
-        LOG_WARN("fail to rebuild metadb", K(ret));
+        LOG_WDIAG("fail to rebuild metadb", K(ret));
       }
     } else if (OB_FAIL(rpp.delete_cluster_resource(cluster_name))) {
-      LOG_WARN("fail to delete cluster resource", K(cluster_name), K(ret));
+      LOG_WDIAG("fail to delete cluster resource", K(cluster_name), K(ret));
     }
   }
 

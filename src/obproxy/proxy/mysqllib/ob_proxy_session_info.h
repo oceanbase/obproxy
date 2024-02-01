@@ -51,6 +51,11 @@ class ObDefaultSysVarSet;
 namespace proxy
 {
 
+enum ObClientSessionIDVersion : uint32_t {
+  CLIENT_SESSION_ID_V1 = 1, // original client session id , depends on 8bit proxy_id, only sync with client
+  CLIENT_SESSION_ID_V2 = 2, // global unique client session id in multi obproxy, depends on 13bits unique_proxy_id, sync with client and observer
+};
+
 struct SessionInfoField
 {
 public:
@@ -218,6 +223,9 @@ public:
   
   bool is_server_dup_sess_info_sync_supported() const {
     return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_SERVER_DUP_SESS_INFO_SYNC);
+  }
+  bool is_server_ob20_compress_supported() const {
+    return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_OB_PROTOCOL_V2_COMPRESS);
   }
 
   const obmysql::ObMySQLCapabilityFlags get_compatible_capability_flags() const {
@@ -395,11 +403,11 @@ inline ObPsIdPair *ObServerSessionInfo::get_ps_id_pair(uint32_t client_ps_id) co
   int ret = OB_SUCCESS;
   if (OB_FAIL(ps_id_pair_map_.get_refactored(client_ps_id, ps_id_pair))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      _PROXY_LOG(WARN, "fail to get ps_id_pair with client ps id, ret=%d, client_ps_id=%d", ret, client_ps_id);
+      _PROXY_LOG(WDIAG, "fail to get ps_id_pair with client ps id, ret=%d, client_ps_id=%d", ret, client_ps_id);
     }
   } else if (OB_ISNULL(ps_id_pair)) {
     ret = OB_ERR_UNEXPECTED;
-    _PROXY_LOG(WARN, "ps_id_pair is null, ret=%d, client_ps_id=%d", ret, client_ps_id);
+    _PROXY_LOG(WDIAG, "ps_id_pair is null, ret=%d, client_ps_id=%d", ret, client_ps_id);
   }
   return ps_id_pair;
 }
@@ -411,10 +419,10 @@ inline int ObServerSessionInfo::get_server_cursor_id(uint32_t client_cursor_id, 
   server_cursor_id = 0;
   ObCursorIdPair *cursor_id_pair = NULL;
   if (OB_FAIL(cursor_id_pair_map_.get_refactored(client_cursor_id, cursor_id_pair))) {
-    PROXY_LOG(WARN, "fail to get cursor id pair", K(client_cursor_id), K(ret));
+    PROXY_LOG(WDIAG, "fail to get cursor id pair", K(client_cursor_id), K(ret));
   } else if (OB_UNLIKELY(NULL == cursor_id_pair)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "unexpected cursor_id_pair is null", K(client_cursor_id), K(ret));
+    PROXY_LOG(WDIAG, "unexpected cursor_id_pair is null", K(client_cursor_id), K(ret));
   } else {
     server_cursor_id = cursor_id_pair->server_cursor_id_;
   }
@@ -428,11 +436,11 @@ inline ObCursorIdPair *ObServerSessionInfo::get_curosr_id_pair(uint32_t client_c
   int ret = OB_SUCCESS;
   if (OB_FAIL(cursor_id_pair_map_.get_refactored(client_cursor_id, cursor_id_pair))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      _PROXY_LOG(WARN, "fail to get cursor_id_pair with client cursor id, ret=%d, client_cursor_id=%d", ret, client_cursor_id);
+      _PROXY_LOG(WDIAG, "fail to get cursor_id_pair with client cursor id, ret=%d, client_cursor_id=%d", ret, client_cursor_id);
     }
   } else if (OB_ISNULL(cursor_id_pair)) {
     ret = OB_ERR_UNEXPECTED;
-    _PROXY_LOG(WARN, "cursor_id_pair is null, ret=%d, client_cursor_id=%d", ret, client_cursor_id);
+    _PROXY_LOG(WDIAG, "cursor_id_pair is null, ret=%d, client_cursor_id=%d", ret, client_cursor_id);
   }
   return cursor_id_pair;
 }
@@ -490,6 +498,7 @@ public:
   /* client session capability */
   uint64_t get_client_ob_capability() const { return client_cap_; }
   void set_client_ob_capability(const uint64_t cap) { client_cap_ = cap; }
+  bool is_client_support_compressed_protocol() const { return orig_capability_.cap_flags_.OB_CLIENT_COMPRESS == 1; }
   bool is_client_support_ob20_protocol() const { return OB_TEST_CAPABILITY(client_cap_, OB_CAP_OB_PROTOCOL_V2); }
   bool is_client_support_full_link_trace() const {
     return is_client_support_ob20_protocol() && OB_TEST_CAPABILITY(client_cap_, OB_CAP_PROXY_FULL_LINK_TRACING);
@@ -528,6 +537,9 @@ public:
            && OB_TEST_CAPABILITY(server_cap_, OB_CAP_PROXY_SESSION_VAR_SYNC);
   }
   
+  bool is_server_support_cs_id_v2() const {
+    return OB_TEST_CAPABILITY(server_cap_, OB_CAP_ENABLE_CLIENT_SESSION_ID_V2);
+  }
   bool is_oracle_mode() const {
     bool is_oracle_mode = false;
     if (is_sharding_user()) {
@@ -775,6 +787,7 @@ public:
   bool need_use_lower_case_names() const { return cached_variables_.need_use_lower_case_names(); }
   int64_t get_read_consistency() const { return cached_variables_.get_read_consistency(); }
   int64_t get_collation_connection() const { return cached_variables_.get_collation_connection(); }
+  int64_t get_ncharacter_set_connection() const { return cached_variables_.get_ncharacter_set_connection(); }
 
   ObConsistencyLevel get_consistency_level_prop() const {return consistency_level_prop_;}
   void set_consistency_level_prop(ObConsistencyLevel level) {consistency_level_prop_ = level;}
@@ -870,7 +883,7 @@ public:
     ObPsIdEntry *ps_id_entry = NULL;
     if (OB_FAIL(ps_id_entry_map_.get_refactored(ps_id, ps_id_entry))) {
       if (OB_HASH_NOT_EXIST != ret) {
-        PROXY_LOG(WARN, "fail to get ps id entry with ps id", K(ret));
+        PROXY_LOG(WDIAG, "fail to get ps id entry with ps id", K(ret));
       }
     }
     return ps_id_entry;
@@ -966,7 +979,7 @@ public:
     for (int64_t i = 0; OB_SUCC(ret) && i < request_send_addrs_.count(); i++) {
       if (addr == request_send_addrs_.at(i)) {
         if (OB_FAIL(request_send_addrs_.remove(i))) {
-          PROXY_LOG(WARN, "fail to remove item", K(i), K(ret));
+          PROXY_LOG(WDIAG, "fail to remove item", K(i), K(ret));
         }
         break;
       }
@@ -1147,7 +1160,7 @@ inline int ObClientSessionInfo::set_origin_username(const common::ObString &user
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(username.length() > common::OB_MAX_USER_NAME_LENGTH)) {
     ret = common::OB_SIZE_OVERFLOW;
-    PROXY_LOG(WARN, "username buf is not enough", K(username), K(ret));
+    PROXY_LOG(WDIAG, "username buf is not enough", K(username), K(ret));
   } else {
     MEMCPY(username_buf_, username.ptr(), username.length());
     origin_username_.assign_ptr(username_buf_, username.length());
@@ -1169,11 +1182,11 @@ inline ObPsEntry *ObClientSessionInfo::get_ps_entry(uint32_t ps_id)
   ObPsIdEntry *ps_id_entry = NULL;
   if (OB_FAIL(ps_id_entry_map_.get_refactored(ps_id, ps_id_entry))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      _PROXY_LOG(WARN, "fail to get ps_id_entry with client ps id, ret=%d, client_ps_id=%d", ret, ps_id);
+      _PROXY_LOG(WDIAG, "fail to get ps_id_entry with client ps id, ret=%d, client_ps_id=%d", ret, ps_id);
     }
   } else if (OB_ISNULL(ps_id_entry)) {
     ret = OB_ERR_UNEXPECTED;
-    _PROXY_LOG(WARN, "ps_id_entry is null, ret=%d, client_ps_id=%d", ret, ps_id);
+    _PROXY_LOG(WDIAG, "ps_id_entry is null, ret=%d, client_ps_id=%d", ret, ps_id);
   } else {
     ps_entry = ps_id_entry->ps_entry_;
   }
@@ -1323,7 +1336,7 @@ inline bool ObClientSessionInfo::need_reset_user_session_vars(const ObServerSess
       common::ObSEArray<common::ObString, 32> names;
       ObClientSessionInfo* client_info = const_cast<ObClientSessionInfo*>(this);
       if (OB_FAIL(client_info->get_all_user_var_names(names))) {
-        PROXY_LOG(WARN, "fail get all var name for source", K(ret));
+        PROXY_LOG(WDIAG, "fail get all var name for source", K(ret));
       } else {
         int64_t count = names.count();
         bret = (0 != count);
@@ -1429,7 +1442,7 @@ int ObClientSessionInfo::get_ps_sql(common::ObString &ps_sql)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ps_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    _PROXY_LOG(WARN, "ps entry is null, ret=%d", ret);
+    _PROXY_LOG(WDIAG, "ps entry is null, ret=%d", ret);
   } else {
     const common::ObString &sql = ps_entry_->get_base_ps_sql();
     ps_sql.assign(const_cast<char *>(sql.ptr()), sql.length());
@@ -1442,7 +1455,7 @@ int ObClientSessionInfo::get_text_ps_sql(common::ObString &sql)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(text_ps_name_entry_) || OB_ISNULL(text_ps_name_entry_->text_ps_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    _PROXY_LOG(WARN, "text ps entry is null, ret = %d", ret);
+    _PROXY_LOG(WDIAG, "text ps entry is null, ret = %d", ret);
   } else {
     const common::ObString &tmp_sql = text_ps_name_entry_->text_ps_entry_->get_base_ps_sql();
     sql.assign_ptr(const_cast<char*>(tmp_sql.ptr()), tmp_sql.length());

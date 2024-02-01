@@ -46,7 +46,7 @@ struct ObExprResolverContext
 {
   ObExprResolverContext() : relation_info_(NULL), part_info_(NULL), client_request_(NULL),
                             ps_id_entry_(NULL), text_ps_entry_(NULL), client_info_(NULL),
-                            sql_field_result_(NULL), route_diagnosis_(NULL) {}
+                            sql_field_result_(NULL) {}
   // parse result
   ObProxyRelationInfo *relation_info_;
   proxy::ObProxyPartInfo *part_info_;
@@ -58,7 +58,6 @@ struct ObExprResolverContext
   obutils::SqlFieldResult *sql_field_result_;
   ObExprParseResult *parse_result_;
   bool is_insert_stm_;
-  proxy::ObRouteDiagnosis *route_diagnosis_;
 };
 
 class ObExprResolverResult
@@ -73,10 +72,9 @@ public:
 class ObExprResolver
 {
 public:
-  explicit ObExprResolver(common::ObIAllocator &allocator) : allocator_(allocator)
-  { }
+  explicit ObExprResolver(common::ObIAllocator &allocator) : allocator_(allocator), route_diagnosis_(NULL) {}
   // will not be inherited, do not set to virtual
-  ~ObExprResolver() {}
+  ~ObExprResolver() { set_route_diagnosis(NULL); }
 
   int resolve(ObExprResolverContext &ctx, ObExprResolverResult &result);
   int resolve_token_list(ObProxyRelationExpr *relation,
@@ -88,6 +86,7 @@ public:
                          common::ObObj *target_obj,
                          obutils::SqlFieldResult *sql_field_result,
                          const bool has_rowid = false);
+  void set_route_diagnosis(proxy::ObRouteDiagnosis *route_diagnosis);
 private:
   int preprocess_range(common::ObNewRange &range, common::ObIArray<common::ObBorderFlag> &border_flags);
   int place_obj_to_range(ObProxyFunctionType type,
@@ -99,7 +98,8 @@ private:
                           proxy::ObClientSessionInfo *client_session_info,
                           common::ObObj &target_obj,
                           obutils::SqlFieldResult *sql_field_result,
-                          const bool is_oracle_mode);
+                          const bool is_oracle_mode,
+                          ObProxyExprType &type);
   int calc_token_hex_obj(ObProxyTokenNode *token, common::ObObj &target_obj);
   int calc_generated_key_value(common::ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode);
   int get_obj_with_param(common::ObObj &target_obj,
@@ -127,6 +127,7 @@ private:
 
   ObProxyExprType get_expr_token_func_type(common::ObString *func);
   common::ObIAllocator &allocator_;
+  proxy::ObRouteDiagnosis *route_diagnosis_;
 
   DISALLOW_COPY_AND_ASSIGN(ObExprResolver);
 };

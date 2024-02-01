@@ -200,7 +200,7 @@ int ObShowRouteHandler::handle_show_table(int event, void *data)
       } else {
         DEBUG_ICMD("start traversing ObTableEntry", K_(list_bucket));
         if (OB_FAIL(table_cache.run_todo_list(list_bucket_))) {
-          LOG_WARN("fail to run todo list", K(list_bucket_), K(ret));
+          LOG_WDIAG("fail to run todo list", K(list_bucket_), K(ret));
         } else {
           entry = table_cache.first_entry(list_bucket_, it);
           while (NULL != entry && OB_SUCC(ret)) {
@@ -209,7 +209,7 @@ int ObShowRouteHandler::handle_show_table(int event, void *data)
                 && match_like(entry->get_database_name(), entry_name_.database_name_)
                 && match_like(entry->get_table_name(), entry_name_.table_name_)
                 && OB_FAIL(dump_table_item(*entry))) {
-              LOG_WARN("fail to dump_item", KPC(entry), K(ret));
+              LOG_WDIAG("fail to dump_item", KPC(entry), K(ret));
             } else {
               entry = table_cache.next_entry(list_bucket_, it);
             }
@@ -264,12 +264,12 @@ int ObShowRouteHandler::handle_show_partition(int event, void *data)
       } else {
         DEBUG_ICMD("start traversing ObPartitionEntry", K_(list_bucket));
         if (OB_FAIL(partition_cache.run_todo_list(list_bucket_))) {
-          LOG_WARN("fail to run todo list", K(list_bucket_), K(ret));
+          LOG_WDIAG("fail to run todo list", K(list_bucket_), K(ret));
         } else {
           entry = partition_cache.first_entry(list_bucket_, it);
           while (NULL != entry && OB_SUCC(ret)) {
             if (OB_FAIL(dump_partition_item(*entry))) {
-              LOG_WARN("fail to dump_item", KPC(entry), K(ret));
+              LOG_WDIAG("fail to dump_item", KPC(entry), K(ret));
             } else {
               entry = partition_cache.next_entry(list_bucket_, it);
             }
@@ -327,7 +327,7 @@ int ObShowRouteHandler::handle_show_routine(int event, void *data)
       } else {
         DEBUG_ICMD("start traversing ObRoutineEntry", K_(list_bucket));
         if (OB_FAIL(routine_cache.run_todo_list(list_bucket_))) {
-          LOG_WARN("fail to run todo list", K(list_bucket_), K(ret));
+          LOG_WDIAG("fail to run todo list", K(list_bucket_), K(ret));
         } else {
           entry = routine_cache.first_entry(list_bucket_, it);
           while (NULL != entry && OB_SUCC(ret)) {
@@ -337,7 +337,7 @@ int ObShowRouteHandler::handle_show_routine(int event, void *data)
                 && match_like(entry->get_package_name(), entry_name_.package_name_)
                 && match_like(entry->get_routine_name(), entry_name_.table_name_)
                 && OB_FAIL(dump_routine_item(*entry))) {
-              LOG_WARN("fail to dump_item", KPC(entry), K(ret));
+              LOG_WDIAG("fail to dump_item", KPC(entry), K(ret));
             } else {
               entry = routine_cache.next_entry(list_bucket_, it);
             }

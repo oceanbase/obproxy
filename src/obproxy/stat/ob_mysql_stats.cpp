@@ -37,7 +37,7 @@ int init_mysql_stats()
 
   if (OB_ISNULL(mysql_rsb = g_stat_processor.allocate_raw_stat_block(MYSQL_STAT_COUNT, XFH_MYSQL_STATE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_LOG(WARN, "fail to alloc mem for mysql_rsb", K(ret));
+    PROXY_LOG(WDIAG, "fail to alloc mem for mysql_rsb", K(ret));
   } else {
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_transaction_count",
                             RECD_INT, TOTAL_TRANSACTION_COUNT, SYNC_SUM, RECP_PERSISTENT);
@@ -281,6 +281,9 @@ int init_mysql_stats()
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "send_start_trans_requests",
                             RECD_INT, SEND_START_TRANS_REQUESTS, SYNC_SUM, RECP_NULL);
 
+    MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "send_xa_start_requests",
+                            RECD_INT, SEND_XA_START_REQUESTS , SYNC_SUM, RECP_NULL);
+
     // size stats
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "client_request_total_size",
                             RECD_INT, CLIENT_REQUEST_TOTAL_SIZE, SYNC_SUM, RECP_NULL);
@@ -354,6 +357,9 @@ int init_mysql_stats()
 
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_server_connect_time",
                             RECD_INT, TOTAL_SERVER_CONNECT_TIME, SYNC_SUM, RECP_NULL);
+
+    MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_send_xa_start_time",
+                            RECD_INT, TOTAL_SEND_XA_START_TIME , SYNC_SUM, RECP_NULL);
 
   }
   return ret;

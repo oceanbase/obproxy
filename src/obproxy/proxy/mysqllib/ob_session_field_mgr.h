@@ -213,7 +213,7 @@ int ObFieldBlock<T, TYPE>::move_strings(ObFieldStrHeap *new_heap)
     for (int64_t i = 0; common::OB_SUCCESS == ret && i < free_idx_; ++i) {
       T &field = field_slots_[i];
       if (OB_FAIL(field.move_strings(heap))) {
-        PROXY_LOG(WARN, "fail to move strings", K(field), K(ret));
+        PROXY_LOG(WDIAG, "fail to move strings", K(field), K(ret));
       }
     }
   }
@@ -238,7 +238,7 @@ int ObFieldBlock<T, TYPE>::format(common::ObSqlString &sql,
   for (int64_t i = 0; common::OB_SUCCESS == ret && i < free_idx_; ++i) {
     const T &field = field_slots_[i];
     if (OB_FAIL(field.format(sql, modify_mod))) {
-      PROXY_LOG(WARN, "fail to construct reset sql", K(field), K(ret));
+      PROXY_LOG(WDIAG, "fail to construct reset sql", K(field), K(ret));
     }
   }
   return ret;
@@ -285,12 +285,12 @@ protected:
     // this function will be called in init(), so we just judge field_heap
     if (OB_UNLIKELY(NULL == field_heap_)) {
       ret = common::OB_NOT_INIT;
-      PROXY_LOG(WARN, "not init", K(ret));
+      PROXY_LOG(WDIAG, "not init", K(ret));
     } else if (OB_FAIL(field_heap_->allocate_block(sizeof(T), new_space))) {
-      PROXY_LOG(WARN, "fail to allocate Block", K(ret));
+      PROXY_LOG(WDIAG, "fail to allocate Block", K(ret));
     } else if (OB_ISNULL(out_block = new (new_space) T())) {
       ret = common::OB_ERR_SYS;
-      PROXY_LOG(WARN, "sys error, fail to new Block", K(ret));
+      PROXY_LOG(WDIAG, "sys error, fail to new Block", K(ret));
     }
     return ret;
   }
@@ -307,7 +307,7 @@ protected:
 
     if (OB_UNLIKELY(!is_inited_)) {
       ret = common::OB_NOT_INIT;
-      PROXY_LOG(WARN, "not init", K(ret));
+      PROXY_LOG(WDIAG, "not init", K(ret));
     }
 
     // first try to resue removed field
@@ -325,7 +325,7 @@ protected:
         }
         if (OB_UNLIKELY(!found)) {
           ret = common::OB_ERR_UNEXPECTED;
-          PROXY_LOG(WARN, "can't find removed field pos", K(block->removed_count_), K(ret));
+          PROXY_LOG(WDIAG, "can't find removed field pos", K(block->removed_count_), K(ret));
         }
       } else {
         // continue
@@ -338,10 +338,10 @@ protected:
           T *new_block = NULL;
           void *new_space =  NULL;
           if (common::OB_SUCCESS != (ret = field_heap_->allocate_block(sizeof(T), new_space))) {
-            PROXY_LOG(WARN, "fail to allocate Block", K(ret));
+            PROXY_LOG(WDIAG, "fail to allocate Block", K(ret));
           } else if (OB_ISNULL(new_block = new (new_space) T())) {
             ret = common::OB_ERR_SYS;
-            PROXY_LOG(WARN, "sys error, fail to new Block", K(ret));
+            PROXY_LOG(WDIAG, "sys error, fail to new Block", K(ret));
           } else {
             list_tail->next_ = new_block;
             list_tail = new_block;
@@ -518,6 +518,7 @@ public:
   static bool is_statement_trace_id_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_STATEMENT_TRACE_ID; }
   static bool is_read_consistency_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_READ_CONSISTENCY; }
   static bool is_client_reroute_info_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_CLIENT_REROUTE_INFO; }
+  static bool is_weak_read_replica_hit_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_WEAK_READ_REPLICA_HIT; }
 
   static bool is_nls_date_timestamp_format_variable(const common::ObString &var_name)
   {
@@ -563,12 +564,12 @@ private:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!is_inited_)) {
       ret = common::OB_NOT_INIT;
-      PROXY_LOG(WARN, "not inited", K(ret));
+      PROXY_LOG(WDIAG, "not inited", K(ret));
     } else {
       const T *block = head;
       for (; common::OB_SUCCESS == ret && NULL != block; block = block->next_) {
         if (OB_FAIL(block->format(sql, modify_mod))) {
-          PROXY_LOG(WARN, "construct reset sql failed", K(ret));
+          PROXY_LOG(WDIAG, "construct reset sql failed", K(ret));
         }
       }
     }
@@ -581,7 +582,7 @@ private:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!is_inited_)) {
       ret = common::OB_NOT_INIT;
-      PROXY_LOG(WARN, "not inited", K(ret));
+      PROXY_LOG(WDIAG, "not inited", K(ret));
     } else {
       const ObSessionBaseField *field = NULL;
       common::ObString var_name;
@@ -591,7 +592,7 @@ private:
           if (OB_FIELD_USED == field->stat_) {
             var_name.assign(const_cast<char *>(field->name_), field->name_len_);
             if (OB_FAIL(names.push_back(var_name))) {
-              PROXY_LOG(WARN, "fail to push back var_name", K(var_name), K(ret));
+              PROXY_LOG(WDIAG, "fail to push back var_name", K(var_name), K(ret));
             }
           }
         }
@@ -606,7 +607,7 @@ private:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!is_inited_)) {
       ret = common::OB_NOT_INIT;
-      PROXY_LOG(WARN, "not inited", K(ret));
+      PROXY_LOG(WDIAG, "not inited", K(ret));
     } else {
       // using hash_map for sort
       std::map<std::string, uint64_t> hash_map;
@@ -646,14 +647,14 @@ private:
     common::ObString var_name;
     if (OB_UNLIKELY(!is_inited_)) {
       ret = common::OB_NOT_INIT;
-      PROXY_LOG(WARN, "not inited", K(ret));
+      PROXY_LOG(WDIAG, "not inited", K(ret));
     }
     for (; common::OB_SUCCESS == ret && NULL != block; block = block->next_) {
       for (int64_t i = 0; common::OB_SUCCESS == ret && i < block->free_idx_; ++i) {
         field = block->field_slots_ + i;
         if (OB_FIELD_USED == field->stat_) {
           if (OB_FAIL(fields.push_back(*field))) {
-            PROXY_LOG(WARN, "fail to push back var_name", K(var_name), K(ret));
+            PROXY_LOG(WDIAG, "fail to push back var_name", K(var_name), K(ret));
           }
         }
       }
@@ -713,7 +714,7 @@ public:
 
   int init();
 
-  int get_sys_variable(const common::ObString &var, ObSessionSysField *&value, bool allow_var_not_found = false);
+  int get_sys_variable(const common::ObString &var, ObSessionSysField *&value, bool allow_var_not_found = true);
   int sys_variable_exists(const common::ObString &var_name, bool &is_exist);
 
   int load_system_variable_snapshot(proxy::ObMysqlResultHandler &result_handler);

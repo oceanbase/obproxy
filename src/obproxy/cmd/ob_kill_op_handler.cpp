@@ -143,26 +143,44 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
           WARN_ICMD("fail to encode err resp packet", K(errcode), K(ret));
         } else {
           cs.vc_ready_killed_ = true;// after send msg succ, we will kill self
+          cs.record_sess_killed(session_priv_.cs_id_);
         }
       } else {
         ObProxySessionPrivInfo &other_priv_info = cs.get_session_info().get_priv_info();
         DEBUG_ICMD("try to kill other client session", K_(cs_id), K_(session_priv),
                                                       K(other_priv_info));
-        // root@sys, and root@proxysys can kill any session of any tenant,
+        // root@proxysys can kill any session of any tenant,
+        // tenant sys can kill any session of any tenant in same cluster
         // the other can only kill the session that at the same cluster.tenant.user,
         // if it has mysql super privilege, it can kill other user of same tenant
+        // for sharding user, it can only kill the session for the same user
         bool has_privilege = false;
         if (session_priv_.has_all_privilege_) {
           DEBUG_ICMD("curr user has the all privilege to kill any client session");
           has_privilege = true;
-        } else if (session_priv_.is_same_tenant(other_priv_info)) {
+        } else if (!cs.get_session_info().is_sharding_user() && session_priv_.tenant_name_.case_compare(OB_SYS_TENANT_NAME) == 0) {
+          if (session_priv_.is_same_cluster(other_priv_info)) {
+            DEBUG_ICMD("curr user is root@sys in same cluster, has privilege to kill this client session");
+            has_privilege = true;
+          } else {
+            errcode = OB_ERR_KILL_DENIED;
+            DEBUG_ICMD("not root user of sys tenant or not the same cluster, not the owner to execute kill", K(errcode));
+          }
+        } else if (!cs.get_session_info().is_sharding_user() && session_priv_.is_same_tenant(other_priv_info)) {
           if (session_priv_.is_same_user(other_priv_info) || session_priv_.has_super_privilege()) {
             DEBUG_ICMD("curr user has the privilege to kill this client session");
             has_privilege = true;
           } else {
             errcode = OB_ERR_KILL_DENIED;
-            DEBUG_ICMD("same cluster.tenant, but different user, not the owner to execute kill",
-                      K(errcode));
+            DEBUG_ICMD("same cluster.tenant, but different user, not the owner to execute kill", K(errcode));
+          }
+        } else if (cs.get_session_info().is_sharding_user()) {
+          if (session_priv_.is_same_logic_user(other_priv_info)) {
+            DEBUG_ICMD("curr sharding user has the privilege to kill this client session");
+            has_privilege = true;
+          } else {
+            errcode = OB_ERR_KILL_DENIED;
+            DEBUG_ICMD("different logic user, not the owner to execute kill", K(errcode));
           }
         } else { // different tenant's user is invisible to others user
           errcode = OB_UNKNOWN_CONNECTION;
@@ -174,6 +192,8 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
           } else {
             ObNetVConnection *net_vc = cs.get_netvc();
             if (NULL != net_vc) {
+              cs.timeout_event_ = obutils::OB_CLIENT_FORCE_KILL; // just record
+              cs.record_sess_killed(session_priv_.cs_id_);
               net_vc->set_is_force_timeout(true);
             }
           }

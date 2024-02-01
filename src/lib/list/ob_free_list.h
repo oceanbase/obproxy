@@ -80,7 +80,7 @@ public:
       err = OB_INIT_TWICE;
     } else if (0 != (syserr = pthread_key_create(&key_, (void (*)(void *))do_destroy_free_list))) {
       err = OB_ERR_UNEXPECTED;
-      _OB_LOG(ERROR, "pthread_key_create()=>%d", syserr);
+      _OB_LOG(EDIAG, "pthread_key_create()=>%d", syserr);
     } else {
       free_handler_ = free_handler;
       allocator_ = allocator;
@@ -93,7 +93,7 @@ public:
     else if (NULL == (global_free_list_ = create_free_list(glimit))) {
       err = OB_ERR_UNEXPECTED;
       destroy();
-      _OB_LOG(ERROR, "create_free_list(%ld)=>%d", glimit, err);
+      _OB_LOG(EDIAG, "create_free_list(%ld)=>%d", glimit, err);
     }
     return err;
   }
@@ -187,7 +187,7 @@ protected:
     if (NULL != free_list) {
       LockGuard guard(lock_);
       if (!free_list_set_.add_last(free_list)) {
-        _OB_LOG(ERROR, "add_last fail, this should not happen");
+        _OB_LOG(EDIAG, "add_last fail, this should not happen");
       }
     }
     return free_list;

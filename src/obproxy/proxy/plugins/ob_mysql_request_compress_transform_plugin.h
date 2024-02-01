@@ -42,7 +42,21 @@ public:
   virtual void handle_input_complete();
 
 private:
-  int build_compressed_packet(bool is_last_segment);
+  /*
+    compress all reader's data into 1 compression packet
+    for normal request, only contains 1 mysql packet can be read from reader
+  */ 
+  int consume_normal_compress_packet(event::ObIOBufferReader &reader);
+  /* 
+    compress lots of mysql packet (content of file) request in 2 ways:
+    1. compress each one of mysql packet into 1 compression packet
+    2. compress each one of mysql packet into N compression packet
+    ATTENTION!!! 
+    Not allowed to compress N mysql packet into 1 compression packet,
+    otherwise observer will report errors
+  */
+  int consume_content_of_file_compress_packet();
+  int build_compressed_packet(bool is_last_segment, int64_t to_compress_len);
   int check_last_data_segment(event::ObIOBufferReader &reader, bool &is_last_segment);
 
 private:
@@ -55,6 +69,14 @@ private:
   event::ObMIOBuffer *mio_buffer_;
   uint8_t compressed_seq_;
   uint32_t request_id_;
+
+  // transfer content of file used in load data local infile cmd
+  struct {
+    char header_length_buffer_[MYSQL_NET_HEADER_LENGTH];
+    int64_t header_content_offset_;
+    int64_t last_packet_remain_;
+    bool is_last_packet_;
+  } content_of_file_;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlRequestCompressTransformPlugin);
 };
 
@@ -87,7 +109,7 @@ public:
         transaction.add_plugin(plugin);
         PROXY_API_LOG(DEBUG, "add ObMysqlRequestCompressTransformPlugin", K(plugin));
       } else {
-        PROXY_API_LOG(ERROR, "fail to allocate memory for ObMysqlRequestCompressTransformPlugin");
+        PROXY_API_LOG(EDIAG, "fail to allocate memory for ObMysqlRequestCompressTransformPlugin");
       }
     } else {
       PROXY_API_LOG(DEBUG, "handle_read_request, no need setup ObMysqlRequestCompressTransformPlugin");
@@ -99,12 +121,11 @@ public:
   inline bool need_enable_plugin(ObMysqlSM *sm) const
   {
     PROXY_API_LOG(DEBUG, "need_enable_plugin",
+                  "cmd", sm->trans_state_.trans_info_.sql_cmd_,
                   "request_content_length", sm->trans_state_.trans_info_.request_content_length_,
-                  "enable_compression_protocol", sm->trans_state_.mysql_config_params_->enable_compression_protocol_,
-                  "enable_ob_protocol_v2", sm->is_enable_ob_protocol_v2());
-    return (sm->trans_state_.trans_info_.request_content_length_ > 0
-            && (sm->trans_state_.mysql_config_params_->enable_compression_protocol_
-                || sm->is_enable_ob_protocol_v2()));
+                  "server_protocol", sm->get_server_protocol());
+    return (ObMysqlTransact::need_use_tunnel(sm->trans_state_)
+            && (sm->get_server_protocol() != ObProxyProtocol::PROTOCOL_NORMAL));
   }
 
 private:

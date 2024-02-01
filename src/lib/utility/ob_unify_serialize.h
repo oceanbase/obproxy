@@ -60,7 +60,7 @@
 #define UNF_UNUSED_DES ({(void)buf; (void)data_len; (void)pos;})
 
 #ifndef RPC_WARN
-#define RPC_WARN(...) OB_LOG(WARN, __VA_ARGS__)
+#define RPC_WARN(...) OB_LOG(WDIAG, __VA_ARGS__)
 #endif
 
 ///

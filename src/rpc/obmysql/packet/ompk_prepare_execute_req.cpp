@@ -33,33 +33,33 @@ int OMPKPrepareExecuteReq::decode()
     uint64_t query_len = 0;
     // skip cmd
     if (OB_FAIL(ObMysqlPacketUtil::get_uint1(pos, data_len, cmd_))) {
-      LOG_WARN("fail to get uint1", K(data_len), K(ret));
+      LOG_WDIAG("fail to get uint1", K(data_len), K(ret));
     } else if (OB_FAIL(ObMysqlPacketUtil::get_uint4(pos, data_len, statement_id_))) {
-      LOG_WARN("fail to get uint4", K(data_len), K(ret));
+      LOG_WDIAG("fail to get uint4", K(data_len), K(ret));
     } else if (OB_FAIL(ObMysqlPacketUtil::get_uint1(pos, data_len, flags_))) {
-      LOG_WARN("fail to get uint1", K(data_len), K(ret));
+      LOG_WDIAG("fail to get uint1", K(data_len), K(ret));
     } else if (OB_FAIL(ObMysqlPacketUtil::get_uint4(pos, data_len, iteration_count_))) {
-      LOG_WARN("fail to get uint4", K(data_len), K(ret));
+      LOG_WDIAG("fail to get uint4", K(data_len), K(ret));
     } else if (OB_FAIL(ObMysqlPacketUtil::get_length(pos, data_len, query_len))) {
-      LOG_WARN("fail to get length", K(data_len), K(ret));
+      LOG_WDIAG("fail to get length", K(data_len), K(ret));
     // skip query
     } else if (FALSE_IT(pos += query_len)) {
     } else if (OB_FAIL(ObMysqlPacketUtil::get_uint4(pos, data_len, param_num_))) {
-      LOG_WARN("fail to get uint4", K(data_len), K(ret));
+      LOG_WDIAG("fail to get uint4", K(data_len), K(ret));
     // skip null bitmap
     } else if (param_num_ <= 0) {
       LOG_DEBUG("skip read param related", K(param_num_));
     } else if (FALSE_IT(pos += (param_num_ + 7)/8)) {
     } else if (OB_FAIL(ObMysqlPacketUtil::get_uint1(pos, data_len, new_params_bound_flag_))) {
-      LOG_WARN("fail to get uint1", K(data_len), K(ret));
+      LOG_WDIAG("fail to get uint1", K(data_len), K(ret));
     } else if (new_params_bound_flag_ == 1 
                && OB_FAIL(ObMysqlRequestAnalyzer::parse_param_type(param_num_, param_types_, type_infos_, pos, data_len))) {
-      LOG_WARN("fail to parse param type", K_(param_num), K(pos), K(data_len), K(ret));
+      LOG_WDIAG("fail to parse param type", K_(param_num), K(pos), K(data_len), K(ret));
     } else { /* do nothing */ }
     // skip the rest of data
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(ret), K(cdata_));
+    LOG_EDIAG("null input", K(ret), K(cdata_));
   }
   return ret;
 }

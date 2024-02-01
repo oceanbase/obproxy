@@ -51,7 +51,7 @@ public:
     {
         if(!lock.acquired())
         {
-            _OB_LOG(ERROR,"%s","ThreadLockedException");
+            _OB_LOG(EDIAG,"%s","ThreadLockedException");
             return false;
         }
         return waitImpl(lock._mutex);
@@ -70,7 +70,7 @@ public:
     {
         if(!lock.acquired())
         {
-            _OB_LOG(ERROR,"%s","ThreadLockedException");
+            _OB_LOG(EDIAG,"%s","ThreadLockedException");
             return false;
         }
         return timedWaitImpl(lock._mutex, timeout);
@@ -100,7 +100,7 @@ Cond::waitImpl(const M& mutex) const
 
     if( 0 != rc )
     {
-        _OB_LOG(ERROR,"%s","ThreadSyscallException");
+        _OB_LOG(EDIAG,"%s","ThreadSyscallException");
         return false;
     }
     return true;
@@ -111,7 +111,7 @@ Cond::timedWaitImpl(const M& mutex, const Time& timeout) const
 {
     if(timeout < Time::microSeconds(0))
     {
-        _OB_LOG(ERROR,"%s","InvalidTimeoutException");
+        _OB_LOG(EDIAG,"%s","InvalidTimeoutException");
         return false;
     }
 
@@ -135,7 +135,7 @@ Cond::timedWaitImpl(const M& mutex, const Time& timeout) const
     {
         if ( rc != ETIMEDOUT )
         {
-            _OB_LOG(ERROR,"%s","ThreadSyscallException");
+            _OB_LOG(EDIAG,"%s","ThreadSyscallException");
             return false;
         }
     }

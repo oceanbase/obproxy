@@ -42,6 +42,7 @@ class ObIOBufferReader;
 }
 namespace proxy
 {
+class ObProtocolDiagnosis;
 typedef common::ObString ObRequestBuffer;
 
 struct ObRequestAnalyzeCtx
@@ -74,14 +75,23 @@ struct ObRequestAnalyzeCtx
 class ObMysqlRequestAnalyzer
 {
 public:
-  ObMysqlRequestAnalyzer();
-  ~ObMysqlRequestAnalyzer() { };
-
-  int is_request_finished(event::ObIOBufferReader &reader, bool &is_finish);
+  ObMysqlRequestAnalyzer() : 
+      total_packet_length_(0),
+      payload_len_(-1),
+      packet_seq_(0),
+      cmd_(0),
+      nbytes_analyze_(0),
+      is_last_request_packet_(true),
+      request_count_(0),
+      header_content_offset_(0) { MEMSET(header_length_buffer_, 0, MYSQL_NET_META_LENGTH); }
+  ObMysqlRequestAnalyzer(const ObMysqlRequestAnalyzer& analyzer);
+  ObMysqlRequestAnalyzer &operator=(const ObMysqlRequestAnalyzer &analyzer);
+  int is_request_finished(event::ObIOBufferReader &reader, bool &is_finish,
+                          obmysql::ObMySQLCmd cmd, int64_t analyze_len,
+                          ObProtocolDiagnosis *protocol_diagnosis);
   uint8_t get_packet_seq() const { return packet_seq_; }
-  void reset() { reuse(); }
+  void reset();
   void reuse();
-
   static void analyze_request(const ObRequestAnalyzeCtx &ctx,
                               ObMysqlAuthRequest &auth_request,
                               ObProxyMysqlRequest &client_request,
@@ -143,7 +153,10 @@ public:
 
 private:
   int get_payload_length(const char *buffer);
-  int is_request_finished(const ObRequestBuffer &buff, bool &is_finish);
+  int check_is_last_request_packet(obmysql::ObMySQLCmd cmd);
+  int is_request_finished(const ObRequestBuffer &buff, bool &is_finish,
+                          obmysql::ObMySQLCmd cmd,
+                          ObProtocolDiagnosis *protocol_diagnosis = NULL);
 
   // handle auth reqeust packet
   static int handle_auth_request(event::ObIOBufferReader &reader, ObMysqlAnalyzeResult &result);
@@ -194,15 +207,15 @@ private:
                                     uint64_t &length);
 
 private:
-  int64_t packet_length_;          // request packet length
-  uint8_t packet_seq_;
+  int64_t total_packet_length_;          // total request packet length
+  int64_t payload_len_;                 // current ananlyzing packet's payload len
+  uint8_t packet_seq_;                  // current analyzing packet's seq
+  uint8_t cmd_;                         // current analyzing packet's cmd
   int64_t nbytes_analyze_;         // total bytes already analyze
   bool is_last_request_packet_;    // whether is mysql last package
   int64_t request_count_;
-
-  char payload_length_buffer_[MYSQL_NET_HEADER_LENGTH];
-  int64_t payload_offset_;
-
+  char header_length_buffer_[MYSQL_NET_META_LENGTH];
+  int64_t header_content_offset_;
 };
 
 } // end of namespace proxy

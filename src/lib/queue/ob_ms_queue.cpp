@@ -55,7 +55,7 @@ int ObMsQueue::QueueInfo::init(char* buf, const int64_t len)
   int ret = OB_SUCCESS;
   if (NULL == buf || len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid args", K(ret), K(buf), K(len));
+    LIB_LOG(EDIAG, "invalid args", K(ret), K(buf), K(len));
   } else {
     array_ = reinterpret_cast<TaskHead*>(buf);
     memset(array_, 0, sizeof(TaskHead) * len);
@@ -83,7 +83,7 @@ int ObMsQueue::QueueInfo::add(const int64_t seq, ObMsQueue::Task* task)
     ret = OB_EAGAIN;
   } else if (NULL == array_) {
     ret = OB_ERR_UNEXPECTED;
-    LIB_LOG(ERROR, "invalid array", K(ret), K(array_));
+    LIB_LOG(EDIAG, "invalid array", K(ret), K(array_));
   } else {
     array_ [seq % len_].add(task);
   }
@@ -129,24 +129,24 @@ int ObMsQueue::init(const int64_t n_queue, const int64_t queue_len, ObIAllocator
   int ret = OB_SUCCESS;
   if (n_queue <= 0 || queue_len <= 0 || NULL == allocator) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("invalid args", K(n_queue), K(queue_len), K(allocator));
+    LOG_EDIAG("invalid args", K(n_queue), K(queue_len), K(allocator));
   } else if (inited_) {
     ret = OB_INIT_TWICE;
   } else if (NULL == (qinfo_ = static_cast<QueueInfo*>(allocator->alloc(n_queue * sizeof(QueueInfo))))) {
-    LOG_ERROR("allocate memory for QueueInfo fail", K(n_queue), K(sizeof(QueueInfo)));
+    LOG_EDIAG("allocate memory for QueueInfo fail", K(n_queue), K(sizeof(QueueInfo)));
     ret = OB_ALLOCATE_MEMORY_FAILED;
   } else {
     for (int i = 0; OB_SUCC(ret) && i < n_queue; i++) {
       char *ptr = NULL;
 
       if (NULL == (ptr = static_cast<char*>(allocator->alloc(queue_len * sizeof(TaskHead))))) {
-        LOG_ERROR("allocate memory for TaskHead fail", "size", queue_len * sizeof(TaskHead));
+        LOG_EDIAG("allocate memory for TaskHead fail", "size", queue_len * sizeof(TaskHead));
         ret = OB_ALLOCATE_MEMORY_FAILED;
       } else {
         new(qinfo_ + i)QueueInfo();
 
         if (OB_FAIL(qinfo_[i].init(ptr, queue_len))) {
-          LOG_ERROR("init queue info fail", K(i), K(ret), K(ptr), K(queue_len));
+          LOG_EDIAG("init queue info fail", K(i), K(ret), K(ptr), K(queue_len));
         }
       }
     }
@@ -154,7 +154,7 @@ int ObMsQueue::init(const int64_t n_queue, const int64_t queue_len, ObIAllocator
 
   if (OB_SUCC(ret)) {
     if (OB_SUCCESS != (ret = seq_queue_.init(queue_len, allocator))) {
-      LOG_ERROR("init co-seq queue fail", K(queue_len), K(ret));
+      LOG_EDIAG("init co-seq queue fail", K(queue_len), K(ret));
     }
   }
 
@@ -201,12 +201,12 @@ int ObMsQueue::push(Task* task, const int64_t seq, const uint64_t hash)
   int ret = OB_SUCCESS;
   if (NULL == task || seq < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("invalid args", K(ret), K(task), K(seq), K(hash));
+    LOG_EDIAG("invalid args", K(ret), K(task), K(seq), K(hash));
   } else if (! inited_) {
     ret = OB_NOT_INIT;
   } else if (OB_SUCCESS != (ret = qinfo_[hash % qcount_].add(seq, task))
            && OB_EAGAIN != ret) {
-    LOG_ERROR("push to ms_queue: unexpected error", K(seq), K(task), K(hash));
+    LOG_EDIAG("push to ms_queue: unexpected error", K(seq), K(task), K(hash));
   } else {
     // succ
   }
@@ -219,12 +219,12 @@ int ObMsQueue::get(Task*& task, const int64_t idx)
   int ret = OB_SUCCESS;
   if (idx < 0 || idx >= qcount_) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("invalid args", K(ret), K(idx));
+    LOG_EDIAG("invalid args", K(ret), K(idx));
   } else if (! inited_) {
     ret = OB_NOT_INIT;
   } else if (OB_SUCCESS != (ret = qinfo_[idx].get(seq_queue_.get_next(), task))
            && OB_EAGAIN != ret) {
-    LOG_ERROR("get task from queue info fail", K(ret), K(idx));
+    LOG_EDIAG("get task from queue info fail", K(ret), K(idx));
   }
   return ret;
 }

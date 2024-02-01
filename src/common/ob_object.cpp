@@ -85,7 +85,7 @@ int ObObj::is_true(bool /*range_check*/, bool &is_true) const
     ObObj buf_obj;
     const ObObj *res_obj = NULL;
     if (OB_FAIL(ObObjCasterV2::to_type(ObTinyIntType, cast_ctx, *this, buf_obj, res_obj))) {
-      _OB_LOG(WARN, "failed to cast object to tinyint");
+      _OB_LOG(WDIAG, "failed to cast object to tinyint");
     } else {
       is_true = !res_obj->is_zero();
     }
@@ -140,8 +140,8 @@ bool ObObj::is_zero() const
         break;
       }
       default:
-        BACKTRACE(ERROR, true, "unexpected numeric type=%hhd", meta_.get_type());
-        right_to_die_or_duty_to_live();
+        BACKTRACE(EDIAG, true, "unexpected numeric type=%hhd", meta_.get_type());
+        break;
     }
   }
   return ret;
@@ -239,7 +239,7 @@ int ObObj::build_not_strict_default_value()
     }
     default:
       ret = OB_INVALID_ARGUMENT;
-      _OB_LOG(WARN, "unexpected data type=%hhd", data_type);
+      _OB_LOG(WDIAG, "unexpected data type=%hhd", data_type);
   }
   return ret;
 }
@@ -247,7 +247,7 @@ int ObObj::build_not_strict_default_value()
 int64_t ObObj::get_deep_copy_size() const
 {
   int64_t ret = 0;
-  if (is_string_type()) {
+  if (is_string_type() || is_decimal_int()) {
     ret += val_len_;
   } else if (ob_is_number_tc(get_type())) {
     ret += (sizeof(uint32_t) * nmb_desc_.len_);
@@ -284,6 +284,16 @@ int ObObj::deep_copy(const ObObj &src, char *buf, const int64_t size, int64_t &p
       *this = src;
       this->set_number(src.get_type(), dest_nmb);
       pos += (sizeof(uint32_t) * src_nmb.get_length());
+    }
+  } else if (ObDecimalIntTC == src.get_type_class()) {
+    if (OB_UNLIKELY(size < (pos + src.get_val_len()))) {
+      ret = OB_BUF_NOT_ENOUGH;
+    } else {
+      MEMCPY(buf + pos, src.get_decimal_int(), src.get_val_len());
+      *this = src;
+      this->set_decimal_int(src.get_val_len(), src.get_scale(),
+                            reinterpret_cast<ObDecimalInt *>(buf + pos));
+      pos += src.get_val_len();
     }
   } else {
     *this = src;
@@ -342,7 +352,7 @@ int ObObj::apply(const ObObj &mutation)
                       && ObExtendType != mut_type
                       && ObNullType != mut_type
                       && org_type != mut_type))) {
-    _OB_LOG(WARN, "type not coincident or invalid type[this->type:%d,mutation.type:%d]",
+    _OB_LOG(WDIAG, "type not coincident or invalid type[this->type:%d,mutation.type:%d]",
               org_type, mut_type);
     ret = OB_INVALID_ARGUMENT;
   } else {
@@ -369,7 +379,7 @@ int ObObj::apply(const ObObj &mutation)
             break;
           default:
             ret = OB_INVALID_ARGUMENT;
-            _OB_LOG(ERROR, "unsupported ext value [value:%ld]", mutation.get_ext());
+            _OB_LOG(EDIAG, "unsupported ext value [value:%ld]", mutation.get_ext());
             break;
         }  // end switch
         break;
@@ -446,6 +456,12 @@ ObObjTypeFuncs OBJ_FUNCS[ObMaxType] =
   DEF_FUNC_ENTRY(ObNumberFloatType),   // 42
   DEF_FUNC_ENTRY(ObNVarchar2Type),     // 43, nvarchar2
   DEF_FUNC_ENTRY(ObNCharType),         // 44, nchar
+  DEF_FUNC_ENTRY(ObNullType),        // 45, urowid
+  DEF_FUNC_ENTRY(ObNullType),           // 46, lob
+  DEF_FUNC_ENTRY(ObNullType),          // 47, json
+  DEF_FUNC_ENTRY(ObNullType),      // 48, geometry TODO!!!!!
+  DEF_FUNC_ENTRY(ObNullType),// 49, udt
+  DEF_FUNC_ENTRY(ObDecimalIntType)     // 50, decimal int
 };
 
 ////////////////////////////////////////////////////////////////
@@ -538,7 +554,7 @@ bool ObObj::check_collation_integrity() const
   }
   if (!is_ok) {
     if (REACH_TIME_INTERVAL(10 * 1000 * 1000)) {
-      BACKTRACE(WARN, true, "unexpected collation type: %s", to_cstring(get_meta()));
+      BACKTRACE(WDIAG, true, "unexpected collation type: %s", to_cstring(get_meta()));
     }
   }
   return is_ok;

@@ -335,11 +335,11 @@ public:
     void *instance_buffer = alloc_.alloc(sizeof(T));
     void *node_buffer = alloc_.alloc(sizeof(TSINode<T>));
     if (NULL == (instance = new (instance_buffer) T())) {
-      _LIB_LOG(WARN, "new instance [%s] fail", typeid(T).name());
+      _LIB_LOG(WDIAG, "new instance [%s] fail", typeid(T).name());
     } else {
       node = new(node_buffer) TSINode<T>(instance);
       if (NULL == node) {
-        _LIB_LOG(WARN, "new tsi_node fail [%s]", typeid(T).name());
+        _LIB_LOG(WDIAG, "new tsi_node fail [%s]", typeid(T).name());
         instance->~T();
         instance = NULL;
       } else {
@@ -378,7 +378,7 @@ public:
   {
     int ret = common::OB_SUCCESS;
     if (0 != pthread_key_create(&key_, destroy_thread_data_)) {
-      _LIB_LOG(WARN, "pthread_key_create fail errno=%u", errno);
+      _LIB_LOG(WDIAG, "pthread_key_create fail errno=%u", errno);
       ret = common::OB_ERROR;
     }
     return ret;
@@ -391,7 +391,7 @@ public:
       destroy_thread_data_(ptr);
       if (0 != pthread_key_delete(key_)) {
         ret = OB_ERR_UNEXPECTED;
-        _LIB_LOG(WARN, "pthread_key_delete fail errno=%u", errno);
+        _LIB_LOG(WDIAG, "pthread_key_delete fail errno=%u", errno);
       } else {
         key_ = INVALID_THREAD_KEY;
       }
@@ -413,7 +413,7 @@ public:
         //}
         if (NULL != tsi
             && 0 != pthread_setspecific(key_, tsi)) {
-          _LIB_LOG(WARN, "pthread_setspecific fail errno=%u key=%d", errno, key_);
+          _LIB_LOG(WDIAG, "pthread_setspecific fail errno=%u key=%d", errno, key_);
           delete tsi;
           tsi = NULL;
         }

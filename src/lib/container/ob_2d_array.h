@@ -84,7 +84,7 @@ Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::Ob2DArray(int64_t block_size,
       error_(false)
 {
   if (OB_UNLIKELY(static_cast<int64_t>(sizeof(T)) > block_size_)) {
-    LIB_LOG(ERROR, "invalid block size, smaller than T. Fatal!!!", K(sizeof(T)), K_(block_size));
+    LIB_LOG(EDIAG, "invalid block size, smaller than T. Fatal!!!", K(sizeof(T)), K_(block_size));
     error_ = true;
   }
 }
@@ -108,7 +108,7 @@ int Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::assign(const ObIArray<T> 
     reserve(N);
     for (int64_t i = 0; OB_SUCC(ret) && i < N; ++i) {
       if (OB_FAIL(this->push_back(other.at(i)))) {
-        LIB_LOG(WARN, "failed to push back item", K(ret));
+        LIB_LOG(WDIAG, "failed to push back item", K(ret));
         break;
       }
     }
@@ -131,10 +131,10 @@ inline int Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::new_block()
   int ret = OB_SUCCESS;
   char *blk = static_cast<char *>(block_alloc_.alloc(block_size_));
   if (OB_ISNULL(blk)) {
-    LIB_LOG(WARN, "no memory");
+    LIB_LOG(WDIAG, "no memory");
     ret = OB_ALLOCATE_MEMORY_FAILED;
   } else if (OB_FAIL(blocks_.push_back(blk))) {
-    LIB_LOG(WARN, "failed to add block", K(ret));
+    LIB_LOG(WDIAG, "failed to add block", K(ret));
     block_alloc_.free(blk);
     blk = NULL;
   }
@@ -163,11 +163,11 @@ int Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::push_back(const T &obj)
   if (OB_SUCC(ret)) {
     if (OB_UNLIKELY(count_ >= get_capacity())) {
       ret = OB_ERR_UNEXPECTED;
-      LIB_LOG(WARN, "invalid param", K_(count), K(get_capacity()));
+      LIB_LOG(WDIAG, "invalid param", K_(count), K(get_capacity()));
     } else {
       char *obj_buf = get_obj_pos(count_);
       if (OB_FAIL(construct_assign(*(reinterpret_cast<T *>(obj_buf)), obj))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       } else {
         ++count_;
       }
@@ -198,7 +198,7 @@ int Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::pop_back(T &obj)
     T *obj_ptr = reinterpret_cast<T *>(get_obj_pos(count_ - 1));
     // assign
     if (OB_FAIL(copy_assign(obj, *obj_ptr))) {
-      LIB_LOG(WARN, "failed to copy data", K(ret));
+      LIB_LOG(WDIAG, "failed to copy data", K(ret));
     } else {
       obj_ptr->~T();
       --count_;
@@ -219,7 +219,7 @@ int Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::remove(int64_t idx)
     T *obj_ptr = reinterpret_cast<T *>(get_obj_pos(idx));
     for (int64_t i = idx; OB_SUCC(ret) && i < count_ - 1; ++i) {
       if (OB_FAIL(copy_assign(at(i), at(i + 1)))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       }
     }
     if (OB_SUCC(ret)) {
@@ -243,7 +243,7 @@ int Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::at(int64_t idx, T &obj) c
   } else {
     T *obj_ptr = reinterpret_cast<T *>(get_obj_pos(idx));
     if (OB_FAIL(copy_assign(obj, *obj_ptr))) {
-      LIB_LOG(WARN, "failed to copy data", K(ret));
+      LIB_LOG(WDIAG, "failed to copy data", K(ret));
     }
   }
   return ret;
@@ -255,7 +255,7 @@ template <typename T,
 inline T &Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::at(int64_t idx)
 {
   if (OB_UNLIKELY(0 > idx || idx >= count_)) {
-    LIB_LOG(ERROR, "invalid idx. Fatal!!!", K(idx), K_(count));
+    LIB_LOG(EDIAG, "invalid idx. Fatal!!!", K(idx), K_(count));
   }
   return *reinterpret_cast<T *>(get_obj_pos(idx));
 }
@@ -266,7 +266,7 @@ template <typename T,
 inline const T &Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::at(int64_t idx) const
 {
   if (OB_UNLIKELY(0 > idx || idx >= count_)) {
-    LIB_LOG(ERROR, "invalid idx. Fatal!!!", K(idx), K_(count));
+    LIB_LOG(EDIAG, "invalid idx. Fatal!!!", K(idx), K_(count));
   }
   return *reinterpret_cast<T *>(get_obj_pos(idx));
 }
@@ -329,9 +329,9 @@ int Ob2DArray<T, BlockAllocatorT, BlockPointerArrayT>::reserve(int64_t capacity)
       char *block = static_cast<char *>(block_alloc_.alloc(block_size_));
       if (OB_ISNULL(block)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LIB_LOG(WARN, "no memory", K(ret));
+        LIB_LOG(WDIAG, "no memory", K(ret));
       } else if (OB_FAIL(blocks_.push_back(block))) {
-        LIB_LOG(WARN, "failed to add new block", K(ret));
+        LIB_LOG(WDIAG, "failed to add new block", K(ret));
         block_alloc_.free(block);
         block = NULL;
       }

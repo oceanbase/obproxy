@@ -28,7 +28,7 @@ int ObStdJsonConvertor::init(const char *json, char *buf, const int64_t buf_size
   int ret = OB_SUCCESS;
   if (OB_ISNULL(json) || OB_ISNULL(buf) || OB_UNLIKELY(0 == buf_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid arugment", K(json), K(buf), K(buf_size));
+    LOG_WDIAG("invalid arugment", K(json), K(buf), K(buf_size));
   } else {
     json_ = json;
     buf_ = buf;
@@ -42,7 +42,7 @@ int ObStdJsonConvertor::convert(int64_t &out_len)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(json_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init");
+    LOG_WDIAG("not init");
   } else {
     out_len = 0;
     const char *p = json_;
@@ -50,7 +50,7 @@ int ObStdJsonConvertor::convert(int64_t &out_len)
     bool in_string = false;
     if (OB_ISNULL(p)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json_ is NULL", K(ret));
+      LOG_WDIAG("json_ is NULL", K(ret));
     } else {}
     while (OB_SUCC(ret) && *p) {
       if (in_string) {
@@ -61,7 +61,7 @@ int ObStdJsonConvertor::convert(int64_t &out_len)
         } else if ('"' == *p) {
           in_string = false;
           if (OB_FAIL(output(p, begin, out_len))) {
-            LOG_WARN("fail to output", K(ret));
+            LOG_WDIAG("fail to output", K(ret));
           } else {}
         } else {}
       } else {
@@ -76,13 +76,13 @@ int ObStdJsonConvertor::convert(int64_t &out_len)
           case '{':
           case '}': {
             if (OB_FAIL(output(p, begin, out_len))) {
-              LOG_WARN("fail to output", K(ret));
+              LOG_WDIAG("fail to output", K(ret));
             } else {}
             break;
           }
           case ':': {
             if (OB_FAIL(quoted_output(p, begin, out_len))) {
-              LOG_WARN("fail to quoted output", K(ret));
+              LOG_WDIAG("fail to quoted output", K(ret));
             } else {}
             break;
           }
@@ -94,7 +94,7 @@ int ObStdJsonConvertor::convert(int64_t &out_len)
     }
     if (OB_SUCC(ret) && begin < p) {
       if (OB_FAIL(output(p - 1, begin, out_len))) {
-        LOG_WARN("fail to output", K(ret));
+        LOG_WDIAG("fail to output", K(ret));
       } else {}
     }
   }
@@ -106,13 +106,13 @@ int ObStdJsonConvertor::output(const char *p, const char *&begin, int64_t &out_l
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(p < begin)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("p < begin", K(ret), K(p), K(begin));
+    LOG_WDIAG("p < begin", K(ret), K(p), K(begin));
   } else {
     int64_t len = p - begin + 1;
     if (len > buf_size_ - pos_) {
       len = buf_size_ - pos_;
       ret = OB_BUF_NOT_ENOUGH;
-      LOG_WARN("buf not enouth", K_(buf_size), "json_len", strlen(json_));
+      LOG_WDIAG("buf not enouth", K_(buf_size), "json_len", strlen(json_));
     } else {}
     // copy to %buf_, even buffer not enough
     if (len > 0) {
@@ -130,7 +130,7 @@ int ObStdJsonConvertor::add_quote_mark(int64_t &out_len)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(pos_ >= buf_size_)) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("buf not enouth", K_(buf_size), "json_len", strlen(json_));
+    LOG_WDIAG("buf not enouth", K_(buf_size), "json_len", strlen(json_));
   } else {
     buf_[pos_++] = '"';
     out_len++;
@@ -143,13 +143,13 @@ int ObStdJsonConvertor::quoted_output(const char *p, const char *&begin, int64_t
   int ret = OB_SUCCESS;
   if (OB_ISNULL(p) || OB_UNLIKELY(p < begin) || OB_UNLIKELY(':' != *p)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("p is NULL or p < begin or ':' != *p", K(ret), K(p), K(begin));
+    LOG_WDIAG("p is NULL or p < begin or ':' != *p", K(ret), K(p), K(begin));
   } else {
     const char *name_begin = begin;
     const char *name_end = p - 1;
     if (OB_ISNULL(name_begin) || OB_ISNULL(name_end)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("name_begin or name_end is NULL", K(ret), K(name_begin), K(name_end));
+      LOG_WDIAG("name_begin or name_end is NULL", K(ret), K(name_begin), K(name_end));
     } else {
       // trim
       while (name_begin <= name_end && isspace(*name_begin)) {
@@ -160,23 +160,23 @@ int ObStdJsonConvertor::quoted_output(const char *p, const char *&begin, int64_t
       }
       if (name_begin > name_end) { // no valid name
         if (OB_FAIL(output(p, begin, out_len))) {
-          LOG_WARN("fail to output", K(ret));
+          LOG_WDIAG("fail to output", K(ret));
         } else {}
       } else {
         if (name_begin > begin) {
           if (OB_FAIL(output(name_begin - 1, begin, out_len))) {
-            LOG_WARN("fail to output", K(ret));
+            LOG_WDIAG("fail to output", K(ret));
           } else {}
         }
         if (OB_FAIL(ret)) {
         } else if (OB_FAIL(add_quote_mark(out_len))) {
-          LOG_WARN("fail to add quote mark", K(ret));
+          LOG_WDIAG("fail to add quote mark", K(ret));
         } else if (OB_FAIL(output(name_end, begin, out_len))) {
-          LOG_WARN("fail to add output", K(ret));
+          LOG_WDIAG("fail to add output", K(ret));
         } else if (OB_FAIL(add_quote_mark(out_len))) {
-          LOG_WARN("fail to add quote mark", K(ret));
+          LOG_WDIAG("fail to add quote mark", K(ret));
         } else if (OB_FAIL(output(p, begin, out_len))) {
-          LOG_WARN("fail to add output", K(ret));
+          LOG_WDIAG("fail to add output", K(ret));
         } else {}
       }
     }

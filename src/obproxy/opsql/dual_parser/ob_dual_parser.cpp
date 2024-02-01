@@ -81,18 +81,18 @@ int ObProxyDualParser::parse_key_word(const char* key, bool allow_semi)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(skip_comments())) {
-    LOG_WARN("skip_comments fail", K(sql_ptr_), K(cur_pos_));
+    LOG_WDIAG("skip_comments fail", K(sql_ptr_), K(cur_pos_));
     return ret;
   }
   last_pos_ = cur_pos_;
   if (allow_semi) {
     if (OB_FAIL(find_next_semi_or_blanket())) {
-      LOG_WARN("find_next_blanket fail", K(sql_ptr_), K(cur_pos_));
+      LOG_WDIAG("find_next_blanket fail", K(sql_ptr_), K(cur_pos_));
       return ret;
     }
   } else {
     if (OB_FAIL(find_next_blanket())) {
-      LOG_WARN("find_next_blanket fail", K(sql_ptr_), K(cur_pos_));
+      LOG_WDIAG("find_next_blanket fail", K(sql_ptr_), K(cur_pos_));
       return ret;
     }
   }
@@ -101,7 +101,7 @@ int ObProxyDualParser::parse_key_word(const char* key, bool allow_semi)
   if (is_match_word(str, key)) {
     return ret;
   } else {
-    LOG_WARN("not match word ", K(sql_ptr_), K(cur_pos_), K(key));
+    LOG_WDIAG("not match word ", K(sql_ptr_), K(cur_pos_), K(key));
     return OB_ERR_UNEXPECTED;
   }
 }
@@ -229,19 +229,19 @@ int ObProxyDualParser::skip_comments()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(find_next_not_blanket())) {
-    LOG_WARN("find_next_not_blanket failed", K(sql_ptr_), K(cur_pos_));
+    LOG_WDIAG("find_next_not_blanket failed", K(sql_ptr_), K(cur_pos_));
     return ret;
   }
   while (true) {
     if (is_slash_char(sql_ptr_[cur_pos_])) {
       ++cur_pos_; // skip cur /*
       if (OB_FAIL(find_next_slash())) {
-        LOG_WARN("find_next_slash failed", K(sql_ptr_), K(cur_pos_));
+        LOG_WDIAG("find_next_slash failed", K(sql_ptr_), K(cur_pos_));
         return ret;
       }
       ++cur_pos_; // skip cur */
       if (OB_FAIL(find_next_not_blanket())) {
-        LOG_WARN("find_next_not_blanket failed", K(sql_ptr_), K(cur_pos_));
+        LOG_WDIAG("find_next_not_blanket failed", K(sql_ptr_), K(cur_pos_));
         return ret;
       }
     } else {
@@ -260,7 +260,7 @@ int ObProxyDualParser::parse_seqs_and_fields()
       LOG_DEBUG("parse_seqs_and_fields 1:", K(cur_pos_), K(last_pos_), K(sql_ptr_));
       // find seq_name
       if (OB_FAIL(skip_comments())) {
-        LOG_WARN("skip_comments failed", K(sql_ptr_), K(cur_pos_));
+        LOG_WDIAG("skip_comments failed", K(sql_ptr_), K(cur_pos_));
         return ret;
       }
       LOG_DEBUG("parse_seqs_and_fields 2:", K(cur_pos_), K(last_pos_), K(sql_ptr_));
@@ -278,7 +278,7 @@ int ObProxyDualParser::parse_seqs_and_fields()
       result_->select_fields_[result_->select_fields_size_].seq_name_ = seq_name;
       if (is_blanket_char(sql_ptr_[cur_pos_])) {
         if (OB_FAIL(find_next_dot())) {
-          LOG_WARN("find_next_dot failed", K(sql_ptr_), K(cur_pos_));
+          LOG_WDIAG("find_next_dot failed", K(sql_ptr_), K(cur_pos_));
           return ret;
         }
       }
@@ -389,7 +389,7 @@ int ObProxyDualParser::parse_where_fields(ObCollationType connection_collation)
   // Parse need last two should be 0
   if (length_ >= 510) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("sql is too long", KP(sql_ptr_));
+    LOG_WDIAG("sql is too long", KP(sql_ptr_));
     return ret;
   }
   ObExprParseMode parse_mode = SELECT_STMT_PARSE_MODE;
@@ -435,14 +435,14 @@ int ObProxyDualParser::parse(const common::ObString &sql_string,
   length_ = sql_string.length();
   sql_ptr_ = sql_string.ptr();
   if (OB_FAIL(parse_key_word("SELECT", false))) {
-    LOG_WARN("parse_key_word SELECT failed");
+    LOG_WDIAG("parse_key_word SELECT failed");
     return ret;
   } else if (OB_FAIL(parse_seqs_and_fields())) {
-    LOG_WARN("parse_seqs_and_fields failed");
+    LOG_WDIAG("parse_seqs_and_fields failed");
     // } else if (OB_FAIL(parse_key_word("FROM", false))){
-    //   LOG_WARN("parse_key_word FROM failed");
+    //   LOG_WDIAG("parse_key_word FROM failed");
   } else if (OB_FAIL(parse_key_word("DUAL", true))) {
-    LOG_WARN("parse_key_word DUAL failed");
+    LOG_WDIAG("parse_key_word DUAL failed");
   } else if (OB_FAIL(parse_where_key_word())) {
     LOG_DEBUG("parse_where_and_fields failed");
   } else if (OB_FAIL(parse_where_fields(connection_collation))) {

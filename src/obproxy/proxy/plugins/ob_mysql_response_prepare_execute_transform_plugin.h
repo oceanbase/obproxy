@@ -98,7 +98,7 @@ public:
         transaction.add_plugin(plugin);
         PROXY_API_LOG(DEBUG, "add ObMysqlResponsePrepareExecuteTransformPlugin", K(plugin));
       } else {
-        PROXY_API_LOG(ERROR, "fail to allocate memory for ObMysqlResponsePrepareExecuteTransformPlugin");
+        PROXY_API_LOG(EDIAG, "fail to allocate memory for ObMysqlResponsePrepareExecuteTransformPlugin");
       }
     } else {
       PROXY_API_LOG(DEBUG, "no need setup ObMysqlResponsePrepareExecuteTransformPlugin");

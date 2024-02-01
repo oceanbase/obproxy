@@ -23,10 +23,10 @@ int ObSystemConfigKey::set_varchar(const ObString &key, const char *strvalue)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(strvalue)) {
     ret = OB_INVALID_ARGUMENT;
-    OB_LOG(WARN, "check varchar value failed", K(ret));
+    OB_LOG(WDIAG, "check varchar value failed", K(ret));
   } else if (key == "zone") {
     if (OB_FAIL(zone_.assign(strvalue))) {
-      OB_LOG(WARN, "zone assign failed", K(strvalue), K(ret));
+      OB_LOG(WDIAG, "zone assign failed", K(strvalue), K(ret));
     }
   } else if (key == "svr_type") {
     strncpy(server_type_, strvalue, sizeof(server_type_));
@@ -36,7 +36,7 @@ int ObSystemConfigKey::set_varchar(const ObString &key, const char *strvalue)
     server_ip_[OB_MAX_SERVER_ADDR_SIZE - 1] = '\0';
   } else {
     ret = OB_INVALID_ARGUMENT;
-    OB_LOG(ERROR, "unknown sys config column name", "name", key.ptr(), K(ret));
+    OB_LOG(EDIAG, "unknown sys config column name", "name", key.ptr(), K(ret));
   }
   return ret;
 }
@@ -58,7 +58,7 @@ int ObSystemConfigKey::set_int(const ObString &key, int64_t intval)
     server_port_ = intval;
   } else {
     ret = OB_INVALID_ARGUMENT;
-    OB_LOG(ERROR, "unknown sys config column name", "name", key.ptr(), K(ret));
+    OB_LOG(EDIAG, "unknown sys config column name", "name", key.ptr(), K(ret));
   }
   return ret;
 }

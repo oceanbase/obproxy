@@ -52,12 +52,12 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(!check_inner_stat())) {
       ret = OB_INNER_STAT_ERROR;
-      LIB_LOG(WARN, "inner stat error", K_(p), K_(index), K_(size), K(ret));
+      LIB_LOG(WDIAG, "inner stat error", K_(p), K_(index), K_(size), K(ret));
     } else if (OB_UNLIKELY(index_ == size_)) {
       ret = OB_ARRAY_OUT_OF_RANGE;
-      LIB_LOG(WARN, "array is full", K_(index), K_(size), K(ret));
+      LIB_LOG(WDIAG, "array is full", K_(index), K_(size), K(ret));
     } else if (OB_FAIL(copy_assign(p_[index_], obj))) {
-      LIB_LOG(WARN, "assign failed", K(ret));
+      LIB_LOG(WDIAG, "assign failed", K(ret));
     } else {
       ++index_;
     }
@@ -69,7 +69,7 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(!check_inner_stat())) {
       ret = OB_INNER_STAT_ERROR;
-      LIB_LOG(WARN, "inner stat error", K_(p), K_(index), K_(size), K(ret));
+      LIB_LOG(WDIAG, "inner stat error", K_(p), K_(index), K_(size), K(ret));
     } else if (index_ > 0) {
       --index_;
     } else {
@@ -82,12 +82,12 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(!check_inner_stat())) {
       ret = OB_INNER_STAT_ERROR;
-      LIB_LOG(WARN, "inner stat error", K_(p), K_(index), K_(size), K(ret));
+      LIB_LOG(WDIAG, "inner stat error", K_(p), K_(index), K_(size), K(ret));
     } else if (OB_UNLIKELY(index_ <= 0)) {
       ret = OB_ARRAY_OUT_OF_RANGE;
-      LIB_LOG(WARN, "array is empty", K_(index), K(ret));
+      LIB_LOG(WDIAG, "array is empty", K_(index), K(ret));
     } else if (OB_FAIL(copy_assign(obj, p_[index_ - 1]))) {
-      LIB_LOG(WARN, "assign failed", K(ret));
+      LIB_LOG(WDIAG, "assign failed", K(ret));
     } else {
       --index_;
     }
@@ -99,14 +99,14 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(!check_inner_stat())) {
       ret = OB_INNER_STAT_ERROR;
-      LIB_LOG(WARN, "inner stat error", K_(p), K_(index), K_(size), K(ret));
+      LIB_LOG(WDIAG, "inner stat error", K_(p), K_(index), K_(size), K(ret));
     } else if (OB_UNLIKELY(idx < 0 || idx >= index_)) {
       ret = OB_ARRAY_OUT_OF_RANGE;
-      LIB_LOG(WARN, "idx out of array range", K(idx), K_(index), K(ret));
+      LIB_LOG(WDIAG, "idx out of array range", K(idx), K_(index), K(ret));
     } else {
       for (int64_t i = idx; OB_SUCC(ret) && i < index_ - 1; ++i) {
         if (OB_FAIL(copy_assign(p_[i], p_[i + 1]))) {
-          LIB_LOG(WARN, "assign failed", K(ret));
+          LIB_LOG(WDIAG, "assign failed", K(ret));
         }
       }
       if (OB_SUCC(ret)) {
@@ -121,12 +121,12 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(!check_inner_stat())) {
       ret = OB_INNER_STAT_ERROR;
-      LIB_LOG(WARN, "inner stat error", K_(p), K_(index), K_(size), K(ret));
+      LIB_LOG(WDIAG, "inner stat error", K_(p), K_(index), K_(size), K(ret));
     } else if (OB_UNLIKELY(idx < 0 || idx >= index_)) {
       ret = OB_ARRAY_OUT_OF_RANGE;
-      LIB_LOG(WARN, "idx out of array range", K(idx), K_(index), K(ret));
+      LIB_LOG(WDIAG, "idx out of array range", K(idx), K_(index), K(ret));
     } else if (OB_FAIL(copy_assign(obj, p_[idx]))) {
-      LIB_LOG(WARN, "assign failed", K(ret));
+      LIB_LOG(WDIAG, "assign failed", K(ret));
     }
     return ret;
   }
@@ -134,9 +134,9 @@ public:
   T &at(int64_t idx)
   {
     if (OB_UNLIKELY(!check_inner_stat())) {
-      LIB_LOG(ERROR, "fail check array inner stat");
+      LIB_LOG(EDIAG, "fail check array inner stat");
     } else if (OB_UNLIKELY(idx < 0 || idx >= index_)) {
-      LIB_LOG(ERROR, "idx out of array range", K(idx), K_(index));
+      LIB_LOG(EDIAG, "idx out of array range", K(idx), K_(index));
     }
     return p_[idx];
   }
@@ -144,9 +144,9 @@ public:
   const T &at(int64_t idx) const
   {
     if (OB_UNLIKELY(!check_inner_stat())) {
-      LIB_LOG(ERROR, "fail check array inner stat");
+      LIB_LOG(EDIAG, "fail check array inner stat");
     } else if (OB_UNLIKELY(idx < 0 || idx >= index_)) {
-      LIB_LOG(ERROR, "idx out of array range", K(idx), K_(index));
+      LIB_LOG(EDIAG, "idx out of array range", K(idx), K_(index));
     }
     return p_[idx];
   }
@@ -173,11 +173,11 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(!check_inner_stat())) {
       ret = OB_INNER_STAT_ERROR;
-      LIB_LOG(WARN, "inner stat error", K_(p), K_(index), K_(size), K(ret));
+      LIB_LOG(WDIAG, "inner stat error", K_(p), K_(index), K_(size), K(ret));
     } else if (this != &other) {
       reuse();
       if (OB_FAIL(append(*this, other))) {
-        LIB_LOG(WARN, "append failed", K(ret));
+        LIB_LOG(WDIAG, "append failed", K(ret));
       }
     }
     return ret;

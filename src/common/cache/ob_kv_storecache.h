@@ -601,13 +601,13 @@ int ObKVCache<Key, Value>::init(const char *cache_name, const int64_t priority)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(inited_)) {
     ret = OB_INIT_TWICE;
-    COMMON_LOG(WARN, "The ObKVCache has been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has been inited, ", K(ret));
   } else if (OB_UNLIKELY(NULL == cache_name)
       || OB_UNLIKELY(priority <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(cache_name), K(priority), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(cache_name), K(priority), K(ret));
   } else if (OB_FAIL(ObKVGlobalCache::get_instance().register_cache(cache_name, priority, cache_id_))) {
-    COMMON_LOG(WARN, "Fail to register cache, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to register cache, ", K(ret));
   } else {
     inited_ = true;
   }
@@ -629,12 +629,12 @@ int ObKVCache<Key, Value>::set_priority(const int64_t priority)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else if (OB_UNLIKELY(priority <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(priority), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(priority), K(ret));
   } else if (OB_FAIL(ObKVGlobalCache::get_instance().set_priority(cache_id_, priority))) {
-    COMMON_LOG(WARN, "Fail to set priority, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to set priority, ", K(ret));
   }
   return ret;
 }
@@ -721,9 +721,9 @@ int ObKVCache<Key, Value>::get_iterator(ObKVCacheIterator &iter)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else if (OB_FAIL(iter.init(cache_id_, &ObKVGlobalCache::get_instance().map_))) {
-    COMMON_LOG(WARN, "Fail to init ObKVCacheIterator, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to init ObKVCacheIterator, ", K(ret));
   }
   return ret;
 }
@@ -736,11 +736,11 @@ int ObKVCache<Key, Value>::put(const Key &key, const Value &value, bool overwrit
   const ObIKVCacheValue *pvalue = NULL;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else if (OB_FAIL(ObKVGlobalCache::get_instance().put(cache_id_, key, value, pvalue,
       handle.mb_handle_, overwrite))) {
     if (OB_ENTRY_EXIST != ret) {
-      COMMON_LOG(WARN, "Fail to put kv to ObKVGlobalCache, ", K_(cache_id), K(ret));
+      COMMON_LOG(WDIAG, "Fail to put kv to ObKVGlobalCache, ", K_(cache_id), K(ret));
     }
   } else {
     handle.reset();
@@ -762,10 +762,10 @@ int ObKVCache<Key, Value>::put_and_fetch(
   handle.reset();
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else if (OB_FAIL(ObKVGlobalCache::get_instance().put(cache_id_, key, value,
       tmp, handle.mb_handle_, overwrite))) {
-    COMMON_LOG(WARN, "Fail to put kv to ObKVGlobalCache, ", K_(cache_id), K(ret));
+    COMMON_LOG(WDIAG, "Fail to put kv to ObKVGlobalCache, ", K_(cache_id), K(ret));
   } else {
     pvalue = reinterpret_cast<const Value*>(tmp);
   }
@@ -779,12 +779,12 @@ int ObKVCache<Key, Value>::get(const Key &key, const Value *&pvalue, ObKVCacheHa
   const ObIKVCacheValue *value = NULL;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else {
     handle.reset();
     if (OB_FAIL(ObKVGlobalCache::get_instance().get(cache_id_, key, value, handle.mb_handle_))) {
       if (OB_ENTRY_NOT_EXIST != ret) {
-        COMMON_LOG(WARN, "Fail to get value from ObKVGlobalCache, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to get value from ObKVGlobalCache, ", K(ret));
       }
     } else {
       pvalue = reinterpret_cast<const Value*> (value);
@@ -799,9 +799,9 @@ int ObKVCache<Key, Value>::erase(const Key &key)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else if (OB_FAIL(ObKVGlobalCache::get_instance().erase(cache_id_, key))) {
-    COMMON_LOG(WARN, "Fail to erase key from ObKVGlobalCache, ", K_(cache_id), K(ret));
+    COMMON_LOG(WDIAG, "Fail to erase key from ObKVGlobalCache, ", K_(cache_id), K(ret));
   }
   return ret;
 }
@@ -813,7 +813,7 @@ int ObKVCache<Key, Value>::alloc(const Key &key, const Value &value,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else {
     ObKVCachePair *tmp_pair = NULL;
     ObKVMemBlockHandle *mb_handle = NULL;
@@ -821,13 +821,13 @@ int ObKVCache<Key, Value>::alloc(const Key &key, const Value &value,
     ObKVCacheInstHandle inst_handle;
 
     if (OB_FAIL(ObKVGlobalCache::get_instance().insts_.get_cache_inst(inst_key, inst_handle))) {
-      COMMON_LOG(WARN, "Fail to get cache inst, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to get cache inst, ", K(ret));
     } else if (NULL == inst_handle.get_inst()) {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "The inst is NULL, ", K(ret));
+      COMMON_LOG(WDIAG, "The inst is NULL, ", K(ret));
     } else if (OB_FAIL(ObKVGlobalCache::get_instance().store_.store(*inst_handle.get_inst(),
         key, value, tmp_pair, mb_handle))) {
-      COMMON_LOG(WARN, "Fail to store kvpair, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to store kvpair, ", K(ret));
     } else {
       handle.reset();
       handle.mb_handle_ = mb_handle;
@@ -843,25 +843,25 @@ int ObKVCache<Key, Value>::put(ObKVCachePair *kvpair, ObKVCacheHandle &handle, b
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCache has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCache has not been inited, ", K(ret));
   } else if (OB_UNLIKELY(NULL == kvpair)
       || OB_UNLIKELY(NULL == kvpair->key_)
       || OB_UNLIKELY(NULL == kvpair->value_)
       || OB_UNLIKELY(!handle.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(kvpair), K(handle), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(kvpair), K(handle), K(ret));
   } else {
     ObKVCacheInstKey inst_key(cache_id_, kvpair->key_->get_tenant_id());
     ObKVCacheInstHandle inst_handle;
     if (OB_FAIL(ObKVGlobalCache::get_instance().insts_.get_cache_inst(inst_key, inst_handle))) {
-      COMMON_LOG(WARN, "Fail to get inst, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to get inst, ", K(ret));
     } else if (NULL == inst_handle.get_inst()) {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "The inst is NULL, ", K(ret));
+      COMMON_LOG(WDIAG, "The inst is NULL, ", K(ret));
     } else if (OB_FAIL(ObKVGlobalCache::get_instance().map_.put(*inst_handle.get_inst(),
         *kvpair->key_, kvpair, handle.mb_handle_, overwrite))) {
       if (OB_ENTRY_EXIST != ret) {
-        COMMON_LOG(WARN, "Fail to put kvpair to map, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to put kvpair to map, ", K(ret));
       }
     }
   }
@@ -881,7 +881,7 @@ int ObKVCacheIterator::get_next_kvpair(
   ObKVCacheMap::Node node;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObKVCacheIterator has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObKVCacheIterator has not been inited, ", K(ret));
   } else {
     while (OB_SUCC(ret)) {
       if (pos_ >= map_->bucket_num_ && handle_list_.empty()) {
@@ -895,10 +895,10 @@ int ObKVCacheIterator::get_next_kvpair(
           if (pos_ >= map_->bucket_num_) {
             ret = OB_ITER_END;
           } else if (OB_FAIL(map_->multi_get(cache_id_, pos_++, handle_list_))) {
-            COMMON_LOG(WARN, "Fail to multi get from map, ", K(ret));
+            COMMON_LOG(WDIAG, "Fail to multi get from map, ", K(ret));
           }
         } else {
-          COMMON_LOG(WARN, "Unexpected error, ", K(ret));
+          COMMON_LOG(WDIAG, "Unexpected error, ", K(ret));
         }
       }
     }

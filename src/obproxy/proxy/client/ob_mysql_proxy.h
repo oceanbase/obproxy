@@ -142,7 +142,7 @@ inline int ObMysqlProxy::set_timeout_ms(const int64_t timeout_ms)
   int ret = common::OB_SUCCESS;
   if (timeout_ms <= 0) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(timeout_ms), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(timeout_ms), K(ret));
   } else {
     timeout_ms_ = timeout_ms;
   }
@@ -154,9 +154,9 @@ inline int ObMysqlProxy::clear_raw_execute()
   int ret = common::OB_SUCCESS;
   if (!is_inited_) {
     ret = common::OB_NOT_INIT;
-    PROXY_LOG(WARN, "not init", K_(is_inited), K(ret));
+    PROXY_LOG(WDIAG, "not init", K_(is_inited), K(ret));
   } else if (OB_FAIL(raw_mysql_client_.disconnect())) {
-    PROXY_LOG(WARN, "fail to disconnect raw mysql client", K(ret));
+    PROXY_LOG(WDIAG, "fail to disconnect raw mysql client", K(ret));
   } else {
     is_raw_execute_ = false;
   }

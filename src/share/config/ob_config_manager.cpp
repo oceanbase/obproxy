@@ -25,9 +25,9 @@ int ObConfigManager::base_init()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(system_config_.init())) {
-    LOG_ERROR("init system config failed", K(ret));
+    LOG_EDIAG("init system config failed", K(ret));
   } else if (OB_FAIL(server_config_.init(system_config_))) {
-    LOG_ERROR("init server config failed", K(ret));
+    LOG_EDIAG("init server config failed", K(ret));
   }
   update_task_.config_mgr_ = this;
   return ret;
@@ -52,9 +52,9 @@ int ObConfigManager::reload_config()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(server_config_.check_all())) {
-    LOG_WARN("Check configuration failed, can't reload", K(ret));
+    LOG_WDIAG("Check configuration failed, can't reload", K(ret));
   } else if (OB_FAIL(reload_config_func_())) {
-    LOG_WARN("Reload configuration failed.", K(ret));
+    LOG_WDIAG("Reload configuration failed.", K(ret));
   }
   return ret;
 }
@@ -72,14 +72,14 @@ int ObConfigManager::load_config(const char *path)
   if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(
       OB_MAX_PACKET_LENGTH, ObModIds::OB_BUFFER)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("alloc buffer failed", LITERAL_K(OB_MAX_PACKET_LENGTH), K(ret));
+    LOG_WDIAG("alloc buffer failed", LITERAL_K(OB_MAX_PACKET_LENGTH), K(ret));
   } else if (OB_ISNULL(fp = fopen(path, "rb"))) {
     if (ENOENT == errno) {
       ret = OB_FILE_NOT_EXIST;
       LOG_INFO("Config file doesn't exist, read from command line", K(path), K(ret));
     } else {
       ret = OB_IO_ERROR;
-      LOG_ERROR("Can't open file", K(path), KERRMSGS, K(ret));
+      LOG_EDIAG("Can't open file", K(path), KERRMSGS, K(ret));
     }
   } else {
     LOG_INFO("Using config file", K(path));
@@ -89,19 +89,19 @@ int ObConfigManager::load_config(const char *path)
 
     if (OB_UNLIKELY(0 != ferror(fp))) { // read with error
       ret = OB_IO_ERROR;
-      LOG_ERROR("Read config file error", K(path), K(ret));
+      LOG_EDIAG("Read config file error", K(path), K(ret));
     } else if (OB_UNLIKELY(0 == feof(fp))) { // not end of file
       ret = OB_BUF_NOT_ENOUGH;
-      LOG_ERROR("Config file is too long", K(path), K(ret));
+      LOG_EDIAG("Config file is too long", K(path), K(ret));
     } else if (OB_FAIL(server_config_.deserialize(buf, len, pos))) {
-      LOG_ERROR("Deserialize server config failed", K(path), K(ret));
+      LOG_EDIAG("Deserialize server config failed", K(path), K(ret));
     } else if (OB_UNLIKELY(pos != len)) {
       ret = OB_DESERIALIZE_ERROR;
-      LOG_ERROR("Deserialize server config failed", K(path), K(ret));
+      LOG_EDIAG("Deserialize server config failed", K(path), K(ret));
     }
     if (OB_UNLIKELY(0 != fclose(fp))) {
       ret = OB_IO_ERROR;
-      LOG_ERROR("Close config file failed", K(ret));
+      LOG_EDIAG("Close config file failed", K(ret));
     }
   }
   if (OB_LIKELY(NULL != buf)) {
@@ -126,7 +126,7 @@ int ObConfigManager::dump2file(const char *path) const
 
   if (OB_ISNULL(path) || STRLEN(path) <= 0) {
     ret = OB_INVALID_ERROR;
-    LOG_WARN("NO dump path specified!", K(ret));
+    LOG_WDIAG("NO dump path specified!", K(ret));
   } else {
     // write server config
     char *buf = NULL;
@@ -135,37 +135,37 @@ int ObConfigManager::dump2file(const char *path) const
     int64_t pos = 0;
     if (OB_ISNULL(buf = pa.alloc(OB_MAX_PACKET_LENGTH))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("ob tc malloc memory for buf failed", K(ret));
+      LOG_WDIAG("ob tc malloc memory for buf failed", K(ret));
     }
     if (OB_ISNULL(tmp_path = pa.alloc(MAX_PATH_SIZE))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("ob tc malloc memory for tmp configure path failed", K(ret));
+      LOG_WDIAG("ob tc malloc memory for tmp configure path failed", K(ret));
     } else {
       snprintf(tmp_path, MAX_PATH_SIZE, "%s.tmp", path);
     }
     if (OB_ISNULL(hist_path = pa.alloc(MAX_PATH_SIZE))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("ob tc malloc memory for history configure path fail", K(ret));
+      LOG_WDIAG("ob tc malloc memory for history configure path fail", K(ret));
     } else {
       snprintf(hist_path, MAX_PATH_SIZE, "%s.history", path);
     }
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(server_config_.serialize(buf, OB_MAX_PACKET_LENGTH, pos))) {
-        LOG_WARN("Serialize server config fail!", K(ret));
+        LOG_WDIAG("Serialize server config fail!", K(ret));
       } else if ((fd = ::open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC,
                               S_IRUSR  | S_IWUSR | S_IRGRP)) < 0) {
         ret = OB_IO_ERROR;
-        LOG_WARN("fail to create config file", K(tmp_path), KERRMSGS, K(ret));
+        LOG_WDIAG("fail to create config file", K(tmp_path), KERRMSGS, K(ret));
       } else if (pos != (size = write(fd, buf, pos))) {
         ret = OB_IO_ERROR;
-        LOG_WARN("Write server config fail!", K(pos), K(size), K(ret));
+        LOG_WDIAG("Write server config fail!", K(pos), K(size), K(ret));
         if (0 != close(fd)) {
-          LOG_WARN("fail to close file fd", K(fd), KERRMSGS, K(ret));
+          LOG_WDIAG("fail to close file fd", K(fd), KERRMSGS, K(ret));
         }
       } else if (0 != close(fd)) {
         ret = OB_IO_ERROR;
-        LOG_WARN("fail to close file fd", K(fd), KERRMSGS, K(ret));
+        LOG_WDIAG("fail to close file fd", K(fd), KERRMSGS, K(ret));
       } else {
         LOG_INFO("Write server config successfully!");
       }
@@ -174,12 +174,12 @@ int ObConfigManager::dump2file(const char *path) const
     if (OB_SUCC(ret)) {
       if (0 != ::rename(path, hist_path) && errno != ENOENT) {
         ret = OB_ERR_SYS;
-        LOG_WARN("fail to backup history config file", KERRMSGS, K(ret));
+        LOG_WDIAG("fail to backup history config file", KERRMSGS, K(ret));
       }
 
       if (0 != ::rename(tmp_path, path)) {
         ret = OB_ERR_SYS;
-        LOG_WARN("fail to move tmp config file", KERRMSGS, K(ret));
+        LOG_WDIAG("fail to move tmp config file", KERRMSGS, K(ret));
       }
     }
   }
@@ -191,7 +191,7 @@ int ObConfigManager::update_local()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_proxy_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("sql proxy is null", K(ret));
+    LOG_WDIAG("sql proxy is null", K(ret));
   } else {
     ObMySQLProxy::MySQLResult result;
     int64_t start = ObTimeUtility::current_time();
@@ -199,7 +199,7 @@ int ObConfigManager::update_local()
         "data_type, value, value_strict, info, need_reboot, section, visible_level "
         "from __all_sys_parameter";
     if (OB_FAIL(sql_proxy_->read(result, sqlstr))) {
-      LOG_WARN("read config from __all_sys_parameter failed", K(sqlstr), K(ret));
+      LOG_WDIAG("read config from __all_sys_parameter failed", K(sqlstr), K(ret));
     } else {
       LOG_INFO("read config from __all_sys_parameter succed", K(start));
       ret = system_config_.update(result);
@@ -209,13 +209,13 @@ int ObConfigManager::update_local()
   if (OB_SUCC(ret)) {
     if ('\0' == dump_path_[0]) {
       ret = OB_NOT_INIT;
-      LOG_ERROR("Dump path doesn't set, stop read config", K(ret));
+      LOG_EDIAG("Dump path doesn't set, stop read config", K(ret));
     } else if (OB_FAIL(server_config_.read_config())) {
-      LOG_ERROR("Read server config failed", K(ret));
+      LOG_EDIAG("Read server config failed", K(ret));
     } else if (OB_FAIL(reload_config())) {
-      LOG_WARN("Reload configuration failed", K(ret));
+      LOG_WDIAG("Reload configuration failed", K(ret));
     } else if (OB_FAIL(dump2file())) {
-      LOG_ERROR("Dump to file failed", K_(dump_path), K(ret));
+      LOG_EDIAG("Dump to file failed", K_(dump_path), K(ret));
     } else {
       LOG_INFO("Reload server config successfully!");
       char path[MAX_PATH_SIZE] = {};
@@ -225,15 +225,15 @@ int ObConfigManager::update_local()
         if (OB_SUCC(server_config_.config_additional_dir.get(idx, path, MAX_PATH_SIZE))) {
           if (STRLEN(path) > 0) {
             if (OB_FAIL(common::FileDirectoryUtils::create_full_path(path))) {
-              LOG_ERROR("create additional configure directory fail", K(path), K(ret));
+              LOG_EDIAG("create additional configure directory fail", K(path), K(ret));
             } else if (STRLEN(path) + STRLEN(CONF_COPY_NAME) < static_cast<uint64_t>(MAX_PATH_SIZE)) {
               strcat(path, CONF_COPY_NAME);
               if (OB_FAIL(dump2file(path))) {
-                LOG_ERROR("make additional configure file copy fail", K(path), K(ret));
+                LOG_EDIAG("make additional configure file copy fail", K(path), K(ret));
                 ret = OB_SUCCESS;  // ignore ret code.
               }
             } else {
-              LOG_ERROR("additional configure directory path is too long",
+              LOG_EDIAG("additional configure directory path is too long",
                         K(path), "len", STRLEN(path));
             }
           }
@@ -242,7 +242,7 @@ int ObConfigManager::update_local()
     }
     server_config_.print();
   } else {
-    LOG_WARN("Read system config from inner table error", K(ret));
+    LOG_WDIAG("Read system config from inner table error", K(ret));
   }
   return ret;
 }
@@ -261,7 +261,7 @@ int ObConfigManager::got_version(int64_t version, const bool remove_repeat)
   } else if (current_version_ == version) {
     // no new version
   } else if (version < current_version_) {
-    LOG_WARN("Local config is newer than rs, weird", K_(current_version), K(version));
+    LOG_WDIAG("Local config is newer than rs, weird", K_(current_version), K(version));
   } else if (version > current_version_) {
     if (!mutex_.tryLock()) {
       LOG_DEBUG("Processed by other thread!");
@@ -274,7 +274,7 @@ int ObConfigManager::got_version(int64_t version, const bool remove_repeat)
         schedule_task = true;
       } else if (version < newest_version_) {
         // impossible, local:current_version_, newest:newest_version, got:version
-        LOG_WARN("Receive weird config version",
+        LOG_WDIAG("Receive weird config version",
                  K_(current_version), K_(newest_version), K(version));
       }
       mutex_.unlock();
@@ -288,7 +288,7 @@ int ObConfigManager::got_version(int64_t version, const bool remove_repeat)
       newest_version_ = current_version_;
       schedule = false;
       ret = OB_NOT_INIT;
-      LOG_WARN("Couldn't update config because timer is NULL", K(ret));
+      LOG_WDIAG("Couldn't update config because timer is NULL", K(ret));
     } else if (true == remove_repeat) {
       schedule = !timer_->task_exist(update_task_);
       LOG_INFO("no need repeat schedule the same task");
@@ -300,7 +300,7 @@ int ObConfigManager::got_version(int64_t version, const bool remove_repeat)
       update_task_.version_ = version;
       update_task_.scheduled_time_ = obsys::CTimeUtil::getMonotonicTime();
       if (OB_FAIL(timer_->schedule(update_task_, 0, false))) {
-        LOG_ERROR("Update local config failed", K(ret));
+        LOG_EDIAG("Update local config failed", K(ret));
       } else {
         LOG_INFO("Schedule update config task successfully!");
       }
@@ -316,10 +316,10 @@ void ObConfigManager::UpdateTask::runTimerTask()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(config_mgr_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("invalid argument", K_(config_mgr), K(ret));
+    LOG_WDIAG("invalid argument", K_(config_mgr), K(ret));
   } else if (OB_ISNULL(config_mgr_->timer_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("invalid argument", K_(config_mgr_->timer), K(ret));
+    LOG_WDIAG("invalid argument", K_(config_mgr_->timer), K(ret));
   } else {
     int64_t current_version = config_mgr_->current_version_;
     int64_t version = version_;
@@ -332,23 +332,23 @@ void ObConfigManager::UpdateTask::runTimerTask()
       config_mgr_->current_version_ = version;
       if (OB_FAIL(config_mgr_->system_config_.clear())) {
         // just print log, ignore ret
-        LOG_WARN("Clear system config map failed", K(ret));
+        LOG_WDIAG("Clear system config map failed", K(ret));
       } else {
         // do nothing
       }
       if (OB_FAIL(config_mgr_->update_local())) {
-        LOG_WARN("Update local config failed", K(ret));
+        LOG_WDIAG("Update local config failed", K(ret));
         // recovery current_version_
         config_mgr_->current_version_ = current_version;
         // retry update local config
         if (OB_FAIL(config_mgr_->timer_->schedule(*this, 1000 * 1000L, false))) {
-          LOG_WARN("Reschedule update local config failed", K(ret));
+          LOG_WDIAG("Reschedule update local config failed", K(ret));
         }
       } else {
         // do nothing
       }
     } else if (OB_FAIL(config_mgr_->reload_config())) {
-      LOG_WARN("Reload configuration failed", K(ret));
+      LOG_WDIAG("Reload configuration failed", K(ret));
     } else {
       config_mgr_->server_config_.print();
     }

@@ -138,13 +138,13 @@ int ObNumber::from_(const char *str, const int64_t length, IAllocator &allocator
 
   if (OB_UNLIKELY(NULL == str || length <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid param", K(length), K(str), K(ret));
+    LOG_WDIAG("invalid param", K(length), K(str), K(ret));
   } else if (OB_FAIL(nb.build(str, length, warning, precision, scale))) {
-    _OB_LOG(WARN, "number build from fail, ret=%d str=[%.*s]", ret, (int)length, str);
+    _OB_LOG(WDIAG, "number build from fail, ret=%d str=[%.*s]", ret, (int)length, str);
   } else if (OB_FAIL(nb.round_scale_(FLOATING_SCALE, true))) {
-    _OB_LOG(WARN, "round scale fail, ret=%d str=[%.*s]", ret, (int)length, str);
+    _OB_LOG(WDIAG, "round scale fail, ret=%d str=[%.*s]", ret, (int)length, str);
   } else if (OB_FAIL(exp_check_(nb.get_desc()))) {
-    LOG_WARN("exponent precision check fail", K(ret));
+    LOG_WDIAG("exponent precision check fail", K(ret));
     if (OB_DECIMAL_PRECISION_OVERFLOW == ret) {
       set_zero();
       ret = OB_SUCCESS;
@@ -152,7 +152,7 @@ int ObNumber::from_(const char *str, const int64_t length, IAllocator &allocator
   } else if (0 == nb.len_) {
     set_zero();
   } else if (OB_ISNULL(digits_ = alloc_(allocator, nb.len_))) {
-    _OB_LOG(WARN, "alloc digits fail, length=%hhu", nb.len_);
+    _OB_LOG(WDIAG, "alloc digits fail, length=%hhu", nb.len_);
     ret = OB_ALLOCATE_MEMORY_FAILED;
   } else {
     MEMCPY(digits_, nb.digits_, nb.len_ * ITEM_SIZE(digits_));
@@ -173,28 +173,28 @@ int ObNumber::from_(const uint32_t desc, const ObCalcVector &vector, IAllocator 
 
   ObCalcVector normalized_vector = vector;
   if (OB_FAIL(normalized_vector.normalize())) {
-    LOG_WARN("normalized_vector.normalize() fails", K(ret));
+    LOG_WDIAG("normalized_vector.normalize() fails", K(ret));
   }
   Desc d;
   d.desc_ = desc;
   d.len_ = (uint8_t)std::min(+MAX_STORE_LEN, normalized_vector.size());
   if (OB_FAIL(ret)) {
-    LOG_WARN("Previous normalize() fails", K(ret));
+    LOG_WDIAG("Previous normalize() fails", K(ret));
   } else if (0 == d.len_) {
     set_zero();
   } else if (OB_ISNULL(digits_ = alloc_(allocator, d.len_))) {
-    LOG_WARN("alloc digits fail", K(d.len_));
+    LOG_WDIAG("alloc digits fail", K(d.len_));
     ret = OB_ALLOCATE_MEMORY_FAILED;
   } else {
     MEMCPY(digits_, normalized_vector.get_digits(), d.len_ * ITEM_SIZE(digits_));
     sign_ = d.sign_;
     exp_ = d.exp_;
     if (OB_FAIL(normalize_(digits_, d.len_))) {
-      _OB_LOG(WARN, "normalize [%s] fail, ret=%d", to_cstring(*this), ret);
+      _OB_LOG(WDIAG, "normalize [%s] fail, ret=%d", to_cstring(*this), ret);
     } else if (OB_FAIL(round_scale_(FLOATING_SCALE, true))) {
-      LOG_WARN("round scale fail", K(ret), K(*this));
+      LOG_WDIAG("round scale fail", K(ret), K(*this));
     } else if (OB_FAIL(exp_check_(desc_))) {
-      LOG_WARN("exponent precision check fail", K(ret), K(*this));
+      LOG_WDIAG("exponent precision check fail", K(ret), K(*this));
       if (OB_DECIMAL_PRECISION_OVERFLOW == ret) {
         set_zero();
         ret = OB_SUCCESS;
@@ -223,7 +223,7 @@ int ObNumber::from_(
       || MAX_SCALE < scale
       || NULL == str
       || 0 >= length)) {
-    LOG_WARN("invalid param",
+    LOG_WDIAG("invalid param",
              K(precision), K(scale), K(str), K(length));
     ret = OB_INVALID_ARGUMENT;
   } else {
@@ -233,13 +233,13 @@ int ObNumber::from_(
     nb.cap_ = MAX_CALC_LEN;
 
     if (OB_FAIL(nb.build(str, length, warning))) {
-      _OB_LOG(WARN, "number build from fail, ret=%d str=[%.*s]", ret, (int)length, str);
+      _OB_LOG(WDIAG, "number build from fail, ret=%d str=[%.*s]", ret, (int)length, str);
     } else if (OB_FAIL(nb.check_and_round(precision, scale))) {
-      _OB_LOG(WARN, "check and round fail, ret=%d str=[%.*s]", ret, (int)length, str);
+      _OB_LOG(WDIAG, "check and round fail, ret=%d str=[%.*s]", ret, (int)length, str);
     } else if (0 == nb.len_) {
       set_zero();
     } else if (OB_ISNULL(digits_ = alloc_(allocator, nb.len_))) {
-      LOG_WARN("alloc digits fail", K(nb.len_));
+      LOG_WDIAG("alloc digits fail", K(nb.len_));
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       MEMCPY(digits_, nb.digits_, nb.len_ * ITEM_SIZE(digits_));
@@ -301,7 +301,7 @@ int ObNumber::floor(const int64_t scale)
   int int_len = 0;
   ObTRecover<ObNumber> recover_guard(*this, OB_SUCCESS, ret);
   if (OB_UNLIKELY(0 != scale)) {
-    LOG_WARN("invalid param", K(scale));
+    LOG_WDIAG("invalid param", K(scale));
     ret = OB_INVALID_ARGUMENT;
   } else if (is_zero()) {
     ret = OB_SUCCESS;
@@ -374,7 +374,7 @@ int ObNumber::ceil(const int64_t scale)
   int int_len = 0;
   ObTRecover<ObNumber> recover_guard(*this, OB_SUCCESS, ret);
   if (OB_UNLIKELY(0 != scale)) {
-    LOG_WARN("invalid param", K(scale));
+    LOG_WDIAG("invalid param", K(scale));
     ret = OB_INVALID_ARGUMENT;
   } else if (is_zero()) {
     ret = OB_SUCCESS;
@@ -445,7 +445,7 @@ int ObNumber::trunc(const int64_t scale)
 
   if (OB_UNLIKELY(MIN_SCALE > scale
       || MAX_SCALE < scale)) {
-    LOG_WARN("invalid param", K(scale));
+    LOG_WDIAG("invalid param", K(scale));
     ret = OB_INVALID_ARGUMENT;
   } else if (is_zero()) {
     ret = OB_SUCCESS;
@@ -453,7 +453,7 @@ int ObNumber::trunc(const int64_t scale)
              || 0 >= len_)) {
     ret = OB_NOT_INIT;
   } else if (OB_FAIL(trunc_scale_(scale, false))) {
-    LOG_WARN("trunc scale failed", K(*this), K(ret));
+    LOG_WDIAG("trunc scale failed", K(*this), K(ret));
   } else {
     // do nothing
   }
@@ -467,7 +467,7 @@ int ObNumber::round(const int64_t scale)
 
   if (OB_UNLIKELY(MIN_SCALE > scale
       || MAX_SCALE < scale)) {
-    LOG_WARN("invalid param", K(scale));
+    LOG_WDIAG("invalid param", K(scale));
     ret = OB_INVALID_ARGUMENT;
   } else if (is_zero()) {
     ret = OB_SUCCESS;
@@ -475,7 +475,7 @@ int ObNumber::round(const int64_t scale)
              || 0 >= len_)) {
     ret = OB_NOT_INIT;
   } else if (OB_FAIL(round_scale_(scale, false))) {
-    //_OB_LOG(WARN, "Buffer overflow, %s", to_cstring(*this));
+    //_OB_LOG(WDIAG, "Buffer overflow, %s", to_cstring(*this));
   } else {
     // do nothing
   }
@@ -494,10 +494,10 @@ int ObNumber::check_and_round(const int64_t precision, const int64_t scale)
     ret = OB_NOT_INIT;
   } else if (INT64_MAX != precision
              && OB_FAIL(round_scale_(scale, false))) {
-    //_OB_LOG(WARN, "Buffer overflow, %s", to_cstring(*this));
+    //_OB_LOG(WDIAG, "Buffer overflow, %s", to_cstring(*this));
   } else if (INT64_MAX != precision && INT64_MAX != scale
              && OB_FAIL(check_precision_(precision, scale))) {
-    //_OB_LOG(WARN, "Precision overflow, %s", to_cstring(*this));
+    //_OB_LOG(WDIAG, "Precision overflow, %s", to_cstring(*this));
   } else {
     // do nothing
   }
@@ -515,7 +515,7 @@ int64_t ObNumber::to_string(char *buffer, const int64_t length) const
 {
   int64_t pos = 0;
   if (len_ > 0 && OB_ISNULL(digits_)) {
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else {
     databuff_printf(buffer, length, pos, "\"sign=%hhu exp=%hhu se=0x%hhx len=%hhu digits=[", sign_,
                     exp_, se_, len_);
@@ -564,7 +564,7 @@ bool ObNumber::is_integer() const
     bret = true;
   } else if (OB_UNLIKELY(NULL == digits_ || 0 >= len_)) {
     bret = false;
-    _OB_LOG(ERROR, "not init");
+    _OB_LOG(EDIAG, "not init");
   } else {
     if (POSITIVE == sign_) {
       int_len = se_ - POSITIVE_EXP_BOUNDARY;
@@ -595,6 +595,13 @@ uint32_t ObNumber::get_desc() const
   return desc_;
 }
 
+ObNumberDesc ObNumber::get_number_desc() const
+{
+  ObNumberDesc d;
+  d.desc_ = desc_;
+  return d;
+}
+
 int64_t ObNumber::get_cap() const
 {
   return cap_;
@@ -610,13 +617,43 @@ int64_t ObNumber::get_length() const
   return len_;
 }
 
+int64_t ObNumber::get_scale() const
+{
+  int64_t decimal_count = 0;
+  if (!is_zero()) {
+    const int64_t expr_value = get_decode_exp(desc_);
+    //xxx_length means xx digit array length
+    const int64_t integer_length = (expr_value >= 0 ? (expr_value + 1) : 0);
+    //e.g. 1,000000000,000000000,   digits=[1], expr_value=2, len_=1,
+    //integer_length=3, valid_integer_length=1
+    // const int64_t valid_integer_length = (d_.len_ > integer_length ? integer_length : d_.len_);
+
+    //len_ > integer_length means have decimal
+    const int64_t valid_decimal_length = (len_ > integer_length ? (len_ - integer_length) : 0);
+    //e.g. 0.000000000 000000001, digits=[1], expr_value=-2, len_=1, decimal_length=2,
+    //valid_decimal_length=1
+    const int64_t decimal_length = valid_decimal_length
+                                   + (0 == integer_length ? (0 - expr_value - 1) : 0);
+
+    int64_t tail_decimal_zero_count = 0;
+    if (valid_decimal_length > 0) {
+      remove_back_zero(digits_[len_ - 1], tail_decimal_zero_count);
+    }
+    decimal_count = decimal_length * DIGIT_LEN - tail_decimal_zero_count;
+    LIB_LOG(DEBUG, "get_scale", KPC(this), K(expr_value),
+            K(integer_length), K(valid_decimal_length), K(decimal_length),
+            K(tail_decimal_zero_count), K(decimal_count));
+  }
+  return decimal_count;
+}
+
 bool ObNumber::is_valid_uint64(uint64_t &uint64)
 {
   bool bret = false;
   uint64_t tmp_int_parts = 0;
   uint64_t tmp_decimal_parts = 0;
   if (OB_UNLIKELY(OB_SUCCESS != check_range(&bret, NULL, tmp_int_parts, tmp_decimal_parts))) {
-    LOG_WARN("can't to check the param range", K(bret));
+    LOG_WDIAG("can't to check the param range", K(bret));
   } else {
     uint64 = tmp_int_parts;
     bret = bret && (0 == tmp_decimal_parts);//Should not use if-test.
@@ -631,7 +668,7 @@ bool ObNumber::is_valid_int64(int64_t &int64)
   uint64_t tmp_int_parts = 0;
   uint64_t tmp_decimal_parts = 0;
   if (OB_UNLIKELY(OB_SUCCESS != check_range(NULL, &bret, tmp_int_parts, tmp_decimal_parts))) {
-    LOG_WARN("can't to check the param range", K(bret));
+    LOG_WDIAG("can't to check the param range", K(bret));
   } else {
     int64 = is_negative() ? (-1 * tmp_int_parts) : tmp_int_parts;
     bret = bret && (0 == tmp_decimal_parts);
@@ -646,7 +683,7 @@ bool ObNumber::is_int_parts_valid_int64(int64_t &int_parts, int64_t &decimal_par
   uint64_t tmp_int_parts = 0;
   uint64_t tmp_decimal_parts = 0;
   if (OB_UNLIKELY(OB_SUCCESS != check_range(NULL, &bret, tmp_int_parts, tmp_decimal_parts))) {
-    LOG_WARN("can't to check the param range", K(bret));
+    LOG_WDIAG("can't to check the param range", K(bret));
   } else {
     decimal_parts = tmp_decimal_parts;
     int_parts = is_negative() ? (-1 * tmp_int_parts) : tmp_int_parts;
@@ -661,7 +698,7 @@ int ObNumber::check_range(bool *is_valid_uint64, bool *is_valid_int64,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY((NULL == is_valid_uint64) && (NULL == is_valid_int64))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the param is invalid", K(ret));
+    LOG_EDIAG("the param is invalid", K(ret));
   } else {
     bool *is_valid = NULL;
     static const int FLAG_INT64 = 0;
@@ -732,7 +769,7 @@ int ObNumber::check_precision_(const int64_t precision, const int64_t scale)
         integer_counter += DIGIT_LEN;
       }
       if (OB_UNLIKELY(integer_counter > limit)) {
-        _OB_LOG(WARN, "Precision=%ld scale=%ld integer_number=%ld precision overflow %s",
+        _OB_LOG(WDIAG, "Precision=%ld scale=%ld integer_number=%ld precision overflow %s",
                   precision, scale, integer_counter, to_cstring(*this));
         ret = OB_INTEGER_PRECISION_OVERFLOW;
         break;
@@ -752,7 +789,7 @@ int ObNumber::check_precision_(const int64_t precision, const int64_t scale)
   ret = (OB_ITER_END == ret) ? OB_SUCCESS : ret;
   if (OB_UNLIKELY(OB_SUCCESS == ret
       && decimal_zero_counter < -limit)) {
-    LOG_WARN("precision overflow ",
+    LOG_WDIAG("precision overflow ",
              K(precision), K(scale), K(decimal_zero_counter), K(*this));
     ret = OB_DECIMAL_PRECISION_OVERFLOW;
   }
@@ -776,7 +813,7 @@ int ObNumber::round_scale_(const int64_t scale, const bool using_floating_scale)
   while (OB_SUCCESS == di.get_next_digit(digit, from_integer, last_decimal)) {
     if (OB_UNLIKELY(MAX_CALC_LEN <= integer_length
         || MAX_CALC_LEN <= decimal_length)) {
-      LOG_WARN("buffer size overflow",
+      LOG_WDIAG("buffer size overflow",
                 K(integer_length), K(decimal_length));
       ret = OB_NUMERIC_OVERFLOW;
       break;
@@ -813,13 +850,13 @@ int ObNumber::round_scale_(const int64_t scale, const bool using_floating_scale)
     // do nothing
   } else if (0 < floating_scale) {
     if (OB_FAIL(round_decimal_(floating_scale, decimal_digits, decimal_length))) {
-      LOG_ERROR("fail to get round_decimal");
+      LOG_EDIAG("fail to get round_decimal");
     } else {
       ret = rebuild_digits_(integer_digits, integer_length, decimal_digits, decimal_length);
     }
   } else if (0 > floating_scale) {
     if (OB_FAIL(round_integer_(-floating_scale, integer_digits, integer_length))) {
-      LOG_ERROR("fail to get round_integer");
+      LOG_EDIAG("fail to get round_integer");
     } else {
       ret = rebuild_digits_(integer_digits, integer_length, NULL, 0);
     }
@@ -849,7 +886,7 @@ int ObNumber::round_integer_(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(integer_digits) || OB_UNLIKELY(0 == DIGIT_LEN || scale < 1)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null or the DIGIT_LEN IS ZERO or the scale < 1", K(ret));
+    LOG_EDIAG("the pointer is null or the DIGIT_LEN IS ZERO or the scale < 1", K(ret));
   } else {
     int64_t round_length = scale / DIGIT_LEN;
     int64_t round = scale % DIGIT_LEN;
@@ -886,7 +923,7 @@ int ObNumber::round_decimal_(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(decimal_digits) || OB_UNLIKELY(0 == DIGIT_LEN || scale < 1)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null or the DIGIT_LEN IS ZERO or the scale < 1", K(ret));
+    LOG_EDIAG("the pointer is null or the DIGIT_LEN IS ZERO or the scale < 1", K(ret));
   } else {
     int64_t round_length = scale / DIGIT_LEN;
     int64_t round = scale % DIGIT_LEN;
@@ -929,7 +966,7 @@ int ObNumber::trunc_scale_(int64_t scale, bool using_floating_scale)
   while (OB_SUCCESS == di.get_next_digit(digit, from_integer, last_decimal)) {
     if (OB_UNLIKELY(MAX_CALC_LEN <= integer_length
         || MAX_CALC_LEN <= decimal_length)) {
-      LOG_WARN("buffer size overflow", K(integer_length), K(decimal_length));
+      LOG_WDIAG("buffer size overflow", K(integer_length), K(decimal_length));
       ret = OB_NUMERIC_OVERFLOW;
       break;
     }
@@ -965,13 +1002,13 @@ int ObNumber::trunc_scale_(int64_t scale, bool using_floating_scale)
     // do nothing
   } else if (0 < floating_scale) {
     if (OB_FAIL(trunc_decimal_(floating_scale, decimal_digits, decimal_length))) {
-      LOG_ERROR("fail to get trunc decimal", K(ret));
+      LOG_EDIAG("fail to get trunc decimal", K(ret));
     } else {
       ret = rebuild_digits_(integer_digits, integer_length, decimal_digits, decimal_length);
     }
   } else if (0 > floating_scale) {
     if (OB_FAIL(trunc_integer_(-floating_scale, integer_digits, integer_length))) {
-      LOG_ERROR("fail to get trunc integer", K(ret));
+      LOG_EDIAG("fail to get trunc integer", K(ret));
     } else {
       ret = rebuild_digits_(integer_digits, integer_length, NULL, 0);
     }
@@ -992,7 +1029,7 @@ int ObNumber::trunc_integer_(
                                         1000000, 10000000, 100000000};
   if (OB_UNLIKELY(0 == DIGIT_LEN || scale <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "DIGIT_LEN is zero or scale is not positive", K(ret), K(scale));
+    LIB_LOG(EDIAG, "DIGIT_LEN is zero or scale is not positive", K(ret), K(scale));
   } else if (integer_length > 0) {
     //tips: in terms of "3333123456789555555555.123"
     //integer_length = 3 and integer_digits[0]=3333, integer_digits[1] = 123456789 integer_digits[2] = 555555555
@@ -1029,7 +1066,7 @@ int ObNumber::trunc_decimal_(
                                         100000, 10000, 1000, 100, 10};
   if (OB_UNLIKELY(0 == DIGIT_LEN || scale <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the DIGIT_LEN is zero or scale is not positive", K(ret), K(scale));
+    LOG_EDIAG("the DIGIT_LEN is zero or scale is not positive", K(ret), K(scale));
   } else if (decimal_length > 0) {
     int64_t trunc_length = (scale - 1) / DIGIT_LEN + 1;
     int64_t trunc = scale % DIGIT_LEN;
@@ -1058,7 +1095,7 @@ int ObNumber::normalize_(uint32_t *digits, const int64_t length)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(digits)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null", K(ret));
+    LOG_EDIAG("the pointer is null", K(ret));
   } else {
     int64_t tmp_length = length;
     int64_t start = 0;
@@ -1093,7 +1130,7 @@ int ObNumber::normalize_(uint32_t *digits, const int64_t length)
 
     if (0 < carry) {
       if (OB_UNLIKELY(0 != tmp_length)) {
-        LOG_WARN("unexpected length", K(tmp_length));
+        LOG_WDIAG("unexpected length", K(tmp_length));
         ret = OB_ERR_UNEXPECTED;
       } else {
         digits_[0] = carry;
@@ -1106,7 +1143,7 @@ int ObNumber::normalize_(uint32_t *digits, const int64_t length)
       }
     } else {
       if (OB_UNLIKELY(cap_ < tmp_length)) {
-        LOG_WARN("unexpected length cap", K(tmp_length), K(cap_));
+        LOG_WDIAG("unexpected length cap", K(tmp_length), K(cap_));
         ret = OB_ERR_UNEXPECTED;
       } else {
         if (digits_ != &digits[start]) {
@@ -1136,7 +1173,7 @@ int ObNumber::rebuild_digits_(
   if (NULL != integer_digits
       && 0 < integer_length) {
     if (OB_UNLIKELY(MAX_CALC_LEN <= (length + integer_length))) {
-      _OB_LOG(WARN, "buffer size overflow, cap=%ld length=%ld integer_length=%ld",
+      _OB_LOG(WDIAG, "buffer size overflow, cap=%ld length=%ld integer_length=%ld",
                 MAX_CALC_LEN, length, integer_length);
       ret = OB_NUMERIC_OVERFLOW;
     } else {
@@ -1148,7 +1185,7 @@ int ObNumber::rebuild_digits_(
       && NULL != decimal_digits
       && 0 < decimal_length) {
     if (OB_UNLIKELY(MAX_CALC_LEN <= (length + decimal_length))) {
-      _OB_LOG(WARN, "buffer size overflow, cap=%ld length=%ld decimal_length=%ld",
+      _OB_LOG(WDIAG, "buffer size overflow, cap=%ld length=%ld decimal_length=%ld",
                 MAX_CALC_LEN, length, decimal_length);
       ret = OB_NUMERIC_OVERFLOW;
     } else {
@@ -1171,7 +1208,7 @@ const char *ObNumber::format() const
   char *buffer = buffers[i++ % BUFFER_NUM];
   int64_t length = 0;
   if(OB_UNLIKELY(OB_SUCCESS != format(buffer, BUFFER_SIZE, length, -1))) {
-    LOG_ERROR("fail to format buffer");
+    LOG_EDIAG("fail to format buffer");
   }
   return buffer;
 }
@@ -1250,13 +1287,276 @@ int ObNumber::format(char *buf, const int64_t buf_len, int64_t &pos, int16_t sca
       // 60 '0' is enough, because ObNumber can contains 9 * 6 = 54 digits.
       if (OB_UNLIKELY(pad_zero_count > 60)) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_ERROR("the param is invalid", K(ret), K(pad_zero_count));
+        LOG_EDIAG("the param is invalid", K(ret), K(pad_zero_count));
       } else {
         char zeros[] = "000000000000000000000000000000000000000000000000000000000000";
         zeros[pad_zero_count] = 0;
         ret = databuff_printf(buf, buf_len, pos, zeros);
       }
     }
+  }
+  return ret;
+}
+
+/* from_sci -- from scientific notation
+ *
+ * str -- IN, scientific notation string representation
+ * length -- IN, the length of the input string
+ * allocator -- IN, used to alloc ObNumber
+ * precision -- OUT, precision of the converted result
+ * scale -- OUT, scale of the converted result
+ * This function converts a scientific notation string into the internal number format
+ * It's more efficient to call from_ if the string is a normal numeric string */
+int ObNumber::from_sci_(const char *str, const int64_t length, IAllocator &allocator, int &warning,
+     int16_t *precision, int16_t *scale, const bool do_rounding)
+{
+  UNUSED(do_rounding);
+  int ret = OB_SUCCESS;
+  char full_str[MAX_PRINTABLE_SIZE] = {0};
+  char digit_str[MAX_PRINTABLE_SIZE] = {0};
+  bool is_neg = false;
+  int32_t nth = 0;
+  int32_t i_nth = 0;
+  int32_t i = 0;
+  int32_t e_value = 0;
+  int32_t valid_len = 0;
+  int32_t dec_n_zero = 0;
+  bool e_neg = false;
+  bool as_zero = false;
+  bool has_digit = false;
+  char tmpstr[MAX_PRINTABLE_SIZE] = {0};
+  char cur = '\0';
+  if (OB_UNLIKELY(NULL == str || length <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LIB_LOG(WDIAG, "invalid param", K(length), KP(str), K(ret));
+  } else {
+    /* parse str like 1.2e3
+     * part 1:allow str like 000123=> 123(valid length is 3); if valid length >126, ignore the rest
+     * part 2:if '.' exists, part 2 must not be empty: str like 1.e3 is illegal
+     * part 3:part 3's value + length of part1 <= 126
+     * */
+    for (i = 0; i < length && isspace(str[i]); ++i);
+    if ('-' == str[i]) {
+      is_neg = true;
+      full_str[nth++] = '-';
+      i++;
+    } else if ('+' == str[i]) {
+      i++;
+    }
+    /* 000123 -> 123 */
+    while ('0' == str[i] && i + 1 < length) {
+      i++;
+      has_digit = true;
+    }
+    cur = str[i];
+    while(i + 1 < length && cur <= '9' && cur >= '0') {
+      if (i_nth < MAX_PRECISION) {
+        digit_str[i_nth++] = cur;
+        cur = str[++i];
+        has_digit = true;
+      } else {
+        /* ignore the rest */
+        i++;
+      }
+      valid_len++;
+    }
+  }
+
+  if (OB_SUCC(ret) && cur == '.' && valid_len < MAX_PRECISION && i + 1 < length) {
+    cur = str[++i];
+    if (0 == valid_len) {
+      /* 0.000123 -> dec_n_zero = 3 */
+      while ('0' == cur && i + 1 < length) {
+        valid_len--;
+        dec_n_zero++;
+        cur = str[++i];
+        has_digit = true;
+      }
+    }
+    /* 1.23  0.0123 0.123 -> digit_str:'123' */
+    while(i + 1 < length && cur <= '9' && cur >= '0') {
+      if (i_nth < MAX_PRECISION) {
+        digit_str[i_nth++] = cur;
+      } else {
+        /* ignore the rest */
+      }
+      cur = str[++i];
+      if (0 >= valid_len) {
+        valid_len--;
+      }
+    }
+  }
+
+  if (OB_SUCC(ret) && (has_digit || 0 < i_nth) 
+                   && ('e' == cur || 'E' == cur) 
+                   && is_valid_sci_tail_(str, length, i)) {
+    LOG_DEBUG("ObNumber from sci", K(ret), K(i), K(cur), K(is_neg), K(nth), K(digit_str), K(i_nth),
+      K(valid_len), K(dec_n_zero));
+    if (0 == i || i >= length - 1) {
+      if (i_nth > 0) {
+        memcpy(full_str + nth, digit_str, i_nth);
+        nth += i_nth;
+      }
+      warning = OB_INVALID_NUMERIC;
+    } else if (0 == valid_len || 0 == i_nth) {
+      // `i_nth = 0` means all digits are zero.
+      /* ignore e's value; only do the check*/
+      cur = str[++i];
+      if ('-' == cur || '+' == cur) {
+        if (i < length - 1) {
+          cur = str[++i];
+        }
+      }
+      if (cur <= '9' && cur >= '0') {
+        while (cur <= '9' && cur >= '0' && (++i < length)) {
+          cur = str[i];
+        }
+      } else {
+        /* 0e */
+        ret = OB_INVALID_NUMERIC;
+        LOG_WDIAG("Number from sci invalid exponent", K(ret), K(cur), K(i));
+      }
+    } else {
+      cur = str[++i];
+      switch (cur) {
+      case '-':
+        e_neg = true;
+        /* fall through */
+      case '+':
+        if (i < length - 1) {
+          cur = str[++i];
+        }
+        break;
+      }
+      /* Oracle max valid length of string is 255(exponent of the value is [-253, 255])
+       * exponent of number's legal range is [-130, 125]
+       * so e_value's valid range can't larger than 3 digits */
+      int e_cnt = 0;
+      while (i < length && cur <= '9' && cur >= '0') {
+        if (e_cnt < 4) {
+          e_value = e_neg ? (e_value * 10 - (cur - '0')) : (e_value * 10 + cur - '0');
+        }
+        e_cnt++;
+        if (++i >= length) {
+          break;
+        }
+        cur = str[i];
+      }
+
+      LOG_DEBUG("ObNumber from sci E", K(warning), K(e_neg), K(e_cnt), K(e_value), K(valid_len), K(i));
+      if (0 == e_cnt) {
+        warning = OB_INVALID_NUMERIC;
+        e_value = 0;
+      }
+      if ((valid_len >= 0 && (e_value + valid_len <= MIN_SCI_SIZE))
+          ||(valid_len < 0 && (e_value - dec_n_zero <= MIN_SCI_SIZE))) {
+        as_zero = true;
+      } else if (e_value + valid_len > MAX_SCI_SIZE) {
+        ret = OB_NUMERIC_OVERFLOW;
+      } else if (valid_len <= 0) {
+        /* 0.01234e-5 */
+        if (e_value < 0) {
+          nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "0.%0*d%s", 0 - e_value + dec_n_zero, 0, digit_str);
+          LOG_DEBUG("ObNumber sci", K(tmpstr), K(nth), K(full_str), K(e_value), K(dec_n_zero), K(digit_str));
+        } else {
+          if (dec_n_zero - e_value > 0) {
+            /* 0.00012e2 -> 0.012 */
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "0.%0*d%s", dec_n_zero - e_value, 0, digit_str);
+            LOG_DEBUG("ObNumber sci", K(tmpstr), K(e_value), K(dec_n_zero));
+          } else if (e_value < dec_n_zero + i_nth) {
+            /* 0.001234e4 -> 12.34
+             * e_value - dec_n_zero = 4 - 2 = 2
+             * fmt str: %2.s%s, digit_str, digit_str + 2*/
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "%.*s.%s", e_value - dec_n_zero, digit_str, digit_str + e_value - dec_n_zero);
+            LOG_DEBUG("ObNumber sci", K(tmpstr), K(full_str), K(nth), K(e_value), K(dec_n_zero), K(digit_str));
+          } else {
+            /* 0.001234e8 -> 123400
+             * e_value - dec_n_zero - i_nth = 8 - 2 - 4 = 2 */
+            if (e_value - dec_n_zero - i_nth > 0) {
+              snprintf(tmpstr, MAX_PRINTABLE_SIZE, "%0*d", e_value - dec_n_zero - i_nth, 0);
+            }
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "%s%s", digit_str, tmpstr);
+            LOG_DEBUG("ObNumber sci", K(tmpstr), K(digit_str), K(full_str), K(nth), K(e_value), K(i_nth), K(dec_n_zero));
+          }
+        }
+      } else {
+        if (e_value >= 0) {
+          /* 12.34e5 -> 1234000
+           * e_value - (i_nth - valid_len) = 5 - (4 - 2) = 0*/
+          if (e_value - (i_nth - valid_len) > 0) {
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "%s%0*d",
+                digit_str, e_value - (i_nth - valid_len), 0);
+            LOG_DEBUG("ObNumber sci", K(tmpstr), K(full_str), K(nth), K(e_value), K(i_nth), K(valid_len));
+          } else if (e_value - (i_nth - valid_len) == 0) {
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "%s", digit_str);
+            LOG_DEBUG("ObNumber sci", K(full_str), K(nth), K(e_value), K(i_nth), K(valid_len));
+          } else {
+            /* 12.345e2 -> 1234.5
+             * valid_len + e_value = 2 + 2 = 4
+             * fmt_str: %4.s, digit_str, digit_str + 4*/
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "%.*s.%s",
+                valid_len + e_value, digit_str, digit_str + valid_len + e_value);
+            LOG_DEBUG("ObNumber sci", K(valid_len + e_value), K(full_str), K(nth), K(e_value), K(digit_str), K(valid_len));
+          }
+        } else {
+          if (valid_len + e_value > 0)
+          {
+            /* 12.34e-1 -> 1.234
+             * valid_len + e_value = 2 - 1 = 1
+             * fmt_str: %1.s, digit_str, digit_str + 1*/
+            //sprintf(tmpstr, "%%%d.s.%%s", valid_len + e_value);
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "%.*s.%s",
+                valid_len + e_value, digit_str, digit_str + valid_len + e_value);
+            LOG_DEBUG("ObNumber sci", K(valid_len + e_value), K(full_str), K(nth), K(e_value), K(digit_str), K(valid_len));
+          } else {
+            /* 12.34e-4 -> 0.001234
+             * 0 - (valid_len + e_value) = 0 - (2 - 4) = 2 */
+            if (valid_len + e_value < 0) {
+              snprintf(tmpstr, MAX_PRINTABLE_SIZE, "%0*d", 0 - (valid_len + e_value), 0);
+            }
+            nth += snprintf(full_str + nth, MAX_PRINTABLE_SIZE - nth, "0.%s%s", tmpstr, digit_str);
+            LOG_DEBUG("ObNumber sci", K(tmpstr), K(full_str), K(nth), K(e_value), K(digit_str), K(valid_len));
+          }
+        }
+      }
+    }
+    if (OB_SUCC(ret)) {
+      LOG_DEBUG("Number from sci last ", K(cur), K(i), "str", ObString(length, str),
+               K(length), K(valid_len), K(ret), K(warning));
+      while (cur == ' ' && i < length - 1) {
+        cur = str[++i];
+      }
+      if (cur != ' ' && i <= length - 1) {
+        warning = OB_INVALID_NUMERIC;
+        LOG_WDIAG("invalid numeric string", K(ret), K(i), K(length), K(cur), "str", ObString(length, str));
+      }
+      if ((OB_SUCCESS != warning) && OB_SUCC(ret)) {
+        ret = warning;
+      } else if (OB_FAIL(ret)) {
+        as_zero = true;
+//        warning = OB_ERR_DOUBLE_TRUNCATED;
+        warning = ret;
+        ret = OB_SUCCESS;
+      }
+      if (OB_SUCC(ret)) {
+        LOG_DEBUG("ObNumber sci final", K(ret), K(warning), K(full_str), K(nth), K(as_zero), K(e_neg), K(e_value), K(valid_len), K(i), K(i_nth));
+        if (as_zero || 0 == valid_len || 0 == i_nth) {
+          full_str[0] = '0';
+          nth = 1;
+          set_zero();
+        } else {
+          int tmp_warning = OB_SUCCESS;
+          // ret = from_(full_str, nth, allocator, tmp_warning, NULL, precision, scale, NULL, do_rounding);
+          ret = from_(full_str, nth, allocator, tmp_warning, precision, scale);
+          if (OB_SUCC(ret) && OB_SUCCESS != warning) {
+            warning = tmp_warning;
+          }
+        }
+      }
+    }
+  } else {
+    // ret = from_(str, length, allocator, warning, NULL, precision, scale, NULL, do_rounding);
+    ret = from_(full_str, nth, allocator, warning, precision, scale);
   }
   return ret;
 }
@@ -1280,16 +1580,16 @@ int ObNumber::add_(const ObNumber &other, ObNumber &value, IAllocator &allocator
     exp_shift_(shift, augend_desc);
     exp_shift_(shift, addend_desc);
     if (OB_FAIL(augend.init(augend_desc.desc_, digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else if (OB_FAIL(addend.init(addend_desc.desc_, other.digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else {
       ObCalcVector sum;
       int64_t sum_size = std::max(augend.size(), addend.size()) + 1;
       if (OB_FAIL(sum.ensure(sum_size))) {
-        LOG_WARN("Fail to ensure sum_size", K(ret));
+        LOG_WDIAG("Fail to ensure sum_size", K(ret));
       } else if (OB_FAIL(poly_poly_add(augend, addend, sum))) {
-        _OB_LOG(WARN, "[%s] add [%s] fail ret=%d", to_cstring(*this), to_cstring(other), ret);
+        _OB_LOG(WDIAG, "[%s] add [%s] fail ret=%d", to_cstring(*this), to_cstring(other), ret);
       } else {
         Desc res_desc = exp_max_(augend_desc, addend_desc);
         bool carried = (0 != sum.at(0));
@@ -1301,7 +1601,7 @@ int ObNumber::add_(const ObNumber &other, ObNumber &value, IAllocator &allocator
     ObNumber subtrahend;
     StackAllocator stack_allocator;
     if (OB_FAIL(other.negate(subtrahend, stack_allocator))) {
-      _OB_LOG(WARN, "nagate [%s] fail, ret=%d", to_cstring(other), ret);
+      _OB_LOG(WDIAG, "nagate [%s] fail, ret=%d", to_cstring(other), ret);
     } else {
       ret = sub_(subtrahend, res, allocator);
     }
@@ -1332,18 +1632,18 @@ int ObNumber::sub_(const ObNumber &other, ObNumber &value, IAllocator &allocator
     exp_shift_(shift, minuend_desc);
     exp_shift_(shift, subtrahend_desc);
     if (OB_FAIL(minuend.init(minuend_desc.desc_, digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else if (OB_FAIL(subtrahend.init(subtrahend_desc.desc_, other.digits_))){
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else {
       ObCalcVector remainder;
       int64_t remainder_size = std::max(minuend.size(), subtrahend.size());
 
       bool sub_negative = false;
       if (OB_FAIL(remainder.ensure(remainder_size))) {
-        LOG_WARN("remainder.ensure(remainder_size) fails", K(ret));
+        LOG_WDIAG("remainder.ensure(remainder_size) fails", K(ret));
       } else if (OB_FAIL(poly_poly_sub(minuend, subtrahend, remainder, sub_negative))) {
-        _OB_LOG(WARN, "[%s] sub [%s] fail ret=%d", to_cstring(*this), to_cstring(other), ret);
+        _OB_LOG(WDIAG, "[%s] sub [%s] fail ret=%d", to_cstring(*this), to_cstring(other), ret);
       } else {
         Desc res_desc = exp_max_(minuend_desc, subtrahend_desc);
         for (int64_t i = 0; i < remainder.size() - 1; ++i) {
@@ -1374,7 +1674,7 @@ int ObNumber::sub_(const ObNumber &other, ObNumber &value, IAllocator &allocator
     ObNumber addend;
     StackAllocator stack_allocator;
     if (OB_FAIL(other.negate(addend, stack_allocator))) {
-      _OB_LOG(WARN, "nagate [%s] fail, ret=%d", to_cstring(other), ret);
+      _OB_LOG(WDIAG, "nagate [%s] fail, ret=%d", to_cstring(other), ret);
     } else {
       ret = add_(addend, res, allocator);
     }
@@ -1395,7 +1695,7 @@ int ObNumber::negate_(ObNumber &value, IAllocator &allocator) const
   } else {
     ObCalcVector cv;
     if (OB_FAIL(cv.init(desc_, digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else {
       int64_t size2alloc = len_;
       if (POSITIVE == sign_) {
@@ -1407,10 +1707,10 @@ int ObNumber::negate_(ObNumber &value, IAllocator &allocator) const
       ++res.exp_;
 
       if (OB_ISNULL(res.digits_ = res.alloc_(allocator, size2alloc))) {
-        _OB_LOG(WARN, "alloc digits fail, length=%ld", size2alloc);
+        _OB_LOG(WDIAG, "alloc digits fail, length=%ld", size2alloc);
         ret = OB_ALLOCATE_MEMORY_FAILED;
       } else if (OB_FAIL(res.normalize_(cv.get_digits(), cv.size()))) {
-        _OB_LOG(WARN, "normalize [%s] fail ret=%d", to_cstring(res), ret);
+        _OB_LOG(WDIAG, "normalize [%s] fail ret=%d", to_cstring(res), ret);
       } else {
         // do nothing
       }
@@ -1437,16 +1737,16 @@ int ObNumber::mul_(const ObNumber &other, ObNumber &value, IAllocator &allocator
     ObCalcVector multiplicand;
     ObCalcVector multiplier;
     if (OB_FAIL(multiplicand.init(multiplicand_desc.desc_, digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else if (OB_FAIL(multiplier.init(multiplier_desc.desc_, other.digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else {
       ObCalcVector product;
       int64_t product_size = multiplicand.size() + multiplier.size();
       if (OB_FAIL(product.ensure(product_size))) {
-        LOG_WARN("product.ensure(product_size) fails", K(ret));
+        LOG_WDIAG("product.ensure(product_size) fails", K(ret));
       } else if (OB_FAIL(poly_poly_mul(multiplicand, multiplier, product))) {
-        _OB_LOG(WARN, "[%s] mul [%s] fail, ret=%d", to_cstring(*this), to_cstring(other), ret);
+        _OB_LOG(WDIAG, "[%s] mul [%s] fail, ret=%d", to_cstring(*this), to_cstring(other), ret);
       } else {
         Desc res_desc = exp_mul_(multiplicand_desc, multiplier_desc);
         bool carried = (0 != product.at(0));
@@ -1471,7 +1771,7 @@ int ObNumber::div_(const ObNumber &other, ObNumber &value, IAllocator &allocator
   dividend_desc.desc_ = desc_;
   divisor_desc.desc_ = other.desc_;
   if (OB_UNLIKELY(other.is_zero())) {
-    _OB_LOG(ERROR, "[%s] div zero [%s]", to_cstring(*this), to_cstring(other));
+    _OB_LOG(EDIAG, "[%s] div zero [%s]", to_cstring(*this), to_cstring(other));
     ret = OB_DIVISION_BY_ZERO;
   } else if (is_zero()) {
     res.set_zero();
@@ -1483,20 +1783,20 @@ int ObNumber::div_(const ObNumber &other, ObNumber &value, IAllocator &allocator
     shift += get_decimal_extend_length_(dividend_desc);
     exp_shift_(shift, dividend_desc);
     if (OB_FAIL(dividend.init(dividend_desc.desc_, digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else if (OB_FAIL(divisor.init(divisor_desc.desc_, other.digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else {
       ObCalcVector quotient;
       ObCalcVector remainder;
       int64_t quotient_size = dividend.size() - divisor.size() + 1;
       int64_t remainder_size = divisor.size();
       if (OB_FAIL(quotient.ensure(quotient_size))) {
-        LOG_WARN("quotient.ensure(quotient_size) fails", K(ret));
+        LOG_WDIAG("quotient.ensure(quotient_size) fails", K(ret));
       } else if (OB_FAIL(remainder.ensure(remainder_size))) {
-        LOG_WARN("remainder.ensure(remainder_size) fails", K(ret));
+        LOG_WDIAG("remainder.ensure(remainder_size) fails", K(ret));
       } else if (OB_FAIL(poly_poly_div(dividend, divisor, quotient, remainder))) {
-        _OB_LOG(WARN, "[%s] div [%s] fail ret=%d", to_cstring(*this), to_cstring(other), ret);
+        _OB_LOG(WDIAG, "[%s] div [%s] fail ret=%d", to_cstring(*this), to_cstring(other), ret);
       } else {
         Desc res_desc = exp_div_(dividend_desc, divisor_desc);
         for (int64_t i = 0; i < quotient.size(); ++i) {
@@ -1527,7 +1827,7 @@ int ObNumber::rem_(const ObNumber &other, ObNumber &value, IAllocator &allocator
   divisor_desc.desc_ = other.desc_;
   int cmp_ret = 0;
   if (OB_UNLIKELY(other.is_zero())) {
-    _OB_LOG(ERROR, "[%s] div zero [%s]", to_cstring(*this), to_cstring(other));
+    _OB_LOG(EDIAG, "[%s] div zero [%s]", to_cstring(*this), to_cstring(other));
     ret = OB_DIVISION_BY_ZERO;
   } else if (is_zero()) {
     res.set_zero();
@@ -1546,14 +1846,14 @@ int ObNumber::rem_(const ObNumber &other, ObNumber &value, IAllocator &allocator
     ObCalcVector dividend;
     ObCalcVector divisor;
     if (OB_FAIL(dividend.init(dividend_desc.desc_, digits_))) {
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else if (OB_FAIL(divisor.init(divisor_desc.desc_, other.digits_))){
-      LOG_WARN("fail to assign values", K(ret));
+      LOG_WDIAG("fail to assign values", K(ret));
     } else {
       ObCalcVector dividend_amplify;
       ObCalcVector *dividend_ptr = NULL;
       if (dividend.size() < divisor.size()) {
-        _OB_LOG(WARN, "dividend_size=%ld must not less than divisor_size=%ld", dividend.size(),
+        _OB_LOG(WDIAG, "dividend_size=%ld must not less than divisor_size=%ld", dividend.size(),
                 divisor.size());
         ret = OB_ERR_UNEXPECTED;
       } else if (dividend.size() > divisor.size()) {
@@ -1561,15 +1861,15 @@ int ObNumber::rem_(const ObNumber &other, ObNumber &value, IAllocator &allocator
       } else {
         ObCalcVector divisor_amplify;
         if (OB_FAIL(divisor_amplify.ensure(divisor.size() + 1))) {
-          LOG_WARN("divisor_amplify.ensure() fails", K(ret));
+          LOG_WDIAG("divisor_amplify.ensure() fails", K(ret));
         } else if (OB_FAIL(poly_mono_mul(divisor, BASE - 1, divisor_amplify))) {
-          _OB_LOG(WARN, "[%s] mul [%lu] fail, ret=%d", to_cstring(divisor), BASE - 1, ret);
+          _OB_LOG(WDIAG, "[%s] mul [%lu] fail, ret=%d", to_cstring(divisor), BASE - 1, ret);
         } else {
           int64_t sum_size = std::max(dividend.size(), divisor_amplify.size()) + 1;
           if (OB_FAIL(dividend_amplify.ensure(sum_size))) {
-            LOG_WARN("ensure() fails", K(ret));
+            LOG_WDIAG("ensure() fails", K(ret));
           } else if (OB_FAIL(poly_poly_add(dividend, divisor_amplify, dividend_amplify))) {
-            _OB_LOG(WARN, "[%s] add [%s] fail, ret=%d",
+            _OB_LOG(WDIAG, "[%s] add [%s] fail, ret=%d",
                     to_cstring(dividend), to_cstring(divisor_amplify), ret);
           } else {
             dividend_ptr = &dividend_amplify;
@@ -1582,11 +1882,11 @@ int ObNumber::rem_(const ObNumber &other, ObNumber &value, IAllocator &allocator
         int64_t quotient_size = dividend_ptr->size() - divisor.size() + 1;
         int64_t remainder_size = divisor.size();
         if (OB_FAIL(quotient.ensure(quotient_size))) {
-          LOG_WARN("ensure() fails", K(ret));
+          LOG_WDIAG("ensure() fails", K(ret));
         } else if (OB_FAIL(remainder.ensure(remainder_size))) {
-          LOG_WARN("ensure() fails", K(ret));
+          LOG_WDIAG("ensure() fails", K(ret));
         } else if (OB_FAIL(poly_poly_div(*dividend_ptr, divisor, quotient, remainder))) {
-          _OB_LOG(WARN, "[%s] div [%s] fail ret=%d",
+          _OB_LOG(WDIAG, "[%s] div [%s] fail ret=%d",
                   to_cstring(*dividend_ptr), to_cstring(divisor), ret);
         } else {
           Desc res_desc = exp_rem_(dividend_desc, divisor_desc);
@@ -1629,7 +1929,7 @@ int ObIntegerBuilder::build(const char *str, const int64_t integer_start,
   int64_t skiped_zero_counter = 0;
   if (OB_UNLIKELY(integer_start <= integer_end && NULL == str)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else if (integer_start >= 0 && integer_end >= 0) {
     bool is_exist_non_zero = false;
     for (int64_t i = integer_end; i >= integer_start; --i) {
@@ -1642,7 +1942,7 @@ int ObIntegerBuilder::build(const char *str, const int64_t integer_start,
       } else {
         for (int64_t j = 0; j < skiped_zero_counter; ++j) {
           if (OB_FAIL(push(0, reduce_zero))) {
-            LOG_WARN("push to integer builder fail", K(ret), K(j));
+            LOG_WDIAG("push to integer builder fail", K(ret), K(j));
             break;
           }
         }
@@ -1653,7 +1953,7 @@ int ObIntegerBuilder::build(const char *str, const int64_t integer_start,
         skiped_zero_counter = 0;
       }
       if (OB_FAIL(push((uint8_t)(c - '0'), reduce_zero))) {
-        LOG_WARN("push to integer builder fail", K(ret), K(c));
+        LOG_WDIAG("push to integer builder fail", K(ret), K(c));
         break;
       }
     }
@@ -1666,7 +1966,7 @@ int ObIntegerBuilder::push(const uint8_t d, const bool reduce_zero)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(digits_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else if (OB_UNLIKELY(get_length() > ObNumber::MAX_CALC_LEN)) {
     ret = OB_NUMERIC_OVERFLOW;
   } else {
@@ -1821,14 +2121,14 @@ int ObNumberBuilder::build(const char *str,
   bool decimal_zero = false;
   if (OB_ISNULL(digits_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("digits_ should not be null when this func is invoked", K(ret));
+    LOG_WDIAG("digits_ should not be null when this func is invoked", K(ret));
   } else if (OB_FAIL(find_point_(str, length, integer_start, integer_end, decimal_start,
                                        negative, integer_zero, decimal_zero, warning))) {
-    _OB_LOG(WARN, "lookup fail ret=%d str=[%.*s]", ret, (int)length, str);
+    _OB_LOG(WDIAG, "lookup fail ret=%d str=[%.*s]", ret, (int)length, str);
   } else if (OB_FAIL(build_integer_(str, integer_start, integer_end, decimal_zero))) {
-    _OB_LOG(WARN, "build integer fail, ret=%d str=[%.*s]", ret, (int)length, str);
+    _OB_LOG(WDIAG, "build integer fail, ret=%d str=[%.*s]", ret, (int)length, str);
   } else if (OB_FAIL(build_decimal_(str, length, decimal_start, decimal_zero))) {
-    _OB_LOG(WARN, "build decimal fail, ret=%d str=[%.*s]", ret, (int)length, str);
+    _OB_LOG(WDIAG, "build decimal fail, ret=%d str=[%.*s]", ret, (int)length, str);
   } else {
     if (!negative) {
       sign_ = POSITIVE;
@@ -1877,7 +2177,7 @@ int ObNumberBuilder::build_integer_(const char *str, const int64_t integer_start
   int64_t skiped_zero_counter = 0;
   if (OB_UNLIKELY(integer_start <= integer_end && NULL == str)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else if (integer_start >= 0 && integer_end >= 0) {
     for (int64_t i = integer_end; i >= integer_start; --i) {
       char c = str[i];
@@ -1887,7 +2187,7 @@ int ObNumberBuilder::build_integer_(const char *str, const int64_t integer_start
       } else {
         for (int64_t j = 0; j < skiped_zero_counter; ++j) {
           if (OB_FAIL(ib_.push(0, reduce_zero))) {
-            LOG_WARN("push to integer builder fail", K(ret), K(j));
+            LOG_WDIAG("push to integer builder fail", K(ret), K(j));
             break;
           }
         }
@@ -1897,7 +2197,7 @@ int ObNumberBuilder::build_integer_(const char *str, const int64_t integer_start
         skiped_zero_counter = 0;
       }
       if (OB_FAIL(ib_.push((uint8_t)(c - '0'), reduce_zero))) {
-        LOG_WARN("push to integer builder fail", K(ret), K(c));
+        LOG_WDIAG("push to integer builder fail", K(ret), K(c));
         break;
       }
     }
@@ -1913,7 +2213,7 @@ int ObNumberBuilder::build_decimal_(const char *str, const int64_t length,
   int64_t skiped_zero_counter = 0;
   if (decimal_start < length && OB_ISNULL(str)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else {
     for (int64_t i = decimal_start; i < length; ++i) {
       char c = str[i];
@@ -1923,7 +2223,7 @@ int ObNumberBuilder::build_decimal_(const char *str, const int64_t length,
       } else {
         for (int64_t j = 0; j < skiped_zero_counter; ++j) {
           if (OB_FAIL(db_.push(0, reduce_zero))) {
-            LOG_WARN("push to decimal builder fail", K(ret), K(j));
+            LOG_WDIAG("push to decimal builder fail", K(ret), K(j));
             break;
           }
         }
@@ -1933,7 +2233,7 @@ int ObNumberBuilder::build_decimal_(const char *str, const int64_t length,
         skiped_zero_counter = 0;
       }
       if (OB_FAIL(db_.push((uint8_t)(c - '0'), reduce_zero))) {
-        LOG_WARN("push to decimal builder fail", K(ret), K(c));
+        LOG_WDIAG("push to decimal builder fail", K(ret), K(c));
         break;
       }
     }
@@ -1965,7 +2265,7 @@ int ObNumberBuilder::find_point_(
   int64_t i = 0;
   if (OB_ISNULL(str)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the str pointer is null", K(ret));
+    LOG_EDIAG("the str pointer is null", K(ret));
   } else {
     for (i = 0; i < length && isspace(str[i]); ++i);
     if (OB_UNLIKELY(i == length)) {
@@ -2104,11 +2404,11 @@ uint32_t ObDigitIterator::get_digit(const int64_t idx) const
 {
   uint32_t ret_digit = 0;
   if (OB_ISNULL(digits_)) {
-    LOG_ERROR("the pointer is null", K(digits_));
+    LOG_EDIAG("the pointer is null", K(digits_));
   } else {
     ret_digit = digits_[idx];
     if (BASE <= ret_digit) {
-      LOG_ERROR("the param is invalid", K(ret_digit));
+      LOG_EDIAG("the param is invalid", K(ret_digit));
     }
   }
 
@@ -2188,9 +2488,9 @@ uint64_t ObCalcVector::at(const int64_t idx) const
 {
   uint64_t ret_digit = 0;
   if (OB_ISNULL(digits_)) {
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else if (OB_UNLIKELY(idx <0 || idx > length_)) {
-    LOG_ERROR("the param is invalid");
+    LOG_EDIAG("the param is invalid");
   } else {
     ret_digit = digits_[idx];
   }
@@ -2223,7 +2523,7 @@ int ObCalcVector::normalize()
   int ret = OB_SUCCESS;
   if (length_ > 0 && OB_ISNULL(digits_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else {
     for (; i < length_; ++i) {
       if (0 != digits_[i]) {
@@ -2248,7 +2548,7 @@ int ObCalcVector::set(const int64_t idx, const uint64_t digit)
       || idx >= length_
       || base_ <= digit
       || NULL == digits_)) {
-    LOG_ERROR("invalid param ",
+    LOG_EDIAG("invalid param ",
               K(idx), K(length_), K(digit), K(base_));
     ret = OB_INVALID_ARGUMENT;
   } else {
@@ -2262,12 +2562,12 @@ int ObCalcVector::ensure(const int64_t size)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buffer_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else if (OB_UNLIKELY(ObNumber::MAX_CALC_LEN < size)) {
     ret = OB_NUMERIC_OVERFLOW;
   } else if (OB_UNLIKELY(digits_ < &buffer_[0]
              || digits_ > &buffer_[ObNumber::MAX_CALC_LEN - 1])) {
-    LOG_ERROR("digits is read only ", K(digits_), K(buffer_));
+    LOG_EDIAG("digits is read only ", K(digits_), K(buffer_));
     ret = OB_ERR_READ_ONLY;
   } else {
     length_ = size;
@@ -2280,12 +2580,12 @@ int ObCalcVector::resize(const int64_t size)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buffer_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("the pointer is null");
+    LOG_EDIAG("the pointer is null");
   } else if (OB_UNLIKELY(ObNumber::MAX_CALC_LEN < size)) {
     ret = OB_NUMERIC_OVERFLOW;
   } else if (OB_UNLIKELY(digits_ < &buffer_[0]
              || digits_ > &buffer_[ObNumber::MAX_CALC_LEN - 1])) {
-    LOG_ERROR("digits is read only", K(digits_), K(buffer_));
+    LOG_EDIAG("digits is read only", K(digits_), K(buffer_));
     ret = OB_ERR_READ_ONLY;
   } else {
     memset(digits_, 0, size * ITEM_SIZE(digits_));
@@ -2298,7 +2598,7 @@ ObCalcVector ObCalcVector::ref(const int64_t start, const int64_t end) const
 {
   ObCalcVector ret_calc_vec;
   if (OB_ISNULL(digits_)) {
-    LOG_ERROR("the pinter is null");
+    LOG_EDIAG("the pinter is null");
   } else {
     ret_calc_vec.length_ = end - start + 1;
     ret_calc_vec.digits_ = &digits_[start];
@@ -2314,7 +2614,7 @@ int ObCalcVector::assign(const ObCalcVector &other, const int64_t start, const i
   if (0 < (end - start + 1)) {
     if (OB_ISNULL(digits_)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_ERROR( "the pointer is null");
+      LOG_EDIAG( "the pointer is null");
     } else {
       MEMCPY(&digits_[start], other.digits_, (end - start + 1) * ITEM_SIZE(digits_));
     }
@@ -2327,7 +2627,7 @@ int64_t ObCalcVector::to_string(char *buffer, const int64_t length) const
   int64_t pos = 0;
 
   if ((length_ > 0 && OB_ISNULL(digits_)) || length_ < 0) {
-    LOG_ERROR("the value is invalid");
+    LOG_EDIAG("the value is invalid");
   } else {
     databuff_printf(buffer, length, pos, "\"{length=%ld digits_ptr=%p buffer_ptr=%p digits=[",
                     length_, digits_, buffer_);

@@ -71,7 +71,7 @@ static inline void handle_stmt_end(ObProxyParseResult* result)
 
 #define UPDATE_ALIAS_NAME(name) \
     /* only support select and update with alias name */ \
-    /* insert into ... select also have alias name */ \
+    /* insert into ... select 语法也需要支持 alias name */ \
     if (NULL != result && (OBPROXY_T_SELECT == result->cur_stmt_type_ || OBPROXY_T_UPDATE == result->cur_stmt_type_ \
                            || OBPROXY_T_INSERT == result->cur_stmt_type_ || OBPROXY_T_MERGE == result->cur_stmt_type_)) { \
       result->table_info_.alias_name_ = name; \
@@ -260,6 +260,14 @@ do {                                                     \
   ++set_info.node_count_;\
 } while(0)
 
+#define SET_BASIC_STMT(stmt_type) \
+do {\
+  if (OBPROXY_T_INVALID == result->cur_stmt_type_\
+      || OBPROXY_T_BEGIN == result->cur_stmt_type_) {\
+    result->cur_stmt_type_ = stmt_type;\
+  }\
+} while (0);
+
 %}
 
 %union
@@ -281,24 +289,26 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
  /* dummy token */
 %token DUMMY_WHERE_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
-%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE STATUS UNIQUE STOP_DDL_TASK RETRY_DDL_TASK
+%token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE UNIQUE
 %token GRANT REVOKE ANALYZE PURGE COMMENT
 %token FROM DUAL
 %token PREPARE EXECUTE USING DEALLOCATE
-%token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY QUERY_TIMEOUT READ_CONSISTENCY WEAK STRONG FROZEN PLACE_HOLDER
+%token COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY QUERY_TIMEOUT READ_CONSISTENCY WEAK STRONG FROZEN PLACE_HOLDER
 %token END_P ERROR
 %token WHEN
+%token TABLEGROUP /*OB 特有的保留关键字*/
  /* non-reserved keyword */
-%token<str> FLASHBACK AUDIT NOAUDIT
+%token<str> FLASHBACK AUDIT NOAUDIT STATUS
 %token<str> BEGI START TRANSACTION READ ONLY WITH CONSISTENT SNAPSHOT INDEX XA
 %token<str> WARNINGS ERRORS TRACE
 %token<str> QUICK COUNT AS WHERE VALUES ORDER GROUP HAVING INTO UNION FOR
 %token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
 %token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR
+%token<str> LOAD DATA HINT_BEGIN LOCAL INFILE
 %token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION
 %token<str> NUMBER_VAL
-%token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER
-%token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY
+%token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
+%token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
 %token<num> INT_NUM
 %type<str> right_string_val tracer_right_string_val name_right_string_val
 %type<node> call_expr
@@ -373,9 +383,32 @@ stmt: select_stmt                    {}
     | text_ps_stmt                   {}
     | merge_stmt                     {}
     | binlog_stmt                    {}
+    | load_data_stmt                 {}
     | other_stmt                     { result->cur_stmt_type_ = OBPROXY_T_OTHERS; }
 
 select_stmt: select_with_opt_hint select_expr_list opt_from
+            {
+              result->cur_stmt_type_ = OBPROXY_T_SELECT;
+            }
+
+opt_replace_ignore: /* empty */
+                    /* word 'ignore' will be ignored and treated as empty*/
+                   | REPLACE
+
+infile_desc: INFILE NAME_OB opt_replace_ignore TABLE table_factor 
+            {
+              result->cur_stmt_type_ = OBPROXY_T_LOAD_DATA_INFILE;
+            }
+
+local_infile_desc: LOCAL INFILE NAME_OB opt_replace_ignore TABLE table_factor
+            {
+              result->cur_stmt_type_ = OBPROXY_T_LOAD_DATA_LOCAL_INFILE;
+            }
+
+load_infile_desc: local_infile_desc
+                | infile_desc
+
+load_data_stmt: load_data_opt_hint load_infile_desc
 
 explain_stmt: explain_or_desc_stmt select_stmt
             | explain_or_desc_stmt insert_stmt
@@ -390,7 +423,7 @@ ddl_stmt: mysql_ddl_stmt
         | oracle_ddl_stmt
 
 mysql_ddl_stmt: CREATE create_dll_expr { result->cur_stmt_type_ = OBPROXY_T_CREATE; }
-              | DROP     { result->cur_stmt_type_ = OBPROXY_T_DROP; }
+              | DROP   drop_ddl_expr   { result->cur_stmt_type_ = OBPROXY_T_DROP; }
               | ALTER    { result->cur_stmt_type_ = OBPROXY_T_ALTER; }
               | TRUNCATE { result->cur_stmt_type_ = OBPROXY_T_TRUNCATE; }
               | RENAME   { result->cur_stmt_type_ = OBPROXY_T_RENAME; }
@@ -401,6 +434,10 @@ create_dll_expr : /* empty */
                 | TABLE { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_TABLE; }
                 | INDEX { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_INDEX; }
                 | UNIQUE INDEX { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_INDEX; }
+                | TABLEGROUP   { result->sub_stmt_type_ = OBPROXY_T_SUB_CREATE_TABLEGROUP; }
+
+drop_ddl_expr : /* empty */
+              | TABLEGROUP { result->sub_stmt_type_ = OBPROXY_T_SUB_DROP_TABLEGROUP; }
 
 stop_ddl_task_stmt: STOP_DDL_TASK INT_NUM
           {
@@ -531,7 +568,7 @@ shard_special_stmt: show_es_id_stmt {}
                   | show_table_status_stmt {}
                   | SHOW_COLUMNS db_tb_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_COLUMNS; }
                   | SHOW_INDEX db_tb_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_INDEX; }
-                  | SHOW_CREATE_TABLE routine_name_stmt { result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_CREATE_TABLE; }
+                  | show_create_table_stmt {}
                   | explain_or_desc var_name
                   {
                       result->table_info_.table_name_ = $2;
@@ -553,6 +590,18 @@ db_tb_stmt: FROM var_name
             result->table_info_.database_name_ = $2;
             result->table_info_.table_name_ = $4;
           }
+
+show_create_table_stmt: SHOW_CREATE_TABLE NAME_OB  
+                      {
+                        result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_CREATE_TABLE;
+                        result->table_info_.table_name_ = $2;
+                      }
+                      | SHOW_CREATE_TABLE NAME_OB '.' NAME_OB 
+                      {
+                        result->sub_stmt_type_ = OBPROXY_T_SUB_SHOW_CREATE_TABLE;
+                        result->table_info_.database_name_ = $2;
+                        result->table_info_.table_name_ = $4;
+                      }
 
 opt_show_like: /*empty*/            {}
              | LIKE NAME_OB         { result->table_info_.table_name_ = $2; }
@@ -693,8 +742,8 @@ sub_query: select_stmt
 opt_column_list: /* empty */
                | '(' column_list ')'
 
-column_list: NAME_OB
-           | column_list ',' NAME_OB
+column_list: var_name
+           | column_list ',' var_name
 
 insert_stmt: insert_with_opt_hint table_factor partition_factor {
                                                                   handle_stmt_end(result);
@@ -714,35 +763,35 @@ set_stmt: SET set_expr_list
 set_expr_list: set_expr ',' set_expr_list
              | set_expr
 
-set_expr: '@' NAME_OB '=' set_var_value
+set_expr: '@' var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $4, $2, SET_VAR_USER);
         }
-        | '@' '@' GLOBAL NAME_OB '=' set_var_value
+        | '@' '@' GLOBAL var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $6, $4, SET_VAR_SYS);
         }
-        | GLOBAL NAME_OB '=' set_var_value
+        | GLOBAL var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $4, $2, SET_VAR_SYS);
         }
-        | '@' '@' NAME_OB '=' set_var_value
+        | '@' '@' var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $5, $3, SET_VAR_SYS);
         }
-        | '@' '@' SESSION NAME_OB '=' set_var_value
+        | '@' '@' SESSION var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $6, $4, SET_VAR_SYS);
         }
-        | SESSION NAME_OB '=' set_var_value
+        | SESSION var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $4, $2, SET_VAR_SYS);
         }
-        | NAME_OB '=' set_var_value
+        | var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $3, $1, SET_VAR_SYS);
         }
-set_var_value: NAME_OB
+set_var_value: var_name
              {
                malloc_set_var_node($$, SET_VALUE_TYPE_STR);
                $$->str_value_ = $1;
@@ -832,6 +881,7 @@ odp_comment: GROUP_ID '=' right_string_val   { result->dbmesh_route_info_.group_
            | RPC_ID '=' tracer_right_string_val     { result->rpc_id_ = $3; }
            | TNT_ID '=' right_string_val { result->dbmesh_route_info_.tnt_id_str_ = $3; }
            | DISASTER_STATUS '=' right_string_val { result->dbmesh_route_info_.disaster_status_str_ = $3; }
+           | TRACE_LOG  { result->has_trace_log_hint_ = true; }
            | TARGET_DB_SERVER '=' right_string_val { result->target_db_server_ = $3; }
            | NAME_OB '.' NAME_OB '=' name_right_string_val
            {
@@ -851,23 +901,28 @@ right_string_val: NAME_OB
                 | NAME_STR
 
 select_with_opt_hint: SELECT
-                    | SELECT_HINT_BEGIN hint_list_with_end
+                    | SELECT hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_SELECT); }
 update_with_opt_hint: UPDATE
-                    | UPDATE_HINT_BEGIN hint_list_with_end
+                    | UPDATE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_UPDATE); }
 delete_with_opt_hint: DELETE
-                    | DELETE_HINT_BEGIN hint_list_with_end
+                    | DELETE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_DELETE); }
+
 insert_with_opt_hint: INSERT insert_all_when
-                    | INSERT_HINT_BEGIN hint_list_with_end insert_all_when
+                    | INSERT hint_list_begin hint_list_with_end insert_all_when { SET_BASIC_STMT(OBPROXY_T_INSERT); }
 
 insert_all_when:
                | ALL
                | ALL WHEN
-
+/* load data will use replace as keyword so we need to set cur_stmt_type_ here */
 replace_with_opt_hint: REPLACE
-                     | REPLACE_HINT_BEGIN hint_list_with_end
+                     | REPLACE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_REPLACE); }
 merge_with_opt_hint: MERGE
-                   | MERGE_HINT_BEGIN hint_list_with_end
-hint_list_with_end: hint_list HINT_END
+                   | MERGE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_MERGE); }
+load_data_opt_hint: LOAD DATA
+                  | LOAD DATA hint_list_begin hint_list_with_end
+
+hint_list_begin : COMMENT_BEGIN HINT_BEGIN
+hint_list_with_end: hint_list COMMENT_END
 hint_list: /* empty */
          | hint hint_list
 
@@ -879,10 +934,12 @@ hint: QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
       add_hint_index(result->dbmesh_route_info_, $3);
       result->dbmesh_route_info_.index_count_++;
     }
+    | TRACE_LOG { result->has_trace_log_hint_ = true; }
     | NAME_OB {}
     | NAME_OB '(' INT_NUM ')' {}
     | NAME_OB '(' NAME_OB ')' {}
     | NAME_OB '(' NAME_OB NAME_OB ')' {}
+    | NAME_OB '(' NAME_OB INT_NUM ')' {}
 
 opt_read_consistency: /* empty */ {}
                     | WEAK { SET_READ_CONSISTENCY(OBPROXY_READ_CONSISTENCY_WEAK); }
@@ -1031,7 +1088,9 @@ show_proxyvip:
  /*show proxymemory grammer*/
 show_proxymemory:
   SHOW_PROXYMEMORY          {}
-| SHOW_PROXYMEMORY OBJPOOL  { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_MEMORY_OBJPOOL); }
+| SHOW_PROXYMEMORY INT_NUM  { SET_ICMD_ONE_ID($2); }
+| SHOW_PROXYMEMORY OBJPOOL         { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_MEMORY_OBJPOOL); }
+| SHOW_PROXYMEMORY OBJPOOL INT_NUM { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_MEMORY_OBJPOOL); SET_ICMD_ONE_ID($3); }
 
  /*show sqlaudit grammer*/
 show_sqlaudit:
@@ -1118,7 +1177,7 @@ transaction_characteristic: READ ONLY
                           | WITH CONSISTENT SNAPSHOT
 
  /*use db stmt*/
-use_db_stmt: USE NAME_OB  {
+use_db_stmt: USE var_name  {
                             result->cur_stmt_type_ = OBPROXY_T_USE_DB;
                             result->table_info_.database_name_ = $2;
                           }
@@ -1130,10 +1189,10 @@ help_stmt: HELP NAME_OB  { result->cur_stmt_type_ = OBPROXY_T_HELP; }
 other_stmt: NAME_OB
 
 partition_factor: /*empty*/ {}
-                | SUBPARTITION NAME_OB { result->part_name_ = $2; }
-                | SUBPARTITION '(' NAME_OB ')' { result->part_name_ = $3; }
-                | PARTITION NAME_OB { result->part_name_ = $2; }
-                | PARTITION '(' NAME_OB ')' { result->part_name_ = $3; }
+                | SUBPARTITION var_name { result->part_name_ = $2; }
+                | SUBPARTITION '(' var_name ')' { result->part_name_ = $3; }
+                | PARTITION var_name { result->part_name_ = $2; }
+                | PARTITION '(' var_name ')' { result->part_name_ = $3; }
 
 table_references: table_factor partition_factor {
                                                   handle_stmt_end(result);
@@ -1193,6 +1252,9 @@ non_reserved_keyword: START
                     | FLASHBACK
                     | AUDIT
                     | NOAUDIT
+                    | LOCAL
+                    | DATA
+                    | STATUS
 
 var_name: NAME_OB
         | non_reserved_keyword

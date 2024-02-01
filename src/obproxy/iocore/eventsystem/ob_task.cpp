@@ -50,7 +50,7 @@ int ObTasksProcessor::start(const int64_t task_threads, const int64_t stacksize)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(g_event_processor.spawn_event_threads(task_threads, "ET_TASK", stacksize, ET_TASK))) {
-    LOG_WARN("fail to spawn event threads for ET_TASK", K(ret));
+    LOG_WDIAG("fail to spawn event threads for ET_TASK", K(ret));
   }
   return ret;
 }

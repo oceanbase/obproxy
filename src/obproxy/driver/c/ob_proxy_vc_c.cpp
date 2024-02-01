@@ -34,9 +34,9 @@ int ob_proxy_vc_c_init(const char *config, void **p_driver_client)
     MPRINT("init obproxy client failed, ret=%d", ret);
   } else if (OB_ISNULL(driver_client = new(std::nothrow) ObDriverClient())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client is null unexpected", K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client is null unexpected", K(ret));
   } else if (OB_FAIL(driver_client->init())) {
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client init failed", K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client init failed", K(ret));
   } else {
     *p_driver_client = static_cast<void *>(driver_client);
     OBPROXY_DRIVER_CLIENT_LOG(DEBUG, "create driver_client success", KP(driver_client));
@@ -56,15 +56,15 @@ int ob_proxy_vc_c_connect(void *driver_client_handle, int64_t conn_timeout, int6
 
   if (OB_ISNULL(driver_client_handle) || conn_timeout < 0 || sock_timeout < 0) {
     ret = OB_INVALID_ARGUMENT;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "invalid argument", KP(driver_client_handle), K(conn_timeout), K(sock_timeout), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "invalid argument", KP(driver_client_handle), K(conn_timeout), K(sock_timeout), K(ret));
   } else {
     driver_client = static_cast<ObDriverClient *>(driver_client_handle);
     driver_client->set_connect_timeout(conn_timeout);
 
     if (conn_timeout == 0 && OB_FAIL(driver_client->sync_connect())) {
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client connect failed", K(ret));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client connect failed", K(ret));
     } else if (conn_timeout > 0 && OB_FAIL(driver_client->sync_connect_with_timeout())) {
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client connect with timeout failed", K(conn_timeout), K(ret));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client connect with timeout failed", K(conn_timeout), K(ret));
     } else {
       driver_client->set_send_timeout(sock_timeout);
       driver_client->set_recv_timeout(sock_timeout);
@@ -84,32 +84,32 @@ int ob_proxy_vc_c_recv(void *driver_client_handle, char *buffer, int64_t offset,
 
   if (OB_ISNULL(driver_client_handle) || OB_ISNULL(buffer) || OB_ISNULL(recv_len)) {
     ret = OB_INVALID_ARGUMENT;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "invalid argument", KP(driver_client_handle), K(buffer), K(recv_len), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "invalid argument", KP(driver_client_handle), K(buffer), K(recv_len), K(ret));
   } else {
     driver_client = static_cast<ObDriverClient *>(driver_client_handle);
     if (OB_FAIL(driver_client->sync_recv_with_timeout(buffer + offset, mlen, rlen))) {
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "sync recv failed", K(ret));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "sync recv failed", K(ret));
     } else {
       if (rlen < 0) {
         switch (errno) {
           case ECONNRESET:
           case EPIPE:
-            OBPROXY_DRIVER_CLIENT_LOG(WARN, "Connection reset", "errno", errno);
+            OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "Connection reset", "errno", errno);
             break;
           case EBADF:
-            OBPROXY_DRIVER_CLIENT_LOG(WARN, "Socket closed", "errno", errno);
+            OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "Socket closed", "errno", errno);
             break;
           case EINTR:
-            OBPROXY_DRIVER_CLIENT_LOG(WARN, "Operation interrupted", "errno", errno);
+            OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "Operation interrupted", "errno", errno);
             break;
           default:
-            OBPROXY_DRIVER_CLIENT_LOG(WARN, "socket read error", "errno", errno);
+            OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "socket read error", "errno", errno);
             break;
         }
         ret = OB_ERR_UNEXPECTED;
       } else if (rlen == 0) {
         ret = OB_ERR_UNEXPECTED;
-        OBPROXY_DRIVER_CLIENT_LOG(WARN, "peer close", KP(driver_client), K(ret));
+        OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "peer close", KP(driver_client), K(ret));
       } else {
         OBPROXY_DRIVER_CLIENT_LOG(DEBUG, "read success", K(rlen));
         *recv_len = rlen;
@@ -129,13 +129,13 @@ int ob_proxy_vc_c_send(void *driver_client_handle, const char *buffer, int64_t o
 
   if (OB_ISNULL(driver_client_handle) || OB_ISNULL(buffer) || OB_ISNULL(send_len)) {
     ret = OB_INVALID_ARGUMENT;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "invalid argument", KP(driver_client_handle), K(buffer), K(send_len), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "invalid argument", KP(driver_client_handle), K(buffer), K(send_len), K(ret));
   } else {
     driver_client = static_cast<ObDriverClient *>(driver_client_handle);
 
     if (OB_FAIL(driver_client->sync_send_with_timeout(buffer + offset, mlen, wlen))) {
       ret = OB_ERR_UNEXPECTED; //send error;
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "sync_send_with_timeout failed", K(wlen), K(ret));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "sync_send_with_timeout failed", K(wlen), K(ret));
     } else {
       if (wlen > 0) {
         OBPROXY_DRIVER_CLIENT_LOG(DEBUG, "sync write success", K(wlen));
@@ -143,9 +143,9 @@ int ob_proxy_vc_c_send(void *driver_client_handle, const char *buffer, int64_t o
       } else {
         ret = ob_get_sys_errno();
         if (errno == ECONNRESET) {
-          OBPROXY_DRIVER_CLIENT_LOG(WARN, "wlen is unexpected, connection reset", K(wlen), K(ret));
+          OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "wlen is unexpected, connection reset", K(wlen), K(ret));
         } else {
-          OBPROXY_DRIVER_CLIENT_LOG(WARN, "wlen is unexpected, write failed", K(wlen), K(ret));
+          OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "wlen is unexpected, write failed", K(wlen), K(ret));
         }
       }
     }
@@ -161,7 +161,7 @@ int ob_proxy_vc_c_close(void *driver_client_handle)
 
   if (OB_ISNULL(driver_client_handle)) {
     ret = OB_INVALID_ARGUMENT;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "invalid argument", KP(driver_client_handle), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "invalid argument", KP(driver_client_handle), K(ret));
   } else {
     OBPROXY_DRIVER_CLIENT_LOG(DEBUG, "free driver client", KP(driver_client_handle));
     driver_client = static_cast<ObDriverClient *>(driver_client_handle);
@@ -183,7 +183,7 @@ int ob_proxy_vc_set_timeout(void *driver_client_handle, int type, int timeout)
 
   if (OB_ISNULL(driver_client_handle) || type < 0 || C_DRIVER_TIMEOUT_MAX <= type) {
     ret = OB_INVALID_ARGUMENT;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "invalid argument", KP(driver_client_handle), K(type), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "invalid argument", KP(driver_client_handle), K(type), K(ret));
   } else {
     driver_client = static_cast<ObDriverClient *>(driver_client_handle);
 
@@ -212,7 +212,7 @@ int ob_proxy_vc_get_timeout(void *driver_client_handle, int type, int *timeout)
 
   if (OB_ISNULL(driver_client_handle) || OB_ISNULL(timeout) || type < C_DRIVER_CONNECT_TIMEOUT || C_DRIVER_TIMEOUT_MAX <= type) {
     ret = OB_INVALID_ARGUMENT;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "invalid argument", KP(driver_client_handle), KP(timeout), K(type), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "invalid argument", KP(driver_client_handle), KP(timeout), K(type), K(ret));
   } else {
     driver_client = static_cast<ObDriverClient *>(driver_client_handle);
 

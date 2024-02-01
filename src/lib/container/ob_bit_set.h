@@ -58,7 +58,7 @@ public:
       //make up elements
       for (int64_t i = this_count; OB_SUCC(ret) && i < other_count; ++i) {
         if (OB_FAIL(bitset_word_array_.push_back(0))) {
-          LIB_LOG(WARN, "fail to push back element into array", K(ret));
+          LIB_LOG(WDIAG, "fail to push back element into array", K(ret));
         }
       }
     }
@@ -106,14 +106,14 @@ int ObBitSet<N, BlockAllocatorT>::add_member(int64_t index)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(index < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "negative bitmapset member not allowed", K(index), K(ret));
+    LIB_LOG(WDIAG, "negative bitmapset member not allowed", K(index), K(ret));
     //just return false
   } else {
     int64_t pos = index >> PER_BITSETWORD_MOD_BITS;
     if (OB_UNLIKELY(pos >= bitset_word_array_.count())) {
       for (int64_t i = bitset_word_array_.count(); OB_SUCC(ret) && i <= pos; ++i) {
         if (OB_FAIL(bitset_word_array_.push_back(0))) {
-          LIB_LOG(WARN, "fail to push back element into array", K(index), K(ret));
+          LIB_LOG(WDIAG, "fail to push back element into array", K(index), K(ret));
         }
       }
     }
@@ -131,7 +131,7 @@ int ObBitSet<N, BlockAllocatorT>::del_member(int64_t index)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(index < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "negative bitmapset member not allowed", K(index), K(ret));
+    LIB_LOG(WDIAG, "negative bitmapset member not allowed", K(index), K(ret));
     //just return false
   } else {
     int64_t pos = index >> PER_BITSETWORD_MOD_BITS;
@@ -170,7 +170,7 @@ int ObBitSet<N, BlockAllocatorT>::add_members(const ObBitSet &other)
     //make up elements
     for (int64_t i = this_count; OB_SUCC(ret) && i < other_count; ++i) {
       if (OB_FAIL(bitset_word_array_.push_back(0))) {
-        LIB_LOG(WARN, "fail to push back element into array", K(ret));
+        LIB_LOG(WDIAG, "fail to push back element into array", K(ret));
       }
     }
   }
@@ -199,7 +199,7 @@ int ObBitSet<N, BlockAllocatorT>::do_mask(int64_t begin_index, int64_t end_index
   if (begin_index < 0 || begin_index >= max_bit_count || end_index < 0 || end_index >=max_bit_count
       || begin_index >= end_index) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments", K(begin_index), K(end_index), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments", K(begin_index), K(end_index), K(ret));
   } else {
     int64_t begin_word = begin_index / PER_BITSETWORD_BITS;
     int64_t end_word = end_index / PER_BITSETWORD_BITS;
@@ -228,7 +228,7 @@ inline bool ObBitSet<N, BlockAllocatorT>::has_member(int64_t index) const
 {
   bool bool_ret = false;
   if (OB_UNLIKELY(index < 0)) {
-    LIB_LOG(WARN, "negative bitmapset member not allowed", K(index));
+    LIB_LOG(WDIAG, "negative bitmapset member not allowed", K(index));
     //just return false
   } else if (OB_UNLIKELY(index >= bit_count())) {
     //the bit is not set
@@ -349,7 +349,7 @@ int ObBitSet<N, BlockAllocatorT>::to_array(ObIArray<int64_t> &arr) const
   for (int64_t i = 0; OB_SUCC(ret) && count < num && i < max_bit_count; ++i) {
     if (has_member(i)) {
       if (OB_FAIL(arr.push_back(i))) {
-        LIB_LOG(WARN, "failed to push back i onto array", K(i), K(ret));
+        LIB_LOG(WDIAG, "failed to push back i onto array", K(i), K(ret));
       } else {
         ++count;
       }

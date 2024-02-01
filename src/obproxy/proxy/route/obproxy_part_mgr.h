@@ -144,6 +144,8 @@ public:
   common::ObObjType get_first_part_type() const;
   common::ObObjType get_sub_part_type() const;
   void set_cluster_version(const int64_t cluster_version) { cluster_version_ = cluster_version; }
+  const common::ObPartDesc *get_first_part_desc() { return first_part_desc_; }
+  const common::ObPartDesc *get_sub_part_desc() { return sub_part_desc_; }
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
 private:

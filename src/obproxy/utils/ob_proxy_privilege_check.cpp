@@ -63,9 +63,14 @@ void ObProxySessionPrivInfo::reset()
     op_fixed_mem_free(user_name_str_, user_name_.length());
     user_name_str_ = NULL;
   }
+  if (NULL != logic_user_name_str_) {
+    op_fixed_mem_free(logic_user_name_str_, logic_user_name_.length());
+    logic_user_name_str_ = NULL;
+  }
   cluster_name_.reset();
   tenant_name_.reset();
   user_name_.reset();
+  logic_user_name_.reset();
 }
 
 int ObProxySessionPrivInfo::deep_copy(const ObProxySessionPrivInfo *priv_info)
@@ -73,12 +78,14 @@ int ObProxySessionPrivInfo::deep_copy(const ObProxySessionPrivInfo *priv_info)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(priv_info)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Invalid priv info", K(priv_info), K(ret));
+    LOG_WDIAG("Invalid priv info", K(priv_info), K(ret));
   } else if (OB_UNLIKELY(NULL != cluster_name_str_)
              || OB_UNLIKELY(NULL != tenant_name_str_)
-             || OB_UNLIKELY(NULL != user_name_str_)) {
+             || OB_UNLIKELY(NULL != user_name_str_)
+             || OB_UNLIKELY(NULL != logic_user_name_str_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("name buff is not null", K(cluster_name_str_), K(tenant_name_str_), K(user_name_str_), K(ret));
+    LOG_WDIAG("name buff is not null", K(cluster_name_str_), K(tenant_name_str_), 
+             K(user_name_str_), K(logic_user_name_str_), K(ret));
   } else {
     has_all_privilege_ = priv_info->has_all_privilege_;
     cs_id_ = priv_info->cs_id_;
@@ -89,7 +96,7 @@ int ObProxySessionPrivInfo::deep_copy(const ObProxySessionPrivInfo *priv_info)
       cluster_name_str_ = static_cast<char *>(op_fixed_mem_alloc(name_length));
       if (OB_ISNULL(cluster_name_str_)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem", K(name_length), K(ret));
+        LOG_WDIAG("fail to alloc mem", K(name_length), K(ret));
       } else {
         MEMCPY(cluster_name_str_, priv_info->cluster_name_.ptr(), name_length);
         cluster_name_.assign_ptr(cluster_name_str_, name_length);
@@ -101,7 +108,7 @@ int ObProxySessionPrivInfo::deep_copy(const ObProxySessionPrivInfo *priv_info)
       tenant_name_str_ = static_cast<char *>(op_fixed_mem_alloc(name_length));
       if (OB_ISNULL(tenant_name_str_)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem", K(name_length), K(ret));
+        LOG_WDIAG("fail to alloc mem", K(name_length), K(ret));
       } else {
         MEMCPY(tenant_name_str_, priv_info->tenant_name_.ptr(), name_length);
         tenant_name_.assign_ptr(tenant_name_str_, name_length);
@@ -113,10 +120,22 @@ int ObProxySessionPrivInfo::deep_copy(const ObProxySessionPrivInfo *priv_info)
       user_name_str_ = static_cast<char *>(op_fixed_mem_alloc(name_length));
       if (OB_ISNULL(user_name_str_)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem", K(name_length), K(ret));
+        LOG_WDIAG("fail to alloc mem", K(name_length), K(ret));
       } else {
         MEMCPY(user_name_str_, priv_info->user_name_.ptr(), name_length);
         user_name_.assign_ptr(user_name_str_, name_length);
+      }
+    }
+
+    if (OB_SUCC(ret) && OB_LIKELY(!priv_info->logic_user_name_.empty())) {
+      name_length = priv_info->logic_user_name_.length();
+      logic_user_name_str_ = static_cast<char *>(op_fixed_mem_alloc(name_length));
+      if (OB_ISNULL(logic_user_name_str_)) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WDIAG("fail to alloc mem", K(name_length), K(ret));
+      } else {
+        MEMCPY(logic_user_name_str_, priv_info->logic_user_name_.ptr(), name_length);
+        logic_user_name_.assign_ptr(logic_user_name_str_, name_length);
       }
     }
   }
@@ -157,6 +176,16 @@ bool ObProxySessionPrivInfo::is_same_user(const ObProxySessionPrivInfo &other_pr
   return bret;
 }
 
+bool ObProxySessionPrivInfo::is_same_logic_user(const ObProxySessionPrivInfo &other_priv_info) const
+{
+  bool bret = true;
+  if (0 != logic_user_name_.compare(other_priv_info.logic_user_name_)) {
+    bret = false;
+    LOG_DEBUG("not same logic user name", "self", logic_user_name_, "other", other_priv_info.logic_user_name_);
+  }
+  return bret;
+}
+
 int ObProxyPrivilegeCheck::get_need_priv(const StmtType stmt_type,
     const ObProxySessionPrivInfo &session_priv, ObNeedPriv &need_priv)
 {
@@ -172,7 +201,7 @@ int ObProxyPrivilegeCheck::get_need_priv(const StmtType stmt_type,
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("it should not come here", K(stmt_type), K(ret));
+        LOG_EDIAG("it should not come here", K(stmt_type), K(ret));
       }
     }
   }
@@ -190,7 +219,7 @@ int ObProxyPrivilegeCheck::check_privilege(const ObProxySessionPrivInfo &session
     switch (need_priv.priv_level_) {
       case OB_PRIV_USER_LEVEL: {
         if (OB_FAIL(check_user_priv(session_priv.user_priv_set_, need_priv.priv_set_, priv_name))) {
-          LOG_WARN("No privilege", K(session_priv), K(need_priv), K(priv_name), K(ret));
+          LOG_WDIAG("No privilege", K(session_priv), K(need_priv), K(priv_name), K(ret));
         }
         break;
       }
@@ -217,7 +246,7 @@ int ObProxyPrivilegeCheck::check_user_priv(const ObPrivSet &user_priv_set,
     priv_name = const_cast<char *>(get_first_priv_name(lack_priv_set));
     if (OB_ISNULL(priv_name)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("Invalid priv type", "priv_set", lack_priv_set);
+      LOG_WDIAG("Invalid priv type", "priv_set", lack_priv_set);
     }
   }
   return ret;

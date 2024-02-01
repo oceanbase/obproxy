@@ -86,34 +86,34 @@ int OMPKHandshake::serialize(char *buffer, int64_t len, int64_t &pos) const
   int ret = OB_SUCCESS;
 
   if (NULL == buffer || 0 >= len || pos < 0 || len - pos < get_serialize_size()) {
-    LOG_WARN("invalid argument", K(buffer), K(len), K(pos), "need_size", get_serialize_size());
+    LOG_WDIAG("invalid argument", K(buffer), K(len), K(pos), "need_size", get_serialize_size());
     ret = OB_INVALID_ARGUMENT;
   } else {
     // buffer is definitely enough
     if (OB_FAIL(ObMySQLUtil::store_int1(buffer, len, protocol_version_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(protocol_version_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(protocol_version_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_obstr_zt(buffer, len, server_version_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(server_version_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(server_version_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int4(buffer, len, thread_id_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(thread_id_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(thread_id_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buffer, len, scramble_buff_, SCRAMBLE_SIZE, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, len, filler_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(filler_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(filler_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, len, server_capabilities_lower_.capability_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(server_capabilities_lower_.capability_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(server_capabilities_lower_.capability_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, len, server_language_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(server_language_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(server_language_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, len, server_status_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(server_status_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(server_status_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, len, server_capabilities_upper_.capability_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(server_capabilities_upper_.capability_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(server_capabilities_upper_.capability_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, len, auth_plugin_data_len_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(auth_plugin_data_len_), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(auth_plugin_data_len_), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buffer, len, reserved_, sizeof (reserved_), pos))) {
-      LOG_WARN("store fail", K(buffer), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buffer, len, auth_plugin_data2_, sizeof (auth_plugin_data2_), pos))) {
-      LOG_WARN("store fail", K(buffer), K(pos));
+      LOG_WDIAG("store fail", K(buffer), K(pos));
     }
     // NULL terminated auth plugin name
 
@@ -121,7 +121,7 @@ int OMPKHandshake::serialize(char *buffer, int64_t len, int64_t &pos) const
       if (server_capabilities_upper_.capability_flag_.OB_SERVER_PLUGIN_AUTH) {
         // auth-plugin name, NULL terminated
         if (OB_FAIL(ObMySQLUtil::store_obstr_zt(buffer, len, auth_plugin_name_, pos))) {
-          LOG_WARN("store fail", K(buffer), K(pos));
+          LOG_WDIAG("store fail", K(buffer), K(pos));
         }
       }
     }
@@ -136,7 +136,7 @@ int OMPKHandshake::set_server_version(ObString &version)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(version.ptr()) || version.length() < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("invalid args", K(version.ptr()), K(version.length()));
+    LOG_EDIAG("invalid args", K(version.ptr()), K(version.length()));
   } else {
     //OB_ASSERT(version.ptr() && version.length() >= 0);
     server_version_ = version;
@@ -181,7 +181,7 @@ int OMPKHandshake::decode()
   const char *end = buf + len;
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", KP(buf), K(len), K(ret));
+    LOG_EDIAG("null input", KP(buf), K(len), K(ret));
   } else {
     ObMySQLUtil::get_uint1(pos, protocol_version_);
 
@@ -221,7 +221,7 @@ int OMPKHandshake::decode()
         pos += tmp_len;
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("auth_plugin_data2's len must be 13", K(tmp_len), K(ret));
+        LOG_WDIAG("auth_plugin_data2's len must be 13", K(tmp_len), K(ret));
       }
     }
 
@@ -249,7 +249,7 @@ int OMPKHandshake::decode()
 
       if (pos > end) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("pos must less than end", KP(pos), KP(end), K(ret));
+        LOG_WDIAG("pos must less than end", KP(pos), KP(end), K(ret));
       }
     }
   }
@@ -282,7 +282,7 @@ int OMPKHandshake::get_scramble(char *buffer, const int64_t len, int64_t &copy_l
   int64_t part2_len = (sizeof (auth_plugin_data2_) - 1);
   if (OB_ISNULL(buffer) || OB_UNLIKELY(len < (part1_len + part2_len))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(buffer), K(len), K(part1_len), K(part2_len), K(ret));
+    LOG_WDIAG("invalid input value", KP(buffer), K(len), K(part1_len), K(part2_len), K(ret));
   } else {
     int64_t pos = 0;
     MEMCPY(buffer, scramble_buff_, part1_len);
@@ -304,7 +304,7 @@ int OMPKHandshake::set_scramble(char *buffer, const int64_t len)
   int64_t part2_len = (sizeof (auth_plugin_data2_) - 1);
   if (OB_ISNULL(buffer) || OB_UNLIKELY(len < (part1_len + part2_len))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(buffer), K(len), K(part1_len), K(part2_len), K(ret));
+    LOG_WDIAG("invalid input value", KP(buffer), K(len), K(part1_len), K(part2_len), K(ret));
   } else {
     int64_t pos = 0;
     MEMCPY(scramble_buff_, buffer, part1_len);

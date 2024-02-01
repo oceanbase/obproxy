@@ -33,7 +33,7 @@ int ObRoutePrometheus::handle_prometheus(const ObTableEntryName &name, const ObP
   va_list args;
   va_start(args, metric);
   if (OB_FAIL(handle_prometheus(name.cluster_name_, name.tenant_name_, name.database_name_, metric, args))) {
-    LOG_WARN("fail to handle_prometheus with ObTableEntryName", K(name.cluster_name_), K(name.tenant_name_),
+    LOG_WDIAG("fail to handle_prometheus with ObTableEntryName", K(name.cluster_name_), K(name.tenant_name_),
              K(name.database_name_), K(metric), K(ret));
   }
 
@@ -70,7 +70,7 @@ int ObRoutePrometheus::handle_prometheus(const ObString &cluster_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_ROUTE_RESULT, result ? LABEL_TRUE : LABEL_FALSE, false);
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_counter(ENTRY_TOTAL, ENTRY_TOTAL_HELP, label_vector))) {
-      LOG_WARN("fail to handle counter with ENTRY_TOTAL", K(ret));
+      LOG_WDIAG("fail to handle counter with ENTRY_TOTAL", K(ret));
     }
     break;
   }

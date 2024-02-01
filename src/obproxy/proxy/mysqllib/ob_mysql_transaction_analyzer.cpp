@@ -13,6 +13,7 @@
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysqllib/ob_mysql_transaction_analyzer.h"
 #include "packet/ob_mysql_packet_reader.h"
+#include "proxy/mysqllib/ob_protocol_diagnosis.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -36,6 +37,10 @@ ObMysqlTransactionAnalyzer::ObMysqlTransactionAnalyzer()
   reset();
 }
 
+ObMysqlTransactionAnalyzer::~ObMysqlTransactionAnalyzer()
+{
+  DEC_SHARED_REF(protocol_diagnosis_);
+}
 // Attention!! before start to analyze a trans, reset must be called
 void ObMysqlTransactionAnalyzer::reset()
 {
@@ -80,16 +85,16 @@ int ObMysqlTransactionAnalyzer::analyze_trans_response(const ObResultBuffer &buf
   ObMysqlRespEndingType ending_type = MAX_PACKET_ENDING_TYPE;
   if (OB_UNLIKELY(buf_reader.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("result buffer is empty", K(ret));
+    LOG_WDIAG("result buffer is empty", K(ret));
   } else if ((UNDEFINED_MYSQL_PROTOCOL_MODE == result_.get_mysql_mode())
               || (UNDEFINED_MYSQL_PROTOCOL_MODE == analyzer_.get_mysql_mode())) {
     ret = OB_NOT_INIT;
-    LOG_WARN("mysql protocol mode was not set", K(ret));
-  } else if (OB_FAIL(analyzer_.analyze_mysql_resp(buf_reader, result_, resp))) {
-    LOG_WARN("fail to analyze mysql resp", K(ret));
+    LOG_WDIAG("mysql protocol mode was not set", K(ret));
+  } else if (OB_FAIL(analyzer_.analyze_mysql_resp(buf_reader, result_, resp, protocol_diagnosis_))) {
+    LOG_WDIAG("fail to analyze mysql resp", K(ret));
   } else if (!analyzer_.need_wait_more_data()
              && OB_FAIL(result_.is_resp_finished(is_resp_completed, ending_type))) {
-    LOG_WARN("fail to check is resp finished", K(ending_type), K(ret));
+    LOG_WDIAG("fail to check is resp finished", K(ending_type), K(ret));
   } else {
     // this mysql response is complete
     if (is_resp_completed) {
@@ -113,10 +118,10 @@ int ObMysqlTransactionAnalyzer::analyze_trans_response(const ObResultBuffer &buf
     // just defense
     if (OB_UNLIKELY(is_trans_completed) && OB_UNLIKELY(!is_resp_completed)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("state error", K(is_trans_completed), K(is_resp_completed), K(ret));
+      LOG_WDIAG("state error", K(is_trans_completed), K(is_resp_completed), K(ret));
     } else if (OB_UNLIKELY(!is_resp_completed) && OB_UNLIKELY(is_trans_completed)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("state error", K(is_trans_completed), K(is_resp_completed), K(ret));
+      LOG_WDIAG("state error", K(is_trans_completed), K(is_resp_completed), K(ret));
     }
 
     LOG_DEBUG("analyze trans response succ", "response data len", buf.length(),
@@ -155,7 +160,7 @@ int ObMysqlTransactionAnalyzer::analyze_trans_response(ObIOBufferReader &reader,
 
   if (data_size <= 0) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("the first block data_size in reader is less than 0",
+    LOG_WDIAG("the first block data_size in reader is less than 0",
              K(offset), K(block->read_avail()), K(ret));
   }
 
@@ -163,7 +168,7 @@ int ObMysqlTransactionAnalyzer::analyze_trans_response(ObIOBufferReader &reader,
   while (OB_SUCC(ret) && NULL != block && data_size > 0 && !is_resp_completed()) {
     resp_buf.assign_ptr(data, static_cast<int32_t>(data_size));
     if (OB_FAIL(analyze_trans_response(resp_buf, resp))) {
-      LOG_WARN("fail to analyze transaction resp", K(ret));
+      LOG_WDIAG("fail to analyze transaction resp", K(ret));
     } else {
       // on to the next block
       offset = 0;
@@ -175,7 +180,7 @@ int ObMysqlTransactionAnalyzer::analyze_trans_response(ObIOBufferReader &reader,
         if (is_resp_completed()) {
           if (OB_UNLIKELY(0 != data_size)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("resp completed but data_size != 0", K(data_size), K(ret));
+            LOG_EDIAG("resp completed but data_size != 0", K(data_size), K(ret));
           }
         }
       }
@@ -195,20 +200,20 @@ int receive_next_ok_packet(ObIOBufferReader &reader, ObMysqlAnalyzeResult &resul
   ObIOBufferReader *tmp_reader = reader.mbuf_->clone_reader(&reader);
   if (OB_ISNULL(tmp_reader)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to reader", K(tmp_reader), K(ret));
+    LOG_WDIAG("fail to reader", K(tmp_reader), K(ret));
     result.status_ = ANALYZE_ERROR;
   } else {
     int64_t first_pkt_len = result.meta_.pkt_len_;
     if (OB_UNLIKELY(tmp_reader->read_avail() < first_pkt_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("buf reader is error", "read_avail", tmp_reader->read_avail(),
+      LOG_WDIAG("buf reader is error", "read_avail", tmp_reader->read_avail(),
                K(first_pkt_len), K(ret));
     } else {
       if (OB_FAIL(tmp_reader->consume(first_pkt_len))) {
-        PROXY_TXN_LOG(WARN, "fail to consume ", K(first_pkt_len), K(ret));
+        PROXY_TXN_LOG(WDIAG, "fail to consume ", K(first_pkt_len), K(ret));
       } else if (tmp_reader->read_avail() > 0) {
         if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*tmp_reader, tmp_result))) {
-          LOG_WARN("fail to analyze packet", K(tmp_reader), K(ret));
+          LOG_WDIAG("fail to analyze packet", K(tmp_reader), K(ret));
         }
       } else {
         tmp_result.status_ = ANALYZE_CONT;
@@ -228,7 +233,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(need_receive_complete)) {
     if (OB_FAIL(analyze_trans_response(reader, resp))) {
-      LOG_WARN("fail to analyze trans response", K(ret));
+      LOG_WDIAG("fail to analyze trans response", K(ret));
       result.status_ = ANALYZE_ERROR;
     } else {
       if (is_resp_completed()) {
@@ -248,12 +253,12 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
     if (OB_UNLIKELY(OB_MYSQL_COM_STATISTICS == result_.get_cmd())) {
       // OB_MYSQL_COM_STATISTICS, maybe only have mysql packet header, without packet body
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet_only_header(reader, result))) {
-        LOG_WARN("fail to analyze packet", K(&reader), K(ret));
+        LOG_WDIAG("fail to analyze packet", K(&reader), K(ret));
       }
     } else {
       // 1. first we should confirm ok pkt or error pkt is received completed
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(reader, result))) {
-        LOG_WARN("fail to analyze packet", K(&reader), K(ret));
+        LOG_WDIAG("fail to analyze packet", K(&reader), K(ret));
       }
     }
 
@@ -262,7 +267,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
         if (OB_UNLIKELY(OB_MYSQL_COM_STATISTICS == result_.get_cmd())) {
           if (result_.is_extra_ok_packet_for_stats_enabled()) {
             if (OB_FAIL(receive_next_ok_packet(reader, result))) {
-              LOG_WARN("fail to receive next ok packet", K(ret));
+              LOG_WDIAG("fail to receive next ok packet", K(ret));
             }
           }
         } else {
@@ -270,7 +275,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
               && OB_MYSQL_COM_STMT_PREPARE != result_.get_cmd() && OB_MYSQL_COM_STMT_PREPARE_EXECUTE != result_.get_cmd()) {
             ObMysqlPacketReader pkt_reader;
             if (OB_FAIL(pkt_reader.get_ok_packet_server_status(reader, server_status))) {
-              LOG_WARN("fail to get server status flags", K(server_status.flags_), K(ret));
+              LOG_WDIAG("fail to get server status flags", K(server_status.flags_), K(ret));
             } else {
               // do nothing
             }
@@ -278,7 +283,7 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
             // 2. if the fist packet is an err pkt, it must be followed by an ok packet.
             //    in this case, we should also confirm the second ok packet is received competed.
             if (OB_FAIL(receive_next_ok_packet(reader, result))) {
-              LOG_WARN("fail to receive next ok packet", K(ret));
+              LOG_WDIAG("fail to receive next ok packet", K(ret));
             }
           }
         }
@@ -297,7 +302,8 @@ int ObMysqlTransactionAnalyzer::analyze_response(ObIOBufferReader &reader,
                                        && (MYSQL_EOF_PACKET_TYPE != result.meta_.pkt_type_)
                                        && (MYSQL_LOCAL_INFILE_TYPE != result.meta_.pkt_type_))))
                              || ((OB_MYSQL_COM_STMT_PREPARE == result_.get_cmd()
-                                  || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == result_.get_cmd())
+                                  || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == result_.get_cmd()
+                                  || OB_MYSQL_COM_STMT_FETCH == result_.get_cmd())
                                  && MYSQL_ERR_PACKET_TYPE != result.meta_.pkt_type_)
                              || OB_MYSQL_COM_FIELD_LIST == result_.get_cmd();
         resp->get_analyze_result().is_resultset_resp_ = is_resultset_resp_;

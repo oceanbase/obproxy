@@ -24,12 +24,12 @@ namespace common
  * proxy new error code definition:
  * proxy new error code scope: [10000， -11000)
  * proxy common error code scope: [-10000, -10100)
- * original proxy related error code scope: [-10000, -10300)
+ * original proxy related error code scope: [-10100, -10300)
  * sharding related error code scope: [-10300, -10500)
  * kv related error code scope: [-10500, -10700)
  * proxy client related error code scope: [-10700, -10900)
  */
- 
+
   static const int OB_INTERNAL_ERROR = -600;
   static const int OB_ORA_FATAL_ERROR = -603;
   static const int64_t OB_MAX_ERROR_CODE = 11000;
@@ -259,6 +259,7 @@ namespace common
   static const int OB_ERR_DOUBLE_TRUNCATED = -4262;
   static const int OB_MINOR_FREEZE_NOT_ALLOW = -4263;
   static const int OB_LOG_OUTOF_DISK_SPACE = -4264;
+  static const int OB_ERR_KILL_CLIENT_SESSION = -4401;
   static const int OB_IMPORT_NOT_IN_SERVER = -4505;
   static const int OB_CONVERT_ERROR = -4507;
   static const int OB_BYPASS_TIMEOUT = -4510;
@@ -625,6 +626,7 @@ namespace common
   static const int OB_ERR_UNEXPECTED_TZ_TRANSITION = -5296;
   static const int OB_ERR_INVALID_TIMEZONE_REGION_ID = -5341;
   static const int OB_ERR_INVALID_HEX_NUMBER = -5342;
+  static const int OB_ERR_INVALID_NUMBER_FORMAT_MODEL = -5608;
   static const int OB_ERR_YEAR_CONFLICTS_WITH_JULIAN_DATE = -5629;
   static const int OB_ERR_DAY_OF_YEAR_CONFLICTS_WITH_JULIAN_DATE = -5630;
   static const int OB_ERR_MONTH_CONFLICTS_WITH_JULIAN_DATE = -5631;
@@ -632,7 +634,7 @@ namespace common
   static const int OB_ERR_DAY_OF_WEEK_CONFLICTS_WITH_JULIAN_DATE = -5633;
   static const int OB_ERR_HOUR_CONFLICTS_WITH_SECONDS_IN_DAY = -5634;
   static const int OB_ERR_MINUTES_OF_HOUR_CONFLICTS_WITH_SECONDS_IN_DAY = -5635;
-  static const int OB_ERR_SECONDS_OF_MINUTE_CONFLICTS_WITH_SECONDS_IN_DAY = -5636;  
+  static const int OB_ERR_SECONDS_OF_MINUTE_CONFLICTS_WITH_SECONDS_IN_DAY = -5636;
   static const int OB_ERR_DATE_NOT_VALID_FOR_MONTH_SPECIFIED = -5637;
   static const int OB_ERR_INPUT_VALUE_NOT_LONG_ENOUGH = -5638;
   static const int OB_ERR_INVALID_YEAR_VALUE = -5639;
@@ -785,23 +787,40 @@ namespace common
   static const int OB_ERR_DISTRIBUTED_TRANSACTION_NOT_SUPPORTED = -8203;
   static const int OB_ERR_SHARD_DDL_UNEXPECTED = -8204;
   static const int OB_ERR_CAN_NOT_PASS_WHITELIST = -8205;
+
+  // obproxy common error code 
   static const int OB_PROXY_INTERNAL_ERROR = -10001;
   static const int OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR = -10010;
-  static const int OB_CLIENT_HANDLING_RQUEST_CONNECITON_ERROR = -10011;
-  static const int OB_CLIENT_TRANSFERING_PACKET_CONNECTION_ERROR = -10012;
+  static const int OB_CLIENT_HANDLING_REQUEST_CONNECTION_ERROR = -10011;
+  static const int OB_CLIENT_TRANSFERRING_PACKET_CONNECTION_ERROR = -10012;
   static const int OB_SERVER_BUILD_CONNECTION_ERROR = -10013;
   static const int OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR = -10014;
   static const int OB_SERVER_CONNECT_TIMEOUT = -10015;
-  static const int OB_SERVER_TRANSFERING_PACKET_CONNECTION_ERROR = -10016;
-  static const int OB_PLUGIN_TRANSFERING_ERROR = -10017;
+  static const int OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR = -10016;
+  static const int OB_PLUGIN_TRANSFERRING_ERROR = -10017;
   static const int OB_PROXY_INTERNAL_REQUEST_FAIL = -10018;
   static const int OB_PROXY_NO_NEED_RETRY = -10019;
-  static const int OB_PROXY_CHECK_CLUSTER_VERSION_FAIL = -10020;
-  static const int OB_PROXY_FETCH_RSLIST_FAIL = -10021;
+  static const int OB_PROXY_HOLD_CONNECTION = -10020;
+  static const int OB_PROXY_INVALID_USER = -10021;
   static const int OB_PROXY_INACTIVITY_TIMEOUT = -10022;
   static const int OB_PROXY_RECONNECT_COORDINATOR = -10023;
   static const int OB_PROXY_INVALID_COORDINATOR = -10024;
-  static const int OB_CONNECT_BINLOG_ERROR = -10025;
+  static const int OB_PROXY_PROXY_ID_OVER_LIMIT = -10025;
+
+  // obproxy related error code
+  static const int OB_PROXY_FETCH_RSLIST_FAIL = -10101;
+  static const int OB_CONNECT_BINLOG_ERROR = -10102;
+  static const int OB_PROXY_CLUSTER_RESOURCE_EXPIRED = -10103;
+
+  // sharding related error code
+  static const int OB_PROXY_SHARD_HINT_NOT_SUPPORTED = -10304;
+  static const int OB_PROXY_SHARD_INVALID_CONFIG = -10305;
+
+  // kv related error code 
+
+
+  // proxy client related error code  
+
 
 #define OB_SUCCESS__USER_ERROR_MSG "Success"
 #define OB_ERROR__USER_ERROR_MSG "Common error"
@@ -1020,6 +1039,7 @@ namespace common
 #define OB_ERR_DOUBLE_TRUNCATED__USER_ERROR_MSG "Truncated incorrect DOUBLE value: '%.*s'"
 #define OB_MINOR_FREEZE_NOT_ALLOW__USER_ERROR_MSG "%s"
 #define OB_LOG_OUTOF_DISK_SPACE__USER_ERROR_MSG "Log out of disk space"
+#define OB_ERR_KILL_CLIENT_SESSION__USER_ERROR_MSG "Client session interrupted"
 #define OB_IMPORT_NOT_IN_SERVER__USER_ERROR_MSG "Import not in service"
 #define OB_CONVERT_ERROR__USER_ERROR_MSG "Convert error"
 #define OB_BYPASS_TIMEOUT__USER_ERROR_MSG "Bypass timeout"
@@ -1385,6 +1405,7 @@ namespace common
 #define OB_ERR_UNEXPECTED_TZ_TRANSITION__USER_ERROR_MSG "unexpected time zone info transition"
 #define OB_ERR_INVALID_TIMEZONE_REGION_ID__USER_ERROR_MSG "timezone region ID is invalid"
 #define OB_ERR_INVALID_HEX_NUMBER__USER_ERROR_MSG "invalid hex number"
+#define OB_ERR_INVALID_NUMBER_FORMAT_MODEL__USER_ERROR_MSG "invalid number format model"
 #define OB_ERR_YEAR_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "year conflicts with Julian date"
 #define OB_ERR_DAY_OF_YEAR_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "day of year conflicts with Julian date"
 #define OB_ERR_MONTH_CONFLICTS_WITH_JULIAN_DATE__USER_ERROR_MSG "month conflicts with Julian date"
@@ -1501,22 +1522,39 @@ namespace common
 #define OB_SERVER_IS_INIT__USER_ERROR_MSG "Server is initializing"
 #define OB_SERVER_IS_STOPPING__USER_ERROR_MSG "Server is stopping"
 #define OB_PACKET_CHECKSUM_ERROR__USER_ERROR_MSG "Packet checksum error"
+
+// obproxy common error code 
 #define OB_PROXY_INTERNAL_ERROR__USER_ERROR_MSG "An internal error occured in obproxy"
-#define OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event received from client while obproxy reading request"
-#define OB_CLIENT_HANDLING_RQUEST_CONNECITON_ERROR__USER_ERROR_MSG "An EOS event received from client while obproxy handling response"
-#define OB_CLIENT_TRANSFERING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event received from client while obproxy transfering response"
-#define OB_SERVER_BUILD_CONNECTION_ERROR__USER_ERROR_MSG "Fail to build connection to observer"
-#define OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event received while proxy reading response"
-#define OB_SERVER_CONNECT_TIMEOUT__USER_ERROR_MSG "An INACTIVITY_TIMEOUT event received while proxy reading response"
-#define OB_SERVER_TRANSFERING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An EOS event eceived while proxy transfering response"
-#define OB_PLUGIN_TRANSFERING_ERROR__USER_ERROR_MSG "OBProxy plugin transfering failed"
+#define OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An unexpected connection event received from client while obproxy reading request"
+#define OB_CLIENT_HANDLING_REQUEST_CONNECITON_ERROR__USER_ERROR_MSG "An unexpected connection event received from client while obproxy handling response"
+#define OB_CLIENT_TRANSFERRING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An unexpected connection event received from client while obproxy transferring response"
+#define OB_SERVER_BUILD_CONNECTION_ERROR__USER_ERROR_MSG "OBProxy fail to build connection to observer"
+#define OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An unexpected connection event received while obproxy reading response"
+#define OB_SERVER_CONNECT_TIMEOUT__USER_ERROR_MSG "An timeout event received while obproxy reading response"
+#define OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An unexpected connection event received while obproxy transferring request"
+#define OB_PLUGIN_TRANSFERRING_ERROR__USER_ERROR_MSG "OBProxy plugin transferring failed"
 #define OB_PROXY_INTERNAL_REQUEST_FAIL__USER_ERROR_MSG "OBProxy internal request execution failed"
-#define OB_PROXY_NO_NEED_RETRY__USER_ERROR_MSG  "OBProxy reached the maximum number of retrying request"
-#define OB_PROXY_CHECK_CLUSTER_VERSION_FAIL__USER_ERROR_MSG "OBProxy fetch root server list failed"
-#define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "OBProxy fetch root server list failed"
+#define OB_PROXY_NO_NEED_RETRY__USER_ERROR_MSG  "OBProxy cannot retry this request"
+#define OB_PROXY_HOLD_CONNECTION__USER_ERROR_MSG "OBProxy internal error occured"
+#define OB_PROXY_INVALID_USER__USER_ERROR_MSG "Invalid obproxy user"
 #define OB_PROXY_INACTIVITY_TIMEOUT__USER_ERROR_MSG "OBProxy inactivity timeout"
-#define OB_PROXY_RECONNECT_COORDINATOR__USER_ERROR_MSG "OBproxy try to reconnect coordinator in transaction"
-#define OB_PROXY_INVALID_COORDINATOR__USER_ERROR_MSG "OBProxy coordinator is invalid"
+#define OB_PROXY_RECONNECT_COORDINATOR__USER_ERROR_MSG "OBProxy try to reconnect coordinator in transaction"
+#define OB_PROXY_INVALID_COORDINATOR__USER_ERROR_MSG "OBProxy transaction coordinator is invalid"
+#define OB_PROXY_PROXY_ID_OVER_LIMIT__USER_ERROR_MSG "When changing proxy_id or client_session_id_version and client_session_id_version is version 1, proxy_id must be set to less than 255"
+// obproxy related error code
+#define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
+#define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"
+
+// sharding related error code
+#define OB_PROXY_SHARD_HINT_NOT_SUPPORTED__USER_ERROR_MSG "ObProxy shard hint usage not supported"
+#define OB_PROXY_SHARD_INVALID_CONFIG__USER_ERROR_MSG "ObProxy shard config is invalid"
+
+// kv related error code 
+
+
+// proxy client related error code  
+
+
   const char* ob_strerror(int oberr);
   const char* ob_sqlstate(int oberr);
   const char* ob_str_user_error(int oberr);

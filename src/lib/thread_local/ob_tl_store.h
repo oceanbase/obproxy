@@ -148,13 +148,13 @@ int ObTlStore<Type, Initializer, Alloc>::SyncVector::push_back(Item *ptr)
   int ret = OB_SUCCESS;
   if (NULL == ptr) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid argument", K(ptr), K(ret));
+    LIB_LOG(WDIAG, "invalid argument", K(ptr), K(ret));
   } else {
     mutex_.lock();
     try {
       ptr_array_.push_back(ptr);
     } catch (std::bad_alloc) {
-      LIB_LOG(ERROR, "memory is not enough when push_back");
+      LIB_LOG(EDIAG, "memory is not enough when push_back");
       ret = OB_ERR_UNEXPECTED;
     }
     mutex_.unlock();
@@ -253,12 +253,12 @@ int32_t ObTlStore<Type, Initializer, Alloc>::init()
   int32_t ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LIB_LOG(ERROR, "ObTlStore has already initialized.", K(ret));
+    LIB_LOG(EDIAG, "ObTlStore has already initialized.", K(ret));
   } else {
     if (INVALID_THREAD_KEY == key_) {
       int err = pthread_key_create(&key_, NULL);
       if (0 != err) {
-        LIB_LOG(ERROR, "pthread_key_create error", KERRNOMSGS(err));
+        LIB_LOG(EDIAG, "pthread_key_create error", KERRNOMSGS(err));
         if (errno == ENOMEM) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
         } else {
@@ -268,7 +268,7 @@ int32_t ObTlStore<Type, Initializer, Alloc>::init()
         is_inited_ = true;
       }
     } else {
-      LIB_LOG(ERROR, "key_ should be INVALID_THREAD_KEY");
+      LIB_LOG(EDIAG, "key_ should be INVALID_THREAD_KEY");
       ret = OB_ERR_UNEXPECTED;
     }
   }
@@ -284,7 +284,7 @@ void ObTlStore<Type, Initializer, Alloc>::destroy()
       //if (NULL != mem) destroy_object(mem);
       int err = pthread_key_delete(key_);
       if (err != 0) {
-        LIB_LOG(ERROR, "pthread_key_delete error", KERRNOMSGS(err));
+        LIB_LOG(EDIAG, "pthread_key_delete error", KERRNOMSGS(err));
       }
       key_ = INVALID_THREAD_KEY;
     }
@@ -299,9 +299,9 @@ Type *ObTlStore<Type, Initializer, Alloc>::get()
 {
   Type *ret = NULL;
   if (!is_inited_) {
-    LIB_LOG(ERROR, "ObTlStore has not been initialized");
+    LIB_LOG(EDIAG, "ObTlStore has not been initialized");
   } else if (OB_UNLIKELY(INVALID_THREAD_KEY == key_)) {
-    LIB_LOG(ERROR, "ObTlStore thread key is invalid");
+    LIB_LOG(EDIAG, "ObTlStore thread key is invalid");
   } else {
     Item *item = reinterpret_cast<Item *>(pthread_getspecific(key_));
     if (OB_UNLIKELY(NULL == item)) {
@@ -331,7 +331,7 @@ int ObTlStore<Type, Initializer, Alloc>::for_each_obj_ptr(Function &f) const
 {
   int ret = OB_SUCCESS;
   if (!is_inited_) {
-    LIB_LOG(ERROR, "ObTlStore has not been initialized");
+    LIB_LOG(EDIAG, "ObTlStore has not been initialized");
     ret = OB_ERR_UNEXPECTED;
   } else {
     ObjPtrAdapter<Function> opa(f);
@@ -346,7 +346,7 @@ int ObTlStore<Type, Initializer, Alloc>::for_each_item_ptr(Function &f) const
 {
   int ret = OB_SUCCESS;
   if (!is_inited_) {
-    LIB_LOG(ERROR, "ObTlStore has not been initialized");
+    LIB_LOG(EDIAG, "ObTlStore has not been initialized");
     ret = OB_ERR_UNEXPECTED;
   } else {
     ret = ptr_array_.for_each(f);

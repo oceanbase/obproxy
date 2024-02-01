@@ -59,9 +59,9 @@ static void *spawn_thread_internal(void *a)
     ObThreadDataInternal *p = reinterpret_cast<ObThreadDataInternal *>(a);
 
     if(OB_FAIL(p->me_->set_specific())) {
-      LOG_ERROR("failed to set_specific for thread", "name", p->name_, K(ret));
+      LOG_EDIAG("failed to set_specific for thread", "name", p->name_, K(ret));
     } else if (OB_FAIL(set_thread_name(p->name_))) {
-      LOG_ERROR("failed to set_thread_name", "name", p->name_, K(ret));
+      LOG_EDIAG("failed to set_thread_name", "name", p->name_, K(ret));
     } else {
       if (NULL != p->f_) {
         p->f_(p->a_);
@@ -81,7 +81,7 @@ int ObThread::start(const char *name, const int64_t stacksize, ThreadFunction f,
 
   if (OB_ISNULL(p = new(std::nothrow) ObThreadDataInternal())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("failed to allocate memory for thread data", K(ret));
+    LOG_EDIAG("failed to allocate memory for thread data", K(ret));
   } else {
     p->f_ = f;
     p->a_ = a;
@@ -89,11 +89,11 @@ int ObThread::start(const char *name, const int64_t stacksize, ThreadFunction f,
     int32_t len = snprintf(p->name_, MAX_THREAD_NAME_LENGTH, "%s", name);
     if (len <= 0 || len >= MAX_THREAD_NAME_LENGTH) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("failed format thread name", K(len), K(MAX_THREAD_NAME_LENGTH), K(ret));
+      LOG_WDIAG("failed format thread name", K(len), K(MAX_THREAD_NAME_LENGTH), K(ret));
     } else {
       if ((tid_ = thread_create(spawn_thread_internal, (void *)p, 0, stacksize)) <= 0) {
         ret = OB_ERR_SYS;
-        LOG_ERROR("failed to create thread", K(ret));
+        LOG_EDIAG("failed to create thread", K(ret));
       }
     }
   }

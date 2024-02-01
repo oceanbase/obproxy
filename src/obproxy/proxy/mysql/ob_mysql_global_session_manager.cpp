@@ -15,6 +15,7 @@
 #include "lib/ob_define.h"
 #include "obutils/ob_config_server_processor.h"
 #include "obutils/ob_proxy_config.h"
+#include "proxy/mysql/ob_mysql_debug_names.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -52,12 +53,12 @@ int ObMysqlServerSessionList::init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(server_session_list_.init("ObMysqlServerSessionList list",
                                         reinterpret_cast<int64_t>(&(reinterpret_cast<ObMysqlServerSession*>(0))->ip_list_link_)))) {
-    LOG_WARN("fail to init server_session_list_", K(ret));
+    LOG_WDIAG("fail to init server_session_list_", K(ret));
   }
   ObProxyMutex *mutex = NULL;
   if (OB_ISNULL(mutex = new_proxy_mutex(CLIENT_VC_LOCK))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mutex", K(ret));
+    LOG_WDIAG("fail to allocate mutex", K(ret));
   } else {
     mutex_ = mutex;
   }
@@ -70,7 +71,7 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("data is null", K(ret));
+    LOG_WDIAG("data is null", K(ret));
   } else {
     switch (event) {
     case VC_EVENT_READ_READY:
@@ -87,7 +88,7 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
 
     default:
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("invalid event", K(event), K(ret));
+      LOG_WDIAG("invalid event", K(event), K(ret));
       break;
     }
   }
@@ -97,7 +98,7 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
     ObIpEndpoint server_ip(net_vc->get_remote_addr());
     hash_key.local_ip_ = &local_ip;
     hash_key.server_ip_ = &server_ip;
-    LOG_DEBUG("Enter main_handler", K(event), "event:", get_vc_event_name(event), K(local_ip), K(server_ip));
+    LOG_DEBUG("Enter main_handler", K(event), "event:", ObMysqlDebugNames::get_event_name(event), K(local_ip), K(server_ip));
     bool found = false;
     {
       //code block for lock
@@ -113,7 +114,7 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
           if (OB_FAIL(remove_from_list(ss))) {
             //impossible happen here
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("no server_session found in shared pool", K(ret));
+            LOG_WDIAG("no server_session found in shared pool", K(ret));
           }
           // Drop connection on this end.
           //mark has lock to prevent double lock in remove
@@ -129,7 +130,7 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
       // We failed to find our session.  This can only be the result
       // of a programming flaw
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("Connection leak from mysql keep-alive system", K(ret));
+      LOG_WDIAG("Connection leak from mysql keep-alive system", K(ret));
     }
   }
   return VC_EVENT_NONE;
@@ -140,7 +141,7 @@ void ObMysqlServerSessionList::purge_session_list()
   while (!server_session_list_.empty()) {
     ObMysqlServerSession* session = (ObMysqlServerSession*)server_session_list_.pop();
     if (OB_ISNULL(session)) {
-      LOG_WARN("unexpected session is NULL");
+      LOG_WDIAG("unexpected session is NULL");
     } else {
       // will remove from local_ip_pool when close
       session->has_global_session_lock_ = true;
@@ -160,7 +161,7 @@ void ObMysqlServerSessionList::do_kill_session()
   for (; spot != last; ++spot) {
     session = &(*spot);
     if (OB_ISNULL(session)) {
-      LOG_WARN("unexpected session is NULL", K(common_addr_));
+      LOG_WDIAG("unexpected session is NULL", K(common_addr_));
     } else {
       local_ip.assign(session->get_netvc()->get_local_addr());
       LOG_DEBUG("kill sesion", K(local_ip), K(common_addr_));
@@ -177,14 +178,14 @@ int ObMysqlServerSessionList::add_server_session(ObMysqlServerSession* server_se
   int ret = OB_SUCCESS;
   if (OB_ISNULL(server_session)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("server_session is null, invalid argument");
+    LOG_WDIAG("server_session is null, invalid argument");
   } else {
     net::ObIpEndpoint local_ip;
     local_ip.assign(server_session->get_netvc()->get_local_addr());
     DRWLock::WRLockGuard guard(rwlock_);
     ret = local_ip_pool_.set_refactored(server_session);
     if (ret != OB_SUCCESS && ret != OB_HASH_EXIST) {
-      LOG_WARN("add to local_ip_pool_ failed", K(ret), K(local_ip));
+      LOG_WDIAG("add to local_ip_pool_ failed", K(ret), K(local_ip));
     } else {
       ret = OB_SUCCESS;
       ATOMIC_INC(&total_count_);
@@ -204,7 +205,7 @@ int ObMysqlServerSessionList::remove_server_session(const ObMysqlServerSession* 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(server_session)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("server_session is null, invalid argument");
+    LOG_WDIAG("server_session is null, invalid argument");
   } else if (server_session->has_global_session_lock_) {
     ret =  remove_server_session_internal(server_session);
   } else {
@@ -258,17 +259,17 @@ int ObMysqlServerSessionList::release_to_list(ObMysqlServerSession& server_sessi
   // continuation for this bucket, ensuring we have the lock
   if (OB_ISNULL(server_vc)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("server vc is null", K(ret));
+    LOG_WDIAG("server vc is null", K(ret));
   } else if (!server_vc->read_.enabled_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("not expected state");
+    LOG_WDIAG("not expected state");
   } else if (OB_ISNULL(server_session.do_io_read(this, INT64_MAX, server_session.read_buffer_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("do_io_read error", K(ret));
+    LOG_WDIAG("do_io_read error", K(ret));
   } else if (OB_ISNULL(server_session.do_io_write(this, 0, NULL))) {
     // Transfer control of the write side as well
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("do_io_write error", K(ret));
+    LOG_WDIAG("do_io_write error", K(ret));
   } else {
     // we probably don't need the active timeout set, but will leave it for now
     if (total_count_ > ObMysqlSessionUtils::get_session_max_conn(server_session.schema_key_)) {
@@ -295,7 +296,7 @@ int ObMysqlServerSessionList::remove_from_list(ObMysqlServerSession* server_sess
   // is locked in main_handler
   ObMysqlServerSession* ss_to_remove = NULL;
   if (OB_ISNULL(ss_to_remove = (ObMysqlServerSession*)server_session_list_.remove(server_session))) {
-    LOG_WARN("should not null here", K(server_session->ss_id_), K(server_session->auth_user_),
+    LOG_WDIAG("should not null here", K(server_session->ss_id_), K(server_session->auth_user_),
              K(server_session->server_ip_));
   } else {
     int64_t old_count = free_count_;
@@ -420,7 +421,7 @@ int ObMysqlServerSessionListPool::accquire_server_seession_list(const ObCommonAd
   if (OB_FAIL(server_session_list_pool_.get_refactored(key, ss_list))) {
   } else if (OB_ISNULL(ss_list)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null", K(key), K(ret));
+    LOG_WDIAG("unexpected null", K(key), K(ret));
   } else {
     ss_list->inc_ref();
   }
@@ -539,7 +540,7 @@ int  ObMysqlServerSessionListPool::do_kill_session_by_ssid(int64_t ss_id)
     for (; !found && ss_spot != ss_last; ++ss_spot) {
       ObMysqlServerSession* session = &(*ss_spot);
       if (OB_ISNULL(session)) {
-        LOG_WARN("unexpected session is NULL", K(server_session_list->server_ip_));
+        LOG_WDIAG("unexpected session is NULL", K(server_session_list->server_ip_));
       } else if (session->ss_id_ == ss_id){
         found = true;
         net::ObIpEndpoint local_ip;
@@ -570,10 +571,10 @@ int ObMysqlServerSessionListPool::add_server_session(ObMysqlServerSession& ss)
     DRWLock::WRLockGuard guard(rwlock_);
     if (OB_FAIL(server_session_list_pool_.get_refactored(common_addr, ss_list))) {
       if (OB_ISNULL(ss_list = op_alloc(ObMysqlServerSessionList))) {
-        LOG_ERROR("fail to allocate ", K(dbkey));
+        LOG_EDIAG("fail to allocate ", K(dbkey));
         ret = OB_ALLOCATE_MEMORY_FAILED;
       } else if (OB_FAIL(ss_list->init())) {
-        LOG_ERROR("fail to init ss_list", K(dbkey));
+        LOG_EDIAG("fail to init ss_list", K(dbkey));
         ret = OB_ERR_UNEXPECTED;
         op_free(ss_list);
         ss_list = NULL;
@@ -583,7 +584,7 @@ int ObMysqlServerSessionListPool::add_server_session(ObMysqlServerSession& ss)
         ss_list->common_addr_ = ss.common_addr_;
         ss_list->inc_ref();
         if (OB_FAIL(server_session_list_pool_.unique_set(ss_list))) {
-          LOG_WARN("add to map failed", K(common_addr), K(ret));
+          LOG_WDIAG("add to map failed", K(common_addr), K(ret));
           ss_list->dec_ref();
           ss_list = NULL;
           ret = OB_ERR_UNEXPECTED;
@@ -594,7 +595,7 @@ int ObMysqlServerSessionListPool::add_server_session(ObMysqlServerSession& ss)
       }
     }
   } else if (OB_ISNULL(ss_list)) {
-    LOG_WARN("ss_list should not null here", K(dbkey));
+    LOG_WDIAG("ss_list should not null here", K(dbkey));
     ret = OB_ERR_UNEXPECTED;
   }
   if (OB_SUCC(ret)) {
@@ -618,10 +619,10 @@ int ObMysqlServerSessionListPool::remove_server_session(const ObMysqlServerSessi
   const ObCommonAddr& key = ss.common_addr_;
   ObMysqlServerSessionList* ss_list = NULL;
   if (OB_FAIL(accquire_server_seession_list(key, ss_list))) {
-    LOG_WARN("not in map", K(dbkey));
+    LOG_WDIAG("not in map", K(dbkey));
   } else if (OB_ISNULL(ss_list)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("session_list is null", K(dbkey));
+    LOG_WDIAG("session_list is null", K(dbkey));
   } else {
     if (ss.state_ == MSS_ACTIVE || ss.state_ == MSS_KA_CLIENT_SLAVE) {
       decr_client_session_count();
@@ -639,7 +640,7 @@ int ObMysqlServerSessionListPool::add_server_addr_if_not_exist(const common::ObS
   int ret = OB_SUCCESS;
   if (OB_ISNULL(schema_server_addr_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(server_ip), K(server_port));
+    LOG_WDIAG("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(server_ip), K(server_port));
   } else {
     ret = schema_server_addr_info_->add_server_addr_if_not_exist(server_ip, server_port, is_physical);
   }
@@ -650,7 +651,7 @@ int ObMysqlServerSessionListPool::add_server_addr_if_not_exist(const ObCommonAdd
   int ret = OB_SUCCESS;
   if (OB_ISNULL(schema_server_addr_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(common_addr));
+    LOG_WDIAG("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(common_addr));
   } else {
     ret = schema_server_addr_info_->add_server_addr_if_not_exist(common_addr);
   }
@@ -663,7 +664,7 @@ int ObMysqlServerSessionListPool::remove_server_addr_if_exist(const common::ObSt
   int ret = OB_SUCCESS;
   if (OB_ISNULL(schema_server_addr_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(server_ip), K(server_port));
+    LOG_WDIAG("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(server_ip), K(server_port));
   } else {
     ret = schema_server_addr_info_->remove_server_addr_if_exist(server_ip, server_port, is_physical);
   }
@@ -675,7 +676,7 @@ int ObMysqlServerSessionListPool::remove_server_addr_if_exist(const ObCommonAddr
   int ret = OB_SUCCESS;
   if (OB_ISNULL(schema_server_addr_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(common_addr));
+    LOG_WDIAG("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(common_addr));
   } else {
     ret = schema_server_addr_info_->remove_server_addr_if_exist(common_addr);
   }
@@ -687,7 +688,7 @@ int ObMysqlServerSessionListPool::incr_fail_count(const ObCommonAddr& addr)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(schema_server_addr_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(addr));
   } else {
     ret = schema_server_addr_info_->incr_fail_count(addr);
   }
@@ -696,7 +697,7 @@ int ObMysqlServerSessionListPool::incr_fail_count(const ObCommonAddr& addr)
 void ObMysqlServerSessionListPool::reset_fail_count(const ObCommonAddr& addr)
 {
   if (OB_ISNULL(schema_server_addr_info_)) {
-    LOG_WARN("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(addr));
   } else {
     schema_server_addr_info_->reset_fail_count(addr);
   }
@@ -705,7 +706,7 @@ int32_t ObMysqlServerSessionListPool::get_fail_count(const ObCommonAddr& addr)
 {
   int32_t fail_count = 0;
   if (OB_ISNULL(schema_server_addr_info_)) {
-    LOG_WARN("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("schema_server_addr_info_ is null", K(schema_key_.dbkey_), K(addr));
   } else {
     fail_count = schema_server_addr_info_->get_fail_count(addr);
   }
@@ -730,7 +731,7 @@ int ObMysqlGlobalSessionManager::purge_session_manager_keepalives(const ObString
   // code block for lock
   DRWLock::WRLockGuard guard(rwlock_);
   if (OB_ISNULL(server_session_list_pool = global_session_pool_.remove(dbkey))) {
-    LOG_WARN("get_refactored failed", K(dbkey));
+    LOG_WDIAG("get_refactored failed", K(dbkey));
     ret = OB_ERR_UNEXPECTED;
   } else {
     server_session_list_pool->dec_ref();
@@ -746,7 +747,7 @@ ObMysqlServerSessionListPool* ObMysqlGlobalSessionManager::get_server_session_li
   if (OB_FAIL(global_session_pool_.get_refactored(dbkey, server_session_list_pool))) {
     LOG_DEBUG("not in map", K(dbkey));
   } else if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WARN("can not null here", K(dbkey));
+    LOG_WDIAG("can not null here", K(dbkey));
     ret = OB_ERR_UNEXPECTED;
   } else {
     server_session_list_pool->inc_ref();
@@ -763,7 +764,7 @@ int ObMysqlGlobalSessionManager::do_close_extra_session_conn(const ObProxySchema
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("can not be this, in map can not null", K(dbkey));
+    LOG_WDIAG("can not be this, in map can not null", K(dbkey));
   } else {
     ret = server_session_list_pool->do_close_extra_session_conn(common_addr_, need_close_num);
     server_session_list_pool->dec_ref();
@@ -781,15 +782,15 @@ int ObMysqlGlobalSessionManager::add_schema_if_not_exist(const ObProxySchemaKey&
     LOG_DEBUG("not in map, will alloc now", K(dbkey));
     if (OB_ISNULL(server_session_list_pool = op_alloc(ObMysqlServerSessionListPool))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("allocate fail", K(dbkey));
+      LOG_EDIAG("allocate fail", K(dbkey));
     } else if (OB_FAIL(server_session_list_pool->init(schema_key))) {
       op_free(server_session_list_pool);
       server_session_list_pool = NULL;
-      LOG_WARN("fail to init server_session_list_pool", K(dbkey));
+      LOG_WDIAG("fail to init server_session_list_pool", K(dbkey));
     } else {
       server_session_list_pool->inc_ref();
       if (OB_FAIL(global_session_pool_.unique_set(server_session_list_pool))) {
-        LOG_WARN("add to map failed", K(ret), K(dbkey));
+        LOG_WDIAG("add to map failed", K(ret), K(dbkey));
         server_session_list_pool->dec_ref();
         server_session_list_pool = NULL;
       } else {
@@ -827,7 +828,7 @@ int ObMysqlGlobalSessionManager::add_server_session(ObMysqlServerSession& server
   int ret = OB_SUCCESS;
   const ObString& dbkey = server_session.schema_key_.dbkey_.config_string_;
   if (dbkey.empty()) {
-    LOG_WARN("dbkey should not empty");
+    LOG_WDIAG("dbkey should not empty");
     ret = OB_ERR_UNEXPECTED;
     return ret;
   }
@@ -852,7 +853,7 @@ int ObMysqlGlobalSessionManager::remove_server_session(const ObMysqlServerSessio
   const ObString& dbkey = server_session.schema_key_.dbkey_.config_string_;
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WARN("invalid, should not null here", K(dbkey));
+    LOG_WDIAG("invalid, should not null here", K(dbkey));
   } else {
     LOG_DEBUG("remove_server_session ", K(dbkey));
     ret = server_session_list_pool->remove_server_session(server_session);
@@ -870,12 +871,12 @@ int ObMysqlGlobalSessionManager::acquire_server_session(const ObProxySchemaKey& 
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
     if (OB_FAIL(add_schema_if_not_exist(schema_key, server_session_list_pool))) {
-      LOG_WARN("add schema failed when not exist", K(dbkey), K(auth_user));
+      LOG_WDIAG("add schema failed when not exist", K(dbkey), K(auth_user));
     }
   }
   if (OB_ISNULL(server_session_list_pool)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("should not null here", K(dbkey), K(auth_user));
+    LOG_WDIAG("should not null here", K(dbkey), K(auth_user));
   } else {
     ret = server_session_list_pool->acquire_server_session(addr, auth_user, server_session, new_client);
     server_session_list_pool->dec_ref();
@@ -890,11 +891,11 @@ int ObMysqlGlobalSessionManager::release_session(ObMysqlServerSession &to_releas
   ObMysqlServerSessionListPool* server_session_list_pool = NULL;
   LOG_DEBUG("release_session", K(dbkey));
   if (dbkey.empty()) {
-    LOG_WARN("dbkey should not empty");
+    LOG_WDIAG("dbkey should not empty");
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_ISNULL(server_session_list_pool = get_server_session_list_pool(dbkey))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("server_session_list_pool is null, should not here", K(dbkey));
+    LOG_WDIAG("server_session_list_pool is null, should not here", K(dbkey));
   } else {
     ret = server_session_list_pool->release_session(to_release);
     server_session_list_pool->dec_ref();
@@ -912,7 +913,7 @@ int64_t ObMysqlGlobalSessionManager::get_current_session_conn_count(const common
   int64_t conn_count = 0;
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WARN("server_session_list_pool is null, should not here", K(dbkey));
+    LOG_WDIAG("server_session_list_pool is null, should not here", K(dbkey));
   } else {
     conn_count = server_session_list_pool->get_current_session_conn_count(common_addr);
     server_session_list_pool->dec_ref();
@@ -932,11 +933,11 @@ int ObMysqlGlobalSessionManager::add_server_addr_if_not_exist(const ObProxySchem
     ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
     if (OB_ISNULL(server_session_list_pool)) {
       if (OB_FAIL(add_schema_if_not_exist(schema_key, server_session_list_pool))) {
-        LOG_WARN("add_schema_if_not_exist fail", K(schema_key.dbkey_), K(server_ip), K(server_port));
+        LOG_WDIAG("add_schema_if_not_exist fail", K(schema_key.dbkey_), K(server_ip), K(server_port));
       }
     }
     if (OB_ISNULL(server_session_list_pool)) {
-      LOG_WARN("here should not null", K(dbkey), K(server_ip), K(server_port));
+      LOG_WDIAG("here should not null", K(dbkey), K(server_ip), K(server_port));
       ret = OB_ERR_UNEXPECTED;
     } else {
       ret = server_session_list_pool->add_server_addr_if_not_exist(server_ip, server_port, is_physical);
@@ -953,7 +954,7 @@ int ObMysqlGlobalSessionManager::incr_fail_count(const common::ObString& dbkey, 
   int ret = OB_SUCCESS;
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WARN("can not be this, in map is null", K(dbkey), K(addr));
+    LOG_WDIAG("can not be this, in map is null", K(dbkey), K(addr));
     ret = OB_ERR_UNEXPECTED;
   } else {
     ret = server_session_list_pool->incr_fail_count(addr);
@@ -967,7 +968,7 @@ void ObMysqlGlobalSessionManager::reset_fail_count(const common::ObString& dbkey
 {
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WARN("can not be this, in map is null", K(dbkey), K(addr));
+    LOG_WDIAG("can not be this, in map is null", K(dbkey), K(addr));
   } else {
     server_session_list_pool->reset_fail_count(addr);
     server_session_list_pool->dec_ref();
@@ -980,7 +981,7 @@ int32_t ObMysqlGlobalSessionManager::get_fail_count(const common::ObString& dbke
   int32_t fail_count = 0;
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WARN("can not be this, in map is null", K(dbkey), K(addr));
+    LOG_WDIAG("can not be this, in map is null", K(dbkey), K(addr));
   } else {
     fail_count = server_session_list_pool->get_fail_count(addr);
     server_session_list_pool->dec_ref();
@@ -995,7 +996,7 @@ ObMysqlSchemaServerAddrInfo* ObMysqlGlobalSessionManager::acquire_scheme_server_
   const common::ObString& dbkey = schema_key.dbkey_.config_string_;
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WARN("can not be this, in map is null", K(dbkey));
+    LOG_WDIAG("can not be this, in map is null", K(dbkey));
   } else {
     server_addr_info = server_session_list_pool->schema_server_addr_info_;
     server_addr_info->inc_ref();

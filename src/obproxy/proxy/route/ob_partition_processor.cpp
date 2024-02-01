@@ -86,7 +86,7 @@ inline int ObPartitionEntryCont::init(ObPartitionParam &param)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid partition param", K(param), K(ret));
+    LOG_WDIAG("invalid partition param", K(param), K(ret));
   } else {
     param_.deep_copy(param);
     action_.set_continuation(param.cont_);
@@ -102,7 +102,7 @@ void ObPartitionEntryCont::kill_this()
   int ret = OB_SUCCESS;
   if (NULL != pending_action_) {
     if (OB_FAIL(pending_action_->cancel())) {
-      LOG_WARN("fail to cancel pending action", K_(pending_action), K(ret));
+      LOG_WDIAG("fail to cancel pending action", K_(pending_action), K(ret));
     } else {
       pending_action_ = NULL;
     }
@@ -169,29 +169,29 @@ int ObPartitionEntryCont::main_handler(int event, void *data)
             "event", get_event_name(event), K(data));
   if (OB_CONT_MAGIC_ALIVE != magic_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this partition entry cont is dead", K_(magic), K(ret));
+    LOG_EDIAG("this partition entry cont is dead", K_(magic), K(ret));
   } else if (this_ethread() != mutex_->thread_holding_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(ret));
   } else {
     pending_action_ = NULL;
     switch (event) {
       case PARTITION_ENTRY_LOOKUP_START_EVENT: {
         if (OB_FAIL(start_lookup_table_entry())) {
-          LOG_WARN("fail to start lookup table entry", K(ret));
+          LOG_WDIAG("fail to start lookup table entry", K(ret));
         }
         break;
       }
       case PARTITION_ENTRY_LOOKUP_CACHE_EVENT: {
         if (OB_FAIL(lookup_entry_in_cache())) {
-          LOG_WARN("fail to lookup enty in cache", K(ret));
+          LOG_WDIAG("fail to lookup enty in cache", K(ret));
         }
         break;
       }
       case PARTITION_ENTRY_LOOKUP_REMOTE_EVENT: {
         if (OB_FAIL(lookup_entry_remote())) {
-          LOG_WARN("fail to lookup enty remote", K(ret));
+          LOG_WDIAG("fail to lookup enty remote", K(ret));
         }
         break;
       }
@@ -203,21 +203,21 @@ int ObPartitionEntryCont::main_handler(int event, void *data)
       __attribute__ ((fallthrough));
       case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
         if (OB_FAIL(handle_client_resp(data))) {
-          LOG_WARN("fail to handle client resp", K(ret));
+          LOG_WDIAG("fail to handle client resp", K(ret));
         } else if (OB_FAIL(notify_caller())) {
-          LOG_WARN("fail to notify caller result", K(ret));
+          LOG_WDIAG("fail to notify caller result", K(ret));
         }
         break;
       }
       case PARTITION_ENTRY_LOOKUP_CACHE_DONE: {
         if (OB_FAIL(handle_lookup_cache_done())) {
-          LOG_WARN("fail to handle lookup cache done", K(ret));
+          LOG_WDIAG("fail to handle lookup cache done", K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknow event", K(event), K(data), K(ret));
+        LOG_WDIAG("unknow event", K(event), K(data), K(ret));
         break;
       }
     }
@@ -231,7 +231,7 @@ int ObPartitionEntryCont::main_handler(int event, void *data)
     }
     param_.result_.is_from_remote_ = false;
     if (OB_FAIL(notify_caller())) {
-      LOG_WARN("fail to notify caller result", K(ret));
+      LOG_WDIAG("fail to notify caller result", K(ret));
     }
   }
 
@@ -248,11 +248,11 @@ int ObPartitionEntryCont::start_lookup_table_entry()
 
   if (param_.need_fetch_from_remote()) {
     if (OB_FAIL(lookup_entry_remote())) {
-      LOG_WARN("fail to lookup enty remote", K(ret));
+      LOG_WDIAG("fail to lookup enty remote", K(ret));
     }
   } else {
     if (OB_FAIL(lookup_entry_in_cache())) {
-      LOG_WARN("fail to lookup enty in cache", K(ret));
+      LOG_WDIAG("fail to lookup enty in cache", K(ret));
     }
   }
   return ret;
@@ -270,13 +270,13 @@ int ObPartitionEntryCont::handle_client_resp(void *data)
     ObPartitionEntry *entry = NULL;
     if (resp->is_resultset_resp()) {
       if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher))) {
-        LOG_WARN("fail to get resultset fetcher", K(ret));
+        LOG_WDIAG("fail to get resultset fetcher", K(ret));
       } else if (OB_ISNULL(rs_fetcher)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("rs_fetcher and entry can not be NULL", K(rs_fetcher), K(entry), K(ret));
+        LOG_WDIAG("rs_fetcher and entry can not be NULL", K(rs_fetcher), K(entry), K(ret));
       } else if (OB_FAIL(ObRouteUtils::fetch_one_partition_entry_info(
               *rs_fetcher, *param_.get_table_entry(), entry, param_.cluster_version_))) {
-        LOG_WARN("fail to fetch one partition entry info", K(ret));
+        LOG_WDIAG("fail to fetch one partition entry info", K(ret));
       } else if (NULL == entry) {
         PROCESSOR_INCREMENT_DYN_STAT(GET_PARTITION_ENTRY_FROM_REMOTE_FAIL);
         ROUTE_PROMETHEUS_STAT(param_.get_table_entry()->get_names(), PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_ENTRY, false, false);
@@ -288,7 +288,7 @@ int ObPartitionEntryCont::handle_client_resp(void *data)
           entry->renew_last_update_time();
         }
         if (OB_FAIL(get_global_partition_cache().add_partition_entry(*entry, false))) {
-          LOG_WARN("fail to add table entry", KPC(entry), K(ret));
+          LOG_WDIAG("fail to add table entry", KPC(entry), K(ret));
           entry->dec_ref(); // paired the ref count above
         } else {
           LOG_INFO("get partition entry from remote succ", KPC(entry));
@@ -328,7 +328,7 @@ int ObPartitionEntryCont::handle_client_resp(void *data)
       PROCESSOR_INCREMENT_DYN_STAT(GET_PARTITION_ENTRY_FROM_REMOTE_FAIL);
       ROUTE_PROMETHEUS_STAT(param_.get_table_entry()->get_names(), PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_ENTRY, false, false);
       const int64_t error_code = resp->get_err_code();
-      LOG_WARN("fail to get partition entry from remote", K(table_name),
+      LOG_WDIAG("fail to get partition entry from remote", K(table_name),
                K(partition_id), K(error_code));
     }
 
@@ -375,7 +375,7 @@ int ObPartitionEntryCont::handle_client_resp(void *data)
              K(is_add_succ), K(key));
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = get_global_partition_cache().remove_partition_entry(key))) {
-      LOG_WARN("fail to remove part entry", K(key), K(ret), K(tmp_ret));
+      LOG_WDIAG("fail to remove part entry", K(key), K(ret), K(tmp_ret));
       if (OB_SUCC(ret)) {
         ret = tmp_ret;
       }
@@ -399,7 +399,7 @@ int ObPartitionEntryCont::handle_lookup_cache_done()
     int64_t diff_us = hrtime_to_usec(get_hrtime()) - gcached_entry_->get_create_time_us();
     // just for defense
     if (diff_us > (6 * 60 * 1000 * 1000)) { // 6min
-      LOG_ERROR("building state entry has cost so mutch time, will fetch from"
+      LOG_EDIAG("building state entry has cost so mutch time, will fetch from"
                 " remote again", K(diff_us), K_(param));
       need_notify_caller = false;
     }
@@ -447,7 +447,7 @@ int ObPartitionEntryCont::handle_lookup_cache_done()
       param_.result_.target_entry_ = gcached_entry_;
       gcached_entry_ = NULL;
       if (OB_FAIL(notify_caller())) { // notify_caller
-        LOG_WARN("fail to notify caller", K(ret));
+        LOG_WDIAG("fail to notify caller", K(ret));
       }
     } else {
       if (OB_SUCC(ret) && NULL != param_.result_.target_old_entry_) {
@@ -469,7 +469,7 @@ int ObPartitionEntryCont::handle_lookup_cache_done()
       }
 
       if (OB_SUCC(ret) && OB_FAIL(lookup_entry_remote())) {
-        LOG_WARN("fail to lookup enty remote", K(ret));
+        LOG_WDIAG("fail to lookup enty remote", K(ret));
       }
     }
   }
@@ -487,11 +487,11 @@ int ObPartitionEntryCont::lookup_entry_remote()
   if (OB_FAIL(ObRouteUtils::get_partition_entry_sql(sql, OB_SHORT_SQL_LENGTH,
                  param_.get_table_entry()->get_names(), param_.partition_id_,
                  param_.is_need_force_flush_, param_.cluster_version_))) {
-    LOG_WARN("fail to get table entry sql", K(sql), K(ret));
+    LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, param_.current_idc_name_);
     if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-      LOG_WARN("fail to nonblock read", K(sql), K_(param), K(ret));
+      LOG_WDIAG("fail to nonblock read", K(sql), K_(param), K(ret));
     }
   }
 
@@ -500,7 +500,7 @@ int ObPartitionEntryCont::lookup_entry_remote()
     // just treat as execute failed
     if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, PARTITION_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule imm", K(ret));
+      LOG_WDIAG("fail to schedule imm", K(ret));
     }
   }
   return ret;
@@ -521,10 +521,10 @@ int ObPartitionEntryCont::lookup_entry_in_cache()
     if (NULL != action) {
       pending_action_ = action;
     } else if (OB_FAIL(handle_lookup_cache_done())) {
-      LOG_WARN("fail to handle lookup cache done", K(ret));
+      LOG_WDIAG("fail to handle lookup cache done", K(ret));
     }
   } else {
-    LOG_WARN("fail to get partition loaction entry", K_(param), K(ret));
+    LOG_WDIAG("fail to get partition loaction entry", K_(param), K(ret));
   }
 
   return ret;
@@ -542,7 +542,7 @@ int ObPartitionEntryCont::notify_caller()
   if (NULL != entry && entry->is_avail_state()) {
     ObPartitionRefHashMap &part_map = self_ethread().get_partition_map();
     if (OB_FAIL(part_map.set(entry))) {
-      LOG_WARN("fail to set partition map", KPC(entry), K(ret));
+      LOG_WDIAG("fail to set partition map", KPC(entry), K(ret));
       ret = OB_SUCCESS; // ignore ret
     }
   }
@@ -616,10 +616,10 @@ int ObPartitionProcessor::get_partition_entry(ObPartitionParam &param, ObAction 
   ObPartitionEntryCont *cont = NULL;
   if (OB_UNLIKELY(!param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(param), K(ret));
+    LOG_WDIAG("invalid input value", K(param), K(ret));
   // 1. find partition entry from thread cache
   } else if (OB_FAIL(get_partition_entry_from_thread_cache(param, tmp_entry))) {
-    LOG_WARN("fail to get partition entry in thread cache", K(param), K(ret));
+    LOG_WDIAG("fail to get partition entry in thread cache", K(param), K(ret));
   } else if (NULL != tmp_entry) { // thread cache hit
     ObProxyMutex *mutex_ = param.cont_->mutex_;
     PROCESSOR_INCREMENT_DYN_STAT(GET_PARTITION_ENTRY_FROM_THREAD_CACHE_HIT);
@@ -634,14 +634,14 @@ int ObPartitionProcessor::get_partition_entry(ObPartitionParam &param, ObAction 
     cont = op_alloc(ObPartitionEntryCont);
     if (OB_ISNULL(cont)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc ObPartitionEntryCont", K(ret));
+      LOG_WDIAG("fail to alloc ObPartitionEntryCont", K(ret));
     } else if (OB_FAIL(cont->init(param))) {
-      LOG_WARN("fail to init partition entry cont", K(ret));
+      LOG_WDIAG("fail to init partition entry cont", K(ret));
     } else {
       action = cont->get_action();
       if (OB_ISNULL(self_ethread().schedule_imm(cont, PARTITION_ENTRY_LOOKUP_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule imm", K(ret));
+        LOG_WDIAG("fail to schedule imm", K(ret));
       }
     }
 
@@ -686,7 +686,7 @@ int ObPartitionProcessor::get_partition_entry_from_thread_cache(
       } else if (tmp_entry->is_avail_state() || tmp_entry->is_updating_state()) { // avail
         find_succ = true;
       } else if (tmp_entry->is_building_state()) {
-        LOG_ERROR("building state partition entry can not in thread cache", KPC(tmp_entry));
+        LOG_EDIAG("building state partition entry can not in thread cache", KPC(tmp_entry));
       } else if (tmp_entry->is_dirty_state()) {
         // dirty entry need to fetch from remote
       } else {}

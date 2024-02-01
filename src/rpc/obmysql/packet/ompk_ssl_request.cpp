@@ -34,18 +34,18 @@ int OMPKSSLRequest::decode()
   //OB_ASSERT(NULL != cdata_);
   if (OB_ISNULL(cdata_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(ret), K(cdata_));
+    LOG_EDIAG("null input", K(ret), K(cdata_));
   } else if (OB_UNLIKELY(len < MIN_CAPABILITY_SIZE)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("error ssl request packet", K(len), K(pos), K(end), K(ret));
+    LOG_WDIAG("error ssl request packet", K(len), K(pos), K(end), K(ret));
   } else {
     capability_.capability_ = uint2korr(pos);
     if (OB_UNLIKELY(!capability_.cap_flags_.OB_CLIENT_SSL)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("error capability from ssl request packet", K(ret));
+      LOG_EDIAG("error capability from ssl request packet", K(ret));
     } else if (OB_UNLIKELY(!capability_.cap_flags_.OB_CLIENT_PROTOCOL_41)) {
       ret = OB_NOT_SUPPORTED;
-      LOG_ERROR("ob only support mysql client protocol 4.1", K(ret));
+      LOG_EDIAG("ob only support mysql client protocol 4.1", K(ret));
     } else {
       if (JDBC_SSL_MIN_SIZE == len) {
         // JConnector only sends server capabilities before starting SSL negotiation.  The below code is patch for this.
@@ -55,7 +55,7 @@ int OMPKSSLRequest::decode()
       } else {
         if (OB_UNLIKELY(len < HANDSHAKE_RESPONSE_MIN_SIZE)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("error ssl request packet", K(len), K(pos), K(end), K(ret));
+          LOG_WDIAG("error ssl request packet", K(len), K(pos), K(end), K(ret));
         } else {
           ObMySQLUtil::get_uint4(pos, capability_.capability_);
           ObMySQLUtil::get_uint4(pos, max_packet_size_); //16MB
@@ -73,20 +73,20 @@ int OMPKSSLRequest::serialize(char *buffer, const int64_t length, int64_t &pos) 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buffer) || OB_UNLIKELY(length - pos < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(buffer), K(length), K(pos), K(ret));
+    LOG_WDIAG("invalid argument", K(buffer), K(length), K(pos), K(ret));
   } else if (OB_UNLIKELY(length - pos < static_cast<int64_t>(get_serialize_size()))) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size is overflow",  K(length), K(pos), "need_size", get_serialize_size(), K(ret));
+    LOG_WDIAG("size is overflow",  K(length), K(pos), "need_size", get_serialize_size(), K(ret));
   } else {
     char reserved[HANDSHAKE_RESPONSE_RESERVED_SIZE] = {};
     if (OB_FAIL(ObMySQLUtil::store_int4(buffer, length, capability_ .capability_, pos))) {
-      LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+      LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int4(buffer, length, max_packet_size_, pos))) {
-      LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+      LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, length, character_set_, pos))) {
-      LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+      LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buffer, length, reserved, HANDSHAKE_RESPONSE_RESERVED_SIZE, pos))) {
-      LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+      LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
     }
   }
   return ret;

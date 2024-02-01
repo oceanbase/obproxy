@@ -73,10 +73,10 @@ int ObBloomFilter<T, HashFunc>::deep_copy(const ObBloomFilter<T, HashFunc> &othe
 
   if (is_valid()) {
     ret = OB_INIT_TWICE;
-    LIB_LOG(WARN, "The ObBloomFilter has data.", K(ret));
+    LIB_LOG(WDIAG, "The ObBloomFilter has data.", K(ret));
   } else if (NULL == (bits_ = allocator_.alloc(calc_nbyte(other.nbit_)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LIB_LOG(WARN, "Fail to allocate memory, ", K(ret));
+    LIB_LOG(WDIAG, "Fail to allocate memory, ", K(ret));
   } else {
     nbit_ = other.nbit_;
     nhash_ = other.nhash_;
@@ -93,7 +93,7 @@ int ObBloomFilter<T, HashFunc>::deep_copy(const ObBloomFilter<T, HashFunc> &othe
 
   if (is_valid()) {
     ret = OB_INIT_TWICE;
-    LIB_LOG(WARN, "The ObBloomFilter has data.", K(ret));
+    LIB_LOG(WDIAG, "The ObBloomFilter has data.", K(ret));
   } else {
     nbit_ = other.nbit_;
     nhash_ = other.nhash_;
@@ -123,11 +123,11 @@ int ObBloomFilter<T, HashFunc>::init(int64_t element_count, double false_positiv
   int ret = common::OB_SUCCESS;
   if (element_count <= 0) {
     ret = common::OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "bloom filter element_count should be > 0 ",
+    LIB_LOG(WDIAG, "bloom filter element_count should be > 0 ",
             K(element_count), K(ret));
   } else if (!(false_positive_prob < 1.0 || false_positive_prob > 0.0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "bloom filter false_positive_prob should be < 1.0 and > 0.0",
+    LIB_LOG(WDIAG, "bloom filter false_positive_prob should be < 1.0 and > 0.0",
             K(false_positive_prob), K(ret));
   } else {
     double num_hashes = -std::log(false_positive_prob) / std::log(2);
@@ -138,7 +138,7 @@ int ObBloomFilter<T, HashFunc>::init(int64_t element_count, double false_positiv
     bits_ = (uint8_t *)allocator_.alloc(static_cast<int32_t>(num_bytes));
     if (NULL == bits_) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LIB_LOG(WARN, "bits_ null pointer, ", K_(nbit), K(ret));
+      LIB_LOG(WDIAG, "bits_ null pointer, ", K_(nbit), K(ret));
     } else {
       memset(bits_, 0, num_bytes);
       nhash_ = static_cast<int64_t>(num_hashes);
@@ -173,7 +173,7 @@ int ObBloomFilter<T, HashFunc>::insert(const T &element)
   int ret = OB_SUCCESS;
   if (!is_valid()) {
     ret = OB_NOT_INIT;
-    LIB_LOG(WARN, "bloom filter has not inited, ",
+    LIB_LOG(WDIAG, "bloom filter has not inited, ",
             K_(bits), K_(nbit), K_(nhash), K(ret));
   } else {
     uint64_t hash = 0;
@@ -193,7 +193,7 @@ int ObBloomFilter<T, HashFunc>::may_contain(const T &element, bool &is_contain) 
   is_contain = true;
   if (!is_valid()) {
     ret = OB_NOT_INIT;
-    LIB_LOG(WARN, "bloom filter has not inited, ",
+    LIB_LOG(WDIAG, "bloom filter has not inited, ",
             K_(bits), K_(nbit), K_(nhash), K(ret));
   } else {
     uint64_t hash = 0;

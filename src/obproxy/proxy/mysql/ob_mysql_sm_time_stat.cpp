@@ -124,6 +124,16 @@ int64_t ObTransactionStat::to_string(char *buf, const int64_t buf_len) const
   return pos;
 }
 
+int64_t ObConnectionMilestones::to_string(char *buf, const int64_t buf_len) const
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  TO_STRING_TIME_US(last_cmd_complete_);
+  J_OBJ_END();
+  return pos;
+}
+
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

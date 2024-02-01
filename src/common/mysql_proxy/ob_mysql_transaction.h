@@ -72,7 +72,7 @@ inline bool ObMySQLTransaction::check_inner_stat(void) const
 {
   bool bret = (OB_SUCCESS == errno_ && NULL != pool_ && NULL != conn_);
   if (!bret) {
-    COMMON_MYSQLP_LOG(WARN, "invalid inner stat", "errno", errno_, K_(pool), K_(conn));
+    COMMON_MYSQLP_LOG(WDIAG, "invalid inner stat", "errno", errno_, K_(pool), K_(conn));
   }
   return bret;
 }

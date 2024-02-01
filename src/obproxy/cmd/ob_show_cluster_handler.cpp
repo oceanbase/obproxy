@@ -148,13 +148,13 @@ int ObShowClusterHandler::dump_cluster_info(const ObProxyClusterInfo &cluster_in
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(cluster_info.get_sub_cluster_info(OB_DEFAULT_CLUSTER_ID, sub_cluster_info))) {
     if (OB_ENTRY_NOT_EXIST != ret) {
-      LOG_WARN("fail to get master cluster info", K(cluster_info), K(ret));
+      LOG_WDIAG("fail to get master cluster info", K(cluster_info), K(ret));
     } else {
       ret = OB_SUCCESS;
     }
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("master cluster info is null", K(cluster_info), K(ret));
+    LOG_WDIAG("master cluster info is null", K(cluster_info), K(ret));
   }
   if (OB_SUCC(ret)) {
     if (OBPROXY_T_SUB_INFO_IDC == sub_type_) {
@@ -197,10 +197,10 @@ int ObShowClusterHandler::dump_cluster_rslist_item(const ObProxyClusterInfo &clu
   char *url = NULL;
   allocator.reuse();
   if (OB_FAIL(get_global_config_server_processor().get_cluster_url(cluster_info.cluster_name_, allocator, url))) {
-    LOG_WARN("fail to get rs url", K(cluster_info.cluster_name_), K(ret));
+    LOG_WDIAG("fail to get rs url", K(cluster_info.cluster_name_), K(ret));
   } else if (OB_ISNULL(url)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("rs url is null", K(ret));
+    LOG_WDIAG("rs url is null", K(ret));
   } else {
     ObNewRow row;
     ObObj cells[OB_CC_MAX_CLUSTER_COLUMN_ID];
@@ -233,10 +233,10 @@ int ObShowClusterHandler::dump_cluster_idc_list_item(const ObProxyClusterInfo &c
   allocator.reuse();
   if (get_global_proxy_config().with_config_server_) {
     if (OB_FAIL(get_global_config_server_processor().get_idc_url(cluster_info.cluster_name_, allocator, url))) {
-      LOG_WARN("fail to get idc url", K(cluster_info.cluster_name_), K(ret));
+      LOG_WDIAG("fail to get idc url", K(cluster_info.cluster_name_), K(ret));
     } else if (OB_ISNULL(url)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("rs url is null", K(ret));
+      LOG_WDIAG("rs url is null", K(ret));
     }
   } else {
     url = const_cast<char *>("");

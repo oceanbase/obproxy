@@ -33,45 +33,64 @@ const char *ob_sql_type_str(ObObjType type)
   static const char *sql_type_name[ObMaxType+1] =
   {
     "NULL",
-
     "TINYINT",
     "SMALLINT",
     "MEDIUMINT",
     "INT",
-    "BIGINT",
+    "BIGINT", /* 5 */
 
-    "TINYINT UNSIGNED",
+    "TINYINT UNSIGNED", 
     "SMALLINT UNSIGNED",
     "MEDIUMINT UNSIGNED",
     "INT UNSIGNED",
-    "BIGINT UNSIGNED",
+    "BIGINT UNSIGNED", /* 10 */
 
     "FLOAT",
     "DOUBLE",
-
     "FLOAT UNSIGNED",
     "DOUBLE UNSIGNED",
 
-    "DECIMAL",
-    "DECIMAL UNSIGNED",
+    "DECIMAL", /* 15 */
 
+    "DECIMAL UNSIGNED",
     "DATETIME",
     "TIMESTAMP",
     "DATE",
-    "TIME",
-    "YEAR",
+    "TIME", /* 20 */
 
+    "YEAR",
     "VARCHAR",
     "CHAR",
     "HEX_STRING",
+    "EXT", /* 25 */
 
-    "EXT",
     "UNKNOWN",
-
     "TINYTEXT",
     "TEXT",
     "MEDIUMTEXT",
-    "LONGTEXT",
+    "LONGTEXT", /* 30 */
+
+    "BIT",
+    "ENUM",
+    "SET",
+    "ENUM INNER",
+    "SET INNER", /* 35 */
+
+    "TIMESTAMP WITH TIME ZONE",
+    "TIMESTAMP WITH LOCAL TIME ZONE",
+    "TIMESTAMP NANO",
+    "RAW",
+    "INTERVAL YEAR TO MONTH", /* 40 */
+
+    "INTERVAL DAY TO SECOND",
+    "NUMBER FLOAT",
+    "NVARCHAR2",
+    "NCHAR",
+    "UROWID", /* 45 */
+
+    "LOB",
+    "JSON",
+    "GEOMETRY",
     ""
   };
   return sql_type_name[OB_LIKELY(type < ObMaxType) ? type : ObMaxType];
@@ -357,5 +376,38 @@ const double REAL_MAX_VAL[ObMaxType] =
   DBL_MAX
 };
 
+ObDecimalIntWideType get_decimalint_type(const int16_t precision)
+{
+  ObDecimalIntWideType type = DECIMAL_INT_MAX;
+  if (precision <= MAX_PRECISION_DECIMAL_INT_32) {
+    type = DECIMAL_INT_32;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_64) {
+    type = DECIMAL_INT_64;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_128) {
+    type = DECIMAL_INT_128;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_256) {
+    type = DECIMAL_INT_256;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_512) {
+    type = DECIMAL_INT_512;
+  }
+  return type;
+}
+
+int16_t get_max_decimalint_precision(const int16_t precision)
+{
+  int16_t max_precision = 0;
+  if (precision <= MAX_PRECISION_DECIMAL_INT_32) {
+    max_precision = MAX_PRECISION_DECIMAL_INT_32;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_64) {
+    max_precision = MAX_PRECISION_DECIMAL_INT_64;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_128) {
+    max_precision = MAX_PRECISION_DECIMAL_INT_128;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_256) {
+    max_precision = MAX_PRECISION_DECIMAL_INT_256;
+  } else if (precision <= MAX_PRECISION_DECIMAL_INT_512) {
+    max_precision = MAX_PRECISION_DECIMAL_INT_512;
+  }
+  return max_precision;
+}
 } // common
 } // oceanbase

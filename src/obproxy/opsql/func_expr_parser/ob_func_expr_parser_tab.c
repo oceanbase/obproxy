@@ -144,13 +144,36 @@ extern int obfuncexprdebug;
      FUNC_TO_CHAR = 272,
      FUNC_MOD = 273,
      FUNC_SYSDATE = 274,
-     END_P = 275,
-     ERROR = 276,
-     IGNORED_WORD = 277,
-     NAME_OB = 278,
-     STR_VAL = 279,
-     NUMBER_VAL = 280,
-     INT_VAL = 281
+     FUNC_ISNULL = 275,
+     FUNC_CEIL = 276,
+     FUNC_FLOOR = 277,
+     FUNC_LTRIM = 278,
+     FUNC_RTRIM = 279,
+     FUNC_TRIM = 280,
+     FUNC_REPLACE = 281,
+     FUNC_LENGTH = 282,
+     FUNC_UPPER = 283,
+     FUNC_LOWER = 284,
+     TRIM_FROM = 285,
+     TRIM_BOTH = 286,
+     TRIM_LEADING = 287,
+     TRIM_TRAILING = 288,
+     FUNC_TO_NUMBER = 289,
+     FUNC_ROUND = 290,
+     FUNC_TRUNCATE = 291,
+     FUNC_ABS = 292,
+     FUNC_SYSTIMESTAMP = 293,
+     FUNC_CURRENTDATE = 294,
+     FUNC_CURRENTTIME = 295,
+     FUNC_CURRENTTIMESTAMP = 296,
+     END_P = 297,
+     ERROR = 298,
+     IGNORED_WORD = 299,
+     NAME_OB = 300,
+     STR_VAL = 301,
+     NUMBER_VAL = 302,
+     NONE_PARAM_FUNC = 303,
+     INT_VAL = 304
    };
 #endif
 
@@ -225,13 +248,13 @@ static inline void add_param_node(ObProxyParamNodeList *list, ObFuncExprParseRes
     }                                                                                         \
   } while(0)                                                                                  \
 
-#define malloc_func_expr_node(func_node, result, type)                                        \
+#define malloc_func_expr_node(func_node, result, name)                                        \
   do {                                                                                        \
     if (OB_ISNULL(func_node = ((ObFuncExprNode *)obproxy_parse_malloc(sizeof(ObFuncExprNode), \
                                                                    result->malloc_pool_)))) { \
       YYABORT;                                                                                \
     } else {                                                                                  \
-      func_node->func_type_ = type;                                                           \
+      func_node->func_name_ = name;                                                           \
       func_node->child_ = NULL;                                                               \
     }                                                                                         \
   } while(0)                                                                                  \
@@ -249,6 +272,18 @@ static inline void add_param_node(ObProxyParamNodeList *list, ObFuncExprParseRes
       list->child_num_ = 1;                                                                   \
     }                                                                                         \
   } while(0)                                                                                  \
+
+#define store_str_val(parse_str, str, str_len)   \
+  do {                                           \
+    parse_str.str_ = NULL;                       \
+    parse_str.str_len_ = 0;                      \
+    parse_str.end_ptr_ = NULL;                   \
+    if (str != 0 && str_len >= 0) {              \
+      parse_str.str_ = str;                      \
+      parse_str.str_len_ = str_len;              \
+      parse_str.end_ptr_ = str + str_len;        \
+    }                                            \
+  } while (0)
 
 
 
@@ -466,22 +501,22 @@ union yyalloc
 #endif
 
 /* YYFINAL -- State number of the termination state.  */
-#define YYFINAL  22
+#define YYFINAL  21
 /* YYLAST -- Last index in YYTABLE.  */
-#define YYLAST   64
+#define YYLAST   92
 
 /* YYNTOKENS -- Number of terminals.  */
-#define YYNTOKENS  30
+#define YYNTOKENS  59
 /* YYNNTS -- Number of nonterminals.  */
-#define YYNNTS  8
+#define YYNNTS  7
 /* YYNRULES -- Number of rules.  */
-#define YYNRULES  29
+#define YYNRULES  25
 /* YYNRULES -- Number of states.  */
-#define YYNSTATES  37
+#define YYNSTATES  43
 
 /* YYTRANSLATE(YYLEX) -- Bison symbol number corresponding to YYLEX.  */
 #define YYUNDEFTOK  2
-#define YYMAXUTOK   281
+#define YYMAXUTOK   304
 
 #define YYTRANSLATE(YYX)						\
   ((unsigned int) (YYX) <= YYMAXUTOK ? yytranslate[YYX] : YYUNDEFTOK)
@@ -492,8 +527,8 @@ static const yytype_uint8 yytranslate[] =
        0,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-       2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
-      27,    28,     2,     2,    29,     2,     2,     2,     2,     2,
+       2,     2,     2,     2,     2,     2,     2,    50,    45,     2,
+      51,    52,    48,    46,    58,    47,     2,    49,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
        2,     2,     2,     2,     2,     2,     2,     2,     2,     2,
@@ -517,7 +552,9 @@ static const yytype_uint8 yytranslate[] =
        2,     2,     2,     2,     2,     2,     1,     2,     3,     4,
        5,     6,     7,     8,     9,    10,    11,    12,    13,    14,
       15,    16,    17,    18,    19,    20,    21,    22,    23,    24,
-      25,    26
+      25,    26,    27,    28,    29,    30,    31,    32,    33,    34,
+      35,    36,    37,    38,    39,    40,    41,    42,    43,    44,
+      53,    54,    55,    56,    57
 };
 
 #if YYDEBUG
@@ -525,29 +562,30 @@ static const yytype_uint8 yytranslate[] =
    YYRHS.  */
 static const yytype_uint8 yyprhs[] =
 {
-       0,     0,     3,     5,     7,     9,    14,    18,    20,    22,
-      24,    26,    28,    30,    32,    34,    36,    38,    40,    42,
-      44,    46,    48,    50,    52,    56,    60,    62,    64,    66
+       0,     0,     3,     5,     7,     9,    14,    18,    20,    24,
+      29,    31,    35,    38,    41,    45,    49,    53,    57,    61,
+      63,    67,    71,    73,    75,    77
 };
 
 /* YYRHS -- A `-1'-separated list of the rules' RHS.  */
 static const yytype_int8 yyrhs[] =
 {
-      31,     0,    -1,    32,    -1,    33,    -1,     1,    -1,    34,
-      27,    36,    28,    -1,    34,    27,    28,    -1,    35,    -1,
-       5,    -1,     6,    -1,     7,    -1,     8,    -1,     9,    -1,
-      10,    -1,    11,    -1,    12,    -1,    13,    -1,    14,    -1,
-      15,    -1,    16,    -1,    17,    -1,    18,    -1,    19,    -1,
-      37,    -1,    36,    29,    37,    -1,     4,    23,     4,    -1,
-      23,    -1,    26,    -1,    24,    -1,    33,    -1
+      60,     0,    -1,    61,    -1,    63,    -1,     1,    -1,    53,
+      51,    64,    52,    -1,    53,    51,    52,    -1,    56,    -1,
+      56,    51,    52,    -1,    56,    51,    64,    52,    -1,    65,
+      -1,    51,    63,    52,    -1,    46,    63,    -1,    47,    63,
+      -1,    63,    46,    63,    -1,    63,    47,    63,    -1,    63,
+      48,    63,    -1,    63,    49,    63,    -1,    63,    50,    63,
+      -1,    63,    -1,    64,    58,    63,    -1,     4,    53,     4,
+      -1,    53,    -1,    57,    -1,    54,    -1,    62,    -1
 };
 
 /* YYRLINE[YYN] -- source line where rule number YYN was defined.  */
-static const yytype_uint8 yyrline[] =
+static const yytype_uint16 yyrline[] =
 {
-       0,    97,    97,    99,   105,   107,   112,   117,   123,   124,
-     125,   126,   127,   128,   129,   130,   131,   132,   133,   134,
-     135,   136,   138,   140,   144,   150,   151,   152,   153,   154
+       0,   115,   115,   117,   122,   124,   129,   134,   139,   144,
+     150,   151,   152,   153,   172,   187,   201,   215,   229,   244,
+     248,   254,   255,   256,   257,   258
 };
 #endif
 
@@ -560,10 +598,15 @@ static const char *const yytname[] =
   "FUNC_SUBSTR", "FUNC_CONCAT", "FUNC_HASH", "FUNC_TOINT", "FUNC_DIV",
   "FUNC_ADD", "FUNC_SUB", "FUNC_MUL", "FUNC_TESTLOAD", "FUNC_TO_DATE",
   "FUNC_TO_TIMESTAMP", "FUNC_NVL", "FUNC_TO_CHAR", "FUNC_MOD",
-  "FUNC_SYSDATE", "END_P", "ERROR", "IGNORED_WORD", "NAME_OB", "STR_VAL",
-  "NUMBER_VAL", "INT_VAL", "'('", "')'", "','", "$accept", "start",
-  "func_root", "func_expr", "func_name", "reserved_func", "param_list",
-  "param", 0
+  "FUNC_SYSDATE", "FUNC_ISNULL", "FUNC_CEIL", "FUNC_FLOOR", "FUNC_LTRIM",
+  "FUNC_RTRIM", "FUNC_TRIM", "FUNC_REPLACE", "FUNC_LENGTH", "FUNC_UPPER",
+  "FUNC_LOWER", "TRIM_FROM", "TRIM_BOTH", "TRIM_LEADING", "TRIM_TRAILING",
+  "FUNC_TO_NUMBER", "FUNC_ROUND", "FUNC_TRUNCATE", "FUNC_ABS",
+  "FUNC_SYSTIMESTAMP", "FUNC_CURRENTDATE", "FUNC_CURRENTTIME",
+  "FUNC_CURRENTTIMESTAMP", "END_P", "ERROR", "IGNORED_WORD", "'&'", "'+'",
+  "'-'", "'*'", "'/'", "'%'", "'('", "')'", "NAME_OB", "STR_VAL",
+  "NUMBER_VAL", "NONE_PARAM_FUNC", "INT_VAL", "','", "$accept", "start",
+  "func_root", "func_expr", "simple_expr", "param_list", "param", 0
 };
 #endif
 
@@ -574,24 +617,27 @@ static const yytype_uint16 yytoknum[] =
 {
        0,   256,   257,   258,   259,   260,   261,   262,   263,   264,
      265,   266,   267,   268,   269,   270,   271,   272,   273,   274,
-     275,   276,   277,   278,   279,   280,   281,    40,    41,    44
+     275,   276,   277,   278,   279,   280,   281,   282,   283,   284,
+     285,   286,   287,   288,   289,   290,   291,   292,   293,   294,
+     295,   296,   297,   298,   299,    38,    43,    45,    42,    47,
+      37,    40,    41,   300,   301,   302,   303,   304,    44
 };
 # endif
 
 /* YYR1[YYN] -- Symbol number of symbol that rule YYN derives.  */
 static const yytype_uint8 yyr1[] =
 {
-       0,    30,    31,    32,    32,    33,    33,    33,    34,    34,
-      34,    34,    34,    34,    34,    34,    34,    34,    34,    34,
-      34,    34,    35,    36,    36,    37,    37,    37,    37,    37
+       0,    59,    60,    61,    61,    62,    62,    62,    62,    62,
+      63,    63,    63,    63,    63,    63,    63,    63,    63,    64,
+      64,    65,    65,    65,    65,    65
 };
 
 /* YYR2[YYN] -- Number of symbols composing right hand side of rule YYN.  */
 static const yytype_uint8 yyr2[] =
 {
-       0,     2,     1,     1,     1,     4,     3,     1,     1,     1,
-       1,     1,     1,     1,     1,     1,     1,     1,     1,     1,
-       1,     1,     1,     1,     3,     3,     1,     1,     1,     1
+       0,     2,     1,     1,     1,     4,     3,     1,     3,     4,
+       1,     3,     2,     2,     3,     3,     3,     3,     3,     1,
+       3,     3,     1,     1,     1,     1
 };
 
 /* YYDEFACT[STATE-NAME] -- Default rule to reduce with in state
@@ -599,33 +645,35 @@ static const yytype_uint8 yyr2[] =
    means the default is an error.  */
 static const yytype_uint8 yydefact[] =
 {
-       0,     4,     8,     9,    10,    11,    12,    13,    14,    15,
-      16,    17,    18,    19,    20,    21,    22,     0,     2,     3,
-       0,     7,     1,     0,     0,    26,    28,    27,     6,    29,
-       0,    23,     0,     5,     0,    25,    24
+       0,     4,     0,     0,     0,     0,    22,    24,     7,    23,
+       0,     2,    25,     3,    10,     0,    12,    13,     0,     0,
+       0,     1,     0,     0,     0,     0,     0,    21,    11,     6,
+      19,     0,     8,     0,    14,    15,    16,    17,    18,     5,
+       0,     9,    20
 };
 
 /* YYDEFGOTO[NTERM-NUM].  */
 static const yytype_int8 yydefgoto[] =
 {
-      -1,    17,    18,    29,    20,    21,    30,    31
+      -1,    10,    11,    12,    30,    31,    14
 };
 
 /* YYPACT[STATE-NUM] -- Index in YYTABLE of the portion describing
    STATE-NUM.  */
-#define YYPACT_NINF -13
+#define YYPACT_NINF -53
 static const yytype_int8 yypact[] =
 {
-      45,   -13,   -13,   -13,   -13,   -13,   -13,   -13,   -13,   -13,
-     -13,   -13,   -13,   -13,   -13,   -13,   -13,    18,   -13,   -13,
-      -6,   -13,   -13,    -4,     0,   -13,   -13,   -13,   -13,   -13,
-     -12,   -13,    37,   -13,    21,   -13,   -13
+      -1,   -53,   -52,    35,    35,    35,   -42,   -53,   -38,   -53,
+      14,   -53,   -53,    -6,   -53,    17,   -53,   -53,   -30,    11,
+      23,   -53,    35,    35,    35,    35,    35,   -53,   -53,   -53,
+      -6,   -50,   -53,   -24,   -44,   -44,   -53,   -53,   -53,   -53,
+      35,   -53,    -6
 };
 
 /* YYPGOTO[NTERM-NUM].  */
 static const yytype_int8 yypgoto[] =
 {
-     -13,   -13,   -13,    42,   -13,   -13,   -13,     9
+     -53,   -53,   -53,   -53,     7,     3,   -53
 };
 
 /* YYTABLE[YYPACT[STATE-NUM]].  What to do in state STATE-NUM.  If
@@ -635,34 +683,41 @@ static const yytype_int8 yypgoto[] =
 #define YYTABLE_NINF -1
 static const yytype_uint8 yytable[] =
 {
-      24,     2,     3,     4,     5,     6,     7,     8,     9,    10,
-      11,    12,    13,    14,    15,    16,    33,    34,    22,    25,
-      26,    23,    27,    32,    28,    24,     2,     3,     4,     5,
-       6,     7,     8,     9,    10,    11,    12,    13,    14,    15,
-      16,    35,    19,    36,    25,    26,     1,    27,     0,     0,
-       2,     3,     4,     5,     6,     7,     8,     9,    10,    11,
-      12,    13,    14,    15,    16
+       1,    15,    39,     2,    24,    25,    26,    13,    40,    19,
+      16,    17,    18,    20,    21,     2,    22,    23,    24,    25,
+      26,    27,    28,    33,     0,     0,     0,     2,    41,    34,
+      35,    36,    37,    38,    40,     0,     0,     0,     0,     2,
+      22,    23,    24,    25,    26,     3,     4,    42,     0,     0,
+       5,     0,     6,     7,     0,     8,     9,     3,     4,     0,
+       0,     0,     5,    29,     6,     7,     0,     8,     9,     3,
+       4,     0,     0,     0,     5,    32,     6,     7,     0,     8,
+       9,     3,     4,     0,     0,     0,     5,     0,     6,     7,
+       0,     8,     9
 };
 
 static const yytype_int8 yycheck[] =
 {
-       4,     5,     6,     7,     8,     9,    10,    11,    12,    13,
-      14,    15,    16,    17,    18,    19,    28,    29,     0,    23,
-      24,    27,    26,    23,    28,     4,     5,     6,     7,     8,
-       9,    10,    11,    12,    13,    14,    15,    16,    17,    18,
-      19,     4,     0,    34,    23,    24,     1,    26,    -1,    -1,
-       5,     6,     7,     8,     9,    10,    11,    12,    13,    14,
-      15,    16,    17,    18,    19
+       1,    53,    52,     4,    48,    49,    50,     0,    58,    51,
+       3,     4,     5,    51,     0,     4,    46,    47,    48,    49,
+      50,     4,    52,    20,    -1,    -1,    -1,     4,    52,    22,
+      23,    24,    25,    26,    58,    -1,    -1,    -1,    -1,     4,
+      46,    47,    48,    49,    50,    46,    47,    40,    -1,    -1,
+      51,    -1,    53,    54,    -1,    56,    57,    46,    47,    -1,
+      -1,    -1,    51,    52,    53,    54,    -1,    56,    57,    46,
+      47,    -1,    -1,    -1,    51,    52,    53,    54,    -1,    56,
+      57,    46,    47,    -1,    -1,    -1,    51,    -1,    53,    54,
+      -1,    56,    57
 };
 
 /* YYSTOS[STATE-NUM] -- The (internal number of the) accessing
    symbol of state STATE-NUM.  */
 static const yytype_uint8 yystos[] =
 {
-       0,     1,     5,     6,     7,     8,     9,    10,    11,    12,
-      13,    14,    15,    16,    17,    18,    19,    31,    32,    33,
-      34,    35,     0,    27,     4,    23,    24,    26,    28,    33,
-      36,    37,    23,    28,    29,     4,    37
+       0,     1,     4,    46,    47,    51,    53,    54,    56,    57,
+      60,    61,    62,    63,    65,    53,    63,    63,    63,    51,
+      51,     0,    46,    47,    48,    49,    50,     4,    52,    52,
+      63,    64,    52,    64,    63,    63,    63,    63,    63,    52,
+      58,    52,    63
 };
 
 #define yyerrok		(yyerrstatus = 0)
@@ -1516,8 +1571,7 @@ yyreduce:
         case 3:
 
     {
-             malloc_param_node(result->param_node_, result, PARAM_FUNC);
-             result->param_node_->func_expr_node_ = (yyvsp[(1) - (1)].func_node);
+             result->param_node_ = (yyvsp[(1) - (1)].param_node);
              YYACCEPT;
            ;}
     break;
@@ -1530,7 +1584,7 @@ yyreduce:
   case 5:
 
     {
-            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (4)].function_type));
+            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (4)].str));
             (yyval.func_node)->child_ = (yyvsp[(3) - (4)].list);
           ;}
     break;
@@ -1538,7 +1592,7 @@ yyreduce:
   case 6:
 
     {
-            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (3)].function_type));
+            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (3)].str));
             (yyval.func_node)->child_ = NULL;
           ;}
     break;
@@ -1546,94 +1600,158 @@ yyreduce:
   case 7:
 
     {
-            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (1)].function_type));
+            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (1)].str));
             (yyval.func_node)->child_ = NULL;
           ;}
     break;
 
   case 8:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_SUBSTR; ;}
+    {
+            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (3)].str));
+            (yyval.func_node)->child_ = NULL;
+          ;}
     break;
 
   case 9:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_CONCAT; ;}
+    {
+            malloc_func_expr_node((yyval.func_node), result, (yyvsp[(1) - (4)].str));
+            (yyval.func_node)->child_ = (yyvsp[(3) - (4)].list);
+          ;}
     break;
 
   case 10:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_HASH; ;}
+    { (yyval.param_node) = (yyvsp[(1) - (1)].param_node); ;}
     break;
 
   case 11:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_TOINT; ;}
+    {(yyval.param_node) = (yyvsp[(2) - (3)].param_node); ;}
     break;
 
   case 12:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_DIV; ;}
+    { (yyval.param_node) = (yyvsp[(2) - (2)].param_node); ;}
     break;
 
   case 13:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_ADD; ;}
+    {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            ObProxyParamNode * dummynode = NULL;
+            
+            // -mod(2,1)-> 0 - mod(2,1)
+            malloc_param_node(dummynode, result, PARAM_INT_VAL);
+            dummynode->int_value_ = 0;
+            malloc_list(dummylist, result, dummynode);
+            add_param_node(dummylist, result, (yyvsp[(2) - (2)].param_node));
+
+            ObProxyParseString str;
+            store_str_val(str, "-", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node((yyval.param_node), result, PARAM_FUNC);
+            (yyval.param_node)->func_expr_node_ = dummyfunc;
+           ;}
     break;
 
   case 14:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_SUB; ;}
+    {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+
+            malloc_list(dummylist, result, (yyvsp[(1) - (3)].param_node));
+            add_param_node(dummylist, result, (yyvsp[(3) - (3)].param_node));
+
+            ObProxyParseString str;
+            store_str_val(str, "+", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node((yyval.param_node), result, PARAM_FUNC);
+            (yyval.param_node)->func_expr_node_ = dummyfunc;
+           ;}
     break;
 
   case 15:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_MUL; ;}
+    {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+
+            malloc_list(dummylist, result, (yyvsp[(1) - (3)].param_node));
+            add_param_node(dummylist, result, (yyvsp[(3) - (3)].param_node));
+            ObProxyParseString str;
+            store_str_val(str, "-", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node((yyval.param_node), result, PARAM_FUNC);
+            (yyval.param_node)->func_expr_node_ = dummyfunc;
+           ;}
     break;
 
   case 16:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD; ;}
+    {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            
+            malloc_list(dummylist, result, (yyvsp[(1) - (3)].param_node));
+            add_param_node(dummylist, result, (yyvsp[(3) - (3)].param_node));
+            ObProxyParseString str;
+            store_str_val(str, "*", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node((yyval.param_node), result, PARAM_FUNC);
+            (yyval.param_node)->func_expr_node_ = dummyfunc;
+           ;}
     break;
 
   case 17:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_TO_DATE; ;}
+    {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            
+            malloc_list(dummylist, result, (yyvsp[(1) - (3)].param_node));
+            add_param_node(dummylist, result, (yyvsp[(3) - (3)].param_node));
+            ObProxyParseString str;
+            store_str_val(str, "/", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node((yyval.param_node), result, PARAM_FUNC);
+            (yyval.param_node)->func_expr_node_ = dummyfunc;
+           ;}
     break;
 
   case 18:
 
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP; ;}
+    {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            
+            malloc_list(dummylist, result, (yyvsp[(1) - (3)].param_node));
+            add_param_node(dummylist, result, (yyvsp[(3) - (3)].param_node));
+            ObProxyParseString str;
+            store_str_val(str, "%", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node((yyval.param_node), result, PARAM_FUNC);
+            (yyval.param_node)->func_expr_node_ = dummyfunc;
+           ;}
     break;
 
   case 19:
-
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_NVL; ;}
-    break;
-
-  case 20:
-
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR; ;}
-    break;
-
-  case 21:
-
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_MOD; ;}
-    break;
-
-  case 22:
-
-    { (yyval.function_type) = OB_PROXY_EXPR_TYPE_FUNC_SYSDATE; ;}
-    break;
-
-  case 23:
 
     {
             malloc_list((yyval.list), result, (yyvsp[(1) - (1)].param_node));
           ;}
     break;
 
-  case 24:
+  case 20:
 
     {
             add_param_node((yyvsp[(1) - (3)].list), result, (yyvsp[(3) - (3)].param_node));
@@ -1641,27 +1759,27 @@ yyreduce:
           ;}
     break;
 
-  case 25:
+  case 21:
 
     { malloc_param_node((yyval.param_node), result, PARAM_COLUMN); (yyval.param_node)->col_name_ = (yyvsp[(2) - (3)].str); ;}
     break;
 
-  case 26:
+  case 22:
 
     { malloc_param_node((yyval.param_node), result, PARAM_COLUMN); (yyval.param_node)->col_name_ = (yyvsp[(1) - (1)].str); ;}
     break;
 
-  case 27:
+  case 23:
 
     { malloc_param_node((yyval.param_node), result, PARAM_INT_VAL); (yyval.param_node)->int_value_ = (yyvsp[(1) - (1)].num); ;}
     break;
 
-  case 28:
+  case 24:
 
     { malloc_param_node((yyval.param_node), result, PARAM_STR_VAL); (yyval.param_node)->str_value_ = (yyvsp[(1) - (1)].str); ;}
     break;
 
-  case 29:
+  case 25:
 
     { malloc_param_node((yyval.param_node), result, PARAM_FUNC); (yyval.param_node)->func_expr_node_ = (yyvsp[(1) - (1)].func_node); ;}
     break;

@@ -20,7 +20,7 @@ int ObRowkeyHelper::prepare_obj_array(const ObRowkeyInfo &info, ObObj *array, co
 {
   int ret = OB_SUCCESS;
   if (NULL == array || size != info.get_size()) {
-    _OB_LOG(WARN, "invalid argument arry = %p, size=%ld, info size=%ld",
+    _OB_LOG(WDIAG, "invalid argument arry = %p, size=%ld, info size=%ld",
               array, size, info.get_size());
     ret = OB_ERROR;
   } else {
@@ -41,7 +41,7 @@ int ObRowkeyHelper::get_row_key(const ObObj *array, const int64_t size, ObString
 {
   int ret = OB_SUCCESS;
   if (NULL == array) {
-    _OB_LOG(WARN, "invalid argument arry = %p", array);
+    _OB_LOG(WDIAG, "invalid argument arry = %p", array);
     ret = OB_ERROR;
   } else {
     char    *buffer = key.ptr();
@@ -52,7 +52,7 @@ int ObRowkeyHelper::get_row_key(const ObObj *array, const int64_t size, ObString
       const ObObj *obj = &array[index];
       ret = serialize_obj(obj, buffer, buf_len, pos);
       if (OB_FAIL(ret)) {
-        _OB_LOG(ERROR, "serialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
+        _OB_LOG(EDIAG, "serialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
                   buffer, buf_len, pos);
       }
     }
@@ -69,7 +69,7 @@ int ObRowkeyHelper::get_obj_array(const ObString &key, ObObj *array, const int64
 {
   int ret = OB_SUCCESS;
   if (NULL == array) {
-    _OB_LOG(WARN, "invalid argument array=%p", array);
+    _OB_LOG(WDIAG, "invalid argument array=%p", array);
     ret = OB_ERROR;
   } else {
 
@@ -89,11 +89,11 @@ int ObRowkeyHelper::get_obj_array(const ObString &key, ObObj *array, const int64
       }
 
       if (pos + len > buf_len) {
-        _OB_LOG(ERROR, "pos=%ld, current column=%d > buf_len=%ld",
+        _OB_LOG(EDIAG, "pos=%ld, current column=%d > buf_len=%ld",
                   pos, len, buf_len);
         ret = OB_SIZE_OVERFLOW;
       } else if (OB_SUCCESS != (ret = deserialize_obj(obj, buffer, buf_len, pos))) {
-        _OB_LOG(ERROR, "deserialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
+        _OB_LOG(EDIAG, "deserialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
                   buffer, buf_len, pos);
       }
     }
@@ -117,38 +117,38 @@ int ObRowkeyHelper::serialize_obj(const ObObj *obj, char *buf, const int64_t buf
           case 1: {
             ret = serialization::encode_i8(buf, buf_len, pos, static_cast<int8_t>(value));
             if (OB_FAIL(ret)) {
-              _OB_LOG(WARN, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+              _OB_LOG(WDIAG, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
             }
             break;
           }
           case 2: {
             ret = serialization::encode_i16(buf, buf_len, pos, static_cast<int16_t>(value));
             if (OB_FAIL(ret)) {
-              _OB_LOG(WARN, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+              _OB_LOG(WDIAG, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
             }
             break;
           }
           case 4: {
             ret = serialization::encode_i32(buf, buf_len, pos, static_cast<int32_t>(value));
             if (OB_FAIL(ret)) {
-              _OB_LOG(WARN, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+              _OB_LOG(WDIAG, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
             }
             break;
           }
           case 8: {
             ret = serialization::encode_i64(buf, buf_len, pos, value);
             if (OB_FAIL(ret)) {
-              _OB_LOG(WARN, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+              _OB_LOG(WDIAG, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
             }
             break;
           }
           default:
-            _OB_LOG(WARN, "unsupport serialization length");
+            _OB_LOG(WDIAG, "unsupport serialization length");
             ret = OB_ERR_UNEXPECTED;
             break;
         }
       } else {
-        _OB_LOG(WARN, "Get int value failed");
+        _OB_LOG(WDIAG, "Get int value failed");
       }
       break;
     }
@@ -159,7 +159,7 @@ int ObRowkeyHelper::serialize_obj(const ObObj *obj, char *buf, const int64_t buf
         MEMCPY(buf + pos, value.ptr(), value.length());
         pos += value.length();
       } else {
-        _OB_LOG(WARN, "Get varchar value failed");
+        _OB_LOG(WDIAG, "Get varchar value failed");
       }
       break;
     }
@@ -169,10 +169,10 @@ int ObRowkeyHelper::serialize_obj(const ObObj *obj, char *buf, const int64_t buf
       if (OB_SUCC(ret)) {
         ret = serialization::encode_i64(buf, buf_len, pos, value);
         if (OB_FAIL(ret)) {
-          _OB_LOG(WARN, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+          _OB_LOG(WDIAG, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
         }
       } else {
-        _OB_LOG(WARN, "Get datatime value failed");
+        _OB_LOG(WDIAG, "Get datatime value failed");
       }
       break;
     }
@@ -182,15 +182,15 @@ int ObRowkeyHelper::serialize_obj(const ObObj *obj, char *buf, const int64_t buf
       if (OB_SUCC(ret)) {
         ret = serialization::encode_i64(buf, buf_len, pos, value);
         if (OB_FAIL(ret)) {
-          _OB_LOG(WARN, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+          _OB_LOG(WDIAG, "serialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
         }
       } else {
-        _OB_LOG(WARN, "Get date time value failed");
+        _OB_LOG(WDIAG, "Get date time value failed");
       }
       break;
     }
     default:
-      _OB_LOG(ERROR, "invalid obj_type=%d, rowkey does not support", type);
+      _OB_LOG(EDIAG, "invalid obj_type=%d, rowkey does not support", type);
       ret = OB_ERR_UNEXPECTED;
       break;
   }
@@ -213,7 +213,7 @@ int ObRowkeyHelper::deserialize_obj(ObObj *obj, const char *buf, const int64_t b
           if (OB_SUCC(ret)) {
             value = invalue;
           } else {
-            _OB_LOG(WARN, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+            _OB_LOG(WDIAG, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
           }
           break;
         }
@@ -223,7 +223,7 @@ int ObRowkeyHelper::deserialize_obj(ObObj *obj, const char *buf, const int64_t b
           if (OB_SUCC(ret)) {
             value = invalue;
           } else {
-            _OB_LOG(WARN, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+            _OB_LOG(WDIAG, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
           }
           break;
         }
@@ -233,7 +233,7 @@ int ObRowkeyHelper::deserialize_obj(ObObj *obj, const char *buf, const int64_t b
           if (OB_SUCC(ret)) {
             value = invalue;
           } else {
-            _OB_LOG(WARN, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+            _OB_LOG(WDIAG, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
           }
           break;
         }
@@ -243,12 +243,12 @@ int ObRowkeyHelper::deserialize_obj(ObObj *obj, const char *buf, const int64_t b
           if (OB_SUCC(ret)) {
             value = invalue;
           } else {
-            _OB_LOG(WARN, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+            _OB_LOG(WDIAG, "deserialization failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
           }
           break;
         }
         default:
-          _OB_LOG(WARN, "unsuported deserialize length");
+          _OB_LOG(WDIAG, "unsuported deserialize length");
           ret = OB_ERR_UNEXPECTED;
           break;
       }
@@ -270,7 +270,7 @@ int ObRowkeyHelper::deserialize_obj(ObObj *obj, const char *buf, const int64_t b
       if (OB_SUCC(ret)) {
         obj->set_datetime(value);
       } else {
-        _OB_LOG(WARN, "deserialize failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+        _OB_LOG(WDIAG, "deserialize failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
       }
       break;
     }
@@ -280,12 +280,12 @@ int ObRowkeyHelper::deserialize_obj(ObObj *obj, const char *buf, const int64_t b
       if (OB_SUCC(ret)) {
         obj->set_timestamp(value);
       } else {
-        _OB_LOG(WARN, "deserialize failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
+        _OB_LOG(WDIAG, "deserialize failed buf=%p, buf_len=%ld, pos=%ld", buf, buf_len, pos);
       }
       break;
     }
     default:
-      _OB_LOG(ERROR, "invalid obj_type=%d, rowkey does not support", type);
+      _OB_LOG(EDIAG, "invalid obj_type=%d, rowkey does not support", type);
       ret = OB_ERR_UNEXPECTED;
       break;
   }
@@ -299,7 +299,7 @@ int ObRowkeyHelper::binary_rowkey_to_obj_array(const ObRowkeyInfo &info,
   int ret = OB_SUCCESS;
   if (NULL == binary_key.ptr() || 0 >= binary_key.length()
       || NULL == array || size < info.get_size()) {
-    _OB_LOG(WARN, "invalid argument array = %p, size=%ld, info size=%ld",
+    _OB_LOG(WDIAG, "invalid argument array = %p, size=%ld, info size=%ld",
               array, size, info.get_size());
     ret = OB_ERROR;
   } else {
@@ -322,15 +322,15 @@ int ObRowkeyHelper::binary_rowkey_to_obj_array(const ObRowkeyInfo &info,
         }
 
         if (pos + obj.get_val_len() > buf_len) {
-          _OB_LOG(ERROR, "pos=%ld, current column=%d > buf_len=%ld",
+          _OB_LOG(EDIAG, "pos=%ld, current column=%d > buf_len=%ld",
                     pos, obj.get_val_len(), buf_len);
           ret = OB_SIZE_OVERFLOW;
         } else if (obj.get_val_len() > column.length_) {
-          _OB_LOG(ERROR, "pos=%ld, current column=%d > column length=%ld, rowkey_info:%s",
+          _OB_LOG(EDIAG, "pos=%ld, current column=%d > column length=%ld, rowkey_info:%s",
                     pos, obj.get_val_len(), column.length_, to_cstring(info));
           ret = OB_SIZE_OVERFLOW;
         } else if (OB_SUCCESS != (ret = deserialize_obj(&obj, buffer, buf_len, pos))) {
-          _OB_LOG(ERROR, "deserialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
+          _OB_LOG(EDIAG, "deserialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
                     buffer, buf_len, pos);
         }
       }
@@ -345,7 +345,7 @@ int ObRowkeyHelper::obj_array_to_binary_rowkey(const ObRowkeyInfo &info,
 {
   int ret = OB_SUCCESS;
   if (NULL == array || size != info.get_size()) {
-    _OB_LOG(WARN, "invalid argument array = %p, size=%ld, info size=%ld",
+    _OB_LOG(WDIAG, "invalid argument array = %p, size=%ld, info size=%ld",
               array, size, info.get_size());
     ret = OB_ERROR;
   }
@@ -365,7 +365,7 @@ int ObRowkeyHelper::obj_array_to_binary_rowkey(const ObRowkeyInfo &info,
 
         ret = serialize_obj(&obj, buffer, buf_len, pos);
         if (OB_FAIL(ret)) {
-          _OB_LOG(WARN, "serialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
+          _OB_LOG(WDIAG, "serialize_obj failed, buffer=%p, buf_len=%ld, pos=%ld",
                     buffer, buf_len, pos);
         }
       }

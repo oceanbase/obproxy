@@ -31,10 +31,10 @@ ObPool<BlockAllocatorT, LockT>::ObPool(int64_t obj_size, int64_t block_size,
       lock_()
 {
   if (OB_UNLIKELY(obj_size_ < static_cast<int64_t>(sizeof(FreeNode)))) {
-    LIB_LOG(ERROR, "obj_size_ < size of FreeNode");
+    LIB_LOG(EDIAG, "obj_size_ < size of FreeNode");
   } else {}
   if (block_size_ < (obj_size_ + static_cast<int64_t>(sizeof(BlockHeader)))) {
-    LIB_LOG(WARN, "obj size larger than block size", K(obj_size_), K(block_size_));
+    LIB_LOG(WDIAG, "obj size larger than block size", K(obj_size_), K(block_size_));
     block_size_ = obj_size_ + sizeof(BlockHeader);
   } else {}
 }
@@ -71,14 +71,14 @@ void ObPool<BlockAllocatorT, LockT>::alloc_new_block()
   int ret = common::OB_SUCCESS;
   BlockHeader *new_block = static_cast<BlockHeader *>(block_allocator_.alloc(block_size_));
   if (OB_ISNULL(new_block)) {
-    LIB_LOG(ERROR, "no memory");
+    LIB_LOG(EDIAG, "no memory");
   } else {
     new_block->next_ = blocklist_;
     blocklist_ = new_block;
 
     const int64_t obj_count = (block_size_ - sizeof(BlockHeader)) / obj_size_;
     if (OB_UNLIKELY(0 >= obj_count)) {
-      LIB_LOG(ERROR, "invalid block size", K(block_size_));
+      LIB_LOG(EDIAG, "invalid block size", K(block_size_));
     } else {
       for (int i = 0; OB_SUCC(ret) && i < obj_count; ++i) {
         ATOMIC_INC(&total_count_);
@@ -129,7 +129,7 @@ void ObPool<BlockAllocatorT, LockT>::freelist_push(void *obj)
   if (NULL != obj) {
     FreeNode *node = static_cast<FreeNode *>(obj);
     if (OB_ISNULL(node)) {
-      LIB_LOG(ERROR, "node is NULL");
+      LIB_LOG(EDIAG, "node is NULL");
     } else {
       node->next_ = freelist_;
       freelist_ = node;

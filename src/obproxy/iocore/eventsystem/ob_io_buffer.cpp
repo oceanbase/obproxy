@@ -54,7 +54,7 @@ int ObMIOBuffer::remove_append(ObIOBufferReader *r, int64_t &append_len)
       r->block_ = r->block_->next_;
     } else {
       if (OB_FAIL(append_block(b))) {
-        PROXY_EVENT_LOG(WARN, "failed to append block", K(ret));
+        PROXY_EVENT_LOG(WDIAG, "failed to append block", K(ret));
       } else {
         r->start_offset_ = 0;
         append_len += r->read_avail();
@@ -79,13 +79,13 @@ int ObMIOBuffer::write(const char *src_buf, const int64_t towrite_len, int64_t &
 
   if (OB_ISNULL(src_buf) || OB_UNLIKELY(towrite_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(src_buf), K(towrite_len), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(src_buf), K(towrite_len), K(ret));
   }
 
   while (remain_len > 0 && OB_SUCC(ret)) {
     //size maybe 0 at first time, without have create writer_
     if (NULL == writer_ && OB_FAIL(add_block())) {
-      PROXY_EVENT_LOG(WARN, "failed to add block", K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to add block", K(ret));
     }
 
     if (OB_SUCC(ret) && OB_LIKELY(NULL != writer_)) {
@@ -94,7 +94,7 @@ int ObMIOBuffer::write(const char *src_buf, const int64_t towrite_len, int64_t &
       if (tofill_len > 0) {
         MEMCPY(writer_->end(), buf, tofill_len);
         if (OB_FAIL(writer_->fill(tofill_len))) {
-          PROXY_EVENT_LOG(WARN, "failed to fill iobuffer", K(tofill_len), K(ret));
+          PROXY_EVENT_LOG(WDIAG, "failed to fill iobuffer", K(tofill_len), K(ret));
         } else {
           buf += tofill_len;
           remain_len -= tofill_len;
@@ -104,7 +104,7 @@ int ObMIOBuffer::write(const char *src_buf, const int64_t towrite_len, int64_t &
       if (remain_len > 0 && OB_SUCC(ret)) {
         if (NULL == writer_->next_) {
           if (OB_FAIL(add_block())) {
-            PROXY_EVENT_LOG(WARN, "failed to add block", K(ret));
+            PROXY_EVENT_LOG(WDIAG, "failed to add block", K(ret));
           }
         } else {
           writer_ = writer_->next_;
@@ -129,7 +129,7 @@ int ObMIOBuffer::get_write_avail_buf(char *&start, int64_t &len)
   while (OB_SUCC(ret) && (0 == len)) {
     //size maybe 0 at first time, without have create writer_
     if (NULL == writer_ && OB_FAIL(add_block())) {
-      PROXY_EVENT_LOG(WARN, "failed to add block", K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to add block", K(ret));
     }
 
     if (OB_SUCC(ret) && OB_LIKELY(NULL != writer_)) {
@@ -142,7 +142,7 @@ int ObMIOBuffer::get_write_avail_buf(char *&start, int64_t &len)
     if (OB_SUCC(ret) && (0 == len)) {
       if (NULL == writer_->next_) {
         if (OB_FAIL(add_block())) {
-          PROXY_EVENT_LOG(WARN, "failed to add block", K(ret));
+          PROXY_EVENT_LOG(WDIAG, "failed to add block", K(ret));
         }
       } else {
         writer_ = writer_->next_;
@@ -158,11 +158,11 @@ int ObMIOBuffer::reserve_successive_buf(const int64_t reserved_len)
   int ret = OB_SUCCESS;
   if (reserved_len <= 0 || reserved_len > get_block_size()) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid input value", K(reserved_len), K(get_block_size()), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid input value", K(reserved_len), K(get_block_size()), K(ret));
   } else {
     bool found = false;
     if ((NULL == writer_) && OB_FAIL(add_block())) {
-      PROXY_EVENT_LOG(WARN, "failed to add block", K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to add block", K(ret));
     } else {
       while ((NULL != writer_) && !found && OB_SUCC(ret)) {
         if (writer_->write_avail() >= reserved_len) {
@@ -172,7 +172,7 @@ int ObMIOBuffer::reserve_successive_buf(const int64_t reserved_len)
           writer_->buf_end_ = writer_->end_;
           if (NULL == writer_->next_) {
             if (OB_FAIL(add_block())) {
-              PROXY_EVENT_LOG(WARN, "failed to add block", K(ret));
+              PROXY_EVENT_LOG(WDIAG, "failed to add block", K(ret));
             }
           } else {
             writer_ = writer_->next_;
@@ -197,7 +197,7 @@ int ObMIOBuffer::write_and_transfer_left_over_space(
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(write(r, towrite_len, written_len, start_offset))) {
-    PROXY_EVENT_LOG(WARN, "failed to wirte data from buffer reader",
+    PROXY_EVENT_LOG(WDIAG, "failed to wirte data from buffer reader",
                     K(r), K(towrite_len), K(ret));
   } else {
     // reset the end markers of the original so that it cannot
@@ -230,7 +230,7 @@ int ObMIOBuffer::write(ObIOBufferReader *r, const int64_t towrite_len,
 
   if (OB_ISNULL(r) || OB_UNLIKELY(towrite_len <= 0) || OB_UNLIKELY(start_offset < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(r), K(towrite_len), K(start_offset), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(r), K(towrite_len), K(start_offset), K(ret));
   } else {
     b = r->block_;
     offset = start_offset + r->start_offset_;
@@ -247,14 +247,14 @@ int ObMIOBuffer::write(ObIOBufferReader *r, const int64_t towrite_len,
       bb = b->clone();
       if (OB_ISNULL(bb)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_EVENT_LOG(ERROR, "failed to allocate memory for iobuffer block", K(ret));
+        PROXY_EVENT_LOG(EDIAG, "failed to allocate memory for iobuffer block", K(ret));
       } else {
         bb->start_ += offset;
         bb->end_ = bb->start_ + bytes;
         bb->buf_end_ = bb->end_;
         if (OB_FAIL(append_block(bb))) {
           bb->free();
-          PROXY_EVENT_LOG(WARN, "failed to append block", K(bb), K(ret));
+          PROXY_EVENT_LOG(WDIAG, "failed to append block", K(bb), K(ret));
         } else {
           offset = 0;
           remain_len -= bytes;

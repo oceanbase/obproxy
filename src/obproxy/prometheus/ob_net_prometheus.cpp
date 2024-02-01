@@ -39,7 +39,7 @@ int ObNetPrometheus::handle_prometheus(const ObString &logic_tenant_name,
 
   if (OB_FAIL(handle_prometheus(logic_tenant_name, logic_database_name, cluster_name,
                                 tenant_name, database_name, metric, args))) {
-    LOG_WARN("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
+    LOG_WDIAG("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
              K(cluster_name), K(tenant_name), K(database_name), K(metric), K(ret));
   }
 
@@ -77,7 +77,7 @@ int ObNetPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SESSION_TYPE, is_client ? LABEL_SESSION_CLIENT : LABEL_SESSION_SERVER, false);
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_BYTE, REQUEST_BYTE_HELP, label_vector, value))) {
-      LOG_WARN("fail to handle counter with REQUEST_BYTE", K(value), K(ret));
+      LOG_WDIAG("fail to handle counter with REQUEST_BYTE", K(value), K(ret));
     }
     break;
   }

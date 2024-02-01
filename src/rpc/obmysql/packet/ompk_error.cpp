@@ -33,19 +33,19 @@ int OMPKError::serialize(char *buffer, int64_t len, int64_t &pos) const
   int ret = OB_SUCCESS;
 
   if (NULL == buffer || len - pos < static_cast<int64_t>(get_serialize_size())) {
-    LOG_WARN("invalid argument", K(buffer), K(len), K(pos), "need_size", get_serialize_size());
+    LOG_WDIAG("invalid argument", K(buffer), K(len), K(pos), "need_size", get_serialize_size());
     ret = OB_INVALID_ARGUMENT;
   } else {
     if (OB_FAIL(ObMySQLUtil::store_int1(buffer, len, field_count_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(field_count_), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(field_count_), K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, len, errcode_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(errcode_), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(errcode_), K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, len, MARKER, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_obstr_nzt(buffer, len, sqlstate_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_obstr_nzt(buffer, len, message_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(ret));
     }
   }
   return ret;
@@ -68,7 +68,7 @@ int OMPKError::decode()
 
   if (OB_ISNULL(cdata_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(cdata_), K(ret)); //  OB_ASSERT(NULL != cdata_);
+    LOG_EDIAG("null input", K(cdata_), K(ret)); //  OB_ASSERT(NULL != cdata_);
   } else {
     ObMySQLUtil::get_uint1(pos, field_count_);
     ObMySQLUtil::get_uint2(pos, errcode_);
@@ -82,11 +82,11 @@ int OMPKError::decode()
       //OB_ASSERT(pos == end);
       if (pos != end) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("packet pos not equal end", K(pos), K(end), K(ret));
+        LOG_EDIAG("packet pos not equal end", K(pos), K(end), K(ret));
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("packet error", K(end), K(pos), K(ret));
+      LOG_EDIAG("packet error", K(end), K(pos), K(ret));
     }
   }
   return ret;
@@ -96,7 +96,7 @@ int OMPKError::set_message(const ObString &message)
 {
   int ret = OB_SUCCESS;
   if (NULL == message.ptr() || 0 > message.length()) {
-    LOG_WARN("invalid argument message", K(message));
+    LOG_WDIAG("invalid argument message", K(message));
     ret = OB_INVALID_ARGUMENT;
   } else {
     message_.assign(const_cast<char *>(message.ptr()), message.length());
@@ -121,7 +121,7 @@ int OMPKError::set_oberrcode(int errcode)
   if (mysql_errno < 0) {
     mysql_errno = -errcode;
   }
-  BACKTRACE(ERROR, (0 == errcode || 0 == mysql_errno), "BUG!!!");
+  BACKTRACE(EDIAG, (0 == errcode || 0 == mysql_errno), "BUG!!!");
   errcode_ = static_cast<uint16_t>(mysql_errno);
   return set_sqlstate(common::ob_sqlstate(errcode));
 }

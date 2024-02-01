@@ -172,14 +172,16 @@ LOG_MOD_END(STORAGETEST)
 } //namespace common
 } //namespace oceanbase
 
-#define OB_LOG_LEVEL_NONE 7
+#define OB_LOG_LEVEL_NONE 8
 #define OB_LOG_LEVEL_NP -1  //set this level, would not print log
 #define OB_LOG_LEVEL_ERROR 0
 //#define OB_LOG_LEVEL_USER_ERROR  1
 #define OB_LOG_LEVEL_WARN  2
 #define OB_LOG_LEVEL_INFO  3
-#define OB_LOG_LEVEL_TRACE 4
-#define OB_LOG_LEVEL_DEBUG 5
+#define OB_LOG_LEVEL_EDIAG 4
+#define OB_LOG_LEVEL_WDIAG 5
+#define OB_LOG_LEVEL_TRACE 6
+#define OB_LOG_LEVEL_DEBUG 7
 #define OB_LOG_LEVEL(level) OB_LOG_LEVEL_##level, __FILE__, __LINE__, __FUNCTION__
 #define OB_LOG_NUM_LEVEL(level) level, __FILE__, __LINE__, __FUNCTION__
 #define OB_LOGGER ::oceanbase::common::ObLogger::get_logger()
@@ -225,6 +227,13 @@ LOG_MOD_END(STORAGETEST)
 #define OBPROXY_DIAGNOSIS_LOG(level, infoString, args...)                                           \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_DIAGNOSIS_FILE, NULL, level, infoString, ##args) : (void) 0)
 
+#define _OBPROXY_LOGIN_LOG(level, _fmt_, args...)                                               \
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_LOGIN_FILE, NULL, level, _fmt_, ##args) : (void) 0)
+
+#define _OBPROXY_REBOOT_LOG(level, _fmt_, args...)                                              \
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_REBOOT_FILE, NULL, level, _fmt_, ##args) : (void) 0)
+
+
 #define OBPROXY_SLOW_LOG(level, infoString, args...)                                           \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_SLOW_FILE, NULL, level, infoString, ##args) : (void) 0)
 #define _OBPROXY_SLOW_LOG(level, _fmt_, args...)                                               \
@@ -235,7 +244,7 @@ LOG_MOD_END(STORAGETEST)
 #define _OBPROXY_STAT_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_STAT_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
- 
+
 #define OBPROXY_CONFIG_LOG(level, infoString, args...)                                           \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_CONFIG_FILE, NULL, level, infoString, ##args) : (void) 0)
 #define _OBPROXY_CONFIG_LOG(level, _fmt_, args...)                                               \
@@ -318,20 +327,18 @@ LOG_MOD_END(STORAGETEST)
 
 // define macro for module obproxy
 #define OBPROXY_MOD_LOG(parMod, level, info_string, args...)                                                      \
-  ((OB_LOGGER.get_id_level_map().get_level(::oceanbase::common::OB_LOG_ROOT::M_##parMod) >= OB_LOG_LEVEL_##level) \
+  ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level)) \
   ? OB_PRINT("["#parMod"] ", level, info_string, ##args) : (void) 0)
 #define _OBPROXY_MOD_LOG(parMod, level, _fmt_, args...)                                                           \
-  ((OB_LOGGER.get_id_level_map().get_level(oceanbase::common::OB_LOG_ROOT::M_##parMod) >= OB_LOG_LEVEL_##level)   \
+  ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level))   \
   ? _OB_PRINT("["#parMod"] ", level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_SUB_MOD_LOG(parMod, subMod, level, info_string, args...)                                          \
-  ((OB_LOGGER.get_id_level_map().get_level(::oceanbase::common::OB_LOG_ROOT::M_##parMod,                          \
-                            ::oceanbase::common::OB_LOG_##parMod::M_##subMod) >= OB_LOG_LEVEL_##level) ?          \
-   OB_PRINT("["#parMod"."#subMod"] ", level, info_string, ##args) : (void) 0)
+  ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level)) \
+  ? OB_PRINT("["#parMod"."#subMod"] ", level, info_string, ##args) : (void) 0)
 #define _OBPROXY_SUB_MOD_LOG(parMod, subMod, level, _fmt_, args...)                                               \
-  ((OB_LOGGER.get_id_level_map().get_level(oceanbase::common::OB_LOG_ROOT::M_##parMod,                            \
-                            oceanbase::common::OB_LOG_##parMod::M_##subMod) >= OB_LOG_LEVEL_##level) ?            \
-   _OB_PRINT("["#parMod"."#subMod"] ", level, _fmt_, ##args) : (void) 0)
+  ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level)) \
+  ? _OB_PRINT("["#parMod"."#subMod"] ", level, _fmt_, ##args) : (void) 0)
 
 //define ParMod_LOG
 #define BLSST_LOG(level, info_string, args...) OB_MOD_LOG(BLSST, level, info_string, ##args)
@@ -752,7 +759,7 @@ LOG_MOD_END(STORAGETEST)
 //
 // example:
 //    #define USING_LOG_PREFIX COMMON
-//    LOG_ERROR(...) will expand to COMMON_LOG(ERROR, ...)
+//    LOG_EDIAG(...) will expand to COMMON_LOG(EDIAG, ...)
 #ifdef USING_LOG_PREFIX
 
 #define LOG_XXX_MACROS_SHOULD_ONLY_BE_USED_IN_CPP_FILES__0 USING_LOG_PREFIX
@@ -765,6 +772,10 @@ LOG_MOD_END(STORAGETEST)
 #define _LOG_WARN(args...) _LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (WARN, ##args)
 #define LOG_INFO(args...) LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (INFO, ##args)
 #define _LOG_INFO(args...) _LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (INFO, ##args)
+#define LOG_EDIAG(args...) LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (EDIAG, ##args)
+#define _LOG_EDIAG(args...) _LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (EDIAG, ##args)
+#define LOG_WDIAG(args...) LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (WDIAG, ##args)
+#define _LOG_WDIAG(args...) _LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (WDIAG, ##args)
 #define LOG_TRACE(args...) LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (TRACE, ##args)
 #define _LOG_TRACE(args...) _LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (TRACE, ##args)
 #define LOG_DEBUG(args...) LOG_MACRO_JOIN(GET_LOG_PREFIX(), _LOG) (DEBUG, ##args)

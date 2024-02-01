@@ -46,11 +46,26 @@ do {\
 #define RETURN_ROW_ID() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return ROW_ID; }
 
-#define RETURN_REVERSED_EXPR_FUNC() \
-  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return REVERSED_EXPR_FUNC; }
+#define RETURN_NONE_PARAM_FUNC() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NONE_PARAM_FUNC; }
 
 #define RETURN_HEX_VAL() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return HEX_VAL; }
+
+#define RETURN_TRIM() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return TRIM; }
+
+#define RETURN_BOTH() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return BOTH; }
+
+#define RETURN_LEADING() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return LEADING; }
+
+#define RETURN_TRAILING() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return TRAILING; }
+
+#define RETURN_FROM() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return FROM; }
 
 %}
 
@@ -65,12 +80,14 @@ multi_byte_comma              [\uff0c]
 multi_byte_left_parenthesis   [\uff08]
 multi_byte_right_parenthesis  [\uff09]
 hexval                  (x'([a-fA-F0-9]+)')|(0x([a-fA-F0-9]+))
+nstring_val             ([u|n]'[^'|\']*')
 space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
 
 /* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
-int_num                 [\-\+]?[0-9]{1,17}
-number      ([\-]?[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*E[-+]?[0-9]+)|([\-]?"."[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*)|([\-]?"."[0-9]+)|([\-\+]?[0-9]{18,})
+int_num                 [0-9]{1,17}
+number      ([0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*E[-+]?[0-9]+)|("."[0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*)|("."[0-9]+)|([0-9]{18,})
+
 
 non_newline             [^\n\r]
 sql_comment             ("--"{space}+{non_newline}*)|(#{non_newline}*)
@@ -124,8 +141,8 @@ OR        { return OR_OP; }
 "||"      { return OR_OP; }
 IN        { return IN; }
 IS        { return IS; }
-NULL      { return TOKEN_NULL; }
 NOT       { return NOT; }
+NULL      { return NULL_VAL; }
 "="       { return COMP_EQ; }
 "<=>"     { return COMP_NSEQ; }
 ">="      { return COMP_GE; }
@@ -135,11 +152,21 @@ NOT       { return NOT; }
 "!="|"<>" { return COMP_NE; }
 "?"       { return PLACE_HOLDER; }
 ":"{int_num} { store_pos_place_holder(yytext + 1, yyscanner); return POS_PLACE_HOLDER; }
-"SYSDATE" { RETURN_REVERSED_EXPR_FUNC();}
+"SYSDATE" { RETURN_NONE_PARAM_FUNC();}
+"SYSTIMESTAMP" { RETURN_NONE_PARAM_FUNC(); }
+"CURRENT_DATE" { RETURN_NONE_PARAM_FUNC(); }
+"CURRENT_TIME" { RETURN_NONE_PARAM_FUNC(); }
+"CURRENT_TIMESTAMP" { RETURN_NONE_PARAM_FUNC(); }
+"TRIM"    { RETURN_TRIM();}
+"FROM"    { RETURN_FROM();}
+"BOTH"    { RETURN_BOTH();}
+"LEADING" { RETURN_LEADING();}
+"TRAILING" { RETURN_TRAILING();}
 
 {int_num}              { RETURN_INT_VAL(); }
 {number}               { RETURN_NUMBER_VAL(); }
 {hexval}               { RETURN_HEX_VAL(); }
+{nstring_val}          { RETURN_STR_VAL(); }
 {identifer}            { RETURN_NAME_OB(); }
 {whitespace}           { }
 {comma}|{multi_byte_comma} { return ','; }
@@ -180,7 +207,12 @@ NOT       { return NOT; }
   return STR_VAL;
 }
 
-<sq>{sqdouble}            {}
+ /** 
+  *to handle excape character, like 'G''Hr&8Y!N''' ->  G'Hr&8Y!N'
+  * here may change sql because tmp_buf -> yytext directly, not support temporary 
+  */
+<sq>{sqdouble} {}
+
 <sq>{qescape}             {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -238,10 +270,12 @@ NOT       { return NOT; }
   }
 }
 
+ /* to handle excape character */
 <bt>{btdouble} {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + 1 < OBPROXY_MAX_NAME_LENGTH) {
-    p->tmp_buf_[p->tmp_len_++] = '`';
+    memcpy(p->tmp_buf_ + p->tmp_len_, "`",  1);
+    p->tmp_len_ += 1;
   }
 }
 

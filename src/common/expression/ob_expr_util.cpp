@@ -34,22 +34,22 @@ int ObExprUtil::get_mb_str_info(const ObString &str,
   int64_t well_formed_len = 0;
   if (CS_TYPE_INVALID == cs_type) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid cs_type", K(ret), K(cs_type));
+    LOG_WDIAG("invalid cs_type", K(ret), K(cs_type));
   } else if (OB_ISNULL(str.ptr())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("str.ptr is null", K(ret));
+    LOG_WDIAG("str.ptr is null", K(ret));
   } else if (0 == str.length()) {
     // do nothing
   } else if (OB_FAIL(ObCharset::well_formed_len(cs_type,
                                                 str.ptr(),
                                                 str.length(),
                                                 well_formed_len))) {
-    LOG_WARN("invalid string for charset", K(str), K(well_formed_len), K(cs_type));
+    LOG_WDIAG("invalid string for charset", K(str), K(well_formed_len), K(cs_type));
   } else {
     size_t byte_index = 0;
     while (OB_SUCC(ret) && byte_index < str.length()) {
       if (OB_FAIL(byte_offsets.push_back(byte_index))) {
-        LOG_WARN("byte_offsets.push_back failed", K(ret), K(byte_offsets));
+        LOG_WDIAG("byte_offsets.push_back failed", K(ret), K(byte_offsets));
       } else {
         size_t tmp_off = ObCharset::charpos(cs_type, str.ptr() + byte_index,
                                             str.length() - byte_index, 1);
@@ -59,16 +59,16 @@ int ObExprUtil::get_mb_str_info(const ObString &str,
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(byte_index != str.length())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected byte_index", K(ret), K(byte_index), K(str), K(byte_offsets));
+        LOG_WDIAG("unexpected byte_index", K(ret), K(byte_index), K(str), K(byte_offsets));
       } else if (OB_FAIL(byte_offsets.push_back(byte_index))) {
-        LOG_WARN("byte_offsets.push_back failed", K(ret), K(byte_offsets));
+        LOG_WDIAG("byte_offsets.push_back failed", K(ret), K(byte_offsets));
       }
     }
 
     // Get the number of bytes occupied by each character
     for (size_t i = 1; OB_SUCC(ret) && (i < byte_offsets.count()); ++i) {
       if (OB_FAIL(byte_num.push_back(byte_offsets.at(i) - byte_offsets.at(i-1)))) {
-        LOG_WARN("byte_num.push_back failed", K(ret), K(byte_num));
+        LOG_WDIAG("byte_num.push_back failed", K(ret), K(byte_num));
       }
     }
     LOG_DEBUG("get_mb_str_info done", K(ret), K(str), K(cs_type), K(byte_offsets), K(byte_num));
@@ -81,7 +81,7 @@ int kmp_next(const char *x, int64_t m, ObArray<int64_t> &next)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(x) || OB_UNLIKELY(m <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid arg", K(m), K(ret));
+    LOG_WDIAG("invalid arg", K(m), K(ret));
   } else {
     int64_t i = 0;
     int64_t j = -1;
@@ -118,9 +118,9 @@ int ObExprUtil::kmp(const char *x,
 
   if (OB_ISNULL(x) || OB_ISNULL(y) || OB_UNLIKELY(m <= 0) || OB_UNLIKELY(n <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("null ptr", K(ret));
+    LOG_WDIAG("null ptr", K(ret));
   } else if (OB_FAIL(next.prepare_allocate(m + 1))) {
-    LOG_WARN("allocate fail", K(m), K(ret));
+    LOG_WDIAG("allocate fail", K(m), K(ret));
   } else if (m <= n) {
     // preprocessing
     if (OB_SUCC(kmp_next(x, m, next))) {
@@ -160,7 +160,7 @@ int kmp_next_reverse(const char *x, int64_t m, ObArray<int64_t> &next)
 
   if (OB_ISNULL(x) || OB_UNLIKELY(m <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("null ptr", K(ret));
+    LOG_WDIAG("null ptr", K(ret));
   } else {
     next[0] = m;
     while (0 <= i) {
@@ -200,9 +200,9 @@ int ObExprUtil::kmp_reverse(const char *x,
 
   if (OB_ISNULL(x) || OB_ISNULL(y) || OB_UNLIKELY(m <= 0) || OB_UNLIKELY(n <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("null ptr", K(m), K(n), K(ret));
+    LOG_WDIAG("null ptr", K(m), K(n), K(ret));
   } else if (OB_FAIL(next.prepare_allocate(m + 1))) {
-    LOG_WARN("allocate fail", K(m), K(ret));
+    LOG_WDIAG("allocate fail", K(m), K(ret));
   } else if (m <= n) {
     // preprocessing
     ret = kmp_next_reverse(x, m, next);

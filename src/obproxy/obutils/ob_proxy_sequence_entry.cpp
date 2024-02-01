@@ -98,10 +98,10 @@ int ObSequenceEntry::init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(pending_list_.init("sequence init pending list",
                                  reinterpret_cast<int64_t>(&(reinterpret_cast<ObProxySequenceEntryCont*>(0))->link_)))) {
-    LOG_WARN("fail to init pending list", K(ret));
+    LOG_WDIAG("fail to init pending list", K(ret));
   } else if (OB_FAIL(timestamp_pending_list_.init("sequence init dbtimestamp pending list",
                      reinterpret_cast<int64_t>(&(reinterpret_cast<ObProxySequenceEntryCont*>(0))->link_)))) {
-    LOG_WARN("fail to init pending list", K(ret));
+    LOG_WDIAG("fail to init pending list", K(ret));
   } else {
   }
   return ret;
@@ -156,11 +156,11 @@ int ObSequenceEntryCache::start_async_cont_if_need(ObSequenceRouteParam& param,
     ObProxySequenceEntryCont* sequence_entry_cont_async = NULL;
     if (OB_ISNULL(sequence_entry_cont_async = op_alloc_args(ObProxySequenceEntryCont, param.cont_, &self_ethread()))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc ObProxySequenceEntryCont", K(ret));
+      LOG_WDIAG("fail to alloc ObProxySequenceEntryCont", K(ret));
     } else if (OB_FAIL(sequence_entry_cont_async->init(param, sequence_entry, OB_SEQUENCE_CONT_ASYNC_TYPE))) {
-      LOG_WARN("fail to init sequence_entry_cont");
+      LOG_WDIAG("fail to init sequence_entry_cont");
     } else if (OB_FAIL(sequence_entry_cont_async->do_create_sequence_entry())) {
-      LOG_WARN("fail to do_create_sequence_entry", K(ret));
+      LOG_WDIAG("fail to do_create_sequence_entry", K(ret));
       sequence_entry->set_dead_state();
     } else {
       LOG_DEBUG("succ to do a async fetch", K(param.seq_id_), K(sequence_entry->sequence_info_),
@@ -168,7 +168,7 @@ int ObSequenceEntryCache::start_async_cont_if_need(ObSequenceRouteParam& param,
       sequence_entry->set_remote_fetching_state();
     }
     if (OB_FAIL(ret) && OB_LIKELY(NULL != sequence_entry_cont_async)) {
-      LOG_WARN("something wrong in create async cont", K(param.seq_id_), K(ret));
+      LOG_WDIAG("something wrong in create async cont", K(param.seq_id_), K(ret));
       sequence_entry_cont_async->destroy();
       sequence_entry_cont_async = NULL;
     }
@@ -186,9 +186,9 @@ int ObSequenceEntryCache::create_entry_cont_task(ObSequenceEntry* sequence_entry
   ObProxySequenceEntryCont* sequence_entry_cont = NULL;
   if (OB_ISNULL(sequence_entry_cont = op_alloc_args(ObProxySequenceEntryCont, param.cont_, &self_ethread()))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc ObProxySequenceEntryCont", K(ret), K(param.seq_id_));
+    LOG_WDIAG("fail to alloc ObProxySequenceEntryCont", K(ret), K(param.seq_id_));
   } else if (OB_FAIL(sequence_entry_cont->init(param, sequence_entry, OB_SEQUENCE_CONT_SYNC_TYPE))) {
-    LOG_WARN("fail to init sequence_entry_cont", K(ret));
+    LOG_WDIAG("fail to init sequence_entry_cont", K(ret));
   } else if (is_timestamp_task) {
     if (sequence_entry->is_timestamp_fetching()) {
       // add to sequence_timestamp_pending_list;
@@ -197,7 +197,7 @@ int ObSequenceEntryCache::create_entry_cont_task(ObSequenceEntry* sequence_entry
     } else {
       LOG_DEBUG("first timestamp remote, do remote fetching now", K(param.seq_id_));
       if (OB_FAIL(sequence_entry_cont->do_create_sequence_entry())) {
-        LOG_WARN("fail to do_create_sequence_entry", K(ret));
+        LOG_WDIAG("fail to do_create_sequence_entry", K(ret));
       } else {
         sequence_entry->set_timestamp_fetching(true);
         action = &sequence_entry_cont->get_action();
@@ -210,7 +210,7 @@ int ObSequenceEntryCache::create_entry_cont_task(ObSequenceEntry* sequence_entry
     } else {
       LOG_DEBUG("first remote ,do remote fetching now", K(param.seq_id_));
       if (OB_FAIL(sequence_entry_cont->do_create_sequence_entry())) {
-        LOG_WARN("fail to do_create_sequence_entry", K(ret));
+        LOG_WDIAG("fail to do_create_sequence_entry", K(ret));
       } else {
         sequence_entry->set_remote_fetching_state();
         action = &sequence_entry_cont->get_action();
@@ -218,7 +218,7 @@ int ObSequenceEntryCache::create_entry_cont_task(ObSequenceEntry* sequence_entry
     }
   }
   if (OB_FAIL(ret) && OB_LIKELY(NULL != sequence_entry_cont)) {
-    LOG_WARN("something wrong in create async cont", K(param.seq_id_), K(ret));
+    LOG_WDIAG("something wrong in create async cont", K(param.seq_id_), K(ret));
     sequence_entry_cont->destroy();
     sequence_entry_cont = NULL;
   }
@@ -240,7 +240,7 @@ int ObSequenceEntryCache::get_next_sequence(ObSequenceRouteParam& param,
       LOG_DEBUG("seq still not in map", K(param.seq_id_));
       sequence_entry = op_alloc(ObSequenceEntry);
       if (OB_ISNULL(sequence_entry)) {
-        LOG_WARN("op_alloc ObSequenceEntry failed", K(param.seq_id_));
+        LOG_WDIAG("op_alloc ObSequenceEntry failed", K(param.seq_id_));
         return OB_ALLOCATE_MEMORY_FAILED;
       }
       sequence_entry->inc_ref();
@@ -249,12 +249,12 @@ int ObSequenceEntryCache::get_next_sequence(ObSequenceRouteParam& param,
       sequence_entry->sequence_info_.tnt_id_.set_value(param.tnt_id_);
       sequence_entry->sequence_info_.tnt_col_.set_value(param.tnt_col_);
       if (OB_FAIL(sequence_entry->init())) {
-        LOG_WARN("fail to init entry", K(ret), K(param.seq_id_));
+        LOG_WDIAG("fail to init entry", K(ret), K(param.seq_id_));
         sequence_entry->dec_ref();
         ret  = OB_ERR_UNEXPECTED;
         return ret;
       } else if (OB_FAIL(sequence_entry_map_.unique_set(sequence_entry))) {
-        LOG_WARN("fail to add to map", K(ret), K(param.seq_id_));
+        LOG_WDIAG("fail to add to map", K(ret), K(param.seq_id_));
         sequence_entry->dec_ref();
         ret  = OB_ERR_UNEXPECTED;
         return ret;
@@ -269,7 +269,7 @@ int ObSequenceEntryCache::get_next_sequence(ObSequenceRouteParam& param,
   if (OB_ISNULL(seq_info = op_alloc(ObSequenceInfo))) {
     // allocate here for reduce return_from_local logic lock time
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("failt to allocate ObSequenceInfo", K(param.seq_id_));
+    LOG_EDIAG("failt to allocate ObSequenceInfo", K(param.seq_id_));
     return ret;
   }
   { // map exist now but maybe not value, we handle remote fetch here
@@ -286,7 +286,7 @@ int ObSequenceEntryCache::get_next_sequence(ObSequenceRouteParam& param,
         LOG_DEBUG("local value is valid and only need timestamp");
         param.only_need_db_timestamp_ = true;
         if (OB_FAIL(create_entry_cont_task(sequence_entry, param, action, true))) {
-          LOG_WARN("create_entry_cont_task for timestamp failed", K(param.seq_id_));
+          LOG_WDIAG("create_entry_cont_task for timestamp failed", K(param.seq_id_));
         }
       }
       if (param.need_value_) {
@@ -297,14 +297,14 @@ int ObSequenceEntryCache::get_next_sequence(ObSequenceRouteParam& param,
       LOG_DEBUG("local value not valid, will fetch remote", K(sequence_entry->sequence_info_));
       // need remote fetch
       if (OB_FAIL(create_entry_cont_task(sequence_entry, param, action, false))) {
-        LOG_WARN("create_entry_cont_task for sequence failed", K(param.seq_id_), K(ret));
+        LOG_WDIAG("create_entry_cont_task for sequence failed", K(param.seq_id_), K(ret));
       }
     }
   }
   if (return_from_local) {
     LOG_DEBUG("return from local now", KPC(seq_info));
     if (((param.cont_->*process_sequence_info)(seq_info)) != EVENT_CONT) {
-      LOG_WARN("process_sequence_info failed", K(ret), K(param.seq_id_));
+      LOG_WDIAG("process_sequence_info failed", K(ret), K(param.seq_id_));
     }
   } else {
     if (seq_info != NULL) {
@@ -355,7 +355,7 @@ int ObMysqlProxyCache::add_mysql_proxy_entry(ObMysqlProxyEntry * entry)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(entry)) {
-    LOG_WARN("entry should not null here");
+    LOG_WDIAG("entry should not null here");
     return OB_ERR_UNEXPECTED;
   }
   ObMysqlProxyEntry* tmp_entry = NULL;
@@ -366,7 +366,7 @@ int ObMysqlProxyCache::add_mysql_proxy_entry(ObMysqlProxyEntry * entry)
     tmp_entry->dec_ref();
   }
   if (OB_FAIL(proxy_entry_map_.unique_set(entry))) {
-    LOG_WARN("fail to add to map", K(entry->proxy_id_));
+    LOG_WDIAG("fail to add to map", K(entry->proxy_id_));
     entry->dec_ref();
     ret = OB_ERR_UNEXPECTED;
   } else {
@@ -378,7 +378,7 @@ int ObMysqlProxyCache::remove_mysql_proxy_entry(ObMysqlProxyEntry* entry)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(entry)) {
-    LOG_WARN("entry should not null here");
+    LOG_WDIAG("entry should not null here");
     return OB_ERR_UNEXPECTED;
   }
   ObMysqlProxyEntry* tmp_entry = NULL;
@@ -388,7 +388,7 @@ int ObMysqlProxyCache::remove_mysql_proxy_entry(ObMysqlProxyEntry* entry)
     LOG_DEBUG("remove old proxy succ", K(entry->proxy_id_));
     tmp_entry->dec_ref();
   } else {
-    LOG_WARN("entry not exist", K(entry->proxy_id_));
+    LOG_WDIAG("entry not exist", K(entry->proxy_id_));
     ret = OB_ERR_UNEXPECTED;
   }
   return ret;

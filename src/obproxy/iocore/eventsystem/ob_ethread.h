@@ -52,6 +52,7 @@ class ObCongestionRefHashMap;
 namespace proxy
 {
 class ObMysqlClientSessionMap;
+class ObClientSessionIDList;
 class ObTableRefHashMap;
 class ObPartitionRefHashMap;
 class ObRoutineRefHashMap;
@@ -321,6 +322,7 @@ public:
   net::ObNetPoll &get_net_poll() { return *net_poll_; }
   net::ObInactivityCop &get_inactivity_cop() { return *inactivity_cop_; }
   proxy::ObMysqlClientSessionMap &get_client_session_map() { return *cs_map_; }
+  proxy::ObClientSessionIDList &get_client_session_id_list() { return *cs_id_list_; }
   proxy::ObTableRefHashMap &get_table_map() { return *table_map_; }
   proxy::ObSqlTableRefHashMap &get_sql_table_map() { return *sql_table_map_; }
   proxy::ObPartitionRefHashMap &get_partition_map() { return *partition_map_; }
@@ -375,6 +377,7 @@ public:
   net::ObNetPoll *net_poll_;
   net::ObInactivityCop *inactivity_cop_;
   proxy::ObMysqlClientSessionMap *cs_map_;
+  proxy::ObClientSessionIDList *cs_id_list_;
   proxy::ObTableRefHashMap *table_map_;
   proxy::ObPartitionRefHashMap *partition_map_;
   proxy::ObRoutineRefHashMap *routine_map_;
@@ -409,14 +412,14 @@ inline ObEvent *ObEThread::schedule_common(ObContinuation &cont, const ObHRTime 
   ObEvent *event = NULL;
   if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to alloc mem for ObEvent", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for ObEvent", K(ret));
   } else if (OB_FAIL(event->init(cont, atimeout_at, aperiod))) {
-    PROXY_EVENT_LOG(WARN, "fail to init ObEvent", K(atimeout_at), K(aperiod), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail to init ObEvent", K(atimeout_at), K(aperiod), K(ret));
   } else {
     event->callback_event_ = callback_event;
     event->cookie_ = cookie;
     if (OB_FAIL((this->*schedule_handler)(*event, fast_signal))) {
-      PROXY_EVENT_LOG(WARN, "fail to schedule ObEvent", K(event), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "fail to schedule ObEvent", K(event), K(ret));
     }
   }
 
@@ -432,10 +435,10 @@ inline ObEvent *ObEThread::schedule_imm(
 {
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, 0, 0, callback_event, cookie,
       &ObEThread::schedule))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_imm");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_imm");
   } else {/*do nothing*/}
 
   return event;
@@ -446,10 +449,10 @@ inline ObEvent *ObEThread::schedule_imm_signal(
 {
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, 0, 0, callback_event, cookie,
       &ObEThread::schedule, true))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_imm_signal");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_imm_signal");
   } else {/*do nothing*/}
 
   return event;
@@ -460,10 +463,10 @@ inline ObEvent *ObEThread::schedule_at(
 {
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, t, 0, callback_event, cookie,
       &ObEThread::schedule))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_at");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_at");
   } else {/*do nothing*/}
 
   return event;
@@ -474,10 +477,10 @@ inline ObEvent *ObEThread::schedule_in(
 {
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, get_hrtime() + t, 0, callback_event,
       cookie, &ObEThread::schedule))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_in");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_in");
   } else {/*do nothing*/}
 
   return event;
@@ -489,10 +492,10 @@ inline ObEvent *ObEThread::schedule_every(
   ObEvent *event = NULL;
   const ObHRTime aperiod = (t < 0 ? t : (get_hrtime() + t));
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, aperiod, t, callback_event,
       cookie, &ObEThread::schedule))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_every");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_every");
   } else {/*do nothing*/}
 
   return event;
@@ -503,10 +506,10 @@ inline int ObEThread::schedule(ObEvent &event, const bool fast_signal)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(REGULAR != tt_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_EVENT_LOG(WARN, "only REGULAR ethread can arrive here", K(tt_), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "only REGULAR ethread can arrive here", K(tt_), K(ret));
   } else if (NULL == event.continuation_->mutex_ && OB_ISNULL(this->mutex_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_EVENT_LOG(WARN, "mutex_ is null, it should not happened", "this.mutex", this->mutex_,
+    PROXY_EVENT_LOG(WDIAG, "mutex_ is null, it should not happened", "this.mutex", this->mutex_,
                     "continuation.mutex", event.continuation_->mutex_.get_ptr(), K(ret));
   } else {
     event.ethread_ = this;
@@ -526,10 +529,10 @@ inline ObEvent *ObEThread::schedule_imm_local(
 {
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, 0, 0, callback_event, cookie,
       &ObEThread::schedule_local))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_imm_local");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_imm_local");
   } else {/*do nothing*/}
 
   return event;
@@ -540,10 +543,10 @@ inline ObEvent *ObEThread::schedule_at_local(
 {
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, t, 0, callback_event, cookie,
       &ObEThread::schedule_local))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_at_local");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_at_local");
   } else {/*do nothing*/}
 
   return event;
@@ -554,10 +557,10 @@ inline ObEvent *ObEThread::schedule_in_local(
 {
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, get_hrtime() + t, 0, callback_event,
       cookie, &ObEThread::schedule_local))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_in_local");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_in_local");
   } else {/*do nothing*/}
 
   return event;
@@ -569,10 +572,10 @@ inline ObEvent *ObEThread::schedule_every_local(
   ObEvent *event = NULL;
   const ObHRTime aperiod = (t < 0 ? t : (get_hrtime() + t));
   if (OB_ISNULL(cont)) {
-    PROXY_EVENT_LOG(WARN, "argument is invalid", K(cont));
+    PROXY_EVENT_LOG(WDIAG, "argument is invalid", K(cont));
   } else if (OB_ISNULL(event = schedule_common(*cont, aperiod, t, callback_event,
       cookie, &ObEThread::schedule_local))) {
-    PROXY_EVENT_LOG(WARN, "fail to schedule_common for schedule_every_local");
+    PROXY_EVENT_LOG(WDIAG, "fail to schedule_common for schedule_every_local");
   } else {/*do nothing*/}
 
   return event;
@@ -584,7 +587,7 @@ inline int ObEThread::schedule_local(ObEvent &event, const bool fast_signal)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(REGULAR != tt_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_EVENT_LOG(WARN, "only REGULAR ethread can arrive here", K(tt_), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "only REGULAR ethread can arrive here", K(tt_), K(ret));
   } else {
     if (NULL == event.mutex_) {
       event.ethread_ = this;
@@ -593,7 +596,7 @@ inline int ObEThread::schedule_local(ObEvent &event, const bool fast_signal)
     } else {
       if (event.ethread_ != this) {
         ret = common::OB_ERR_UNEXPECTED;
-        PROXY_EVENT_LOG(WARN, "event.ethread_ do not band curr ethread", K(event.ethread_), K(ret));
+        PROXY_EVENT_LOG(WDIAG, "event.ethread_ do not band curr ethread", K(event.ethread_), K(ret));
       } else {
         event_queue_external_.enqueue_local(&event);
       }
@@ -605,7 +608,7 @@ inline int ObEThread::schedule_local(ObEvent &event, const bool fast_signal)
 inline void ObEThread::free_event(ObEvent &event)
 {
   if (OB_UNLIKELY(event.in_the_priority_queue_) || OB_UNLIKELY(event.in_the_prot_queue_)) {
-    PROXY_EVENT_LOG(ERROR, "current event is in queue, it should not happened", K(event));
+    PROXY_EVENT_LOG(EDIAG, "current event is in queue, it should not happened", K(event));
   } else {
     event.free();
   }

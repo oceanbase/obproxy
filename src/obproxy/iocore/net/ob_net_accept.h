@@ -76,9 +76,9 @@ public:
   {
     int ret = common::OB_SUCCESS;
     if (OB_FAIL(event::ObAction::cancel(cont))) {
-      PROXY_NET_LOG(WARN, "fail to cancel action", K(cont), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to cancel action", K(cont), K(ret));
     } else if (OB_FAIL(server_->close())) {
-      PROXY_NET_LOG(WARN, "fail to do server close", K(server_), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to do server close", K(server_), K(ret));
     } else {/*do nothing*/}
     return ret;
   }

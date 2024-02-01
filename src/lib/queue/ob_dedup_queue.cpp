@@ -68,20 +68,20 @@ int ObDedupQueue::init(int32_t thread_num /*= DEFAULT_THREAD_NUM*/,
              || page_size <= 0) {
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_FAIL(task_queue_sync_.init(ObWaitEventIds::DEDUP_QUEUE_COND_WAIT))) {
-    COMMON_LOG(WARN, "fail to init task queue sync cond, ", K(ret));
+    COMMON_LOG(WDIAG, "fail to init task queue sync cond, ", K(ret));
   } else {
     thread_num_ = thread_num;
     setThreadCount(thread_num);
     if (OB_SUCCESS != (ret = allocator_.init(total_mem_limit, hold_mem_limit, page_size))) {
-      COMMON_LOG(WARN, "allocator init fail", K(total_mem_limit), K(hold_mem_limit), K(page_size),
+      COMMON_LOG(WDIAG, "allocator init fail", K(total_mem_limit), K(hold_mem_limit), K(page_size),
                  K(ret));
     } else if (OB_SUCCESS != (ret = task_map_.create(task_map_size, &hash_allocator_,
                                                      ObModIds::OB_HASH_BUCKET_TASK_MAP))) {
-      COMMON_LOG(WARN, "task_map create fail", K(ret));
+      COMMON_LOG(WDIAG, "task_map create fail", K(ret));
     } else if (OB_SUCCESS != (ret = task_queue_.init(queue_size))) {
-      COMMON_LOG(WARN, "task_queue init fail", K(ret));
+      COMMON_LOG(WDIAG, "task_queue init fail", K(ret));
     } else if (thread_num_ != start()) {
-      COMMON_LOG(WARN, "start thread fail");
+      COMMON_LOG(WDIAG, "start thread fail");
       ret = OB_ERR_UNEXPECTED;
     } else {
       is_inited_ = true;
@@ -129,7 +129,7 @@ int ObDedupQueue::set_thread_dead_threshold(const int64_t thread_dead_threshold)
     ret = OB_NOT_INIT;
   } else if (0 > thread_dead_threshold) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "thread_dead_threshold is not valid", K(ret));
+    COMMON_LOG(WDIAG, "thread_dead_threshold is not valid", K(ret));
   } else {
     thread_dead_threshold_ = thread_dead_threshold;
   }
@@ -149,7 +149,7 @@ int ObDedupQueue::add_task(const IObDedupTask &task)
     } else if (OB_HASH_NOT_EXIST == hash_ret) {
       ret = add_task_(task);
     } else {
-      COMMON_LOG(WARN, "unexpected hash_ret", K(hash_ret));
+      COMMON_LOG(WDIAG, "unexpected hash_ret", K(hash_ret));
       ret = hash_ret;
     }
     if (OB_SUCC(ret)) {
@@ -160,7 +160,7 @@ int ObDedupQueue::add_task(const IObDedupTask &task)
     if (REACH_TIME_INTERVAL(THREAD_CHECK_INTERVAL)) {
       for (int64_t i = 0; i < thread_num_; i++) {
         if (thread_metas_[i].check_dead(thread_dead_threshold_)) {
-          COMMON_LOG(WARN, "thread maybe dead", K(i), K(thread_metas_[i]));
+          COMMON_LOG(WDIAG, "thread maybe dead", K(i), K(thread_metas_[i]));
         }
       }
     }
@@ -172,14 +172,14 @@ IObDedupTask *ObDedupQueue::copy_task_(const IObDedupTask &task)
 {
   IObDedupTask *ret = NULL;
   if (IS_NOT_INIT) {
-    COMMON_LOG(WARN, "ObDedupQueue is not inited");
+    COMMON_LOG(WDIAG, "ObDedupQueue is not inited");
   } else {
     int64_t deep_copy_size = task.get_deep_copy_size();
     char *memory = NULL;
     if (NULL == (memory = (char *)allocator_.alloc(deep_copy_size))) {
-      COMMON_LOG(WARN, "alloc memory fail", K(deep_copy_size));
+      COMMON_LOG(WDIAG, "alloc memory fail", K(deep_copy_size));
     } else if (NULL == (ret = task.deep_copy(memory, deep_copy_size))) {
-      COMMON_LOG(WARN, "deep copy task object fail", K(deep_copy_size), KP(memory));
+      COMMON_LOG(WDIAG, "deep copy task object fail", K(deep_copy_size), KP(memory));
     } else {
       COMMON_LOG(DEBUG, "deep copy task succ", K(ret), KP(memory), K(deep_copy_size));
       ret->set_memory_ptr(memory);
@@ -197,9 +197,9 @@ IObDedupTask *ObDedupQueue::copy_task_(const IObDedupTask &task)
 void ObDedupQueue::destroy_task_(IObDedupTask *task)
 {
   if (IS_NOT_INIT) {
-    COMMON_LOG(WARN, "ObDedupQueue is not inited");
+    COMMON_LOG(WDIAG, "ObDedupQueue is not inited");
   } else if (OB_ISNULL(task)) {
-    COMMON_LOG(WARN, "invalid argument");
+    COMMON_LOG(WDIAG, "invalid argument");
   } else {
     char *memory = task->get_memory_ptr();
     task->~IObDedupTask();
@@ -220,7 +220,7 @@ int ObDedupQueue::map_callback_(const IObDedupTask &task, TaskMapKVPair &kvpair)
     IObDedupTask *task2add = NULL;
     if (kvpair.first != kvpair.second
         || NULL == (task2remove = kvpair.second)) {
-      COMMON_LOG(WARN, "unexpected key null pointer", K(kvpair.first), K(kvpair.second));
+      COMMON_LOG(WDIAG, "unexpected key null pointer", K(kvpair.first), K(kvpair.second));
       ret = OB_ERR_UNEXPECTED;
     } else if (0 != task2remove->trylock()) {
       ret = OB_EAGAIN;
@@ -230,11 +230,11 @@ int ObDedupQueue::map_callback_(const IObDedupTask &task, TaskMapKVPair &kvpair)
       ret = OB_EAGAIN;
     } else if (NULL == (task2add = copy_task_(task))) {
       task2remove->unlock();
-      COMMON_LOG(WARN, "copy task fail");
+      COMMON_LOG(WDIAG, "copy task fail");
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else if (OB_SUCCESS != (ret = task_queue_.push(task2add))) {
       task2remove->unlock();
-      COMMON_LOG(WARN, "push task to queue fail", K(ret));
+      COMMON_LOG(WDIAG, "push task to queue fail", K(ret));
       destroy_task_(task2add);
       task2add = NULL;
     } else {
@@ -259,23 +259,23 @@ int ObDedupQueue::add_task_(const IObDedupTask &task)
   } else {
     IObDedupTask *task2add = NULL;
     if (NULL == (task2add = copy_task_(task))) {
-      COMMON_LOG(WARN, "copy task fail");
+      COMMON_LOG(WDIAG, "copy task fail");
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       // lockstat is to aviod that job not insert task_queue was deleted from map by other thread.
       task2add->lock();
       int hash_ret = task_map_.set_refactored(task2add, task2add);
       if (OB_SUCCESS != hash_ret) {
-        COMMON_LOG(WARN, "set to task map fail", K(hash_ret));
+        COMMON_LOG(WDIAG, "set to task map fail", K(hash_ret));
         task2add->unlock();
         destroy_task_(task2add);
         task2add = NULL;
         ret = OB_EAGAIN;
       } else if (OB_SUCCESS != (ret = task_queue_.push(task2add))) {
-        COMMON_LOG(WARN, "push task to queue fail", K(ret));
+        COMMON_LOG(WDIAG, "push task to queue fail", K(ret));
         if (OB_SUCCESS != (hash_ret = task_map_.erase_refactored(task2add))) {
           task2add->unlock();
-          COMMON_LOG(WARN, "unexpected erase from task_map fail", K(hash_ret));
+          COMMON_LOG(WDIAG, "unexpected erase from task_map fail", K(hash_ret));
         } else {
           task2add->unlock();
           destroy_task_(task2add);
@@ -317,7 +317,7 @@ bool ObDedupQueue::gc_()
     int hash_ret = task_map_.erase_refactored(task_list[i]);
     if (OB_SUCCESS != hash_ret) {
       task_list[i]->unlock();
-      COMMON_LOG(WARN, "unexpected erase from task_map fail", K(hash_ret));
+      COMMON_LOG(WDIAG, "unexpected erase from task_map fail", K(hash_ret));
     } else {
       task_list[i]->unlock();
       destroy_task_(task_list[i]);
@@ -337,7 +337,7 @@ void ObDedupQueue::run(obsys::CThread *thread, void *arg)
   while (!_stop) {
     IObDedupTask *task2process = NULL;
     if (OB_SUCCESS != (tmp_ret = task_queue_.pop(task2process)) && OB_UNLIKELY(tmp_ret != OB_ENTRY_NOT_EXIST)) {
-      COMMON_LOG(WARN, "task_queue_.pop error", K(tmp_ret), K(task2process));
+      COMMON_LOG(WDIAG, "task_queue_.pop error", K(tmp_ret), K(task2process));
     } else if (NULL != task2process) {
       thread_meta.on_process_start(task2process);
       task2process->process();

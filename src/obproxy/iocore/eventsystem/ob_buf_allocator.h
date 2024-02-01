@@ -111,7 +111,7 @@ public:
     while (OB_UNLIKELY(once < 2) && OB_SUCC(ret)) {
       if (ATOMIC_BCAS(&once, 0, 1)) {
         if (OB_FAIL(g_buf_allocator.init_buffer_allocators())) {
-          PROXY_EVENT_LOG(WARN, "failed to init buffer allocators", K(ret));
+          PROXY_EVENT_LOG(WDIAG, "failed to init buffer allocators", K(ret));
           ATOMIC_BCAS(&once, 1, 0);
         } else {
           ATOMIC_BCAS(&once, 1, 2);
@@ -140,7 +140,7 @@ private:
       }
 
       if (OB_FAIL(buf_allocator_[i].init("ObBufAllocator", slab_size, cache_count, alignment))) {
-        PROXY_EVENT_LOG(WARN, "failed to init buffer allocator",
+        PROXY_EVENT_LOG(WDIAG, "failed to init buffer allocator",
                         K(i), K(slab_size), K(cache_count), K(alignment), K(ret));
       } else if (DEFAULT_MAX_BUFFER_SIZE == slab_size) {
         buf_allocator_[i].set_reclaim_opt(common::ENABLE_RECLAIM, 1);

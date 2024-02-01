@@ -33,11 +33,11 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::serialize(char *buf, cons
 {
   int ret = OB_SUCCESS;
   if (OB_SUCCESS != (ret = serialization::encode_vi64(buf, buf_len, pos, count()))) {
-    _OB_LOG(WARN, "fail to encode ob array count:ret[%d]", ret);
+    _OB_LOG(WDIAG, "fail to encode ob array count:ret[%d]", ret);
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < count(); i ++) {
     if (OB_SUCCESS != (ret = ItemEncode::encode_item(buf, buf_len, pos, at(i)))) {
-      _OB_LOG(WARN, "fail to encode item[%ld]:ret[%d]", i, ret);
+      _OB_LOG(WDIAG, "fail to encode item[%ld]:ret[%d]", i, ret);
     }
   }
   return ret;
@@ -52,13 +52,13 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::deserialize(const char *b
   T item;
   reset();
   if (OB_SUCCESS != (ret = serialization::decode_vi64(buf, data_len, pos, &count))) {
-    _OB_LOG(WARN, "fail to decode ob array count:ret[%d]", ret);
+    _OB_LOG(WDIAG, "fail to decode ob array count:ret[%d]", ret);
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < count; i ++) {
     if (OB_SUCCESS != (ret = ItemEncode::decode_item(buf, data_len, pos, item))) {
-      _OB_LOG(WARN, "fail to decode array item:ret[%d]", ret);
+      _OB_LOG(WDIAG, "fail to decode array item:ret[%d]", ret);
     } else if (OB_SUCCESS != (ret = push_back(item))) {
-      _OB_LOG(WARN, "fail to add item to array:ret[%d]", ret);
+      _OB_LOG(WDIAG, "fail to add item to array:ret[%d]", ret);
     }
   }
   return ret;
@@ -91,7 +91,7 @@ int ObFixedArray<T, BlockAllocatorT>::deserialize(const char *buf, int64_t data_
   OB_UNIS_DECODE(count);
   if (OB_SUCC(ret) && count > 0) {
     if (OB_FAIL(prepare_allocate(count))) {
-      _OB_LOG(WARN, "fail to init ob array item:ret[%d]", ret);
+      _OB_LOG(WDIAG, "fail to init ob array item:ret[%d]", ret);
     } else {
       for (int64_t i = 0; OB_SUCC(ret) && i < count; i ++) {
         OB_UNIS_DECODE(at(i));

@@ -66,7 +66,7 @@ int ObSQLMonitorInfoCont::init(int64_t report_interval_us, ObEThread *thread, Ob
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(report_interval_us <= 0 || NULL == thread || NULL == thread_prometheus)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(report_interval_us), K(ret));
+    LOG_WDIAG("invalid argument", K(report_interval_us), K(ret));
   } else {
     report_interval_us_ = report_interval_us;
     thread_ = thread;
@@ -82,7 +82,7 @@ int ObSQLMonitorInfoCont::set_report_interval(const int64_t interval)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(interval <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid interval value", K(interval), K(ret));
+    LOG_WDIAG("invalid interval value", K(interval), K(ret));
   } else {
     report_interval_us_ = interval;
   }
@@ -95,15 +95,15 @@ int ObSQLMonitorInfoCont::schedule_report_prometheus_info()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K_(is_inited), K(ret));
+    LOG_WDIAG("not inited", K_(is_inited), K(ret));
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
-    LOG_WARN("proxy need exit now");
+    LOG_WDIAG("proxy need exit now");
   } else if (OB_UNLIKELY(!thread_->is_event_thread_type(ET_NET))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("sql monitor info cont must be scheduled in net thread", K(ret));
+    LOG_EDIAG("sql monitor info cont must be scheduled in net thread", K(ret));
   } else if (OB_ISNULL(thread_->schedule_in(this, HRTIME_USECONDS(report_interval_us_), EVENT_NONE))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule report prometheus info", K(ret));
+    LOG_WDIAG("fail to schedule report prometheus info", K(ret));
   }
 
   return ret;
@@ -144,7 +144,7 @@ int ObSQLMonitorInfoCont::main_handler(int event, void *data)
   thread_prometheus_->monitor_info_hash_map_.reuse();
 
   if (OB_FAIL(schedule_report_prometheus_info())) {
-    LOG_WARN("schedule report prometheus info failed", K(ret));
+    LOG_WDIAG("schedule report prometheus info failed", K(ret));
   }
   return ret;
 }
@@ -166,15 +166,15 @@ int ObThreadPrometheus::init(ObEThread *thread)
   if (OB_UNLIKELY(NULL == thread)) {
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_FAIL(monitor_info_hash_map_.create(16, ObModIds::OB_PROMETHEUS_RELATED))) {
-    LOG_WARN("monitor info hash map create failed", K(ret));
+    LOG_WDIAG("monitor info hash map create failed", K(ret));
   } else if (OB_ISNULL(sql_monitor_info_cont_ = op_alloc(ObSQLMonitorInfoCont))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc ObSQLMonitorInfoCont", K(ret));
+    LOG_WDIAG("fail to alloc ObSQLMonitorInfoCont", K(ret));
   } else if (OB_FAIL(sql_monitor_info_cont_->init(
               get_global_proxy_config().prometheus_sync_interval / 5, thread, this))) {
-    LOG_WARN("set report interval failed", K(ret));
+    LOG_WDIAG("set report interval failed", K(ret));
   } else if (OB_FAIL(sql_monitor_info_cont_->schedule_report_prometheus_info())) {
-    LOG_WARN("schedule report prometheus info failed", K(ret));
+    LOG_WDIAG("schedule report prometheus info failed", K(ret));
   } else {
     thread_ = thread;
   }
@@ -198,7 +198,7 @@ int ObThreadPrometheus::set_sql_monitor_info(const ObString &tenant_name,
   if (set_sql_monitor_info_using_array(tenant_name, cluster_name, info)) {
     LOG_DEBUG("set sql monitor info using array", K(tenant_name), K(cluster_name), K(ret));
   } else if (OB_FAIL(set_sql_monitor_info_using_hashmap(tenant_name, cluster_name, info))) {
-    LOG_WARN("set sql monitor info using hashmap failed", K(tenant_name), K(cluster_name), K(info), K(ret));
+    LOG_WDIAG("set sql monitor info using hashmap failed", K(tenant_name), K(cluster_name), K(info), K(ret));
   }
 
   return ret;
@@ -213,9 +213,9 @@ int ObThreadPrometheus::set_sql_monitor_info_using_hashmap(const ObString &tenan
   SQLMonitorInfo monitor_info;
   if (OB_UNLIKELY(tenant_name.empty() || cluster_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(tenant_name), K(cluster_name), K(ret));
+    LOG_WDIAG("invalid argument", K(tenant_name), K(cluster_name), K(ret));
   } else if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
-    LOG_WARN("paste tenant and cluster name failed", K(tenant_name), K(cluster_name), K(ret));
+    LOG_WDIAG("paste tenant and cluster name failed", K(tenant_name), K(cluster_name), K(ret));
   } else if (OB_FAIL(monitor_info_hash_map_.get_refactored(key_string, monitor_info))) {
     if (OB_HASH_NOT_EXIST == ret) {
       memset(&monitor_info, 0, sizeof(monitor_info));
@@ -231,7 +231,7 @@ int ObThreadPrometheus::set_sql_monitor_info_using_hashmap(const ObString &tenan
     monitor_info.server_process_request_time_ += info.server_process_request_time_;
     monitor_info.prepare_send_request_to_server_time_ += info.prepare_send_request_to_server_time_;
     if (OB_FAIL(monitor_info_hash_map_.set_refactored(key_string, monitor_info, 1))) {
-      LOG_WARN("monitor info hash map set failed", K(ret));
+      LOG_WDIAG("monitor info hash map set failed", K(ret));
     }
   }
 

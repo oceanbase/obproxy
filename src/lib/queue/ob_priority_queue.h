@@ -39,7 +39,7 @@ public:
       ret = OB_SIZE_OVERFLOW;
     } else if (OB_UNLIKELY(NULL == data) || OB_UNLIKELY(priority < 0) || OB_UNLIKELY(priority >= PRIO_CNT)) {
       ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(WARN, "push error, invalid argument", KP(data), K(priority));
+      COMMON_LOG(WDIAG, "push error, invalid argument", KP(data), K(priority));
     } else if (OB_FAIL(queue_[priority].push(data))) {
       // do nothing
     } else {
@@ -56,7 +56,7 @@ public:
     int ret = OB_ENTRY_NOT_EXIST;
     if (OB_UNLIKELY(timeout_us < 0)) {
       ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(ERROR, "timeout is invalid", K(ret), K(timeout_us));
+      COMMON_LOG(EDIAG, "timeout is invalid", K(ret), K(timeout_us));
     } else {
       if (0 == sem_.wait(timeout_us)) {
         for(int i = 0; OB_ENTRY_NOT_EXIST == ret  && i < prio_limit; i++) {

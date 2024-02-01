@@ -16,6 +16,9 @@
 #include "cmd/ob_internal_cmd_handler.h"
 #include "rpc/obmysql/ob_mysql_packet.h"
 
+#define CLIENT_SESSION_ID_V1_PROXY_ID_LIMIT 255  // max proxy_id using CLIENT_SESSION_ID_V1
+#define CLIENT_SESSION_ID_V2_PROXY_ID_LIMIT 8191 // max proxy_id using CLIENT_SESSION_ID_V2
+
 namespace oceanbase
 {
 namespace obproxy

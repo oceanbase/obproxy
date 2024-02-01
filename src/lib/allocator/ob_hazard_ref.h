@@ -115,7 +115,7 @@ public:
   void push(HazardNode *node)
   {
     if (OB_ISNULL(node) || OB_ISNULL(tail_)) {
-      _OB_LOG(WARN, "invalid node");
+      _OB_LOG(WDIAG, "invalid node");
     } else {
       count_++;
       node->next_ = tail_->next_;

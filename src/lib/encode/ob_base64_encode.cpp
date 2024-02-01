@@ -79,7 +79,7 @@ int ObBase64Encoder::encode(const uint8_t *input, const int64_t input_len,
   if (OB_ISNULL(input) || OB_ISNULL(output) ||
       OB_UNLIKELY(input_len < 0 || output_len < 0) || pos < 0) {
     ret = OB_INVALID_ARGUMENT;
-    _OB_LOG(WARN, "invalid argument input=%p output=%p, input_len=%ld, pos=%ld",
+    _OB_LOG(WDIAG, "invalid argument input=%p output=%p, input_len=%ld, pos=%ld",
             input, output, input_len, pos);
   } else {
     uint8_t output_idxes[4] = {0, 0, 0, 0};
@@ -87,7 +87,7 @@ int ObBase64Encoder::encode(const uint8_t *input, const int64_t input_len,
     int64_t rounds = input_len / 3;
     if (OB_UNLIKELY(pos + rounds * 4 > output_len)) {
       ret = OB_BUF_NOT_ENOUGH;
-      _OB_LOG(WARN, "buffer is not enough pos = %ld, output_len = %ld, rounds = %ld",
+      _OB_LOG(WDIAG, "buffer is not enough pos = %ld, output_len = %ld, rounds = %ld",
                   pos, output_len, rounds);
     }
     const uint8_t *iter_input = input;
@@ -116,7 +116,7 @@ int ObBase64Encoder::encode(const uint8_t *input, const int64_t input_len,
 
         if (OB_UNLIKELY(pos + 3 >= output_len)) {
           ret = OB_BUF_NOT_ENOUGH;
-          _OB_LOG(WARN, "buffer is not enough pos = %ld, output_len = %ld",
+          _OB_LOG(WDIAG, "buffer is not enough pos = %ld, output_len = %ld",
                   pos, output_len);
         } else {
           output[pos++] = BASE64_CHARS[idx1];
@@ -132,7 +132,7 @@ int ObBase64Encoder::encode(const uint8_t *input, const int64_t input_len,
 
         if (OB_UNLIKELY(pos + 3 >= output_len)) {
           ret = OB_BUF_NOT_ENOUGH;
-          _OB_LOG(WARN, "buffer is not enough, pos = %ld, output_len = %ld",
+          _OB_LOG(WDIAG, "buffer is not enough, pos = %ld, output_len = %ld",
                   pos, output_len);
         } else {
           output[pos++] = BASE64_CHARS[idx1];
@@ -154,7 +154,7 @@ int ObBase64Encoder::decode(const char *input, const int64_t input_len,
   if (OB_ISNULL(input) || OB_ISNULL(output) ||
       OB_UNLIKELY(input_len < 0 || output_len < 0 || pos< 0)) {
     ret = OB_INVALID_ARGUMENT;
-    _OB_LOG(WARN, "invalid argument input=%p, output=%p, input_len=%ld, output_len=%ld, pos=%ld",
+    _OB_LOG(WDIAG, "invalid argument input=%p, output=%p, input_len=%ld, output_len=%ld, pos=%ld",
             input, output, input_len, output_len, pos);
   } else {
     uint8_t uint8_array_3[3];
@@ -163,7 +163,7 @@ int ObBase64Encoder::decode(const char *input, const int64_t input_len,
     int64_t rounds = input_len / 4;
     if (OB_UNLIKELY(rounds * 3 + pos > output_len)) {
       ret = OB_BUF_NOT_ENOUGH;
-      _OB_LOG(WARN, "buffer not enough, pos=%ld, output_len=%ld, input_len=%ld",
+      _OB_LOG(WDIAG, "buffer not enough, pos=%ld, output_len=%ld, input_len=%ld",
                     pos, output_len, input_len);
     }
     const char *iter_input = input;
@@ -176,7 +176,7 @@ int ObBase64Encoder::decode(const char *input, const int64_t input_len,
           }
         } else {
           ret = OB_INVALID_ARGUMENT;
-          _OB_LOG(WARN, "invalid base64 char, cur_idx=%ld, char=%c",
+          _OB_LOG(WDIAG, "invalid base64 char, cur_idx=%ld, char=%c",
                       iter_input - input, *iter_input);
         }
       } else {
@@ -230,7 +230,7 @@ int ObBase64Encoder::decode(const char *input, const int64_t input_len,
         if (skip_spaces && (pos + i - 1 >= output_len)) {
           ret = OB_INVALID_ARGUMENT;
         } else {
-          _OB_LOG(WARN, "buffer not enough, pos=%ld, output_len = %ld, i = %ld", pos, output_len, i);
+          _OB_LOG(WDIAG, "buffer not enough, pos=%ld, output_len = %ld, i = %ld", pos, output_len, i);
         }
       } else {
         for (int k = 0; k < i - 1; k++) {

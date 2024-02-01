@@ -61,8 +61,8 @@ public:
   ~ObWhiteListTableProcessor() {}
 
   int init();
-  bool can_ip_pass(common::ObString &cluster_name, common::ObString &tenant_name,
-                   common::ObString &user_name, const struct sockaddr& addr);
+  bool can_ip_pass(const common::ObString &cluster_name, const common::ObString &tenant_name,
+                   const common::ObString &user_name, const struct sockaddr& addr);
   int set_ip_list(common::ObString &cluster_name, common::ObString &tenant_name, common::ObString &ip_list);
   int delete_ip_list(common::ObString &cluster_name, common::ObString &tenant_name);
   void inc_index();
@@ -73,10 +73,10 @@ private:
   int32_t ip_to_int(char *addr, uint32_t &value);
   int backup_hash_map();
   uint32_t to_little_endian(uint32_t value);
-  bool can_ipv4_pass(common::ObString &cluster_name, common::ObString &tenant_name,
-                     common::ObString &user_name, const struct sockaddr& in_addr);
-  bool can_ipv6_pass(common::ObString &cluster_name, common::ObString &tenant_name,
-                     common::ObString &user_name, const struct sockaddr& in6_addr);
+  bool can_ipv4_pass(const common::ObString &cluster_name, const common::ObString &tenant_name,
+                     const common::ObString &user_name, const struct sockaddr& in_addr);
+  bool can_ipv6_pass(const common::ObString &cluster_name, const common::ObString &tenant_name,
+                     const common::ObString &user_name, const struct sockaddr& in6_addr);
 private:
   static int execute(void *arg);
   static int commit(void* arg, bool is_success);

@@ -55,6 +55,45 @@ void ObProxyPartMgr::destroy()
   if(sub_part_name_id_map_.created()) {
     sub_part_name_id_map_.destroy();
   }
+
+  if (OB_NOT_NULL(first_part_desc_)) {
+    first_part_desc_->~ObPartDesc();
+    first_part_desc_ = NULL;
+  }
+
+  // destroy sub part desc
+  // for non template table sub_part_desc_ is point to an array
+  // for template table sub_part_desc_ is a ptr
+  if (OB_NOT_NULL(sub_part_desc_)) {
+    // non template
+    if (OB_NOT_NULL(sub_part_num_)) {
+      ObPartitionFuncType type = sub_part_desc_->get_part_func_type();
+      if (is_hash_part(type, cluster_version_)) {
+        for (int i = 0; i < first_part_num_; i++) {
+          (((ObPartDescHash*) sub_part_desc_) + i)->~ObPartDescHash();
+        }
+      } else if (is_range_part(type, cluster_version_)) {
+        for (int i = 0; i < first_part_num_; i++) {
+          (((ObPartDescRange*) sub_part_desc_) + i)->~ObPartDescRange();
+        }
+      } else if (is_key_part(type, cluster_version_)) {
+        for (int i = 0; i < first_part_num_; i++) {
+          (((ObPartDescKey*) sub_part_desc_) + i)->~ObPartDescKey();
+        }
+      } else if (is_list_part(type, cluster_version_)) {
+        for (int i = 0; i < first_part_num_; i++) {
+          (((ObPartDescList*) sub_part_desc_) + i)->~ObPartDescList();
+        }
+      } else {
+        LOG_WDIAG("unexpected part desc type", K(type));
+      }
+    // template
+    } else {
+      sub_part_desc_->~ObPartDesc();
+      sub_part_desc_ = NULL;
+    }
+    first_part_num_ = 0;
+  }
 }
 int ObProxyPartMgr::get_part_with_part_name(const ObString &part_name,
                                             int64_t &part_id,
@@ -65,7 +104,7 @@ int ObProxyPartMgr::get_part_with_part_name(const ObString &part_name,
   int ret = OB_SUCCESS;
   if ( part_name.length() <= 0 || part_name.length() > MAX_PART_NAME_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("error part name", K(part_name));
+    LOG_WDIAG("error part name", K(part_name));
   } else {
     ObPartitionLevel part_level = part_info.get_part_level();
     ObString store_part_name;
@@ -103,7 +142,7 @@ int ObProxyPartMgr::get_part_with_part_name(const ObString &part_name,
   return ret;
 }
 
-int ObProxyPartMgr::get_first_part_id_by_random(const int64_t rand_num, 
+int ObProxyPartMgr::get_first_part_id_by_random(const int64_t rand_num,
                                                 int64_t &first_part_id,
                                                 int64_t &tablet_id)
 {
@@ -112,10 +151,10 @@ int ObProxyPartMgr::get_first_part_id_by_random(const int64_t rand_num,
   ObSEArray<int64_t, 1> tablet_ids;
   if (OB_ISNULL(first_part_desc_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get first part, null ptr", K(ret));
+    LOG_WDIAG("fail to get first part, null ptr", K(ret));
   } else {
     if (OB_FAIL(first_part_desc_->get_part_by_num(rand_num, part_ids, tablet_ids))) {
-      LOG_WARN("fail to get first part by random", K(first_part_desc_), K(ret));
+      LOG_WDIAG("fail to get first part by random", K(first_part_desc_), K(ret));
     } else {
       if (part_ids.count() >= 1) {
         first_part_id = part_ids[0];
@@ -203,11 +242,11 @@ int ObProxyPartMgr::get_sub_part_desc_by_first_part_id(const bool is_template_ta
       sub_part_desc_ptr = sub_part_desc_tmp;
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to get sub part desc ptr", K(ret));
+      LOG_WDIAG("fail to get sub part desc ptr", K(ret));
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get sub part desc by first part id", K(ret));
+    LOG_WDIAG("fail to get sub part desc by first part id", K(ret));
   }
 
   return ret;
@@ -225,10 +264,10 @@ int ObProxyPartMgr::get_sub_part(ObNewRange &range,
 
   if (OB_ISNULL(sub_part_desc_ptr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get sub part, null ptr", K(ret));
+    LOG_WDIAG("fail to get sub part, null ptr", K(ret));
   } else {
     if (OB_FAIL(sub_part_desc_ptr->get_part(range, allocator, part_ids, ctx, tablet_ids, sub_part_idx))) {
-      LOG_WARN("fail to get sub part", K(sub_part_desc_ptr), K(ret));
+      LOG_DEBUG("fail to get sub part", K(sub_part_desc_ptr), K(ret));
     }
   }
 
@@ -244,10 +283,10 @@ int ObProxyPartMgr::get_sub_part_by_random(const int64_t rand_num,
 
   if (OB_ISNULL(sub_part_desc_ptr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get sub part, null ptr", K(ret));
+    LOG_WDIAG("fail to get sub part, null ptr", K(ret));
   } else {
     if (OB_FAIL(sub_part_desc_ptr->get_part_by_num(rand_num, part_ids, tablet_ids))) {
-      LOG_WARN("fail to get sub part by random", K(sub_part_desc_ptr), K(ret));
+      LOG_WDIAG("fail to get sub part by random", K(sub_part_desc_ptr), K(ret));
     }
   }
 
@@ -278,28 +317,28 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
   // After observer v4.0, there is no concept of template partition
   if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && PARTITION_LEVEL_TWO == part_level) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster version bigger than 4 and level is two", K(ret), K(cluster_version));
+    LOG_WDIAG("cluster version bigger than 4 and level is two", K(ret), K(cluster_version));
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescHash)))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(desc_hash = new (tmp_buf) ObPartDescHash())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, part_num))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_hash->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit, alloc tablet id array failed", K(ret), K(part_num));
+    LOG_WDIAG("part mgr reach memory limit, alloc tablet id array failed", K(ret), K(part_num));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(part_array = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit, alloc part array failed", K(ret), K(part_num));
+    LOG_WDIAG("part mgr reach memory limit, alloc part array failed", K(ret), K(part_num));
   } else {
     if (NULL != rs_fetcher) {
       if (PARTITION_LEVEL_ONE == part_level) {
         first_part_num_ = part_num;
         if (!is_template_table && OB_ISNULL(sub_part_num_ = (int64_t *)allocator_.alloc(sizeof(int64_t) * part_num))) {
           ret = OB_REACH_MEMORY_LIMIT;
-          LOG_WARN("part mgr reach memory limit", K(ret));
+          LOG_WDIAG("part mgr reach memory limit", K(ret));
         }
         for (int64_t i = 0; i < part_num && OB_SUCC(ret); ++i) {
           if (OB_FAIL(rs_fetcher->next())) {
@@ -355,7 +394,7 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
       } else {
         //nothing
       }
-    } // end NULL != rs_fetcher 
+    } // end NULL != rs_fetcher
   }
 
   if (OB_SUCC(ret)) {
@@ -372,16 +411,16 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
       desc_hash->get_obj_types().push_back(ObObjType());
       desc_hash->get_cs_types().push_back(ObCollationType());
     }
-    // find all keys in this level 
+    // find all keys in this level
     for (int i = 0; i < key_info.key_num_; ++i) {
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == part_level) {
-        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                             key_info.part_keys_[i].accuracy_.length_,
                             key_info.part_keys_[i].accuracy_.precision_,
                             key_info.part_keys_[i].accuracy_.scale_);
-        desc_hash->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;        
-        desc_hash->get_obj_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObObjType>(key_info.part_keys_[i].obj_type_);
-        desc_hash->get_cs_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_);
+        desc_hash->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
+        desc_hash->set_obj_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
+        desc_hash->set_cs_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
       }
     }
 
@@ -401,7 +440,7 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("part level invalid", K(part_level), K(ret));
+      LOG_WDIAG("part level invalid", K(part_level), K(ret));
     }
   }
 
@@ -431,12 +470,12 @@ int ObProxyPartMgr::build_sub_hash_part_with_non_template(const bool is_oracle_m
   // alloc desc_range
   if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescHash) * first_part_num_))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(sub_part_desc = new (tmp_buf) ObPartDescHash[first_part_num_])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, all_sub_part_num_))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   }
 
   int64_t index=0;
@@ -444,12 +483,12 @@ int ObProxyPartMgr::build_sub_hash_part_with_non_template(const bool is_oracle_m
     desc_hash = (((ObPartDescHash *)sub_part_desc) + i);
     if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_hash->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WARN("allocator alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
+      LOG_WDIAG("allocator alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
     }
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
       if (OB_FAIL(rs_fetcher.next()) || index >= all_sub_part_num_) {
-        LOG_WARN("fail to get next rs_fetcher", K(ret));
+        LOG_WDIAG("fail to get next rs_fetcher", K(ret));
       } else {
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_id", first_part_id, int64_t);
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sub_part_id", sub_part_id, int64_t);
@@ -484,16 +523,16 @@ int ObProxyPartMgr::build_sub_hash_part_with_non_template(const bool is_oracle_m
         desc_hash->get_obj_types().push_back(ObObjType());
         desc_hash->get_cs_types().push_back(ObCollationType());
       }
-      // find all keys in this level 
+      // find all keys in this level
       for (int i = 0; i < key_info.key_num_; ++i) {
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == PARTITION_LEVEL_TWO) {
-          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                               key_info.part_keys_[i].accuracy_.length_,
                               key_info.part_keys_[i].accuracy_.precision_,
                               key_info.part_keys_[i].accuracy_.scale_);
-          desc_hash->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;
-          desc_hash->get_obj_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObObjType>(key_info.part_keys_[i].obj_type_);
-          desc_hash->get_cs_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_);
+          desc_hash->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
+          desc_hash->set_obj_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
+          desc_hash->set_cs_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
         }
       }
     }
@@ -534,28 +573,28 @@ int ObProxyPartMgr::build_key_part(const ObPartitionLevel part_level,
 
   if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && PARTITION_LEVEL_TWO == part_level) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster version is bigger than 4 and level is two", K(ret), K(cluster_version));
+    LOG_WDIAG("cluster version is bigger than 4 and level is two", K(ret), K(cluster_version));
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescKey)))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(desc_key = new (tmp_buf) ObPartDescKey())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, part_num))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_key->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret), K(part_num));
+    LOG_WDIAG("part mgr reach memory limit", K(ret), K(part_num));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(part_array = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("fail to alloc part array", K(ret), K(part_num));
+    LOG_WDIAG("fail to alloc part array", K(ret), K(part_num));
   } else {
     if (NULL != rs_fetcher) {
       if (PARTITION_LEVEL_ONE == part_level) {
         first_part_num_ = part_num;
         if (!is_template_table && OB_ISNULL(sub_part_num_ = (int64_t *)allocator_.alloc(sizeof(int64_t) * part_num))) {
           ret = OB_REACH_MEMORY_LIMIT;
-          LOG_WARN("part mgr reach memory limit", K(ret));
+          LOG_WDIAG("part mgr reach memory limit", K(ret));
         }
         for (int64_t i = 0; i < part_num && OB_SUCC(ret); ++i) {
           if (OB_FAIL(rs_fetcher->next())) {
@@ -627,16 +666,16 @@ int ObProxyPartMgr::build_key_part(const ObPartitionLevel part_level,
       desc_key->get_obj_types().push_back(ObObjType());
       desc_key->get_cs_types().push_back(ObCollationType());
     }
-    // find all keys in this level 
+    // find all keys in this level
     for (int i = 0; i < key_info.key_num_; ++i) {
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == part_level) {
-        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                               key_info.part_keys_[i].accuracy_.length_,
                               key_info.part_keys_[i].accuracy_.precision_,
                               key_info.part_keys_[i].accuracy_.scale_);
-        desc_key->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;
-        desc_key->get_obj_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObObjType>(key_info.part_keys_[i].obj_type_);
-        desc_key->get_cs_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_);
+        desc_key->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
+        desc_key->set_obj_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
+        desc_key->set_cs_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
       }
     }
     if (PARTITION_LEVEL_ONE == part_level) {
@@ -655,7 +694,7 @@ int ObProxyPartMgr::build_key_part(const ObPartitionLevel part_level,
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("part level invalid", K(part_level), K(ret));
+      LOG_WDIAG("part level invalid", K(part_level), K(ret));
     }
   }
 
@@ -684,12 +723,12 @@ int ObProxyPartMgr::build_sub_key_part_with_non_template(const ObPartitionFuncTy
   // alloc desc_range
   if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescKey) * first_part_num_))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(sub_part_desc = new (tmp_buf) ObPartDescKey[first_part_num_])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, all_sub_part_num_))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   }
 
   int64_t index=0;
@@ -697,12 +736,12 @@ int ObProxyPartMgr::build_sub_key_part_with_non_template(const ObPartitionFuncTy
     desc_key = (((ObPartDescKey *)sub_part_desc) + i);
     if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_key->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WARN("allocate tablet id array failed", K(ret), K(sub_part_num_[i]));
+      LOG_WDIAG("allocate tablet id array failed", K(ret), K(sub_part_num_[i]));
     }
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
       if (OB_FAIL(rs_fetcher.next()) || index >= all_sub_part_num_) {
-        LOG_WARN("fail to get next rs_fetcher", K(ret));
+        LOG_WDIAG("fail to get next rs_fetcher", K(ret));
       } else {
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_id", first_part_id, int64_t);
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sub_part_id", sub_part_id, int64_t);
@@ -737,16 +776,16 @@ int ObProxyPartMgr::build_sub_key_part_with_non_template(const ObPartitionFuncTy
         desc_key->get_obj_types().push_back(ObObjType());
         desc_key->get_cs_types().push_back(ObCollationType());
       }
-      // find all keys in this level 
+      // find all keys in this level
       for (int i = 0; i < key_info.key_num_; ++i) {
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == PARTITION_LEVEL_TWO) {
-          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                               key_info.part_keys_[i].accuracy_.length_,
                               key_info.part_keys_[i].accuracy_.precision_,
                               key_info.part_keys_[i].accuracy_.scale_);
-          desc_key->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;
-          desc_key->get_obj_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObObjType>(key_info.part_keys_[i].obj_type_);
-          desc_key->get_cs_types().at(key_info.part_keys_[i].idx_in_part_columns_) = static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_);
+          desc_key->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
+          desc_key->set_obj_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObObjType>(key_info.part_keys_[i].obj_type_));
+          desc_key->set_cs_types(key_info.part_keys_[i].idx_in_part_columns_, static_cast<ObCollationType>(key_info.part_keys_[i].cs_type_));
         }
       }
     }
@@ -786,31 +825,31 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
 
   if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && PARTITION_LEVEL_TWO == part_level) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster version bigger than 4, level two has no tempalte", K(ret));
+    LOG_WDIAG("cluster version bigger than 4, level two has no tempalte", K(ret));
   // alloc desc_range and part_array
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescRange)))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(desc_range = new (tmp_buf) ObPartDescRange())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(ret));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_range->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(RangePartition) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(part_array = new (tmp_buf) RangePartition[part_num])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(part_num), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(part_num), K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, part_num))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   } else {
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_num_ = part_num;
       if (!is_template_table && OB_ISNULL(sub_part_num_ = (int64_t *)allocator_.alloc(sizeof(int64_t) * part_num))) {
         ret = OB_REACH_MEMORY_LIMIT;
-        LOG_WARN("part mgr reach memory limit", K(ret));
+        LOG_WDIAG("part mgr reach memory limit", K(ret));
       }
     }
   }
@@ -820,7 +859,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
   int64_t pos = 0;
   for (int64_t i = 0; i < part_num && OB_SUCC(ret); ++i) {
     if (OB_FAIL(rs_fetcher.next())) {
-      LOG_WARN("fail to get next rs_fetcher", K(ret));
+      LOG_WDIAG("fail to get next rs_fetcher", K(ret));
     } else {
       if (PARTITION_LEVEL_ONE == part_level) {
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_id", part_array[i].part_id_, int64_t);
@@ -863,10 +902,10 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
 
       pos = 0;
       if (OB_FAIL(ret)) {
-        LOG_WARN("fail to fetch result", K(ret));
+        LOG_WDIAG("fail to fetch result", K(ret));
       } else if (OB_FAIL(part_array[i].high_bound_val_.deserialize(allocator_, tmp_str.ptr(),
                                                                    tmp_str.length(), pos))) {
-        LOG_WARN("fail to deserialize", K(tmp_str), K(ret));
+        LOG_WDIAG("fail to deserialize", K(tmp_str), K(ret));
       } else {
         // do nothing
       }
@@ -877,7 +916,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(desc_range->set_part_array(part_array, part_num))) {
-      LOG_WARN("fail to set_part_array, unexpected ", K(ret));
+      LOG_WDIAG("fail to set_part_array, unexpected ", K(ret));
     }
   }
 
@@ -888,14 +927,14 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
     for (int i = 0; i < part_col_num; i++) {
       desc_range->get_accuracies().push_back(ObAccuracy());
     }
-    // find all keys in this level 
+    // find all keys in this level
     for (int i = 0; i < key_info.key_num_; ++i) {
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == part_level) {
-        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                               key_info.part_keys_[i].accuracy_.length_,
                               key_info.part_keys_[i].accuracy_.precision_,
                               key_info.part_keys_[i].accuracy_.scale_);
-        desc_range->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;
+        desc_range->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
       }
     }
     if (PARTITION_LEVEL_ONE == part_level) {
@@ -914,7 +953,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("part level invalid", K(part_level), K(ret));
+      LOG_WDIAG("part level invalid", K(part_level), K(ret));
     }
   }
 
@@ -940,12 +979,12 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
   // alloc desc_range
   if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescRange) * first_part_num_))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(sub_part_desc = new (tmp_buf) ObPartDescRange[first_part_num_])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, all_sub_part_num_))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   }
   // build desc_range
   ObString tmp_str;
@@ -957,19 +996,19 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
     tmp_buf = NULL;
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(RangePartition) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WARN("part mgr reach memory limit", K(ret));
+      LOG_WDIAG("part mgr reach memory limit", K(ret));
     } else if (OB_ISNULL(part_array = new (tmp_buf) RangePartition[sub_part_num_[i]])) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to do placement new", K(tmp_buf), "sub_part_index", i,
+      LOG_WDIAG("fail to do placement new", K(tmp_buf), "sub_part_index", i,
                "sub_part_num", sub_part_num_[i], K(ret));
     } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_range->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WARN("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
+      LOG_WDIAG("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
     }
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
       if (OB_FAIL(rs_fetcher.next()) || index >= all_sub_part_num_) {
-        LOG_WARN("fail to get next rs_fetcher", K(ret));
+        LOG_WDIAG("fail to get next rs_fetcher", K(ret));
       } else {
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_id", part_array[j].first_part_id_, int64_t);
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sub_part_id", part_array[j].part_id_, int64_t);
@@ -995,10 +1034,10 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
         ++index;
         pos = 0;
         if (OB_FAIL(ret)) {
-          LOG_WARN("fail to fetch result", K(ret));
+          LOG_WDIAG("fail to fetch result", K(ret));
         } else if (OB_FAIL(part_array[j].high_bound_val_.deserialize(allocator_, tmp_str.ptr(),
                                                                      tmp_str.length(), pos))) {
-          LOG_WARN("fail to deserialize", K(tmp_str), K(ret));
+          LOG_WDIAG("fail to deserialize", K(tmp_str), K(ret));
         } else {
           // do nothing
         }
@@ -1011,18 +1050,18 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
       for (int i = 0; i < part_col_num; i++) {
         desc_range->get_accuracies().push_back(ObAccuracy());
       }
-      // find all keys in this level 
+      // find all keys in this level
       for (int i = 0; i < key_info.key_num_; ++i) {
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == PARTITION_LEVEL_TWO) {
-          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                               key_info.part_keys_[i].accuracy_.length_,
                               key_info.part_keys_[i].accuracy_.precision_,
                               key_info.part_keys_[i].accuracy_.scale_);
-          desc_range->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;
+          desc_range->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
         }
       }
       if (OB_FAIL(desc_range->set_part_array(part_array, sub_part_num_[i]))) {
-        LOG_WARN("fail to set_part_array, unexpected ", K(ret));
+        LOG_WDIAG("fail to set_part_array, unexpected ", K(ret));
       }
     }
   } // end of for
@@ -1061,31 +1100,31 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
 
   if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && PARTITION_LEVEL_TWO == part_level) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster version bigger than 4, part level is two", K(ret), K(cluster_version));
+    LOG_WDIAG("cluster version bigger than 4, part level is two", K(ret), K(cluster_version));
   // alloc desc_range and part_array
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescList)))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(desc_list = new (tmp_buf) ObPartDescList())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(ret));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_list->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit, alloc tablet id array failed", K(ret));
+    LOG_WDIAG("part mgr reach memory limit, alloc tablet id array failed", K(ret));
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ListPartition) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(part_array = new (tmp_buf) ListPartition[part_num])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(part_num), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(part_num), K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, part_num))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   } else {
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_num_ = part_num;
       if (!is_template_table && OB_ISNULL(sub_part_num_ = (int64_t *)allocator_.alloc(sizeof(int64_t) * part_num))) {
         ret = OB_REACH_MEMORY_LIMIT;
-        LOG_WARN("part mgr reach memory limit", K(ret));
+        LOG_WDIAG("part mgr reach memory limit", K(ret));
       }
     }
   }
@@ -1098,7 +1137,7 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
   ObObj obj_array[OB_USER_ROW_MAX_COLUMNS_COUNT];
   for (int64_t i = 0; i < part_num && OB_SUCC(ret); ++i) {
     if (OB_FAIL(rs_fetcher.next())) {
-      LOG_WARN("fail to get next rs_fetcher", K(ret));
+      LOG_WDIAG("fail to get next rs_fetcher", K(ret));
     } else {
       if (PARTITION_LEVEL_ONE == part_level) {
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_id", part_array[i].part_id_, int64_t);
@@ -1140,22 +1179,23 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "high_bound_val_bin", tmp_str);
       pos = 0;
       if (OB_FAIL(ret)) {
-        LOG_WARN("fail to fetch result", K(ret));
+        LOG_WDIAG("fail to fetch result", K(ret));
       } else {
         // deserialize ob rows array
         while (OB_SUCC(ret) && pos < tmp_str.length()) {
           row.assign(obj_array, OB_USER_ROW_MAX_COLUMNS_COUNT);
           if (OB_FAIL(row.deserialize(tmp_str.ptr(), tmp_str.length(), pos))) {
-            LOG_WARN("fail to deserialize ob row", K(tmp_str), K(ret));
+            LOG_WDIAG("fail to deserialize ob row", K(tmp_str), K(ret));
           } else if (OB_FAIL(ob_write_row(allocator_, row, tmp_row))) {
-            LOG_WARN("fail to write row to tmp row", K(row), K(tmp_row), K(ret));
+            LOG_WDIAG("fail to write row to tmp row", K(row), K(tmp_row), K(ret));
           } else if (OB_FAIL(part_array[i].rows_.push_back(tmp_row))) {
-            LOG_WARN("fail to add row array", K(ret));
+            LOG_WDIAG("fail to add row array", K(ret));
           }
         } // end while
         if (part_array[i].rows_.count() == 1
             && part_array[i].rows_[0].get_count() == 1
-            && part_array[i].rows_[0].get_cell(0).is_ext()) {
+            && OB_NOT_NULL(part_array[i].rows_[0].get_cell(0))
+            && part_array[i].rows_[0].get_cell(0)->is_ext()) {
           desc_list->set_default_part_array_idx(i);
         }
       }
@@ -1164,7 +1204,7 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(desc_list->set_part_array(part_array, part_num))) {
-      LOG_WARN("fail to set_part_array, unexpected ", K(ret));
+      LOG_WDIAG("fail to set_part_array, unexpected ", K(ret));
     }
   }
 
@@ -1175,14 +1215,14 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
     for (int i = 0; i < part_col_num; i++) {
       desc_list->get_accuracies().push_back(ObAccuracy());
     }
-    // find all keys in this level 
+    // find all keys in this level
     for (int i = 0; i < key_info.key_num_; ++i) {
       if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == part_level) {
-        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+        ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                             key_info.part_keys_[i].accuracy_.length_,
                             key_info.part_keys_[i].accuracy_.precision_,
                             key_info.part_keys_[i].accuracy_.scale_);
-        desc_list->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;
+        desc_list->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
       }
     }
     if (PARTITION_LEVEL_ONE == part_level) {
@@ -1201,7 +1241,7 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("part level invalid", K(part_level), K(ret));
+      LOG_WDIAG("part level invalid", K(part_level), K(ret));
     }
   }
 
@@ -1223,16 +1263,16 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
   int64_t *name_len_buf = NULL;
   int64_t *part_id_buf = NULL;
   ObString sub_part_name;
-  
+
   // alloc desc_range
   if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObPartDescList) * first_part_num_))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit", K(ret));
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(sub_part_desc = new (tmp_buf) ObPartDescList[first_part_num_])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do placement new", K(tmp_buf), K(ret));
+    LOG_WDIAG("fail to do placement new", K(tmp_buf), K(ret));
   } else if (OB_FAIL(alloc_name_buf(name_buf, name_len_buf, part_id_buf, all_sub_part_num_))) {
-    LOG_WARN("fail to alloc name buf", K(ret));
+    LOG_WDIAG("fail to alloc name buf", K(ret));
   }
   // build desc_list
   ObString tmp_str;
@@ -1247,19 +1287,19 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
     desc_list = (((ObPartDescList *)sub_part_desc) + i);
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ListPartition) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WARN("part mgr reach memory limit", K(ret));
+      LOG_WDIAG("part mgr reach memory limit", K(ret));
     } else if (OB_ISNULL(part_array = new (tmp_buf) ListPartition[sub_part_num_[i]])) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to do placement new", K(tmp_buf), "sub_part_index", i,
+      LOG_WDIAG("fail to do placement new", K(tmp_buf), "sub_part_index", i,
                "sub_part_num", sub_part_num_[i], K(ret));
     } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_list->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WARN("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
+      LOG_WDIAG("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
     }
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
       if (OB_FAIL(rs_fetcher.next()) || index >= all_sub_part_num_) {
-        LOG_WARN("fail to get next rs_fetcher", K(ret));
+        LOG_WDIAG("fail to get next rs_fetcher", K(ret));
       } else {
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_id", part_array[j].first_part_id_, int64_t);
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sub_part_id", part_array[j].part_id_, int64_t);
@@ -1285,22 +1325,23 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
         ++index;
         pos = 0;
         if (OB_FAIL(ret)) {
-          LOG_WARN("fail to fetch result", K(ret));
+          LOG_WDIAG("fail to fetch result", K(ret));
         } else {
           // deserialize ob rows array
           while (OB_SUCC(ret) && pos < tmp_str.length()) {
             row.assign(obj_array, OB_USER_ROW_MAX_COLUMNS_COUNT);
             if (OB_FAIL(row.deserialize(tmp_str.ptr(), tmp_str.length(), pos))) {
-              LOG_WARN("fail to deserialize ob row", K(tmp_str), K(ret));
+              LOG_WDIAG("fail to deserialize ob row", K(tmp_str), K(ret));
             } else if (OB_FAIL(ob_write_row(allocator_, row, tmp_row))) {
-              LOG_WARN("fail to write row to tmp row", K(row), K(tmp_row), K(ret));
+              LOG_WDIAG("fail to write row to tmp row", K(row), K(tmp_row), K(ret));
             } else if (OB_FAIL(part_array[j].rows_.push_back(tmp_row))) {
-              LOG_WARN("fail to add row array", K(ret));
+              LOG_WDIAG("fail to add row array", K(ret));
             }
           } // end while
           if (part_array[j].rows_.count() == 1
               && part_array[j].rows_[0].get_count() == 1
-              && part_array[j].rows_[0].get_cell(0).is_ext()) {
+              && OB_NOT_NULL(part_array[j].rows_[0].get_cell(0))
+              && part_array[j].rows_[0].get_cell(0)->is_ext()) {
             desc_list->set_default_part_array_idx(j);
           }
         }
@@ -1313,18 +1354,18 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
       for (int i = 0; i < part_col_num; i++) {
         desc_list->get_accuracies().push_back(ObAccuracy());
       }
-      // find all keys in this level 
+      // find all keys in this level
       for (int i = 0; i < key_info.key_num_; ++i) {
         if (static_cast<ObPartitionLevel>(key_info.part_keys_[i].level_) == PARTITION_LEVEL_TWO) {
-          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_, 
+          ObAccuracy accuracy(key_info.part_keys_[i].accuracy_.valid_,
                               key_info.part_keys_[i].accuracy_.length_,
                               key_info.part_keys_[i].accuracy_.precision_,
                               key_info.part_keys_[i].accuracy_.scale_);
-          desc_list->get_accuracies().at(key_info.part_keys_[i].idx_in_part_columns_) = accuracy;       
+          desc_list->set_accuracies(key_info.part_keys_[i].idx_in_part_columns_, accuracy);
         }
       }
       if (OB_FAIL(desc_list->set_part_array(part_array, sub_part_num_[i]))) {
-        LOG_WARN("fail to set_part_array, unexpected ", K(ret));
+        LOG_WDIAG("fail to set_part_array, unexpected ", K(ret));
       }
     }
   } // end of for
@@ -1347,7 +1388,7 @@ int ObProxyPartMgr::get_first_part_num(int64_t &num)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_first_part_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get first part num", K(ret));
+    LOG_WDIAG("fail to get first part num", K(ret));
   } else {
     num = first_part_num_;
   }
@@ -1365,7 +1406,7 @@ int ObProxyPartMgr::get_sub_part_num_by_first_part_id(ObProxyPartInfo &part_info
   } else {
     if (OB_UNLIKELY(!is_sub_part_valid())) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to get sub part num by first due to invalid sub part", K(ret));
+      LOG_WDIAG("fail to get sub part num by first due to invalid sub part", K(ret));
     } else {
       int sub_ret = OB_INVALID_ARGUMENT;
       const ObPartitionFuncType sub_part_func_type = sub_part_desc_->get_part_func_type();
@@ -1402,14 +1443,14 @@ int ObProxyPartMgr::get_sub_part_num_by_first_part_id(ObProxyPartInfo &part_info
             break;
           }
         } else {
-          LOG_WARN("unsupported partition func type", K(sub_part_func_type));
+          LOG_WDIAG("unsupported partition func type", K(sub_part_func_type));
           break;
         }
       }
 
       if (OB_FAIL(sub_ret)) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("fail to get sub part num by first part id", K(ret));
+        LOG_WDIAG("fail to get sub part num by first part id", K(ret));
       }
     }
   }
@@ -1417,24 +1458,24 @@ int ObProxyPartMgr::get_sub_part_num_by_first_part_id(ObProxyPartInfo &part_info
   return ret;
 }
 
-int ObProxyPartMgr::build_part_name_id_map(const PART_NAME_BUF * const name_buf, 
-                                           const int64_t * const name_len_buf, 
-                                           const int64_t * const part_id_buf, 
+int ObProxyPartMgr::build_part_name_id_map(const PART_NAME_BUF * const name_buf,
+                                           const int64_t * const name_len_buf,
+                                           const int64_t * const part_id_buf,
                                            char * target_part_name_buf,
                                            const int64_t total_part_name_len,
-                                           const int64_t part_num, 
+                                           const int64_t part_num,
                                            PartNameIdMap& part_name_id_map)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(name_buf) || OB_ISNULL(name_len_buf) || OB_ISNULL(part_id_buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get part name buf", K(ret));
+    LOG_WDIAG("fail to get part name buf", K(ret));
   } else if (OB_NOT_NULL(target_part_name_buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("part name buf is alloc twice", K(ret));
+    LOG_WDIAG("part name buf is alloc twice", K(ret));
   } else if (OB_ISNULL(target_part_name_buf = (char *)allocator_.alloc(total_part_name_len))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit when alloc all first part name buf", K(ret));
+    LOG_WDIAG("part mgr reach memory limit when alloc all first part name buf", K(ret));
   } else {
     ObString part_name;
     int64_t pos = 0;
@@ -1451,21 +1492,21 @@ int ObProxyPartMgr::build_part_name_id_map(const PART_NAME_BUF * const name_buf,
   return ret;
 }
 
-int ObProxyPartMgr::build_temp_sub_part_name_id_map(const PART_NAME_BUF * const name_buf, 
-                                                    const int64_t * const name_len_buf, 
-                                                    const int64_t * const part_id_buf, 
+int ObProxyPartMgr::build_temp_sub_part_name_id_map(const PART_NAME_BUF * const name_buf,
+                                                    const int64_t * const name_len_buf,
+                                                    const int64_t * const part_id_buf,
                                                     const int64_t part_num)
 {
   int ret = OB_SUCCESS;
   all_sub_part_name_length_ = (all_first_part_name_length_ * part_num) //total length of first-part-name
                               + (all_sub_part_name_length_ * first_part_num_) //total length of sub-part-name
-                              + (part_num * first_part_num_); //total length of 's' 
+                              + (part_num * first_part_num_); //total length of 's'
   if (OB_ISNULL(name_buf) || OB_ISNULL(name_len_buf) || OB_ISNULL(part_id_buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fail to get part name buf", K(ret));
+    LOG_WDIAG("fail to get part name buf", K(ret));
   } else if (OB_ISNULL(all_sub_part_name_buf_ = (char *)allocator_.alloc(sizeof(char) * all_sub_part_name_length_))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit when alloc all first part name buf", K(ret));
+    LOG_WDIAG("part mgr reach memory limit when alloc all first part name buf", K(ret));
   } else {
     ObString part_name;
     int64_t pos = 0;
@@ -1486,7 +1527,7 @@ int ObProxyPartMgr::build_temp_sub_part_name_id_map(const PART_NAME_BUF * const 
             string_to_upper_case(part_name.ptr(), part_name.length());
             sub_part_name_id_map_.set_refactored(part_name, generate_phy_part_id(iter->second, part_id_buf[i]));
           }
-        }  
+        }
       }
     }
   }
@@ -1498,13 +1539,13 @@ int ObProxyPartMgr::alloc_name_buf(PART_NAME_BUF *&name_buf, int64_t *&name_len_
   int ret = OB_SUCCESS;
   if (OB_ISNULL(name_buf = (PART_NAME_BUF *)allocator_.alloc(sizeof(PART_NAME_BUF) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit when alloc name buf", K(ret));
+    LOG_WDIAG("part mgr reach memory limit when alloc name buf", K(ret));
   } else if (OB_ISNULL(name_len_buf = (int64_t *)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit when alloc name len buf", K(ret));
+    LOG_WDIAG("part mgr reach memory limit when alloc name len buf", K(ret));
   } else if (OB_ISNULL(part_id_buf = (int64_t *)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WARN("part mgr reach memory limit when alloc part id buf", K(ret));
+    LOG_WDIAG("part mgr reach memory limit when alloc part id buf", K(ret));
   }
 
   if (OB_NOT_NULL(name_len_buf)) {

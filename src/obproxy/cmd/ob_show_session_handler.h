@@ -131,9 +131,10 @@ inline bool ObShowSessionHandler::enable_show_session(const ObMysqlClientSession
   const ObProxySessionPrivInfo &other_priv_info = cs.get_session_info().get_priv_info();
   return  session_priv_.has_all_privilege_
           || session_priv_.tenant_name_ == OB_SYS_TENANT_NAME
-          || (session_priv_.is_same_tenant(other_priv_info)
-              && session_priv_.cs_id_ == cs.get_cs_id()
-              && (session_priv_.is_same_user(other_priv_info) || session_priv_.has_process_privilege()));
+          || ((!cs.get_session_info().is_sharding_user() && session_priv_.is_same_tenant(other_priv_info))
+              && (session_priv_.cs_id_ == cs.get_cs_id())
+              && (session_priv_.is_same_user(other_priv_info) || session_priv_.has_process_privilege()))
+          || (cs.get_session_info().is_sharding_user() && session_priv_.is_same_logic_user(other_priv_info));
 }
 
 

@@ -32,15 +32,17 @@ enum ObIDCType
 const common::ObString get_idc_type_string(const ObIDCType type);
 
 /*
- * |--- n bits  ---|----- 2bits -----|--- 2 bits  ---|--- 2 bits  ---|--- 2 bits ---|--- 2 bits ---|--- 2 bits ---| LSB
- * | new attribute |-- dup replica --|-- role type --|-- pl status --|  zone type   | merge status |     IDC      | LSB
+ * |--- n bits  ---|----- 2bits -----|----- 2bits -----|--- 2 bits  ---|--- 2 bits  ---|--- 2 bits ---|--- 2 bits ---|--- 2 bits ---| LSB
+ * | new attribute |  primary zone   |-- dup replica --|-- role type --|-- pl status --|  zone type   | merge status |     IDC      | LSB
+
  */
 static const int64_t MERGE_BITS_SHIFT         = 2;
 static const int64_t ZONE_TYPE_BITS_SHIFT     = 4;
 static const int64_t PARTITION_BITS_SHIFT     = 6;
 static const int64_t ROLE_TYPE_BITS_SHIFT     = 8;
 static const int64_t DUP_REPLICA_BITS_SHIFT   = 10;
-static const int64_t NEW_ATTRIBUTE_BITS_SHIFT = 12;
+static const int64_t PRIMARY_ZONE_BITS_SHIFT = 12;
+static const int64_t NEW_ATTRIBUTE_BITS_SHIFT = 14;
 static const int64_t IN_SAME_IDC              = static_cast<int64_t>(SAME_IDC); //LOCAL
 static const int64_t IN_SAME_REGION           = static_cast<int64_t>(SAME_REGION); //REGION
 static const int64_t IN_OTHER_REGION          = static_cast<int64_t>(OTHER_REGION);//REMOTE
@@ -65,6 +67,10 @@ static const int64_t UNKNOWN_ROLE             = 3 << ROLE_TYPE_BITS_SHIFT;//UNKN
 static const int64_t NON_DUP_REPLICA          = 0 << DUP_REPLICA_BITS_SHIFT; // NON DUP_REPLICA
 static const int64_t IS_DUP_REPLICA           = 1 << DUP_REPLICA_BITS_SHIFT; // IS DUP_REPLICA
 static const int64_t UNKNOWN_DUP_REPLICA_TYPE = 3 << DUP_REPLICA_BITS_SHIFT; // UNKNOWN
+
+static const int64_t NON_PRIMARY_ZONE = 0 << PRIMARY_ZONE_BITS_SHIFT; // USE NON PRIMARY ZONE
+static const int64_t PRIMARY_ZONE = 1 << PRIMARY_ZONE_BITS_SHIFT; // USE PRIMARY ZONE
+static const int64_t UNKNOWN_PRIMARY_ZONE = 2 << PRIMARY_ZONE_BITS_SHIFT; // UNKOWN
 
 static const int64_t MAX_IDC_VALUE            = ((1 << MERGE_BITS_SHIFT) -1);//0x0011
 static const int64_t MAX_MERGE_VALUE          = (((1 << (ZONE_TYPE_BITS_SHIFT - MERGE_BITS_SHIFT)) -1) << MERGE_BITS_SHIFT);//0x01100
@@ -139,6 +145,8 @@ enum ObRouteType
   ROUTE_TYPE_DUP_PARTITION_MERGE_REGION            = (IS_DUP_REPLICA | UNKNOWN_ROLE | WITH_PARTITION_TYPE | UNKNOWN_ZONE_TYPE | IN_MERGING | IN_SAME_REGION),
   ROUTE_TYPE_DUP_PARTITION_UNMERGE_REMOTE          = (IS_DUP_REPLICA | UNKNOWN_ROLE | WITH_PARTITION_TYPE | UNKNOWN_ZONE_TYPE | IN_UNMERGING | IN_OTHER_REGION),
   ROUTE_TYPE_DUP_PARTITION_MERGE_REMOTE            = (IS_DUP_REPLICA | UNKNOWN_ROLE | WITH_PARTITION_TYPE | UNKNOWN_ZONE_TYPE | IN_MERGING | IN_OTHER_REGION),
+
+  ROUTE_TYPE_PRIMARY_ZONE = PRIMARY_ZONE,
 
   ROUTE_TYPE_MAX                                   = (MAX_ROLE_TYPE_VALUE | MAX_PARTITION_TYPE_VALUE | MAX_ZONE_TYPE_VALUE | MAX_MERGE_VALUE | MAX_IDC_VALUE | MAX_DUP_REPLICA_TYPE_VALUE),//1023
 };
@@ -533,6 +541,9 @@ common::ObString get_route_type_string(const ObRouteType type)
       break;
     case ROUTE_TYPE_DUP_PARTITION_MERGE_REMOTE:
       str = "ROUTE_TYPE_DUP_PARTITION_MERGE_REMOTE";
+      break;
+    case ROUTE_TYPE_PRIMARY_ZONE:
+      str = "ROUTE_TYPE_PRIMARY_ZONE";
       break;
     case ROUTE_TYPE_MAX:
       str = "ROUTE_TYPE_MAX";

@@ -16,6 +16,7 @@
 #include "iocore/eventsystem/ob_action.h"
 #include "obutils/ob_async_common_task.h"
 #include "proxy/route/ob_table_entry.h"
+#include "proxy/client/ob_client_vc.h"
 
 
 #define TABLE_ENTRY_LOOKUP_CACHE_EVENT (ROUTE_EVENT_EVENTS_START + 1)
@@ -78,13 +79,15 @@ class ObTableCache;
 class ObTableRouteParam
 {
 public:
-  ObTableRouteParam() { reset(); }
+  ObTableRouteParam() : route_diagnosis_(NULL) { reset(); }
   ~ObTableRouteParam() { reset(); }
 
   void reset();
   bool is_valid() const;
   int64_t to_string(char *buf, const int64_t buf_len) const;
   bool need_fetch_remote() const { return force_renew_ && (!name_.is_sys_dummy()); }
+  void set_route_diagnosis(ObRouteDiagnosis *route_diagnosis);
+
 
   event::ObContinuation *cont_;
   ObTableEntryName name_;
@@ -100,6 +103,8 @@ public:
   ObMysqlProxy *mysql_proxy_;
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
+  common::ObString binlog_service_ip_;
+  ObRouteDiagnosis *route_diagnosis_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObTableRouteParam);
@@ -116,11 +121,11 @@ public:
   int init(ObTableCache &table_cache, ObTableRouteParam &table_param, ObTableEntry *table_entry);
   void set_table_entry_op(const ObTableEntryLookupOp op) { te_op_ = op; }
   void set_need_notify(const bool need_notify) { need_notify_ = need_notify; }
+  static const char *get_state_name(const ObTableEntryLookupState state);
 
 private:
   int main_handler(int event, void *data);
   static const char *get_event_name(const int64_t event);
-  static const char *get_state_name(const ObTableEntryLookupState state);
 
   int schedule_imm(event::ObContinuation *cont, const int event);
   int schedule_in(event::ObContinuation *cont, const ObHRTime atimeout_in, const int event);
@@ -166,6 +171,8 @@ private:
   ObTableEntry *table_entry_; // the entry get from global cache
   ObTableCache *table_cache_;
   bool need_notify_;
+  ObMysqlClient *mysql_client_;
+  common::ObString binlog_service_ip_;
 
   DISALLOW_COPY_AND_ASSIGN(ObTableEntryCont);
 };

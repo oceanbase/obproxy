@@ -29,6 +29,8 @@ namespace obproxy
 namespace proxy
 {
 
+bool ObBasePsEntry::alloc_new_entry_disabled_ = false;
+
 DEF_TO_STRING(ObPsIdAddrs)
 {
   int64_t pos = 0;
@@ -108,11 +110,11 @@ int ObPsIdAddrs::alloc_ps_id_addrs(uint32_t ps_id, const struct sockaddr &addr, 
   int64_t alloc_size = sizeof(ObPsIdAddrs);
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for cursor id entry", K(alloc_size), K(ret));
+    LOG_WDIAG("fail to alloc mem for cursor id entry", K(alloc_size), K(ret));
   } else {
     ps_id_addrs = new (buf) ObPsIdAddrs(ps_id);
     if (OB_FAIL(ps_id_addrs->add_addr(addr))) {
-      LOG_WARN("set addr in ps_id_addrs failed", "addr", net::ObIpEndpoint(addr), K(ret));
+      LOG_WDIAG("set addr in ps_id_addrs failed", "addr", net::ObIpEndpoint(addr), K(ret));
       ps_id_addrs->destroy();
       ps_id_addrs = NULL;
     }
@@ -123,8 +125,14 @@ int ObPsIdAddrs::alloc_ps_id_addrs(uint32_t ps_id, const struct sockaddr &addr, 
 int ObPsIdAddrs::add_addr(const struct sockaddr &socket_addr) {
   int ret = OB_SUCCESS;
   net::ObIpEndpoint addr(socket_addr);
-  if (OB_FAIL(addrs_.push_back(addr))) {
-    LOG_WARN("set refactored failed", K(addr), K(ret));
+  bool found = false;
+  for (int64_t i = 0; !found && i < addrs_.count(); i++) {
+    if (addrs_.at(i) == addr) {
+      found = true;
+    }
+  }
+  if (!found && OB_FAIL(addrs_.push_back(addr))) {
+    LOG_WDIAG("set refactored failed", K(addr), K(ret));
   }
   return ret;
 }
@@ -135,7 +143,7 @@ int ObPsIdAddrs::remove_addr(const struct sockaddr &socket_addr) {
   for(int64_t i = 0; OB_SUCC(ret) && i < addrs_.count(); i++) {
     if (addr == addrs_.at(i)) {
       if (OB_FAIL(addrs_.remove(i))) {
-        LOG_WARN("fail to remove", K(i), K(ret));
+        LOG_WDIAG("fail to remove", K(i), K(ret));
       }
       break;
     }
@@ -145,7 +153,7 @@ int ObPsIdAddrs::remove_addr(const struct sockaddr &socket_addr) {
 
 void ObPsIdAddrs::destroy()
 {
-  LOG_INFO("ps id addrs will be destroyed", KPC(this));
+  LOG_DEBUG("ps id addrs will be destroyed", KPC(this));
 
   // release HashSet
   this->~ObPsIdAddrs();
@@ -161,7 +169,7 @@ int ObPsIdEntry::alloc_ps_id_entry(uint32_t ps_id, ObPsEntry *ps_entry, ObPsIdEn
   int64_t alloc_size = sizeof(ObPsIdEntry);
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for ps id entry", K(alloc_size), K(ret));
+    LOG_WDIAG("fail to alloc mem for ps id entry", K(alloc_size), K(ret));
   } else {
     ps_id_entry = new (buf) ObPsIdEntry(ps_id, ps_entry);
     LOG_DEBUG("alloc ps id", K(ps_id));
@@ -171,7 +179,7 @@ int ObPsIdEntry::alloc_ps_id_entry(uint32_t ps_id, ObPsEntry *ps_entry, ObPsIdEn
 
 void ObPsIdEntry::destroy()
 {
-  LOG_INFO("ps id entry will be destroyed", KPC(this));
+  LOG_DEBUG("ps id entry will be destroyed", KPC(this));
   ps_meta_.reset();
   int64_t total_len = sizeof(ObPsIdEntry);
   ps_entry_->dec_ref();
@@ -186,7 +194,7 @@ int ObPsIdPair::alloc_ps_id_pair(uint32_t client_ps_id, uint32_t server_ps_id, O
   int64_t alloc_size = sizeof(ObPsIdPair);
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for ps id pair", K(alloc_size), K(ret));
+    LOG_WDIAG("fail to alloc mem for ps id pair", K(alloc_size), K(ret));
   } else {
     ps_id_pair = new (buf) ObPsIdPair(client_ps_id, server_ps_id);
   }
@@ -195,7 +203,7 @@ int ObPsIdPair::alloc_ps_id_pair(uint32_t client_ps_id, uint32_t server_ps_id, O
 
 void ObPsIdPair::destroy()
 {
-  LOG_INFO("ps id pair will be destroyed", KPC(this));
+  LOG_DEBUG("ps id pair will be destroyed", KPC(this));
   int64_t total_len = sizeof(ObPsIdPair);
   op_fixed_mem_free(this, total_len);
 }
@@ -212,7 +220,7 @@ int ObPsSqlMeta::set_param_type(const char *param_type, int64_t param_type_len)
 
   if (OB_ISNULL(param_type_ = static_cast<char *>(op_fixed_mem_alloc(param_type_len)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc param type", K(param_type_len), K(ret));
+    LOG_WDIAG("fail to alloc param type", K(param_type_len), K(ret));
   } else {
     memcpy(param_type_, param_type, param_type_len);
     param_type_len_ = param_type_len;
@@ -226,10 +234,10 @@ int ObPsEntry::init(char *buf_start, int64_t buf_len)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_ISNULL(buf_start) || OB_UNLIKELY(buf_len < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf_start), K(buf_len), K(ret));
+    LOG_WDIAG("invalid input value", K(buf_start), K(buf_len), K(ret));
   } else {
     buf_start_ = buf_start;
     buf_len_ = buf_len;
@@ -243,10 +251,10 @@ int ObPsEntry::set_sql(const ObString &ps_sql)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(ps_sql.length() + PARSE_EXTRA_CHAR_NUM > buf_len_)) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("buf is not enough", K_(buf_len), K(ps_sql), K(ret));
+    LOG_WDIAG("buf is not enough", K_(buf_len), K(ps_sql), K(ret));
   } else {
     int64_t pos = 0;
     MEMCPY(buf_start_ + pos, ps_sql.ptr(), ps_sql.length());
@@ -292,13 +300,13 @@ int ObTextPsEntry::init(char *buf_start, int64_t buf_len, const ObString &text_p
 
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_ISNULL(buf_start) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf_start), K(buf_len), K(ret));
+    LOG_WDIAG("invalid input value", K(buf_start), K(buf_len), K(ret));
   } else if (OB_UNLIKELY(text_ps_sql.length() + PARSE_EXTRA_CHAR_NUM > buf_len)) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("buf is not enough", K(buf_len), K(text_ps_sql), K(ret));
+    LOG_WDIAG("buf is not enough", K(buf_len), K(text_ps_sql), K(ret));
   } else {
     int64_t pos = 0;
     MEMCPY(buf_start, text_ps_sql.ptr(), text_ps_sql.length());
@@ -323,7 +331,7 @@ void ObTextPsEntry::free()
 
 void ObTextPsEntry::destroy()
 {
-  LOG_INFO("text ps entry will be destroyed", KPC(this));
+  LOG_DEBUG("text ps entry will be destroyed", KPC(this));
   if (OB_LIKELY(is_inited_)) {
     ObBasePsEntry::destroy();
     is_inited_ = false;
@@ -336,7 +344,7 @@ void ObTextPsEntry::destroy()
 
 void ObGlobalTextPsEntry::free()
 {
-  LOG_INFO("global text ps entry will be destroyed", KPC(this));
+  LOG_DEBUG("global text ps entry will be destroyed", KPC(this));
   if (NULL != ps_entry_cache_) {
     ps_entry_cache_->delete_base_ps_entry(this);
   }
@@ -350,13 +358,13 @@ int ObTextPsNameEntry::alloc_text_ps_name_entry(const ObString &text_ps_name,
 
   if (text_ps_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("stmt name is empty", K(ret));
+    LOG_WDIAG("stmt name is empty", K(ret));
   } else {
     char *buf = NULL;
     int64_t alloc_size = sizeof(ObTextPsNameEntry) + text_ps_name.length();
     if (OB_ISNULL(buf = static_cast<char*>(op_fixed_mem_alloc(alloc_size)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem for text ps name entry", K(alloc_size), K(ret));
+      LOG_WDIAG("fail to alloc mem for text ps name entry", K(alloc_size), K(ret));
     } else {
       char *buf_start = buf + sizeof(ObTextPsNameEntry);
       MEMCPY(buf_start, text_ps_name.ptr(), text_ps_name.length());
@@ -369,7 +377,7 @@ int ObTextPsNameEntry::alloc_text_ps_name_entry(const ObString &text_ps_name,
 
 void ObTextPsNameEntry::destroy()
 {
-  LOG_INFO("text ps name entry will be destroyed", KPC(this));
+  LOG_DEBUG("text ps name entry will be destroyed", KPC(this));
   int64_t total_len = sizeof(ObTextPsNameEntry) + text_ps_name_.length();
   text_ps_entry_->dec_ref();
   text_ps_entry_ = NULL;
@@ -417,7 +425,7 @@ int init_ps_entry_cache_for_thread()
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_ps_entry_cache_for_one_thread(i))) {
-      PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
     }
   }
   return ret;
@@ -429,7 +437,7 @@ int init_text_ps_entry_cache_for_thread()
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_text_ps_entry_cache_for_one_thread(i))) {
-      PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
     }
   }
   return ret;
@@ -441,7 +449,7 @@ int init_ps_entry_cache_for_one_thread(int64_t index)
   if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->ps_entry_cache_
     = new (std::nothrow) ObBasePsEntryThreadCache())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
   }
   return ret;
 }
@@ -452,7 +460,7 @@ int init_text_ps_entry_cache_for_one_thread(int64_t index)
   if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->text_ps_entry_cache_
     = new (std::nothrow) ObBasePsEntryThreadCache())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(WARN, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
   }
   return ret;
 }

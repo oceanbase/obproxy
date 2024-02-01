@@ -63,7 +63,7 @@ inline int do_net_accept(ObNetAccept *na, void *ep, const bool blockable)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(na) || OB_ISNULL(ep)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(na), K(ep), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(na), K(ep), K(ret));
   } else {
     ObEvent *e = reinterpret_cast<ObEvent *>(ep);
     bool loop = accept_till_done;
@@ -78,7 +78,7 @@ inline int do_net_accept(ObNetAccept *na, void *ep, const bool blockable)
         vc = reinterpret_cast<ObUnixNetVConnection *>(na->get_net_processor()->allocate_vc());
         if (OB_ISNULL(vc)) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          PROXY_NET_LOG(ERROR, "failed to allocate ObUnixNetVConnection", K(ret));
+          PROXY_NET_LOG(EDIAG, "failed to allocate ObUnixNetVConnection", K(ret));
         } else {
           is_vc_from_cache = false;
           NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_CONNECTIONS_CURRENTLY_OPEN, 1);
@@ -105,9 +105,9 @@ inline int do_net_accept(ObNetAccept *na, void *ep, const bool blockable)
             }
           }
         } else if (OB_FAIL(na->set_sock_buf_size(na->server_.fd_))) {
-          PROXY_NET_LOG(ERROR, "fail to set_sock_buf_size", K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to set_sock_buf_size", K(ret));
         } else if (OB_FAIL(na->init_unix_net_vconnection(con, vc))) {
-          PROXY_NET_LOG(ERROR, "fail to init_unix_net_vconnection", K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to init_unix_net_vconnection", K(ret));
         } else {
           na->alloc_cache_ = NULL;
           vc->action_.copy(*na->action_);
@@ -121,7 +121,7 @@ inline int do_net_accept(ObNetAccept *na, void *ep, const bool blockable)
           } else {
             if(OB_ISNULL(g_event_processor.schedule_imm(vc, na->etype_))) {
               ret = OB_ERR_UNEXPECTED;
-              PROXY_NET_LOG(ERROR, "g_event_processor fail to schedule_imm", K(ret));
+              PROXY_NET_LOG(EDIAG, "g_event_processor fail to schedule_imm", K(ret));
             }
           }
         }
@@ -137,12 +137,12 @@ int net_accept(ObNetAccept *na, void *ep, const bool blockable)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(na) || OB_ISNULL(ep)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(na), K(ep), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(na), K(ep), K(ret));
   } else {
     if (blockable) {
       if (OB_FAIL(do_net_accept(na, ep, blockable))
           && OB_SYS_EAGAIN != ret) {
-        PROXY_NET_LOG(WARN, "fail to do net accept", K(na), K(ep), K(ret));
+        PROXY_NET_LOG(WDIAG, "fail to do net accept", K(na), K(ep), K(ret));
       }
     } else {
       ObEvent *e = reinterpret_cast<ObEvent *>(ep);
@@ -150,7 +150,7 @@ int net_accept(ObNetAccept *na, void *ep, const bool blockable)
       if (accept_lock.is_locked()) {
         if (OB_FAIL(do_net_accept(na, ep, blockable))
             && OB_SYS_EAGAIN != ret) {
-          PROXY_NET_LOG(WARN, "fail to do net accept", K(na), K(ep), K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to do net accept", K(na), K(ep), K(ret));
         }
       }//end of locked
     }
@@ -165,13 +165,13 @@ int ObNetAccept::init_accept_loop(const char *thread_name, const int64_t stacksi
   int ret = OB_SUCCESS;
   if (OB_ISNULL(thread_name) || OB_UNLIKELY(stacksize < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(thread_name), K(stacksize), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(thread_name), K(stacksize), K(ret));
   } else {
     NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_ACCEPTS_CURRENTLY_OPEN, 1);
     SET_CONTINUATION_HANDLER(this, &ObNetAccept::accept_loop_event);
     if (OB_ISNULL(g_event_processor.spawn_thread(this, thread_name, stacksize, DEDICATE_THREAD_ACCEPT))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_NET_LOG(ERROR, "g_event_processor fail to spawn_thread", K(ret));
+      PROXY_NET_LOG(EDIAG, "g_event_processor fail to spawn_thread", K(ret));
     }
   }
   return ret;
@@ -188,7 +188,7 @@ int ObNetAccept::init_accept()
   ObEThread *t = g_event_processor.assign_thread(etype_);
   if (OB_ISNULL(t)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "g_event_processor fail to assign_thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "g_event_processor fail to assign_thread", K(ret));
   } else {
     if (NULL == action_->continuation_->mutex_) {
       action_->continuation_->mutex_ = t->mutex_;
@@ -196,13 +196,13 @@ int ObNetAccept::init_accept()
     }
 
     if (OB_FAIL(do_listen(NON_BLOCKING))) {
-      PROXY_NET_LOG(ERROR, "fail to listen", K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to listen", K(ret));
     } else {
       SET_HANDLER((NetAcceptHandler)&ObNetAccept::accept_event);
       period_ = ACCEPT_PERIOD;
       if (OB_ISNULL(t->schedule_every(this, period_, etype_))) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_NET_LOG(ERROR, "fail to schedule_every", K(ret));
+        PROXY_NET_LOG(EDIAG, "fail to schedule_every", K(ret));
       } else {
         NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_ACCEPTS_CURRENTLY_OPEN, 1);
       }
@@ -217,7 +217,7 @@ int ObNetAccept::init_accept_per_thread()
   ObEThread *t = NULL;
 
   if (OB_FAIL(do_listen(NON_BLOCKING))) {
-    PROXY_NET_LOG(ERROR, "fail to listen", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to listen", K(ret));
   } else {
     if (accept_fn_ == net_accept) {
       SET_HANDLER((NetAcceptHandler)&ObNetAccept::accept_fast_event);
@@ -233,10 +233,10 @@ int ObNetAccept::init_accept_per_thread()
       if (i < n - 1) {
         if (OB_ISNULL(na = new (std::nothrow) ObNetAccept())) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          PROXY_NET_LOG(ERROR, "fail to new ObNetAccept");
+          PROXY_NET_LOG(EDIAG, "fail to new ObNetAccept");
         } else if (OB_FAIL(na->deep_copy(*this))) {
           NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_ACCEPTS_CURRENTLY_OPEN, -1);
-          PROXY_NET_LOG(ERROR, "fail to deep_copy", K(i), K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to deep_copy", K(i), K(ret));
         }
       } else {
         na = this;
@@ -246,15 +246,15 @@ int ObNetAccept::init_accept_per_thread()
         t = g_event_processor.event_thread_[ET_NET][i];
         if (OB_ISNULL(t)) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_NET_LOG(ERROR, "g_event_processor fail to get ET_NET ObEThread", K(ret));
+          PROXY_NET_LOG(EDIAG, "g_event_processor fail to get ET_NET ObEThread", K(ret));
         } else {
           na->mutex_ = t->get_net_handler().mutex_;
           if(OB_FAIL(na->ep_->start(t->get_net_poll().get_poll_descriptor(),
                                     *na, EVENTIO_READ))) {
-            PROXY_NET_LOG(ERROR, "fail to start ObEventIO", K(ret));
+            PROXY_NET_LOG(EDIAG, "fail to start ObEventIO", K(ret));
           } else if (OB_ISNULL(t->schedule_every(na, period_, etype_))) {
             ret = OB_ERR_UNEXPECTED;
-            PROXY_NET_LOG(ERROR, "fail to schedule_every", K(ret));
+            PROXY_NET_LOG(EDIAG, "fail to schedule_every", K(ret));
           }
         }
       }
@@ -276,7 +276,7 @@ int ObNetAccept::do_listen(const bool non_blocking)
                       K(server_.accept_addr_), K(ret));
         // retry
         if (OB_FAIL(server_.listen(non_blocking, recv_bufsize_, send_bufsize_))) {
-          PROXY_NET_LOG(ERROR, "fail to setup_fd_for_listen on server",
+          PROXY_NET_LOG(EDIAG, "fail to setup_fd_for_listen on server",
                         K(server_.accept_addr_), KERRMSGS, K(ret));
         }
       }
@@ -284,7 +284,7 @@ int ObNetAccept::do_listen(const bool non_blocking)
       // come from inherited, we should fill ObServerConnection's addr_
       int64_t name_len = sizeof(server_.addr_);
       if (OB_FAIL(ObSocketManager::getsockname(server_.fd_, &server_.addr_.sa_, &name_len))) {
-        PROXY_NET_LOG(ERROR, "fail to get socket name",
+        PROXY_NET_LOG(EDIAG, "fail to get socket name",
                       K(server_.fd_), K(server_.accept_addr_), KERRMSGS, K(ret));
       } else {
         PROXY_NET_LOG(DEBUG, "succ to get socket name",
@@ -294,7 +294,7 @@ int ObNetAccept::do_listen(const bool non_blocking)
     }
   } else {
     if (OB_FAIL(server_.listen(non_blocking, recv_bufsize_, send_bufsize_))) {
-      PROXY_NET_LOG(ERROR, "fail to listen", K(server_.accept_addr_), KERRMSGS, K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to listen", K(server_.accept_addr_), KERRMSGS, K(ret));
     } else {
       PROXY_NET_LOG(DEBUG, "succ to listen", K(server_.accept_addr_), K(ret));
     }
@@ -302,7 +302,7 @@ int ObNetAccept::do_listen(const bool non_blocking)
 
   if (OB_ISNULL(action_->continuation_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get action_->continuation_", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get action_->continuation_", K(ret));
   } else {
     if (callback_on_open_ && !action_->cancelled_) {
       if (OB_FAIL(ret)) {
@@ -329,25 +329,25 @@ int ObNetAccept::fetch_vip_tenant(ObUnixNetVConnection* vc, ObVipTenant& vip_ten
   ObConfigItem cluster_item;
   if (OB_ISNULL(vc)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "vc pointer is null", K(ret));
+    PROXY_NET_LOG(WDIAG, "vc pointer is null", K(ret));
   } else {
     vid = static_cast<int64_t>(vc->get_virtual_vid());
     vip_tenant.vip_addr_.set(vc->get_virtual_addr(), vid);
     if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
       vip_tenant.vip_addr_, "", "", "proxy_tenant_name", tenant_item, "LEVEL_VIP", found))) {
-      PROXY_NET_LOG(WARN, "get proxy tenant name config failed", K(vip_tenant.vip_addr_), K(ret));
+      PROXY_NET_LOG(WDIAG, "get proxy tenant name config failed", K(vip_tenant.vip_addr_), K(ret));
     }
 
     if (OB_SUCC(ret) && found) {
       if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
         vip_tenant.vip_addr_, "", "", "rootservice_cluster_name", cluster_item, "LEVEL_VIP", found))) {
-        PROXY_NET_LOG(WARN, "get cluster name config failed", K(vip_tenant.vip_addr_), K(ret));
+        PROXY_NET_LOG(WDIAG, "get cluster name config failed", K(vip_tenant.vip_addr_), K(ret));
       }
     }
 
     if (OB_SUCC(ret) && found) {
       if (OB_FAIL(vip_tenant.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
-        PROXY_CS_LOG(WARN, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
+        PROXY_CS_LOG(WDIAG, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
       } else {
         lookup_success = true;
       }
@@ -364,9 +364,9 @@ int ObNetAccept::fetch_tenant_cpu(ObVipTenant& vip_tenant, ObTenantCpu*& tenant_
   common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> key_string;
   if (OB_UNLIKELY(!vip_tenant.vip_addr_.addr_.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "fail to covert ip to string", K(vip_name), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to covert ip to string", K(vip_name), K(ret));
   } else if (OB_FAIL(build_tenant_cluster_vip_name(vip_tenant.tenant_name_, vip_tenant.cluster_name_, vip_name, key_string))) {
-    PROXY_NET_LOG(WARN, "build tenant cluser vip name failed", K(vip_tenant), K(ret));
+    PROXY_NET_LOG(WDIAG, "build tenant cluser vip name failed", K(vip_tenant), K(ret));
   } else if (FALSE_IT(key_name = ObString::make_string(key_string.ptr()))) {
   } else if (OB_FAIL(get_global_cpu_table_processor().get_tenant_cpu(key_name, tenant_cpu))) {
     PROXY_NET_LOG(DEBUG, "get tenant cpu failed", K(key_name), K(ret));
@@ -385,7 +385,7 @@ int ObNetAccept::handle_tenant_cpu_isolated(ObTenantCpu* tenant_cpu, ObEThread*&
   //    2.2 tasks that write the thread id to the cgroup filesystem
   if (OB_ISNULL(tenant_cpu)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "tenant cpu point is null", K(ret));
+    PROXY_NET_LOG(WDIAG, "tenant cpu point is null", K(ret));
   } else {
     if (tenant_cpu->thread_array_.count() < tenant_cpu->max_thread_num_) {
       DRWLock::WRLockGuard guard(g_event_processor.lock_);
@@ -393,9 +393,9 @@ int ObNetAccept::handle_tenant_cpu_isolated(ObTenantCpu* tenant_cpu, ObEThread*&
         ethread = get_schedule_vip_ethread();
         if (OB_ISNULL(ethread)) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_NET_LOG(ERROR, "fail to get_shedule_ethread", K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to get_shedule_ethread", K(ret));
         } else if (OB_FAIL(tenant_cpu->acquire_more_worker(ethread->thread_id_))) {
-          PROXY_NET_LOG(WARN, "acquire more worker failed", K(ret));
+          PROXY_NET_LOG(WDIAG, "acquire more worker failed", K(ret));
         } else {
           ethread->use_status_ = true;
           tenant_cpu->thread_array_.push_back(ethread);
@@ -439,7 +439,7 @@ int ObNetAccept::do_blocking_accept()
       if (OB_LIKELY(OB_SYS_EINTR == ret && !info.need_conn_accept_)) {
         PROXY_NET_LOG(DEBUG, "accept interrupted when need_conn_accept is false", K(ret), "need_conn_accept", info.need_conn_accept_);
       } else {
-        PROXY_NET_LOG(ERROR, "failed to accept con", K(ret));
+        PROXY_NET_LOG(EDIAG, "failed to accept con", K(ret));
       }
     } else {
       NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_CONNECTIONS_CURRENTLY_OPEN, 1);
@@ -452,14 +452,14 @@ int ObNetAccept::do_blocking_accept()
         PROXY_NET_LOG(ERROR ,"failed to allocate_vc, current accepted connection will be closed",
                       K(con.addr_), K(con.fd_));
         if (OB_SUCCESS != con.close()) {
-          PROXY_NET_LOG(WARN, "failed to close connection");
+          PROXY_NET_LOG(WDIAG, "failed to close connection");
         }
         NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_CONNECTIONS_CURRENTLY_OPEN, -1);
         NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, -1);
       } else if (OB_FAIL(init_unix_net_vconnection(con, vc))) {
-        PROXY_NET_LOG(ERROR, "fail to init_unix_net_vconnection", K(ret));
+        PROXY_NET_LOG(EDIAG, "fail to init_unix_net_vconnection", K(ret));
         if (OB_SUCCESS != con.close()) {
-          PROXY_NET_LOG(WARN, "failed to close connection");
+          PROXY_NET_LOG(WDIAG, "failed to close connection");
         }
         vc->free();
       }
@@ -482,7 +482,7 @@ int ObNetAccept::do_blocking_accept()
         }
         if (lookup_vip_tenant_success && lookup_tenant_cpu_success) {
           if (OB_FAIL(handle_tenant_cpu_isolated(tenant_cpu, ethread))) {
-            PROXY_NET_LOG(ERROR, "handle tenant cpu isolate failed", K(ret));
+            PROXY_NET_LOG(EDIAG, "handle tenant cpu isolate failed", K(ret));
           }
           tenant_cpu->dec_ref();
         } else {
@@ -494,12 +494,12 @@ int ObNetAccept::do_blocking_accept()
 
       if (OB_ISNULL(ethread)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_NET_LOG(ERROR, "fail to get_shedule_ethread", K(ret));
+        PROXY_NET_LOG(EDIAG, "fail to get_shedule_ethread", K(ret));
       } else {
         NET_ATOMIC_INCREMENT_DYN_STAT(ethread, NET_CLIENT_CONNECTIONS_CURRENTLY_OPEN);
         if (OB_ISNULL(ethread->schedule_imm_signal(vc))) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_NET_LOG(ERROR, "fail to schedule_imm_signal vc", K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to schedule_imm_signal vc", K(ret));
         }
       }
     }
@@ -566,7 +566,7 @@ inline ObEThread *ObNetAccept::get_schedule_vip_ethread()
 
   if (OB_ISNULL(target_ethread)) {
     if (OB_FAIL(create_one_net_ethread(target_ethread))) {
-      PROXY_NET_LOG(WARN, "create net thread failed", K(ret));
+      PROXY_NET_LOG(WDIAG, "create net thread failed", K(ret));
     }
   }
 
@@ -583,36 +583,36 @@ int ObNetAccept::create_one_net_ethread(ObEThread*& target_ethread)
   int64_t stack_size = get_global_proxy_config().stack_size;
 
   if (OB_FAIL(g_event_processor.spawn_net_threads(1, "ET_NET", stack_size))) {
-    PROXY_NET_LOG(ERROR, "fail to spawn event threads for ET_NET", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to spawn event threads for ET_NET", K(ret));
   } else {
     is_new_net_thread = true;
     event_thread_count = g_event_processor.event_thread_count_;
     net_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
     target_ethread = g_event_processor.event_thread_[ET_CALL][net_thread_count - 1];
     if (OB_FAIL(initialize_thread_for_net(target_ethread))) {
-      PROXY_NET_LOG(ERROR, "fail to initialize thread for net", K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to initialize thread for net", K(ret));
     } else if (OB_FAIL(init_cs_map_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init cs_map for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init cs_map for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_table_map_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init table_map for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init table_map for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_congestion_map_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init congestion_map for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init congestion_map for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_partition_map_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init partition_map for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init partition_map for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_routine_map_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init routine_map for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init routine_map for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_sql_table_map_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init sql_table_map for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init sql_table_map for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_ps_entry_cache_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init ps entry cache for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init ps entry cache for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_text_ps_entry_cache_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init text ps entry cache for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init text ps entry cache for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(init_random_seed_for_one_thread(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init random seed for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init random seed for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(ObCacheCleaner::schedule_one_cache_cleaner(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to init cleaner cache for thread", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to init cleaner cache for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(g_ob_prometheus_processor.start_one_prometheus(net_thread_count - 1))) {
-      PROXY_NET_LOG(ERROR, "fail to start one prometheus", K(net_thread_count), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to start one prometheus", K(net_thread_count), K(ret));
     } else {
       PROXY_NET_LOG(INFO, "new thread", K(ET_CALL), K(net_thread_count), KPC(target_ethread));
     }
@@ -644,7 +644,7 @@ int ObNetAccept::accept_event(int event, void *ep)
   int event_ret = EVENT_CONT;
   if (OB_ISNULL(ep)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(ep), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(ep), K(ret));
   } else {
     ObEvent *e = reinterpret_cast<ObEvent *>(ep);
     ObProxyMutex *m = NULL;
@@ -667,14 +667,14 @@ int ObNetAccept::accept_event(int event, void *ep)
               || OB_UNLIKELY(OB_SYS_EPIPE == ret)) {
             ret = OB_SUCCESS;
           } else {
-            PROXY_NET_LOG(ERROR, "fail to do accept_fn_", K(&server_.addr_), K(ret));
+            PROXY_NET_LOG(EDIAG, "fail to do accept_fn_", K(&server_.addr_), K(ret));
           }
         }
 
         if (OB_FAIL(ret)) {
           NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_ACCEPTS_CURRENTLY_OPEN, -1);
           if (OB_FAIL(e->cancel())) {
-            PROXY_NET_LOG(WARN, "fail to cancel event", K(ret));
+            PROXY_NET_LOG(WDIAG, "fail to cancel event", K(ret));
           }
           delete this;
           event_ret = EVENT_DONE;
@@ -690,10 +690,10 @@ inline int ObNetAccept::set_sock_buf_size(const int fd)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(fd < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(fd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(fd), K(ret));
   } else if (OB_FAIL(ObSocketManager::set_sndbuf_and_rcvbuf_size(
       fd, send_bufsize_, recv_bufsize_, 1024))){
-    PROXY_NET_LOG(WARN, "fail to set_sndbuf_and_rcvbuf_size",
+    PROXY_NET_LOG(WDIAG, "fail to set_sndbuf_and_rcvbuf_size",
                   K(send_bufsize_), K(recv_bufsize_), K(ret));
   }
   return ret;
@@ -712,7 +712,7 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
 
   if (OB_ISNULL(ep)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(ep), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(ep), K(ret));
   } else if (OB_UNLIKELY(!info.need_conn_accept_)) {
     //do nothing
   } else {
@@ -722,7 +722,7 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
 
     if (OB_ISNULL(e->ethread_)) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_NET_LOG(ERROR, "fail to get ethread", K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to get ethread", K(ret));
     } else {
       while (loop && OB_SUCC(ret)) {
         if (!accept_balance(e->ethread_)) { // for balance
@@ -733,15 +733,15 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
           net_ret = ret;
           con.fd_ = NO_FD;
           if (OB_SYS_EAGAIN != ret) {
-            PROXY_NET_LOG(ERROR, "fail to accept", K(server_.accept_addr_), K(server_.fd_), K(ret));
+            PROXY_NET_LOG(EDIAG, "fail to accept", K(server_.accept_addr_), K(server_.fd_), K(ret));
           }
         } else if (OB_FAIL(set_sock_buf_size(con.fd_))) {
-          PROXY_NET_LOG(ERROR, "fail to set_sock_buf_size", K(con.addr_), K(con.fd_), K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to set_sock_buf_size", K(con.addr_), K(con.fd_), K(ret));
         } else if (OB_ISNULL(vc = static_cast<ObUnixNetVConnection *>(get_net_processor()->allocate_vc()))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          PROXY_NET_LOG(ERROR, "fail to allocate_vc", K(con.addr_), K(con.fd_), K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to allocate_vc", K(con.addr_), K(con.fd_), K(ret));
         } else if (OB_FAIL(init_unix_net_vconnection(con, vc))) {
-          PROXY_NET_LOG(ERROR, "fail to init_unix_net_vconnection", K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to init_unix_net_vconnection", K(ret));
         } else {
           need_close_vc = false;
           vc->nh_ = &(e->ethread_->get_net_handler());
@@ -754,7 +754,7 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
 
           if (OB_FAIL(vc->ep_->start(e->ethread_->get_net_poll().get_poll_descriptor(),
                                      *vc, EVENTIO_READ | EVENTIO_WRITE))) {
-            PROXY_NET_LOG(ERROR, "fail to start ObEventIO", K(con.addr_), K(con.fd_), K(ret));
+            PROXY_NET_LOG(EDIAG, "fail to start ObEventIO", K(con.addr_), K(con.fd_), K(ret));
           } else {
             vc->nh_->open_list_.enqueue(vc);
 #ifdef USE_EDGE_TRIGGER
@@ -769,7 +769,7 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
               MUTEX_LOCK(lock, vc->mutex_, e->ethread_);
               if (OB_ISNULL(action_->continuation_)) {
                 ret = OB_ERR_UNEXPECTED;
-                PROXY_NET_LOG(ERROR, "fail to get action_->continuation_", K(con.addr_), K(con.fd_), K(ret));
+                PROXY_NET_LOG(EDIAG, "fail to get action_->continuation_", K(con.addr_), K(con.fd_), K(ret));
               } else {
                 NET_ATOMIC_INCREMENT_DYN_STAT(e->ethread_, NET_CLIENT_CONNECTIONS_CURRENTLY_OPEN);
                 action_->continuation_->handle_event(NET_EVENT_ACCEPT, vc);
@@ -781,7 +781,7 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
           // if failed or need close vc, close vc and dec stat
           if (OB_FAIL(ret) || need_close_vc) {
             if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = vc->close()))) {
-              PROXY_NET_LOG(WARN, "fail to close unix net vconnection", K(vc), K(tmp_ret));
+              PROXY_NET_LOG(WDIAG, "fail to close unix net vconnection", K(vc), K(tmp_ret));
             }
             vc = NULL;
           }
@@ -803,10 +803,10 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
               action_->continuation_->handle_event(EVENT_ERROR, reinterpret_cast<void *>(static_cast<uintptr_t>(net_ret)));
             }
             if (OB_SUCCESS != (tmp_ret = server_.close())) {
-              PROXY_NET_LOG(WARN, "failed to close server connection", K(tmp_ret));
+              PROXY_NET_LOG(WDIAG, "failed to close server connection", K(tmp_ret));
             }
             if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = e->cancel()))) {
-              PROXY_NET_LOG(WARN, "fail to cancel ObEvent", K(e), K(tmp_ret));
+              PROXY_NET_LOG(WDIAG, "fail to cancel ObEvent", K(e), K(tmp_ret));
             }
             if (NULL != vc) {
               vc->free();
@@ -814,7 +814,7 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
             }
             event_ret = EVENT_DONE;
             NET_SUM_GLOBAL_DYN_STAT(NET_GLOBAL_ACCEPTS_CURRENTLY_OPEN, -1);
-            PROXY_NET_LOG(ERROR, "fatal error, the ObNetAccept will stop "
+            PROXY_NET_LOG(EDIAG, "fatal error, the ObNetAccept will stop "
                           "accept and delete self", K(e), K(net_ret));
             delete this;
           }
@@ -824,7 +824,7 @@ int ObNetAccept::accept_fast_event(int event, void *ep)
       // if failed, close the connect at last
       if (OB_FAIL(ret)) {
         if ((NO_FD != con.fd_) && OB_UNLIKELY(OB_SUCCESS != (tmp_ret = con.close()))) {
-          PROXY_NET_LOG(WARN, "failed to close connection", K(tmp_ret), K(ret));
+          PROXY_NET_LOG(WDIAG, "failed to close connection", K(tmp_ret), K(ret));
         }
       }
     }
@@ -850,12 +850,12 @@ int ObNetAccept::init_unix_net_vconnection(const ObConnection &con, ObUnixNetVCo
 
   if (OB_ISNULL(vc)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(vc), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(vc), K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex(NET_VC_LOCK))) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to new_proxy_mutex", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to new_proxy_mutex", K(ret));
   } else if (OB_FAIL(vc->apply_options())) {
-    PROXY_NET_LOG(ERROR, "fail to apply_options", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to apply_options", K(ret));
   } else {
     vc->con_ = con;
     vc->mutex_ = mutex;
@@ -875,10 +875,10 @@ int ObNetAccept::init()
   int ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    PROXY_NET_LOG(ERROR, "init ObNetAccept twice", K(this), K(ret));
+    PROXY_NET_LOG(EDIAG, "init ObNetAccept twice", K(this), K(ret));
   } else if (OB_ISNULL(ep_ = new (std::nothrow) ObEventIO())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "fail to new ObEventIO", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to new ObEventIO", K(ret));
   } else {
     is_inited_ = true;
   }
@@ -893,9 +893,9 @@ int ObNetAccept::accept_loop_event(int event, ObEvent *e)
 
   //open the cancel  switch
   if (OB_FAIL(pthread_setcancelstate(PTHREAD_CANCEL_ENABLE, NULL))) {
-    PROXY_NET_LOG(WARN, "fail to do pthread_setcancelstate PTHREAD_CANCEL_ENABLE", K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to do pthread_setcancelstate PTHREAD_CANCEL_ENABLE", K(ret));
   } else if (OB_FAIL(pthread_setcanceltype(PTHREAD_CANCEL_ASYNCHRONOUS, NULL))) {
-    PROXY_NET_LOG(WARN, "fail to do pthread_setcanceltype PTHREAD_CANCEL_ASYNCHRONOUS", K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to do pthread_setcanceltype PTHREAD_CANCEL_ASYNCHRONOUS", K(ret));
   } else {
     // current thread maybe pthread_cancel in other place, we need register its free func
     pthread_cleanup_push(free_netaccept, static_cast<void *>(this));
@@ -946,7 +946,7 @@ void ObNetAccept::cancel()
   action_->cancel();
   int tmp_ret = OB_SUCCESS;
   if (OB_SUCCESS != (tmp_ret = server_.close())) {
-    PROXY_NET_LOG(WARN, "server close failed", K(tmp_ret));
+    PROXY_NET_LOG(WDIAG, "server close failed", K(tmp_ret));
   }
 }
 
@@ -956,7 +956,7 @@ int ObNetAccept::deep_copy(const ObNetAccept &na)
   MEMCPY(this, &na, sizeof(na));
   if (OB_ISNULL(ep_ = new (std::nothrow) ObEventIO())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "fail to new ObEventIO", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to new ObEventIO", K(ret));
   }
   return ret;
 }

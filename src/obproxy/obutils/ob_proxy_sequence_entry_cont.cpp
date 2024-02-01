@@ -106,7 +106,7 @@ int ObProxySequenceEntryCont::do_create_oceanbase_sequence_entry()
     LOG_DEBUG("need_create_cluster_resource, create now", K(proxy_id), K(sequence_info_.seq_id_));
     if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, SEQUENCE_ENTRY_CREATE_CLUSTER_RESOURCE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to schedule imm", K(ret), K(sequence_info_.seq_id_));
+      LOG_EDIAG("fail to schedule imm", K(ret), K(sequence_info_.seq_id_));
     }
   }
   return ret;
@@ -126,7 +126,7 @@ int ObProxySequenceEntryCont::do_create_normal_sequence_entry()
     mysql_proxy_entry_ = get_global_mysql_proxy_cache().accquire_mysql_proxy_entry(proxy_id_buf_);
   }
   if (OB_ISNULL(mysql_proxy_entry_) && OB_FAIL(create_proxy(shard_conn_, username_))) {
-    LOG_ERROR("fail to create proxy", K_(username), K(ret));
+    LOG_EDIAG("fail to create proxy", K_(username), K(ret));
   }
   return ret;
 }
@@ -137,11 +137,11 @@ int ObProxySequenceEntryCont::do_create_sequence_entry()
 
   if (DB_OB_MYSQL == server_type_ || DB_OB_ORACLE == server_type_) {
     if (OB_FAIL(do_create_oceanbase_sequence_entry())) {
-      LOG_WARN("fail to create oceanbase sequence entry", K(ret));
+      LOG_WDIAG("fail to create oceanbase sequence entry", K(ret));
     }
   } else {
     if (OB_FAIL(do_create_normal_sequence_entry())) {
-      LOG_WARN("fail to create mysql sequence entry", K(ret));
+      LOG_WDIAG("fail to create mysql sequence entry", K(ret));
     }
   }
 
@@ -149,7 +149,7 @@ int ObProxySequenceEntryCont::do_create_sequence_entry()
     LOG_DEBUG("succ get proxy from cache", K(sequence_info_.seq_id_));
     if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, SEQUENCE_ENTRY_LOOKUP_REMOTE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to schedule imm", K(ret), K(sequence_info_.seq_id_));
+      LOG_EDIAG("fail to schedule imm", K(ret), K(sequence_info_.seq_id_));
     }
   }
   return ret;
@@ -160,15 +160,15 @@ bool ObProxySequenceEntryCont::need_create_cluster_resource() {
   if (OB_ISNULL(mysql_proxy_entry_)) {
     LOG_DEBUG("mysql_proxy_entry is NULL", K(sequence_info_.seq_id_));
   } else if (OB_UNLIKELY(OB_ISNULL(mysql_proxy_entry_->mysql_proxy_))) {
-    LOG_WARN("mysql_proxy_entry_->mysql_proxy_ is NULL", K(sequence_info_.seq_id_));
+    LOG_WDIAG("mysql_proxy_entry_->mysql_proxy_ is NULL", K(sequence_info_.seq_id_));
   } else {
     ObMysqlClientPool* client_pool = mysql_proxy_entry_->mysql_proxy_-> acquire_client_pool();
     if (OB_UNLIKELY(OB_ISNULL(client_pool))) {
-      LOG_WARN("client_pool is NULL", K(sequence_info_.seq_id_));
+      LOG_WDIAG("client_pool is NULL", K(sequence_info_.seq_id_));
     } else {
       ObClusterResource *cluster_resource = client_pool->acquire_cluster_resource();
       if (OB_UNLIKELY(OB_ISNULL(cluster_resource))) {
-        LOG_WARN("cluster_resource is NULL", K(sequence_info_.seq_id_));
+        LOG_WDIAG("cluster_resource is NULL", K(sequence_info_.seq_id_));
       } else if (cluster_resource->is_avail()) {
         need_create = false;
         cluster_resource->dec_ref();
@@ -189,7 +189,7 @@ int ObProxySequenceEntryCont::handle_create_cluster_resouce()
   if (OB_FAIL(rp_processor.get_cluster_resource(*this,
               (process_async_task_pfn)&ObProxySequenceEntryCont::handle_create_cluster_resource_complete,
               false, cluster_name, OB_DEFAULT_CLUSTER_ID, NULL, pending_action_))) {
-    LOG_WARN("fail to get cluster resource", "cluster name", cluster_name, K(ret));
+    LOG_WDIAG("fail to get cluster resource", "cluster name", cluster_name, K(ret));
     last_state_success_ = false;
   } else if (NULL == pending_action_) { // created succ
     LOG_INFO("cluster  resource was created by others, no need create again", K(cluster_name));
@@ -204,7 +204,7 @@ int ObProxySequenceEntryCont::handle_create_cluster_resource_complete(void *data
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
     last_state_success_ = false;
-    LOG_WARN("handle_create_cluster_resource_complete get invalid argument", K(data), K(cluster_name_));
+    LOG_WDIAG("handle_create_cluster_resource_complete get invalid argument", K(data), K(cluster_name_));
   } else {
     ObClusterResource *cr = reinterpret_cast<ObClusterResource *>(data);
     LOG_DEBUG("cluster create succ", K(cluster_name_), K(cr), KPC(cr));
@@ -215,7 +215,7 @@ int ObProxySequenceEntryCont::handle_create_cluster_resource_complete(void *data
              tenant_name_.config_string_.length(), tenant_name_.config_string_.ptr());
     ObString full_user_name(user_tenant_name_buf);
     if (OB_FAIL(create_proxy(cr, full_user_name))) {
-      LOG_WARN("fail to create proxy", KPC(cr), K(full_user_name), K(ret));
+      LOG_WDIAG("fail to create proxy", KPC(cr), K(full_user_name), K(ret));
     }
 
     cr->dec_ref(); // free
@@ -239,16 +239,16 @@ int ObProxySequenceEntryCont::create_proxy(ObSharedRefCount *param, const ObStri
   char passwd_staged1_buf[ENC_STRING_BUF_LEN]; // 1B '*' + 40B octal num
   ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
   if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(password_.config_string_, passwd_string))) {
-    LOG_WARN("fail to encrypt_passwd_to_stage1", K(ret));
+    LOG_WDIAG("fail to encrypt_passwd_to_stage1", K(ret));
   } else {
     passwd_string += 1;//trim the head'*'
     if (OB_ISNULL(proxy)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc ObMysqlProxy");
+      LOG_WDIAG("fail to alloc ObMysqlProxy");
     } else if (OB_FAIL(proxy->init(timeout_ms, username, passwd_string, database_name_))) {
-      LOG_WARN("fail to init proxy", K(username), K_(database_name));
+      LOG_WDIAG("fail to init proxy", K(username), K_(database_name));
     } else if (OB_FAIL(rebuild_proxy(proxy, param, username, passwd_string))) {
-      LOG_WARN("fail to rebuild client pool", K(username), K(ret));
+      LOG_WDIAG("fail to rebuild client pool", K(username), K(ret));
     } else {
       LOG_DEBUG("rebuild_client_pool success", K(username), K_(database_name));
     }
@@ -265,7 +265,7 @@ int ObProxySequenceEntryCont::create_proxy(ObSharedRefCount *param, const ObStri
     mysql_proxy_entry_ = op_alloc(ObMysqlProxyEntry);
     if (OB_ISNULL(mysql_proxy_entry_)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc ObMysqlProxyEntry", K(ret));
+      LOG_WDIAG("fail to alloc ObMysqlProxyEntry", K(ret));
     } else {
       mysql_proxy_entry_->mysql_proxy_ = proxy;
       mysql_proxy_entry_->proxy_id_.set_value(proxy_id_buf_);
@@ -288,13 +288,13 @@ int ObProxySequenceEntryCont::rebuild_proxy(ObMysqlProxy *proxy, ObSharedRefCoun
   if (DB_OB_MYSQL == server_type_ || DB_OB_ORACLE == server_type_) {
     if (OB_FAIL(proxy->rebuild_client_pool(dynamic_cast<ObClusterResource*>(param), is_meta_mysql_client,
                        cluster_name_, OB_DEFAULT_CLUSTER_ID, username, passwd, database_name_))) {
-      LOG_WARN("fail to create oceanbase client pool", K_(cluster_name), K(username),
+      LOG_WDIAG("fail to create oceanbase client pool", K_(cluster_name), K(username),
                K_(database_name), K(ret));
     }
   } else {
     if (OB_FAIL(proxy->rebuild_client_pool(dynamic_cast<ObShardConnector*>(param), NULL, is_meta_mysql_client,
                        username, passwd, database_name_))) {
-      LOG_WARN("fail to create mysql client pool", K(username), K_(database_name), K(ret));
+      LOG_WDIAG("fail to create mysql client pool", K(username), K_(database_name), K(ret));
     }
   }
 
@@ -306,10 +306,10 @@ void ObProxySequenceEntryCont::kill_this()
   LOG_DEBUG("ObProxySequenceEntryCont will be free", K(this));
   int ret = OB_SUCCESS;
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
   if (mysql_proxy_entry_ != NULL) {
     mysql_proxy_entry_->dec_ref();
@@ -342,19 +342,19 @@ int ObProxySequenceEntryCont::select_old_value_from_remote()
               tnt_id,
               tnt_col))) {
     last_state_success_ = false;
-    LOG_WARN("fail to get sequence entry sql", K(sql), K(sequence_info_), K(ret));
+    LOG_WDIAG("fail to get sequence entry sql", K(sql), K(sequence_info_), K(ret));
   } else {
     LOG_DEBUG("get_sequence_entry_sql ", K(sql));
     const ObMysqlRequestParam request_param(sql);
     if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-      LOG_WARN("fail to nonblock read", K(sql), K(cluster_name_), K(seq_name), K(ret));
+      LOG_WDIAG("fail to nonblock read", K(sql), K(cluster_name_), K(seq_name), K(ret));
     }
   }
   if (OB_FAIL(ret)) {
     ret = OB_SUCCESS;
     last_state_success_ = false;
     if (OB_FAIL(schedule_imm(this, SEQUENCE_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT))) {
-      LOG_WARN("fail to schedule in", K(ret));
+      LOG_WDIAG("fail to schedule in", K(ret));
     }
   }
   return ret;
@@ -370,7 +370,7 @@ int ObProxySequenceEntryCont::update_new_value_to_remote()
   sql[0] = '\0';
   if (!last_state_success_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("update_new_value_to_remote last_state_success_ should true");
+    LOG_WDIAG("update_new_value_to_remote last_state_success_ should true");
     return ret;
   }
   ObString& seq_name = sequence_info_.seq_name_.config_string_;
@@ -393,12 +393,12 @@ int ObProxySequenceEntryCont::update_new_value_to_remote()
                 step_,
                 min_value_ + step_,
                 time_now_str))) {
-      LOG_WARN("fail to get sequence entry sql", K(sql), K(sequence_info_), K(ret));
+      LOG_WDIAG("fail to get sequence entry sql", K(sql), K(sequence_info_), K(ret));
     } else {
       LOG_DEBUG("insert_sequence_entry_sql ", K(sql));
       const ObMysqlRequestParam request_param(sql);
       if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-        LOG_WARN("fail to nonblock read", K(sql), K(cluster_name_), K(seq_name), K(ret));
+        LOG_WDIAG("fail to nonblock read", K(sql), K(cluster_name_), K(seq_name), K(ret));
       } else {
         // set init value when insert
         sequence_info_.value_ = min_value_;
@@ -427,12 +427,12 @@ int ObProxySequenceEntryCont::update_new_value_to_remote()
                 tnt_col,
                 new_value,
                 old_value))) {
-      LOG_WARN("fail to get sequence entry sql", K(sql), K(sequence_info_), K(ret));
+      LOG_WDIAG("fail to get sequence entry sql", K(sql), K(sequence_info_), K(ret));
     } else {
       LOG_DEBUG("update_sequence_entry_sql ", K(sql));
       const ObMysqlRequestParam request_param(sql);
       if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-        LOG_WARN("fail to nonblock read", K(sql), K(cluster_name_), K(seq_name), K(tnt_id), K(tnt_col), K(ret));
+        LOG_WDIAG("fail to nonblock read", K(sql), K(cluster_name_), K(seq_name), K(tnt_id), K(tnt_col), K(ret));
       }
     }
   }
@@ -440,7 +440,7 @@ int ObProxySequenceEntryCont::update_new_value_to_remote()
   if (OB_FAIL(ret)) {
     ret = OB_SUCCESS;
     if (OB_FAIL(schedule_imm(this, SEQUENCE_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT))) {
-      LOG_WARN("fail to schedule_imm", K(ret), K(sequence_info_));
+      LOG_WDIAG("fail to schedule_imm", K(ret), K(sequence_info_));
     }
   } else {
     LOG_INFO("after update", K(sequence_info_), K(need_insert_));
@@ -453,15 +453,15 @@ inline int ObProxySequenceEntryCont::schedule_imm(ObContinuation * cont, const i
   int ret = OB_SUCCESS;
   if (OB_ISNULL(cont)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid cont", K(cont), K(ret));
+    LOG_WDIAG("invalid cont", K(cont), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action_ must be NULL here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action_ must be NULL here", K_(pending_action), K(ret));
   } else {
     pending_action_ = submit_thread_->schedule_imm(cont, event);
     if (OB_ISNULL(pending_action_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule imm", K_(pending_action), K(event), K(ret));
+      LOG_WDIAG("fail to schedule imm", K_(pending_action), K(event), K(ret));
     }
   }
   return ret;
@@ -495,7 +495,7 @@ const char* ObProxySequenceEntryCont::get_state_name(const ObSequenceEntryLookup
     MACRO_FOR_CASE_STATE(LOOKUP_SEQUENCE_RETRY_STATE);
   default:
     name = "Unknown State";
-    LOG_WARN("Unknown State", K(state));
+    LOG_WDIAG("Unknown State", K(state));
     break;
   }
   return name;
@@ -523,7 +523,7 @@ int ObProxySequenceEntryCont::set_next_state() {
   case LOOKUP_SEQUENCE_DONE_STATE:
   default:
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected state", K_(state), K(ret));
+    LOG_WDIAG("unexpected state", K_(state), K(ret));
     break;
   }
   LOG_DEBUG("sequence entry state changed", "state", get_state_name(state_),
@@ -545,10 +545,10 @@ int ObProxySequenceEntryCont::handle_client_resp(void *data)
       if (resp->is_resultset_resp()) {
         if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher))) {
           last_state_success_ = false;
-          LOG_WARN("fail to get resultset fetcher", K(ret), K(sequence_info_.seq_id_));
+          LOG_WDIAG("fail to get resultset fetcher", K(ret), K(sequence_info_.seq_id_));
         } else if (OB_ISNULL(rs_fetcher)) {
           last_state_success_ = false;
-          LOG_WARN("resultset fetcher is NULL", K(ret), K(sequence_info_.seq_id_));
+          LOG_WDIAG("resultset fetcher is NULL", K(ret), K(sequence_info_.seq_id_));
           ret = OB_ERR_UNEXPECTED;
         } else {
           ret = handle_select_old_value_resp(*rs_fetcher);
@@ -560,7 +560,7 @@ int ObProxySequenceEntryCont::handle_client_resp(void *data)
         ObString error_msg = resp->get_err_msg();
         sequence_info_.errno_ = error_code;
         sequence_info_.err_msg_.set_value(error_msg);
-        LOG_WARN("fail to get table entry from remote", K(sequence_info_.seq_id_), K(error_code), K(error_msg));
+        LOG_WDIAG("fail to get table entry from remote", K(sequence_info_.seq_id_), K(error_code), K(error_msg));
       }
       break;
     case LOOKUP_SEQUENCE_UPDATE_STATE:
@@ -574,7 +574,7 @@ int ObProxySequenceEntryCont::handle_client_resp(void *data)
           state_ = LOOKUP_SEQUENCE_RETRY_STATE;
         } else {
           last_state_success_ = false;
-          LOG_WARN("update failed after retry ", K(sequence_info_.seq_id_), K(retry_time_));
+          LOG_WDIAG("update failed after retry ", K(sequence_info_.seq_id_), K(retry_time_));
           ret = OB_ERR_UNEXPECTED;
         }
       } else {
@@ -584,12 +584,12 @@ int ObProxySequenceEntryCont::handle_client_resp(void *data)
         ObString error_msg = resp->get_err_msg();
         sequence_info_.errno_ = error_code;
         sequence_info_.err_msg_.set_value(error_msg);
-        LOG_WARN("fail to get table entry from remote", K(sequence_info_.seq_id_), K(error_code), K(error_msg), K(ret));
+        LOG_WDIAG("fail to get table entry from remote", K(sequence_info_.seq_id_), K(error_code), K(error_msg), K(ret));
         ret = OB_ERR_UNEXPECTED;
       }
       break;
     default:
-      LOG_WARN("handle_client_resp invalid state", K(state_), K(sequence_info_.seq_id_));
+      LOG_WDIAG("handle_client_resp invalid state", K(state_), K(sequence_info_.seq_id_));
     }
     op_free(resp); // free the resp come from ObMysqlProxy
     resp = NULL;
@@ -597,7 +597,7 @@ int ObProxySequenceEntryCont::handle_client_resp(void *data)
     ret = OB_ERR_UNEXPECTED;
     need_clean_proxy = true;
     last_state_success_ = false;
-    LOG_WARN("handle_client_resp fail to get table entry from remote", K(ret), K(sequence_info_.seq_id_));
+    LOG_WDIAG("handle_client_resp fail to get table entry from remote", K(ret), K(sequence_info_.seq_id_));
   }
   if (need_clean_proxy) {
     // when fail clean cache
@@ -605,7 +605,7 @@ int ObProxySequenceEntryCont::handle_client_resp(void *data)
   }
   ret = OB_SUCCESS;
   if (OB_FAIL(set_next_state())) {
-    LOG_WARN("handle_client_resp fail to set next state", "state", get_state_name(state_), K(sequence_info_.seq_id_));
+    LOG_WDIAG("handle_client_resp fail to set next state", "state", get_state_name(state_), K(sequence_info_.seq_id_));
   }
   return ret;
 }
@@ -655,7 +655,7 @@ int ObProxySequenceEntryCont::handle_select_old_value_resp(ObResultSetFetcher &r
       ret = OB_ERR_UNEXPECTED;
       sequence_info_.errno_ = OB_SEQUENCE_ERROR;
       sequence_info_.err_msg_.set_value("sequence not exist");
-      LOG_WARN("handle_select_old_value_resp fetch result fail, something worng", K(sequence_info_.seq_id_));
+      LOG_WDIAG("handle_select_old_value_resp fetch result fail, something worng", K(sequence_info_.seq_id_));
     }
   }
   return ret;
@@ -705,7 +705,7 @@ inline int ObProxySequenceEntryCont::handle_lookup_remote()
     break;
   default:
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpectec state", K_(state), K(ret));
+    LOG_WDIAG("unexpectec state", K_(state), K(ret));
     break;
   }
   return ret;
@@ -715,7 +715,7 @@ int ObProxySequenceEntryCont::handle_lookup_remote_done()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(notify_caller())) {
-    LOG_WARN("fail to notify_caller", K(ret));
+    LOG_WDIAG("fail to notify_caller", K(ret));
   }
   return ret;
 }
@@ -736,7 +736,7 @@ int ObProxySequenceEntryCont::notify_caller()
   } else {
     obsys::CWLockGuard guard(sequence_entry_->rwlock_);
     if (sequence_entry_->is_remote_fetching_state()) {
-      LOG_WARN("still remote fetching state, something wrong before", K(sequence_info_.seq_id_));
+      LOG_WDIAG("still remote fetching state, something wrong before", K(sequence_info_.seq_id_));
       sequence_entry_->set_dead_state();
     } else {
       // when start, not allow insert
@@ -753,12 +753,12 @@ int ObProxySequenceEntryCont::notify_caller()
     }
     submit_thread = cont->submit_thread_;
     if (OB_ISNULL(submit_thread)) {
-      LOG_ERROR("submit_thread can not be null", K(cont), K(sequence_info_.seq_id_));
+      LOG_EDIAG("submit_thread can not be null", K(cont), K(sequence_info_.seq_id_));
     } else {
       cont->set_errinfo(sequence_info_.err_msg_.config_string_);
       cont->set_errno(sequence_info_.errno_);
       if (OB_ISNULL(submit_thread->schedule_imm(cont, SEQUENCE_ENTRY_NOTIFY_CALLER_EVENT))) {
-        LOG_ERROR("fail to schedule imm", K(cont), K(sequence_info_.seq_id_));
+        LOG_EDIAG("fail to schedule imm", K(cont), K(sequence_info_.seq_id_));
       } else {
         LOG_DEBUG("schedule SEQUENCE_ENTRY_NOTIFY_CALLER_EVENT succ", K(cont), K(sequence_info_.seq_id_));
       }
@@ -775,7 +775,7 @@ int ObProxySequenceEntryCont::handle_inform_out_event()
   int ret = OB_SUCCESS;
   LOG_DEBUG("Enter handle_inform_out_event", K(sequence_info_.seq_id_));
   if (this_ethread() != submit_thread_) {
-    LOG_ERROR("this thread must be equal with submit_thread", "this ethread", this_ethread(), K_(submit_thread),
+    LOG_EDIAG("this thread must be equal with submit_thread", "this ethread", this_ethread(), K_(submit_thread),
               K(sequence_info_.seq_id_), K(ret));
   } if (cont_type_ == OB_SEQUENCE_CONT_ASYNC_TYPE) {
     // async only need set sequence_info2 to entry
@@ -785,7 +785,7 @@ int ObProxySequenceEntryCont::handle_inform_out_event()
     if (last_state_success_) {
       if (OB_ISNULL(seq_info = op_alloc(ObSequenceInfo))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("failt to allocate ObSequenceInfo", K(sequence_info_.seq_id_));
+        LOG_EDIAG("failt to allocate ObSequenceInfo", K(sequence_info_.seq_id_));
       } else if (only_need_db_timestamp_) {
         *seq_info = sequence_info_;
         LOG_DEBUG("only_need_db_timestamp_ just dispatch seq info", K(*seq_info));
@@ -797,7 +797,7 @@ int ObProxySequenceEntryCont::handle_inform_out_event()
         if (sequence_info_.errno_ != 0) {
           seq_info->err_msg_.set_value(sequence_info_.err_msg_.config_string_);
           seq_info->errno_  = sequence_info_.errno_;
-          LOG_WARN("something wrong in fetch remote", K(sequence_info_), K(seq_info));
+          LOG_WDIAG("something wrong in fetch remote", K(sequence_info_), K(seq_info));
         } else if (!sequence_entry_->sequence_info_.is_valid()) {
           // maybe too much pending list local is over
           LOG_INFO("local is over, maybe too much pending list", K(sequence_entry_->sequence_info_));
@@ -814,7 +814,7 @@ int ObProxySequenceEntryCont::handle_inform_out_event()
     } else if (sequence_info_.errno_ != 0) {
       if (OB_ISNULL(seq_info = op_alloc(ObSequenceInfo))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("failt to allocate ObSequenceInfo", K(sequence_info_.seq_id_));
+        LOG_EDIAG("failt to allocate ObSequenceInfo", K(sequence_info_.seq_id_));
       } else {
         seq_info->errno_ = sequence_info_.errno_;
         seq_info->err_msg_.set_value(sequence_info_.err_msg_.config_string_);
@@ -839,41 +839,41 @@ int ObProxySequenceEntryCont::main_handler(int event, void *data)
   LOG_DEBUG("Enter main_handler, received event", "event", get_event_name(event), K(data));
   if (OB_UNLIKELY(OB_SEQUENCE_ENTRY_CONT_MAGIC_ALIVE != magic_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this table entry cont is dead", K_(magic), K(ret));
+    LOG_EDIAG("this table entry cont is dead", K_(magic), K(ret));
   } else if (OB_UNLIKELY(this_ethread() != mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(ret));
   } else {
     pending_action_ = NULL;
     switch (event) {
     case SEQUENCE_ENTRY_CREATE_CLUSTER_RESOURCE_EVENT: {
       if (OB_FAIL(handle_create_cluster_resouce())) {
-        LOG_WARN("fail to handle create cluster resource", K(ret), K(sequence_info_.seq_id_));
+        LOG_WDIAG("fail to handle create cluster resource", K(ret), K(sequence_info_.seq_id_));
       }
       break;
     }
     case CLUSTER_RESOURCE_CREATE_COMPLETE_EVENT: {
       if (OB_FAIL(handle_create_cluster_resource_complete(data))) {
-        LOG_WARN("fail to handle create complete", K(ret), K(sequence_info_.seq_id_));
+        LOG_WDIAG("fail to handle create complete", K(ret), K(sequence_info_.seq_id_));
       }
       break;
     }
     case SEQUENCE_ENTRY_LOOKUP_REMOTE_EVENT: {
       if (OB_FAIL(select_old_value_from_remote())) {
-        LOG_WARN("fail to lookup entry remote", K(ret), K(sequence_info_.seq_id_));
+        LOG_WDIAG("fail to lookup entry remote", K(ret), K(sequence_info_.seq_id_));
       }
       break;
     }
     case SEQUENCE_ENTRY_CHAIN_NOTIFY_CALLER_EVENT: {
       if (OB_FAIL(notify_caller())) {
-        LOG_WARN("fail to notify caller", K(sequence_info_.seq_id_));
+        LOG_WDIAG("fail to notify caller", K(sequence_info_.seq_id_));
       }
       break;
     }
     case SEQUENCE_ENTRY_NOTIFY_CALLER_EVENT: {
       if (OB_FAIL(handle_inform_out_event())) {
-        LOG_WARN("fail to inform out", K(ret), K(sequence_info_.seq_id_));
+        LOG_WDIAG("fail to inform out", K(ret), K(sequence_info_.seq_id_));
       }
       break;
     }
@@ -885,22 +885,22 @@ int ObProxySequenceEntryCont::main_handler(int event, void *data)
     __attribute__ ((fallthrough));
     case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
       if (OB_FAIL(handle_client_resp(data))) {
-        LOG_WARN("fail to handle client resp", K(ret), K(sequence_info_.seq_id_));
+        LOG_WDIAG("fail to handle client resp", K(ret), K(sequence_info_.seq_id_));
       } else if (OB_FAIL(handle_lookup_remote())) {
-        LOG_WARN("fail to handle lookup remote done", K(ret), K(sequence_info_.seq_id_));
+        LOG_WDIAG("fail to handle lookup remote done", K(ret), K(sequence_info_.seq_id_));
       }
       // if failed, treat as lookup done and  will inform out
       if (LOOKUP_SEQUENCE_DONE_STATE == state_ || OB_FAIL(ret)) {
         ret = OB_SUCCESS;
         if (OB_FAIL(handle_lookup_remote_done())) {
-          LOG_ERROR("fail to handle lookup remote done", K(ret), K(sequence_info_.seq_id_));
+          LOG_EDIAG("fail to handle lookup remote done", K(ret), K(sequence_info_.seq_id_));
         }
       }
       break;
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown event", K(event), K(data), K(ret), K(sequence_info_.seq_id_));
+      LOG_WDIAG("unknown event", K(event), K(data), K(ret), K(sequence_info_.seq_id_));
       break;
     }
     }

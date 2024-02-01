@@ -52,11 +52,11 @@ int init_net(ObModuleVersion version, const ObNetOptions &net_options)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(check_module_version(version, NET_SYSTEM_MODULE_VERSION))) {
-    PROXY_NET_LOG(WARN, "failed to check module version", K(version), K(ret));
+    PROXY_NET_LOG(WDIAG, "failed to check module version", K(version), K(ret));
   } else if (!inited) {
     // do one time stuff
     if (OB_FAIL(update_net_options(net_options))) {
-      PROXY_NET_LOG(WARN, "fail to update_net_options", K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to update_net_options", K(ret));
     } else {
       inited = true;
     }
@@ -68,7 +68,7 @@ int update_net_options(const ObNetOptions &net_options)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(update_cop_config(net_options.default_inactivity_timeout_, net_options.max_client_connections_))) {
-    PROXY_NET_LOG(WARN, "fail to update_cop_config",
+    PROXY_NET_LOG(WDIAG, "fail to update_cop_config",
                   K(net_options.default_inactivity_timeout_),
                   K(net_options.max_client_connections_), K(ret));
   }

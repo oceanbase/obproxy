@@ -16,6 +16,7 @@
 #include "proxy/mysqllib/ob_mysql_response.h"
 #include "proxy/mysqllib/ob_mysql_analyzer_utils.h"
 #include "proxy/mysqllib/ob_proxy_parser_utils.h"
+#include "proxy/mysqllib/ob_protocol_diagnosis.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -31,6 +32,12 @@ namespace proxy
 
 static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 
+ObMysqlCompressAnalyzer::~ObMysqlCompressAnalyzer()
+{
+  DEC_SHARED_REF(protocol_diagnosis_);
+  delloc_tmp_used_buffer();
+}
+
 int ObMysqlCompressAnalyzer::init(
     const uint8_t last_seq, const AnalyzeMode mode,
     const obmysql::ObMySQLCmd mysql_cmd,
@@ -38,7 +45,8 @@ int ObMysqlCompressAnalyzer::init(
     const bool enable_extra_ok_packet_for_stats,
     const uint8_t last_ob20_seq,
     const uint32_t request_id,
-    const uint32_t sessid)
+    const uint32_t sessid,
+    const bool is_analyze_compressed_ob20)
 {
   int ret = OB_SUCCESS;
 
@@ -49,32 +57,63 @@ int ObMysqlCompressAnalyzer::init(
 
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(is_inited_), K(ret));
+    LOG_WDIAG("init twice", K(is_inited_), K(ret));
   } else {
     last_seq_ = last_seq;
     mode_ = mode;
     mysql_cmd_ = mysql_cmd;
     enable_extra_ok_packet_for_stats_ = enable_extra_ok_packet_for_stats;
-    reset_out_buffer();
-    if (DECOMPRESS_MODE == mode_) {
-      if (OB_ISNULL(out_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to new miobuffer", K(ret));
-      }
+    delloc_tmp_used_buffer();
+    if (DECOMPRESS_MODE == mode_ && OB_FAIL(alloc_tmp_used_buffer())) {
+      LOG_WDIAG("fail to do alloc_tmp_used_buffer", K(ret));
+    } else if (is_analyze_compressed_ob20 && OB_ISNULL(ob20_decompress_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to new miobuffer", K(ret));
+    } else {
+      is_inited_ = true;
+      analyzer_.set_mysql_mode(mysql_mode);
+      result_.set_cmd(mysql_cmd);
+      result_.set_mysql_mode(mysql_mode);
+      result_.set_enable_extra_ok_packet_for_stats(enable_extra_ok_packet_for_stats);
+      LOG_DEBUG("compress analyzer init", K(last_seq), K(mode), K(mysql_cmd), K(enable_extra_ok_packet_for_stats));
     }
-    is_inited_ = true;
-
-    LOG_DEBUG("compress analyzer init", K(last_seq), K(mode), K(mysql_cmd), K(enable_extra_ok_packet_for_stats), K(lbt()));
   }
   return ret;
 }
 
-void ObMysqlCompressAnalyzer::reset_out_buffer()
+void ObMysqlCompressAnalyzer::delloc_tmp_used_buffer()
 {
-  if (NULL != out_buffer_) {
-    free_miobuffer(out_buffer_);
+  if (NULL != mysql_decompress_buffer_reader_) {
+    mysql_decompress_buffer_reader_->dealloc();
+    mysql_decompress_buffer_reader_ = NULL;
   }
-  out_buffer_ = NULL;
+  if (NULL != mysql_decompress_buffer_) {
+    free_miobuffer(mysql_decompress_buffer_);
+    mysql_decompress_buffer_ = NULL;
+  }
+  if (NULL != ob20_decompress_buffer_) {
+    free_miobuffer(ob20_decompress_buffer_);
+    ob20_decompress_buffer_ = NULL;
+  }
+}
+
+int ObMysqlCompressAnalyzer::alloc_tmp_used_buffer()
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_ISNULL(mysql_decompress_buffer_) &&
+      OB_ISNULL(mysql_decompress_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to do new_miobuffer", K(mysql_decompress_buffer_), K(ret));
+  } else if (OB_ISNULL(mysql_decompress_buffer_reader_) &&
+             OB_ISNULL(mysql_decompress_buffer_reader_ = mysql_decompress_buffer_->alloc_reader())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to do alloc_reader", K(mysql_decompress_buffer_), K(ret));
+  } else {
+    /* do nothing */
+  }
+
+  return ret;
 }
 
 void ObMysqlCompressAnalyzer::reset()
@@ -86,17 +125,14 @@ void ObMysqlCompressAnalyzer::reset()
   is_last_packet_ = false;
   is_stream_finished_ = false;
   mode_ = SIMPLE_MODE;
-  remain_len_ = 0;
+  last_compressed_pkt_remain_len_ = 0;
   header_valid_len_ = 0;
   curr_compressed_header_.reset();
-  reset_out_buffer();
-  if (NULL != last_packet_buffer_ && last_packet_len_ > 0) {
-    op_fixed_mem_free(last_packet_buffer_, last_packet_len_);
-  }
-  last_packet_buffer_ = NULL;
-  last_packet_len_ = 0;
-  last_packet_filled_len_ = 0;
+  delloc_tmp_used_buffer();
   compressor_.reset();
+  is_analyze_compressed_ob20_ = false;
+  result_.reset();
+  analyzer_.reset();
 }
 
 int ObMysqlCompressAnalyzer::analyze_compressed_response_with_length(event::ObIOBufferReader &reader, uint64_t decompress_size)
@@ -116,7 +152,7 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response_with_length(event::ObIO
 
   if (data_size <= 0) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("the first block data_size in reader is less than 0",
+    LOG_WDIAG("the first block data_size in reader is less than 0",
              K(offset), K(block->read_avail()), K(ret));
   } else if (data_size > decompress_size) {
     data_size = decompress_size;
@@ -127,7 +163,7 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response_with_length(event::ObIO
   while (OB_SUCC(ret) && NULL != block && decompress_size > 0) {
     resp_buf.assign_ptr(data, static_cast<int32_t>(data_size));
     if (OB_FAIL(analyze_compressed_response(resp_buf, resp))) {
-      LOG_WARN("fail to analyze compressed response", K(ret));
+      LOG_WDIAG("fail to analyze compressed response", K(ret));
     } else {
       decompress_size -= data_size;
       if (decompress_size > 0) {
@@ -149,7 +185,14 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response_with_length(event::ObIO
   return ret;
 }
 
-int ObMysqlCompressAnalyzer::analyze_compressed_response(event::ObIOBufferReader &reader, ObMysqlResp &resp)
+/*
+  ATTENTION!!!
+  1. reader should contain all compressed packets
+  2. reader.mio_buf_ shouldn't be modified
+*/
+int ObMysqlCompressAnalyzer::analyze_compressed_response(
+    event::ObIOBufferReader &reader,
+    ObMysqlResp &resp)
 {
   int ret = OB_SUCCESS;
   ObIOBufferBlock *block = NULL;
@@ -166,7 +209,7 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(event::ObIOBufferReader
 
   if (data_size <= 0) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("the first block data_size in reader is less than 0",
+    LOG_WDIAG("the first block data_size in reader is less than 0",
              K(offset), K(block->read_avail()), K(ret));
   }
 
@@ -174,7 +217,7 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(event::ObIOBufferReader
   while (OB_SUCC(ret) && NULL != block && data_size > 0 && !resp.get_analyze_result().is_resp_completed()) {
     resp_buf.assign_ptr(data, static_cast<int32_t>(data_size));
     if (OB_FAIL(analyze_compressed_response(resp_buf, resp))) {
-      LOG_WARN("fail to analyze compressed response", K(ret));
+      LOG_WDIAG("fail to analyze compressed response", K(ret));
     } else {
       // on to the next block
       offset = 0;
@@ -186,7 +229,7 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(event::ObIOBufferReader
         if (resp.get_analyze_result().is_resp_completed()) {
           if (OB_UNLIKELY(0 != data_size)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("compressed resp completed, but data_size != 0", K(data_size), K(ret));
+            LOG_EDIAG("compressed resp completed, but data_size != 0", K(data_size), K(ret));
           }
         }
       }
@@ -202,36 +245,45 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(const ObString &compres
   int ret = OB_SUCCESS;
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K(is_inited_), K(ret));
+    LOG_WDIAG("not init", K(is_inited_), K(ret));
   } else if (OB_UNLIKELY(compressed_data.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("empty compressed data", K(compressed_data), K(ret));
+    LOG_WDIAG("empty compressed data", K(compressed_data), K(ret));
   } else {
     int64_t origin_len = compressed_data.length();
     int64_t avail_len = origin_len;
     const char *start = compressed_data.ptr();
 
     while (OB_SUCC(ret) && avail_len > 0) {
-      if (0 == remain_len_) { // next compressed packet start
+      // 1. last compressed packet decompressed completely
+      //    so read header to prepare decompressed next compressed packet
+      if (0 == last_compressed_pkt_remain_len_) { // next compressed packet start
         if (OB_FAIL(decode_compressed_header(compressed_data, avail_len))) {
-          LOG_WARN("fail to decode compressed header", K(ret));
+          LOG_WDIAG("fail to decode compressed header", K(ret));
         }
-      } else if (remain_len_ > 0) { // just consume
+      // 2. last compressed packet's remain
+      //    directly add these data to decompress
+      } else if (last_compressed_pkt_remain_len_ > 0) { // just consume
         const char *buf_start = start + origin_len - avail_len;
         int64_t buf_len = 0;
-        if (remain_len_ > avail_len) {
+        // the remaining of the one compressed packet across two blocks
+        // so we just decompress the first part
+        if (last_compressed_pkt_remain_len_ > avail_len) {
           buf_len = avail_len;
-          remain_len_ -= avail_len;
-          avail_len = 0; // need more data
+          last_compressed_pkt_remain_len_ -= avail_len;
+          avail_len = 0;
+        // the remaining of the one compressed packet in this block
+        // so we finish to decompress this packet
+        // and make header_valid_len to 0 to prepare decompress the next one
         } else {
-          buf_len = remain_len_;
-          avail_len -= remain_len_;
-          remain_len_ = 0;
+          buf_len = last_compressed_pkt_remain_len_;
+          avail_len -= last_compressed_pkt_remain_len_;
+          last_compressed_pkt_remain_len_ = 0;
           header_valid_len_ = 0; // prepare next compressed packet
         }
 
         // whether this is last part of one compressed packet
-        bool is_last_data = (0 == remain_len_);
+        bool is_last_data = (0 == last_compressed_pkt_remain_len_);
         if (SIMPLE_MODE == mode_) {
           if (is_last_packet_ && is_last_data) {
             // stream completed
@@ -242,23 +294,23 @@ int ObMysqlCompressAnalyzer::analyze_compressed_response(const ObString &compres
           }
           LOG_DEBUG("print analyzer in simple mode", K(is_last_packet_), K(is_last_data), K(resp));
         } else if (DECOMPRESS_MODE == mode_) {
-          if (is_last_packet_) {
+          if (is_last_packet_ && is_last_data) {
             if (OB_FAIL(analyze_last_compress_packet(buf_start, buf_len, is_last_data, resp))) {
-              LOG_WARN("fail to analyze last compress packet", KP(buf_start),
+              LOG_WDIAG("fail to analyze last compress packet", KP(buf_start),
                        K(buf_len), K(is_last_data), K(ret));
             }
           } else if (OB_FAIL(decompress_data(buf_start, buf_len, resp))) {
-            LOG_WARN("fail to decompress data", KP(buf_start), K(buf_len), K(ret));
+            LOG_WDIAG("fail to decompress data", KP(buf_start), K(buf_len), K(ret));
           } else {
             resp.get_analyze_result().has_more_compress_packet_ = true;
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid analyze mode", K_(mode), K(ret));
+          LOG_WDIAG("invalid analyze mode", K_(mode), K(ret));
         }
-      } else { // remain_len_ < 0
+      } else { // last_compressed_pkt_remain_len_ < 0
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid last remain len", K_(remain_len), K(ret));
+        LOG_WDIAG("invalid last remain len", K_(last_compressed_pkt_remain_len), K(ret));
       }
     }
   }
@@ -288,7 +340,7 @@ int ObMysqlCompressAnalyzer::decode_compressed_header(const ObString &compressed
       header_buffer_start = header_buf_;
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("never happen", K_(header_valid_len), K(curr_compressed_header_),
+      LOG_WDIAG("never happen", K_(header_valid_len), K(curr_compressed_header_),
                K(avail_len), K(is_last_packet_), K(ret));
       abort();
     }
@@ -299,13 +351,19 @@ int ObMysqlCompressAnalyzer::decode_compressed_header(const ObString &compressed
     curr_compressed_header_.reset();
     if (OB_FAIL(ObMysqlAnalyzerUtils::analyze_compressed_packet_header(
             header_buffer_start, MYSQL_COMPRESSED_HEALDER_LENGTH, curr_compressed_header_))) {
-      LOG_WARN("fail to analyze compressed packet header", K(ret));
+      LOG_WDIAG("fail to analyze compressed packet header", K(ret));
     } else {
+      if (mode_ == DECOMPRESS_MODE) {
+        PROTOCOL_DIAGNOSIS(COMPRESSED_MYSQL, recv, protocol_diagnosis_,
+                           curr_compressed_header_.compressed_len_,
+                           curr_compressed_header_.seq_,
+                           curr_compressed_header_.non_compressed_len_);
+      }
       if (last_seq_ == curr_compressed_header_.seq_) {
         is_last_packet_ = true;
       }
       last_seq_ = curr_compressed_header_.seq_;
-      remain_len_ = curr_compressed_header_.compressed_len_;
+      last_compressed_pkt_remain_len_ = curr_compressed_header_.compressed_len_;
       LOG_DEBUG("decode compressed header succ", K_(curr_compressed_header));
     }
   }
@@ -318,304 +376,14 @@ int ObMysqlCompressAnalyzer::analyze_last_compress_packet(
     const bool is_last_data, ObMysqlResp &resp)
 {
   int ret = OB_SUCCESS;
+  UNUSED(is_last_data);
   if (OB_ISNULL(start) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(start), K(len), K(ret));
-  } else {
-    // alloc buff if needed
-    if (NULL == last_packet_buffer_) {
-      //NOTE::add 1 is used to decide whether decompress compelete easy
-      if (is_compressed_payload()) {
-        last_packet_len_ = curr_compressed_header_.non_compressed_len_ + 1;
-      } else {
-        last_packet_len_ = curr_compressed_header_.compressed_len_ + 1;
-      }
-      if (OB_ISNULL(last_packet_buffer_ = static_cast<char *>(op_fixed_mem_alloc(last_packet_len_)))) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc mem for last_packet_buffer_", "alloc_size", last_packet_len_, K(ret));
-      }
-    }
-
-    // decopress data
-    if (OB_SUCC(ret)) {
-      if (OB_FAIL(decompress_last_mysql_packet(start, len))) {
-        LOG_WARN("fail to decompress last mysql packet", K(ret));
-      }
-    }
-
-    // analyze the last compress packet
-    if (OB_SUCC(ret) && is_last_data) {
-      if (OB_FAIL(do_analyze_last_compress_packet(resp))) {
-        LOG_WARN("fail to do analyze last compress packet", K(ret));
-      }
-    }
-  }
-
-  return ret;
-}
-
-int ObMysqlCompressAnalyzer::decompress_last_mysql_packet(const char *compressed_data, const int64_t len)
-{
-  int ret = OB_SUCCESS;
-  int64_t filled_len = 0;
-  int64_t free_len = last_packet_len_ - last_packet_filled_len_;
-  char *buf_start = last_packet_buffer_ + last_packet_filled_len_;
-  if (OB_ISNULL(compressed_data) || OB_ISNULL(last_packet_buffer_)
-      || OB_UNLIKELY(free_len <= 0) || OB_UNLIKELY(len <= 0)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(compressed_data), K(len), K_(last_packet_buffer),
-             K(free_len), K(ret));
-  } else {
-    if (is_compressed_payload()) {
-      if (OB_FAIL(compressor_.add_decompress_data(compressed_data, len))) {
-        LOG_WARN("fail to add decompress data", K(ret));
-      } else if (OB_FAIL(compressor_.decompress(buf_start, free_len, filled_len))) {
-        LOG_WARN("fail to decompress", KP(buf_start), K(free_len), K(filled_len), K(ret));
-      } else if (filled_len > free_len) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("the packet buff is enough, should not happen", K(filled_len), K(free_len), K(ret));
-      } else {
-        last_packet_filled_len_ += filled_len;
-      }
-    } else {
-      //uncompressed payload, just copy
-      MEMCPY(buf_start, compressed_data, len);
-      last_packet_filled_len_ += len;
-    }
-  }
-  return ret;
-}
-
-int ObMysqlCompressAnalyzer::do_analyze_last_compress_packet(ObMysqlResp &resp)
-{
-  int ret = OB_SUCCESS;
-  if (OB_ISNULL(last_packet_buffer_) || OB_UNLIKELY(last_packet_len_ != (last_packet_filled_len_ + 1))) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", KP_(last_packet_buffer), K_(last_packet_len),
-             K_(last_packet_filled_len), K(ret));
-  } else {
-    // the last compress packet only has four types:
-    // 1. ok
-    // 2. eof + ok
-    // 3. error + ok
-    // 4. string<EOF> Human readable string, just for OB_MYSQL_COM_STATISTICS
-    ObMysqlPacketMeta meta1; // the fist packet's meta
-    char *body_start = NULL; // the start pos of mysql packet body
-    int64_t body_len = 0;    // the len of mysql packet body
-    ObMysqlRespEndingType ending_type = MAX_PACKET_ENDING_TYPE;
-
-    if (OB_MYSQL_COM_STATISTICS == mysql_cmd_) {
-      ending_type = STRING_EOF_ENDING_TYPE;
-      if (OB_FAIL(analyze_string_eof_packet(resp))) {
-        LOG_WARN("fail to analyze string eof packet", K(meta1),
-                 "request cmd", ObProxyParserUtils::get_sql_cmd_name(mysql_cmd_), K(ret));
-      }
-    } else {
-      if (OB_FAIL(ObProxyParserUtils::analyze_mysql_packet_meta(
-              last_packet_buffer_, last_packet_filled_len_, meta1))) {
-        LOG_WARN("fail to analyze mysql packet meta",
-                 "request cmd", ObProxyParserUtils::get_sql_cmd_name(mysql_cmd_), K(ret));
-      } else {
-        switch (meta1.pkt_type_) {
-          case MYSQL_ERR_PACKET_TYPE : {
-            // only error packet is error resp, other is result set
-            if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE == mysql_cmd_ && resp.get_analyze_result().has_more_compress_packet()) {
-              ending_type = EOF_PACKET_ENDING_TYPE;
-            } else {
-              ending_type = ERROR_PACKET_ENDING_TYPE;
-            }
-            body_start = last_packet_buffer_ + MYSQL_NET_HEADER_LENGTH;
-            body_len = meta1.pkt_len_ - MYSQL_NET_HEADER_LENGTH;
-            if (OB_FAIL(analyze_error_packet(body_start, body_len, resp))) {
-              LOG_WARN("fail to analyze error packet", K(ret));
-            } else if (OB_FAIL(analyze_last_ok_packet(meta1.pkt_len_, resp))) {
-              LOG_WARN("fail to analyze last ok packet", K(meta1), K(ret));
-            }
-            break;
-          }
-          case MYSQL_OK_PACKET_TYPE : {
-            ending_type = OK_PACKET_ENDING_TYPE;
-            body_start = last_packet_buffer_ + MYSQL_NET_HEADER_LENGTH;
-            body_len = meta1.pkt_len_ - MYSQL_NET_HEADER_LENGTH;
-            // only one ok packet, we need rewrite later
-            if (OB_MYSQL_COM_FIELD_LIST == mysql_cmd_|| OB_MYSQL_COM_STMT_PREPARE == mysql_cmd_
-                || OB_MYSQL_COM_STMT_GET_PIECE_DATA == mysql_cmd_) {
-              resp.get_analyze_result().ok_packet_action_type_ = OK_PACKET_ACTION_CONSUME;
-            } else {
-              resp.get_analyze_result().ok_packet_action_type_ = OK_PACKET_ACTION_REWRITE;
-            }
-            resp.get_analyze_result().last_ok_pkt_len_ = meta1.pkt_len_; // include header
-            if (OB_FAIL(analyze_ok_packet(body_start, body_len, resp))) {
-              LOG_WARN("fail to analyze ok packet", K(body_len), KP(body_start), K(ret));
-            }
-            break;
-          }
-          case MYSQL_EOF_PACKET_TYPE : {
-            ending_type = EOF_PACKET_ENDING_TYPE;
-            // just skip analyze eof packet len, just analyze the last ok packet
-            if (OB_FAIL(analyze_last_ok_packet(meta1.pkt_len_, resp))) {
-              LOG_WARN("fail to analyze last ok packet", K(meta1), K(ret));
-            }
-            break;
-          }
-          default : {
-            ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid packet type", K(meta1),
-                     "request cmd", ObProxyParserUtils::get_sql_cmd_name(mysql_cmd_), K(ret));
-            break;
-          }
-        }
-      }
-    }
-
-    if (OB_SUCC(ret)) {
-      if (NULL != out_buffer_) {
-        // copy the last packet data(non-compressed) to out_buffer_
-        int64_t written_len = 0;
-        int64_t packet_len = last_packet_len_ - 1;
-        out_buffer_->write(last_packet_buffer_, packet_len, written_len);
-        if (OB_UNLIKELY(written_len != packet_len)) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to write", K(mode_), K(written_len), K(packet_len), K(ret));
-        }
-      }
-
-      ObRespAnalyzeResult &analyze_result = resp.get_analyze_result();
-      analyze_result.is_resp_completed_ = true;
-      analyze_result.ending_type_ = ending_type;
-      is_stream_finished_ = true;
-      LOG_DEBUG("the last compressed analyze complete",
-                "request cmd", ObProxyParserUtils::get_sql_cmd_name(mysql_cmd_), K(resp));
-    }
-  }
-
-  return ret;
-}
-
-inline int ObMysqlCompressAnalyzer::analyze_string_eof_packet(ObMysqlResp &resp)
-{
-  int ret = OB_SUCCESS;
-  ObMySQLPacketHeader header;
-  if (OB_FAIL(ObProxyParserUtils::analyze_mysql_packet_header(
-              last_packet_buffer_, last_packet_filled_len_, header))) {
-    LOG_WARN("fail to analyze mysql packet header",
-             "request cmd", ObProxyParserUtils::get_sql_cmd_name(mysql_cmd_), K(ret));
-  } else {
-    LOG_DEBUG("string<EOF> packet", K(header), K_(enable_extra_ok_packet_for_stats),
-              "request cmd", ObProxyParserUtils::get_sql_cmd_name(mysql_cmd_));
-    if (enable_extra_ok_packet_for_stats_) {
-      if ((header.len_ + MYSQL_NET_HEADER_LENGTH) >= last_packet_filled_len_) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid string<EOF> Human readable string", K(header),
-                 K(last_packet_filled_len_), K(header), K(ret));
-      } else {
-        // analyze last ok packet
-        if (OB_FAIL(analyze_last_ok_packet(header.len_ + MYSQL_NET_HEADER_LENGTH, resp))) {
-          LOG_WARN("fail to analyze ok packet", K(header), K(ret));
-        }
-      }
-    } else {
-      if ((header.len_ + MYSQL_NET_HEADER_LENGTH) != last_packet_filled_len_) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid string<EOF> Human readable string", K(header),
-                 K(last_packet_filled_len_), K(header), K(ret));
-      } else {
-        // if server not support extra ok packet, treat it as in trans
-        ObRespAnalyzeResult &analyze_result = resp.get_analyze_result();
-        analyze_result.is_trans_completed_ = false;
-        resp.get_analyze_result().ok_packet_action_type_ = OK_PACKET_ACTION_SEND;
-      }
-    }
-  }
-
-  return ret;
-}
-
-int ObMysqlCompressAnalyzer::analyze_last_ok_packet(
-    const int64_t last_pkt_total_len, // include header
-    ObMysqlResp &resp)
-{
-  int ret = OB_SUCCESS;
-  ObMysqlPacketMeta ok_pkt_meta;
-  // the total buffer must > first paket len
-  if (last_packet_filled_len_ <= last_pkt_total_len) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("there must have ok packet after first packet", K(last_pkt_total_len),
-             K(last_packet_filled_len_), K(ret));
-  // get ok packet meta
-  } else if (OB_FAIL(ObProxyParserUtils::analyze_mysql_packet_meta(
-          last_packet_buffer_ + last_pkt_total_len,
-          last_packet_filled_len_ - last_pkt_total_len, ok_pkt_meta))) {
-    LOG_WARN("fail to analyze mysql packet meta", K(ret));
-  } else if (last_pkt_total_len + ok_pkt_meta.pkt_len_ != last_packet_filled_len_) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("the last compressed packet must be contain two packet",
-             K(last_pkt_total_len), K(ok_pkt_meta), K(last_packet_filled_len_), K(ret));
-  } else {
-    resp.get_analyze_result().reserved_len_ = 0; // the last packet is received, no need reserve
-    resp.get_analyze_result().ok_packet_action_type_ = OK_PACKET_ACTION_CONSUME;
-    resp.get_analyze_result().last_ok_pkt_len_ = ok_pkt_meta.pkt_len_; // include header
-
-    char *body_start = last_packet_buffer_ + last_pkt_total_len + MYSQL_NET_HEADER_LENGTH;
-    int64_t body_len = ok_pkt_meta.pkt_len_ - MYSQL_NET_HEADER_LENGTH;
-    if (OB_FAIL(analyze_ok_packet(body_start, body_len, resp))) {
-      LOG_WARN("fail to analyze ok packet", K(body_len), KP(body_start), K(ret));
-    }
-  }
-
-  return ret;
-}
-
-int ObMysqlCompressAnalyzer::analyze_error_packet(const char *ptr, const int64_t len, ObMysqlResp &resp)
-{
-  int ret = OB_SUCCESS;
-  ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> &content_buf = resp.get_analyze_result().error_pkt_buf_;
-  if (OB_FAIL(content_buf.init(len))) {
-    LOG_WARN("fail int alloc mem", K(len), K(ret));
-  } else {
-    char *pos = content_buf.pos();
-    MEMCPY(pos, ptr, len); // len is packet body len, not include packet header
-    if (OB_FAIL(content_buf.consume(len))) {
-      LOG_WARN("fail to consume", K(len), K(ret));
-    } else {
-      OMPKError &err_pkt = resp.get_analyze_result().get_error_pkt();
-      err_pkt.set_content(pos, static_cast<uint32_t>(len));
-      if (OB_FAIL(err_pkt.decode())) {
-        LOG_WARN("fail to decode error packet", K(ret));
-      }
-    }
-  }
-
-  return ret;
-}
-
-int ObMysqlCompressAnalyzer::analyze_ok_packet(const char *ptr, const int64_t len, ObMysqlResp &resp)
-{
-  int ret = OB_SUCCESS;
-  // only need to get the OB_SERVER_STATUS_IN_TRANS bit
-  const char *pos = ptr;
-  uint64_t affected_rows = 0;
-  uint64_t last_insert_id = 0;
-  uint8_t ok_packet_type = 0;
-  ObServerStatusFlags server_status;
-
-  ObMySQLUtil::get_uint1(pos, ok_packet_type);
-  if (OB_FAIL(ObMySQLUtil::get_length(pos, affected_rows))) {
-    LOG_WARN("get length failed", K(ptr), K(pos), K(affected_rows), K(ret));
-  } else if (OB_FAIL(ObMySQLUtil::get_length(pos, last_insert_id))) {
-    LOG_WARN("get length failed", K(ptr), K(pos), K(last_insert_id), K(ret));
-  } else if (FALSE_IT(ObMySQLUtil::get_uint2(pos, server_status.flags_))) {
-    // impossible
-  } else if (OB_UNLIKELY((pos - ptr) > len)) { // just defnese
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected ptr pos", KP(ptr), KP(pos), K(len), K(ret));
-  } else {
-    ObRespAnalyzeResult &analyze_result = resp.get_analyze_result();
-    if (server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS) {
-      analyze_result.is_trans_completed_ = false;
-    } else {
-      analyze_result.is_trans_completed_ = true;
-    }
+    LOG_WDIAG("invalid input value", KP(start), K(len), K(ret));
+  } else if (OB_FAIL(decompress_data(start, len, resp))) {
+    LOG_WDIAG("fail to decompress last mysql packet", K(ret));
+  } else if (OB_FAIL(analyze_mysql_packet_end(resp))) {
+    LOG_WDIAG("fail to analyze_mysql_packet_end", K(ret));
   }
   return ret;
 }
@@ -624,9 +392,9 @@ int ObMysqlCompressAnalyzer::decompress_data(const char *zprt, const int64_t zle
 {
   int ret = OB_SUCCESS;
   UNUSED(resp);
-  if (OB_ISNULL(out_buffer_) || OB_ISNULL(zprt) || OB_UNLIKELY(zlen < 0)) {
+  if (OB_ISNULL(mysql_decompress_buffer_) || OB_ISNULL(zprt) || OB_UNLIKELY(zlen < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K_(out_buffer), KP(zprt), K(zlen), K(ret));
+    LOG_WDIAG("invalid argument", K_(mysql_decompress_buffer), KP(zprt), K(zlen), K(ret));
   } else {
     int64_t filled_len = 0;
     if (is_compressed_payload()) {
@@ -634,19 +402,19 @@ int ObMysqlCompressAnalyzer::decompress_data(const char *zprt, const int64_t zle
       int64_t len = 0;
       bool stop = false;
       if (OB_FAIL(compressor_.add_decompress_data(zprt, zlen))) {
-        LOG_WARN("fail to add decompress data", K(ret));
+        LOG_WDIAG("fail to add decompress data", K(ret));
       }
       while (OB_SUCC(ret) && !stop) {
-        if (OB_FAIL(out_buffer_->get_write_avail_buf(buf, len))) {
-          LOG_WARN("fail to get successive vuf", K(len), K(ret));
+        if (OB_FAIL(mysql_decompress_buffer_->get_write_avail_buf(buf, len))) {
+          LOG_WDIAG("fail to get successive vuf", K(len), K(ret));
         } else if (OB_ISNULL(buf) || (0 == len)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid argument", KP(buf), K(len), K(ret));
+          LOG_WDIAG("invalid argument", KP(buf), K(len), K(ret));
         } else if (OB_FAIL(compressor_.decompress(buf, len, filled_len))) {
-          LOG_WARN("fail to decompress", KP(buf), K(len), K(ret));
+          LOG_WDIAG("fail to decompress", KP(buf), K(len), K(ret));
         } else {
           if (filled_len > 0) {
-            out_buffer_->fill(filled_len);
+            mysql_decompress_buffer_->fill(filled_len);
           }
           if (len > filled_len) { // complete
             stop = true;
@@ -656,12 +424,37 @@ int ObMysqlCompressAnalyzer::decompress_data(const char *zprt, const int64_t zle
     } else {
       //uncompressed payload, just copy
       //TODO:: this can do better, remove_append
-      if (OB_FAIL(out_buffer_->write(zprt, zlen, filled_len))) {
-        LOG_WARN("fail to write uncompressed payload", K(zlen), K(filled_len), K(ret));
+      if (OB_FAIL(mysql_decompress_buffer_->write(zprt, zlen, filled_len))) {
+        LOG_WDIAG("fail to write uncompressed payload", K(zlen), K(filled_len), K(ret));
       } else if (OB_UNLIKELY(zlen != filled_len)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to write uncompressed payload", K(zlen), K(filled_len), K(ret));
+        LOG_WDIAG("fail to write uncompressed payload", K(zlen), K(filled_len), K(ret));
       }
+    }
+    if (OB_NOT_NULL(mysql_decompress_buffer_reader_)) {
+      LOG_DEBUG("start analyze mysql packet");
+      mysql_decompress_buffer_reader_->skip_empty_blocks();
+      ObIOBufferBlock *block = mysql_decompress_buffer_reader_->block_;
+      int64_t offset = mysql_decompress_buffer_reader_->start_offset_;
+      char *data = block->start() + offset;
+      int64_t data_size = block->read_avail() - offset;
+      int64_t analyzed_len = 0;
+      while (OB_NOT_NULL(block) && data_size > 0) {
+        ObString buf;
+        buf.assign_ptr(data, static_cast<int>(data_size));
+        ObBufferReader r(buf);
+        if (OB_FAIL(analyzer_.analyze_mysql_resp(r, result_, &resp, protocol_diagnosis_))) {
+          LOG_WDIAG("fail to analyze mysql packets", K(ret), K(resp));
+        } else {
+          analyzed_len += data_size;
+          if (OB_NOT_NULL(block = block->next_)) {
+            data = block->start();
+            data_size = block->read_avail();
+          }
+          resp.get_analyze_result().reserved_len_of_last_ok_ = result_.get_reserved_len();
+        }
+      }
+      mysql_decompress_buffer_reader_->consume(analyzed_len);
     }
   }
   return ret;
@@ -688,9 +481,9 @@ int ObMysqlCompressAnalyzer::analyze_first_response(
   result.reset();
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(is_inited_), K(ret));
+    LOG_WDIAG("not inited", K(is_inited_), K(ret));
   } else if (OB_FAIL(analyze_one_compressed_packet(reader, result))) {
-    LOG_WARN("fail to analyze one compressed packet", K(ret));
+    LOG_WDIAG("fail to analyze one compressed packet", K(ret));
   } else if (ANALYZE_DONE == result.status_) { // one compressed packet received completely
     if (is_last_packet(result)) {    // only has one compressed packet
       resp.get_analyze_result().is_resultset_resp_ = false;
@@ -698,22 +491,22 @@ int ObMysqlCompressAnalyzer::analyze_first_response(
     } else {
       resp.get_analyze_result().is_resultset_resp_ = true;
     }
-
     if (mode_ == DECOMPRESS_MODE || need_receive_completed) {
       ObIOBufferReader *transfer_reader = NULL;
       if (mode_ == DECOMPRESS_MODE) {
-        if (NULL == out_buffer_ && OB_ISNULL(out_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+        if (OB_FAIL(alloc_tmp_used_buffer())) {
+          LOG_WDIAG("fail to do alloc_tmp_used_buffer", K(ret));
+        } else if (OB_ISNULL(transfer_reader = mysql_decompress_buffer_reader_->clone())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to new miobuffer", K(ret));
-        } else if (OB_ISNULL(transfer_reader = get_transfer_reader())) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to get transfer reader", K(transfer_reader), K(ret));
+          LOG_WDIAG("fail to clone mysql_decompress_buffer_reader", K(transfer_reader), K(ret));
+        } else {
+          /* do nothing */
         }
       }
 
       if (OB_SUCC(ret)) {
-        if (OB_FAIL(analyze_compressed_response(reader, resp))) { // analyze it
-          LOG_WARN("fail to analyze compressed response", K(ret));
+        if (OB_FAIL(ObMysqlCompressAnalyzer::analyze_compressed_response(reader, resp))) { // analyze it
+          LOG_WDIAG("fail to analyze compressed response", K(ret));
         } else {
           if (resp.get_analyze_result().is_resp_completed()) {
             result.is_checksum_on_ = curr_compressed_header_.is_compressed_payload();
@@ -721,14 +514,16 @@ int ObMysqlCompressAnalyzer::analyze_first_response(
             if (mode_ == DECOMPRESS_MODE) {
               int64_t written_len = 0;
               int64_t tmp_read_avail = transfer_reader->read_avail();
-              // consume all compressed data, and write uncompressed data to server miobuffer
+              // reader.mio_buf -- decompress --> transfer_reader.mio_buf ----> reader.mio_buf
+              //  we have decompress all data from reader to transfer_reader.mio_buf
+              //  then we write all data in transfer_reader.mio_buf back to reader.mio_buf
               if (OB_FAIL(reader.consume_all())) {
-                LOG_WARN("fail to consume all", K(ret));
+                LOG_WDIAG("fail to consume all", K(ret));
               } else if (OB_FAIL(reader.mbuf_->write(transfer_reader, tmp_read_avail, written_len))) {
-                LOG_WARN("fail to write", K(tmp_read_avail), K(ret));
+                LOG_WDIAG("fail to write", K(tmp_read_avail), K(ret));
               } else if (OB_UNLIKELY(written_len != tmp_read_avail)) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("written_len is not expected", K(written_len), K(tmp_read_avail), K(ret));
+                LOG_WDIAG("written_len is not expected", K(written_len), K(tmp_read_avail), K(ret));
               } else {
                 resp.get_analyze_result().is_decompressed_ = true;
                 LOG_DEBUG("receive completed", K(need_receive_completed), K(result));
@@ -740,13 +535,10 @@ int ObMysqlCompressAnalyzer::analyze_first_response(
           }
         }
       }
-      
+
       // 这里 transfer_reader 不清理缓存可能会导致内存泄漏
       int tmp_ret = OB_SUCCESS;
       if (NULL != transfer_reader) {
-        if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = transfer_reader->consume_all()))) {
-          LOG_WARN("fail to consume all", K(transfer_reader), K(ret));
-        }
         transfer_reader->dealloc();
         transfer_reader = NULL;
       }
@@ -759,6 +551,7 @@ int ObMysqlCompressAnalyzer::analyze_first_response(
   return ret;
 }
 
+// called by ObMysqlTransact::do_handle_prepare_response or ObMysqlCompressOB20Analyzer::analyze_first_response
 int ObMysqlCompressAnalyzer::analyze_first_response(
     ObIOBufferReader &reader,
     ObMysqlCompressedAnalyzeResult &result)
@@ -767,31 +560,32 @@ int ObMysqlCompressAnalyzer::analyze_first_response(
   result.reset();
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(is_inited_), K(ret));
+    LOG_WDIAG("not inited", K(is_inited_), K(ret));
   } else if (OB_FAIL(analyze_one_compressed_packet(reader, result))) {
-    LOG_WARN("fail to analyze one compressed packet", K(ret));
+    LOG_WDIAG("fail to analyze one compressed packet", K(ret));
   } else if (ANALYZE_DONE == result.status_) { // one compressed packet received completely
     if (OB_FAIL(analyze_compressed_response_with_length(reader, result.header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH))) { // analyze it
-      LOG_WARN("fail to analyze compressed response with length", K(ret));
+      LOG_WDIAG("fail to analyze compressed response with length", K(ret));
     }
   }
 
   return ret;
 }
 
+// reader was not modified!!!
 int ObMysqlCompressAnalyzer::analyze_response(event::ObIOBufferReader &reader, ObMysqlResp *resp)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(resp)) {
     int ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("resp can not be NULL here", K(resp), K(ret));
+    LOG_WDIAG("resp can not be NULL here", K(resp), K(ret));
   } else if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(is_inited_), K(ret));
+    LOG_WDIAG("not inited", K(is_inited_), K(ret));
   } else if (OB_FAIL(analyze_compressed_response(reader, *resp))) {
-    LOG_WARN("fail to analyze compressed response", K(ret));
+    LOG_WDIAG("fail to analyze compressed response", K(ret));
   }
-
+  LOG_DEBUG("[ObMysqlCompressAnalyzer::analyze_response] analyzed reader", K(reader.read_avail()));
   return ret;
 }
 
@@ -801,22 +595,22 @@ int ObMysqlCompressAnalyzer::analyze_first_request(ObIOBufferReader &reader,
                                                    ObMysqlAnalyzeStatus &status)
 {
   UNUSED(req);
-  
+
   int ret = OB_SUCCESS;
   result.reset();
 
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("analyzer not init", K(ret));
+    LOG_WDIAG("analyzer not init", K(ret));
   } else if (OB_FAIL(analyze_one_compressed_packet(reader, result))) { // 7 + 24 header decode finish
-    LOG_WARN("fail to analyze one compressed packet", K(ret));
+    LOG_WDIAG("fail to analyze one compressed packet", K(ret));
   } else if (ANALYZE_DONE == result.status_) {
     status = result.status_;
 
     // total ob20 request received complete here, total_len = ob20.head.compressed_len + mysql compress head(3+1+3)
     // get extra info from ob20 payload
     if (OB_FAIL(analyze_compress_packet_payload(reader, result))) {
-      LOG_WARN("fail to analyze compress packet payload", K(ret));
+      LOG_WDIAG("fail to analyze compress packet payload", K(ret));
       status = ANALYZE_ERROR;
     }
   }
@@ -829,12 +623,53 @@ int ObMysqlCompressAnalyzer::analyze_compress_packet_payload(event::ObIOBufferRe
 {
   UNUSED(reader);
   UNUSED(result);
-  
-  int ret = OB_INVALID_ARGUMENT;
-  LOG_WARN("unexpected protocol type handle.");
-  return ret;
-}          
 
+  int ret = OB_INVALID_ARGUMENT;
+  LOG_WDIAG("unexpected protocol type handle.");
+  return ret;
+}
+
+int ObMysqlCompressAnalyzer::analyze_mysql_packet_end(ObMysqlResp& resp)
+{
+  int ret = OB_SUCCESS;
+  bool is_trans_completed = false;
+  bool is_resp_completed = false;
+  ObMysqlRespEndingType ending_type = MAX_PACKET_ENDING_TYPE;
+  if (!analyzer_.need_wait_more_data()
+        && OB_FAIL(result_.is_resp_finished(is_resp_completed, ending_type))) {
+      LOG_WDIAG("fail to check is resp finished", K(ending_type), K(ret));
+  } else {
+    // this mysql response is complete
+    if (is_resp_completed) {
+      ObRespTransState state = result_.get_trans_state();
+      if (NOT_IN_TRANS_STATE_BY_PARSE == state) {
+        is_trans_completed = true;
+      }
+    }
+
+    // just defense
+    if (OB_UNLIKELY(is_trans_completed) && OB_UNLIKELY(!is_resp_completed)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("state error", K(is_trans_completed), K(is_resp_completed), K(ret));
+    } else if (OB_UNLIKELY(!is_resp_completed) && OB_UNLIKELY(is_trans_completed)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("state error", K(is_trans_completed), K(is_resp_completed), K(ret));
+    }
+
+    LOG_DEBUG("analyze trans response succ", K(is_trans_completed), K(is_resp_completed),
+              "mode", result_.get_mysql_mode(), "ObMysqlRespEndingType", ending_type);
+    ObRespAnalyzeResult &analyze_result = resp.get_analyze_result();
+    if (is_resp_completed) {
+      analyze_result.is_trans_completed_ = is_trans_completed;
+      analyze_result.is_resp_completed_ = is_resp_completed;
+      analyze_result.ending_type_ = ending_type;
+      is_stream_finished_ = true;
+      LOG_DEBUG("analyze result", K(resp));
+    }
+  }
+
+  return ret;
+}
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

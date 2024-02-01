@@ -45,18 +45,18 @@ int ObProxyPacketWriter::write_packet(event::ObMIOBuffer &write_buf,
   if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
-    Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
-                                            compressed_seq, true, false, false,
-                                            client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing(), false);
+    Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                    compressed_seq, true, false, false,
+                                    client_session.is_client_support_new_extra_info(),
+                                    client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_packet(write_buf, packet, ob20_head_param))) {
-      LOG_WARN("fail to write ob20 packet", K(ret));
+      LOG_WDIAG("fail to write ob20 packet", K(ret));
     } else {
       client_session.set_compressed_seq(compressed_seq);
     }
   } else {
     if (OB_FAIL(ObMysqlPacketWriter::write_packet(write_buf, packet))) {
-      LOG_WARN("fail to write mysql packet", K(ret));
+      LOG_WDIAG("fail to write mysql packet", K(ret));
     }
   }
 
@@ -73,18 +73,18 @@ int ObProxyPacketWriter::write_raw_packet(event::ObMIOBuffer &write_buf,
   if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
-    Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_,
-                                            compressed_seq, compressed_seq, true, false, false,
-                                            client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing(), false);
+    Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_,
+                                    compressed_seq, compressed_seq, true, false, false,
+                                    client_session.is_client_support_new_extra_info(),
+                                    client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_raw_packet(write_buf, pkt_str, ob20_head_param))) {
-      LOG_WARN("fail to write raw packet in ob20 format", K(ret));
+      LOG_WDIAG("fail to write raw packet in ob20 format", K(ret));
     } else {
        client_session.set_compressed_seq(compressed_seq);
     }
   } else {
     if (OB_FAIL(ObMysqlPacketWriter::write_raw_packet(write_buf, pkt_str))) {
-      LOG_WARN("fail to write raw ok packet", K(ret));
+      LOG_WDIAG("fail to write raw ok packet", K(ret));
     }
   }
 
@@ -104,18 +104,18 @@ int ObProxyPacketWriter::write_kv_resultset(event::ObMIOBuffer &write_buf,
   if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
-    Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
-                                            compressed_seq, true, false, false,
-                                            client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing(), false);
+    Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                    compressed_seq, true, false, false,
+                                    client_session.is_client_support_new_extra_info(),
+                                    client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObProto20Utils::encode_kv_resultset(write_buf, ob20_head_param, seq, field,
                                                     field_value, status_flag))) {
-      LOG_WARN("fail to encode kv resultset", K(ret));
-    }    
+      LOG_WDIAG("fail to encode kv resultset", K(ret));
+    }
   } else {
     // mysql
     if (OB_FAIL(ObMysqlPacketUtil::encode_kv_resultset(write_buf, seq, field, field_value, status_flag))) {
-      LOG_WARN("fail to encode kv resultset", K(seq), K(ret));
+      LOG_WDIAG("fail to encode kv resultset", K(seq), K(ret));
     }
   }
 
@@ -134,18 +134,18 @@ int ObProxyPacketWriter::write_ok_packet(event::ObMIOBuffer &write_buf,
   if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
-    Ob20ProtocolHeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
-                                            compressed_seq, true, false, false,
-                                            client_session.is_client_support_new_extra_info(),
-                                            client_session.is_trans_internal_routing(), false);
+    Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                    compressed_seq, true, false, false,
+                                    client_session.is_client_support_new_extra_info(),
+                                    client_session.is_trans_internal_routing(), false);
     if (OB_FAIL(ObProto20Utils::encode_ok_packet(write_buf, ob20_head_param, seq, affected_rows, capability))) {
-      LOG_WARN("fail to encode ok packet in ob20 format", K(ret));
+      LOG_WDIAG("fail to encode ok packet in ob20 format", K(ret));
     } else {
       client_session.set_compressed_seq(compressed_seq);
     }
   } else {
     if (OB_FAIL(ObMysqlPacketUtil::encode_ok_packet(write_buf, seq, affected_rows, capability))) {
-      LOG_WARN("[ObMysqlSM::do_internal_request] fail to encode OB_MYSQL_COM_PING response ok packet", K(ret));
+      LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to encode OB_MYSQL_COM_PING response ok packet", K(ret));
     }
   }
 
@@ -157,7 +157,7 @@ int ObProxyPacketWriter::get_err_buf(int err_code, char *&buf)
   int ret = OB_SUCCESS;
 
   if (OB_UNLIKELY(err_code == OB_SUCCESS)) {
-    BACKTRACE(ERROR, (OB_SUCCESS == err_code), "BUG send error packet but err code is 0");
+    BACKTRACE(EDIAG, (OB_SUCCESS == err_code), "BUG send error packet but err code is 0");
     err_code = OB_ERR_UNEXPECTED;
   }
 
@@ -173,7 +173,7 @@ int ObProxyPacketWriter::get_err_buf(int err_code, char *&buf)
 
   if (OB_UNLIKELY(length < 0) || OB_UNLIKELY(length >= MAX_MSG_BUFFER_SIZE)) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("err msg buffer not enough", K(ret), K(length), K(err_msg));
+    LOG_WDIAG("err msg buffer not enough", K(ret), K(length), K(err_msg));
   } else {
     buf = msg_buffer_;
   }
@@ -204,25 +204,25 @@ int ObProxyPacketWriter::write_error_packet(event::ObMIOBuffer &write_buf,
   if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
     if (OB_ISNULL(client_session)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid client session ptr in ob20 mode", K(ret));
+      LOG_WDIAG("invalid client session ptr in ob20 mode", K(ret));
     } else {
       Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
       uint8_t compressed_seq = static_cast<uint8_t>(client_session->get_compressed_seq() + 1);
-      Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, 
-                                              compressed_seq, compressed_seq, true, false, false,
-                                              client_session->is_client_support_new_extra_info(),
-                                              client_session->is_trans_internal_routing(), false);
+      Ob20HeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_,
+                                      compressed_seq, compressed_seq, true, false, false,
+                                      client_session->is_client_support_new_extra_info(),
+                                      client_session->is_trans_internal_routing(), false);
       if (OB_FAIL(ObProto20Utils::encode_err_packet(write_buf, ob20_head_param, seq, err_code, msg_buf))) {
-        LOG_WARN("fail to encode err packet in ob20 format", K(ret));
+        LOG_WDIAG("fail to encode err packet in ob20 format", K(ret));
       }
     }
   } else {
     // mysql
     if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(write_buf, seq, err_code, msg_buf))) {
-      LOG_WARN("fail to encode err packet buf in mysql format", K(ret));
+      LOG_WDIAG("fail to encode err packet buf in mysql format", K(ret));
     }
   }
-  
+
   return ret;
 }
 

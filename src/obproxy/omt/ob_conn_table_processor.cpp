@@ -77,7 +77,7 @@ bool ObConnTableProcessor::check_and_inc_conn(
 
   if (OB_FAIL(inc_conn(cluster_name, tenant_name, ip_name, cur_used_connections))) {
     throttle = true;
-    LOG_WARN("fail to get or create used conn", K(cluster_name), K(tenant_name), K(ip_name), K(ret));
+    LOG_WDIAG("fail to get or create used conn", K(cluster_name), K(tenant_name), K(ip_name), K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -95,7 +95,7 @@ bool ObConnTableProcessor::check_and_inc_conn(
       if (cur_used_connections <= vt_conn->max_connections_) {
         LOG_DEBUG("vip tenant connect info", K(cur_used_connections), KPC(vt_conn));
       } else {
-        LOG_WARN("used connections reach throttle", K(cur_used_connections), K(vt_conn->max_connections_), KPC(vt_conn));
+        LOG_WDIAG("used connections reach throttle", K(cur_used_connections), K(vt_conn->max_connections_), KPC(vt_conn));
         dec_conn(cluster_name, tenant_name, ip_name);
         throttle = true;
       }
@@ -113,11 +113,11 @@ int ObConnTableProcessor::inc_conn(ObString& cluster_name, ObString& tenant_name
   ObUsedConn* used_conn = NULL;
   common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
   if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name, cluster_name, ip_name, key_string))) {
-    LOG_WARN("build tenant cluser vip name failed", K(tenant_name), K(cluster_name), K(ip_name), K(ret));
+    LOG_WDIAG("build tenant cluser vip name failed", K(tenant_name), K(cluster_name), K(ip_name), K(ret));
   } else {
     key_name = ObString::make_string(key_string.ptr());
     if (OB_FAIL(get_or_create_used_conn(key_name, used_conn, cur_used_connections))) {
-      LOG_WARN("create used conn failed", K(key_name), K(ret));
+      LOG_WDIAG("create used conn failed", K(key_name), K(ret));
     } else {
       used_conn->dec_ref();
     }
@@ -134,11 +134,11 @@ void ObConnTableProcessor::dec_conn(
   common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
 
   if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name, cluster_name, ip_name, key_string))) {
-    LOG_WARN("build tenant cluster vip name failed", K(ret), K(tenant_name), K(cluster_name), K(ip_name));
+    LOG_WDIAG("build tenant cluster vip name failed", K(ret), K(tenant_name), K(cluster_name), K(ip_name));
   } else {
     ObString key_name = ObString::make_string(key_string.ptr());
     if (OB_FAIL(get_used_conn(key_name, false, used_conn, cur_used_connections))) {
-      LOG_WARN("fail to get used conn in map", K(key_name), K(ret));
+      LOG_WDIAG("fail to get used conn in map", K(key_name), K(ret));
     } else {
       if (OB_NOT_NULL(used_conn)) {
         if (ATOMIC_FAA(&used_conn->max_used_connections_, -1) > 1) {
@@ -163,14 +163,14 @@ int ObConnTableProcessor::get_vt_conn_object(
 
   common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + common::MAX_IP_ADDR_LENGTH> key_string;
   if (OB_FAIL(build_tenant_cluster_vip_name(tenant_name, cluster_name, vip_name, key_string))) {
-    LOG_WARN("build tenant cluser vip name failed", K(ret), K(tenant_name), K(cluster_name), K(vip_name));
+    LOG_WDIAG("build tenant cluser vip name failed", K(ret), K(tenant_name), K(cluster_name), K(vip_name));
   } else {
     ObString key_name = ObString::make_string(key_string.ptr());
     if (OB_FAIL(vt_conn_cache_.get(key_name, vt_conn))) {
       if (OB_ENTRY_NOT_EXIST == ret) {
         LOG_DEBUG("vip tenant connect not in cache", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
       } else {
-        LOG_WARN("fail to get vip tenant connect in cache", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
+        LOG_WDIAG("fail to get vip tenant connect in cache", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
       }
     } else {
       LOG_DEBUG("succ to get vip tenant connect in cache", K(cluster_name), K(tenant_name), K(vip_name), KPC(vt_conn));
@@ -189,12 +189,12 @@ int ObConnTableProcessor::alloc_and_init_vt_conn(
 
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("name is empty", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
+    LOG_WDIAG("name is empty", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
   } else if (OB_ISNULL(tmp_vt_conn = op_alloc(ObVipTenantConn))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObVipTenantConn", K(ret));
+    LOG_WDIAG("fail to alloc memory for ObVipTenantConn", K(ret));
   } else if (OB_FAIL(tmp_vt_conn->set(cluster_name, tenant_name, vip_name, max_connections))) {
-    LOG_WARN("fail to set vip tenant connect info", K(ret));
+    LOG_WDIAG("fail to set vip tenant connect info", K(ret));
   } else {
     vt_conn = tmp_vt_conn;
     LOG_DEBUG("succ to set vip tenant connect object", KPC(vt_conn));
@@ -231,28 +231,28 @@ int ObConnTableProcessor::fill_local_vt_conn_cache(
   ObString vip_list_str;
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty()) || OB_UNLIKELY(vip_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("name is empty", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
+    LOG_WDIAG("name is empty", K(cluster_name), K(tenant_name), K(vip_name), K(ret));
   } else if (OB_FAIL(parser.init(&json_allocator))) {
-    LOG_WARN("json parser init failed", K(ret));
+    LOG_WDIAG("json parser init failed", K(ret));
   } else if (OB_FAIL(parser.parse(vip_name.ptr(), vip_name.length(), info_config))) {
-    LOG_WARN("parse json failed", K(ret), "vip_json_str", get_print_json(vip_name));
+    LOG_WDIAG("parse json failed", K(ret), "vip_json_str", get_print_json(vip_name));
   } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(info_config, json::JT_ARRAY))) {
-    LOG_WARN("check config info type failed", K(ret));
+    LOG_WDIAG("check config info type failed", K(ret));
   } else {
     DLIST_FOREACH(it, info_config->get_array()) {
       if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it, json::JT_OBJECT))) {
-        LOG_WARN("check config info type failed", K(ret));
+        LOG_WDIAG("check config info type failed", K(ret));
       } else {
         DLIST_FOREACH(p, it->get_object()) {
           if (p->name_ == JSON_OBPROXY_VIP) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-              LOG_WARN("check config info type failed", K(ret));
+              LOG_WDIAG("check config info type failed", K(ret));
             } else {
               vip_list_str = p->value_->get_string();
             }
           } else if (p->name_ == JSON_OBPROXY_VALUE) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_NUMBER))) {
-              LOG_WARN("check config info type failed", K(ret));
+              LOG_WDIAG("check config info type failed", K(ret));
             } else {
               max_connections = (uint32_t)p->value_->get_number();
             }
@@ -266,9 +266,9 @@ int ObConnTableProcessor::fill_local_vt_conn_cache(
         if (OB_FAIL(get_vt_conn_object(cluster_name, tenant_name, vip_list_str, vt_conn))) {
           if (OB_ENTRY_NOT_EXIST == ret) {
             if (OB_FAIL(alloc_and_init_vt_conn(cluster_name, tenant_name, vip_list_str, max_connections, vt_conn))) {
-              LOG_WARN("fail to alloc and init vip tenant connect", K(ret));
+              LOG_WDIAG("fail to alloc and init vip tenant connect", K(ret));
             } else if (OB_FAIL(vt_conn_cache_.set(vt_conn))) {
-              LOG_WARN("fail to insert one vip tenant conn into conn_map", K(vt_conn), K(ret));
+              LOG_WDIAG("fail to insert one vip tenant conn into conn_map", K(vt_conn), K(ret));
               if (OB_LIKELY(NULL != vt_conn)) {
                 vt_conn->destroy();
                 vt_conn = NULL;
@@ -300,7 +300,7 @@ int ObConnTableProcessor::backup_local_vt_conn_cache()
 
   DRWLock::WRLockGuard guard(rwlock_);
   if (OB_FAIL(vt_conn_cache_.backup())) {
-    LOG_WARN("backup connect cache failed");
+    LOG_WDIAG("backup connect cache failed");
   } else {
     conn_backup_status_ = true;
   }
@@ -316,11 +316,11 @@ int ObConnTableProcessor::conn_handle_replace_config(
 
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("tenant or cluster is null", K(ret), K(cluster_name), K(tenant_name));
+    LOG_WDIAG("tenant or cluster is null", K(ret), K(cluster_name), K(tenant_name));
   } else if (OB_FAIL(backup_local_vt_conn_cache())) {
-    LOG_WARN("backup vip tenant connect cache failed", K(ret));
+    LOG_WDIAG("backup vip tenant connect cache failed", K(ret));
   } else if (OB_FAIL(fill_local_vt_conn_cache(cluster_name, tenant_name, value_str))) {
-    LOG_WARN("update vip tenant connect cache failed", K(ret));
+    LOG_WDIAG("update vip tenant connect cache failed", K(ret));
   } else {
     LOG_DEBUG("update vip tenant connect cache succed", "count", get_conn_map_count());
   }
@@ -334,10 +334,10 @@ int ObConnTableProcessor::conn_handle_delete_config(ObString& cluster_name, ObSt
 
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
+    LOG_WDIAG("tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
   } else {
     if (OB_FAIL(backup_local_vt_conn_cache())) {
-      LOG_WARN("backup vip tenant connect cache failed", K(ret));
+      LOG_WDIAG("backup vip tenant connect cache failed", K(ret));
     } else {
       DRWLock::WRLockGuard guard(rwlock_);
       vt_conn_cache_.erase(cluster_name, tenant_name);
@@ -355,7 +355,7 @@ int ObConnTableProcessor::conn_rollback()
   // The backup can be rolled back only if the backup is successful
   if (OB_LIKELY(conn_backup_status_)) {
     if (OB_FAIL(vt_conn_cache_.recover())) {
-      LOG_WARN("recover connect cache failed");
+      LOG_WDIAG("recover connect cache failed");
     }
   }
 
@@ -374,12 +374,12 @@ int ObConnTableProcessor::create_used_conn(ObString& key_name,
       int64_t alloc_size = sizeof(ObUsedConn);
       if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for used conn", K(alloc_size), K(ret));
+        LOG_WDIAG("fail to alloc memory for used conn", K(alloc_size), K(ret));
       } else {
         used_conn = new (buf) ObUsedConn(key_name);
         used_conn->inc_ref();
         if (OB_FAIL(used_conn_cache_.set(used_conn))) {
-          LOG_WARN("fail to set used conn map", K(key_name), KPC(used_conn), K(ret));
+          LOG_WDIAG("fail to set used conn map", K(key_name), KPC(used_conn), K(ret));
         } else {
           used_conn->is_in_map_ = true;
         }
@@ -428,12 +428,12 @@ int ObConnTableProcessor::get_or_create_used_conn(ObString& key_name,
   if (OB_FAIL(get_used_conn(key_name, true, used_conn, cur_used_connections))) {
     if (OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(create_used_conn(key_name, used_conn, cur_used_connections))) {
-        LOG_WARN("fail to create used conn", K(key_name), K(ret));
+        LOG_WDIAG("fail to create used conn", K(key_name), K(ret));
       } else {
         LOG_DEBUG("succ to create used conn", K(key_name), K(cur_used_connections), KPC(used_conn));
       }
     } else {
-      LOG_WARN("fail to get used conn", K(key_name), K(ret));
+      LOG_WDIAG("fail to get used conn", K(key_name), K(ret));
     }
   }
   return ret;
@@ -443,7 +443,7 @@ int ObConnTableProcessor::erase_used_conn(ObString& key_name, ObUsedConn* used_c
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(used_conn_cache_.erase(key_name))) {
-    LOG_WARN("erase used conn failed", K(key_name));
+    LOG_WDIAG("erase used conn failed", K(key_name));
   } else {
     used_conn->is_in_map_ = false;
     used_conn->dec_ref();

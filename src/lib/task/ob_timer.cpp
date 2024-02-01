@@ -140,10 +140,10 @@ int ObTimer::schedule_task(ObTimerTask &task, const int64_t delay, const bool re
     ret = OB_NOT_INIT;
   } else if (delay < 0) {
     ret = OB_INVALID_ARGUMENT;
-    OB_LOG(WARN, "invalid argument", K(ret), K(delay));
+    OB_LOG(WDIAG, "invalid argument", K(ret), K(delay));
   } else if (tasks_num_ >= MAX_TASK_NUM) {
     ret = OB_ERR_UNEXPECTED;
-    OB_LOG(WARN, "too much timer task", K(ret), K_(tasks_num), "max_task_num", MAX_TASK_NUM);
+    OB_LOG(WDIAG, "too much timer task", K(ret), K_(tasks_num), "max_task_num", MAX_TASK_NUM);
   } else {
     int64_t time = Time::now(Time::Monotonic).toMicroSeconds();
     if(!is_scheduled_immediately) {
@@ -151,7 +151,7 @@ int ObTimer::schedule_task(ObTimerTask &task, const int64_t delay, const bool re
     }
     if (is_stopped_) {
       ret = OB_CANCELED;
-      OB_LOG(WARN, "schedule task on stopped timer", K(ret), K(task));
+      OB_LOG(WDIAG, "schedule task on stopped timer", K(ret), K(task));
     } else {
       ret = insert_token(Token(time, repeate ? delay : 0, &task));
       if (OB_SUCC(ret)) {
@@ -159,7 +159,7 @@ int ObTimer::schedule_task(ObTimerTask &task, const int64_t delay, const bool re
           monitor_.notify();
         }
       } else {
-        OB_LOG(WARN, "insert token failed", K(ret), K(task));
+        OB_LOG(WDIAG, "insert token failed", K(ret), K(task));
       }
     }
   }
@@ -177,7 +177,7 @@ int ObTimer::insert_token(const Token &token)
       max_task_num = MAX_TASK_NUM - 1;
     }
     if (tasks_num_ >= max_task_num) {
-      OB_LOG(WARN, "tasks_num_ exceed max_task_num", K_(tasks_num), "max_task_num", MAX_TASK_NUM);
+      OB_LOG(WDIAG, "tasks_num_ exceed max_task_num", K_(tasks_num), "max_task_num", MAX_TASK_NUM);
       ret = OB_ERR_UNEXPECTED;
     } else {
       int64_t pos = 0;
@@ -228,7 +228,7 @@ void ObTimer::cancel_all()
 void *ObTimer::run_thread(void *arg)
 {
   if (NULL == arg) {
-    OB_LOG(ERROR, "timer thread failed to start", "tid", GETTID());
+    OB_LOG(EDIAG, "timer thread failed to start", "tid", GETTID());
   } else {
     ObTimer *t = reinterpret_cast<ObTimer *>(arg);
     t->run();
@@ -253,7 +253,7 @@ void ObTimer::run()
         token.scheduled_time = Time::now(Time::Monotonic).toMicroSeconds() + token.delay;
         if (OB_SUCCESS != (tmp_ret = insert_token(
             Token(token.scheduled_time, token.delay, token.task)))) {
-          OB_LOG(WARN, "insert token error", K(tmp_ret), K(token));
+          OB_LOG(WDIAG, "insert token error", K(tmp_ret), K(token));
         }
       }
       has_running_task_ = false;
@@ -301,9 +301,9 @@ void ObTimer::run()
             static const int64_t MAX_REALTIME_DELTA1 = 20000; // 20ms
             static const int64_t MAX_REALTIME_DELTA2 = 500000; // 500ms
             if (delta > MAX_REALTIME_DELTA1) {
-              OB_LOG(WARN, "Hardware clock skew", K(rt1), K(rt2), K_(wakeup_time), K(now));
+              OB_LOG(WDIAG, "Hardware clock skew", K(rt1), K(rt2), K_(wakeup_time), K(now));
             } else if (delta > MAX_REALTIME_DELTA2) {
-              OB_LOG(ERROR, "Hardware clock error", K(rt1), K(rt2), K_(wakeup_time), K(now));
+              OB_LOG(EDIAG, "Hardware clock error", K(rt1), K(rt2), K_(wakeup_time), K(now));
             }
           }
           monitor_.timedWait(Time(wakeup_time_ - now));
@@ -315,7 +315,7 @@ void ObTimer::run()
       token.task->runTimerTask();
       const int64_t end_time = ::oceanbase::common::ObTimeUtility::current_time();
       if (end_time - start_time > 1000 * 1000) {
-        OB_LOG(WARN, "timer task cost too much time", "task", to_cstring(*token.task),
+        OB_LOG(WDIAG, "timer task cost too much time", "task", to_cstring(*token.task),
             K(start_time), K(end_time), "used", end_time - start_time);
       }
     }

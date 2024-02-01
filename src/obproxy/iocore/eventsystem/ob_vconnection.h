@@ -325,7 +325,7 @@ struct ObDummyVConnection : public ObVConnection
     UNUSED(c);
     UNUSED(nbytes);
     UNUSED(buf);
-    PROXY_EVENT_LOG(ERROR, "ObVConnection::do_io_write, cannot use default implementation");
+    PROXY_EVENT_LOG(EDIAG, "ObVConnection::do_io_write, cannot use default implementation");
     return NULL;
   }
 
@@ -335,20 +335,20 @@ struct ObDummyVConnection : public ObVConnection
     UNUSED(c);
     UNUSED(nbytes);
     UNUSED(buf);
-    PROXY_EVENT_LOG(ERROR, "ObVConnection::do_io_read, cannot use default implementation");
+    PROXY_EVENT_LOG(EDIAG, "ObVConnection::do_io_read, cannot use default implementation");
     return NULL;
   }
 
   virtual void do_io_close(const int alerrno)
   {
     UNUSED(alerrno);
-    PROXY_EVENT_LOG(ERROR, "ObVConnection::do_io_close, cannot use default implementation");
+    PROXY_EVENT_LOG(EDIAG, "ObVConnection::do_io_close, cannot use default implementation");
   }
 
   virtual void do_io_shutdown(const ShutdownHowToType howto)
   {
     UNUSED(howto);
-    PROXY_EVENT_LOG(ERROR, "ObVConnection::do_io_shutdown, cannot use default implementation");
+    PROXY_EVENT_LOG(EDIAG, "ObVConnection::do_io_shutdown, cannot use default implementation");
   }
 };
 
@@ -582,61 +582,6 @@ inline void ObVIO::reenable_in(const ObHRTime atimeout_in)
   }
 }
 
-static inline const char *get_vc_event_name(int32_t event)
-{
-  const char *ret = NULL;
-  switch (event) {
-    case VC_EVENT_NONE:
-      ret = "VC_EVENT_NONE";
-      break;
-
-    case VC_EVENT_IMMEDIATE:
-      ret = "VC_EVENT_IMMEDIATE";
-      break;
-
-    case VC_EVENT_READ_READY:
-      ret = "VC_EVENT_READ_READY";
-      break;
-
-    case VC_EVENT_WRITE_READY:
-      ret = "VC_EVENT_WRITE_READY";
-      break;
-
-    case VC_EVENT_READ_COMPLETE:
-      ret = "VC_EVENT_READ_COMPLETE";
-      break;
-
-    case VC_EVENT_WRITE_COMPLETE:
-      ret = "VC_EVENT_WRITE_COMPLETE";
-      break;
-
-    case VC_EVENT_EOS:
-      ret = "VC_EVENT_EOS";
-      break;
-
-    case VC_EVENT_ERROR:
-      ret = "VC_EVENT_ERROR";
-      break;
-
-    case VC_EVENT_INACTIVITY_TIMEOUT:
-      ret = "VC_EVENT_INACTIVITY_TIMEOUT";
-      break;
-
-    case VC_EVENT_ACTIVE_TIMEOUT:
-      ret = "VC_EVENT_ACTIVE_TIMEOUT";
-      break;
-
-    case VC_EVENT_DETECT_SERVER_DEAD:
-      ret = "VC_EVENT_DETECT_SERVER_DEAD";
-      break;
-
-    default:
-      ret = "unknown event";
-      break;
-  }
-  return ret;
-}
-
 inline ObVIO *vc_do_io_write(ObVConnection *vc, ObContinuation *cont,
                       int64_t nbytes, ObMIOBuffer *buf, int64_t offset)
 {
@@ -645,10 +590,10 @@ inline ObVIO *vc_do_io_write(ObVConnection *vc, ObContinuation *cont,
   ObIOBufferReader *reader = NULL;
   if (OB_ISNULL(reader = buf->alloc_reader())) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "fail to alloc_reader", K(ret));
+    PROXY_LOG(WDIAG, "fail to alloc_reader", K(ret));
   } else if (offset > 0) {
     if (OB_FAIL(reader->consume(offset))) {
-      PROXY_LOG(WARN, "fail to consume ", K(offset), K(ret));
+      PROXY_LOG(WDIAG, "fail to consume ", K(offset), K(ret));
     }
   } else {/*do nothing*/}
 
@@ -692,7 +637,7 @@ inline ObVIO *ObVConnection::do_io(int op, ObContinuation *c,
       break;
 
     default:
-      PROXY_EVENT_LOG(ERROR, "cannot use default implementation for do_io operation");
+      PROXY_EVENT_LOG(EDIAG, "cannot use default implementation for do_io operation");
       break;
   }
 

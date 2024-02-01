@@ -47,7 +47,7 @@ int FileDirectoryUtils::is_exists(const char *file_path, bool &result)
   struct stat64 file_info;
   if (NULL == file_path || strlen(file_path) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(file_path), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(file_path), K(ret));
   } else {
     result = (0 == stat64(file_path, &file_info));
   }
@@ -63,7 +63,7 @@ int FileDirectoryUtils::is_directory(const char *directory_path, bool &result)
   struct stat64 file_info;
   if (NULL == directory_path ||  strlen(directory_path) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(directory_path), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(directory_path), K(ret));
   } else {
     result = (0 == stat64(directory_path, &file_info) && S_ISDIR(file_info.st_mode));
   }
@@ -76,7 +76,7 @@ int FileDirectoryUtils::is_link(const char *link_path, bool &result)
   int ret = OB_SUCCESS;
   if (NULL == link_path || strlen(link_path) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(link_path), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(link_path), K(ret));
   }  else {
     struct stat64 file_info;
     result = (0 == lstat64(link_path, &file_info) && S_ISLNK(file_info.st_mode));
@@ -94,13 +94,13 @@ int FileDirectoryUtils::create_directory(const char *directory_path)
 
   if (NULL == directory_path || strlen(directory_path) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(directory_path), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(directory_path), K(ret));
   } else if (::mkdir(directory_path, mode)) {
     if (EEXIST == errno) {
       ret = OB_SUCCESS;
     } else {
       ret = OB_IO_ERROR;
-      LIB_LOG(WARN, "create directory failed.", K(directory_path), KERRMSGS, K(ret));
+      LIB_LOG(WDIAG, "create directory failed.", K(directory_path), KERRMSGS, K(ret));
     }
   }
 
@@ -116,13 +116,13 @@ int FileDirectoryUtils::create_full_path(const char *fullpath)
   int64_t len = 0;
   if (NULL == fullpath || (len = strlen(fullpath)) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(fullpath), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(fullpath), K(ret));
   } else {
     ret = ::stat64(fullpath, &file_info);
     if (0 == ret) {
       if (!S_ISDIR(file_info.st_mode)) {
         ret = OB_ENTRY_EXIST;
-        LIB_LOG(WARN, "file is exists but not a directory.", K(fullpath), K(ret));
+        LIB_LOG(WDIAG, "file is exists but not a directory.", K(fullpath), K(ret));
       } else {
         ret = OB_SUCCESS;
       }
@@ -145,7 +145,7 @@ int FileDirectoryUtils::create_full_path(const char *fullpath)
 
         *path = '\0';
         if (OB_FAIL(create_directory(dirpath))) {
-          LIB_LOG(WARN, "create directory failed.", K(dirpath), K(ret));
+          LIB_LOG(WDIAG, "create directory failed.", K(dirpath), K(ret));
         } else {
           *path++ = '/';
           // skip '/'
@@ -156,7 +156,7 @@ int FileDirectoryUtils::create_full_path(const char *fullpath)
 
       if (OB_SUCC(ret)) {
         if (OB_FAIL(create_directory(dirpath))) {
-          LIB_LOG(WARN, "create directory failed.", K(dirpath), K(ret));
+          LIB_LOG(WDIAG, "create directory failed.", K(dirpath), K(ret));
         }
       }
     }
@@ -173,19 +173,19 @@ int FileDirectoryUtils::delete_file(const char *filename)
   struct stat64 file_info;
   if (NULL == filename || strlen(filename) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(filename), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(filename), K(ret));
   } else {
     ret = ::stat64(filename, &file_info);
     if (0 != ret) {
       ret = OB_FILE_NOT_EXIST;
-      LIB_LOG(WARN, "file is not exists.", K(filename), K(ret));
+      LIB_LOG(WDIAG, "file is not exists.", K(filename), K(ret));
     } else if (S_ISDIR(file_info.st_mode)) {
       ret = OB_FILE_NOT_EXIST;
-      LIB_LOG(WARN, "file is directory, use delete_directory.",
+      LIB_LOG(WDIAG, "file is directory, use delete_directory.",
               K(filename), K(ret));
     } else if (0 != unlink(filename)){
       ret = OB_IO_ERROR;
-      LIB_LOG(WARN, "unlink file failed.", K(filename), KERRMSGS, K(ret));
+      LIB_LOG(WDIAG, "unlink file failed.", K(filename), KERRMSGS, K(ret));
     }
   }
   return ret;
@@ -198,15 +198,15 @@ int FileDirectoryUtils::delete_directory(const char *dirname)
   bool is_dir = false;
   if (NULL == dirname || strlen(dirname) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(dirname), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(dirname), K(ret));
   } else if (OB_FAIL(is_directory(dirname, is_dir))) {
-    LIB_LOG(WARN, "check if directory failed.", K(dirname), K(ret));
+    LIB_LOG(WDIAG, "check if directory failed.", K(dirname), K(ret));
   } else if (!is_dir) {
     ret = OB_FILE_NOT_EXIST;
-    LIB_LOG(WARN, "file path is not a directory.", K(dirname), K(ret));
+    LIB_LOG(WDIAG, "file path is not a directory.", K(dirname), K(ret));
   } else if (0 != rmdir(dirname)) {
     ret = OB_IO_ERROR;
-    LIB_LOG(WARN, "rmdir failed.", K(dirname), KERRMSGS, K(ret));
+    LIB_LOG(WDIAG, "rmdir failed.", K(dirname), KERRMSGS, K(ret));
   }
   return ret;
 }
@@ -218,15 +218,15 @@ int FileDirectoryUtils::get_file_size(const char *filename, int64_t &size)
   struct stat64 file_info;
   if (NULL == filename || strlen(filename) == 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(filename), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(filename), K(ret));
   } else {
     ret = ::stat64(filename, &file_info);
     if (0 != ret) {
       ret = OB_FILE_NOT_EXIST;
-      LIB_LOG(WARN, "file is not exists.", K(filename), K(ret));
+      LIB_LOG(WDIAG, "file is not exists.", K(filename), K(ret));
     } else if (S_ISDIR(file_info.st_mode)) {
       ret = OB_FILE_NOT_EXIST;
-      LIB_LOG(WARN, "file is not a file.", K(filename), K(ret));
+      LIB_LOG(WDIAG, "file is not a file.", K(filename), K(ret));
     } else {
       size = file_info.st_size;
     }

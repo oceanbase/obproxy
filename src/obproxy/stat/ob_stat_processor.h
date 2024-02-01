@@ -103,7 +103,7 @@ struct ObRecRawStatBlock
   {
     ob_zero(*this);
     if (OB_UNLIKELY(common::OB_SUCCESS != common::mutex_init(&mutex_))) {
-      PROXY_LOG(ERROR, "fail to init mutex");
+      PROXY_LOG(EDIAG, "fail to init mutex");
     }
   }
   ~ObRecRawStatBlock() { common::mutex_destroy(&mutex_); }
@@ -142,7 +142,7 @@ struct ObRecRecord
       : name_(NULL), rec_type_(RECT_NULL), data_type_(RECD_NULL)
   {
     if (OB_UNLIKELY(common::OB_SUCCESS != common::mutex_init(&mutex_))) {
-      PROXY_LOG(WARN, "fail to int mutex");
+      PROXY_LOG(WDIAG, "fail to int mutex");
     }
   }
   ~ObRecRecord() { common::mutex_destroy(&mutex_); }
@@ -201,7 +201,7 @@ public:
     ObRecRawStat *tlp = NULL;
     if (OB_ISNULL(tlp = get_tlp_raw_stat(rsb, id, ethread))) {
       ret = common::OB_ERR_UNEXPECTED;
-      _PROXY_LOG(WARN, "fail to get tlp_raw_stat, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get tlp_raw_stat, ret=%d", ret);
     } else {
       (void)ATOMIC_FAA(&(tlp->sum_), incr);
     }
@@ -216,7 +216,7 @@ public:
     ObRecRawStat *tlp = NULL;
     if (OB_ISNULL(tlp = get_tlp_raw_stat(rsb, id, ethread))) {
       ret = common::OB_ERR_UNEXPECTED;
-      _PROXY_LOG(WARN, "fail to get tlp_raw_stat, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get tlp_raw_stat, ret=%d", ret);
     } else {
       data = tlp->sum_;
     }
@@ -228,7 +228,7 @@ public:
   {
     ObRecRawStat *tlp = NULL;
     if (OB_ISNULL(tlp = get_tlp_raw_stat(rsb, id, const_cast<event::ObEThread *>(ethread)))) {
-      PROXY_LOG(WARN, "fail to get tlp_raw_stat");
+      PROXY_LOG(WDIAG, "fail to get tlp_raw_stat");
     }
     return NULL == tlp ? 0 : tlp->sum_;
   }
@@ -240,7 +240,7 @@ public:
     ObRecRawStat *tlp = NULL;
     if (OB_ISNULL(tlp = get_tlp_raw_stat(rsb, id, ethread))) {
       ret = common::OB_ERR_UNEXPECTED;
-      _PROXY_LOG(WARN, "fail to get tlp_raw_stat, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get tlp_raw_stat, ret=%d", ret);
     } else {
       tlp->sum_ += incr;
       tlp->count_ += 1;
@@ -255,7 +255,7 @@ public:
     ObRecRawStat *tlp = NULL;
     if (OB_ISNULL(tlp = get_tlp_raw_stat(rsb, id, ethread))) {
       ret = common::OB_ERR_UNEXPECTED;
-      _PROXY_LOG(WARN, "fail to get tlp_raw_stat, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get tlp_raw_stat, ret=%d", ret);
     } else {
       tlp->sum_ -= decr;
       tlp->count_ += 1;
@@ -270,7 +270,7 @@ public:
     ObRecRawStat *tlp = NULL;
     if (OB_ISNULL(tlp = get_tlp_raw_stat(rsb, id, ethread))) {
       ret = common::OB_ERR_UNEXPECTED;
-      _PROXY_LOG(WARN, "fail to get tlp_raw_stat, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get tlp_raw_stat, ret=%d", ret);
     } else {
       tlp->sum_ += incr;
     }
@@ -284,7 +284,7 @@ public:
     ObRecRawStat *tlp = NULL;
     if (OB_ISNULL(tlp = get_tlp_raw_stat(rsb, id, ethread))) {
       ret = common::OB_ERR_UNEXPECTED;
-      _PROXY_LOG(WARN, "fail to get tlp_raw_stat, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get tlp_raw_stat, ret=%d", ret);
     } else {
       tlp->count_ += incr;
     }
@@ -296,7 +296,7 @@ public:
   {
     int ret = common::OB_SUCCESS;
     if (OB_FAIL(clear_raw_stat_sum(rsb, id))) {
-      _PROXY_LOG(WARN, "fail to clear raw stat num, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to clear raw stat num, ret=%d", ret);
     } else {
       (void)ATOMIC_SET(&(rsb->global_[id]->sum_), data);
     }
@@ -308,7 +308,7 @@ public:
   {
     int ret = common::OB_SUCCESS;
     if (OB_FAIL(clear_raw_stat_count(rsb, id))) {
-      _PROXY_LOG(WARN, "fail to clear raw stat num, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to clear raw stat num, ret=%d", ret);
     } else {
       (void)ATOMIC_SET(&(rsb->global_[id]->count_), data);
     }
@@ -322,7 +322,7 @@ public:
     data = 0;
     ObRecRawStat total;
     if (OB_FAIL(get_raw_stat_total(rsb, id, total))) {
-      _PROXY_LOG(WARN, "fail to get raw stat total, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get raw stat total, ret=%d", ret);
     } else {
       data = total.sum_;
     }
@@ -336,7 +336,7 @@ public:
     data = 0;
     ObRecRawStat total;
     if (OB_FAIL(get_raw_stat_total(rsb, id, total))) {
-      _PROXY_LOG(WARN, "fail to get raw stat total, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "fail to get raw stat total, ret=%d", ret);
     } else {
       data = total.count_;
     }
@@ -350,7 +350,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else {
       (void)ATOMIC_FAA(&(rsb->global_[id]->sum_), incr);
       (void)ATOMIC_FAA(&(rsb->global_[id]->count_), 1);
@@ -364,7 +364,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else {
       (void)ATOMIC_FAA(&(rsb->global_[id]->sum_), incr);
     }
@@ -377,7 +377,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else {
       (void)ATOMIC_FAA(&(rsb->global_[id]->count_), incr);
     }
@@ -390,7 +390,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else {
       (void)ATOMIC_SET(&(rsb->global_[id]->sum_), data);
     }
@@ -403,7 +403,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else {
       (void)ATOMIC_SET(&(rsb->global_[id]->count_), data);
     }
@@ -417,7 +417,7 @@ public:
     data = 0;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else {
       data = ATOMIC_LOAD(&rsb->global_[id]->sum_);
     }
@@ -431,7 +431,7 @@ public:
     data = 0;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else {
       data = ATOMIC_LOAD(&rsb->global_[id]->count_);
     }
@@ -553,10 +553,10 @@ private:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(!check_argument(rsb, id))) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
+      _PROXY_LOG(WDIAG, "invalid rsb or id, rsb=%p, id=%ld, ret=%d", rsb, id, ret);
     } else if (OB_ISNULL(ethread) && OB_ISNULL(ethread = get_this_ethread())) {
       ret = common::OB_INVALID_ARGUMENT;
-      _PROXY_LOG(WARN, "ethread is null, ret=%d", ret);
+      _PROXY_LOG(WDIAG, "ethread is null, ret=%d", ret);
     }
     return common::OB_SUCCESS == ret
            ? reinterpret_cast<ObRecRawStat *>(reinterpret_cast<char *>(ethread) + rsb->ethr_stat_offset_) + id

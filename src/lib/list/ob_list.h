@@ -450,13 +450,13 @@ public:
     int64_t tmp_pos = pos;
     int64_t sz = size();
     if (OB_SUCCESS != (ret = serialization::encode_i64(buf, buf_len, tmp_pos, sz))) {
-      _OB_LOG(WARN, "serialize size=%ld fail, ret=%d buf=%p buf_len=%ld pos=%ld",
+      _OB_LOG(WDIAG, "serialize size=%ld fail, ret=%d buf=%p buf_len=%ld pos=%ld",
                 sz, ret, buf, buf_len, tmp_pos);
     } else {
       const_iterator iter;
       for (iter = begin(); iter != end(); iter++) {
         if (OB_SUCCESS != (ret = iter->serialize(buf, buf_len, tmp_pos))) {
-          OB_LOG(WARN, "serialize fail", "item", *iter, K(ret), KP(buf), K(buf_len), K(tmp_pos));
+          OB_LOG(WDIAG, "serialize fail", "item", *iter, K(ret), KP(buf), K(buf_len), K(tmp_pos));
           break;
         }
       }
@@ -473,19 +473,19 @@ public:
     int64_t tmp_pos = pos;
     int64_t sz = 0;
     if (OB_SUCCESS != (ret = serialization::decode_i64(buf, data_len, tmp_pos, &sz))) {
-      _OB_LOG(WARN, "deserialize size fail, ret=%d buf=%p date_len=%ld pos=%ld",
+      _OB_LOG(WDIAG, "deserialize size fail, ret=%d buf=%p date_len=%ld pos=%ld",
                 ret, buf, data_len, tmp_pos);
     } else {
       clear();
       for (int64_t i = 0; i < sz; i++) {
         value_type item;
         if (OB_SUCCESS != (ret = item.deserialize(buf, data_len, tmp_pos))) {
-          _OB_LOG(WARN, "deserialize item fail, idx=%ld ret=%d buf=%p date_len=%ld pos=%ld",
+          _OB_LOG(WDIAG, "deserialize item fail, idx=%ld ret=%d buf=%p date_len=%ld pos=%ld",
                     i, ret, buf, data_len, tmp_pos);
           break;
         }
         if (OB_SUCCESS != (ret = push_back(item))) {
-          OB_LOG(WARN, "push back fail", K(item), K(i), K(ret), KP(buf), K(data_len), K(tmp_pos));
+          OB_LOG(WDIAG, "push back fail", K(item), K(i), K(ret), KP(buf), K(data_len), K(tmp_pos));
           break;
         }
       }

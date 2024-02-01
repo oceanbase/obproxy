@@ -66,7 +66,7 @@ T *ObPooledAllocator<T, BlockAllocatorT, LockT>::alloc()
   T *ret = NULL;
   void *p = the_pool_.alloc();
   if (OB_ISNULL(p)) {
-    LIB_LOG(ERROR, "no memory");
+    LIB_LOG(EDIAG, "no memory");
   } else {
     ret = new(p) T();
   }

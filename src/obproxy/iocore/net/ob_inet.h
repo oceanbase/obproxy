@@ -139,6 +139,7 @@ union ObIpEndpoint
   uint64_t hash(const uint64_t hash = 0) const;
 
   int64_t to_string(char *buffer, const int64_t size) const;
+  int64_t to_plain_string(char *buffer, const int64_t size) const;
 
   struct sockaddr sa_; // Generic address.
   struct sockaddr_in sin_; // IPv4

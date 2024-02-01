@@ -83,7 +83,7 @@ bool ObProxyVariantString::set_value(const int32_t len, const char *value)
   data_size_ = len + 1;
   data_ = (char*)ob_malloc(data_size_);
   if (OB_ISNULL(data_)) {
-    LOG_WARN("ob_malloc failed", K(data_size_));
+    LOG_WDIAG("ob_malloc failed", K(data_size_));
     return false;
   }
   MEMCPY(data_, value, len);
@@ -103,7 +103,7 @@ bool ObProxyVariantString::set_value_with_quote(const int32_t len, const char *v
   data_size_ = len + 3;
   data_ = (char*)ob_malloc(data_size_);
   if (OB_ISNULL(data_)) {
-    LOG_WARN("ob_malloc failed", K_(data_size));
+    LOG_WDIAG("ob_malloc failed", K_(data_size));
     return false;
   } else {
     data_[0] = quote;
@@ -121,7 +121,7 @@ void ObProxyVariantString::set_integer(const int64_t other)
   char buf[1024];
   const int32_t len = snprintf(buf, 1024, "%ld", other);
   if (len <= 0 || len >= 1024) {
-    LOG_ERROR("snprintf failed", K(other));
+    LOG_EDIAG("snprintf failed", K(other));
   } else {
     set_value(len, buf);
   }

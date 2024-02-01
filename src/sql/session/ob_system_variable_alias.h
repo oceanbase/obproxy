@@ -97,6 +97,18 @@ namespace sql
   static const char* const OB_SV_NLS_DATE_FORMAT = "nls_date_format";
   static const char* const OB_SV_NLS_TIMESTAMP_FORMAT = "nls_timestamp_format";
   static const char* const OB_SV_NLS_TIMESTAMP_TZ_FORMAT = "nls_timestamp_tz_format";
+
+  // Feedback on whether weak read sql routed to all leader replica or all follower replica
+  // no _ob_proxy_weakread_feedback  -> all follower
+  // _ob_proxy_weakread_feedback = 1 -> invalid replica
+  // _ob_proxy_weakread_feedback = 2 -> all leader
+  // _ob_proxy_weakread_feedback = 3 -> part leader / part follower
+  static const char* const OB_SV_WEAK_READ_REPLICA_HIT = "_ob_proxy_weakread_feedback";
+  static const char* const OB_SV_NCHARACTER_SET_CONNECTION = "ncharacter_set_connection";
+  static const char* const OB_SV_NLS_CURRENCY = "nls_currency";
+  static const char* const OB_SV_NLS_ISO_CURRENCY = "nls_iso_currency";
+  static const char* const OB_SV_NLS_DUAL_CURRENCY = "nls_dual_currency";
+  static const char* const OB_SV_NLS_NUMERIC_CHARACTERS = "nls_numeric_characters";
 }
 }
 #endif //OCEANBASE_COMMON_OB_SYSTEM_VARIABLE_ALIAS_H_

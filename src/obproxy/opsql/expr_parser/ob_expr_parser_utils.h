@@ -57,7 +57,7 @@ void print_token_node(char *buf, const int64_t buf_len, int64_t &pos, const int6
         break;
 
       case TOKEN_COLUMN:
-        VBUF_PRINTF(" value:%ld,\n", node->part_key_idx_);
+        VBUF_PRINTF(" value:%.*s,\n", node->column_name_.str_len_, node->column_name_.str_);
         break;
 
       case TOKEN_PLACE_HOLDER:

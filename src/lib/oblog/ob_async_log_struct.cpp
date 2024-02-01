@@ -23,28 +23,55 @@ int64_t ObLogItemFactory::alloc_count_[MAX_LOG_ITEM_TYPE] = {0};
 int64_t ObLogItemFactory::release_count_[MAX_LOG_ITEM_TYPE] = {0};
 
 ObLogItem::ObLogItem()
-: item_type_(MAX_LOG_ITEM_TYPE), fd_type_(MAX_FD_FILE),
-  log_level_(OB_LOG_LEVEL_NONE), timestamp_(0),
-  header_pos_(0), pos_(0), buf_((char *)(this) + sizeof(ObLogItem))
+: item_type_(MAX_LOG_ITEM_TYPE), header_pos_(0), pos_(0), header_(),
+  buf_((char *)(this) + sizeof(ObLogItem))
 {
 }
 
+void ObLogItem::set_header(const timeval tv, const int32_t level, const ObLogFDType type,
+                  const uint64_t trace_id_0, const uint64_t trace_id_1, const char *mod_name,
+                  const char *file, const int32_t line, const char* function, const uint64_t dropped_log_count,
+                  const int64_t tid)
+{
+  header_.timestamp_ = static_cast<int64_t>(tv.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>(tv.tv_usec);
+  header_.log_level_ = level;
+  header_.fd_type_ = type;
+  header_.trace_id_0_ = trace_id_0;
+  header_.trace_id_1_ = trace_id_1;
+  header_.mod_name_ = mod_name;
+  header_.file_name_ = file;
+  header_.line_ = line;
+  header_.function_name_ = function;
+  header_.dropped_log_count_ = dropped_log_count;
+  header_.tid_ = tid;
+}
+
+void ObLogItem::ObLogItemHeader::reset()
+{
+  fd_type_ = MAX_FD_FILE;
+  log_level_ = OB_LOG_LEVEL_NONE;
+  timestamp_ = 0;
+  mod_name_ = NULL;
+  file_name_ = NULL;
+  function_name_ = NULL;
+  line_ = 0;
+  trace_id_0_ = 0;
+  trace_id_1_ = 0;
+  dropped_log_count_ = 0;
+  tid_ = 0;
+}
 void ObLogItem::reuse()
 {
   header_pos_ = 0;
   pos_ = 0;
-  log_level_ = OB_LOG_LEVEL_NONE;
-  timestamp_ = 0;
-  fd_type_ = MAX_FD_FILE;
+  header_.reset();
   //not not reset item_type_ and buf_
 }
 
 void ObLogItem::deep_copy_header_only(const ObLogItem &other)
 {
   //can not set item_type_ and buf_
-  fd_type_ = other.get_fd_type();
-  log_level_ = other.get_log_level();
-  timestamp_ = other.get_timestamp();
+  header_ = other.header_;
   header_pos_ = other.get_header_len();
   pos_ = other.get_header_len();//use header pos
   memcpy(buf_, other.get_buf(), other.get_header_len());

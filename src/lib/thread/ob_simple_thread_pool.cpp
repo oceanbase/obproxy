@@ -37,9 +37,9 @@ int ObSimpleThreadPool::init(const int64_t thread_num, const int64_t task_num_li
   } else if (thread_num <= 0 || task_num_limit <= 0 || thread_num > MAX_THREAD_NUM) {
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_SUCCESS != (ret = queue_.init(task_num_limit))) {
-    COMMON_LOG(WARN, "task queue init failed", K(ret), K(task_num_limit));
+    COMMON_LOG(WDIAG, "task queue init failed", K(ret), K(task_num_limit));
   } else if (OB_SUCCESS != (ret = launch_thread_(thread_num))) {
-    COMMON_LOG(WARN, "launch_thread_ failed", K(ret), K(thread_num));
+    COMMON_LOG(WDIAG, "launch_thread_ failed", K(ret), K(thread_num));
   } else {
     is_inited_ = true;
     is_stopped_ = false;
@@ -62,7 +62,7 @@ void ObSimpleThreadPool::destroy()
     queue_cond_.signal();
     int pthread_ret = pthread_join(tc.pd, NULL);
     if (0 != pthread_ret) {
-      COMMON_LOG(ERROR, "pthread_join failed", K(pthread_ret));
+      COMMON_LOG(EDIAG, "pthread_join failed", K(pthread_ret));
     } else {
       // do nothing
     }
@@ -95,7 +95,7 @@ void *ObSimpleThreadPool::thread_func_(void *data)
 {
   ThreadConf *const tc = (ThreadConf *)data;
   if (NULL == tc || NULL == tc->host) {
-    COMMON_LOG(WARN, "thread_func param null pointer");
+    COMMON_LOG(WDIAG, "thread_func param null pointer");
   } else {
     while (!ATOMIC_LOAD(&tc->host->is_stopped_)) {
       void *task = NULL;
@@ -118,7 +118,7 @@ int ObSimpleThreadPool::launch_thread_(const int64_t thread_num)
     tc.host = this;
     int tmp_ret = 0;
     if (0 != (tmp_ret = pthread_create(&(tc.pd), NULL, thread_func_, &tc))) {
-      COMMON_LOG(WARN, "pthread_create failed", "ret", tmp_ret);
+      COMMON_LOG(WDIAG, "pthread_create failed", "ret", tmp_ret);
       ret = OB_ERR_UNEXPECTED;
       break;
     }

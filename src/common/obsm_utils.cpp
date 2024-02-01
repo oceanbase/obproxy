@@ -142,7 +142,7 @@ int ObSMUtils::cell_str(
         break;
       }
       default:
-        _OB_LOG(ERROR, "invalid ob type=%d", obj.get_type());
+        _OB_LOG(EDIAG, "invalid ob type=%d", obj.get_type());
         ret = OB_ERROR;
         break;
     }
@@ -212,7 +212,7 @@ int ObSMUtils::get_mysql_type(ObObjType ob_type, EMySQLFieldType &mysql_type,
         break;
       default:
         ret = OB_ERR_UNEXPECTED;
-        _OB_LOG(WARN, "unexpected mysql_type=%d", mysql_type);
+        _OB_LOG(WDIAG, "unexpected mysql_type=%d", mysql_type);
         break;
     } // end switch
   }
@@ -307,6 +307,12 @@ int ObSMUtils::get_ob_type(ObObjType &ob_type, EMySQLFieldType mysql_type)
     case OB_MYSQL_TYPE_COMPLEX:
       ob_type = ObExtendType;
       break;
+    case MYSQL_TYPE_OB_NVARCHAR2:
+      ob_type = ObNVarchar2Type;
+      break;
+    case MYSQL_TYPE_OB_NCHAR:
+      ob_type = ObNCharType;
+      break;
     case OB_MYSQL_TYPE_OB_UROWID:
       ob_type = ObURowIDType;
       break;
@@ -317,7 +323,7 @@ int ObSMUtils::get_ob_type(ObObjType &ob_type, EMySQLFieldType mysql_type)
       ob_type = ObGeometryType;
       break;
     default:
-      _OB_LOG(WARN, "unsupport MySQL type %d", mysql_type);
+      _OB_LOG(WDIAG, "unsupport MySQL type %d", mysql_type);
       ret = OB_OBJ_TYPE_ERROR;
   }
   return ret;

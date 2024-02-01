@@ -107,7 +107,7 @@ void ObMysqlSMApi::reset()
         LOG_DEBUG("response transform entry has been cleanup, no need clean again");
       } else {
         if (OB_SUCCESS != sm_->vc_table_.cleanup_entry(response_transform_info_.entry_)) {
-          LOG_WARN("vc table failed to cleanup response transform entry",
+          LOG_WDIAG("vc table failed to cleanup response transform entry",
                    K_(response_transform_info_.entry), K_(sm_->sm_id));
         }
       }
@@ -126,7 +126,7 @@ void ObMysqlSMApi::reset()
         LOG_DEBUG("request transform entry has been cleanup, no need clean again");
       } else {
         if (OB_SUCCESS != sm_->vc_table_.cleanup_entry(request_transform_info_.entry_)) {
-          LOG_WARN("vc table failed to cleanup request transform entry",
+          LOG_WDIAG("vc table failed to cleanup request transform entry",
                    K_(request_transform_info_.entry), K_(sm_->sm_id));
         }
       }
@@ -187,7 +187,7 @@ int ObMysqlSMApi::state_api_callout(int event, void *data)
     case EVENT_INTERVAL:
       if (OB_UNLIKELY(sm_->pending_action_ != data)) {
         ret = OB_INNER_STAT_ERROR;
-        LOG_ERROR("invalid internal state, pending action isn't equal to data",
+        LOG_EDIAG("invalid internal state, pending action isn't equal to data",
                   K_(sm_->pending_action), K(data), K_(sm_->sm_id), K(ret));
       } else {
         sm_->pending_action_ = NULL;
@@ -241,7 +241,7 @@ int ObMysqlSMApi::state_api_callout(int event, void *data)
               MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::state_api_callout);
               if (NULL != sm_->pending_action_) {
                 ret = OB_INNER_STAT_ERROR;
-                LOG_ERROR("pending action isn't NULL", K_(sm_->pending_action), K_(sm_->sm_id), K(ret));
+                LOG_EDIAG("pending action isn't NULL", K_(sm_->pending_action), K_(sm_->sm_id), K(ret));
               } else {
                 sm_->pending_action_ = sm_->mutex_->thread_holding_->schedule_in(sm_, HRTIME_MSECONDS(1));
                 is_return = true;
@@ -286,7 +286,7 @@ int ObMysqlSMApi::state_api_callout(int event, void *data)
 
         default:
           ret = OB_INNER_STAT_ERROR;
-          LOG_ERROR("Unknown api state type", K_(callout_state), K_(sm_->sm_id), K(ret));
+          LOG_EDIAG("Unknown api state type", K_(callout_state), K_(sm_->sm_id), K(ret));
           break;
       }
       break;
@@ -334,7 +334,7 @@ int ObMysqlSMApi::state_api_callout(int event, void *data)
       case API_RETURN_DEFERED_CLOSE:
         if (OB_UNLIKELY(ObMysqlTransact::SM_ACTION_API_SM_SHUTDOWN != sm_->trans_state_.api_next_action_)) {
           ret = OB_INNER_STAT_ERROR;
-          LOG_ERROR("api next action must be SM_ACTION_API_SM_SHUTDOWN",
+          LOG_EDIAG("api next action must be SM_ACTION_API_SM_SHUTDOWN",
                     "api_next_action", ObMysqlTransact::get_action_name(sm_->trans_state_.api_next_action_),
                     K_(sm_->sm_id), K(ret));
         } else {
@@ -346,7 +346,7 @@ int ObMysqlSMApi::state_api_callout(int event, void *data)
         if (OB_UNLIKELY(ObMysqlTransact::SM_ACTION_API_SEND_REQUEST != sm_->trans_state_.api_next_action_)
             || OB_UNLIKELY(ObMysqlTransact::CONNECTION_ALIVE == sm_->trans_state_.current_.state_)) {
           ret = OB_INNER_STAT_ERROR;
-          LOG_ERROR("api next action must be SM_ACTION_API_SEND_REQUEST "
+          LOG_EDIAG("api next action must be SM_ACTION_API_SEND_REQUEST "
                     "or current state should not be CONNECTION_ALIVE",
                     "state", ObMysqlTransact::get_server_state_name(sm_->trans_state_.current_.state_),
                     "api_next_action", ObMysqlTransact::get_action_name(sm_->trans_state_.api_next_action_),
@@ -369,7 +369,7 @@ int ObMysqlSMApi::state_api_callout(int event, void *data)
       case API_RETURN_UNKNOWN:
       default:
         ret = OB_INNER_STAT_ERROR;
-        LOG_ERROR("Unknown api state type", K_(sm_->sm_id), K(ret));
+        LOG_EDIAG("Unknown api state type", K_(sm_->sm_id), K(ret));
         break;
     }
   }
@@ -426,7 +426,7 @@ void ObMysqlSMApi::do_api_callout_internal()
     default:
       cur_hook_id_ = OB_MYSQL_LAST_HOOK;
       ret = OB_INNER_STAT_ERROR;
-      LOG_ERROR("unexpected api next action",
+      LOG_EDIAG("unexpected api next action",
                 K_(sm_->trans_state_.api_next_action), K_(sm_->sm_id), K(ret));
       break;
   }
@@ -445,7 +445,7 @@ void ObMysqlSMApi::do_api_callout_internal()
 ObVConnection *ObMysqlSMApi::do_response_transform_open()
 {
   if (OB_UNLIKELY(NULL != response_transform_info_.vc_)) {
-    LOG_ERROR("invalid internal state, response transform vc isn't NULL",
+    LOG_EDIAG("invalid internal state, response transform vc isn't NULL",
               K_(response_transform_info_.vc), K_(sm_->sm_id));
   } else {
     ObAPIHook *hooks = api_hooks_.get(OB_MYSQL_RESPONSE_TRANSFORM_HOOK);
@@ -464,11 +464,13 @@ ObVConnection *ObMysqlSMApi::do_response_transform_open()
   return response_transform_info_.vc_;
 }
 
-ObVConnection *ObMysqlSMApi::do_request_transform_open()
+int ObMysqlSMApi::do_request_transform_open(ObVConnection *&vc)
 {
+  int ret = OB_SUCCESS;
   if (OB_UNLIKELY(NULL != request_transform_info_.vc_)) {
-    LOG_ERROR("invalid internal state, request transform vc isn't NULL",
-              K_(request_transform_info_.vc), K_(sm_->sm_id));
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid internal state, request transform vc isn't NULL",
+              K_(request_transform_info_.vc), K_(sm_->sm_id), K(ret));
   } else {
     ObAPIHook *hooks = api_hooks_.get(OB_MYSQL_REQUEST_TRANSFORM_HOOK);
     if (NULL != hooks) {
@@ -484,7 +486,9 @@ ObVConnection *ObMysqlSMApi::do_request_transform_open()
     }
   }
 
-  return request_transform_info_.vc_;
+  vc = request_transform_info_.vc_;
+
+  return ret;
 }
 
 // We've done a successful transform open and issued a do_io_write
@@ -567,7 +571,7 @@ int ObMysqlSMApi::state_common_wait_for_transform_read(
       c = sm_->tunnel_.get_consumer(t_info.vc_);
       if (OB_ISNULL(c) || OB_UNLIKELY(c->vc_ != t_info.entry_->vc_)) {
         ret = OB_INNER_STAT_ERROR;
-        LOG_ERROR("consumer is NULL or the cosumer vc isn't the same as transform vc",
+        LOG_EDIAG("consumer is NULL or the cosumer vc isn't the same as transform vc",
                   K(c), K_(t_info.entry), K_(sm_->sm_id), K(ret));
       } else {
         if (MYSQL_SM_TRANSFORM_FAIL == c->handler_state_) {
@@ -575,7 +579,7 @@ int ObMysqlSMApi::state_common_wait_for_transform_read(
           // transform fall through to vc event error case
           if (c->write_success_) {
             ret = OB_INNER_STAT_ERROR;
-            LOG_ERROR("consumer transform fail, consumer write success flag must be false",
+            LOG_EDIAG("consumer transform fail, consumer write success flag must be false",
                       K_(c->handler_state), K_(c->write_success), K_(sm_->sm_id), K(ret));
           }
         } else if (!c->producer_->read_success_) {
@@ -586,7 +590,7 @@ int ObMysqlSMApi::state_common_wait_for_transform_read(
             // handler to clean this mess up
             if (&t_info != &request_transform_info_) {
               ret = OB_INNER_STAT_ERROR;
-              LOG_ERROR("invalid internal state, must be request tranform",
+              LOG_EDIAG("invalid internal state, must be request tranform",
                         K(&t_info), K(&request_transform_info_), K_(sm_->sm_id), K(ret));
             } else {
               (sm_->*tunnel_handler)(event, data);
@@ -598,7 +602,7 @@ int ObMysqlSMApi::state_common_wait_for_transform_read(
             // just don't cache the result
             if (&t_info != &response_transform_info_) {
               ret = OB_INNER_STAT_ERROR;
-              LOG_ERROR("invalid internal state, must be response tranform",
+              LOG_EDIAG("invalid internal state, must be response tranform",
                         K(&t_info), K(&response_transform_info_), K_(sm_->sm_id), K(ret));
             }
             break;
@@ -616,12 +620,12 @@ int ObMysqlSMApi::state_common_wait_for_transform_read(
         c = sm_->tunnel_.get_consumer(t_info.vc_);
         if (OB_ISNULL(c)) {
           ret = OB_INNER_STAT_ERROR;
-          LOG_ERROR("consumer is NULL", K(c), K_(sm_->sm_id), K(ret));
+          LOG_EDIAG("consumer is NULL", K(c), K_(sm_->sm_id), K(ret));
         }
       }
       if (OB_SUCC(ret)) {
         if (OB_FAIL(sm_->vc_table_.cleanup_entry(t_info.entry_))) {
-          LOG_WARN("vc table failed to cleanup trnaform entry", K_(sm_->sm_id), K(ret));
+          LOG_WDIAG("vc table failed to cleanup trnaform entry", K_(sm_->sm_id), K(ret));
         } else {
           t_info.entry_ = NULL;
           // In Case 1: error due to transform write,
@@ -639,7 +643,7 @@ int ObMysqlSMApi::state_common_wait_for_transform_read(
 
     default:
       ret = OB_INNER_STAT_ERROR;
-      LOG_ERROR("Unknown event", K(event), K_(sm_->sm_id), K(ret));
+      LOG_EDIAG("Unknown event", K(event), K_(sm_->sm_id), K(ret));
       break;
   }
 
@@ -665,14 +669,14 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
     transform = &request_transform_info_;
     if (c.vc_ != transform->entry_->vc_) {
       ret = OB_INNER_STAT_ERROR;
-      LOG_ERROR("consumer vc must be the same transform vc",
+      LOG_EDIAG("consumer vc must be the same transform vc",
                 K_(c.vc), K_(transform->entry_->vc), K_(sm_->sm_id), K(ret));
     }
   } else {
     transform = &response_transform_info_;
     if (c.vc_ != transform->vc_ || c.vc_ != transform->entry_->vc_) {
       ret = OB_INNER_STAT_ERROR;
-      LOG_ERROR("consumer vc must be the same transform vc",
+      LOG_EDIAG("consumer vc must be the same transform vc",
                 K_(c.vc), K_(transform->vc), K_(transform->entry_->vc), K_(sm_->sm_id), K(ret));
     }
   }
@@ -680,6 +684,9 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
   if (OB_SUCC(ret)) {
     switch (event) {
       case VC_EVENT_ERROR:
+        COLLECT_VC_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                             obutils::OB_CLIENT_VC_TRACE, event,
+                             OB_PLUGIN_TRANSFERRING_ERROR, NULL);
         // Transform error
         sm_->tunnel_.chain_abort_all(*c.producer_);
         // if we do not clear server entry and client entry here, for it's vc has already
@@ -690,12 +697,6 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
         sm_->consume_all_internal_data();
         c.handler_state_ = MYSQL_SM_TRANSFORM_FAIL;
         c.vc_->do_io_close(EMYSQL_ERROR);
-        COLLECT_CONNECTION_DIAGNOSIS(sm_->connection_diagnosis_trace_,
-                                 vc,
-                                 obutils::OB_VC_DISCONNECT_TRACE,
-                                 event,
-                                 obutils::OB_CLIENT,
-                                 OB_PLUGIN_TRANSFERING_ERROR);
         break;
 
       case VC_EVENT_EOS:
@@ -733,7 +734,7 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
 
       default:
         ret = OB_INNER_STAT_ERROR;
-        LOG_ERROR("Unknown event", K(event), K_(sm_->sm_id), K(ret));
+        LOG_EDIAG("Unknown event", K(event), K_(sm_->sm_id), K(ret));
         break;
     }
   }
@@ -757,11 +758,14 @@ int ObMysqlSMApi::tunnel_handler_transform_read(int event, ObMysqlTunnelProducer
   int ret = OB_SUCCESS;
   if (p.vc_ != response_transform_info_.vc_ && p.vc_ != request_transform_info_.vc_) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_ERROR("invalid internal state, produce vc must be response transform vc or request transform vc",
+    LOG_EDIAG("invalid internal state, produce vc must be response transform vc or request transform vc",
               K_(p.vc), K_(response_transform_info_.vc), K_(request_transform_info_.vc), K_(sm_->sm_id), K(ret));
   } else {
     switch (event) {
       case VC_EVENT_ERROR:
+        COLLECT_VC_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                             obutils::OB_CLIENT_VC_TRACE, event,
+                             OB_PLUGIN_TRANSFERRING_ERROR, NULL);
         // Transform error
         sm_->tunnel_.chain_abort_all(*p.self_consumer_->producer_);
         // if we do not clear server entry and client entry here, for it's vc has already
@@ -770,12 +774,6 @@ int ObMysqlSMApi::tunnel_handler_transform_read(int event, ObMysqlTunnelProducer
         sm_->clear_entries();
         // consume all data, make sure will disconnect directly;
         sm_->consume_all_internal_data();
-        COLLECT_CONNECTION_DIAGNOSIS(sm_->connection_diagnosis_trace_,
-                                      vc,
-                                      obutils::OB_VC_DISCONNECT_TRACE,
-                                      event,
-                                      obutils::OB_CLIENT,
-                                      OB_PLUGIN_TRANSFERING_ERROR);
         break;
 
       case VC_EVENT_EOS:
@@ -790,7 +788,7 @@ int ObMysqlSMApi::tunnel_handler_transform_read(int event, ObMysqlTunnelProducer
 
       default:
         ret = OB_INNER_STAT_ERROR;
-        LOG_ERROR("Unknown event", K(event), K_(sm_->sm_id), K(ret));
+        LOG_EDIAG("Unknown event", K(event), K_(sm_->sm_id), K(ret));
         break;
     }
   }
@@ -818,17 +816,14 @@ int ObMysqlSMApi::tunnel_handler_plugin_client(int event, ObMysqlTunnelConsumer 
 
   switch (event) {
     case VC_EVENT_ERROR:
+      COLLECT_VC_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                      obutils::OB_CLIENT_VC_TRACE, event,
+                      OB_PLUGIN_TRANSFERRING_ERROR, NULL);
       c.vc_->do_io_close(EMYSQL_ERROR); // close up
       // Signal producer if we're the last consumer.
       if (c.producer_->alive_ && 1 == c.producer_->num_consumers_) {
         sm_->tunnel_.producer_handler(MYSQL_TUNNEL_EVENT_CONSUMER_DETACH, *c.producer_);
       }
-      COLLECT_CONNECTION_DIAGNOSIS(sm_->connection_diagnosis_trace_,
-                               vc,
-                               obutils::OB_VC_DISCONNECT_TRACE,
-                               event,
-                               obutils::OB_CLIENT,
-                               OB_PLUGIN_TRANSFERING_ERROR);
       break;
 
     case VC_EVENT_EOS:
@@ -844,7 +839,7 @@ int ObMysqlSMApi::tunnel_handler_plugin_client(int event, ObMysqlTunnelConsumer 
 
     default:
       ret = OB_INNER_STAT_ERROR;
-      LOG_ERROR("Unknown event", K(event), K_(sm_->sm_id), K(ret));
+      LOG_EDIAG("Unknown event", K(event), K_(sm_->sm_id), K(ret));
       break;
   }
 
@@ -861,25 +856,25 @@ int ObMysqlSMApi::setup_transform_to_server_transfer()
 
   if (OB_ISNULL(request_transform_info_.entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid internal state, request transform entry is NULL",
+    LOG_WDIAG("invalid internal state, request transform entry is NULL",
              K_(request_transform_info_.entry), K_(sm_->sm_id), K(ret));
   } else if (OB_UNLIKELY(request_transform_info_.entry_->vc_ != request_transform_info_.vc_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid internal state, request transform entry vc is different with request transform vc",
+    LOG_WDIAG("invalid internal state, request transform entry vc is different with request transform vc",
              K_(request_transform_info_.entry_->vc),
              K_(request_transform_info_.vc), K_(sm_->sm_id), K(ret));
   } else if (OB_ISNULL(post_buffer = new_empty_miobuffer(MYSQL_BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("failed to new io buffer", K_(sm_->sm_id), K(ret));
+    LOG_EDIAG("failed to new io buffer", K_(sm_->sm_id), K(ret));
   } else if (OB_ISNULL(buf_start = post_buffer->alloc_reader())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to allocate buffer reader", K_(sm_->sm_id), K(ret));
+    LOG_WDIAG("failed to allocate buffer reader", K_(sm_->sm_id), K(ret));
   } else {
     MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::tunnel_handler_request_transfered);
 
     if (OB_ISNULL(c = sm_->tunnel_.get_consumer(request_transform_info_.vc_))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("failed to get consumer", K_(request_transform_info_.vc), K_(sm_->sm_id), K(ret));
+      LOG_WDIAG("failed to get consumer", K_(request_transform_info_.vc), K_(sm_->sm_id), K(ret));
     } else if (OB_ISNULL(p = sm_->tunnel_.add_producer(request_transform_info_.vc_,
                                                        sm_->trans_state_.trans_info_.transform_request_cl_,
                                                        buf_start,
@@ -887,7 +882,7 @@ int ObMysqlSMApi::setup_transform_to_server_transfer()
                                                        MT_TRANSFORM,
                                                        "transform read"))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("failed to add producer", K_(sm_->sm_id), K(ret));
+      LOG_WDIAG("failed to add producer", K_(sm_->sm_id), K(ret));
     } else {
       sm_->tunnel_.chain(*c, *p);
       request_transform_info_.entry_->in_tunnel_ = true;
@@ -898,13 +893,13 @@ int ObMysqlSMApi::setup_transform_to_server_transfer()
                                                   MT_MYSQL_SERVER,
                                                   "observer"))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("failed to add consumer", K_(sm_->sm_id), K(ret));
+        LOG_WDIAG("failed to add consumer", K_(sm_->sm_id), K(ret));
       } else {
         sm_->server_entry_->in_tunnel_ = true;
-        if (OB_FAIL(p->set_request_packet_analyzer(MYSQL_REQUEST, NULL))) {
-          LOG_WARN("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
+        if (OB_FAIL(p->set_request_packet_analyzer(MYSQL_REQUEST, NULL, NULL))) {
+          LOG_WDIAG("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
         } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
-          LOG_WARN("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
+          LOG_WDIAG("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
         }
       }
     }
@@ -922,17 +917,17 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
 
   if (OB_ISNULL(response_transform_info_.entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid internal state, reponse transform entry is NULL",
+    LOG_WDIAG("invalid internal state, reponse transform entry is NULL",
              K_(response_transform_info_.entry), K_(sm_->sm_id), K(ret));
   } else if (OB_UNLIKELY(response_transform_info_.entry_->vc_ != response_transform_info_.vc_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid internal state, response transform entry vc is different with response transform vc",
+    LOG_WDIAG("invalid internal state, response transform entry vc is different with response transform vc",
              K_(response_transform_info_.entry_->vc),
              K_(response_transform_info_.vc), K_(sm_->sm_id), K(ret));
   } else if (OB_FAIL(sm_->trans_state_.alloc_internal_buffer(MYSQL_BUFFER_SIZE))) {
-    LOG_ERROR("fail to allocate internal buffer,", K_(sm_->sm_id), K(ret));
+    LOG_EDIAG("fail to allocate internal buffer,", K_(sm_->sm_id), K(ret));
   } else if (OB_FAIL(sm_->server_transfer_init(sm_->trans_state_.internal_buffer_, nbytes))) {
-    LOG_WARN("failed to init server transfer", K_(sm_->sm_id), K(ret));
+    LOG_WDIAG("failed to init server transfer", K_(sm_->sm_id), K(ret));
   } else if (OB_ISNULL(p = sm_->tunnel_.add_producer(sm_->server_entry_->vc_,
                                                      nbytes,
                                                      sm_->trans_state_.internal_reader_,
@@ -940,14 +935,14 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
                                                      MT_MYSQL_SERVER,
                                                      "observer", false))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to add producer", K(p), K_(sm_->sm_id), K (ret));
+    LOG_WDIAG("failed to add producer", K(p), K_(sm_->sm_id), K (ret));
   } else if (OB_ISNULL(c = sm_->tunnel_.add_consumer(response_transform_info_.vc_,
                                                      sm_->server_entry_->vc_,
                                                      &ObMysqlSM::tunnel_handler_transform_write,
                                                      MT_TRANSFORM,
                                                      "transform write"))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
+    LOG_WDIAG("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
   } else {
     MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::state_response_wait_for_transform_read);
 
@@ -957,18 +952,24 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
     ObMysqlResp *server_response = &sm_->trans_state_.trans_info_.server_response_;
     ObIMysqlRespAnalyzer *analyzer = NULL;
     ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
+    ObMysqlServerSession *server_session = sm_->get_server_session();
     if (ObProxyProtocol::PROTOCOL_CHECKSUM == ob_proxy_protocol
         || ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-      const uint8_t req_seq = sm_->get_request_seq();
+      const uint8_t req_seq = sm_->get_compressed_or_ob20_request_seq();
       const obmysql::ObMySQLCmd cmd = sm_->get_request_cmd();
       ObMysqlCompressAnalyzer *compress_analyzer = &sm_->get_compress_analyzer();
-      const ObMysqlProtocolMode mysql_mode = sm_->client_session_->get_session_info().is_oracle_mode() ? OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
+      const ObMysqlProtocolMode mysql_mode = sm_->get_client_session()->get_session_info().is_oracle_mode() ?
+                                              OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
       compress_analyzer->reset();
       const bool enable_extra_ok_packet_for_stats = sm_->is_extra_ok_packet_for_stats_enabled();
+      const bool is_analyze_compressed_ob20 =
+        server_session->get_session_info().is_server_ob20_compress_supported() && sm_->compression_algorithm_.level_ != 0;
       if (OB_FAIL(compress_analyzer->init(req_seq, ObMysqlCompressAnalyzer::SIMPLE_MODE,
-              cmd, mysql_mode, enable_extra_ok_packet_for_stats, req_seq, sm_->get_server_session()->get_server_request_id(),
-              sm_->get_server_session()->get_server_sessid()))) {
-        LOG_WARN("fail to init compress analyzer", K(req_seq), K(cmd),
+                                          cmd, mysql_mode, enable_extra_ok_packet_for_stats, req_seq,
+                                          server_session->get_server_request_id(),
+                                          server_session->get_server_sessid(),
+                                          is_analyze_compressed_ob20))) {
+        LOG_WDIAG("fail to init compress analyzer", K(req_seq), K(cmd),
                  K(enable_extra_ok_packet_for_stats), K(ret));
       }
       analyzer = compress_analyzer;
@@ -979,9 +980,9 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, analyzer, server_response))) {
-        LOG_WARN("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
+        LOG_WDIAG("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
       } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
-        LOG_WARN("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
+        LOG_WDIAG("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
       }
     }
   }
@@ -999,28 +1000,28 @@ int ObMysqlSMApi::setup_transfer_from_transform()
 
   if (OB_ISNULL(response_transform_info_.entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid internal state, reponse transform entry is NULL",
+    LOG_WDIAG("invalid internal state, reponse transform entry is NULL",
              K_(response_transform_info_.entry), K_(sm_->sm_id), K(ret));
   } else if (OB_UNLIKELY(response_transform_info_.entry_->vc_ != response_transform_info_.vc_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid internal state, response transform entry vc is different with response transform vc",
+    LOG_WDIAG("invalid internal state, response transform entry vc is different with response transform vc",
              K_(response_transform_info_.entry_->vc),
              K_(response_transform_info_.vc), K_(sm_->sm_id), K(ret));
   } else if (OB_ISNULL(buf = new_empty_miobuffer(MYSQL_BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("failed to new io buffer", K_(sm_->sm_id), K(ret));
+    LOG_EDIAG("failed to new io buffer", K_(sm_->sm_id), K(ret));
   } else if (OB_ISNULL(buf_start = buf->alloc_reader())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to allocate buffer reader", K_(sm_->sm_id), K(ret));
+    LOG_WDIAG("failed to allocate buffer reader", K_(sm_->sm_id), K(ret));
   } else {
     MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::tunnel_handler_response_transfered);
     buf->water_mark_ = sm_->trans_state_.mysql_config_params_->default_buffer_water_mark_;
     if (OB_ISNULL(c = sm_->tunnel_.get_consumer(response_transform_info_.vc_))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("failed to get consumer", K_(response_transform_info_.vc), K_(sm_->sm_id), K(ret));
+      LOG_WDIAG("failed to get consumer", K_(response_transform_info_.vc), K_(sm_->sm_id), K(ret));
     } else if (c->vc_ != response_transform_info_.vc_ || MT_TRANSFORM != c->vc_type_) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("vc is different, unecpected vc type",
+      LOG_WDIAG("vc is different, unecpected vc type",
                K_(c->vc), K_(response_transform_info_.vc), K_(c->vc_type),
                "expected_vc_type", "MT_TRANSFORM", K_(sm_->sm_id), K(ret));
     } else if (OB_ISNULL(p = sm_->tunnel_.add_producer(response_transform_info_.vc_,
@@ -1030,7 +1031,7 @@ int ObMysqlSMApi::setup_transfer_from_transform()
                                                        MT_TRANSFORM,
                                                        "transform read"))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("failed to add producer", K(p), K_(sm_->sm_id), K(ret));
+      LOG_WDIAG("failed to add producer", K(p), K_(sm_->sm_id), K(ret));
     } else {
       sm_->tunnel_.chain(*c, *p);
       if (OB_ISNULL(c = sm_->tunnel_.add_consumer(sm_->client_entry_->vc_,
@@ -1039,7 +1040,7 @@ int ObMysqlSMApi::setup_transfer_from_transform()
                                                   MT_MYSQL_CLIENT,
                                                   "client"))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
+        LOG_WDIAG("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
       } else {
         ObIMysqlRespAnalyzer *analyzer = NULL;
         if (ObProxyProtocol::PROTOCOL_OB20 == sm_->get_client_session_protocol()) {
@@ -1049,15 +1050,15 @@ int ObMysqlSMApi::setup_transfer_from_transform()
           analyzer = &sm_->analyzer_;
           LOG_DEBUG("set res packet analyzer is normal");
         }
-        
+
         response_transform_info_.entry_->in_tunnel_ = true;
         sm_->client_entry_->in_tunnel_ = true;
         if (OB_FAIL(setup_plugin_clients(*p))) {
-          LOG_WARN("failed to setup_plugin_clients", K(p), K_(sm_->sm_id), K(ret));
+          LOG_WDIAG("failed to setup_plugin_clients", K(p), K_(sm_->sm_id), K(ret));
         } else if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, analyzer, NULL))) {
-          LOG_WARN("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
+          LOG_WDIAG("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
         } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
-          LOG_WARN("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
+          LOG_WDIAG("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
         }
       }
     }
@@ -1083,7 +1084,7 @@ inline int ObMysqlSMApi::setup_plugin_clients(ObMysqlTunnelProducer &p)
                                             MT_MYSQL_CLIENT,
                                             "plugin client"))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("failed to add consumer", K_(sm_->sm_id), K(ret));
+      LOG_WDIAG("failed to add consumer", K_(sm_->sm_id), K(ret));
     } else {
       // We don't put these in the SM VC table because the tunnel
       // will clean them up in do_io_close().
@@ -1127,7 +1128,7 @@ int ObMysqlSMApi::get_mysql_schedule(int event, void *data) {
     if (!plugin_lock.is_locked()) {
       MYSQL_SM_SET_DEFAULT_HANDLER(&ObMysqlSM::get_mysql_schedule);
       if (NULL != sm_->pending_action_) {
-        LOG_ERROR("pending action isn't NULL", K_(sm_->pending_action), K_(sm_->sm_id));
+        LOG_EDIAG("pending action isn't NULL", K_(sm_->pending_action), K_(sm_->sm_id));
       }
       sm_->pending_action_ = sm_->mutex_->thread_holding_->schedule_in(sm_, HRTIME_MSECONDS(1));
     } else {

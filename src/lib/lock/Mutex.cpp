@@ -21,7 +21,7 @@ Mutex::Mutex()
     assert( rt == 0 );
     if ( rt != 0 )
     {
-        _OB_LOG(ERROR,"%s","ThreadSyscallException");
+        _OB_LOG(EDIAG,"%s","ThreadSyscallException");
     }
 #else
     if ( rt != 0 )
@@ -37,7 +37,7 @@ Mutex::~Mutex()
     assert(rt == 0);
     if ( rt != 0 )
     {
-        _OB_LOG(ERROR,"%s","ThreadSyscallException");
+        _OB_LOG(EDIAG,"%s","ThreadSyscallException");
     }
 }
 
@@ -50,11 +50,11 @@ void Mutex::lock() const
     {
         if ( rt == EDEADLK )
         {
-            _OB_LOG(ERROR,"%s","ThreadLockedException ");
+            _OB_LOG(EDIAG,"%s","ThreadLockedException ");
         }
         else
         {
-            _OB_LOG(ERROR,"%s","ThreadSyscallException");
+            _OB_LOG(EDIAG,"%s","ThreadSyscallException");
         }
     }
 #else
@@ -80,11 +80,11 @@ bool Mutex::tryLock() const
     {
         if ( rt == EDEADLK )
         {
-            _OB_LOG(ERROR,"%s","ThreadLockedException ");
+            _OB_LOG(EDIAG,"%s","ThreadLockedException ");
         }
         else
         {
-            _OB_LOG(ERROR,"%s","ThreadSyscallException");
+            _OB_LOG(EDIAG,"%s","ThreadSyscallException");
         }
         return false;
     }
@@ -111,7 +111,7 @@ void Mutex::unlock() const
     assert( rt == 0 );
     if ( rt != 0 )
     {
-        _OB_LOG(ERROR,"%s","ThreadSyscallException");
+        _OB_LOG(EDIAG,"%s","ThreadSyscallException");
     }
 #else
     if ( rt != 0 )

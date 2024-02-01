@@ -91,7 +91,7 @@ int ObHSRResult::do_parse_auth_result(const char ut_separator,
 
   if (OB_UNLIKELY(user.empty()) || OB_UNLIKELY(tenant.empty()) || OB_UNLIKELY(cluster.empty())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid full user name", K(user), K(tenant), K(cluster), K(ret));
+    LOG_WDIAG("invalid full user name", K(user), K(tenant), K(cluster), K(ret));
   } else {
     if (len <= OB_PROXY_FULL_USER_NAME_MAX_LEN) {
       buf_start = full_name_buf_;
@@ -105,7 +105,7 @@ int ObHSRResult::do_parse_auth_result(const char ut_separator,
       if (NULL == name_buf_) {
         if (OB_ISNULL(name_buf_ = static_cast<char *>(op_fixed_mem_alloc(len)))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("fail to alloc memory for login name", K(ret));
+          LOG_EDIAG("fail to alloc memory for login name", K(ret));
         } else {
           name_buf_[0] = '\0';
           name_len_ = len;
@@ -134,7 +134,7 @@ int ObHSRResult::do_parse_auth_result(const char ut_separator,
     pos += cluster.length();
     if (!cluster_id_str.empty()) {
       if (OB_FAIL(get_int_value(cluster_id_str, cluster_id_))) {
-        LOG_WARN("fail to get int value for cluster id", K(cluster_id_str), K(ret));
+        LOG_WDIAG("fail to get int value for cluster id", K(cluster_id_str), K(ret));
       } else {
         buf_start[pos++] = cluster_id_separator;
         MEMCPY(buf_start + pos, cluster_id_str.ptr(), cluster_id_str.length());
@@ -159,7 +159,7 @@ int ObMysqlAuthRequest::add_auth_request(event::ObIOBufferReader *reader, const 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(reader) || OB_UNLIKELY(add_len < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid buffer reader", K(reader), K(ret));
+    LOG_WDIAG("invalid buffer reader", K(reader), K(ret));
   } else {
     int64_t avail_bytes = reader->read_avail();
     int64_t len = 0;
@@ -171,19 +171,19 @@ int ObMysqlAuthRequest::add_auth_request(event::ObIOBufferReader *reader, const 
 
     if (OB_UNLIKELY(len <= 0)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid len", K(len), K(ret));
+      LOG_WDIAG("invalid len", K(len), K(ret));
     } else {
       if (auth_buffer_.is_inited()) {
         auth_buffer_.reset();
       }
       if (OB_FAIL(auth_buffer_.init(len))) {
-        LOG_WARN("fail to init auth buffer", K(len), K(ret));
+        LOG_WDIAG("fail to init auth buffer", K(len), K(ret));
       } else {
         char *buf = const_cast<char *>(auth_buffer_.ptr());
         char *written_pos = reader->copy(buf, len, 0);
         if (OB_UNLIKELY(written_pos != buf + len)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("write pos not expected", K(written_pos), K(buf), K(len), K(ret));
+          LOG_WDIAG("write pos not expected", K(written_pos), K(buf), K(len), K(ret));
         } else {
           auth_.assign_ptr(buf, static_cast<int32_t>(len));
         }
@@ -204,7 +204,7 @@ int ObProxyAuthParser::parse_auth(ObMysqlAuthRequest &request,
   switch (cmd) {
     case OB_MYSQL_COM_LOGIN: {
       if (OB_FAIL(parse_handshake_response(request, default_tenant_name, default_cluster_name))) {
-        LOG_WARN("fail to parse handshake response", "cmd",
+        LOG_WDIAG("fail to parse handshake response", "cmd",
                  ObProxyParserUtils::get_sql_cmd_name(cmd), K(default_tenant_name),
                  K(default_cluster_name), K(ret));
       }
@@ -212,7 +212,7 @@ int ObProxyAuthParser::parse_auth(ObMysqlAuthRequest &request,
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("proxy auth parser can not parse this cmd", "cmd",
+      LOG_WDIAG("proxy auth parser can not parse this cmd", "cmd",
                ObProxyParserUtils::get_sql_cmd_name(cmd), K(ret));
       break;
     }
@@ -327,7 +327,7 @@ int ObProxyAuthParser::parse_full_user_name(const ObString &full_name,
 
   if (OB_FAIL(do_parse_full_user_name(full_name, separator, default_tenant_name,
                                       default_cluster_name, hsr))) {
-      LOG_WARN("fail to parse standard full username", K(full_name), K(ret));
+      LOG_WDIAG("fail to parse standard full username", K(full_name), K(ret));
   }
   return ret;
 }
@@ -350,7 +350,7 @@ int ObProxyAuthParser::do_parse_full_user_name(const ObString &full_name,
 
   if (OB_FAIL(handle_full_user_name(full_user_name, separator, user, tenant,
                                     cluster, cluster_id_str))) {
-    LOG_WARN("fail to handle full user name", K(full_user_name), K(separator), K(ret));
+    LOG_WDIAG("fail to handle full user name", K(full_user_name), K(separator), K(ret));
   } else {
     if (tenant.empty() && cluster.empty()) {
       // if proxy start with specified tenant and cluster, just use them
@@ -362,7 +362,7 @@ int ObProxyAuthParser::do_parse_full_user_name(const ObString &full_name,
         if (OB_UNLIKELY(proxy_tenant_len > OB_MAX_TENANT_NAME_LENGTH)
             || OB_UNLIKELY(proxy_cluster_len > OB_PROXY_MAX_CLUSTER_NAME_LENGTH)) {
           ret = OB_SIZE_OVERFLOW;
-          LOG_WARN("proxy_tenant or proxy_cluster is too long", K(proxy_tenant_len), K(proxy_cluster_len), K(ret));
+          LOG_WDIAG("proxy_tenant or proxy_cluster is too long", K(proxy_tenant_len), K(proxy_cluster_len), K(ret));
         } else {
           memcpy(tenant_str, proxy_config.proxy_tenant_name.str(), proxy_tenant_len);
           memcpy(cluster_str, proxy_config.rootservice_cluster_name.str(), proxy_cluster_len);
@@ -392,7 +392,7 @@ int ObProxyAuthParser::do_parse_full_user_name(const ObString &full_name,
                                          FORMAL_TENANT_CLUSTER_SEPARATOR,
                                          CLUSTER_ID_SEPARATOR,
                                          user, tenant, cluster, cluster_id_str))) {
-      LOG_WARN("fail to do parse auth result", K(hsr), K(ret));
+      LOG_WDIAG("fail to do parse auth result", K(hsr), K(ret));
     }
 
   }
@@ -407,7 +407,7 @@ int ObProxyAuthParser::parse_handshake_response(ObMysqlAuthRequest &request,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(OB_MYSQL_COM_LOGIN != request.get_packet_meta().cmd_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("handshake packet is not OB_MYSQL_COM_LOGIN", "cmd",
+    LOG_WDIAG("handshake packet is not OB_MYSQL_COM_LOGIN", "cmd",
              request.get_packet_meta().cmd_, K(ret));
   } else {
     ObString &auth = request.get_auth_request();
@@ -415,7 +415,7 @@ int ObProxyAuthParser::parse_handshake_response(ObMysqlAuthRequest &request,
 
     if (OB_UNLIKELY(auth.empty())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("handshake response is empty", K(auth), K(ret));
+      LOG_WDIAG("handshake response is empty", K(auth), K(ret));
     } else {
       const char *start = auth.ptr() + MYSQL_NET_HEADER_LENGTH;
       uint32_t len = static_cast<uint32_t>(auth.length() - MYSQL_NET_HEADER_LENGTH);
@@ -423,22 +423,22 @@ int ObProxyAuthParser::parse_handshake_response(ObMysqlAuthRequest &request,
 
       hsr.set_content(start, len);
       if (OB_FAIL(hsr.decode())) {
-        LOG_WARN("fail to decode hand shake response packet", K(ret));
+        LOG_WDIAG("fail to decode hand shake response packet", K(ret));
       } else if (hsr.get_username().empty() && hsr.is_ssl_request()) {
         // maybe is SSL Request, usename is allowed empty
       } else if (hsr.get_username().empty()) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("user name can not be empty in handshake response", K(ret));
+        LOG_WDIAG("user name can not be empty in handshake response", K(ret));
       } else if (OB_FAIL(parse_full_user_name(hsr.get_username(), default_tenant_name,
                                               default_cluster_name, result))) {
-        LOG_WARN("fail to parse full username", "fullname", hsr.get_username(), K(ret));
+        LOG_WDIAG("fail to parse full username", "fullname", hsr.get_username(), K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       LOG_DEBUG("succ to parse handshake response", K(result), K(ret));
     } else {
-      LOG_WARN("fail to parse handshake response", K(ret));
+      LOG_WDIAG("fail to parse handshake response", K(ret));
     }
   }
   return ret;
@@ -460,7 +460,7 @@ int ObProxyAuthParser::covert_hex_to_string(const ObString &hex, char *str, cons
       tmp[2] = '\0';
       if (OB_UNLIKELY(-1 == sscanf(tmp, "%x", (unsigned int*)(&str[i])))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to call sscanf", KERRMSGS, K(ret));
+        LOG_WDIAG("fail to call sscanf", KERRMSGS, K(ret));
       }
     }
     str[half_len] = '\0';
@@ -478,7 +478,7 @@ int ObProxyAuthParser::covert_string_to_hex(const ObString &string, char *hex_st
     for (int64_t i = 0; OB_SUCC(ret) && i < string.length(); ++i) {
       if (OB_UNLIKELY(-1 == sprintf(hex_str, "%.2x", (uint8_t)string[i]))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to call sprintf", KERRMSGS, K(ret));
+        LOG_WDIAG("fail to call sprintf", KERRMSGS, K(ret));
       } else {
         hex_str += 2;
       }

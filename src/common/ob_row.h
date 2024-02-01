@@ -76,38 +76,51 @@ public:
 
   bool operator==(const ObNewRow &other);
   OB_INLINE int64_t get_count() const { return projector_size_ > 0 ? projector_size_ : count_; }
-  const ObObj &get_cell(int64_t index) const
+  const ObObj* get_cell(int64_t index) const
   {
+    ObObj *ret_obj = NULL;
     int64_t real_idx = index;
-    if (projector_size_ > 0) {
-      if (OB_ISNULL(projector_) || index >= projector_size_) {
-        COMMON_LOG(ERROR, "index is invalid", K(index), K_(projector_size), K_(projector));
+    if (index < 0) {
+      /* return null */
+    } else {
+      if (projector_size_ > 0) {
+        if (OB_ISNULL(projector_) || index >= projector_size_) {
+          COMMON_LOG(EDIAG, "index is invalid", K(index), K_(projector_size), K_(projector));
+        } else {
+          real_idx = projector_[index];
+        }
+      }
+      if (real_idx >= count_) {
+        COMMON_LOG(EDIAG, "real_idx is invalid", K_(count), K(real_idx));
       } else {
-        real_idx = projector_[index];
+        ret_obj = cells_ + real_idx;
       }
     }
-    if (real_idx >= count_) {
-      COMMON_LOG(ERROR, "real_idx is invalid", K_(count), K(real_idx));
-    }
-    return cells_[real_idx];
+    return ret_obj;
   }
 
-  ObObj &get_cell(int64_t index)
+  ObObj* get_cell(int64_t index)
   {
+    ObObj *ret_obj = NULL;
     int64_t real_idx = index;
-    if (projector_size_ > 0) {
-      if (OB_ISNULL(projector_) || index >= projector_size_) {
-        COMMON_LOG(ERROR, "index is invalid", K(index), K_(projector_size), K_(projector));
-        right_to_die_or_duty_to_live();
+    if (index < 0) {
+      /* return null */
+    } else {
+      if (projector_size_ > 0) {
+        if (OB_ISNULL(projector_) || index >= projector_size_) {
+          COMMON_LOG(EDIAG, "index is invalid", K(index), K_(projector_size), K_(projector));
+        } else {
+          real_idx = projector_[index];
+        }
+      }
+      if (real_idx >= count_) {
+        COMMON_LOG(EDIAG, "real_idx is invalid", K_(count), K(real_idx));
       } else {
-        real_idx = projector_[index];
+        return ret_obj = cells_ + real_idx;
       }
     }
-    if (real_idx >= count_) {
-      COMMON_LOG(ERROR, "real_idx is invalid", K_(count), K(real_idx));
-      right_to_die_or_duty_to_live();
-    }
-    return cells_[real_idx];
+
+    return ret_obj;
   }
 
   int64_t to_string(char* buf, const int64_t buf_len) const
@@ -144,11 +157,11 @@ int ob_write_row(AllocatorT &allocator, const ObNewRow &src, ObNewRow &dst)
     dst.projector_ = NULL;
   } else if (OB_ISNULL(ptr1 = allocator.alloc(sizeof(ObObj) * src.count_))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(WARN, "out of memory");
+    _OB_LOG(WDIAG, "out of memory");
   } else if (NULL != src.projector_
       && OB_ISNULL(ptr2 = allocator.alloc(sizeof(int32_t) * src.projector_size_))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(WARN, "out of memory");
+    _OB_LOG(WDIAG, "out of memory");
   } else {
     if (NULL != src.projector_) {
       MEMCPY(ptr2, src.projector_, sizeof(int32_t) * src.projector_size_);
@@ -156,7 +169,7 @@ int ob_write_row(AllocatorT &allocator, const ObNewRow &src, ObNewRow &dst)
     ObObj *objs = new(ptr1) ObObj[src.count_]();
     for (int64_t i = 0; OB_SUCC(ret) && i < src.count_; ++i) {
       if (OB_FAIL(ob_write_obj(allocator, src.cells_[i], objs[i]))) {
-        _OB_LOG(WARN, "copy ObObj error, row=%s, i=%ld, ret=%d",
+        _OB_LOG(WDIAG, "copy ObObj error, row=%s, i=%ld, ret=%d",
             to_cstring(src.cells_[i]), i, ret);
       }
     }

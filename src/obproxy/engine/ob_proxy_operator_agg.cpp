@@ -53,16 +53,16 @@ int ObProxyAggOp::init()
   char *tmp_buf = NULL;
   if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(ObColInfoArray)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("init not have enough memory", K(ret), K(sizeof(ObColInfoArray)));
+    LOG_WDIAG("init not have enough memory", K(ret), K(sizeof(ObColInfoArray)));
   } else if (OB_ISNULL(hash_col_idxs_ = new (tmp_buf) ObColInfoArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("init construct error", K(ret), K(hash_col_idxs_));
+    LOG_WDIAG("init construct error", K(ret), K(hash_col_idxs_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(SortColumnArray)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("init not have enough memory", K(ret), K(sizeof(SortColumnArray)));
+    LOG_WDIAG("init not have enough memory", K(ret), K(sizeof(SortColumnArray)));
   } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("init construct error", K(ret), K(sort_columns_));
+    LOG_WDIAG("init construct error", K(ret), K(sort_columns_));
   } else {
     ret = ObProxyOperator::init();
   }
@@ -79,11 +79,11 @@ int ObProxyAggOp::get_next_row()
   ob_agg_func_ = new (tmp_buf)ObAggregateFunction(allocator_, input_->get_select_exprs());
   if (OB_ISNULL(ob_agg_func_)) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("alloc memory failed", K(ret), K(ob_agg_func_));
+    LOG_WDIAG("alloc memory failed", K(ret), K(ob_agg_func_));
   } else if (OB_FAIL(init_group_by_columns())) {
-    LOG_WARN("init group by columns error", K(ret));
+    LOG_WDIAG("init group by columns error", K(ret));
   } else if (OB_FAIL(ob_agg_func_->init(*hash_col_idxs_))) {
-    LOG_WARN("init ob_agg_func_ failed", K(ret));
+    LOG_WDIAG("init ob_agg_func_ failed", K(ret));
   } else {
     ret = ObProxyOperator::get_next_row();
   }
@@ -98,7 +98,7 @@ int ObProxyAggOp::init_group_by_columns()
 
   if (OB_ISNULL(input)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("input is invalid in ObProxyAggOp", K(ret), K(input_));
+    LOG_WDIAG("input is invalid in ObProxyAggOp", K(ret), K(input_));
   } else {
     const ObSEArray<ObProxyGroupItem*, 4>& group_by_expr = input->get_group_by_exprs();
     ObProxyExpr* expr_ptr = NULL;
@@ -109,7 +109,7 @@ int ObProxyAggOp::init_group_by_columns()
     for (int64_t i = 0; OB_SUCC(ret) && i < group_by_expr.count(); i++) {
       if (OB_ISNULL(expr_ptr = group_by_expr.at(i))) {
         ret = common::OB_ERROR;
-        LOG_WARN("internal error in ObProxyAggOp::init_group_by_columns", K(ret), K(expr_ptr));
+        LOG_WDIAG("internal error in ObProxyAggOp::init_group_by_columns", K(ret), K(expr_ptr));
       }
       LOG_DEBUG("ObProxyAggOp::init_group_by_columns init begin", K(i), K(*expr_ptr));
       tmp_ptr = allocator_.alloc(sizeof(ObSortColumn));
@@ -118,7 +118,7 @@ int ObProxyAggOp::init_group_by_columns()
         new_col->index_ = expr_ptr->index_;
       } else {
         ret = common::OB_ERR_UNEXPECTED;
-        LOG_WARN("ObProxyAggOp::init_group_by_columns error group by expression", K(ret), KP(expr_ptr));
+        LOG_WDIAG("ObProxyAggOp::init_group_by_columns error group by expression", K(ret), KP(expr_ptr));
       }
       //use the type of the result returned, and cannot get type only by expr
       //new_col->cs_type_ = expr_ptr->get_expr_type();
@@ -143,7 +143,7 @@ int ObProxyAggOp::process_exprs_in_agg(ResultRows *src_rows, ResultRows *obj_row
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(src_rows) || OB_ISNULL(obj_rows)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN(" ObProxyAggOp::process_exprs_in_agg invalid input", K(ret), K(src_rows), K(obj_rows));
+    LOG_WDIAG(" ObProxyAggOp::process_exprs_in_agg invalid input", K(ret), K(src_rows), K(obj_rows));
     return ret;
   }
   expr_has_calced_ = false;
@@ -159,18 +159,18 @@ int ObProxyAggOp::process_exprs_in_agg(ResultRows *src_rows, ResultRows *obj_row
     row = src_rows->at(i);
     if (OB_ISNULL(row)) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("ObProxyAggOp::process_exprs_in_agg invalid row", K(ret));
+      LOG_WDIAG("ObProxyAggOp::process_exprs_in_agg invalid row", K(ret));
       break;
     } else if (OB_FAIL(init_row(new_row))) {
-      LOG_WARN("ObProxyProOp::process_ready_data init row error", K(ret));
+      LOG_WDIAG("ObProxyProOp::process_ready_data init row error", K(ret));
       ret = common::OB_ERROR;
       break;
     }
     LOG_DEBUG("get one recored from res", K(ret), K(row));
     if (OB_FAIL(ObProxyOperator::calc_result(*row, *new_row, select_exprs, added_row_count))) {
-      LOG_WARN("ObProxyProOp::process_ready_data calc result error", K(ret));
+      LOG_WDIAG("ObProxyProOp::process_ready_data calc result error", K(ret));
     } else if (OB_FAIL(obj_rows->push_back(new_row))) {
-      LOG_WARN("ObProxyProOp::process_ready_data put row error", K(ret));
+      LOG_WDIAG("ObProxyProOp::process_ready_data put row error", K(ret));
     }
   }
 
@@ -190,13 +190,13 @@ int ObProxyAggOp::handle_response_result(void *data, bool &is_final, ObProxyResu
 
   if (OB_ISNULL(data)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(data));
+    LOG_WDIAG("invalid input", K(ret), K(data));
   } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyMemSortOp::handle_response_result not response result", K(opres), KP(opres));
+    LOG_WDIAG("ObProxyMemSortOp::handle_response_result not response result", K(opres), KP(opres));
   } else if (!opres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyAggOp::handle_response_result not response result", K(opres), KP(opres), K(opres->is_resultset_resp()));
+    LOG_WDIAG("ObProxyAggOp::handle_response_result not response result", K(opres), KP(opres), K(opres->is_resultset_resp()));
   } else {
     LOG_DEBUG("ObProxyAggOp::::handle_response_result result set", K(opres));
     if (OB_ISNULL(get_result_fields())) {
@@ -211,7 +211,7 @@ int ObProxyAggOp::handle_response_result(void *data, bool &is_final, ObProxyResu
       }
       LOG_DEBUG("ObProxyAggOp::handle_response_result fetch rows", K(row), K(*row), K(ret));
       if (OB_FAIL(ob_agg_func_->add_row(row))) {
-        LOG_WARN("inner error to put rows", K(ret), K(op_name()));
+        LOG_WDIAG("inner error to put rows", K(ret), K(op_name()));
         break;
       }
       sum++;
@@ -227,20 +227,20 @@ int ObProxyAggOp::handle_response_result(void *data, bool &is_final, ObProxyResu
 
       if (OB_ISNULL(origin_fields = get_result_fields())) {
         ret = common::OB_ERROR;
-        LOG_WARN("invalid field info", K(ret), KP(origin_fields));
+        LOG_WDIAG("invalid field info", K(ret), KP(origin_fields));
       } else if (OB_ISNULL(ob_agg_func_)) {
         ret = common::OB_ERROR;
-        LOG_WARN("not init ob_agg_func_ before used", K(ret));
+        LOG_WDIAG("not init ob_agg_func_ before used", K(ret));
       } else {
         if (OB_FAIL(ob_agg_func_->handle_all_result(row))) {
           ret = common::OB_ERROR;
-          LOG_WARN("handle all agg failed.", K(ret));
+          LOG_WDIAG("handle all agg failed.", K(ret));
         } else if (OB_FAIL(put_row(row))) {
           ret = common::OB_ERROR;
-          LOG_WARN("put result failed.", K(ret));
+          LOG_WDIAG("put result failed.", K(ret));
         } else if (OB_FAIL(packet_result_set(res, cur_result_rows_, origin_fields))) {
             res->set_packet_flag(PCK_ERR_RESPONSE);
-            LOG_WARN("packet resultset packet error", K(ret));
+            LOG_WDIAG("packet resultset packet error", K(ret));
         }
 
         if (OB_FAIL(ret)) {
@@ -273,13 +273,13 @@ int ObProxyHashAggOp::handle_response_result(void *data, bool &is_final, ObProxy
 
   if (OB_ISNULL(data)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(data));
+    LOG_WDIAG("invalid input", K(ret), K(data));
   } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyMemSortOp::handle_response_result not response result", K(opres), KP(opres));
+    LOG_WDIAG("ObProxyMemSortOp::handle_response_result not response result", K(opres), KP(opres));
   } else if (!opres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyHashAggOp::handle_response_result not response result", K(opres), KP(opres), K(opres->is_resultset_resp()));
+    LOG_WDIAG("ObProxyHashAggOp::handle_response_result not response result", K(opres), KP(opres), K(opres->is_resultset_resp()));
   } else {
     LOG_DEBUG("ObProxyAggOp::::handle_response_result result set", K(opres));
     if (OB_ISNULL(get_result_fields())) {
@@ -294,7 +294,7 @@ int ObProxyHashAggOp::handle_response_result(void *data, bool &is_final, ObProxy
       }
       LOG_DEBUG("ObProxyAggOp::handle_response_result fetch rows", K(row), K(*row), K(ret));
       if (OB_FAIL(ob_agg_func_->add_row(row))) {
-        LOG_WARN("inner error to put rows", K(ret), K(op_name()));
+        LOG_WDIAG("inner error to put rows", K(ret), K(op_name()));
         break;
       }
       sum++;
@@ -307,17 +307,17 @@ int ObProxyHashAggOp::handle_response_result(void *data, bool &is_final, ObProxy
       ObProxyResultResp *res = NULL;
       if (OB_ISNULL(origin_fields = get_result_fields())) {
         ret = common::OB_ERROR;
-        LOG_WARN("invalid field info", K(ret), KP(origin_fields));
+        LOG_WDIAG("invalid field info", K(ret), KP(origin_fields));
       } else if (OB_ISNULL(ob_agg_func_)) {
         ret = common::OB_ERROR;
-        LOG_WARN("not init ob_agg_func_ before used", K(ret));
+        LOG_WDIAG("not init ob_agg_func_ before used", K(ret));
       } else {
         if (OB_FAIL(ob_agg_func_->handle_all_hash_result(cur_result_rows_))) {
           ret = common::OB_ERROR;
-          LOG_WARN("handle all agg failed.", K(ret));
+          LOG_WDIAG("handle all agg failed.", K(ret));
         } else if (OB_FAIL(packet_result_set(res, cur_result_rows_, origin_fields))) {
             res->set_packet_flag(PCK_ERR_RESPONSE);
-            LOG_WARN("packet resultset packet error", K(ret));
+            LOG_WDIAG("packet resultset packet error", K(ret));
         }
 
         if (OB_FAIL(ret)) {
@@ -339,25 +339,25 @@ int ObProxyMergeAggOp::init()
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(ObProxyAggOp::init())) {
-    LOG_WARN("ObProxyAggOp::init error", K(ret));
+    LOG_WDIAG("ObProxyAggOp::init error", K(ret));
   } else if (OB_FAIL(init_row_set(result_rows_array_))) {
-    LOG_WARN("ObProxyAggOp::init result_rows_array_ error", K(ret));
+    LOG_WDIAG("ObProxyAggOp::init result_rows_array_ error", K(ret));
   } else {
     char *tmp_buf = NULL;
     if (OB_ISNULL(tmp_buf = (char*)allocator_.alloc(sizeof(ResultFlagArray)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(tmp_buf), K(sizeof(ResultFlagArray)));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(tmp_buf), K(sizeof(ResultFlagArray)));
     } else if (OB_ISNULL(result_rows_flag_array_
         = new (tmp_buf) ResultFlagArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("ObProxyAggOp::init error for construct", K(ret), K(result_rows_flag_array_));
+      LOG_WDIAG("ObProxyAggOp::init error for construct", K(ret), K(result_rows_flag_array_));
     } else if (OB_ISNULL(tmp_buf = (char*)allocator_.alloc(sizeof(ResultRespArray)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(tmp_buf), K(sizeof(ResultRespArray)));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(tmp_buf), K(sizeof(ResultRespArray)));
     } else if (OB_ISNULL(regions_results_
         = new (tmp_buf) ResultRespArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("ObProxyAggOp::init error for construct", K(ret), K(regions_results_));
+      LOG_WDIAG("ObProxyAggOp::init error for construct", K(ret), K(regions_results_));
     }
   }
   return ret;
@@ -372,13 +372,13 @@ int ObProxyMergeAggOp::handle_response_result(void *data, bool &is_final, ObProx
 
   if (OB_ISNULL(data)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(data));
+    LOG_WDIAG("invalid input", K(ret), K(data));
   } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyMemSortOp::handle_response_result not response result", K(opres), KP(opres));
+    LOG_WDIAG("ObProxyMemSortOp::handle_response_result not response result", K(opres), KP(opres));
   } else if (!opres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyMergeAggOp::handle_response_result not response result", K(opres), KP(opres), K(opres->is_resultset_resp()));
+    LOG_WDIAG("ObProxyMergeAggOp::handle_response_result not response result", K(opres), KP(opres), K(opres->is_resultset_resp()));
   } else {
     if (OB_ISNULL(get_result_fields())) {
       result_fields_ = opres->get_fields();
@@ -386,7 +386,7 @@ int ObProxyMergeAggOp::handle_response_result(void *data, bool &is_final, ObProx
     if (regions_ == 0) {
       regions_ = opres->get_result_sum();
       if (OB_FAIL(init_result_rows_array(regions_))) {
-        LOG_WARN("init regions to be merege error", K(ret), K(regions_));
+        LOG_WDIAG("init regions to be merege error", K(ret), K(regions_));
       }
     }
     regions_results_->push_back(opres);
@@ -396,17 +396,17 @@ int ObProxyMergeAggOp::handle_response_result(void *data, bool &is_final, ObProx
       ResultFields *origin_fields = NULL;
       if (OB_ISNULL(origin_fields = get_result_fields())) {
         ret = common::OB_ERROR;
-        LOG_WARN("invalid field info", K(ret), KP(origin_fields));
+        LOG_WDIAG("invalid field info", K(ret), KP(origin_fields));
       } else if (OB_ISNULL(ob_agg_func_)) {
         ret = common::OB_ERROR;
-        LOG_WARN("not init ob_agg_func_ before used", K(ret));
+        LOG_WDIAG("not init ob_agg_func_ before used", K(ret));
       } else {
         if (OB_FAIL(fetch_all_result(cur_result_rows_))) {
           ret = common::OB_ERROR;
-          LOG_WARN("handle all agg failed.", K(ret));
+          LOG_WDIAG("handle all agg failed.", K(ret));
         } else if (OB_FAIL(packet_result_set(res, cur_result_rows_, get_result_fields()))) {
             res->set_packet_flag(PCK_ERR_RESPONSE);
-            LOG_WARN("packet resultset packet error", K(ret));
+            LOG_WDIAG("packet resultset packet error", K(ret));
         }
 
         if (OB_FAIL(ret)) {
@@ -430,7 +430,7 @@ int ObProxyMergeAggOp::init_result_rows_array(int64_t regions)
   int ret = common::OB_SUCCESS;
   if (regions <= 0) {
     ret =  common::OB_INVALID_ARGUMENT;
-    LOG_WARN("error regions to store", K(ret));
+    LOG_WDIAG("error regions to store", K(ret));
   }
 
   for (int64_t i = 0; i < regions; i++) {
@@ -448,25 +448,25 @@ int ObProxyMergeAggOp::fetch_all_result(ResultRows *rows)
   ObProxyResultResp *res = NULL;
   if (OB_ISNULL(rows)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret));
+    LOG_WDIAG("invalid input", K(ret));
     return ret;
   }
   if (regions_ < 0 || regions_ != regions_results_->count()) {
     ret = common::OB_ERROR;
-    LOG_WARN("invalid result to merge", K(ret), K(regions_), K(regions_results_->count()));
+    LOG_WDIAG("invalid result to merge", K(ret), K(regions_), K(regions_results_->count()));
   } else {
     void *tmp_buf = NULL;
     ResultRows *new_rows = NULL;
     ObBaseSort *sort_imp = NULL;
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
     } else if (OB_ISNULL(new_rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("init ResultRows failed", K(ret), K(op_name()), K(new_rows));
+      LOG_WDIAG("init ResultRows failed", K(ret), K(op_name()), K(new_rows));
     } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObMemorySort)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObMemorySort)));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObMemorySort)));
     } else {
       sort_imp = new (tmp_buf) ObMemorySort(*sort_columns_, allocator_, *new_rows);
     }
@@ -485,7 +485,7 @@ int ObProxyMergeAggOp::fetch_all_result(ResultRows *rows)
           /* find the next from res */
           if (OB_ISNULL(res = regions_results_->at(i)) || !res->is_resultset_resp()) {
             ret = common::OB_ERROR;
-            LOG_WARN("invalid result to merge", K(ret), K(ret));
+            LOG_WDIAG("invalid result to merge", K(ret), K(ret));
             continue;
           } else {
             if (OB_FAIL(res->next(row))) {
@@ -494,12 +494,12 @@ int ObProxyMergeAggOp::fetch_all_result(ResultRows *rows)
                 result_rows_flag_array_->at(i) = false;
               } else {
                 ret = common::OB_ERROR;
-                LOG_WARN("invalid result to merge", K(ret), K(row));
+                LOG_WDIAG("invalid result to merge", K(ret), K(row));
               }
               continue;
             } else if (OB_ISNULL(row)) {
               ret = common::OB_ERROR;
-              LOG_WARN("invalid result to merge", K(ret), K(row));
+              LOG_WDIAG("invalid result to merge", K(ret), K(row));
               continue;
             } else {
               result_rows_array_->at(i) = row;
@@ -526,7 +526,7 @@ int ObProxyMergeAggOp::fetch_all_result(ResultRows *rows)
         break;
       } else if (OB_ISNULL(cur_row)) {
         ret = common::OB_ERROR;
-        LOG_WARN("inner error in HashAGG", K(ret));
+        LOG_WDIAG("inner error in HashAGG", K(ret));
         break;
       }
 
@@ -540,7 +540,7 @@ int ObProxyMergeAggOp::fetch_all_result(ResultRows *rows)
           LOG_DEBUG("ObProxyMergeAggOp::fetch_all_result rows is_same_group", K(*cur_row), K(*(result_rows_array_->at(i))));
           if (OB_FAIL(ob_agg_func_->cal_row_agg(*cur_row, *(result_rows_array_->at(i)),
                   has_inited_normal_cell))) {
-            LOG_WARN("ObProxyMergeAggOp::fetch_all_result, calc_row_agg fail", K(ret), K(cur_row));
+            LOG_WDIAG("ObProxyMergeAggOp::fetch_all_result, calc_row_agg fail", K(ret), K(cur_row));
           } else {
             result_rows_array_->at(i) = NULL;
           }
@@ -577,16 +577,16 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
 
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, data is NULL", K(ret));
+    LOG_WDIAG("invalid input, data is NULL", K(ret));
   } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid input, opres type is not match", K(ret));
+    LOG_WDIAG("invalid input, opres type is not match", K(ret));
   } else if (!opres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resp is not resultset", K(opres), K(ret));
+    LOG_WDIAG("resp is not resultset", K(opres), K(ret));
   } else if (OB_ISNULL(input = dynamic_cast<ObProxyAggInput*>(get_input()))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("input is invalid", K(ret));
+    LOG_WDIAG("input is invalid", K(ret));
   } else {
     const ObSEArray<ObProxyGroupItem*, 4>& group_exprs = input->get_group_by_exprs();
     const ObSEArray<ObProxyExpr*, 4>& agg_exprs = input->get_agg_exprs();
@@ -597,7 +597,7 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
       result_fields_ = opres->get_fields();
       if (OB_ISNULL(result_fields_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("no result field, unexpected", K(ret));
+        LOG_WDIAG("no result field, unexpected", K(ret));
       }
     }
 
@@ -605,20 +605,20 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
     while (OB_SUCC(ret) && OB_SUCC(opres->next(row))) {
       ObProxyGroupUnit group_unit(allocator_);
       if (OB_FAIL(group_unit.init(row, result_fields_, group_exprs))) {
-        LOG_WARN("fail to init group unit", K(ret));
+        LOG_WDIAG("fail to init group unit", K(ret));
       } else if (NULL == current_group_unit_) {
         if (OB_FAIL(ObProxyGroupUnit::create_group_unit(allocator_, current_group_unit_, group_unit))) {
-          LOG_WARN("fail to create group unit", K(ret));
+          LOG_WDIAG("fail to create group unit", K(ret));
         }
       } else if (*current_group_unit_ == group_unit) {
         if (OB_FAIL(current_group_unit_->aggregate(group_unit, agg_exprs))) {
-          LOG_WARN("fail to aggregate", K(ret));
+          LOG_WDIAG("fail to aggregate", K(ret));
         }
       } else {
         if (OB_FAIL(current_group_unit_->set_agg_value())) {
-          LOG_WARN("fail to set agg value", K(ret));
+          LOG_WDIAG("fail to set agg value", K(ret));
         } else if (OB_FAIL(current_rows_.push_back(current_group_unit_->get_row()))) {
-          LOG_WARN("fail to push back row", K(ret));
+          LOG_WDIAG("fail to push back row", K(ret));
         } else {
           ObProxyGroupUnit::destroy_group_unit(allocator_, current_group_unit_);
           current_group_unit_ = NULL;
@@ -628,7 +628,7 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
           }
 
           if (OB_FAIL(ObProxyGroupUnit::create_group_unit(allocator_, current_group_unit_, group_unit))) {
-            LOG_WARN("fail to create group unit", K(ret));
+            LOG_WDIAG("fail to create group unit", K(ret));
           }
         }
       }
@@ -638,9 +638,9 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
       ret = OB_SUCCESS;
       if (is_final && NULL != current_group_unit_) {
         if (OB_FAIL(current_group_unit_->set_agg_value())) {
-          LOG_WARN("fail to set agg value", K(ret));
+          LOG_WDIAG("fail to set agg value", K(ret));
         } else if (OB_FAIL(current_rows_.push_back(current_group_unit_->get_row()))) {
-          LOG_WARN("fail to push back row", K(ret));
+          LOG_WDIAG("fail to push back row", K(ret));
         } else {
           ObProxyGroupUnit::destroy_group_unit(allocator_, current_group_unit_);
           current_group_unit_ = NULL;
@@ -654,7 +654,7 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
       void *tmp_buf = NULL;
       if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+        LOG_WDIAG("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
       } else if (FALSE_IT(rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
         // impossible
       } else {
@@ -665,7 +665,7 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
 
         for (int64_t i = limit_offset; OB_SUCC(ret) && i < count; i++) {
           if (OB_FAIL(rows->push_back(current_rows_.at(i)))) {
-            LOG_WARN("fail to push back row", K(i), K(count), K(limit_offset), K(limit_offset_size), K(ret));
+            LOG_WDIAG("fail to push back row", K(i), K(count), K(limit_offset), K(limit_offset_size), K(ret));
           }
         }
       }
@@ -674,7 +674,7 @@ int ObProxyStreamAggOp::handle_response_result(void *data, bool &is_final, ObPro
         if (FALSE_IT(current_rows_.reuse())) {
           // impossible
         } else if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
-          LOG_WARN("fail to packet resultset", K(op_name()), K(ret));
+          LOG_WDIAG("fail to packet resultset", K(op_name()), K(ret));
         }
       }
 
@@ -706,16 +706,16 @@ int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObP
 
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, data is NULL", K(ret));
+    LOG_WDIAG("invalid input, data is NULL", K(ret));
   } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid input, opres type is not match", K(ret));
+    LOG_WDIAG("invalid input, opres type is not match", K(ret));
   } else if (!opres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resp is not resultset", K(opres), K(ret));
+    LOG_WDIAG("resp is not resultset", K(opres), K(ret));
   } else if (OB_ISNULL(input = dynamic_cast<ObProxyAggInput*>(get_input()))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("input is invalid", K(ret));
+    LOG_WDIAG("input is invalid", K(ret));
   } else {
     const ObSEArray<ObProxyGroupItem*, 4>& group_exprs = input->get_group_by_exprs();
     const ObSEArray<ObProxyExpr*, 4>& agg_exprs = input->get_agg_exprs();
@@ -724,7 +724,7 @@ int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObP
       result_fields_ = opres->get_fields();
       if (OB_ISNULL(result_fields_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("no result field, unexpected", K(ret));
+        LOG_WDIAG("no result field, unexpected", K(ret));
       }
     }
 
@@ -733,19 +733,19 @@ int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObP
       ObProxyGroupUnit group_unit(allocator_);
       ObProxyGroupUnit *current_group_unit = NULL;
       if (OB_FAIL(group_unit.init(row, result_fields_, group_exprs))) {
-        LOG_WARN("fail to init group unit", K(ret));
+        LOG_WDIAG("fail to init group unit", K(ret));
       } else if (OB_FAIL(group_unit_map_.get_refactored(group_unit, current_group_unit))) {
         if (OB_HASH_NOT_EXIST == ret) {
           if (OB_FAIL(ObProxyGroupUnit::create_group_unit(allocator_, current_group_unit, group_unit))) {
-            LOG_WARN("fail to create group unit", K(ret));
+            LOG_WDIAG("fail to create group unit", K(ret));
           } else if (OB_FAIL(group_unit_map_.set_refactored(current_group_unit))) {
-            LOG_WARN("fail to set group unit", K(ret));
+            LOG_WDIAG("fail to set group unit", K(ret));
           }
         } else {
-          LOG_WARN("fail to get group unit", K(ret));
+          LOG_WDIAG("fail to get group unit", K(ret));
         }
       } else if (OB_FAIL(current_group_unit->aggregate(group_unit, agg_exprs))) {
-        LOG_WARN("fail to aggregate", K(ret));
+        LOG_WDIAG("fail to aggregate", K(ret));
       }
     }
 
@@ -759,7 +759,7 @@ int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObP
       void *tmp_buf = NULL;
       if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+        LOG_WDIAG("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
       } else if (FALSE_IT(rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
         // impossible
       } else {
@@ -768,9 +768,9 @@ int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObP
         GroupUnitHashMap::iterator end = group_unit_map_.end();
         for (; OB_SUCC(ret) && it != end; ) {
           if (OB_FAIL(it->set_agg_value())) {
-            LOG_WARN("fail to set agg value", K(ret));
+            LOG_WDIAG("fail to set agg value", K(ret));
           } else if (OB_FAIL(rows->push_back(it->get_row()))) {
-            LOG_WARN("fail to push back row", K(ret));
+            LOG_WDIAG("fail to push back row", K(ret));
           } else {
             tmp_it = it;
             ++it;
@@ -782,7 +782,7 @@ int ObProxyMemMergeAggOp::handle_response_result(void *data, bool &is_final, ObP
 
       if (OB_SUCC(ret)) {
         if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
-          LOG_WARN("fail to packet resultset", K(op_name()), K(ret));
+          LOG_WDIAG("fail to packet resultset", K(op_name()), K(ret));
         }
       }
       result = res;
@@ -801,12 +801,12 @@ int ObProxyGroupUnit::create_group_unit(common::ObIAllocator &allocator,
   current_group_unit = NULL;
   if (OB_ISNULL(buf = (char*)(allocator.alloc(sizeof(ObProxyGroupUnit))))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc group unit buf", K(ret));
+    LOG_WDIAG("fail to alloc group unit buf", K(ret));
   } else if (OB_ISNULL(current_group_unit = new (buf)ObProxyGroupUnit(allocator))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to new group unit", K(ret));
+    LOG_WDIAG("fail to new group unit", K(ret));
   } else if (OB_FAIL(current_group_unit->assign(group_unit))) {
-    LOG_WARN("fail to assign group unit", K(ret));
+    LOG_WDIAG("fail to assign group unit", K(ret));
   }
 
   return ret;
@@ -837,13 +837,13 @@ int ObProxyGroupUnit::init(ResultRow *row, ResultFields *result_fields,
 
   for (int64_t i = 0; OB_SUCC(ret) && i < group_exprs.count(); i++) {
     if (OB_FAIL(group_exprs.at(i)->calc(ctx, calc_item, group_values_))) {
-      LOG_WARN("fail to calc group exprs", K(ret));
+      LOG_WDIAG("fail to calc group exprs", K(ret));
     } else {
       int64_t index = group_exprs.at(i)->get_expr()->get_index();
       if (-1 != index) {
         ObObj &value = group_values_.at(i);
         if (OB_FAIL(change_sql_value(value, result_fields->at(index), &allocator_))) {
-          LOG_WARN("fail to change sql value", K(value),
+          LOG_WDIAG("fail to change sql value", K(value),
                    "filed", result_fields->at(index), K(ret));
         }
       }
@@ -888,7 +888,7 @@ int ObProxyGroupUnit::assign(const ObProxyGroupUnit &group_unit)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(group_values_.assign(group_unit.get_group_values()))) {
-    LOG_WARN("fail to assign group value", K(ret));
+    LOG_WDIAG("fail to assign group value", K(ret));
   } else {
     row_ = group_unit.get_row();
     result_fields_ = group_unit.get_result_fields();
@@ -909,19 +909,19 @@ int ObProxyGroupUnit::do_aggregate(ResultRow *row)
     ObProxyAggUnit *agg_unit = agg_units_.at(i);
     agg_values.reuse();
     if (OB_FAIL(agg_unit->get_agg_expr()->calc(ctx, calc_item, agg_values))) {
-      LOG_WARN("fail to calc agg expr", K(ret));
+      LOG_WDIAG("fail to calc agg expr", K(ret));
     } else {
       int64_t index = agg_unit->get_agg_expr()->get_index();
       if (-1 != index) {
         ObObj &value = agg_values.at(0);
         if (OB_FAIL(change_sql_value(value, result_fields_->at(index), &allocator_))) {
-          LOG_WARN("fail to change sql value", K(value),
+          LOG_WDIAG("fail to change sql value", K(value),
                    "filed", result_fields_->at(index), K(ret));
         }
       }
 
       if (OB_SUCC(ret) && OB_FAIL(agg_unit->merge(agg_values))) {
-        LOG_WARN("fail to merge agg value", K(ret));
+        LOG_WDIAG("fail to merge agg value", K(ret));
       }
     }
   }
@@ -938,18 +938,18 @@ int ObProxyGroupUnit::aggregate(const ObProxyGroupUnit &group_unit, const ObIArr
       ObProxyExpr *agg_expr = agg_exprs.at(i);
       ObProxyAggUnit *agg_unit = NULL;
       if (OB_FAIL(ObProxyAggUnit::create_agg_unit(allocator_, agg_expr, agg_unit))) {
-        LOG_WARN("fail to create agg unit", "agg type", agg_expr->get_expr_type(), K(ret));
+        LOG_WDIAG("fail to create agg unit", "agg type", agg_expr->get_expr_type(), K(ret));
       } else if (FALSE_IT(agg_unit->set_agg_expr(agg_expr))) {
-        LOG_WARN("fail to set agg expr", K(ret));
+        LOG_WDIAG("fail to set agg expr", K(ret));
       } else if (agg_units_.push_back(agg_unit)) {
-        LOG_WARN("fail to push back agg unit", K(ret));
+        LOG_WDIAG("fail to push back agg unit", K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       // Process the first row of data
       if (OB_FAIL(do_aggregate(row_))) {
-        LOG_WARN("fail to do aggregate", K(ret));
+        LOG_WDIAG("fail to do aggregate", K(ret));
       }
     }
   }
@@ -957,7 +957,7 @@ int ObProxyGroupUnit::aggregate(const ObProxyGroupUnit &group_unit, const ObIArr
   if (OB_SUCC(ret)) {
     // Aggregate subsequent data
     if (OB_FAIL(do_aggregate(group_unit.get_row()))) {
-      LOG_WARN("fail to do aggregate", K(ret));
+      LOG_WDIAG("fail to do aggregate", K(ret));
     }
   }
 
@@ -987,10 +987,10 @@ int ObProxyAggUnit::create_agg_unit(ObIAllocator &allocator,
 #define ALLOC_AGG_UNIT_BY_TYPE(ExprClass, args) \
   if (OB_ISNULL(buf = (allocator.alloc(sizeof(ExprClass))))) { \
     ret = OB_ALLOCATE_MEMORY_FAILED; \
-    LOG_WARN("fail to alloc mem", K(ret)); \
+    LOG_WDIAG("fail to alloc mem", K(ret)); \
   } else if (OB_ISNULL(agg_unit = new (buf)ExprClass(allocator, args))) { \
     ret = OB_ALLOCATE_MEMORY_FAILED; \
-    LOG_WARN("fail to new expr", K(ret)); \
+    LOG_WDIAG("fail to new expr", K(ret)); \
   }
 
   switch(expr_type) {
@@ -1006,7 +1006,7 @@ int ObProxyAggUnit::create_agg_unit(ObIAllocator &allocator,
       break;
     default:
       ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
-      LOG_WARN("unexpected type", K(expr_type));
+      LOG_WDIAG("unexpected type", K(expr_type));
       break;
   }
 
@@ -1065,11 +1065,11 @@ int ObProxyAccumulationAggUnit::merge(common::ObIArray<ObObj> &agg_values)
       first_expr.set_object(obj_);
       second_expr.set_object(agg_values.at(0));
       if (OB_FAIL(add_expr.add_param_expr(&first_expr))) {
-        LOG_WARN("fail to add first expr", K(ret));
+        LOG_WDIAG("fail to add first expr", K(ret));
       } else if (OB_FAIL(add_expr.add_param_expr(&second_expr))) {
-        LOG_WARN("fail to add second expr", K(ret));
+        LOG_WDIAG("fail to add second expr", K(ret));
       } else if (add_expr.calc(ctx, calc_item, result_obj)) {
-        LOG_WARN("fail to calc", K(ret));
+        LOG_WDIAG("fail to calc", K(ret));
       } else {
         obj_ = result_obj.at(0);
       }
@@ -1127,10 +1127,10 @@ int ObAggregateFunction::handle_all_result(ResultRow *&row)
   buf = allocator_.alloc(sizeof(ResultRow));
   if (OB_ISNULL(buf)) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("handle_all_result not have enough memory", K(ret), K(sizeof(sizeof(ResultRow))));
+    LOG_WDIAG("handle_all_result not have enough memory", K(ret), K(sizeof(sizeof(ResultRow))));
   } else if (OB_ISNULL(row = new (buf) ResultRow(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERROR;
-    LOG_WARN("handle_all_result init ResultRow error", K(ret));
+    LOG_WDIAG("handle_all_result init ResultRow error", K(ret));
   } else if (agg_rows_->count() > 0
               && OB_NOT_NULL(agg_rows_->at(0))) {
              // && agg_rows_.at(0)->count() == result_fields_->count())) {
@@ -1143,14 +1143,14 @@ int ObAggregateFunction::handle_all_result(ResultRow *&row)
     for (int64_t i = 1; OB_SUCC(ret) && i < rows_count; i++) {
       if (OB_ISNULL(agg_rows_->at(i))) {
         ret = common::OB_ERROR;
-        LOG_WARN("invalid row to calc agg", K(ret));
+        LOG_WDIAG("invalid row to calc agg", K(ret));
       } else if (OB_FAIL(cal_row_agg(*row, *agg_rows_->at(i), has_inited_normal_cell))) {
-        LOG_WARN("calc agg error", K(ret));
+        LOG_WDIAG("calc agg error", K(ret));
       }
     }
   } else {
     ret = common::OB_ERROR;
-    LOG_WARN("inner error when calc agg", K(ret));
+    LOG_WDIAG("inner error when calc agg", K(ret));
   }
   return ret;
 }
@@ -1162,7 +1162,7 @@ int ObAggregateFunction::handle_all_hash_result(ResultRows *rows)
   void *buf = NULL;
   if (OB_ISNULL(rows)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(rows));
+    LOG_WDIAG("invalid input", K(rows));
   } else if (agg_rows_->count() > 0
               && OB_NOT_NULL(agg_rows_->at(0))) {
               //&& agg_rows_.at(0)->count == select_exprs_->count())) {
@@ -1172,12 +1172,12 @@ int ObAggregateFunction::handle_all_hash_result(ResultRows *rows)
     for (int64_t i = 1; OB_SUCC(ret) && i < rows_count; i++) {
       if (OB_ISNULL(row = rows->at(i))) {
         ret = common::OB_ERROR;
-        LOG_WARN("invalid row to calc agg", K(ret));
+        LOG_WDIAG("invalid row to calc agg", K(ret));
       } else {
         buf = static_cast<ObGbyHashCols*>(allocator_.alloc(sizeof(ObGbyHashCols)));
         col = new (buf) ObGbyHashCols();
         if (OB_FAIL(col->init(row, group_col_idxs_, 0))) {
-          LOG_WARN("inner error to init hash_col", K(ret));
+          LOG_WDIAG("inner error to init hash_col", K(ret));
         } else if (FALSE_IT(col->inner_hash())) {
           // never be here
         } else {
@@ -1190,7 +1190,7 @@ int ObAggregateFunction::handle_all_hash_result(ResultRows *rows)
             while (OB_NOT_NULL(head)) {
               if (is_same_group(*head->row_, *col->row_)) {
                 if (OB_FAIL(cal_row_agg(*head->row_, *col->row_, has_inited_normal_cell))) { //TODO free col
-                  LOG_WARN("inner error to calc agg", K(ret));
+                  LOG_WDIAG("inner error to calc agg", K(ret));
                 }
                 break;
               }
@@ -1216,25 +1216,25 @@ int ObAggregateFunction::handle_all_hash_result(ResultRows *rows)
       ResultRows *new_rows = NULL;
       if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(ret), K(sizeof(ResultRows)));
+        LOG_WDIAG("no have enough memory to init", K(ret), K(sizeof(ResultRows)));
       } else if (OB_ISNULL(new_rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
         ret = common::OB_ERR_UNEXPECTED;
-        LOG_WARN("init ResultRows failed", K(ret), K(new_rows));
+        LOG_WDIAG("init ResultRows failed", K(ret), K(new_rows));
       } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObMemorySort)))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(ret), K(sizeof(ObMemorySort)));
+        LOG_WDIAG("no have enough memory to init", K(ret), K(sizeof(ObMemorySort)));
       } else {
         mem_sort_impl = new (tmp_buf) ObMemorySort(*sort_columns_, allocator_, *new_rows);
       }
       if (OB_ISNULL(mem_sort_impl)) {
         ret = common::OB_ERROR;
-        LOG_WARN("inner error to init memory sort", K(ret));
+        LOG_WDIAG("inner error to init memory sort", K(ret));
       } else {
         mem_sort_impl->set_sort_rows(*rows);
         if (OB_FAIL(mem_sort_impl->sort_rows())) {
-          LOG_WARN("memory sort error", K(ret));
+          LOG_WDIAG("memory sort error", K(ret));
         } else if (OB_FAIL(mem_sort_impl->fetch_final_results(*rows))) {
-          LOG_WARN("memory sort error in ObProxySortOp", K(ret));
+          LOG_WDIAG("memory sort error in ObProxySortOp", K(ret));
         }
       }
     }
@@ -1252,7 +1252,7 @@ int ObAggregateFunction::cal_row_agg(ResultRow &obj_row, ResultRow &src_row, boo
         || OB_ISNULL(&src_row)
         || obj_row.count() != src_row.count()) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("failed to call the aggregate the result row", K(ret));
+    LOG_WDIAG("failed to call the aggregate the result row", K(ret));
   } else {
     int64_t row_count = obj_row.count();
     int64_t sel_count = select_exprs_.count();
@@ -1260,7 +1260,7 @@ int ObAggregateFunction::cal_row_agg(ResultRow &obj_row, ResultRow &src_row, boo
     for (int64_t i = sel_count - 1; i >= 0; i--) {
       if (OB_ISNULL(select_exprs_[i])) {
         ret = common::OB_ERROR;
-        LOG_WARN("erro to call thre cell agg", K(ret));
+        LOG_WDIAG("erro to call thre cell agg", K(ret));
         break;
       } else if (select_exprs_[i]->has_agg()) {
         row_loc = row_count - sel_count + i;
@@ -1271,7 +1271,7 @@ int ObAggregateFunction::cal_row_agg(ResultRow &obj_row, ResultRow &src_row, boo
         if (OB_FAIL(calc_aggr_cell(select_exprs_[i]->get_expr_type(),
                     *obj_row.at(row_loc), *src_row.at(row_loc)))) {
           ret = common::OB_ERROR;
-          LOG_WARN("error to call thre cell agg", K(ret));
+          LOG_WDIAG("error to call thre cell agg", K(ret));
           break;
         }
       }
@@ -1311,34 +1311,34 @@ int ObAggregateFunction::init(ObColInfoArray &group_col_idxs)
   char *tmp_buf = NULL;
   if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(common::ObExprCtx)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("init not have enough memory", K(ret), K(sizeof(common::ObExprCtx)));
+    LOG_WDIAG("init not have enough memory", K(ret), K(sizeof(common::ObExprCtx)));
   } else if (OB_ISNULL(expr_ctx_ = new (tmp_buf) common::ObExprCtx(NULL, NULL, NULL, &allocator_, NULL))) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("init construct error", K(ret), K(expr_ctx_));
+    LOG_WDIAG("init construct error", K(ret), K(expr_ctx_));
 //  } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(ObColInfoArray)))) {
 //    ret = common::OB_ALLOCATE_MEMORY_FAILED;
-//    LOG_WARN("init not have enough memory", K(ret), K(sizeof(ObColInfoArray)));
+//    LOG_WDIAG("init not have enough memory", K(ret), K(sizeof(ObColInfoArray)));
 //  } else if (OB_ISNULL(group_col_idxs_ = new (tmp_buf) ObColInfoArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
 //    ret = common::OB_ERR_UNEXPECTED;
-//    LOG_WARN("init construct error", K(ret), K(group_col_idxs_));
+//    LOG_WDIAG("init construct error", K(ret), K(group_col_idxs_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(SortColumnArray)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("init not have enough memory", K(ret), K(sizeof(SortColumnArray)));
+    LOG_WDIAG("init not have enough memory", K(ret), K(sizeof(SortColumnArray)));
   } else if (OB_ISNULL(sort_columns_ = new (tmp_buf) SortColumnArray(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("init construct error", K(ret), K(sort_columns_));
+    LOG_WDIAG("init construct error", K(ret), K(sort_columns_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(ResultRows)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("init not have enough memory", K(ret), K(sizeof(ResultRows)));
+    LOG_WDIAG("init not have enough memory", K(ret), K(sizeof(ResultRows)));
   } else if (OB_ISNULL(agg_rows_ = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("init construct error", K(ret), K(agg_rows_));
+    LOG_WDIAG("init construct error", K(ret), K(agg_rows_));
   } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(sizeof(HashTable)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("init not have enough memory", K(ret), K(sizeof(HashTable)));
+    LOG_WDIAG("init not have enough memory", K(ret), K(sizeof(HashTable)));
   } else if (OB_ISNULL(result_rows_ = new (tmp_buf) HashTable(allocator_))) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("init construct error", K(ret), K(result_rows_));
+    LOG_WDIAG("init construct error", K(ret), K(result_rows_));
   }
 
   group_col_idxs_ = &group_col_idxs;
@@ -1393,7 +1393,7 @@ int ObAggregateFunction::clone_number_cell(const common::ObObj &src_cell, common
   if (OB_UNLIKELY(ObNumberTC != src_cell.get_type_class())) {
     //|| OB_UNLIKELY(src_cell.get_number_byte_length() > MAX_CALC_BYTE_LEN)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is invalid", K(src_cell.get_type()), K(target_cell.get_type()),
+    LOG_WDIAG("argument is invalid", K(src_cell.get_type()), K(target_cell.get_type()),
          K(src_cell), K(ret));
   } else {
     target_cell = src_cell;
@@ -1451,14 +1451,14 @@ int ObAggregateFunction::add_calc(common::ObObj &res,
   bool need_expr_calc = true;
   if (OB_ISNULL(expr_ctx_->calc_buf_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("expr context calc buf is null");
+    LOG_WDIAG("expr context calc buf is null");
   } else if (ObNumberType == left.get_type() && ObNumberType == right.get_type()) {
     number::ObNumber sum;
     char buf_alloc[MAX_CALC_BYTE_LEN];
     ObDataBuffer allocator(buf_alloc, MAX_CALC_BYTE_LEN);
 
     if (OB_FAIL(left.get_number().add(right.get_number(), sum, *(expr_ctx_->calc_buf_)))) {
-      LOG_WARN("number add failed", K(ret), K(left), K(right));
+      LOG_WDIAG("number add failed", K(ret), K(left), K(right));
     } else {
       ObObj sum_obj;
       sum_obj.set_number(sum);
@@ -1508,7 +1508,7 @@ int ObAggregateFunction::add_calc(common::ObObj &res,
   }
 
   if (OB_SUCC(ret) && need_expr_calc) {
-    LOG_WARN("ObObj type not supported or overflow when calc", K(left.get_type()), K(right.get_type()));
+    LOG_WDIAG("ObObj type not supported or overflow when calc", K(left.get_type()), K(right.get_type()));
     LOG_DEBUG("ObObj type not supported", K(left), K(right));
     ret = common::OB_ERR_UNEXPECTED;
   }
@@ -1522,7 +1522,7 @@ int ObAggregateFunction::calc_aggr_cell(const ObProxyExprType aggr_fun,
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(&res1) || OB_ISNULL(&res2)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("oprands is invalid");
+    LOG_WDIAG("oprands is invalid");
   }
   common::ObCollationType cs_type = res2.get_collation_type();
   LOG_DEBUG("ObAggregateFunction::calc_aggr_cell", K(cs_type), K(res1), K(res2));
@@ -1570,7 +1570,7 @@ int ObAggregateFunction::calc_aggr_cell(const ObProxyExprType aggr_fun,
       }
       default:
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown aggr function type", K(aggr_fun));
+        LOG_WDIAG("unknown aggr function type", K(aggr_fun));
         break;
     }
   }
@@ -1596,7 +1596,7 @@ int ObAggregateFunction::is_same_group(const ResultRow &row1, const ResultRow &r
 
   if (row1.count() != row2.count()) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(row1.count()), K(row2.count()));
+    LOG_WDIAG("invalid input", K(ret), K(row1.count()), K(row2.count()));
   }
 
   const ObObj *lcell = NULL;
@@ -1608,7 +1608,7 @@ int ObAggregateFunction::is_same_group(const ResultRow &row1, const ResultRow &r
     int64_t group_idx = (row1.count() - 1 - group_col_idxs_->at(i).index_);
     if (OB_UNLIKELY(group_idx >= row1.count() || group_idx < 0)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid argument", K(row1), K(row2), K(group_idx));
+      LOG_WDIAG("invalid argument", K(row1), K(row2), K(group_idx));
     } else {
       lcell = row1.at(group_idx);//&row1.reserved_cells_[group_idx];
       rcell = row2.at(group_idx);//&row2.get_cell(group_idx); // read through projector
@@ -1631,7 +1631,7 @@ int ObAggregateFunction::add_row(ResultRow *row)
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(row)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("inner error add_row", K(row));
+    LOG_WDIAG("inner error add_row", K(row));
   } else {
     agg_rows_->push_back(row);
   }

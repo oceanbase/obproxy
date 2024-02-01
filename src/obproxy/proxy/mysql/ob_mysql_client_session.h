@@ -29,6 +29,9 @@
 #include "iocore/net/ob_unix_net_vconnection.h"
 #include "ob_proxy_init.h"
 #include "obutils/ob_connection_diagnosis_trace.h"
+#include "rpc/proxy_protocol/proxy_protocol_v2.h"
+#include "lib/hash/ob_hashset.h"
+#include "lib/list//ob_list.h"
 
 namespace oceanbase
 {
@@ -54,6 +57,25 @@ class ObMysqlSM;
 class ObMysqlClientSession : public ObProxyClientSession
 {
 public:
+
+  struct ObConnTenantInfo
+  {
+    ObConnTenantInfo() : lookup_success_(false), vip_tenant_(), client_addr_() {}
+    ~ObConnTenantInfo() { }
+
+    void reset() {
+      lookup_success_ = false;
+      vip_tenant_.reset();
+      client_addr_.reset();
+      // slb_addr_.reset();
+    }
+
+    bool lookup_success_;
+    obutils::ObVipTenant vip_tenant_;
+    common::ObAddr client_addr_; // the client ip addr
+    // common::ObAddr slb_addr_;    // SLB ip addr
+  };
+
   ObMysqlClientSession();
   virtual ~ObMysqlClientSession() {}
 
@@ -71,6 +93,8 @@ public:
   int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
                      event::ObIOBufferReader *reader, dbconfig::ObShardConnector *shard_conn,
                      dbconfig::ObShardProp *shard_prop);
+
+  int get_vip_info();
 
   // Implement ObVConnection interface.
   virtual event::ObVIO *do_io_read(event::ObContinuation *c,
@@ -131,6 +155,13 @@ public:
   const char *get_read_state_str() const;
   const common::ObString &get_vip_tenant_name() { return ct_info_.vip_tenant_.tenant_name_; }
   const common::ObString &get_vip_cluster_name() { return ct_info_.vip_tenant_.cluster_name_; }
+  const common::ObString get_vip_vpc_info()
+  {
+    ObString ret_str;
+    ret_str.assign_ptr(ct_info_.vip_tenant_.vip_addr_.vpc_info_.ptr(),
+            static_cast<int>(ct_info_.vip_tenant_.vip_addr_.vpc_info_.len()));
+    return ret_str;
+  }
   bool is_vip_lookup_success() const { return ct_info_.lookup_success_; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
@@ -156,9 +187,9 @@ public:
   int check_update_ldc();
   bool need_print_trace_stat() const;
 
-  static int get_thread_init_cs_id(uint32_t &thread_init_cs_id, uint32_t &max_local_seq, const int64_t thread_id = -1);
-  int acquire_client_session_id();
-
+  // generate a cs_id, depends on proxy_id
+  static int get_thread_init_cs_id(const ObClientSessionIDVersion version, uint32_t &thread_init_cs_id, uint32_t &max_local_seq, const int64_t thread_id = -1);
+  int acquire_client_session_id(const ObClientSessionIDVersion version);
   static uint64_t get_next_proxy_sessid();
 
   int add_to_list();
@@ -166,6 +197,8 @@ public:
   int fill_session_priv_info();
 
   bool is_authorised_proxysys(const ObProxyLoginUserType type);
+
+  int fill_tenant_info_with_ppv2(proxy_protocol_v2::ProxyProtocolV2 &v2);
 
   common::ObString &get_login_packet();
 
@@ -209,10 +242,45 @@ public:
   // set timeout
   // set inactivity to the value timeout(in nanoseconds)
   void set_inactivity_timeout(const ObHRTime timeout, obutils::ObInactivityTimeoutEvent event);
-  void set_connect_timeout() { set_inactivity_timeout(get_connect_timeout(), obutils::OB_CLIENT_CONNECT_TIMEOUT); }
-  void set_wait_timeout() { set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_CLIENT_WAIT_TIMEOUT); }
-  void set_net_write_timeout() { set_inactivity_timeout(session_info_.get_net_write_timeout(), obutils::OB_CLIENT_NET_WRITE_TIMEOUT); }
-  void set_net_read_timeout() { set_inactivity_timeout(session_info_.get_net_read_timeout(), obutils::OB_CLIENT_NET_READ_TIMEOUT); }
+  void set_connect_timeout() {
+    set_inactivity_timeout(get_connect_timeout(), obutils::OB_CLIENT_CONNECT_TIMEOUT);
+    #ifdef ERRSIM
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(OB_E(EventTable::EN_CLIENT_CONNECT_TIMEOUT) OB_SUCCESS)) {
+      set_inactivity_timeout(1, obutils::OB_CLIENT_CONNECT_TIMEOUT);
+    }
+    #endif
+  }
+  void set_wait_timeout()
+  {
+    set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_CLIENT_WAIT_TIMEOUT);
+    #ifdef ERRSIM
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(OB_E(EventTable::EN_CLIENT_WAIT_TIMEOUT) OB_SUCCESS)) {
+      set_inactivity_timeout(1, obutils::OB_CLIENT_WAIT_TIMEOUT);
+    }
+    #endif
+  }
+  void set_net_write_timeout()
+  {
+    set_inactivity_timeout(session_info_.get_net_write_timeout(), obutils::OB_CLIENT_NET_WRITE_TIMEOUT);
+    #ifdef ERRSIM
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(OB_E(EventTable::EN_CLIENT_NET_WRITE_TIMEOUT) OB_SUCCESS)) {
+      set_inactivity_timeout(1, obutils::OB_CLIENT_NET_WRITE_TIMEOUT);
+    }
+    #endif
+  }
+  void set_net_read_timeout()
+  {
+    set_inactivity_timeout(session_info_.get_net_read_timeout(),obutils::OB_CLIENT_NET_READ_TIMEOUT);
+    #ifdef ERRSIM
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(OB_E(EventTable::EN_CLIENT_NET_READ_TIMEOUT) OB_SUCCESS)) {
+      set_inactivity_timeout(1, obutils::OB_CLIENT_NET_READ_TIMEOUT);
+    }
+    #endif
+  }
   bool is_in_trans() { return !is_waiting_trans_first_request_; }
 
   void cancel_inactivity_timeout();
@@ -276,6 +344,7 @@ public:
   void set_user_identity(const ObProxyLoginUserType identity) { session_info_.set_user_identity(identity); }
   void set_conn_prometheus_decrease(bool conn_prometheus_decrease) { conn_prometheus_decrease_ = conn_prometheus_decrease; }
   void set_vip_connection_decrease(bool vip_connection_decrease) { vip_connection_decrease_ = vip_connection_decrease; }
+  void record_sess_killed(uint32_t cs_id);
   optimizer::ObShardingSelectLogPlan* get_sharding_select_log_plan() const { return select_plan_; }
   void set_sharding_select_log_plan(optimizer::ObShardingSelectLogPlan *plan) {
     if (NULL != select_plan_) {
@@ -313,10 +382,17 @@ public:
 
   void set_using_ldg(const bool using_ldg) { using_ldg_ = using_ldg; }
   bool using_ldg() const { return using_ldg_; }
-  obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() { return timeout_event_;}
-  ObHRTime get_timeout() { return timeout_; }
+  obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() const { return timeout_event_;}
+  ObHRTime get_timeout_record() const { return timeout_record_; }
   bool is_request_transferring() const { return is_request_transferring_; }
   void set_request_transferring(bool is_transferring) { is_request_transferring_ = is_transferring; }
+  ObConnTenantInfo& get_ct_info() { return ct_info_; }
+
+  void set_cs_id_version(const ObClientSessionIDVersion cs_id_version) { cs_id_version_ = cs_id_version; }
+  ObClientSessionIDVersion get_cs_id_version() const { return cs_id_version_; }
+  bool is_cs_id_v2() const { return cs_id_version_ == CLIENT_SESSION_ID_V2; }
+  void set_connected_time(const int64_t connected_time) { connected_time_ = connected_time; }
+  int64_t  get_connected_time() const { return  connected_time_; }
 
 private:
   static uint32_t get_next_ps_stmt_id();
@@ -387,6 +463,8 @@ public:
   bool is_request_transferring_;
 
   ObProxySchemaKey schema_key_;
+  obutils::ObInactivityTimeoutEvent timeout_event_;     // just record timeout event for log
+  ObHRTime timeout_record_;                             // just record timeout for log
   LINK(ObMysqlClientSession, stat_link_);
 
 #ifdef USE_MYSQL_DEBUG_LISTS
@@ -402,17 +480,6 @@ private:
     MCS_HALF_CLOSED,
     MCS_CLOSED,
     MCS_MAX
-  };
-
-  struct ObConnTenantInfo
-  {
-    ObConnTenantInfo() : lookup_success_(false), vip_tenant_(), client_addr_(), slb_addr_() {}
-    ~ObConnTenantInfo() { }
-
-    bool lookup_success_;
-    obutils::ObVipTenant vip_tenant_;
-    common::ObAddr client_addr_; // the client ip addr
-    common::ObAddr slb_addr_;    // SLB ip addr
   };
 
   bool tcp_init_cwnd_set_;
@@ -451,7 +518,7 @@ private:
   event::ObIOBufferReader *buffer_reader_;
 
   ObMysqlSM *mysql_sm_;
-  
+
   ObClientReadState read_state_;
 
   event::ObVIO *ka_vio_;
@@ -469,9 +536,11 @@ private:
   uint32_t ps_id_;
   uint32_t cursor_id_;
   bool using_ldg_;
-  obutils::ObInactivityTimeoutEvent timeout_event_;
-  ObHRTime timeout_;
+  ObClientSessionIDVersion cs_id_version_;
+  int64_t connected_time_;
 private:
+  int acquire_client_session_id_v1();
+  int acquire_client_session_id_v2();
   DISALLOW_COPY_AND_ASSIGN(ObMysqlClientSession);
 };
 
@@ -515,7 +584,7 @@ inline common::ObAddr ObMysqlClientSession::get_real_client_addr(net::ObNetVConn
 inline void ObMysqlClientSession::set_inactivity_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event)
 {
   timeout_event_ = event;
-  timeout_ = timeout;
+  timeout_record_ = timeout;
   if (OB_LIKELY(NULL != client_vc_)) {
     client_vc_->set_inactivity_timeout(timeout);
   }
@@ -524,7 +593,7 @@ inline void ObMysqlClientSession::set_inactivity_timeout(ObHRTime timeout, obuti
 inline void ObMysqlClientSession::cancel_inactivity_timeout()
 {
   timeout_event_ = obutils::OB_TIMEOUT_UNKNOWN_EVENT;
-  timeout_ = 0;
+  timeout_record_ = 0;
   if (OB_LIKELY(NULL != client_vc_)) {
     client_vc_->cancel_inactivity_timeout();
   }
@@ -535,7 +604,7 @@ inline int ObMysqlClientSession::reset_read_buffer()
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(NULL == buffer_reader_) || OB_UNLIKELY(NULL == read_buffer_)) {
     ret =common::OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WARN, "invalid read_buffer", K(buffer_reader_), K(read_buffer_), K(ret));
+    PROXY_CS_LOG(WDIAG, "invalid read_buffer", K(buffer_reader_), K(read_buffer_), K(ret));
   } else {
     read_buffer_->dealloc_all_readers();
     read_buffer_->writer_ = NULL;
@@ -589,6 +658,7 @@ inline common::ObMysqlRandom &get_random_seed(const event::ObEThread &t)
 }
 
 int init_cs_map_for_thread();
+int init_cs_id_list_for_thread();
 int init_random_seed_for_thread();
 int init_random_seed_for_one_thread(int64_t index);
 
@@ -596,8 +666,36 @@ bool is_proxy_conn_id_avail(const uint64_t conn_id);
 bool is_server_conn_id_avail(const uint64_t conn_id);
 bool is_conn_id_avail(const int64_t conn_id, bool &is_proxy_generated);
 int extract_thread_id(const uint32_t cs_id, int64_t &thread_id);
+int extract_thread_id_v1(const uint32_t cs_id, int64_t &thread_id);
+int extract_thread_id_v2(const uint32_t cs_id, int64_t &thread_id);
+void extract_proxy_id_v2(const uint32_t cs_id, int64_t &proxy_id);
 
 int init_cs_map_for_one_thread(int64_t index);
+
+class ObClientSessionIDList
+{
+
+public:
+  ObClientSessionIDList() { using_cs_id_set_.create(HASH_BUCKET_SIZE, ObModIds::OB_PROXY_CLIENT_SESSION_ID, ObModIds::OB_PROXY_CLIENT_SESSION_ID); }
+  virtual ~ObClientSessionIDList() { using_cs_id_set_.destroy(); }
+public:
+  static const int64_t HASH_BUCKET_SIZE = 64;
+  int record_cs_id(const uint32_t cs_id);
+  int is_cs_id_exist(const uint32_t cs_id, bool &is_exist);
+  int erase_cs_id(const uint32_t cs_id);
+private:
+  ObSEArray<uint32_t, 32> unused_cs_id_list_;
+  hash::ObHashSet<uint32_t, hash::NoPthreadDefendMode> using_cs_id_set_;
+  common::DRWLock lock_;
+  DISALLOW_COPY_AND_ASSIGN(ObClientSessionIDList);
+};
+
+inline ObClientSessionIDList &get_client_session_id_list(const event::ObEThread &t)
+{
+  return *(const_cast<event::ObEThread *>(&t)->cs_id_list_);
+}
+
+
 
 } // end of namespace proxy
 } // end of namespace obproxy

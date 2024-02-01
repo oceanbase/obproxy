@@ -30,30 +30,6 @@ extern "C"
   void do_breakpad_init()
   {}
 }
-char *parray(char *buf, int64_t len, int64_t *array, int size)
-{
-  int64_t pos = 0;
-  int64_t count = 0;
-  for (int64_t i = 0; i < size; i++) {
-    count = snprintf(buf + pos, len - pos, "0x%lx ", array[i]);
-    if (count >= 0 && pos + count + 1 < len) {
-      pos += count;
-    } else {
-      _OB_LOG(WARN, "buf not enough, len=%ld, array_size=%d", len, size);
-      break;
-    }
-  }
-  buf[pos + 1] = 0;
-  return buf;
-}
-
-char *lbt()
-{
-  static __thread void *addrs[100];
-  static __thread char buf[LBT_BUFFER_LENGTH];
-  int size = backtrace(addrs, 100);
-  return parray(buf, sizeof(buf), (int64_t *)addrs, size);
-}
 
 void hex_dump(const void *data, const int32_t size,
               const bool char_type /*= true*/, const int32_t log_level /*= OB_LOG_LEVEL_DEBUG*/)
@@ -267,7 +243,7 @@ int convert_comment_str(char *comment_str)
   if (comment_str == NULL) {
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_SUCCESS != (ret = replace_str(comment_str, strlen(comment_str), "\\n", "\n"))) {
-    _OB_LOG(WARN, "replace \\n to enter failed, src_str=%s, ret=%d", comment_str, ret);
+    _OB_LOG(WDIAG, "replace \\n to enter failed, src_str=%s, ret=%d", comment_str, ret);
   }
   return ret;
 }
@@ -518,7 +494,7 @@ int mem_chunk_serialize(char *buf, int64_t len, int64_t &pos, const char *data, 
   if (NULL == buf || len <= 0 || pos < 0 || pos > len || NULL == data || 0 > data_len) {
     err = OB_INVALID_ARGUMENT;
   } else if (OB_SUCCESS != (err = serialization::encode_i64(buf, len, tmp_pos, data_len))) {
-    _OB_LOG(ERROR, "encode_i64(buf=%p, len=%ld, pos=%ld, i=%ld)=>%d", buf, len, tmp_pos, data_len,
+    _OB_LOG(EDIAG, "encode_i64(buf=%p, len=%ld, pos=%ld, i=%ld)=>%d", buf, len, tmp_pos, data_len,
             err);
   } else if (tmp_pos + data_len > len) {
     err = OB_SERIALIZE_ERROR;
@@ -538,7 +514,7 @@ int mem_chunk_deserialize(const char *buf, int64_t len, int64_t &pos, char *data
   if (NULL == buf || len <= 0 || pos < 0 || pos > len || NULL == data || data_len < 0) {
     err = OB_INVALID_ARGUMENT;
   } else if (OB_SUCCESS != (err = serialization::decode_i64(buf, len, tmp_pos, &real_len))) {
-    _OB_LOG(ERROR, "decode_i64(buf=%p, len=%ld, pos=%ld, i=%ld)=>%d", buf, len, tmp_pos, real_len,
+    _OB_LOG(EDIAG, "decode_i64(buf=%p, len=%ld, pos=%ld, i=%ld)=>%d", buf, len, tmp_pos, real_len,
             err);
   } else if (real_len > data_len || tmp_pos + real_len > len) {
     err = OB_DESERIALIZE_ERROR;
@@ -608,7 +584,7 @@ int replace_str(char *src_str, const int64_t src_str_buf_size,
 
   if (NULL == src_str || src_str_buf_size <= 0
       || NULL == match_str || NULL == replace_str) {
-    _OB_LOG(WARN, "invalid param, src_str=%p, src_str_buf_size=%ld, "
+    _OB_LOG(WDIAG, "invalid param, src_str=%p, src_str_buf_size=%ld, "
             "match_str=%p, replace_str=%p",
             src_str, src_str_buf_size, match_str, replace_str);
     ret = OB_ERROR;
@@ -620,7 +596,7 @@ int replace_str(char *src_str, const int64_t src_str_buf_size,
           + strlen(find_pos + match_str_len);
       if (str_len >= OB_MAX_EXPIRE_INFO_STRING_LENGTH
           || str_len >= src_str_buf_size) {
-        _OB_LOG(WARN, "str after replace is too large, new_size=%ld, "
+        _OB_LOG(WDIAG, "str after replace is too large, new_size=%ld, "
                 "new_buf_size=%ld, src_str_buf_size=%ld",
                 str_len, OB_MAX_EXPIRE_INFO_STRING_LENGTH, src_str_buf_size);
         ret = OB_ERROR;
@@ -644,7 +620,7 @@ int get_ethernet_speed(const char *devname, int64_t &speed)
 {
   int rc = OB_SUCCESS;
   if (NULL == devname) {
-    _OB_LOG(WARN, "invalid devname %p", devname);
+    _OB_LOG(WDIAG, "invalid devname %p", devname);
     rc = OB_INVALID_ARGUMENT;
   } else {
     rc = get_ethernet_speed(ObString::make_string(devname), speed);
@@ -658,12 +634,12 @@ int get_ethernet_speed(const ObString &devname, int64_t &speed)
   bool exist = false;
   char path[OB_MAX_FILE_NAME_LENGTH];
   if (0 == devname.length()) {
-    _OB_LOG(WARN, "empty devname");
+    _OB_LOG(WDIAG, "empty devname");
     rc = OB_INVALID_ARGUMENT;
   } else {
     IGNORE_RETURN snprintf(path, sizeof(path), "/sys/class/net/%.*s", devname.length(), devname.ptr());
     if (OB_SUCCESS != (rc = FileDirectoryUtils::is_exists(path, exist)) || !exist) {
-      _OB_LOG(WARN, "path %s not exist", path);
+      _OB_LOG(WDIAG, "path %s not exist", path);
       rc = OB_FILE_NOT_EXIST;
     }
   }
@@ -675,14 +651,14 @@ int get_ethernet_speed(const ObString &devname, int64_t &speed)
     IGNORE_RETURN snprintf(path, sizeof(path), "/sys/class/net/%.*s/bonding/",
                            devname.length(), devname.ptr());
     if (OB_SUCCESS != (rc = FileDirectoryUtils::is_exists(path, exist))) {
-      LIB_LOG(WARN, "check net file if exists failed.", K(rc));
+      LIB_LOG(WDIAG, "check net file if exists failed.", K(rc));
     } else if (exist) {
       IGNORE_RETURN snprintf(path, sizeof(path), "/sys/class/net/%.*s/bonding/slaves",
                              devname.length(), devname.ptr());
       if (OB_SUCCESS != (rc = load_file_to_string(path, alloc, str))) {
-        _OB_LOG(WARN, "load file %s failed, rc %d", path, rc);
+        _OB_LOG(WDIAG, "load file %s failed, rc %d", path, rc);
       } else if (0 == str.length()) {
-        _OB_LOG(WARN, "can't get slave ethernet");
+        _OB_LOG(WDIAG, "can't get slave ethernet");
         rc = OB_ERROR;
       } else {
         int len = 0;
@@ -697,7 +673,7 @@ int get_ethernet_speed(const ObString &devname, int64_t &speed)
     }
     if (OB_SUCCESS == rc) {
       if (OB_SUCCESS != (rc = load_file_to_string(path, alloc, str))) {
-        _OB_LOG(WARN, "load file %s failed, rc %d", path, rc);
+        _OB_LOG(WDIAG, "load file %s failed, rc %d", path, rc);
       } else {
         speed = atoll(str.ptr());
         speed = speed * 1024 * 1024 / 8;
@@ -714,7 +690,7 @@ bool is_case_space_equal(const char *s1, int64_t s1_len, const char *s2, int64_t
   //Check input
   if (NULL == s1 || NULL == s2 || s1_len < 0 || s2_len < 0) {
     result = false;
-    _OB_LOG(ERROR,
+    _OB_LOG(EDIAG,
             "Invalid argument, input arguments include NULL pointer or string length is less than zero.");
   } else if (s1 != s2) { //If s1 == s2,return 1
     while (1) {
@@ -781,7 +757,7 @@ bool is_n_case_space_equal(const char *s1, int64_t s1_len, const char *s2, int64
   //Check input
   if (NULL == s1 || NULL == s2 || s1_len < 0 || s2_len < 0) {
     result = false;
-    _OB_LOG(ERROR,
+    _OB_LOG(EDIAG,
             "Invalid argument, input arguments include NULL pointer or string length is less than zero.");
   } else if (s1 != s2) { //If s1 == s2,return 1
     while (1) {
@@ -1178,19 +1154,19 @@ int sql_append_hex_escape_str(const ObString &str, ObSqlString &sql)
   const int64_t need_len = sql.length() + str.length() * 2 + 3; // X''
 
   if (OB_FAIL(sql.reserve(need_len))) {
-    LOG_WARN("reserve sql failed, ", K(ret));
+    LOG_WDIAG("reserve sql failed, ", K(ret));
   } else if (OB_FAIL(sql.append("X'"))) {
-    LOG_WARN("append string failed", K(ret));
+    LOG_WDIAG("append string failed", K(ret));
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < str.length(); ++i) {
       if (OB_FAIL(sql.append_fmt("%02X", static_cast<uint8_t>(str.ptr()[i])))) {
-        LOG_WARN("append string failed", K(ret), K(i));
+        LOG_WDIAG("append string failed", K(ret), K(i));
       }
     }
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(sql.append("'"))) {
-      LOG_WARN("append string failed", K(ret));
+      LOG_WDIAG("append string failed", K(ret));
     }
   }
   return ret;
@@ -1202,7 +1178,7 @@ static int pidfile_test(const char *pidfile)
   int fd = open(pidfile, O_RDONLY);
 
   if (fd < 0) {
-    LOG_ERROR("fid file doesn't exist", K(pidfile));
+    LOG_EDIAG("fid file doesn't exist", K(pidfile));
     ret = OB_FILE_NOT_EXIST;
   } else {
     if (lockf(fd, F_TEST, 0) != 0) {
@@ -1221,10 +1197,10 @@ static int read_pid(const char *pidfile, long &pid)
   int fd = open(pidfile, O_RDONLY);
 
   if (fd < 0) {
-    LOG_ERROR("can't open pid file", K(pidfile), K(errno));
+    LOG_EDIAG("can't open pid file", K(pidfile), K(errno));
     ret = OB_FILE_NOT_EXIST;
   } else if (read(fd, buf, sizeof(buf)) <= 0) {
-    LOG_ERROR("fail to read pid from file", K(pidfile), K(errno));
+    LOG_EDIAG("fail to read pid from file", K(pidfile), K(errno));
     ret = OB_IO_ERROR;
   } else {
     pid = strtol(buf, NULL, 10);
@@ -1243,7 +1219,7 @@ static int use_daemon()
   const int nochdir = 1;
   const int noclose = 0;
   if (daemon(nochdir, noclose) < 0) {
-    LOG_ERROR("create daemon process fail", K(errno));
+    LOG_EDIAG("create daemon process fail", K(errno));
     ret = OB_ERR_SYS;
   }
   reset_tid_cache();
@@ -1258,33 +1234,33 @@ int start_daemon(const char *pidfile)
   ret = pidfile_test(pidfile);
 
   if (ret != OB_SUCCESS && ret != OB_FILE_NOT_EXIST) {
-    LOG_ERROR("pid already exists");
+    LOG_EDIAG("pid already exists");
   } else {
     ret = OB_SUCCESS;
   }
 
   // start daemon
   if (OB_SUCC(ret) && OB_FAIL(use_daemon())) {
-    LOG_ERROR("create daemon process fail", K(ret));
+    LOG_EDIAG("create daemon process fail", K(ret));
   }
 
   if (OB_SUCC(ret)) {
     int fd = open(pidfile, O_RDWR|O_CREAT, 0600);
 
     if (fd < 0) {  // open pidfile fail
-      LOG_ERROR("can't open pid file", K(pidfile), K(fd), K(errno));
+      LOG_EDIAG("can't open pid file", K(pidfile), K(fd), K(errno));
       ret = OB_IO_ERROR;
     } else if (lockf(fd, F_TLOCK, 0) < 0) {  // other process has locked it
       long pid = 0;
       if (OB_FAIL(read_pid(pidfile, pid))) {
-        LOG_ERROR("read pid fail", K(pidfile), K(ret));
+        LOG_EDIAG("read pid fail", K(pidfile), K(ret));
       } else {
-        LOG_ERROR("process is running", K(pid));
+        LOG_EDIAG("process is running", K(pid));
       }
       close(fd);
     } else {  // I hold the lock, won't close this fd.
       if (ftruncate(fd, 0) < 0) {
-        LOG_ERROR("ftruncate pid file fail", K(pidfile), K(errno));
+        LOG_EDIAG("ftruncate pid file fail", K(pidfile), K(errno));
         ret = OB_IO_ERROR;
       } else {
         char buf[32] = {};
@@ -1292,7 +1268,7 @@ int start_daemon(const char *pidfile)
         ssize_t len = strlen(buf);
         ssize_t nwrite = write(fd, buf, len);
         if (len != nwrite) {
-          LOG_ERROR("write pid file fail", K(pidfile), K(errno));
+          LOG_EDIAG("write pid file fail", K(pidfile), K(errno));
           ret = OB_IO_ERROR;
         }
       }
@@ -1309,20 +1285,20 @@ int ob_alloc_printf(ObString &result, ObIAllocator &alloc, const char* fmt, va_l
   va_copy(ap2, ap);
   int64_t n = vsnprintf(NULL, 0, fmt, ap);
   if (n < 0) {
-    LOG_ERROR("vsnprintf failed", K(n), K(errno));
+    LOG_EDIAG("vsnprintf failed", K(n), K(errno));
     ret = OB_ERR_SYS;
   } else {
     char* buf = static_cast<char*>(alloc.alloc(n+1));
     if (NULL == buf) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no memory");
+      LOG_WDIAG("no memory");
     } else {
       int64_t n2 = vsnprintf(buf, n+1, fmt, ap2);
       if (n2 < 0) {
-        LOG_ERROR("vsnprintf failed", K(n), K(errno));
+        LOG_EDIAG("vsnprintf failed", K(n), K(errno));
         ret = OB_ERR_SYS;
       } else if (n != n2) {
-        LOG_ERROR("vsnprintf failed", K(n), K(n2));
+        LOG_EDIAG("vsnprintf failed", K(n), K(n2));
         ret = OB_ERR_SYS;
       } else {
         result.assign_ptr(buf, static_cast<int32_t>(n));
@@ -1416,10 +1392,10 @@ int ObBandwidthThrottle::init(const int64_t rate, const int64_t buflen)
   int ret = OB_SUCCESS;
   if (inited_) {
     ret = OB_INIT_TWICE;
-    STORAGE_LOG(WARN, "init throttle twice.", K(ret));
+    STORAGE_LOG(WDIAG, "init throttle twice.", K(ret));
   } else if (rate <= 0 || buflen <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", K(ret), K(rate), K(buflen));
+    COMMON_LOG(WDIAG, "invalid arguments.", K(ret), K(rate), K(buflen));
   } else {
     rate_ = rate;
     buf_len_ = buflen;
@@ -1439,7 +1415,7 @@ int ObBandwidthThrottle::start_task()
   int64_t current_time = ObTimeUtility::current_time();
   if (!inited_) {
     ret = OB_NOT_INIT;
-    STORAGE_LOG(WARN, "throttle is not initialized.", K(ret));
+    STORAGE_LOG(WDIAG, "throttle is not initialized.", K(ret));
   } else {
     ObSpinLockGuard guard(lock_);
     if (0 == start_time_) {
@@ -1465,10 +1441,10 @@ int ObBandwidthThrottle::limit(const int64_t bytes, int64_t &sleep_time)
   sleep_time = 0;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    STORAGE_LOG(WARN, "throttle is not initialized.", K(ret));
+    STORAGE_LOG(WDIAG, "throttle is not initialized.", K(ret));
   } else if (bytes <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid input bytes.", K(ret), K(bytes));
+    COMMON_LOG(WDIAG, "invalid input bytes.", K(ret), K(bytes));
   } else {
     ObSpinLockGuard guard(lock_);
     lamt_ += bytes;

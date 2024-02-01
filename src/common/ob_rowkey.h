@@ -191,7 +191,7 @@ inline int64_t ObRowkey::get_deep_copy_size() const
 
   if (OB_UNLIKELY(!is_legal())) {
     tmp_ret = OB_INVALID_DATA;
-    COMMON_LOG(ERROR, "illegal rowkey.",
+    COMMON_LOG(EDIAG, "illegal rowkey.",
                KP_(obj_ptr), K_(obj_cnt), K(tmp_ret));
   } else {
     for (int64_t i = 0; i < obj_cnt_; ++i) {
@@ -213,13 +213,13 @@ int ObRowkey::deserialize(Allocator &allocator, const char *buf, const int64_t d
 
   if (NULL == buf || data_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(buf), K(data_len), K(ret));
   } else if (OB_FAIL(copy_rowkey.deserialize(buf, data_len, pos))) {
-    COMMON_LOG(WARN, "deserlize to shallow copy key failed.",
+    COMMON_LOG(WDIAG, "deserlize to shallow copy key failed.",
                KP(buf), K(data_len), K(pos), K(ret));
   } else if (OB_FAIL(copy_rowkey.deep_copy(*this, allocator))) {
-    COMMON_LOG(WARN, "deep copy to self failed.",
+    COMMON_LOG(WDIAG, "deep copy to self failed.",
                KP(buf), K(data_len), K(pos), K(ret));
   }
 
@@ -233,7 +233,7 @@ int ObRowkey::deep_copy(char *ptr, int64_t size) const
   int64_t obj_arr_len = obj_cnt_ * sizeof(ObObj);
   if (OB_UNLIKELY(NULL == ptr) || OB_UNLIKELY(size < obj_arr_len)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(ptr), K(size), KP_(obj_cnt), K(ret));
   } else if (obj_cnt_ > 0 && NULL != obj_ptr_) {
     ObObj *obj_ptr = NULL;
@@ -244,7 +244,7 @@ int ObRowkey::deep_copy(char *ptr, int64_t size) const
 
     for (int64_t i = 0; i < obj_cnt_ && OB_SUCCESS == ret; ++i) {
       if (OB_FAIL(obj_ptr[i].deep_copy(obj_ptr_[i], ptr, size, pos))) {
-        COMMON_LOG(WARN, "deep copy object failed.",
+        COMMON_LOG(WDIAG, "deep copy object failed.",
                    K(i), K(obj_ptr_[i]), K(size), K(pos), K(ret));
       }
     }
@@ -264,15 +264,15 @@ int ObRowkey::deep_copy(ObRowkey &rhs, Allocator &allocator) const
   char *ptr = NULL;
   if (NULL == (ptr = (char *)allocator.alloc(total_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "allocate mem for obj array failed.",
+    COMMON_LOG(WDIAG, "allocate mem for obj array failed.",
                K(total_len), K(ret));
   } else if (OB_UNLIKELY(!is_legal())) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "illegal rowkey.",
+    COMMON_LOG(WDIAG, "illegal rowkey.",
                KP_(obj_ptr), K_(obj_cnt), K(ret));
   } else if (obj_cnt_ > 0 && NULL != obj_ptr_) {
     if (OB_FAIL(deep_copy(ptr, total_len))) {
-      COMMON_LOG(WARN, "deep copy rowkey failed.",
+      COMMON_LOG(WDIAG, "deep copy rowkey failed.",
                  KP_(obj_ptr), KP_(obj_cnt), K(ret));
     } else {
       rhs.assign(reinterpret_cast<ObObj *>(ptr), obj_cnt_);
@@ -331,11 +331,11 @@ inline int ObRowkey::obj_copy(ObRowkey &dest_rowkey, ObObj *obj_buf, const int64
   if (OB_UNLIKELY(NULL == obj_buf)
       || OB_UNLIKELY(cnt < obj_cnt_)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid argument.",
+    COMMON_LOG(WDIAG, "invalid argument.",
                KP(obj_buf), K(cnt), K_(obj_cnt), K(ret));
   } else if (OB_UNLIKELY(!is_legal())) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "illegal rowkey.",
+    COMMON_LOG(WDIAG, "illegal rowkey.",
                KP_(obj_ptr), K_(obj_cnt), K(ret));
   } else {
     for (int64_t i = 0; i < obj_cnt_; ++i) {

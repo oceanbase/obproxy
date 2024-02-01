@@ -33,11 +33,11 @@ int OMPKResheader::serialize(char *buffer, int64_t len, int64_t &pos) const
   int ret = OB_SUCCESS;
 
   if (NULL == buffer || len <= 0 || pos < 0) {
-    LOG_WARN("invalid argument", K(buffer), K(len), K(pos));
+    LOG_WDIAG("invalid argument", K(buffer), K(len), K(pos));
     ret = OB_INVALID_ARGUMENT;
   } else {
     if (OB_FAIL(ObMySQLUtil::store_length(buffer, len, field_count_, pos))) {
-      LOG_WARN("serialize field count fail", K(buffer), K(len), K(pos), K(field_count_));
+      LOG_WDIAG("serialize field count fail", K(buffer), K(len), K(pos), K(field_count_));
     }
   }
 
@@ -58,11 +58,11 @@ int OMPKResheader::decode()
 
   if (NULL != cdata_) {
     if (OB_FAIL(ObMySQLUtil::get_length(pos, field_count_))) {
-      LOG_WARN("get len fail", K(pos));
+      LOG_WDIAG("get len fail", K(pos));
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K_(cdata), K(ret));
+    LOG_EDIAG("null input", K_(cdata), K(ret));
   }
 
   return ret;

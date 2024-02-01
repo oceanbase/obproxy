@@ -59,12 +59,12 @@ int ObRowDesc::add_column_desc(const uint64_t table_id, const uint64_t column_id
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(cells_desc_count_ >= MAX_COLUMNS_COUNT)) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_ERROR("too many column for a row", K(table_id), K(column_id));
+    LOG_EDIAG("too many column for a row", K(table_id), K(column_id));
   } else {
     cells_desc_[cells_desc_count_].table_id_ = table_id;
     cells_desc_[cells_desc_count_].column_id_ = column_id;
     if (OB_FAIL(hash_map_.set_index(cells_desc_count_))) {
-      LOG_WARN("failed to insert column desc", K(ret));
+      LOG_WDIAG("failed to insert column desc", K(ret));
     } else {
       ++cells_desc_count_;
     }
@@ -98,7 +98,7 @@ ObRowDesc &ObRowDesc::operator = (const ObRowDesc &other)
   int ret = OB_SUCCESS;
   if (this != &other) {
     if (OB_FAIL(assign(other))) {
-      LOG_WARN("fail to assign row desc", K(ret));
+      LOG_WDIAG("fail to assign row desc", K(ret));
     }
   }
   return *this;
@@ -123,7 +123,7 @@ int ObRowDesc::assign(const ObRowDesc &other)
 
   for (int64_t i = 0; OB_SUCC(ret) && i < cells_desc_count_; i++) {
     if (OB_FAIL(hash_map_.set_index(i))) {
-      LOG_WARN("failed to insert column desc", K(ret));
+      LOG_WDIAG("failed to insert column desc", K(ret));
     }
   }
 
@@ -142,17 +142,17 @@ DEFINE_SERIALIZE(ObRowDesc)
   ret = encode_vi64(buf, buf_len, pos, column_cnt);
   for (int64_t i = 0; OB_SUCC(ret) && i < column_cnt; i++) {
     if (OB_FAIL(get_tid_cid(i, tid, cid))) {
-      LOG_ERROR("get tid cid error", K(ret));
+      LOG_EDIAG("get tid cid error", K(ret));
     } else if (OB_FAIL(encode_vi64(buf, buf_len, pos, static_cast<int64_t>(tid)))) {
-      LOG_ERROR("encode tid error", K(ret));
+      LOG_EDIAG("encode tid error", K(ret));
     } else if (OB_FAIL(encode_vi64(buf, buf_len, pos, static_cast<int64_t>(cid)))) {
-      LOG_ERROR("encode cid error", K(ret));
+      LOG_EDIAG("encode cid error", K(ret));
     }
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_vi64(buf, buf_len, pos, rowkey_cell_count_))) {
-      LOG_WARN("fail to encode", K(ret), K_(rowkey_cell_count));
+      LOG_WDIAG("fail to encode", K(ret), K_(rowkey_cell_count));
     }
   }
 
@@ -174,18 +174,18 @@ DEFINE_DESERIALIZE(ObRowDesc)
   ret = decode_vi64(buf, data_len, pos, &column_cnt);
   for (int64_t i = 0; OB_SUCC(ret) && i < column_cnt; i++) {
     if (OB_FAIL(decode_vi64(buf, data_len, pos, &tid))) {
-      LOG_ERROR("decode tid error", K(ret));
+      LOG_EDIAG("decode tid error", K(ret));
     } else if (OB_FAIL(decode_vi64(buf, data_len, pos, &cid))) {
-      LOG_ERROR("decode cid error", K(ret));
+      LOG_EDIAG("decode cid error", K(ret));
     } else if (OB_FAIL(add_column_desc(tid, cid))) {
-      LOG_ERROR("add column desc error", K(ret));
+      LOG_EDIAG("add column desc error", K(ret));
     }
     //_OB_LOG(DEBUG, "tid %lu, cid %lu", tid, cid);
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(decode_vi64(buf, data_len, pos, &rowkey_cell_count_))) {
-      LOG_WARN("fail to decode", K(ret));
+      LOG_WDIAG("fail to decode", K(ret));
     }
   }
 
@@ -206,7 +206,7 @@ DEFINE_GET_SERIALIZE_SIZE(ObRowDesc)
   size += encoded_length_vi64(column_cnt);
   for (int64_t i = 0; OB_SUCC(ret) && i < column_cnt; i++) {
     if (OB_FAIL(get_tid_cid(i, tid, cid))) {
-      LOG_ERROR("get tid cid error", K(ret));
+      LOG_EDIAG("get tid cid error", K(ret));
     } else {
       size += encoded_length_vi64(static_cast<int64_t>(tid));
       size += encoded_length_vi64(static_cast<int64_t>(cid));

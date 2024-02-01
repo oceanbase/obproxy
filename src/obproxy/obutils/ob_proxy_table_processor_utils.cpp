@@ -143,7 +143,7 @@ int ObProxyTableProcessorUtils::get_proxy_info(ObMysqlProxy &mysql_proxy,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(proxy_ip) || OB_UNLIKELY(proxy_port <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
+    LOG_WDIAG("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
   } else {
     ObMysqlResultHandler result_handler;
     char sql[OB_SHORT_SQL_LENGTH];
@@ -154,24 +154,24 @@ int ObProxyTableProcessorUtils::get_proxy_info(ObMysqlProxy &mysql_proxy,
                            proxy_ip, proxy_port, INT64_MAX);
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
     } else if (OB_FAIL(mysql_proxy.read(sql, result_handler))) {
-      LOG_WARN("fail to read proxy info", K(sql), K(ret));
+      LOG_WDIAG("fail to read proxy info", K(sql), K(ret));
     } else {
       if (OB_FAIL(result_handler.next())) {
         if (OB_UNLIKELY(OB_ITER_END == ret)) { //no record
           ret = OB_ENTRY_NOT_EXIST;
           LOG_INFO("no record found", K(sql), K(ret));
         } else {
-          LOG_WARN("fail to get proxy info", K(sql), K(ret));
+          LOG_WDIAG("fail to get proxy info", K(sql), K(ret));
         }
       } else {
         if (OB_FAIL(fill_proxy_info(result_handler, proxy_info))) {
-          LOG_WARN("fail to fill proxy info", K(ret));
+          LOG_WDIAG("fail to fill proxy info", K(ret));
         } else {
           // check if this is only one
           if (OB_UNLIKELY(OB_ITER_END != (ret = result_handler.next()))) {
-            LOG_WARN("fail to get proxy info, there is more than one record", K(ret));
+            LOG_WDIAG("fail to get proxy info, there is more than one record", K(ret));
             ret = OB_ERR_UNEXPECTED;
           } else {
             ret = OB_SUCCESS;
@@ -208,7 +208,7 @@ int ObProxyTableProcessorUtils::fill_proxy_info(ObMysqlResultHandler &result_han
   if (OB_SUCC(ret)) {
     ObString cmd_str(cmd_str_len, cmd_str_buf);
     if (OB_FAIL(proxy_info.parse_hu_cmd(cmd_str))) {
-      LOG_WARN("fail to parse hot upgrade cmd", K(cmd_str), K(ret));
+      LOG_WDIAG("fail to parse hot upgrade cmd", K(cmd_str), K(ret));
     } else {
       LOG_DEBUG("fill proxy info succ", K(proxy_info), K(ret));
     }
@@ -240,11 +240,11 @@ int ObProxyTableProcessorUtils::get_proxy_kv_table_info(ObMysqlProxy &mysql_prox
 
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_FAIL(mysql_proxy.read(sql, result_handler))) {
-    LOG_WARN("fail to read proxy kv table info", K(sql), K(ret));
+    LOG_WDIAG("fail to read proxy kv table info", K(sql), K(ret));
   } else if (OB_FAIL(fill_kv_table_info(result_handler, rows, kv_info))) {
-    LOG_WARN("fail to fill proxy kv table info", K(ret));
+    LOG_WDIAG("fail to fill proxy kv table info", K(ret));
   } else {
     LOG_DEBUG("succ to get proxy kv table info", K(rows), K(kv_info));
   }
@@ -263,7 +263,7 @@ int ObProxyTableProcessorUtils::fill_kv_table_info(ObMysqlResultHandler &result_
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(kv_info.fill_rows(rows, kv_name, kv_value))) {
-        LOG_WARN("fail to fill rows, ignore it, continue", K(kv_name), K(kv_value), K(ret));
+        LOG_WDIAG("fail to fill rows, ignore it, continue", K(kv_name), K(kv_value), K(ret));
         ret = OB_SUCCESS;
       } else {
         LOG_DEBUG("succ to fill rows", K(kv_name), K(kv_value));
@@ -276,7 +276,7 @@ int ObProxyTableProcessorUtils::fill_kv_table_info(ObMysqlResultHandler &result_
   if (OB_LIKELY(OB_ITER_END == ret)) {
     ret = OB_SUCCESS;
   } else {
-    LOG_WARN("fail to get result from result_handler set", K(ret));
+    LOG_WDIAG("fail to get result from result_handler set", K(ret));
   }
   return ret;
 }
@@ -289,7 +289,7 @@ int ObProxyTableProcessorUtils::add_or_modify_proxy_info(ObMysqlProxy &mysql_pro
   const int64_t sql_len = OB_SHORT_SQL_LENGTH * 4;
   if (OB_ISNULL(sql = static_cast<char *>(op_fixed_mem_alloc(sql_len)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else {
     const ObProxyKernelRelease kernel_release = get_global_config_server_processor().get_kernel_release();
     const char *null_str = "";
@@ -331,12 +331,12 @@ int ObProxyTableProcessorUtils::add_or_modify_proxy_info(ObMysqlProxy &mysql_pro
     int64_t affected_rows = -1;
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= sql_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql), K(sql_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(sql_len), K(ret));
     } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
-      LOG_WARN("fail to execute sql", K(sql), K(ret));
+      LOG_WDIAG("fail to execute sql", K(sql), K(ret));
     } else if (OB_UNLIKELY(affected_rows < 0) || OB_UNLIKELY(affected_rows > 2)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error", K(sql), K(affected_rows), K(ret));
+      LOG_WDIAG("unexpected error", K(sql), K(affected_rows), K(ret));
     }
   }
   if (OB_LIKELY(NULL != sql)) {
@@ -351,7 +351,7 @@ int ObProxyTableProcessorUtils::add_proxy_kv_table_info(ObMysqlProxy &mysql_prox
   int ret = OB_SUCCESS;
   if (OB_ISNULL(appname)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(appname), K(ret));
+    LOG_WDIAG("invalid argument", K(appname), K(ret));
   } else {
     char sql[OB_SHORT_SQL_LENGTH];
     const ObString &bu_status = ObHotUpgraderInfo::get_bu_status_string(BUS_UPGRADE_OFF);
@@ -366,17 +366,17 @@ int ObProxyTableProcessorUtils::add_proxy_kv_table_info(ObMysqlProxy &mysql_prox
     int64_t affected_rows = -1;
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql), K(OB_SHORT_SQL_LENGTH), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(OB_SHORT_SQL_LENGTH), K(ret));
     } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
       if (-ER_DUP_ENTRY == ret) {
         LOG_INFO("appname has already be added", K(sql), K(appname), K(ret));
         ret = OB_SUCCESS;
       } else {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       }
     } else if (OB_UNLIKELY(1 != affected_rows)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error", K(sql), K(affected_rows), K(ret));
+      LOG_WDIAG("unexpected error", K(sql), K(affected_rows), K(ret));
     } else {/*do nothing*/}
   }
   return ret;
@@ -395,16 +395,16 @@ int ObProxyTableProcessorUtils::get_config_version(ObMysqlProxy &mysql_proxy, in
                       INT64_MAX);
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_FAIL(mysql_proxy.read(sql, result_handler))) {
-    LOG_WARN("fail to read proxy info", K(sql), K(ret));
+    LOG_WDIAG("fail to read proxy info", K(sql), K(ret));
   } else {
     if (OB_FAIL(result_handler.next())) {
       if (OB_ITER_END == ret) { //no record
         ret = OB_ENTRY_NOT_EXIST;
-        LOG_WARN("no result", K(sql), K(ret));
+        LOG_WDIAG("no result", K(sql), K(ret));
       } else {
-        LOG_WARN("fail to get result", K(sql), K(ret));
+        LOG_WDIAG("fail to get result", K(sql), K(ret));
       }
     } else {
       int64_t value = 0;
@@ -412,7 +412,7 @@ int ObProxyTableProcessorUtils::get_config_version(ObMysqlProxy &mysql_proxy, in
       //check if this is only one
       if (OB_SUCC(ret)) {
         if (OB_ITER_END != (ret = result_handler.next())) {
-          LOG_WARN("fail to get result, there is more than one record", K(sql), K(value), K(ret));
+          LOG_WDIAG("fail to get result, there is more than one record", K(sql), K(value), K(ret));
           ret = OB_ERR_UNEXPECTED;
         } else {
           version = value;
@@ -435,11 +435,11 @@ int ObProxyTableProcessorUtils::get_vip_tenant_info(ObMysqlProxy &mysql_proxy,
                          ObProxyTableInfo::PROXY_VIP_TENANT_TABLE_NAME, INT64_MAX);
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_FAIL(mysql_proxy.read(sql, result_handler))) {
-    LOG_WARN("fail to read all vip tenant", K(sql), K(ret));
+    LOG_WDIAG("fail to read all vip tenant", K(sql), K(ret));
   } else if (OB_FAIL(fill_local_vt_cache(result_handler, cache_map))) {
-    LOG_WARN("fail to fill vip tenant cache", K(ret));
+    LOG_WDIAG("fail to fill vip tenant cache", K(ret));
   } else {
     LOG_DEBUG("succ to vip tenant info", "count", cache_map.count());
   }
@@ -468,7 +468,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
   json::Parser parser;
 
   if (OB_FAIL(parser.init(&json_allocator))) {
-    LOG_WARN("json parser init failed", K(ret));
+    LOG_WDIAG("json parser init failed", K(ret));
   }
 
   int64_t batch_size = get_global_proxy_config().metadb_batch_size;
@@ -486,20 +486,20 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
 
     if (OB_SUCC(ret) && !info.empty()) {
       if (OB_FAIL(parser.parse(info.ptr(), info.length(), info_config))) {
-        LOG_WARN("parse json failed", K(ret), K(info));
+        LOG_WDIAG("parse json failed", K(ret), K(info));
       } if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(info_config, json::JT_OBJECT))) {
-        LOG_WARN("check config info type failed", K(ret));
+        LOG_WDIAG("check config info type failed", K(ret));
       } else {
         DLIST_FOREACH(it, info_config->get_object()) {
           if (it->name_ == JSON_REQUEST_TARGET) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, json::JT_NUMBER))) {
-              LOG_WARN("check config info type failed", K(ret));
+              LOG_WDIAG("check config info type failed", K(ret));
             } else {
               request_target_type = it->value_->get_number();
             }
           } else if (it->name_ == JSON_RW_TYPE) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, json::JT_NUMBER))) {
-              LOG_WARN("check config info type failed", K(ret));
+              LOG_WDIAG("check config info type failed", K(ret));
             } else {
               rw_type = it->value_->get_number();
             }
@@ -512,21 +512,21 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
       need_free = true;
       if (OB_ISNULL(vip_tenant = op_alloc(ObVipTenant))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for ObVipTenant", K(ret));
+        LOG_WDIAG("fail to alloc memory for ObVipTenant", K(ret));
       } else if (FALSE_IT(vip_tenant->vip_addr_.set(vip, static_cast<int32_t>(vport), vid))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to set vip_addr", K(vip), K(vport), K(vid), K(ret));
+        LOG_WDIAG("fail to set vip_addr", K(vip), K(vport), K(vid), K(ret));
       } else if (OB_FAIL(vip_tenant->set_tenant_cluster(tenant_name, cluster_name))) {
-        LOG_WARN("fail to set tenant cluster for ObVipTenant", K(tenant_name), K(cluster_name), K(ret));
+        LOG_WDIAG("fail to set tenant cluster for ObVipTenant", K(tenant_name), K(cluster_name), K(ret));
       } else if (OB_FAIL(vip_tenant->set_request_target_type(request_target_type))) {
-        LOG_WARN("unexpected error", K(ret));
+        LOG_WDIAG("unexpected error", K(ret));
       } else if (OB_FAIL(vip_tenant->set_rw_type(rw_type))) {
-        LOG_WARN("unexpected error", K(ret));
+        LOG_WDIAG("unexpected error", K(ret));
       } else if (OB_UNLIKELY(!vip_tenant->is_valid())) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid input value", KPC(vip_tenant), K(ret));
+        LOG_WDIAG("invalid input value", KPC(vip_tenant), K(ret));
       } else if (OB_FAIL(cache_map.unique_set(vip_tenant))) {
-        LOG_WARN("fail to insert one vip_tenant into cache_map", K(*vip_tenant), K(ret));
+        LOG_WDIAG("fail to insert one vip_tenant into cache_map", K(*vip_tenant), K(ret));
       } else {
         need_free = false;
         char request_target_buf[32];
@@ -539,21 +539,21 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
         rw_string.assign_ptr(rw_buf, rw_len);
         if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
           vid, vip, vport, "", "", "proxy_tenant_name", tenant_name, "LEVEL_VIP"))) {
-          LOG_WARN("store proxy_tenant_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
+          LOG_WDIAG("store proxy_tenant_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
         } else if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
           vid, vip, vport, "", "", "rootservice_cluster_name", cluster_name, "LEVEL_VIP"))) {
-          LOG_WARN("store rootservice_cluster_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
+          LOG_WDIAG("store rootservice_cluster_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
         }
         if (OB_SUCC(ret) && -1 != rw_type) {
           if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
             vid, vip, vport, tenant_name, cluster_name, "obproxy_read_only", rw_string, "LEVEL_VIP"))) {
-            LOG_WARN("store obporxy_read_only failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(rw_type), K(ret));
+            LOG_WDIAG("store obporxy_read_only failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(rw_type), K(ret));
           }
         }
         if (OB_SUCC(ret) && -1 != request_target_type) {
           if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
             vid, vip, vport, tenant_name, cluster_name, "obproxy_read_consistency", request_target_string, "LEVEL_VIP"))) {
-            LOG_WARN("store obproxy_read_consistency failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(request_target_type), K(ret));
+            LOG_WDIAG("store obproxy_read_consistency failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(request_target_type), K(ret));
           }
         }
         if (OB_SUCC(ret)) {
@@ -608,14 +608,14 @@ int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
     // Does not support ipv6 yet
     if (OB_UNLIKELY(NO_FD == info.ipv4_fd_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("this process is inherited born, but listen fd is invalid",
+      LOG_WDIAG("this process is inherited born, but listen fd is invalid",
                "is_inherited", info.is_inherited_, "fd", info.ipv4_fd_, K(ret));
     } else {
       struct sockaddr sock_addr;
       int64_t namelen = sizeof(sock_addr);
       memset(&sock_addr, 0, namelen);
       if (OB_FAIL(ObSocketManager::getsockname(info.ipv4_fd_, &sock_addr , &namelen))) {
-        LOG_WARN("fail to get sock name", K(info.ipv4_fd_), K(ret));
+        LOG_WDIAG("fail to get sock name", K(info.ipv4_fd_), K(ret));
       } else {
         struct sockaddr_in *ain = (sockaddr_in *)&sock_addr;
         inbound_ip.assign(sock_addr);
@@ -629,7 +629,7 @@ int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
     if (OB_UNLIKELY(0 != (ip_ret = inbound_ip.load(get_global_proxy_config().local_bound_ip)))) {
       ret = OB_ERR_UNEXPECTED;
       const char *local_bound_ip = get_global_proxy_config().local_bound_ip;
-      LOG_WARN("fail to load local bound ip", K(ip_ret), K(local_bound_ip), K(ret));
+      LOG_WDIAG("fail to load local bound ip", K(ip_ret), K(local_bound_ip), K(ret));
     }
   }
 
@@ -647,7 +647,7 @@ int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
     if (inbound_addr == any_addr || inbound_addr == local_addr) {
       memset(ip_str, 0, MAX_IP_ADDR_LENGTH);
       if (OB_FAIL(get_one_local_addr(ip_str, MAX_IP_ADDR_LENGTH))) {
-        LOG_WARN("fail to get one local addr", K(ret));
+        LOG_WDIAG("fail to get one local addr", K(ret));
       }
     }
   }
@@ -656,7 +656,7 @@ int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
     addr.set_ip_addr(ip_str, port);
     if (OB_UNLIKELY(!addr.is_valid())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("invalid addr", K(addr), K(ret));
+      LOG_WDIAG("invalid addr", K(addr), K(ret));
     }
   }
   return ret;
@@ -701,12 +701,12 @@ int ObProxyTableProcessorUtils::update_proxy_info(ObMysqlProxy &mysql_proxy,
   int64_t affected_rows = -1;
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
-    LOG_WARN("fail to execute sql", K(sql), K(ret));
+    LOG_WDIAG("fail to execute sql", K(sql), K(ret));
   } else if (OB_UNLIKELY(affected_rows < 0) || OB_UNLIKELY(affected_rows > 1)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected error", K(sql), K(affected_rows), K(ret));
+    LOG_WDIAG("unexpected error", K(sql), K(affected_rows), K(ret));
   } else {}
 
   if (OB_SUCC(ret) || OB_UNLIKELY(-1 == affected_rows)) {
@@ -727,7 +727,7 @@ int ObProxyTableProcessorUtils::update_proxy_table_config(ObMysqlProxy &mysql_pr
       || OB_UNLIKELY(proxy_port <= 0)
       || OB_UNLIKELY(rc_status < RCS_NONE && rc_status >= RCS_MAX)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(proxy_ip), K(proxy_port), K(rc_status), K(ret));
+    LOG_WDIAG("invalid argument", K(proxy_ip), K(proxy_port), K(rc_status), K(ret));
   } else {
     char sql[OB_SHORT_SQL_LENGTH];
     int64_t affected_rows = -1;
@@ -739,12 +739,12 @@ int ObProxyTableProcessorUtils::update_proxy_table_config(ObMysqlProxy &mysql_pr
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
     } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
-      LOG_WARN("fail to execute sql", K(sql), K(ret));
+      LOG_WDIAG("fail to execute sql", K(sql), K(ret));
     } else if (OB_UNLIKELY(affected_rows < 0) || OB_UNLIKELY(affected_rows > 1)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error", K(sql), K(affected_rows), K(ret));
+      LOG_WDIAG("unexpected error", K(sql), K(affected_rows), K(ret));
     } else { }
   }
   return ret;
@@ -769,7 +769,7 @@ int ObProxyTableProcessorUtils::get_proxy_update_hu_cmd_sql(char *sql_buf,
       || OB_UNLIKELY(orig_cmd_either < HUC_NONE && orig_cmd_either > HUC_MAX)
       || OB_UNLIKELY(orig_cmd_another < HUC_NONE && orig_cmd_another > HUC_MAX)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(sql_buf), K(buf_len), K(proxy_ip), K(proxy_port), K(target_cmd),
+    LOG_WDIAG("invalid argument", K(sql_buf), K(buf_len), K(proxy_ip), K(proxy_port), K(target_cmd),
                                  K(orig_cmd), K(orig_cmd_either), K(ret));
   } else {
     const ObString &target_cmd_string = ObHotUpgraderInfo::get_cmd_string(target_cmd);
@@ -798,7 +798,7 @@ int ObProxyTableProcessorUtils::get_proxy_update_hu_cmd_sql(char *sql_buf,
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql_buf), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(sql_buf), K(ret));
     }
   }
   return ret;
@@ -822,17 +822,17 @@ int ObProxyTableProcessorUtils::update_proxy_hu_cmd(ObMysqlProxy &mysql_proxy,
       || OB_UNLIKELY(orig_cmd_either < HUC_NONE && orig_cmd_either > HUC_MAX)
       || OB_UNLIKELY(orig_cmd_another < HUC_NONE && orig_cmd_another > HUC_MAX)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(proxy_ip), K(proxy_port), K(target_cmd),
+    LOG_WDIAG("invalid argument", K(proxy_ip), K(proxy_port), K(target_cmd),
                                  K(orig_cmd), K(orig_cmd_either), K(orig_cmd_another), K(ret));
   } else if (OB_FAIL(get_proxy_update_hu_cmd_sql(sql, OB_SHORT_SQL_LENGTH, proxy_ip,
       proxy_port, target_cmd, orig_cmd, orig_cmd_either, orig_cmd_another))) {
-    LOG_WARN("fail to get proxy update hu cmd sql", K(sql), K(OB_SHORT_SQL_LENGTH), K(proxy_ip),
+    LOG_WDIAG("fail to get proxy update hu cmd sql", K(sql), K(OB_SHORT_SQL_LENGTH), K(proxy_ip),
              K(proxy_port), K(target_cmd), K(orig_cmd), K(orig_cmd_either), K(orig_cmd_another), K(ret));
   } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
-    LOG_WARN("fail to execute sql", K(sql), K(orig_cmd), K(target_cmd), K(ret));
+    LOG_WDIAG("fail to execute sql", K(sql), K(orig_cmd), K(target_cmd), K(ret));
   } else if (OB_UNLIKELY(1 != affected_rows)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected error", K(sql), K(orig_cmd), K(target_cmd), K(affected_rows), K(ret));
+    LOG_WDIAG("unexpected error", K(sql), K(orig_cmd), K(target_cmd), K(affected_rows), K(ret));
   } else {/*do nothing*/}
   return ret;
 }
@@ -849,7 +849,7 @@ int ObProxyTableProcessorUtils::update_proxy_status_and_cmd(ObMysqlProxy &mysql_
   ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
   if (OB_ISNULL(proxy_ip) || OB_UNLIKELY(proxy_port <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
+    LOG_WDIAG("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
   } else {
     const ObString &parent_status_string = ObHotUpgraderInfo::get_status_string(parent_status);
     const ObString &sub_status_string = ObHotUpgraderInfo::get_status_string(sub_status);
@@ -865,7 +865,7 @@ int ObProxyTableProcessorUtils::update_proxy_status_and_cmd(ObMysqlProxy &mysql_
                      parent_status_string.length(), parent_status_string.ptr());
       if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_MAX_PROXY_HOT_UPGRADE_STATUS_LEN)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to merge_str for retries too many", K(len), K(merge_str), K(ret));
+        LOG_WDIAG("fail to merge_str for retries too many", K(len), K(merge_str), K(ret));
       } else {
         const ObString &none_cmd = ObHotUpgraderInfo::get_cmd_string(HUC_NONE);
         len = snprintf(sql, OB_SHORT_SQL_LENGTH, UPDATE_PROXY_BOTH_HUS_AND_CMD_SQL,
@@ -899,12 +899,12 @@ int ObProxyTableProcessorUtils::update_proxy_status_and_cmd(ObMysqlProxy &mysql_
       int64_t affected_rows = -1;
       if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+        LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
       } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(parent_status), K(sub_status), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(parent_status), K(sub_status), K(ret));
       } else if (OB_UNLIKELY(affected_rows < 0) || OB_UNLIKELY(affected_rows > 1)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected error", K(sql), K(parent_status), K(sub_status), K(affected_rows), K(ret));
+        LOG_WDIAG("unexpected error", K(sql), K(parent_status), K(sub_status), K(affected_rows), K(ret));
       } else {}
 
       if (OB_SUCC(ret) || OB_UNLIKELY(-1 == affected_rows)) {
@@ -931,7 +931,7 @@ int ObProxyTableProcessorUtils::update_proxy_exited_status(ObMysqlProxy &mysql_p
   ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
   if (OB_ISNULL(proxy_ip) || OB_UNLIKELY(proxy_port <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
+    LOG_WDIAG("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
   } else {
     char sql[OB_SHORT_SQL_LENGTH];
     const ObString &target_cmd_string = ObHotUpgraderInfo::get_cmd_string(target_cmd);
@@ -945,12 +945,12 @@ int ObProxyTableProcessorUtils::update_proxy_exited_status(ObMysqlProxy &mysql_p
     int64_t affected_rows = -1;
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
     } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
-      LOG_WARN("fail to execute sql", K(sql), K(parent_status), K(target_cmd), K(ret));
+      LOG_WDIAG("fail to execute sql", K(sql), K(parent_status), K(target_cmd), K(ret));
     } else if (OB_UNLIKELY(affected_rows < 0) || OB_UNLIKELY(affected_rows > 1)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error", K(sql), K(parent_status), K(target_cmd), K(affected_rows), K(ret));
+      LOG_WDIAG("unexpected error", K(sql), K(parent_status), K(target_cmd), K(affected_rows), K(ret));
     } else {
       LOG_DEBUG("update last parent hu status",
                 "last_parent_status", ObHotUpgraderInfo::get_status_string(info.last_parent_status_),
@@ -967,7 +967,7 @@ int ObProxyTableProcessorUtils::update_proxy_update_time(ObMysqlProxy &mysql_pro
   int ret = OB_SUCCESS;
   if (OB_ISNULL(proxy_ip) || OB_UNLIKELY(proxy_port <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
+    LOG_WDIAG("invalid argument", K(proxy_ip), K(proxy_port), K(ret));
   } else {
     char sql[OB_SHORT_SQL_LENGTH];
     int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, UPDATE_PROXY_UPDATE_TIME_SQL,
@@ -977,12 +977,12 @@ int ObProxyTableProcessorUtils::update_proxy_update_time(ObMysqlProxy &mysql_pro
     int64_t affected_rows = -1;
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
     } else if (OB_FAIL(mysql_proxy.write(sql, affected_rows))) {
-      LOG_WARN("fail to execute sql", K(sql), K(ret));
+      LOG_WDIAG("fail to execute sql", K(sql), K(ret));
     } else if (OB_UNLIKELY(affected_rows < 0) || OB_UNLIKELY(affected_rows > 1)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error", K(sql), K(affected_rows), K(ret));
+      LOG_WDIAG("unexpected error", K(sql), K(affected_rows), K(ret));
     } else { }
   }
   return ret;
@@ -993,7 +993,7 @@ int ObProxyTableProcessorUtils::get_one_local_addr(char *addr_str, const int64_t
   int ret = OB_SUCCESS;
   if (OB_ISNULL(addr_str) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", "ip addr", addr_str, K(len), K(ret));
+    LOG_WDIAG("invalid input value", "ip addr", addr_str, K(len), K(ret));
   } else {
     ObIpAddr addr_arr[MAX_LOCAL_ADDR_LIST_COUNT];
     bool is_need_all = false;
@@ -1001,7 +1001,7 @@ int ObProxyTableProcessorUtils::get_one_local_addr(char *addr_str, const int64_t
     // 1. get local ip by hostname
     if (OB_FAIL(net::get_local_addr_list(addr_arr, net::MAX_LOCAL_ADDR_LIST_COUNT,
                                          is_need_all, valid_cnt))) {
-      LOG_WARN("fail to get_local_addr_list", K(valid_cnt), K(ret));
+      LOG_WDIAG("fail to get_local_addr_list", K(valid_cnt), K(ret));
     }
 
     if (OB_FAIL(ret) || OB_UNLIKELY(valid_cnt <= 0)) {
@@ -1012,10 +1012,10 @@ int ObProxyTableProcessorUtils::get_one_local_addr(char *addr_str, const int64_t
       // 2. get local ip by nic
       if (OB_FAIL(net::get_local_addr_list_by_nic(addr_arr, net::MAX_LOCAL_ADDR_LIST_COUNT,
                                                   is_need_all, valid_cnt))) {
-        LOG_WARN("fail to get local addr list by nic", K(valid_cnt), K(ret));
+        LOG_WDIAG("fail to get local addr list by nic", K(valid_cnt), K(ret));
       } else if (OB_UNLIKELY(valid_cnt <= 0)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to get local addr list through hostname and nic, please check"
+        LOG_WDIAG("fail to get local addr list through hostname and nic, please check"
                  "whether hostname or netdevice is correctly set, and has valid ip addrs"
                  "(exclude 0.0.0.0 and 127.0.0.1)", K(valid_cnt), K(ret));
       }
@@ -1034,7 +1034,7 @@ int ObProxyTableProcessorUtils::get_one_local_addr(char *addr_str, const int64_t
       ObAddr any_addr(ObAddr::IPV4, INADDR_ANY_IP, fake_port);
       if (OB_UNLIKELY(!addr.is_valid()) || addr == localhost_addr || addr == any_addr) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid ip addr", "ip addr", addr_str, K(ret));
+        LOG_WDIAG("invalid ip addr", "ip addr", addr_str, K(ret));
       } else {
         LOG_DEBUG("get one local addr succ", "ip(ingore port)", addr);
       }
@@ -1048,13 +1048,13 @@ int ObProxyTableProcessorUtils::get_uname_info(char *info, const int64_t info_le
   int ret = OB_SUCCESS;
   if (OB_ISNULL(info) || OB_UNLIKELY(info_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(info), K(info_len), K(ret));
+    LOG_WDIAG("invalid input value", K(info), K(info_len), K(ret));
   } else {
     struct utsname u;
     int fb = 0;
     if (OB_UNLIKELY(0 != (fb = uname(&u)))) {
       ret = OB_ERR_SYS;
-      LOG_WARN("fail to get uname info", KERRMSGS, K(ret));
+      LOG_WDIAG("fail to get uname info", KERRMSGS, K(ret));
     } else {
       ObConfigServerProcessor &config_server_processor = get_global_config_server_processor();
       int64_t length = -1;
@@ -1074,7 +1074,7 @@ int ObProxyTableProcessorUtils::get_uname_info(char *info, const int64_t info_le
 
       if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= info_len)) {
         ret = OB_BUF_NOT_ENOUGH;
-        LOG_WARN("buf not enought", K(length), K(info_len), K(info), K(ret));
+        LOG_WDIAG("buf not enought", K(length), K(info_len), K(info), K(ret));
       }
     }
   }

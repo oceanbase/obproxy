@@ -38,16 +38,16 @@ void ObLDCLocation::reset_item_array()
   if (NULL != item_array_ && item_count_ > 0) {
     op_fixed_mem_free(item_array_, static_cast<int64_t>(sizeof(ObLDCItem)) * item_count_);
   }
-  
+
   if (NULL != primary_zone_item_array_ && primary_zone_item_count_ > 0) {
     op_fixed_mem_free(primary_zone_item_array_, static_cast<int64_t>(sizeof(ObLDCItem)) * primary_zone_item_count_);
   }
-  
+
   item_array_ = NULL;
   item_count_ = 0;
   primary_zone_item_array_ = NULL;
   primary_zone_item_count_ = 0;
-  
+
   site_start_index_array_[SAME_IDC] = 0;
   site_start_index_array_[SAME_REGION] = 0;
   site_start_index_array_[OTHER_REGION] = 0;
@@ -67,7 +67,7 @@ inline int ObLDCLocation::add_unique_region_name(
   }
   if (!found) {
     if (OB_FAIL(region_names.push_back(region_name))) {
-      LOG_WARN("fail to push back region_name", K(region_name), K(ret));
+      LOG_WDIAG("fail to push back region_name", K(region_name), K(ret));
     }
   }
 
@@ -95,7 +95,7 @@ int ObLDCLocation::get_region_name(
         zone_region_string = ss_info.at(i).region_name_;
         // do not add duplicated region name
         if (OB_FAIL(add_unique_region_name(zone_region_string, region_names))) {
-          LOG_WARN("fail to add unique region name", K(zone_region_string), K(ret));
+          LOG_WDIAG("fail to add unique region name", K(zone_region_string), K(ret));
         } else {
           matched_type = MATCHED_BY_IDC;
         }
@@ -109,7 +109,7 @@ int ObLDCLocation::get_region_name(
           zone_region_string = ss_info.at(i).region_name_;
           // do not add duplicated region name
           if (OB_FAIL(add_unique_region_name(zone_region_string, region_names))) {
-            LOG_WARN("fail to add unique region name", K(zone_region_string), K(ret));
+            LOG_WDIAG("fail to add unique region name", K(zone_region_string), K(ret));
           } else {
             matched_type = MATCHED_BY_ZONE_PREFIX;
           }
@@ -121,10 +121,10 @@ int ObLDCLocation::get_region_name(
     if (OB_SUCC(ret) && region_names.empty() && !cluster_name.empty()) {
       if (OB_FAIL(get_global_config_server_processor().get_cluster_idc_region(
           cluster_name, cluster_id, idc_name, region_name_from_idc_list))) {
-        LOG_WARN("fail to add unique region name", K(zone_region_string), K(ret));
+        LOG_WDIAG("fail to add unique region name", K(zone_region_string), K(ret));
       } else if (!region_name_from_idc_list.empty()) {
         if (OB_FAIL(add_unique_region_name(region_name_from_idc_list.name_string_, region_names))) {
-          LOG_WARN("fail to add unique region name", K(zone_region_string), K(ret));
+          LOG_WDIAG("fail to add unique region name", K(zone_region_string), K(ret));
         } else {
           matched_type = MATCHED_BY_URL;
         }
@@ -143,7 +143,7 @@ int64_t ObLDCLocation::get_first_item_index(const ObLDCLocation &dummy_ldc, cons
     int64_t start_partition_idx = 0;
     int ret = OB_SUCCESS;
     if (OB_FAIL(ObRandomNumUtils::get_random_num(0, partition_count - 1, start_partition_idx))) {
-      PROXY_LOG(WARN, "fail to get random num", K(partition_count), K(ret));
+      PROXY_LOG(WDIAG, "fail to get random num", K(partition_count), K(ret));
     } else {
       ret_idx = start_partition_idx * replica_count;
     }
@@ -165,9 +165,9 @@ int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerState
       || OB_UNLIKELY(!ts->is_valid())
       || OB_UNLIKELY(ts->is_empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is invalid", K(idc_name), KPC(ts), K(ss_info), K(ret));
+    LOG_WDIAG("argument is invalid", K(idc_name), KPC(ts), K(ss_info), K(ret));
   } else if (OB_FAIL(get_thread_allocator(allocator))) {
-    LOG_WARN("fail to get_thread_allocator", K(ret));
+    LOG_WDIAG("fail to get_thread_allocator", K(ret));
   } else {
     reset();
     set_tenant_server(ts);
@@ -178,13 +178,13 @@ int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerState
     if (OB_FAIL(ObLDCLocation::get_region_name(ss_info, idc_name, cluster_name, cluster_id,
                                                region_name_from_idc_list,
                                                match_type, region_names))) {
-      LOG_WARN("fail to get region name", K(idc_name), K(ret));
+      LOG_WDIAG("fail to get region name", K(idc_name), K(ret));
     } else {
       if (idc_name.empty()) {
         //do nothing
       } else if (region_names.empty()) {
         set_idc_name(idc_name);
-        LOG_WARN("can not find region name, maybe set error idc name, treat as do not use ldc",
+        LOG_WDIAG("can not find region name, maybe set error idc name, treat as do not use ldc",
                  K(cluster_name), K(idc_name), K(ret));
       } else {
         set_use_ldc(true);
@@ -214,42 +214,42 @@ int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerState
                     || ((MATCHED_BY_ZONE_PREFIX == match_type) && ss.zone_name_.prefix_case_match(idc_name))) {
                   const ObLDCItem item(replica, ss.is_merging_, SAME_IDC, ss.zone_type_, ss.is_force_congested_);
                   if (OB_FAIL(local_item_array.push_back(item))) {
-                    LOG_WARN("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
+                    LOG_WDIAG("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
                   }
                 } else {
                   const ObLDCItem item(replica, ss.is_merging_, SAME_REGION, ss.zone_type_, ss.is_force_congested_);
                   if (OB_FAIL(region_item_array.push_back(item))) {
-                    LOG_WARN("failed to push back same_region tmp_item_array", K(i), K(item), K(region_item_array), K(ret));
+                    LOG_WDIAG("failed to push back same_region tmp_item_array", K(i), K(item), K(region_item_array), K(ret));
                   }
                 }
               } else {
                 const ObLDCItem item(replica, ss.is_merging_, OTHER_REGION, ss.zone_type_, ss.is_force_congested_);
                 if (OB_FAIL(remote_item_array.push_back(item))) {
-                  LOG_WARN("failed to push back other_region tmp_item_array", K(i), K(item), K(remote_item_array), K(ret));
+                  LOG_WDIAG("failed to push back other_region tmp_item_array", K(i), K(item), K(remote_item_array), K(ret));
                 }
               }
             } else {
               const ObLDCItem item(replica, ss.is_merging_, SAME_IDC, ss.zone_type_, ss.is_force_congested_);
               if (OB_FAIL(local_item_array.push_back(item))) {
-                LOG_WARN("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
+                LOG_WDIAG("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
               }
             }
           }//end of found server
         }//end of for ss_info
         if (OB_SUCC(ret) && !found) {
           if (is_base_servers_added && !replica.server_.is_ip_loopback()) {
-            LOG_WARN("fail to find tenant server from server list, maybe has not updated, don not use it", K(replica));
+            LOG_WDIAG("fail to find tenant server from server list, maybe has not updated, don not use it", K(replica));
           } else {
             // if relica has no IDC info, lower priority. Avoid choosing offline relica
             if (is_ldc_used()) {
               const ObLDCItem item(replica, default_merging_status, OTHER_REGION, default_zone_type, default_congested_status);
               if (OB_FAIL(remote_item_array.push_back(item))) {
-                LOG_WARN("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
+                LOG_WDIAG("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
               }
             } else {
               const ObLDCItem item(replica, default_merging_status, default_idc_type, default_zone_type, default_congested_status);
               if (OB_FAIL(local_item_array.push_back(item))) {
-                LOG_WARN("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
+                LOG_WDIAG("failed to push back same_idc tmp_item_array", K(i), K(item), K(local_item_array), K(ret));
               }
             }
           }
@@ -268,10 +268,10 @@ int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerState
         char *item_array_buf = NULL;
         if (OB_UNLIKELY(item_count <= 0)) {
           ret = OB_EMPTY_RESULT;
-          LOG_WARN("fail to find any tenant server from server list", KPC(ts), K(ss_info), K(item_count), K(ret));
+          LOG_WDIAG("fail to find any tenant server from server list", KPC(ts), K(ss_info), K(item_count), K(ret));
         } else if (OB_ISNULL(item_array_buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc mem", K(alloc_size), K(item_count), K(ret));
+          LOG_WDIAG("fail to alloc mem", K(alloc_size), K(item_count), K(ret));
         } else {
           item_count_ = item_count;
           item_array_ = new (item_array_buf) ObLDCItem[item_count];
@@ -313,7 +313,7 @@ bool ObLDCLocation::check_need_update_entry(const ObProxyReplicaLocation &replic
         // same region or not R relica, need refresh
         if (is_in_logic_region(region_names, ss.region_name_) || REPLICA_TYPE_READONLY != replica.replica_type_) {
           bret = true;
-          LOG_WARN("check_need_update_entry, same region or not readonly replica, need update entry", K(replica), K(ss), K(region_names));
+          LOG_WDIAG("check_need_update_entry, same region or not readonly replica, need update entry", K(replica), K(ss), K(region_names));
         } else {
           LOG_DEBUG("check_need_update_entry, other region and readonly replica, do not need update entry", K(replica), K(ss), K(region_names));
         }
@@ -322,7 +322,7 @@ bool ObLDCLocation::check_need_update_entry(const ObProxyReplicaLocation &replic
 
     if (!found) {
       bret = true;
-      LOG_WARN("check_need_update_entry, replica is not the cluster's servers, need update entry", K(replica));
+      LOG_WDIAG("check_need_update_entry, replica is not the cluster's servers, need update entry", K(replica));
     }
   } else {
     // if no ldc, have two case:
@@ -330,7 +330,7 @@ bool ObLDCLocation::check_need_update_entry(const ObProxyReplicaLocation &replic
     //   2. region name is empty
     // No way to know if this relica is the same as IDC/REGION, need fresh
     bret = true;
-    LOG_WARN("check_need_update_entry, not use ldc, need update entry", K(replica));
+    LOG_WDIAG("check_need_update_entry, not use ldc, need update entry", K(replica));
   }
 
   return bret;
@@ -377,9 +377,9 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
   common::ModulePageAllocator *allocator = NULL;
   if (OB_UNLIKELY(dummy_ldc.is_empty())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dummy_ldc is empty", K(dummy_ldc), K(ret));
+    LOG_WDIAG("dummy_ldc is empty", K(dummy_ldc), K(ret));
   } else if (OB_FAIL(get_thread_allocator(allocator))) {
-    LOG_WARN("fail to get_thread_allocator", K(ret));
+    LOG_WDIAG("fail to get_thread_allocator", K(ret));
   } else {
     LdcItemArrayType tmp_item_array(OB_MAX_LDC_ITEM_COUNT, *allocator);
     LdcItemArrayType tmp_pz_item_array(OB_MAX_LDC_ITEM_COUNT, *allocator);
@@ -393,7 +393,7 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
       if (OB_FAIL(fill_item_array_from_pl(pl, ss_info, region_names, proxy_primary_zone_name, need_skip_leader_item,
                                           is_only_readwrite_zone, need_use_dup_replica, dummy_ldc, entry_need_update,
                                           leader_item, tmp_item_array))) {
-        LOG_WARN("fail to fill item array from pl", K(ret));
+        LOG_WDIAG("fail to fill item array from pl", K(ret));
       }
     } else if (cluster_resource != NULL
                && !need_use_dup_replica
@@ -406,10 +406,10 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
       // random route mode, do not go through primary zone policy
       if (OB_FAIL(fill_primary_zone_item_array(allocator, cluster_resource, ss_info, tenant_name,
                                                dummy_ldc, tmp_pz_item_array))) {
-        LOG_WARN("fail to fill primary zone item array", K(ret));
+        LOG_WDIAG("fail to fill primary zone item array", K(ret));
       }
     }
-    
+
     //4. fill tmp_item_array from dummy entry
     if (OB_SUCC(ret)) {
       if (tmp_item_array.count() > 1) {
@@ -428,7 +428,7 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
         } else if (!is_in_primary_zone(*(dummy_item.replica_), ss_info, proxy_primary_zone_name)) {
           //do not use id
         } else if (OB_FAIL(tmp_item_array.push_back(dummy_item))) {
-          LOG_WARN("fail to push_back target_item", K(dummy_item), K(tmp_item_array), K(ret));
+          LOG_WDIAG("fail to push_back target_item", K(dummy_item), K(tmp_item_array), K(ret));
         }//no need set is_used_= true
       }//end of for
     }
@@ -436,12 +436,12 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
     //3. fill tenant_ldc without leader
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ldc_location.set_ldc_location(pl, dummy_ldc, tmp_item_array, tmp_pz_item_array))) {
-        LOG_WARN("fail to set_ldc_location", K(ret));
+        LOG_WDIAG("fail to set_ldc_location", K(ret));
       }
     }
     allocator = NULL;
   }
-  
+
   return ret;
 }
 
@@ -457,9 +457,9 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
   common::ModulePageAllocator *allocator = NULL;
   if (OB_UNLIKELY(dummy_ldc.is_empty())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dummy_ldc is invaild", K(dummy_ldc), K(ret));
+    LOG_WDIAG("dummy_ldc is invaild", K(dummy_ldc), K(ret));
   } else if (OB_FAIL(get_thread_allocator(allocator))) {
-    LOG_WARN("fail to get_thread_allocator", K(ret));
+    LOG_WDIAG("fail to get_thread_allocator", K(ret));
   } else {
     ObSEArray<ObLDCItem, OB_MAX_LDC_ITEM_COUNT> tmp_item_array(OB_MAX_LDC_ITEM_COUNT, *allocator);
     ObSEArray<ObLDCItem, OB_MAX_LDC_ITEM_COUNT> tmp_pz_item_array(OB_MAX_LDC_ITEM_COUNT, *allocator);
@@ -486,7 +486,7 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
             //continue
           } else if (OB_ISNULL(dummy_item.replica_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("dummy_item is invalid", K(dummy_item), K(j), K(dummy_ldc), K(ret));
+            LOG_WDIAG("dummy_item is invalid", K(dummy_item), K(j), K(dummy_ldc), K(ret));
           } else if (replica.server_ == dummy_item.replica_->server_) {
             if (!replica.is_weak_read_avail()
                 || (is_only_readonly_zone && common::ZONE_TYPE_READONLY != dummy_item.zone_type_)) {
@@ -511,22 +511,22 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
               entry_need_update = check_need_update_entry(replica, dummy_ldc, ss_info, region_names);
 
               if (is_ldc_used) {
-                LOG_WARN("fail to find replica in dummy ldc with ldc, maybe someone old, "
+                LOG_WDIAG("fail to find replica in dummy ldc with ldc, maybe someone old, "
                          "do not use it", K(replica));
               } else {
-                LOG_WARN("fail to find replica in dummy ldc without ldc, maybe someone old, "
+                LOG_WDIAG("fail to find replica in dummy ldc without ldc, maybe someone old, "
                          "continue use it", K(replica));
                 tmp_item.set(replica, default_merging_status, default_idc_type, default_zone_type,
                              true, default_congested_status);//without ldc, location will put into same_idc
                 if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
-                  LOG_WARN("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
+                  LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
                 }
               }
             }
           } else {
             //found it
             if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
-              LOG_WARN("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
+              LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
             }
           }
         }//OB_SUCC
@@ -553,7 +553,7 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
         } else if (!is_in_primary_zone(*(dummy_item.replica_), ss_info, proxy_primary_zone_name)) {
           //do not use id
         } else if (OB_FAIL(tmp_item_array.push_back(dummy_item))) {
-          LOG_WARN("fail to push_back target_item", K(dummy_item), K(tmp_item_array), K(ret));
+          LOG_WDIAG("fail to push_back target_item", K(dummy_item), K(tmp_item_array), K(ret));
         }
       }//end of for
     }
@@ -561,7 +561,7 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
     //3. fill ldc_location from tmp_item_array
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ldc_location.set_ldc_location(pl, dummy_ldc, tmp_item_array, tmp_pz_item_array))) {
-        LOG_WARN("fail to set_ldc_location", K(ret));
+        LOG_WDIAG("fail to set_ldc_location", K(ret));
       } else {
         // target_ldc we should use priority
         ldc_location.sort_by_priority(dummy_ldc.get_safe_snapshot_manager());
@@ -605,7 +605,7 @@ int ObLDCLocation::fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
         //continue
       } else if (OB_ISNULL(dummy_item.replica_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("dummy_item is invalid", K(dummy_item), K(j), K(dummy_ldc), K(ret));
+        LOG_WDIAG("dummy_item is invalid", K(dummy_item), K(j), K(dummy_ldc), K(ret));
       } else if (replica.server_ == dummy_item.replica_->server_) {
         if (is_only_readwrite_zone
             && common::ZONE_TYPE_READWRITE != dummy_item.zone_type_
@@ -633,27 +633,27 @@ int ObLDCLocation::fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
         // if table location is not in dummy entry, need judge whether it is in the same IDC/REGION
         entry_need_update = check_need_update_entry(replica, dummy_ldc, ss_info, region_names);
         if (replica.is_leader()) {
-          LOG_WARN("fail to find leader in dummy ldc with ldc, maybe someone old, continue use it",
+          LOG_WDIAG("fail to find leader in dummy ldc with ldc, maybe someone old, continue use it",
                    K(replica));
           if (!need_skip_leader_item) {
             leader_item.set(replica, default_merging_status, default_idc_type, default_zone_type,
                           true, default_congested_status);
             if (need_use_dup_replica) {
               if (OB_FAIL(tmp_item_array.push_back(leader_item))) {
-                LOG_WARN("fail to push_back leader_item", K(leader_item), K(tmp_item_array), K(ret));
+                LOG_WDIAG("fail to push_back leader_item", K(leader_item), K(tmp_item_array), K(ret));
               }
             }
           }
         } else if (is_ldc_used) {
-          LOG_WARN("fail to find replica in dummy ldc with ldc, maybe someone old, "
+          LOG_WDIAG("fail to find replica in dummy ldc with ldc, maybe someone old, "
                    "do not use it", K(replica));
         } else {
-          LOG_WARN("fail to find replica in dummy ldc without ldc, maybe someone old, "
+          LOG_WDIAG("fail to find replica in dummy ldc without ldc, maybe someone old, "
                    "continue use it", K(replica));
           tmp_item.set(replica, default_merging_status, default_idc_type, default_zone_type,
                        true, default_congested_status); //without ldc, location will put into same_idc
           if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
-            LOG_WARN("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
+            LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
           }
         }
       } else {
@@ -663,12 +663,12 @@ int ObLDCLocation::fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
             leader_item = tmp_item;
             if (need_use_dup_replica) {
               if (OB_FAIL(tmp_item_array.push_back(leader_item))) {
-                LOG_WARN("fail to push_back leader_item", K(leader_item), K(tmp_item_array), K(ret));
+                LOG_WDIAG("fail to push_back leader_item", K(leader_item), K(tmp_item_array), K(ret));
               }
             }
           }
         } else if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
-          LOG_WARN("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
+          LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
         }
       }
     } // if
@@ -695,13 +695,13 @@ int ObLDCLocation::fill_primary_zone_item_array(common::ModulePageAllocator *all
       ret = OB_SUCCESS;
       LOG_INFO("no location tenant info, do not update, or no right to visit all_tenant table", K(tenant_name));
     } else {
-      LOG_WARN("fail to get location tenant info", K(ret));
+      LOG_WDIAG("fail to get location tenant info", K(ret));
     }
   } else if (info != NULL) {
     // pz zone name list & weight list
     PrimaryZonePrioArrayType &pz_prio_array = info->primary_zone_prio_array_;
     PrimaryZonePrioWeightArrayType &pz_prio_weight_array = info->primary_zone_prio_weight_array_;
-    
+
     // zone name match
     if (!pz_prio_array.empty()
         && !pz_prio_weight_array.empty()
@@ -760,9 +760,9 @@ int ObLDCLocation::fill_primary_zone_item_array(common::ModulePageAllocator *all
       LOG_DEBUG("no primary zone for this tenant, route with tenant location cache", K(tenant_name));
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error while check the location tenant info", K(ret), KPC(info));
+      LOG_WDIAG("unexpected error while check the location tenant info", K(ret), KPC(info));
     }
-    
+
     // dec ref after use
     info->dec_ref();
   }
@@ -787,7 +787,7 @@ int ObLDCLocation::set_ldc_location(const ObProxyPartitionLocation *pl,
     char *item_array_buf = NULL;
     if (OB_ISNULL(item_array_buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(alloc_size), K(ret));
+      LOG_WDIAG("fail to alloc mem", K(alloc_size), K(ret));
     } else {
       item_count_ = tmp_item_array.count();
       item_array_ = new (item_array_buf) ObLDCItem[item_count_];
@@ -797,7 +797,7 @@ int ObLDCLocation::set_ldc_location(const ObProxyPartitionLocation *pl,
       }
       if (OB_UNLIKELY(0 != site_item_count[MAX_IDC_TYPE])) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("MAX_IDC_TYPE should not exist", K(tmp_item_array), K(ret));
+        LOG_WDIAG("MAX_IDC_TYPE should not exist", K(tmp_item_array), K(ret));
       } else {
         site_start_index_array_[0] = 0;
         int64_t site_next_use_index_array[MAX_IDC_TYPE] = {0};
@@ -819,7 +819,7 @@ int ObLDCLocation::set_ldc_location(const ObProxyPartitionLocation *pl,
     char *pz_item_array_buf = NULL;
     if (OB_ISNULL(pz_item_array_buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(ret), K(alloc_size));
+      LOG_WDIAG("fail to alloc mem", K(ret), K(alloc_size));
     } else {
       primary_zone_item_count_ = tmp_pz_item_array.count();
       primary_zone_item_array_ = new (pz_item_array_buf) ObLDCItem[primary_zone_item_count_];
@@ -829,7 +829,7 @@ int ObLDCLocation::set_ldc_location(const ObProxyPartitionLocation *pl,
       }
     }
   }
-  
+
   return ret;
 }
 
@@ -866,11 +866,11 @@ inline int64_t ObLDCLocation::get_priority(const ObSafeSnapshotManager &safe_sna
 {
   int64_t priority = INT64_MAX;
   if (OB_ISNULL(item_array_[idx].replica_)) {
-    LOG_WARN("replica_ should not be null");
+    LOG_WDIAG("replica_ should not be null");
   } else {
     ObSafeSnapshotEntry *entry = safe_snapshot_mananger.get(item_array_[idx].replica_->server_);
     if (OB_ISNULL(entry)) {
-      LOG_WARN("safe snapshot entry should not be null");
+      LOG_WDIAG("safe snapshot entry should not be null");
     } else {
       priority = entry->get_priority();
     }
@@ -886,7 +886,7 @@ int ObLDCLocation::get_thread_allocator(common::ModulePageAllocator *&allocator)
   if (NULL == page_allocator
       && OB_ISNULL(page_allocator = new (std::nothrow) common::ModulePageAllocator(common::ObModIds::OB_PROXY_LDC_ARRAY))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc arena allocator", K(ret));
+    LOG_WDIAG("fail to alloc arena allocator", K(ret));
   } else {
     allocator = page_allocator;
   }

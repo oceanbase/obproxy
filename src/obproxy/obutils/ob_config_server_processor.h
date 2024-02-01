@@ -131,7 +131,6 @@ public:
   static int do_ldg_repeat_task();
   static void update_interval();
   static void update_ldg_interval();
-
   int refresh_config_server();
   ObAsyncCommonTask *get_refresh_cont() { return refresh_cont_; }
   ObAsyncCommonTask *get_refresh_ldg_cont() { return refresh_ldg_cont_; }
@@ -139,6 +138,10 @@ public:
                                     const ObString &cluster_name,
                                     ObProxyObInstance* &instance);
 
+  bool is_cluster_array_empty();
+  typedef ObProxyLdgInfo::LdgClusterVersionPair LdgClusterVersionPair;
+  typedef common::hash::ObHashMap<ObProxyConfigString, ObProxyConfigString> LdgHashMap;
+  LdgHashMap ldg_cluster_hash_;    // (cluster_name, cluster_version)
   DECLARE_TO_STRING;
 
 private:
@@ -178,7 +181,7 @@ private:
   int refresh_json_config_info(const bool force_refresh = false);
   int get_json_config_info(const char *url, const bool version_only = false);
   int parse_json_config_info(const common::ObString &json_str, const bool version_only = false);
-  virtual int do_fetch_json_info(const char *url, common::ObString &json, int64_t timeout = CURL_TRANSFER_TIMEOUT);
+  virtual int do_fetch_json_info(const char *url, common::ObString &json, int64_t timeout = CURL_TRANSFER_TIMEOUT, const char* cluster_name_array = NULL);
   int handle_content_string(char *content, const int64_t content_length);
   int init_json(const common::ObString &json_str, json::Value *&json_root, common::ObArenaAllocator &allocator);
 
@@ -193,9 +196,12 @@ private:
 
   static int64_t write_data(void *ptr, int64_t size, int64_t nmemb, void *stream);
   static int64_t write_proxy_bin(void *ptr, int64_t size, int64_t nmemb, void *stream);
-  int fetch_by_curl(const char *url, int64_t timeout, void *stream,
-                    write_func write_func_callback = NULL);
-  int refresh_ldg_config_info();
+  int concat_cluster_name_array(char *data, const char *cluster_name_array);
+  int fetch_by_curl(const char *url, int64_t timeout, void *stream, write_func write_func_callback = NULL, const char *data = NULL);    // 增加curl的header、data参数
+  int request_ldg_cluster_info(ObProxyLdgInfo *ldg_info, const char *ldg_url, const char* cluster_name_array, ObIArray<LdgClusterVersionPair> &cluster_info_array, ObIArray<LdgClusterVersionPair>& change_cluster_info_array);
+  int copy_cluster_info(ObIArray<LdgClusterVersionPair>& cluster_info_array, const ObString &login_cluster_name);
+  int update_cluster_version(ObIArray<LdgClusterVersionPair>& cluster_info_array);
+  int refresh_ldg_config_info(const ObString &login_cluster_name = ObString(NULL));
 private:
   static const int64_t OBPROXY_MAX_JSON_INFO_SIZE = 64 * 1024; // 64K
   static const int16_t OB_PROXY_CONFIG_MAGIC = static_cast<int16_t>(0X4A43); // "JC",short for JsonConfig

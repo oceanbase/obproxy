@@ -75,7 +75,7 @@ int ObTableCacheCont::get_table_entry(const int event, ObEvent *e)
     MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
     if (lock_bucket.is_locked()) {
       if (OB_FAIL(table_cache_->run_todo_list(table_cache_->part_num(hash_)))) {
-        LOG_WARN("fail to run todo list", K(ret));
+        LOG_WDIAG("fail to run todo list", K(ret));
       } else {
         *ppentry_ = table_cache_->lookup_entry(hash_, key_);
         if (NULL != *ppentry_) {
@@ -86,7 +86,7 @@ int ObTableCacheCont::get_table_entry(const int event, ObEvent *e)
             *ppentry_ = NULL;
             // remove the expired table entry in locked
             if (OB_FAIL(table_cache_->remove_table_entry(key_))) {
-              LOG_WARN("fail to remove table entry", K_(key), K(ret));
+              LOG_WDIAG("fail to remove table entry", K_(key), K(ret));
             }
           } else {
             (*ppentry_)->inc_ref();
@@ -105,7 +105,7 @@ int ObTableCacheCont::get_table_entry(const int event, ObEvent *e)
                 LITERAL_K(ObTableParam::SCHEDULE_TABLE_CACHE_CONT_INTERVAL));
       if (OB_ISNULL(self_ethread().schedule_in(this, ObTableParam::SCHEDULE_TABLE_CACHE_CONT_INTERVAL))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule in", K(ret));
+        LOG_WDIAG("fail to schedule in", K(ret));
       }
       he_ret = EVENT_CONT;
     }
@@ -193,7 +193,7 @@ public:
       case ADD_TABLE_ENTRY_OP: {
         bool direct_add = false;
         if (OB_FAIL(table_cache_.add_table_entry(table_entry_, direct_add))) {
-          LOG_WARN("fail to add table entry", K_(table_entry), K(direct_add));
+          LOG_WDIAG("fail to add table entry", K_(table_entry), K(direct_add));
           table_entry_.dec_ref(); // free the table entry
         }
         table_entry_.dec_ref();
@@ -219,12 +219,12 @@ int ObTableCache::init(const int64_t bucket_size)
   int64_t sub_bucket_size = bucket_size / MT_HASHTABLE_PARTITIONS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(bucket_size <= 0 || sub_bucket_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
+    LOG_WDIAG("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
   } else if (OB_FAIL(TableEntryHashMap::init(sub_bucket_size, TABLE_ENTRY_MAP_LOCK, gc_table_entry))) {
-    LOG_WARN("fail to init hash table of table cache", K(sub_bucket_size), K(ret));
+    LOG_WDIAG("fail to init hash table of table cache", K(sub_bucket_size), K(ret));
   } else {
     for (int64_t i = 0; i < MT_HASHTABLE_PARTITIONS; ++i) {
       todo_lists_[i].init("location_todo_list",
@@ -265,11 +265,11 @@ int ObTableCache::get_table_entry(
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(ppentry) || OB_ISNULL(cont)
              || OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid arugument", K(ppentry), K(key), K(cont), K(ret));
+    LOG_WDIAG("invalid arugument", K(ppentry), K(key), K(cont), K(ret));
   } else {
     uint64_t hash = key.hash();
     LOG_DEBUG("begin to get table location entry", K(ppentry), K(key), K(cont), K(hash));
@@ -278,7 +278,7 @@ int ObTableCache::get_table_entry(
     MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
     if (lock_bucket.is_locked()) {
       if (OB_FAIL(run_todo_list(part_num(hash)))) {
-        LOG_WARN("fail to run todo list", K(ret));
+        LOG_WDIAG("fail to run todo list", K(ret));
       } else {
         *ppentry = lookup_entry(hash, key);
         if (NULL != *ppentry) {
@@ -289,7 +289,7 @@ int ObTableCache::get_table_entry(
             *ppentry = NULL;
             // remove the expired table entry in locked
             if (OB_FAIL(remove_table_entry(key))) {
-              LOG_WARN("fail to remove table entry", K(key), K(ret));
+              LOG_WDIAG("fail to remove table entry", K(key), K(ret));
             }
           } else {
             (*ppentry)->inc_ref();
@@ -306,10 +306,10 @@ int ObTableCache::get_table_entry(
       ObTableCacheCont *table_cont = NULL;
       if (OB_ISNULL(table_cont = op_alloc_args(ObTableCacheCont, *this))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for table cache continuation", K(ret));
+        LOG_EDIAG("fail to allocate memory for table cache continuation", K(ret));
       } else if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(*key.name_, key.cr_version_,
           key.cr_id_, table_cont->buf_entry_))) { // use to save name buf
-        LOG_WARN("fail to alloc and init pl entry", K(key), K(ret));
+        LOG_WDIAG("fail to alloc and init pl entry", K(key), K(ret));
       } else {
         table_cont->buf_entry_->get_key(table_cont->key_);
         table_cont->action_.set_continuation(cont);
@@ -322,7 +322,7 @@ int ObTableCache::get_table_entry(
             || OB_ISNULL(cont->mutex_->thread_holding_->schedule_in(table_cont,
                 ObTableParam::SCHEDULE_TABLE_CACHE_CONT_INTERVAL))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to schedule imm", K(table_cont), K(ret));
+          LOG_WDIAG("fail to schedule imm", K(table_cont), K(ret));
         } else {
           action = &table_cont->action_;
         }
@@ -345,7 +345,7 @@ int ObTableCache::update_entry(ObTableEntry &entry, const ObTableEntryKey &key,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     ObTableEntry *tmp_entry = insert_entry(hash, key, &entry);
     if (NULL != tmp_entry) {
@@ -362,7 +362,7 @@ int ObTableCache::add_table_entry(ObTableEntry &entry, bool direct_add)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     ObTableEntryKey key;
     entry.get_key(key);
@@ -374,9 +374,9 @@ int ObTableCache::add_table_entry(ObTableEntry &entry, bool direct_add)
       MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
       if (lock.is_locked()) {
         if (OB_FAIL(run_todo_list(part_num(hash)))) {
-          LOG_WARN("fail to run todo list", K(ret));
+          LOG_WDIAG("fail to run todo list", K(ret));
         } else if (OB_FAIL(update_entry(entry, key, hash))) {
-          LOG_WARN("fail to update_entry", K(entry), K(ret));
+          LOG_WDIAG("fail to update_entry", K(entry), K(ret));
         }
       } else {
         direct_add = true;
@@ -388,7 +388,7 @@ int ObTableCache::add_table_entry(ObTableEntry &entry, bool direct_add)
       ObTableParam *param = op_alloc(ObTableParam);
       if (OB_ISNULL(param)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for table param", K(param), K(ret));
+        LOG_EDIAG("fail to allocate memory for table param", K(param), K(ret));
       } else {
         param->op_ = ObTableParam::ADD_TABLE_OP;
         param->hash_ = hash;
@@ -407,10 +407,10 @@ int ObTableCache::remove_table_entry(const ObTableEntryKey &key)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(key), K(ret));
+    LOG_WDIAG("invalid input value", K(key), K(ret));
   } else {
     uint64_t hash = key.hash();
     ObTableEntry *entry = NULL;
@@ -418,7 +418,7 @@ int ObTableCache::remove_table_entry(const ObTableEntryKey &key)
     MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
     if (lock.is_locked()) {
       if (OB_FAIL(run_todo_list(part_num(hash)))) {
-        LOG_WARN("fail to run todo list", K(ret));
+        LOG_WDIAG("fail to run todo list", K(ret));
       } else {
         entry = remove_entry(hash, key);
         LOG_INFO("this entry will be removed from table cache", KPC(entry));
@@ -432,12 +432,12 @@ int ObTableCache::remove_table_entry(const ObTableEntryKey &key)
       ObTableParam *param = op_alloc(ObTableParam);
       if (OB_ISNULL(param)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for location param", K(param), K(ret));
+        LOG_EDIAG("fail to allocate memory for location param", K(param), K(ret));
       } else {
         // just use this entry to save entry name;
         if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(*key.name_, key.cr_version_, key.cr_id_, entry))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("fail to allocate memory for location entry", K(key), K(entry), K(ret));
+          LOG_EDIAG("fail to allocate memory for location entry", K(key), K(entry), K(ret));
         } else  {
           param->op_ = ObTableParam::REMOVE_TABLE_OP;
           param->hash_ = hash;
@@ -467,7 +467,7 @@ int ObTableCache::remove_all_table_entry()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     ObTableEntry *entry = NULL;
     ObTableEntry *tmp_entry = NULL;
@@ -477,14 +477,14 @@ int ObTableCache::remove_all_table_entry()
       MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
       if (lock.is_locked()) {
         if (OB_FAIL(run_todo_list(part))) {
-          LOG_WARN("fail to run todo list", K(part), K(ret));
+          LOG_WDIAG("fail to run todo list", K(part), K(ret));
         } else {
           entry = first_entry(part, it);
           while (NULL != entry) {
             tmp_entry = remove_entry(part, it);
             if (tmp_entry != entry) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("entry mismatch", K(tmp_entry), K(entry), K(ret));
+              LOG_WDIAG("entry mismatch", K(tmp_entry), K(entry), K(ret));
             } else {
               entry->set_deleted_state();
               entry->dec_ref();
@@ -500,7 +500,7 @@ int ObTableCache::remove_all_table_entry()
           todo_lists_[part].push(param);
         } else {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("fail to allocate memory for congest request parameter", K(ret));
+          LOG_EDIAG("fail to allocate memory for congest request parameter", K(ret));
         }
       }
     }
@@ -514,10 +514,10 @@ int ObTableCache::run_todo_list(const int64_t buck_id)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(buck_id < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buck_id), K(ret));
+    LOG_WDIAG("invalid input value", K(buck_id), K(ret));
   } else {
     ObTableParam *pre = NULL;
     ObTableParam *cur = NULL;
@@ -552,14 +552,14 @@ int ObTableCache::process(const int64_t buck_id, ObTableParam *param)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(param) || OB_UNLIKELY(buck_id < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buck_id), K(param), K(ret));
+    LOG_WDIAG("invalid input value", K(buck_id), K(param), K(ret));
   } else {
     LOG_DEBUG("begin to process ObTableParam", K(buck_id), K(*param));
     ObTableEntry *old_entry = NULL;
     switch (param->op_) {
       case ObTableParam::ADD_TABLE_OP: {
         if (OB_FAIL(update_entry(*param->entry_, param->key_, param->hash_))) {
-          LOG_WARN("fail to update_entry", K(param), K(ret));
+          LOG_WDIAG("fail to update_entry", K(param), K(ret));
         }
         if (NULL != param->entry_) {
           // dec_ref, it was inc before add param into todo list
@@ -593,7 +593,7 @@ int ObTableCache::process(const int64_t buck_id, ObTableParam *param)
           tmp_entry = remove_entry(param->part_id_, it);
           if (tmp_entry != old_entry) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("entry dismatch", K(tmp_entry), K(old_entry), K(ret));
+            LOG_WDIAG("entry dismatch", K(tmp_entry), K(old_entry), K(ret));
           } else {
             old_entry->set_deleted_state();
             old_entry->dec_ref();
@@ -604,7 +604,7 @@ int ObTableCache::process(const int64_t buck_id, ObTableParam *param)
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("ObTableCache::process unrecognized op",
+        LOG_EDIAG("ObTableCache::process unrecognized op",
                   "op", param->op_, K(buck_id), K(*param), K(ret));
         break;
       }
@@ -618,13 +618,13 @@ int ObTableCache::add_table_entry(ObTableCache &table_cache, ObTableEntry &entry
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!entry.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(entry), K(ret));
+    LOG_WDIAG("invalid argument", K(entry), K(ret));
   } else {
     entry.inc_ref();
     ObTableCacheHandlerCont *handler_cont = op_alloc_args(ObTableCacheHandlerCont, table_cache, entry);
     if (OB_ISNULL(handler_cont)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate memory for table cache handler continuation", K(ret));
+      LOG_WDIAG("fail to allocate memory for table cache handler continuation", K(ret));
     } else {
       g_event_processor.schedule_imm(handler_cont, ET_CALL);
     }
@@ -665,7 +665,7 @@ int init_table_map_for_thread()
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_table_map_for_one_thread(i))) {
-      LOG_WARN("fail to init table_map", K(i), K(ret));
+      LOG_WDIAG("fail to init table_map", K(i), K(ret));
     }
   }
   return ret;
@@ -677,16 +677,16 @@ int init_table_map_for_one_thread(int64_t index)
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else {
     if (OB_ISNULL(ethreads[index]->table_map_ = new (std::nothrow) ObTableRefHashMap(ObModIds::OB_PROXY_TABLE_ENTRY_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new ObTableRefHashMap", K(index), K(ethreads[index]), K(ret));
+      LOG_WDIAG("fail to new ObTableRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->table_map_->init())) {
-      LOG_WARN("fail to init table_map", K(ret));
+      LOG_WDIAG("fail to init table_map", K(ret));
     } else {
       LOG_DEBUG("succ to init table_map", K(ET_CALL), "ethread", reinterpret_cast<const void*>(ethreads[index]),
                 "table_map", reinterpret_cast<const void*>(ethreads[index]->table_map_), K(ret));
@@ -704,7 +704,7 @@ int ObTableRefHashMap::clean_hash_map()
       if ((*it)->is_deleted_state()) {
         LOG_INFO("this table entry will erase from tc map", KPC(*it));
         if (OB_FAIL(erase(it, i))) {
-          LOG_WARN("fail to erase table entry", K(i), K(ret));
+          LOG_WDIAG("fail to erase table entry", K(i), K(ret));
         }
         if ((NULL != this_ethread()) && (NULL != this_ethread()->mutex_)) {
           ObProxyMutex *mutex_ = this_ethread()->mutex_;

@@ -85,4 +85,6 @@ common/expression/ob_expr_string_buf.h\
 common/expression/ob_expr_util.cpp\
 common/expression/ob_expr_util.h\
 common/expression/ob_expr_regexp_context.h\
-common/expression/ob_expr_regexp_context.cpp
+common/expression/ob_expr_regexp_context.cpp\
+common/ob_datum_cast.h\
+common/ob_datum_cast.cpp

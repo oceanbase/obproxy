@@ -27,16 +27,16 @@ int ObSeqQueue::init(const int64_t limit, SeqItem *buf)
   int ret = OB_SUCCESS;
   if (0 >= limit) {
     ret = OB_INVALID_ARGUMENT;
-    _OB_LOG(ERROR, "init(limit=%ld, buf=%p): INVALID_ARGUMENT", limit, buf);
+    _OB_LOG(EDIAG, "init(limit=%ld, buf=%p): INVALID_ARGUMENT", limit, buf);
   } else if (limit_ > 0 || NULL != items_) {
     ret = OB_INIT_TWICE;
   } else if (NULL == (items_ = (buf ? : (SeqItem *)buf_holder_.get(sizeof(SeqItem) * limit)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(ERROR, "buf_holder.get(%ld)=>NULL", sizeof(SeqItem) * limit);
+    _OB_LOG(EDIAG, "buf_holder.get(%ld)=>NULL", sizeof(SeqItem) * limit);
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < N_COND; ++i) {
       if (OB_FAIL(cond_[i].init(ObWaitEventIds::SEQ_QUEUE_COND_WAIT))) {
-        _OB_LOG(ERROR, "fail to init cond, ret=%d,", ret);
+        _OB_LOG(EDIAG, "fail to init cond, ret=%d,", ret);
       }
     }
 
@@ -61,7 +61,7 @@ int ObSeqQueue::start(const int64_t seq)
   int err = OB_SUCCESS;
   if (0 >= seq) {
     err = OB_INVALID_ARGUMENT;
-    _OB_LOG(ERROR, "start(seq=%ld): INVALID_ARGUMENT", seq);
+    _OB_LOG(EDIAG, "start(seq=%ld): INVALID_ARGUMENT", seq);
   } else if (NULL == items_) {
     err = OB_NOT_INIT;
   } else if (seq_ > 0) {
@@ -90,15 +90,15 @@ int ObSeqQueue::add(const int64_t seq, void *data)
     err = OB_NOT_INIT;
   } else if (seq_ <= 0) {
     err = OB_NOT_INIT;
-    _OB_LOG(ERROR, "seq_[%ld] <= 0", seq_);
+    _OB_LOG(EDIAG, "seq_[%ld] <= 0", seq_);
   } else if (seq < seq_) {
     err = OB_INVALID_ARGUMENT;
-    _OB_LOG(ERROR, "add(seq[%ld] < seq_[%ld]): INVALID_ARGUMEN", seq, seq_);
+    _OB_LOG(EDIAG, "add(seq[%ld] < seq_[%ld]): INVALID_ARGUMEN", seq, seq_);
   } else if (seq_ + limit_ <= seq) {
     err = OB_EAGAIN;
   } else if (seq <= (pitem = items_ + seq % limit_)->seq_) {
     err = OB_ENTRY_EXIST;
-    _OB_LOG(ERROR, "add(seq=%ld): ENTRY_EXIST", seq);
+    _OB_LOG(EDIAG, "add(seq=%ld): ENTRY_EXIST", seq);
   } else if (!__sync_bool_compare_and_swap(&pitem->seq_, -1, -2)) {
     err = OB_EAGAIN;
   } else {
@@ -133,7 +133,7 @@ int ObSeqQueue::get(int64_t &seq, void *&data, const int64_t timeout_us)
     err = OB_NOT_INIT;
   } else if (seq_ < 0) {
     err = OB_ERR_UNEXPECTED;
-    _OB_LOG(ERROR, "seq_[%ld] < 0", seq_);
+    _OB_LOG(EDIAG, "seq_[%ld] < 0", seq_);
   } else {
     cond->lock();
     while (OB_EAGAIN == err) {
@@ -167,7 +167,7 @@ int ObSeqQueue::update(const int64_t seq)
   int err = OB_SUCCESS;
   if (seq < seq_) {
     err = OB_DISCONTINUOUS_LOG;
-    _OB_LOG(ERROR, "seq[%ld] < seq_[%ld]", seq, seq_);
+    _OB_LOG(EDIAG, "seq[%ld] < seq_[%ld]", seq, seq_);
   } else {
     ObThreadCond *cond = get_cond(seq_);
     cond->lock();

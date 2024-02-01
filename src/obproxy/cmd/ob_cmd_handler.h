@@ -28,14 +28,14 @@ namespace obproxy
 
 #define DEBUG_CMD(fmt...) PROXY_CMD_LOG(DEBUG, ##fmt)
 #define INFO_CMD(fmt...) PROXY_CMD_LOG(INFO, ##fmt)
-#define WARN_CMD(fmt...) PROXY_CMD_LOG(WARN, ##fmt)
-#define ERROR_CMD(fmt...) PROXY_CMD_LOG(ERROR, ##fmt)
+#define WARN_CMD(fmt...) PROXY_CMD_LOG(WDIAG, ##fmt)
+#define ERROR_CMD(fmt...) PROXY_CMD_LOG(EDIAG, ##fmt)
 
 class ObCmdInfo {
 public:
   ObCmdInfo() { reset(); }
   ObCmdInfo(uint8_t seq, int64_t memory_limit, proxy::ObProxyProtocol protocol,
-            proxy::Ob20ProtocolHeaderParam &ob20_param) :
+            proxy::Ob20HeaderParam &ob20_param) :
     seq_(seq), memory_limit_(memory_limit), protocol_(protocol), ob20_param_(ob20_param) {}
   ~ObCmdInfo () {}
 
@@ -49,7 +49,7 @@ public:
   uint8_t get_seq() const { return seq_; }
   int64_t get_memory_limit() const { return memory_limit_; }
   proxy::ObProxyProtocol get_protocol() const { return protocol_; }
-  proxy::Ob20ProtocolHeaderParam &get_ob20_param() { return ob20_param_; }
+  proxy::Ob20HeaderParam &get_ob20_param() { return ob20_param_; }
 
   TO_STRING_KV(K_(seq), K_(memory_limit), K_(protocol), K_(ob20_param));
 
@@ -57,7 +57,7 @@ private:
   uint8_t seq_;
   int64_t memory_limit_;
   proxy::ObProxyProtocol protocol_;
-  proxy::Ob20ProtocolHeaderParam ob20_param_;
+  proxy::Ob20HeaderParam ob20_param_;
 };
 
 class ObCmdHandler
@@ -113,7 +113,7 @@ protected:
   int64_t internal_buf_limited_;
   
   proxy::ObProxyProtocol protocol_;
-  proxy::Ob20ProtocolHeaderParam ob20_param_;
+  proxy::Ob20HeaderParam ob20_param_;
 
   bool is_inited_;
   bool header_encoded_;

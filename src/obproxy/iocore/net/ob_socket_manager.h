@@ -345,14 +345,14 @@ inline int ObSocketManager::set_fl(int sockfd, const int arg, int &result)
   int old_flags = -1;
   if (OB_UNLIKELY(sockfd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else {
     if (OB_FAIL(fcntl(sockfd, F_GETFL, 0, old_flags))) {
-      PROXY_NET_LOG(ERROR, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
+      PROXY_NET_LOG(EDIAG, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
     } else {
       old_flags |= arg;
       if (OB_FAIL(fcntl(sockfd, F_SETFL, old_flags, result))) {
-        PROXY_NET_LOG(ERROR, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
+        PROXY_NET_LOG(EDIAG, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
       }
     }
   }
@@ -365,14 +365,14 @@ inline int ObSocketManager::clr_fl(int sockfd, const int arg, int &result)
   int old_flags = -1;
   if (OB_UNLIKELY(sockfd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else {
     if (OB_FAIL(fcntl(sockfd, F_GETFL, 0, old_flags))) {
-      PROXY_NET_LOG(ERROR, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
+      PROXY_NET_LOG(EDIAG, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
     } else {
       old_flags &= ~arg;
       if (OB_FAIL(fcntl(sockfd, F_SETFL, old_flags, result))) {
-        PROXY_NET_LOG(ERROR, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
+        PROXY_NET_LOG(EDIAG, "fail to fcntl", K(sockfd), K(ret), KERRMSGS);
       }
     }
   }
@@ -415,9 +415,9 @@ inline int ObSocketManager::blocking(int sockfd)
   int flags = -1;
   if (OB_UNLIKELY(sockfd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else if (OB_FAIL(clr_fl(sockfd, O_NONBLOCK, flags))) {
-    PROXY_NET_LOG(ERROR, "fail to clr_fl", K(sockfd), K(ret), KERRMSGS);
+    PROXY_NET_LOG(EDIAG, "fail to clr_fl", K(sockfd), K(ret), KERRMSGS);
   }
   return ret;
 }
@@ -428,9 +428,9 @@ inline int ObSocketManager::nonblocking(int sockfd)
   int flags = -1;
   if (OB_UNLIKELY(sockfd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else if (OB_FAIL(set_fl(sockfd, O_NONBLOCK, flags))) {
-    PROXY_NET_LOG(ERROR, "fail to set_fl", K(sockfd), K(ret), KERRMSGS);
+    PROXY_NET_LOG(EDIAG, "fail to set_fl", K(sockfd), K(ret), KERRMSGS);
   }
   return ret;
 }
@@ -454,14 +454,14 @@ inline int ObSocketManager::get_sndbuf_size(int sockfd, int64_t &size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(sockfd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else {
     int optval = 0;
     int optlen = sizeof(optval);
     ret = getsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<void *>(&optval), &optlen);
     if (OB_UNLIKELY(ret < 0)) {
       ret = ob_get_sys_errno();
-      PROXY_NET_LOG(ERROR, "fail to getsockopt", K(sockfd), K(ret), KERRMSGS);
+      PROXY_NET_LOG(EDIAG, "fail to getsockopt", K(sockfd), K(ret), KERRMSGS);
     } else {
       size = optval;
     }
@@ -474,14 +474,14 @@ inline int ObSocketManager::get_rcvbuf_size(int sockfd, int64_t &size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(sockfd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else {
     int optval = 0;
     int optlen = sizeof(optval);
     ret = getsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<void *>(&optval), &optlen);
     if (OB_UNLIKELY(ret < 0)) {
       ret = ob_get_sys_errno();
-      PROXY_NET_LOG(ERROR, "fail to getsockopt", K(sockfd), K(ret), KERRMSGS);
+      PROXY_NET_LOG(EDIAG, "fail to getsockopt", K(sockfd), K(ret), KERRMSGS);
     } else {
       size = optval;
     }
@@ -494,12 +494,12 @@ inline int ObSocketManager::set_sndbuf_size(int sockfd, const int size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(sockfd < 3) || OB_UNLIKELY(size < 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else {
     ret = setsockopt(sockfd, SOL_SOCKET, SO_SNDBUF, reinterpret_cast<const void *>(&size), sizeof(size));
     if (OB_UNLIKELY(ret < 0)) {
       ret = ob_get_sys_errno();
-      PROXY_NET_LOG(ERROR, "fail to setsockopt", K(sockfd), K(ret), KERRMSGS);
+      PROXY_NET_LOG(EDIAG, "fail to setsockopt", K(sockfd), K(ret), KERRMSGS);
     }
   }
   return ret;
@@ -510,12 +510,12 @@ inline int ObSocketManager::set_rcvbuf_size(int sockfd, const int size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(sockfd < 3) || OB_UNLIKELY(size < 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else {
     ret = setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, reinterpret_cast<const void *>(&size), sizeof(size));
     if (OB_UNLIKELY(ret < 0)) {
       ret = ob_get_sys_errno();
-      PROXY_NET_LOG(ERROR, "fail to setsockopt", K(sockfd), K(ret), KERRMSGS);
+      PROXY_NET_LOG(EDIAG, "fail to setsockopt", K(sockfd), K(ret), KERRMSGS);
     }
   }
   return ret;
@@ -529,7 +529,7 @@ inline int ObSocketManager::set_sndbuf_and_rcvbuf_size(int sockfd, const int snd
   int64_t bufsz = 0;
   if (OB_UNLIKELY(prec <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(sockfd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(sockfd), K(ret));
   } else {
     if (OB_LIKELY(sndbuf_size > 0)) {
       bufsz = ob_roundup(sndbuf_size, prec);
@@ -571,7 +571,7 @@ int ObSocketManager::ssl_accept(SSL *ssl, bool &is_connected, int &tmp_code)
   ERR_clear_error();
   if (OB_ISNULL(ssl) || is_connected) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(ret), K(is_connected));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(ret), K(is_connected));
   } else {
     int tmp_ret = SSL_accept(ssl);
     if (1 != tmp_ret) {
@@ -583,7 +583,7 @@ int ObSocketManager::ssl_accept(SSL *ssl, bool &is_connected, int &tmp_code)
         // do nothing
       } else if (SSL_ERROR_ZERO_RETURN == tmp_code || ERR_peek_error() == 0) {
         ret = common::OB_SSL_ERROR;
-        PROXY_NET_LOG(WARN, "peer closed connection in ssl accept", K(ret));
+        PROXY_NET_LOG(WDIAG, "peer closed connection in ssl accept", K(ret));
       } else {
         ret = handle_ssl_error(tmp_code);
       }
@@ -603,7 +603,7 @@ int ObSocketManager::ssl_connect(SSL *ssl, bool &is_connected, int &tmp_code)
   ERR_clear_error();
   if (OB_ISNULL(ssl) || is_connected) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(ret), K(is_connected));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(ret), K(is_connected));
   } else {
     int tmp_ret = SSL_connect(ssl);
     if (1 != tmp_ret) {
@@ -615,7 +615,7 @@ int ObSocketManager::ssl_connect(SSL *ssl, bool &is_connected, int &tmp_code)
         // do nothing
       } else if (SSL_ERROR_ZERO_RETURN == tmp_code || ERR_peek_error() == 0) {
         ret = common::OB_SSL_ERROR;
-        PROXY_NET_LOG(WARN, "peer closed connection in ssl connect", K(ret));
+        PROXY_NET_LOG(WDIAG, "peer closed connection in ssl connect", K(ret));
       } else {
         ret = handle_ssl_error(tmp_code);
       }
@@ -683,13 +683,13 @@ inline int ObSocketManager::handle_ssl_error(int tmp_code)
       break;
     case SSL_ERROR_ZERO_RETURN:
       ret = common::OB_SSL_ERROR;
-      PROXY_NET_LOG(WARN, "the ssl peer has closed", K(ret));
+      PROXY_NET_LOG(WDIAG, "the ssl peer has closed", K(ret));
       break;
     case SSL_ERROR_SYSCALL: {
       unsigned long e = ERR_peek_error();
       if (e == 0) {
         ret = common::OB_SSL_ERROR;
-        PROXY_NET_LOG(WARN, "the ssl peer has closed", K(ret));
+        PROXY_NET_LOG(WDIAG, "the ssl peer has closed", K(ret));
       } else {
         ret = ob_get_sys_errno();
         // Shouldn't have come here, be defensive
@@ -698,7 +698,7 @@ inline int ObSocketManager::handle_ssl_error(int tmp_code)
         }
         char temp_buf[512];
         ERR_error_string_n(e, temp_buf, sizeof(temp_buf));
-        PROXY_NET_LOG(WARN, "system error happen", K(ret), K(temp_buf), K(tmp_code));
+        PROXY_NET_LOG(WDIAG, "system error happen", K(ret), K(temp_buf), K(tmp_code));
       }
       break;
     }
@@ -706,17 +706,17 @@ inline int ObSocketManager::handle_ssl_error(int tmp_code)
       unsigned long e = ERR_peek_error();
       ret = common::OB_SSL_ERROR;
       if (e == 0) {
-        PROXY_NET_LOG(WARN, "the ssl peer has closed", K(ret));
+        PROXY_NET_LOG(WDIAG, "the ssl peer has closed", K(ret));
       } else {
         char temp_buf[512];
         ERR_error_string_n(e, temp_buf, sizeof(temp_buf));
-        PROXY_NET_LOG(WARN, "system error happen", K(ret), K(temp_buf), K(tmp_code));
+        PROXY_NET_LOG(WDIAG, "system error happen", K(ret), K(temp_buf), K(tmp_code));
       }
       break;
     }
     default:
       ret = common::OB_SSL_ERROR;
-      PROXY_NET_LOG(WARN, "unexpected error", K(ret), K(tmp_code));
+      PROXY_NET_LOG(WDIAG, "unexpected error", K(ret), K(tmp_code));
       break;
   }
 

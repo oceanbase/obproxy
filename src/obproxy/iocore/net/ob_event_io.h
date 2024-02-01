@@ -120,7 +120,7 @@ inline int ObEventIO::start(ObPollDescriptor &loop, int fd, event::ObContinuatio
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(fd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(fd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(fd), K(ret));
   } else {
     event_loop_ = &loop;
     fd_ = fd;
@@ -134,7 +134,7 @@ inline int ObEventIO::start(ObPollDescriptor &loop, int fd, event::ObContinuatio
     events_ = events;
 #endif
     if (OB_FAIL(ObSocketManager::epoll_ctl(event_loop_->epoll_fd_, EPOLL_CTL_ADD, fd_, &ev))) {
-      PROXY_NET_LOG(WARN, "fail to epoll_ctl, op is EPOLL_CTL_ADD", K(fd), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to epoll_ctl, op is EPOLL_CTL_ADD", K(fd), K(ret));
     }
   }
   return ret;
@@ -145,7 +145,7 @@ inline int ObEventIO::start(ObPollDescriptor &loop, ObNetAccept &na, const int e
   int ret = common::OB_SUCCESS;
   type_ = EVENTIO_NETACCEPT;
   if (OB_FAIL(start(loop, na.server_.fd_, reinterpret_cast<event::ObContinuation &>(na), events))) {
-    PROXY_NET_LOG(WARN, "fail to start event io", K(na.server_.fd_), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to start event io", K(na.server_.fd_), K(ret));
   }
   return ret;
 }
@@ -155,7 +155,7 @@ inline int ObEventIO::start(ObPollDescriptor &loop, ObUnixNetVConnection &vc, co
   int ret = common::OB_SUCCESS;
   type_ = EVENTIO_READWRITE_VC;
   if (OB_FAIL(start(loop, vc.con_.fd_, reinterpret_cast<event::ObContinuation &>(vc), events))) {
-    PROXY_NET_LOG(WARN, "fail to start event io", K(vc.con_.fd_), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to start event io", K(vc.con_.fd_), K(ret));
   }
   return ret;
 }
@@ -165,7 +165,7 @@ inline int ObEventIO::start(ObPollDescriptor &loop, int fd, const int events)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(fd < 3)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(fd), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(fd), K(ret));
   } else {
     event_loop_ = &loop;
     fd_ = fd;
@@ -179,7 +179,7 @@ inline int ObEventIO::start(ObPollDescriptor &loop, int fd, const int events)
     events_ = events;
 #endif
     if (OB_FAIL(ObSocketManager::epoll_ctl(event_loop_->epoll_fd_, EPOLL_CTL_ADD, fd_, &ev))) {
-      PROXY_NET_LOG(WARN, "fail to epoll_ctl, op is EPOLL_CTL_ADD", K(fd), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to epoll_ctl, op is EPOLL_CTL_ADD", K(fd), K(ret));
     }
   }
   return ret;
@@ -224,7 +224,7 @@ inline int ObEventIO::stop()
     memset(&ev, 0, sizeof(struct epoll_event));
     ev.events = EPOLLIN | EPOLLOUT | EPOLLET;
     if (OB_FAIL(ObSocketManager::epoll_ctl(event_loop_->epoll_fd_, EPOLL_CTL_DEL, fd_, &ev))) {
-      PROXY_NET_LOG(WARN, "fail to epoll_ctl, op is EPOLL_CTL_DEL", K(event_loop_->epoll_fd_),
+      PROXY_NET_LOG(WDIAG, "fail to epoll_ctl, op is EPOLL_CTL_DEL", K(event_loop_->epoll_fd_),
                     K(fd_), K(ret));
     }
   }
@@ -246,11 +246,11 @@ inline int ObEventIO::close()
 
       default:
         ret = common::OB_ERR_UNEXPECTED;
-        PROXY_NET_LOG(WARN, "can't reach here", K(type_), K(ret));
+        PROXY_NET_LOG(WDIAG, "can't reach here", K(type_), K(ret));
         break;
     }
   } else {
-    PROXY_NET_LOG(WARN, "fail to stop", K(type_), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to stop", K(type_), K(ret));
   }
   return ret;
 }

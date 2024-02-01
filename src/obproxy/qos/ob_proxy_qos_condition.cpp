@@ -123,7 +123,7 @@ int ObProxyQosCondTableName::init(const common::ObString &table_name_re, common:
     is_param_empty_ = true;
   } else {
     if (OB_FAIL(table_name_re_.init(table_name_re, OB_REG_ICASE, *allocator))) {
-      LOG_WARN("fail to init table name re", K(table_name_re), K(ret));
+      LOG_WDIAG("fail to init table name re", K(table_name_re), K(ret));
     }
   }
 
@@ -145,7 +145,7 @@ int ObProxyQosCondTableName::calc(ObProxyMysqlRequest &client_request,
 
     if (OB_LIKELY(!table_name.empty())) {
       if (OB_FAIL(table_name_re_.match(table_name, 0, is_match, *allocator))) {
-        LOG_WARN("fail to match table name", K(table_name), K(ret));
+        LOG_WDIAG("fail to match table name", K(table_name), K(ret));
       }
     } else {
       is_match = false;
@@ -163,7 +163,7 @@ int ObProxyQosCondSQLMatch::init(const common::ObString &sql_re, common::ObIAllo
     is_param_empty_ = true;
   } else {
     if (OB_FAIL(sql_re_.init(sql_re, OB_REG_ICASE, *allocator))) {
-      LOG_WARN("fail to init sql re", K(sql_re), K(ret));
+      LOG_WDIAG("fail to init sql re", K(sql_re), K(ret));
     }
   }
 
@@ -184,7 +184,7 @@ int ObProxyQosCondSQLMatch::calc(ObProxyMysqlRequest &client_request,
   } else  {
     if (OB_LIKELY(!expr_sql.empty())) {
       if (OB_FAIL(sql_re_.match(expr_sql, 0, is_match, *allocator))) {
-        LOG_WARN("fail to match sql", K(expr_sql), K(ret));
+        LOG_WDIAG("fail to match sql", K(expr_sql), K(ret));
       }
     } else {
       is_match = false;

@@ -39,7 +39,7 @@ int get_package_version_array(int *versions, const int64_t size)
   const int64_t VERSION_ITEM = 3;
 
   if (NULL == versions || VERSION_ITEM > size) {
-    COMMON_LOG(WARN, "invalid argument", KP(versions), K(size));
+    COMMON_LOG(WDIAG, "invalid argument", KP(versions), K(size));
     ret = OB_INVALID_ARGUMENT;
   } else {
     strncpy(buf, PACKAGE_VERSION, size);
@@ -53,7 +53,7 @@ int get_package_version_array(int *versions, const int64_t size)
       ptr = NULL;
     }
     if (VERSION_ITEM != i) {
-      COMMON_LOG(WARN, "invalid package version", K(PACKAGE_VERSION));
+      COMMON_LOG(WDIAG, "invalid package version", K(PACKAGE_VERSION));
       ret = OB_ERR_UNEXPECTED;
     }
   }

@@ -167,6 +167,9 @@ protected:
 
   int condition_exprs_to_sql_string(common::ObSqlString& sql_string);
   int limit_to_sql_string(common::ObSqlString& sql_string);
+
+  //for explain
+  int handle_explain_node(const ParseResult &parse_result, ParseNode*& node);
 public:
   int limit_offset_;
   int limit_size_;

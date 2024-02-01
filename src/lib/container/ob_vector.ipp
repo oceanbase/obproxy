@@ -45,7 +45,7 @@ ObVector<T, Allocator>::ObVector(int64_t size, Allocator *alloc, const int64_t m
   }
   int ret = expand(size);
   if (OB_FAIL(ret)) {
-    COMMON_LOG(WARN, "expand failed", K(ret), K(size));
+    COMMON_LOG(WDIAG, "expand failed", K(ret), K(size));
   }
 }
 
@@ -72,7 +72,7 @@ int ObVector<T, Allocator>::assign(const ObVector<T, Allocator> &other)
     destroy();
     if (other.size() > 0) {
       if (OB_SUCCESS != (ret = expand(other.size()))) {
-        COMMON_LOG(WARN, "expand failed", K(ret), "size", other.size());
+        COMMON_LOG(WDIAG, "expand failed", K(ret), "size", other.size());
       } else {
         copy(mem_begin_, other.begin(), other.end());
         mem_end_ = mem_begin_ + other.size();
@@ -87,7 +87,7 @@ ObVector<T, Allocator> &ObVector<T, Allocator>::operator=(const ObVector<T, Allo
 {
   int ret = assign(other);
   if (OB_FAIL(ret)) {
-    COMMON_LOG(WARN, "assign vector failed", K(ret));
+    COMMON_LOG(WDIAG, "assign vector failed", K(ret));
   }
   return *this;
 }
@@ -136,7 +136,7 @@ int ObVector<T, Allocator>::expand(int64_t size)
     iterator new_mem = alloc_array(size);
     if (NULL == new_mem) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "alloc memory failed", K(ret), K(size));
+      COMMON_LOG(WDIAG, "alloc memory failed", K(ret), K(size));
     } else {
       if (old_size) {
         copy(new_mem, mem_begin_, mem_end_);

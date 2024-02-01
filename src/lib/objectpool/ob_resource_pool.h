@@ -130,7 +130,7 @@ public:
   {
     int ret = pthread_key_create(&thread_key_, NULL);
     if (0 != ret) {
-      _OB_LOG(ERROR, "pthread_key_create fail ret=%d", ret);
+      _OB_LOG(EDIAG, "pthread_key_create fail ret=%d", ret);
     }
     array_list_.init(MAX_THREAD_NUM);
     free_list_.init(TOTAL_NUM);
@@ -194,7 +194,7 @@ public:
     if (NULL != ptr) {
       Node *node = (Node *)ptr;
       if (ALLOC_MAGIC_NUM != node->magic || node->mod_id != MOD_ID) {
-        _OB_LOG(ERROR, "node=%p magic=%lx not match %lx mod_id=%ld expected_mod_id=%ld", node, node->magic, ALLOC_MAGIC_NUM, node->mod_id, MOD_ID);
+        _OB_LOG(EDIAG, "node=%p magic=%lx not match %lx mod_id=%ld expected_mod_id=%ld", node, node->magic, ALLOC_MAGIC_NUM, node->mod_id, MOD_ID);
       } else {
         //RESP_ON_REVERT(OB_RES::OB_RESOURCE_POOL, ptr);
         free_node_(node);
@@ -242,14 +242,14 @@ private:
       ptr->next = NULL;
       if (ALLOC_BY_PAGEARENA == ptr->flag) {
         if (common::OB_SUCCESS != free_list_.push(ptr)) {
-          _OB_LOG(ERROR, "free node to list fail, size=%ld ptr=%p", free_list_.get_total(), ptr);
+          _OB_LOG(EDIAG, "free node to list fail, size=%ld ptr=%p", free_list_.get_total(), ptr);
         }
       } else if (ALLOC_BY_OBMALLOC == ptr->flag) {
         ptr->~Node();
         common::ob_free(ptr);
         (void)ATOMIC_AAF(&allocated_num_, -1);
       } else {
-        _OB_LOG(ERROR, "invalid flag=%lu", ptr->flag);
+        _OB_LOG(EDIAG, "invalid flag=%lu", ptr->flag);
       }
       //int64_t cnt = 0;
       //int64_t last_warn_time = 0;
@@ -266,7 +266,7 @@ private:
       //      && ::oceanbase::common::ObTimeUtility::current_time() > (WARN_INTERVAL + last_warn_time))
       //  {
       //    last_warn_time = ::oceanbase::common::ObTimeUtility::current_time();
-      //    _OB_LOG(ERROR, "free node to list fail count to large %ld, free_list_size=%ld", cnt, free_list_.get_free());
+      //    _OB_LOG(EDIAG, "free node to list fail count to large %ld, free_list_size=%ld", cnt, free_list_.get_free());
       //  }
       //}
     }
@@ -300,7 +300,7 @@ private:
           free_array_(ret);
           ret = NULL;
         } else if (0 != pthread_setspecific(thread_key_, ret)) {
-          OB_LOG(ERROR, "failed to pthread_setspecific");
+          OB_LOG(EDIAG, "failed to pthread_setspecific");
         } else {
           _OB_LOG(DEBUG, "alloc thread specific node_array=%p", ret);
         }

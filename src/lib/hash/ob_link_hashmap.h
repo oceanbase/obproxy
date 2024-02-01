@@ -34,7 +34,7 @@ public:
     int ret = OB_SUCCESS;
     if (!is_valid_tenant_id(tenant_id)) {
       ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(WARN, "invalid argument", K(ret), K(mod_id), K(tenant_id));
+      COMMON_LOG(WDIAG, "invalid argument", K(ret), K(mod_id), K(tenant_id));
     } else {
       mod_id_ = mod_id;
       tenant_id_ = tenant_id;
@@ -46,7 +46,7 @@ public:
   {
     void *ptr = NULL;
     if (sz <= 0) {
-      COMMON_LOG(WARN, "invalid argument", K(sz));
+      COMMON_LOG(WDIAG, "invalid argument", K(sz));
     } else {
       ObMemAttr attr(tenant_id_, mod_id_);
       ptr = ob_malloc(sz, attr);
@@ -291,9 +291,9 @@ public:
     int ret = OB_SUCCESS;
     if (!is_valid_tenant_id(tenant_id)) {
       ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(WARN, "invalid argument", K(ret), K(mod_id), K(tenant_id));
+      COMMON_LOG(WDIAG, "invalid argument", K(ret), K(mod_id), K(tenant_id));
     } else if (OB_FAIL(array_alloc_.init(mod_id, tenant_id))) {
-      COMMON_LOG(ERROR, "array_alloc_ init error", K(ret), K(mod_id), K(tenant_id));
+      COMMON_LOG(EDIAG, "array_alloc_ init error", K(ret), K(mod_id), K(tenant_id));
     }
     return ret;
   }

@@ -12,7 +12,7 @@
 #define USING_LOG_PREFIX PROXY
 
 #include "lib/oblog/ob_log.h"
-#include "ob_mysql_response_ob20_transform_plugin.h"
+#include "ob_mysql_response_ob20_protocol_transform_plugin.h"
 #include "obutils/ob_resource_pool_processor.h"
 #include "proxy/mysqllib/ob_2_0_protocol_utils.h"
 #include "proxy/mysqllib/ob_2_0_protocol_struct.h"
@@ -36,7 +36,7 @@ ObMysqlResponseOb20ProtocolTransformPlugin *ObMysqlResponseOb20ProtocolTransform
 ObMysqlResponseOb20ProtocolTransformPlugin::ObMysqlResponseOb20ProtocolTransformPlugin(ObApiTransaction &transaction)
   : ObTransformationPlugin(transaction, ObTransformationPlugin::RESPONSE_TRANSFORMATION),
     tail_crc_(0), target_payload_len_(0), handled_payload_len_(0), state_(OB20_PLUGIN_INIT_STATE),
-    local_reader_(NULL), out_buffer_(NULL), out_buffer_reader_(NULL)
+    local_reader_(NULL), mysql_decompress_buffer_(NULL), mysql_decompress_buffer_reader_(NULL)
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseOb20ProtocolTransformPlugin born", K(this));
 }
@@ -58,7 +58,7 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::consume(event::ObIOBufferReader 
   
   if (state_ == OB20_PLUGIN_INIT_STATE) {
     if (OB_FAIL(alloc_iobuffer_inner(reader))) {
-      LOG_WARN("fail to alloc iobuffer inner", K(ret));
+      LOG_WDIAG("fail to alloc iobuffer inner", K(ret));
     } else {
       int64_t total_avail = local_reader_->read_avail();
       target_payload_len_ = total_avail;
@@ -71,17 +71,17 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::consume(event::ObIOBufferReader 
     char client_extra_info_buf[CLIENT_EXTRA_INFO_BUF_MAX_LEN] = "\0";
       if (OB_FAIL(ObProxyTraceUtils::build_extra_info_for_client(sm_, client_extra_info_buf,
                                              CLIENT_EXTRA_INFO_BUF_MAX_LEN, extra_info, is_resp_finished))) {
-      LOG_WARN("fail to build extra info for client", K(ret));
-    } else if (OB_FAIL(build_ob20_head_and_extra(out_buffer_, extra_info, is_resp_finished))) {
-      LOG_WARN("fail to build ob20 head and extra", K(ret));
+      LOG_WDIAG("fail to build extra info for client", K(ret));
+    } else if (OB_FAIL(build_ob20_head_and_extra(mysql_decompress_buffer_, extra_info, is_resp_finished))) {
+      LOG_WDIAG("fail to build ob20 head and extra", K(ret));
     } else {
       int64_t local_reader_avail = local_reader_->read_avail();
       int64_t could_write_max = MIN(local_reader_avail, target_payload_len_);  // more than MYSQL_NET_HEADER_LENGTH
-      if (OB_FAIL(build_ob20_body(local_reader_, local_reader_avail, out_buffer_, could_write_max, tail_crc_))) {
-        LOG_WARN("fail to build ob20 body", K(ret));
+      if (OB_FAIL(build_ob20_body(local_reader_, local_reader_avail, mysql_decompress_buffer_, could_write_max, tail_crc_))) {
+        LOG_WDIAG("fail to build ob20 body", K(ret));
       } else if (OB_UNLIKELY(handled_payload_len_ > target_payload_len_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected err, handled len > target len", K(ret), K(handled_payload_len_), K(target_payload_len_));
+        LOG_WDIAG("unexpected err, handled len > target len", K(ret), K(handled_payload_len_), K(target_payload_len_));
       } else if (handled_payload_len_ == target_payload_len_) {
         state_ = OB20_PLUGIN_FIN_STATE;
       } else {
@@ -94,11 +94,11 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::consume(event::ObIOBufferReader 
     // build body as much as possible
     int64_t local_reader_avail = local_reader_->read_avail();
     int64_t could_write_max = MIN(local_reader_avail, target_payload_len_ - handled_payload_len_);
-    if (OB_FAIL(build_ob20_body(local_reader_, local_reader_avail, out_buffer_, could_write_max, tail_crc_))) {
-      LOG_WARN("fail to build ob20 body", K(ret));
+    if (OB_FAIL(build_ob20_body(local_reader_, local_reader_avail, mysql_decompress_buffer_, could_write_max, tail_crc_))) {
+      LOG_WDIAG("fail to build ob20 body", K(ret));
     } else if (OB_UNLIKELY(handled_payload_len_ > target_payload_len_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected handle > target len", K(ret), K(handled_payload_len_), K(target_payload_len_));
+      LOG_WDIAG("unexpected handle > target len", K(ret), K(handled_payload_len_), K(target_payload_len_));
     } else if (handled_payload_len_ == target_payload_len_) {
       state_ = OB20_PLUGIN_FIN_STATE;
     } else {
@@ -107,19 +107,19 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::consume(event::ObIOBufferReader 
   }
 
   if (OB_SUCC(ret) && state_ == OB20_PLUGIN_FIN_STATE) {
-    if (OB_FAIL(ObProto20Utils::fill_proto20_tailer(out_buffer_, tail_crc_))) {
-      LOG_WARN("fail to build ob20 tail crc", K(ret));
+    if (OB_FAIL(ObProto20Utils::fill_proto20_tailer(mysql_decompress_buffer_, tail_crc_))) {
+      LOG_WDIAG("fail to build ob20 tail crc", K(ret));
     }
   }
 
   if (OB_SUCC(ret) && state_ != OB20_PLUGIN_INIT_STATE) {
-    int64_t avail_size = out_buffer_reader_->read_avail();
+    int64_t avail_size = mysql_decompress_buffer_reader_->read_avail();
     int64_t produce_size = 0;
-    if (avail_size != (produce_size = produce(out_buffer_reader_, avail_size))) {
+    if (avail_size != (produce_size = produce(mysql_decompress_buffer_reader_, avail_size))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to produce to VIO", K(ret), K(avail_size), K(produce_size));
-    } else if (OB_FAIL(out_buffer_reader_->consume(avail_size))) {
-      LOG_WARN("fail to consume out buffer reader", K(ret), K(avail_size));
+      LOG_WDIAG("fail to produce to VIO", K(ret), K(avail_size), K(produce_size));
+    } else if (OB_FAIL(mysql_decompress_buffer_reader_->consume(avail_size))) {
+      LOG_WDIAG("fail to consume out buffer reader", K(ret), K(avail_size));
     } else if (state_ == OB20_PLUGIN_FIN_STATE) {
       state_ = OB20_PLUGIN_INIT_STATE;
       reset();
@@ -131,7 +131,7 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::consume(event::ObIOBufferReader 
     reset();
     sm_->trans_state_.inner_errcode_ = ret;
     sm_->trans_state_.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
-    LOG_WARN("fail to consume in ob20 response transform plugin", K(ret));
+    LOG_WDIAG("fail to consume in ob20 response transform plugin", K(ret));
   }
 
   return ret;
@@ -146,8 +146,8 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::build_ob20_head_and_extra(ObMIOB
   // total mysql len in ob20 response payload
   int64_t payload_len = target_payload_len_;   // msyql + (4 + extra_info_len() if exist)
   char *head_start = NULL;
-  if (OB_FAIL(ObProto20Utils::reserve_proto20_hdr(write_buf, head_start))) {
-    LOG_WARN("fail to reserve ob20 head", K(ret));
+  if (OB_FAIL(ObProto20Utils::reserve_proto_hdr(write_buf, head_start, MYSQL_COMPRESSED_OB20_HEALDER_LENGTH))) {
+    LOG_WDIAG("fail to reserve ob20 head", K(ret));
   } else {
     ObMysqlClientSession *client_session = sm_->get_client_session();
     Ob20ProtocolHeader &ob20_head = client_session->get_session_info().ob20_request_.ob20_header_;
@@ -158,16 +158,15 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::build_ob20_head_and_extra(ObMIOB
     const bool is_trans_internal_routing = false;
     const bool is_switch_route = false;
     bool is_extra_info_exist = false;
-
-    Ob20ProtocolHeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, last_compressed_seq,
-                                            last_compressed_seq, is_last_packet, is_weak_read, is_need_reroute,
-                                            is_new_extra_info, is_trans_internal_routing, is_switch_route);
+    Ob20HeaderParam ob20_head_param(client_session->get_cs_id(), ob20_head.request_id_, last_compressed_seq,
+                                    last_compressed_seq, is_last_packet, is_weak_read, is_need_reroute,
+                                    is_new_extra_info, is_trans_internal_routing, is_switch_route);
     if (OB_FAIL(ObProto20Utils::fill_proto20_extra_info(write_buf, &extra_info, is_new_extra_info, 
                                                         payload_len, tail_crc_, is_extra_info_exist))) {
-      LOG_WARN("fail to fill ob20 extra info", K(ret));
+      LOG_WDIAG("fail to fill ob20 extra info", K(ret));
     } else if (OB_FAIL(ObProto20Utils::fill_proto20_header(head_start, payload_len, ob20_head_param,
                                                            is_extra_info_exist))) {
-      LOG_WARN("fail to fill ob20 head", K(ret), K(ob20_head_param));
+      LOG_WDIAG("fail to fill ob20 head", K(ret), K(ob20_head_param));
     } else {
       client_session->set_compressed_seq(last_compressed_seq);
     }
@@ -188,11 +187,11 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::build_ob20_body(ObIOBufferReader
     LOG_DEBUG("arg is 0, continue...", K(reader_avail), K(write_len));
   } else if (reader_avail < 0 || write_len < 0 || reader_avail < write_len) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected argument check, plz check", K(ret), K(reader_avail), K(write_len));
+    LOG_WDIAG("unexpected argument check, plz check", K(ret), K(reader_avail), K(write_len));
   } else {
     int64_t payload_len = 0;
     if (OB_FAIL(ObProto20Utils::fill_proto20_payload(reader, write_buf, write_len, payload_len, crc))) {
-      LOG_WARN("fail to fill ob20 body in ob20 plugin", K(ret), K(write_len), K(reader_avail));
+      LOG_WDIAG("fail to fill ob20 body in ob20 plugin", K(ret), K(write_len), K(reader_avail));
     } else {
       handled_payload_len_ += write_len;
     }
@@ -211,10 +210,10 @@ void ObMysqlResponseOb20ProtocolTransformPlugin::handle_input_complete()
     local_reader_ = NULL;
   }
 
-  if (NULL != out_buffer_) {
-    free_miobuffer(out_buffer_);
-    out_buffer_ = NULL;
-    out_buffer_reader_ = NULL;
+  if (NULL != mysql_decompress_buffer_) {
+    free_miobuffer(mysql_decompress_buffer_);
+    mysql_decompress_buffer_ = NULL;
+    mysql_decompress_buffer_reader_ = NULL;
   }
   
   set_output_complete();
@@ -226,15 +225,15 @@ int ObMysqlResponseOb20ProtocolTransformPlugin::alloc_iobuffer_inner(event::ObIO
 
   if (NULL == local_reader_ && OB_ISNULL(local_reader_ = reader->clone())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to clone reader to local", K(ret));
+    LOG_WDIAG("fail to clone reader to local", K(ret));
   }
   
-  if (OB_SUCC(ret) && NULL == out_buffer_) {
-    if (OB_ISNULL(out_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+  if (OB_SUCC(ret) && NULL == mysql_decompress_buffer_) {
+    if (OB_ISNULL(mysql_decompress_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to new miobuffer", K(ret));
-    } else if (NULL == (out_buffer_reader_ = out_buffer_->alloc_reader())) {
-      LOG_WARN("fail to alloc local reader", K(ret));
+      LOG_WDIAG("fail to new miobuffer", K(ret));
+    } else if (NULL == (mysql_decompress_buffer_reader_ = mysql_decompress_buffer_->alloc_reader())) {
+      LOG_WDIAG("fail to alloc local reader", K(ret));
     } else {
       LOG_DEBUG("alloc iobuffer inner finish");
     }

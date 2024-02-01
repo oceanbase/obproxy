@@ -60,9 +60,9 @@ int ObServerSessionInfo::init()
   int ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("server session is inited", K(ret));
+    LOG_WDIAG("server session is inited", K(ret));
   } else if (OB_FAIL(field_mgr_.init())) {
-    LOG_WARN("fail to init field_mgr", K(ret));
+    LOG_WDIAG("fail to init field_mgr", K(ret));
   } else {
     field_mgr_.set_allow_var_not_found(true);
     LOG_DEBUG("init session info success");
@@ -71,9 +71,9 @@ int ObServerSessionInfo::init()
 
     if (OB_ISNULL(default_sysvar_set = get_global_resource_pool_processor().get_default_sysvar_set())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("default_sysvar_set is null", K(ret));
+      LOG_WDIAG("default_sysvar_set is null", K(ret));
     } else if (OB_FAIL(field_mgr_.set_sys_var_set(default_sysvar_set))) {
-      LOG_WARN("fail to add sys var set", K(ret));
+      LOG_WDIAG("fail to add sys var set", K(ret));
     }
   }
   return ret;
@@ -95,11 +95,11 @@ int ObServerSessionInfo::set_database_name(const ObString &database_name, const 
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(field_mgr_.set_database_name(database_name))) {
-    LOG_WARN("fail to set database name", K(database_name), K(ret));
+    LOG_WDIAG("fail to set database name", K(database_name), K(ret));
   } else if (OB_LIKELY(is_string_to_lower_case)) {
     ObString db_name;
     if (OB_FAIL(get_database_name(db_name))) {
-      LOG_WARN("fail to get db name", K(db_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to get db name", K(db_name), K(database_name), K(ret));
     } else {
       string_to_lower_case(db_name.ptr(), db_name.length());
     }
@@ -154,7 +154,7 @@ int ObServerSessionInfo::set_text_ps_version(const int64_t text_ps_version)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(text_ps_version_set_.set_refactored(text_ps_version))) {
-    LOG_WARN("set refactored failed", K(ret), K(text_ps_version));
+    LOG_WDIAG("set refactored failed", K(ret), K(text_ps_version));
   } else {
     LOG_DEBUG("set refactored succed", K(text_ps_version));
   }
@@ -167,7 +167,7 @@ int ObServerSessionInfo::remove_text_ps_version(const int64_t text_ps_version)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(text_ps_version_set_.erase_refactored(text_ps_version))) {
-    LOG_WARN("remove refactored failed", K(ret), K(text_ps_version));
+    LOG_WDIAG("remove refactored failed", K(ret), K(text_ps_version));
   } else {
     LOG_DEBUG("remove refactored succed", K(text_ps_version));
   }
@@ -206,11 +206,11 @@ int ObServerSessionInfo::update_sess_info_field_version(int16_t type, int64_t ve
   }
   if (!is_type_exist) {
     if (OB_FAIL(sess_info_field_version_.push_back(SessionInfoFieldVersion(type, version)))) {
-      LOG_WARN("fail to record sess info field version", K(type), K(version), K(ret));
+      LOG_WDIAG("fail to record sess info field version", K(type), K(version), K(ret));
     }
   }
   return ret;
-}  
+}
 
 void ObServerSessionInfo::reuse_text_ps_version_set()
 {
@@ -273,9 +273,9 @@ int ObClientSessionInfo::init()
   int ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("client session is inited", K(ret));
+    LOG_WDIAG("client session is inited", K(ret));
   } else if (OB_FAIL(field_mgr_.init())) {
-    LOG_WARN("fail to init field_mgr", K(ret));
+    LOG_WDIAG("fail to init field_mgr", K(ret));
   } else {
     LOG_DEBUG("init session info success", K(cached_variables_));
     is_inited_ = true;
@@ -288,14 +288,14 @@ int ObClientSessionInfo::add_sys_var_set(ObDefaultSysVarSet &set)
   int ret = OB_SUCCESS;
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_FAIL(field_mgr_.set_sys_var_set(&set))) {
-    LOG_WARN("fail to set sys var set", K(ret));
+    LOG_WDIAG("fail to set sys var set", K(ret));
   } else if (OB_FAIL(load_all_cached_variable())) {
-    LOG_WARN("fail to load cached variables", K(ret));
+    LOG_WDIAG("fail to load cached variables", K(ret));
     // if failed, we should set var set back to NULL;
     if (OB_FAIL(field_mgr_.set_sys_var_set(NULL))) {
-      LOG_WARN("fail to set sys var set", K(ret));
+      LOG_WDIAG("fail to set sys var set", K(ret));
     }
     is_inited_ = true;
   }
@@ -319,12 +319,12 @@ int ObClientSessionInfo::set_cluster_info(const bool enable_cluster_checkout,
         // 3. real meta cluster do not exist
         need_delete_cluster = true;
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("real meta cluster name is empty, it should not happened, proxy need rebuild meta cluster", K(ret));
+        LOG_WDIAG("real meta cluster name is empty, it should not happened, proxy need rebuild meta cluster", K(ret));
       }
     } else {
       if (OB_ISNULL(real_meta_cluster_name_str_ = static_cast<char *>(op_fixed_mem_alloc(real_meta_cluster_name.length())))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem for real_meta_cluster_name", "size", real_meta_cluster_name.length(), K(ret));
+        LOG_WDIAG("fail to alloc mem for real_meta_cluster_name", "size", real_meta_cluster_name.length(), K(ret));
       } else {
         MEMCPY(real_meta_cluster_name_str_, real_meta_cluster_name.ptr(), real_meta_cluster_name.length());
         real_meta_cluster_name_.assign_ptr(real_meta_cluster_name_str_, real_meta_cluster_name.length());
@@ -359,7 +359,7 @@ int ObClientSessionInfo::set_vip_addr_name(const common::ObAddr &vip_addr)
   char vip_name[MAX_IP_ADDR_LENGTH];
   if (OB_UNLIKELY(!vip_addr.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to covert ip to string", K(vip_name), K(ret));
+    LOG_WDIAG("fail to covert ip to string", K(vip_name), K(ret));
   } else {
     return field_mgr_.set_vip_addr_name(vip_name);
   }
@@ -381,11 +381,11 @@ int ObClientSessionInfo::set_database_name(const ObString &database_name,
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(field_mgr_.set_database_name(database_name))) {
-    LOG_WARN("fail to set database name", K(database_name), K(ret));
+    LOG_WDIAG("fail to set database name", K(database_name), K(ret));
   } else if (OB_LIKELY(!is_oracle_mode())) {
     ObString db_name;
     if (OB_FAIL(get_database_name(db_name))) {
-      LOG_WARN("fail to get db name", K(db_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to get db name", K(db_name), K(database_name), K(ret));
     } else if (need_use_lower_case_names()) {
       string_to_lower_case(db_name.ptr(), db_name.length());
     } else {/*do nothing*/}
@@ -432,9 +432,9 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, const 
       if(info_type < MAX_TYPE_RECORD) {
         type_record |= 1 << info_type;
       }
-      if (buf + info_len > end) {
+      if (info_len < 0 || buf + info_len > end) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("data is error", K(info_type), K(info_len), K(len), K(ret));
+        LOG_EDIAG("data is error", K(info_type), K(info_len), K(len), K(ret));
       } else {
         LOG_DEBUG("extra info", K(info_type), K(info_len), K(len));
         char* info_value = NULL;
@@ -442,17 +442,17 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, const 
         int64_t version = 0;
         if (OB_ISNULL(info_value = static_cast<char*>(op_fixed_mem_alloc(info_len + 6)))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc memory", K(info_len), K(ret));
+          LOG_WDIAG("fail to alloc memory", K(info_len), K(ret));
         } else if (FALSE_IT(MEMCPY(info_value, buf - 6, info_len + 6))) {
         } else if (FALSE_IT(info_value_string.assign_ptr(info_value, info_len + 6))) {
         } else if (OB_FAIL(update_sess_info_field(info_type, info_value_string, version))) {
-          LOG_WARN("fail to set to hash map", K(info_type), K(ret));
+          LOG_WDIAG("fail to set to hash map", K(info_type), K(ret));
           op_fixed_mem_free(info_value, info_len + 6);
           info_value = NULL;
         } else if (is_error_packet && OB_FAIL(server_info.update_sess_info_field_version(info_type, version))) {
           // if proxy receive error packet, treat all types that server not delivered sync failed, only push up the version of the type that server delivered
           // and duplicate sync the types server not delivered next time
-          LOG_WARN("fail to update server sess info type version", K(info_type), K(version), K(ret));
+          LOG_WDIAG("fail to update server sess info type version", K(info_type), K(version), K(ret));
         } else {
           buf += info_len;
         }
@@ -479,7 +479,7 @@ int ObClientSessionInfo::update_server_sess_info_version(ObServerSessionInfo &se
       int64_t server_version = server_info.get_sess_field_version(sess_info_type);
       if (client_version > server_version) {
         if (OB_FAIL(server_info.update_sess_info_field_version(sess_info_type, client_version))) {
-          LOG_WARN("fail to set sess field versoin", K(sess_info_type), K(ret));
+          LOG_WDIAG("fail to set sess field versoin", K(sess_info_type), K(ret));
         }
       }
     }
@@ -525,7 +525,7 @@ int ObClientSessionInfo::update_server_sess_info_version_not_dup_sync(ObServerSe
         }
       } else if (OB_FAIL(server_info.update_sess_info_field_version(sess_info_type, client_version))) {
         // push up all version of internal routing transaction sess info
-        LOG_WARN("fail to set sess field versoin", K(sess_info_type), K(ret));
+        LOG_WDIAG("fail to set sess field versoin", K(sess_info_type), K(ret));
       }
     }
   }
@@ -610,7 +610,7 @@ int ObClientSessionInfo::update_cached_variable(const ObString &var_name,
     ObCachedVariableType type = CACHED_VAR_MAX;
     if (CACHED_VAR_MAX != (type = cached_variables_.get_type(var_name))) {
       if (OB_FAIL(cached_variables_.update_var(type, field->value_))) {
-        LOG_WARN("update cached variable failed ", K(var_name), KPC(field), K(type), K(ret));
+        LOG_WDIAG("update cached variable failed ", K(var_name), KPC(field), K(type), K(ret));
       }
     }
   }
@@ -625,17 +625,17 @@ int ObClientSessionInfo::update_common_sys_variable(const ObString &var_name, co
   ObSessionSysField *field = NULL;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.update_common_sys_variable(var_name, value, field, is_need_insert, is_oceanbase))) {
     if (OB_ENTRY_NOT_EXIST != ret) {
-      LOG_WARN("filed to update comomn sys variable", K(var_name), K(ret));
+      LOG_WDIAG("filed to update comomn sys variable", K(var_name), K(ret));
     }
   } else if (OB_ISNULL(field)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("filed is null after update_system_variable, it should not happened", K(var_name), K(ret));
+    LOG_WDIAG("filed is null after update_system_variable, it should not happened", K(var_name), K(ret));
   } else {
     switch (field->modify_mod_) {
       case OB_FIELD_HOT_MODIFY_MOD: {
@@ -650,13 +650,13 @@ int ObClientSessionInfo::update_common_sys_variable(const ObString &var_name, co
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("error modify_mod_ type, it should not happened", K(field->modify_mod_), K(ret));
+        LOG_WDIAG("error modify_mod_ type, it should not happened", K(field->modify_mod_), K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(update_cached_variable(var_name, field))) {
-        LOG_WARN("fail to update cached variable ", K(var_name), KPC(field), K(ret));
+        LOG_WDIAG("fail to update cached variable ", K(var_name), KPC(field), K(ret));
       }
     }
   }
@@ -670,7 +670,7 @@ int ObClientSessionInfo::update_common_sys_variable(const ObString &var_name, co
   ObObj obj;
   obj.set_varchar(value);
   if (OB_FAIL(update_common_sys_variable(var_name, obj, is_need_insert, is_oceanbase))) {
-    LOG_WARN("fail to update common sys variable", K(var_name), K(ret));
+    LOG_WDIAG("fail to update common sys variable", K(var_name), K(ret));
   }
   return ret;
 }
@@ -680,18 +680,18 @@ int ObClientSessionInfo::update_mysql_sys_variable(const ObString &var_name, con
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(update_common_sys_variable(var_name, value, false))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
       ObSessionSysField *field = NULL;
       if (OB_FAIL(field_mgr_.update_mysql_system_variable(var_name, value, field))){
-        LOG_WARN("fail to update system variable", K(var_name), K(ret));
+        LOG_WDIAG("fail to update system variable", K(var_name), K(ret));
       } else if (OB_ISNULL(field)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("filed is null after update_system_variable, it should not happened", K(var_name), K(ret));
+        LOG_WDIAG("filed is null after update_system_variable, it should not happened", K(var_name), K(ret));
       } else {
         switch (field->modify_mod_) {
           case OB_FIELD_HOT_MODIFY_MOD:
@@ -704,13 +704,13 @@ int ObClientSessionInfo::update_mysql_sys_variable(const ObString &var_name, con
             break;
           default: {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("error modify_mod_ type, it should not happened", K(field->modify_mod_), K(ret));
+            LOG_WDIAG("error modify_mod_ type, it should not happened", K(field->modify_mod_), K(ret));
           }
         }
 
         if (OB_SUCC(ret)) {
           if (OB_FAIL(update_cached_variable(var_name, field))) {
-            LOG_WARN("fail to update cached variable ", K(var_name), KPC(field), K(ret));
+            LOG_WDIAG("fail to update cached variable ", K(var_name), KPC(field), K(ret));
           }
         }
       }
@@ -727,7 +727,7 @@ int ObClientSessionInfo::update_mysql_sys_variable(const ObString &var_name,
   ObObj obj;
   obj.set_varchar(value);
   if (OB_FAIL(update_mysql_sys_variable(var_name, obj))) {
-    LOG_WARN("fail to update sys variable", K(var_name), K(ret));
+    LOG_WDIAG("fail to update sys variable", K(var_name), K(ret));
   }
   return ret;
 }
@@ -737,18 +737,18 @@ int ObClientSessionInfo::update_sys_variable(const ObString &var_name, const ObO
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(update_common_sys_variable(var_name, value, false))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
       ObSessionSysField *field = NULL;
       if (OB_FAIL(field_mgr_.update_system_variable(var_name, value, field))){
-        LOG_WARN("fail to update system variable", K(var_name), K(ret));
+        LOG_WDIAG("fail to update system variable", K(var_name), K(ret));
       } else if (OB_ISNULL(field)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("filed is null after update_system_variable, it should not happened", K(var_name), K(ret));
+        LOG_WDIAG("filed is null after update_system_variable, it should not happened", K(var_name), K(ret));
       } else {
         switch (field->modify_mod_) {
           case OB_FIELD_LAST_INSERT_ID_MODIFY_MOD:
@@ -764,13 +764,13 @@ int ObClientSessionInfo::update_sys_variable(const ObString &var_name, const ObO
             break;
           default: {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("error modify_mod_ type, it should not happened", K(field->modify_mod_), K(ret));
+            LOG_WDIAG("error modify_mod_ type, it should not happened", K(field->modify_mod_), K(ret));
           }
         }
 
         if (OB_SUCC(ret)) {
           if (OB_FAIL(update_cached_variable(var_name, field))) {
-            LOG_WARN("fail to update cached variable ", K(var_name), KPC(field), K(ret));
+            LOG_WDIAG("fail to update cached variable ", K(var_name), KPC(field), K(ret));
           }
         }
       }
@@ -786,7 +786,7 @@ int ObClientSessionInfo::update_sys_variable(const ObString &var_name, const ObS
   ObObj obj;
   obj.set_varchar(value);
   if (OB_FAIL(update_sys_variable(var_name, obj))) {
-    LOG_WARN("fail to update sys variable", K(var_name), K(ret));
+    LOG_WDIAG("fail to update sys variable", K(var_name), K(ret));
   }
   return ret;
 }
@@ -796,12 +796,12 @@ int ObClientSessionInfo::get_sys_variable(const ObString &var_name, ObSessionSys
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.get_sys_variable(var_name, value))) {
-    LOG_WARN("fail to get sys variable", K(var_name), K(ret));
+    LOG_WDIAG("fail to get sys variable", K(var_name), K(ret));
   }
   return  ret;
 }
@@ -811,12 +811,12 @@ int ObClientSessionInfo::get_sys_variable_value(const ObString &var_name, ObObj 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.get_sys_variable_value(var_name, value))) {
-    LOG_WARN("fail to get sys variable value", K(var_name), K(ret));
+    LOG_WDIAG("fail to get sys variable value", K(var_name), K(ret));
   }
   return  ret;
 }
@@ -826,12 +826,12 @@ int ObClientSessionInfo::get_sys_variable_value(const char *name, ObObj &value) 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("variable name is NULL", K(ret));
+    LOG_WDIAG("variable name is NULL", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(ObString::make_string(name)), K(ret));
+    LOG_WDIAG("client session is not inited", K(ObString::make_string(name)), K(ret));
   } else if (OB_FAIL(field_mgr_.get_sys_variable_value(name, value))) {
-    LOG_WARN("fail to get sys variable value", K(ObString::make_string(name)), K(ret));
+    LOG_WDIAG("fail to get sys variable value", K(ObString::make_string(name)), K(ret));
   }
   return ret;
 }
@@ -841,12 +841,12 @@ int ObClientSessionInfo::sys_variable_exists(const ObString &var_name, bool &is_
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.sys_variable_exists(var_name, is_exist))) {
-    LOG_WARN("fail to check if sys variable exists", K(var_name), K(ret));
+    LOG_WDIAG("fail to check if sys variable exists", K(var_name), K(ret));
   }
   return  ret;
 }
@@ -857,12 +857,12 @@ int ObClientSessionInfo::get_sys_variable_type(const ObString &var_name, ObObjTy
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.get_sys_variable_type(var_name, type))) {
-    LOG_WARN("fail to get sys variable type", K(var_name), K(ret));
+    LOG_WDIAG("fail to get sys variable type", K(var_name), K(ret));
   }
   return  ret;
 }
@@ -873,12 +873,12 @@ int ObClientSessionInfo::replace_user_variable(const ObString &var_name, const O
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.replace_user_variable(var_name, val))) {
-    LOG_WARN("fail to replace user variable", K(ret));
+    LOG_WDIAG("fail to replace user variable", K(ret));
   } else {
     version_.inc_user_var_version();
   }
@@ -892,7 +892,7 @@ int ObClientSessionInfo::replace_user_variable(const ObString &name,
   ObObj obj;
   obj.set_varchar(val);
   if (OB_FAIL(replace_user_variable(name, obj))) {
-    LOG_WARN("fail to replace user variable", K(name), K(obj), K(ret));
+    LOG_WDIAG("fail to replace user variable", K(name), K(obj), K(ret));
   } else {
     LOG_DEBUG("succ to replace user variable", K(name), K(obj));
   }
@@ -904,12 +904,12 @@ int ObClientSessionInfo::remove_user_variable(const ObString &var_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.remove_user_variable(var_name))) {
-    LOG_WARN("fail to remove user variable", K(var_name), K(ret));
+    LOG_WDIAG("fail to remove user variable", K(var_name), K(ret));
   } else {
     version_.inc_user_var_version();
   }
@@ -920,7 +920,7 @@ int ObClientSessionInfo::remove_all_user_variable()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(field_mgr_.remove_all_user_vars())) {
-    LOG_WARN("fail to remove all user variable", K(ret));
+    LOG_WDIAG("fail to remove all user variable", K(ret));
   }
   return ret;
 }
@@ -930,12 +930,12 @@ int ObClientSessionInfo::get_user_variable(const ObString &var_name, ObSessionUs
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(var_name), K(ret));
+    LOG_WDIAG("var name is empty", K(var_name), K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.get_user_variable(var_name, value))) {
-    LOG_WARN("fail to get user variable", K(var_name), K(ret));
+    LOG_WDIAG("fail to get user variable", K(var_name), K(ret));
   }
   return  ret;
 }
@@ -945,12 +945,12 @@ int ObClientSessionInfo::get_user_variable_value(const ObString &var_name, ObObj
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.get_user_variable_value(var_name, value))) {
-    LOG_WARN("fail to get user variable value", K(var_name), K(ret));
+    LOG_WDIAG("fail to get user variable value", K(var_name), K(ret));
   }
   return  ret;
 }
@@ -960,12 +960,12 @@ int ObClientSessionInfo::user_variable_exists(const ObString &var_name, bool &is
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("var name is empty", K(ret));
+    LOG_WDIAG("var name is empty", K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(var_name), K(ret));
+    LOG_WDIAG("client session is not inited", K(var_name), K(ret));
   } else if (OB_FAIL(field_mgr_.user_variable_exists(var_name, is_exist))) {
-    LOG_WARN("fail to check if user variable exist", K(var_name), K(ret));
+    LOG_WDIAG("fail to check if user variable exist", K(var_name), K(ret));
   }
   return  ret;
 }
@@ -975,13 +975,13 @@ int ObClientSessionInfo::extract_all_variable_reset_sql(ObSqlString &sql)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(ret));
+    LOG_WDIAG("client session is not inited", K(ret));
   } else if (OB_FAIL(sql.append_fmt("SET"))) {
-    LOG_WARN("fail to append_fmt 'SET'", K(ret));
+    LOG_WDIAG("fail to append_fmt 'SET'", K(ret));
     // reset all session variable,
     // including hot/cold sys variable ,user variable, last_insert_id
   } else if (OB_FAIL(field_mgr_.format_all_var(sql))) {
-    LOG_WARN("fail to format_all_sys_var.", K(sql), K(*this), K(ret));
+    LOG_WDIAG("fail to format_all_sys_var.", K(sql), K(*this), K(ret));
   } else {
     *(sql.ptr() + sql.length() - 1) = ';'; //replace ',' with ';'
   }
@@ -994,14 +994,14 @@ int ObClientSessionInfo::extract_user_variable_reset_sql(ObServerSessionInfo &se
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(ret));
+    LOG_WDIAG("client session is not inited", K(ret));
   } else {
     bool need_reset = false;
     if (OB_FAIL(sql.append_fmt("SET"))) {
-      LOG_WARN("fail to append_fmt 'SET'", K(ret));
+      LOG_WDIAG("fail to append_fmt 'SET'", K(ret));
     } else if (!is_oceanbase_server()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("extract user variable reset sql only for oceanbase server");
+      LOG_WDIAG("extract user variable reset sql only for oceanbase server");
     } else { /* do nothing */ }
 
     //reset user variable
@@ -1009,7 +1009,7 @@ int ObClientSessionInfo::extract_user_variable_reset_sql(ObServerSessionInfo &se
       if (need_reset_user_session_vars(server_info)) {
         need_reset = true;
         if (OB_FAIL(field_mgr_.format_user_var(sql))) {
-          LOG_WARN("fail to format_user_var.", K(sql), K(*this),
+          LOG_WDIAG("fail to format_user_var.", K(sql), K(*this),
                    K(server_info), K(ret));
         }
       }
@@ -1034,22 +1034,22 @@ int ObClientSessionInfo::extract_variable_reset_sql(ObServerSessionInfo &server_
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(ret));
+    LOG_WDIAG("client session is not inited", K(ret));
   } else {
     bool need_reset = false;
     if (OB_FAIL(sql.append_fmt("SET"))) {
-      LOG_WARN("fail to append_fmt 'SET'", K(ret));
+      LOG_WDIAG("fail to append_fmt 'SET'", K(ret));
     }
 
     if (OB_SUCC(ret)) {
       if (is_oceanbase_server()) {
         if (OB_FAIL(extract_oceanbase_variable_reset_sql(server_info, sql, need_reset))) {
-          LOG_WARN("fail to extract_oceanbase_variable_reset_sql", K(sql), K(*this),
+          LOG_WDIAG("fail to extract_oceanbase_variable_reset_sql", K(sql), K(*this),
                    K(server_info), K(ret));
         }
       } else {
         if (OB_FAIL(extract_mysql_variable_reset_sql(server_info, sql, need_reset))) {
-          LOG_WARN("fail to extract_mysql_variable_reset_sql", K(sql), K(*this),
+          LOG_WDIAG("fail to extract_mysql_variable_reset_sql", K(sql), K(*this),
                    K(server_info), K(ret));
         }
       }
@@ -1062,7 +1062,7 @@ int ObClientSessionInfo::extract_variable_reset_sql(ObServerSessionInfo &server_
       if (need_reset || need_reset_common_cold_session_vars(server_info)) {
         need_reset = true;
         if (OB_FAIL(field_mgr_.format_common_sys_var(sql))) {
-          LOG_WARN("fail to format_common_sys_var.", K(sql), K(*this),
+          LOG_WDIAG("fail to format_common_sys_var.", K(sql), K(*this),
                    K(server_info), K(ret));
         }
       }
@@ -1073,7 +1073,7 @@ int ObClientSessionInfo::extract_variable_reset_sql(ObServerSessionInfo &server_
       if (need_reset || need_reset_common_hot_session_vars(server_info)) {
         need_reset = true;
         if (OB_FAIL(field_mgr_.format_common_hot_sys_var(sql))) {
-          LOG_WARN("fail to format_common_hot_sys_var.", K(sql), K(*this),
+          LOG_WDIAG("fail to format_common_hot_sys_var.", K(sql), K(*this),
                    K(server_info), K(ret));
         }
       }
@@ -1084,7 +1084,7 @@ int ObClientSessionInfo::extract_variable_reset_sql(ObServerSessionInfo &server_
       if (need_reset_user_session_vars(server_info)) {
         need_reset = true;
         if (OB_FAIL(field_mgr_.format_user_var(sql))) {
-          LOG_WARN("fail to format_user_var.", K(sql), K(*this),
+          LOG_WDIAG("fail to format_user_var.", K(sql), K(*this),
                    K(server_info), K(ret));
         }
       }
@@ -1112,7 +1112,7 @@ int ObClientSessionInfo::extract_mysql_variable_reset_sql(ObServerSessionInfo &s
     if (need_reset_mysql_cold_session_vars(server_info)) {
       need_reset = true;
       if (OB_FAIL(field_mgr_.format_mysql_sys_var(sql))) {
-        LOG_WARN("fail to format_mysql_sys_var.", K(sql), K(*this),
+        LOG_WDIAG("fail to format_mysql_sys_var.", K(sql), K(*this),
                  K(server_info), K(ret));
       }
     }
@@ -1123,7 +1123,7 @@ int ObClientSessionInfo::extract_mysql_variable_reset_sql(ObServerSessionInfo &s
     if (need_reset_mysql_hot_session_vars(server_info)) {
       need_reset = true;
       if (OB_FAIL(field_mgr_.format_mysql_hot_sys_var(sql))) {
-        LOG_WARN("fail to format_mysql_hot_sys_var.", K(sql), K(*this),
+        LOG_WDIAG("fail to format_mysql_hot_sys_var.", K(sql), K(*this),
                  K(server_info), K(ret));
       }
     }
@@ -1142,7 +1142,7 @@ int ObClientSessionInfo::extract_oceanbase_variable_reset_sql(ObServerSessionInf
       if (OB_FAIL(sql.append_fmt(" @@%s = %ld,",
                                  OB_SV_SAFE_WEAK_READ_SNAPSHOT,
                                  syncing_safe_read_snapshot_))) {
-        LOG_WARN("fail to append_fmt safe read_snapshot", K(ret));
+        LOG_WDIAG("fail to append_fmt safe read_snapshot", K(ret));
       } else {
         LOG_DEBUG("will sync safe snapshot ", K_(syncing_safe_read_snapshot));
       }
@@ -1154,7 +1154,7 @@ int ObClientSessionInfo::extract_oceanbase_variable_reset_sql(ObServerSessionInf
     if (need_reset_cold_session_vars(server_info)) {
       need_reset = true;
       if (OB_FAIL(field_mgr_.format_sys_var(sql))) {
-        LOG_WARN("fail to format_sys_var.", K(sql), K(*this),
+        LOG_WDIAG("fail to format_sys_var.", K(sql), K(*this),
                  K(server_info), K(ret));
       }
     }
@@ -1165,7 +1165,7 @@ int ObClientSessionInfo::extract_oceanbase_variable_reset_sql(ObServerSessionInf
     if (need_reset_hot_session_vars(server_info)) {
       need_reset = true;
       if (OB_FAIL(field_mgr_.format_hot_sys_var(sql))) {
-        LOG_WARN("fail to format_hot_sys_var.", K(sql), K(*this),
+        LOG_WDIAG("fail to format_hot_sys_var.", K(sql), K(*this),
                  K(server_info), K(ret));
       }
     }
@@ -1176,7 +1176,7 @@ int ObClientSessionInfo::extract_oceanbase_variable_reset_sql(ObServerSessionInf
     if (need_reset_last_insert_id(server_info)) {
       need_reset = true;
       if (OB_FAIL(field_mgr_.format_last_insert_id(sql))) {
-          LOG_WARN("fail to format_last_insert_id.", K(sql),
+          LOG_WDIAG("fail to format_last_insert_id.", K(sql),
                    K(*this), K(server_info), K(ret));
       }
     }
@@ -1191,13 +1191,13 @@ int ObClientSessionInfo::extract_last_insert_id_reset_sql(ObServerSessionInfo &s
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(ret));
+    LOG_WDIAG("client session is not inited", K(ret));
   } else if (!need_reset_last_insert_id(server_info)) {
     // do nothing
   } else if (OB_FAIL(sql.append_fmt("SET"))) {
-    LOG_WARN("fail to append_fmt ", K(ret));
+    LOG_WDIAG("fail to append_fmt ", K(ret));
   } else if (OB_FAIL(field_mgr_.format_last_insert_id(sql))) {
-    LOG_WARN("fail to format_last_insert_id.", K(sql), K(ret));
+    LOG_WDIAG("fail to format_last_insert_id.", K(sql), K(ret));
   } else {
     *(sql.ptr() + sql.length() - 1) = ';'; //replace ',' with ';'
   }
@@ -1211,11 +1211,11 @@ int ObClientSessionInfo::extract_changed_schema(ObServerSessionInfo &server_info
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("client session is not inited", K(ret));
+    LOG_WDIAG("client session is not inited", K(ret));
   } else if (!need_reset_database(server_info)) {
     // do nothing
   } else if (OB_FAIL(get_database_name(db_name))) {
-    LOG_ERROR("fail to get database name", K(*this), K(server_info), K(ret));
+    LOG_EDIAG("fail to get database name", K(*this), K(server_info), K(ret));
   } else {}
   return ret;
 }
@@ -1263,9 +1263,9 @@ int ObClientSessionInfo::get_session_timeout(const char *timeout_name, int64_t &
   int ret = OB_SUCCESS;
   ObObj timeout_obj;
   if (OB_FAIL(get_sys_variable_value(timeout_name, timeout_obj))) {
-    LOG_WARN("fail to get sys variable", "name", timeout_name, K(ret));
+    LOG_WDIAG("fail to get sys variable", "name", timeout_name, K(ret));
   } else if (OB_FAIL(timeout_obj.get_int(timeout))) {
-    LOG_WARN("fail to get timeout", K(ret));
+    LOG_WDIAG("fail to get timeout", K(ret));
   }
   return ret;
 }
@@ -1276,7 +1276,7 @@ int ObClientSessionInfo::set_start_trans_sql(const ObString &sql)
   char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(sql.length()));
   if (OB_ISNULL(buf)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K(sql.length()), K(ret));
+    LOG_WDIAG("fail to alloc mem", K(sql.length()), K(ret));
   } else {
     // if we have save start_trans_sql before, reset it (and free memory buf)
     // TODO: reuse it?
@@ -1285,7 +1285,7 @@ int ObClientSessionInfo::set_start_trans_sql(const ObString &sql)
     int32_t writed_size = saved_start_trans_sql_.write(sql.ptr(), sql.length());
     if (OB_UNLIKELY(sql.length() != writed_size)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("writed unexpected", K(writed_size), K(sql.length()), K(ret));
+      LOG_WDIAG("writed unexpected", K(writed_size), K(sql.length()), K(ret));
     }
   }
   return ret;
@@ -1309,9 +1309,16 @@ int ObClientSessionInfo::load_all_cached_variable()
     ObCachedVariableType type = static_cast<ObCachedVariableType>(i);
     name = ObCachedVariables::get_name(type);
     if (OB_FAIL(field_mgr_.get_sys_variable_value(name, obj))) {
-      LOG_WARN("get system variable value failed", K(name), K(obj), K(ret));
-    } else if (OB_FAIL(cached_variables_.update_var(type, obj))) {
-      LOG_WARN("update cached variable failed ", K(name), K(type), K(obj), K(ret));
+      if (name.case_compare(OB_SV_NCHARACTER_SET_CONNECTION) == 0) {
+        ret = OB_SUCCESS;
+        obj.set_int(0);
+        LOG_DEBUG("skip the variable ncharacter_set_connection because observer does not offer it");
+      } else {
+        LOG_WDIAG("get system variable value failed", K(name), K(obj), K(ret));
+      }
+    }
+    if (OB_SUCC(ret) && OB_FAIL(cached_variables_.update_var(type, obj))) {
+      LOG_WDIAG("update cached variable failed ", K(name), K(type), K(obj), K(ret));
     } else {}
   }
   return ret;
@@ -1331,7 +1338,7 @@ int ObClientSessionInfo::revalidate_sys_var_set(ObSysVarSetProcessor &var_set_pr
   ObDefaultSysVarSet *newest_var_set = NULL;
   if (OB_ISNULL(newest_var_set = var_set_processor_->acquire())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to acquire sys var set", K(newest_var_set), K(ret));
+    LOG_WDIAG("fail to acquire sys var set", K(newest_var_set), K(ret));
   } else if (need_update_var_set
              || (NULL == cur_var_set)
              || (newest_var_set->get_sys_var_count() != cur_var_set->get_sys_var_count())) {
@@ -1345,7 +1352,7 @@ int ObClientSessionInfo::revalidate_sys_var_set(ObSysVarSetProcessor &var_set_pr
     // revalidate new var set
     // add_sys_var_set will inc_ref newest_var_set and dec_ref cur_var_set
     if (OB_FAIL(add_sys_var_set(*newest_var_set))) {
-      LOG_WARN("fail to add sys var set", K(ret));
+      LOG_WDIAG("fail to add sys var set", K(ret));
     }
   }
   if (OB_LIKELY(NULL != newest_var_set)) {
@@ -1375,7 +1382,7 @@ void ObClientSessionInfo::destroy()
   }
   reset_start_trans_sql();
   clear_init_sql();
- 
+
   destroy_ps_id_entry_map();
   destroy_cursor_id_addr_map();
   destroy_ps_id_addrs_map();
@@ -1502,11 +1509,11 @@ ObTextPsNameEntry *ObClientSessionInfo::get_text_ps_name_entry(const common::ObS
   ObTextPsNameEntry *text_ps_name_entry = NULL;
   if (OB_FAIL(text_ps_name_entry_map_.get_refactored(text_ps_name, text_ps_name_entry))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      LOG_WARN("fail to get text ps name enrtry with client stmt name", K(ret), K(text_ps_name));
+      LOG_WDIAG("fail to get text ps name enrtry with client stmt name", K(ret), K(text_ps_name));
     }
   } else if (OB_ISNULL(text_ps_name_entry)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("text ps name entry is null", K(ret), K(text_ps_name));
+    LOG_WDIAG("text ps name entry is null", K(ret), K(text_ps_name));
   }
   return text_ps_name_entry;
 }
@@ -1521,7 +1528,7 @@ int ObClientSessionInfo::delete_text_ps_name_entry(ObString& text_ps_name)
 {
   ObTextPsNameEntry *tmp = text_ps_name_entry_map_.remove(text_ps_name);
   if (NULL == tmp) {
-    LOG_WARN("unexpected", K(text_ps_name));
+    LOG_WDIAG("unexpected", K(text_ps_name));
   } else {
     tmp->destroy();
   }
@@ -1534,11 +1541,11 @@ ObCursorIdAddr *ObClientSessionInfo::get_cursor_id_addr(uint32_t client_cursor_i
   int ret = OB_SUCCESS;
   if (OB_FAIL(cursor_id_addr_map_.get_refactored(client_cursor_id, cursor_id_addr))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      LOG_WARN("fail to get cursor_id_addr with client cursor id", K(ret), K(client_cursor_id));
+      LOG_WDIAG("fail to get cursor_id_addr with client cursor id", K(ret), K(client_cursor_id));
     }
   } else if (OB_ISNULL(cursor_id_addr)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cursor_id_addr is null", K(ret), K(client_cursor_id));
+    LOG_WDIAG("cursor_id_addr is null", K(ret), K(client_cursor_id));
   }
   return cursor_id_addr;
 }
@@ -1549,11 +1556,11 @@ ObPsIdAddrs *ObClientSessionInfo::get_ps_id_addrs(uint32_t client_ps_id) const
   int ret = OB_SUCCESS;
   if (OB_FAIL(ps_id_addrs_map_.get_refactored(client_ps_id, ps_id_addrs))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      LOG_WARN("fail to get ps_id_addrs with client ps id", K(ret), K(client_ps_id));
+      LOG_WDIAG("fail to get ps_id_addrs with client ps id", K(ret), K(client_ps_id));
     }
   } else if (OB_ISNULL(ps_id_addrs)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ps_id_addrs is null", K(ret), K(client_ps_id));
+    LOG_WDIAG("ps_id_addrs is null", K(ret), K(client_ps_id));
   }
   return ps_id_addrs;
 }
@@ -1578,7 +1585,7 @@ int ObClientSessionInfo::update_sess_info_field(int16_t type, ObString &sess_inf
   if (!is_field_exist) {
     version = 1;
     if (OB_FAIL(sess_info_list_.push_back(SessionInfoField(sess_info_value, type, version)))) {
-      LOG_WARN("fail to record sess info field version", K(type), K(sess_info_value), K(ret));
+      LOG_WDIAG("fail to record sess info field version", K(type), K(sess_info_value), K(ret));
     }
   }
   return ret;

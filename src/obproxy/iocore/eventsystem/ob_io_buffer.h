@@ -803,7 +803,7 @@ public:
       if (NULL != writer_->next_ && 0 == writer_->write_avail()) {
         ret = writer_->next_;
       } else if (OB_UNLIKELY(NULL != writer_->next_) && OB_UNLIKELY(0 != writer_->next_->read_avail())) {
-        PROXY_EVENT_LOG(ERROR, "next block read avail must be 0",
+        PROXY_EVENT_LOG(EDIAG, "next block read avail must be 0",
                         "next_block_read_avail", writer_->next_->read_avail());
       } else {
         ret = writer_;
@@ -1199,11 +1199,11 @@ inline int iobuffer_mem_common(const char *loc, int64_t size)
       loc = "memory/IOBuffer/UNKNOWN-LOCATION";
     }
     if (OB_FAIL(ObMemoryResourceTracker::increment(loc, size))) {
-      PROXY_EVENT_LOG(WARN, "fail to increment", K(loc), K(size), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "fail to increment", K(loc), K(size), K(ret));
     }
   } else {
     ret = common::OB_ERROR_OUT_OF_RANGE;
-    PROXY_EVENT_LOG(WARN, "size is out of range", K(loc), K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "size is out of range", K(loc), K(size), K(ret));
   }
 #endif //OB_HAS_MEMORY_TRACKER
   return ret;
@@ -1213,7 +1213,7 @@ inline int iobuffer_mem_inc(const char *loc, int64_t size)
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(iobuffer_mem_common(loc, size))) {
-    PROXY_EVENT_LOG(WARN, "fail to iobuffer_mem_inc", K(loc), K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail to iobuffer_mem_inc", K(loc), K(size), K(ret));
   }
   return ret;
 }
@@ -1222,7 +1222,7 @@ inline int iobuffer_mem_dec(const char *loc, int64_t size)
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(iobuffer_mem_common(loc, -size))) {
-    PROXY_EVENT_LOG(WARN, "fail to iobuffer_mem_dec", K(loc), K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail to iobuffer_mem_dec", K(loc), K(size), K(ret));
   }
   return ret;
 }
@@ -1237,11 +1237,11 @@ inline ObIOBufferData *new_iobufferdata_internal(
 {
   ObIOBufferData *data = NULL;
   if (OB_ISNULL(b) || OB_UNLIKELY(size <= 0)) {
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(b), K(size));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(b), K(size));
   } else {
     data = op_thread_alloc(ObIOBufferData, get_io_data_allocator(), NULL);
     if (OB_ISNULL(data)) {
-      PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferData");
+      PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferData");
     } else {
       data->size_ = size;
       data->data_ = reinterpret_cast<char *>(b);
@@ -1263,18 +1263,18 @@ inline ObIOBufferData *new_iobufferdata_internal(
 {
   ObIOBufferData *data = NULL;
   if (OB_UNLIKELY(size <= 0)) {
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(size));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(size));
   } else {
     data = op_thread_alloc(ObIOBufferData, get_io_data_allocator(), NULL);
     if (OB_ISNULL(data)) {
-      PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferData");
+      PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferData");
     } else {
 #ifdef TRACK_BUFFER_USER
       data->location_ = loc;
 #endif
 
       if (common::OB_SUCCESS != data->alloc(size)) {
-        PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferData");
+        PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferData");
         op_thread_free(ObIOBufferData, data, get_io_data_allocator());
         data = NULL;
       }
@@ -1291,7 +1291,7 @@ inline int ObIOBufferData::alloc(const int64_t size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(size <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(size), K(ret));
   } else {
     if (NULL != data_) {
       dealloc();
@@ -1306,7 +1306,7 @@ inline int ObIOBufferData::alloc(const int64_t size)
     data_ = static_cast<char *>(op_fixed_mem_alloc(size_));
     if (OB_ISNULL(data_)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferData", K(ret));
+      PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferData", K(ret));
       size_ = 0;
       mem_type_ = NO_ALLOC;
     }
@@ -1343,7 +1343,7 @@ inline ObIOBufferBlock *new_iobufferblock_internal(
 {
   ObIOBufferBlock *b = op_thread_alloc(ObIOBufferBlock, get_io_block_allocator(), NULL);
   if (OB_ISNULL(b)) {
-    PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferBlock");
+    PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferBlock");
   } else {
 #ifdef TRACK_BUFFER_USER
     b->location_ = location;
@@ -1361,11 +1361,11 @@ inline ObIOBufferBlock *new_iobufferblock_internal(
   ObIOBufferBlock *b = NULL;
   if (OB_ISNULL(d) || OB_UNLIKELY(len <= 0) || OB_UNLIKELY(offset < 0)
       || len > d->get_block_size()) {
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(d), K(len), K(offset));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(d), K(len), K(offset));
   } else {
     b = op_thread_alloc(ObIOBufferBlock, get_io_block_allocator(), NULL);
     if (OB_ISNULL(b)) {
-      PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferBlock");
+      PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferBlock");
     } else {
 #ifdef TRACK_BUFFER_USER
       b->location_ = location;
@@ -1392,7 +1392,7 @@ inline int ObIOBufferBlock::consume(const int64_t len)
     start_ += len;
   } else {
     ret = common::OB_SIZE_OVERFLOW;
-    PROXY_EVENT_LOG(WARN, "consume length overflow",
+    PROXY_EVENT_LOG(WDIAG, "consume length overflow",
                     "actual_size", end_ - start_, K(len), K(ret));
   }
   return ret;
@@ -1405,7 +1405,7 @@ inline int ObIOBufferBlock::fill(const int64_t len)
     end_ += len;
   } else {
     ret = common::OB_SIZE_OVERFLOW;
-    PROXY_EVENT_LOG(WARN, "fill length overflow",
+    PROXY_EVENT_LOG(WDIAG, "fill length overflow",
                     "remain_size", buf_end_ - end_, K(len), K(ret));
   }
   return ret;
@@ -1431,7 +1431,7 @@ inline int ObIOBufferBlock::alloc(const int64_t size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(size <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(size), K(ret));
   } else {
 #ifdef TRACK_BUFFER_USER
     data_ = new_iobufferdata_internal(location_, size);
@@ -1440,7 +1440,7 @@ inline int ObIOBufferBlock::alloc(const int64_t size)
 #endif
     if (OB_ISNULL(data_)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferData", K(ret));
+      PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferData", K(ret));
     } else {
       reset();
     }
@@ -1476,7 +1476,7 @@ inline ObIOBufferBlock *ObIOBufferBlock::clone()
 #endif
 
   if (OB_ISNULL(block)) {
-    PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferBlock");
+    PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferBlock");
   } else {
     block->data_ = data_;
     block->start_ = start_;
@@ -1510,7 +1510,7 @@ inline int ObIOBufferBlock::set_internal(void *b, const int64_t len)
 #endif
   if (OB_ISNULL(data_)) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferData", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferData", K(ret));
   } else {
     reset();
     end_ = start_ + len;
@@ -1532,7 +1532,7 @@ inline int ObIOBufferBlock::realloc_set_internal(void *b, const int64_t buf_size
   int64_t data_size = size();
   if (OB_UNLIKELY(data_size > buf_size) || OB_ISNULL(b) || OB_UNLIKELY(buf_size < 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(data_size), K(buf_size), K(b), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(data_size), K(buf_size), K(b), K(ret));
   } else {
     MEMCPY(b, start_, data_size);
     dealloc();
@@ -1554,15 +1554,15 @@ inline int ObIOBufferBlock::realloc(const int64_t size)
   void *b = NULL;
   if (OB_UNLIKELY(size < 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(size), K(ret));
   } else if (size != data_->size_) {
     if (OB_ISNULL((b = op_fixed_mem_alloc(size)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObIOBufferData data", K(ret));
+      PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObIOBufferData data", K(ret));
     } else if (OB_FAIL(realloc_set_internal(b, size))) {
       op_fixed_mem_free(b, size);
       b = NULL;
-      PROXY_EVENT_LOG(WARN, "fail to realloc_set_internal", K(size), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "fail to realloc_set_internal", K(size), K(ret));
     } else {
       data_->mem_type_ = DEFAULT_ALLOC;
     }
@@ -1697,7 +1697,7 @@ inline int ObIOBufferReader::consume(const int64_t len)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(read_avail() < len) || OB_UNLIKELY(len < 0)) {
     ret = common::OB_SIZE_OVERFLOW;
-    PROXY_EVENT_LOG(WARN, "consume length is overflow", "read_avail",
+    PROXY_EVENT_LOG(WDIAG, "consume length is overflow", "read_avail",
                     read_avail(), K(len), K(ret));
   } else {
     consume_internal(len);
@@ -1773,7 +1773,7 @@ inline ObMIOBuffer *new_miobuffer_internal(
 {
   ObMIOBuffer *b = op_thread_alloc(ObMIOBuffer, get_mio_allocator(), NULL);
   if (OB_ISNULL(b)) {
-    PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObMIOBuffer");
+    PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObMIOBuffer");
   } else {
 #ifdef TRACK_BUFFER_USER
     b->location_ = location;
@@ -1799,7 +1799,7 @@ inline ObMIOBuffer *new_empty_miobuffer_internal(
 {
   ObMIOBuffer *b = op_thread_alloc(ObMIOBuffer, get_mio_allocator(), NULL);
   if (OB_ISNULL(b)) {
-    PROXY_EVENT_LOG(ERROR, "fail to allocate memory for ObMIOBuffer");
+    PROXY_EVENT_LOG(EDIAG, "fail to allocate memory for ObMIOBuffer");
   } else {
     b->size_ = size;
 #ifdef TRACK_BUFFER_USER
@@ -1892,7 +1892,7 @@ inline int ObMIOBuffer::append_block_internal(ObIOBufferBlock *b)
     init_readers();
   } else if(NULL != writer_->next_ && OB_UNLIKELY(0 != writer_->next_->read_avail())) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_EVENT_LOG(ERROR, "append_block_internal, invalid miobuffer writer",
+    PROXY_EVENT_LOG(EDIAG, "append_block_internal, invalid miobuffer writer",
                     "read_avail", writer_->next_->read_avail(), K(ret));
   } else {
     writer_->next_ = b;
@@ -1916,13 +1916,13 @@ inline int ObMIOBuffer::append_block(ObIOBufferBlock *b)
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(b)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(b), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(b), K(ret));
   } else if (OB_UNLIKELY(b->read_avail() <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument, block read avail must be greater than 0",
+    PROXY_EVENT_LOG(WDIAG, "invalid argument, block read avail must be greater than 0",
                     "read_avail", b->read_avail(), K(ret));
   } else if (OB_FAIL(append_block_internal(b))) {
-    PROXY_EVENT_LOG(WARN, "failed to append block internal", K(b), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "failed to append block internal", K(b), K(ret));
   }
   return ret;
 }
@@ -1934,7 +1934,7 @@ inline int ObMIOBuffer::append_block(const int64_t size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(size <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(size), K(ret));
   } else {
 #ifdef TRACK_BUFFER_USER
     ObIOBufferBlock *b = new_iobufferblock_internal(location_);
@@ -1944,13 +1944,13 @@ inline int ObMIOBuffer::append_block(const int64_t size)
 
     if (OB_ISNULL(b)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_EVENT_LOG(ERROR, "failed to allocate iobuffer block", K(b), K(ret));
+      PROXY_EVENT_LOG(EDIAG, "failed to allocate iobuffer block", K(b), K(ret));
     } else if (OB_FAIL(b->alloc(size))) {
       b->free();
-      PROXY_EVENT_LOG(WARN, "failed to allocate iobuffer data", K(b), K(size), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to allocate iobuffer data", K(b), K(size), K(ret));
     } else if (OB_FAIL(append_block_internal(b))) {
       b->free();
-      PROXY_EVENT_LOG(WARN, "failed to append block internal", K(b), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to append block internal", K(b), K(ret));
     }
   }
   return ret;
@@ -1969,7 +1969,7 @@ inline int ObMIOBuffer::add_block(const int64_t block_count)
 
   if (OB_UNLIKELY(block_count <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(block_count), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(block_count), K(ret));
   } else {
     for (int64_t i = block_count; (i > 0) && OB_SUCC(ret); --i) {
 #ifdef TRACK_BUFFER_USER
@@ -1979,9 +1979,9 @@ inline int ObMIOBuffer::add_block(const int64_t block_count)
 #endif
       if (OB_ISNULL(b)) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_EVENT_LOG(ERROR, "failed to allocate iobuffer block", K(b), K(i), K(ret));
+        PROXY_EVENT_LOG(EDIAG, "failed to allocate iobuffer block", K(b), K(i), K(ret));
       } else if (OB_FAIL(b->alloc(size_))) {
-        PROXY_EVENT_LOG(WARN, "failed to allocate iobuffer data", K(b), K(size_), K(i), K(ret));
+        PROXY_EVENT_LOG(WDIAG, "failed to allocate iobuffer data", K(b), K(size_), K(i), K(ret));
       } else {
         b->next_ = head_block;
         head_block = b;
@@ -1990,7 +1990,7 @@ inline int ObMIOBuffer::add_block(const int64_t block_count)
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(append_block_internal(head_block))) {
-        PROXY_EVENT_LOG(WARN, "failed to append block internal", K(head_block), K(ret));
+        PROXY_EVENT_LOG(WDIAG, "failed to append block internal", K(head_block), K(ret));
       }
     }
     if (OB_FAIL(ret) && NULL != head_block) {
@@ -2015,7 +2015,7 @@ inline int ObMIOBuffer::check_add_block(const int64_t total_size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(total_size <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(total_size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(total_size), K(ret));
   } else {
     if (!is_high_water() && is_current_low_water()) {
 
@@ -2028,7 +2028,7 @@ inline int ObMIOBuffer::check_add_block(const int64_t total_size)
 
       if (add_block_count > 0) {
         if (OB_FAIL(add_block(add_block_count))) {
-          PROXY_EVENT_LOG(WARN, "fail to add_block", K(add_block_count), K(ret));
+          PROXY_EVENT_LOG(WDIAG, "fail to add_block", K(add_block_count), K(ret));
         }
       }
     }
@@ -2190,7 +2190,7 @@ inline int ObMIOBuffer::set(void *b, const int64_t len)
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(b) || OB_UNLIKELY(len <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(b), K(len), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(b), K(len), K(ret));
   } else {
 #ifdef TRACK_BUFFER_USER
     writer_ = new_iobufferblock_internal(location_);
@@ -2199,10 +2199,10 @@ inline int ObMIOBuffer::set(void *b, const int64_t len)
 #endif
     if (OB_ISNULL(writer_)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_EVENT_LOG(ERROR, "failed to allocate iobuffer block", K(b), K(ret));
+      PROXY_EVENT_LOG(EDIAG, "failed to allocate iobuffer block", K(b), K(ret));
     } else if (OB_FAIL(writer_->set_internal(b, len))) {
       writer_ = NULL; // free writer block
-      PROXY_EVENT_LOG(WARN, "failed to set internal block", K(b), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to set internal block", K(b), K(ret));
     } else {
       init_readers();
     }
@@ -2215,7 +2215,7 @@ inline int ObMIOBuffer::append_allocated(void *b, const int64_t len)
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(b) || OB_UNLIKELY(len <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(b), K(len), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(b), K(len), K(ret));
   } else {
 #ifdef TRACK_BUFFER_USER
     ObIOBufferBlock *block = new_iobufferblock_internal(location_);
@@ -2225,15 +2225,15 @@ inline int ObMIOBuffer::append_allocated(void *b, const int64_t len)
 
     if (OB_ISNULL(block)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_EVENT_LOG(ERROR, "failed to allocate iobuffer block", K(b), K(ret));
+      PROXY_EVENT_LOG(EDIAG, "failed to allocate iobuffer block", K(b), K(ret));
     } else if (OB_FAIL(block->set_internal(b, len))) {
       block->free();
       block = NULL;
-      PROXY_EVENT_LOG(WARN, "failed to set internal block", K(b), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to set internal block", K(b), K(ret));
     } else if (OB_FAIL(append_block_internal(block))) {
       block->free();
       block = NULL;
-      PROXY_EVENT_LOG(WARN, "failed to append block internal", K(b), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to append block internal", K(b), K(ret));
     }
   }
   return ret;
@@ -2244,7 +2244,7 @@ inline int ObMIOBuffer::alloc(const int64_t size)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(size <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(WARN, "invalid argument", K(size), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(size), K(ret));
   } else {
 #ifdef TRACK_BUFFER_USER
     writer_ = new_iobufferblock_internal(location_);
@@ -2253,10 +2253,10 @@ inline int ObMIOBuffer::alloc(const int64_t size)
 #endif
     if (OB_ISNULL(writer_)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_EVENT_LOG(ERROR, "failed to allocate iobuffer block", K(ret));
+      PROXY_EVENT_LOG(EDIAG, "failed to allocate iobuffer block", K(ret));
     } else if (OB_FAIL(writer_->alloc(size))) {
       writer_ = NULL; // free writer block
-      PROXY_EVENT_LOG(WARN, "failed to set internal block", K(size), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to set internal block", K(size), K(ret));
     } else {
       size_ = size;
       init_readers();
@@ -2269,7 +2269,7 @@ inline void ObMIOBuffer::dealloc_reader(ObIOBufferReader *e)
 {
   if (NULL != e->accessor_) {
     if (OB_UNLIKELY(e->accessor_->writer() != this) || OB_UNLIKELY(e->accessor_->reader() != e)) {
-      PROXY_EVENT_LOG(ERROR, "accessor writer must be this, accessor reader must be e",
+      PROXY_EVENT_LOG(EDIAG, "accessor writer must be this, accessor reader must be e",
                       "accessor_writer", e->accessor_->writer(),
                       K(this), "accessor_reader", e->accessor_->reader(), K(e));
     }

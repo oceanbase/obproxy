@@ -45,7 +45,7 @@ int ObHandshakeResponseParam::write_conn_id_buf(const uint32_t conn_id)
   int64_t pos = 0;
   if (OB_FAIL(databuff_printf(conn_id_buf_, OB_MAX_UINT32_BUF_LEN,
                               pos, "%u", conn_id))) {
-    LOG_WARN("fail to append connection id", K(pos), K(conn_id_buf_),
+    LOG_WDIAG("fail to append connection id", K(pos), K(conn_id_buf_),
              K(conn_id), K(ret));
   }
   return ret;
@@ -56,7 +56,7 @@ int ObHandshakeResponseParam::write_proxy_version_buf()
   int ret = OB_SUCCESS;
   int64_t pos = 0;
   if (OB_FAIL(databuff_printf(proxy_version_buf_, OB_MAX_VERSION_BUF_LEN, pos, "%s", PACKAGE_VERSION))) {
-    LOG_WARN("fail to append proxy version", K(pos), K(proxy_version_buf_),
+    LOG_WDIAG("fail to append proxy version", K(pos), K(proxy_version_buf_),
              K(PACKAGE_VERSION), K(ret));
   }
   return ret;
@@ -67,7 +67,7 @@ int ObHandshakeResponseParam::write_proxy_conn_id_buf(const uint64_t proxy_conn_
   int ret = OB_SUCCESS;
   int64_t pos = 0;
   if (OB_FAIL(databuff_printf(proxy_conn_id_buf_, OB_MAX_UINT64_BUF_LEN, pos, "%lu", proxy_conn_id))) {
-    LOG_WARN("fail to append proxy connection id", K(pos), K(proxy_conn_id_buf_),
+    LOG_WDIAG("fail to append proxy connection id", K(pos), K(proxy_conn_id_buf_),
              K(proxy_conn_id), K(ret));
   }
   return ret;
@@ -78,7 +78,7 @@ int ObHandshakeResponseParam::write_cluster_id_buf(const int64_t cluster_id)
   int ret = OB_SUCCESS;
   int64_t pos = 0;
   if (OB_FAIL(databuff_printf(cluster_id_buf_, OB_MAX_UINT64_BUF_LEN, pos, "%ld", cluster_id))) {
-    LOG_WARN("fail to append cluster id", K(pos), K(cluster_id_buf_),
+    LOG_WDIAG("fail to append cluster id", K(pos), K(cluster_id_buf_),
              K(cluster_id), K(ret));
   } else {
     cluster_id_ = cluster_id;
@@ -91,7 +91,7 @@ int ObHandshakeResponseParam::write_global_vars_version_buf(const int64_t versio
   int ret = OB_SUCCESS;
   int64_t pos = 0;
   if (OB_FAIL(databuff_printf(global_vars_version_buf_, OB_MAX_UINT64_BUF_LEN, pos, "%ld", version))) {
-    LOG_WARN("fail to append vars version failed", K(pos),
+    LOG_WDIAG("fail to append vars version failed", K(pos),
              K(global_vars_version_buf_), K(version), K(ret));
   }
   return ret;
@@ -102,7 +102,7 @@ int ObHandshakeResponseParam::write_capability_buf(const uint64_t cap)
   int ret = OB_SUCCESS;
   int64_t pos = 0;
   if (OB_FAIL(databuff_printf(cap_buf_, OB_MAX_UINT64_BUF_LEN, pos, "%lu", cap))) {
-    LOG_WARN("fail to append capability flag", K(pos), K_(cap_buf),
+    LOG_WDIAG("fail to append capability flag", K(pos), K_(cap_buf),
              K(cap), K(ret));
   }
   return ret;
@@ -115,12 +115,12 @@ int ObHandshakeResponseParam::write_proxy_scramble(const common::ObString &proxy
   if (OB_UNLIKELY(proxy_scramble.length() != server_scramble.length())
       || OB_UNLIKELY(server_scramble.length() != sizeof(proxy_scramble_buf_))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid scramble length", K(proxy_scramble), K(server_scramble), K(ret));
+    LOG_WDIAG("invalid scramble length", K(proxy_scramble), K(server_scramble), K(ret));
   } else if (OB_FAIL(ObEncryptedHelper::my_xor(reinterpret_cast<const unsigned char *>(proxy_scramble.ptr()),
       reinterpret_cast<const unsigned char *>(server_scramble.ptr()),
       static_cast<const unsigned int>(server_scramble.length()),
       reinterpret_cast<unsigned char *>(proxy_scramble_buf_)))) {
-    LOG_WARN("fail to encrypt proxy_scramble", K(proxy_scramble), K(server_scramble), K(ret));
+    LOG_WDIAG("fail to encrypt proxy_scramble", K(proxy_scramble), K(server_scramble), K(ret));
   } else {
     proxy_scramble_.assign_ptr(proxy_scramble_buf_, sizeof(proxy_scramble_buf_));
   }
@@ -134,10 +134,41 @@ int ObHandshakeResponseParam::write_client_addr_buf(const common::ObAddr &addr)
     //do not write
   } else if (OB_UNLIKELY(!addr.ip_to_string(client_ip_buf_, MAX_IP_ADDR_LENGTH))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to ip_to_string", K(addr), K(ret));
+    LOG_WDIAG("fail to ip_to_string", K(addr), K(ret));
   }
   return ret;
 }
+
+int ObHandshakeResponseParam::write_client_port_buf(const uint32_t port)
+{
+  int ret = OB_SUCCESS;
+  int64_t pos = 0;
+  if (OB_FAIL(databuff_printf(client_port_buf_, OB_MAX_UINT32_BUF_LEN, pos, "%u", port))) {
+    LOG_WDIAG("fail to print client port", K(port), K(ret));
+  }
+  return ret;
+}
+
+int ObHandshakeResponseParam::write_cs_id_buf(const uint32_t cs_id)
+{
+  int ret = OB_SUCCESS;
+  int64_t pos = 0;
+  if (OB_FAIL(databuff_printf(cs_id_buf_, OB_MAX_UINT32_BUF_LEN, pos, "%u", cs_id))) {
+    LOG_WDIAG("fail to print cs_id", K(cs_id), K(ret));
+  }
+  return ret;
+}
+
+int ObHandshakeResponseParam::write_connected_time_buf(const int64_t connected_time)
+{
+  int ret = OB_SUCCESS;
+  int64_t pos = 0;
+  if (OB_FAIL(databuff_printf(connected_time_buf_, OB_MAX_UINT64_BUF_LEN, pos, "%ld", connected_time))) {
+    LOG_WDIAG("fail to print connected time", K(connected_time), K(ret));
+  }
+  return ret;
+}
+
 
 int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
                                              const ObMySQLCapabilityFlags &des_cap,
@@ -166,7 +197,7 @@ int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
     for (int64_t i = 0; i < system_vars.count() && OB_SUCC(ret); ++i) {
       if (ObSessionFieldMgr::is_nls_date_timestamp_format_variable(system_vars.at(i).key_)) {
         if (OB_FAIL(des_ok.add_system_var(system_vars.at(i)))) {
-          LOG_WARN("fail to add system var", K(ret), "key:", system_vars.at(i).key_);
+          LOG_WDIAG("fail to add system var", K(ret), "key:", system_vars.at(i).key_);
         }
       }
     }
@@ -180,13 +211,13 @@ int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
     int64_t pos = 0;
     
     if (OB_FAIL(databuff_printf(cap_buf, cap_buf_len, pos, "%lu", cap))) {
-      LOG_WARN("fail to databuff printf", K(ret), K(pos));
+      LOG_WDIAG("fail to databuff printf", K(ret), K(pos));
     } else {
       ObStringKV str_kv;
       str_kv.key_.assign_ptr(sql::OB_SV_CAPABILITY_FLAG, static_cast<int32_t>(STRLEN(sql::OB_SV_CAPABILITY_FLAG)));
       str_kv.value_.assign_ptr(cap_buf, static_cast<int32_t>(STRLEN(cap_buf)));
       if (OB_FAIL(des_ok.add_system_var(str_kv))) {
-        LOG_WARN("fail to add system var while rewrite ok packet", K(ret));
+        LOG_WDIAG("fail to add system var while rewrite ok packet", K(ret));
       } else {
         LOG_DEBUG("succ to add system var in ok packet back to client", K(str_kv), K(cap));
       }
@@ -261,10 +292,10 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
     ObStringKV kv;
     // transit conn attrs OB_MYSQL_OB_CLIENT
     if (OB_FAIL(orig_hsr.get_connect_attrs().at(i, kv))) {
-      LOG_WARN("fail access handshake response connect attrs", K(i), K(ret));
+      LOG_WDIAG("fail access handshake response connect attrs", K(i), K(ret));
     } else if (kv.key_.prefix_match(OB_MYSQL_OB_CLIENT)) {
       if (OB_FAIL(tg_hsr.get_connect_attrs().push_back(kv))) {
-        LOG_WARN("fail push back transparent transmit connect attrs", K(kv), K(ret));
+        LOG_WDIAG("fail push back transparent transmit connect attrs", K(kv), K(ret));
       } else { /* succ */ }
     } else if (!find_client_ip 
                 && param.enable_client_ip_checkout_
@@ -282,25 +313,31 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
   // e. cluster_id
   // f. capability_flag
   if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_MODE, OB_MYSQL_CLIENT_OBPROXY_MODE, tg_hsr))) {
-    LOG_WARN("fail to add proxy mode", K(ret));
+    LOG_WDIAG("fail to add proxy mode", K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CONNECTION_ID, param.conn_id_buf_, tg_hsr))) {
-    LOG_WARN("fail to add connection id", K(param.conn_id_buf_), K(ret));
+    LOG_WDIAG("fail to add connection id", K(param.conn_id_buf_), K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_CONNECTION_ID, param.proxy_conn_id_buf_, tg_hsr))) {
-    LOG_WARN("fail to add proxy_sessid", K(param.proxy_conn_id_buf_), K(ret));
+    LOG_WDIAG("fail to add proxy_sessid", K(param.proxy_conn_id_buf_), K(ret));
   } else if (param.is_cluster_name_valid() && OB_FAIL(add_connect_attr(OB_MYSQL_CLUSTER_NAME, param.cluster_name_, tg_hsr))) {
-    LOG_WARN("fail to add cluster name", K(param.cluster_name_), K(ret));
+    LOG_WDIAG("fail to add cluster name", K(param.cluster_name_), K(ret));
   } else if (param.is_cluster_id_valid() && OB_FAIL(add_connect_attr(OB_MYSQL_CLUSTER_ID, param.cluster_id_buf_, tg_hsr))) {
-    LOG_WARN("fail to add cluster id", K(param.cluster_id_), K(ret));
+    LOG_WDIAG("fail to add cluster id", K(param.cluster_id_), K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_GLOBAL_VARS_VERSION, param.global_vars_version_buf_, tg_hsr))) {
-    LOG_WARN("fail to add global vars version", K(param.global_vars_version_buf_), K(ret));
+    LOG_WDIAG("fail to add global vars version", K(param.global_vars_version_buf_), K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CAPABILITY_FLAG, param.cap_buf_, tg_hsr))) {
-    LOG_WARN("fail to add capability flag", K(param.cap_buf_), K(ret));
+    LOG_WDIAG("fail to add capability flag", K(param.cap_buf_), K(ret));
   } else if (param.is_proxy_scramble_valid() && OB_FAIL(add_connect_attr(OB_MYSQL_SCRAMBLE, param.proxy_scramble_, tg_hsr))) {
-    LOG_WARN("fail to add global vars version", K(param.proxy_scramble_), K(ret));
+    LOG_WDIAG("fail to add global vars version", K(param.proxy_scramble_), K(ret));
   } else if (param.is_client_ip_valid() && OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_IP, param.client_ip_buf_, tg_hsr))) {
-    LOG_WARN("fail to add client ip", K(param.client_ip_buf_), K(ret));
+    LOG_WDIAG("fail to add client ip", K(param.client_ip_buf_), K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_VERSION, param.proxy_version_buf_, tg_hsr))) {
-    LOG_WARN("fail to add proxy version", K(param.proxy_version_buf_), K(ret));
+    LOG_WDIAG("fail to add proxy version", K(param.proxy_version_buf_), K(ret));
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_PORT, param.client_port_buf_, tg_hsr))) {
+    LOG_WDIAG("fail to add client port", K(param.client_port_buf_), K(ret));
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_SESSION_ID, param.cs_id_buf_, tg_hsr))) {
+    LOG_WDIAG("fail to add connected time", K(param.cs_id_buf_), K(ret));
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_CONNECT_TIME, param.connected_time_buf_, tg_hsr))) {
+    LOG_WDIAG("fail to add connected time", K(param.connected_time_buf_), K(ret));
   } else { /* succ */ }
 
 

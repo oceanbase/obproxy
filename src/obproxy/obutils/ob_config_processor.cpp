@@ -125,11 +125,11 @@ int ObConfigProcessor::init()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(table_handler_map_.create(32, ObModIds::OB_HASH_BUCKET))) {
-    LOG_WARN("create hash map failed", K(ret));
+    LOG_WDIAG("create hash map failed", K(ret));
   } else if (OB_FAIL(open_sqlite3())) {
-    LOG_WARN("fail to open sqlite3", K(ret));
+    LOG_WDIAG("fail to open sqlite3", K(ret));
   } else if (OB_FAIL(check_and_create_table())) {
-    LOG_WARN("check create table failed", K(ret));
+    LOG_WDIAG("check create table failed", K(ret));
   } else {
     get_global_proxy_config().proxy_config_db_ = proxy_config_db_;
   }
@@ -137,17 +137,17 @@ int ObConfigProcessor::init()
   if (OB_FAIL(ret)) {
     // do nothing
   } else if (OB_FAIL(get_global_proxy_config().dump_config_to_sqlite())) {
-    LOG_WARN("dump config to sqlite3 failed", K(ret));
+    LOG_WDIAG("dump config to sqlite3 failed", K(ret));
   } else if (OB_FAIL(get_global_white_list_table_processor().init())) {
-    LOG_WARN("white list table processor init failed", K(ret));
+    LOG_WDIAG("white list table processor init failed", K(ret));
   } else if (OB_FAIL(get_global_resource_unit_table_processor().init())) {
-    LOG_WARN("resource unit table processor init failed", K(ret));
+    LOG_WDIAG("resource unit table processor init failed", K(ret));
   } else if (OB_FAIL(get_global_ssl_config_table_processor().init())) {
-    LOG_WARN("ssl config table processor init failed", K(ret));
+    LOG_WDIAG("ssl config table processor init failed", K(ret));
   } else if (OB_FAIL(get_global_proxy_config_table_processor().init())) {
-    LOG_WARN("proxy config table processor init failed", K(ret));
+    LOG_WDIAG("proxy config table processor init failed", K(ret));
   } else if (OB_FAIL(init_config_from_disk())) {
-    LOG_WARN("init config from disk failed", K(ret));
+    LOG_WDIAG("init config from disk failed", K(ret));
   } else {
     get_global_proxy_config_table_processor().set_need_sync_to_file(true);
   }
@@ -160,7 +160,7 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(NULL == data || NULL == argv || NULL == column_name)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("argument is null unexpected", K(ret));
+    LOG_WDIAG("argument is null unexpected", K(ret));
   } else {
     ObConfigHandler *handler = reinterpret_cast<ObConfigHandler*>(data);
     ObCloudFnParams params;
@@ -172,7 +172,7 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
       } else {
         SqlField *sql_field = NULL;
         if (OB_FAIL(SqlField::alloc_sql_field(sql_field))) {
-          LOG_WARN("fail to alloc sql field", K(ret));
+          LOG_WDIAG("fail to alloc sql field", K(ret));
         } else {
           sql_field->column_name_.set_value(static_cast<int32_t>(strlen(column_name[i])), column_name[i]);
           sql_field->value_type_ = TOKEN_STR_VAL;
@@ -180,7 +180,7 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
           if (OB_FAIL(field_result.fields_.push_back(sql_field))) {
             sql_field->reset();
             sql_field = NULL;
-            LOG_WARN("push back failed", K(ret));
+            LOG_WDIAG("push back failed", K(ret));
           } else {
             field_result.field_num_++;
           }
@@ -204,11 +204,11 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
       bool is_success = true;
       if (OB_FAIL(handler->execute_func_(&params))) {
         is_success = false;
-        LOG_WARN("execute fn failed", K(ret));
+        LOG_WDIAG("execute fn failed", K(ret));
       }
 
       if (OB_FAIL(handler->commit_func_(&params, is_success))) {
-        LOG_WARN("commit func failed", K(ret), K(is_success));
+        LOG_WDIAG("commit func failed", K(ret), K(is_success));
       }
     }
   }
@@ -229,12 +229,12 @@ int ObConfigProcessor::init_config_from_disk()
     int64_t len = snprintf(sql_buf, MAX_INIT_SQL_LEN, select_sql, strlen(table_name), table_name);
     if (OB_UNLIKELY(len <= 0 || len >= MAX_INIT_SQL_LEN)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("generate sql faield", K(ret), K(len));
+      LOG_WDIAG("generate sql faield", K(ret), K(len));
     } else if (OB_FAIL(table_handler_map_.get_refactored(table_name, handler))) {
-      LOG_WARN("get handler failed", K(ret), "table_name", table_name);
+      LOG_WDIAG("get handler failed", K(ret), "table_name", table_name);
     } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, sql_buf, ObConfigProcessor::init_callback, &handler, &err_msg)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("exec sql failed", K(ret), "err_msg", err_msg);
+      LOG_WDIAG("exec sql failed", K(ret), "err_msg", err_msg);
       sqlite3_free(err_msg);
     }
   }
@@ -248,10 +248,10 @@ int ObConfigProcessor::execute(ObString &sql, const ObProxyBasicStmtType stmt_ty
   DRWLock::WRLockGuard guard(config_lock_);
   if (OB_UNLIKELY(sql.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid sql", K(ret), K(sql.length()));
+    LOG_WDIAG("invalid sql", K(ret), K(sql.length()));
   } else if (stmt_type == OBPROXY_T_SELECT) {
     if (OB_FAIL(handle_select_stmt(sql, v2_handler))) {
-      LOG_WARN("handle select stmt failed", K(ret));
+      LOG_WDIAG("handle select stmt failed", K(ret));
     }
   } else {
     ObArenaAllocator allocator;
@@ -260,9 +260,9 @@ int ObConfigProcessor::execute(ObString &sql, const ObProxyBasicStmtType stmt_ty
     ObString parse_sql(sql.length() + EXTRA_NUM, sql.ptr());
     ObProxyParser obproxy_parser(allocator, NORMAL_PARSE_MODE);
     if (OB_FAIL(obproxy_parser.obparse(parse_sql, parse_result))) {
-      LOG_WARN("fail to parse sql", K(sql), K(ret));
+      LOG_WDIAG("fail to parse sql", K(sql), K(ret));
     } else if (OB_FAIL(handle_dml_stmt(sql, parse_result, allocator))) {
-      LOG_WARN("handle stmt failed", K(ret), K(sql));
+      LOG_WDIAG("handle stmt failed", K(ret), K(sql));
     }
   }
 
@@ -275,19 +275,19 @@ int ObConfigProcessor::check_and_create_table()
   char *err_msg = NULL;
   if (SQLITE_OK != sqlite3_exec(proxy_config_db_, create_all_table_version_table, NULL, 0, &err_msg)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("exec create all table version table sql failed", K(ret), "err_msg", err_msg);
+    LOG_WDIAG("exec create all table version table sql failed", K(ret), "err_msg", err_msg);
   } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, create_white_list_table, NULL, 0, &err_msg)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("exec create white list table sql failed", K(ret), "err_msg", err_msg);
+    LOG_WDIAG("exec create white list table sql failed", K(ret), "err_msg", err_msg);
   } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, create_resource_unit_table, NULL, 0, &err_msg)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("exec create resource unit table sql failed", K(ret), "err_msg", err_msg);
+    LOG_WDIAG("exec create resource unit table sql failed", K(ret), "err_msg", err_msg);
   } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, create_ssl_config_table, NULL, 0, &err_msg)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("exec create ssl config table sql failed", K(ret), "err_msg", err_msg);
+    LOG_WDIAG("exec create ssl config table sql failed", K(ret), "err_msg", err_msg);
   } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, create_proxy_config_table, NULL, 0, &err_msg)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("exec create proxy config table sql failed", K(ret), "err_msg", err_msg);
+    LOG_WDIAG("exec create proxy config table sql failed", K(ret), "err_msg", err_msg);
   }
 
   if (NULL != err_msg) {
@@ -312,10 +312,10 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
   ParseNode* node = parse_result.result_tree_;
   if (OB_ISNULL(node)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("node is unexpected null", K(ret));
+    LOG_WDIAG("node is unexpected null", K(ret));
   } else if (T_STMT_LIST != node->type_ || node->num_child_ < 1) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", "node_type", get_type_name(node->type_), K(node->num_child_), K(ret));
+    LOG_WDIAG("invalid argument", "node_type", get_type_name(node->type_), K(node->num_child_), K(ret));
   } else if (OB_ISNULL(node = node->children_[0])) {
     ret = OB_ERR_UNEXPECTED;
     LOG_DEBUG("unexpected null child", K(ret));
@@ -327,18 +327,18 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
       case T_INSERT:
       {
         if (OB_ISNULL(insert_stmt = op_alloc_args(ObProxyInsertStmt, allocator))) {
-          LOG_WARN("alloc insert stmt failed", K(ret));
+          LOG_WDIAG("alloc insert stmt failed", K(ret));
         } else if (OB_FAIL(insert_stmt->init())) {
-            LOG_WARN("insert stmt init failed", K(ret));
+            LOG_WDIAG("insert stmt init failed", K(ret));
         } else if (OB_FAIL(insert_stmt->handle_parse_result(parse_result))) {
-          LOG_WARN("insert stmt handle parse result failed", K(ret));
+          LOG_WDIAG("insert stmt handle parse result failed", K(ret));
         } else if (insert_stmt->has_unsupport_expr_type()
                    || insert_stmt->has_unsupport_expr_type_for_config()) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("insert stmt has unsupport expr type", K(ret));
+          LOG_WDIAG("insert stmt has unsupport expr type", K(ret));
         } else if (insert_stmt->get_row_count() > 1) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("proxy config cannot insert multi row now", K(ret));
+          LOG_WDIAG("proxy config cannot insert multi row now", K(ret));
         }
         stmt = insert_stmt;
         break;
@@ -346,22 +346,22 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
       case T_DELETE:
       {
         if (OB_ISNULL(delete_stmt = op_alloc_args(ObProxyDeleteStmt, allocator))) {
-          LOG_WARN("alloc delete stmt failed", K(ret));
+          LOG_WDIAG("alloc delete stmt failed", K(ret));
         } else if (OB_FAIL(delete_stmt->init())) {
-            LOG_WARN("delete stmt init failed", K(ret));
+            LOG_WDIAG("delete stmt init failed", K(ret));
         } else if (OB_FAIL(delete_stmt->handle_parse_result(parse_result))) {
-          LOG_WARN("delete stmt handle parse result failed", K(ret));
+          LOG_WDIAG("delete stmt handle parse result failed", K(ret));
         } else if (delete_stmt->has_unsupport_expr_type()
                    || delete_stmt->has_unsupport_expr_type_for_config()) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("insert stmt has unsupport expr type", K(ret));
+          LOG_WDIAG("insert stmt has unsupport expr type", K(ret));
         }
         stmt = delete_stmt;
         break;
       }
       default:
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unsupported type", K(node->type_));
+        LOG_WDIAG("unsupported type", K(node->type_));
     }
 
     if (OB_SUCC(ret)) {
@@ -376,19 +376,19 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
         char *sql_buf = (char*)ob_malloc(sql.length() + 1);
         if (NULL == sql_buf) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("allocate memory failed", K(ret), K(sql.length()));
+          LOG_WDIAG("allocate memory failed", K(ret), K(sql.length()));
         } else {
           memcpy(sql_buf, sql.ptr(), sql.length());
           sql_buf[sql.length()] = '\0';
           if (SQLITE_OK != sqlite3_exec(proxy_config_db_, "begin;", NULL, 0, &err_msg)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+            LOG_WDIAG("sqlite3 exec failed", K(sql), "err_msg", err_msg);
             sqlite3_free(err_msg);
           }
 
           if (OB_SUCC(ret) && SQLITE_OK != sqlite3_exec(proxy_config_db_, sql_buf, NULL, 0, &err_msg)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+            LOG_WDIAG("sqlite3 exec failed", K(sql), "err_msg", err_msg);
             sqlite3_free(err_msg);
           }
           ob_free(sql_buf);
@@ -417,16 +417,16 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
           if (params.table_name_ == all_table_version_table_name) {
             ret = OB_SUCCESS;
           } else {
-            LOG_WARN("get table handler failed", K_(params.table_name), K(ret));
+            LOG_WDIAG("get table handler failed", K_(params.table_name), K(ret));
           }
         } else if (OB_FAIL(handler.execute_func_(&params))) {
           is_execute = true;
-          LOG_WARN("execute fn failed", K(ret));
+          LOG_WDIAG("execute fn failed", K(ret));
         } else {
           is_execute = true;
           if (OB_SUCC(ret) && NULL != handler.before_commit_func_) {
             if (OB_FAIL(handler.before_commit_func_(proxy_config_db_))) {
-              LOG_WARN("before commit func failed", K_(params.table_name), K(ret));
+              LOG_WDIAG("before commit func failed", K_(params.table_name), K(ret));
             }
           }
         }
@@ -439,7 +439,7 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
 
       if (is_execute) {
         if (OB_FAIL(handler.commit_func_(&params, is_success))) {
-          LOG_WARN("commit failed", K(ret), K(is_success));
+          LOG_WDIAG("commit failed", K(ret), K(is_success));
         }
       }
 
@@ -447,7 +447,7 @@ int ObConfigProcessor::handle_dml_stmt(ObString &sql, ParseResult& parse_result,
       const char *end_sql = (is_success ? "commit;" : "rollback;");
       if (SQLITE_OK != sqlite3_exec(proxy_config_db_, end_sql, NULL, 0, &err_msg)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("sqlite3 exec failed", K(sql), "err_msg", err_msg);
+        LOG_WDIAG("sqlite3 exec failed", K(sql), "err_msg", err_msg);
         sqlite3_free(err_msg);
       }
     }
@@ -470,7 +470,7 @@ int ObConfigProcessor::sqlite3_callback(void *data, int argc, char **argv, char 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(NULL == data || NULL == argv || NULL == column_name)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("argument is null unexpected", K(ret));
+    LOG_WDIAG("argument is null unexpected", K(ret));
   } else {
     obproxy::ObConfigV2Handler *v2_handler = reinterpret_cast<obproxy::ObConfigV2Handler*>(data);
     bool need_add_column_name = (v2_handler->sqlite3_column_name_.count() == 0);
@@ -480,7 +480,7 @@ int ObConfigProcessor::sqlite3_callback(void *data, int argc, char **argv, char 
         ObFixSizeString<OB_MAX_COLUMN_NAME_LENGTH> name;
         name.set(column_name[i]);
         if (OB_FAIL(v2_handler->sqlite3_column_name_.push_back(name))) {
-          LOG_WARN("sqlite3 column name push back failed", K(ret));
+          LOG_WDIAG("sqlite3 column name push back failed", K(ret));
         }
       }
 
@@ -489,13 +489,13 @@ int ObConfigProcessor::sqlite3_callback(void *data, int argc, char **argv, char 
         int32_t len = (NULL == argv[i] ? 0 : static_cast<int32_t>(strlen(argv[i])));
         value.set_value(len, argv[i]);
         if (OB_FAIL(value_array.push_back(value))) {
-          LOG_WARN("value array push back failed", K(ret));
+          LOG_WDIAG("value array push back failed", K(ret));
         }
       }
     }
 
     if (OB_SUCC(ret) && OB_FAIL(v2_handler->sqlite3_column_value_.push_back(value_array))) {
-      LOG_WARN("column value push back failed", K(ret));
+      LOG_WDIAG("column value push back failed", K(ret));
     }
   }
 
@@ -508,7 +508,7 @@ int ObConfigProcessor::handle_select_stmt(ObString& sql, obproxy::ObConfigV2Hand
   char *sql_str = (char*)ob_malloc(sql.length() + 1);
   if (NULL == sql_str) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("allocate memory failed", K(ret), K(sql.length()));
+    LOG_WDIAG("allocate memory failed", K(ret), K(sql.length()));
   } else {
     char *err_msg = NULL;
     memcpy(sql_str, sql.ptr(), sql.length());
@@ -516,7 +516,7 @@ int ObConfigProcessor::handle_select_stmt(ObString& sql, obproxy::ObConfigV2Hand
 
     if (SQLITE_OK != sqlite3_exec(proxy_config_db_, sql_str, sqlite3_callback, (void*)v2_handler, &err_msg)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("sqlite3 exec sql failed", K(ret), K(sql), "err_msg", err_msg);
+      LOG_WDIAG("sqlite3 exec sql failed", K(ret), K(sql), "err_msg", err_msg);
       sqlite3_free(err_msg);
     }
 
@@ -530,7 +530,7 @@ int ObConfigProcessor::register_callback(const common::ObString &table_name, ObC
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(table_handler_map_.set_refactored(table_name, handler))) {
-    LOG_WARN("set refactored failed", K(ret), K(table_name));
+    LOG_WDIAG("set refactored failed", K(ret), K(table_name));
   }
 
   return ret;
@@ -567,14 +567,14 @@ int ObConfigProcessor::store_global_ssl_config(const ObString &name, const ObStr
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(name.empty() || value.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(name), K(value));
+    LOG_WDIAG("invalid argument", K(name), K(value));
   } else {
     const char *sql = "replace into ssl_config(cluster_name, tenant_name, name, value) values('*', '*', '%.*s', '%.*s')";
     int64_t buf_len = name.length() + value.length() + strlen(sql);
     char *sql_buf = (char*)ob_malloc(buf_len + 1, ObModIds::OB_PROXY_CONFIG_TABLE);
     if (OB_ISNULL(sql_buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("allocate memory failed", K(ret), K(buf_len));
+      LOG_WDIAG("allocate memory failed", K(ret), K(buf_len));
     } else {
       ObString sql_string;
       int64_t len = 0;
@@ -584,9 +584,9 @@ int ObConfigProcessor::store_global_ssl_config(const ObString &name, const ObStr
       sql_string.assign_ptr(sql_buf, static_cast<int32_t>(len));
       if (OB_UNLIKELY(len <= 0)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to fill sql", K(len), K(ret));
+        LOG_WDIAG("fail to fill sql", K(len), K(ret));
       } else if (OB_FAIL(execute(sql_string, OBPROXY_T_REPLACE, NULL))) {
-        LOG_WARN("execute sql failed", K(ret));
+        LOG_WDIAG("execute sql failed", K(ret));
       }
     }
 
@@ -605,7 +605,7 @@ int ObConfigProcessor::store_proxy_config_with_level(int64_t vid, const ObString
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(name.empty() || level.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(name), K(level));
+    LOG_WDIAG("invalid argument", K(name), K(level));
   } else {
     const char *sql =
       "replace into proxy_config(vid, vip, vport, cluster_name, tenant_name, name, value, config_level) "
@@ -618,7 +618,7 @@ int ObConfigProcessor::store_proxy_config_with_level(int64_t vid, const ObString
     char *sql_buf = (char*)ob_malloc(buf_len + 1, ObModIds::OB_PROXY_CONFIG_TABLE);
     if (OB_ISNULL(sql_buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("allocate memory failed", K(ret), K(buf_len));
+      LOG_WDIAG("allocate memory failed", K(ret), K(buf_len));
     } else {
       ObString sql_string;
       int32_t len = 0;
@@ -636,9 +636,9 @@ int ObConfigProcessor::store_proxy_config_with_level(int64_t vid, const ObString
       LOG_DEBUG("execute sql", K(sql_string));
       if (OB_UNLIKELY(len <= 0)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to fill sql", K(len), K(ret));
+        LOG_WDIAG("fail to fill sql", K(len), K(ret));
       } else if (OB_FAIL(execute(sql_string, OBPROXY_T_REPLACE, NULL))) {
-        LOG_WARN("execute sql failed", K(ret));
+        LOG_WDIAG("execute sql failed", K(ret));
       }
       get_global_proxy_config_table_processor().set_need_sync_to_file(true);
     }
@@ -655,7 +655,7 @@ int ObConfigProcessor::store_global_proxy_config(const ObString &name, const ObS
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(store_proxy_config_with_level(-1, "", 0, "", "", name, value, "LEVEL_GLOBAL"))) {
-    LOG_WARN("store_proxy_config_with_level failed", K(ret));
+    LOG_WDIAG("store_proxy_config_with_level failed", K(ret));
   }
   return ret;
 }
@@ -669,7 +669,7 @@ int ObConfigProcessor::get_proxy_config_with_level(const ObVipAddr &addr, const 
   if (OB_FAIL(get_global_proxy_config_table_processor().get_config_item(
       addr, cluster_name, tenant_name, name, proxy_item))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      LOG_WARN("get config item failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+      LOG_WDIAG("get config item failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
     } else {
       ret = OB_SUCCESS;
     }
@@ -694,26 +694,26 @@ int ObConfigProcessor::get_proxy_config(const ObVipAddr &addr, const ObString &c
   ObString tmp_tenant_name = tenant_name;
   bool found = false;
   if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_VIP", found))) {
-    LOG_WARN("get_proxy_config_with_level failed", K(ret));
+    LOG_WDIAG("get_proxy_config_with_level failed", K(ret));
   }
 
   if (OB_SUCC(ret) && !found) {
     tmp_addr.reset();
     if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_TENANT", found))) {
-      LOG_WARN("get_proxy_config_with_level failed", K(ret));
+      LOG_WDIAG("get_proxy_config_with_level failed", K(ret));
     }
   }
 
   if (OB_SUCC(ret) && !found) {
     tmp_tenant_name.reset();
     if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_CLUSTER", found))) {
-      LOG_WARN("get_proxy_config_with_level failed", K(ret));
+      LOG_WDIAG("get_proxy_config_with_level failed", K(ret));
     }
   }
 
   if (OB_SUCC(ret) && !found) {
     if (OB_FAIL(get_global_proxy_config().get_config_item(name, ret_item))) {
-      LOG_WARN("get global config item failed", K(ret));
+      LOG_WDIAG("get global config item failed", K(ret));
     }
   }
 
@@ -729,7 +729,7 @@ int ObConfigProcessor::get_proxy_config_bool_item(const ObVipAddr &addr, const O
   int ret = OB_SUCCESS;
   ObConfigItem item;
   if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item))) {
-    LOG_WARN("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+    LOG_WDIAG("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
   } else {
     ret_item.set(item.str());
     LOG_DEBUG("get bool item succ", K(ret_item));
@@ -745,7 +745,7 @@ int ObConfigProcessor::get_proxy_config_int_item(const ObVipAddr &addr, const Ob
   int ret = OB_SUCCESS;
   ObConfigItem item;
   if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item))) {
-    LOG_WARN("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+    LOG_WDIAG("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
   } else {
     ret_item.set(item.str());
     LOG_DEBUG("get int item succ", K(ret_item));
@@ -761,7 +761,7 @@ int ObConfigProcessor::get_proxy_config_strlist_item(const ObVipAddr &addr, cons
   int ret = OB_SUCCESS;
   ObConfigItem item;
   if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item))) {
-    LOG_WARN("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
+    LOG_WDIAG("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
   } else {
     ret_item = item.str();
     LOG_DEBUG("get list item succ", K(ret_item));
@@ -776,7 +776,7 @@ int ObConfigProcessor::close_sqlite3()
   DRWLock::WRLockGuard guard(config_lock_);
   if (NULL != proxy_config_db_ && SQLITE_OK != sqlite3_close(proxy_config_db_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("sqlite3_close failed", "err_msg", sqlite3_errmsg(proxy_config_db_), K(ret));
+    LOG_WDIAG("sqlite3_close failed", "err_msg", sqlite3_errmsg(proxy_config_db_), K(ret));
   } else {
     proxy_config_db_ = NULL;
   }
@@ -790,17 +790,17 @@ int ObConfigProcessor::open_sqlite3()
     const char *dir = NULL;
     if (OB_ISNULL(dir = get_global_layout().get_etc_dir())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("get etc dir failed", K(ret));
+      LOG_WDIAG("get etc dir failed", K(ret));
     } else {
       char *path = NULL;
       ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
       if (OB_FAIL(ObLayout::merge_file_path(dir, sqlite3_db_name, allocator, path))) {
-        LOG_WARN("fail to merge file path", K(sqlite3_db_name), K(ret));
+        LOG_WDIAG("fail to merge file path", K(sqlite3_db_name), K(ret));
       } else if (OB_ISNULL(path)) {
         ret = OB_ERR_UNEXPECTED;
       } else if (SQLITE_OK != sqlite3_open_v2(path, &proxy_config_db_, SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE, NULL)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("sqlite3 open failed", "path", path, "err_msg", sqlite3_errmsg(proxy_config_db_), K(ret));
+        LOG_WDIAG("sqlite3 open failed", "path", path, "err_msg", sqlite3_errmsg(proxy_config_db_), K(ret));
       }
     }
   }

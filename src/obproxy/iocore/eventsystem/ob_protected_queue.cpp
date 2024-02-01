@@ -54,9 +54,9 @@ namespace event
 void ObProtectedQueue::enqueue(ObEvent *e, const bool fast_signal)
 {
   if (OB_ISNULL(e)) {
-    LOG_WARN("event NULL, it should not happened");
+    LOG_WDIAG("event NULL, it should not happened");
   } else if (OB_UNLIKELY(e->in_the_prot_queue_) || OB_UNLIKELY(e->in_the_priority_queue_)) {
-    LOG_WARN("event has already in queue, it should not happened", K(*e));
+    LOG_WDIAG("event has already in queue, it should not happened", K(*e));
   } else {
     int ret = OB_SUCCESS;
     ObEThread *e_ethread = e->ethread_;
@@ -70,7 +70,7 @@ void ObProtectedQueue::enqueue(ObEvent *e, const bool fast_signal)
       // inserting_thread == NULL means it is not a regular ObEThread
       if (NULL == inserting_thread || NULL == inserting_thread->ethreads_to_be_signalled_) {
         if (OB_FAIL(signal())) {
-          LOG_WARN("fail to do signal, it should not happened", K(ret));
+          LOG_WDIAG("fail to do signal, it should not happened", K(ret));
         }
         if (NULL != e_ethread->net_poll_) {
           e_ethread->get_net_poll().timerfd_settime();
@@ -140,7 +140,7 @@ void ObProtectedQueue::enqueue(ObEvent *e, const bool fast_signal)
 void flush_signals(ObEThread *thr)
 {
   if (OB_ISNULL(thr) || OB_UNLIKELY(this_ethread() != thr)) {
-    LOG_WARN("argument is error", K(thr), "this_ethread", this_ethread());
+    LOG_WDIAG("argument is error", K(thr), "this_ethread", this_ethread());
   } else {
     int ret = OB_SUCCESS;
     int64_t count = thr->ethreads_to_be_signalled_count_;
@@ -170,7 +170,7 @@ void flush_signals(ObEThread *thr)
     for (int64_t i = 0; i < count; ++i) {
       if (NULL != thr->ethreads_to_be_signalled_[i]) {
         if (OB_FAIL(thr->ethreads_to_be_signalled_[i]->event_queue_external_.signal())) {
-          LOG_WARN("failed to do signal, it should not happened", K(ret));
+          LOG_WDIAG("failed to do signal, it should not happened", K(ret));
         }
         if (NULL != thr->ethreads_to_be_signalled_[i]->net_poll_) {
           thr->ethreads_to_be_signalled_[i]->get_net_poll().timerfd_settime();
@@ -191,7 +191,7 @@ int ObProtectedQueue::dequeue_timed(const ObHRTime timeout, const bool need_slee
   int ret = OB_SUCCESS;
   if (need_sleep) {
     if (OB_FAIL(mutex_acquire(&lock_))) {
-      LOG_ERROR("failed to acquire mutex", K(ret));
+      LOG_EDIAG("failed to acquire mutex", K(ret));
     } else {
       if (atomic_list_.empty()) {
         timespec ts = hrtime_to_timespec(timeout);
@@ -199,7 +199,7 @@ int ObProtectedQueue::dequeue_timed(const ObHRTime timeout, const bool need_slee
       }
       int tmp_ret = OB_SUCCESS;
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = mutex_release(&lock_)))) {
-        LOG_ERROR("failed to release mutex", K(tmp_ret));
+        LOG_EDIAG("failed to release mutex", K(tmp_ret));
       }
     }
   }

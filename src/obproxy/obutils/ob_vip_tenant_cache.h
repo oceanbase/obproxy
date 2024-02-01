@@ -15,7 +15,9 @@
 #include "lib/net/ob_addr.h"
 #include "lib/string/ob_string.h"
 #include "lib/hash/ob_build_in_hashmap.h"
+#include "obutils/ob_proxy_buf.h"
 #include "utils/ob_proxy_lib.h"
+#include "lib/hash_func/murmur_hash.h"
 
 namespace oceanbase
 {
@@ -37,23 +39,54 @@ enum ObVipTenantRWType
   ReadWrite,
 };
 
+// 在阿里云上，通过阿里的内核接口 vtoa 模块可以获得 LB 的 IP。
+// 在 aws 上，需要使用标准的协议 proxy protocol v2 (简称 ppv2) 获得客户端 IP
+// 和 vpc 相关的信息，因此 ObVipAddr 需要支持这两种结构。
+// 注意：vpc 相关的信息可能是字符串，不满足 IP 的格式
 struct ObVipAddr
 {
 public:
-  ObVipAddr() : addr_(), vid_(-1) { }
-  ~ObVipAddr() { reset(); }
+  enum VipAddrType {
+    VTOA_VIP_ADDR = 0,
+    VPC_VIP_ADDR,
+    INVALID_VIP_ADDR,
+  };
 
-  bool is_valid() const { return (addr_.is_valid() && vid_ >= 0); }
-  void reset() { vid_ = -1; addr_.reset(); }
-  bool operator==(const ObVipAddr &vip_addr) const { return (vip_addr.vid_ == vid_ && vip_addr.addr_ == addr_); }
+  ObVipAddr() : addr_(), vid_(-1), vpc_info_(), vip_addr_type_(INVALID_VIP_ADDR) { }
+  ~ObVipAddr() { reset(); }
+  ObVipAddr(const ObVipAddr& vip_addr);
+  ObVipAddr& operator =(const ObVipAddr& vip_addr);
+
+  uint64_t hash(uint64_t seed) const {
+    if (VTOA_VIP_ADDR == vip_addr_type_) {
+      seed = common::murmurhash(&addr_, static_cast<int32_t>(sizeof(addr_)), seed);
+    } else if (VPC_VIP_ADDR == vip_addr_type_) {
+      seed = common::murmurhash(vpc_info_.ptr(), static_cast<int32_t>(vpc_info_.len()), seed);
+    }
+
+    return seed;
+  }
+
+  bool is_valid() const;
+  void reset() { vid_ = -1; addr_.reset(); vpc_info_.reset(); vip_addr_type_ = INVALID_VIP_ADDR; }
+  bool operator==(const ObVipAddr &vip_addr) const
+  {
+    return vip_addr.vip_addr_type_ == vip_addr_type_
+    && vip_addr.vid_ == vid_
+    && vip_addr.addr_ == addr_
+    && vip_addr.vpc_info_ == vpc_info_;
+  }
   void set(const char* ip, const int32_t port, const int64_t vid);
   void set_ipv4(int32_t ip, const int32_t port, const int64_t vid);
   void set(const struct sockaddr &addr, const int64_t vid);
-  TO_STRING_KV(K_(addr), K_(vid));
+  void set(const common::ObString vpc_info);
+  TO_STRING_KV(K_(addr), K_(vid), K_(vpc_info), K_(vip_addr_type));
 
 public:
   common::ObAddr addr_;
   int64_t vid_;
+  ObVariableLenBuffer<64> vpc_info_;
+  VipAddrType vip_addr_type_;
 };
 
 struct ObVipTenant

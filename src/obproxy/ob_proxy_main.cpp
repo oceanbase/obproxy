@@ -12,11 +12,14 @@
 
 #define USING_LOG_PREFIX PROXY
 
-#include "ob_proxy_main.h"
 #include <malloc.h>
+#include "ob_proxy_main.h"
 #include "lib/ob_errno.h"
 #include "lib/utility/ob_preload.h"
+#include "lib/utility/ob_backtrace.h"
 #include "lib/alloc/alloc_func.h"
+#include "lib/allocator/ob_mem_leak_checker.h"
+#include "lib/wide_integer/ob_wide_integer.h"
 
 #include "utils/ob_proxy_utils.h"
 #include "utils/ob_layout.h"
@@ -29,6 +32,7 @@
 
 #include "cmd/ob_show_sqlaudit_handler.h"
 #include "ob_proxy_init.h"
+#include "proxy/mysql/ob_prepare_statement_struct.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::lib;
@@ -67,13 +71,13 @@ void ObProxyMain::destroy()
   add_sig_default_catched(action, SIGTERM);
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(sig_detect_cont_))) {
-    LOG_WARN("fail to destroy sig detect task", K(ret));
+    LOG_WDIAG("fail to destroy sig detect task", K(ret));
   }
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(mem_monitor_cont_))) {
-    LOG_WARN("fail to destroy mem monitor task", K(ret));
+    LOG_WDIAG("fail to destroy mem monitor task", K(ret));
   }
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(sqlaudit_detect_cont_))) {
-    LOG_WARN("fail to destroy sqlaudit detect task", K(ret));
+    LOG_WDIAG("fail to destroy sqlaudit detect task", K(ret));
   }
   obproxy_.destroy();
 }
@@ -330,7 +334,7 @@ ObProxyMain *ObProxyMain::get_instance()
   if (OB_ISNULL(instance_)) {
     instance_ = new(std::nothrow) ObProxyMain();
     if (OB_ISNULL(instance_)) {
-      LOG_ERROR("fail to alloc mem for ObProxyMain");
+      LOG_EDIAG("fail to alloc mem for ObProxyMain");
     }
   }
   return instance_;
@@ -365,7 +369,7 @@ int ObProxyMain::use_daemon()
   const int noclose = 0;
   if (daemon(nochdir, noclose) < 0) {
     ret = OB_ERR_SYS;
-    LOG_ERROR("fail to create daemon process", KERRMSGS, K(ret));
+    LOG_EDIAG("fail to create daemon process", KERRMSGS, K(ret));
   }
   reset_tid_cache();
   return ret;
@@ -376,7 +380,7 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
   int ret = OB_SUCCESS;
   if (OB_ISNULL(file_name) || OB_UNLIKELY(type >= MAX_FD_FILE) || OB_UNLIKELY(len < 1)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("invalid argument", K(file_name), K(type), K(len), K(ret));
+    LOG_EDIAG("invalid argument", K(file_name), K(type), K(len), K(ret));
   } else {
     int64_t ret_len = 0;
     char log_file_name[OB_MAX_LOG_FILE_NAME_LEN];
@@ -395,7 +399,7 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_stat.log");
     } else if (FD_LIMIT_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_limit.log");
-    } else if (FD_CONFIG_FILE == type) {
+    } else if (get_global_proxy_config().enable_sharding && FD_CONFIG_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_config.log");
     } else if (FD_POOL_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_pool.log");
@@ -403,7 +407,7 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_pool_stat.log");
     } else if (FD_TRACE_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_trace.log");
-    } else if (FD_DRIVER_CLIENT_FILE == type) {
+    } else if (g_run_mode == RUN_MODE_CLIENT && FD_DRIVER_CLIENT_FILE == type) {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy_client.log");
     } else {
       ret_len = snprintf(log_file_name, OB_MAX_LOG_FILE_NAME_LEN, "obproxy.log");
@@ -411,19 +415,19 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
 
     if (OB_UNLIKELY(ret_len <= 0) || OB_UNLIKELY(ret_len >= OB_MAX_LOG_FILE_NAME_LEN)) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_ERROR("fail to snprintf log_file_name", K(type), K(ret_len), K(ret));
+      LOG_EDIAG("fail to snprintf log_file_name", K(type), K(ret_len), K(ret));
     } else {
       ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
       char *path = NULL;
       int64_t path_len = 0;
 
       if (OB_FAIL(ObLayout::merge_file_path(get_global_layout().get_log_dir(), log_file_name, allocator, path))) {
-        LOG_ERROR("fail to merge file path", K(log_file_name), K(ret));
+        LOG_EDIAG("fail to merge file path", K(log_file_name), K(ret));
       } else {
         path_len = static_cast<int64_t>(STRLEN(path));
         if (OB_UNLIKELY(len <= path_len)) {
           ret = OB_SIZE_OVERFLOW;
-          LOG_ERROR("buf is to small", K(len), "need_len", path_len+1, K(ret));
+          LOG_EDIAG("buf is to small", K(len), "need_len", path_len+1, K(ret));
         } else {
           MEMCPY(file_name, path, path_len);
           file_name[path_len] = '\0';
@@ -470,16 +474,20 @@ int ObProxyMain::start(const int argc, char *const argv[])
   }
 
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(get_global_layout().init(argv[0]))) {
+    if (OB_FAIL(ObMemLeakChecker::init_all_mem_leak_checker())) {
+      MPRINT("fail to init mem checker, ret=%d", ret);
+    } else if (OB_FAIL(get_global_layout().init(argv[0]))) {
       MPRINT("fail to init global layout, ret=%d", ret);
     } else if (OB_FAIL(init_log())) {
       MPRINT("fail to init log, ret=%d", ret);
     } else if (OB_FAIL(init_signal())) {
-      LOG_ERROR("fail to init signal", K(ret));
+      LOG_EDIAG("fail to init signal", K(ret));
     } else if (OB_FAIL(ObRandomNumUtils::init_seed())) {
-      LOG_ERROR("fail to init random seed", K(ret));
+      LOG_EDIAG("fail to init random seed", K(ret));
+    } else if (OB_FAIL(init_data_type())) {
+      LOG_EDIAG("fail to init partition calculation related", K(ret));
     } else {
-      init_gb18030_2022();
+      init_proc_map_info();
       app_info_.setup(PACKAGE_STRING, APP_NAME, RELEASEID);
       _LOG_INFO("%s-%s", app_info_.full_version_info_str_, build_version());
       if (info.is_inherited_) {
@@ -489,7 +497,7 @@ int ObProxyMain::start(const int argc, char *const argv[])
         LOG_INFO("has no inherited sockets, start new obproxy", K(info));
       }
       if (OB_FAIL(do_start_work(opts))) {
-        LOG_ERROR("fail to do start work", K(ret));
+        LOG_EDIAG("fail to do start work", K(ret));
       }
     }
   }
@@ -523,7 +531,7 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
       // Allow IPv6 to be empty
       // because it may be a hot upgrade from a lower version to a higher version
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("ipv4 should not be NULL", K(ret));
+      LOG_EDIAG("ipv4 should not be NULL", K(ret));
     } else if (info.is_inherited_) {
       ret = OB_ERR_UNEXPECTED;
       MPRINT("hot upgrade info is_inherited can't be true, ret=%d", ret);
@@ -557,13 +565,13 @@ int ObProxyMain::init_log()
 
   for (ObLogFDType type = FD_DEFAULT_FILE; OB_SUCC(ret) && type < MAX_FD_FILE; type = (ObLogFDType)(type + 1)) {
     if (OB_FAIL(get_log_file_name(type, log_file_name, OB_MAX_LOG_FILE_NAME_LEN))) {
-      LOG_ERROR("fail to get log file name", K(type), K(ret));
+      LOG_EDIAG("fail to get log file name", K(type), K(ret));
     } else {
       if (FD_DEFAULT_FILE == type) {
         if (RUN_MODE_PROXY == g_run_mode) {
-          OB_LOGGER.set_file_name(type, log_file_name, true, true);
+          OB_LOGGER.set_file_name(type, log_file_name, true, false);
         } else if (RUN_MODE_CLIENT == g_run_mode) {
-          OB_LOGGER.set_file_name(type, log_file_name, false, true);
+          OB_LOGGER.set_file_name(type, log_file_name, false, false);
         } else {
           MPRINT("invalid g_run_mode, mode=%d", g_run_mode);
         }
@@ -579,11 +587,11 @@ int ObProxyMain::init_log()
     OB_LOGGER.set_monitor_log_level("INFO");
     OB_LOGGER.set_xflush_log_level("INFO");
     OB_LOGGER.set_max_file_size(config.max_log_file_size);
-    OB_LOGGER.set_logger_callback_handler(&oceanbase::obproxy::logger_callback);
+    // OB_LOGGER.set_logger_callback_handler(&oceanbase::obproxy::logger_callback);
 
     if (OB_FAIL(OB_LOGGER.init_async_log_thread(config.stack_size))) {
       // In special cases if set_xflush_log_name fails, we ignore the error.
-      LOG_WARN("fail to init_async_log_thread, use sync logging instead", K(ret));
+      LOG_WDIAG("fail to init_async_log_thread, use sync logging instead", K(ret));
     } else {
       OB_LOGGER.set_enable_async_log(config.enable_async_log);
     }
@@ -598,39 +606,38 @@ int ObProxyMain::init_signal()
   int ret = OB_SUCCESS;
   struct sigaction action;
   if (OB_FAIL(add_sig_ignore_catched(action, SIGPIPE))) {
-    LOG_WARN("fail to add_sig_ignore_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_ignore_catched", K(ret));
 
   // Handle the SIGTERM and SIGINT signal:
   // We will stop accepted connect and exit immediately
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGINT))) {
-    LOG_WARN("fail to add_sig_direct_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGTERM))) {
-    LOG_WARN("fail to add_sig_direct_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR1))) {
-    LOG_WARN("fail to add_sig_direct_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR2))) {
-    LOG_WARN("fail to add_sig_direct_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, 43))) {
-    LOG_WARN("fail to add_sig_direct_catched", K(ret));
-
+    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   // when a process terminates, the SIGHUP signal can be catch by its sub process
   } else if (OB_FAIL(prctl(PR_SET_PDEATHSIG, SIGHUP))) {
-    LOG_WARN("fail to prctl PR_SET_PDEATHSIG for SIGHUP", K(ret));
+    LOG_WDIAG("fail to prctl PR_SET_PDEATHSIG for SIGHUP", K(ret));
   } else if (OB_FAIL(add_sig_async_catched(action, SIGHUP))) {
-    LOG_WARN("fail to add_sig_async_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_async_catched", K(ret));
 
   // when a process terminates, the SIGCHLD signal will be sent to its parent process
   } else if (OB_FAIL(add_sig_async_catched(action, SIGCHLD))) {
-    LOG_WARN("fail to add_sig_async_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_async_catched", K(ret));
 
   } else if (OB_FAIL(add_sig_async_catched(action, 40))) {
-    LOG_WARN("fail to add_sig_async_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_async_catched", K(ret));
   } else if (OB_FAIL(add_sig_async_catched(action, 41))) {
-    LOG_WARN("fail to add_sig_async_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_async_catched", K(ret));
   } else if (OB_FAIL(add_sig_async_catched(action, 42))) {
-    LOG_WARN("fail to add_sig_async_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_async_catched", K(ret));
   } else if (OB_FAIL(add_sig_async_catched(action, 49))) {
-    LOG_WARN("fail to add_sig_async_catched", K(ret));
+    LOG_WDIAG("fail to add_sig_async_catched", K(ret));
   } else {
     LOG_DEBUG("succ to init_signal");
   }
@@ -645,7 +652,7 @@ int ObProxyMain::add_sig_ignore_catched(struct sigaction &action, const int sig)
   action.sa_flags = 0;
   if (OB_UNLIKELY(0 != sigaction(sig, &action, NULL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
   }
   return ret;
 }
@@ -658,7 +665,7 @@ int ObProxyMain::add_sig_default_catched(struct sigaction &action, const int sig
   action.sa_flags = 0;
   if (OB_UNLIKELY(0 != sigaction(sig, &action, NULL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
   }
   return ret;
 }
@@ -671,7 +678,7 @@ int ObProxyMain::add_sig_direct_catched(struct sigaction &action, const int sig,
   action.sa_flags = flag;
   if (OB_UNLIKELY(0 != sigaction(sig, &action, NULL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
   }
   return ret;
 }
@@ -684,7 +691,7 @@ int ObProxyMain::add_sig_async_catched(struct sigaction &action, const int sig, 
   action.sa_flags = flag;
   if (OB_UNLIKELY(0 != sigaction(sig, &action, NULL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to sigaction sig", K(sig), KERRMSGS, K(ret));
   }
   return ret;
 }
@@ -694,12 +701,15 @@ int ObProxyMain::do_start_work(ObProxyOptions &opts)
   int ret = OB_SUCCESS;
   startup_time_us_ = hrtime_to_usec(get_hrtime_internal());
   if (OB_FAIL(obproxy_.init(opts, app_info_))) {
-    LOG_ERROR("obproxy init failed", K(ret));
-  } else if (OB_FAIL(obproxy_.start())) {
-    LOG_ERROR("obproxy start failed", K(ret));
+    LOG_EDIAG("obproxy init failed", K(ret));
+  } else if (OB_FAIL(obproxy_.start(app_info_))) {
+    LOG_EDIAG("obproxy start failed", K(ret));
   } else {
     LOG_INFO("obproxy init and start succ");
   }
+
+  obproxy_.print_start_info(ret, app_info_);
+
   return ret;
 }
 
@@ -710,7 +720,7 @@ int ObProxyMain::schedule_detect_task()
   if (OB_UNLIKELY(NULL != sig_detect_cont_) || OB_UNLIKELY(NULL != mem_monitor_cont_)
       || OB_UNLIKELY(NULL != sqlaudit_detect_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("detect cont should be null here", K_(sig_detect_cont), K_(mem_monitor_cont),
+    LOG_WDIAG("detect cont should be null here", K_(sig_detect_cont), K_(mem_monitor_cont),
              K_(sqlaudit_detect_cont), K(ret));
   }
   const bool is_repeat = true;
@@ -720,7 +730,7 @@ int ObProxyMain::schedule_detect_task()
                                      "sig_detect_task", ObProxyMain::do_detect_sig,
                                      NULL, is_repeat))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start sig detect task", K(ret));
+      LOG_WDIAG("fail to create and start sig detect task", K(ret));
     } else {
       LOG_INFO("succ to schedule sig detect task", K(interval_us), K(ret));
     }
@@ -732,7 +742,7 @@ int ObProxyMain::schedule_detect_task()
                                       "mem_monitor_task", ObProxyMain::do_monitor_mem,
                                       NULL, is_repeat))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start memory monitor task", K(ret));
+      LOG_WDIAG("fail to create and start memory monitor task", K(ret));
     } else {
       LOG_INFO("succ to schedule mem monitor task", K(interval_us), K(ret));
     }
@@ -744,7 +754,7 @@ int ObProxyMain::schedule_detect_task()
                                           "sqlaudit_detect_task", ObProxyMain::do_detect_sqlaudit,
                                           NULL, is_repeat))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start sql_audit detect task", K(ret));
+      LOG_WDIAG("fail to create and start sql_audit detect task", K(ret));
     } else {
       LOG_INFO("succ to schedule sqlaudit detect task", K(interval_us), K(ret));
     }
@@ -778,7 +788,7 @@ int ObProxyMain::do_detect_sig()
               info.parent_hot_upgrade_flag_ = false;
               lib::mutex_release(&info.hot_upgrade_mutex_);
             } else {
-              LOG_WARN("sub process exit, but recv it late");
+              LOG_WDIAG("sub process exit, but recv it late");
             }
             lib::mutex_release(&info.hot_upgrade_mutex_);
           }
@@ -793,7 +803,7 @@ int ObProxyMain::do_detect_sig()
           LOG_INFO("parent process exit", K(info));
         }
         if (OB_FAIL(OB_LOGGER.reopen_monitor_log())) {
-          LOG_WARN("fail to reopen_monitor_log_name", K(ret));
+          LOG_WDIAG("fail to reopen_monitor_log_name", K(ret));
         }
         break;
       }
@@ -891,6 +901,12 @@ void ObProxyMain::sig_direct_handler(const int sig)
       break;
     }
   }
+
+  if (OB_GOT_SIGNAL_ABORTING == g_proxy_fatal_errcode) {
+    if (SIGTERM == sig || SIGINT == sig) {
+      LOG_ERROR("receive signal", K(sig));
+    }
+  }
 }
 
 void ObProxyMain::print_memory_usage()
@@ -953,11 +969,11 @@ void ObProxyMain::print_memory_usage(const int64_t hold, const int64_t used,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid name", K(name), K(ret));
+    LOG_WDIAG("invalid name", K(name), K(ret));
   } else if (OB_FAIL(databuff_printf(buf, PRINT_SQL_LEN, pos, "\n[MEMORY] hold=% '15ld used=% '15ld "
                      "count=% '8ld avg_used=% '15ld mod=%s", hold, used,
                      count, (0 == count) ? 0 : used / count, name))) {
-    LOG_WARN("fail to print memory usage", K(name), K(ret));
+    LOG_WDIAG("fail to print memory usage", K(name), K(ret));
   }
   LOG_INFO(buf);
 }
@@ -998,7 +1014,7 @@ int ObProxyMain::do_monitor_mem()
               K(mem_limited), "OTHER_MEMORY_SIZE", static_cast<int64_t>(OTHER_MEMORY_SIZE),
               K(is_out_of_mem_limit), K(cur_pos));
     for (int64_t i = 0; i < HISTORY_MEMORY_RECORD_COUNT; ++i) {
-      _LOG_ERROR("history memory size, history_mem_size[%ld]=%ld", i,  proxy_main->history_mem_size_[i]);
+      _LOG_EDIAG("history memory size, history_mem_size[%ld]=%ld", i,  proxy_main->history_mem_size_[i]);
     }
 
     // print memory usage
@@ -1006,15 +1022,15 @@ int ObProxyMain::do_monitor_mem()
     ObMemoryResourceTracker::dump();
 
     ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+    ObHRTime interval = HRTIME_SECONDS(2) ; // nanosecond;
+    info.graceful_exit_start_time_ = get_hrtime_internal();
+    info.graceful_exit_end_time_ = info.graceful_exit_start_time_ + interval;
+    g_proxy_fatal_errcode = OB_EXCEED_MEM_LIMIT;
     if (OB_LIKELY(info.need_conn_accept_)) {
       info.disable_net_accept();             // disable accecpt new connection
-      ObHRTime interval = HRTIME_SECONDS(2) ; // nanosecond;
-      info.graceful_exit_start_time_ = get_hrtime_internal();
-      info.graceful_exit_end_time_ = info.graceful_exit_start_time_ + interval;
-      g_proxy_fatal_errcode = OB_EXCEED_MEM_LIMIT;
-      LOG_ERROR("obproxy will kill itself in seconds", "seconds", hrtime_to_sec(interval), K(g_proxy_fatal_errcode));
+      LOG_EDIAG("obproxy will kill itself in seconds", "seconds", hrtime_to_sec(interval), K(g_proxy_fatal_errcode));
     } else {
-      LOG_WARN("obproxy is already in graceful exit process",
+      LOG_WDIAG("obproxy is already in graceful exit process",
                "need_conn_accept", info.need_conn_accept_);
     }
   } else if (is_out_of_error_mem_limit) {
@@ -1023,12 +1039,17 @@ int ObProxyMain::do_monitor_mem()
               K(mem_limited), "OTHER_MEMORY_SIZE", static_cast<int64_t>(OTHER_MEMORY_SIZE),
               K(is_out_of_error_mem_limit), K(cur_pos));
     for (int64_t i = 0; i < HISTORY_MEMORY_RECORD_COUNT; ++i) {
-      _LOG_WARN("history memory size, history_mem_size[%ld]=%ld", i,  proxy_main->history_mem_size_[i]);
+      _LOG_WDIAG("history memory size, history_mem_size[%ld]=%ld", i,  proxy_main->history_mem_size_[i]);
     }
 
+    // clear mem leak check info
+    get_global_mem_leak_checker().reset();
+    get_global_objpool_leak_checker().reset();
     // print memory usage
     ObProxyMain::print_memory_usage();
     ObMemoryResourceTracker::dump();
+    ObProxyMain::freeze_mem_alloc();
+    ObProxyMain::freeze_new_connection();
   } else if (is_out_of_warn_mem_limit) {
     if (0 == cur_pos) {
       //only print every 20s
@@ -1040,10 +1061,18 @@ int ObProxyMain::do_monitor_mem()
       }
 
       // print memory usage
+      get_global_mem_leak_checker().print();
+      get_global_objpool_leak_checker().print();
       ObProxyMain::print_memory_usage();
       ObMemoryResourceTracker::dump();
+      ObProxyMain::unfreeze_mem_alloc();
+      ObProxyMain::unfreeze_new_connection();
     }
+  } else {
+    ObProxyMain::unfreeze_mem_alloc();
+    ObProxyMain::unfreeze_new_connection();
   }
+
   return ret;
 }
 
@@ -1066,7 +1095,7 @@ int ObProxyMain::do_detect_sqlaudit()
     if (UNAVAILABLE == status) {
       if (g_sqlaudit_processor.set_status(INITIALIZING)) {
         if (OB_FAIL(g_sqlaudit_processor.init_sqlaudit_record_queue(cur_sqlaudit_mem_limited))) {
-          LOG_WARN("fail to init_sqlaudit_record_queue", K(ret));
+          LOG_WDIAG("fail to init_sqlaudit_record_queue", K(ret));
         }
       }
     } else if (STOPPING == status) {
@@ -1076,7 +1105,7 @@ int ObProxyMain::do_detect_sqlaudit()
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid sqlaudit_mem_limited", K(cur_sqlaudit_mem_limited), K(ret));
+    LOG_WDIAG("invalid sqlaudit_mem_limited", K(cur_sqlaudit_mem_limited), K(ret));
   }
   return ret;
 }
@@ -1126,6 +1155,44 @@ int ObProxyMain::close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen
       }
     }
   }
+  return ret;
+}
+
+void ObProxyMain::freeze_mem_alloc()
+{
+  // now only freeze PS related mem alloc
+  ObBasePsEntry::alloc_new_entry_disabled_ = true;
+  lib::ObMallocAllocator::get_instance()->set_disabled_mod_id(ObModIds::OB_PROXY_PS_RELATED);
+}
+
+void ObProxyMain::unfreeze_mem_alloc()
+{
+  ObBasePsEntry::alloc_new_entry_disabled_ = false;
+  lib::ObMallocAllocator::get_instance()->reset_disabled_mod_id();
+}
+
+void ObProxyMain::freeze_new_connection()
+{
+  g_proxy_connection_errcode = OB_ALLOCATE_MEMORY_FAILED;
+}
+
+void ObProxyMain::unfreeze_new_connection()
+{
+  g_proxy_connection_errcode = OB_SUCCESS;
+}
+
+int ObProxyMain::init_data_type()
+{
+  int ret = OB_SUCCESS;
+  // character collation conversion
+  if (OB_FALSE_IT(init_gb18030_2022())) {
+  // decimal int precision conversion
+  } else if (OB_FAIL(common::wide::ObDecimalIntConstValue::init_const_values())) {
+    LOG_ERROR("fail to init decimal int const value", K(ret));
+  } else {
+    /* do nothing */
+  }
+
   return ret;
 }
 

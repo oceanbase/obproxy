@@ -49,7 +49,7 @@ int init_event_system(ObModuleVersion version)
   op_reclaim_opt(ObIOBufferData, ENABLE_RECLAIM, 1);
   op_reclaim_opt(ObProxyMutex, ENABLE_RECLAIM, 1);
   if (OB_FAIL(check_module_version(version, EVENT_SYSTEM_MODULE_VERSION))) {
-    LOG_WARN("failed to check module version", K(version), K(ret));
+    LOG_WDIAG("failed to check module version", K(version), K(ret));
   }
   return ret;
 }

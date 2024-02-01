@@ -131,8 +131,6 @@ struct ObCollationWrapper
   int64_t sortlen_;
 };
 
-const char *ob_collation_type_str(ObCollationType collation_type);
-
 class ObCharset
 {
 private:
@@ -375,6 +373,27 @@ private:
   static void *charset_arr[CS_TYPE_MAX];   // CHARSET_INFO *
   static ObCharsetType default_charset_type_;
   static ObCollationType default_collation_type_;
+};
+
+class ObStringScanner
+{
+public:
+  enum {
+    IGNORE_INVALID_CHARACTER = 1<<0,
+  };
+  ObStringScanner(const ObString &str, common::ObCollationType collation_type, uint64_t flags = 0)
+    : origin_str_(str), str_(str), collation_type_(collation_type), flags_(flags)
+  {}
+  int next_character(ObString &encoding_value, int32_t &unicode_value);
+  bool next_character(ObString &encoding_value, int32_t &unicode_value, int &ret);
+  ObString get_remain_str() { return str_; }
+  void forward_bytes(int64_t n) { str_ += n; }
+  TO_STRING_KV(K_(str), K_(collation_type));
+private:
+  const ObString &origin_str_;
+  ObString str_;
+  common::ObCollationType collation_type_;
+  uint64_t flags_;
 };
 
 // to_string adapter

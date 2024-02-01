@@ -38,11 +38,11 @@ int ObCompressorPool::get_compressor(const char *compressor_name,
 
   if (NULL == compressor_name) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid compressor name argument, ", K(ret), KP(compressor_name));
+    LIB_LOG(WDIAG, "invalid compressor name argument, ", K(ret), KP(compressor_name));
   } else if (OB_FAIL(get_compressor_type(compressor_name, compressor_type))) {
-    LIB_LOG(WARN, "fail to get compressor type, ", K(ret), K(compressor_name));
+    LIB_LOG(WDIAG, "fail to get compressor type, ", K(ret), K(compressor_name));
   } else if (OB_FAIL(get_compressor(compressor_type, compressor))) {
-    LIB_LOG(WARN, "fail to get compressor", K(ret), K(compressor_type));
+    LIB_LOG(WDIAG, "fail to get compressor", K(ret), K(compressor_type));
   }
   return ret;
 }
@@ -69,7 +69,7 @@ int ObCompressorPool::get_compressor(const ObCompressorType& compressor_type, Ob
     default:
       compressor = NULL;
       ret = OB_NOT_SUPPORTED;
-      LIB_LOG(WARN, "not support compress type, ", K(ret), K(compressor_type));
+      LIB_LOG(WDIAG, "not support compress type, ", K(ret), K(compressor_type));
   }
   return ret; 
 } 
@@ -80,7 +80,7 @@ int ObCompressorPool::get_compressor_type(const char *compressor_name,
   int ret = OB_SUCCESS;
   if (NULL == compressor_name) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid compressor name argument, ", K(ret), KP(compressor_name));
+    LIB_LOG(WDIAG, "invalid compressor name argument, ", K(ret), KP(compressor_name));
   } else if (!strcmp(compressor_name, "none")) {
     compressor_type = NONE_COMPRESSOR;
   } else if (!strcmp(compressor_name, "lz4_1.0")) {
@@ -93,7 +93,7 @@ int ObCompressorPool::get_compressor_type(const char *compressor_name,
     compressor_type = ZSTD_1_3_8_COMPRESSOR;
   } else {
     ret = OB_NOT_SUPPORTED;
-    LIB_LOG(WARN, "no support compressor type, ", K(ret), K(compressor_name));
+    LIB_LOG(WDIAG, "no support compressor type, ", K(ret), K(compressor_name));
   }
   return ret;
 }

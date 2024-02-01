@@ -85,6 +85,7 @@ public:
                        ObObjType obj_type,
                        ObDataTypeCastParams &dtc_params);
   ObIArray<ObAccuracy> &get_accuracies() { return accuracies_; }
+  int set_accuracies(int64_t pos, const ObAccuracy &accuracy);
 
   int cast_obj(ObObj &src_obj,
                ObObj &target_obj,
@@ -98,8 +99,10 @@ public:
                ObIAllocator &allocator,
                ObPartDescCtx &ctx,
                ObAccuracy &accuracy);
-  
+  static int decimal_int_murmur_hash(const ObObj &val, const uint64_t seed, uint64_t &res);
+
   DECLARE_VIRTUAL_TO_STRING = 0;
+  virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const = 0;
   share::schema::ObPartitionLevel part_level_;
   share::schema::ObPartitionFuncType part_func_type_;
   ObSEArray<ObAccuracy, 4> accuracies_;

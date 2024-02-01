@@ -70,10 +70,10 @@ int ObServerStatus::display_status_str(const DisplayStatus status, const char *&
   int ret = OB_SUCCESS;
   if (status < 0 || status >= OB_DISPLAY_MAX) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(status));
+    LOG_WDIAG("invalid argument", K(ret), K(status));
   } else if (OB_FAIL(get_status_str(g_server_display_status_str,
       ARRAYSIZEOF(g_server_display_status_str), status, str))) {
-    LOG_WARN("get status str failed", K(ret), K(status));
+    LOG_WDIAG("get status str failed", K(ret), K(status));
   }
   return ret;
 }
@@ -83,7 +83,7 @@ int ObServerStatus::str2display_status(const char *str, ObServerStatus::DisplayS
   int ret = OB_SUCCESS;
   if (NULL == str) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), KP(str));
+    LOG_WDIAG("invalid argument", K(ret), KP(str));
   } else {
     status = OB_DISPLAY_MAX;
     if (0 == STRCASECMP(str, "inactive")) {
@@ -97,7 +97,7 @@ int ObServerStatus::str2display_status(const char *str, ObServerStatus::DisplayS
     } else {
       status = OB_DISPLAY_MAX;
       ret = OB_ENTRY_NOT_EXIST;
-      LOG_WARN("display status str not found", K(ret), K(str));
+      LOG_WDIAG("display status str not found", K(ret), K(str));
     }
   }
   return ret;
@@ -110,9 +110,9 @@ int ObServerStatus::server_admin_status_str(const ServerAdminStatus status, cons
   int ret = OB_SUCCESS;
   if (status < 0 || status >= OB_SERVER_ADMIN_MAX) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(status));
+    LOG_WDIAG("invalid argument", K(ret), K(status));
   } else if (OB_FAIL(get_status_str(strs, ARRAYSIZEOF(strs), status, str))) {
-    LOG_WARN("get status str failed", K(ret), K(status));
+    LOG_WDIAG("get status str failed", K(ret), K(status));
   }
   return ret;
 }
@@ -124,9 +124,9 @@ int ObServerStatus::heartbeat_status_str(const HeartBeatStatus status, const cha
   STATIC_ASSERT(OB_HEARTBEAT_MAX == ARRAYSIZEOF(strs), "status string array size mismatch");
   if (status < 0 || status >= OB_HEARTBEAT_MAX) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(status));
+    LOG_WDIAG("invalid argument", K(ret), K(status));
   } else if (OB_FAIL(get_status_str(strs, ARRAYSIZEOF(strs), status, str))) {
-    LOG_WARN("get status str failed", K(ret), K(status));
+    LOG_WDIAG("get status str failed", K(ret), K(status));
   }
   return ret;
 }
@@ -138,7 +138,7 @@ int ObServerStatus::get_status_str(const char *strs[], const int64_t strs_len,
   str = NULL;
   if (NULL == strs || strs_len <= 0 || status < 0 || status >= strs_len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), KP(strs), K(strs_len), K(status), K(strs_len));
+    LOG_WDIAG("invalid argument", K(ret), KP(strs), K(strs_len), K(status), K(strs_len));
   } else {
     str = strs[status];
   }
@@ -166,17 +166,17 @@ int64_t ObServerStatus::to_string(char *buf, const int64_t buf_len) const
   int ret = OB_SUCCESS;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), KP(buf), K(buf_len));
+    LOG_WDIAG("invalid argument", K(ret), KP(buf), K(buf_len));
   } else {
     const char *admin_str = NULL;
     const char *heartbeat_str = NULL;
     // ignore get_xxx_str error, and do not check NULL str
     int tmp_ret = server_admin_status_str(admin_status_, admin_str);
     if (OB_SUCCESS != tmp_ret) {
-      LOG_WARN("get server admin status str failed", K(tmp_ret), K_(admin_status));
+      LOG_WDIAG("get server admin status str failed", K(tmp_ret), K_(admin_status));
     }
     if (OB_SUCCESS != (tmp_ret = heartbeat_status_str(hb_status_, heartbeat_str))) {
-      LOG_WARN("get heartbeat status str failed", K(tmp_ret), K_(hb_status));
+      LOG_WDIAG("get heartbeat status str failed", K(tmp_ret), K_(hb_status));
     }
     J_KV("id", id_,
         "zone", zone_,

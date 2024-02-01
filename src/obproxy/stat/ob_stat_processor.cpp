@@ -98,15 +98,15 @@ int ObSessionStatTableSync::init(ObMysqlProxy &mysql_proxy, const char *cluster_
   if (OB_ISNULL(cluster_name)
       || OB_ISNULL(stats) || OB_ISNULL(stat_names)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameter", K(cluster_name), K(stats), K(stat_names), K(ret));
+    LOG_WDIAG("invalid parameter", K(cluster_name), K(stats), K(stat_names), K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(addr))) {
-    LOG_WARN("fail to get proxy local addr", K(addr), K(ret));
+    LOG_WDIAG("fail to get proxy local addr", K(addr), K(ret));
   } else if (!addr.ip_to_string(ip_str, MAX_IP_ADDR_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to covert ip to string", K(addr), K(ret));
+    LOG_WDIAG("fail to covert ip to string", K(addr), K(ret));
   } else if (OB_FAIL(sql_.append_fmt(ObStatProcessor::INSERT_PROXY_STAT_SQL_HEAD,
                                     ObProxyTableInfo::PROXY_STAT_TABLE_NAME))) {
-    LOG_WARN("fail to append stmt", K(ret));
+    LOG_WDIAG("fail to append stmt", K(ret));
   } else {
     mysql_proxy_ = &mysql_proxy;
     const int64_t first_report_size = stats_size - 1;
@@ -117,7 +117,7 @@ int ObSessionStatTableSync::init(ObMysqlProxy &mysql_proxy, const char *cluster_
                                     addr.get_port(), session_id, stat_names[i],
                                     stats[i]))) {
           const ObString simplified_sql(std::min(sql_.length(), PRINT_SQL_LEN), sql_.ptr());
-          LOG_WARN("fail to append stmt", K(simplified_sql), "size", sql_.length(), K(ret));
+          LOG_WDIAG("fail to append stmt", K(simplified_sql), "size", sql_.length(), K(ret));
         } else {
           ++row_count_;
         }
@@ -129,7 +129,7 @@ int ObSessionStatTableSync::init(ObMysqlProxy &mysql_proxy, const char *cluster_
                                   addr.get_port(), session_id, stat_names[stats_size - 1],
                                   stats[stats_size - 1]))) {
         const ObString simplified_sql(std::min(sql_.length(), PRINT_SQL_LEN), sql_.ptr());
-        LOG_WARN("fail to append stmt", K(simplified_sql), "size", sql_.length(), K(ret));
+        LOG_WDIAG("fail to append stmt", K(simplified_sql), "size", sql_.length(), K(ret));
       } else {
         ++row_count_;
         const ObString simplified_sql(std::min(sql_.length(), PRINT_SQL_LEN), sql_.ptr());
@@ -152,9 +152,9 @@ int ObSessionStatTableSync::sync(int event, ObEvent *e)
   LOG_DEBUG("ObSessionStatTableSync() processed");
 
   if (OB_FAIL(mysql_proxy_->write(sql_.ptr(), affected_rows))) {
-    LOG_WARN("fail to execute", K_(sql), K(ret));
+    LOG_WDIAG("fail to execute", K_(sql), K(ret));
   } else if (OB_UNLIKELY(affected_rows > row_count_ * 2) || OB_UNLIKELY(affected_rows < 0)) {
-    LOG_WARN("affected_rows is not expected", "size", sql_.length(),
+    LOG_WDIAG("affected_rows is not expected", "size", sql_.length(),
              K_(sql), K_(row_count), K(affected_rows), K(ret));
   } else {/*do nothing*/}
 
@@ -176,14 +176,14 @@ ObStatProcessor::~ObStatProcessor()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(stat_table_cont_))) {
-    LOG_WARN("fail to destroy stat table sync task", K(ret));
+    LOG_WDIAG("fail to destroy stat table sync task", K(ret));
   }
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(stat_dump_cont_))) {
-    LOG_WARN("fail to destroy stat dump task", K(ret));
+    LOG_WDIAG("fail to destroy stat dump task", K(ret));
   }
 
   if(OB_FAIL(mutex_destroy(&allocator_lock_))) {
-    LOG_WARN("failed to destroy allocator mutex", K(ret));
+    LOG_WDIAG("failed to destroy allocator mutex", K(ret));
   }
   is_inited_ = false;
 }
@@ -195,14 +195,14 @@ int ObStatProcessor::init(ObMysqlProxy &mysql_proxy)
   mysql_proxy_ = &mysql_proxy;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_FAIL(mutex_init(&allocator_lock_))) {
-    LOG_WARN("fail to init mutex", K(ret));
+    LOG_WDIAG("fail to init mutex", K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(local_addr))) {
-    LOG_WARN("fail to get proxy local addr", K(local_addr), K(ret));
+    LOG_WDIAG("fail to get proxy local addr", K(local_addr), K(ret));
   } else if (OB_UNLIKELY(!local_addr.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to covert ip to string", K(local_addr), K(ret));
+    LOG_WDIAG("fail to covert ip to string", K(local_addr), K(ret));
   } else {
     proxy_port_ = local_addr.get_port();
     is_inited_ = true;
@@ -217,11 +217,11 @@ int ObStatProcessor::start_stat_task()
   int64_t interval_us = 0;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K(ret));
+    LOG_WDIAG("not init", K(ret));
   } else if (OB_UNLIKELY(NULL != stat_table_cont_)
              || OB_UNLIKELY(NULL != stat_dump_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("stat_table_cont should be null here", K_(stat_table_cont), K_(stat_dump_cont), K(ret));
+    LOG_WDIAG("stat_table_cont should be null here", K_(stat_table_cont), K_(stat_dump_cont), K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -232,7 +232,7 @@ int ObStatProcessor::start_stat_task()
                                      ObStatProcessor::do_sync_stat_table,
                                      ObStatProcessor::update_stat_table_sync_interval))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start stat_table_sync task", K(ret));
+      LOG_WDIAG("fail to create and start stat_table_sync task", K(ret));
     } else {
       LOG_INFO("succ to start stat table sync task", K(interval_us));
     }
@@ -245,7 +245,7 @@ int ObStatProcessor::start_stat_task()
                                     ObStatProcessor::do_dump_stat,
                                     ObStatProcessor::update_stat_dump_interval))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start stat_dump task", K(ret));
+      LOG_WDIAG("fail to create and start stat_dump task", K(ret));
     } else {
       LOG_INFO("succ to start stat dump task", K(interval_us));
     }
@@ -261,7 +261,7 @@ void ObStatProcessor::print_xflush_log()
 
   if (OB_ISNULL(buf = reinterpret_cast<char *>(ob_malloc(len, ObModIds::OB_PROXY_STAT)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else {
     int64_t pos = 0;
     int64_t i = 0;
@@ -280,7 +280,7 @@ void ObStatProcessor::print_xflush_log()
           value = (RECD_FLOAT != record->data_type_) ?
             record->data_.rec_int_ : static_cast<int64_t>(record->data_.rec_float_);
           if(OB_FAIL(databuff_printf(buf, len, pos, "%s=%ld,", record->name_, value))) {
-            LOG_WARN("fail to fill stat dump buf", K(ret));
+            LOG_WDIAG("fail to fill stat dump buf", K(ret));
           }
         }
       }
@@ -308,7 +308,7 @@ ObRecRawStatBlock *ObStatProcessor::allocate_raw_stat_block(const int64_t num_st
   // allocate thread-local raw-stat memory
   if (OB_UNLIKELY(stat_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid num_stats", K(stat_size), K(ret));
+    LOG_WDIAG("invalid num_stats", K(stat_size), K(ret));
   } else if (OB_LIKELY(-1 != (ethr_stat_offset = g_event_processor.allocate(stat_size)))) {
     // create the raw-stat-block structure
     if (OB_SUCC(mutex_acquire(&allocator_lock_))) {
@@ -331,12 +331,12 @@ ObRecRawStatBlock *ObStatProcessor::allocate_raw_stat_block(const int64_t num_st
 
       int tmp_ret = OB_SUCCESS;
       if (OB_SUCCESS != (tmp_ret = mutex_release(&allocator_lock_))) {
-        LOG_WARN("fail to release mutex", K(tmp_ret));
+        LOG_WDIAG("fail to release mutex", K(tmp_ret));
       }
     }
   } else {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("failed to allocate memory from thread local data buffer", K(ret));
+    LOG_WDIAG("failed to allocate memory from thread local data buffer", K(ret));
   }
 
   return rsb;
@@ -361,14 +361,14 @@ int ObStatProcessor::register_raw_stat(
 
   if (OB_UNLIKELY(!check_argument(rsb, id)) || OB_UNLIKELY(sync_type >= SYNC_MAX)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid rsb or id", K(rsb), K(id), K(sync_type), K(ret));
+    LOG_WDIAG("invalid rsb or id", K(rsb), K(id), K(sync_type), K(ret));
   } else {
     {
       if (OB_SUCC(mutex_acquire(&allocator_lock_))) {
         r = allocator_.new_object<ObRecRecord>();
         int tmp_ret = OB_SUCCESS;
         if (OB_SUCCESS != (tmp_ret = mutex_release(&allocator_lock_))) {
-          LOG_WARN("fail to release mutex", K(tmp_ret));
+          LOG_WDIAG("fail to release mutex", K(tmp_ret));
         }
       }
     }
@@ -387,14 +387,14 @@ int ObStatProcessor::register_raw_stat(
       rsb->global_record_[id] = r;
 
       if (OB_FAIL(mutex_acquire(&r->mutex_))) {
-        LOG_ERROR("fail to acquire mutex", K(ret));
+        LOG_EDIAG("fail to acquire mutex", K(ret));
       } else {
         r->stat_meta_.persist_type_ = persist_type;
         r->stat_meta_.sync_rsb_ = rsb;
         r->stat_meta_.sync_id_ = id;
         r->stat_meta_.sync_cb_ = sync_cb[sync_type];
         if (OB_FAIL(mutex_release(&r->mutex_))) {
-          LOG_ERROR("fail to release mutex", K(ret));
+          LOG_EDIAG("fail to release mutex", K(ret));
         } else {
           all_records_.push(r);
           (void)ATOMIC_FAA(&record_count_, 1);
@@ -402,15 +402,15 @@ int ObStatProcessor::register_raw_stat(
       }
     } else {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("alloc memory error", K(ret));
+      LOG_WDIAG("alloc memory error", K(ret));
     }
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(set_raw_stat_sum(rsb, id, 0))) {
-      LOG_WARN("fail to set raw stat num to 0", K(ret));
+      LOG_WDIAG("fail to set raw stat num to 0", K(ret));
     } else if (OB_FAIL(set_raw_stat_count(rsb, id, 0))) {
-      LOG_WARN("fail to set raw stat count to 0", K(ret));
+      LOG_WDIAG("fail to set raw stat count to 0", K(ret));
     }
   }
   return ret;
@@ -421,9 +421,9 @@ int ObStatProcessor::set_stat_table_sync_interval()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("stat processor is not inited", K(ret));
+    LOG_WDIAG("stat processor is not inited", K(ret));
   } else if (OB_FAIL(ObAsyncCommonTask::update_task_interval(stat_table_cont_))) {
-    LOG_WARN("fail to set stat_table_sync interval", K(ret));
+    LOG_WDIAG("fail to set stat_table_sync interval", K(ret));
   }
   return ret;
 }
@@ -433,9 +433,9 @@ int ObStatProcessor::set_stat_dump_interval()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("stat processor is not inited", K(ret));
+    LOG_WDIAG("stat processor is not inited", K(ret));
   } else if (OB_FAIL(ObAsyncCommonTask::update_task_interval(stat_dump_cont_))) {
-    LOG_WARN("fail to set stat_dump interval", K(ret));
+    LOG_WDIAG("fail to set stat_dump interval", K(ret));
   }
   return ret;
 }
@@ -474,18 +474,18 @@ int ObStatProcessor::exec_raw_stat_sync_cbs()
   ObRecRecord *r = all_records_.head();
   while (OB_SUCC(ret) && NULL != r) {
     if (OB_FAIL(mutex_acquire(&r->mutex_))) {
-      LOG_ERROR("fail to acquire mutex", K(ret));
+      LOG_EDIAG("fail to acquire mutex", K(ret));
     } else {
       if (OB_ISNULL(r->stat_meta_.sync_cb_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("sync_cb is null", K(ret));
+        LOG_WDIAG("sync_cb is null", K(ret));
       } else if (OB_FAIL((*(r->stat_meta_.sync_cb_))(r->data_type_, r->data_,
                          r->stat_meta_.sync_rsb_, r->stat_meta_.sync_id_))) {
-        LOG_WARN("fail to exex raw stat sync cb", K(ret));
+        LOG_WDIAG("fail to exex raw stat sync cb", K(ret));
       } else {/*do nothing*/}
 
       if (OB_FAIL(mutex_release(&r->mutex_))){
-        LOG_ERROR("fail to release mutex", K(ret));
+        LOG_EDIAG("fail to release mutex", K(ret));
       } else {
         r = all_records_.next(r);
       }
@@ -504,7 +504,7 @@ int ObStatProcessor::sync_all_proxy_stat()
   print_xflush_log();
 
   if (OB_FAIL(sql.append_fmt(INSERT_PROXY_STAT_SQL_HEAD, ObProxyTableInfo::PROXY_STAT_TABLE_NAME))) {
-    LOG_WARN("fail to append stmt", K(ret));
+    LOG_WDIAG("fail to append stmt", K(ret));
   } else {
     int64_t value = 0;
     const char *COMMON_INFO = "";
@@ -522,7 +522,7 @@ int ObStatProcessor::sync_all_proxy_stat()
         if (OB_FAIL(sql.append_fmt(INSERT_PROXY_STAT_SQL_VALUES_AND_INFO,
                                    get_global_proxy_config().app_name_str_,
                                    proxy_ip_, proxy_port_, 0L, r->name_, value, COMMON_INFO))) {
-          LOG_WARN("fail to append stmt", "stat_name", r->name_, K(ret));
+          LOG_WDIAG("fail to append stmt", "stat_name", r->name_, K(ret));
         } else {
           ++row_count;
         }
@@ -538,15 +538,15 @@ int ObStatProcessor::sync_all_proxy_stat()
       char *info_buf = NULL;
       if (OB_ISNULL(info_buf = static_cast<char *>(op_fixed_mem_alloc(OB_MAX_CONFIG_INFO_LEN)))) {// 4k
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory", K(ret));
+        LOG_WDIAG("fail to alloc memory", K(ret));
       } else if (OB_FAIL(get_global_resource_pool_processor().get_recently_accessed_cluster_info(info_buf,
           OB_MAX_CONFIG_INFO_LEN, value))) {
-        LOG_WARN("fail to get all recently accessed cluster info from resource_pool", K(ret));
+        LOG_WDIAG("fail to get all recently accessed cluster info from resource_pool", K(ret));
       } else if (OB_FAIL(sql.append_fmt(INSERT_PROXY_STAT_SQL_VALUES_AND_INFO_END,
                                         get_global_proxy_config().app_name_str_,
                                         proxy_ip_, proxy_port_, 0L, CLUSTER_STAT_NAME,
                                         value, info_buf, info_buf))) {
-        LOG_WARN("fail to append stmt", K(CLUSTER_STAT_NAME), K(ret));
+        LOG_WDIAG("fail to append stmt", K(CLUSTER_STAT_NAME), K(ret));
       } else {
         ++row_count;
       }
@@ -560,9 +560,9 @@ int ObStatProcessor::sync_all_proxy_stat()
       int64_t affected_rows = -1;
       const ObString simplified_sql(std::min(sql.length(), PRINT_SQL_LEN), sql.ptr());
       if (OB_FAIL(mysql_proxy_->write(sql.ptr(), affected_rows))) {
-        LOG_WARN("fail to execute sql", K(simplified_sql), "size", sql.length(), K(ret));
+        LOG_WDIAG("fail to execute sql", K(simplified_sql), "size", sql.length(), K(ret));
       } else if (OB_UNLIKELY(affected_rows > row_count * 2) || OB_UNLIKELY(affected_rows < 0)) {
-        LOG_WARN("affected_rows is not expected", K(simplified_sql), "size", sql.length(), K(row_count), K(affected_rows), K(ret));
+        LOG_WDIAG("affected_rows is not expected", K(simplified_sql), "size", sql.length(), K(row_count), K(affected_rows), K(ret));
       } else {
         is_first_register_ = false;
         LOG_DEBUG("succ to sync stats", K(simplified_sql), "size", sql.length(), K(row_count), K(affected_rows));
@@ -594,11 +594,11 @@ int ObStatProcessor::sync_stat_table()
     LOG_INFO("mysql proxy is not inited, can not sync_stat_table");
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_FAIL(exec_raw_stat_sync_cbs())) {
-    LOG_WARN("fail to exec raw stat sync cbs", K(ret));
+    LOG_WDIAG("fail to exec raw stat sync cbs", K(ret));
   } else if (OB_FAIL(sync_all_proxy_stat())) {
-    LOG_WARN("fail to sync all proxy stat", K(ret));
+    LOG_WDIAG("fail to sync all proxy stat", K(ret));
   }
   return ret;
 }
@@ -625,25 +625,25 @@ int ObStatProcessor::dump()
 
   if (OB_ISNULL(buf = reinterpret_cast<char *>(ob_malloc(len, ObModIds::OB_PROXY_STAT)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else {
     int64_t pos = 0;
     if(OB_FAIL(databuff_printf(buf, len, pos, "\n      stat value      |       stat name\n"))) {
-      LOG_WARN("fail to fill stat dump buf", K(ret));
+      LOG_WDIAG("fail to fill stat dump buf", K(ret));
     } else if (OB_FAIL(databuff_printf(buf, len, pos, "----------------------|----------------------------------\n"))) {
-      LOG_WARN("fail to fill stat dump buf", K(ret));
+      LOG_WDIAG("fail to fill stat dump buf", K(ret));
     } else {
       ObRecRecord *r = all_records_.head();
       while (OB_SUCC(ret) && NULL != r) {
         if (RECD_FLOAT != r->data_type_) {
           if (OB_FAIL(databuff_printf(buf, len, pos, " %20ld | %s\n",
                                       r->data_.rec_int_, r->name_))) {
-            LOG_WARN("fail to fill stat dump buf", K(ret));
+            LOG_WDIAG("fail to fill stat dump buf", K(ret));
           }
         } else {
           if(OB_FAIL(databuff_printf(buf, len, pos, " %20.2f | %s\n",
                                      r->data_.rec_float_, r->name_))) {
-            LOG_WARN("fail to fill stat dump buf", K(ret));
+            LOG_WDIAG("fail to fill stat dump buf", K(ret));
           }
         }
         r = all_records_.next(r);
@@ -668,24 +668,24 @@ int ObStatProcessor::report_session_stats(
   ObProxyMutex *mutex = NULL;
   if (OB_UNLIKELY(!is_mysql_proxy_inited())) {
     ret = OB_NOT_INIT;
-    LOG_WARN("mysql proxy is not inited, can not report_session_stats");
+    LOG_WDIAG("mysql proxy is not inited, can not report_session_stats");
   } else if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory for proxy mutex error", K(ret));
+    LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
   } else if (OB_ISNULL(stat_sync =
     op_reclaim_alloc_args(ObSessionStatTableSync, mutex))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("failed to allocate memory for ObSessionStatTableSync", K(ret));
+    LOG_EDIAG("failed to allocate memory for ObSessionStatTableSync", K(ret));
     if (OB_LIKELY(NULL != mutex)) {
       mutex->free();
       mutex = NULL;
     }
   } else if (OB_FAIL(stat_sync->init(*mysql_proxy_, cluster_name, session_id, stats,
                                      is_first_register, stat_names, stats_size))) {
-    LOG_WARN("failed to init ObSessionStatTableSync", K(ret));
+    LOG_WDIAG("failed to init ObSessionStatTableSync", K(ret));
   } else if (OB_ISNULL(g_event_processor.schedule_imm(stat_sync, ET_TASK))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("schedule imm report session stats error", K(ret));
+    LOG_WDIAG("schedule imm report session stats error", K(ret));
   }
 
   if (OB_FAIL(ret) && OB_LIKELY(NULL != stat_sync)) {
@@ -719,7 +719,7 @@ bool ObStatProcessor::set_rec_data(ObRecDataType data_type, ObRecData &data_dst,
       break;
 
     default:
-      LOG_WARN("Wrong RECD type!");
+      LOG_WDIAG("Wrong RECD type!");
       bret = false;
   }
 
@@ -745,7 +745,7 @@ bool ObStatProcessor::set_rec_data_from_int64(
       break;
 
     default:
-      LOG_WARN("Unexpected RecD type");
+      LOG_WDIAG("Unexpected RecD type");
       bret = false;
   }
 
@@ -770,7 +770,7 @@ bool ObStatProcessor::set_rec_data_from_float(
       break;
 
     default:
-      LOG_WARN("Unexpected RecD type");
+      LOG_WDIAG("Unexpected RecD type");
       bret = false;
   }
 
@@ -786,7 +786,7 @@ int ObStatProcessor::get_raw_stat_total(ObRecRawStatBlock *rsb, const int64_t id
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid rsb or id", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid rsb or id", K(rsb), K(id), K(ret));
   } else {
     // get global values
     total.sum_ = rsb->global_[id]->sum_;
@@ -823,7 +823,7 @@ int ObStatProcessor::sync_raw_stat_to_global(ObRecRawStatBlock *rsb, const int64
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid rsb or id", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid rsb or id", K(rsb), K(id), K(ret));
   } else {
     // sum_ the thread local values
     for (int64_t i = 0; i < g_event_processor.event_thread_count_; ++i) {
@@ -844,7 +844,7 @@ int ObStatProcessor::sync_raw_stat_to_global(ObRecRawStatBlock *rsb, const int64
 
     // lock so the setting of the globals and last values are atomic
     if (OB_FAIL(mutex_acquire(&(rsb->mutex_)))) {
-      LOG_ERROR("fail to acquire mutex", K(ret));
+      LOG_EDIAG("fail to acquire mutex", K(ret));
     } else {
       // get the delta from the last sync
       ObRecRawStat delta;
@@ -859,7 +859,7 @@ int ObStatProcessor::sync_raw_stat_to_global(ObRecRawStatBlock *rsb, const int64
       (void)ATOMIC_SET(&(rsb->global_[id]->last_sum_), total.sum_);
       (void)ATOMIC_SET(&(rsb->global_[id]->last_count_), total.count_);
       if (OB_FAIL(mutex_release(&(rsb->mutex_)))) {
-        LOG_ERROR("fail to release mutex", K(ret));
+        LOG_EDIAG("fail to release mutex", K(ret));
       }
     }
   }
@@ -873,19 +873,19 @@ int ObStatProcessor::clear_raw_stat(ObRecRawStatBlock *rsb, const int64_t id)
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid rsb or id", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid rsb or id", K(rsb), K(id), K(ret));
 
     // the globals need to be reset too
     // lock so the setting of the globals and last values are atomic
   } else if (OB_FAIL(mutex_acquire(&(rsb->mutex_)))){
-    LOG_ERROR("fail to acquire mutex", K(ret));
+    LOG_EDIAG("fail to acquire mutex", K(ret));
   } else {
     (void)ATOMIC_SET(&(rsb->global_[id]->sum_), 0L);
     (void)ATOMIC_SET(&(rsb->global_[id]->last_sum_), 0L);
     (void)ATOMIC_SET(&(rsb->global_[id]->count_), 0L);
     (void)ATOMIC_SET(&(rsb->global_[id]->last_count_), 0L);
     if (OB_FAIL(mutex_release(&(rsb->mutex_)))) {
-      LOG_ERROR("fail to release mutex", K(ret));
+      LOG_EDIAG("fail to release mutex", K(ret));
     } else {
       // reset the local stats
       ObRecRawStat *tlp = NULL;
@@ -911,17 +911,17 @@ int ObStatProcessor::clear_raw_stat_sum(ObRecRawStatBlock *rsb, const int64_t id
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid rsb or id", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid rsb or id", K(rsb), K(id), K(ret));
 
     // the globals need to be reset too
     // lock so the setting of the globals and last values are atomic
   } else if (OB_FAIL(mutex_acquire(&(rsb->mutex_)))){
-    LOG_ERROR("fail to acquire mutex", K(ret));
+    LOG_EDIAG("fail to acquire mutex", K(ret));
   } else {
     (void)ATOMIC_SET(&(rsb->global_[id]->count_), 0L);
     (void)ATOMIC_SET(&(rsb->global_[id]->last_count_), 0L);
     if (OB_FAIL(mutex_release(&(rsb->mutex_)))) {
-      LOG_ERROR("fail to release mutex", K(ret));
+      LOG_EDIAG("fail to release mutex", K(ret));
     } else {
       // reset the local stats
       ObRecRawStat *tlp = NULL;
@@ -945,17 +945,17 @@ int ObStatProcessor::clear_raw_stat_count(ObRecRawStatBlock *rsb, const int64_t 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid rsb or id", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid rsb or id", K(rsb), K(id), K(ret));
 
     // the globals need to be reset too
     // lock so the setting of the globals and last values are atomic
   } else if (OB_FAIL(mutex_acquire(&(rsb->mutex_)))){
-    LOG_ERROR("fail to acquire mutex", K(ret));
+    LOG_EDIAG("fail to acquire mutex", K(ret));
   } else {
     (void)ATOMIC_SET(&(rsb->global_[id]->count_), 0L);
     (void)ATOMIC_SET(&(rsb->global_[id]->last_count_), 0L);
     if (OB_FAIL(mutex_release(&(rsb->mutex_)))) {
-      LOG_ERROR("fail to release mutex", K(ret));
+      LOG_EDIAG("fail to release mutex", K(ret));
     } else {
       // reset the local stats
       ObRecRawStat *tlp = NULL;
@@ -985,9 +985,9 @@ int ObStatProcessor::sync_raw_stat_sum(
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid argument", K(rsb), K(id), K(ret));
   } else if (OB_FAIL(sync_raw_stat_to_global(rsb, id))) {
-    LOG_WARN("fail to sync_raw_stat_to_global", K(ret));
+    LOG_WDIAG("fail to sync_raw_stat_to_global", K(ret));
   } else {
     total.sum_ = rsb->global_[id]->sum_;
     total.count_ = rsb->global_[id]->count_;
@@ -995,7 +995,7 @@ int ObStatProcessor::sync_raw_stat_sum(
 
   if (OB_SUCC(ret) && OB_UNLIKELY(!set_rec_data_from_int64(data_type, data, total.sum_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected rec data type", K(ret));
+    LOG_WDIAG("unexpected rec data type", K(ret));
   }
   return ret;
 }
@@ -1009,9 +1009,9 @@ int ObStatProcessor::sync_raw_stat_count(
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid argument", K(rsb), K(id), K(ret));
   } else if (OB_FAIL(sync_raw_stat_to_global(rsb, id))) {
-    LOG_WARN("fail to sync_raw_stat_to_global", K(ret));
+    LOG_WDIAG("fail to sync_raw_stat_to_global", K(ret));
   } else {
     total.sum_ = rsb->global_[id]->sum_;
     total.count_ = rsb->global_[id]->count_;
@@ -1019,7 +1019,7 @@ int ObStatProcessor::sync_raw_stat_count(
 
   if (OB_SUCC(ret) && OB_UNLIKELY(!set_rec_data_from_int64(data_type, data, total.count_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected rec data type", K(ret));
+    LOG_WDIAG("unexpected rec data type", K(ret));
   }
   return ret;
 }
@@ -1034,9 +1034,9 @@ int ObStatProcessor::sync_raw_stat_avg(
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid argument", K(rsb), K(id), K(ret));
   } else if (OB_FAIL(sync_raw_stat_to_global(rsb, id))) {
-    LOG_WARN("fail to sync_raw_stat_to_global", K(ret));
+    LOG_WDIAG("fail to sync_raw_stat_to_global", K(ret));
   } else {
     total.sum_ = rsb->global_[id]->sum_;
     total.count_ = rsb->global_[id]->count_;
@@ -1047,7 +1047,7 @@ int ObStatProcessor::sync_raw_stat_avg(
 
   if (OB_SUCC(ret) && OB_UNLIKELY(!set_rec_data_from_float(data_type, data, avg))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected rec data type", K(ret));
+    LOG_WDIAG("unexpected rec data type", K(ret));
   }
   return ret;
 }
@@ -1062,9 +1062,9 @@ int ObStatProcessor::sync_raw_stat_hrtime_avg(
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid argument", K(rsb), K(id), K(ret));
   } else if (OB_FAIL(sync_raw_stat_to_global(rsb, id))) {
-    LOG_WARN("fail to sync_raw_stat_to_global", K(ret));
+    LOG_WDIAG("fail to sync_raw_stat_to_global", K(ret));
   } else {
     total.sum_ = rsb->global_[id]->sum_;
     total.count_ = rsb->global_[id]->count_;
@@ -1078,7 +1078,7 @@ int ObStatProcessor::sync_raw_stat_hrtime_avg(
 
   if (OB_SUCC(ret) && OB_UNLIKELY(!set_rec_data_from_float(data_type, data, r))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected rec data type", K(ret));
+    LOG_WDIAG("unexpected rec data type", K(ret));
   }
   return ret;
 }
@@ -1093,9 +1093,9 @@ int ObStatProcessor::sync_raw_stat_int_msecs_to_float_seconds(
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid argument", K(rsb), K(id), K(ret));
   } else if (OB_FAIL(sync_raw_stat_to_global(rsb, id))) {
-    LOG_WARN("fail to sync_raw_stat_to_global", K(ret));
+    LOG_WDIAG("fail to sync_raw_stat_to_global", K(ret));
   } else {
     total.sum_ = rsb->global_[id]->sum_;
     total.count_ = rsb->global_[id]->count_;
@@ -1108,7 +1108,7 @@ int ObStatProcessor::sync_raw_stat_int_msecs_to_float_seconds(
 
   if (OB_SUCC(ret) && OB_UNLIKELY(!set_rec_data_from_float(data_type, data, r))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected rec data type", K(ret));
+    LOG_WDIAG("unexpected rec data type", K(ret));
   }
   return ret;
 }
@@ -1123,9 +1123,9 @@ int ObStatProcessor::sync_raw_stat_mhrtime_avg(
 
   if (OB_UNLIKELY(!check_argument(rsb, id))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(rsb), K(id), K(ret));
+    LOG_WDIAG("invalid argument", K(rsb), K(id), K(ret));
   } else if (OB_FAIL(sync_raw_stat_to_global(rsb, id))) {
-    LOG_WARN("fail to sync_raw_stat_to_global", K(ret));
+    LOG_WDIAG("fail to sync_raw_stat_to_global", K(ret));
   } else {
     total.sum_ = rsb->global_[id]->sum_;
     total.count_ = rsb->global_[id]->count_;
@@ -1139,7 +1139,7 @@ int ObStatProcessor::sync_raw_stat_mhrtime_avg(
 
   if (OB_SUCC(ret) && OB_UNLIKELY(!set_rec_data_from_float(data_type, data, r))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected rec data type", K(ret));
+    LOG_WDIAG("unexpected rec data type", K(ret));
   }
   return ret;
 }

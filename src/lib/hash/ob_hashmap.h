@@ -59,10 +59,11 @@ class ObHashMap
   typedef typename HashMapTypes<_key_type, _value_type>::pair_type pair_type;
   typedef ObHashMap<_key_type, _value_type, _defendmode, _hashfunc, _equal, _allocer, _bucket_array, _bucket_allocer>
   hashmap;
-  typedef ObHashTable<_key_type, pair_type, _hashfunc, _equal, pair_first<pair_type>, _allocer, _defendmode, _bucket_array, _bucket_allocer>
-  hashtable;
   typedef hashmap_preproc<_key_type, _value_type> preproc;
 public:
+  typedef ObHashTable<_key_type, pair_type, _hashfunc, _equal, pair_first<pair_type>, _allocer, _defendmode, _bucket_array, _bucket_allocer>
+  hashtable;
+  typedef typename hashtable::bucket_iterator bucket_iterator;
   typedef typename hashtable::iterator iterator;
   typedef typename hashtable::const_iterator const_iterator;
 public:
@@ -76,6 +77,14 @@ public:
   {
   };
 public:
+  bucket_iterator bucket_begin()
+  {
+    return ht_.bucket_begin();
+  };
+  bucket_iterator bucket_end()
+  {
+    return ht_.bucket_end();
+  };
   iterator begin()
   {
     return ht_.begin();

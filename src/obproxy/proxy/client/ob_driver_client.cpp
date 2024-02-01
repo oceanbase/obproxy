@@ -43,7 +43,7 @@ using namespace oceanbase::obproxy::net;
         int res = -1;                   \
         flags |= O_NONBLOCK;            \
         if (OB_SUCCESS != (tmp_ret = ObSocketManager::fcntl(fd, F_SETFL, flags, res))) { \
-          OBPROXY_DRIVER_CLIENT_LOG(WARN, "fail to set nonblocking", K(tmp_ret), K(errno), K(strerror(errno))); \
+          OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "fail to set nonblocking", K(tmp_ret), K(errno), K(strerror(errno))); \
           if (OB_SUCCESS == ret) {  \
             ret = tmp_ret;  \
           } \
@@ -56,7 +56,7 @@ using namespace oceanbase::obproxy::net;
         int res = -1;                   \
         flags &= ~O_NONBLOCK;           \
         if (OB_SUCCESS != (tmp_ret = ObSocketManager::fcntl(fd, F_SETFL, flags, res))) { \
-          OBPROXY_DRIVER_CLIENT_LOG(WARN, "fail to set blocking", K(ret), K(errno), K(strerror(errno))); \
+          OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "fail to set blocking", K(ret), K(errno), K(strerror(errno))); \
           if (OB_SUCCESS == ret) { \
             ret = tmp_ret; \
           } \
@@ -97,9 +97,9 @@ int ObDriverClient::init()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client init twice", K(this), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client init twice", K(this), K(ret));
   } else if (OB_FAIL(ObSocketManager::socket(AF_UNIX, SOCK_STREAM, 0, unix_fd_))) {
-    OBPROXY_DRIVER_CLIENT_LOG(ERROR, "dirver client create socket failed", K(this), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(EDIAG, "dirver client create socket failed", K(this), K(ret));
   } else {
     OBPROXY_DRIVER_CLIENT_LOG(DEBUG, "init driver client", K(this), K_(cs_id));
     is_inited_ = true;
@@ -115,7 +115,7 @@ int ObDriverClient::sync_connect()
   memset(addr.sun_path, 0, sizeof(addr.sun_path));
   strncpy(addr.sun_path, get_global_layout().get_unix_domain_path(), sizeof(addr.sun_path) - 1);
   if (OB_FAIL(ObSocketManager::connect(unix_fd_, (struct sockaddr*)&addr, sizeof(addr)))) {
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client connect unix domain failed", K(this), K(errno), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client connect unix domain failed", K(this), K(errno), K(ret));
   } else {
     OBPROXY_DRIVER_CLIENT_LOG(DEBUG, "driver client connect success" , K(this));
   }
@@ -127,7 +127,7 @@ int ObDriverClient::sync_connect_with_timeout()
   int ret = OB_SUCCESS;
   if (connect_timeout_ < 0) {
     ret = OB_ERR_UNEXPECTED;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "connect timeout value unexpected", K(connect_timeout_), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "connect timeout value unexpected", K(connect_timeout_), K(ret));
   } else if (connect_timeout_ == 0) {
     ret = sync_connect();
   } else {
@@ -145,7 +145,7 @@ int ObDriverClient::sync_connect_with_timeout()
         int64_t prev_time = get_current_time();
         if (errno != EINPROGRESS && errno != EWOULDBLOCK && errno != EAGAIN) {
           ret = ob_get_sys_errno();
-          OBPROXY_DRIVER_CLIENT_LOG(WARN, "connect failed", K(ret));
+          OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "connect failed", K(ret));
         } else if (errno == EWOULDBLOCK || errno == EAGAIN) {
           // The unix socket encounters the above socket sleep 1ms to prevent it from being called all the time.
           // Refer to https://stackoverflow.com/questions/48222690/set-connect-timeout-on-unix-domain-socket
@@ -171,7 +171,7 @@ int ObDriverClient::sync_connect_with_timeout()
             } else {
               if (errno != EINTR) {
                 ret = ob_get_sys_errno();
-                OBPROXY_DRIVER_CLIENT_LOG(WARN, "poll failed", K(ret));
+                OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "poll failed", K(ret));
               } else {
                 int64_t new_time = get_current_time();
                 timeout -= (new_time - prev_time);
@@ -205,7 +205,7 @@ int ObDriverClient::sync_recv_internal(char *buf, int64_t buf_len, int64_t &recv
 
   if (OB_UNLIKELY(NULL == buf || 0 >= buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
   } else {
 
     do {
@@ -218,7 +218,7 @@ int ObDriverClient::sync_recv_internal(char *buf, int64_t buf_len, int64_t &recv
       // will call this func again, do nothing
     } else if (-1 == recv_len) {
       ret = ob_get_sys_errno();
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "recv failed", K(ret), KP(buf), K(buf_len), K(recv_len), K(recv_flags));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "recv failed", K(ret), KP(buf), K(buf_len), K(recv_len), K(recv_flags));
     } else {
       // success, do nothing
     }
@@ -235,7 +235,7 @@ int ObDriverClient::sync_wait_io_or_timeout(bool is_recv)
   int64_t timeout = 0;
   int64_t prev_time = get_current_time();
   int64_t new_time = 0;
-    
+
   memset(&pfd, 0, sizeof(pfd));
   pfd.fd = unix_fd_;
   if (is_recv) {
@@ -263,10 +263,10 @@ int ObDriverClient::sync_wait_io_or_timeout(bool is_recv)
 
   if (rv < 0) {
     ret = ob_get_sys_errno();
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "poll error", K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "poll error", K(ret));
   } else if (rv == 0) {
     ret = OB_TIMEOUT;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "poll timeout", K(timeout), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "poll timeout", K(timeout), K(ret));
   } else {
     // recv >= 0 , do nothing
   }
@@ -280,23 +280,23 @@ int ObDriverClient::sync_recv_with_timeout(char *buf, int64_t buf_len, int64_t &
 
   if (OB_UNLIKELY(NULL == buf || 0 >= buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
   } else {
     int recv_flags= MSG_DONTWAIT;
     recv_len = -1;
 
     while (OB_SUCC(ret) && -1 == recv_len) {
       if (OB_FAIL(sync_recv_internal(buf, buf_len, recv_len, recv_flags))) {
-        OBPROXY_DRIVER_CLIENT_LOG(WARN, "fail to call sync_recv_internal", K(buf_len), K(recv_len), K(ret));
+        OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "fail to call sync_recv_internal", K(buf_len), K(recv_len), K(ret));
       } else if (-1 == recv_len && OB_FAIL(sync_wait_io_or_timeout(true))) {
-        OBPROXY_DRIVER_CLIENT_LOG(WARN, "fail to call sync_wait_io_or_timeout", K(ret));
+        OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "fail to call sync_wait_io_or_timeout", K(ret));
       } else {
         // do nothing
       }
     }
 
     if (OB_FAIL(ret)) {
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client recv failed", K(this), K(recv_len), K(recv_flags), K_(cs_id), K_(unix_fd), K(ret));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client recv failed", K(this), K(recv_len), K(recv_flags), K_(cs_id), K_(unix_fd), K(ret));
     }
 
   }
@@ -310,7 +310,7 @@ int ObDriverClient::sync_send_internal(const char *buf, int64_t buf_len, int64_t
 
   if (OB_UNLIKELY(NULL == buf || 0 >= buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
   } else {
 
     do {
@@ -323,7 +323,7 @@ int ObDriverClient::sync_send_internal(const char *buf, int64_t buf_len, int64_t
       // will call this func again, do nothing
     } else if (-1 == send_len) {
       ret = ob_get_sys_errno();
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "send failed", K(ret), KP(buf), K(buf_len), K(send_len), K(send_flags));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "send failed", K(ret), KP(buf), K(buf_len), K(send_len), K(send_flags));
     } else {
       // success, do nothing
     }
@@ -338,23 +338,23 @@ int ObDriverClient::sync_send_with_timeout(const char *buf, int64_t buf_len, int
 
   if (OB_UNLIKELY(NULL == buf || 0 >= buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    OBPROXY_DRIVER_CLIENT_LOG(WARN, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
+    OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "buf is null or len is invalid", K(buf_len), K(this), K_(cs_id), K(ret));
   } else {
     int send_flags = MSG_DONTWAIT | MSG_NOSIGNAL;
     send_len = -1;
 
     while (OB_SUCC(ret) && -1 == send_len) {
       if (OB_FAIL(sync_send_internal(buf, buf_len, send_len, send_flags))) {
-        OBPROXY_DRIVER_CLIENT_LOG(WARN, "fail to call sync_send_internal", K(buf_len), K(send_len), K(ret));
+        OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "fail to call sync_send_internal", K(buf_len), K(send_len), K(ret));
       } else if (-1 == send_len && OB_FAIL(sync_wait_io_or_timeout(false))) {
-        OBPROXY_DRIVER_CLIENT_LOG(WARN, "fail to call sync_wait_io_or_timeout", K(ret));
+        OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "fail to call sync_wait_io_or_timeout", K(ret));
       } else {
         // do nothing
       }
     }
 
     if (OB_FAIL(ret)) {
-      OBPROXY_DRIVER_CLIENT_LOG(WARN, "driver client send failed", K(this), K(send_len), K(send_flags), K_(cs_id), K_(unix_fd), K(ret));
+      OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "driver client send failed", K(this), K(send_len), K(send_flags), K_(cs_id), K_(unix_fd), K(ret));
     }
 
   }

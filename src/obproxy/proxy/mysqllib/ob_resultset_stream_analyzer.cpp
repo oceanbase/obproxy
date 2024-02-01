@@ -43,7 +43,7 @@ int ObResultsetStreamAnalyzer::analyze_resultset_stream(ObIOBufferReader *reader
 
   if (OB_ISNULL(reader) || OB_UNLIKELY((read_avail = reader->read_avail()) <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("reader must contain data", K(reader), K(read_avail), K(ret));
+    LOG_WDIAG("reader must contain data", K(reader), K(read_avail), K(ret));
   } else if (!is_received_all_eof() && !is_received_error()) {
     bool need_loop = true;
     int64_t min_len = 0;
@@ -58,20 +58,20 @@ int ObResultsetStreamAnalyzer::analyze_resultset_stream(ObIOBufferReader *reader
       }
       if (OB_UNLIKELY(0 != next_read_len_ && 0 != read_avail)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("error, never run here!", K(next_read_len_), K(read_avail), K(ret));
+        LOG_WDIAG("error, never run here!", K(next_read_len_), K(read_avail), K(ret));
       } else if (read_avail > 0) {
         // if pkt meta has not received completed,
         // break and continue received from net.
         if (read_avail < MYSQL_NET_META_LENGTH) {
           need_loop = false;
         } else if (OB_FAIL(get_mysql_resp_meta(reader, to_consume_size, pkt_len, type))) {
-          LOG_WARN("fail to get mysql resp meta", K(ret));
+          LOG_WDIAG("fail to get mysql resp meta", K(ret));
         } else if (MYSQL_EOF_PACKET_TYPE == type) {
           ++eof_pkt_count_;
           if (OB_UNLIKELY(eof_pkt_count_ > MYSQL_RESULTSET_EOF_PECKET_COUNT)
               || OB_UNLIKELY(eof_pkt_count_ <= 0)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("eof_pkt_count is out of range", K(eof_pkt_count_), K(ret));
+            LOG_WDIAG("eof_pkt_count is out of range", K(eof_pkt_count_), K(ret));
           } else if (is_received_all_eof()) {
             need_loop = false;
           } else {
@@ -85,7 +85,7 @@ int ObResultsetStreamAnalyzer::analyze_resultset_stream(ObIOBufferReader *reader
           // ok pakt in ResultSet Protocol;
           // it need both MYSQL_OK_PACKET_TYPE == type and 1 != eof_pkt_count_;
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("error, never run here!", K(type), K(eof_pkt_count_), K(ret));
+          LOG_WDIAG("error, never run here!", K(type), K(eof_pkt_count_), K(ret));
         } else {
           next_read_len_ = pkt_len + MYSQL_NET_HEADER_LENGTH;
         }
@@ -97,7 +97,7 @@ int ObResultsetStreamAnalyzer::analyze_resultset_stream(ObIOBufferReader *reader
   if (OB_SUCC(ret) && is_received_all_eof()) {
     if (OB_FAIL(handle_end_packet(reader, read_avail, MYSQL_EOF_PACKET_TYPE,
                 to_consume_size, stream_status))) {
-      LOG_WARN("fail to handle the last eof pkt  and ok pkt", K(ret));
+      LOG_WDIAG("fail to handle the last eof pkt  and ok pkt", K(ret));
     }
   }
 
@@ -105,7 +105,7 @@ int ObResultsetStreamAnalyzer::analyze_resultset_stream(ObIOBufferReader *reader
   if (OB_SUCC(ret) && is_received_error()) {
     if (OB_FAIL(handle_end_packet(reader, read_avail, MYSQL_ERR_PACKET_TYPE,
                 to_consume_size, stream_status))) {
-      LOG_WARN("fail to handle the last err pkt and ok pkt", K(ret));
+      LOG_WDIAG("fail to handle the last err pkt and ok pkt", K(ret));
     }
   }
 
@@ -123,10 +123,10 @@ inline int ObResultsetStreamAnalyzer::get_mysql_resp_meta(
   type = 0;
   if (OB_ISNULL(reader) || OB_UNLIKELY(start_pos < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(reader), K(start_pos), K(ret));
+    LOG_WDIAG("invalid argument", K(reader), K(start_pos), K(ret));
   } else if (OB_UNLIKELY(start_pos + MYSQL_NET_META_LENGTH > reader->read_avail())) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("reader buf is not enough", "buf_len", reader->read_avail(),
+    LOG_WDIAG("reader buf is not enough", "buf_len", reader->read_avail(),
              "need_len", start_pos + MYSQL_NET_META_LENGTH, K(ret));
   } else {
     // TODO, later optimization
@@ -135,7 +135,7 @@ inline int ObResultsetStreamAnalyzer::get_mysql_resp_meta(
     char *written_pos = reader->copy(meta_buf, MYSQL_NET_META_LENGTH, start_pos);
     if (OB_UNLIKELY(written_pos != meta_buf + MYSQL_NET_META_LENGTH)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("not copy completely", K(written_pos), K(meta_buf),
+      LOG_WDIAG("not copy completely", K(written_pos), K(meta_buf),
                "meta_length", MYSQL_NET_META_LENGTH, K(ret));
     } else {
       char *start = meta_buf;
@@ -161,25 +161,25 @@ inline int ObResultsetStreamAnalyzer::handle_end_packet(
     uint64_t pkt_len = 0;
     uint8_t pkt_type = 0;
     if (OB_FAIL(get_mysql_resp_meta(reader, to_consume_size, pkt_len, pkt_type))) {
-      LOG_WARN("fail to get mysql resp meta", K(expect_type), K(ret));
+      LOG_WDIAG("fail to get mysql resp meta", K(expect_type), K(ret));
     } else if (OB_UNLIKELY(expect_type != pkt_type)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected pkt type", K(expect_type), K(pkt_type), K(ret));
+      LOG_WDIAG("unexpected pkt type", K(expect_type), K(pkt_type), K(ret));
     } else if (read_avail > static_cast<int64_t>(pkt_len) + MYSQL_NET_HEADER_LENGTH + MYSQL_NET_META_LENGTH) {
       //get ok pkt meta
       uint64_t ok_pkt_len = 0;
       uint8_t ok_type = 0;
       int64_t start_pos = to_consume_size + pkt_len + MYSQL_NET_HEADER_LENGTH;
       if (OB_FAIL(get_mysql_resp_meta(reader, start_pos, ok_pkt_len, ok_type))) {
-        LOG_WARN("fail to get mysql resp meta", K(expect_type), K(ret));
+        LOG_WDIAG("fail to get mysql resp meta", K(expect_type), K(ret));
       } else if (OB_UNLIKELY(MYSQL_OK_PACKET_TYPE != ok_type)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected pkt type, expect ok pkt", K(ok_type), K(ret));
+        LOG_WDIAG("unexpected pkt type, expect ok pkt", K(ok_type), K(ret));
       } else {
         int64_t total_len = pkt_len + MYSQL_NET_HEADER_LENGTH + ok_pkt_len + MYSQL_NET_HEADER_LENGTH;
         if (OB_UNLIKELY(read_avail > total_len)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid packet", K(read_avail), K(ret));
+          LOG_WDIAG("invalid packet", K(read_avail), K(ret));
         } else if (read_avail == total_len) {
           to_consume_size += pkt_len + MYSQL_NET_HEADER_LENGTH;
           stream_status = RSS_END_NORMAL_STATUS;

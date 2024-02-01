@@ -62,18 +62,18 @@ int ObMySQLRow::serialize(char *buf, const int64_t len, int64_t &pos) const
       //      }
       //    } else
       if (OB_FAIL(encode_cell(cell_idx, buf, len, pos, bitmap))) {
-        LOG_WARN("failed to encode cell", K(ret), K(cell_idx), K(buf), K(len), K(pos), K(bitmap));
+        LOG_WDIAG("failed to encode cell", K(ret), K(cell_idx), K(buf), K(len), K(pos), K(bitmap));
       }
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid arguments", K(ret), K(column_num), K(buf));
+    LOG_WDIAG("invalid arguments", K(ret), K(column_num), K(buf));
   }
 
   if (OB_FAIL(ret)) {
     pos = pos_bk;
     if (OB_LIKELY(OB_SIZE_OVERFLOW != ret && OB_BUF_NOT_ENOUGH != ret)) {
-      LOG_WARN("serialize ob row fail", K(ret));
+      LOG_WDIAG("serialize ob row fail", K(ret));
     }
   }
   return ret;

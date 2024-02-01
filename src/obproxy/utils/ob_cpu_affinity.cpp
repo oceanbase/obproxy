@@ -38,10 +38,10 @@ int ObCpuTopology::init()
   FILE *fp = NULL;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_ISNULL(fp = popen("lscpu -p", "r"))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get lscpu info", K(ret));
+    LOG_WDIAG("fail to get lscpu info", K(ret));
   } else {
     char buf[BUFSIZ];
     int64_t cpu_id = 0;
@@ -74,7 +74,7 @@ int ObCpuTopology::init()
         cores_[core_id].cpues_[(cores_[core_id].cpu_number_++) % MAX_CPU_NUMBER_PER_CORE] = cpu_id;
       } else {
         ret = OB_SIZE_OVERFLOW;
-        LOG_ERROR("too many cores", K(core_number_), K(ret));
+        LOG_EDIAG("too many cores", K(core_number_), K(ret));
       }
     }
 
@@ -124,17 +124,17 @@ int ObCpuTopology::bind_cpu(const int64_t cpu_id, const pthread_t thread_id)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("ObCpuTopology not init", K(ret));
+    LOG_WDIAG("ObCpuTopology not init", K(ret));
   } else if (OB_UNLIKELY(cpu_id < 0) || OB_UNLIKELY(thread_id <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(thread_id), K(ret));
+    LOG_WDIAG("invalid argument", K(thread_id), K(ret));
   } else {
     cpu_set_t cpuset;
     CPU_ZERO(&cpuset);
     CPU_SET(cpu_id, &cpuset);
     if (OB_UNLIKELY(0 != pthread_setaffinity_np(thread_id, sizeof(cpu_set_t), &cpuset))) {
       ret = ob_get_sys_errno();
-      LOG_WARN("fail to pthread_setaffinity_np", K(cpu_id), K(thread_id), K(ret));
+      LOG_WDIAG("fail to pthread_setaffinity_np", K(cpu_id), K(thread_id), K(ret));
     } else {
       LOG_INFO("success to bind_cpu", K(cpu_id), K(thread_id));
     }

@@ -40,28 +40,28 @@ int ObProxyOKPacket::encode()
   int ret = OB_SUCCESS;
   int64_t pos = OB_SEQ_POS;
   if (OB_FAIL(ObMySQLUtil::store_int1(pkt_buf_, OB_MAX_OK_PACKET_LENGTH, seq_, pos))) {
-    LOG_WARN("fail to store seq", K_(seq), K(pos), K(ret));
+    LOG_WDIAG("fail to store seq", K_(seq), K(pos), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::store_int1(pkt_buf_, OB_MAX_OK_PACKET_LENGTH,
                                              OB_HEADER_OK_TYPE, pos))) {
-    LOG_WARN("fail to store header", K(pos), K(ret));
+    LOG_WDIAG("fail to store header", K(pos), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::store_length(pkt_buf_, OB_MAX_OK_PACKET_LENGTH,
                                                affected_rows_, pos))) {
-    LOG_WARN("fail to store affected_rows", K_(affected_rows), K(pos), K(ret));
+    LOG_WDIAG("fail to store affected_rows", K_(affected_rows), K(pos), K(ret));
   } else if (FALSE_IT(last_insert_id_pos_ = pos)) {
     // last_insert_id is behind affected_rows
   } else if (OB_FAIL(ObMySQLUtil::store_length(pkt_buf_, OB_MAX_OK_PACKET_LENGTH,
                                                last_insert_id_, pos))) {
-    LOG_WARN("fail to store", K_(last_insert_id), K(pos), K(ret));
+    LOG_WDIAG("fail to store", K_(last_insert_id), K(pos), K(ret));
   } else if (FALSE_IT(status_flags_pos_ = pos)) {
     // status_flag is behind last_insert_id
   } else if (OB_FAIL(ObMySQLUtil::store_int2(pkt_buf_, OB_MAX_OK_PACKET_LENGTH,
                                              status_flags_, pos))) {
-    LOG_WARN("fail to store status_flags", K_(status_flags), K(pos), K(ret));
+    LOG_WDIAG("fail to store status_flags", K_(status_flags), K(pos), K(ret));
   } else if (FALSE_IT(warnings_count_pos_ = pos)) {
     // warnings_count is behind status_flag
   } else if (OB_FAIL(ObMySQLUtil::store_int2(pkt_buf_, OB_MAX_OK_PACKET_LENGTH,
                                              warnings_count_, pos))) {
-    LOG_WARN("fail to store warnings_count", K_(warnings_count), K(pos), K(ret));
+    LOG_WDIAG("fail to store warnings_count", K_(warnings_count), K(pos), K(ret));
   } else if (FALSE_IT(pkt_len_ = pos)) {
     // last content, store pkt_len
   } else if (FALSE_IT(pos = 0)) {
@@ -69,7 +69,7 @@ int ObProxyOKPacket::encode()
   } else if (OB_FAIL(ObMySQLUtil::store_int3(pkt_buf_, OB_MAX_OK_PACKET_LENGTH,
                                              static_cast<int32_t>(pkt_len_ - OB_HEADER_POS),
                                              pos))) {
-    LOG_WARN("fail to store length", "length", pkt_len_ - OB_HEADER_POS, K(pos), K(ret));
+    LOG_WDIAG("fail to store length", "length", pkt_len_ - OB_HEADER_POS, K(pos), K(ret));
   } else {
     // do nothing
   }

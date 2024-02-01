@@ -200,11 +200,21 @@ const char *ObProxyParserUtils::get_sql_cmd_name(const ObMySQLCmd cmd)
     case OB_MYSQL_COM_MAX_NUM:
       name = "OB_MYSQL_COM_MAX_NUM";
       break;
+
     case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
       name ="OB_MYSQL_COM_STMT_SEND_PIECE_DATA";
       break;
+
     case OB_MYSQL_COM_STMT_GET_PIECE_DATA:
       name = "OB_MYSQL_COM_STMT_GET_PIECE_DATA";
+      break;
+
+    case OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT:
+      name = "OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT";
+      break;
+
+    case OB_MYSQL_COM_AUTH_SWITCH_RESP:
+      name = "OB_MYSQL_COM_AUTH_SWITCH_RESP";
       break;
 
     default:
@@ -263,7 +273,7 @@ int ObProxyParserUtils::analyze_one_packet(ObIOBufferReader &reader, ObMysqlAnal
       char *written_pos = reader.copy(mysql_hdr, MYSQL_NET_META_LENGTH, 0);
       if (OB_UNLIKELY(written_pos != mysql_hdr + MYSQL_NET_META_LENGTH)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("not copy completely", K(written_pos), K(mysql_hdr),
+        LOG_WDIAG("not copy completely", K(written_pos), K(mysql_hdr),
                  "meta_length", MYSQL_NET_META_LENGTH, K(ret));
       } else {
         buf_start = mysql_hdr;
@@ -298,7 +308,7 @@ int ObProxyParserUtils::analyze_one_packet_only_header(ObIOBufferReader &reader,
       char *written_pos = reader.copy(mysql_hdr, MYSQL_NET_HEADER_LENGTH, 0);
       if (OB_UNLIKELY(written_pos != mysql_hdr + MYSQL_NET_HEADER_LENGTH)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("not copy completely", K(written_pos), K(mysql_hdr),
+        LOG_WDIAG("not copy completely", K(written_pos), K(mysql_hdr),
                  "meta_length", MYSQL_NET_HEADER_LENGTH, K(ret));
       } else {
         buf_start = mysql_hdr;
@@ -322,7 +332,7 @@ int ObProxyParserUtils::analyze_mysql_packet_meta(const char *ptr, const int64_t
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ptr) || (OB_UNLIKELY(len < MYSQL_NET_META_LENGTH))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(ptr), K(len), K(ret));
+    LOG_WDIAG("invalid input value", KP(ptr), K(len), K(ret));
   } else {
     meta.pkt_len_ = uint3korr(ptr) + MYSQL_NET_HEADER_LENGTH;
     meta.pkt_seq_ = uint1korr(ptr + 3);
@@ -337,7 +347,7 @@ int ObProxyParserUtils::analyze_mysql_packet_header(const char *ptr, const int64
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ptr) || (len < MYSQL_NET_HEADER_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(ptr), K(len), K(ret));
+    LOG_WDIAG("invalid input value", KP(ptr), K(len), K(ret));
   } else {
     header.len_ = uint3korr(ptr);
     header.seq_ = uint1korr(ptr + 3);

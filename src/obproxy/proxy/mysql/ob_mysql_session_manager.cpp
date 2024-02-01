@@ -103,14 +103,14 @@ int ObServerSessionPool::release_session(ObMysqlServerSession &ss)
   // to remove the connection from our lists
   if (OB_ISNULL(ss.do_io_read(this, INT64_MAX, ss.read_buffer_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("do_io_read error", K(ret));
+    LOG_WDIAG("do_io_read error", K(ret));
   } else if (OB_ISNULL(ss.do_io_write(this, 0, NULL))) {
     // Transfer control of the write side as well
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("do_io_write error", K(ret));
+    LOG_WDIAG("do_io_write error", K(ret));
   } else if(OB_ISNULL(server_vc = ss.get_netvc())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("server vc is null", K(ret));
+    LOG_WDIAG("server vc is null", K(ret));
   } else {
     // we probably don't need the active timeout set, but will leave it for now
     server_vc->set_inactivity_timeout(server_vc->get_inactivity_timeout());
@@ -123,7 +123,7 @@ int ObServerSessionPool::release_session(ObMysqlServerSession &ss)
       LOG_DEBUG("[release session] server session placed into shared pool",
                 "ss_id", ss.ss_id_);
     } else {
-      LOG_WARN("fail to release server session into shared pool", K(ret));
+      LOG_WDIAG("fail to release server session into shared pool", K(ret));
     }
   }
 
@@ -149,7 +149,7 @@ int ObServerSessionPool::acquire_random_session(ObMysqlServerSession *&server_se
     }
     if (begin == end) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("it arrived the end, it should not happened", K(idx), K(i), K(ret));
+      LOG_WDIAG("it arrived the end, it should not happened", K(idx), K(i), K(ret));
     } else {
       hash_key.local_ip_ = &begin->local_ip_;
       hash_key.server_ip_ = &begin->server_ip_;
@@ -161,7 +161,7 @@ int ObServerSessionPool::acquire_random_session(ObMysqlServerSession *&server_se
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(server_session = acquire_session(hash_key))) {
       ret = OB_SESSION_NOT_FOUND;
-      LOG_WARN("fail to acquire session, it should not happened", K(hash_key));
+      LOG_WDIAG("fail to acquire session, it should not happened", K(hash_key));
     }
   }
   return ret;
@@ -176,7 +176,7 @@ int ObServerSessionPool::event_handler(int event, void *data)
   ObMysqlServerSession *ss = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("data is null", K(ret));
+    LOG_WDIAG("data is null", K(ret));
   } else {
     switch (event) {
       case VC_EVENT_READ_READY:
@@ -193,7 +193,7 @@ int ObServerSessionPool::event_handler(int event, void *data)
 
       default:
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid event", K(event), K(ret));
+        LOG_WDIAG("invalid event", K(event), K(ret));
         break;
     }
   }
@@ -219,7 +219,7 @@ int ObServerSessionPool::event_handler(int event, void *data)
         if (OB_ISNULL(ip_pool_.remove(hash_key))) {
           //impossible happen here
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("no server_session found in shared pool", K(ret));
+          LOG_WDIAG("no server_session found in shared pool", K(ret));
         }
         // Drop connection on this end.
         ss->do_io_close();
@@ -230,7 +230,7 @@ int ObServerSessionPool::event_handler(int event, void *data)
       // We failed to find our session.  This can only be the result
       // of a programming flaw
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("Connection leak from mysql keep-alive system", K(ret));
+      LOG_WDIAG("Connection leak from mysql keep-alive system", K(ret));
     }
   }
 
@@ -265,7 +265,7 @@ int ObMysqlSessionManager::release_session(ObMysqlServerSession &to_release)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(session_pool_.release_session(to_release))) {
-    LOG_WARN("fail to release session to shared pool", K(ret));
+    LOG_WDIAG("fail to release session to shared pool", K(ret));
   }
   return ret;
 }
@@ -327,21 +327,21 @@ int ObMysqlSessionManagerNew::release_session(const ObString &hash_key, ObMysqlS
       ret = OB_SUCCESS;
       if (OB_ISNULL(session_pool = op_alloc_args(ObServerSessionPool, mutex_))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to allocate memory", K(ret));
+        LOG_WDIAG("fail to allocate memory", K(ret));
       } else if (FALSE_IT(session_pool->set_delete_when_empty(true))) {
       } else if (FALSE_IT(session_pool->set_session_manager(this))) {
       } else if (FALSE_IT(session_pool->set_hash_key(hash_key))) {
       } else if (OB_FAIL(session_pool_hash_.unique_set(session_pool))) {
-        LOG_WARN("fail to set session pool to hash table", K(ret));
+        LOG_WDIAG("fail to set session pool to hash table", K(ret));
       }
     } else {
-      LOG_WARN("fail to get session pool", K(ret));
+      LOG_WDIAG("fail to get session pool", K(ret));
     }
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(session_pool->release_session(to_release))) {
-      LOG_WARN("fail to release session to shared pool", K(ret));
+      LOG_WDIAG("fail to release session to shared pool", K(ret));
     }
   }
   return ret;

@@ -31,19 +31,19 @@ int OMPKField::decode()
     const char *end = cdata_ + hdr_.len_;
     ObString catalog;
     if (OB_FAIL(assign_string(catalog, pos))) {
-      LOG_WARN("fail to assign_string(catalog)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(catalog)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field_.dname_, pos))) {
-      LOG_WARN("fail to assign_string(db)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(db)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field_.tname_, pos))) {
-      LOG_WARN("fail to assign_string(table)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(table)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field_.org_tname_, pos))) {
-      LOG_WARN("fail to assign_string(org_table)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(org_table)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field_.cname_, pos))) {
-      LOG_WARN("fail to assign_string(name)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(name)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field_.org_cname_, pos))) {
-      LOG_WARN("fail to assign_string(org_name)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(org_name)", KP(pos), K(ret));
     } else if (OB_FAIL(ObMySQLUtil::get_length(pos, len))) {
-      LOG_WARN("fail to get length", K(ret));
+      LOG_WDIAG("fail to get length", K(ret));
     } else {
       uint16_t value = 0;
       ObMySQLUtil::get_uint2(pos, value);
@@ -69,12 +69,12 @@ int OMPKField::decode()
     if (OB_SUCC(ret)) {
       if (pos > end) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("pos must be <= end", KP(pos), KP(end), K(cdata_), K(ret));
+        LOG_WDIAG("pos must be <= end", KP(pos), KP(end), K(cdata_), K(ret));
       }
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(ret), K(cdata_));
+    LOG_EDIAG("null input", K(ret), K(cdata_));
   }
 
   return ret;
@@ -86,9 +86,9 @@ int OMPKField::assign_string(ObString &str, const char *&pos)
   int ret = OB_SUCCESS;
   if (NULL == pos) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(pos), K(ret));
+    LOG_WDIAG("invalid input value", KP(pos), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::get_length(pos, len))) {
-    LOG_WARN("fail to get length", K(ret));
+    LOG_WDIAG("fail to get length", K(ret));
   } else {
     str.assign_ptr(pos, static_cast<uint32_t>(len));
     pos += len;

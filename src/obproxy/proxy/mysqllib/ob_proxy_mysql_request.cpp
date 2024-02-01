@@ -47,7 +47,7 @@ int ObProxyKillQueryInfo::do_privilege_check(const ObProxySessionPrivInfo &sessi
   share::schema::ObNeedPriv need_priv;
   ObProxyPrivilegeCheck::get_need_priv(sql::stmt::T_KILL, session_priv, need_priv);
   if (OB_FAIL(ObProxyPrivilegeCheck::check_privilege(session_priv, need_priv, priv_name_))) {
-    LOG_WARN("user privilege is not match need privilege, permission denied", K(session_priv),
+    LOG_WDIAG("user privilege is not match need privilege, permission denied", K(session_priv),
              K(need_priv), K_(priv_name), K(ret));
     errcode_ = ret;
   }
@@ -79,7 +79,7 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
   int ret = OB_SUCCESS;
   if (OB_ISNULL(reader) || OB_UNLIKELY(buf_len < MYSQL_NET_META_LENGTH + PARSE_EXTRA_CHAR_NUM)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid buffer reader", K(reader), K(buf_len), K(ret));
+    LOG_WDIAG("invalid buffer reader", K(reader), K(buf_len), K(ret));
   } else {
     // we maybe get the OB_MYSQL_COM_QUERY packet like: {0x1, 0x0, 0x0, 0x0, 0x3},
     // which has no sql actual;
@@ -87,7 +87,7 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
     int64_t req_buf_len = buf_len;
     if (OB_UNLIKELY(total_len < MYSQL_NET_META_LENGTH)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("buffer reader is empty", K(ret));
+      LOG_WDIAG("buffer reader is empty", K(ret));
     } else {
       // OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_SEND_LONG_DATA always followed other request
       // mysql req in ob20 payload, always followed by crc or other mysql req
@@ -110,7 +110,7 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
       // if buf is not suitable we re-alloc it
       if (OB_ISNULL(req_buf_) || OB_UNLIKELY(req_buf_len_ != req_buf_len)) {
         if (OB_FAIL(alloc_request_buf(req_buf_len))) {
-          LOG_ERROR("fail to alloc buf", K(req_buf_len), K(ret));
+          LOG_EDIAG("fail to alloc buf", K(req_buf_len), K(ret));
         } else {
           LOG_DEBUG("alloc request buf ", K(req_buf_len));
         }
@@ -122,7 +122,7 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
           char *written_pos = reader->copy(req_buf_, copy_len, 0);
           if (OB_UNLIKELY(written_pos != req_buf_ + copy_len)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("not copy completely", K(written_pos), K(req_buf_), K(copy_len), K(ret));
+            LOG_WDIAG("not copy completely", K(written_pos), K(req_buf_), K(copy_len), K(ret));
           } else {
             // add two '\0' at the tail for parser
             req_pkt_len_ = copy_len;
@@ -132,7 +132,7 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_ERROR("unexpected null buf", K(req_buf_), K(copy_len), K(req_buf_len_));
+          LOG_EDIAG("unexpected null buf", K(req_buf_), K(copy_len), K(req_buf_len_));
         }
       }
     }
@@ -148,7 +148,7 @@ int ObProxyMysqlRequest::fill_query_info(const int64_t cs_id)
     int64_t alloc_size = static_cast<int64_t>(sizeof(ObProxyKillQueryInfo));
     if (OB_ISNULL(query_info_buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem for ObProxyKillQueryInfo", K(alloc_size), K(ret));
+      LOG_WDIAG("fail to alloc mem for ObProxyKillQueryInfo", K(alloc_size), K(ret));
     } else {
       query_info_ = new (query_info_buf) ObProxyKillQueryInfo();
     }
@@ -186,6 +186,7 @@ void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
   is_mysql_req_in_ob20_payload_ = false;
   user_identity_ = USER_TYPE_NONE;
   req_pkt_len_ = 0;
+  enable_internal_kill_connection_ = false;
   allocator_.reuse();
   sql_id_buf_[0] = '\0';
 }

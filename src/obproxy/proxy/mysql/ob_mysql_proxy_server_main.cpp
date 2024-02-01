@@ -27,6 +27,7 @@
 #include "obutils/ob_proxy_config.h"
 #include "dbconfig/ob_proxy_db_config_processor.h"
 #include "ob_proxy_init.h"
+#include "opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_factory.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -55,7 +56,7 @@ int ObMysqlProxyServerMain::make_net_accept_options(
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(config_params.net_accept_threads_ < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(config_params.net_accept_threads_), K(ret));
+    LOG_WDIAG("invalid argument", K(config_params.net_accept_threads_), K(ret));
   } else {
     ObNetProcessor::ObAcceptOptions net_opt;
 
@@ -84,12 +85,12 @@ int ObMysqlProxyServerMain::make_mysql_proxy_acceptor(
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(make_net_accept_options(config_params, port, acceptor.net_opt_))) {
-    LOG_ERROR("fail to make_net_accept_options", K(ret));
+    LOG_EDIAG("fail to make_net_accept_options", K(ret));
   } else {
     ObMysqlSessionAccept *mysql_accept = new(std::nothrow) ObMysqlSessionAccept();
     if (OB_ISNULL(mysql_accept)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to new ObMysqlSessionAccept", K(ret));
+      LOG_EDIAG("fail to new ObMysqlSessionAccept", K(ret));
     } else {
       acceptor.accept_ = mysql_accept;
     }
@@ -109,16 +110,18 @@ int ObMysqlProxyServerMain::init_mysql_proxy_server(const ObMysqlConfigParams &c
   op_reclaim_sparse_opt(ObMysqlSM, ObMysqlSM::instantiate_func, ENABLE_RECLAIM, 1);
 
   if (RUN_MODE_PROXY == g_run_mode && OB_FAIL(init_mysql_proxy_port(config_params))) {
-    LOG_ERROR("fail to init mysql proxy port", K(ret));
+    LOG_EDIAG("fail to init mysql proxy port", K(ret));
   } else if (OB_FAIL(init_mysql_stats())) {
-    LOG_ERROR("fail to init_mysql_stats", K(ret));
+    LOG_EDIAG("fail to init_mysql_stats", K(ret));
   } else if (OB_FAIL(mutex_init(&g_debug_sm_list_mutex))) {
-    LOG_ERROR("fail to init g_debug_sm_list_mutex", K(ret));
+    LOG_EDIAG("fail to init g_debug_sm_list_mutex", K(ret));
+  } else if (OB_FAIL(ObProxyExprFactory::register_proxy_expr())) {
+    LOG_EDIAG("fail to init proxy expr", K(ret));
   }
 
 #ifdef USE_MYSQL_DEBUG_LISTS
   if (OB_SUCC(ret) && OB_FAIL(mutex_init(&g_debug_cs_list_mutex))) {
-    LOG_ERROR("fail to init g_debug_cs_list_mutex", K(ret));
+    LOG_EDIAG("fail to init g_debug_cs_list_mutex", K(ret));
   }
 #endif
 
@@ -131,7 +134,7 @@ int ObMysqlProxyServerMain::init_mysql_proxy_server(const ObMysqlConfigParams &c
     if (OB_FAIL(make_mysql_proxy_acceptor(config_params,
                                           get_global_proxy_ipv4_port(),
                                           g_mysql_proxy_ipv4_acceptor))) {
-      LOG_ERROR("fail to make mysql proxy acceptor", K(ret));
+      LOG_EDIAG("fail to make mysql proxy acceptor", K(ret));
     }
   }
 
@@ -139,7 +142,7 @@ int ObMysqlProxyServerMain::init_mysql_proxy_server(const ObMysqlConfigParams &c
     if (OB_FAIL(make_mysql_proxy_acceptor(config_params,
                                           get_global_proxy_ipv6_port(),
                                           g_mysql_proxy_ipv6_acceptor))) {
-      LOG_ERROR("fail to make mysql proxy acceptor", K(ret));
+      LOG_EDIAG("fail to make mysql proxy acceptor", K(ret));
     }
   }
   return ret;
@@ -159,12 +162,12 @@ int ObMysqlProxyServerMain::start_mysql_proxy_acceptor()
                                                            get_global_proxy_ipv4_port().fd_,
                                                            g_mysql_proxy_ipv4_acceptor.net_opt_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to execute ipv4 main accept", K(ret));
+    LOG_EDIAG("fail to execute ipv4 main accept", K(ret));
   } else if (enable_ipv6 && OB_ISNULL(g_net_processor.main_accept(*(g_mysql_proxy_ipv6_acceptor.accept_),
                                                             get_global_proxy_ipv6_port().fd_,
                                                             g_mysql_proxy_ipv6_acceptor.net_opt_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to execute ipv6 main accept", K(ret));
+    LOG_EDIAG("fail to execute ipv6 main accept", K(ret));
   }
 
   return ret;
@@ -174,7 +177,7 @@ int ObMysqlProxyServerMain::start_mysql_proxy_server(const ObMysqlConfigParams &
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(start_processor_threads(config_params))) {
-    LOG_ERROR("fail to start processor threads", K(ret));
+    LOG_EDIAG("fail to start processor threads", K(ret));
   }
   return ret;
 }
@@ -195,46 +198,48 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
   if (OB_UNLIKELY(stack_size <= 0) || OB_UNLIKELY(event_threads <= 0)
       || OB_UNLIKELY(task_threads <= 0)) {
     ret = OB_INVALID_CONFIG;
-    LOG_WARN("invalid variable", K(stack_size), K(event_threads), K(task_threads), K(ret));
+    LOG_WDIAG("invalid variable", K(stack_size), K(event_threads), K(task_threads), K(ret));
   } else if (OB_FAIL(g_event_processor.start(static_cast<int>(event_threads), stack_size,
                                              enable_cpu_topology, automatic_match_work_thread, enable_cpu_isolate))) {
-    LOG_ERROR("fail to start event processor", K(stack_size), K(event_threads), K(ret));
+    LOG_EDIAG("fail to start event processor", K(stack_size), K(event_threads), K(ret));
   } else if (OB_FAIL(g_net_processor.start())) {
-    LOG_ERROR("fail to start net processor", K(ret));
+    LOG_EDIAG("fail to start net processor", K(ret));
   } else if (OB_FAIL(g_task_processor.start(task_threads, stack_size))) {
-    LOG_ERROR("fail to start task processor", K(stack_size), K(ret));
+    LOG_EDIAG("fail to start task processor", K(stack_size), K(ret));
   } else if (OB_FAIL(g_blocking_task_processor.start(blocking_threads, stack_size))) {
-    LOG_ERROR("fail to start blocking task processor", K(stack_size), K(ret));
-  } else if (!get_global_proxy_config().use_local_dbconfig
+    LOG_EDIAG("fail to start blocking task processor", K(stack_size), K(ret));
+  } else if (get_global_proxy_config().enable_sharding && !get_global_proxy_config().use_local_dbconfig
              && OB_FAIL(g_grpc_task_processor.start(grpc_threads, stack_size))) {
     // if use local config, no need start grpc threads
-    LOG_ERROR("fail to start grpc task processor", K(stack_size), K(ret));
+    LOG_EDIAG("fail to start grpc task processor", K(stack_size), K(ret));
   } else if (get_global_proxy_config().enable_sharding
       && OB_FAIL(g_shard_watch_task_processor.start(grpc_watch_threads, stack_size))) {
-    LOG_ERROR("fail to start grpc parent task processor", K(stack_size), K(ret));
+    LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (get_global_proxy_config().enable_sharding
       && OB_FAIL(g_shard_scan_all_task_processor.start(shard_scan_threads > 0 ? shard_scan_threads
                                                        : g_event_processor.thread_count_for_type_[ET_CALL] / 2,
                                                        stack_size))) {
-    LOG_ERROR("fail to start grpc parent task processor", K(stack_size), K(ret));
+    LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (OB_FAIL(init_cs_map_for_thread())) {
-    LOG_ERROR("fail to init cs_map for thread", K(ret));
+    LOG_EDIAG("fail to init cs_map for thread", K(ret));
+  } else if (OB_FAIL(init_cs_id_list_for_thread())) {
+    LOG_EDIAG("failt to init cs_id_list for thread", K(ret));
   } else if (OB_FAIL(init_table_map_for_thread())) {
-    LOG_ERROR("fail to init table_map for thread", K(ret));
+    LOG_EDIAG("fail to init table_map for thread", K(ret));
   } else if (OB_FAIL(init_congestion_map_for_thread())) {
-    LOG_ERROR("fail to init congestion_map for thread", K(ret));
+    LOG_EDIAG("fail to init congestion_map for thread", K(ret));
   } else if (OB_FAIL(init_partition_map_for_thread())) {
-    LOG_ERROR("fail to init partition_map for thread", K(ret));
+    LOG_EDIAG("fail to init partition_map for thread", K(ret));
   } else if (OB_FAIL(init_routine_map_for_thread())) {
-    LOG_ERROR("fail to init routine_map for thread", K(ret));
+    LOG_EDIAG("fail to init routine_map for thread", K(ret));
   } else if (OB_FAIL(init_sql_table_map_for_thread())) {
-    LOG_ERROR("fail to init sql_table_map for thread", K(ret));
+    LOG_EDIAG("fail to init sql_table_map for thread", K(ret));
   } else if (OB_FAIL(init_ps_entry_cache_for_thread())) {
-    LOG_ERROR("fail to init ps entry cache for thread", K(ret));
+    LOG_EDIAG("fail to init ps entry cache for thread", K(ret));
   } else if (OB_FAIL(init_text_ps_entry_cache_for_thread())) {
-    LOG_ERROR("fail to init text ps entry cache for thread", K(ret));
+    LOG_EDIAG("fail to init text ps entry cache for thread", K(ret));
   } else if (OB_FAIL(init_random_seed_for_thread())) {
-    LOG_ERROR("fail to init random seed for thread", K(ret));
+    LOG_EDIAG("fail to init random seed for thread", K(ret));
   } else {}
   return ret;
 }
@@ -247,7 +252,7 @@ int ObMysqlProxyServerMain::init_inherited_info(ObMysqlProxyPort &proxy_port, co
   int64_t namelen = sizeof(sock_addr);
   memset(&sock_addr, 0, namelen);
   if (OB_FAIL(ObSocketManager::getsockname(proxy_port.fd_, (struct sockaddr*)(&sock_addr), &namelen))) {
-    LOG_ERROR("fail to get sock name", K(ret));
+    LOG_EDIAG("fail to get sock name", K(ret));
   } else {
     // This step of conversion is mainly to obtain the port number, sockaddr_in and sockaddr_in6 port number positions are compatible
     struct sockaddr_in *ain = (sockaddr_in *)&sock_addr;
@@ -272,13 +277,13 @@ int ObMysqlProxyServerMain::init_mysql_proxy_port(const ObMysqlConfigParams &con
   if (info.is_inherited_) {
     if (enable_ipv4) {
       if (OB_FAIL(init_inherited_info(proxy_ipv4_port, info.ipv4_fd_))) {
-        LOG_WARN("fail to init inherited info", K(ret));
+        LOG_WDIAG("fail to init inherited info", K(ret));
       }
     }
 
     if (OB_SUCC(ret) && enable_ipv6) {
       if (OB_FAIL(init_inherited_info(proxy_ipv6_port, info.ipv6_fd_))) {
-        LOG_WARN("fail to init inherited info", K(ret));
+        LOG_WDIAG("fail to init inherited info", K(ret));
       }
     }
   } else { // init from config

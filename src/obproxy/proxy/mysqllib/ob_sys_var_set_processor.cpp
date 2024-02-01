@@ -43,15 +43,15 @@ int ObSysVarFetchCont::init_task()
                          OB_ALL_VIRTUAL_PROXY_SYS_VARIABLE_TNAME, INT64_MAX);
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(OB_SHORT_SQL_LENGTH), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(OB_SHORT_SQL_LENGTH), K(ret));
   } else if (OB_ISNULL(cr_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster resource can not be null here", K_(cr), K(ret));
+    LOG_WDIAG("cluster resource can not be null here", K_(cr), K(ret));
   } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql, pending_action_))) {
-    LOG_WARN("fail to asyanc read sysvar set", K(ret));
+    LOG_WDIAG("fail to asyanc read sysvar set", K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
   }
 
   return ret;
@@ -63,22 +63,22 @@ int ObSysVarFetchCont::finish_task(void *data)
   ObDefaultSysVarSet *var_set = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid data", K(data), K(ret));
+    LOG_WDIAG("invalid data", K(data), K(ret));
   } else if (OB_ISNULL(var_set = new (std::nothrow) ObDefaultSysVarSet())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for default sysvar set", K(ret));
+    LOG_EDIAG("fail to alloc mem for default sysvar set", K(ret));
   } else if (FALSE_IT(var_set->inc_ref())) {
     // impossible
   } else if (OB_FAIL(var_set->init())) {
-    LOG_WARN("fail to init var set", K(ret));
+    LOG_WDIAG("fail to init var set", K(ret));
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
     ObMysqlResultHandler handler;
     handler.set_resp(resp);
     if (OB_FAIL(var_set->load_system_variable_snapshot(handler))) {
-      LOG_WARN("fail to load system variable snapshot", K(ret));
+      LOG_WDIAG("fail to load system variable snapshot", K(ret));
     } else if (OB_FAIL(cr_->sys_var_set_processor_.swap(var_set))) {
-      LOG_WARN("fail to set new system variable set", K(ret));
+      LOG_WDIAG("fail to set new system variable set", K(ret));
     } else {
       fetch_result_ = true;
     }
@@ -103,7 +103,7 @@ void ObSysVarFetchCont::destroy()
     cr_->dec_ref();
     cr_ = NULL;
   } else {
-    LOG_ERROR("cluster resource can not be NULL", K_(cr), K(this));
+    LOG_EDIAG("cluster resource can not be NULL", K_(cr), K(this));
   }
   ObAsyncCommonTask::destroy();
 }
@@ -114,7 +114,7 @@ int ObSysVarSetProcessor::init()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else {
     is_inited_ = true;
   }
@@ -138,15 +138,15 @@ int ObSysVarSetProcessor::add_sys_var_renew_task(ObClusterResource &cr)
   ObProxyMutex *mutex = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for proxymutex", K(ret));
+    LOG_EDIAG("fail to alloc mem for proxymutex", K(ret));
   } else {
     cr.inc_ref();
     if (OB_ISNULL(cont = new (std::nothrow) ObSysVarFetchCont(&cr, mutex))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc mem for ObSysVarFetchCont", K(ret));
+      LOG_EDIAG("fail to alloc mem for ObSysVarFetchCont", K(ret));
       if (NULL != mutex) {
         mutex->free();
         mutex = NULL;
@@ -154,7 +154,7 @@ int ObSysVarSetProcessor::add_sys_var_renew_task(ObClusterResource &cr)
       cr.dec_ref();
     } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("schedule sysvar fetch task error", K(ret));
+      LOG_WDIAG("schedule sysvar fetch task error", K(ret));
     }
 
     if (OB_FAIL(ret)) {
@@ -173,9 +173,9 @@ int ObSysVarSetProcessor::renew_sys_var_set(ObDefaultSysVarSet *var_set)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_FAIL(swap(var_set))) {
-    LOG_WARN("fail to set new system variable set", K(ret));
+    LOG_WDIAG("fail to set new system variable set", K(ret));
   }
   return ret;
 }
@@ -185,10 +185,10 @@ int ObSysVarSetProcessor::swap(ObDefaultSysVarSet *sys_var_set)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(sys_var_set)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(sys_var_set), K(ret));
+    LOG_WDIAG("invalid input value", K(sys_var_set), K(ret));
   } else {
     // new objects must start with a zero refcount. The sys var set
     // processor holds it's own refcount. We should be the only
@@ -215,7 +215,7 @@ ObDefaultSysVarSet *ObSysVarSetProcessor::acquire()
   if (OB_LIKELY(is_inited_)) {
     DRWLock::RDLockGuard lock(set_lock_);
     if (OB_ISNULL(var_set = sys_var_set_)) {
-      LOG_ERROR("current system variable set is NULL");
+      LOG_EDIAG("current system variable set is NULL");
     } else {
       var_set->inc_ref();
     }

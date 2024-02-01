@@ -55,6 +55,10 @@ private:
 
   static void sig_direct_handler(const int sig);
   static void sig_async_handler(const int sig);
+  static void freeze_mem_alloc();
+  static void unfreeze_mem_alloc();
+  static void freeze_new_connection();
+  static void unfreeze_new_connection();
 
   int add_sig_ignore_catched(struct sigaction &action, const int sig) const;
   int add_sig_default_catched(struct sigaction &action, const int sig) const;
@@ -86,7 +90,7 @@ private:
   int handle_inherited_sockets(const int argc, char *const argv[]);
   int init_log();
   int init_signal();
-
+  int init_data_type();
   int close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen_ipv6_fd);
 
   class ObLogLevel

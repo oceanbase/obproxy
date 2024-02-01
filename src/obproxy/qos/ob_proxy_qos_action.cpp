@@ -190,7 +190,7 @@ int ObProxyQosActionCircuitBreaker::calc(bool &is_pass)
     int64_t cost = 0;
     if (OB_FAIL(g_ob_qos_stat_processor.calc_cost(cluster_name_, tenant_name_, database_name_,
             user_name_, cost, time_window_))) {
-      LOG_WARN("cacl cost failed for breaker", K(ret), K(cluster_name_), K(tenant_name_),
+      LOG_WDIAG("cacl cost failed for breaker", K(ret), K(cluster_name_), K(tenant_name_),
                    K(database_name_), K(user_name_));
     } else {
       // cost unit is us, time_window unit is second
@@ -206,7 +206,7 @@ int ObProxyQosActionCircuitBreaker::calc(bool &is_pass)
   } else {
     if (OB_FAIL(g_ob_qos_stat_processor.calc_qps_and_rt(cluster_name_, tenant_name_, database_name_,
                                                         user_name_, rt_, qps_, is_circuit_))) {
-      LOG_WARN("fail to calc qps and rt", K_(cluster_name), K_(tenant_name), K_(database_name),
+      LOG_WDIAG("fail to calc qps and rt", K_(cluster_name), K_(tenant_name), K_(database_name),
                K_(user_name), K_(rt), K_(qps), K(ret));
     } else {
       is_pass = !is_circuit_;

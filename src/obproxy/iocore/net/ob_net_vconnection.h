@@ -436,6 +436,7 @@ public:
   // Returns virtual sockaddr storage
   const sockaddr &get_virtual_addr();
   const sockaddr &get_real_client_addr();
+  void set_real_client_addr(const struct sockaddr_storage &addr) { real_client_addr_.assign(addr); }
 
   // Force an event if a write operation empties the write buffer.
   //

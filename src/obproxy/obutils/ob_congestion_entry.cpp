@@ -104,7 +104,7 @@ int ObCongestionEntry::init(ObCongestionControlConfig *config, ObCongestionZoneS
   int ret = OB_SUCCESS;
   if (OB_ISNULL(config) || OB_ISNULL(zone_state)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(config), K(zone_state), K(ret));
+    LOG_WDIAG("invalid argument", K(config), K(zone_state), K(ret));
   } else {
     if (NULL != control_config_) {
       control_config_->dec_ref();
@@ -122,7 +122,7 @@ int ObCongestionEntry::init(ObCongestionControlConfig *config, ObCongestionZoneS
     fail_hist_lock_ = new_proxy_mutex(CONGESTION_ENTRY_LOCK);
     if (OB_ISNULL(fail_hist_lock_.get_ptr())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("failed to allocate memory for fail history lock", K(ret));
+      LOG_EDIAG("failed to allocate memory for fail history lock", K(ret));
     }
   }
 
@@ -134,9 +134,9 @@ int ObCongestionEntry::validate_config(ObCongestionControlConfig *config)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(config)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, config is NULL", K(ret));
+    LOG_WDIAG("invalid argument, config is NULL", K(ret));
   } else if (OB_FAIL(apply_new_config(config))) {
-    LOG_WARN("failed to apply new config", K(config), K(ret));
+    LOG_WDIAG("failed to apply new config", K(config), K(ret));
   }
   return ret;
 }
@@ -146,9 +146,9 @@ int ObCongestionEntry::validate_zone(ObCongestionZoneState *zone_state)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(zone_state)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, zone_state is NULL", K(ret));
+    LOG_WDIAG("invalid argument, zone_state is NULL", K(ret));
   } else if (OB_FAIL(apply_new_zone_state(zone_state))) {
-    LOG_WARN("failed to apply new zone_state", K(zone_state), K(ret));
+    LOG_WDIAG("failed to apply new zone_state", K(zone_state), K(ret));
   }
   return ret;
 }
@@ -158,7 +158,7 @@ int ObCongestionEntry::apply_new_config(ObCongestionControlConfig *config)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(config)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, control config is NULL", K(ret));
+    LOG_WDIAG("invalid argument, control config is NULL", K(ret));
   } else if (control_config_->fail_window_sec_ != config->fail_window_sec_) {
     control_config_->dec_ref();
     config->inc_ref();
@@ -205,7 +205,7 @@ int ObCongestionEntry::apply_new_zone_state(ObCongestionZoneState *zone_state)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(zone_state)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, zone_state is NULL", K(ret));
+    LOG_WDIAG("invalid argument, zone_state is NULL", K(ret));
   } else if (NULL != zone_state_
              && zone_state_ != zone_state
              && zone_state_->zone_name_ == zone_state->zone_name_) {
@@ -461,7 +461,7 @@ void ObCongestionEntry::set_alive_congested()
     // action congested ?
   } else {
     last_alive_congested_ = ObTimeUtility::extract_second(ObTimeUtility::current_time());
-    LOG_INFO("set alive congested", KPC(this));
+    LOG_WARN("set alive congested", KPC(this));
   }
 }
 
@@ -469,7 +469,7 @@ void ObCongestionEntry::set_alive_congested_free()
 {
   if (ATOMIC_TAS(&alive_congested_, 0)) {
     // action not congested ?
-    LOG_INFO("set alive congested free", KPC(this));
+    LOG_WARN("set alive congested free", KPC(this));
   }
 }
 
@@ -480,7 +480,7 @@ void ObCongestionEntry::set_dead_congested()
     // Action congested ?
   } else {
     last_dead_congested_ = ObTimeUtility::extract_second(ObTimeUtility::current_time());
-    LOG_INFO("set dead congested", KPC(this));
+    LOG_WARN("set dead congested", KPC(this));
   }
 }
 
@@ -488,7 +488,7 @@ void ObCongestionEntry::set_dead_congested_free()
 {
   if (ATOMIC_TAS(&dead_congested_, 0)) {
     // action not congested ?
-    LOG_INFO("set dead congested free", KPC(this));
+    LOG_WARN("set dead congested free", KPC(this));
   }
 }
 
@@ -498,7 +498,7 @@ void ObCongestionEntry::set_detect_congested()
     // Action congested ?
   } else {
     last_detect_congested_ = ObTimeUtility::extract_second(ObTimeUtility::current_time());
-    LOG_INFO("set detect congested", KPC(this));
+    LOG_WARN("set detect congested", KPC(this));
   }
 }
 
@@ -506,7 +506,7 @@ void ObCongestionEntry::set_detect_congested_free()
 {
   if (ATOMIC_TAS(&detect_congested_, 0)) {
     // action not congested ?
-    LOG_INFO("set detect congested free", KPC(this));
+    LOG_WARN("set detect congested free", KPC(this));
   }
 }
 

@@ -78,7 +78,7 @@ int ObProxyConfig::reset()
   ObProxyConfig *orig_config = NULL;
   if (OB_ISNULL(orig_config = new (std::nothrow) ObProxyConfig())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to new memory for ObProxyConfig", K(ret));
+    LOG_WDIAG("fail to new memory for ObProxyConfig", K(ret));
   } else {
     set_app_name(orig_config->app_name);
 
@@ -86,7 +86,7 @@ int ObProxyConfig::reset()
     ObConfigContainer::const_iterator it = container.begin();
     for (; OB_SUCC(ret) && it != container.end(); ++it) {
       if (OB_FAIL(update_config_item(ObString::make_string(it->first.str()), ObString::make_string(it->second->str())))) {
-        LOG_WARN("fail to update config item", "name", it->first.str(), "value", it->second->str(), K(ret));
+        LOG_WDIAG("fail to update config item", "name", it->first.str(), "value", it->second->str(), K(ret));
       }
     }
   }
@@ -107,7 +107,7 @@ int ObProxyConfig::check_all() const
   for (; OB_SUCC(ret) && it != container_.end(); ++it) {
     if (OB_UNLIKELY(!it->second->check())) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("proxy config item invalid!", "name", it->first.str(), "value", it->second->str(), K(ret));
+      LOG_WDIAG("proxy config item invalid!", "name", it->first.str(), "value", it->second->str(), K(ret));
     }
   }
   return ret;
@@ -121,7 +121,7 @@ int ObProxyConfig::check_proxy_serviceable() const
     ObProxyServiceMode mode = OB_MAX_SERVICE_MODE;
     if (OB_UNLIKELY(!is_service_mode_available(mode)) || OB_UNLIKELY(OB_MAX_SERVICE_MODE == mode)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("service mode is not available", K(mode),
+      LOG_WDIAG("service mode is not available", K(mode),
                "proxy_service_mode", proxy_service_mode.str(), K(ret));
     } else if (OB_SERVER_SERVICE_MODE == mode && OB_UNLIKELY(proxy_id.get_value() <= 0)) {
       // get_value() return the real-time value
@@ -129,7 +129,7 @@ int ObProxyConfig::check_proxy_serviceable() const
       // here we need use real-time value.
       // if use server service mode, proxy_id must be specified
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("proxy_id must be specified when use server service mode",
+      LOG_WDIAG("proxy_id must be specified when use server service mode",
                "proxy_id", proxy_id.get_value(), K(ret));
     } else {
       //do nothing
@@ -141,7 +141,7 @@ int ObProxyConfig::check_proxy_serviceable() const
     ObServerRoutingMode mode = OB_MAX_ROUTING_MODE;
     if (OB_UNLIKELY(!is_routing_mode_available(mode)) || OB_UNLIKELY(OB_MAX_ROUTING_MODE == mode)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("routing mode is not available", K(mode),
+      LOG_WDIAG("routing mode is not available", K(mode),
                "server_routing_mode", server_routing_mode.str(), K(ret));
     }
   }
@@ -152,7 +152,7 @@ int ObProxyConfig::check_proxy_serviceable() const
     const int64_t len = static_cast<int64_t>(strlen(app_name.str()));
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_MAX_APP_NAME_LENGTH)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("app name is not available", K(len), K(OB_MAX_APP_NAME_LENGTH), K(app_name.str()), K(ret));
+      LOG_WDIAG("app name is not available", K(len), K(OB_MAX_APP_NAME_LENGTH), K(app_name.str()), K(ret));
     }
   }
 
@@ -161,11 +161,11 @@ int ObProxyConfig::check_proxy_serviceable() const
     int8_t level = 0;
     CRLockGuard guard(rwlock_);
     if (OB_FAIL(OB_LOGGER.parse_check(syslog_level.str(), static_cast<int32_t>(STRLEN(syslog_level.str()))))) {
-      LOG_WARN("fail to parse check syslog_level", K(syslog_level.str()), K(ret));
+      LOG_WDIAG("fail to parse check syslog_level", K(syslog_level.str()), K(ret));
     } else if (OB_FAIL(OB_LOGGER.get_log_level_from_str(monitor_log_level.str(), level))) {
-      LOG_WARN("fail to get_log_level_from_str", K(monitor_log_level.str()), K(ret));
+      LOG_WDIAG("fail to get_log_level_from_str", K(monitor_log_level.str()), K(ret));
     } else if (OB_FAIL(OB_LOGGER.get_log_level_from_str(xflush_log_level.str(), level))) {
-      LOG_WARN("fail to get_log_level_from_str", K(xflush_log_level.str()), K(ret));
+      LOG_WDIAG("fail to get_log_level_from_str", K(xflush_log_level.str()), K(ret));
     }
   }
 
@@ -174,7 +174,7 @@ int ObProxyConfig::check_proxy_serviceable() const
     CRLockGuard guard(rwlock_);
     if (OB_UNLIKELY(!rootservice_list.valid()) || OB_UNLIKELY(!username_separator.valid())) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("string list item is not valid", K(rootservice_list.str()), K(username_separator.str()), K(ret));
+      LOG_WDIAG("string list item is not valid", K(rootservice_list.str()), K(username_separator.str()), K(ret));
     }
   }
 
@@ -184,7 +184,7 @@ int ObProxyConfig::check_proxy_serviceable() const
     const int64_t len = static_cast<int64_t>(strlen(proxy_idc_name.str()));
     if (OB_UNLIKELY(len > OB_PROXY_MAX_IDC_NAME_LENGTH)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("proxy idc name is not available", K(len), K(OB_PROXY_MAX_IDC_NAME_LENGTH), K(proxy_idc_name.str()), K(ret));
+      LOG_WDIAG("proxy idc name is not available", K(len), K(OB_PROXY_MAX_IDC_NAME_LENGTH), K(proxy_idc_name.str()), K(ret));
     }
   }
 
@@ -195,7 +195,7 @@ int ObProxyConfig::check_proxy_serviceable() const
 
     if ((len != 0) && OB_UNLIKELY(OB_FAIL(check_version_valid(len, mysql_version.str())))) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("mysql version is not valid, must be digital", K(mysql_version.str()), K(ret));
+      LOG_WDIAG("mysql version is not valid, must be digital", K(mysql_version.str()), K(ret));
     }
   }
   return ret;
@@ -207,7 +207,7 @@ int ObProxyConfig::dump_config_to_local()
   const int64_t now = ObTimeUtility::current_time();
 
   if (OB_FAIL(ObProxyConfigUtils::dump2file(*this))) {
-    LOG_WARN("fail to dump config bin to file", K(ret));
+    LOG_WDIAG("fail to dump config bin to file", K(ret));
   }
 
   LOG_DEBUG("finish dump config to local", "cost time(us)", ObTimeUtility::current_time() - now, K(ret));
@@ -226,10 +226,10 @@ int ObProxyConfig::dump_config_to_sqlite()
     int64_t len = static_cast<int64_t>(snprintf(buf, 1024, sql, it->first.str(), it->second->str()));
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= 1024)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(buf), K(len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(buf), K(len), K(ret));
     } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, buf, NULL, 0, &err_msg)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("exec replace into proxy config failed", K(ret), "sql", buf, "err_msg", err_msg);
+      LOG_WDIAG("exec replace into proxy config failed", K(ret), "sql", buf, "err_msg", err_msg);
     }
 
     if (NULL != err_msg) {
@@ -245,7 +245,7 @@ int ObProxyConfig::set_value_safe(ObConfigItem *item, const ObString &value,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(item)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input argument", K(value), K(ret));
+    LOG_WDIAG("invalid input argument", K(value), K(ret));
   } else {
     //0.we need lock it in case of multi-thread set_value()
     CWLockGuard guard(rwlock_);
@@ -261,12 +261,12 @@ int ObProxyConfig::set_value_safe(ObConfigItem *item, const ObString &value,
       const char *null_string = "";
       if (OB_UNLIKELY(!item->set_value(null_string))) {
         ret = OB_INVALID_CONFIG;
-        LOG_WARN("fail to set config item to null_string", "name", item->name(), K(ret));
+        LOG_WDIAG("fail to set config item to null_string", "name", item->name(), K(ret));
       }
     } else {
       if (OB_UNLIKELY(!item->set_value(value))) {
         ret = OB_INVALID_CONFIG;
-        LOG_WARN("fail to set config item", "name", item->name(), K(value), K(ret));
+        LOG_WDIAG("fail to set config item", "name", item->name(), K(value), K(ret));
       }
     }
 
@@ -274,16 +274,16 @@ int ObProxyConfig::set_value_safe(ObConfigItem *item, const ObString &value,
     if (OB_SUCC(ret)) {
      if (OB_UNLIKELY(!item->check())) {
         ret = OB_INVALID_CONFIG;
-        LOG_WARN("invalid config", "name", item->name(), "value", item->str(), K(ret));
+        LOG_WDIAG("invalid config", "name", item->name(), "value", item->str(), K(ret));
       }
     }
 
     //4.when failed, recover original config
     if (OB_FAIL(ret)) {
       if (OB_UNLIKELY(!item->set_value(original_value_str_))) {
-        LOG_ERROR("fail to recover config item", "name", item->name(), K(original_value_str_));
+        LOG_EDIAG("fail to recover config item", "name", item->name(), K(original_value_str_));
       } else if (!allow_invalid_value) {
-        LOG_WARN("invalid value", K(value), K(original_value_str_), K(allow_invalid_value), K(ret));
+        LOG_WDIAG("invalid value", K(value), K(original_value_str_), K(allow_invalid_value), K(ret));
       } else {
         ret = OB_SUCCESS;
       }
@@ -299,7 +299,7 @@ int ObProxyConfig::update_config_item(const ObString &key_name, const ObString &
       || OB_UNLIKELY(key_name.length() >= static_cast<int32_t>(OB_MAX_CONFIG_NAME_LEN))
       || (!value.empty() && OB_UNLIKELY(static_cast<int64_t>(value.length()) >= OB_MAX_CONFIG_VALUE_LEN))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(key_name), K(value), K(ret));
+    LOG_WDIAG("invalid argument", K(key_name), K(value), K(ret));
   } else {
     //if allow_invalid_key_value is true, we can tolerate the invalid key and value
     //if allow_invalid_key_value is false, the key and value must be valid and set succeed
@@ -309,12 +309,12 @@ int ObProxyConfig::update_config_item(const ObString &key_name, const ObString &
 
     if (OB_ISNULL(item = container_.get(key))) {
       ret = OB_ERR_SYS_CONFIG_UNKNOWN;
-      LOG_WARN("unknown key_name", K(key_name), K(ret));
+      LOG_WDIAG("unknown key_name", K(key_name), K(ret));
     } else if (OB_ISNULL(*item)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid item, it should not happened",K(key_name), K(ret));
+      LOG_WDIAG("invalid item, it should not happened",K(key_name), K(ret));
     } else if (OB_FAIL(set_value_safe(*item, value, allow_invalid_key_value))) {
-      LOG_WARN("fail to set config item safety", "name", (*item)->name(), K(value), K(ret));
+      LOG_WDIAG("fail to set config item safety", "name", (*item)->name(), K(value), K(ret));
     }
   }
 
@@ -328,7 +328,7 @@ int ObProxyConfig::update_user_config_item(const ObString &key_name, const ObStr
       || OB_UNLIKELY(key_name.length() >= static_cast<int32_t>(OB_MAX_CONFIG_NAME_LEN))
       || (!value.empty() && OB_UNLIKELY(static_cast<int64_t>(value.length()) >= OB_MAX_CONFIG_VALUE_LEN))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(key_name), K(value), K(ret));
+    LOG_WDIAG("invalid argument", K(key_name), K(value), K(ret));
   } else {
     ObConfigItem *const *item = NULL;
     ObConfigStringKey key(key_name);
@@ -337,11 +337,11 @@ int ObProxyConfig::update_user_config_item(const ObString &key_name, const ObStr
       LOG_INFO("config item not exist, maybe new add item", K(key_name), K(ret));
     } else if (OB_ISNULL(*item)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid item, it should not happened",K(key_name), K(ret));
+      LOG_WDIAG("invalid item, it should not happened",K(key_name), K(ret));
     } else if (OB_UNLIKELY(!ObProxyConfigUtils::is_user_visible((**item)))) {
-      LOG_WARN("this is not user visible item, config in metadb is unexpected, ignore it", K(key_name), K(value));
+      LOG_WDIAG("this is not user visible item, config in metadb is unexpected, ignore it", K(key_name), K(value));
     } else if (OB_FAIL(set_value_safe(*item, value))) {
-      LOG_WARN("fail to set config item safety", "name", (*item)->name(), K(value), K(ret));
+      LOG_WDIAG("fail to set config item safety", "name", (*item)->name(), K(value), K(ret));
     }
   }
 
@@ -357,21 +357,21 @@ int ObProxyConfig::get_old_config_value(const common::ObString &key_name, char *
       || OB_ISNULL(buf)
       || OB_UNLIKELY(buf_size < OB_MAX_CONFIG_VALUE_LEN)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(key_name), K(buf_size), K(buf), K(ret));
+    LOG_WDIAG("invalid argument", K(key_name), K(buf_size), K(buf), K(ret));
   } else {
     ObConfigItem *const *item = NULL;
     ObConfigStringKey key(key_name);
 
     if (OB_ISNULL(item = container_.get(key))) {
       ret = OB_ERR_SYS_CONFIG_UNKNOWN;
-      LOG_WARN("unknown key_name", K(key_name), K(ret));
+      LOG_WDIAG("unknown key_name", K(key_name), K(ret));
     } else {
       //we need lock it whenever handle item->value
       CRLockGuard guard(rwlock_);
       const int32_t length = snprintf(buf, buf_size, "%s", (*item)->str());
       if (length < 0 || length >= buf_size) {
         ret = OB_BUF_NOT_ENOUGH;
-        OB_LOG(WARN, "buffer not enough", K(length), K(buf_size), "value", (*item)->str(), K(ret));
+        OB_LOG(WDIAG, "buffer not enough", K(length), K(buf_size), "value", (*item)->str(), K(ret));
       }
     }
   }
@@ -384,14 +384,14 @@ int ObProxyConfig::get_config_item(const common::ObString &key_name, ObConfigIte
   if (OB_UNLIKELY(key_name.empty())
       || OB_UNLIKELY(key_name.length() >= static_cast<int32_t>(OB_MAX_CONFIG_NAME_LEN))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(key_name), K(ret));
+    LOG_WDIAG("invalid argument", K(key_name), K(ret));
   } else {
     ObConfigItem *const *item = NULL;
     ObConfigStringKey key(key_name);
 
     if (OB_ISNULL(item = container_.get(key))) {
       ret = OB_ERR_SYS_CONFIG_UNKNOWN;
-      LOG_WARN("unknown key_name", K(key_name), K(ret));
+      LOG_WDIAG("unknown key_name", K(key_name), K(ret));
     } else {
       //we need lock it whenever handle item->value
       CRLockGuard guard(rwlock_);
@@ -413,11 +413,11 @@ void ObProxyConfig::update_log_level(const bool level_flag)
   const ObString name("syslog_level");
   const ObString value(OB_LOGGER.get_level_str());
   if (OB_FAIL(update_config_item(name, value))) {
-    LOG_WARN(" fail to update sys log level", K(ret));
+    LOG_WDIAG(" fail to update sys log level", K(ret));
   } else if (OB_FAIL(dump_config_to_local())) {
-    LOG_WARN("dump config fail, inc log level fail", K(ret));
+    LOG_WDIAG("dump config fail, inc log level fail", K(ret));
   } else if (OB_FAIL(dump_config_to_sqlite())) {
-    LOG_WARN("dump config failed, inc log level fail", K(ret));
+    LOG_WDIAG("dump config failed, inc log level fail", K(ret));
   } {
     //do nothing
   }
@@ -440,7 +440,7 @@ int ObProxyConfig::fill_proxy_config(ObMysqlResultHandler &result_handler)
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(update_user_config_item(key_name, value))) {
-        LOG_WARN("fail to update user config item", K(app_name), K(key_name), K(value));
+        LOG_WDIAG("fail to update user config item", K(app_name), K(key_name), K(value));
       } else {
         LOG_DEBUG("succ to update user config item", K(app_name), K(key_name), K(value));
         app_name.reset();
@@ -453,10 +453,68 @@ int ObProxyConfig::fill_proxy_config(ObMysqlResultHandler &result_handler)
   if (OB_LIKELY(OB_ITER_END == ret)) {
     ret = OB_SUCCESS;
   } else {
-    LOG_WARN("failed to get result from result set", K(ret));
+    LOG_WDIAG("failed to get result from result set", K(ret));
   }
   return ret;
 }
+
+#ifdef ERRSIM
+int ObProxyConfig::parse_error_inject_config() const
+{
+  common::ObString param = error_inject.str();
+  int ret = OB_SUCCESS;
+  int len = param.length();
+  common::ObString buf;
+  // clear error inject config
+  TP_RESET();
+  if (len == 0) {
+  } else {
+    buf.assign(param.ptr(), len);
+    bool finish = false;
+    while (OB_SUCC(ret) && !finish) {
+      common::ObString group_str;
+      common::ObString item_str;
+      int64_t err_inject_conf[4] = {0};
+      group_str = buf.split_on(';');
+      if (group_str.empty()) {
+        finish = true;
+        group_str = buf;
+      }
+      bool inner_finish = false;
+      for (int i = 0; i < 4 && !group_str.empty() && OB_SUCC(ret); i++) {
+        item_str = group_str.split_on(',');
+        char *stop_index = NULL;
+        if (inner_finish) {
+          ret = OB_INVALID_ARGUMENT;
+          LOG_WDIAG("invalid err inject param");
+        } else {
+          if (item_str.empty()) {
+            item_str = group_str;
+            inner_finish = true;
+          }
+          if (item_str.empty()) {
+            ret = OB_INVALID_ARGUMENT;
+            LOG_WDIAG("invalid err inject param", K(ret));
+          } else {
+            err_inject_conf[i] = strtol(item_str.ptr(), &stop_index, 10);
+            if (stop_index != (item_str.ptr() + item_str.length())) {
+              ret = OB_INVALID_ARGUMENT;
+              LOG_WDIAG("invalid err inject param", K(ret));
+            }
+          }
+        }
+      }
+      if (OB_SUCC(ret)) {
+        TP_SET_EVENT(err_inject_conf[0], err_inject_conf[1], err_inject_conf[2], err_inject_conf[3]);
+      }
+    }
+  }
+  if (OB_FAIL(ret)) {
+    TP_RESET();
+  }
+  return ret;
+}
+#endif
 
 }
 }

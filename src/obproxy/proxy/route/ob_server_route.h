@@ -176,7 +176,7 @@ inline int ObServerRoute::fill_weak_read_replica(
   if (OB_FAIL(ObLDCLocation::fill_weak_read_location(pl, dummy_ldc, ldc_route_.location_,
                                                      entry_need_update, is_only_readonly_zone,
                                                      ss_info, region_names, proxy_primary_zone_name))) {
-    PROXY_LOG(WARN, "fail to fill_weak_read_location", K(ret));
+    PROXY_LOG(WDIAG, "fail to fill_weak_read_location", K(ret));
   } else {
     valid_count_ = ldc_route_.location_.count();
     PROXY_LOG(DEBUG, "succ to fill_weak_read_replica", KPC(this), KPC(pl), K(dummy_ldc));
@@ -213,7 +213,7 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
                                                     proxy_primary_zone_name,
                                                     tenant_name,
                                                     cluster_resource))) {
-    PROXY_LOG(WARN, "fail to divide_leader_replica", K(ret));
+    PROXY_LOG(WDIAG, "fail to divide_leader_replica", K(ret));
   } else {
     valid_count_ = ldc_route_.location_.count() + ((!need_use_dup_replica_ && leader_item_.is_valid()) ? 1 : 0);
     PROXY_LOG(DEBUG, "succ to fill_strong_read_replica", KPC(this), KPC(pl), K(dummy_ldc), K(valid_count_));
@@ -248,16 +248,16 @@ inline int ObServerRoute::fill_replicas(
 
   if (OB_UNLIKELY(common::STRONG != level && common::WEAK != level)) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "unsupport ObConsistencyLevel", K(level), K(ret));
+    PROXY_LOG(WDIAG, "unsupport ObConsistencyLevel", K(level), K(ret));
   } else if (OB_ISNULL(dummy_entry) || OB_UNLIKELY(!dummy_entry->is_tenant_servers_valid())) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "dummy_entry is not available", KPC(dummy_entry), K(ret));
+    PROXY_LOG(WDIAG, "dummy_entry is not available", KPC(dummy_entry), K(ret));
   } else if (OB_UNLIKELY(dummy_entry->get_tenant_servers() != dummy_ldc.get_tenant_server())) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "dummy_entry is not equal to dummy_ldc.tenant_server", KPC(dummy_entry), K(dummy_ldc), K(ret));
+    PROXY_LOG(WDIAG, "dummy_entry is not equal to dummy_ldc.tenant_server", KPC(dummy_entry), K(dummy_ldc), K(ret));
   } else if (OB_UNLIKELY(dummy_ldc.is_empty())) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "dummy_entry is emtry", K(dummy_ldc), K(ret));
+    PROXY_LOG(WDIAG, "dummy_entry is emtry", K(dummy_ldc), K(ret));
   } else {
     set_dummy_entry(dummy_entry);
     set_consistency_level(level);
@@ -283,7 +283,7 @@ inline int ObServerRoute::fill_replicas(
 
     const int64_t replica_count = dummy_entry->get_tenant_servers()->replica_count_;
     if (OB_FAIL(ObLDCLocation::shuffle_dummy_ldc(dummy_ldc, replica_count, is_weak_read()))) {
-      PROXY_LOG(WARN, "fail to shuffle_dummy_ldc", K(dummy_ldc), K(replica_count), K(ret));
+      PROXY_LOG(WDIAG, "fail to shuffle_dummy_ldc", K(dummy_ldc), K(replica_count), K(ret));
     } else {
 #if OB_DETAILED_SLOW_QUERY
       t2 = common::get_hrtime_internal();
@@ -399,6 +399,7 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
         } else {
           // succ to get item from primary zone route optimize, no need update pl
           no_need_pl_update_ = true;
+          cur_chosen_route_type_ = ROUTE_TYPE_PRIMARY_ZONE;
           PROXY_LOG(DEBUG, "enable pz, choose pz item", K(item->replica_->server_));
         }
       }
@@ -425,7 +426,7 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
   } else {
     cur_chosen_server_.reset();
     cur_chosen_route_type_ = ROUTE_TYPE_MAX;
-    PROXY_LOG(ERROR, "it should never arrive here", K(*this));
+    PROXY_LOG(EDIAG, "it should never arrive here", K(*this));
   }
   PROXY_LOG(DEBUG, "succ to get_next_replica",
             "consistency_level", get_consistency_level_str(consistency_level_),
@@ -680,14 +681,14 @@ inline bool ObServerRoute::set_delay_update()
           && table_entry_->need_update_entry()
           && table_entry_->cas_set_delay_update()) {
         bret = true;
-        PROXY_LOG(WARN, "this table entry will set delay update", KPC_(table_entry));
+        PROXY_LOG(WDIAG, "this table entry will set delay update", KPC_(table_entry));
       }
     } else if (is_partition_table()) {
       if (NULL != part_entry_
           && part_entry_->need_update_entry()
           && part_entry_->cas_set_delay_update()) {
         bret = true;
-        PROXY_LOG(WARN, "this partition entry will set delay update", KPC_(table_entry), KPC_(part_entry));
+        PROXY_LOG(WDIAG, "this partition entry will set delay update", KPC_(table_entry), KPC_(part_entry));
       }
     }
   }

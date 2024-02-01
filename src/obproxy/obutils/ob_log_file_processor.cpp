@@ -64,7 +64,7 @@ void ObLogFileProcessor::destroy()
   if (OB_LIKELY(is_inited_)) {
     int ret = OB_SUCCESS;
     if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(cleanup_cont_))) {
-      LOG_WARN("fail to destroy cleanup task", K(ret));
+      LOG_WDIAG("fail to destroy cleanup task", K(ret));
     }
   }
   is_inited_ = false;
@@ -75,7 +75,7 @@ int ObLogFileProcessor::init()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("the log file processor has already been inited", K(ret));
+    LOG_WDIAG("the log file processor has already been inited", K(ret));
   } else {
     is_inited_ = true;
   }
@@ -87,10 +87,10 @@ int ObLogFileProcessor::start_cleanup_log_file()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("log file processor is not inited", K(ret));
+    LOG_WDIAG("log file processor is not inited", K(ret));
   } else if (OB_UNLIKELY(NULL != cleanup_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("log file cleanup task has already been scheduled", K_(cleanup_cont), K(ret));
+    LOG_WDIAG("log file cleanup task has already been scheduled", K_(cleanup_cont), K(ret));
   } else {
     int64_t interval_us = get_global_proxy_config().log_cleanup_interval;
     if (OB_ISNULL(cleanup_cont_ = ObAsyncCommonTask::create_and_start_repeat_task(interval_us,
@@ -98,7 +98,7 @@ int ObLogFileProcessor::start_cleanup_log_file()
                                   ObLogFileProcessor::do_repeat_task,
                                   ObLogFileProcessor::update_interval))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start log cleanup task", K(interval_us), K(ret));
+      LOG_WDIAG("fail to create and start log cleanup task", K(interval_us), K(ret));
     } else {
       LOG_INFO("succ to create and start log cleanup task", K(interval_us));
     }
@@ -112,9 +112,9 @@ int ObLogFileProcessor::set_log_cleanup_interval()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("log file processor is not inited", K(ret));
+    LOG_WDIAG("log file processor is not inited", K(ret));
   } else if (OB_FAIL(ObAsyncCommonTask::update_task_interval(cleanup_cont_))) {
-    LOG_WARN("fail to set log cleanup intreval");
+    LOG_WDIAG("fail to set log cleanup intreval");
   }
   return ret;
 }
@@ -132,16 +132,16 @@ int ObLogFileProcessor::match_file_name(const char *layout_dir, const char *file
   struct stat st;
   if (OB_ISNULL(layout_dir) || OB_ISNULL(file_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(layout_dir), K(file_name), K(ret));
+    LOG_WDIAG("invalid input value", K(layout_dir), K(file_name), K(ret));
   } else if (OB_FAIL(ObLayout::merge_file_path(layout_dir, file_name, allocator, full_path))) {
-    LOG_WARN("fail to merge file", K(layout_dir), K(file_name), K(ret));
+    LOG_WDIAG("fail to merge file", K(layout_dir), K(file_name), K(ret));
   } else if (0 != (stat(full_path, &st))) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to stat dir", K(full_path), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to stat dir", K(full_path), KERRMSGS, K(ret));
   } else if (S_ISDIR(st.st_mode)) {
     LOG_DEBUG("skip directory", K(full_path));
   } else if (OB_FAIL(databuff_printf(file_st.full_path_, OB_MAX_FILE_NAME_LENGTH, pos, "%s", full_path))) {
-    LOG_WARN("fail to copy full path to file_st", K(ret));
+    LOG_WDIAG("fail to copy full path to file_st", K(ret));
   } else {
     file_st.size_ = st.st_size;
     file_st.mtime_ = st.st_mtime;
@@ -156,12 +156,12 @@ int ObLogFileProcessor::get_disk_size(const char *dir, int64_t &avail_size)
   avail_size = 0;
   if (OB_ISNULL(dir)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("dir is null", K(ret));
+    LOG_WDIAG("dir is null", K(ret));
   } else {
     struct statfs st;
     if (OB_UNLIKELY(0 != ::statfs(dir, &st))) {
       ret = OB_IO_ERROR;
-      LOG_WARN("fail to read dir info", KERRMSGS, K(ret));
+      LOG_WDIAG("fail to read dir info", KERRMSGS, K(ret));
     } else {
       avail_size = st.f_bsize * st.f_bfree;
     }
@@ -199,13 +199,13 @@ int ObLogFileProcessor::cleanup_log_file()
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("logfile processor is not inited", K(ret));
+    LOG_WDIAG("logfile processor is not inited", K(ret));
   } else if (OB_ISNULL(layout_log_dir = get_global_layout().get_log_dir())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get log dir", K(ret));
+    LOG_WDIAG("fail to get log dir", K(ret));
   } else if (OB_ISNULL(log_dir = opendir(layout_log_dir))) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to open dir", K(layout_log_dir), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to open dir", K(layout_log_dir), KERRMSGS, K(ret));
   } else {
     bool need_further_handle = false;
     ObProxyLogFileStruct log_st;
@@ -216,7 +216,7 @@ int ObLogFileProcessor::cleanup_log_file()
       if (!file_name.prefix_match("obproxy")) {
         // we only handle logs writtente by obproxy, and all xflush log should not be deleted
       } else if (OB_FAIL(match_file_name(layout_log_dir, ent->d_name, allocator, log_st, need_further_handle))) {
-        LOG_WARN("fail to filter log file", K(ret));
+        LOG_WDIAG("fail to filter log file", K(ret));
       } else if (need_further_handle) {
         need_further_handle = false;
 
@@ -262,16 +262,16 @@ int ObLogFileProcessor::cleanup_log_file()
         } else if (!self_process_file) {
           // handle other invalid obproxy.xxx.log or obproxy.xxx.log.time
           if (OB_FAIL(invalid_log_array.push_back(log_st))) {
-            LOG_WARN("fail to add file into invalid log array", K(ret));
+            LOG_WDIAG("fail to add file into invalid log array", K(ret));
           }
         } else {
           if (enable_syslog_file_compress && !is_wf_file
               && (type == FD_DEFAULT_FILE || type == FD_XFLUSH_FILE || type == FD_DIGEST_FILE)) {
             if (OB_FAIL(compress_log_array.push_back(log_st))) {
-              LOG_WARN("fail to add file into compress log array", K(compress_log_array), K(log_st), K(ret));
+              LOG_WDIAG("fail to add file into compress log array", K(compress_log_array), K(log_st), K(ret));
             }
           } else if (OB_FAIL(log_array.push_back(log_st))) {
-            LOG_WARN("fail to add file into log array", K(log_array), K(log_st), K(ret));
+            LOG_WDIAG("fail to add file into log array", K(log_array), K(log_st), K(ret));
           }
           if (OB_SUCC(ret)) {
             total_size += log_st.size_;
@@ -282,16 +282,16 @@ int ObLogFileProcessor::cleanup_log_file()
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(do_cleanup_invalid_log_file(invalid_log_array))) {
-      LOG_WARN("fail to do cleanup invalid log file", K(ret));
+      LOG_WDIAG("fail to do cleanup invalid log file", K(ret));
     } else if (enable_syslog_file_compress && OB_FAIL(do_cleanup_compress_log_file(log_array, compress_log_array, total_size))) {
-      LOG_WARN("fail to do cleanup compress log file", K(ret));
+      LOG_WDIAG("fail to do cleanup compress log file", K(ret));
     } else if (OB_FAIL(do_cleanup_log_file(log_array, total_size))) {
-      LOG_WARN("fail to do cleanup log file", K(ret));
+      LOG_WDIAG("fail to do cleanup log file", K(ret));
     }
   }
   if (OB_LIKELY(NULL != log_dir) && OB_UNLIKELY(0 != closedir(log_dir))) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to close dir", K(log_dir), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to close dir", K(log_dir), KERRMSGS, K(ret));
   }
 
   LOG_DEBUG("finish cleanup log file", "log_array count", log_array.count(),
@@ -305,7 +305,7 @@ int ObLogFileProcessor::do_cleanup_invalid_log_file(ObArray<ObProxyLogFileStruct
   for (int64_t i = 0; OB_SUCC(ret) && i < log_array.count(); ++i) {
     if (OB_UNLIKELY(0 != ::unlink(log_array[i].full_path_))) {
       ret = OB_IO_ERROR;
-      LOG_WARN("fail to unlink file", K(log_array[i].full_path_), KERRMSGS, K(ret));
+      LOG_WDIAG("fail to unlink file", K(log_array[i].full_path_), KERRMSGS, K(ret));
     }
   }
   return ret;
@@ -318,7 +318,7 @@ int ObLogFileProcessor::log_compress_block(char *dest, size_t dest_size,
   int ret = OB_SUCCESS;
   int64_t size = -1;
   if (OB_FAIL(zstd_compressor_1_3_8_.compress(src, src_size, dest, dest_size, size))) {
-    LOG_WARN("Failed to compress", K(ret));
+    LOG_WDIAG("Failed to compress", K(ret));
   } else {
     return_size = size;
   }
@@ -335,24 +335,24 @@ int ObLogFileProcessor::log_compress(ObProxyLogFileStruct &log_st, const ObStrin
 
   if (compression_file_name.empty()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to get_compression_file_name", K(ret));
+    LOG_WDIAG("failed to get_compression_file_name", K(ret));
   } else if (NULL == (input_file = fopen(file_name.ptr(), "r"))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("Failed to fopen", "error_code", errno, K(ret));
+    LOG_WDIAG("Failed to fopen", "error_code", errno, K(ret));
   } else if (NULL == (output_file = fopen(compression_file_name.ptr(), "w"))) {
     ret = OB_ERR_UNEXPECTED;
     fclose(input_file);
-    LOG_WARN("Failed to fopen", "error_code", errno, K(ret));
+    LOG_WDIAG("Failed to fopen", "error_code", errno, K(ret));
   } else {
     size_t read_size = 0;
     size_t write_size = 0;
     while (OB_SUCC(ret) && !feof(input_file)) {
       if ((read_size = fread(src_buf, 1, src_size, input_file)) > 0) {
         if (OB_FAIL(log_compress_block(dest_buf, dest_size, src_buf, read_size, write_size))) {
-          LOG_WARN("Failed to log_compress_block", K(ret));
+          LOG_WDIAG("Failed to log_compress_block", K(ret));
         } else if (write_size != fwrite(dest_buf, 1, write_size, output_file)) {
           ret = OB_ERR_SYS;
-          LOG_WARN("Failed to fwrite", "err_code=", errno, K(ret));
+          LOG_WDIAG("Failed to fwrite", "err_code=", errno, K(ret));
         }
       }
       usleep(sleep_us);
@@ -366,7 +366,7 @@ int ObLogFileProcessor::log_compress(ObProxyLogFileStruct &log_st, const ObStrin
       struct stat st;
       if (0 != (stat(compression_file_name.ptr(), &st))) {
         ret = OB_IO_ERROR;
-        LOG_WARN("fail to stat dir", K(compression_file_name), KERRMSGS, K(ret));
+        LOG_WDIAG("fail to stat dir", K(compression_file_name), KERRMSGS, K(ret));
       } else {
         total_size += (st.st_size - log_st.size_);
         log_st.size_ = st.st_size;
@@ -405,7 +405,7 @@ int ObLogFileProcessor::do_cleanup_compress_log_file(ObArray<ObProxyLogFileStruc
         || (i < delete_num)) {
       if (OB_UNLIKELY(0 != ::unlink(compress_log_array[i].full_path_))) {
         ret = OB_IO_ERROR;
-        LOG_WARN("fail to unlink file", K(compress_log_array[i].full_path_), KERRMSGS, K(ret));
+        LOG_WDIAG("fail to unlink file", K(compress_log_array[i].full_path_), KERRMSGS, K(ret));
       } else {
         total_size -= compress_log_array[i].size_;
         LOG_INFO("succ to cleanup file", K(compress_log_array[i].full_path_), K(ret));
@@ -428,7 +428,7 @@ int ObLogFileProcessor::do_cleanup_compress_log_file(ObArray<ObProxyLogFileStruc
           src_buf = (char *)ob_malloc(src_size + dest_size, ObModIds::OB_COMPRESSOR);
           if (OB_ISNULL(src_buf)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to ob_malloc", K(ret));
+            LOG_WDIAG("fail to ob_malloc", K(ret));
           } else {
             dest_buf = src_buf + src_size;
           }
@@ -444,7 +444,7 @@ int ObLogFileProcessor::do_cleanup_compress_log_file(ObArray<ObProxyLogFileStruc
           // do nothing
         } else if (OB_FAIL(log_compress(compress_log_array[i], file_name, compression_file_name,
                 total_size, src_buf, src_size, dest_buf, dest_size))) {
-          LOG_WARN("fail to compress log", K(file_name), K(compression_file_name), K(ret));
+          LOG_WDIAG("fail to compress log", K(file_name), K(compression_file_name), K(ret));
         }
       }
 
@@ -470,7 +470,7 @@ int ObLogFileProcessor::do_cleanup_log_file(ObArray<ObProxyLogFileStruct> &log_a
   static const int64_t min_avail_size = 1024 * 1024 * 1024; // 1GB
   if (OB_FAIL(get_disk_size(get_global_layout().get_log_dir(), avail_size))) {
     // if fail, just ignore ret, we only use log_dir_size_threshold to do cleanup
-    LOG_WARN("fail to get disk size", K(ret));
+    LOG_WDIAG("fail to get disk size", K(ret));
     ret = OB_SUCCESS;
   }
   ObProxyConfig &config = get_global_proxy_config();
@@ -478,7 +478,7 @@ int ObLogFileProcessor::do_cleanup_log_file(ObArray<ObProxyLogFileStruct> &log_a
   int64_t log_file_percentage = config.log_file_percentage;
   if (OB_LIKELY(avail_size >= 0) && OB_LIKELY(log_file_percentage > 0)) {
     if (avail_size <= min_avail_size) {
-      LOG_WARN("disk avail size is too small!!!", K(avail_size));
+      LOG_WDIAG("disk avail size is too small!!!", K(avail_size));
     }
     thresh_hold = std::min(thresh_hold, ((total_size + avail_size) / 100) * log_file_percentage);
   }
@@ -490,14 +490,14 @@ int ObLogFileProcessor::do_cleanup_log_file(ObArray<ObProxyLogFileStruct> &log_a
     for (; OB_SUCC(ret) && i < log_array.count() && low_water_mark < total_size; ++i) {
       if (OB_UNLIKELY(0 != ::unlink(log_array[i].full_path_))) {
         ret = OB_IO_ERROR;
-        LOG_WARN("fail to unlink file", K(log_array[i].full_path_), KERRMSGS, K(ret));
+        LOG_WDIAG("fail to unlink file", K(log_array[i].full_path_), KERRMSGS, K(ret));
       } else {
         total_size -= log_array[i].size_;
         LOG_INFO("succ to cleanup file", K(log_array[i].full_path_), K(ret));
       }
     }
     if (OB_UNLIKELY(i == log_array.count()) && OB_UNLIKELY(thresh_hold < total_size)) {
-      LOG_WARN("no file could be cleanup any more, but log total size is still larger than thresh_hold",
+      LOG_WDIAG("no file could be cleanup any more, but log total size is still larger than thresh_hold",
                K(thresh_hold), K(low_water_mark), K(total_size));
     }
   }

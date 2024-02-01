@@ -469,7 +469,7 @@ public:
                   tb_suffix_len_(0), db_suffix_len_(0),
                   table_name_(), tb_name_pattern_(), db_name_pattern_(),
                   tb_prefix_(), db_prefix_(), tb_suffix_(), tb_tail_(), db_tail_(),
-                  tb_rules_(), db_rules_(), es_rules_(),
+                  create_table_sql_(), tb_rules_(), db_rules_(), es_rules_(),
                   allocator_() {}
   ~ObShardRule() {}
 
@@ -521,6 +521,7 @@ public:
   obutils::ObProxyConfigString tb_suffix_;
   obutils::ObProxyConfigString tb_tail_;
   obutils::ObProxyConfigString db_tail_;
+  common::ObString create_table_sql_;
   ObProxyShardRuleList tb_rules_;
   ObProxyShardRuleList db_rules_;
   ObProxyShardRuleList es_rules_;

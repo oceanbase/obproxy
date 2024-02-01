@@ -37,19 +37,19 @@ int ObTenantServer::init(const ObIArray<ObProxyReplicaLocation> &locations)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(locations.count() <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid replica location", K(locations), K(ret));
+    LOG_WDIAG("invalid replica location", K(locations), K(ret));
   } else if (OB_UNLIKELY(NULL != server_array_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("server_array_ should be null here", K(server_array_), K(ret));
+    LOG_WDIAG("server_array_ should be null here", K(server_array_), K(ret));
   } else {
     const int64_t alloc_size = static_cast<int64_t>(sizeof(ObProxyReplicaLocation)) * locations.count();
     char *server_list_buf = NULL;
     if (OB_ISNULL(server_list_buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(alloc_size), K(ret));
+      LOG_WDIAG("fail to alloc mem", K(alloc_size), K(ret));
     } else {
       server_count_ = locations.count();
       server_array_ = new (server_list_buf) ObProxyReplicaLocation[server_count_];
@@ -73,7 +73,7 @@ int ObTenantServer::init(const ObIArray<ObProxyReplicaLocation> &locations)
         partition_count_ = static_cast<uint64_t>((server_count_ / replica_count_ + (0 == server_count_ % replica_count_ ? 0 : 1)));
         int64_t idx = 0;
         if (OB_FAIL(ObRandomNumUtils::get_random_num(0, static_cast<int64_t>(partition_count_ - 1), idx))) {
-          LOG_WARN("fail to get random num", "max", partition_count_ - 1, K(ret));
+          LOG_WDIAG("fail to get random num", "max", partition_count_ - 1, K(ret));
         } else {
           next_partition_idx_ = static_cast<uint64_t>(idx);
         }
@@ -81,7 +81,7 @@ int ObTenantServer::init(const ObIArray<ObProxyReplicaLocation> &locations)
     }
 
     if (FAILEDx(shuffle())) {
-      LOG_WARN("fail to shuffle server list", K(ret));
+      LOG_WDIAG("fail to shuffle server list", K(ret));
     } else {
       is_inited_ = true;
       LOG_DEBUG("succ to init ObTenantServer", K(*this), K(locations));
@@ -95,7 +95,7 @@ int ObTenantServer::shuffle()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(server_array_) || OB_UNLIKELY(replica_count_ <= 0) || OB_UNLIKELY(0 == partition_count_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(*this), K(ret));
+    LOG_WDIAG("invalid argument", K(*this), K(ret));
   } else {
     int64_t iterator_begin = 0;
     int64_t iterator_end = 0;
@@ -107,7 +107,7 @@ int ObTenantServer::shuffle()
           || OB_ISNULL(server_array_ + iterator_end - 1)
           || OB_UNLIKELY(!server_array_[iterator_end - 1].is_valid())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("replica is unexpected", K(iterator_begin), K(iterator_end - 1),
+        LOG_WDIAG("replica is unexpected", K(iterator_begin), K(iterator_end - 1),
                  KPC(server_array_ + iterator_begin), KPC(server_array_ + iterator_end - 1), K(ret));
       } else {
         std::random_shuffle(server_array_ + iterator_begin, server_array_ + iterator_end);
@@ -123,9 +123,9 @@ int ObTenantServer::get_random_servers(ObProxyPartitionLocation &location)
   int64_t init_replica_idx = 0;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("it has not inited", K_(is_inited), K(ret));
+    LOG_WDIAG("it has not inited", K_(is_inited), K(ret));
   } else if (OB_FAIL(ObRandomNumUtils::get_random_num(0, replica_count_ - 1, init_replica_idx))) {
-    LOG_WARN("fail to get random num", "max", replica_count_ - 1, K(ret));
+    LOG_WDIAG("fail to get random num", "max", replica_count_ - 1, K(ret));
   } else {
     const int64_t MAX_REPLICA_COUNT = ObProxyPartitionLocation::OB_PROXY_REPLICA_COUNT;
     const uint64_t chosen_partition_idx = get_next_partition_index();
@@ -136,16 +136,16 @@ int ObTenantServer::get_random_servers(ObProxyPartitionLocation &location)
     for (int64_t i = 0; i < avail_count && OB_SUCC(ret); ++i) {
       if (OB_ISNULL(replica = get_replica_location(chosen_partition_idx, init_replica_idx, i))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("it should not happened", K(chosen_partition_idx), K(init_replica_idx), K(i), K(*this), K(ret));
+        LOG_EDIAG("it should not happened", K(chosen_partition_idx), K(init_replica_idx), K(i), K(*this), K(ret));
       } else if (OB_FAIL(replicas.push_back(*replica))) {
-        PROXY_LOG(WARN, "fail to push_back replica", K(*replica), K(ret));
+        PROXY_LOG(WDIAG, "fail to push_back replica", K(*replica), K(ret));
       } else {
         PROXY_LOG(DEBUG, "succ to add replica location", K(*replica));
       }
     }
 
     if (FAILEDx(location.set_replicas(replicas))) {
-      LOG_WARN("fail to set replicas", K(replicas), K(ret));
+      LOG_WDIAG("fail to set replicas", K(replicas), K(ret));
     }
   }
   return ret;

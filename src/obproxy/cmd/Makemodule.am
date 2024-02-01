@@ -21,6 +21,8 @@ obproxy/cmd/ob_show_cluster_handler.h\
 obproxy/cmd/ob_show_cluster_handler.cpp\
 obproxy/cmd/ob_show_config_handler.h\
 obproxy/cmd/ob_show_config_handler.cpp\
+obproxy/cmd/ob_show_create_table_handler.h\
+obproxy/cmd/ob_show_create_table_handler.cpp\
 obproxy/cmd/ob_show_memory_handler.h\
 obproxy/cmd/ob_show_memory_handler.cpp\
 obproxy/cmd/ob_show_info_handler.h\

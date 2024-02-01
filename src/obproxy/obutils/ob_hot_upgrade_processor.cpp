@@ -54,21 +54,21 @@ int ObProxyHotUpgrader::spawn_process()
   int ret = OB_SUCCESS;
   ObExecCtx ctx;
   if (OB_FAIL(fill_exec_ctx(ctx))) {
-    LOG_ERROR("fail to fill exec ctx", K(ret));
+    LOG_EDIAG("fail to fill exec ctx", K(ret));
   } else {
     ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
     info.sub_pid_ = fork();
     switch (info.sub_pid_) {
       case -1: {
         ret  = OB_ERR_SYS;
-        LOG_ERROR("fail to fork", "ProcessID", getpid(), "fork_ret", info.sub_pid_,
+        LOG_EDIAG("fail to fork", "ProcessID", getpid(), "fork_ret", info.sub_pid_,
                   KERRMSGS, K(ret));
         break;
       }
       case 0: {
         int ret = execve(ctx.path_, ctx.argv_, ctx.envp_);
         if (OB_UNLIKELY(-1 == ret)) {
-          LOG_ERROR("fail to execve", K(ctx.path_), K(ctx.argv_[0]), K(ctx.envp_[0]),
+          LOG_EDIAG("fail to execve", K(ctx.path_), K(ctx.argv_[0]), K(ctx.envp_[0]),
                     K(ret), KERRMSGS);
           // Attention: as 'exit()' will destruct the global variables and local static variables,
           // flushes standard I/O buffers and removes temporary files created,
@@ -96,7 +96,7 @@ int ObProxyHotUpgrader::fill_exec_ctx(ObExecCtx &ctx)
   int ret = OB_SUCCESS;
   memset(&ctx, 0, sizeof(ctx));
   if (OB_FAIL(get_envp(ctx.envp_))) {
-    LOG_ERROR("fail to get envp", K(ret));
+    LOG_EDIAG("fail to get envp", K(ret));
   } else {
     ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
     ctx.path_ = info.argv_[0];
@@ -123,7 +123,7 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
   var = reinterpret_cast<char *>(malloc(size));
   if (OB_ISNULL(var)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to malloc", K(size), K(ret));
+    LOG_EDIAG("fail to malloc", K(size), K(ret));
   } else {
     memset(var, 0, size);
     envp = reinterpret_cast<char **>(var);
@@ -134,20 +134,20 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
       free(var);
       var = NULL;
       envp = NULL;
-      LOG_ERROR("fail to malloc", K(OBPROXY_ENVP_MAX_SIZE), K(ret));
+      LOG_EDIAG("fail to malloc", K(OBPROXY_ENVP_MAX_SIZE), K(ret));
     } else {
       const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
       int64_t length = snprintf(envp[0], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
                                 OBPROXY_INHERITED_IPV4_FD"=%d", info.ipv4_fd_);
       if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
         ret = OB_BUF_NOT_ENOUGH;
-        LOG_WARN("buf not enought", K(length), "envp[0]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[0]), K(ret));
+        LOG_WDIAG("buf not enought", K(length), "envp[0]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[0]), K(ret));
       } else {
         int64_t length = snprintf(envp[1], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
                                   OBPROXY_INHERITED_IPV6_FD"=%d", info.ipv6_fd_);
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
           ret = OB_BUF_NOT_ENOUGH;
-          LOG_WARN("buf not enought", K(length), "envp[0]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[1]), K(ret));
+          LOG_WDIAG("buf not enought", K(length), "envp[0]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[1]), K(ret));
         }
       }
     }
@@ -160,13 +160,13 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
         free(var);
         var = NULL;
         envp = NULL;
-        LOG_ERROR("fail to malloc", K(ret));
+        LOG_EDIAG("fail to malloc", K(ret));
       } else {
         int64_t length = snprintf(envp[2], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
                                   "OBPROXY_ROOT=%s", obproxy_root);
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
           ret = OB_BUF_NOT_ENOUGH;
-          LOG_WARN("buf not enought", K(length), "envp[2]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[2]), K(ret));
+          LOG_WDIAG("buf not enought", K(length), "envp[2]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[2]), K(ret));
         }
       }
     }
@@ -193,16 +193,16 @@ int get_binary_md5(const char *binary, char *md5_buf, const int64_t md5_buf_len)
   const int64_t now = ObTimeUtility::current_time();
   if (OB_ISNULL(binary) || OB_ISNULL(md5_buf) || md5_buf_len <= OB_DEFAULT_PROXY_MD5_LEN) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input argument", K(binary), K(ret));
+    LOG_WDIAG("invalid input argument", K(binary), K(ret));
   } else if (OB_UNLIKELY(0 != access(binary, R_OK))) {//check whether exist
     ret = ob_get_sys_errno();
-    LOG_WARN("failed to access file", K(binary), KERRMSGS);
+    LOG_WDIAG("failed to access file", K(binary), KERRMSGS);
   } else {
     const int64_t MAX_SHELL_STR_LENGTH = ObLayout::MAX_PATH_LENGTH + 10;
     char *shell_str = static_cast<char *>(op_fixed_mem_alloc(MAX_SHELL_STR_LENGTH));
     if (OB_ISNULL(shell_str)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(MAX_SHELL_STR_LENGTH), K(ret));
+      LOG_WDIAG("fail to alloc mem", K(MAX_SHELL_STR_LENGTH), K(ret));
     } else {
       struct sigaction action;
       struct sigaction old_action;
@@ -214,17 +214,17 @@ int get_binary_md5(const char *binary, char *md5_buf, const int64_t md5_buf_len)
 
       if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= MAX_SHELL_STR_LENGTH)) {
         ret = OB_BUF_NOT_ENOUGH;
-        LOG_WARN("buf not enough", K(length), "shell_str_length", sizeof(shell_str), K(shell_str), K(ret));
+        LOG_WDIAG("buf not enough", K(length), "shell_str_length", sizeof(shell_str), K(shell_str), K(ret));
       } else if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &action, &old_action))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
+        LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
       } else {
         if (OB_ISNULL((fp = popen(shell_str, "r")))) {
           ret = ob_get_sys_errno();
-          LOG_WARN("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
+          LOG_WDIAG("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
         } else if (OB_ISNULL(fgets(md5_buf, static_cast<int32_t>(md5_buf_len), fp))) {
           ret = ob_get_sys_errno();
-          LOG_WARN("fail to fgets md5_str", K(shell_str), K(md5_buf), KERRMSGS, K(ret));
+          LOG_WDIAG("fail to fgets md5_str", K(shell_str), K(md5_buf), KERRMSGS, K(ret));
         } else {
           LOG_INFO("succeed to get binary md5", K(shell_str), K(md5_buf), K(md5_buf_len));
         }
@@ -232,7 +232,7 @@ int get_binary_md5(const char *binary, char *md5_buf, const int64_t md5_buf_len)
         if (OB_LIKELY(NULL != fp)) {
           if (-1 == pclose(fp)) {
             ret = ob_get_sys_errno();
-            LOG_WARN("failed to pclose fp", K(fp), KERRMSGS, K(ret));
+            LOG_WDIAG("failed to pclose fp", K(fp), KERRMSGS, K(ret));
           } else {
             fp = NULL;
           }
@@ -240,7 +240,7 @@ int get_binary_md5(const char *binary, char *md5_buf, const int64_t md5_buf_len)
 
         if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &old_action, NULL))) {//reset it
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
+          LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
         }
       }
     }
@@ -274,10 +274,10 @@ void ObHotUpgradeProcessor::destroy()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(hu_cont_))) {
-    LOG_WARN("fail to destroy hot upgrader cont", K(ret));
+    LOG_WDIAG("fail to destroy hot upgrader cont", K(ret));
   }
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(hot_upgrade_cont_))) {
-    LOG_WARN("fail to destroy hot upgrader cont", K(ret));
+    LOG_WDIAG("fail to destroy hot upgrader cont", K(ret));
   }
   if (OB_LIKELY(is_inited_)) {
     is_inited_ = false;
@@ -328,15 +328,15 @@ int ObHotUpgradeProcessor::init(ObMysqlProxy &mysql_proxy)
   ObProxyMutex *mutex = NULL;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("it has already inited", K(ret));
+    LOG_WDIAG("it has already inited", K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(info_.local_addr_))) {
-    LOG_WARN("fail to get proxy local addr", K(info_.local_addr_), K(ret));
+    LOG_WDIAG("fail to get proxy local addr", K(info_.local_addr_), K(ret));
   } else if (OB_UNLIKELY(!info_.local_addr_.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to covert ip to string", K(info_.local_addr_), K(ret));
+    LOG_WDIAG("fail to covert ip to string", K(info_.local_addr_), K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to allocate memory for ObProxyMutex", K(ret));
+    LOG_EDIAG("fail to allocate memory for ObProxyMutex", K(ret));
   } else {
     proxy_port_ = info_.local_addr_.get_port();
     mysql_proxy_ = &mysql_proxy;
@@ -362,22 +362,22 @@ int ObHotUpgradeProcessor::schedule_upgrade_task()
   cmd_ = info_.cmd_;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("hot upgrade processor is not inited", K(ret));
+    LOG_WDIAG("hot upgrade processor is not inited", K(ret));
   } else if (OB_UNLIKELY(interval_us < 0)) {
     ret = OB_INVALID_CONFIG;
-    LOG_WARN("fetch_proxy_bin_random_time must not be < 0", K(interval_us), K(ret));
+    LOG_WDIAG("fetch_proxy_bin_random_time must not be < 0", K(interval_us), K(ret));
   } else if (NULL == hu_cont_) {
     if (OB_ISNULL(hu_cont_ = ObAsyncCommonTask::create_and_start_repeat_task(interval_us,
                                                 "hot_upgrade_task",
                                                 ObHotUpgradeProcessor::do_repeat_task, NULL))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start hot_upgrade cont", K(ret));
+      LOG_WDIAG("fail to create and start hot_upgrade cont", K(ret));
     }
   } else if (OB_ISNULL(g_event_processor.schedule_in(hu_cont_,
                        HRTIME_USECONDS(interval_us), ET_BLOCKING,
                        ASYNC_PROCESS_DO_REPEAT_TASK_EVENT))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule hot upgrade cont", K(ret));
+    LOG_WDIAG("fail to schedule hot upgrade cont", K(ret));
   }
   return ret;
 }
@@ -390,11 +390,11 @@ int ObHotUpgradeProcessor::prepare_binary()
     LOG_INFO("begin to do restart", "cmd", ObHotUpgraderInfo::get_cmd_string(cmd_), K(info));
     if (OB_FAIL(check_binary_availability())) {
       info_.update_parent_status(HU_STATUS_UNAVAILABLE_BINARY);
-      LOG_WARN("fail to check binary availability", K_(info), K(ret));
+      LOG_WDIAG("fail to check binary availability", K_(info), K(ret));
 
     } else if (OB_FAIL(dump_config())) {
       info_.update_parent_status(HU_STATUS_BACKUP_BIN_FAIL);
-      LOG_WARN("fail to dump config", K_(info), K(ret));
+      LOG_WDIAG("fail to dump config", K_(info), K(ret));
 
     } else {
       set_is_self_binary(true);
@@ -405,31 +405,31 @@ int ObHotUpgradeProcessor::prepare_binary()
     ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
 
     if (OB_FAIL(FileDirectoryUtils::create_full_path(get_global_layout().get_bin_dir()))) {
-      LOG_WARN("fail to makedir", "dir", get_global_layout().get_bin_dir(), K(ret));
+      LOG_WDIAG("fail to makedir", "dir", get_global_layout().get_bin_dir(), K(ret));
     } else if (OB_FAIL(ObLayout::merge_file_path(get_global_layout().get_bin_dir(), "obproxy_tmp", allocator, obproxy_tmp))) {
       info_.update_parent_status(HU_STATUS_FETCH_BIN_FAIL);// we treate this fetch bin failed
-      LOG_WARN("fail to merge file path of obproxy_tmp",  K_(info), K(ret));
+      LOG_WDIAG("fail to merge file path of obproxy_tmp",  K_(info), K(ret));
     } else if (OB_FAIL(fetch_new_proxy_bin(obproxy_tmp))) {
       info_.update_parent_status(HU_STATUS_FETCH_BIN_FAIL);
-      LOG_WARN("fail to fetch new proxy bin", K_(info), K(ret));
+      LOG_WDIAG("fail to fetch new proxy bin", K_(info), K(ret));
     } else if (OB_FAIL(check_proxy_bin_release(obproxy_tmp))) {
       info_.update_parent_status(HU_STATUS_CHECK_BIN_RELEASE_FAIL);
-      LOG_WARN("fail to check binary release of obproxy_tmp", K(obproxy_tmp), K_(info), K(ret));
+      LOG_WDIAG("fail to check binary release of obproxy_tmp", K(obproxy_tmp), K_(info), K(ret));
     } else if (OB_FAIL(check_proxy_bin_md5(obproxy_tmp))) {
       info_.update_parent_status(HU_STATUS_CHECK_BIN_MD5_FAIL);
-      LOG_WARN("fail to check binary md5 of obproxy_tmp", K(obproxy_tmp), K_(info), K(ret));
+      LOG_WDIAG("fail to check binary md5 of obproxy_tmp", K(obproxy_tmp), K_(info), K(ret));
     } else if (OB_FAIL(dump_config())) {
       info_.update_parent_status(HU_STATUS_BACKUP_BIN_FAIL);
-      LOG_WARN("fail to dump config", K_(info), K(ret));
+      LOG_WDIAG("fail to dump config", K_(info), K(ret));
     } else if (OB_FAIL(rename_binary(obproxy_tmp))) {
       info_.update_parent_status(HU_STATUS_BACKUP_BIN_FAIL);
-      LOG_WARN("fail to rename binary", K_(info), K(ret));
+      LOG_WDIAG("fail to rename binary", K_(info), K(ret));
     } else {
       set_is_self_binary(false);
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected cmd", "cmd", ObHotUpgraderInfo::get_cmd_string(cmd_), K(info), K(ret));
+    LOG_WDIAG("unexpected cmd", "cmd", ObHotUpgraderInfo::get_cmd_string(cmd_), K(info), K(ret));
   }
   return ret;
 }
@@ -439,11 +439,11 @@ int ObHotUpgradeProcessor::handle_hot_upgrade()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("hu processor is not inited", K(ret));
+    LOG_WDIAG("hu processor is not inited", K(ret));
   } else {
     if (HU_STATE_FORK_NEW_PROXY == info_.get_state()) {
       if (OB_FAIL(prepare_binary())) {
-        LOG_WARN("fail to prepare binary", K(ret));
+        LOG_WDIAG("fail to prepare binary", K(ret));
       } else {
         if (HUC_UPGRADE_BIN == cmd_) {
           info_.update_parent_status(HU_STATUS_UPGRADE_BINARY_SUCC);
@@ -457,10 +457,10 @@ int ObHotUpgradeProcessor::handle_hot_upgrade()
           if (OB_FAIL(ObProxyHotUpgrader::spawn_process())) {
             cancel_timeout_rollback();
             if (!is_self_binary() && OB_FAIL(restore_binary())) {
-              LOG_WARN("fail to restore old binary, but it has nothing affect", K_(info), K(ret));
+              LOG_WDIAG("fail to restore old binary, but it has nothing affect", K_(info), K(ret));
             }
             info_.update_parent_status(HU_STATUS_CREATE_NEW_PROXY_FAIL);
-            LOG_WARN("fail to spawn sub process", K_(info), K(ret));
+            LOG_WDIAG("fail to spawn sub process", K_(info), K(ret));
           } else {
             // as it is a asynchronous task, we need set state immediately.
             info_.update_state(HU_STATE_WAIT_CR_CMD);
@@ -471,7 +471,7 @@ int ObHotUpgradeProcessor::handle_hot_upgrade()
         }
       }
     } else {
-      LOG_ERROR("there is no need to do hot upgrade now, it should not enter here", K_(info));
+      LOG_EDIAG("there is no need to do hot upgrade now, it should not enter here", K_(info));
       //do nothing
     }
   }
@@ -484,13 +484,13 @@ int ObHotUpgradeProcessor::check_binary_availability()
   char *binary = NULL;
   ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
   if (OB_FAIL(ObLayout::merge_file_path(get_global_layout().get_bin_dir(), "obproxy", allocator, binary))) {
-    LOG_WARN("fail to merge file path of obproxy",  K(ret));
+    LOG_WDIAG("fail to merge file path of obproxy",  K(ret));
   } else if (OB_UNLIKELY(0 != access(binary, F_OK))) {//check whether exist
     ret = ob_get_sys_errno();
-    LOG_WARN("failed to access file", K(binary), KERRMSGS, K(ret));
+    LOG_WDIAG("failed to access file", K(binary), KERRMSGS, K(ret));
   } else if (OB_UNLIKELY(0 != chmod(binary, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH))) {
     ret = ob_get_sys_errno();
-    LOG_WARN("fail to chmod of binary", KERRMSGS, K(binary), K(ret));
+    LOG_WDIAG("fail to chmod of binary", KERRMSGS, K(binary), K(ret));
   } else {/*do nothing*/}
   return ret;
 }
@@ -501,7 +501,7 @@ int ObHotUpgradeProcessor::fetch_new_proxy_bin(const char *bin_save_path)
   int64_t retry_times = 1;
   if (OB_ISNULL(bin_save_path)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("binary is null", K(ret));
+    LOG_WDIAG("binary is null", K(ret));
   } else {
     bool need_retry = true;
     //only one is available between them
@@ -509,7 +509,7 @@ int ObHotUpgradeProcessor::fetch_new_proxy_bin(const char *bin_save_path)
     while (need_retry && retry_times <= 3) {
       if (OB_FAIL(get_global_config_server_processor().do_fetch_proxy_bin(bin_save_path,
           target_binary_name_))) {
-        LOG_WARN("fail to fetch proxy bin", K(retry_times), K(ret));
+        LOG_WDIAG("fail to fetch proxy bin", K(retry_times), K(ret));
       } else {
         need_retry = false;
         LOG_INFO("succ to fetch proxy bin from net", K(ret));
@@ -522,7 +522,7 @@ int ObHotUpgradeProcessor::fetch_new_proxy_bin(const char *bin_save_path)
     int tmp_ret = OB_SUCCESS;
     if (OB_UNLIKELY(0 != (tmp_ret = chmod(bin_save_path, S_IRWXU | S_IRGRP | S_IXGRP | S_IXOTH)))) {
       ret = ob_get_sys_errno();
-      LOG_WARN("fail to chmod of binary", K(tmp_ret), KERRMSGS, K(bin_save_path), K(ret));
+      LOG_WDIAG("fail to chmod of binary", K(tmp_ret), KERRMSGS, K(bin_save_path), K(ret));
     } else {
       LOG_INFO("succ to fetch new proxy bin and chmod it", K(ret));
     }
@@ -535,7 +535,7 @@ int ObHotUpgradeProcessor::check_proxy_bin_md5(const char *binary)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(binary)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input argument", K(binary), K(ret));
+    LOG_WDIAG("invalid input argument", K(binary), K(ret));
   } else {
     const char *target_binary_md5_ = (hot_binary_md5_[0] != '\0' ? hot_binary_md5_ : cold_binary_md5_);
     const ObString new_binary_md5(target_binary_md5_);
@@ -543,13 +543,13 @@ int ObHotUpgradeProcessor::check_proxy_bin_md5(const char *binary)
 
     if (OB_UNLIKELY(!is_available_md5(new_binary_md5))) {
       ret = OB_CHECKSUM_ERROR;
-      LOG_WARN("new_binary_md5 is error", K(new_binary_md5), K(ret));
+      LOG_WDIAG("new_binary_md5 is error", K(new_binary_md5), K(ret));
     } else if (OB_FAIL(get_binary_md5(binary, fetch_binary_md5_str,
                                       static_cast<int64_t>(sizeof(fetch_binary_md5_str))))) {
-      LOG_WARN("fail to get binary md5", K(binary), K(fetch_binary_md5_str), K(ret));
+      LOG_WDIAG("fail to get binary md5", K(binary), K(fetch_binary_md5_str), K(ret));
     } else if (0 != new_binary_md5.compare(fetch_binary_md5_str)) {
       ret = OB_CHECKSUM_ERROR;
-      LOG_WARN("fetch_bin md5 is different from new_binary_md5",
+      LOG_WDIAG("fetch_bin md5 is different from new_binary_md5",
                K(fetch_binary_md5_str), K(new_binary_md5), K(ret));
     } else {
       LOG_INFO("succeed to check proxy bin md5", K(binary));
@@ -563,17 +563,17 @@ int ObHotUpgradeProcessor::check_proxy_bin_release(const char *binary)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(binary)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input argument", K(binary), K(ret));
+    LOG_WDIAG("invalid input argument", K(binary), K(ret));
   } else {
     const int64_t MAX_SHELL_STR_LENGTH = ObLayout::MAX_PATH_LENGTH + 10;
     char *shell_str = NULL;
     const int64_t now = ObTimeUtility::current_time();
     if (OB_UNLIKELY(0 != access(binary, X_OK))) {//check whether execute permissions
       ret = ob_get_sys_errno();
-      LOG_WARN("failed to access file", K(binary), KERRMSGS, K(ret));
+      LOG_WDIAG("failed to access file", K(binary), KERRMSGS, K(ret));
     } else if (OB_ISNULL(shell_str = static_cast<char *>(op_fixed_mem_alloc(MAX_SHELL_STR_LENGTH)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(MAX_SHELL_STR_LENGTH), K(ret));
+      LOG_WDIAG("fail to alloc mem", K(MAX_SHELL_STR_LENGTH), K(ret));
     } else {
       struct sigaction action;
       struct sigaction old_action;
@@ -584,14 +584,14 @@ int ObHotUpgradeProcessor::check_proxy_bin_release(const char *binary)
       int64_t length = snprintf(shell_str, MAX_SHELL_STR_LENGTH, "%s -R", binary);
       if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= MAX_SHELL_STR_LENGTH)) {
         ret = OB_BUF_NOT_ENOUGH;
-        LOG_WARN("buf not enough", K(length), "shell_str_length", sizeof(shell_str), K(shell_str), K(ret));
+        LOG_WDIAG("buf not enough", K(length), "shell_str_length", sizeof(shell_str), K(shell_str), K(ret));
       } else if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &action, &old_action))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
+        LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
       } else {
         if (OB_ISNULL((fp = popen(shell_str, "r")))) {
           ret = ob_get_sys_errno();
-          LOG_WARN("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
+          LOG_WDIAG("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
         } else {
           char *result_buf = shell_str;
           MEMSET(result_buf, 0, MAX_SHELL_STR_LENGTH);
@@ -599,7 +599,7 @@ int ObHotUpgradeProcessor::check_proxy_bin_release(const char *binary)
           if (0 != STRLEN(result_buf)
               && (NULL != strstr(result_buf, ".el") || NULL != strstr(result_buf, ".alios"))) {
             if (OB_FAIL(get_global_config_server_processor().check_kernel_release(result_buf))) {
-              LOG_WARN("failed to parser linux kernel release in result_buf", K(result_buf), K(ret));
+              LOG_WDIAG("failed to parser linux kernel release in result_buf", K(result_buf), K(ret));
             } else {
               LOG_INFO("succeed to check proxy binary release", K(result_buf));
             }
@@ -611,7 +611,7 @@ int ObHotUpgradeProcessor::check_proxy_bin_release(const char *binary)
         if (OB_LIKELY(NULL != fp)) {
           if (-1 == pclose(fp)) {
             ret = ob_get_sys_errno();
-            LOG_WARN("failed to pclose fp", K(fp), KERRMSGS, K(ret));
+            LOG_WDIAG("failed to pclose fp", K(fp), KERRMSGS, K(ret));
           } else {
             fp = NULL;
           }
@@ -619,7 +619,7 @@ int ObHotUpgradeProcessor::check_proxy_bin_release(const char *binary)
 
         if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &old_action, NULL))) {//reset it
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
+          LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
         }
       }
 
@@ -659,7 +659,7 @@ int ObHotUpgradeProcessor::check_timeout_rollback()
       LOG_DEBUG("it is not time to do hot upgrade timeout rollback job",
                 K_(timeout_rollback_timeout_at), K(diff_time));
     } else {
-      LOG_WARN("it is time, but we still not receive rollback cmd, we need do timeout rollback job",
+      LOG_WDIAG("it is time, but we still not receive rollback cmd, we need do timeout rollback job",
                 K_(timeout_rollback_timeout_at), K(diff_time));
       is_timeout_rollback_ = true;
 
@@ -674,7 +674,7 @@ int ObHotUpgradeProcessor::check_timeout_rollback()
         if (OB_NOT_NULL(mysql_proxy_) && OB_FAIL(ObProxyTableProcessorUtils::update_proxy_hu_cmd(*mysql_proxy_, proxy_ip_,
             proxy_port_, target_cmd, orig_cmd, orig_cmd_either, orig_cmd_another))
             && OB_ERR_UNEXPECTED != ret) {
-          LOG_WARN("fail to update hot upgrade cmd, unknown error code, we will retry update",
+          LOG_WDIAG("fail to update hot upgrade cmd, unknown error code, we will retry update",
                    K(ret), K(target_cmd), K(orig_cmd), K(orig_cmd_either),
                    K(proxy_ip_), K(proxy_port_), K(retry_times));
           --retry_times;
@@ -686,10 +686,10 @@ int ObHotUpgradeProcessor::check_timeout_rollback()
         LOG_INFO("succ to update hot upgrade cmd to rollback", K(retry_times));
       } else if (OB_ERR_UNEXPECTED == ret) {
         // maybe parent(sub) has update table, we fail to update again
-        LOG_WARN("fail to update hot upgrade cmd, maybe other one has updated table, "
+        LOG_WDIAG("fail to update hot upgrade cmd, maybe other one has updated table, "
                  "we will do rollback later", K(ret));
       } else {
-        LOG_WARN("fail to update hot upgrade cmd, we will do rollback later", K(ret));
+        LOG_WDIAG("fail to update hot upgrade cmd, we will do rollback later", K(ret));
       }
     }
   }
@@ -716,7 +716,7 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
       const int64_t max_upgrade_failures = (HUC_RESTART == info_.cmd_ ? 1 : get_global_proxy_config().hot_upgrade_failure_retries.get());
       if (OB_UNLIKELY(upgrade_failures_ >= max_upgrade_failures)) {
         info_.update_parent_status(HU_STATUS_FAILURE_RETRIES_TOO_MANY);
-        LOG_WARN("continual upgrade failure retries is too much, we will re-accept it until "
+        LOG_WDIAG("continual upgrade failure retries is too much, we will re-accept it until "
                  "'hot_upgrade_cmd' has been reset to 'hot_upgrade/auto_upgrade'.", K_(info),
                  K(upgrade_failures_), K(max_upgrade_failures), K(ret));
         info_.cmd_ = HUC_NONE;
@@ -737,12 +737,12 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
         if (OB_FAIL(check_arguments(proxy_info))) {
           ++upgrade_failures_;
           info_.update_parent_status(HU_STATUS_INVALID_ARGUMENT);
-          LOG_WARN("fail to check arguments for hot_upgrade", K_(info), K_(upgrade_failures), K(ret));
+          LOG_WDIAG("fail to check arguments for hot_upgrade", K_(info), K_(upgrade_failures), K(ret));
 
         } else if (OB_FAIL(schedule_upgrade_task())) {
           ++upgrade_failures_;
           info_.update_parent_status(HU_STATUS_SCHEDULE_CREATE_NEW_PROXY_EVENT_FAIL);
-          LOG_WARN("fail to schedule upgrade task", K_(info), K_(upgrade_failures), K(ret));
+          LOG_WDIAG("fail to schedule upgrade task", K_(info), K_(upgrade_failures), K(ret));
 
         } else {
           ObHotUpgradeStatus status = HU_STATUS_NONE;
@@ -766,7 +766,7 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
       //2. do quick exit in 5 seconds
       if (OB_NOT_NULL(mysql_proxy_) && OB_FAIL(ObProxyTableProcessorUtils::update_proxy_exited_status(*mysql_proxy_,
               proxy_ip_, proxy_port_, HU_STATUS_DO_QUICK_EXIT, HUC_NONE))) {
-        LOG_WARN("fail to update hot upgrade status and cmd to DO_GRACEFUL_EXIT, NONE", K_(info), K(ret));
+        LOG_WDIAG("fail to update hot upgrade status and cmd to DO_GRACEFUL_EXIT, NONE", K_(info), K(ret));
       }
       if (OB_SUCC(ret) || info_.is_local_exit()) {
         info_.disable_net_accept();
@@ -776,7 +776,7 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
         info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().delay_exit_time)
                                         + info_.graceful_exit_start_time_; // nanosecond
         g_proxy_fatal_errcode = OB_SERVER_IS_STOPPING;
-        LOG_WARN("parent process stop accepting new connection, stop check timer", K_(info), K(g_proxy_fatal_errcode), K(ret));
+        LOG_WDIAG("parent process stop accepting new connection, stop check timer", K_(info), K(g_proxy_fatal_errcode), K(ret));
       }
       break;
     }
@@ -789,7 +789,7 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
+      LOG_EDIAG("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
     }
   }
   return ret;
@@ -812,7 +812,7 @@ int ObHotUpgradeProcessor::state_fork_new_proxy()
       //if fail to fetch && excv new proxy, we will turn to HU_STATE_WAIT_HU_CMD state
       ++upgrade_failures_;
       info_.update_state(HU_STATE_WAIT_HU_CMD);
-      LOG_WARN("fail to fork sub for hot_upgrade, back to HU_STATE_WAIT_HU_CMD state",
+      LOG_WDIAG("fail to fork sub for hot_upgrade, back to HU_STATE_WAIT_HU_CMD state",
                K_(info_.status), K_(upgrade_failures));
       break;
     }
@@ -833,7 +833,7 @@ int ObHotUpgradeProcessor::state_fork_new_proxy()
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unknown ObHotUpgradeStatus, it should not enter here", K_(info_.status));
+      LOG_EDIAG("unknown ObHotUpgradeStatus, it should not enter here", K_(info_.status));
     }
   }
   return ret;
@@ -864,7 +864,7 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
     if (info_.is_sub_exited() && HUC_ROLLBACK != info_.cmd_ && !is_timeout_rollback_) {
       // if sub exited earlier without rollback cmd or timeout rollback,
       // parent treats it as fork failed
-      LOG_WARN("sub process has exited abnormally without rollback event, parent need back to state: "
+      LOG_WDIAG("sub process has exited abnormally without rollback event, parent need back to state: "
                "HU_STATE_FORK_NEW_PROXY", "sub_pid", info_.sub_pid_);
       is_sub_abnormal = true;
       info_.cmd_ = HUC_ROLLBACK;//go to rollback case
@@ -892,7 +892,7 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
         info_.update_both_status(HU_STATUS_RECV_COMMIT_AND_EXIT, HU_STATUS_COMMIT_SUCC);
         info_.update_state(HU_STATE_WAIT_CR_FINISH);
         cancel_timeout_rollback();
-        LOG_WARN("parent process stop accepting new connection, "
+        LOG_WDIAG("parent process stop accepting new connection, "
                   "stop check timer, and wait to die gradually", K_(info));
         break;
       }
@@ -932,10 +932,10 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
         cancel_timeout_rollback();//cancel_timeout_rollback must be at end
 
         if (!is_self_binary() && OB_FAIL(restore_binary())) {//!!it maybe cost long time
-          LOG_WARN("fail to restore binary, but it has nothing affect", K(ret));
+          LOG_WDIAG("fail to restore binary, but it has nothing affect", K(ret));
         }
         if (OB_FAIL(dump_config())) {//!!it maybe cost long time
-          LOG_WARN("fail to dump obproxy_config.bin in rollback, but it has nothing affect", K(ret));
+          LOG_WDIAG("fail to dump obproxy_config.bin in rollback, but it has nothing affect", K(ret));
         }
         LOG_INFO("parent process come to normal service status.", K_(info));
         break;
@@ -952,7 +952,7 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
         if (proxy_info.current_pid_ != getpid()) {
           LOG_INFO("parent proxy need send commit via subprocesst", K_(info));
           if (OB_FAIL(send_commit_via_subprocess())) {
-            LOG_WARN("fail to send commit via subprocesst", K_(info), K(ret));
+            LOG_WDIAG("fail to send commit via subprocesst", K_(info), K(ret));
           }
         } else {
           LOG_DEBUG("parent wait subprocess normally working", K_(info));
@@ -961,12 +961,12 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
+        LOG_EDIAG("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
       }
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("sub should not enter here", K_(info), K(ret));
+    LOG_EDIAG("sub should not enter here", K_(info), K(ret));
   }
   return ret;
 }
@@ -980,7 +980,7 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
     if (info_.is_parent_exited() && OB_LIKELY(HUC_COMMIT != info_.cmd_)) {
       // if parent is exited without accepting HUC_COMMIT cmd, sub need update his status "
       // to let DBA know it
-      LOG_WARN("parent process has exited abnormally without commit event, sub need back to state: "
+      LOG_WDIAG("parent process has exited abnormally without commit event, sub need back to state: "
                "HU_STATE_WAIT_HU_CMD");
       info_.cmd_ = HUC_COMMIT;//go to commit case
       is_parent_abnormal = true;
@@ -1019,7 +1019,7 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
         upgrade_failures_ = 0;// reset to zero if ever succ to fork new proxy
         cancel_timeout_rollback();
         if (!is_self_binary() && OB_FAIL(backup_old_binary())) {//!!it maybe cost long time
-          LOG_WARN("fail to backup old binary, but it has nothing affect", K(ret));
+          LOG_WDIAG("fail to backup old binary, but it has nothing affect", K(ret));
         }
         info_.cmd_ = HUC_COMMIT;//reset it to commit
         LOG_INFO("sub process come to normal service status", K_(info));
@@ -1044,7 +1044,7 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
           info_.update_both_status(HU_STATUS_ROLLBACK_SUCC, HU_STATUS_RECV_ROLLBACK_AND_EXIT);
         }
         cancel_timeout_rollback();
-        LOG_WARN("sub process stop accept new connection, "
+        LOG_WDIAG("sub process stop accept new connection, "
                  "stop check timer, and wait to die gradually.", K_(info));
         break;
       }
@@ -1058,12 +1058,12 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
+        LOG_EDIAG("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
       }
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("parent should not enter here", K_(info), K(ret));
+    LOG_EDIAG("parent should not enter here", K_(info), K(ret));
   }
   return ret;
 }
@@ -1114,7 +1114,7 @@ int ObHotUpgradeProcessor::check_arguments(const ObProxyServerInfo &proxy_info)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("it is not inited", K(ret));
+    LOG_WDIAG("it is not inited", K(ret));
   } else if (info_.is_restart()) {
     // restart cmd no need check arguments
   } else {
@@ -1124,12 +1124,12 @@ int ObHotUpgradeProcessor::check_arguments(const ObProxyServerInfo &proxy_info)
     if (OB_UNLIKELY(new_binary_version.empty())
         || OB_UNLIKELY(new_binary_version.length() > OB_MAX_PROXY_BINARY_VERSION_LEN)) {
       ret = OB_INVALID_DATA;
-      LOG_WARN("new binary version is not available", K(new_binary_version), K(ret));
+      LOG_WDIAG("new binary version is not available", K(new_binary_version), K(ret));
     } else if (OB_UNLIKELY(!is_available_md5(new_binary_md5))) {
       ret = OB_INVALID_DATA;
-      LOG_WARN("new binary md5's is not available", K(new_binary_md5), K(ret));
+      LOG_WDIAG("new binary md5's is not available", K(new_binary_md5), K(ret));
     } else if (OB_FAIL(get_global_config_server_processor().check_kernel_release(new_binary_version))) {
-      LOG_WARN("new_binary_version is not available", K(new_binary_version), K(ret));
+      LOG_WDIAG("new_binary_version is not available", K(new_binary_version), K(ret));
     } else {
       if (HUC_UPGRADE_BIN == info_.cmd_) {
         MEMCPY(cold_binary_name_, new_binary_version.ptr(), new_binary_version.length());
@@ -1169,10 +1169,10 @@ int ObHotUpgradeProcessor::rename_binary(const char *obproxy_tmp) const
   ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
   if (OB_FAIL(ObLayout::merge_file_path(get_global_layout().get_bin_dir(), "obproxy_old",
                                                allocator, obproxy_old))) {
-    LOG_WARN("fail to merge file path of obproxy_old", K(obproxy_old), K(ret));
+    LOG_WDIAG("fail to merge file path of obproxy_old", K(obproxy_old), K(ret));
   } else if (OB_FAIL(ObLayout::merge_file_path(get_global_layout().get_bin_dir(), "obproxy",
                                                allocator, obproxy))) {
-    LOG_WARN("fail to merge file path of obproxy", K(obproxy), K(ret));
+    LOG_WDIAG("fail to merge file path of obproxy", K(obproxy), K(ret));
   } else {
     bool obproxy_exist = true;
     int tmp_ret = OB_SUCCESS;
@@ -1182,11 +1182,11 @@ int ObHotUpgradeProcessor::rename_binary(const char *obproxy_tmp) const
       // we can tolerate 'obproxy' binary absenting during hot upgrading
       if (ENOENT == errno) {
         obproxy_exist = false;
-        LOG_WARN("!Attention: 'obproxy' do not exist, however hot upgrade can still work ",
+        LOG_WDIAG("!Attention: 'obproxy' do not exist, however hot upgrade can still work ",
                   K(tmp_ret), KERRMSGS, K(obproxy), K(obproxy_old));
       } else {
         ret = ob_get_sys_errno();
-        LOG_WARN("fail to rename 'obproxy' to 'obproxy_old'", K(tmp_ret),
+        LOG_WDIAG("fail to rename 'obproxy' to 'obproxy_old'", K(tmp_ret),
                  KERRMSGS, K(ret), K(obproxy), K(obproxy_old));
       }
     }
@@ -1194,12 +1194,12 @@ int ObHotUpgradeProcessor::rename_binary(const char *obproxy_tmp) const
     if (OB_SUCC(ret) && OB_UNLIKELY(0 != (tmp_ret = rename(obproxy_tmp, obproxy)))) {
       // we can not tolerate 'obproxy_tmp' binary erring during hot upgrading
       ret = ob_get_sys_errno();
-      LOG_WARN("!Attention: fail to rename 'obproxy_tmp' to 'obproxy', "
+      LOG_WDIAG("!Attention: fail to rename 'obproxy_tmp' to 'obproxy', "
                "we need rename 'obproxy_old' back to 'obproxy'",
                K(tmp_ret), KERRMSGS, K(ret), K(obproxy_tmp), K(obproxy));
       // obproxy_old --> obproxy
       if (obproxy_exist && OB_UNLIKELY(0 != (tmp_ret = rename(obproxy_old, obproxy)))) {
-        LOG_WARN("!Attention: fail to rename 'obproxy_old' back to 'obproxy', "
+        LOG_WDIAG("!Attention: fail to rename 'obproxy_old' back to 'obproxy', "
                  "the 'obproxy' is not belong to current proxy, however proxy can still work",
                  K(tmp_ret), KERRMSGS, K(ret), K(obproxy), K(obproxy_old));
       }
@@ -1213,7 +1213,7 @@ int ObHotUpgradeProcessor::dump_config() const
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_proxy_config().dump_config_to_local())) {
-    LOG_WARN("fail to dump obproxy_config.bin", K(ret));
+    LOG_WDIAG("fail to dump obproxy_config.bin", K(ret));
   }
   return ret;
 }
@@ -1231,21 +1231,21 @@ int ObHotUpgradeProcessor::restore_binary() const
   // obproxy_old --> obproxy
   if (OB_FAIL(ObLayout::merge_file_path(
               get_global_layout().get_bin_dir(), "obproxy_old", allocator, obproxy_old))) {
-    LOG_WARN("fail to merge file path of proxy_old", K(obproxy_old), K(ret));
+    LOG_WDIAG("fail to merge file path of proxy_old", K(obproxy_old), K(ret));
   } else if (OB_FAIL(ObLayout::merge_file_path(
               get_global_layout().get_bin_dir(), "obproxy", allocator, obproxy))) {
-    LOG_WARN("fail to merge file path of proxy", K(obproxy), K(ret));
+    LOG_WDIAG("fail to merge file path of proxy", K(obproxy), K(ret));
   } else if (0 != (tmp_ret = rename(obproxy_old, obproxy))) {
     if (ENOENT == errno) {
-      LOG_WARN("!Attention: 'obproxy_old' do not exist, the current proxy process can still work",
+      LOG_WDIAG("!Attention: 'obproxy_old' do not exist, the current proxy process can still work",
                 K(tmp_ret), K(obproxy_old), KERRMSGS);
       if (OB_UNLIKELY(0 != (tmp_ret = remove(obproxy)))) {
-        LOG_WARN("!Attention: fail to remove 'obproxy', the current binary 'obproxy' is not "
+        LOG_WDIAG("!Attention: fail to remove 'obproxy', the current binary 'obproxy' is not "
                  "belong to the current proxy process", K(tmp_ret), KERRMSGS, K(ret));
       }
     } else {
       ret = ob_get_sys_errno();
-      LOG_WARN("fail to rename 'obproxy_old' to 'obproxy'", K(tmp_ret), KERRMSGS,
+      LOG_WDIAG("fail to rename 'obproxy_old' to 'obproxy'", K(tmp_ret), KERRMSGS,
                K(ret), K(obproxy_old), K(obproxy));
     }
   }
@@ -1266,17 +1266,17 @@ int ObHotUpgradeProcessor::backup_old_binary() const
   // obproxy_old --> obproxy.old
   if (OB_FAIL(ObLayout::merge_file_path(
               get_global_layout().get_bin_dir(), "obproxy_old", allocator, obproxy_old))) {
-    LOG_WARN("fail to merge file path of proxy_old", K(obproxy_old), K(ret));
+    LOG_WDIAG("fail to merge file path of proxy_old", K(obproxy_old), K(ret));
   } else if (OB_FAIL(ObLayout::merge_file_path(
              get_global_layout().get_bin_dir(), "obproxy.old", allocator, obproxy_backup))) {
-    LOG_WARN("fail to merge file path of proxy", K(obproxy_backup), K(ret));
+    LOG_WDIAG("fail to merge file path of proxy", K(obproxy_backup), K(ret));
   } else if (0 != (tmp_ret = rename(obproxy_old, obproxy_backup))) {
     if (ENOENT == errno) {
-      LOG_WARN("!Attention: 'obproxy_old' do not exist, the current proxy process can still work",
+      LOG_WDIAG("!Attention: 'obproxy_old' do not exist, the current proxy process can still work",
                 K(tmp_ret), K(obproxy_old), KERRMSGS);
     } else {
       ret = ob_get_sys_errno();
-      LOG_WARN("!Attention: fail to rename 'obproxy_old' back to 'obproxy.old', "
+      LOG_WDIAG("!Attention: fail to rename 'obproxy_old' back to 'obproxy.old', "
                "the current binary 'obproxy.old' is not belong to the last proxy",
                KERRMSGS, K(ret), K(obproxy_old), K(obproxy_backup));
     }
@@ -1304,15 +1304,15 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
     case USER_TYPE_METADB: {
       string_passwd.assign_ptr(passwd_staged1_buf, ENC_STRING_BUF_LEN);
       if (OB_FAIL(get_global_config_server_processor().get_proxy_meta_table_login_info(login_info))) {
-        LOG_WARN("fail to get meta table login info", K(ret));
+        LOG_WDIAG("fail to get meta table login info", K(ret));
       } else if (OB_UNLIKELY(!login_info.is_valid())) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid proxy meta table login info", K(login_info), K(ret));
+        LOG_WDIAG("invalid proxy meta table login info", K(login_info), K(ret));
       } else if (OB_FAIL(databuff_printf(full_user_name, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1, pos, "%.*s#%s",
           login_info.username_.length(), login_info.username_.ptr(), OB_META_DB_CLUSTER_NAME))) {
-        LOG_WARN("fail to databuff_printf", K(login_info), "cluster name", OB_META_DB_CLUSTER_NAME, K(ret));
+        LOG_WDIAG("fail to databuff_printf", K(login_info), "cluster name", OB_META_DB_CLUSTER_NAME, K(ret));
       } else if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(login_info.password_, string_passwd))) {
-        LOG_WARN("fail to encrypt_passwd_to_stage1", K(login_info), "cluster name", OB_META_DB_CLUSTER_NAME, K(ret));
+        LOG_WDIAG("fail to encrypt_passwd_to_stage1", K(login_info), "cluster name", OB_META_DB_CLUSTER_NAME, K(ret));
       } else {
         string_passwd += 1;//cut the head'*'
         string_username.assign_ptr(full_user_name, static_cast<ObString::obstr_size_t>(pos));
@@ -1323,14 +1323,14 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
     case USER_TYPE_PROXYRO: {
       cluster_name_buf[0] = '\0';
       if (OB_FAIL(get_global_config_server_processor().get_default_cluster_name(cluster_name_buf, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1))) {
-        LOG_WARN("fail to get default cluster name", K(ret));
+        LOG_WDIAG("fail to get default cluster name", K(ret));
       } else {
         ObString default_cname = '\0' == cluster_name_buf[0]
                                  ? ObString::make_string(OB_PROXY_DEFAULT_CLUSTER_NAME)
                                  : ObString::make_string(cluster_name_buf);
         if (OB_FAIL(databuff_printf(full_user_name, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1, pos, "%s#%.*s",
             ObProxyTableInfo::READ_ONLY_USERNAME, default_cname.length(), default_cname.ptr()))) {
-          LOG_WARN("fail to databuff_printf", "username", ObProxyTableInfo::READ_ONLY_USERNAME, K(default_cname), K(ret));
+          LOG_WDIAG("fail to databuff_printf", "username", ObProxyTableInfo::READ_ONLY_USERNAME, K(default_cname), K(ret));
         } else {
           string_username.assign_ptr(full_user_name, static_cast<ObString::obstr_size_t>(pos));
           string_passwd.assign_ptr(get_global_proxy_config().observer_sys_password.str(),
@@ -1347,7 +1347,7 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
     case USER_TYPE_PROXYSYS: {
       if (OB_FAIL(databuff_printf(full_user_name, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1, pos, "%s@%s",
           OB_PROXYSYS_USER_NAME, OB_PROXYSYS_TENANT_NAME))) {
-        LOG_WARN("fail to databuff_printf", "user name", OB_PROXYSYS_USER_NAME,
+        LOG_WDIAG("fail to databuff_printf", "user name", OB_PROXYSYS_USER_NAME,
                  "tenant name", OB_PROXYSYS_TENANT_NAME, K(ret));
       } else {
         string_username.assign_ptr(full_user_name, static_cast<ObString::obstr_size_t>(pos));
@@ -1359,7 +1359,7 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unknown ObProxyLoginUserType, it should not enter here", K(type), K(ret));
+      LOG_EDIAG("unknown ObProxyLoginUserType, it should not enter here", K(type), K(ret));
     }
   }
 
@@ -1369,13 +1369,13 @@ int ObHotUpgradeProcessor::init_raw_client(ObRawMysqlClient &raw_client, const O
     ObAddr addr;
     if (OB_UNLIKELY(!addr.set_ip_addr(proxy_ip_, proxy_port_))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to set addr", K(proxy_ip_), K(proxy_port_), K(ret));
+      LOG_WDIAG("fail to set addr", K(proxy_ip_), K(proxy_port_), K(ret));
     } else if (OB_FAIL(local_addrs.push_back(addr))) {
-      LOG_WARN("fail to push addr to local_addrs", K(addr), K(ret));
+      LOG_WDIAG("fail to push addr to local_addrs", K(addr), K(ret));
     } else if (OB_FAIL(raw_client.init(string_username, string_passwd, string_db, cluster_name, string_passwd1))) {
-      LOG_WARN("fail to init raw mysql client", K(string_username), K(string_db), K(ret));
+      LOG_WDIAG("fail to init raw mysql client", K(string_username), K(string_db), K(ret));
     } else if (OB_FAIL(raw_client.set_server_addr(local_addrs))) {
-      LOG_WARN("fail to set server addr", K(ret));
+      LOG_WDIAG("fail to set server addr", K(ret));
     } else {
       LOG_DEBUG("succ to fill raw client", K(string_username), K(string_db));
     }
@@ -1393,7 +1393,7 @@ int ObHotUpgradeProcessor::send_cmd_and_check_response(const char *sql,
       || OB_UNLIKELY(max_retry_times <= 0)
       || OB_UNLIKELY(expected_affected_rows < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is invalid", K(sql), K(type), K(expected_affected_rows), K(ret));
+    LOG_WDIAG("argument is invalid", K(sql), K(type), K(expected_affected_rows), K(ret));
   } else {
     const int64_t now = ObTimeUtility::current_time();
     const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().short_async_task_timeout);
@@ -1402,36 +1402,36 @@ int ObHotUpgradeProcessor::send_cmd_and_check_response(const char *sql,
     int64_t affected_rows = 0;
     bool is_done = false;
     if (OB_FAIL(init_raw_client(raw_client, type))) {
-      LOG_WARN("fail to init raw client", K(type), K(ret));
+      LOG_WDIAG("fail to init raw client", K(type), K(ret));
     } else {
       info_.set_rejected_user(type);
 
       for (int64_t i = 0; i < max_retry_times && OB_SUCC(ret) && !is_done; ++i) {
         if (OB_FAIL(raw_client.sync_raw_execute(sql, timeout_ms, resp))) {
-          LOG_WARN("fail to sync raw execute", K(sql), K(timeout_ms), K(i), K(max_retry_times), K(ret));
+          LOG_WDIAG("fail to sync raw execute", K(sql), K(timeout_ms), K(i), K(max_retry_times), K(ret));
           if (i < (max_retry_times - 1)) {
             ret = OB_SUCCESS;//ignore it
           }
         } else if (OB_ISNULL(resp)) {
           ret = OB_NO_RESULT;
-          LOG_WARN("resp is NULL", K(i), K(timeout_ms), K(sql), K(ret));
+          LOG_WDIAG("resp is NULL", K(i), K(timeout_ms), K(sql), K(ret));
         } else {
           if (resp->is_error_resp()) {
             ret = -resp->get_err_code();
-            LOG_WARN("fail to execute sql", K(sql), K(ret));
+            LOG_WDIAG("fail to execute sql", K(sql), K(ret));
           } else if (resp->is_ok_resp()) {
             if (OB_FAIL(resp->get_affected_rows(affected_rows))) {
-              LOG_WARN("fail to get affected rows", K(sql), K(ret));
+              LOG_WDIAG("fail to get affected rows", K(sql), K(ret));
             } else if (OB_UNLIKELY(expected_affected_rows != affected_rows)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("unexpected affected_rows", K(expected_affected_rows), K(affected_rows), K(sql), K(ret));
+              LOG_WDIAG("unexpected affected_rows", K(expected_affected_rows), K(affected_rows), K(sql), K(ret));
             } else {
               is_done = true;
               LOG_DEBUG("succ to send cmd", K(i), K(sql));
             }
           } else {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpected resp", K(ret));
+            LOG_WDIAG("unexpected resp", K(ret));
           }
         }
         if (NULL != resp) {
@@ -1463,10 +1463,10 @@ int ObHotUpgradeProcessor::send_commit_via_subprocess()
   char sql[OB_SHORT_SQL_LENGTH];
   if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_update_hu_cmd_sql(sql, OB_SHORT_SQL_LENGTH,
       proxy_ip_, proxy_port_, target_cmd, orig_cmd, orig_cmd_either))) {
-    LOG_WARN("fail to get proxy update hu cmd sql", K(sql), K(OB_SHORT_SQL_LENGTH), K_(proxy_ip),
+    LOG_WDIAG("fail to get proxy update hu cmd sql", K(sql), K(OB_SHORT_SQL_LENGTH), K_(proxy_ip),
              K_(proxy_port), K(target_cmd), K(orig_cmd), K(orig_cmd_either), K(ret));
   } else if (OB_FAIL(send_cmd_and_check_response(sql, USER_TYPE_METADB, max_retry_times, expected_affected_rows))) {
-    LOG_WARN("fail to send commit via subprocess", K(sql), K(USER_TYPE_METADB), K(ret));
+    LOG_WDIAG("fail to send commit via subprocess", K(sql), K(USER_TYPE_METADB), K(ret));
   } else {
     LOG_INFO("succ to send commit via subprocess");
   }
@@ -1493,31 +1493,31 @@ int ObHotUpgradeProcessor::check_subprocess_available()
   }
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_FAIL(init_raw_client(raw_client, login_type))) {
-    LOG_WARN("fail to init raw client", K(ret));
+    LOG_WDIAG("fail to init raw client", K(ret));
   } else {
     const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().short_async_task_timeout);
     ObClientMysqlResp *resp = NULL;
     ObMysqlResultHandler result_handler;
     info_.set_rejected_user(login_type);
     if (OB_FAIL(raw_client.sync_raw_execute(sql, timeout_ms, resp))) {
-      LOG_WARN("fail to sync raw execute", K(sql), K(resp), K(timeout_ms), K(ret));
+      LOG_WDIAG("fail to sync raw execute", K(sql), K(resp), K(timeout_ms), K(ret));
     } else if (OB_ISNULL(resp)) {
       ret = OB_NO_RESULT;
-      LOG_WARN("resp is NULL", K(timeout_ms), K(sql), K(ret));
+      LOG_WDIAG("resp is NULL", K(timeout_ms), K(sql), K(ret));
     } else {
       if (resp->is_error_resp()) {
         ret = -resp->get_err_code();
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (!resp->is_resultset_resp()) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected resp, this is not resultset", K(ret));
+        LOG_WDIAG("unexpected resp, this is not resultset", K(ret));
       } else {
         result_handler.set_resp(resp);
         resp = NULL;
         if (OB_FAIL(result_handler.next())) {
-          LOG_WARN("fail to get result", K(sql), K(ret));
+          LOG_WDIAG("fail to get result", K(sql), K(ret));
         } else {
           int64_t value = 0;
           if (use_proxysys) {
@@ -1528,14 +1528,14 @@ int ObHotUpgradeProcessor::check_subprocess_available()
           //check if this is only one
           if (OB_SUCC(ret)) {
             if (OB_ITER_END != (ret = result_handler.next())) {
-              LOG_WARN("fail to get result, there is more than one record", K(sql), K(value), K(ret));
+              LOG_WDIAG("fail to get result, there is more than one record", K(sql), K(value), K(ret));
               ret = OB_ERR_UNEXPECTED;
             } else if (use_proxysys && value <= 0) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("error unexpected result", K(sql), K(value), K(ret));
+              LOG_WDIAG("error unexpected result", K(sql), K(value), K(ret));
             } else if (!use_proxysys  && 1 != value) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("error unexpected result", K(sql), K(value), K(ret));
+              LOG_WDIAG("error unexpected result", K(sql), K(value), K(ret));
             } else {
               ret = OB_SUCCESS;
             }
@@ -1574,10 +1574,10 @@ int ObHotUpgradeProcessor::start_hot_upgrade_task()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("obproxy table processor is not inited", K(ret));
+    LOG_WDIAG("obproxy table processor is not inited", K(ret));
   } else if (OB_UNLIKELY(NULL != hot_upgrade_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("hot upgrade cont has been scheduled", K(ret));
+    LOG_WDIAG("hot upgrade cont has been scheduled", K(ret));
   } else {
     int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(
                           get_global_proxy_config().proxy_hot_upgrade_check_interval);
@@ -1586,7 +1586,7 @@ int ObHotUpgradeProcessor::start_hot_upgrade_task()
                                       ObHotUpgradeProcessor::do_hot_upgrade_repeat_task,
                                       ObHotUpgradeProcessor::update_hot_upgrade_interval))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start proxy table check task", K(ret));
+      LOG_WDIAG("fail to create and start proxy table check task", K(ret));
     } else {
       LOG_INFO("succ to start proxy table check task", K(interval_us));
     }
@@ -1610,7 +1610,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
         info_.cmd_ = HUC_LOCAL_EXIT;
         LOG_INFO("proxy will do quick exit from local cmd, no need check proxy info", K_(info));
       } else {
-        LOG_WARN("it is doing hot upgrading now, CAN NOT do quick exit from local cmd", K_(info));
+        LOG_WDIAG("it is doing hot upgrading now, CAN NOT do quick exit from local cmd", K_(info));
      }
 
      break;
@@ -1621,7 +1621,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
         info_.cmd_ = HUC_LOCAL_RESTART;
         LOG_INFO("proxy will do restart from local cmd", K_(info));
       } else {
-        LOG_WARN("it is doing hot upgrading now, CAN NOT do quick restart from local cmd", K_(info));
+        LOG_WDIAG("it is doing hot upgrading now, CAN NOT do quick restart from local cmd", K_(info));
       }
       break;
     }
@@ -1644,7 +1644,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
       break;
     }
     default: {
-      LOG_WARN("unknown ObProxyLocalCMDType, reset it default value", K(cmd_type));
+      LOG_WDIAG("unknown ObProxyLocalCMDType, reset it default value", K(cmd_type));
       get_global_proxy_config().reset_local_cmd();
     }
   }
@@ -1659,9 +1659,9 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
         case HUC_LOCAL_RESTART: {
           g_ob_prometheus_processor.destroy_exposer();
           if (OB_FAIL(get_global_config_processor().close_sqlite3())) {
-            LOG_WARN("fail to close sqlite3", K(ret));
+            LOG_WDIAG("fail to close sqlite3", K(ret));
           } else if (OB_FAIL(ObProxyHotUpgrader::spawn_process())) {
-            LOG_WARN("fail to spawn sub process", K_(info), K(ret));
+            LOG_WDIAG("fail to spawn sub process", K_(info), K(ret));
           } else {
             schedule_timeout_rollback();
             info_.disable_net_accept();  // disable accecpt new connection
@@ -1673,7 +1673,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
           if (OB_FAIL(ret)) {
             g_ob_prometheus_processor.create_exposer();
             if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
-              LOG_WARN("fail to reopen sqlite3", K(ret));
+              LOG_WDIAG("fail to reopen sqlite3", K(ret));
             }
           }
           break;
@@ -1684,14 +1684,14 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
           info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().delay_exit_time)
             + info_.graceful_exit_start_time_; // nanosecond
           g_proxy_fatal_errcode = OB_SERVER_IS_STOPPING;
-          LOG_WARN("parent process stop accepting new connection, stop check timer", K_(info), K(g_proxy_fatal_errcode), K(ret));
+          LOG_WDIAG("parent process stop accepting new connection, stop check timer", K_(info), K(g_proxy_fatal_errcode), K(ret));
           break;
         }
         case HUC_NONE:
           break;
         default: {
           ret = OB_ERR_UNEXPECTED;
-          LOG_ERROR("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
+          LOG_EDIAG("unknown ObHotUpgradeCmd, it should not enter here", K_(info), K(ret));
         }
       }
       info_.cmd_ = HUC_NONE;
@@ -1705,7 +1705,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
           info_.update_sub_status(HU_STATUS_NONE);
           info_.update_state(HU_STATE_WAIT_HU_CMD);
           if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
-            LOG_WARN("fail to reopen sqlite3", K(ret));
+            LOG_WDIAG("fail to reopen sqlite3", K(ret));
           }
         } else {
           if (OB_LIKELY(!info_.parent_hot_upgrade_flag_)) {
@@ -1725,7 +1725,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
             }
 
             if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
-              LOG_WARN("fail to reopen sqlite3", K(ret));
+              LOG_WDIAG("fail to reopen sqlite3", K(ret));
             }
           }
         }
@@ -1735,7 +1735,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("it should not enter here", K_(info));
+      LOG_EDIAG("it should not enter here", K_(info));
     }
   }
 

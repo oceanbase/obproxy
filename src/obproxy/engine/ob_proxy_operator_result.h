@@ -153,7 +153,7 @@ int change_sql_value(ObObj &value, obmysql::ObMySQLField &field, ObIAllocator *a
         ObCastCtx cast_ctx(allocator, NULL, CM_NULL_ON_WARN, cs_type);
         // use src_obj as buf_obj
         if (OB_FAIL(ObObjCasterV2::to_type(ob_type, cs_type, cast_ctx, value, value))) {
-          COMMON_LOG(WARN, "failed to cast obj", "row", value, K(ob_type), K(cs_type), K(ret));
+          COMMON_LOG(WDIAG, "failed to cast obj", "row", value, K(ob_type), K(cs_type), K(ret));
         }
       }
     }

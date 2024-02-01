@@ -36,13 +36,14 @@ typedef enum ObProxyParamType
   PARAM_INT_VAL,
   PARAM_COLUMN,
   PARAM_FUNC,
+  PARAM_NULL,
 } ObProxyParamType;
 
 struct _ObProxyParamNodeList;
 
 typedef struct _ObFuncExprNode
 {
-  ObProxyExprType func_type_;
+  ObProxyParseString func_name_;
   struct _ObProxyParamNodeList *child_;
 } ObFuncExprNode;
 

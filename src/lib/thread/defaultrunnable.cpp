@@ -30,7 +30,7 @@ CDefaultRunnable::~CDefaultRunnable() {
 void CDefaultRunnable::setThreadCount(int threadCount)
 {
     if (_thread != NULL) {
-        _OB_LOG(ERROR, "already running, can not set threadCount");
+        _OB_LOG(EDIAG, "already running, can not set threadCount");
         return;
     }
     _threadCount = threadCount;
@@ -39,13 +39,13 @@ void CDefaultRunnable::setThreadCount(int threadCount)
 // start
 int CDefaultRunnable::start() {
     if (_thread != NULL || _threadCount < 1) {
-        _OB_LOG(ERROR, "start failure, _thread: %p, threadCount: %d", _thread, _threadCount);
+        _OB_LOG(EDIAG, "start failure, _thread: %p, threadCount: %d", _thread, _threadCount);
         return 0;
     }
     _thread = new CThread[_threadCount];
     if (NULL == _thread)
     {
-        _OB_LOG(ERROR, "create _thread object failed, threadCount: %d", _threadCount);
+        _OB_LOG(EDIAG, "create _thread object failed, threadCount: %d", _threadCount);
         return 0;
     }
     int i = 0;

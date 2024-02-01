@@ -25,6 +25,8 @@ namespace oceanbase
 {
 namespace common
 {
+static const int64_t MAX_FLOAT_PRINT_SIZE = 64;
+static const int64_t MAX_DOUBLE_PRINT_SIZE = 64;
 namespace number
 {
 // Poly: [a, b, c, d] = a * Base^3
@@ -121,6 +123,7 @@ public:
   static const ObScale MAX_TOTAL_SCALE = MAX_SCALE + MAX_PRECISION + 1;
   // 5 valid digits, another: 1 for round, 1 for negative end flag
   static const int64_t MAX_STORE_LEN = 9;
+  static const int64_t MAX_APPEND_LEN = 3;// '+'/'-', '.', '\0'
   static const int64_t MAX_BYTE_LEN = sizeof(uint32_t) * MAX_STORE_LEN + sizeof(Desc::desc_);
   static const ObScale FLOATING_SCALE = 72;  // 8 valid digits
   static const int64_t MAX_INTEGER_EXP = 14; // {9.999...999,count=38}e134
@@ -132,6 +135,9 @@ public:
   static const int64_t MAX_PRINTABLE_SIZE = 256;
   static const int POSITIVE_EXP_BOUNDARY = 0xc0;
   static const int NEGATIVE_EXP_BOUNDARY = 0x40;
+  static const int64_t MAX_SCI_SIZE = 126;    /* compatible with Oracle */
+  static const int64_t MIN_SCI_SIZE = -130;   /* compatible with Oracle */
+  static const int64_t SCI_NUMBER_LENGTH = 40;
   static const ObNumber &get_positive_one();
   static const ObNumber &get_zero();
 public:
@@ -154,7 +160,12 @@ public:
   int from(const uint32_t desc, const ObCalcVector &vector, T &allocator);
   template <class T>
   int from(const ObNumber &other, T &allocator);
-
+  template <class T>
+  int from_sci(const char *str, const int64_t length, T &allocator, int16_t *precision, 
+               int16_t *scale, const bool do_rounding);
+  template <class T>
+  int from_sci_opt(const char *str, const int64_t length, T &allocator,
+                   int16_t *precision = NULL, int16_t *scale = NULL, const bool do_rounding = true);
   void assign(const uint32_t desc, uint32_t *digits);
   int round(const int64_t scale);
   int floor(const int64_t scale);
@@ -230,13 +241,15 @@ public:
 
   OB_INLINE uint32_t get_desc_value() const;
   uint32_t get_desc() const;
+  ObNumberDesc get_number_desc() const;
   uint32_t *get_digits() const;
   int64_t get_length() const;
   int64_t get_cap() const;
+  int64_t get_scale() const;
   bool is_valid_uint64(uint64_t &uint64);
   bool is_valid_int64(int64_t &int64);
   bool is_int_parts_valid_int64(int64_t &int_parts, int64_t &decimal_parts);
-
+  int normalize_(uint32_t *digits, const int64_t length);
 protected:
   int from_(const int64_t value, IAllocator &allocator);
   int from_(const uint64_t value, IAllocator &allocator);
@@ -251,6 +264,8 @@ protected:
   int from_(const uint32_t desc, const ObCalcVector &vector, IAllocator &allocator);
   int from_(const ObNumber &other, IAllocator &allocator);
   int from_(const ObNumber &other, uint32_t *digits, uint8_t cap);
+  int from_sci_(const char *str, const int64_t length, IAllocator &allocator, int &warning, 
+                int16_t *precision, int16_t *scale, const bool do_rounding);
   int add_(const ObNumber &other, ObNumber &value, IAllocator &allocator) const;
   int sub_(const ObNumber &other, ObNumber &value, IAllocator &allocator) const;
   int mul_(const ObNumber &other, ObNumber &value, IAllocator &allocator) const;
@@ -277,7 +292,6 @@ protected:
       const int64_t integer_length,
       const uint32_t *decimal_digits,
       const int64_t decimal_length);
-  int normalize_(uint32_t *digits, const int64_t length);
   inline static void exp_shift_(const int64_t shift, Desc &desc) __attribute__((always_inline));
   inline static int64_t exp_integer_align_(const Desc d1,
                                            const Desc d2) __attribute__((always_inline));
@@ -293,6 +307,9 @@ protected:
   inline static bool is_lt_1_(const Desc d) __attribute__((always_inline));
   inline static int exp_check_(const uint32_t desc) __attribute__((always_inline));
   inline static int64_t get_decode_exp(const uint32_t desc) __attribute__((always_inline));
+  inline static bool is_valid_sci_tail_(const char *str,
+                                        const int64_t length,
+                                        const int64_t e_pos) __attribute__((always_inline));
 public:
   struct \
   { \
@@ -621,6 +638,42 @@ int ObNumber::from(const ObNumber &other, T &allocator)
 }
 
 template <class T>
+int ObNumber::from_sci(const char *str,
+                   const int64_t length,
+                   T &allocator,
+                   int16_t *precision,
+                   int16_t *scale,
+                   const bool do_rounding)
+{
+  int ret = OB_SUCCESS;
+  int warning = OB_SUCCESS;
+  TAllocator<T> ta(allocator);
+  ret = from_sci_(str, length, ta, warning, precision, scale, do_rounding);
+  if (OB_SUCCESS == ret && OB_SUCCESS != warning) {
+    ret = warning;
+  }
+  return ret;
+}
+
+template <class T>
+int ObNumber::from_sci_opt(const char *str,
+                           const int64_t length,
+                           T &allocator,
+                           int16_t *precision,
+                           int16_t *scale,
+                           const bool do_rounding)
+{
+  int ret = OB_SUCCESS;
+  const common::ObString tmp_string(length, str);
+  if (!tmp_string.empty() && (NULL != tmp_string.find('e') || NULL != tmp_string.find('E'))) {
+    ret = from_sci(str, length, allocator, precision, scale, do_rounding);
+  } else {
+    ret = from(str, length, allocator, precision, scale);
+  }
+  return ret;
+}
+
+template <class T>
 int ObNumber::add(const ObNumber &other, ObNumber &value, T &allocator) const
 {
   TAllocator<T> ta(allocator);
@@ -753,7 +806,7 @@ int ObNumber::is_in_uint(int64_t exp, bool &is_uint, uint64_t &num) const
   } else {
     if (OB_ISNULL(digits_)) {
       ret = OB_INVALID_ARGUMENT;
-      LIB_LOG(ERROR, "the pointer is null");
+      LIB_LOG(EDIAG, "the pointer is null");
     } else {
       if (2 == exp) {
         static const uint32_t unum[3] = {18, 446744073, 709551615};
@@ -885,7 +938,7 @@ inline int ObNumber::uint32cmp(const uint32_t *s1, const uint32_t *s2, const int
 {
   int cret = 0;
   if (n > 0 && (OB_ISNULL(s1) || OB_ISNULL(s2))) {
-    LIB_LOG(ERROR, "the poniter is null");
+    LIB_LOG(EDIAG, "the poniter is null");
   } else {
     for (int64_t i = 0; i < n; ++i) {
       if (s1[i] < s2[i]) {
@@ -904,7 +957,7 @@ inline bool ObNumber::uint32equal(const uint32_t *s1, const uint32_t *s2, const 
 {
   bool is_equal = true;
   if (n > 0 && (OB_ISNULL(s1) || OB_ISNULL(s2))) {
-    LIB_LOG(ERROR, "the poniter is null");
+    LIB_LOG(EDIAG, "the poniter is null");
   } else {
     for (int64_t i = 0; i < n && is_equal; ++i) {
       if (s1[i] != s2[i]) {
@@ -931,7 +984,7 @@ inline int64_t ObNumber::get_digit_len(const uint32_t d)
 {
   int64_t ret = 0;
   if (BASE <= d) {
-    LIB_LOG(ERROR, "d is out of range");
+    LIB_LOG(EDIAG, "d is out of range");
   } else {
     ret = (d >= 100000000) ? 9 :
           (d >= 10000000) ? 8 :
@@ -1206,6 +1259,36 @@ inline int64_t ObNumber::get_decode_exp(const uint32_t desc)
   return e;
 }
 
+/**
+ * check whether a sci format string has a valid exponent part
+ * valid : 1.8E-1/1.8E1   invalid : 1.8E, 1.8Ea, 1.8E-a
+ * @param str     string need to parse
+ * @param length  length of str
+ * @param e_pos   index of 'E'
+ */
+bool ObNumber::is_valid_sci_tail_(const char *str, 
+                                 const int64_t length, 
+                                 const int64_t e_pos)
+{
+  bool res = false;
+  if (e_pos == length - 1) {
+    //like 1.8e, false
+  } else if (e_pos < length - 1) {
+    if ('+' == str[e_pos + 1] || '-' == str[e_pos + 1]) {
+      if (e_pos < length - 2 && str[e_pos + 2] >= '0' && str[e_pos + 2] <= '9') {
+        res = true;
+      } else {
+        //like 1.8e+, false
+      }
+    } else if (str[e_pos + 1] >= '0' && str[e_pos + 1] <= '9') {
+      res = true;
+    } else {
+      //like 1.8ea, false
+    }
+  }
+  return res;
+}
+
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
 template <class T>
@@ -1226,7 +1309,7 @@ int poly_mono_mul(
       || 0 >= multiplicand_size
       || (multiplicand_size + 1) != product_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "the input param is invalid");
+    LIB_LOG(EDIAG, "the input param is invalid");
   } else {
     uint64_t carry = 0;
     int64_t multiplicand_idx = multiplicand_size - 1;
@@ -1244,7 +1327,7 @@ int poly_mono_mul(
         carry = 0;
       }
       if (OB_FAIL(product.set(product_idx, tmp))) {
-        LIB_LOG(WARN, "set to product fail", K(ret), K(product_idx));
+        LIB_LOG(WDIAG, "set to product fail", K(ret), K(product_idx));
         break;
       }
       --product_idx;
@@ -1272,7 +1355,7 @@ int poly_mono_div(
       || 0 >= dividend_size
       || dividend_size != quotient_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "the input param is invalid");
+    LIB_LOG(EDIAG, "the input param is invalid");
   } else {
     uint64_t carry = 0;
     int64_t dividend_idx = 0;
@@ -1284,7 +1367,7 @@ int poly_mono_div(
       uint64_t tmp = carry / divisor;
       carry = carry % divisor;
       if (OB_FAIL(quotient.set(quotient_idx, tmp))) {
-        LIB_LOG(WARN, "set to quotient fail", K(ret), K(quotient_idx));
+        LIB_LOG(WDIAG, "set to quotient fail", K(ret), K(quotient_idx));
         break;
       }
       ++quotient_idx;
@@ -1315,7 +1398,7 @@ int poly_poly_add(
       || 0 >= addend_size
       || add_size != sum_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "the input param is invalid");
+    LIB_LOG(EDIAG, "the input param is invalid");
   } else {
     uint64_t carry = 0;
     int64_t augend_idx = augend_size - 1;
@@ -1338,7 +1421,7 @@ int poly_poly_add(
         carry = 0;
       }
       if (OB_FAIL(sum.set(sum_idx, tmp))) {
-        LIB_LOG(WARN, "set to sum fail", K(ret), K(sum_idx));
+        LIB_LOG(WDIAG, "set to sum fail", K(ret), K(sum_idx));
         break;
       }
       --sum_idx;
@@ -1370,7 +1453,7 @@ int poly_poly_sub(
       || 0 >= subtrahend_size
       || sub_size != remainder_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "the input param is invalid");
+    LIB_LOG(EDIAG, "the input param is invalid");
   } else {
     uint64_t borrow = 0;
     int64_t minuend_idx = minuend_size - 1;
@@ -1395,7 +1478,7 @@ int poly_poly_sub(
       }
       tmp_minuend -= tmp_subtrahend;
       if (OB_FAIL(remainder.set(remainder_idx, tmp_minuend))) {
-        LIB_LOG(WARN, "set to remainder fail", K(ret), K(tmp_minuend));
+        LIB_LOG(WDIAG, "set to remainder fail", K(ret), K(tmp_minuend));
         break;
       }
       --remainder_idx;
@@ -1438,7 +1521,7 @@ int recursion_set_product(
     carry = carry / base;
 
     if (OB_FAIL(product.set(start_idx - carry_idx, tmp))) {
-      LIB_LOG(WARN, "set to product fail",
+      LIB_LOG(WDIAG, "set to product fail",
               K(ret), K(start_idx), K(carry_idx), K(tmp), K(carry));
       break;
     }
@@ -1468,7 +1551,7 @@ int poly_poly_mul(
       || 0 >= multiplier_size
       || mul_size != product_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "the input param is invalid");
+    LIB_LOG(EDIAG, "the input param is invalid");
   } else {
     // [a, b, c] * [d, e, f]
     // = (a*B^2 + b*B^1 + c*B^0) * (d*B^2 + e^B^1 + f*B^0)
@@ -1484,7 +1567,7 @@ int poly_poly_mul(
         uint64_t tmp_product = multiplicand.at(multiplicand_idx) * multiplier.at(multiplier_idx);
 
         if (OB_FAIL(recursion_set_product(base, tmp_product, cur_product_idx, product))) {
-          LIB_LOG(WARN, "set product fail", K(tmp_product), K(product_idx));
+          LIB_LOG(WDIAG, "set product fail", K(tmp_product), K(product_idx));
           break;
         }
       }
@@ -1541,18 +1624,18 @@ int knuth_probe_quotient(
   bool negative = false;
   bool truevalue = false;
   if (OB_FAIL(qq_mul_v.ensure(v.size() + 1))) {
-    _OB_LOG(WARN, "ensure qq_mul_v fail, ret=%d size=%ld", ret, v.size() + 1);
+    _OB_LOG(WDIAG, "ensure qq_mul_v fail, ret=%d size=%ld", ret, v.size() + 1);
   } else if (OB_FAIL(poly_mono_mul(v, qq, qq_mul_v))) {
-    _OB_LOG(WARN, "%lu mul %s u=%s fail, ret=%d", qq, to_cstring(v), to_cstring(u), ret);
+    _OB_LOG(WDIAG, "%lu mul %s u=%s fail, ret=%d", qq, to_cstring(v), to_cstring(u), ret);
   } else if (OB_FAIL(u_sub.ensure(n + 1))) {
-    _OB_LOG(WARN, "ensure u_sub fail, ret=%d size=%ld", ret, n + 1);
+    _OB_LOG(WDIAG, "ensure u_sub fail, ret=%d size=%ld", ret, n + 1);
   } else if (OB_FAIL(poly_poly_sub(u.ref(j, j + n), qq_mul_v.ref(1, n + 1), u_sub,
                                                 negative, truevalue))) {
-    _OB_LOG(WARN, "%s sub %s fail, ret=%d", to_cstring(u.ref(j, j + n)),
+    _OB_LOG(WDIAG, "%s sub %s fail, ret=%d", to_cstring(u.ref(j, j + n)),
             to_cstring(qq_mul_v), ret);
   } else if (!negative
              && OB_FAIL(u.assign(u_sub, j, j + n))) {
-    _OB_LOG(WARN, "assign %s to u[%ld,%ld] fail, ret=%d", to_cstring(u_sub), j, j + n, ret);
+    _OB_LOG(WDIAG, "assign %s to u[%ld,%ld] fail, ret=%d", to_cstring(u_sub), j, j + n, ret);
   } else {
     // do nothing
   }
@@ -1568,11 +1651,11 @@ int knuth_probe_quotient(
     T u_add;
     u_add.set_base(base);
     if (OB_FAIL(u_add.ensure(n + 2))) {
-      _OB_LOG(WARN, "ensure u_add fail, ret=%d size=%ld", ret, n + 2);
+      _OB_LOG(WDIAG, "ensure u_add fail, ret=%d size=%ld", ret, n + 2);
     } else if (OB_FAIL(poly_poly_add(u_sub, v, u_add))) {
-      _OB_LOG(WARN, "%s add %s fail, ret=%d", to_cstring(u_sub), to_cstring(v), ret);
+      _OB_LOG(WDIAG, "%s add %s fail, ret=%d", to_cstring(u_sub), to_cstring(v), ret);
     } else if (OB_FAIL(u.assign(u_add.ref(1, n + 1), j, j + n))) {
-      _OB_LOG(WARN, "assign %s to u[%ld,%ld] fail, ret=%d",
+      _OB_LOG(WDIAG, "assign %s to u[%ld,%ld] fail, ret=%d",
               to_cstring(u_add.ref(1, n + 1)), j, j + n, ret);
     } else {
       // do nothing
@@ -1617,21 +1700,21 @@ int poly_poly_div(
       || div_size != quotient_size
       || divisor_size != remainder_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "the input param is invalid");
+    LIB_LOG(EDIAG, "the input param is invalid");
   } else {
     // Knuth Algo:
     // D1
     uint64_t d = base / (divisor.at(0) + 1);
 
     if (OB_FAIL(u.ensure(dividend_size + 1))) {
-      _OB_LOG(WARN, "ensure dividend fail ret=%d size=%ld", ret, dividend_size + 1);
+      _OB_LOG(WDIAG, "ensure dividend fail ret=%d size=%ld", ret, dividend_size + 1);
     } else if (OB_FAIL(v.ensure(divisor_size + 1))) {
-      _OB_LOG(WARN, "ensure divisor fail ret=%d size=%ld", ret, divisor_size + 1);
+      _OB_LOG(WDIAG, "ensure divisor fail ret=%d size=%ld", ret, divisor_size + 1);
     }
     if (OB_FAIL(poly_mono_mul(dividend, d, u))) {
-      _OB_LOG(WARN, "%s mul %lu fail, ret=%d", to_cstring(dividend), d, ret);
+      _OB_LOG(WDIAG, "%s mul %lu fail, ret=%d", to_cstring(dividend), d, ret);
     } else if (OB_FAIL(poly_mono_mul(divisor, d, v))) {
-      _OB_LOG(WARN, "%s mul %lu fail, ret=%d", to_cstring(divisor), d, ret);
+      _OB_LOG(WDIAG, "%s mul %lu fail, ret=%d", to_cstring(divisor), d, ret);
     } else {
       LIB_LOG(DEBUG, "Knuth Algo start",
               K(dividend), K(divisor), K(d), K(u), K(v), K(n), K(m));
@@ -1662,7 +1745,7 @@ int poly_poly_div(
       if (OB_SUCC(ret)) {
         uint64_t r = 0;
         if (OB_FAIL(poly_mono_div(u.ref(m + 1, m + n), d, remainder, r))) {
-          _OB_LOG(WARN, "%s div %lu fail, ret=%d", to_cstring(u.ref(m + 1, m + n)), d, ret);
+          _OB_LOG(WDIAG, "%s div %lu fail, ret=%d", to_cstring(u.ref(m + 1, m + n)), d, ret);
         }
       }
 

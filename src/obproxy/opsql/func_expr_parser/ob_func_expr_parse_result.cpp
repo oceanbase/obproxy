@@ -98,6 +98,9 @@ const char* get_generate_function_type(const ObProxyExprType type)
     case OB_PROXY_EXPR_TYPE_FUNC_SPLIT:
       str_ret = "OB_PROXY_EXPR_TYPE_FUNC_SPLIT";
       break;
+    case OB_PROXY_EXPR_TYPE_FUNC_MOD:
+      str_ret = "OB_PROXY_EXPR_TYPE_FUNC_MOD";
+      break;
     default:
       break;
   }

@@ -76,13 +76,13 @@ int ObCommonConfig::add_config(const char *config_str,
 
   if (OB_ISNULL(config_str)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("config str is null", K(ret));
+    LOG_WDIAG("config str is null", K(ret));
   } else if ((config_str_length = static_cast<int64_t>(STRLEN(config_str))) >= MAX_OPTS_LENGTH) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_ERROR("Extra config is too long", K(ret));
+    LOG_EDIAG("Extra config is too long", K(ret));
   } else if (OB_ISNULL(buf = new (std::nothrow) char[config_str_length + 1])) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("ob tc malloc memory for buf fail", K(ret));
+    LOG_WDIAG("ob tc malloc memory for buf fail", K(ret));
   } else {
     MEMCPY(buf, config_str, config_str_length);
     buf[config_str_length] = '\0';
@@ -97,7 +97,7 @@ int ObCommonConfig::add_config(const char *config_str,
     ObConfigItem *const *pp_item = NULL;
     if (OB_ISNULL(name = STRTOK_R(token, "=", &saveptr_one))) {
       ret = OB_INVALID_CONFIG;
-      LOG_ERROR("Invalid config string", K(token), K(ret));
+      LOG_EDIAG("Invalid config string", K(token), K(ret));
     } else if (OB_ISNULL(saveptr_one) || OB_UNLIKELY('\0' == *(saveptr_one))) {
       LOG_INFO("Empty config string", K(token), K(name));
       value = value_tmp;
@@ -123,13 +123,13 @@ int ObCommonConfig::add_config(const char *config_str,
     } else if (OB_ISNULL(pp_item = container_.get(ObConfigStringKey(name)))) {
       /* make compatible with previous configuration */
       ret = check_name ? OB_INVALID_CONFIG : OB_SUCCESS;
-      LOG_WARN("Invalid config string, no such config item", K(name), K(value), K(ret));
+      LOG_WDIAG("Invalid config string, no such config item", K(name), K(value), K(ret));
     } else if (!(*pp_item)->set_value(value)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("Invalid config value", K(name), K(value), K(ret));
+      LOG_WDIAG("Invalid config value", K(name), K(value), K(ret));
     } else if (!(*pp_item)->check()) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("Invalid config, value out of range", K(name), K(value), K(ret));
+      LOG_WDIAG("Invalid config, value out of range", K(name), K(value), K(ret));
     } else {
       (*pp_item)->set_version(version);
       LOG_INFO("Load config succ", K(name), K(value));
@@ -197,20 +197,20 @@ DEFINE_DESERIALIZE(ObCommonConfig)
     const char *const p_data = p_header + header.get_serialize_size();
     const int64_t pos_data = pos + header.get_serialize_size();
     if (OB_FAIL(header.deserialize(buf, data_len, pos))) {
-      LOG_ERROR("deserialize header failed", K(ret));
+      LOG_EDIAG("deserialize header failed", K(ret));
     } else if (OB_FAIL(header.check_header_checksum())) {
-      LOG_ERROR("check header checksum failed", K(ret));
+      LOG_EDIAG("check header checksum failed", K(ret));
     } else if (OB_COMMON_CONFIG_MAGIC != header.magic_) {
       ret = OB_INVALID_DATA;
-      LOG_ERROR("check magic number failed", K_(header.magic), K(ret));
+      LOG_EDIAG("check magic number failed", K_(header.magic), K(ret));
     } else if (data_len - pos_data != header.data_zlength_) {
       ret = OB_INVALID_DATA;
-      LOG_ERROR("check data len failed",
+      LOG_EDIAG("check data len failed",
                 K(data_len), K(pos_data), K_(header.data_zlength), K(ret));
     } else if (OB_FAIL(header.check_payload_checksum(p_data, data_len - pos_data))) {
-      LOG_ERROR("check data checksum failed", K(ret));
+      LOG_EDIAG("check data checksum failed", K(ret));
     } else if (OB_FAIL(add_extra_config(buf + pos))) {
-      LOG_ERROR("Read server config failed", K(ret));
+      LOG_EDIAG("Read server config failed", K(ret));
     } else {
       pos += header.data_length_;
     }

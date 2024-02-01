@@ -194,6 +194,12 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_DESC:
       str_ret = "DESC";
       break;
+    case OBPROXY_T_LOAD_DATA_LOCAL_INFILE:
+      str_ret = "LOAD_DATA_LOCAL_INFILE";
+      break;
+    case OBPROXY_T_LOAD_DATA_INFILE:
+      str_ret = "LOAD_DATA_INFILE";
+      break;
 
     case OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT:
       str_ret = "SHOW_BINLOG_SERVER_FOR_TENANT";
@@ -434,6 +440,12 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_DESC:
       str_ret = "OBPROXY_T_DESC";
       break;
+    case OBPROXY_T_LOAD_DATA_LOCAL_INFILE:
+      str_ret = "OBPROXY_T_LOAD_DATA_LOCAL_INFILE";
+      break;
+    case OBPROXY_T_LOAD_DATA_INFILE:
+      str_ret = "OBPROXY_T_LOAD_DATA_INFILE";
+      break;
     case OBPROXY_T_MAX:
       str_ret = "OBPROXY_T_MAX";
       break;
@@ -576,6 +588,12 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
       break;
     case OBPROXY_T_SUB_CREATE_INDEX:
       str_ret = "OBPROXY_T_SUB_CREATE_INDEX";
+      break;
+    case OBPROXY_T_SUB_CREATE_TABLEGROUP:
+      str_ret = "OBPROXY_T_SUB_CREATE_TABLEGROUP";
+      break;
+    case OBPROXY_T_SUB_DROP_TABLEGROUP:
+      str_ret = "OBPROXY_T_SUB_DROP_TABLEGROUP";
       break;
     case OBPROXY_T_SUB_MAX:
       str_ret = "OBPROXY_T_SUB_MAX";

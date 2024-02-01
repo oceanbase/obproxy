@@ -28,7 +28,7 @@ DefaultBlockAllocator::DefaultBlockAllocator()
 DefaultBlockAllocator::~DefaultBlockAllocator()
 {
   if (allocated_ != 0) {
-    _OB_LOG(WARN, "allocated_[%ld] != 0", allocated_);
+    _OB_LOG(WDIAG, "allocated_[%ld] != 0", allocated_);
   }
 }
 
@@ -63,15 +63,15 @@ void *DefaultBlockAllocator::alloc(const int64_t size)
     ret = OB_INVALID_ARGUMENT;
   } else if (allocated_ + alloc_size > limit_) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(ERROR, "allocated[%ld] + size[%ld] > limit[%ld]", allocated_, size, limit_);
+    _OB_LOG(EDIAG, "allocated[%ld] + size[%ld] > limit[%ld]", allocated_, size, limit_);
   } else if (__sync_add_and_fetch(&allocated_, alloc_size) > limit_) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     IGNORE_RETURN __sync_add_and_fetch(&allocated_, -alloc_size);
-    _OB_LOG(ERROR, "allocated[%ld] + size[%ld] > limit[%ld]", allocated_, alloc_size, limit_);
+    _OB_LOG(EDIAG, "allocated[%ld] + size[%ld] > limit[%ld]", allocated_, alloc_size, limit_);
   } else if (NULL == (p = ob_malloc(alloc_size, mod_))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     IGNORE_RETURN __sync_add_and_fetch(&allocated_, -alloc_size);
-    _OB_LOG(ERROR, "ob_tc_malloc(size=%ld) failed", alloc_size);
+    _OB_LOG(EDIAG, "ob_tc_malloc(size=%ld) failed", alloc_size);
   } else {
     *((int64_t *)p) = alloc_size;
     p = (char *)p + sizeof(alloc_size);
@@ -92,7 +92,7 @@ void DefaultBlockAllocator::free(void *p)
   if (OB_SUCCESS != ret) {
   } else if (__sync_add_and_fetch(&allocated_, -alloc_size) < 0) {
     ret = OB_ERR_UNEXPECTED;
-    _OB_LOG(ERROR, "free(size=%ld): allocated[%ld] < 0 after free", alloc_size, allocated_);
+    _OB_LOG(EDIAG, "free(size=%ld): allocated[%ld] < 0 after free", alloc_size, allocated_);
   } else {
     ob_free((void *)((char *)p - sizeof(int64_t)));
   }
@@ -148,9 +148,9 @@ int StackAllocator::reset(const bool slow)
   if (NULL == allocator_) {
     ret = OB_NOT_INIT;
   } else if (OB_FAIL(restore_top(0, slow))) {
-    _OB_LOG(ERROR, "restore_top(0)=>%d", ret);
+    _OB_LOG(EDIAG, "restore_top(0)=>%d", ret);
   } else if (OB_FAIL(set_reserved_block(NULL))) {
-    _OB_LOG(ERROR, "set_reserved_block()=>%d", ret);
+    _OB_LOG(EDIAG, "set_reserved_block()=>%d", ret);
   }
   return ret;
 }
@@ -163,9 +163,9 @@ int StackAllocator::alloc_block(Block *&block, const int64_t size)
     ret = OB_NOT_INIT;
   } else if (NULL == (block = (Block *)allocator_->alloc(limit))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(WARN, "allocator->alloc(size=%ld)=>NULL", size);
+    _OB_LOG(WDIAG, "allocator->alloc(size=%ld)=>NULL", size);
   } else if (OB_FAIL(block->init(limit))) {
-    _OB_LOG(ERROR, "block->init()=>%d", ret);
+    _OB_LOG(EDIAG, "block->init()=>%d", ret);
   }
   return ret;
 }
@@ -177,7 +177,7 @@ int StackAllocator::free_block(Block *block)
     ret = OB_NOT_INIT;
   } else if (NULL == block) {
     ret = OB_INVALID_ARGUMENT;
-    _OB_LOG(ERROR, "free_block(block=NULL)");
+    _OB_LOG(EDIAG, "free_block(block=NULL)");
   } else {
     allocator_->free(block);
     block = NULL;
@@ -191,10 +191,10 @@ int StackAllocator::alloc_head(const int64_t size)
   Block *new_block = reserved_;
   if (OB_ISNULL(new_block)) {
     ret = OB_ERR_UNEXPECTED;
-    _OB_LOG(WARN, "invalid new block");
+    _OB_LOG(WDIAG, "invalid new block");
   } else if (new_block->remain() < size
              && OB_FAIL(alloc_block(new_block, size))) {
-    _OB_LOG(WARN, "allocator->alloc(size=%ld)=>%d", size, ret);
+    _OB_LOG(WDIAG, "allocator->alloc(size=%ld)=>%d", size, ret);
   } else {
     if (new_block == reserved_) {
       reserved_ = NULL;
@@ -220,7 +220,7 @@ int StackAllocator::free_head()
   }
   if (OB_SUCCESS != ret) {
   } else if (OB_FAIL(free_block(head))) {
-    _OB_LOG(ERROR, "free_block()=>%d", ret);
+    _OB_LOG(EDIAG, "free_block()=>%d", ret);
   }
   return ret;
 }
@@ -229,7 +229,7 @@ int StackAllocator::set_reserved_block(Block *block)
 {
   int ret = OB_SUCCESS;
   if (NULL != reserved_ && OB_FAIL(free_block(reserved_))) {
-    _OB_LOG(ERROR, "free(%p)=>%d", reserved_, ret);
+    _OB_LOG(EDIAG, "free(%p)=>%d", reserved_, ret);
   } else {
     reserved_ = block;
   }
@@ -241,15 +241,15 @@ int StackAllocator::reserve_block(const int64_t size)
   int ret = OB_SUCCESS;
   Block *new_block = NULL;
   if (OB_FAIL(alloc_block(new_block, size))) {
-    _OB_LOG(WARN, "allocator->alloc(size=%ld)=>%d", size, ret);
+    _OB_LOG(WDIAG, "allocator->alloc(size=%ld)=>%d", size, ret);
   } else if (OB_FAIL(set_reserved_block(new_block))) {
-    _OB_LOG(ERROR, "set_reserved_block(new_block=%p)=>%d", new_block, ret);
+    _OB_LOG(EDIAG, "set_reserved_block(new_block=%p)=>%d", new_block, ret);
   }
 
   if (OB_SUCCESS != ret) {
     int ret_tmp = OB_SUCCESS;
     if (OB_SUCCESS != (ret_tmp = free_block(new_block))) {
-      _OB_LOG(ERROR, "free_block(new_block=%p)=>%d", new_block, ret_tmp);
+      _OB_LOG(EDIAG, "free_block(new_block=%p)=>%d", new_block, ret_tmp);
     }
   }
   return ret;
@@ -262,9 +262,9 @@ int StackAllocator::reserve(const int64_t size)
       || head_->remain() >= size
       || OB_ISNULL(reserved_)
       || reserved_->remain() >= size) {
-    _OB_LOG(ERROR, "unexpected error");
+    _OB_LOG(EDIAG, "unexpected error");
   } else if (OB_FAIL(reserve_block(size))) {
-    _OB_LOG(ERROR, "reserve_block(size=%ld)=>%d", size, ret);
+    _OB_LOG(EDIAG, "reserve_block(size=%ld)=>%d", size, ret);
   }
   return ret;
 }
@@ -276,11 +276,11 @@ int StackAllocator::shrink(const char *p, const int64_t size, const int64_t new_
     ret = OB_INVALID_ARGUMENT;
   } else if (p + size != (char *)head_ + head_->pos_) {
     ret = OB_NOT_SUPPORTED;
-    _OB_LOG(WARN, "try shrink after another alloc, not supported: end[%ld] != allocator_end[%ld]",
+    _OB_LOG(WDIAG, "try shrink after another alloc, not supported: end[%ld] != allocator_end[%ld]",
               (int64_t)p + size, (int64_t)head_ + head_->pos_);
   } else if (head_->pos_ < size) {
     ret = OB_ERR_UNEXPECTED;
-    _OB_LOG(ERROR, "head->pos[%ld] < size[%ld]", head_->pos_, size);
+    _OB_LOG(EDIAG, "head->pos[%ld] < size[%ld]", head_->pos_, size);
   } else {
     head_->pos_ -= size - new_size;
     top_ -= size - new_size;
@@ -294,9 +294,9 @@ void *StackAllocator::alloc(const int64_t size)
   void *p = NULL;
   if (size <= 0 || OB_ISNULL(head_)) {
     ret = OB_INVALID_ARGUMENT;
-    _OB_LOG(ERROR, "alloc(size=%ld): INVALID_ARGUMENT", size);
+    _OB_LOG(EDIAG, "alloc(size=%ld): INVALID_ARGUMENT", size);
   } else if (head_->remain() < size && OB_FAIL(alloc_head(size))) {
-    _OB_LOG(ERROR, "alloc_block(size=%ld)=>%d", size, ret);
+    _OB_LOG(EDIAG, "alloc_block(size=%ld)=>%d", size, ret);
   } else {
     p = (char *)head_ + head_->pos_;
     head_->pos_ += size;
@@ -316,7 +316,7 @@ int StackAllocator::start_batch_alloc()
   if (saved_top_ >= 0) {
     ret = OB_ERROR;
   } else if (OB_FAIL(save_top(saved_top_))) {
-    _OB_LOG(ERROR, "save_top(top=%ld)=>%d", top_, ret);
+    _OB_LOG(EDIAG, "save_top(top=%ld)=>%d", top_, ret);
   }
   return ret;
 }
@@ -327,7 +327,7 @@ int StackAllocator::end_batch_alloc(const bool rollback)
   if (saved_top_ < 0) {
     _OB_LOG(TRACE, "no need to end_batch_alloc");
   } else if (rollback && OB_FAIL(restore_top(saved_top_, false))) {
-    _OB_LOG(ERROR, "restor_top(saved_top=%ld)=>%d", saved_top_, ret);
+    _OB_LOG(EDIAG, "restor_top(saved_top=%ld)=>%d", saved_top_, ret);
   } else {
     saved_top_ = -1;
   }
@@ -356,12 +356,12 @@ int StackAllocator::restore_top(const int64_t top, const bool slow)
   while (OB_SUCCESS == ret && top_ > top) {
     if (NULL == head_) {
       ret = OB_ERR_UNEXPECTED;
-      _OB_LOG(ERROR, "restor_top(top=%ld): head_ == NULL", top);
+      _OB_LOG(EDIAG, "restor_top(top=%ld): head_ == NULL", top);
     } else if (top + head_->pos_ <= top_) {
       ret = free_head();
     } else if (head_->pos_ - (int64_t)sizeof(*head_) < top_ - top) {
       ret = OB_ERR_UNEXPECTED;
-      _OB_LOG(ERROR, "restore_top(head->pos_=%ld, top=%ld, top_=%ld)=>%d", head_->pos_, top, top_, ret);
+      _OB_LOG(EDIAG, "restore_top(head->pos_=%ld, top=%ld, top_=%ld)=>%d", head_->pos_, top, top_, ret);
     } else {
       head_->pos_ -= top_ - top;
       top_ = top;
@@ -415,7 +415,7 @@ int TSIStackAllocator::reserve(const int64_t size)
   StackAllocator *allocator = NULL;
   if (NULL == (allocator = get())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(ERROR, "get_tsi_allocator() failed");
+    _OB_LOG(EDIAG, "get_tsi_allocator() failed");
   } else {
     ret = allocator->reserve(size);
   }
@@ -427,9 +427,9 @@ void *TSIStackAllocator::alloc(const int64_t size)
   StackAllocator *allocator = NULL;
   void *p = NULL;
   if (NULL == (allocator = get())) {
-    _OB_LOG(ERROR, "get_tsi_allocator() failed");
+    _OB_LOG(EDIAG, "get_tsi_allocator() failed");
   } else if (NULL == (p = allocator->alloc(size))) {
-    _OB_LOG(ERROR, "allocator->alloc(%ld)=>NULL", size);
+    _OB_LOG(EDIAG, "allocator->alloc(%ld)=>NULL", size);
   }
   return p;
 }
@@ -440,7 +440,7 @@ int TSIStackAllocator::shrink(const char *p, const int64_t size, const int64_t n
   StackAllocator *allocator = NULL;
   if (NULL == (allocator = get())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(ERROR, "get_tsi_allocator() failed");
+    _OB_LOG(EDIAG, "get_tsi_allocator() failed");
   } else {
     ret = allocator->shrink(p, size, new_size);
   }
@@ -450,7 +450,7 @@ void TSIStackAllocator::free(void *p)
 {
   StackAllocator *allocator = NULL;
   if (NULL == (allocator = get())) {
-    _OB_LOG(ERROR, "get_tsi_allocator() failed");
+    _OB_LOG(EDIAG, "get_tsi_allocator() failed");
   } else {
     allocator->free(p);
     p = NULL;
@@ -463,7 +463,7 @@ int TSIStackAllocator::start_batch_alloc()
   StackAllocator *allocator = NULL;
   if (NULL == (allocator = get())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(ERROR, "get_tsi_allocator() failed");
+    _OB_LOG(EDIAG, "get_tsi_allocator() failed");
   } else {
     ret = allocator->start_batch_alloc();
   }
@@ -476,7 +476,7 @@ int TSIStackAllocator::end_batch_alloc(const bool rollback)
   StackAllocator *allocator = NULL;
   if (NULL == (allocator = get())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    _OB_LOG(ERROR, "get_tsi_allocator() failed");
+    _OB_LOG(EDIAG, "get_tsi_allocator() failed");
   } else {
     ret = allocator->end_batch_alloc(rollback);
   }

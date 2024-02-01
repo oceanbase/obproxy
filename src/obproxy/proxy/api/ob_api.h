@@ -26,8 +26,8 @@ namespace proxy
 
 #define DEBUG_API(fmt...) _PROXY_API_LOG(DEBUG, ##fmt)
 #define INFO_API(fmt...) _PROXY_API_LOG(INFO, ##fmt)
-#define WARN_API(fmt...) _PROXY_API_LOG(WARN, ##fmt)
-#define ERROR_API(fmt...) _PROXY_API_LOG(ERROR, ##fmt)
+#define WARN_API(fmt...) _PROXY_API_LOG(WDIAG, ##fmt)
+#define ERROR_API(fmt...) _PROXY_API_LOG(EDIAG, ##fmt)
 
 int api_init();
 

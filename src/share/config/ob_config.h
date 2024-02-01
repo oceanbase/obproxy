@@ -199,7 +199,7 @@ public:
   ObConfigIntListItem &operator=(const char *str)
   {
     if (!set_value(str)) {
-      OB_LOG(WARN, "obconfig int list item set value failed");
+      OB_LOG(WDIAG, "obconfig int list item set value failed");
     }
     return *this;
   }
@@ -252,7 +252,7 @@ public:
   ObConfigStrListItem &operator=(const char *str)
   {
     if (!set_value(str)) {
-      OB_LOG(WARN, "obconfig str list item set value failed");
+      OB_LOG(WDIAG, "obconfig str list item set value failed");
     }
     return *this;
   }
@@ -422,7 +422,7 @@ inline ObConfigDoubleItem &ObConfigDoubleItem::operator = (double value)
   char buf[OB_MAX_CONFIG_VALUE_LEN];
   (void) snprintf(buf, sizeof(buf), "%f", value);
   if (!set_value(buf)) {
-    OB_LOG(WARN, "obconfig double item set value failed");
+    OB_LOG(WDIAG, "obconfig double item set value failed");
   }
   return *this;
 }
@@ -469,7 +469,7 @@ inline ObConfigCapacityItem &ObConfigCapacityItem::operator = (int64_t value)
   char buf[OB_MAX_CONFIG_VALUE_LEN];
   (void) snprintf(buf, sizeof(buf), "%ldB", value);
   if (!set_value(buf)) {
-    OB_LOG(WARN, "obconfig capacity item set value failed");
+    OB_LOG(WDIAG, "obconfig capacity item set value failed");
   }
   return *this;
 }
@@ -510,7 +510,7 @@ inline ObConfigTimeItem &ObConfigTimeItem::operator = (int64_t value){
   char buf[OB_MAX_CONFIG_VALUE_LEN];
   (void) snprintf(buf, sizeof(buf), "%ldus", value);
   if (!set_value(buf)) {
-    OB_LOG(WARN, "obconfig time item set value failed");
+    OB_LOG(WDIAG, "obconfig time item set value failed");
   }
   return *this;
 }
@@ -546,7 +546,7 @@ inline ObConfigIntItem &ObConfigIntItem::operator = (int64_t value)
   char buf[OB_MAX_CONFIG_VALUE_LEN];
   (void) snprintf(buf, sizeof(buf), "%ld", value);
   if (!set_value(buf)) {
-    OB_LOG(WARN, "obconfig int item set value failed");
+    OB_LOG(WDIAG, "obconfig int item set value failed");
   }
   return *this;
 }
@@ -644,7 +644,7 @@ public:
   {
     int32_t length = snprintf(initial_value_str_, sizeof(initial_value_str_), "%s", value_str_);
     if (length < 0 || length > static_cast<int32_t>(sizeof(initial_value_str_))) {
-      OB_LOG(WARN, "buffer not enough", K(length), "buff_size", sizeof(initial_value_str_),
+      OB_LOG(WDIAG, "buffer not enough", K(length), "buff_size", sizeof(initial_value_str_),
              K_(value_str));
     } else {
       is_initial_value_set_ = true;

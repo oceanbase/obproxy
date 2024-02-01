@@ -26,12 +26,12 @@ int ObFastZlibStreamCompressor::compress(char *dest_start, const int64_t len, in
 
   if (OB_ISNULL(dest_start) || (len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(dest_start), K(len), K(ret));
+    LOG_WDIAG("invalid input value", KP(dest_start), K(len), K(ret));
   } else if (COMPRESS_FILL_COMPLETE == compress_state_) {
     filled_len = 0;
   } else if (COMPRESS_TYPE != type_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid compress type, COMPRESS_TYPE expected", K_(type), K(ret));
+    LOG_WDIAG("invalid compress type, COMPRESS_TYPE expected", K_(type), K(ret));
   } else {
     Byte *dest = reinterpret_cast<Byte *>(dest_start);
     int64_t curr_dest_len = len;
@@ -69,7 +69,7 @@ int ObFastZlibStreamCompressor::compress(char *dest_start, const int64_t len, in
         }
         default: {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid sate", K(compress_state_), K(ret));
+          LOG_WDIAG("invalid sate", K(compress_state_), K(ret));
         }
       }
     }

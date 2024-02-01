@@ -258,7 +258,7 @@ public:
 
     ObAsyncDispatchController *dispatcher = ObAsyncDispatchController::alloc(event_receiver, provider, mutex);
     if (NULL == dispatcher) {
-      _OB_LOG(WARN, "failed to allocate memory for async dispatcher");
+      _OB_LOG(WDIAG, "failed to allocate memory for async dispatcher");
     } else {
       event_receiver->set_dispatcher(dispatcher);
       provider->do_run(dispatcher);

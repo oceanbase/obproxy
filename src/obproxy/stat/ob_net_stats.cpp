@@ -33,7 +33,7 @@ int init_net_stats()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(net_rsb = g_stat_processor.allocate_raw_stat_block(NET_STAT_COUNT, XFH_NET_STATE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "g_stat_processor fail to allocate_raw_stat_block", K(ret));
+    PROXY_NET_LOG(EDIAG, "g_stat_processor fail to allocate_raw_stat_block", K(ret));
   } else {
     NET_REGISTER_RAW_STAT(net_rsb, RECT_PROCESS, "net_handler_run",
                           RECD_INT, NET_HANDLER_RUN, SYNC_SUM, RECP_NULL);

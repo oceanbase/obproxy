@@ -66,6 +66,22 @@ int64_t ObIpEndpoint::to_string(char *buf, const int64_t buf_len) const
   return pos;
 }
 
+int64_t ObIpEndpoint::to_plain_string(char *buf, const int64_t buf_len) const
+{
+  char ip_buff[MAX_IP_ADDR_LENGTH];
+  int64_t pos = 0;
+  if (is_ip6()) {
+    databuff_printf(buf, buf_len, pos, "[%s]:%u",
+                    ops_ip_ntop(*this, ip_buff, sizeof(ip_buff)),
+                    ops_ip_port_host_order(*this));
+  } else {
+    databuff_printf(buf, buf_len, pos, "%s:%u",
+                    ops_ip_ntop(*this, ip_buff, sizeof(ip_buff)),
+                    ops_ip_port_host_order(*this));
+  }
+  return pos;
+}
+
 const char *ops_ip_ntop(const struct sockaddr &addr, char *dst, int64_t size)
 {
   const char *zret = 0;

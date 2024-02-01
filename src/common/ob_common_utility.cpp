@@ -65,34 +65,34 @@ int check_stack_overflow(bool &is_overflow,
   void *stack_start = NULL;
   if (OB_UNLIKELY(0 != pthread_getattr_np(pthread_self(), &attr))) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(ERROR, "cannot get thread params", K(ret));
+    COMMON_LOG(EDIAG, "cannot get thread params", K(ret));
     is_overflow = true;
   } else if (OB_UNLIKELY(0 != pthread_attr_getstack(&attr, &stack_start, &stack_size))) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(ERROR, "cannot get thread statck params", K(ret));
+    COMMON_LOG(EDIAG, "cannot get thread statck params", K(ret));
     is_overflow = true;
   } else if (OB_UNLIKELY(0 != pthread_attr_destroy(&attr))) {
     is_overflow = true;
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(ERROR, "destroy thread attr failed", K(ret));
+    COMMON_LOG(EDIAG, "destroy thread attr failed", K(ret));
   } else {
     stack_eof = static_cast<char *>(stack_start) + stack_size;
     cur_stack = &stack_start;
     if (OB_UNLIKELY(static_cast<int64_t>(stack_size) < reserved_size)) { //stack size is the whole stack size
       ret = OB_ERR_UNEXPECTED;
       is_overflow = true;
-      COMMON_LOG(ERROR, "stack size smaller than reserved_stack_size ",
+      COMMON_LOG(EDIAG, "stack size smaller than reserved_stack_size ",
           K(ret), K(stack_size), K(reserved_size));
     } else if (OB_UNLIKELY(stack_eof < static_cast<char *>(cur_stack))) {
       is_overflow = true;
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(ERROR, "stack incorrect params", K(ret), KP(stack_eof), KP(cur_stack));
+      COMMON_LOG(EDIAG, "stack incorrect params", K(ret), KP(stack_eof), KP(cur_stack));
     } else {
       int64_t cur_stack_used = stack_eof - (static_cast<char *>(cur_stack));
       COMMON_LOG(DEBUG, "stack info ", K(cur_stack_used), K(stack_size), K(reserved_size));
       if (OB_UNLIKELY(cur_stack_used > (static_cast<int64_t>(stack_size) - reserved_size))) {
         is_overflow = true;
-        COMMON_LOG(WARN, "stack possible overflow", KP(cur_stack), KP(stack_eof),
+        COMMON_LOG(WDIAG, "stack possible overflow", KP(cur_stack), KP(stack_eof),
             KP(stack_start), K(stack_size), K(reserved_size), K(cur_stack_used));
       }
     }

@@ -43,7 +43,7 @@ int ObFieldHeapUtils::new_field_heap(const int64_t size, ObFieldHeap *&heap)
   int64_t alloc_size = 0;
   if (OB_UNLIKELY(size <= ObFieldHeap::get_hdr_size())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("size is too small", K(size), K(ObFieldHeap::get_hdr_size()), K(ret));
+    LOG_WDIAG("size is too small", K(size), K(ObFieldHeap::get_hdr_size()), K(ret));
   } else {
     alloc_size = get_alloc_size(size);
     new_space = op_fixed_mem_alloc(alloc_size);
@@ -52,10 +52,10 @@ int ObFieldHeapUtils::new_field_heap(const int64_t size, ObFieldHeap *&heap)
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(new_space)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc memory for ObFieldHeap", K(ret));
+      LOG_EDIAG("fail to alloc memory for ObFieldHeap", K(ret));
     } else if (OB_ISNULL(heap = new (new_space) ObFieldHeap(alloc_size))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to new ObFieldHeap", K(ret));
+      LOG_EDIAG("fail to new ObFieldHeap", K(ret));
     }
   }
   if (OB_FAIL(ret) && OB_LIKELY(NULL != new_space)) {
@@ -76,17 +76,17 @@ int ObFieldHeapUtils::new_field_str_heap(const int64_t requested_size, ObFieldSt
   int64_t alloc_size = 0;
   if (OB_UNLIKELY(requested_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(requested_size), K(ret));
+    LOG_WDIAG("invalid argument", K(requested_size), K(ret));
   } else {
     alloc_size = get_alloc_size(requested_size + sizeof(ObFieldStrHeap));
     new_space = op_fixed_mem_alloc(alloc_size);
 
     if (OB_ISNULL(new_space)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem for ObFieldStrHeap", K(alloc_size), K(requested_size), K(ret));
+      LOG_WDIAG("fail to alloc mem for ObFieldStrHeap", K(alloc_size), K(requested_size), K(ret));
     } else if (OB_ISNULL(str_heap = new (new_space) ObFieldStrHeap(alloc_size))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to new ObFieldHeap", K(ret));
+      LOG_EDIAG("fail to new ObFieldHeap", K(ret));
     }
   }
   if (OB_FAIL(ret) && OB_LIKELY(NULL != new_space)) {
@@ -102,10 +102,10 @@ int ObFieldHeapUtils::str_heap_move_str(ObFieldStrHeap &heap, const char *&str, 
   char *new_str = NULL;
   if (OB_ISNULL(str) || OB_UNLIKELY(str_len < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid str", K(str), K(str_len), K(ret));
+    LOG_WDIAG("invalid str", K(str), K(str_len), K(ret));
   } else if (OB_ISNULL(new_str = heap.allocate(str_len))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to allocate memory", K(str_len), K(ret));
+    LOG_WDIAG("fail to allocate memory", K(str_len), K(ret));
   } else {
     MEMCPY(new_str, str, str_len);
     str = new_str;
@@ -122,9 +122,9 @@ int ObFieldHeapUtils::str_heap_move_obj(ObFieldStrHeap &heap, ObObj &obj)
   int64_t pos = 0;
   if (OB_ISNULL(buf)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to allocate memory", K(obj), K(ret));
+    LOG_WDIAG("fail to allocate memory", K(obj), K(ret));
   } else if (OB_FAIL(obj.deep_copy(old_obj, buf, deep_copy_size, pos))) {
-    LOG_WARN("fail to deep copy obj", K(obj), K(ret));
+    LOG_WDIAG("fail to deep copy obj", K(obj), K(ret));
   }
   return ret;
 }
@@ -167,7 +167,7 @@ ObFieldHeap::ObFieldHeap(const int64_t size)
   size_ = size;
   free_size_ = size_ - get_hdr_size();
   if (free_size_ <= 0) {
-    LOG_ERROR("size is invalid", K_(size), K(get_hdr_size()));
+    LOG_EDIAG("size is invalid", K_(size), K(get_hdr_size()));
     writeable_ = false;
   } else {
     data_start_ = (reinterpret_cast<char *>(this)) + get_hdr_size();
@@ -201,7 +201,7 @@ inline int ObFieldHeap::alloc_field_heap(const int64_t size, ObFieldHeap *&heap)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObFieldHeapUtils::new_field_heap(size, heap))) {
-    LOG_ERROR("fail to alloc field heap", K(size), K(heap), K(ret));
+    LOG_EDIAG("fail to alloc field heap", K(size), K(heap), K(ret));
   } else {
     total_size_ += (NULL == heap ? 0 : heap->size_);
     LOG_DEBUG("alloc field_heap succ", KP(this), K(size), KP(heap), K_(total_size));
@@ -213,7 +213,7 @@ inline int ObFieldHeap::alloc_str_heap(const int64_t size, ObFieldStrHeap *&str_
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObFieldHeapUtils::new_field_str_heap(size, str_heap))) {
-    LOG_ERROR("fail to alloc str heap", K(size), K(str_heap), K(ret));
+    LOG_EDIAG("fail to alloc str heap", K(size), K(str_heap), K(ret));
   } else {
     total_size_ += (NULL == str_heap ? 0 : str_heap->get_heap_size());
     LOG_DEBUG("alloc str_heap succ", KP(this), K(size), KP(str_heap));
@@ -237,7 +237,7 @@ inline void ObFieldHeap::free_str_heap()
   }
   total_size_ -= free_size;
   if (OB_UNLIKELY(total_size_ < 0)) {
-    LOG_ERROR("total_size should not less than 0, unexpected!!", K_(total_size));
+    LOG_EDIAG("total_size should not less than 0, unexpected!!", K_(total_size));
   }
   dirty_string_space_ = 0;
   LOG_DEBUG("free str_heap succ", KP(this), K_(total_size), K(free_size));
@@ -251,10 +251,10 @@ int ObFieldHeap::allocate_block(int64_t nbytes, void *&obj)
   nbytes = round(nbytes, HEAP_PRT_SIZE);
   if (OB_UNLIKELY(!writeable_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("field heap is not inited, not writeable so far", K_(writeable),  K(ret));
+    LOG_WDIAG("field heap is not inited, not writeable so far", K_(writeable),  K(ret));
   } else if (nbytes > get_max_alloc_size()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("requested size is too big", K(nbytes), K(get_max_alloc_size()), K(ret));
+    LOG_WDIAG("requested size is too big", K(nbytes), K(get_max_alloc_size()), K(ret));
   } else {
     ObFieldHeap *heap = this;
     bool found = false;
@@ -268,7 +268,7 @@ int ObFieldHeap::allocate_block(int64_t nbytes, void *&obj)
         // allocate our next pointer heap twice as large as this one so
         // number of pointer heaps is O(log n)  with regard to number of bytes allocated
         if (OB_FAIL(alloc_field_heap(heap->size_ * 2, heap->next_))) {
-          LOG_ERROR("fail to new ObFieldHeap", K(ret));
+          LOG_EDIAG("fail to new ObFieldHeap", K(ret));
         }
       }
       heap = heap->next_;
@@ -282,10 +282,10 @@ int ObFieldHeap::deallocate_block(ObFieldHeader *obj)
   int ret = OB_SUCCESS;
   if (!writeable_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("field heap is not inited, not writable so far", K(ret));
+    LOG_WDIAG("field heap is not inited, not writable so far", K(ret));
   } else if (OB_ISNULL(obj)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(obj), K(ret));
+    LOG_WDIAG("invalid argument", K(obj), K(ret));
   } else {
     obj->type_ = HEAP_OBJ_EMPTY;
   }
@@ -300,11 +300,11 @@ int ObFieldHeap::duplicate_str(const char *in_str, const uint16_t in_len,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(in_str) || OB_UNLIKELY(0 == in_len)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument fail to allocate str", K(in_str), K(in_len), K(ret));
+    LOG_WDIAG("invalid argument fail to allocate str", K(in_str), K(in_len), K(ret));
   } else {
     char *new_str = NULL;
     if (OB_FAIL(allocate_str(static_cast<int64_t>(in_len), new_str))) {
-      LOG_WARN("fail to allocate str", K(in_str), K(in_len), K(ret));
+      LOG_WDIAG("fail to allocate str", K(in_str), K(in_len), K(ret));
     } else {
       MEMCPY(new_str, in_str, in_len);
       out_str = new_str;
@@ -321,13 +321,13 @@ int ObFieldHeap::duplicate_obj(const ObObj &src_obj, ObObj &dest_obj)
   char *buf = NULL;
   if (deep_copy_size > 0) {
     if (OB_FAIL(allocate_str(deep_copy_size, buf))) {
-      LOG_WARN("fail to allocate str", K(deep_copy_size), K(ret));
+      LOG_WDIAG("fail to allocate str", K(deep_copy_size), K(ret));
     }
   }
   if (OB_SUCC(ret)) {
     int64_t pos = 0;
     if (OB_FAIL(dest_obj.deep_copy(src_obj, buf, deep_copy_size, pos))) {
-      LOG_WARN("fail to deep copy obj", K(src_obj), K(dest_obj), K(ret));
+      LOG_WDIAG("fail to deep copy obj", K(src_obj), K(dest_obj), K(ret));
     }
   }
   return ret;
@@ -340,13 +340,13 @@ int ObFieldHeap::duplicate_str_and_obj(const char *in_str, const uint16_t in_len
   int ret = OB_SUCCESS;
   if (OB_ISNULL(in_str) || OB_UNLIKELY(0 == in_len)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument fail to allocate str", K(in_str), K(in_len), K(ret));
+    LOG_WDIAG("invalid argument fail to allocate str", K(in_str), K(in_len), K(ret));
   } else {
     int64_t deep_copy_size = src_obj.get_deep_copy_size();
     int64_t alloc_len = deep_copy_size + in_len;
     char *buf = NULL;
     if (OB_FAIL(allocate_str(alloc_len, buf))) {
-      LOG_WARN("fail to allocate str", K(alloc_len), K(ret));
+      LOG_WDIAG("fail to allocate str", K(alloc_len), K(ret));
     } else {
       // copy str
       MEMCPY(buf, in_str, in_len);
@@ -357,7 +357,7 @@ int ObFieldHeap::duplicate_str_and_obj(const char *in_str, const uint16_t in_len
       buf += in_len;
       int64_t pos = 0;
       if (OB_FAIL(dest_obj.deep_copy(src_obj, buf, deep_copy_size, pos))) {
-        LOG_WARN("fail to deep copy obj", K(src_obj), K(dest_obj), K(ret));
+        LOG_WDIAG("fail to deep copy obj", K(src_obj), K(dest_obj), K(ret));
       }
     }
   }
@@ -395,14 +395,14 @@ int ObFieldHeap::allocate_str(const int64_t requested_size, char *&buf)
     //read_write_heap_ is NULL when first allocate str
     ObFieldStrHeap *heap_ptr = NULL;
     if (OB_FAIL(alloc_str_heap(requested_size, heap_ptr))) {
-      LOG_ERROR("fail to new ObFieldStrHeap", K(ret));
+      LOG_EDIAG("fail to new ObFieldStrHeap", K(ret));
     } else {
       read_write_heap_ = heap_ptr;
     }
   } else if (dirty_string_space_ >= MAX_FREED_STR_SPACE) {
     //coalesce string heap, do defragmentation
     if (OB_FAIL(reform_str_heaps(requested_size))) {
-      LOG_WARN("fail to coalesce str heaps", K(requested_size), K(ret));
+      LOG_WDIAG("fail to coalesce str heaps", K(requested_size), K(ret));
     }
   } else if (NULL == (buf = read_write_heap_->allocate(requested_size))) {
     //the free space of the read_write_heap_ is not enough, first move read_write_heap_ to read_only
@@ -410,12 +410,12 @@ int ObFieldHeap::allocate_str(const int64_t requested_size, char *&buf)
     if (OB_FAIL(demote_rw_str_heap())) {
       //fail to demote,then defragment
       if (OB_FAIL(reform_str_heaps(requested_size))) {
-        LOG_WARN("fail to coalesce str heaps", K(requested_size), K(ret));
+        LOG_WDIAG("fail to coalesce str heaps", K(requested_size), K(ret));
       }
     } else {
       ObFieldStrHeap *heap_ptr = NULL;
       if (OB_FAIL(alloc_str_heap(requested_size, heap_ptr))) {
-        LOG_ERROR("fail to new ObFieldStrHeap", K(ret));
+        LOG_EDIAG("fail to new ObFieldStrHeap", K(ret));
       } else {
         read_write_heap_ = heap_ptr;
       }
@@ -425,7 +425,7 @@ int ObFieldHeap::allocate_str(const int64_t requested_size, char *&buf)
   if (OB_SUCC(ret) && NULL == buf) {
     if (OB_ISNULL(buf = read_write_heap_->allocate(requested_size))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to alloc when should succ", K(requested_size), K(ret));
+      LOG_EDIAG("fail to alloc when should succ", K(requested_size), K(ret));
     }
   }
   return ret;
@@ -436,10 +436,10 @@ int ObFieldHeap::demote_rw_str_heap()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!writeable_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("field heap is not inited, not writable so far", K(ret));
+    LOG_WDIAG("field heap is not inited, not writable so far", K(ret));
   } else if (OB_ISNULL(read_write_heap_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("read_write_heap is NULL", K(ret));
+    LOG_WDIAG("read_write_heap is NULL", K(ret));
   } else {
     // First, see if we have any open slots for read
     // only heaps
@@ -462,22 +462,22 @@ int ObFieldHeap::reform_str_heaps(int64_t incoming_size)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!writeable_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("field heap is not inited, not writable so far", K(ret));
+    LOG_WDIAG("field heap is not inited, not writable so far", K(ret));
   } else if (OB_UNLIKELY(incoming_size < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("incoming_size should not smaller than 0", K(incoming_size), K(ret));
+    LOG_WDIAG("incoming_size should not smaller than 0", K(incoming_size), K(ret));
   } else {
     int64_t new_heap_size = incoming_size;
     LOG_DEBUG("need to reform rw str heap", K(incoming_size));
 
     ObFieldStrHeap *new_heap = NULL;
     if (OB_FAIL(required_space_for_evacuation(new_heap_size))) {
-      LOG_WARN("fail to compute space needed for evacuation", K(ret));
+      LOG_WDIAG("fail to compute space needed for evacuation", K(ret));
     } else if (OB_FAIL(alloc_str_heap(new_heap_size, new_heap))) {
-      LOG_WARN("fail to new ObFieldStrHeap", K(ret));
+      LOG_WDIAG("fail to new ObFieldStrHeap", K(ret));
     } else if (OB_FAIL(evacuate_from_str_heaps(new_heap))) {
       //will not come into this, the space is enough
-      LOG_ERROR("fail to evacuate_from_str_heaps", K(ret));
+      LOG_EDIAG("fail to evacuate_from_str_heaps", K(ret));
     } else {
       free_str_heap(); // free old str_heap
       read_write_heap_ = new_heap; // assign new str_heap
@@ -491,10 +491,10 @@ int ObFieldHeap::evacuate_from_str_heaps(ObFieldStrHeap *new_heap)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!writeable_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("field heap is not inited, not writable so far", K(ret));
+    LOG_WDIAG("field heap is not inited, not writable so far", K(ret));
   } else if (OB_ISNULL(new_heap)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("new_heap should not be NULL", K(ret));
+    LOG_WDIAG("new_heap should not be NULL", K(ret));
   } else {
     // Loop over the objects in heap and call the evacuation function in each one
     ObFieldHeap *heap = this;
@@ -509,27 +509,27 @@ int ObFieldHeap::evacuate_from_str_heaps(ObFieldStrHeap *new_heap)
         obj = reinterpret_cast<ObFieldHeader *>(data);
         if (OB_ISNULL(obj)) {
           ret = OB_BAD_NULL_ERROR;
-          LOG_WARN("data_start should not be NULL", K(ret));
+          LOG_WDIAG("data_start should not be NULL", K(ret));
         } else {
           switch (obj->type_) {
             case HEAP_OBJ_SYS_VAR_BLOCK : {
               sys_var = reinterpret_cast<ObSysVarFieldBlock *>(obj);
               if (OB_FAIL(sys_var->move_strings(new_heap))) {
-                LOG_ERROR("fail to move strings", K(*sys_var), K(ret));
+                LOG_EDIAG("fail to move strings", K(*sys_var), K(ret));
               }
               break;
             }
             case HEAP_OBJ_USER_VAR_BLOCK : {
               user_var = reinterpret_cast<ObUserVarFieldBlock *>(obj);
               if (OB_FAIL(user_var->move_strings(new_heap))) {
-                LOG_ERROR("fail to move strings", K(*user_var), K(ret));
+                LOG_EDIAG("fail to move strings", K(*user_var), K(ret));
               }
               break;
             }
             case HEAP_OBJ_STR_BLOCK : {
               str = reinterpret_cast<ObStrFieldBlock *>(obj);
               if (OB_FAIL(str->move_strings(new_heap))) {
-                LOG_ERROR("fail to move strings", K(*str), K(ret));
+                LOG_EDIAG("fail to move strings", K(*str), K(ret));
               }
               break;
             }
@@ -538,7 +538,7 @@ int ObFieldHeap::evacuate_from_str_heaps(ObFieldStrHeap *new_heap)
               break;
             default:
               ret = OB_ERR_UNEXPECTED;
-              LOG_ERROR("invalid ObFieldHeader", K(obj), K(ret));
+              LOG_EDIAG("invalid ObFieldHeader", K(obj), K(ret));
           }
           data += obj->length_;
         }
@@ -554,7 +554,7 @@ int ObFieldHeap::required_space_for_evacuation(int64_t &require_size)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!writeable_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("field heap is not inited, not writable so far", K(ret));
+    LOG_WDIAG("field heap is not inited, not writable so far", K(ret));
   } else {
     ObFieldHeap *heap = this;
     int64_t initial_size = require_size;
@@ -588,7 +588,7 @@ int ObFieldHeap::required_space_for_evacuation(int64_t &require_size)
             break;
           default:
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid ObFieldHeader type", K(obj), K(ret));
+            LOG_WDIAG("invalid ObFieldHeader type", K(obj), K(ret));
         }
         data += obj->length_;
       }

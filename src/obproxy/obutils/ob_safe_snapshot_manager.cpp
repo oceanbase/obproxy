@@ -36,11 +36,11 @@ int ObSafeSnapshotManager::add(const ObAddr &addr)
   int64_t random_priority = -1;
   // 1. random pick a priority in [0, next_priority_]
   if (OB_FAIL(ObRandomNumUtils::get_random_num(0, next_priority_, random_priority))) {
-    LOG_WARN("fail to get random number", K(ret));
+    LOG_WDIAG("fail to get random number", K(ret));
   } else {
     void *buf = op_fixed_mem_alloc(sizeof(ObSafeSnapshotEntry));
     if (OB_ISNULL(buf)) {
-      LOG_WARN("fail to alloc buf", K(ret));
+      LOG_WDIAG("fail to alloc buf", K(ret));
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       // 2. alloc and init new entry, assign it priority to the randome value
@@ -61,7 +61,7 @@ int ObSafeSnapshotManager::add(const ObAddr &addr)
       // 4. put the new entry into entry_map map
       ret = err_code_map(entry_map_.insert(addr, new_entry));
       if (OB_UNLIKELY(OB_ENTRY_EXIST == ret)) {
-        LOG_ERROR("new entry already exist, it should not happened", K(*new_entry), KPC(this));
+        LOG_EDIAG("new entry already exist, it should not happened", K(*new_entry), KPC(this));
         op_fixed_mem_free(new_entry, sizeof(ObSafeSnapshotEntry));
         buf = NULL;
         new_entry = NULL;

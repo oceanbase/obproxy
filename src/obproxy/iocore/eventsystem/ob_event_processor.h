@@ -390,7 +390,7 @@ inline int64_t ObEventProcessor::allocate(const int64_t size)
   static int64_t loss = start - offsetof(ObEThread, thread_private_);
 
   if (OB_UNLIKELY(size < 0)) {
-    PROXY_EVENT_LOG(ERROR, "invalid parameters", K(size));
+    PROXY_EVENT_LOG(EDIAG, "invalid parameters", K(size));
   } else {
     int64_t alloc_size = OB_ALIGN(size, 16);       // 16 byte alignment
     int64_t old = 0;
@@ -439,13 +439,13 @@ inline int ObEventProcessor::check_schedule_input(ObContinuation *cont,
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(cont)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(ERROR, "invalid parameters, ObContinuation is NULL", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "invalid parameters, ObContinuation is NULL", K(ret));
   } else if (OB_UNLIKELY(event_type >= MAX_EVENT_TYPES) || OB_UNLIKELY(event_type < ET_CALL)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(ERROR, "invalid parameters", K(event_type), K(ret));
+    PROXY_EVENT_LOG(EDIAG, "invalid parameters", K(event_type), K(ret));
   } else if (OB_UNLIKELY(0 == thread_count_for_type_[event_type])) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(ERROR, "threads count for this type is zero", K(event_type), K(ret));
+    PROXY_EVENT_LOG(EDIAG, "threads count for this type is zero", K(event_type), K(ret));
   } else {
     //do nothing
   }
@@ -459,12 +459,12 @@ inline ObEvent *ObEventProcessor::schedule_imm_signal(
   ObEvent *event = NULL;
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(check_schedule_input(cont, etype))) {
-    PROXY_EVENT_LOG(ERROR, "fail to check_schedule_input", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret));
   } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to alloc mem for schedule_imm_signal", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_imm_signal", K(ret));
   } else if (OB_FAIL(event->init(*cont, 0, 0))) {
-    PROXY_EVENT_LOG(WARN, "fail init ObEvent", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
   } else {
 #ifdef ENABLE_TIME_TRACE
     event->start_time_ = get_hrtime();
@@ -488,12 +488,12 @@ inline ObEvent *ObEventProcessor::schedule_imm(
   ObEvent *event = NULL;
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(check_schedule_input(cont, etype))) {
-    PROXY_EVENT_LOG(ERROR, "fail to check_schedule_input", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret));
   } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to alloc mem for schedule_imm", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_imm", K(ret));
   } else if (OB_FAIL(event->init(*cont, 0, 0))) {
-    PROXY_EVENT_LOG(WARN, "fail init ObEvent", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
   } else {
 #ifdef ENABLE_TIME_TRACE
     event->start_time_ = get_hrtime();
@@ -517,15 +517,15 @@ inline ObEvent *ObEventProcessor::schedule_at(
   ObEvent *event = NULL;
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(check_schedule_input(cont, etype))) {
-    PROXY_EVENT_LOG(ERROR, "fail to check_schedule_input", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret));
   } else if (OB_UNLIKELY(t <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(ERROR, "invalid parameters", K(t), K(ret));
+    PROXY_EVENT_LOG(EDIAG, "invalid parameters", K(t), K(ret));
   } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to alloc mem for schedule_at", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_at", K(ret));
   } else if (OB_FAIL(event->init(*cont, t, 0))) {
-    PROXY_EVENT_LOG(WARN, "fail init ObEvent", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
   } else {
     event->callback_event_ = callback_event;
     event->cookie_ = cookie;
@@ -547,13 +547,13 @@ inline ObEvent *ObEventProcessor::schedule_in(
   int ret = common::OB_SUCCESS;
 
   if (OB_FAIL(check_schedule_input(cont, etype))) {
-    PROXY_EVENT_LOG(ERROR, "fail to check_schedule_input", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret));
     // check_schedule_input had been printed
   } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to alloc mem for schedule_in", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_in", K(ret));
   } else if (OB_FAIL(event->init(*cont, get_hrtime() + t, 0))) {
-    PROXY_EVENT_LOG(WARN, "fail init ObEvent", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
   } else {
     event->callback_event_ = callback_event;
     event->cookie_ = cookie;
@@ -575,21 +575,21 @@ inline ObEvent *ObEventProcessor::schedule_every(
   int ret = common::OB_SUCCESS;
 
   if (OB_FAIL(check_schedule_input(cont, etype))) {
-    PROXY_EVENT_LOG(ERROR, "fail to check_schedule_input", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret));
   } else if (OB_UNLIKELY(0 == t)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_EVENT_LOG(ERROR, "invalid parameters", K(t), K(ret));
+    PROXY_EVENT_LOG(EDIAG, "invalid parameters", K(t), K(ret));
   } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to alloc mem for schedule_every", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_every", K(ret));
   } else {
     if (t < 0) {
       if (OB_FAIL(event->init(*cont, t, t))) {
-        PROXY_EVENT_LOG(WARN, "fail init ObEvent", K(ret));
+        PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
       }
     } else {
       if (OB_FAIL(event->init(*cont, get_hrtime() + t, t))) {
-        PROXY_EVENT_LOG(WARN, "fail init ObEvent", K(ret));
+        PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
       }
     }
   }
@@ -614,12 +614,12 @@ inline ObEvent *ObEventProcessor::prepare_schedule_imm(
   int ret = common::OB_SUCCESS;
 
   if (OB_FAIL(check_schedule_input(cont, etype))) {
-    PROXY_EVENT_LOG(ERROR, "fail to check_schedule_input", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret));
   } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_EVENT_LOG(ERROR, "fail to alloc mem for prepare_schedule_imm", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for prepare_schedule_imm", K(ret));
   } else if (OB_FAIL(event->init(*cont, 0, 0))) {
-    PROXY_EVENT_LOG(WARN, "fail init ObEvent", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
   } else {
 #ifdef ENABLE_TIME_TRACE
     event->start_time_ = get_hrtime();
@@ -645,7 +645,7 @@ inline ObEvent *ObEventProcessor::prepare_schedule_imm(
 inline void ObEventProcessor::do_schedule(ObEvent *event, const bool fast_signal)
 {
   if (OB_ISNULL(event)) {
-    PROXY_EVENT_LOG(ERROR, "invalid parameters, ObEvent is NULL");
+    PROXY_EVENT_LOG(EDIAG, "invalid parameters, ObEvent is NULL");
   } else {
     event->ethread_->event_queue_external_.enqueue(event, fast_signal);
   }

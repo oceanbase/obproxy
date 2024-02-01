@@ -85,23 +85,23 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
 
     while (OB_SUCC(ret) && local_analyze_reader_->read_avail()) {
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*local_analyze_reader_, result))) {
-        PROXY_API_LOG(ERROR, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
+        PROXY_API_LOG(EDIAG, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
       } else {
         if (ANALYZE_DONE == result.status_) {
           switch(resultset_state_) {
           case RESULTSET_HEADER :
             if (OB_FAIL(handle_resultset_header(local_analyze_reader_))) {
-              PROXY_API_LOG(ERROR, "handle resultset header failed", K(ret));
+              PROXY_API_LOG(EDIAG, "handle resultset header failed", K(ret));
             }
             break;
           case RESULTSET_FIELD :
             if (OB_FAIL(handle_resultset_field(local_analyze_reader_))) {
-              PROXY_API_LOG(ERROR, "handle resultset field", K(ret));
+              PROXY_API_LOG(EDIAG, "handle resultset field", K(ret));
             }
             break;
           case RESULTSET_EOF_FIRST :
             if (MYSQL_EOF_PACKET_TYPE != result.meta_.pkt_type_) {
-              PROXY_API_LOG(ERROR, "excepted EOF packet, but not", "type", result.meta_.pkt_type_, K(ret));
+              PROXY_API_LOG(EDIAG, "excepted EOF packet, but not", "type", result.meta_.pkt_type_, K(ret));
             } else {
               resultset_state_ = RESULTSET_ROW;
             }
@@ -110,7 +110,7 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
             if (MYSQL_EOF_PACKET_TYPE == result.meta_.pkt_type_) {
               reset();
             } else if (OB_FAIL(handle_resultset_row(local_analyze_reader_, sm_, field_types_, hava_cursor_, column_num_))) {
-              PROXY_API_LOG(ERROR, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+              PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
             }
             break;
           default :
@@ -119,7 +119,7 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
 
           if (OB_SUCC(ret)) {
             if (OB_FAIL(local_analyze_reader_->consume(result.meta_.pkt_len_))) {
-              PROXY_API_LOG(ERROR, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+              PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
             } else {
               write_size += result.meta_.pkt_len_;
             }
@@ -134,12 +134,12 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
     int64_t actual_size = 0;
     if (write_size != (actual_size = produce(local_reader_, write_size))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(ERROR, "fail to produce", "expected size", write_size,
+      PROXY_API_LOG(EDIAG, "fail to produce", "expected size", write_size,
                     "actual size", actual_size, K(ret));
     } else if (write_size == local_reader_->read_avail() && OB_FAIL(local_analyze_reader_->consume_all())) {
-      PROXY_API_LOG(ERROR, "fail to consume all local analyze reader", K(ret));
+      PROXY_API_LOG(EDIAG, "fail to consume all local analyze reader", K(ret));
     } else if (OB_FAIL(local_reader_->consume(write_size))) {
-      PROXY_API_LOG(ERROR, "fail to consume local reader", K(write_size), K(ret));
+      PROXY_API_LOG(EDIAG, "fail to consume local reader", K(write_size), K(ret));
     }
   }
 
@@ -159,7 +159,7 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_header(event::ObIOBuf
 
   pkt_reader_.reset();
   if (OB_FAIL(pkt_reader_.get_packet(*reader, resultset_header))) {
-    PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
+    PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
   } else {
     column_num_ = resultset_header.get_field_count();
     resultset_state_ = RESULTSET_FIELD;
@@ -177,7 +177,7 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_field(event::ObIOBuff
 
   pkt_reader_.reset();
   if (OB_FAIL(pkt_reader_.get_packet(*reader, field_packet))) {
-    PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
+    PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
   } else {
     pkt_count_++;
     field_types_.push_back(field.type_);
@@ -206,7 +206,7 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_row(event::ObIOBuffer
     OMPKRow row_packet(sm_row);
     packet::ObMysqlPacketReader pkt_reader;
     if (OB_FAIL(pkt_reader.get_packet(*reader, row_packet))) {
-      PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
+      PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
     } else {
       const char *start = row_packet.get_cdata();
       const char *pos = start;
@@ -237,17 +237,17 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_row(event::ObIOBuffer
             uint32_t client_cursor_id = client_session->inc_and_get_cursor_id();
             uint32_t server_cursor_id = 0;
             if (OB_FAIL(ObMysqlPacketUtil::get_uint4(pos, payload_len, server_cursor_id))) {
-              PROXY_API_LOG(WARN, "fail to get cursor id", K(i), K(ret));
+              PROXY_API_LOG(WDIAG, "fail to get cursor id", K(i), K(ret));
             } else if (OB_FAIL(add_cursor_id_pair(server_session, client_cursor_id, server_cursor_id))) {
-              PROXY_API_LOG(WARN, "fail to add cursor id parit", K(i), K(client_cursor_id), K(server_cursor_id), K(ret));
+              PROXY_API_LOG(WDIAG, "fail to add cursor id parit", K(i), K(client_cursor_id), K(server_cursor_id), K(ret));
             } else if (OB_FAIL(add_cursor_id_addr(client_session, client_cursor_id, server_session->get_netvc()->get_remote_addr()))) {
-              PROXY_API_LOG(WARN, "fail to add cursor id addr", K(i), K(client_cursor_id), K(ret));
+              PROXY_API_LOG(WDIAG, "fail to add cursor id addr", K(i), K(client_cursor_id), K(ret));
             } else {
               reader->replace(reinterpret_cast<const char*>(&client_cursor_id), sizeof(client_cursor_id),
                               MYSQL_NET_HEADER_LENGTH + (pos - 4 - start));
             }
           } else if (OB_FAIL(skip_field_value(pos, payload_len, field_types.at(i)))) {
-            PROXY_API_LOG(WARN, "fail to skip field value", K(i), K(ret));
+            PROXY_API_LOG(WDIAG, "fail to skip field value", K(i), K(ret));
           }
         }
       }
@@ -264,12 +264,12 @@ int ObMysqlResponseCursorTransformPlugin::add_cursor_id_pair(ObMysqlServerSessio
   ObServerSessionInfo &ss_info = server_session->get_session_info();
   ObCursorIdPair *cursor_id_pair = NULL;
   if (OB_FAIL(ObCursorIdPair::alloc_cursor_id_pair(client_cursor_id, server_cursor_id, cursor_id_pair))) {
-    PROXY_API_LOG(WARN, "fail to alloc cursor id pair", K(client_cursor_id), K(server_cursor_id), K(ret));
+    PROXY_API_LOG(WDIAG, "fail to alloc cursor id pair", K(client_cursor_id), K(server_cursor_id), K(ret));
   } else if (OB_ISNULL(cursor_id_pair)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(WARN, "cursor_id_pair is null", K(cursor_id_pair), K(ret));
+    PROXY_API_LOG(WDIAG, "cursor_id_pair is null", K(cursor_id_pair), K(ret));
   } else if (OB_FAIL(ss_info.add_cursor_id_pair(cursor_id_pair))) {
-    PROXY_API_LOG(WARN, "fail to add cursor_id_pair", KPC(cursor_id_pair), K(ret));
+    PROXY_API_LOG(WDIAG, "fail to add cursor_id_pair", KPC(cursor_id_pair), K(ret));
     cursor_id_pair->destroy();
   }
 
@@ -283,12 +283,12 @@ int ObMysqlResponseCursorTransformPlugin::add_cursor_id_addr(ObMysqlClientSessio
   ObClientSessionInfo &cs_info = client_session->get_session_info();
   ObCursorIdAddr *cursor_id_addr = NULL;
   if (OB_FAIL(ObCursorIdAddr::alloc_cursor_id_addr(client_cursor_id, addr, cursor_id_addr))) {
-    PROXY_API_LOG(WARN, "fail to alloc cursor id addr", K(client_cursor_id), K(ret));
+    PROXY_API_LOG(WDIAG, "fail to alloc cursor id addr", K(client_cursor_id), K(ret));
   } else if (OB_ISNULL(cursor_id_addr)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(WARN, "cursor_id_addr is null", K(cursor_id_addr), K(ret));
+    PROXY_API_LOG(WDIAG, "cursor_id_addr is null", K(cursor_id_addr), K(ret));
   } else if (OB_FAIL(cs_info.add_cursor_id_addr(cursor_id_addr))) {
-    PROXY_API_LOG(WARN, "fail to add cursor_id_addr", KPC(cursor_id_addr), K(ret));
+    PROXY_API_LOG(WDIAG, "fail to add cursor_id_addr", KPC(cursor_id_addr), K(ret));
     cursor_id_addr->destroy();
   }
 
@@ -300,7 +300,7 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_API_LOG(WARN, "invalid input value", K(ret));
+    PROXY_API_LOG(WDIAG, "invalid input value", K(ret));
   } else {
     switch (field_type) {
       case OB_MYSQL_TYPE_NULL:
@@ -362,16 +362,18 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
       case OB_MYSQL_TYPE_OB_RAW:
       case OB_MYSQL_TYPE_STRING:
       case OB_MYSQL_TYPE_VARCHAR:
+      case MYSQL_TYPE_OB_NCHAR:
+      case MYSQL_TYPE_OB_NVARCHAR2:
       case OB_MYSQL_TYPE_VAR_STRING:
       case OB_MYSQL_TYPE_OB_UROWID:
       case OB_MYSQL_TYPE_DECIMAL:
       case OB_MYSQL_TYPE_NEWDECIMAL: {
         uint64_t length = 0;
         if (OB_FAIL(ObMysqlPacketUtil::get_length(data, buf_len, length))) {
-          PROXY_API_LOG(WARN, "decode varchar field value failed", K(buf_len), K(ret));
+          PROXY_API_LOG(WDIAG, "decode varchar field value failed", K(buf_len), K(ret));
         } else if (buf_len < length) {
           ret = OB_SIZE_OVERFLOW;
-          PROXY_API_LOG(WARN, "data buf size is not enough", K(length), K(buf_len), K(ret));
+          PROXY_API_LOG(WDIAG, "data buf size is not enough", K(length), K(buf_len), K(ret));
         } else {
           data += length;
           buf_len -= length;
@@ -381,7 +383,7 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
       case OB_MYSQL_TYPE_NOT_DEFINED:
       case OB_MYSQL_TYPE_COMPLEX: {
         ret = OB_ERR_ILLEGAL_TYPE;
-        PROXY_API_LOG(WARN, "illegal mysql type, we will set param with null", K(field_type), K(ret));
+        PROXY_API_LOG(WDIAG, "illegal mysql type, we will set param with null", K(field_type), K(ret));
         break;
       }
     }

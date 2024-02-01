@@ -76,14 +76,14 @@ int ObProxyConnNumCheckCont::main_handler(int event, void *data)
   case CONN_NUM_CHECK_ENTRY_START_EVENT: {
     pending_action_ = NULL;
     if (OB_FAIL(handle_conn_num_check())) {
-      LOG_WARN("fail to handle_conn_num_check", K(ret));
+      LOG_WDIAG("fail to handle_conn_num_check", K(ret));
     }
     break;
   }
   case CONN_NUM_CHECK_ENTRY_DESTROY_EVENT: {
     pending_action_ = NULL;
     if (OB_FAIL(handle_detroy_self())) {
-      LOG_WARN("fail to handle_detroy_self", K(ret));
+      LOG_WDIAG("fail to handle_detroy_self", K(ret));
     } else {
       terminate_ = true;
     }
@@ -91,15 +91,15 @@ int ObProxyConnNumCheckCont::main_handler(int event, void *data)
   }
   default: {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unknown event", K(event), K(data), K(ret));
+    LOG_WDIAG("unknown event", K(event), K(data), K(ret));
     break;
   }
   };
   if (!terminate_) {
     if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel_pending_action", K(schema_key_.dbkey_), K(ret));
+    LOG_WDIAG("fail to cancel_pending_action", K(schema_key_.dbkey_), K(ret));
     } else if (OB_FAIL(schedule_check_conn_num_cont())) {
-      LOG_WARN("fail to schedule_check_conn_num_cont", K(schema_key_.dbkey_), K(ret));
+      LOG_WDIAG("fail to schedule_check_conn_num_cont", K(schema_key_.dbkey_), K(ret));
     }
   }
   if (terminate_ && (1 == reentrancy_count_)) {
@@ -108,7 +108,7 @@ int ObProxyConnNumCheckCont::main_handler(int event, void *data)
   } else {
     --reentrancy_count_;
     if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-      LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count));
+      LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count));
     }
   }
   return ret_event;
@@ -120,7 +120,7 @@ int ObProxyConnNumCheckCont::handle_one_schema_key_num_check()
     get_global_session_manager().acquire_scheme_server_addr_info(schema_key_);
   if (OB_ISNULL(schema_server_addr_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("should not null here", K(schema_key_.dbkey_));
+    LOG_WDIAG("should not null here", K(schema_key_.dbkey_));
   } else if (schema_key_.logic_tenant_name_.config_string_.empty() ||
     schema_key_.logic_tenant_name_.config_string_.compare(DEFAULT_LOGIC_TENANT_NAME) == 0) {
     LOG_DEBUG("not logic tenant", K(schema_key_));
@@ -134,11 +134,11 @@ int ObProxyConnNumCheckCont::handle_one_schema_key_num_check()
            schema_server_addr_info->server_addr_map_.begin(); spot != last; ++spot) {
       ObServerAddrInfo* addr_info = &(*spot);
       if (OB_ISNULL(addr_info)) {
-        LOG_WARN("addr info is null, invalid", K(schema_key_.dbkey_));
+        LOG_WDIAG("addr info is null, invalid", K(schema_key_.dbkey_));
         continue;
       }
       if (addr_info->reach_max_fail_count()) {
-        LOG_WARN("reach_max_fail count, will remove it now", K(addr_info->addr_));
+        LOG_WDIAG("reach_max_fail count, will remove it now", K(addr_info->addr_));
         schema_server_addr_info->remove_server_addr_if_exist(addr_info->addr_);
         continue;
       }
@@ -151,7 +151,7 @@ int ObProxyConnNumCheckCont::handle_one_schema_key_num_check()
         if (TYPE_SHARD_CONNECTOR == schema_key_.get_connector_type()) {
           SchemaKeyConnInfo* schema_key_info = op_alloc(SchemaKeyConnInfo);
           if (OB_ISNULL(schema_key_info)) {
-            LOG_WARN("alloc SchemaKeyConnInfo failed", K(schema_key_.dbkey_));
+            LOG_WDIAG("alloc SchemaKeyConnInfo failed", K(schema_key_.dbkey_));
             continue;
           }
           schema_key_info->schema_key_ = schema_key_;
@@ -208,27 +208,27 @@ int ObProxyConnNumCheckCont::schedule_check_conn_num_cont(bool imm)
   if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
     terminate_ = true;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending action should be null here", K_(pending_action), K(ret));
   } else {
     int64_t delay_us = 0;
     if (imm) {
       // must be done in work thread
       if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL, CONN_NUM_CHECK_ENTRY_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule_check_conn_num event", K(ret));
+        LOG_WDIAG("fail to schedule_check_conn_num event", K(ret));
       }
     } else {
       delay_us = ObRandomNumUtils::get_random_half_to_full(refresh_interval_us_);
       if (OB_UNLIKELY(delay_us <= 0)) {
         ret = OB_INNER_STAT_ERROR;
-        LOG_WARN("delay must greater than zero", K(delay_us), K(ret));
+        LOG_WDIAG("delay must greater than zero", K(delay_us), K(ret));
       } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(
           this, HRTIME_USECONDS(delay_us), CONN_NUM_CHECK_ENTRY_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule numcheck cont", K(delay_us), K(ret));
+        LOG_WDIAG("fail to schedule numcheck cont", K(delay_us), K(ret));
       }
     }
   }

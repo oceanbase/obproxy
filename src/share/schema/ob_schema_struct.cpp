@@ -229,26 +229,26 @@ int ObSysParam::init(const uint64_t tenant_id,
   int64_t pos = 0;
   if (OB_INVALID == tenant_id || OB_UNLIKELY(name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("tenant id is invalid or some variable is null", K(name), K(ret));
+    LOG_WDIAG("tenant id is invalid or some variable is null", K(name), K(ret));
   } else if (OB_FAIL(databuff_printf(name_, OB_MAX_SYS_PARAM_NAME_LENGTH, pos, "%.*s", name.length(),
                                     name.ptr()))) {
-    LOG_WARN("failed to print name", K(name), K(ret));
+    LOG_WDIAG("failed to print name", K(name), K(ret));
   } else if (FALSE_IT(pos = 0)) {
   } else if (OB_FAIL(databuff_printf(value_, OB_MAX_SYS_PARAM_VALUE_LENGTH, pos, "%.*s", value.length(),
                                     value.ptr()))) {
-    LOG_WARN("failed to print value", K(value), K(ret));
+    LOG_WDIAG("failed to print value", K(value), K(ret));
   } else if (FALSE_IT(pos = 0)) {
   } else if (OB_FAIL(databuff_printf(min_val_, OB_MAX_SYS_PARAM_VALUE_LENGTH, pos, "%.*s", min_val.length(),
                                     min_val.ptr()))) {
-    LOG_WARN("failed to print min_val", K(min_val), K(ret));
+    LOG_WDIAG("failed to print min_val", K(min_val), K(ret));
   } else if (FALSE_IT(pos = 0)) {
   } else if (OB_FAIL(databuff_printf(max_val_, OB_MAX_SYS_PARAM_VALUE_LENGTH, pos, "%.*s", max_val.length(),
                                     max_val.ptr()))) {
-    LOG_WARN("failed to print max_val", K(max_val), K(ret));
+    LOG_WDIAG("failed to print max_val", K(max_val), K(ret));
   } else if (FALSE_IT(pos = 0)) {
   } else if (OB_FAIL(databuff_printf(info_, OB_MAX_SYS_PARAM_INFO_LENGTH, pos, "%.*s", info.length(),
                                     info.ptr()))) {
-    LOG_WARN("failed to print info", K(info), K(ret));
+    LOG_WDIAG("failed to print info", K(info), K(ret));
   } else {/*do nothing*/}
   return ret;
 }
@@ -307,7 +307,7 @@ void *ObSchema::alloc(int64_t size)
   void *ret = NULL;
   if (NULL == allocator_) {
     if (NULL == (allocator_ = OB_NEW(ObArenaAllocator, ObModIds::OB_SCHEMA_OB_SCHEMA_ARENA, ObModIds::OB_SCHEMA_OB_SCHEMA_ARENA))) {
-      LOG_WARN("Fail to new allocator.");
+      LOG_WDIAG("Fail to new allocator.");
     } else {
       is_inner_allocator_ = true;
       ret = allocator_->alloc(size);
@@ -334,7 +334,7 @@ int ObSchema::string_array2str(const common::ObIArray<common::ObString> &string_
   int ret = OB_SUCCESS;
   if (OB_ISNULL(str) || buf_size <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(str), K(buf_size));
+    LOG_WDIAG("invalid argument", K(str), K(buf_size));
   } else {
     MEMSET(str, 0, static_cast<uint32_t>(buf_size));
     int64_t nwrite = 0;
@@ -344,7 +344,7 @@ int ObSchema::string_array2str(const common::ObIArray<common::ObString> &string_
           "%s%s", to_cstring(string_array.at(i)), (i != string_array.count() - 1) ? ";" : "");
       if (n <= 0 || n >= buf_size - nwrite) {
         ret = OB_BUF_NOT_ENOUGH;
-        LOG_WARN("snprintf failed", K(ret));
+        LOG_WDIAG("snprintf failed", K(ret));
       } else {
         nwrite += n;
       }
@@ -364,7 +364,7 @@ int ObSchema::str2string_array(const char *str,
     item_str = strtok_r((NULL == item_str ? const_cast<char *>(str) : NULL), ";", &save_ptr);
     if (NULL != item_str) {
       if (OB_FAIL(string_array.push_back(ObString::make_string(item_str)))) {
-        LOG_WARN("push_back failed", K(ret));
+        LOG_WDIAG("push_back failed", K(ret));
       }
     } else {
       break;
@@ -380,15 +380,15 @@ int ObSchema::deep_copy_str(const char *src, ObString &dest)
 
   if (OB_SUCCESS != error_ret_) {
     ret = error_ret_;
-    LOG_WARN("There has error in this schema, ", K(ret));
+    LOG_WDIAG("There has error in this schema, ", K(ret));
   } else if (OB_ISNULL(src)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("The src is NULL, ", K(ret));
+    LOG_WDIAG("The src is NULL, ", K(ret));
   } else {
     int64_t len = strlen(src) + 1;
     if (NULL == (buf = static_cast<char*>(alloc(len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("Fail to allocate memory, ", K(len), K(ret));
+      LOG_WDIAG("Fail to allocate memory, ", K(len), K(ret));
     } else {
       MEMCPY(buf, src, len-1);
       buf[len-1] = '\0';
@@ -406,13 +406,13 @@ int ObSchema::deep_copy_str(const ObString &src, ObString &dest)
 
   if (OB_SUCCESS != error_ret_) {
     ret = error_ret_;
-    LOG_WARN("There has error in this schema, ", K(ret));
+    LOG_WDIAG("There has error in this schema, ", K(ret));
   } else {
     if (src.length() > 0) {
       int64_t len = src.length() + 1;
       if (NULL == (buf = static_cast<char*>(alloc(len)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("Fail to allocate memory, ", K(len), K(ret));
+        LOG_WDIAG("Fail to allocate memory, ", K(len), K(ret));
       } else {
         MEMCPY(buf, src.ptr(), len-1);
         buf[len - 1] = '\0';
@@ -435,14 +435,14 @@ int ObSchema::deep_copy_obj(const ObObj &src, ObObj &dest)
 
   if (OB_SUCCESS != error_ret_) {
     ret = error_ret_;
-    LOG_WARN("There has error in this schema, ", K(ret));
+    LOG_WDIAG("There has error in this schema, ", K(ret));
   } else {
     if (size > 0) {
       if (NULL == (buf = static_cast<char*>(alloc(size)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("Fail to allocate memory, ", K(size), K(ret));
+        LOG_WDIAG("Fail to allocate memory, ", K(size), K(ret));
       } else if (OB_FAIL(dest.deep_copy(src, buf, size, pos))){
-        LOG_WARN("Fail to deep copy obj, ", K(ret));
+        LOG_WDIAG("Fail to deep copy obj, ", K(ret));
       }
     } else {
       dest = src;
@@ -466,15 +466,15 @@ int ObSchema::deep_copy_string_array(const ObIArray<ObString> &src_array,
     // do nothing
   } else if (NULL == (buf = alloc(alloc_size))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("alloc failed", K(alloc_size), K(ret));
+    LOG_WDIAG("alloc failed", K(alloc_size), K(ret));
   } else {
     dst_array.init(src_array.count(), static_cast<ObString *>(buf));
     for (int64_t i = 0; OB_SUCC(ret) && i < src_array.count(); ++i) {
       ObString str;
       if (OB_FAIL(deep_copy_str(src_array.at(i), str))) {
-        LOG_WARN("deep_copy_str failed", K(ret));
+        LOG_WDIAG("deep_copy_str failed", K(ret));
       } else if (OB_FAIL(dst_array.push_back(str))) {
-        LOG_WARN("push_back failed", K(ret));
+        LOG_WDIAG("push_back failed", K(ret));
         // free memory avoid memory leak
         for (int64_t j = 0; j < dst_array.count(); ++j) {
           free(dst_array.at(j).ptr());
@@ -502,7 +502,7 @@ int ObSchema::add_string_to_array(const ObString &str,
     alloc_size = extend_cnt * static_cast<int64_t>(sizeof(ObString));
     if (NULL == (buf = alloc(alloc_size))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("alloc failed", K(alloc_size), K(ret));
+      LOG_WDIAG("alloc failed", K(alloc_size), K(ret));
     } else {
       str_array.init(extend_cnt, static_cast<ObString *>(buf));
     }
@@ -511,19 +511,19 @@ int ObSchema::add_string_to_array(const ObString &str,
   if (OB_SUCC(ret)) {
     ObString temp_str;
     if (OB_FAIL(deep_copy_str(str, temp_str))) {
-      LOG_WARN("deep_copy_str failed", K(ret));
+      LOG_WDIAG("deep_copy_str failed", K(ret));
     } else {
       // if full, extend it
       if (str_array.get_array_size() == str_array.count()) {
         alloc_size = (str_array.count() + extend_cnt) * static_cast<int64_t>(sizeof(ObString));
         if (NULL == (buf = alloc(alloc_size))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("alloc failed", K(alloc_size), K(ret));
+          LOG_WDIAG("alloc failed", K(alloc_size), K(ret));
         } else {
           ObArrayHelper<ObString> new_array(
               str_array.count() + extend_cnt, static_cast<ObString *>(buf));
           if (OB_FAIL(new_array.assign(str_array))) {
-            LOG_WARN("assign failed", K(ret));
+            LOG_WDIAG("assign failed", K(ret));
           } else {
             free(str_array.get_base_address());
             str_array = new_array;
@@ -535,7 +535,7 @@ int ObSchema::add_string_to_array(const ObString &str,
       }
       if (OB_SUCC(ret)) {
         if (OB_FAIL(str_array.push_back(temp_str))) {
-          LOG_WARN("push_back failed", K(ret));
+          LOG_WDIAG("push_back failed", K(ret));
           free(temp_str.ptr());
         }
       }
@@ -552,13 +552,13 @@ int ObSchema::serialize_string_array(char *buf, const int64_t buf_len, int64_t &
   const int64_t count = str_array.count();
   if (OB_ISNULL(buf) || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("buf should not be null", K(buf), K(buf_len), K(ret));
+    LOG_WDIAG("buf should not be null", K(buf), K(buf_len), K(ret));
   } else if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, count))) {
-    LOG_WARN("serialize count failed", K(ret));
+    LOG_WDIAG("serialize count failed", K(ret));
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < str_array.count(); ++i) {
       if (OB_FAIL(str_array.at(i).serialize(buf, buf_len, pos))) {
-        LOG_WARN("serialize string failed", K(ret));
+        LOG_WDIAG("serialize string failed", K(ret));
       }
     }
   }
@@ -577,9 +577,9 @@ int ObSchema::deserialize_string_array(const char *buf, const int64_t data_len, 
   str_array.reset();
   if (OB_ISNULL(buf) || data_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("buf should not be null", K(buf), K(data_len), K(ret));
+    LOG_WDIAG("buf should not be null", K(buf), K(data_len), K(ret));
   } else if (OB_FAIL(serialization::decode_vi64(buf, data_len, pos, &count))) {
-    LOG_WARN("deserialize count failed", K(ret));
+    LOG_WDIAG("deserialize count failed", K(ret));
   } else if (0 == count){
     //do nothing
   } else {
@@ -587,18 +587,18 @@ int ObSchema::deserialize_string_array(const char *buf, const int64_t data_len, 
     const int64_t alloc_size = count * static_cast<int64_t>(sizeof(ObString));
     if (NULL == (array_buf = alloc(alloc_size))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("alloc memory failed", K(alloc_size), K(ret));
+      LOG_WDIAG("alloc memory failed", K(alloc_size), K(ret));
     } else {
       str_array.init(count, static_cast<ObString *>(array_buf));
       for (int64_t i = 0; OB_SUCC(ret) && i < count; ++i) {
         ObString str;
         ObString copy_str;
         if (OB_FAIL(str.deserialize(buf, data_len, pos))) {
-          LOG_WARN("string deserialize failed", K(ret));
+          LOG_WDIAG("string deserialize failed", K(ret));
         } else if (OB_FAIL(deep_copy_str(str, copy_str))) {
-          LOG_WARN("deep_copy_str failed", K(ret));
+          LOG_WDIAG("deep_copy_str failed", K(ret));
         } else if (OB_FAIL(str_array.push_back(copy_str))) {
-          LOG_WARN("push_back failed", K(ret));
+          LOG_WDIAG("push_back failed", K(ret));
         }
       }
     }
@@ -660,7 +660,7 @@ common::ObCollationType ObSchema::get_cs_type_with_cmp_mode(const ObNameCaseMode
   } else if (OB_ORIGIN_AND_SENSITIVE == mode){
     cs_type = common::CS_TYPE_UTF8MB4_BIN;
   } else {
-    SHARE_SCHEMA_LOG(ERROR, "invalid ObNameCaseMode value", K(mode));
+    SHARE_SCHEMA_LOG(EDIAG, "invalid ObNameCaseMode value", K(mode));
   }
   return cs_type;
 }
@@ -707,13 +707,13 @@ ObTenantSchema& ObTenantSchema::operator =(const ObTenantSchema &src_schema)
     set_name_case_mode(src_schema.get_name_case_mode());
     set_rewrite_merge_version(src_schema.get_rewrite_merge_version());
     if (OB_FAIL(set_tenant_name(src_schema.tenant_name_))) {
-      LOG_WARN("set_tenant_name failed", K(ret));
+      LOG_WDIAG("set_tenant_name failed", K(ret));
     } else if (OB_FAIL(set_zone_list(src_schema.zone_list_))) {
-      LOG_WARN("set_zone_list failed", K(ret));
+      LOG_WDIAG("set_zone_list failed", K(ret));
     } else if (OB_FAIL(set_primary_zone(src_schema.primary_zone_))) {
-      LOG_WARN("set_primary_zone failed", K(ret));
+      LOG_WDIAG("set_primary_zone failed", K(ret));
     } else if (OB_FAIL(set_comment(src_schema.comment_))) {
-      LOG_WARN("set_comment failed", K(ret));
+      LOG_WDIAG("set_comment failed", K(ret));
     }
 
     if (OB_FAIL(ret)) {
@@ -768,9 +768,9 @@ OB_DEF_SERIALIZE(ObTenantSchema)
               comment_, charset_type_, collation_type_,
               name_case_mode_, read_only_, rewrite_merge_version_);
   if (!OB_SUCC(ret)) {
-    LOG_WARN("func_SERIALIZE failed", K(ret));
+    LOG_WDIAG("func_SERIALIZE failed", K(ret));
   } else if (OB_FAIL(serialize_string_array(buf, buf_len, pos, zone_list_))) {
-    LOG_WARN("serialize_string_array failed", K(ret));
+    LOG_WDIAG("serialize_string_array failed", K(ret));
   }
 
   LOG_INFO("serialize schema",
@@ -788,15 +788,15 @@ OB_DEF_DESERIALIZE(ObTenantSchema)
               primary_zone_, locked_, comment_, charset_type_, collation_type_,
               name_case_mode_, read_only_, rewrite_merge_version_);
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data", K(ret));
+    LOG_WDIAG("Fail to deserialize data", K(ret));
   } else if (OB_FAIL(set_tenant_name(tenant_name_))) {
-    LOG_WARN("set_tenant_name failed", K(ret));
+    LOG_WDIAG("set_tenant_name failed", K(ret));
   } else if (OB_FAIL(set_primary_zone(primary_zone_))) {
-    LOG_WARN("set_primary_zone failed", K(ret));
+    LOG_WDIAG("set_primary_zone failed", K(ret));
   } else if (OB_FAIL(set_comment(comment_))) {
-    LOG_WARN("set_comment failed", K(ret));
+    LOG_WDIAG("set_comment failed", K(ret));
   } else if (OB_FAIL(deserialize_string_array(buf, data_len, pos, zone_list_))) {
-    LOG_WARN("deserialize_string_array failed", K(ret));
+    LOG_WDIAG("deserialize_string_array failed", K(ret));
   }
   return ret;
 }
@@ -856,15 +856,15 @@ ObDatabaseSchema &ObDatabaseSchema::operator =(const ObDatabaseSchema &src_schem
     set_default_tablegroup_id(src_schema.default_tablegroup_id_);
 
     if (OB_FAIL(set_database_name(src_schema.database_name_))) {
-      LOG_WARN("set_tenant_name failed", K(ret));
+      LOG_WDIAG("set_tenant_name failed", K(ret));
     } else if (OB_FAIL(set_zone_list(src_schema.zone_list_))) {
-      LOG_WARN("set_zone_list failed", K(ret));
+      LOG_WDIAG("set_zone_list failed", K(ret));
     } else if (OB_FAIL(set_primary_zone(src_schema.primary_zone_))) {
-      LOG_WARN("set_primary_zone failed", K(ret));
+      LOG_WDIAG("set_primary_zone failed", K(ret));
     } else if (OB_FAIL(set_comment(src_schema.comment_))) {
-      LOG_WARN("set_comment failed", K(ret));
+      LOG_WDIAG("set_comment failed", K(ret));
     } else if (OB_FAIL(set_default_tablegroup_name(src_schema.default_tablegroup_name_))) {
-      LOG_WARN("set_comment failed", K(ret));
+      LOG_WDIAG("set_comment failed", K(ret));
     }
 
     if (OB_FAIL(ret)) {
@@ -930,9 +930,9 @@ OB_DEF_SERIALIZE(ObDatabaseSchema)
               primary_zone_, comment_, charset_type_, collation_type_, name_case_mode_, read_only_,
               default_tablegroup_id_, default_tablegroup_name_);
   if (!OB_SUCC(ret)) {
-    LOG_WARN("func_SERIALIZE failed", K(ret));
+    LOG_WDIAG("func_SERIALIZE failed", K(ret));
   } else if (OB_FAIL(serialize_string_array(buf, buf_len, pos, zone_list_))) {
-    LOG_WARN("serialize_string_array failed", K(ret));
+    LOG_WDIAG("serialize_string_array failed", K(ret));
   }
   return ret;
 }
@@ -949,17 +949,17 @@ OB_DEF_DESERIALIZE(ObDatabaseSchema)
               primary_zone, comment, charset_type_, collation_type_, name_case_mode_, read_only_,
               default_tablegroup_id_, default_tablegroup_name);
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data", K(ret));
+    LOG_WDIAG("Fail to deserialize data", K(ret));
   } else if (OB_FAIL(set_database_name(database_name))) {
-    LOG_WARN("set_tenant_name failed", K(ret));
+    LOG_WDIAG("set_tenant_name failed", K(ret));
   } else if (OB_FAIL(set_primary_zone(primary_zone))) {
-    LOG_WARN("set_primary_zone failed", K(ret));
+    LOG_WDIAG("set_primary_zone failed", K(ret));
   } else if (OB_FAIL(set_comment(comment))) {
-    LOG_WARN("set_comment failed", K(ret));
+    LOG_WDIAG("set_comment failed", K(ret));
   } else if (OB_FAIL(set_default_tablegroup_name(default_tablegroup_name))) {
-    LOG_WARN("set_comment failed", K(ret));
+    LOG_WDIAG("set_comment failed", K(ret));
   } else if (OB_FAIL(deserialize_string_array(buf, data_len, pos, zone_list_))) {
-    LOG_WARN("deserialize_string_array failed", K(ret));
+    LOG_WDIAG("deserialize_string_array failed", K(ret));
   }
   return ret;
 }
@@ -1028,9 +1028,9 @@ ObTablegroupSchema &ObTablegroupSchema::operator =(const ObTablegroupSchema &src
     schema_version_ = src_schema.schema_version_;
 
     if (OB_FAIL(deep_copy_str(src_schema.tablegroup_name_, tablegroup_name_))) {
-      LOG_WARN("Fail to deep copy tablegroup name, ", K(ret));
+      LOG_WDIAG("Fail to deep copy tablegroup name, ", K(ret));
     } else if (OB_FAIL(deep_copy_str(src_schema.comment_, comment_))) {
-      LOG_WARN("Fail to deep copy comment, ", K(ret));
+      LOG_WDIAG("Fail to deep copy comment, ", K(ret));
     }
     if (OB_FAIL(ret)) {
       error_ret_ = ret;
@@ -1099,11 +1099,11 @@ OB_DEF_DESERIALIZE(ObTablegroupSchema)
       tablegroup_name, comment);
 
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data, ", K(ret));
+    LOG_WDIAG("Fail to deserialize data, ", K(ret));
   } else if (OB_FAIL(deep_copy_str(tablegroup_name, tablegroup_name_))) {
-    LOG_WARN("Fail to deep copy tablegroup name, ", K(ret));
+    LOG_WDIAG("Fail to deep copy tablegroup name, ", K(ret));
   } else if (OB_FAIL(deep_copy_str(comment, comment_))) {
-    LOG_WARN("Fail to deep copy comment, ", K(ret));
+    LOG_WDIAG("Fail to deep copy comment, ", K(ret));
   }
 
   return ret;
@@ -1155,7 +1155,7 @@ ObPartitionOption &ObPartitionOption::operator =(const ObPartitionOption &expr)
     part_num_ = expr.part_num_;
     part_func_type_ = expr.part_func_type_;
     if (OB_FAIL(deep_copy_str(expr.part_func_expr_, part_func_expr_))) {
-      LOG_WARN("Fail to deep copy part func expr, ", K(ret));
+      LOG_WDIAG("Fail to deep copy part func expr, ", K(ret));
     }
 
     if (OB_FAIL(ret)) {
@@ -1212,9 +1212,9 @@ OB_DEF_DESERIALIZE(ObPartitionOption)
   LST_DO_CODE(OB_UNIS_DECODE, part_func_type_, part_func_expr, part_num_);
 
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data, ", K(ret));
+    LOG_WDIAG("Fail to deserialize data, ", K(ret));
   } else if (OB_FAIL(deep_copy_str(part_func_expr, part_func_expr_))) {
-    LOG_WARN("Fail to deep copy part_func_expr, ", K(ret));
+    LOG_WDIAG("Fail to deep copy part_func_expr, ", K(ret));
   }
 
   return ret;
@@ -1269,7 +1269,7 @@ ObViewSchema &ObViewSchema::operator =(const ObViewSchema &src_schema)
     view_is_updatable_ = src_schema.view_is_updatable_;
 
     if (OB_FAIL(deep_copy_str(src_schema.view_definition_, view_definition_))) {
-      LOG_WARN("Fail to deep copy view definition, ", K(ret));
+      LOG_WDIAG("Fail to deep copy view definition, ", K(ret));
     }
 
     if (OB_FAIL(ret)) {
@@ -1337,9 +1337,9 @@ OB_DEF_DESERIALIZE(ObViewSchema)
               view_is_updatable_);
 
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data, ", K(ret));
+    LOG_WDIAG("Fail to deserialize data, ", K(ret));
   } else if (OB_FAIL(deep_copy_str(definition, view_definition_))) {
-    LOG_WARN("Fail to deep copy view definition, ", K(ret));
+    LOG_WDIAG("Fail to deep copy view definition, ", K(ret));
   }
   return ret;
 }
@@ -1511,13 +1511,13 @@ ObUserInfo& ObUserInfo::operator=(const ObUserInfo &other)
     locked_ = other.locked_;
 
     if (OB_FAIL(deep_copy_str(other.user_name_, user_name_))) {
-      LOG_WARN("Fail to deep copy user_name", K(ret));
+      LOG_WDIAG("Fail to deep copy user_name", K(ret));
     } else if (OB_FAIL(deep_copy_str(other.host_, host_))) {
-      LOG_WARN("Fail to deep copy host_name", K(ret));
+      LOG_WDIAG("Fail to deep copy host_name", K(ret));
     } else if (OB_FAIL(deep_copy_str(other.passwd_, passwd_))) {
-      LOG_WARN("Fail to deep copy passwd", K(ret));
+      LOG_WDIAG("Fail to deep copy passwd", K(ret));
     } else if (OB_FAIL(deep_copy_str(other.info_, info_))) {
-      LOG_WARN("Fail to deep copy info", K(ret));
+      LOG_WDIAG("Fail to deep copy info", K(ret));
     }
 
     if (OB_FAIL(ret)) {
@@ -1582,15 +1582,15 @@ OB_DEF_DESERIALIZE(ObUserInfo)
               locked_);
 
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data", K(ret));
+    LOG_WDIAG("Fail to deserialize data", K(ret));
   } else if (OB_FAIL(deep_copy_str(user_name, user_name_))) {
-    LOG_WARN("Fail to deep copy user_name", K(user_name), K(ret));
+    LOG_WDIAG("Fail to deep copy user_name", K(user_name), K(ret));
   } else if (OB_FAIL(deep_copy_str(host, host_))) {
-    LOG_WARN("Fail to deep copy host", K(host), K(ret));
+    LOG_WDIAG("Fail to deep copy host", K(host), K(ret));
   } else if (OB_FAIL(deep_copy_str(passwd, passwd_))) {
-    LOG_WARN("Fail to deep copy host", K(passwd), K(ret));
+    LOG_WDIAG("Fail to deep copy host", K(passwd), K(ret));
   } else if (OB_FAIL(deep_copy_str(info, info_))) {
-    LOG_WARN("Fail to deep copy host", K(passwd), K(ret));
+    LOG_WDIAG("Fail to deep copy host", K(passwd), K(ret));
   } else { }
   return ret;
 }
@@ -1618,7 +1618,7 @@ ObDBPriv& ObDBPriv::operator=(const ObDBPriv &other)
     sort_ = other.sort_;
 
     if (OB_FAIL(deep_copy_str(other.db_, db_))) {
-      LOG_WARN("Fail to deep copy db", K(ret));
+      LOG_WDIAG("Fail to deep copy db", K(ret));
     }
     if (OB_FAIL(ret)) {
       error_ret_ = ret;
@@ -1662,9 +1662,9 @@ OB_DEF_DESERIALIZE(ObDBPriv)
   BASE_DESER((, ObPriv));
   LST_DO_CODE(OB_UNIS_DECODE, db, sort_);
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data", K(ret));
+    LOG_WDIAG("Fail to deserialize data", K(ret));
   } else if (OB_FAIL(deep_copy_str(db, db_))) {
-    LOG_WARN("Fail to deep copy user_name", K(db), K(ret));
+    LOG_WDIAG("Fail to deep copy user_name", K(db), K(ret));
   } else {}
   return ret;
 }
@@ -1686,9 +1686,9 @@ ObTablePriv& ObTablePriv::operator=(const ObTablePriv &other)
     ObPriv::operator=(other);
 
     if (OB_FAIL(deep_copy_str(other.db_, db_))) {
-      LOG_WARN("Fail to deep copy db", K(ret));
+      LOG_WDIAG("Fail to deep copy db", K(ret));
     } else if (OB_FAIL(deep_copy_str(other.table_, table_))) {
-      LOG_WARN("Fail to deep copy table", K(ret));
+      LOG_WDIAG("Fail to deep copy table", K(ret));
     }
     if (OB_FAIL(ret)) {
       error_ret_ = ret;
@@ -1734,11 +1734,11 @@ OB_DEF_DESERIALIZE(ObTablePriv)
   BASE_DESER((, ObPriv));
   LST_DO_CODE(OB_UNIS_DECODE, db, table);
   if (!OB_SUCC(ret)) {
-    LOG_WARN("Fail to deserialize data", K(ret));
+    LOG_WDIAG("Fail to deserialize data", K(ret));
   } else if (OB_FAIL(deep_copy_str(db, db_))) {
-    LOG_WARN("Fail to deep copy user_name", K(db), K(ret));
+    LOG_WDIAG("Fail to deep copy user_name", K(db), K(ret));
   } else if (OB_FAIL(deep_copy_str(table, table_))) {
-    LOG_WARN("Fail to deep copy user_name", K(table), K(ret));
+    LOG_WDIAG("Fail to deep copy user_name", K(table), K(ret));
   } else {}
   return ret;
 }
@@ -1757,9 +1757,9 @@ int ObNeedPriv::deep_copy(const ObNeedPriv &other, common::ObIAllocator &allocat
   priv_set_ = other.priv_set_;
   is_sys_table_ = other.is_sys_table_;
   if (OB_FAIL(ob_write_string(allocator, other.db_, db_))) {
-    LOG_WARN("Fail to deep copy db", K_(db), K(ret));
+    LOG_WDIAG("Fail to deep copy db", K_(db), K(ret));
   } else if (OB_FAIL(ob_write_string(allocator, other.table_, table_))) {
-    LOG_WARN("Fail to deep copy table", K_(table), K(ret));
+    LOG_WDIAG("Fail to deep copy table", K_(table), K(ret));
   }
   return ret;
 }
@@ -1769,13 +1769,13 @@ int ObStmtNeedPrivs::deep_copy(const ObStmtNeedPrivs &other, common::ObIAllocato
   int ret = OB_SUCCESS;
   need_privs_.reset();
   if (OB_FAIL(need_privs_.reserve(other.need_privs_.count()))) {
-    LOG_WARN("fail to reserve need prives size", K(ret), K(other.need_privs_.count()));
+    LOG_WDIAG("fail to reserve need prives size", K(ret), K(other.need_privs_.count()));
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < other.need_privs_.count(); ++i) {
     const ObNeedPriv &priv_other = other.need_privs_.at(i);
     ObNeedPriv priv_new;
     if (OB_FAIL(priv_new.deep_copy(priv_other, allocator))) {
-      LOG_WARN("Fail to deep copy ObNeedPriv", K(priv_new), K(ret));
+      LOG_WDIAG("Fail to deep copy ObNeedPriv", K(priv_new), K(ret));
     } else {
       need_privs_.push_back(priv_new);
     }
@@ -1866,7 +1866,7 @@ const char *ob_mysql_table_type_str(ObTableType type)
       type_ptr = "TMP TABLE";
       break;
     default:
-      LOG_WARN("unkonw table type", K(type));
+      LOG_WDIAG("unkonw table type", K(type));
       break;
   }
   return type_ptr;
@@ -1874,7 +1874,7 @@ const char *ob_mysql_table_type_str(ObTableType type)
 
 ObTableType get_inner_table_type_by_id(const uint64_t tid) {
   if (!is_inner_table(tid)) {
-    LOG_WARN("tid is not inner table", K(tid));
+    LOG_WDIAG("tid is not inner table", K(tid));
   }
   ObTableType type = MAX_TABLE_TYPE;
   if (is_sys_table(tid)) {
@@ -1966,17 +1966,17 @@ ObOutlineInfo &ObOutlineInfo::operator=(const ObOutlineInfo &src_info)
     enabled_ = src_info.enabled_;
     format_ = src_info.format_;
     if (OB_FAIL(deep_copy_str(src_info.name_, name_))) {
-      LOG_WARN("Fail to deep copy name", K(ret));
+      LOG_WDIAG("Fail to deep copy name", K(ret));
     } else if (OB_FAIL(deep_copy_str(src_info.signature_, signature_))) {
-      LOG_WARN("Fail to deep copy signature", K(ret));
+      LOG_WDIAG("Fail to deep copy signature", K(ret));
     } else if (OB_FAIL(deep_copy_str(src_info.outline_content_, outline_content_))) {
-      LOG_WARN("Fail to deep copy outline_content", K(ret));
+      LOG_WDIAG("Fail to deep copy outline_content", K(ret));
     } else if (OB_FAIL(deep_copy_str(src_info.sql_text_, sql_text_))) {
-      LOG_WARN("Fail to deep copy sql_text", K(ret));
+      LOG_WDIAG("Fail to deep copy sql_text", K(ret));
     } else if (OB_FAIL(deep_copy_str(src_info.owner_, owner_))) {
-      LOG_WARN("Fail to deep copy sql_text", K(ret));
+      LOG_WDIAG("Fail to deep copy sql_text", K(ret));
     } else if (OB_FAIL(deep_copy_str(src_info.version_, version_))) {
-      LOG_WARN("Fail to deep copy sql_text", K(ret));
+      LOG_WDIAG("Fail to deep copy sql_text", K(ret));
     } else {/*do noghing*/}
     if (OB_FAIL(ret)) {
       error_ret_ = ret;
@@ -2072,19 +2072,19 @@ OB_DEF_DESERIALIZE(ObOutlineInfo)
       enabled_, format_);
 
   if (OB_FAIL(ret)) {
-    LOG_WARN("Fail to deserialize data", K(ret));
+    LOG_WDIAG("Fail to deserialize data", K(ret));
   } else if (OB_FAIL(deep_copy_str(name, name_))) {
-    LOG_WARN("Fail to deep copy outline name", K(ret));
+    LOG_WDIAG("Fail to deep copy outline name", K(ret));
   } else if (OB_FAIL(deep_copy_str(signature, signature_))) {
-    LOG_WARN("Fail to deep copy signature", K(ret));
+    LOG_WDIAG("Fail to deep copy signature", K(ret));
   } else if (OB_FAIL(deep_copy_str(outline_content, outline_content_))) {
-    LOG_WARN("Fail to deep copy outline_content", K(ret));
+    LOG_WDIAG("Fail to deep copy outline_content", K(ret));
   } else if (OB_FAIL(deep_copy_str(sql_text, sql_text_))) {
-    LOG_WARN("Fail to deep copy sql_text", K(ret));
+    LOG_WDIAG("Fail to deep copy sql_text", K(ret));
   } else if (OB_FAIL(deep_copy_str(owner, owner_))) {
-    LOG_WARN("Fail to deep copy sql_text", K(ret));
+    LOG_WDIAG("Fail to deep copy sql_text", K(ret));
   } else if (OB_FAIL(deep_copy_str(version, version_))) {
-    LOG_WARN("Fail to deep copy sql_text", K(ret));
+    LOG_WDIAG("Fail to deep copy sql_text", K(ret));
   } else {/*do nothing*/}
 
   return ret;

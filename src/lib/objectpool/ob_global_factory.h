@@ -65,7 +65,7 @@ inline ObTCBlock *ObTCBlock::new_block(int32_t obj_size, int64_t mod_id)
   ObMemAttr memattr(OB_SERVER_TENANT_ID, mod_id);
   void *ptr = ob_malloc(BLOCK_SIZE, memattr);
   if (OB_ISNULL(ptr)) {
-    LIB_LOG(WARN, "no memory");
+    LIB_LOG(WDIAG, "no memory");
   } else {
     blk_ret = new(ptr) ObTCBlock(obj_size);
   }
@@ -75,7 +75,7 @@ inline ObTCBlock *ObTCBlock::new_block(int32_t obj_size, int64_t mod_id)
 inline void ObTCBlock::delete_block(ObTCBlock *blk)
 {
   if (OB_ISNULL(blk) || OB_UNLIKELY(false == blk->can_delete())) {
-    LIB_LOG(ERROR, "block is NULL or block can not be deleted", K(blk));
+    LIB_LOG(EDIAG, "block is NULL or block can not be deleted", K(blk));
   } else {
     blk->~ObTCBlock();
     ob_free(blk);
@@ -86,7 +86,7 @@ inline int32_t ObTCBlock::get_batch_count_by_obj_size(int32_t obj_size)
 {
   // Checking the parameters here is just to hit the log
   if (OB_UNLIKELY(obj_size < 0)) {
-    LIB_LOG(ERROR, "obj_size < 0, is invalid");
+    LIB_LOG(EDIAG, "obj_size < 0, is invalid");
   } else {}
   int32_t batch_count = static_cast<int32_t>(BLOCK_SIZE) / obj_size;
   if (batch_count < 2) {
@@ -105,7 +105,7 @@ inline ObTCBlock *ObTCBlock::get_block_by_obj(void *obj)
 inline void ObTCBlock::freelist_push(void *ptr)
 {
   if (OB_ISNULL(ptr)) {
-    LIB_LOG(ERROR, "invalid argument, ptr is NULL");
+    LIB_LOG(EDIAG, "invalid argument, ptr is NULL");
   } else {
     FreeNode *node = reinterpret_cast<FreeNode *>(ptr);
     node->next_ = freelist_;
@@ -159,7 +159,7 @@ inline ObTCBlock::ObTCBlock(int32_t obj_size)
     freelist_push(ptr);
   }
   if (OB_UNLIKELY(0 == obj_count)) {
-    LIB_LOG(ERROR, "object too large", K(obj_size), K(aligned_obj_size));
+    LIB_LOG(EDIAG, "object too large", K(obj_size), K(aligned_obj_size));
   } else {}
 }
 
@@ -180,9 +180,9 @@ inline void *ObTCBlock::alloc()
 inline void ObTCBlock::free(void *ptr)
 {
   if (OB_ISNULL(ptr)) {
-    LIB_LOG(ERROR, "ptr is NULL");
+    LIB_LOG(EDIAG, "ptr is NULL");
   } else if (OB_UNLIKELY((char *)ptr - (char *)this >= BLOCK_SIZE)) {
-    LIB_LOG(ERROR, "size is larger than BLOCK_SIZE", K(ptr), K(this),
+    LIB_LOG(EDIAG, "size is larger than BLOCK_SIZE", K(ptr), K(this),
             K(((char *)ptr - (char *)this)), LITERAL_K(BLOCK_SIZE));
   } else {
     freelist_push(ptr);
@@ -237,7 +237,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(range.get_size() > num_to_move)) {
       ret = common::OB_ERR_UNEXPECTED;
-      LIB_LOG(ERROR, "range size is larger than number to move",
+      LIB_LOG(EDIAG, "range size is larger than number to move",
               K(range.get_size()), K(num_to_move));
     } else {
       ObRecursiveMutexGuard guard(lock_);
@@ -267,7 +267,7 @@ public:
             "nonempty_blocks_num", nonempty_blocks_.get_size());
     DLIST_FOREACH_NORET(blk, nonempty_blocks_) {
       if (OB_ISNULL(blk)) {
-        LIB_LOG(ERROR, "nonempty_block is NULL");
+        LIB_LOG(EDIAG, "nonempty_block is NULL");
       } else {
         const int32_t obj_size = blk->get_obj_size();
         LIB_LOG(INFO, "[GFACTORY_STAT] nonempty_block",
@@ -286,15 +286,15 @@ private:
     DLIST_REMOVE_ALL_NORET(ptr, range) {
       ObTCBlock *blk = NULL;
       if (OB_ISNULL(ptr)) {
-        LIB_LOG(ERROR, "obj ptr is NULL");
+        LIB_LOG(EDIAG, "obj ptr is NULL");
       } else if (OB_ISNULL(blk = ObTCBlock::get_block_by_obj(ptr))) {
-        LIB_LOG(ERROR, "block is NULL");
+        LIB_LOG(EDIAG, "block is NULL");
       } else {
         if (blk->is_empty()) {
           // move from empty list to nonempty list
           empty_blocks_.remove(blk);
           if (OB_UNLIKELY(false == nonempty_blocks_.add_last(blk))) {
-            LIB_LOG(ERROR, "fail to add block to nonempty_blocks_'s tail");
+            LIB_LOG(EDIAG, "fail to add block to nonempty_blocks_'s tail");
           }
         } else {}
         ptr->~T();
@@ -319,27 +319,27 @@ private:
         ObTCBlock *blk = ObTCBlock::new_block(obj_size, MODID);
         if (OB_ISNULL(blk)) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LIB_LOG(ERROR, "fail to alloc block", K(ret));
+          LIB_LOG(EDIAG, "fail to alloc block", K(ret));
         } else {
           void *ptr = blk->alloc();
           if (OB_ISNULL(ptr)) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LIB_LOG(ERROR, "fail to alloc memory from block", K(ret));
+            LIB_LOG(EDIAG, "fail to alloc memory from block", K(ret));
           } else {
             T *obj = creator(ptr);
             if (OB_UNLIKELY(false == range.add_first(obj))) {
               ret = OB_ERR_UNEXPECTED;
-              LIB_LOG(ERROR, "fail to add obj to range list head", K(ret));
+              LIB_LOG(EDIAG, "fail to add obj to range list head", K(ret));
             } else {
               if (blk->is_empty()) {
                 if (OB_UNLIKELY(false == empty_blocks_.add_last(blk))) {
                   ret = OB_ERR_UNEXPECTED;
-                  LIB_LOG(ERROR, "fail to add block to empty block list tail", K(ret));
+                  LIB_LOG(EDIAG, "fail to add block to empty block list tail", K(ret));
                 }
               } else {
                 if (OB_UNLIKELY(false == nonempty_blocks_.add_last(blk))) {
                   ret = OB_ERR_UNEXPECTED;
-                  LIB_LOG(ERROR, "fail to add block to nonempty block list tail", K(ret));
+                  LIB_LOG(EDIAG, "fail to add block to nonempty block list tail", K(ret));
                 }
               }
             }
@@ -349,23 +349,23 @@ private:
         ObTCBlock *blk = nonempty_blocks_.get_first();
         if (OB_ISNULL(blk)) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LIB_LOG(ERROR, "fail to alloc block", K(ret));
+          LIB_LOG(EDIAG, "fail to alloc block", K(ret));
         } else {
           void *ptr = blk->alloc();
           if (OB_ISNULL(ptr)) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LIB_LOG(ERROR, "fail to alloc memory from block", K(ret));
+            LIB_LOG(EDIAG, "fail to alloc memory from block", K(ret));
           } else {
             T *obj = creator(ptr);
             if (OB_UNLIKELY(false == range.add_first(obj))) {
               ret = OB_ERR_UNEXPECTED;
-              LIB_LOG(ERROR, "fail to add obj to range list head", K(ret));
+              LIB_LOG(EDIAG, "fail to add obj to range list head", K(ret));
             } else {
               if (blk->is_empty()) {
                 nonempty_blocks_.remove(blk);
                 if (OB_UNLIKELY(false == empty_blocks_.add_last(blk))) {
                   ret = OB_ERR_UNEXPECTED;
-                  LIB_LOG(ERROR, "fail to add block to empty block list tail", K(ret));
+                  LIB_LOG(EDIAG, "fail to add block to empty block list tail", K(ret));
                 }
               } else {}
             }
@@ -438,14 +438,14 @@ int ObGlobalFactory<T, MAX_CLASS_NUM, MODID>::register_class(int32_t type_id,
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(0 > type_id) || OB_UNLIKELY(type_id >= MAX_CLASS_NUM)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid type_id", K(ret), K(type_id), K(MAX_CLASS_NUM));
+    LIB_LOG(WDIAG, "invalid type_id", K(ret), K(type_id), K(MAX_CLASS_NUM));
   } else if (OB_ISNULL(creator) || OB_UNLIKELY(0 >= obj_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments", K(ret), K(creator), K(obj_size));
+    LIB_LOG(WDIAG, "invalid arguments", K(ret), K(creator), K(obj_size));
   } else if (OB_UNLIKELY(NULL != create_methods_[type_id])
              || OB_UNLIKELY(0 != obj_size_[type_id])) {
     ret = OB_INIT_TWICE;
-    LIB_LOG(WARN, "class already registered", K(ret), K(type_id));
+    LIB_LOG(WDIAG, "class already registered", K(ret), K(type_id));
   } else {
     create_methods_[type_id] = creator;
     obj_size_[type_id] = obj_size;
@@ -459,7 +459,7 @@ int ObGlobalFactory<T, MAX_CLASS_NUM, MODID>::init()
   int ret = common::OB_SUCCESS;
   for (int64_t type_id = 0; OB_SUCC(ret) && type_id < MAX_CLASS_NUM; ++type_id) {
     if (NULL == create_methods_[type_id]) {
-      //_OB_LOG(WARN, "class not registered, type_id=%d", type_id);
+      //_OB_LOG(WDIAG, "class not registered, type_id=%d", type_id);
     } else {
       batch_count_[type_id] = ObTCBlock::get_batch_count_by_obj_size(obj_size_[type_id]);
     }
@@ -476,7 +476,7 @@ ObGlobalFactory<T, MAX_CLASS_NUM, MODID> *ObGlobalFactory<T, MAX_CLASS_NUM, MODI
   if (OB_ISNULL(INSTANCE)) {
     INSTANCE = new(std::nothrow) self_t();
     if (OB_ISNULL(INSTANCE)) {
-      LIB_LOG(ERROR, "failed to create singleton instance");
+      LIB_LOG(EDIAG, "failed to create singleton instance");
     } else {}
   } else {}
   return INSTANCE;

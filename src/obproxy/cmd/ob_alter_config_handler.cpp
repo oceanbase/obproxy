@@ -75,7 +75,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     char passwd_staged1_buf[ENC_STRING_BUF_LEN];
     ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
     if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(value_string, passwd_string))) {
-      LOG_WARN("encrypt_passwd_to_stage1 failed", K(ret));
+      LOG_WDIAG("encrypt_passwd_to_stage1 failed", K(ret));
     } else {
       MEMCPY(value_str_, passwd_staged1_buf + 1, 40);
       value_str_[40] = '\0';
@@ -94,25 +94,54 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
   //1. get old config value
   } else if (OB_ISNULL(old_value = static_cast<char *>(op_fixed_mem_alloc(OB_MAX_CONFIG_VALUE_LEN)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for old_value", "size", OB_MAX_CONFIG_VALUE_LEN, K(ret));
+    LOG_WDIAG("fail to alloc mem for old_value", "size", OB_MAX_CONFIG_VALUE_LEN, K(ret));
   } else if (OB_FAIL(get_global_proxy_config().get_old_config_value(key_string, old_value, OB_MAX_CONFIG_VALUE_LEN))) {
-    LOG_WARN("fail to get old config value", K(key_string), K(ret));
+    LOG_WDIAG("fail to get old config value", K(key_string), K(ret));
 
   //2. update config value
   } else if (key_string == get_global_proxy_config().app_name.name()) {
     ret = OB_NOT_SUPPORTED;
     WARN_ICMD("app_name can only modified when restart", K(old_value), K(ret));
-  } else if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
-    WARN_ICMD("fail to update config", K(key_string), K(value_string), K(ret));
-  } else {
-    has_update_config = true;
-    DEBUG_ICMD("succ to update config", K(key_string), K(value_string), K(old_value));
+  } else if (key_string == get_global_proxy_config().client_session_id_version.name()) {
+    // check proxy_id operator
+    char *value_end = NULL;
+    int64_t cs_id_version = strtol(value_string.ptr(), &value_end, 10);
+    if ((value_end - value_str_) != value_string.length()) {
+      ret = OB_INVALID_ARGUMENT;
+      WARN_ICMD("fail to convert proxy_id to int", K(value_string), K(ret));
+    } else if (get_global_proxy_config().proxy_id.get_value() > CLIENT_SESSION_ID_V1_PROXY_ID_LIMIT  && cs_id_version == 1) {
+      ret = OB_PROXY_PROXY_ID_OVER_LIMIT;
+    }
+  } else if (key_string == get_global_proxy_config().proxy_id.name()) {
+    char *value_end = NULL;
+    int64_t proxy_id = strtol(value_string.ptr(), &value_end, 10);
+    if ((value_end - value_str_) != value_string.length()) {
+      ret = OB_INVALID_ARGUMENT;
+      WARN_ICMD("fail to convert proxy_id to int", K(value_string), K(ret));
+    } else if (get_global_proxy_config().client_session_id_version == 1 && proxy_id > CLIENT_SESSION_ID_V1_PROXY_ID_LIMIT) {
+      ret = OB_PROXY_PROXY_ID_OVER_LIMIT;
+    }
   }
+
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
+      WARN_ICMD("fail to update config", K(key_string), K(value_string), K(ret));
+    } else {
+      has_update_config = true;
+      DEBUG_ICMD("succ to update config", K(key_string), K(value_string), K(old_value));
+    }
+  }
+
+  #ifdef ERRSIM
+  if (key_string == get_global_proxy_config().error_inject.name() && OB_FAIL(get_global_proxy_config().parse_error_inject_config())) {
+    WARN_ICMD("fail to update error inject config and clear origin config", K(ret));
+  }
+  #endif
 
   //3. check config and dump it
   if (OB_SUCC(ret)) {
     if (OB_FAIL(get_global_proxy_config().check_proxy_serviceable())) {
-      LOG_WARN("fail to check proxy string_item config", K(ret));
+      LOG_WDIAG("fail to check proxy string_item config", K(ret));
     } else if (OB_FAIL(get_global_proxy_config().dump_config_to_local())) {
       WARN_ICMD("fail to dump_config_to_local", K(ret));
     } else {
@@ -132,7 +161,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
   // Global configuration items need to be synchronized to the proxy_config table
   if (OB_SUCC(ret) &&
       OB_FAIL(get_global_config_processor().store_global_proxy_config(key_string, value_string))) {
-    LOG_WARN("store proxy config failed", K(ret));
+    LOG_WDIAG("store proxy config failed", K(ret));
   }
 
   //5. rollback

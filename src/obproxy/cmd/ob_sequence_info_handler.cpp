@@ -91,7 +91,7 @@ int ObSequenceInfoHandler::handle_sequece_params()
   int ret = OB_SUCCESS;
   // conver to uppercase
   if (result_->select_fields_[0].seq_name_.length() >= MAX_SEQ_NAME_SIZE) {
-    LOG_WARN("seq_name too long, unsupported", K(result_->select_fields_[0].seq_name_));
+    LOG_WDIAG("seq_name too long, unsupported", K(result_->select_fields_[0].seq_name_));
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "seq name more than %d", MAX_SEQ_NAME_SIZE);
     ret = OB_ERR_UNEXPECTED;
   } else {
@@ -128,13 +128,13 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
   if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
     ret = OB_ERR_UNEXPECTED;
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "get logic tenant name fail");
-    LOG_WARN("get_logic_tenant_name failed", K(sequence_sql_));
+    LOG_WDIAG("get_logic_tenant_name failed", K(sequence_sql_));
     return ret;
   }
   if (OB_FAIL(session_info.get_logic_database_name(logic_database_name))) {
     ret = OB_ERR_UNEXPECTED;
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "get logic databse name fail");
-    LOG_WARN("get_logic_database_name failed", K(sequence_sql_));
+    LOG_WDIAG("get_logic_database_name failed", K(sequence_sql_));
     return ret;
   }
   LOG_DEBUG("logic info is ", K(logic_tenant_name), K(logic_database_name));
@@ -148,7 +148,7 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
   if (OB_ISNULL(logic_db_info)) {
     ret = OB_ERR_UNEXPECTED;
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "get logic dbinfo failed");
-    LOG_WARN("logic_db_info not exist", K(logic_tenant_name), K(logic_database_name), K(sequence_sql_));
+    LOG_WDIAG("logic_db_info not exist", K(logic_tenant_name), K(logic_database_name), K(sequence_sql_));
     return ret;
   }
   ObShardConnector* shard_conn = NULL;
@@ -159,7 +159,7 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
   ObSequenceParam sequence_param;
   if (OB_FAIL(logic_db_info->get_sequence_param(sequence_param))) {
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "get_sequence_param failed");
-    LOG_WARN("fail to get_sequence_param", K(ret));
+    LOG_WDIAG("fail to get_sequence_param", K(ret));
     return ret;
   }
   param_.min_value_ = sequence_param.min_value_;
@@ -170,7 +170,7 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
   param_.tnt_col_.set_value(sequence_param.tnt_col_);
   if (sequence_table_name.empty()) {
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "sequence_table_name is empty");
-    LOG_ERROR("sequence table name is invalid", K(sequence_sql_));
+    LOG_EDIAG("sequence table name is invalid", K(sequence_sql_));
     ret = OB_ERR_UNEXPECTED;
   } else if (!param_.tnt_id_.empty() && param_.tnt_col_.empty()) {
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "tnt_col is empty while tnt_id used");
@@ -188,10 +188,10 @@ int ObSequenceInfoHandler::handle_shard_sequence_params()
                      &table_id,
                      &es_id))) {
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "Sequence table rule calculate error");
-    LOG_WARN("get_real_info failed", K(ret), K(sequence_sql_));
+    LOG_WDIAG("get_real_info failed", K(ret), K(sequence_sql_));
   } else if (OB_ISNULL(shard_conn)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid shard_conn", K(sequence_sql_));
+    LOG_WDIAG("invalid shard_conn", K(sequence_sql_));
   } else {
     LOG_DEBUG("shard_conn is ", K(*shard_conn));
     param_.shard_conn_ = shard_conn;
@@ -327,7 +327,7 @@ int ObSequenceInfoHandler::process_sequence_info(void* data)
     WARN_ICMD("it should not happened, this_ethread is null", K(ret));
   } else if (tmp_seq_info->errno_ != 0) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("err happend in cont", K(tmp_seq_info->errno_ ), K(tmp_seq_info->err_msg_ ));
+    LOG_WDIAG("err happend in cont", K(tmp_seq_info->errno_ ), K(tmp_seq_info->err_msg_ ));
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "%.*s", tmp_seq_info->err_msg_.config_string_.length(),
              tmp_seq_info->err_msg_.config_string_.ptr());
   } else if (param_.need_value_ && !tmp_seq_info->is_valid()) {
@@ -341,7 +341,7 @@ int ObSequenceInfoHandler::process_sequence_info(void* data)
           (process_seq_pfn)&ObSequenceInfoHandler::process_sequence_info, action);
     } else {
       snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "fail after retry, maybe step too small");
-      LOG_WARN("fail after retry ", K(param_.seq_id_), K(retry_time_));
+      LOG_WDIAG("fail after retry ", K(param_.seq_id_), K(retry_time_));
       ret = OB_SEQUENCE_ERROR;
     }
   } else {
@@ -430,7 +430,7 @@ int ObSequenceInfoHandler::dump_header()
     MACRO_FOR_COLUMN_NAME_ARRAY("tableid", obmysql::OB_MYSQL_TYPE_LONGLONG);
     MACRO_FOR_COLUMN_NAME_ARRAY("eid", obmysql::OB_MYSQL_TYPE_LONGLONG);
     MACRO_FOR_COLUMN_NAME_ARRAY("elasticid", obmysql::OB_MYSQL_TYPE_LONGLONG);
-    LOG_ERROR("invalid seq_field:", K(i), K(result_->select_fields_[i].seq_field_));
+    LOG_EDIAG("invalid seq_field:", K(i), K(result_->select_fields_[i].seq_field_));
     return OB_ERR_UNEXPECTED;
   }
   if (OB_FAIL(encode_header(cname, file_type, result_->select_fields_size_))) {
@@ -468,7 +468,7 @@ int ObSequenceInfoHandler::dump_body()
                || result_->select_fields_[i].seq_field_.case_compare("elasticid") == 0) {
       cells[i].set_int(eid_);
     } else {
-      LOG_ERROR("invalid seq_field:", K(result_->select_fields_[i].seq_field_));
+      LOG_EDIAG("invalid seq_field:", K(result_->select_fields_[i].seq_field_));
     }
   }
   if (OB_FAIL(encode_row_packet(row))) {

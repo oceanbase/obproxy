@@ -123,7 +123,8 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     ip_listen_mode_(0),
     local_bound_ipv6_ip_(),
     read_stale_retry_interval_(0),
-    ob_max_read_stale_time_(0)
+    ob_max_read_stale_time_(0),
+    client_session_id_version_(1)
 {
   proxy_idc_name_[0] = '\0';
 }
@@ -230,7 +231,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
     server_routing_mode_ = proxy_config.get_routing_mode(proxy_config.server_routing_mode);
     if (!proxy_config.is_routing_mode_available(server_routing_mode_) || OB_MAX_ROUTING_MODE == server_routing_mode_) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("routing mode is not available", K(server_routing_mode_),
+      LOG_WDIAG("routing mode is not available", K(server_routing_mode_),
                "server_routing_mode", proxy_config.server_routing_mode.str(), K(ret));
     }
   }
@@ -241,7 +242,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
     const int64_t len = static_cast<int64_t>(strlen(proxy_config.proxy_idc_name.str()));
     if (len < 0 || len > OB_PROXY_MAX_IDC_NAME_LENGTH) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("proxy_idc_name's length is over size", K(len),
+      LOG_WDIAG("proxy_idc_name's length is over size", K(len),
                "proxy_idc_name", proxy_config.proxy_idc_name.str(), K(ret));
     } else {
       memcpy(proxy_idc_name_, proxy_config.proxy_idc_name.str(), len);
@@ -254,7 +255,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
     const int64_t len = static_cast<int64_t>(strlen(proxy_config.proxy_primary_zone_name.str()));
     if (len < 0 || len > MAX_ZONE_LENGTH) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("proxy_primary_zone_name's length is over size", K(len),
+      LOG_WDIAG("proxy_primary_zone_name's length is over size", K(len),
                "proxy_primary_zone_name", proxy_config.proxy_primary_zone_name.str(), K(ret));
     } else {
       memcpy(proxy_primary_zone_name_, proxy_config.proxy_primary_zone_name.str(), len);
@@ -267,10 +268,10 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
     obsys::CRLockGuard guard(proxy_config.rwlock_);
     if(OB_UNLIKELY(0 != local_bound_ip_.load(proxy_config.local_bound_ip))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to assign ip value", K(proxy_config.local_bound_ip.str()), K(ret));
+      LOG_WDIAG("fail to assign ip value", K(proxy_config.local_bound_ip.str()), K(ret));
     } else if (OB_UNLIKELY(0 != local_bound_ipv6_ip_.load(proxy_config.local_bound_ipv6_ip))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to assign ipv6 value", K(proxy_config.local_bound_ipv6_ip.str()), K(ret));
+      LOG_WDIAG("fail to assign ipv6 value", K(proxy_config.local_bound_ipv6_ip.str()), K(ret));
     }
   }
 
@@ -293,9 +294,9 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
         if (!addr_str.empty()) {
           if (OB_FAIL(ops_ip_pton(addr_str, tmp_addr))) {
             ret = OB_BAD_ADDRESS;
-            LOG_WARN("fail to assign server addr", K(addr_str), K(ret));
+            LOG_WDIAG("fail to assign server addr", K(addr_str), K(ret));
           } else if (OB_FAIL(test_server_addr_.push_back(tmp_addr))) {
-            LOG_WARN("fail push back addr", K(addr_str), K(ret));
+            LOG_WDIAG("fail push back addr", K(addr_str), K(ret));
           } else {
             LOG_DEBUG("load addr succ", K(tmp_addr));
           }
@@ -378,13 +379,13 @@ int ObMysqlConfigProcessor::reconfigure(const ObProxyConfig &proxy_config)
   ObMysqlConfigParams *params = new (std::nothrow) ObMysqlConfigParams();
   if (OB_ISNULL(params)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for ObMysqlConfigParams", K(ret));
+    LOG_WDIAG("fail to alloc mem for ObMysqlConfigParams", K(ret));
   } else {
     params->inc_ref();
     if (OB_FAIL(params->assign_config(proxy_config))) {
-      LOG_WARN("fail to assign_config", K(ret));
+      LOG_WDIAG("fail to assign_config", K(ret));
     } else if (OB_FAIL(set(params))) {// add new config params
-      LOG_WARN("fail to set new config params", K(ret));
+      LOG_WDIAG("fail to set new config params", K(ret));
     } else  {
       LOG_DEBUG("succ to set new config params", KPC(params));
     }
@@ -394,7 +395,7 @@ int ObMysqlConfigProcessor::reconfigure(const ObProxyConfig &proxy_config)
   }
 
   if (OB_FAIL(performance_params.assign_config(proxy_config))) {
-    LOG_WARN("fail to set new performance params", K(ret));
+    LOG_WDIAG("fail to set new performance params", K(ret));
   } else {
     performance_params.is_inited_ = true;
   }
@@ -408,7 +409,7 @@ ObMysqlConfigParams *ObMysqlConfigProcessor::acquire()
   ObMysqlConfigParams *params = NULL;
   obsys::CRLockGuard lock(params_lock_);
   if (OB_ISNULL(params = params_)) {
-    LOG_ERROR("current params_ is NULL");
+    LOG_EDIAG("current params_ is NULL");
   } else {
     params->inc_ref();
   }
@@ -421,7 +422,7 @@ int ObMysqlConfigProcessor::release(ObMysqlConfigParams *params)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(params)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("params is null", K(params), K(ret));
+    LOG_WDIAG("params is null", K(params), K(ret));
   } else {
     params->dec_ref();
   }
@@ -433,7 +434,7 @@ int ObMysqlConfigProcessor::set(ObMysqlConfigParams *params)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(params)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(params), K(ret));
+    LOG_WDIAG("invalid input value", K(params), K(ret));
   } else {
     // new objects *must* start with a zero refcount. The mysql config
     // processor holds it's own refcount. We should be the only

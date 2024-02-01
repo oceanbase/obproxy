@@ -169,7 +169,7 @@ inline int ObZoneStateInfo::set_zone_name(const ObString &zone_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(zone_name.empty()) || OB_UNLIKELY(zone_name.length() > MAX_ZONE_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(zone_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(zone_name), K(ret));
   } else {
     MEMCPY(zone_name_buf_, zone_name.ptr(), zone_name.length());
     zone_name_.assign_ptr(zone_name_buf_, zone_name.length());
@@ -182,7 +182,7 @@ inline int ObZoneStateInfo::set_region_name(const ObString &region_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(region_name.empty()) || OB_UNLIKELY(region_name.length() > MAX_REGION_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(region_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(region_name), K(ret));
   } else {
     MEMCPY(region_name_buf_, region_name.ptr(), region_name.length());
     region_name_.assign_ptr(region_name_buf_, region_name.length());
@@ -195,7 +195,7 @@ inline int ObZoneStateInfo::set_idc_name(const ObString &idc_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(idc_name.empty()) || OB_UNLIKELY(idc_name.length() > MAX_PROXY_IDC_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(idc_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(idc_name), K(ret));
   } else {
     MEMCPY(idc_name_buf_, idc_name.ptr(), idc_name.length());
     idc_name_.assign_ptr(idc_name_buf_, idc_name.length());
@@ -277,7 +277,7 @@ inline int ObServerStateInfo::add_addr(const char *ip, const int64_t port)
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(replica_.add_addr(ip, static_cast<int32_t>(port)))) {
-    PROXY_LOG(WARN, "fail to add addr", K(ip), K(port), K(ret));
+    PROXY_LOG(WDIAG, "fail to add addr", K(ip), K(port), K(ret));
   }
   return ret;
 }
@@ -328,7 +328,7 @@ inline int ObServerStateSimpleInfo::set_addr(const common::ObAddr &addr)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(!addr.is_valid())) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(addr), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(addr), K(ret));
   } else {
     addr_ = addr;
   }
@@ -349,7 +349,7 @@ inline int ObServerStateSimpleInfo::set_zone_name(const ObString &zone_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(zone_name.empty()) || OB_UNLIKELY(zone_name.length() > MAX_ZONE_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(zone_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(zone_name), K(ret));
   } else {
     MEMCPY(zone_name_buf_, zone_name.ptr(), zone_name.length());
     zone_name_.assign_ptr(zone_name_buf_, zone_name.length());
@@ -362,7 +362,7 @@ inline int ObServerStateSimpleInfo::set_region_name(const ObString &region_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(region_name.empty()) || OB_UNLIKELY(region_name.length() > MAX_REGION_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(region_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(region_name), K(ret));
   } else {
     MEMCPY(region_name_buf_, region_name.ptr(), region_name.length());
     region_name_.assign_ptr(region_name_buf_, region_name.length());
@@ -375,7 +375,7 @@ inline int ObServerStateSimpleInfo::set_idc_name(const ObString &idc_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(idc_name.empty()) || OB_UNLIKELY(idc_name.length() > MAX_PROXY_IDC_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(idc_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(idc_name), K(ret));
   } else {
     MEMCPY(idc_name_buf_, idc_name.ptr(), idc_name.length());
     idc_name_.assign_ptr(idc_name_buf_, idc_name.length());
@@ -467,7 +467,7 @@ int ObSysLdgInfo::set_tenant_name(const common::ObString &tenant_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(tenant_name.empty()) || OB_UNLIKELY(tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(tenant_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(tenant_name), K(ret));
   } else {
     MEMCPY(tenant_name_buf_, tenant_name.ptr(), tenant_name.length());
     tenant_name_.assign_ptr(tenant_name_buf_, tenant_name.length());
@@ -479,7 +479,7 @@ int ObSysLdgInfo::set_cluster_name(const common::ObString &cluster_name)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(cluster_name), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(cluster_name), K(ret));
   } else {
     MEMCPY(cluster_name_buf_, cluster_name.ptr(), cluster_name.length());
     cluster_name_.assign_ptr(cluster_name_buf_, cluster_name.length());
@@ -491,7 +491,7 @@ int ObSysLdgInfo::set_ldg_role(const common::ObString &ldg_role)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(ldg_role.empty()) || OB_UNLIKELY(ldg_role.length() > MAX_SYS_LDG_INFO_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(ldg_role), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(ldg_role), K(ret));
   } else {
     MEMCPY(ldg_role_buf_, ldg_role.ptr(), ldg_role.length());
     ldg_role_.assign_ptr(ldg_role_buf_, ldg_role.length());
@@ -503,7 +503,7 @@ int ObSysLdgInfo::set_ldg_status(const common::ObString &ldg_status)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(ldg_status.empty()) || OB_UNLIKELY(ldg_status.length() > MAX_SYS_LDG_INFO_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(ldg_status), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(ldg_status), K(ret));
   } else {
     MEMCPY(ldg_status_buf_, ldg_status.ptr(), ldg_status.length());
     ldg_status_.assign_ptr(ldg_status_buf_, ldg_status.length());

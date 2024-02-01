@@ -30,7 +30,7 @@ int ObVersion::fixed_length_encode(char *buf, const int64_t buf_len, int64_t &po
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_SUCCESS != (ret = serialization::encode_i64(buf, buf_len, new_pos, version_))) {
-    CLOG_LOG(WARN, "serialize error", "buf", buf, "buf_len", buf_len, "pos", pos, "version_", version_);
+    CLOG_LOG(WDIAG, "serialize error", "buf", buf, "buf_len", buf_len, "pos", pos, "version_", version_);
   } else {
     pos = new_pos;
   }
@@ -43,7 +43,7 @@ int ObVersion::fixed_length_decode(const char *buf, const int64_t data_len, int6
   if (NULL == buf || data_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_SUCCESS != (ret = serialization::decode_i64(buf, data_len, new_pos, &version_))) {
-    CLOG_LOG(WARN, "deserialize error", "buf", buf, "data_len", data_len, "pos", new_pos);
+    CLOG_LOG(WDIAG, "deserialize error", "buf", buf, "data_len", data_len, "pos", new_pos);
   } else {
     pos = new_pos;
   }
@@ -66,12 +66,12 @@ bool ObRange::check(void) const
 {
   bool ret = true;
   if ((start_key_ > end_key_) && (!border_flag_.is_max_value()) && (!border_flag_.is_min_value())) {
-    _OB_LOG(WARN, "%s", "check start key gt than end key");
+    _OB_LOG(WDIAG, "%s", "check start key gt than end key");
     ret = false;
   } else if (start_key_ == end_key_) {
     if (!border_flag_.is_min_value() && !border_flag_.is_max_value()) {
       if (start_key_.length() == 0 || !border_flag_.inclusive_start() || !border_flag_.inclusive_end()) {
-        _OB_LOG(WARN, "check border flag or length failed:length[%d], flag[%u]",
+        _OB_LOG(WDIAG, "check border flag or length failed:length[%d], flag[%u]",
                 start_key_.length(), border_flag_.get_data());
         ret = false;
       }
@@ -245,7 +245,7 @@ int ObRange::trim(const ObRange &r, ObStringBuf &string_buf)
   int ret = OB_SUCCESS;
   if (r.table_id_ != table_id_) {
     ret = OB_ERROR;
-    _OB_LOG(WARN, "table id is not equal table_id_[%ld] r.table_id_[%ld]",
+    _OB_LOG(WDIAG, "table id is not equal table_id_[%ld] r.table_id_[%ld]",
             table_id_, r.table_id_);
   }
 
@@ -263,7 +263,7 @@ int ObRange::trim(const ObRange &r, ObStringBuf &string_buf)
           }
           ret = string_buf.write_string(r.end_key_, &start_key_);
           if (OB_FAIL(ret)) {
-            _OB_LOG(WARN, "write start key fail:ret[%d]", ret);
+            _OB_LOG(WDIAG, "write start key fail:ret[%d]", ret);
           }
         } else {
           ret = OB_ERROR;
@@ -271,7 +271,7 @@ int ObRange::trim(const ObRange &r, ObStringBuf &string_buf)
           dump();
           _OB_LOG(DEBUG, "dump r range");
           r.dump();
-          _OB_LOG(WARN, "r should be included by this range");
+          _OB_LOG(WDIAG, "r should be included by this range");
         }
       }
     } else if (0 == compare_with_endkey2(r)) { // right interval equal
@@ -284,7 +284,7 @@ int ObRange::trim(const ObRange &r, ObStringBuf &string_buf)
         }
         ret = string_buf.write_string(r.start_key_, &end_key_);
         if (OB_FAIL(ret)) {
-          _OB_LOG(WARN, "write end key fail:ret[%d]", ret);
+          _OB_LOG(WDIAG, "write end key fail:ret[%d]", ret);
         }
       } else {
         ret = OB_ERROR;
@@ -293,7 +293,7 @@ int ObRange::trim(const ObRange &r, ObStringBuf &string_buf)
         dump();
         _OB_LOG(DEBUG, "dump r range");
         r.dump();
-        _OB_LOG(WARN, "r should be included by this range");
+        _OB_LOG(WDIAG, "r should be included by this range");
       }
     } else {
       ret = OB_ERROR;
@@ -302,7 +302,7 @@ int ObRange::trim(const ObRange &r, ObStringBuf &string_buf)
       dump();
       _OB_LOG(DEBUG, "dump r range");
       r.dump();
-      _OB_LOG(WARN, "r should be included by this range");
+      _OB_LOG(WDIAG, "r should be included by this range");
     }
   }
 
@@ -371,7 +371,7 @@ DEFINE_DESERIALIZE(ObRange)
   if (OB_SUCC(ret)) {
     ret = start_key_.deserialize(buf, data_len, pos);
     if (OB_FAIL(ret)) {
-      _OB_LOG(WARN, "failed to deserialize start key, buf=%p, data_len=%ld, pos=%ld, ret=%d",
+      _OB_LOG(WDIAG, "failed to deserialize start key, buf=%p, data_len=%ld, pos=%ld, ret=%d",
               buf, data_len, pos, ret);
     }
   }
@@ -379,7 +379,7 @@ DEFINE_DESERIALIZE(ObRange)
   if (OB_SUCC(ret)) {
     ret = end_key_.deserialize(buf, data_len, pos);
     if (OB_FAIL(ret)) {
-      _OB_LOG(WARN, "failed to deserialize end key, buf=%p, data_len=%ld, pos=%ld, ret=%d",
+      _OB_LOG(WDIAG, "failed to deserialize end key, buf=%p, data_len=%ld, pos=%ld, ret=%d",
               buf, data_len, pos, ret);
     }
   }

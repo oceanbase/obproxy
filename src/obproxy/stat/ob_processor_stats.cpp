@@ -32,7 +32,7 @@ int init_processor_stats()
 
   if (OB_ISNULL(processor_rsb = g_stat_processor.allocate_raw_stat_block(PROCESSOR_STAT_COUNT, XFH_PROCESSOR_STATE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_LOG(ERROR, "fail to alloc memory for processor rsb", K(ret));
+    PROXY_LOG(EDIAG, "fail to alloc memory for processor rsb", K(ret));
   } else {
     // pl related
     PROCESSOR_REGISTER_RAW_STAT(processor_rsb, RECT_PROCESS, "get_pl_total",

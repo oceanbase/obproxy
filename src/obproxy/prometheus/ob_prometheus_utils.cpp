@@ -88,7 +88,7 @@ int ObProxyPrometheusUtils::copy_label_hash(ObVector<ObPrometheusLabel> *labels,
         new_label.set_value(value);
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("copy label meet unexpected error", K(offset),
+        LOG_WDIAG("copy label meet unexpected error", K(offset),
                  "value len", label.get_value().length(), K(buf_len));
       }
     } else {
@@ -96,7 +96,7 @@ int ObProxyPrometheusUtils::copy_label_hash(ObVector<ObPrometheusLabel> *labels,
     }
 
     if (OB_FAIL(dst_labels.push_back(new_label))) {
-      LOG_WARN("put label into metric failed", K(new_label), K(ret));
+      LOG_WDIAG("put label into metric failed", K(new_label), K(ret));
     }
   }
 

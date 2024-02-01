@@ -39,7 +39,7 @@ int OMPKPrepareExecute::decode()
     ObMySQLUtil::get_uint1(pos, has_result_set_); 
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(ret), K(cdata_));
+    LOG_EDIAG("null input", K(ret), K(cdata_));
   }
   return ret;
 }
@@ -49,24 +49,24 @@ int OMPKPrepareExecute::serialize(char* buffer, int64_t length, int64_t& pos) co
   int ret = OB_SUCCESS;
   if (NULL == buffer || 0 >= length || pos < 0 || length - pos < get_serialize_size()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(buffer), K(length), K(pos), "need_size", get_serialize_size());
+    LOG_WDIAG("invalid argument", K(buffer), K(length), K(pos), "need_size", get_serialize_size());
   } else {
     if (OB_SUCCESS != (ret = ObMySQLUtil::store_int1(buffer, length, status_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(status), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(status), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int4(buffer, length, statement_id_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(statement_id), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(statement_id), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, length, column_num_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(column_num), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(column_num), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, length, param_num_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(param_num), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(param_num), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, length, reserved_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(reserved), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(reserved), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, length, warning_count_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(warning_count), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(warning_count), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int4(buffer, length, extend_flag_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(extend_flag), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(extend_flag), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, length, has_result_set_, pos))) {
-      LOG_WARN("store failed", K(buffer), K(length), K_(has_result_set), K(pos));
+      LOG_WDIAG("store failed", K(buffer), K(length), K_(has_result_set), K(pos));
     }
   }
   return ret;

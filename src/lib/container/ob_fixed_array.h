@@ -52,15 +52,15 @@ public:
     if (OB_UNLIKELY(NULL == data_)) {
       if (capacity_ > 0) {
         if (OB_FAIL(reserve(capacity_))) {
-          OB_LOG(WARN, "fail to reserve array", K(ret));
+          OB_LOG(WDIAG, "fail to reserve array", K(ret));
         }
       } else {
         ret = OB_NOT_INIT;
-        OB_LOG(WARN, "array not init", K(ret), K_(capacity));
+        OB_LOG(WDIAG, "array not init", K(ret), K_(capacity));
       }
     } else if (OB_UNLIKELY(count_ >= capacity_)) {
       ret = OB_SIZE_OVERFLOW;
-      OB_LOG(WARN, "ob fixed array size overflow", K(ret), K(count_), K(capacity_));
+      OB_LOG(WDIAG, "ob fixed array size overflow", K(ret), K(count_), K(capacity_));
     } else {}
     if (OB_SUCC(ret)) {
       if (OB_LIKELY(count_ >= init_cnt_)) {
@@ -153,15 +153,15 @@ public:
     int ret = OB_SUCCESS;
     if (capacity < 0 || capacity > UINT32_MAX) {
       ret = OB_INVALID_ARGUMENT;
-      OB_LOG(WARN, "invalid argument", K(ret), K(capacity));
+      OB_LOG(WDIAG, "invalid argument", K(ret), K(capacity));
     } else if (NULL == data_) {
       if (OB_FAIL(init(capacity))) {
-        OB_LOG(WARN, "fail to init array", K(ret), K(capacity));
+        OB_LOG(WDIAG, "fail to init array", K(ret), K(capacity));
       }
     } else {}
     if (OB_SUCC(ret) && capacity > capacity_) {
       ret = OB_SIZE_OVERFLOW;
-      OB_LOG(WARN, "fail to reserver capacity", K(ret), K(capacity), K(capacity_));
+      OB_LOG(WDIAG, "fail to reserver capacity", K(ret), K(capacity), K(capacity_));
     } else {
       //nothing todo
     }
@@ -173,13 +173,13 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(capacity < 0) || OB_UNLIKELY(capacity > UINT32_MAX)) {
       ret = OB_INVALID_ARGUMENT;
-      LIB_LOG(WARN, "invalid argument", K(capacity));
+      LIB_LOG(WDIAG, "invalid argument", K(capacity));
     } else if (OB_UNLIKELY(NULL != data_)) {
       ret = OB_INIT_TWICE;
-      OB_LOG(WARN, "reserve array size", K(ret), K_(data), K_(capacity));
+      OB_LOG(WDIAG, "reserve array size", K(ret), K_(data), K_(capacity));
     } else if (OB_ISNULL(allocator_)) {
       ret = OB_ERR_UNEXPECTED;
-      OB_LOG(ERROR, "fail to init array", K(ret), K(allocator_));
+      OB_LOG(EDIAG, "fail to init array", K(ret), K(allocator_));
     } else if (0 == capacity) {
       //nothing todo
     } else {
@@ -187,7 +187,7 @@ public:
       data_ = static_cast<T *>(allocator_->alloc(real_capacity * sizeof(T)));
       if (OB_UNLIKELY(NULL == data_)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LIB_LOG(WARN, "no memory", K(ret));
+        LIB_LOG(WDIAG, "no memory", K(ret));
       } else {
         count_ = 0;
         init_cnt_ = 0;
@@ -207,14 +207,14 @@ public:
       if (OB_LIKELY(NULL == data_) && OB_LIKELY(other_cnt > 0)) {
         //need init capacity
         if (OB_UNLIKELY(OB_SUCCESS != (copy_assign_ret_ = init(other_cnt)))) {
-          LIB_LOG(WARN, "init capacity failed", K(other_cnt));
+          LIB_LOG(WDIAG, "init capacity failed", K(other_cnt));
         }
       } else {
         clear();
       }
       for (int64_t i = 0; OB_LIKELY(OB_SUCCESS == copy_assign_ret_) && i < other_cnt; ++i) {
         if (OB_UNLIKELY(OB_SUCCESS != (copy_assign_ret_ = push_back(other.at(i))))) {
-          LIB_LOG(WARN, "push back other element failed", K(copy_assign_ret_), K(i));
+          LIB_LOG(WDIAG, "push back other element failed", K(copy_assign_ret_), K(i));
         }
       }
     }
@@ -229,14 +229,14 @@ public:
       if (OB_LIKELY(NULL == data_) && OB_LIKELY(other_cnt > 0)) {
         //need init capacity
         if (OB_FAIL(init(other_cnt))) {
-          LIB_LOG(WARN, "init capacity failed", K(other_cnt));
+          LIB_LOG(WDIAG, "init capacity failed", K(other_cnt));
         }
       } else {
         clear();
       }
       for (int64_t i = 0; OB_SUCC(ret) && i < other_cnt; ++i) {
         if (OB_FAIL(push_back(other.at(i)))) {
-          LIB_LOG(WARN, "push back other element failed", K(ret), K(i));
+          LIB_LOG(WDIAG, "push back other element failed", K(ret), K(i));
         }
       }
     }
@@ -248,9 +248,9 @@ public:
     int ret = OB_SUCCESS;
     if (capacity < 0 || capacity > UINT32_MAX) {
       ret = OB_INVALID_ARGUMENT;
-      OB_LOG(WARN, "fail to preprare allocate array", K(ret), K(capacity));
+      OB_LOG(WDIAG, "fail to preprare allocate array", K(ret), K(capacity));
     } else if (OB_FAIL(reserve(capacity))) {
-      OB_LOG(WARN, "fail to reserver array", K(ret), K(capacity));
+      OB_LOG(WDIAG, "fail to reserver array", K(ret), K(capacity));
     }
     if (OB_SUCC(ret)) {
       for (int64_t i = init_cnt_; i < capacity; i++) {

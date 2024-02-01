@@ -53,7 +53,7 @@ int ObResourceUnitTableProcessor::get_config_params(void* args,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(args)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("params is null", K(ret));
+    LOG_WDIAG("params is null", K(ret));
   } else {
     ObCloudFnParams* params = (ObCloudFnParams*)args;
     cluster_str  = params->cluster_name_;
@@ -62,10 +62,10 @@ int ObResourceUnitTableProcessor::get_config_params(void* args,
     SqlFieldResult* fields = params->fields_;
     if (OB_UNLIKELY(cluster_str.empty()) || OB_UNLIKELY(tenant_str.empty())) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("tenant or cluster is null", K(ret), K(cluster_str), K(tenant_str));
+      LOG_WDIAG("tenant or cluster is null", K(ret), K(cluster_str), K(tenant_str));
     } else if (OB_ISNULL(fields)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fields is null", K(ret));
+      LOG_WDIAG("fields is null", K(ret));
     } else {
       // The storage format is:[cluster|tenant|name|value]
       for (int64_t i = 0; i < fields->field_num_; i++) {
@@ -90,22 +90,22 @@ int ObResourceUnitTableProcessor::execute(void* args)
   ObString value_str;
   ObProxyBasicStmtType stmt_type;
   if (OB_FAIL(get_config_params(args, cluster_name, tenant_name, name_str, value_str, stmt_type))) {
-    LOG_WARN("fail to get config params", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
+    LOG_WDIAG("fail to get config params", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
   } else {
     LOG_DEBUG("execute cloud config", K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
     if (OBPROXY_T_REPLACE == stmt_type) {
       if (OB_FAIL(get_global_resource_unit_table_processor().handle_replace_config(
         cluster_name, tenant_name, name_str, value_str))) {
-        LOG_WARN("fail to handle replace cmd", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
+        LOG_WDIAG("fail to handle replace cmd", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
       }
     } else if (OBPROXY_T_DELETE == stmt_type) {
       if (OB_FAIL(get_global_resource_unit_table_processor().handle_delete_config(
         cluster_name, tenant_name, name_str))) {
-        LOG_WARN("fail to handle delete cmd", K(ret), K(cluster_name), K(tenant_name), K(name_str));
+        LOG_WDIAG("fail to handle delete cmd", K(ret), K(cluster_name), K(tenant_name), K(name_str));
       }
     } else {
       ret = OB_NOT_SUPPORTED;
-      LOG_WARN("operation is unexpected", K(ret), K(stmt_type));
+      LOG_WDIAG("operation is unexpected", K(ret), K(stmt_type));
     }
   }
 
@@ -121,12 +121,12 @@ int ObResourceUnitTableProcessor::commit(void* args, bool is_success)
   ObString value_str;
   ObProxyBasicStmtType stmt_type;
   if (OB_FAIL(get_config_params(args, cluster_name, tenant_name, name_str, value_str, stmt_type))) {
-    LOG_WARN("fail to get config params", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
+    LOG_WDIAG("fail to get config params", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
   } else {
     LOG_DEBUG("commit cloud config", K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type), K(is_success));
     if (name_str == conn_name) {
       if (OB_FAIL(get_global_conn_table_processor().commit(is_success))) {
-        LOG_WARN("fail to handle connection commit", K(ret), K(cluster_name), K(tenant_name), K(name_str));
+        LOG_WDIAG("fail to handle connection commit", K(ret), K(cluster_name), K(tenant_name), K(name_str));
       }
     } else if (name_str == cpu_name) {
       get_global_cpu_table_processor().commit(is_success);
@@ -142,16 +142,16 @@ int ObResourceUnitTableProcessor::init()
 
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else {
     ObConfigHandler handler;
     ObString table_name = ObString::make_string("resource_unit");
     handler.execute_func_  = &execute;
     handler.commit_func_   = &commit;
     if (OB_FAIL(get_global_config_processor().register_callback(table_name, handler))) {
-      LOG_WARN("register callback info failed", K(ret));
+      LOG_WDIAG("register callback info failed", K(ret));
     } else if (OB_FAIL(get_global_cpu_table_processor().init())) {
-      LOG_WARN("init cpu processor failed", K(ret));
+      LOG_WDIAG("init cpu processor failed", K(ret));
     } else {
       is_inited_ = true;
     }
@@ -166,19 +166,19 @@ int ObResourceUnitTableProcessor::handle_replace_config(
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(name_str.empty()) || OB_UNLIKELY(value_str.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("name or value is null", K(ret), K(name_str), K(value_str));
+    LOG_WDIAG("name or value is null", K(ret), K(name_str), K(value_str));
   } else {
     if (name_str == conn_name) {
       if (OB_FAIL(get_global_conn_table_processor().conn_handle_replace_config(cluster_name, tenant_name, name_str, value_str))) {
-        LOG_WARN("fail to replace connection config", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
+        LOG_WDIAG("fail to replace connection config", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
       }
     } else if (name_str == cpu_name) {
       if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_replace_config(cluster_name, tenant_name, name_str, value_str))) {
-        LOG_WARN("fail to replace cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
+        LOG_WDIAG("fail to replace cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
       }
     } else {
       ret = OB_NOT_SUPPORTED;
-      LOG_WARN("operation is unexpected", K(ret), K(name_str));
+      LOG_WDIAG("operation is unexpected", K(ret), K(name_str));
     }
   }
 
@@ -192,24 +192,24 @@ int ObResourceUnitTableProcessor::handle_delete_config(
   // note: Now only supports the deletion of cluster and tenant information
   if (name_str.empty()) {
     if (OB_FAIL(get_global_conn_table_processor().conn_handle_delete_config(cluster_name, tenant_name))) {
-      LOG_WARN("fail to handle delete conn config", K(ret), K(cluster_name), K(tenant_name));
+      LOG_WDIAG("fail to handle delete conn config", K(ret), K(cluster_name), K(tenant_name));
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_delete_config(cluster_name, tenant_name))) {
-        LOG_WARN("fail to handle delete cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
+        LOG_WDIAG("fail to handle delete cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
       }
     }
   } else if (name_str == conn_name) {
     if (OB_FAIL(get_global_conn_table_processor().conn_handle_delete_config(cluster_name, tenant_name))) {
-      LOG_WARN("fail to handle delete conn config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
+      LOG_WDIAG("fail to handle delete conn config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
     }
   } else if (name_str == cpu_name) {
     if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_delete_config(cluster_name, tenant_name))) {
-      LOG_WARN("fail to handle delete cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
+      LOG_WDIAG("fail to handle delete cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
     }
   } else {
     ret = OB_NOT_SUPPORTED;
-    LOG_WARN("operation is unexpected", K(ret), K(name_str));
+    LOG_WDIAG("operation is unexpected", K(ret), K(name_str));
   }
 
   return ret;
@@ -227,9 +227,9 @@ int build_tenant_cluster_vip_name(const ObString &tenant_name, const ObString &c
     vip_name.length(), vip_name.ptr()));
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill buf", K(ret), K(tenant_name), K(cluster_name), K(vip_name));
+    LOG_WDIAG("fail to fill buf", K(ret), K(tenant_name), K(cluster_name), K(vip_name));
   } else if (OB_FAIL(key_string.assign(buf))) {
-    LOG_WARN("assign failed", K(ret));
+    LOG_WDIAG("assign failed", K(ret));
   }
 
   return ret;

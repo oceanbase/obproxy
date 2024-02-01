@@ -99,6 +99,8 @@ enum EMySQLFieldType
   OB_MYSQL_TYPE_OB_TIMESTAMP_WITH_LOCAL_TIME_ZONE = 201,
   OB_MYSQL_TYPE_OB_TIMESTAMP_NANO = 202,
   OB_MYSQL_TYPE_OB_RAW = 203,
+  MYSQL_TYPE_OB_NVARCHAR2 = 207,
+  MYSQL_TYPE_OB_NCHAR = 208,
   OB_MYSQL_TYPE_OB_UROWID = 209,
   OB_MYSQL_TYPE_JSON = 245,
   OB_MYSQL_TYPE_NEWDECIMAL = 246,
@@ -192,6 +194,12 @@ inline const char *get_emysql_field_type_str(const obmysql::EMySQLFieldType &typ
       break;
     case obmysql::OB_MYSQL_TYPE_OB_RAW:
       str = "OB_MYSQL_TYPE_OB_RAW";
+      break;
+    case obmysql::MYSQL_TYPE_OB_NVARCHAR2:
+      str = "MYSQL_TYPE_OB_NVARCHAR2";
+      break;
+    case obmysql::MYSQL_TYPE_OB_NCHAR:
+      str = "MYSQL_TYPE_OB_NCHAR";
       break;
     case obmysql::OB_MYSQL_TYPE_NEWDECIMAL:
       str = "OB_MYSQL_TYPE_NEWDECIMAL";

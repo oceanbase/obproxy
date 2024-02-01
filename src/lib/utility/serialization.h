@@ -1326,7 +1326,7 @@ inline int encode_decimal_type(char *buf, const int64_t buf_len, int64_t &pos, b
     }
   }
   if (OB_SUCCESS != err) {
-    _OB_LOG(WARN, "fail to encode decimal. err = %d", err);
+    _OB_LOG(WDIAG, "fail to encode decimal. err = %d", err);
   }
   return err;
 }
@@ -1363,7 +1363,7 @@ inline int decode_decimal_type(const char *buf, const int64_t buf_len, int64_t &
     }
   }
   if (OB_SUCCESS != err) {
-    _OB_LOG(WARN, "fail to decode decimal, err = %d", err);
+    _OB_LOG(WDIAG, "fail to decode decimal, err = %d", err);
   }
   return err;
 }
@@ -1372,7 +1372,7 @@ inline int64_t encoded_length_decimal_type(int8_t nwords, const uint32_t *words)
 {
   int64_t ret = 6;
   if (OB_UNLIKELY(NULL == words)) {
-    _OB_LOG(ERROR, "null decimal words");
+    _OB_LOG(EDIAG, "null decimal words");
   } else {
     for (int8_t i = 0; i < nwords; ++i) {
       ret += static_cast<int32_t>(encoded_length_vi32(words[i]));
@@ -1622,13 +1622,13 @@ inline int encode_createtime_type(char *buf, const int64_t buf_len, int64_t &pos
   int ret = OB_SIZE_OVERFLOW;
   if (NULL == buf || buf_len - pos <= 0 || val < 0) {
     ret = OB_SIZE_OVERFLOW;
-    _OB_LOG(WARN, "fail to encode_createtime_type: buf[%p], buf_len[%ld], pos[%ld] val[%ld]",
+    _OB_LOG(WDIAG, "fail to encode_createtime_type: buf[%p], buf_len[%ld], pos[%ld] val[%ld]",
               buf, buf_len, pos, val);
   } else {
     int8_t first_byte = OB_CREATETIME_TYPE;
     ret = __encode_time_type(buf, buf_len, first_byte, pos, val);
     if (OB_FAIL(ret)) {
-      _OB_LOG(WARN, "fail to __encode_time_type: ret = %d", ret);
+      _OB_LOG(WDIAG, "fail to __encode_time_type: ret = %d", ret);
     }
   }
   return ret;
@@ -1902,7 +1902,7 @@ int decode(const char *buf, const int64_t data_len, int64_t &pos, T (&val)[CNT])
 
   if (OB_FAIL(decode_vi64(buf, data_len, pos, &rsize))) {
   } else if (CNT != rsize) {
-    LIB_LOG(WARN, "int array size isn't same");
+    LIB_LOG(WDIAG, "int array size isn't same");
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < CNT; i++) {
       ret = decode(buf, data_len, pos, val[i]);

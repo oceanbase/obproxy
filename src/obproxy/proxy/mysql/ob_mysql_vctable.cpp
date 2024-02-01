@@ -74,7 +74,7 @@ int ObMysqlVCTable::remove_entry(ObMysqlVCTableEntry *e)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(e) || OB_UNLIKELY(NULL != e->vc_ && !e->in_tunnel_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid VCTableEntry", K(e), K(ret));
+    LOG_WDIAG("invalid VCTableEntry", K(e), K(ret));
   } else {
     e->vc_ = NULL;
     e->eos_ = false;
@@ -102,7 +102,7 @@ int ObMysqlVCTable::cleanup_entry(ObMysqlVCTableEntry *e, bool need_close)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(e) || OB_ISNULL(e->vc_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid vc table entry", K(e), K(ret));
+    LOG_WDIAG("invalid vc table entry", K(e), K(ret));
   } else {
     LOG_DEBUG("cleanup_entry", "in_tunnel", e->in_tunnel_,
               "eos", e->eos_, "vc_type", e->vc_type_, "vc", e->vc_, K(need_close));
@@ -113,7 +113,7 @@ int ObMysqlVCTable::cleanup_entry(ObMysqlVCTableEntry *e, bool need_close)
       }
     }
     if (OB_FAIL(remove_entry(e))) {
-      LOG_WARN("fail to remove entry", K(ret));
+      LOG_WDIAG("fail to remove entry", K(ret));
     }
   }
   return ret;
@@ -125,7 +125,7 @@ int ObMysqlVCTable::cleanup_all()
   for (int64_t i = 0; OB_SUCC(ret) && i < VC_TABLE_MAX_ENTRIES; ++i) {
     if (NULL != vc_table_[i].vc_) {
       if (OB_FAIL(cleanup_entry(vc_table_ + i))) {
-        LOG_WARN("fail to cleanup vc table entry", K(ret));
+        LOG_WDIAG("fail to cleanup vc table entry", K(ret));
       }
     }
   }

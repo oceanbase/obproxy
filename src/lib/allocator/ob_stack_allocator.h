@@ -90,13 +90,13 @@ public:
     BatchAllocGuard(TSIStackAllocator &allocator, int &err): allocator_(allocator), err_(err)
     {
       if (OB_SUCCESS != allocator_.start_batch_alloc()) {
-        _OB_LOG(ERROR, "start_batch_alloc() fail");
+        _OB_LOG(EDIAG, "start_batch_alloc() fail");
       }
     }
     virtual ~BatchAllocGuard()
     {
       if (OB_SUCCESS != allocator_.end_batch_alloc(OB_SUCCESS != err_)) {
-        _OB_LOG(ERROR, "end_batch_alloc(OB_SUCCESS != err[%d]) fail", err_);
+        _OB_LOG(EDIAG, "end_batch_alloc(OB_SUCCESS != err[%d]) fail", err_);
       }
     }
     TSIStackAllocator &allocator_;

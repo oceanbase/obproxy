@@ -33,11 +33,11 @@ int ObShardScanAllTaskProcessor::start(const int64_t shard_scan_all_threads, con
   int ret = OB_SUCCESS;
   if (OB_ISNULL(thread_pool_event_queue_ = new (std::nothrow) ObProtectedQueueThreadPool())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to new ObProtectedQueueThreadPool", K(ret));
+    LOG_WDIAG("fail to new ObProtectedQueueThreadPool", K(ret));
   } else if (OB_FAIL(thread_pool_event_queue_->init())) {
-    LOG_WARN("fail to init thread_pool_event_queue", K(ret));
+    LOG_WDIAG("fail to init thread_pool_event_queue", K(ret));
   } else if (OB_FAIL(spawn_event_threads(shard_scan_all_threads, "ET_SHARD_SCAN_ALL", stacksize, ET_SHARD_SCAN_ALL))) {
-    LOG_WARN("fail to spawn event threads for ET_SHARD_SCAN_ALL", K(ret));
+    LOG_WDIAG("fail to spawn event threads for ET_SHARD_SCAN_ALL", K(ret));
   }
 
   return ret;
@@ -48,7 +48,7 @@ int ObShardScanAllTaskProcessor::init_thread(ObEThread *&t)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(t->init())) {
-    LOG_WARN("fail to init event", K(ret));
+    LOG_WDIAG("fail to init event", K(ret));
     delete t;
     t = NULL;
   } else {

@@ -76,16 +76,16 @@ int ObCacheCleaner::init(ObTableCache &table_cache, ObPartitionCache &partition_
   ObProxyMutex *mutex = NULL;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (!range.is_valid() || total_count <= 0 || idx >= total_count || clean_interval_us <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(range), K(total_count), K(idx), K(clean_interval_us), K(ret));
+    LOG_WDIAG("invalid input value", K(range), K(total_count), K(idx), K(clean_interval_us), K(ret));
   } else if (OB_FAIL(deleting_cr_list_.init("cr deleting list",
           reinterpret_cast<int64_t>(&(reinterpret_cast<ObResourceDeleteActor *>(0))->link_)))) {
-    LOG_WARN("fail to init deleting cr list", K(ret));
+    LOG_WDIAG("fail to init deleting cr list", K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex(CACHE_CLEANER_LOCK))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mutex", K(ret));
+    LOG_WDIAG("fail to allocate mutex", K(ret));
   } else {
     is_inited_ = true;
     mutex_ = mutex;
@@ -124,40 +124,40 @@ int ObCacheCleaner::main_handler(int event, void *data)
   switch (event) {
     case EVENT_IMMEDIATE: {
       if (OB_FAIL(cancel_pending_action())) {
-        LOG_WARN("fail to cancel pending_action", K(ret));
+        LOG_WDIAG("fail to cancel pending_action", K(ret));
       } else {
         LOG_INFO("cleaner clean interval has changed", "current interval",
                  cleaner_reschedule_interval_us_);
         if (OB_FAIL(schedule_in(cleaner_reschedule_interval_us_))) {
-          LOG_ERROR("fail to schedule cleaner", K(ret));
+          LOG_EDIAG("fail to schedule cleaner", K(ret));
         }
       }
       break;
     }
     case CLEANER_TRIGGER_EVENT: {
       if (OB_FAIL(cancel_pending_action())) {
-        LOG_WARN("fail to cancel pending_action", K(ret));
+        LOG_WDIAG("fail to cancel pending_action", K(ret));
       } else if (OB_FAIL(cleanup())) {
-        LOG_WARN("fail to cleanup", K(ret));
+        LOG_WDIAG("fail to cleanup", K(ret));
       }
       break;
     }
     case EVENT_INTERVAL: {
       pending_action_ = NULL;
       if (OB_FAIL(cleanup())) {
-        LOG_WARN("fail to cleanup", K(ret));
+        LOG_WDIAG("fail to cleanup", K(ret));
       }
       break;
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unexpected event", K(event), K(ret));
+      LOG_EDIAG("unexpected event", K(event), K(ret));
       break;
     }
   }
 
   if (OB_FAIL(ret)) {
-    LOG_ERROR("ObCacheCleaner will exit, something error",
+    LOG_EDIAG("ObCacheCleaner will exit, something error",
               "this_thread", this_ethread(), K(ret));
     event_ret = EVENT_DONE;
     self_ethread().cache_cleaner_ = NULL;
@@ -171,14 +171,14 @@ int ObCacheCleaner::cleanup()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(do_clean_job())) {
-    LOG_WARN("fail to do clean job", K(ret));
+    LOG_WDIAG("fail to do clean job", K(ret));
   } else {
     triggered_ = false;
   }
 
   // some error unexpected, just clear some state and retry
   if (OB_FAIL(ret)) {
-    LOG_ERROR("some internal error, just clear state and retry", K(ret));
+    LOG_EDIAG("some internal error, just clear state and retry", K(ret));
     next_action_ = CLEAN_THREAD_CACHE_CONGESTION_ENTRY_ACTION;
     table_cache_range_.again();
     tc_part_clean_count_ = 0;
@@ -190,7 +190,7 @@ int ObCacheCleaner::cleanup()
     ret = OB_SUCCESS;
     // schedule next clean action
     if (OB_FAIL(schedule_in(cleaner_reschedule_interval_us_))) {
-      LOG_ERROR("fail to schedule next clean action, cache cleaner will stop working", K(ret));
+      LOG_EDIAG("fail to schedule next clean action, cache cleaner will stop working", K(ret));
     }
   }
 
@@ -215,7 +215,7 @@ int ObCacheCleaner::do_clean_job()
       case CLEAN_THREAD_CACHE_CONGESTION_ENTRY_ACTION: {
         ObCongestionRefHashMap &cgt_map = self_ethread().get_cgt_map();
         if (OB_FAIL(cgt_map.clean_hash_map())) {
-          LOG_WARN("fail to clean cgt hash map", K(ret));
+          LOG_WDIAG("fail to clean cgt hash map", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_CLUSTER_RESOURCE_ACTION;
@@ -230,7 +230,7 @@ int ObCacheCleaner::do_clean_job()
 
       case EXPIRE_TABLE_ENTRY_ACTION: {
         if (OB_FAIL(do_expire_table_entry())) {
-          LOG_WARN("fail to do expire table entry", K(ret));
+          LOG_WDIAG("fail to do expire table entry", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_TABLE_CACHE_ACTION;
@@ -240,7 +240,7 @@ int ObCacheCleaner::do_clean_job()
       case CLEAN_TABLE_CACHE_ACTION: {
         bool need_try_lock = false;
         if (OB_FAIL(clean_table_cache(need_try_lock))) {
-          LOG_WARN("fail to clean table cache", K(ret));
+          LOG_WDIAG("fail to clean table cache", K(ret));
           ret = OB_SUCCESS; // continue
         }
         if (need_try_lock) {
@@ -255,7 +255,7 @@ int ObCacheCleaner::do_clean_job()
       case CLEAN_THREAD_CACHE_TABLE_ENTRY_ACTION: {
         ObTableRefHashMap &table_map = self_ethread().get_table_map();
         if (OB_FAIL(table_map.clean_hash_map())) {
-          LOG_WARN("fail to clean table hash map", K(ret));
+          LOG_WDIAG("fail to clean table hash map", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = EXPIRE_PARTITION_ENTRY_ACTION;
@@ -264,7 +264,7 @@ int ObCacheCleaner::do_clean_job()
 
       case EXPIRE_PARTITION_ENTRY_ACTION: {
         if (OB_FAIL(do_expire_partition_entry())) {
-          LOG_WARN("fail to do partition entry", K(ret));
+          LOG_WDIAG("fail to do partition entry", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_PARTITION_CACHE_ACTION;
@@ -273,7 +273,7 @@ int ObCacheCleaner::do_clean_job()
 
      case CLEAN_PARTITION_CACHE_ACTION: {
         if (OB_FAIL(clean_partition_cache())) {
-          LOG_WARN("fail to clean partition cache", K(ret));
+          LOG_WDIAG("fail to clean partition cache", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_THREAD_CACHE_PARTITION_ENTRY_ACTION;
@@ -283,7 +283,7 @@ int ObCacheCleaner::do_clean_job()
       case CLEAN_THREAD_CACHE_PARTITION_ENTRY_ACTION: {
         ObPartitionRefHashMap &partition_map = self_ethread().get_partition_map();
         if (OB_FAIL(partition_map.clean_hash_map())) {
-          LOG_WARN("fail to clean partition hash map", K(ret));
+          LOG_WDIAG("fail to clean partition hash map", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = EXPIRE_ROUTINE_ENTRY_ACTION;
@@ -292,7 +292,7 @@ int ObCacheCleaner::do_clean_job()
 
       case EXPIRE_ROUTINE_ENTRY_ACTION: {
         if (OB_FAIL(do_expire_routine_entry())) {
-          LOG_WARN("fail to do routine entry", K(ret));
+          LOG_WDIAG("fail to do routine entry", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_ROUTINE_CACHE_ACTION;
@@ -300,7 +300,7 @@ int ObCacheCleaner::do_clean_job()
       }
       case CLEAN_ROUTINE_CACHE_ACTION: {
         if (OB_FAIL(clean_routine_cache())) {
-          LOG_WARN("fail to clean routine cache", K(ret));
+          LOG_WDIAG("fail to clean routine cache", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_THREAD_CACHE_ROUTINE_ENTRY_ACTION;
@@ -309,7 +309,7 @@ int ObCacheCleaner::do_clean_job()
       case CLEAN_THREAD_CACHE_ROUTINE_ENTRY_ACTION: {
         ObRoutineRefHashMap &routine_map = self_ethread().get_routine_map();
         if (OB_FAIL(routine_map.clean_hash_map())) {
-          LOG_WARN("fail to clean routine hash map", K(ret));
+          LOG_WDIAG("fail to clean routine hash map", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = EXPIRE_SQL_TABLE_ENTRY_ACTION; // from the beginning
@@ -318,7 +318,7 @@ int ObCacheCleaner::do_clean_job()
       }
       case EXPIRE_SQL_TABLE_ENTRY_ACTION: {
         if (OB_FAIL(do_expire_sql_table_entry())) {
-          LOG_WARN("fail to do sql table entry", K(ret));
+          LOG_WDIAG("fail to do sql table entry", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_SQL_TABLE_CACHE_ACTION;
@@ -326,7 +326,7 @@ int ObCacheCleaner::do_clean_job()
       }
       case CLEAN_SQL_TABLE_CACHE_ACTION: {
         if (OB_FAIL(clean_sql_table_cache())) {
-          LOG_WARN("fail to clean sql_table cache", K(ret));
+          LOG_WDIAG("fail to clean sql_table cache", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = CLEAN_THREAD_CACHE_SQL_TABLE_ENTRY_ACTION;
@@ -335,7 +335,7 @@ int ObCacheCleaner::do_clean_job()
       case CLEAN_THREAD_CACHE_SQL_TABLE_ENTRY_ACTION: {
         ObSqlTableRefHashMap &sql_table_map = self_ethread().get_sql_table_map();
         if (OB_FAIL(sql_table_map.clean_hash_map())) {
-          LOG_WARN("fail to clean sql table hash map", K(ret));
+          LOG_WDIAG("fail to clean sql table hash map", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = IDLE_CLEAN_ACTION; // from the beginning
@@ -343,7 +343,7 @@ int ObCacheCleaner::do_clean_job()
         break;
       }
       default: {
-        LOG_ERROR("never reach here", "action", get_cleaner_action_name(next_action_));
+        LOG_EDIAG("never reach here", "action", get_cleaner_action_name(next_action_));
         stop = true;
         next_action_ = IDLE_CLEAN_ACTION; // from the beginning
       }
@@ -351,7 +351,7 @@ int ObCacheCleaner::do_clean_job()
   }
 
   if (OB_FAIL(schedule_in(cleaner_reschedule_interval_us_))) {
-    LOG_ERROR("fail to schedule in cache cleaner", K_(cleaner_reschedule_interval_us), K(ret));
+    LOG_EDIAG("fail to schedule in cache cleaner", K_(cleaner_reschedule_interval_us), K(ret));
   }
 
   return ret;
@@ -364,14 +364,14 @@ void ObCacheCleaner::clean_cluster_resource()
   if (need_expire_cluster_resource()) {
     // expire cluster resource
     if (OB_FAIL(do_expire_cluster_resource())) {
-      LOG_WARN("fail to expire cluster resource", K(ret));
+      LOG_WDIAG("fail to expire cluster resource", K(ret));
       ret = OB_SUCCESS;
     }
   }
 
   // delete cluster resource
   if (OB_FAIL(do_delete_cluster_resource())) {
-    LOG_WARN("fail to delete cluster resource", K(ret));
+    LOG_WDIAG("fail to delete cluster resource", K(ret));
     ret = OB_SUCCESS;
   }
 }
@@ -425,7 +425,7 @@ int ObCacheCleaner::clean_table_cache(bool &need_try_lock)
       for (int64_t i = range.cur_idx_; (i <= range.end_idx_) && OB_SUCC(ret); ++i) {
         if (OB_FAIL(clean_one_part_table_cache(i))) {
           if (OB_ERR_EXCLUSIVE_LOCK_CONFLICT != ret) {
-            LOG_WARN("fail to clean one part table cache", K(ret));
+            LOG_WDIAG("fail to clean one part table cache", K(ret));
           } else {
             LOG_INFO("fail to trylock parittion mutex", "partition_id", i, K(ret));
           }
@@ -486,7 +486,7 @@ int ObCacheCleaner::clean_one_part_table_cache(const int64_t part_idx)
   int64_t mt_part_num = table_cache_->get_sub_part_count();
   if (part_idx < 0 || part_idx >= mt_part_num) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid part idx", K(part_idx), K(mt_part_num), K(ret));
+    LOG_WDIAG("invalid part idx", K(part_idx), K(mt_part_num), K(ret));
   } else {
     ObTableEntryCmp cmp;
     ObTableEntry *entry = NULL;
@@ -499,9 +499,9 @@ int ObCacheCleaner::clean_one_part_table_cache(const int64_t part_idx)
       char *buf = static_cast<char *>(op_fixed_mem_alloc(buf_len));
       if (OB_ISNULL(buf)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory", K(buf_len), K(ret));
+        LOG_WDIAG("fail to alloc memory", K(buf_len), K(ret));
       } else if (OB_FAIL(table_cache_->run_todo_list(part_idx))) {
-        LOG_WARN("fail to run todo list", K(part_idx), K(ret));
+        LOG_WDIAG("fail to run todo list", K(part_idx), K(ret));
       } else {
         // 1.make a smallest heap
         ObTableEntryElem *eles = new (buf) ObTableEntryElem[tmp_clean_count];
@@ -555,7 +555,7 @@ int ObCacheCleaner::clean_one_part_table_cache(const int64_t part_idx)
             key.reset();
             entry->get_key(key);
             if (OB_FAIL(table_cache_->remove_table_entry(key))) {
-              LOG_WARN("fail to remote table entry", KPC(entry));
+              LOG_WDIAG("fail to remote table entry", KPC(entry));
             }
           }
         }
@@ -597,7 +597,7 @@ int ObCacheCleaner::clean_partition_cache() {
           LOG_INFO("will clean partition cache", "sub bucket idx", i, K(clean_count),
                    K(max_sub_bucket_count), K(entry_count), K(mem_limited));
           if (OB_FAIL(clean_one_sub_bucket_partition_cache(i, clean_count))) {
-            LOG_WARN("fail to clean sub bucket partition cache", "sub bucket idx", i,
+            LOG_WDIAG("fail to clean sub bucket partition cache", "sub bucket idx", i,
                      K(clean_count), K(max_sub_bucket_count), K(mem_limited));
             ret = OB_SUCCESS; // ignore, and coutine
           }
@@ -641,7 +641,7 @@ int ObCacheCleaner::clean_one_sub_bucket_partition_cache(const int64_t bucket_id
   int64_t bucket_num = partition_cache_->get_sub_part_count();
   if ((bucket_idx < 0) || (bucket_idx >= bucket_num) || (clean_count <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(bucket_idx), K(clean_count), K(bucket_num), K(ret));
+    LOG_WDIAG("invalid input value", K(bucket_idx), K(clean_count), K(bucket_num), K(ret));
   } else {
     ObPartitionEntryCmp cmp;
     ObPartitionEntry *entry = NULL;
@@ -654,9 +654,9 @@ int ObCacheCleaner::clean_one_sub_bucket_partition_cache(const int64_t bucket_id
       char *buf = static_cast<char *>(op_fixed_mem_alloc(buf_len));
       if (OB_ISNULL(buf)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory", K(buf_len), K(ret));
+        LOG_WDIAG("fail to alloc memory", K(buf_len), K(ret));
       } else if (OB_FAIL(partition_cache_->run_todo_list(bucket_idx))) {
-        LOG_WARN("fail to run todo list", K(bucket_idx), K(ret));
+        LOG_WDIAG("fail to run todo list", K(bucket_idx), K(ret));
       } else {
         // 1.make a smallest heap
         ObPartitionEntryElem *eles = new (buf) ObPartitionEntryElem[tmp_clean_count];
@@ -708,7 +708,7 @@ int ObCacheCleaner::clean_one_sub_bucket_partition_cache(const int64_t bucket_id
             key.reset();
             key = entry->get_key();
             if (OB_FAIL(partition_cache_->remove_partition_entry(key))) {
-              LOG_WARN("fail to remove partition entry", KPC(entry), K(ret));
+              LOG_WDIAG("fail to remove partition entry", KPC(entry), K(ret));
             }
           }
         }
@@ -734,12 +734,12 @@ int ObCacheCleaner::schedule_in(const int64_t timeout_us)
   int ret = OB_SUCCESS;
   if (timeout_us < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(timeout_us), K(ret));
+    LOG_WDIAG("invalid input value", K(timeout_us), K(ret));
   } else {
     int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(timeout_us);
     if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(this, HRTIME_USECONDS(interval_us)))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule in", K(interval_us), K(ret));
+      LOG_WDIAG("fail to schedule in", K(interval_us), K(ret));
     }
   }
 
@@ -825,12 +825,12 @@ int ObCacheCleaner::schedule_cache_cleaner()
     for (int64_t i = 0; i < net_thread_count; ++i) {
       // calc range
       if (OB_FAIL(schedule_one_cache_cleaner(i))) {
-        LOG_WARN("fail to init cleaner", K(i), K(ret));
+        LOG_WDIAG("fail to init cleaner", K(i), K(ret));
       }
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("thread_num or mt_part_num can not be NULL", K(mt_part_num), K(net_thread_count), K(ret));
+    LOG_EDIAG("thread_num or mt_part_num can not be NULL", K(mt_part_num), K(net_thread_count), K(ret));
   }
 
   return ret;
@@ -880,15 +880,15 @@ int ObCacheCleaner::schedule_one_cache_cleaner(int64_t index)
       range.again();
       if (OB_ISNULL(cleaner = new (std::nothrow) ObCacheCleaner())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc cleaner", K(ret));
+        LOG_WDIAG("fail to alloc cleaner", K(ret));
       } else if (OB_FAIL(cleaner->init(table_cache, partition_cache, routine_cache, sql_table_cache, range,
               net_thread_count, index, clean_interval))) {
-        LOG_WARN("fail to init cleaner", K(range), K(ret));
+        LOG_WDIAG("fail to init cleaner", K(range), K(ret));
       } else if (OB_ISNULL(target_ethread = netthreads[index])) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("ethread can not be NULL", K(target_ethread), K(ret));
+        LOG_WDIAG("ethread can not be NULL", K(target_ethread), K(ret));
       } else if (OB_FAIL(cleaner->start_clean_cache(*target_ethread))) {
-        LOG_WARN("fail to start clean cache", K(ret));
+        LOG_WDIAG("fail to start clean cache", K(ret));
       } else {
         target_ethread->cache_cleaner_ = cleaner;
         LOG_INFO("succ schedule cache cleaners", K(target_ethread), K(range), K(index),
@@ -897,7 +897,7 @@ int ObCacheCleaner::schedule_one_cache_cleaner(int64_t index)
     //}
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("thread_num or mt_part_num can not be NULL", K(mt_part_num), K(net_thread_count), K(ret));
+    LOG_EDIAG("thread_num or mt_part_num can not be NULL", K(mt_part_num), K(net_thread_count), K(ret));
   }
 
   return ret;
@@ -956,7 +956,7 @@ int ObCacheCleaner::do_delete_cluster_resource()
           cs_handler.force_close_ = true;
         }
         if (OB_FAIL(cs_handlers.push_back(cs_handler))) {
-          LOG_WARN("fail to push back", K(ret));
+          LOG_WDIAG("fail to push back", K(ret));
         }
       }
     }
@@ -969,19 +969,19 @@ int ObCacheCleaner::do_delete_cluster_resource()
       deleting_cr_list_.push(cr_actor); // push to list again
     } else {
       if (OB_FAIL(table_cache_deleted_cr_version_.push_back(cr->version_))) {
-        LOG_WARN("fail to push back table cache cr version", K(cr), KPC(cr), K(ret));
+        LOG_WDIAG("fail to push back table cache cr version", K(cr), KPC(cr), K(ret));
         ret = OB_SUCCESS; // continue
       }
       if (OB_FAIL(partition_cache_deleted_cr_version_.push_back(cr->version_))) {
-        LOG_WARN("fail to push back partition cache cr version", K(cr), KPC(cr), K(ret));
+        LOG_WDIAG("fail to push back partition cache cr version", K(cr), KPC(cr), K(ret));
         ret = OB_SUCCESS; // continue
       }
       if (OB_FAIL(routine_cache_deleted_cr_version_.push_back(cr->version_))) {
-        LOG_WARN("fail to push back routine cache cr version", K(cr), KPC(cr), K(ret));
+        LOG_WDIAG("fail to push back routine cache cr version", K(cr), KPC(cr), K(ret));
         ret = OB_SUCCESS; // continue
       }
       if (OB_FAIL(sql_table_cache_deleted_cr_version_.push_back(cr->version_))) {
-        LOG_WARN("fail to push back sql table cache cr version", K(cr), KPC(cr), K(ret));
+        LOG_WDIAG("fail to push back sql table cache cr version", K(cr), KPC(cr), K(ret));
         ret = OB_SUCCESS; // continue
       }
       // this thread has clean complete
@@ -1030,7 +1030,7 @@ int ObCacheCleaner::push_deleting_cr(ObResourceDeleteActor *actor)
     deleting_cr_list_.push(actor);
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid cr actor", K(actor), K(ret));
+    LOG_WDIAG("invalid cr actor", K(actor), K(ret));
   }
   return ret;
 }
@@ -1040,7 +1040,7 @@ int ObCacheCleaner::do_expire_cluster_resource()
   int ret = OB_SUCCESS;
   ObResourcePoolProcessor &rpp = get_global_resource_pool_processor();
   if (OB_FAIL(rpp.expire_cluster_resource())) {
-    LOG_WARN("fail to expire cluster reousrce", K(ret));
+    LOG_WDIAG("fail to expire cluster reousrce", K(ret));
   }
   return ret;
 }
@@ -1207,7 +1207,7 @@ int ObCacheCleaner::cancel_pending_action()
   int ret = OB_SUCCESS;
   if (OB_LIKELY(NULL != pending_action_)) {
     if (OB_FAIL(pending_action_->cancel())) {
-      LOG_WARN("fail to cancel pending_action", K(ret));
+      LOG_WDIAG("fail to cancel pending_action", K(ret));
     } else {
       pending_action_ = NULL;
     }
@@ -1220,7 +1220,7 @@ int ObCacheCleaner::set_clean_interval(const int64_t interval_us)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(interval_us <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid clean interval", K(interval_us), K(ret));
+    LOG_WDIAG("invalid clean interval", K(interval_us), K(ret));
   } else {
     cleaner_reschedule_interval_us_ = interval_us;
   }
@@ -1238,12 +1238,12 @@ int ObCacheCleaner::update_clean_interval()
   for (int64_t i = 0; (i < thread_count) && OB_SUCC(ret); ++i) {
     if (OB_ISNULL(ethread = threads[i]) || OB_ISNULL(cleaner = threads[i]->cache_cleaner_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("ethread and cache cleaner can not be NULL", K(i), K(thread_count), K(ethread), K(cleaner), K(ret));
+      LOG_WDIAG("ethread and cache cleaner can not be NULL", K(i), K(thread_count), K(ethread), K(cleaner), K(ret));
     } else if (OB_FAIL(cleaner->set_clean_interval(interval_us))) {
-      LOG_WARN("fail to set clean interval", K(interval_us), K(ret));
+      LOG_WDIAG("fail to set clean interval", K(interval_us), K(ret));
     } else if (OB_ISNULL(ethread->schedule_imm(cleaner))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to schedule imm", K(ret));
+      LOG_EDIAG("fail to schedule imm", K(ret));
     }
   }
   return ret;
@@ -1255,10 +1255,10 @@ int ObCacheCleaner::trigger()
   if (!triggered_) {
     if (OB_ISNULL(ethread_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("ethread can not be NULL", K_(ethread), K(ret));
+      LOG_EDIAG("ethread can not be NULL", K_(ethread), K(ret));
     } else if (OB_ISNULL(ethread_->schedule_imm(this, CLEANER_TRIGGER_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to schedule imm", K(ret));
+      LOG_EDIAG("fail to schedule imm", K(ret));
     } else {
       triggered_ = true;
     }
@@ -1271,16 +1271,16 @@ int ObCacheCleaner::start_clean_cache(ObEThread &ethread)
   int ret = OB_SUCCESS;
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(cleaner_reschedule_interval_us_ <= 0 || NULL != pending_action_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("unexpect state", K_(cleaner_reschedule_interval_us), K_(pending_action), K(ret));
+    LOG_WDIAG("unexpect state", K_(cleaner_reschedule_interval_us), K_(pending_action), K(ret));
   } else {
     ethread_ = &ethread;
     int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(cleaner_reschedule_interval_us_);
     if (OB_ISNULL(pending_action_ = ethread.schedule_in(this, HRTIME_USECONDS(interval_us)))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule in", K(interval_us), K(ret));
+      LOG_WDIAG("fail to schedule in", K(interval_us), K(ret));
     }
   }
   return ret;
@@ -1337,7 +1337,7 @@ int ObCacheCleaner::clean_routine_cache() {
           LOG_INFO("will clean routine cache", "sub bucket idx", i, K(clean_count),
                    K(max_sub_bucket_count), K(entry_count), K(mem_limited));
           if (OB_FAIL(clean_one_sub_bucket_routine_cache(i, clean_count))) {
-            LOG_WARN("fail to clean sub bucket routine cache", "sub bucket idx", i,
+            LOG_WDIAG("fail to clean sub bucket routine cache", "sub bucket idx", i,
                      K(clean_count), K(max_sub_bucket_count), K(mem_limited));
             ret = OB_SUCCESS; // ignore, and coutine
           }
@@ -1382,7 +1382,7 @@ int ObCacheCleaner::clean_one_sub_bucket_routine_cache(const int64_t bucket_idx,
   int64_t bucket_num = routine_cache_->get_sub_part_count();
   if ((bucket_idx < 0) || (bucket_idx >= bucket_num) || (clean_count <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(bucket_idx), K(clean_count), K(bucket_num), K(ret));
+    LOG_WDIAG("invalid input value", K(bucket_idx), K(clean_count), K(bucket_num), K(ret));
   } else {
     ObRoutineEntryCmp cmp;
     ObRoutineEntry *entry = NULL;
@@ -1395,9 +1395,9 @@ int ObCacheCleaner::clean_one_sub_bucket_routine_cache(const int64_t bucket_idx,
       char *buf = static_cast<char *>(op_fixed_mem_alloc(buf_len));
       if (OB_ISNULL(buf)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory", K(buf_len), K(ret));
+        LOG_WDIAG("fail to alloc memory", K(buf_len), K(ret));
       } else if (OB_FAIL(routine_cache_->run_todo_list(bucket_idx))) {
-        LOG_WARN("fail to run todo list", K(bucket_idx), K(ret));
+        LOG_WDIAG("fail to run todo list", K(bucket_idx), K(ret));
       } else {
         // 1.make a smallest heap
         ObRoutineEntryElem *eles = new (buf) ObRoutineEntryElem[tmp_clean_count];
@@ -1449,7 +1449,7 @@ int ObCacheCleaner::clean_one_sub_bucket_routine_cache(const int64_t bucket_idx,
             key.reset();
             entry->get_key(key);
             if (OB_FAIL(routine_cache_->remove_routine_entry(key))) {
-              LOG_WARN("fail to remove routine entry", KPC(entry), K(ret));
+              LOG_WDIAG("fail to remove routine entry", KPC(entry), K(ret));
             }
           }
         }
@@ -1511,7 +1511,7 @@ int ObCacheCleaner::clean_sql_table_cache() {
           LOG_INFO("will clean sql table cache", "sub bucket idx", i, K(clean_count),
                    K(max_sub_bucket_count), K(entry_count), K(mem_limited));
           if (OB_FAIL(clean_one_sub_bucket_sql_table_cache(i, clean_count))) {
-            LOG_WARN("fail to clean sub bucket sql table cache", "sub bucket idx", i,
+            LOG_WDIAG("fail to clean sub bucket sql table cache", "sub bucket idx", i,
                      K(clean_count), K(max_sub_bucket_count), K(mem_limited));
             ret = OB_SUCCESS; // ignore, and coutine
           }
@@ -1555,7 +1555,7 @@ int ObCacheCleaner::clean_one_sub_bucket_sql_table_cache(const int64_t bucket_id
   int64_t bucket_num = sql_table_cache_->get_sub_part_count();
   if ((bucket_idx < 0) || (bucket_idx >= bucket_num) || (clean_count <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(bucket_idx), K(clean_count), K(bucket_num), K(ret));
+    LOG_WDIAG("invalid input value", K(bucket_idx), K(clean_count), K(bucket_num), K(ret));
   } else {
     ObSqlTableEntryCmp cmp;
     ObSqlTableEntry *entry = NULL;
@@ -1565,7 +1565,7 @@ int ObCacheCleaner::clean_one_sub_bucket_sql_table_cache(const int64_t bucket_id
     char *buf = static_cast<char *>(op_fixed_mem_alloc(buf_len));
     if (OB_ISNULL(buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc memory", K(buf_len), K(ret));
+      LOG_WDIAG("fail to alloc memory", K(buf_len), K(ret));
     } else {
       // 1.make a smallest heap
       ObSqlTableEntryElem *eles = new (buf) ObSqlTableEntryElem[tmp_clean_count];
@@ -1620,7 +1620,7 @@ int ObCacheCleaner::clean_one_sub_bucket_sql_table_cache(const int64_t bucket_id
           key.reset();
           key = entry->get_key();
           if (OB_FAIL(sql_table_cache_->remove_sql_table_entry(key))) {
-            LOG_WARN("fail to remove sql table entry", KPC(entry), K(ret));
+            LOG_WDIAG("fail to remove sql table entry", KPC(entry), K(ret));
           }
         }
       }

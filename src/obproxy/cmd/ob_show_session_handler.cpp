@@ -456,7 +456,7 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
     const int64_t len = static_cast<int64_t>(strlen(get_global_proxy_config().proxy_idc_name.str()));
     if (len < 0 || len > common::MAX_PROXY_IDC_LENGTH) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("proxy_idc_name's length is over size", K(len),
+      LOG_WDIAG("proxy_idc_name's length is over size", K(len),
                "proxy_idc_name", get_global_proxy_config().proxy_idc_name.str(), K(ret));
     } else {
       memcpy(idc_name_buf, get_global_proxy_config().proxy_idc_name.str(), len);
@@ -591,7 +591,7 @@ int ObShowSessionHandler::dump_cs_attribute_item(const char *name, const int64_t
 
   if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int64_t>(sizeof(int64_buffer)))) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("buf not enought", K(length), "int64_buffer length", sizeof(int64_buffer), K(value), K(ret));
+    LOG_WDIAG("buf not enought", K(length), "int64_buffer length", sizeof(int64_buffer), K(value), K(ret));
   } else{
     ret = dump_cs_attribute_item(name, ObString::make_string(int64_buffer), info);
   }
@@ -738,10 +738,12 @@ int ObShowSessionHandler::dump_cs_list(const ObMysqlClientSession &cs)
     //2. SYS tenant user
     //3. same tenant && same user
     //4. same tenant && PROCESS privilege
+    //5. same user for sharding
     if (session_priv_.has_all_privilege_
         || session_priv_.tenant_name_ == OB_SYS_TENANT_NAME
-        || (session_priv_.is_same_tenant(other_priv_info)
-            && (session_priv_.is_same_user(other_priv_info) || session_priv_.has_process_privilege()))) {
+        || ((!cs.get_session_info().is_sharding_user() && session_priv_.is_same_tenant(other_priv_info))
+            && (session_priv_.is_same_user(other_priv_info) || session_priv_.has_process_privilege()))
+        || (cs.get_session_info().is_sharding_user() && session_priv_.is_same_logic_user(other_priv_info))) {
       ObNewRow row;
       ObObj cells[OB_SLC_MAX_SLIST_COLUMN_ID];
       cells[OB_SLC_ID].set_uint32(cs.get_cs_id());
@@ -1156,9 +1158,7 @@ int ObShowSessionHandler::dump_cs_read_stale_replica(ObMysqlClientSession &cs)
   const ObProxySessionPrivInfo &priv_info = cs.get_session_info().get_priv_info();
   const ObString &tenant_name = priv_info.tenant_name_;
   const ObString &cluster_name = priv_info.cluster_name_;
-  ObNetVConnection *client_vc = static_cast<ObNetVConnection*>(cs.get_netvc());
-  ObVipAddr vip_addr;
-  vip_addr.set(client_vc->get_virtual_addr(), client_vc->get_virtual_vid());
+  ObVipAddr vip_addr = cs.get_ct_info().vip_tenant_.vip_addr_;
 
   if (OB_FAIL(processor.acquire_vip_feedback_record(vip_addr, tenant_name, cluster_name, vip_read_stale_info))) {
     WARN_ICMD("fail to acquire vip read stale feedback map", K(ret));

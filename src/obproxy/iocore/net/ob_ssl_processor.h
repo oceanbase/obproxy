@@ -36,7 +36,8 @@ public:
   ~ObSSLProcessor() {}
   int init();
   SSL* create_new_ssl(const common::ObString &cluster_name,
-                      const common::ObString &tenant_name);
+                      const common::ObString &tenant_name,
+                      const uint64_t options);
   void release_ssl(SSL* ssl, const bool can_shutdown_ssl);
   void release_ssl_ctx(common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> &delete_info);
   void openssl_lock(int n);

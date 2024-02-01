@@ -25,12 +25,12 @@ int ObTargetDbServer::init(const char* target_db_server_str, uint64_t target_db_
   reset();
   if (OB_ISNULL(target_db_server_str)) {
     ret = OB_INIT_FAIL;
-    LOG_WARN("fail to init target db server for NULL str", K(ret));
+    LOG_WDIAG("fail to init target db server for NULL str", K(ret));
   } else if (target_db_server_str_len == 0) {
     LOG_DEBUG("succ to init target db server with empty str");
   } else if (OB_ISNULL(target_db_server_buf_ = static_cast<char*>(op_fixed_mem_alloc(target_db_server_str_len + 1)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mem for target db server", K(ret), K(target_db_server_str_len));
+    LOG_WDIAG("fail to allocate mem for target db server", K(ret), K(target_db_server_str_len));
   } else {
     target_db_server_buf_len_ = target_db_server_str_len + 1;
     MEMSET(target_db_server_buf_, '\0', target_db_server_buf_len_);
@@ -38,7 +38,7 @@ int ObTargetDbServer::init(const char* target_db_server_str, uint64_t target_db_
   
     ObString target_db_server_str(target_db_server_str_len, target_db_server_buf_);
     if (OB_FAIL(split_weight_group(target_db_server_str, target_db_server_, target_db_server_weight_))) {
-       LOG_WARN("fail to split target db server str", K(ret));
+       LOG_WDIAG("fail to split target db server str", K(ret));
     } else { /* succ */ }
   }
 
@@ -58,10 +58,10 @@ int ObTargetDbServer::get(net::ObIpEndpoint &dest)
   // [weight_start, weight_end) 
   if (!is_init_) {
     ret = OB_INIT_FAIL;
-    LOG_WARN("fail to get next, target db server not init", K(ret));
+    LOG_WDIAG("fail to get next, target db server not init", K(ret));
   } else if (last_failed_idx_ == target_db_server_.count() - 1) {
     ret = OB_DATA_OUT_OF_RANGE;
-    LOG_WARN("fail to get next, all target db server has failed", K(ret));
+    LOG_WDIAG("fail to get next, all target db server has failed", K(ret));
   } else if (!is_rand_) {
     ObTargetDbServerArray::iterator weight_begin = target_db_server_.begin();
     for (int64_t i = 0; i < target_db_server_.count(); i++) {
@@ -79,9 +79,9 @@ int ObTargetDbServer::get(net::ObIpEndpoint &dest)
     ObString addr;
     uint64_t idx = last_failed_idx_ + 1;
     if (OB_FAIL(target_db_server_.at(idx, addr))) {
-      LOG_WARN("fail to access target db server array", K(ret), K(idx));
+      LOG_WDIAG("fail to access target db server array", K(ret), K(idx));
     } else if (OB_FAIL(ops_ip_pton(addr, dest))) {
-      LOG_WARN("fail to do ops_ip_pton on target db server", K(ret), K(addr));
+      LOG_WDIAG("fail to do ops_ip_pton on target db server", K(ret), K(addr));
     } else if (dest == obproxy_addr_ || (ops_is_ip_loopback(dest) && dest.port() == obproxy_addr_.port())) {
       LOG_DEBUG("try to get next, since get obproxy itself as target db server", K(ret), K(addr));
       return get_next(dest);

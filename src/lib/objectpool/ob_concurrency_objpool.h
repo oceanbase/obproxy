@@ -20,11 +20,13 @@
 #include "lib/list/ob_intrusive_list.h"
 #include "lib/lock/ob_mutex.h"
 #include "lib/container/ob_vector.h"
+#include "lib/allocator/ob_mem_leak_checker.h"
 
 DEFINE_HAS_MEMBER(OP_LOCAL_NUM);
 
 namespace oceanbase
 {
+
 namespace common
 {
 struct ObThreadCache;
@@ -261,12 +263,14 @@ public:
     if (OB_LIKELY(NULL != fl_)) {
       ret = fl_->alloc();
     }
+    common::get_global_objpool_leak_checker().on_alloc(this->get_objpool_id(), this->get_free_list_name(), ret, this->get_obj_size());
     return ret;
   }
 
   // Deallocate a block of memory allocated by the Allocator.
   virtual void free_void(void *ptr)
   {
+    common::get_global_objpool_leak_checker().on_free(this->get_objpool_id(), this->get_free_list_name(), ptr);
     if (OB_LIKELY(NULL != fl_) && OB_LIKELY(NULL != ptr)) {
       fl_->free(ptr);
       ptr = NULL;
@@ -306,6 +310,9 @@ public:
   int64_t get_obj_size() { return ((NULL == fl_) ? 0 : fl_->get_base_obj_size()); }
 
 protected:
+  virtual int64_t get_objpool_id() { return (int64_t)fl_; }
+  virtual const char* get_free_list_name() { return ((NULL == fl_) ? "" : fl_->get_name()); }
+
   ObObjFreeList *fl_;
 
   DISALLOW_COPY_AND_ASSIGN(ObFixedMemAllocator);
@@ -412,7 +419,7 @@ public:
         if (OB_LIKELY(NULL != instance)) {
           if (common::OB_SUCCESS != instance->init(typeid(T).name(), RND16(sizeof(T)),
                                                    obj_count, RND16(alignment), cache_type, is_meta)) {
-            _OB_LOG(ERROR, "failed to init class allocator %s", typeid(T).name());
+            _OB_LOG(EDIAG, "failed to init class allocator %s", typeid(T).name());
             delete instance;
             instance = NULL;
             ATOMIC_BCAS(&once_, 1, 0);
@@ -439,6 +446,7 @@ public:
     if (OB_LIKELY(NULL != fl_) && OB_LIKELY(NULL != (ptr = fl_->alloc()))) {
       ObClassConstructor<T> construct;
       ret = construct(ptr);
+      common::get_global_objpool_leak_checker().on_alloc(this->get_objpool_id(), this->get_free_list_name(), ptr, this->get_obj_size());
     }
     return ret;
   }
@@ -448,6 +456,7 @@ public:
   virtual void free(T *ptr)
   {
     if (OB_LIKELY(NULL != fl_) && OB_LIKELY(NULL != ptr)) {
+      common::get_global_objpool_leak_checker().on_free(this->get_objpool_id(), this->get_free_list_name(), ptr);
       ptr->~T();
       fl_->free(ptr);
       ptr = NULL;
@@ -467,7 +476,6 @@ protected:
   static volatile int64_t once_; // for creating singleton instance
   static volatile ObClassAllocator<T> *instance_;
 
-private:
   DISALLOW_COPY_AND_ASSIGN(ObClassAllocator);
 };
 
@@ -509,6 +517,8 @@ public:
     if (OB_LIKELY(NULL != ptr)) {
       obj = new (ptr) T();
     }
+    common::get_global_objpool_leak_checker().on_alloc(this->get_objpool_id(), this->get_free_list_name(), ptr, this->get_obj_size());
+
     return obj;
   }
 
@@ -518,6 +528,7 @@ public:
   {
     int ret = OB_SUCCESS;
     if (OB_LIKELY(NULL != ptr)) {
+      common::get_global_objpool_leak_checker().on_free(this->get_objpool_id(), this->get_free_list_name(), ptr);
       ptr->~T();
       if (OB_SUCC(mutex_acquire(&allocator_lock_))) {
         *(reinterpret_cast<void **>(ptr)) = free_list_;
@@ -574,7 +585,7 @@ public:
           instance->instantiate_ = instantiate_func;
           if (common::OB_SUCCESS != instance->init(typeid(T).name(), RND16(sizeof(T)),
                                                    obj_count, 16, OP_RECLAIM, false)) {
-            _OB_LOG(ERROR, "failed to init class sparse allocator %s", typeid(T).name());
+            _OB_LOG(EDIAG, "failed to init class sparse allocator %s", typeid(T).name());
             delete instance;
             instance = NULL;
             ATOMIC_BCAS(&once_, 1, 0);
@@ -603,6 +614,8 @@ public:
         ret = reinterpret_cast<T *>(ptr);
       }
     }
+    common::get_global_objpool_leak_checker().on_alloc(this->get_objpool_id(), this->get_free_list_name(), ret, this->get_obj_size());
+
     return ret;
   }
 
@@ -656,10 +669,10 @@ private:
     while (OB_UNLIKELY(once_ < 2) && OB_SUCC(ret)) {
       if (ATOMIC_BCAS(&once_, 0, 1)) {
         if (OB_FAIL(fl_allocator_.init(*this, "ObjFreeList", sizeof(ObObjFreeList), 64, 16, OP_GLOBAL, true))) {
-          OB_LOG(WARN, "failed to init ObjFreeList allocator", K(ret));
+          OB_LOG(WDIAG, "failed to init ObjFreeList allocator", K(ret));
           ATOMIC_BCAS(&once_, 1, 0);
         } else if (OB_FAIL(tc_allocator_.init(*this, "ObThreadCache", sizeof(ObThreadCache), 64, 16, OP_RECLAIM, true))) {
-          OB_LOG(WARN, "failed to init ObThreadCache allocator", K(ret));
+          OB_LOG(WDIAG, "failed to init ObThreadCache allocator", K(ret));
           ATOMIC_BCAS(&once_, 1, 0);
         } else {
           is_inited_ = true;

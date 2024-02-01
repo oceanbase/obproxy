@@ -54,10 +54,10 @@ int ObSessionPoolProcessor::create_refresh_server_session_cont()
   int64_t interval_us = HRTIME_USECONDS(get_global_proxy_config().session_pool_cont_delay_interval);
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory for proxy mutex error", K(ret));
+    LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
   } else if (OB_ISNULL(cont = new (std::nothrow) ObProxyRefreshServerAddrCont(mutex, interval_us))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc ObProxyRefreshServerAddrCont", K(ret));
+    LOG_EDIAG("fail to alloc ObProxyRefreshServerAddrCont", K(ret));
   } else {
     cont->schedule_refresh_server_cont(true);
     LOG_INFO("create_refresh_server_session_cont", K(interval_us));
@@ -85,10 +85,10 @@ int ObSessionPoolProcessor::create_server_conn_cont()
   int64_t interval_us = HRTIME_USECONDS(get_global_proxy_config().session_pool_cont_delay_interval);
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory for proxy mutex error", K(ret));
+    LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
   } else if (OB_ISNULL(cont = new (std::nothrow) ObProxyCreateServerConnCont(mutex, interval_us))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc ObProxyCreateServerConnCont", K(ret));
+    LOG_EDIAG("fail to alloc ObProxyCreateServerConnCont", K(ret));
   } else {
     ret = cont->schedule_create_conn_cont(true);
     LOG_INFO("create_server_conn_cont", K(interval_us));
@@ -116,10 +116,10 @@ int ObSessionPoolProcessor::create_conn_num_check_cont()
   int64_t interval_us = HRTIME_USECONDS(get_global_proxy_config().session_pool_cont_delay_interval);
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory for proxy mutex error", K(ret));
+    LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
   } else if (OB_ISNULL(cont = new (std::nothrow) ObProxyConnNumCheckCont(mutex, interval_us))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc ObProxyConnNumCheckCont", K(ret));
+    LOG_EDIAG("fail to alloc ObProxyConnNumCheckCont", K(ret));
   } else {
     ret = cont->schedule_check_conn_num_cont(true);
     LOG_INFO("create_conn_num_check_cont", K(interval_us));
@@ -156,7 +156,7 @@ int ObSessionPoolProcessor::handle_one_logic_tenent(ObDbConfigLogicTenant* logic
     logic_db = &(*ld_spot);
     schema_key = NULL;
     if (OB_ISNULL(logic_db)) {
-      LOG_WARN("logic_db should not null here", K(logic_tenant_name));
+      LOG_WDIAG("logic_db should not null here", K(logic_tenant_name));
     } else {
       ++logic_db_count;
       ObString logic_db_name = logic_db->db_name_.config_string_;
@@ -166,7 +166,7 @@ int ObSessionPoolProcessor::handle_one_logic_tenent(ObDbConfigLogicTenant* logic
       for (; OB_SUCC(ret) && sc_spot != sc_last; ++sc_spot) {
         ObShardConnector* shard_conn = &(*sc_spot);
         if (OB_ISNULL(shard_conn)) {
-          LOG_WARN("shard_conn should not null here", K(logic_tenant_name), K(logic_db_name));
+          LOG_WDIAG("shard_conn should not null here", K(logic_tenant_name), K(logic_db_name));
         } else {
           ++shard_conn_count;
           ObString shard_name = shard_conn->shard_name_.config_string_;
@@ -174,22 +174,22 @@ int ObSessionPoolProcessor::handle_one_logic_tenent(ObDbConfigLogicTenant* logic
           ObShardProp* shard_prop = NULL;
           if (OB_FAIL(get_global_dbconfig_cache().get_shard_prop(logic_tenant_name,
               logic_db_name, shard_name, shard_prop))) {
-            LOG_WARN("get_connector_prop faild", K(ret), K(logic_tenant_name), K(logic_db_name), K(shard_name));
+            LOG_WDIAG("get_connector_prop faild", K(ret), K(logic_tenant_name), K(logic_db_name), K(shard_name));
           } else if (!shard_prop->get_need_prefill()) {
             LOG_DEBUG("no need prefill", K(logic_tenant_name), K(logic_db_name), K(shard_name));
           } else if (OB_ISNULL(schema_key = op_alloc(ObProxySchemaKey))) {
-            LOG_WARN("alloc schema_key failed", K(shard_name), KPC(shard_conn));
+            LOG_WDIAG("alloc schema_key failed", K(shard_name), KPC(shard_conn));
           } else if (OB_FAIL(ObMysqlSessionUtils::init_schema_key_value(*schema_key, logic_tenant_name, logic_db_name, shard_conn))) {
-            LOG_WARN("init_schema_key_value failed", K(ret), KPC(shard_conn));
+            LOG_WDIAG("init_schema_key_value failed", K(ret), KPC(shard_conn));
           } else if (DB_MYSQL == shard_conn->server_type_) {
             // mysql add addr direct
             int64_t port = 0;
             if (OB_FAIL(get_int_value(shard_conn->physic_port_.config_string_, port))) {
-              LOG_WARN("invalid int value", K(shard_conn->physic_port_.config_string_), K(ret));
+              LOG_WDIAG("invalid int value", K(shard_conn->physic_port_.config_string_), K(ret));
             } else if (OB_FAIL(get_global_session_manager().add_server_addr_if_not_exist(*schema_key,
                          shard_conn->physic_addr_.config_string_, static_cast<int32_t>(port),
                          shard_conn->is_physic_ip_))) {
-              LOG_WARN("add server addr failed", K(ret), KPC(shard_conn));
+              LOG_WDIAG("add server addr failed", K(ret), KPC(shard_conn));
             } else {
               LOG_DEBUG("add server addr succ", K(ret), K(shard_conn->physic_addr_.config_string_), K(port));
             }
@@ -250,7 +250,7 @@ int ObSessionPoolProcessor::start_pool_stat_dump_task()
             ObSessionPoolProcessor::do_pool_stat_dump,
             ObSessionPoolProcessor::update_pool_stat_dump_interval, false, event::ET_TASK))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start tenant_stat_dump_task task", K(ret));
+      LOG_WDIAG("fail to create and start tenant_stat_dump_task task", K(ret));
     } else {
       LOG_DEBUG("start pool_stat_dump_task", K(interval_us));
     }
@@ -273,15 +273,15 @@ int ObSessionPoolProcessor::start_session_pool_task()
     int32_t logic_db_count = 0;
     int32_t shard_conn_count = 0;
     if (OB_FAIL(get_global_dbconfig_cache().get_all_logic_tenant(all_tenant))) {
-      LOG_WARN("failed to get all logic tenant", K(ret));
+      LOG_WDIAG("failed to get all logic tenant", K(ret));
     }
     for (int64_t i = 0; OB_SUCC(ret) && i < all_tenant.count(); i++) {
       ObString& tenant_name = all_tenant.at(i);
       if (OB_ISNULL(logic_tenant = get_global_dbconfig_cache().get_exist_tenant(tenant_name))) {
-        LOG_WARN("tenant not exist", K(tenant_name));
+        LOG_WDIAG("tenant not exist", K(tenant_name));
       } else {
         if (OB_FAIL(handle_one_logic_tenent(logic_tenant, logic_tenant_count, logic_db_count, shard_conn_count))) {
-          LOG_WARN("fail to handle_one_logic_tenent", K(ret));
+          LOG_WDIAG("fail to handle_one_logic_tenent", K(ret));
         }
         logic_tenant->dec_ref();
         logic_tenant = NULL;
@@ -301,9 +301,9 @@ int ObSessionPoolProcessor::start_session_pool_task()
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(create_conn_num_check_cont())) {
-      LOG_WARN("create_conn_num_check_cont failed", K(ret));
+      LOG_WDIAG("create_conn_num_check_cont failed", K(ret));
     } else if (OB_FAIL(start_pool_stat_dump_task())) {
-      LOG_WARN("start_pool_stat_dump_task failed", K(ret));
+      LOG_WDIAG("start_pool_stat_dump_task failed", K(ret));
     }
   }
   return ret;

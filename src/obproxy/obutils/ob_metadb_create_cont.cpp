@@ -41,20 +41,20 @@ int ObMetadbCreateCont::main_handler(int event, void *data)
     case METADB_CREATE_START_EVENT: {
       pending_action_ = NULL;
       if (OB_FAIL(handle_create_meta_db())) {
-        LOG_WARN("fail to handle create meta db", K(ret));
+        LOG_WDIAG("fail to handle create meta db", K(ret));
       }
       break;
     }
     case CLUSTER_RESOURCE_CREATE_COMPLETE_EVENT: {
       pending_action_ = NULL;
       if (OB_FAIL(handle_create_complete(data))) {
-        LOG_WARN("fail to handle creat complete", K(ret));
+        LOG_WDIAG("fail to handle creat complete", K(ret));
       }
       break;
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown event", K(event), K(data), K(ret));
+      LOG_WDIAG("unknown event", K(event), K(data), K(ret));
       break;
     }
   };
@@ -65,7 +65,7 @@ int ObMetadbCreateCont::main_handler(int event, void *data)
   } else {
     --reentrancy_count_;
     if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-      LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count));
+      LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count));
     }
   }
 
@@ -85,7 +85,7 @@ int ObMetadbCreateCont::handle_create_meta_db()
   if (OB_FAIL(rp_processor.get_cluster_resource(*this,
           (process_async_task_pfn)&ObMetadbCreateCont::handle_create_complete,
           false, tenant_name, OB_DEFAULT_CLUSTER_ID, NULL, pending_action_))) {
-    LOG_WARN("fail to get cluster resource", "cluster name", OB_META_DB_CLUSTER_NAME, K(ret));
+    LOG_WDIAG("fail to get cluster resource", "cluster name", OB_META_DB_CLUSTER_NAME, K(ret));
   } else if (NULL == pending_action_) { // created succ
     LOG_INFO("metadb resource was created by others, no need create again");
   }
@@ -103,10 +103,10 @@ int ObMetadbCreateCont::handle_create_complete(void *data)
       if (OB_ISNULL(pending_action_ = g_event_processor.schedule_in(
               this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), ET_CALL, METADB_CREATE_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule fetch rslist task", K(ret));
+        LOG_WDIAG("fail to schedule fetch rslist task", K(ret));
       }
     } else {
-      LOG_WARN("fail to crate metadb, no chance retry", K(data));
+      LOG_WDIAG("fail to crate metadb, no chance retry", K(data));
       terminate_ = true;
     }
   } else {
@@ -118,15 +118,15 @@ int ObMetadbCreateCont::handle_create_complete(void *data)
       char passwd_staged1_buf[ENC_STRING_BUF_LEN]; // 1B '*' + 40B octal num
       ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
       if (OB_FAIL(cs_processor.get_proxy_meta_table_login_info(login_info))) {
-        LOG_WARN("fail to get meta table login info", K(ret));
+        LOG_WDIAG("fail to get meta table login info", K(ret));
       } else if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(login_info.password_, passwd_string))) {
-        LOG_WARN("fail to encrypt_passwd_to_stage1", K(login_info), K(ret));
+        LOG_WDIAG("fail to encrypt_passwd_to_stage1", K(login_info), K(ret));
       } else {
         passwd_string += 1;//trim the head'*'
         const bool is_meta_mysql_client = true;
         if (OB_FAIL(meta_proxy_->rebuild_client_pool(cr, is_meta_mysql_client,
                    OB_META_DB_CLUSTER_NAME, OB_DEFAULT_CLUSTER_ID, login_info.username_, passwd_string, login_info.db_))) {
-          LOG_WARN("fail to create meta mysql client pool", K(login_info), K(ret));
+          LOG_WDIAG("fail to create meta mysql client pool", K(login_info), K(ret));
         }
       }
     }
@@ -147,16 +147,16 @@ int ObMetadbCreateCont::create_metadb(ObMysqlProxy *meta_proxy)
   ObProxyMutex *mutex = NULL;
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory for proxy mutex error", K(ret));
+    LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
   } else if (OB_ISNULL(cont = new (std::nothrow) ObMetadbCreateCont(mutex, meta_proxy))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc ObMetadbCreateCont", K(ret));
+    LOG_EDIAG("fail to alloc ObMetadbCreateCont", K(ret));
   } else {
     // create cluster resource must be done in work thread
     if (!self_ethread().is_event_thread_type(ET_CALL)) {
       if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL, METADB_CREATE_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule create metadb cluster resource event", K(ret));
+        LOG_WDIAG("fail to schedule create metadb cluster resource event", K(ret));
       }
     } else {
       MUTEX_TRY_LOCK(lock, cont->mutex_, this_ethread());
@@ -165,7 +165,7 @@ int ObMetadbCreateCont::create_metadb(ObMysqlProxy *meta_proxy)
         cont->handle_event(METADB_CREATE_START_EVENT, NULL);
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("the lock must be locked", K(ret));
+        LOG_WDIAG("the lock must be locked", K(ret));
       }
     }
   }

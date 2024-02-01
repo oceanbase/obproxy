@@ -325,14 +325,14 @@ int ObPrometheusFamily::create_metric(const ObPrometheusMetricHashKey &key, TA &
     if (common::OB_HASH_NOT_EXIST == ret) {
       if (OB_ISNULL(metric = op_alloc_args(T, args))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_LOG(WARN, "fail to allocate memory", K(ret));
+        PROXY_LOG(WDIAG, "fail to allocate memory", K(ret));
       } else {
         is_new = true;
         metric->inc_ref();
         if (OB_FAIL(metric->init(key, allow_delete))) {
-          PROXY_LOG(WARN, "fail to init metric", K(key), K(ret));
+          PROXY_LOG(WDIAG, "fail to init metric", K(key), K(ret));
         } else if (OB_FAIL(metrics_.unique_set(metric))) {
-          PROXY_LOG(WARN, "fail to set metric into hashmap", KPC(metric), K(ret));
+          PROXY_LOG(WDIAG, "fail to set metric into hashmap", KPC(metric), K(ret));
         }
       }
 
@@ -373,10 +373,10 @@ int ObPrometheusFamily::get_or_create_metric(const common::ObVector<ObPrometheus
   if (OB_FAIL(get_metric(key, metric))) {
     if (common::OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(create_metric(key, args, metric))) {
-        PROXY_LOG(WARN, "fail to create metric", K(key), K(ret));
+        PROXY_LOG(WDIAG, "fail to create metric", K(key), K(ret));
       }
     } else {
-      PROXY_LOG(WARN, "fail to get metric", K(key), K(ret));
+      PROXY_LOG(WDIAG, "fail to get metric", K(key), K(ret));
     }
   }
 

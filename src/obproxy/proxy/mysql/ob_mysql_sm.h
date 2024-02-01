@@ -8,24 +8,6 @@
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
- *
- * ************************************************************
- * 
- * Licensed to the Apache Software Foundation (ASF) under one
- * or more contributor license agreements.  See the NOTICE file
- * distributed with this work for additional information
- * regarding copyright ownership.  The ASF licenses this file
- * to you under the Apache License, Version 2.0 (the
- * "License"); you may not use this file except in compliance
- * with the License.  You may obtain a copy of the License at
- *
- *    http://www.apache.org/licenses/LICENSE-2.0
- *
- * Unless required by applicable law or agreed to in writing, software
- * distributed under the License is distributed on an "AS IS" BASIS,
- * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
- * See the License for the specific language governing permissions and
- * limitations under the License.
  */
 
 #ifndef OBPROXY_MYSQL_SM_H
@@ -52,6 +34,7 @@
 #include "rpc/proxy_protocol/proxy_protocol_v2.h"
 #include "proxy/route/ob_route_diagnosis.h"
 #include "obutils/ob_connection_diagnosis_trace.h"
+#include "omt/ob_proxy_config_table_processor.h"
 
 namespace oceanbase
 {
@@ -65,15 +48,18 @@ namespace proxy
 // from the observer since we want to get as much of the
 // document as possible on the first read Marco benchmarked
 // about 3% ops/second improvement using the larger buffer size
-static int64_t const MYSQL_BUFFER_SIZE     = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
+static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 static const int64_t MYSQL_SM_LIST_BUCKETS = 64;
+
+// COM_STMT_CLOSE not return any packet, in case client sending packet continuously, here define WATER_MARK to check whether stack overflow
+static const int64_t COM_STMT_CLOSE_REQUEST_BUFFER_WATER_MARK = 1024;
 
 class ObMysqlServerSession;
 
 enum ObMysqlSMMagic
 {
   MYSQL_SM_MAGIC_ALIVE = 0x0000FEED,
-  MYSQL_SM_MAGIC_DEAD  = 0xDEADFEED
+  MYSQL_SM_MAGIC_DEAD = 0xDEADFEED
 };
 
 struct ObStreamSizeStat
@@ -100,10 +86,11 @@ struct ObStreamSizeStat
 extern ObMutex g_debug_sm_list_mutex;
 
 /* Attention!!!
- * The sm object does not call the constructor when allocate, but directly copies the memory.
- * Therefore, when adding member variables to sm or adding sub-members to sm member variables,
- * if the new member contains pointer variables, it must be displayed Initialize in the init function,
- * otherwise the new object member pointer may point to the memory in the old sm object;
+ * sm 对象在allocate 时并不会调用构造函数，而是直接内存拷贝，
+ * 因此往sm 添加中成员变量或者给sm的的成员变量添加子成员时，
+ * 如果新增的成员中包含指针变量，一定要显示地在init 函数中进行初始化，
+ * 否则新的对象成员指针可能会指向老的sm对象中的内存；
+ * bug 记录: https://work.aone.alibaba-inc.com/issue/21801637
  */
 class ObMysqlSM : public event::ObContinuation
 {
@@ -185,14 +172,13 @@ public:
   int analyze_fetch_request();
   int analyze_close_reset_request();
   int analyze_ps_prepare_execute_request();
-  bool need_setup_client_transfer();
+  int need_setup_client_transfer(bool &need);
   bool check_connection_throttle();
   bool can_pass_white_list();
   int analyze_capacity_flag_from_client();
   bool check_vt_connection_throttle();
   bool is_partition_table_route_supported();
   bool is_pl_route_supported();
-  int encode_error_message(int err_code);
   int handle_saved_session_variables();
   void print_mysql_complete_log(ObMysqlTunnelProducer *p);
 
@@ -236,7 +222,7 @@ public:
   ObProxyProtocol get_client_session_protocol() const;
   bool is_checksum_on() const;
   bool is_extra_ok_packet_for_stats_enabled() const;
-  uint8_t get_request_seq();
+  uint8_t get_compressed_or_ob20_request_seq();
   obmysql::ObMySQLCmd get_request_cmd();
 
   ObMysqlCompressAnalyzer &get_compress_analyzer();
@@ -254,6 +240,7 @@ public:
                               const bool is_cloud_user) const;
   inline void set_skip_plugin(const bool bvalue) { skip_plugin_ = bvalue; }
   void set_detect_server_info(net::ObIpEndpoint target_addr, int cnt, int64_t time);
+  int build_error_packet_for_connection_diagnosis(bool &is_packet_build);
 public:
   static const int64_t OP_LOCAL_NUM = 32;
   static const int64_t MAX_SCATTER_LEN;
@@ -264,7 +251,6 @@ public:
   ObMysqlTransact::ObTransState trans_state_;
   ObMysqlClientSession *client_session_;
   obutils::ObClusterResource *sm_cluster_resource_; // point to client_session's cluster_resource
-
   LINK(ObMysqlSM, stat_link_);
 
 #ifdef USE_MYSQL_DEBUG_LISTS
@@ -276,6 +262,7 @@ public:
   ObCmdTimeStat cmd_time_stats_;
   ObTransactionStat trans_stats_;
   ObTransactionMilestones milestones_;
+  ObConnectionMilestones conn_milestones_;
   bool is_updated_stat_;
   bool is_in_list_;
 
@@ -293,7 +280,7 @@ public:
 public:
   common::FLTObjManage flt_;     // ob20 full link trace obj
   char flt_trace_buffer_[MAX_TRACE_LOG_SIZE];     // buffer for full link trace with each sm
-  
+
 public:
   static uint32_t get_next_sm_id();
   void remove_client_entry();
@@ -354,6 +341,7 @@ public:
   int do_internal_request_for_sharding_show_db(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_show_table(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_show_table_status(event::ObMIOBuffer *buf);
+  int do_internal_request_for_sharding_show_create_table(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_show_elastic_id(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_show_topology(event::ObMIOBuffer *buf);
   int do_internal_request_for_sharding_select_db(event::ObMIOBuffer *buf);
@@ -422,7 +410,8 @@ public:
   void update_monitor_log();
   void get_monitor_error_info(int32_t &error_code,
                               ObString &error_msg,
-                              bool &is_error_resp);
+                              bool &is_error_resp,
+                              bool &is_database_error);
   void update_monitor_stats(const ObString &logic_tenant_name,
                             const ObString &logic_database_name,
                             const ObString &cluster,
@@ -445,11 +434,13 @@ public:
   int handle_req_to_generate_root_span_by_proxy();
   int handle_for_end_proxy_trace(trace::UUID &trace_id);
   int handle_resp_for_end_flt_trace(bool is_trans_completed);
-  void set_enable_ob_protocol_v2(const bool enable_ob_protocol_v2) { enable_ob_protocol_v2_ = enable_ob_protocol_v2; }
-  bool is_enable_ob_protocol_v2() const { return enable_ob_protocol_v2_; }
+  void set_server_protocol(ObProxyProtocol protocol) { server_protocol_ = protocol; }
+  ObProxyProtocol get_server_protocol() const { return server_protocol_; }
 
   bool is_proxy_switch_route() const;
-  void build_basic_connection_diagnossis_info();
+  void build_basic_connection_diagnosis_info();
+  void fill_disconnect_message();
+
 private:
   // private functions
   int handle_server_request_send_long_data();
@@ -461,6 +452,9 @@ private:
                                                           ObClientSessionInfo &client_session_info);
   int analyze_ob20_remain_after_analyze_mysql_request_done(ObClientSessionInfo &client_session_info);
   int handle_proxy_protocol_v2_request(proxy_protocol_v2::ProxyProtocolV2 &v2, ObMysqlAnalyzeStatus &status);
+  void handle_obproxy_internal_error();
+  void handle_obproxy_error_transfer();
+  void handle_disconnect_directly();
 
 private:
   static const int64_t HISTORY_SIZE = 32;
@@ -502,23 +496,34 @@ private:
   bool skip_plugin_;
   bool add_detect_server_cnt_;
   proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
+  ObProxyProtocol server_protocol_; // server protocol configured by `enable_compression_protocol` or `enable_ob_protocol_v2`
 public:
   // 多级别配置项：因为配置项最细粒度可以在VIP级别生效，所以需要每个SM可能都不同
   // 非配置相关的不要放在这里
   char proxy_route_policy_[OB_MAX_CONFIG_VALUE_LEN];
   char proxy_idc_name_[OB_MAX_CONFIG_VALUE_LEN];
+  char proxy_primary_zone_name_[OB_MAX_CONFIG_VALUE_LEN];
   bool enable_cloud_full_username_;
   bool enable_client_ssl_;
   bool enable_server_ssl_;
   bool enable_read_write_split_;
   bool enable_transaction_split_;
-  bool enable_ob_protocol_v2_; // limit the scope of changing enable_protocol_v2_ to client session level 
+  bool enable_ob_protocol_v2_; // limit the scope of changing enable_protocol_v2_ to client session level
+  bool enable_compression_protocol_;
   bool enable_read_stale_feedback_;
   int64_t read_stale_retry_interval_;
-  bool force_using_ssl_;
+  omt::ObProxyConfigTableProcessor::SSLAttributes ssl_attributes_;
+  char binlog_service_ip_[OB_MAX_CONFIG_VALUE_LEN];
   uint64_t config_version_;
-  ObTargetDbServer *target_db_server_; 
+  ObTargetDbServer *target_db_server_;
+  struct {
+    ObCompressionAlgorithm algorithm_; // we only support zlib now
+    int64_t level_;                    // only be zlib compression level now
+  } compression_algorithm_;
+
+  // 诊断使用
   ObRouteDiagnosis *route_diagnosis_;
+  ObProtocolDiagnosis *protocol_diagnosis_;
   obutils::ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
 };
 
@@ -605,6 +610,12 @@ inline void ObMysqlSM::set_internal_cmd_timeout(const ObHRTime timeout)
 {
   if (OB_LIKELY(NULL != client_session_)) {
     client_session_->set_inactivity_timeout(timeout, obutils::OB_CLIENT_INTERNAL_CMD_TIMEOUT);
+    #ifdef ERRSIM
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(OB_E(EventTable::EN_CLIENT_INTERNAL_CMD_TIMEOUT) OB_SUCCESS)) {
+      client_session_->set_inactivity_timeout(1, obutils::OB_CLIENT_INTERNAL_CMD_TIMEOUT);
+    }
+    #endif
   }
 }
 
@@ -635,6 +646,12 @@ inline void ObMysqlSM::set_server_query_timeout()
 {
   if (OB_LIKELY(NULL != server_session_)) {
     server_session_->set_inactivity_timeout(get_query_timeout(), obutils::OB_SERVER_QUERY_TIMEOUT);
+    #ifdef ERRSIM
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(OB_E(EventTable::EN_SERVER_QUERY_TIMEOUT) OB_SUCCESS)) {
+      client_session_->set_inactivity_timeout(1, obutils::OB_SERVER_QUERY_TIMEOUT);
+    }
+    #endif
   }
 }
 
@@ -649,6 +666,12 @@ inline void ObMysqlSM::set_server_trx_timeout()
 {
   if (OB_LIKELY(NULL != server_session_) && OB_LIKELY(NULL != client_session_)) {
     server_session_->set_inactivity_timeout(client_session_->get_session_info().get_trx_timeout(), obutils::OB_SERVER_TRX_TIMEOUT);
+    #ifdef ERRSIM
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(OB_E(EventTable::EN_SERVER_TRX_TIMEOUT) OB_SUCCESS)) {
+      client_session_->set_inactivity_timeout(1, obutils::OB_SERVER_TRX_TIMEOUT);
+    }
+    #endif
   }
 }
 
@@ -675,7 +698,7 @@ inline void ObMysqlSM::clear_entries()
   PROXY_LOG(INFO, "ObMysqlSM::clear_entries", K_(client_entry), K(server_entry_), K_(sm_id));
   if (OB_LIKELY(NULL != client_entry_)) {
     if (OB_SUCCESS != vc_table_.cleanup_entry(client_entry_)) {
-      PROXY_LOG(WARN, "vc_table failed to cleanup client entry", K_(client_entry), K_(sm_id));
+      PROXY_LOG(WDIAG, "vc_table failed to cleanup client entry", K_(client_entry), K_(sm_id));
     }
     if (OB_LIKELY(client_entry_->vc_ == NULL)) {
       client_session_ = NULL;       // vc is equivalent to session
@@ -685,7 +708,7 @@ inline void ObMysqlSM::clear_entries()
 
   if (OB_LIKELY(NULL != server_entry_)) {
     if (OB_SUCCESS != vc_table_.cleanup_entry(server_entry_)) {
-      PROXY_LOG(WARN, "vc_table failed to cleanup client entry", K_(server_entry), K_(sm_id));
+      PROXY_LOG(WDIAG, "vc_table failed to cleanup client entry", K_(server_entry), K_(sm_id));
     }
     if (OB_LIKELY(server_entry_->vc_ == NULL)) {
       server_session_ = NULL;       // vc is equivalent to session
@@ -700,7 +723,7 @@ inline void ObMysqlSM::consume_all_internal_data()
   // consume all data in internal reader, make sure will disconnect directly
   if (NULL != trans_state_.internal_reader_) {
     if (OB_FAIL(trans_state_.internal_reader_->consume_all())) {
-      PROXY_LOG(WARN, "fail to consume all", K(ret));
+      PROXY_LOG(WDIAG, "fail to consume all", K(ret));
     }
   }
 }

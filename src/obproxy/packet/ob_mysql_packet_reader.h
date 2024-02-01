@@ -131,11 +131,11 @@ inline int ObMysqlPacketReader::read_packet_str(event::ObIOBufferReader &buf_rea
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(copy_to_buildin_buf(buf_reader, pkt_len, 0, pkt_str))) {
-    PROXY_LOG(WARN, "fail to copy buf", K(ret));
+    PROXY_LOG(WDIAG, "fail to copy buf", K(ret));
   } else {
     is_in_use_ = true; // if output buffer, we must mark we hold the buffer
     if (OB_FAIL(buf_reader.consume(pkt_len))) {
-      PROXY_LOG(WARN, "fail to consume ", K(pkt_len), K(ret));
+      PROXY_LOG(WDIAG, "fail to consume ", K(pkt_len), K(ret));
     }
   }
   return ret;
@@ -149,10 +149,10 @@ inline int ObMysqlPacketReader::get_content_len_and_seq(event::ObIOBufferReader 
   int ret = OB_SUCCESS;
   char *pbuf = NULL;
   if (OB_FAIL(get_buf(buf_reader, OB_MYSQL_NET_HEADER_LENGTH, offset, pbuf))) {
-    PROXY_LOG(WARN, "fail to get header buf", K(ret));
+    PROXY_LOG(WDIAG, "fail to get header buf", K(ret));
   } else if (OB_ISNULL(pbuf)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "pbuf is null, which is unexpected", K(pbuf), K(ret));
+    PROXY_LOG(WDIAG, "pbuf is null, which is unexpected", K(pbuf), K(ret));
   } else {
     content_len = static_cast<int64_t>(uint3korr(pbuf));
     seq = static_cast<int64_t>(uint1korr(pbuf + 3));

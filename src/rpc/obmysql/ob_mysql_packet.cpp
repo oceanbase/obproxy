@@ -29,12 +29,12 @@ int ObMySQLPacket::encode_packet(char *buf, int64_t &len, int64_t &pos, const Ob
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf) || len <= 0 || pos < 0) {
-    LOG_WARN("invalid buf or len", KP(buf), K(len), K(pos), K(ret));
+    LOG_WDIAG("invalid buf or len", KP(buf), K(len), K(pos), K(ret));
     ret = OB_INVALID_ARGUMENT;
   } else {
     int64_t seri_size = 0;
     if (OB_FAIL(pkt.encode(buf + pos, len, seri_size))) {
-      LOG_WARN("serialize response packet fail", K(ret));
+      LOG_WDIAG("serialize response packet fail", K(ret));
     } else {
       len -= seri_size;
       pos += seri_size;
@@ -48,21 +48,21 @@ int ObMySQLPacket::encode(char *buffer, int64_t length, int64_t &pos) const
   int ret = OB_SUCCESS;
 
   if (OB_ISNULL(buffer) || 0 >= length || pos < 0) {
-    LOG_WARN("invalid argument", KP(buffer), K(length), K(pos));
+    LOG_WDIAG("invalid argument", KP(buffer), K(length), K(pos));
     ret = OB_INVALID_ARGUMENT;
   } else {
     const int64_t orig_pos = pos;
     pos += OB_MYSQL_HEADER_LENGTH;
 
     if (OB_FAIL(serialize(buffer, length, pos))) {
-      LOG_WARN("encode packet data failed", K(ret));
+      LOG_WDIAG("encode packet data failed", K(ret));
     } else {
       int32_t payload = static_cast<int32_t>(pos - orig_pos - OB_MYSQL_HEADER_LENGTH);
       pos = orig_pos;
       if (OB_FAIL(ObMySQLUtil::store_int3(buffer, length, payload, pos))) {
-        LOG_ERROR("failed to encode int", K(ret)); // OB_ASSERT(false);
+        LOG_EDIAG("failed to encode int", K(ret)); // OB_ASSERT(false);
       } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, length, hdr_.seq_, pos))) {
-        LOG_ERROR("failed to encode int", K(ret)); // OB_ASSERT(false);
+        LOG_EDIAG("failed to encode int", K(ret)); // OB_ASSERT(false);
       } else {
         pos += payload;
       }
@@ -77,7 +77,7 @@ int ObMySQLPacket::encode(char *buffer, int64_t length, int64_t &pos) const
 
 int64_t ObMySQLPacket::get_serialize_size() const
 {
-  BACKTRACE(ERROR, 1, "not a serializiable packet");
+  BACKTRACE(EDIAG, 1, "not a serializiable packet");
   return -1;
 }
 
@@ -85,9 +85,9 @@ int ObMySQLPacket::store_string_kv(char* buf, int64_t len, const ObStringKV& str
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObMySQLUtil::store_obstr(buf, len, str.key_, pos))) {
-    LOG_WARN("store stringkv key fail", K(ret));
+    LOG_WDIAG("store stringkv key fail", K(ret));
   } else if (OB_FAIL(ObMySQLUtil::store_obstr(buf, len, str.value_, pos))) {
-    LOG_WARN("store stringkv value fail", K(ret));
+    LOG_WDIAG("store stringkv value fail", K(ret));
   }
   return ret;
 }
@@ -122,11 +122,11 @@ int ObMySQLRawPacket::serialize(char *buf, const int64_t length, int64_t &pos) c
   if (OB_UNLIKELY(NULL == buf || length <= 0 || pos < 0
                   || length - pos < get_serialize_size() || NULL == cdata_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", KP(buf), K(length), K(get_serialize_size()), K(pos), K(ret));
+    LOG_WDIAG("invalid argument", KP(buf), K(length), K(get_serialize_size()), K(pos), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::store_int1(buf, length, cmd_, pos))) {
-    LOG_WARN("fail to store cmd", K(length), K(cmd_), K(pos), K(ret));
+    LOG_WDIAG("fail to store cmd", K(length), K(cmd_), K(pos), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buf, length, get_cdata(), get_clen(), pos))) {
-    LOG_WARN("fail to store content", K(length), K(get_cdata()), K(get_clen()), K(pos), K(ret));
+    LOG_WDIAG("fail to store content", K(length), K(get_cdata()), K(get_clen()), K(pos), K(ret));
   }
   return ret;
 }
@@ -137,15 +137,15 @@ int ObMySQLRawPacket::encode_packet_meta(char *buf, int64_t &len, int64_t &pos) 
   // healder len + cmd len = 4 + 1 = 5
   if (OB_UNLIKELY(NULL == buf || len <= 0 || pos < 0 || len - pos < 5)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", KP(buf), K(len), K(pos), K(ret));
+    LOG_WDIAG("invalid argument", KP(buf), K(len), K(pos), K(ret));
   } else {
     int32_t payload = 1 + hdr_.len_; // payload = cmd + request = 1 + hdr_.len
     if (OB_FAIL(ObMySQLUtil::store_int3(buf, len, payload, pos))) {
-      LOG_ERROR("failed to encode int", K(ret));
+      LOG_EDIAG("failed to encode int", K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buf, len, hdr_.seq_, pos))) {
-      LOG_ERROR("failed to encode int", K(ret));
+      LOG_EDIAG("failed to encode int", K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buf, len, cmd_, pos))) {
-      LOG_WARN("fail to store cmd", K(len), K(cmd_), K(pos), K(ret));
+      LOG_WDIAG("fail to store cmd", K(len), K(cmd_), K(pos), K(ret));
     }
   }
 
@@ -235,13 +235,13 @@ char const *get_mysql_cmd_str(ObMySQLCmd mysql_cmd)
     "Login"  // OB_MYSQL_COM_LOGIN,
   };
 
-  if (mysql_cmd >= OB_MYSQL_COM_SLEEP && mysql_cmd <= OB_MYSQL_COM_BINLOG_DUMP_GTID) {
+  if (mysql_cmd >= OB_MYSQL_COM_SLEEP && mysql_cmd <= OB_MYSQL_COM_RESET_CONNECTION) {
     str = mysql_cmd_array[mysql_cmd];
   } else if (mysql_cmd >= OB_MYSQL_COM_STMT_PREPARE_EXECUTE && mysql_cmd <= OB_MYSQL_COM_END) {
-    int start = OB_MYSQL_COM_BINLOG_DUMP_GTID + 1;
+    int start = OB_MYSQL_COM_RESET_CONNECTION + 1;
     str = mysql_cmd_array[mysql_cmd - OBPROXY_NEW_MYSQL_CMD_START + start];
   } else if (mysql_cmd > OB_MYSQL_COM_END && mysql_cmd < OB_MYSQL_COM_MAX_NUM) {
-    int start = OB_MYSQL_COM_BINLOG_DUMP_GTID + 1 + OB_MYSQL_COM_END - OB_MYSQL_COM_STMT_PREPARE_EXECUTE + 1;
+    int start = OB_MYSQL_COM_RESET_CONNECTION + 1 + OB_MYSQL_COM_END - OB_MYSQL_COM_STMT_PREPARE_EXECUTE + 1;
     str = mysql_cmd_array[mysql_cmd - OBPROXY_MYSQL_CMD_START + start];
   }
   return str;

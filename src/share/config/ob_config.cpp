@@ -59,11 +59,11 @@ void ObConfigItem::init(const char *name,
                         const ObCfgItemExtraInfo e3)
 {
   if (OB_ISNULL(name) || OB_ISNULL(def) || OB_ISNULL(info)) {
-    OB_LOG(ERROR, "name or def or info is null", K(name), K(def), K(info));
+    OB_LOG(EDIAG, "name or def or info is null", K(name), K(def), K(info));
   } else {
     set_name(name);
     if (!set_value(def)) {
-      OB_LOG(ERROR, "Set config item value failed", K(name), K(def));
+      OB_LOG(EDIAG, "Set config item value failed", K(name), K(def));
     }
     set_info(info);
     const ObCfgItemExtraInfo extra_infos[] = { CFG_EXTRA_INFO_LIST };
@@ -85,7 +85,7 @@ void ObConfigItem::init(const char *name,
           break;
         }
       default: {
-          OB_LOG(ERROR, "Unknown extra info type", "type", extra_infos[i].type_);
+          OB_LOG(EDIAG, "Unknown extra info type", "type", extra_infos[i].type_);
         }
       }
     }
@@ -102,9 +102,9 @@ void ObConfigItem::init(const char *name,
 {
   init(name, def, info, CFG_EXTRA_INFO_LIST);
   if (OB_ISNULL(range)) {
-    OB_LOG(ERROR, "Range is NULL");
+    OB_LOG(EDIAG, "Range is NULL");
   } else if (!parse_range(range)) {
-    OB_LOG(ERROR, "Parse check range fail", K(range));
+    OB_LOG(EDIAG, "Parse check range fail", K(range));
   } else {
     set_range_str(range);
   }
@@ -145,7 +145,7 @@ ObConfigItem *ObConfigIntListItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigIntListItem())) {
-    OB_LOG(WARN, "fail to new ObConfigIntListItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigIntListItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -191,7 +191,7 @@ bool ObConfigIntListItem::set(const char *str)
       int64_t v = strtol(s, &endptr, 10);
       if (endptr != s + STRLEN(s)) {
         value_.valid_ = false;
-        _OB_LOG(ERROR, "not a valid config, [%s]", s);
+        _OB_LOG(EDIAG, "not a valid config, [%s]", s);
       }
       value_.int_list_[value_.size_++] = v;
     } while (OB_LIKELY(NULL != (s = STRTOK_R(NULL, ";", &saveptr))) && value_.valid_);
@@ -204,7 +204,7 @@ ObConfigItem *ObConfigStrListItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigStrListItem())) {
-    OB_LOG(WARN, "fail to new ObConfigStrListItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigStrListItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -244,12 +244,12 @@ int ObConfigStrListItem::tryget(const int64_t idx, char *buf, const int64_t buf_
       || OB_UNLIKELY(idx >= MAX_INDEX_SIZE)
       || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    OB_LOG(WARN, "input argument is invalid", K(buf), K(idx), K(buf_len), K(ret));
+    OB_LOG(WDIAG, "input argument is invalid", K(buf), K(idx), K(buf_len), K(ret));
   } else if (!inner_value->valid_) {
     ret = OB_ERR_UNEXPECTED;
-    OB_LOG(WARN, "ValueStrList is not available, no need to get", K_(inner_value->valid), K(ret));
+    OB_LOG(WDIAG, "ValueStrList is not available, no need to get", K_(inner_value->valid), K(ret));
   } else if (OB_FAIL(latch.try_rdlock(ObLatchIds::CONFIG_LOCK))) {
-    OB_LOG(WARN, "failed to tryrdlock rwlock_", K(ret));
+    OB_LOG(WDIAG, "failed to tryrdlock rwlock_", K(ret));
   } else { //tryrdlock succ
     int print_size = 0;
     int32_t min_len = 0;
@@ -268,7 +268,7 @@ int ObConfigStrListItem::tryget(const int64_t idx, char *buf, const int64_t buf_
     latch.unlock();
 
     if (OB_FAIL(ret)) {
-      OB_LOG(WARN, "failed to get value during lock",
+      OB_LOG(WDIAG, "failed to get value during lock",
              K(idx), K_(inner_value->size), K(buf_len), K(print_size), K(min_len), K(segment_str), K(ret));
     }
   }
@@ -281,10 +281,10 @@ int ObConfigStrListItem::get(const int64_t idx, char *buf, const int64_t buf_len
   const struct ObInnerConfigStrListItem *inner_value = ((need_reboot_ && is_initial_value_set_) ? &initial_value_ : &value_);
   if (OB_ISNULL(buf) || idx < 0 || idx >= MAX_INDEX_SIZE || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    OB_LOG(WARN, "input argument is invalid", K(buf), K(idx), K(buf_len), K(ret));
+    OB_LOG(WDIAG, "input argument is invalid", K(buf), K(idx), K(buf_len), K(ret));
   } else if (!inner_value->valid_) {
     ret = OB_ERR_UNEXPECTED;
-    OB_LOG(WARN, "ValueStrList is not available, no need to get", K(inner_value->valid_), K(ret));
+    OB_LOG(WDIAG, "ValueStrList is not available, no need to get", K(inner_value->valid_), K(ret));
   } else {
     int print_size = 0;
     int32_t min_len = 0;
@@ -304,7 +304,7 @@ int ObConfigStrListItem::get(const int64_t idx, char *buf, const int64_t buf_len
     }
 
     if (OB_FAIL(ret)) {
-      OB_LOG(WARN, "failed to get value during lock",
+      OB_LOG(WDIAG, "failed to get value during lock",
              K(idx), K(inner_value->size_), K(buf_len), K(print_size),  K(min_len), K(segment_str), K(ret));
     }
   }
@@ -351,7 +351,7 @@ bool ObConfigStrListItem::set(const char *str)
         }
       }
     } else {
-      OB_LOG(WARN, "input str is not available", K(str), K_(value_.valid), K_(value_.size), K(bret));
+      OB_LOG(WDIAG, "input str is not available", K(str), K_(value_.valid), K_(value_.size), K(bret));
     }
   } else {
     ObLatchRGuard wr_guard(value_.rwlock_, ObLatchIds::CONFIG_LOCK);
@@ -372,13 +372,13 @@ bool ObConfigIntegralItem::parse_range(const char *range)
   int ret = OB_SUCCESS;
   int64_t pos = 0;
   if (OB_ISNULL(range)) {
-    OB_LOG(ERROR, "Range is NULL!");
+    OB_LOG(EDIAG, "Range is NULL!");
     bool_ret = false;
   } else if ('\0' == range[0]) {
     // do nothing
   } else if (OB_FAIL(databuff_printf(buff, sizeof(buff), pos, "%s", range))) {
     bool_ret = false;
-    OB_LOG(WARN, "buf is not long enough", K(sizeof(buff)), K(pos), K(ret));
+    OB_LOG(WDIAG, "buf is not long enough", K(sizeof(buff)), K(pos), K(ret));
   } else {
     const int64_t buff_length = static_cast<int64_t>(STRLEN(buff));
     for (int64_t i = 0; i < buff_length; ++i) {
@@ -433,7 +433,7 @@ ObConfigItem *ObConfigDoubleItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigDoubleItem())) {
-    OB_LOG(WARN, "fail to new ObConfigDoubleItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigDoubleItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -501,7 +501,7 @@ bool ObConfigDoubleItem::parse_range(const char *range)
   int ret = OB_SUCCESS;
   int64_t pos = 0;
   if (OB_ISNULL(range)) {
-    OB_LOG(ERROR, "Range is NULL!");
+    OB_LOG(EDIAG, "Range is NULL!");
     bool_ret = false;
   } else if ('\0' == range[0]) {
     // do nothing
@@ -556,7 +556,7 @@ ObConfigItem *ObConfigCapacityItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigCapacityItem())) {
-    OB_LOG(WARN, "fail to new ObConfigCapacityItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigCapacityItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -599,7 +599,7 @@ int64_t ObConfigCapacityItem::parse(const char *str, bool &valid) const
 {
   int64_t ret = ObConfigCapacityParser::get(str, valid);
   if (!valid) {
-      OB_LOG(ERROR, "set capacity error", "name", name(), K(str), K(valid));
+      OB_LOG(EDIAG, "set capacity error", "name", name(), K(str), K(valid));
   }
   return ret;
 }
@@ -609,7 +609,7 @@ ObConfigItem *ObConfigTimeItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigTimeItem())) {
-    OB_LOG(WARN, "fail to new ObConfigTimeItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigTimeItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -660,7 +660,7 @@ int64_t ObConfigTimeItem::parse(const char *str, bool &valid) const
     value = std::max(0L, strtol(str, &p_unit, 0));
     if (OB_ISNULL(p_unit)) {
       valid = false;
-      OB_LOG(ERROR, "set time error, p_unit is null", "name", name(), K(str), K(valid));
+      OB_LOG(EDIAG, "set time error, p_unit is null", "name", name(), K(str), K(valid));
     } else if (0 == STRCASECMP("us", p_unit)) {
       value *= TIME_MICROSECOND;
     } else if (0 == STRCASECMP("ms", p_unit)) {
@@ -676,7 +676,7 @@ int64_t ObConfigTimeItem::parse(const char *str, bool &valid) const
       value *= TIME_DAY;
     } else {
       valid = false;
-      OB_LOG(ERROR, "set time error", "name", name(), K(str), K(valid));
+      OB_LOG(EDIAG, "set time error", "name", name(), K(str), K(valid));
     }
   }
   return value;
@@ -687,7 +687,7 @@ ObConfigItem *ObConfigIntItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigIntItem())) {
-    OB_LOG(WARN, "fail to new ObConfigIntItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigIntItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -740,7 +740,7 @@ int64_t ObConfigIntItem::parse(const char *str, bool &valid) const
       valid = true;
     } else {
       valid = false;
-      OB_LOG(ERROR, "set int error", "name", name(), K(str), K(valid));
+      OB_LOG(EDIAG, "set int error", "name", name(), K(str), K(valid));
     }
   }
   return value;
@@ -751,7 +751,7 @@ ObConfigItem *ObConfigMomentItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigMomentItem())) {
-    OB_LOG(WARN, "fail to new ObConfigMomentItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigMomentItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -785,7 +785,7 @@ bool ObConfigMomentItem::set(const char *str)
   } else if (OB_ISNULL(strptime(str, "%H:%M", &tm_value))) {
     value_.disable_ = true;
     ret = false;
-    OB_LOG(ERROR, "Not well-formed moment item value", K(str));
+    OB_LOG(EDIAG, "Not well-formed moment item value", K(str));
   } else {
     value_.disable_ = false;
     value_.hour_ = tm_value.tm_hour;
@@ -799,7 +799,7 @@ ObConfigItem *ObConfigBoolItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigBoolItem())) {
-    OB_LOG(WARN, "fail to new ObConfigBoolItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigBoolItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -841,7 +841,7 @@ bool ObConfigBoolItem::parse(const char *str, bool &valid) const
   bool value = true;
   if (OB_ISNULL(str)) {
     valid = false;
-    OB_LOG(ERROR, "Get bool config item fail, str is NULL!");
+    OB_LOG(EDIAG, "Get bool config item fail, str is NULL!");
   } else if (0 == STRCASECMP(str, "false")) {
     valid = true;
     value = false;
@@ -873,7 +873,7 @@ bool ObConfigBoolItem::parse(const char *str, bool &valid) const
     valid = true;
     value = false;
   } else {
-    OB_LOG(ERROR, "Get bool config item fail", K(str));
+    OB_LOG(EDIAG, "Get bool config item fail", K(str));
     valid = false;
   }
   return value;
@@ -884,7 +884,7 @@ ObConfigItem *ObConfigStringItem::clone()
 {
   ObConfigItem *ret = NULL;
   if (OB_ISNULL(ret = new (std::nothrow) ObConfigStringItem())) {
-    OB_LOG(WARN, "fail to new ObConfigStringItem", K(name_str_));
+    OB_LOG(WDIAG, "fail to new ObConfigStringItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
@@ -918,7 +918,7 @@ int ObConfigStringItem::copy(char *buf, const int64_t buf_len)
   int32_t length = snprintf(buf, min_len, "%.*s", min_len, inner_value);
   if (length < 0 || length > min_len) {
     ret = OB_BUF_NOT_ENOUGH;
-    OB_LOG(WARN, "buffer not enough", K(length), K(min_len), K_(value_str), K(ret));
+    OB_LOG(WDIAG, "buffer not enough", K(length), K(min_len), K_(value_str), K(ret));
   }
   return ret;
 }

@@ -48,7 +48,7 @@ int ObObjPool<T>::init()
 {
   int ret = OB_SUCCESS;
   if (OB_SUCCESS != (ret = list_.init())) {
-    _OB_LOG(WARN, "ObObjPool init failed, ret=%d", ret);
+    _OB_LOG(WDIAG, "ObObjPool init failed, ret=%d", ret);
   }
   return ret;
 }

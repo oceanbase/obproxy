@@ -80,7 +80,6 @@ public:
   static bool can_compare_directly(ObObjType type1, ObObjType type2);
   /**
    * null safe compare.
-   * will HANG (right_to_die_or_duty_to_live) if error, such as can't compare without cast.
    * @param[in] obj1
    * @param[in] obj2
    * @param[in] cs_type: compare collation.
@@ -93,7 +92,6 @@ public:
                                     ObCmpOp cmp_op);
   /**
    * null safe compare.
-   * will HANG (right_to_die_or_duty_to_live) if error, such as can't compare without cast.
    * @param[in] obj1
    * @param[in] obj2
    * @param[in] cs_type: compare collation.

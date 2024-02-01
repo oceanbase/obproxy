@@ -199,6 +199,7 @@ public:
   ObNetHandler *nh_;
 
   uint32_t id_;
+  int event_record_;  // record vc event, to check whether connection in unexpected state 
 
   ObIpEndpoint server_addr_; // used for Server address and port.
 
@@ -235,9 +236,11 @@ public:
     IO_WRITE,
   };
 
-  int ssl_init(const SSLType ssL_type, const common::ObString &cluster_name, const common::ObString &tenant_name);
+  int ssl_init(const SSLType ssL_type, const common::ObString &cluster_name,
+               const common::ObString &tenant_name, const uint64_t options = 0);
   inline bool using_ssl() const { return using_ssl_; }
   inline bool ssl_connected() const { return ssl_connected_; }
+  inline bool get_ssl_err_code() const { return ssl_err_code_; }
   void do_ssl_io(event::ObEThread &thread);
   void close_ssl();
 
@@ -254,6 +257,7 @@ private:
   SSLType ssl_type_;
   SSL *ssl_;
   bool can_shutdown_ssl_;
+  int ssl_err_code_;
   IOType io_type_;
 
 private:
@@ -274,7 +278,7 @@ inline void ObUnixNetVConnection::cancel_active_timeout()
   if (NULL != active_timeout_action_) {
     PROXY_NET_LOG(DEBUG, "cancel active timeout", K(this));
     if (common::OB_SUCCESS != active_timeout_action_->cancel(this)) {
-      PROXY_NET_LOG(ERROR, "fail to cancel active timeout");
+      PROXY_NET_LOG(EDIAG, "fail to cancel active timeout");
     }
     active_timeout_action_ = NULL;
   }
@@ -304,7 +308,7 @@ inline int ObUnixNetVConnection::set_local_addr()
   int ret = common::OB_SUCCESS;
   int64_t namelen = sizeof(local_addr_);
   if (OB_FAIL(ObSocketManager::getsockname(con_.fd_, &local_addr_.sa_, &namelen))) {
-    PROXY_NET_LOG(ERROR, "fail to getsocketname", K(local_addr_), K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to getsocketname", K(local_addr_), K(ret));
   } else {
     PROXY_NET_LOG(DEBUG, "set local addr succ", "fd", con_.fd_, K_(local_addr));
   }

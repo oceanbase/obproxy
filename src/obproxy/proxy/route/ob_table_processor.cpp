@@ -46,10 +46,10 @@ int ObTableProcessor::init(ObTableCache *table_cache)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_ISNULL(table_cache)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(table_cache), K(ret));
+    LOG_WDIAG("invalid input value", K(table_cache), K(ret));
   } else {
     table_cache_ = table_cache;
     is_inited_ = true;
@@ -101,19 +101,19 @@ int ObTableProcessor::add_table_entry_with_rslist(ObTableRouteParam &table_param
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     if (OB_ISNULL(json_info = cs_processor.acquire())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json info is null", K(ret));
+      LOG_WDIAG("json info is null", K(ret));
     } else if (OB_FAIL(json_info->get_sub_cluster_info(table_param.name_.cluster_name_, table_param.cr_id_, sub_cluster_info))) {
-      LOG_WARN("fail to get cluster info", K(ret));
+      LOG_WDIAG("fail to get cluster info", K(ret));
     } else if (OB_ISNULL(sub_cluster_info)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("cluster info is null", K(ret));
+      LOG_WDIAG("cluster info is null", K(ret));
     } else if (OB_FAIL(ObRouteUtils::build_sys_dummy_entry(table_param.name_.cluster_name_,
               table_param.cr_id_,
               sub_cluster_info->web_rs_list_, is_rslist, entry))) {
-      LOG_WARN("fail to build sys dummy entry", K(table_param), K(ret));
+      LOG_WDIAG("fail to build sys dummy entry", K(table_param), K(ret));
     } else if (OB_ISNULL(entry) || OB_UNLIKELY(!entry->is_valid())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("entry can not be NULL here", K(entry), K(ret));
+      LOG_WDIAG("entry can not be NULL here", K(entry), K(ret));
     }
     cs_processor.release(json_info);
   }
@@ -123,7 +123,7 @@ int ObTableProcessor::add_table_entry_with_rslist(ObTableRouteParam &table_param
     ObTableEntry *tmp_entry = entry;
     tmp_entry->inc_ref();
     if (OB_FAIL(table_cache.add_table_entry(*tmp_entry, direct_add))) {
-      LOG_WARN("fail to add sys dummy entry", KPC(tmp_entry), K(ret));
+      LOG_WDIAG("fail to add sys dummy entry", KPC(tmp_entry), K(ret));
     } else {
       LOG_INFO("succ to add sys dummy entry with rslist", K(table_param), KPC(tmp_entry),
                K(entry_from_last_dummy));
@@ -147,10 +147,10 @@ inline int ObTableProcessor::get_table_entry_from_rslist(
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(add_table_entry_with_rslist(table_param, entry, is_old_entry_from_rslist))) {
-    LOG_WARN("fail to add table entry with rslist", K(ret));
+    LOG_WDIAG("fail to add table entry with rslist", K(ret));
   } else if (OB_ISNULL(entry)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("entry is null", K(ret));
+    LOG_WDIAG("entry is null", K(ret));
   } else {
     ObProxyMutex *mutex_ = table_param.cont_->mutex_;
     PROCESSOR_INCREMENT_DYN_STAT(GET_PL_BY_RS_LIST_SUCC);
@@ -183,23 +183,23 @@ int ObTableProcessor::get_table_entry_from_global_cache(
     MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
     if (lock_bucket.is_locked()) {
       if (OB_FAIL(table_cache.run_todo_list(table_cache.part_num(hash)))) {
-        LOG_WARN("fail to run todo list", K(ret));
+        LOG_WDIAG("fail to run todo list", K(ret));
       } else {
         target_entry = table_cache.lookup_entry(hash, key);
         bool is_entry_from_rslist = false;
         if (NULL == target_entry) { // find nothing, should alloc building state table entry and fetch from remote
           if (OB_UNLIKELY(table_param.name_.is_sys_dummy())) {
             is_entry_from_rslist = true;
-            LOG_WARN("sys tenant' all dummy entry is not in global cache, will add one with rslist",
+            LOG_WDIAG("sys tenant' all dummy entry is not in global cache, will add one with rslist",
                      K(table_param));
             if (OB_FAIL(get_table_entry_from_rslist(table_param, target_entry, op, is_entry_from_rslist))) {
-              LOG_WARN("fail to get table entry from rslist", K(ret));
+              LOG_WDIAG("fail to get table entry from rslist", K(ret));
             }
           } else if (OB_FAIL(add_building_state_table_entry(table_param, table_cache, target_entry))) {
-            LOG_WARN("fail to add building state table entry", K(table_param), K(ret));
+            LOG_WDIAG("fail to add building state table entry", K(table_param), K(ret));
           } else if (OB_ISNULL(target_entry)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("target_entry can not be NULL here", K(target_entry), K(ret));
+            LOG_WDIAG("target_entry can not be NULL here", K(target_entry), K(ret));
           } else {
             op = LOOKUP_REMOTE_WITH_BUILDING_ENTRY_OP;
           }
@@ -210,7 +210,7 @@ int ObTableProcessor::get_table_entry_from_global_cache(
           }
           if (target_entry->is_deleted_state()) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("deleting table entry must not be in global cache", KPC(target_entry), K(ret));
+            LOG_EDIAG("deleting table entry must not be in global cache", KPC(target_entry), K(ret));
           } else if (table_cache.is_table_entry_expired_in_qa_mode(*target_entry)
              || (!get_global_proxy_config().enable_async_pull_location_cache
                  && table_cache.is_table_entry_expired_in_time_mode(*target_entry))) {
@@ -222,30 +222,30 @@ int ObTableProcessor::get_table_entry_from_global_cache(
             target_entry = NULL;
             // remove this expired entry from table cache
             if (OB_FAIL(table_cache.remove_table_entry(key))) {
-              LOG_WARN("fail to remove table entry", K(key), K(ret));
+              LOG_WDIAG("fail to remove table entry", K(key), K(ret));
             } else if (OB_UNLIKELY(table_param.name_.is_sys_dummy())) {
               // if sys dummy entry, just use rslist
-              LOG_WARN("sys tenant' all dummy entry is expired or version does not match, "
+              LOG_WDIAG("sys tenant' all dummy entry is expired or version does not match, "
                        "will add one with rslist", K(is_entry_from_rslist), K(table_param));
               if (OB_FAIL(get_table_entry_from_rslist(table_param, target_entry, op, is_entry_from_rslist))) {
-                LOG_WARN("fail to get table entry from rslist", K(ret));
+                LOG_WDIAG("fail to get table entry from rslist", K(ret));
               }
             } else if (OB_FAIL(add_building_state_table_entry(table_param, table_cache, target_entry))) {
-              LOG_WARN("fail to add building state table entry", K(table_param), K(ret));
+              LOG_WDIAG("fail to add building state table entry", K(table_param), K(ret));
             } else if (OB_ISNULL(target_entry)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("target_entry can not be NULL here", K(target_entry), K(ret));
+              LOG_WDIAG("target_entry can not be NULL here", K(target_entry), K(ret));
             } else {
               op = LOOKUP_REMOTE_WITH_BUILDING_ENTRY_OP;
             }
           } else if (target_entry->is_need_update()) {
             if (OB_UNLIKELY(table_param.name_.is_sys_dummy())) {
               is_entry_from_rslist = target_entry->is_entry_from_rslist();
-              LOG_WARN("sys_dummy_entry can not be updating state, will add one with rslist", K(is_entry_from_rslist), K(table_param));
+              LOG_WDIAG("sys_dummy_entry can not be updating state, will add one with rslist", K(is_entry_from_rslist), K(table_param));
               target_entry->dec_ref();
               target_entry = NULL;
               if (OB_FAIL(get_table_entry_from_rslist(table_param, target_entry, op, is_entry_from_rslist))) {
-                LOG_WARN("fail to get table entry from rslist", K(ret));
+                LOG_WDIAG("fail to get table entry from rslist", K(ret));
               }
               // double check
             } else if (target_entry->cas_compare_and_swap_state(ObTableEntry::DIRTY, ObTableEntry::UPDATING)) {
@@ -272,17 +272,17 @@ int ObTableProcessor::get_table_entry_from_global_cache(
           } else if (target_entry->is_building_state()) {
             if (OB_UNLIKELY(table_param.name_.is_sys_dummy())) {
               is_entry_from_rslist = target_entry->is_entry_from_rslist();
-              LOG_WARN("sys_dummy_entry can not be building state, will add one with rslist", K(is_entry_from_rslist), K(table_param));
+              LOG_WDIAG("sys_dummy_entry can not be building state, will add one with rslist", K(is_entry_from_rslist), K(table_param));
               target_entry->dec_ref();
               target_entry = NULL;
               if (OB_FAIL(get_table_entry_from_rslist(table_param, target_entry, op, is_entry_from_rslist))) {
-                LOG_WARN("fail to get table entry from rslist", K(ret));
+                LOG_WDIAG("fail to get table entry from rslist", K(ret));
               }
             } else {
               int64_t diff_us = hrtime_to_usec(get_hrtime()) - target_entry->get_create_time_us();
               // just for defense
               if (diff_us > (6 * 60 * 1000 * 1000)) { // 6min
-                LOG_ERROR("building state entry has cost so mutch time",
+                LOG_EDIAG("building state entry has cost so mutch time",
                           K(diff_us), KPC(target_entry));
               }
               LOG_INFO("building state table entry, fetch from remote or push into pending_queue",
@@ -292,9 +292,9 @@ int ObTableProcessor::get_table_entry_from_global_cache(
               if (NULL == te_cont) {
                 if (OB_ISNULL(te_cont = op_alloc(ObTableEntryCont))) {
                   ret = OB_ALLOCATE_MEMORY_FAILED;
-                  LOG_WARN("fail to alloc ObTableEntryCont", K(ret));
+                  LOG_WDIAG("fail to alloc ObTableEntryCont", K(ret));
                 } else if (OB_FAIL(te_cont->init(table_cache, table_param, target_entry))) {
-                  LOG_WARN("fail to init table entry cont", K(ret));
+                  LOG_WDIAG("fail to init table entry cont", K(ret));
                 } else {
                   action = &te_cont->get_action();
                 }
@@ -339,7 +339,7 @@ int ObTableProcessor::get_table_entry_from_thread_cache(
   entry = NULL;
   if (OB_UNLIKELY(!table_param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(table_param), K(ret));
+    LOG_WDIAG("invalid input value", K(table_param), K(ret));
   } else {
     if (OB_LIKELY(!table_param.need_fetch_remote())) {
       // find entry from thread cache
@@ -358,7 +358,7 @@ int ObTableProcessor::get_table_entry_from_thread_cache(
         } else if (OB_LIKELY(tmp_entry->is_avail_state() || tmp_entry->is_updating_state())) { // avail
           find_succ = true;
         } else if (tmp_entry->is_building_state()) {
-          LOG_ERROR("building state table entry can not in thread cache", KPC(tmp_entry));
+          LOG_EDIAG("building state table entry can not in thread cache", KPC(tmp_entry));
         } else if (tmp_entry->is_dirty_state()) {
           // dirty entry need to fetch from remote
         } else {}
@@ -384,7 +384,7 @@ int ObTableProcessor::handle_lookup_global_cache_done(
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!table_param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(table_param), K(ret));
+    LOG_WDIAG("invalid input value", K(table_param), K(ret));
   } else {
     ObProxyMutex *mutex_ = table_param.cont_->mutex_;
     ObTableEntryCont *te_cont = NULL;
@@ -392,7 +392,7 @@ int ObTableProcessor::handle_lookup_global_cache_done(
       case LOOKUP_PUSH_INTO_PENDING_LIST_OP: {
         if (OB_ISNULL(action) || OB_ISNULL(entry)) { // for defense
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("action can not be NULL here", K(action), K(ret));
+          LOG_WDIAG("action can not be NULL here", K(action), K(ret));
         } else {
           entry->dec_ref();
           entry = NULL;
@@ -402,7 +402,7 @@ int ObTableProcessor::handle_lookup_global_cache_done(
       case LOOKUP_GLOBAL_CACHE_HIT_OP: {
         if (OB_ISNULL(entry)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("table entry must not be NULL here", K(entry), K(ret));
+          LOG_WDIAG("table entry must not be NULL here", K(entry), K(ret));
         } else {
           // entry has already inc_ref
           entry->renew_last_access_time();
@@ -416,7 +416,7 @@ int ObTableProcessor::handle_lookup_global_cache_done(
           if (entry->is_avail_state() || entry->is_updating_state()) {
             ObTableRefHashMap &table_map = self_ethread().get_table_map();
             if (OB_FAIL(table_map.set(entry))) {
-              LOG_WARN("fail to set table map", KPC(entry), K(ret));
+              LOG_WDIAG("fail to set table map", KPC(entry), K(ret));
               ret = OB_SUCCESS; // ignore ret
             }
           }
@@ -431,9 +431,9 @@ int ObTableProcessor::handle_lookup_global_cache_done(
       case LOOKUP_REMOTE_WITH_BUILDING_ENTRY_OP: {
         if (OB_ISNULL(te_cont = op_alloc(ObTableEntryCont))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc ObTableEntryCont", K(ret));
+          LOG_WDIAG("fail to alloc ObTableEntryCont", K(ret));
         } else if (OB_FAIL(te_cont->init(table_cache, table_param, entry))) { // init will inc entry ref
-          LOG_WARN("fail to init table entry cont", K(ret));
+          LOG_WDIAG("fail to init table entry cont", K(ret));
         } else {
           te_cont->set_table_entry_op(op); // do not forget
           int te_event = TABLE_ENTRY_LOOKUP_REMOTE_EVENT;
@@ -441,7 +441,7 @@ int ObTableProcessor::handle_lookup_global_cache_done(
             te_event = TABLE_ENTRY_LOOKUP_CACHE_EVENT;
             if (OB_UNLIKELY(NULL != entry)) { // for defense
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("table entry must be NULL when it is RETRY_LOOKUP_GLOBAL_CACHE_OP", KPC(entry), K(ret));
+              LOG_WDIAG("table entry must be NULL when it is RETRY_LOOKUP_GLOBAL_CACHE_OP", KPC(entry), K(ret));
             }
           } else if (LOOKUP_REMOTE_DIRECT_OP == op) {
             PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_REMOTE);
@@ -457,7 +457,7 @@ int ObTableProcessor::handle_lookup_global_cache_done(
                     ObTableEntryCont::SCHEDULE_TABLE_ENTRY_LOOKUP_INTERVAL, te_event);
               if (OB_ISNULL(event)) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("fail to schedule in", K(event), K(ret));
+                LOG_WDIAG("fail to schedule in", K(event), K(ret));
               }
             } else {
               te_cont->handle_event(te_event, NULL);
@@ -476,7 +476,7 @@ int ObTableProcessor::handle_lookup_global_cache_done(
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown op", K(op), K(ret));
+        LOG_WDIAG("unknown op", K(op), K(ret));
         break;
       }
     }
@@ -497,10 +497,10 @@ int ObTableProcessor::get_table_entry(ObTableRouteParam &table_param, ObAction *
   action = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K(ret));
+    LOG_WDIAG("not init", K(ret));
   } else if (OB_UNLIKELY(!table_param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(table_param), K(ret));
+    LOG_WDIAG("invalid input value", K(table_param), K(ret));
   } else {
     ObProxyMutex *mutex_ = table_param.cont_->mutex_;
     PROCESSOR_INCREMENT_DYN_STAT(GET_PL_TOTAL);
@@ -515,7 +515,7 @@ int ObTableProcessor::get_table_entry(ObTableRouteParam &table_param, ObAction *
     ObTableEntry *tmp_entry = NULL;
     // 1. find table entry from thread cache
     if (OB_FAIL(get_table_entry_from_thread_cache(table_param, *table_cache_, tmp_entry))) {
-      LOG_WARN("fail to get table entry in thread cache", K(table_param), K(ret));
+      LOG_WDIAG("fail to get table entry in thread cache", K(table_param), K(ret));
     } else {
       if (OB_LIKELY(NULL != tmp_entry)) {
         PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_THREAD_CACHE_HIT);
@@ -532,10 +532,10 @@ int ObTableProcessor::get_table_entry(ObTableRouteParam &table_param, ObAction *
         // 2. find entry from global cache or remote
         if (OB_FAIL(get_table_entry_from_global_cache( // if get succ, will inc_ref
                         table_param, *table_cache_, te_cont, action, tmp_entry, op))) {
-          LOG_WARN("fail to get table entry in global cache", K(table_param), K(ret));
+          LOG_WDIAG("fail to get table entry in global cache", K(table_param), K(ret));
         } else if (OB_FAIL(handle_lookup_global_cache_done(
                                table_param, *table_cache_, tmp_entry, action, op))) {
-          LOG_WARN("fail to handle lookup global cachd done", K(table_param), K(ret));
+          LOG_WDIAG("fail to handle lookup global cachd done", K(table_param), K(ret));
         }
       }
     }
@@ -568,13 +568,13 @@ int ObTableProcessor::add_building_state_table_entry(
   ObTableEntry *target_entry = NULL;
   if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(table_param.name_, table_param.cr_version_,
                                                        table_param.cr_id_, target_entry))) {
-    LOG_WARN("fail to alloc table entry", K(table_param), K(ret));
+    LOG_WDIAG("fail to alloc table entry", K(table_param), K(ret));
   } else {
     target_entry->set_building_state();
     bool direct_add = false;
     target_entry->inc_ref(); // before add to table_cache, must inc_ref
     if (OB_FAIL(table_cache.add_table_entry(*target_entry, direct_add))) {
-      LOG_WARN("fail to add table entry", K(ret));
+      LOG_WDIAG("fail to add table entry", K(ret));
       target_entry->dec_ref();
     } else {
       entry = target_entry;

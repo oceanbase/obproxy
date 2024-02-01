@@ -41,20 +41,20 @@ int SessionInfoVerification::serialize(char *buf, const int64_t len, int64_t &po
 
   if (!is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid sess info veri", K(ret), K(addr_len_), K(server_sess_id_), K(proxy_sess_id_));
+    LOG_WDIAG("invalid sess info veri", K(ret), K(addr_len_), K(server_sess_id_), K(proxy_sess_id_));
   } else {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_str(buf, len, pos,
                                                       addr_, static_cast<int32_t>(addr_len_),
                                                       SESS_INFO_VERI_ADDR))) {
-      LOG_WARN("fail to store addr str", K(ret), K(addr_));
+      LOG_WDIAG("fail to store addr str", K(ret), K(addr_));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int4(buf, len, pos,
                                                               static_cast<int32_t>(server_sess_id_),
                                                               SESS_INFO_VERI_SERVER_SESS_ID))) {
-      LOG_WARN("fail to store server sess id", K(ret));
+      LOG_WDIAG("fail to store server sess id", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int8(buf, len, pos,
                                                               static_cast<int64_t>(proxy_sess_id_),
                                                               SESS_INFO_VERI_PROXY_SESS_ID))) {
-      LOG_WARN("fail to store proxy sess id");
+      LOG_WDIAG("fail to store proxy sess id");
     } else {
       LOG_DEBUG("succ to seri sess info veri", K(pos), K(len));
     }

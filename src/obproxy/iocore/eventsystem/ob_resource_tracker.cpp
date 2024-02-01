@@ -59,7 +59,7 @@ int ObMemoryResourceTracker::increment(const char *name, const int64_t size)
   int ret = OB_SUCCESS;
   ObMemoryResource *resource = NULL;
   if (OB_FAIL(lookup(name, resource))) {
-    LOG_WARN("fail to lookup ObMemoryResource", K(name),  K(ret));
+    LOG_WDIAG("fail to lookup ObMemoryResource", K(name),  K(ret));
   } else {
     resource->increment(size);
   }
@@ -71,24 +71,24 @@ int ObMemoryResourceTracker::lookup(const char *location, ObMemoryResource *&res
   int ret = OB_SUCCESS;
   resource = NULL;
   if (OB_FAIL(mutex_acquire(&g_resource_lock))) {
-    LOG_ERROR("fail to acquire mutex", K(ret));
+    LOG_EDIAG("fail to acquire mutex", K(ret));
   } else {
     if (OB_FAIL(g_resource_map.get_refactored(ObString::make_string(location), resource))) {
       //if lookup fail, we need insert one
       if (OB_ISNULL(resource = new (std::nothrow) ObMemoryResource())) { // create a new entry
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to new memory for Resource", K(location), K(ret));
+        LOG_WDIAG("fail to new memory for Resource", K(location), K(ret));
       } else {
         resource->location_.assign_ptr(location, static_cast<int32_t>(strlen(location)));
         if (OB_FAIL(g_resource_map.unique_set(resource))) {
-          LOG_WARN("fail to set Resource", K(location), K(ret));
+          LOG_WDIAG("fail to set Resource", K(location), K(ret));
         }
       }
     }
 
     int tmp_ret = OB_SUCCESS;
     if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = mutex_release(&g_resource_lock)))) {
-      LOG_ERROR("fail to release mutex", K(tmp_ret));
+      LOG_EDIAG("fail to release mutex", K(tmp_ret));
     }
   }
   return ret;
@@ -103,12 +103,12 @@ void ObMemoryResourceTracker::dump()
   int64_t len = OB_MALLOC_NORMAL_BLOCK_SIZE;
   char *buf = reinterpret_cast<char *>(ob_malloc(len, ObModIds::OB_PROXY_PRINTF));
   if (OB_ISNULL(buf)) {
-    LOG_ERROR("fail to malloc memory", K(len));
+    LOG_EDIAG("fail to malloc memory", K(len));
   } else {
     databuff_printf(buf, len, pos, "%100s | %20s\n", "Location", "Size In-use");
     databuff_printf(buf, len, pos, "---------------------------------------------------+------------------------\n");
     if (OB_FAIL(mutex_acquire(&g_resource_lock))) {
-      LOG_ERROR("fail to acquire mutex", K(ret));
+      LOG_EDIAG("fail to acquire mutex", K(ret));
     } else {
       if (0 != g_resource_map.count()) {
         for (ObResourceHashMap::iterator it = g_resource_map.begin();
@@ -119,7 +119,7 @@ void ObMemoryResourceTracker::dump()
         }
       }
       if (OB_FAIL(mutex_release(&g_resource_lock))) {
-        LOG_ERROR("fail to release mutex", K(ret));
+        LOG_EDIAG("fail to release mutex", K(ret));
       }
 
       databuff_printf(buf, len, pos, "%100s | % '20ld\n", "TOTAL", total);

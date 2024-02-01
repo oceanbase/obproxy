@@ -33,15 +33,15 @@ int OMPKEOF::serialize(char *buffer, int64_t len, int64_t &pos) const
   int ret = OB_SUCCESS;
 
   if (NULL == buffer || len - pos < static_cast<int64_t>(get_serialize_size())) {
-    LOG_WARN("invalid argument", K(buffer), K(len), K(pos), "need_size", get_serialize_size());
+    LOG_WDIAG("invalid argument", K(buffer), K(len), K(pos), "need_size", get_serialize_size());
     ret = OB_INVALID_ARGUMENT;
   } else {
     if (OB_FAIL(ObMySQLUtil::store_int1(buffer, len, field_count_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(pos), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(pos), K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, len, warning_count_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(pos), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(pos), K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_int2(buffer, len, server_status_.flags_, pos))) {
-      LOG_WARN("store fail", K(buffer), K(len), K(pos), K(ret));
+      LOG_WDIAG("store fail", K(buffer), K(len), K(pos), K(ret));
     }
   }
 
@@ -63,11 +63,11 @@ int OMPKEOF::decode()
     //OB_ASSERT(pos == end);
     if (pos != end) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("packet error, pos != end", K(pos), K(end), K(ret));
+      LOG_EDIAG("packet error, pos != end", K(pos), K(end), K(ret));
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(cdata_), K(ret));
+    LOG_EDIAG("null input", K(cdata_), K(ret));
   }
   return ret;
 }

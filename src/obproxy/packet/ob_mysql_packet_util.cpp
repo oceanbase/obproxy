@@ -40,7 +40,7 @@ int ObMysqlPacketUtil::encode_header(ObMIOBuffer &write_buf,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(fields.count() < 1)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, field array has no element", K(ret));
+    LOG_WDIAG("invalid argument, field array has no element", K(ret));
   } else {
     // write header packet
     OMPKResheader rhp;
@@ -48,7 +48,7 @@ int ObMysqlPacketUtil::encode_header(ObMIOBuffer &write_buf,
     rhp.set_seq(seq++);
     if (OB_FAIL(ObMysqlPacketWriter::write_packet(write_buf, rhp))) {
       seq--;
-      LOG_WARN("fail to write packet", K(rhp), K(ret));
+      LOG_WDIAG("fail to write packet", K(rhp), K(ret));
     }
     // write field packet(s)
     if (OB_SUCC(ret)) {
@@ -57,7 +57,7 @@ int ObMysqlPacketUtil::encode_header(ObMIOBuffer &write_buf,
         OMPKField field_packet(field);
         field_packet.set_seq(seq++);
         if (OB_FAIL(ObMysqlPacketWriter::write_field_packet(write_buf, field_packet))) {
-          LOG_WARN("fail to write field", K(field_packet), K(field), K(ret));
+          LOG_WDIAG("fail to write field", K(field_packet), K(field), K(ret));
           --seq;
         }
       }
@@ -65,7 +65,7 @@ int ObMysqlPacketUtil::encode_header(ObMIOBuffer &write_buf,
     // write the first eof packet
     if (OB_SUCC(ret)) {
       if (OB_FAIL(encode_eof_packet(write_buf, seq, status_flag))) {
-        LOG_WARN("fail to write eof packet", K(ret));
+        LOG_WDIAG("fail to write eof packet", K(ret));
       }
     }
   }
@@ -79,7 +79,7 @@ int ObMysqlPacketUtil::encode_field_packet(ObMIOBuffer &write_buf,
   OMPKField field_packet(field);
   field_packet.set_seq(seq++);
   if (OB_FAIL(ObMysqlPacketWriter::write_field_packet(write_buf, field_packet))) {
-    LOG_WARN("fail to write field", K(field_packet), K(field), K(ret));
+    LOG_WDIAG("fail to write field", K(field_packet), K(field), K(ret));
     --seq;
   }
   return ret;
@@ -106,7 +106,7 @@ int ObMysqlPacketUtil::encode_row_packet(ObMIOBuffer &write_buf,
   row_packet.set_seq(seq++);
 
   if (OB_FAIL(ObMysqlPacketWriter::write_row_packet(write_buf, row_packet))) {
-    LOG_WARN("fail to write field", K(row_packet), K(ret));
+    LOG_WDIAG("fail to write field", K(row_packet), K(ret));
     --seq;
   }
   return ret;
@@ -125,7 +125,7 @@ int ObMysqlPacketUtil::encode_eof_packet(ObMIOBuffer &write_buf,
   eof_packet.set_server_status(server_status);
 
   if (OB_FAIL(ObMysqlPacketWriter::write_packet(write_buf, eof_packet))) {
-    LOG_WARN("fail to write eof packet", K(eof_packet), K(ret));
+    LOG_WDIAG("fail to write eof packet", K(eof_packet), K(ret));
   }
   return ret;
 }
@@ -145,10 +145,10 @@ int ObMysqlPacketUtil::encode_err_packet(ObMIOBuffer &write_buf, uint8_t &seq, c
   if (OB_SUCC(err_packet.set_oberrcode(errcode))
       && OB_SUCC(err_packet.set_message(msg_buf))) {
     if (OB_FAIL(ObMysqlPacketWriter::write_packet(write_buf, err_packet))) {
-      LOG_WARN("fail to write err packet", K(err_packet), K(ret));
+      LOG_WDIAG("fail to write err packet", K(err_packet), K(ret));
     }
   } else {
-    LOG_WARN("failed to set error info", K(ret), K(errcode), K(msg_buf));
+    LOG_WDIAG("failed to set error info", K(ret), K(errcode), K(msg_buf));
     ret = OB_ERR_UNEXPECTED;
   }
   return ret;
@@ -170,7 +170,7 @@ int ObMysqlPacketUtil::encode_ok_packet(ObMIOBuffer &write_buf, uint8_t &seq,
 
   if (OB_FAIL(ObMysqlPacketWriter::write_packet(write_buf, ok_packet))) {
     seq--;
-    LOG_WARN("fail to write packet", K(ok_packet), K(ret));
+    LOG_WDIAG("fail to write packet", K(ok_packet), K(ret));
   }
   return ret;
 }
@@ -187,9 +187,9 @@ int ObMysqlPacketUtil::encode_kv_resultset(ObMIOBuffer &write_buf,
   if (OB_SUCC(ret)) {
     ObSEArray<ObMySQLField, 1> fields;
     if (OB_FAIL(fields.push_back(field))) {
-      LOG_WARN("faild to push field", K(field), K(ret));
+      LOG_WDIAG("faild to push field", K(field), K(ret));
     } else if (OB_FAIL(ObMysqlPacketUtil::encode_header(write_buf, seq, fields, status_flag))) {
-      LOG_WARN("faild to encode header", K(field), K(seq), K(status_flag), K(ret));
+      LOG_WDIAG("faild to encode header", K(field), K(seq), K(status_flag), K(ret));
     }
   }
 
@@ -199,14 +199,14 @@ int ObMysqlPacketUtil::encode_kv_resultset(ObMIOBuffer &write_buf,
     row.cells_ = &field_value;
     row.count_ = 1;
     if (OB_FAIL(ObMysqlPacketUtil::encode_row_packet(write_buf, seq, row))) {
-      LOG_WARN("faild to encode row", K(row), K(ret));
+      LOG_WDIAG("faild to encode row", K(row), K(ret));
     }
   }
 
   // second eof
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ObMysqlPacketUtil::encode_eof_packet(write_buf, seq, status_flag))) {
-      LOG_WARN("faild to encode row", K(seq), K(status_flag), K(ret));
+      LOG_WDIAG("faild to encode row", K(seq), K(status_flag), K(ret));
     }
   }
 

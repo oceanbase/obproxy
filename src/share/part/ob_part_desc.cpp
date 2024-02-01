@@ -77,11 +77,11 @@ int ObPartDesc::build_dtc_params(obproxy::proxy::ObClientSessionInfo *session_in
       ObObj value_obj;
       int sub_ret = OB_SUCCESS;
       if (OB_SUCCESS != (sub_ret = session_info->get_sys_variable_value(sys_key_name, value_obj))) {
-        COMMON_LOG(WARN, "fail to get sys var from session, use standard nls format", K(sub_ret), K(sys_key_name));
+        COMMON_LOG(DEBUG, "fail to get sys var from session, use standard nls format", K(sub_ret), K(sys_key_name));
       } else {
         ObString value_str = value_obj.get_string();
         if (OB_FAIL(dtc_params.set_nls_format_by_type(obj_type, value_str))) {
-          COMMON_LOG(WARN, "fail to set nls format by type", K(ret), K(obj_type), K(value_str));
+          COMMON_LOG(DEBUG, "fail to set nls format by type", K(ret), K(obj_type), K(value_str));
         } else {
           COMMON_LOG(DEBUG, "succ to set nls format by type", K(obj_type), K(value_str));
         }
@@ -89,7 +89,20 @@ int ObPartDesc::build_dtc_params(obproxy::proxy::ObClientSessionInfo *session_in
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "fail to build dtc params due to null session", K(ret));
+    COMMON_LOG(DEBUG, "fail to build dtc params due to null session", K(ret));
+  }
+
+  return ret;
+}
+
+int ObPartDesc::set_accuracies(int64_t pos, const ObAccuracy &accuracy)
+{
+  int ret = OB_SUCCESS;
+  if (accuracies_.count() <= pos || pos < 0) {
+    ret = OB_ARRAY_OUT_OF_RANGE;
+    COMMON_LOG(WDIAG, "set part desc accuracy out of range", K(pos), K(ret));
+  } else {
+    accuracies_.at(pos) = accuracy;
   }
 
   return ret;
@@ -121,20 +134,55 @@ int ObPartDesc::cast_obj(ObObj &src_obj,
                                                                             obj_type, tz_info, dtc_params))) {
     COMMON_LOG(DEBUG, "fail to build dtc params with ctx session", K(ret), K(obj_type));
   } else {
-    ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type);
+    ObCastMode cm = CM_NULL_ON_WARN;
+    // for insert stmt, use column_conv
+    if (ctx.need_accurate()) {
+      cm = cm | CM_COLUMN_CONVERT;
+    // for other stmt, use cast
+    } else {
+      cm = cm | CM_CONST_TO_DECIMAL_INT_EQ;
+    }
+    ObCastCtx cast_ctx(&allocator, &dtc_params, cm, cs_type, &accuracy);
     const ObObj *res_obj = &src_obj;
- 
+
     // use src_obj as buf_obj
     if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cs_type, cast_ctx, src_obj, src_obj))) {
       COMMON_LOG(DEBUG, "failed to cast obj", K(ret), K(src_obj), K(obj_type), K(cs_type));
     } else if (ctx.need_accurate()
                && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type, *res_obj, src_obj, res_obj))) {
-      COMMON_LOG(WARN, "fail to obj accuracy check", K(ret), K(src_obj));
+      COMMON_LOG(DEBUG, "fail to obj accuracy check", K(ret), K(src_obj));
     } else {
       COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(obj_type), K(cs_type));
     }
   }
 
+  return ret;
+}
+
+int ObPartDesc::decimal_int_murmur_hash(const ObObj &val, const uint64_t seed, uint64_t &res)
+{
+  int ret = OB_SUCCESS;
+  constexpr static uint32_t SIGN_BIT_MASK = (1 << 31);
+  const uint32_t *data = reinterpret_cast<const uint32_t *>(val.get_decimal_int());
+  int32_t last = val.get_int_bytes() / sizeof(uint32_t) - 1;
+
+  // find minimum length of uint32_t values to represent `val`:
+  // if data[last] ==  UINT32_MAX && data[last - 1]'s highest bit is 1, last--
+  // else if data[last] == 0 && data[last - 1]'s highest bit is 0, last--
+  //
+  // this way, val can be easily recovered appending 0/UINT32_MAX values
+  if (last <= 0) {
+    // do nothing
+  } else if (data[last] == UINT32_MAX) {
+    while (last > 0 && data[last] == UINT32_MAX && (data[last - 1] & SIGN_BIT_MASK)) {
+      last--;
+    }
+  } else if (data[last] == 0) {
+    while (last > 0 && data[last] == 0 && ((data[last - 1] & SIGN_BIT_MASK) == 0)) {
+      last--;
+    }
+  }
+  res = murmurhash(data, (last + 1) * sizeof(uint32_t), seed);
   return ret;
 }
 

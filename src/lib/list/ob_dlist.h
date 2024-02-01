@@ -110,11 +110,11 @@ bool ObDList<DLinkNode>::add_last(DLinkNode *e)
   bool ret = true;
   if (OB_ISNULL(e)) {
     ret = false;
-    LIB_LOG(ERROR, "the poniter is null",K(e));
+    LIB_LOG(EDIAG, "the poniter is null",K(e));
   } else if (OB_UNLIKELY(e->get_prev() != NULL
              || e->get_next() != NULL)) {
     ret = false;
-    LIB_LOG(ERROR, "link node is not alone",
+    LIB_LOG(EDIAG, "link node is not alone",
               K(e->get_prev()), K(e->get_next()), K(e));
   } else {
     header_.add_before(e);
@@ -130,11 +130,11 @@ bool ObDList<DLinkNode>::add_first(DLinkNode *e)
   bool ret = true;
   if (OB_ISNULL(e)) {
     ret = false;
-    LIB_LOG(ERROR, "the poniter is null",K(e));
+    LIB_LOG(EDIAG, "the poniter is null",K(e));
   } else if (e->get_prev() != NULL
              || e->get_next() != NULL) {
     ret = false;
-    LIB_LOG(ERROR, "link node is not alone",
+    LIB_LOG(EDIAG, "link node is not alone",
               K(e->get_prev()), K(e->get_next()), K(e));
   } else {
     header_.add_after(e);
@@ -269,26 +269,26 @@ int64_t ObDList<DLinkNode>::to_string(char *buf, const int64_t buf_len) const
   int64_t pos = 0;
   int ret = OB_SUCCESS;
   if (OB_FAIL(databuff_printf(buf, buf_len, pos, "["))) { // json style
-//    LIB_LOG(WARN, "fail to databuff printf", K(ret));
+//    LIB_LOG(WDIAG, "fail to databuff printf", K(ret));
   }
   for (DLinkNode *it = header_.next_;
        it != &header_ && it != header_.prev_ && OB_SUCCESS == ret;
        it = it->next_) {
     if (OB_FAIL(databuff_print_obj(buf, buf_len, pos, *it))) {
-//      LIB_LOG(WARN, "fail to databuff printf", K(ret));
+//      LIB_LOG(WDIAG, "fail to databuff printf", K(ret));
     } else if (OB_FAIL(databuff_printf(buf, buf_len, pos, ", "))) {
-//      LIB_LOG(WARN, "fail to databuff printf", K(ret));
+//      LIB_LOG(WDIAG, "fail to databuff printf", K(ret));
     }
   }
   if (OB_SUCCESS == ret) {
     if (!is_empty()) {
       if (OB_FAIL(databuff_print_obj(buf, buf_len, pos, *header_.prev_))) {
-//        LIB_LOG(WARN, "fail to databuff printf", K(ret));
+//        LIB_LOG(WDIAG, "fail to databuff printf", K(ret));
       }
     }
     if (OB_SUCCESS == ret) {
       if (OB_FAIL(databuff_printf(buf, buf_len, pos, "]"))) {
-//        LIB_LOG(WARN, "fail to databuff printf", K(ret));
+//        LIB_LOG(WDIAG, "fail to databuff printf", K(ret));
       }
     }
   }

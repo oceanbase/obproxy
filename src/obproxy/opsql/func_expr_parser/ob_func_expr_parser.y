@@ -52,13 +52,13 @@ static inline void add_param_node(ObProxyParamNodeList *list, ObFuncExprParseRes
     }                                                                                         \
   } while(0)                                                                                  \
 
-#define malloc_func_expr_node(func_node, result, type)                                        \
+#define malloc_func_expr_node(func_node, result, name)                                        \
   do {                                                                                        \
     if (OB_ISNULL(func_node = ((ObFuncExprNode *)obproxy_parse_malloc(sizeof(ObFuncExprNode), \
                                                                    result->malloc_pool_)))) { \
       YYABORT;                                                                                \
     } else {                                                                                  \
-      func_node->func_type_ = type;                                                           \
+      func_node->func_name_ = name;                                                           \
       func_node->child_ = NULL;                                                               \
     }                                                                                         \
   } while(0)                                                                                  \
@@ -77,71 +77,175 @@ static inline void add_param_node(ObProxyParamNodeList *list, ObFuncExprParseRes
     }                                                                                         \
   } while(0)                                                                                  \
 
+#define store_str_val(parse_str, str, str_len)   \
+  do {                                           \
+    parse_str.str_ = NULL;                       \
+    parse_str.str_len_ = 0;                      \
+    parse_str.end_ptr_ = NULL;                   \
+    if (str != 0 && str_len >= 0) {              \
+      parse_str.str_ = str;                      \
+      parse_str.str_len_ = str_len;              \
+      parse_str.end_ptr_ = str + str_len;        \
+    }                                            \
+  } while (0)
+
 %}
 
  /* dummy node */
 %token DUMMY_FUNCTION_CLAUSE
  /* reserved keyword */
 %token TOKEN_SPECIAL FUNC_SUBSTR FUNC_CONCAT FUNC_HASH FUNC_TOINT FUNC_DIV FUNC_ADD FUNC_SUB FUNC_MUL FUNC_TESTLOAD
-%token FUNC_TO_DATE FUNC_TO_TIMESTAMP FUNC_NVL FUNC_TO_CHAR FUNC_MOD FUNC_SYSDATE
+%token FUNC_TO_DATE FUNC_TO_TIMESTAMP FUNC_NVL FUNC_TO_CHAR FUNC_MOD FUNC_SYSDATE FUNC_ISNULL FUNC_CEIL FUNC_FLOOR
+%token FUNC_LTRIM FUNC_RTRIM FUNC_TRIM FUNC_REPLACE FUNC_LENGTH FUNC_UPPER FUNC_LOWER TRIM_FROM TRIM_BOTH TRIM_LEADING TRIM_TRAILING FUNC_TO_NUMBER
+%token FUNC_ROUND FUNC_TRUNCATE FUNC_ABS FUNC_SYSTIMESTAMP FUNC_CURRENTDATE FUNC_CURRENTTIME FUNC_CURRENTTIMESTAMP
 %token END_P ERROR IGNORED_WORD
+ /* expression priority */
+ %left '&'
+ %left '+' '-'
+ %left '*' '/' '%'
+ %left '(' ')'
  /* type token */
-%token<str> NAME_OB STR_VAL NUMBER_VAL
+%token<str> NAME_OB STR_VAL NUMBER_VAL NONE_PARAM_FUNC
 %token<num> INT_VAL
-%type<function_type> func_name reserved_func
 %type<list> param_list
 %type<func_node> func_expr
-%type<param_node> param
+%type<param_node> param simple_expr
 %start start
 %%
 start: func_root
 
-func_root: func_expr
+func_root: simple_expr
            {
-             malloc_param_node(result->param_node_, result, PARAM_FUNC);
-             result->param_node_->func_expr_node_ = $1;
+             result->param_node_ = $1;
              YYACCEPT;
            }
            | error { YYABORT; }
 
-func_expr: func_name '(' param_list ')'
+func_expr: NAME_OB '(' param_list ')'
           {
             malloc_func_expr_node($$, result, $1);
             $$->child_ = $3;
           }
-          | func_name '(' ')'
+          | NAME_OB '(' ')'
           {
             malloc_func_expr_node($$, result, $1);
             $$->child_ = NULL;
           }
-          | reserved_func 
+          | NONE_PARAM_FUNC
           {
             malloc_func_expr_node($$, result, $1);
             $$->child_ = NULL;
           }
+          | NONE_PARAM_FUNC '(' ')'
+          {
+            malloc_func_expr_node($$, result, $1);
+            $$->child_ = NULL;
+          }
+          | NONE_PARAM_FUNC '(' param_list ')'
+          {
+            malloc_func_expr_node($$, result, $1);
+            $$->child_ = $3;
+          }
 
-func_name: FUNC_SUBSTR { $$ = OB_PROXY_EXPR_TYPE_FUNC_SUBSTR; }
-         | FUNC_CONCAT { $$ = OB_PROXY_EXPR_TYPE_FUNC_CONCAT; }
-         | FUNC_HASH   { $$ = OB_PROXY_EXPR_TYPE_FUNC_HASH; }
-         | FUNC_TOINT  { $$ = OB_PROXY_EXPR_TYPE_FUNC_TOINT; }
-         | FUNC_DIV    { $$ = OB_PROXY_EXPR_TYPE_FUNC_DIV; }
-         | FUNC_ADD    { $$ = OB_PROXY_EXPR_TYPE_FUNC_ADD; }
-         | FUNC_SUB    { $$ = OB_PROXY_EXPR_TYPE_FUNC_SUB; }
-         | FUNC_MUL    { $$ = OB_PROXY_EXPR_TYPE_FUNC_MUL; }
-         | FUNC_TESTLOAD { $$ = OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD; }
-         | FUNC_TO_DATE { $$ = OB_PROXY_EXPR_TYPE_FUNC_TO_DATE; }
-         | FUNC_TO_TIMESTAMP { $$ = OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP; }
-         | FUNC_NVL { $$ = OB_PROXY_EXPR_TYPE_FUNC_NVL; }
-         | FUNC_TO_CHAR { $$ = OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR; }
-         | FUNC_MOD { $$ = OB_PROXY_EXPR_TYPE_FUNC_MOD; }
+simple_expr: param { $$ = $1; }
+           | '(' simple_expr ')' {$$ = $2; }
+           | '+' simple_expr %prec '*' { $$ = $2; }
+           | '-' simple_expr %prec '*'
+           {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            ObProxyParamNode * dummynode = NULL;
+            
+            // -mod(2,1)-> 0 - mod(2,1)
+            malloc_param_node(dummynode, result, PARAM_INT_VAL);
+            dummynode->int_value_ = 0;
+            malloc_list(dummylist, result, dummynode);
+            add_param_node(dummylist, result, $2);
 
-reserved_func: FUNC_SYSDATE  { $$ = OB_PROXY_EXPR_TYPE_FUNC_SYSDATE; }
+            ObProxyParseString str;
+            store_str_val(str, "-", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node($$, result, PARAM_FUNC);
+            $$->func_expr_node_ = dummyfunc;
+           }
+           | simple_expr '+' simple_expr
+           {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
 
-param_list: param
+            malloc_list(dummylist, result, $1);
+            add_param_node(dummylist, result, $3);
+
+            ObProxyParseString str;
+            store_str_val(str, "+", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node($$, result, PARAM_FUNC);
+            $$->func_expr_node_ = dummyfunc;
+           }
+           | simple_expr '-' simple_expr
+           {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+
+            malloc_list(dummylist, result, $1);
+            add_param_node(dummylist, result, $3);
+            ObProxyParseString str;
+            store_str_val(str, "-", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node($$, result, PARAM_FUNC);
+            $$->func_expr_node_ = dummyfunc;
+           }
+           | simple_expr '*' simple_expr
+           {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            
+            malloc_list(dummylist, result, $1);
+            add_param_node(dummylist, result, $3);
+            ObProxyParseString str;
+            store_str_val(str, "*", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node($$, result, PARAM_FUNC);
+            $$->func_expr_node_ = dummyfunc;
+           }
+           | simple_expr '/' simple_expr
+           {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            
+            malloc_list(dummylist, result, $1);
+            add_param_node(dummylist, result, $3);
+            ObProxyParseString str;
+            store_str_val(str, "/", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node($$, result, PARAM_FUNC);
+            $$->func_expr_node_ = dummyfunc;
+           }
+           | simple_expr '%' simple_expr
+           {
+            ObFuncExprNode *dummyfunc = NULL;
+            ObProxyParamNodeList *dummylist = NULL;
+            
+            malloc_list(dummylist, result, $1);
+            add_param_node(dummylist, result, $3);
+            ObProxyParseString str;
+            store_str_val(str, "%", 1);
+            malloc_func_expr_node(dummyfunc, result, str);
+            dummyfunc->child_ = dummylist;
+            malloc_param_node($$, result, PARAM_FUNC);
+            $$->func_expr_node_ = dummyfunc;
+           }
+
+param_list: simple_expr
           {
             malloc_list($$, result, $1);
           }
-          | param_list ',' param
+          | param_list ',' simple_expr
           {
             add_param_node($1, result, $3);
             $$ = $1;

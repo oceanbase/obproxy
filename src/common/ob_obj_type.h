@@ -92,6 +92,8 @@ enum ObObjType
   ObLobType           = 46, // Oracle Lob
   ObJsonType          = 47, // Json Type
   ObGeometryType      = 48, // Geometry type
+  ObUserDefinedSQLType = 49, // User defined type in SQL
+  ObDecimalIntType     = 50, // decimal int type
   ObMaxType                 // invalid type, or count of obj type
 };
 
@@ -119,6 +121,10 @@ enum ObObjTypeClass
   ObIntervalTC  = 19,   // oracle interval type class include interval year to month and interval day to second
   ObRowIDTC     = 20,   // oracle rowid typeclass, includes urowid and rowid
   ObLobTC       = 21,   // oracle lob typeclass
+  ObJsonTC          = 22, // json type class 
+  ObGeometryTC      = 23, // geometry type class
+  ObUserDefinedSQLTC = 24, // user defined type class in SQL
+  ObDecimalIntTC     = 25, // decimal int class
   ObMaxTC,
   // invalid type classes are below, only used as the result of XXXX_type_promotion()
   // to indicate that the two obj can't be promoted to the same type.
@@ -176,7 +182,11 @@ static ObObjTypeClass OBJ_TYPE_TO_CLASS[ObMaxType] =
   ObStringTC,       // ObNVarchar2Type
   ObStringTC,       // ObNCharType
   ObRowIDTC,        // ObURowIDType
-  ObLobTC           // ObLobType
+  ObLobTC,          // ObLobType
+  ObJsonTC,         // ObJsonType
+  ObGeometryTC,     // ObGeometryType
+  ObUserDefinedSQLTC,// ObUserDefinedSQLType
+  ObDecimalIntTC,    // ObDecimalIntType
 };
 
 static ObObjType OBJ_DEFAULT_TYPE[ObActualMaxTC] =
@@ -278,6 +288,7 @@ inline bool ob_is_text_tc(ObObjType type) { return ObTextTC == ob_obj_type_class
 inline bool ob_is_nvarchar2(const ObObjType type) { return ObNVarchar2Type == type; }
 inline bool ob_is_nchar(const ObObjType type) { return ObNCharType == type; }
 inline bool ob_is_nstring_type(const ObObjType type) { return ob_is_nchar(type) || ob_is_nvarchar2(type); }
+inline bool ob_is_decimal_int_type(const ObObjType type) { return ObDecimalIntType == type; }
 inline bool ob_is_accurate_numeric_type(ObObjType type)
 {
   return (ObTinyIntType <= type && type <= ObUInt64Type) || (ob_is_number_tc(type));
@@ -300,7 +311,8 @@ inline bool is_obj_type_supported(ObObjType type)
           || ob_is_otimestamp_type(type) 
           || ob_is_number_tc(type)
           || ob_is_nvarchar2(type)
-          || ob_is_nchar(type);
+          || ob_is_nchar(type)
+          || ob_is_decimal_int_type(type);
 }
 
 // to_string adapter
@@ -318,6 +330,19 @@ inline int databuff_print_key_obj(char *buf, const int64_t buf_len, int64_t &pos
 }
 
 bool ob_can_static_cast(const ObObjType src, const ObObjType dst);
+
+enum ObDecimalIntWideType
+{
+  DECIMAL_INT_32 = 0, // precision from 1 to 9
+  DECIMAL_INT_64,     // precision from 1 to 18
+  DECIMAL_INT_128,    // precision from 1 to 38
+  DECIMAL_INT_256,    // precision from 1 to 76
+  DECIMAL_INT_512,    // precision from 1 to 154
+  DECIMAL_INT_MAX
+};
+
+ObDecimalIntWideType get_decimalint_type(const int16_t precision);
+int16_t get_max_decimalint_precision(const int16_t precision);
 }  // end namespace common
 }  // end namespace oceanbase
 

@@ -50,7 +50,7 @@ ObProxyOperator* ObProxyTableScanOp::get_child(const uint32_t idx)
   int ret = common::OB_SUCCESS;
   if (child_cnt_ > 0) {
     ret = common::OB_ERROR;
-    LOG_WARN("invalid TABLE_SCAN operator which has children operator", K(ret), K(idx),
+    LOG_WDIAG("invalid TABLE_SCAN operator which has children operator", K(ret), K(idx),
         K(child_cnt_));
   }
   return NULL;
@@ -65,13 +65,13 @@ int ObProxyTableScanOp::get_next_row()
 
   if (OB_ISNULL(ObProxyOperator::get_input())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("not have any input for table_scan", K(ret), KP(ObProxyOperator::get_input()));
+    LOG_WDIAG("not have any input for table_scan", K(ret), KP(ObProxyOperator::get_input()));
   } else if (OB_ISNULL(input = dynamic_cast<ObProxyTableScanInput*>(ObProxyOperator::get_input()))) { 
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input for ObProxyTableScanOp", K(ret));
+    LOG_WDIAG("invalid input for ObProxyTableScanOp", K(ret));
   } else if (OB_ISNULL(operator_async_task_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input for ObProxyTableScanOp", K(ret));
+    LOG_WDIAG("invalid input for ObProxyTableScanOp", K(ret));
   } else {
     ObIArray<hash::ObHashMapWrapper<ObString, ObString> > &table_name_maps = input->get_table_name_maps();
     ObIArray<dbconfig::ObShardConnector*> &db_key_names = input->get_db_key_names();
@@ -83,13 +83,13 @@ int ObProxyTableScanOp::get_next_row()
     if (table_name_maps.count() != db_key_names.count()
         || shard_props.count() != db_key_names.count()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("inner error for sharding info",
+      LOG_WDIAG("inner error for sharding info",
                "phy table count", table_name_maps.count(),
                "shard prop count", shard_props.count(),
                "dbkey count", db_key_names.count(), K(ret));
     } else if (OB_FAIL(sql_parser.parse_sql_by_obparser(proxy::ObProxyMysqlRequest::get_parse_sql(request_sql),
                                                         NORMAL_PARSE_MODE, parse_result, true))) {
-      LOG_WARN("parse_sql_by_obparser failed", K(request_sql), K(ret));
+      LOG_WDIAG("parse_sql_by_obparser failed", K(request_sql), K(ret));
     }
 
     for (int64_t i = 0; OB_SUCC(ret) && i < db_key_names.count(); i++) {
@@ -102,10 +102,10 @@ int ObProxyTableScanOp::get_next_row()
       if (OB_FAIL(proxy::ObProxyShardUtils::rewrite_shard_dml_request(request_sql, new_sql, parse_result,
                                             is_oracle_mode, table_name_map_warraper.get_hash_map(),
                                             db_key_name->database_name_, false))) {
-        LOG_WARN("fail to rewrite shard request", K(request_sql), K(is_oracle_mode), K(ret));
+        LOG_WDIAG("fail to rewrite shard request", K(request_sql), K(is_oracle_mode), K(ret));
       } else if (OB_ISNULL(tmp_buf = (char *)allocator_.alloc(new_sql.length()))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(op_name()), "sql len", new_sql.length(), K(ret));
+        LOG_WDIAG("no have enough memory to init", K(op_name()), "sql len", new_sql.length(), K(ret));
       } else {
         MEMCPY(tmp_buf, new_sql.ptr(), new_sql.length());
         ObProxyParallelParam param;
@@ -125,7 +125,7 @@ int ObProxyTableScanOp::get_next_row()
     }
     if (OB_FAIL(get_global_parallel_processor().open(*operator_async_task_, operator_async_task_->parallel_action_array_[0],
                                                      parallel_param, &allocator_, timeout_ms_))) {
-      LOG_WARN("fail to op parallel processor", K(parallel_param));
+      LOG_WDIAG("fail to op parallel processor", K(parallel_param));
     } else {
       set_sub_sql_count(parallel_param.count());
     }
@@ -141,29 +141,29 @@ int ObProxyTableScanOp::handle_result(void *data, bool &is_final, ObProxyResultR
   executor::ObProxyParallelResp *pres = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, data is NULL", K(ret));
+    LOG_WDIAG("invalid input, data is NULL", K(ret));
   } else if (OB_ISNULL(pres = reinterpret_cast<executor::ObProxyParallelResp*>(data))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, pres type is not match", K(ret));
+    LOG_WDIAG("invalid input, pres type is not match", K(ret));
   } else if (OB_FAIL(pres_array_.push_back(pres))) {
-    LOG_WARN("fail to push result resp to array", K(ret));
+    LOG_WDIAG("fail to push result resp to array", K(ret));
   } else {
     if (pres->is_ok_resp()) { // it is the OK packet
       // For the OK package, it is only necessary to construct an OK package in the case of
       // the last package, and the others can be swallowed.
       if (is_final) {
         if (OB_FAIL(build_ok_packet(result))) {
-          LOG_WARN("fail to build_ok_packet", K(ret));
+          LOG_WDIAG("fail to build_ok_packet", K(ret));
         }
       }
     } else if (pres->is_resultset_resp()) {
       if (OB_FAIL(handle_response_result(pres, is_final, result))) {
-        LOG_WARN("failed to handle resultset_resp", K(ret));
+        LOG_WDIAG("failed to handle resultset_resp", K(ret));
       }
     } else if (pres->is_error_resp()) {
       if (OB_FAIL(packet_error_info(result, pres->get_err_msg().ptr(),
                                     pres->get_err_msg().length(), pres->get_err_code()))) {
-        LOG_WARN("fail to error packet error", K(ret), K(result));
+        LOG_WDIAG("fail to error packet error", K(ret), K(result));
       }
     }
     LOG_DEBUG("handle_result success", K(ret), K(pres));
@@ -173,7 +173,6 @@ int ObProxyTableScanOp::handle_result(void *data, bool &is_final, ObProxyResultR
 
 int ObProxyTableScanOp::handle_response_result(void *data, bool &is_final, ObProxyResultResp *&result)
 {
-  UNUSED(is_final);
   int ret = OB_SUCCESS;
   LOG_DEBUG("Enter ObProxyTableScanOp::handle_response_result", K(op_name()), K(data));
   int64_t columns_length = 0;
@@ -188,34 +187,34 @@ int ObProxyTableScanOp::handle_response_result(void *data, bool &is_final, ObPro
 
   if (OB_ISNULL(data)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(data));
+    LOG_WDIAG("invalid input", K(ret), K(data));
   } else if (OB_ISNULL(pres = reinterpret_cast<executor::ObProxyParallelResp*> (data))) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(data));
+    LOG_WDIAG("invalid input", K(ret), K(data));
   } else if (!pres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyTableScanOp::handle_response_result not response result", K(pres), KP(pres), K(pres->is_resultset_resp()));
+    LOG_WDIAG("ObProxyTableScanOp::handle_response_result not response result", K(pres), KP(pres), K(pres->is_resultset_resp()));
   } else if (OB_UNLIKELY((columns_length = pres->get_column_count()) <= 0)) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("columns_length less than 0", K(columns_length), K(pres), K(ret));
+    LOG_WDIAG("columns_length less than 0", K(columns_length), K(pres), K(ret));
   } else if (OB_ISNULL(fields = pres->get_field())) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("fields is null", K(pres), K(ret));
+    LOG_WDIAG("fields is null", K(pres), K(ret));
   }
 
   if (OB_SUCC(ret) && OB_ISNULL(result_fields_)) {
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultFields)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
     } else if (OB_ISNULL(result_fields_ = new (tmp_buf) ResultFields(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_))) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultFields)));
     } else {
       for (int64_t i = 0; OB_SUCC(ret) && i < columns_length; i++) {
         LOG_DEBUG("change field info", K(i), K(result_fields_));
         obmysql::ObMySQLField *obj_field = NULL;
         if (OB_FAIL(change_sql_field(fields, obj_field, allocator_))) {
-          LOG_WARN("change field info failed", K(ret));
+          LOG_WDIAG("change field info failed", K(ret));
         } else {
           result_fields_->push_back(*obj_field);
           fields++;
@@ -225,7 +224,7 @@ int ObProxyTableScanOp::handle_response_result(void *data, bool &is_final, ObPro
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(set_index())) {
-        LOG_WARN("fail to set index", K(ret));
+        LOG_WDIAG("fail to set index", K(ret));
       }
     }
   }
@@ -233,7 +232,7 @@ int ObProxyTableScanOp::handle_response_result(void *data, bool &is_final, ObPro
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ResultRows)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
     } else {
       rows = new (tmp_buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
     }
@@ -242,10 +241,10 @@ int ObProxyTableScanOp::handle_response_result(void *data, bool &is_final, ObPro
   while(OB_SUCC(ret) && OB_SUCC(pres->next(row_ptr))) {
     if (NULL == row_ptr) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("row prt is NULL", K(ret));
+      LOG_WDIAG("row prt is NULL", K(ret));
     } else if (OB_FAIL(init_row(row))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(row));
+      LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(row));
     } else {
       result_sum++;
 
@@ -266,14 +265,22 @@ int ObProxyTableScanOp::handle_response_result(void *data, bool &is_final, ObPro
 
   LOG_DEBUG("ObProxyTableScanOp::process_ready_data get all rows", K(ret), K(result_sum),
             K(pres->get_cont_index()));
+  all_resultset_rows_sum_ += result_sum;
+  if (OB_UNLIKELY(is_final 
+      && (all_resultset_rows_sum_ > obproxy::obutils::get_global_proxy_config().scan_buffered_rows_warning_threshold))) {
+    int64_t all_resultset_rows_threshold = obproxy::obutils::get_global_proxy_config().scan_buffered_rows_warning_threshold;
+    ObProxyTableScanInput* input = dynamic_cast<ObProxyTableScanInput*>(get_input());
+    LOG_WDIAG("scan all request get resultset rows more than threshold", K_(all_resultset_rows_sum), K(all_resultset_rows_threshold), 
+              K_(sub_sql_count), "request sql", input? input->request_sql_ : "NULL", K(ret));
+  }
 
   ObProxyResultResp *res = NULL;
   if (OB_SUCC(ret)) {
     if (OB_FAIL(packet_result_set(res, rows, get_result_fields()))) {
-      LOG_WARN("process_ready_data:failed to packet resultset", K(op_name()), K(ret));
+      LOG_WDIAG("process_ready_data:failed to packet resultset", K(op_name()), K(ret));
     } else if (OB_ISNULL(res)) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("process_ready_data::packet_result_set success but res is NULL", K(ret), K(res));
+      LOG_WDIAG("process_ready_data::packet_result_set success but res is NULL", K(ret), K(res));
     } else {
       res->set_result_sum(get_sub_sql_count());
       res->set_result_idx(pres->get_cont_index());
@@ -291,13 +298,13 @@ int ObProxyTableScanOp::set_index()
 
   ObProxyTableScanInput* input = dynamic_cast<ObProxyTableScanInput*>(get_input());
   if (OB_FAIL(set_index_for_exprs(input->get_calc_exprs()))) {
-    LOG_WARN("fail to set index for calc exprs", K(ret));
+    LOG_WDIAG("fail to set index for calc exprs", K(ret));
   } else if (OB_FAIL(set_index_for_exprs(input->get_agg_exprs()))) {
-    LOG_WARN("fail to set index for agg exprs", K(ret));
+    LOG_WDIAG("fail to set index for agg exprs", K(ret));
   } else if (OB_FAIL(set_index_for_exprs(input->get_group_exprs()))) {
-    LOG_WARN("fail to set index for group exprs", K(ret));
+    LOG_WDIAG("fail to set index for group exprs", K(ret));
   } else if (OB_FAIL(set_index_for_exprs(input->get_order_exprs()))) {
-    LOG_WARN("fail to set index for order exprs", K(ret));
+    LOG_WDIAG("fail to set index for order exprs", K(ret));
   }
 
   return ret;
@@ -312,9 +319,9 @@ int ObProxyTableScanOp::set_index_for_exprs(ObIArray<T*> &expr_array)
     T *expr = expr_array.at(i);
     if (OB_ISNULL(expr)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected expr is null", K(ret));
+      LOG_WDIAG("unexpected expr is null", K(ret));
     } else if (OB_FAIL(set_index_for_expr(expr))) {
-      LOG_WARN("fail to set index", K(ret));
+      LOG_WDIAG("fail to set index", K(ret));
     }
   }
 
@@ -331,10 +338,10 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
     ObProxyGroupItem *group_expr = dynamic_cast<ObProxyGroupItem*>(expr);
     if (OB_ISNULL(group_expr)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+      LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
     } else if (OB_ISNULL(expr = group_expr->get_expr())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("group expr or order expr do not have child expr", KPC(group_expr), K(ret));
+      LOG_WDIAG("group expr or order expr do not have child expr", KPC(group_expr), K(ret));
     } else {
       expr_type = expr->get_expr_type();
     }
@@ -365,7 +372,7 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
         ObProxyExprColumn *expr_column = dynamic_cast<ObProxyExprColumn*>(expr);
         if (OB_ISNULL(expr_column)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+          LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
         } else {
           ObString &table_name = expr_column->get_table_name();
           ObString &column_name = expr_column->get_column_name();
@@ -381,7 +388,7 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
 
     if (i == result_fields_->count()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to get column from field, mayby something error", K(expr), K(ret));
+      LOG_WDIAG("fail to get column from field, mayby something error", K(expr), K(ret));
     }
   }
 
@@ -393,17 +400,17 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
       ObProxyExprCount *count_expr = NULL;
       if (OB_ISNULL(avg_expr)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+        LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
       } else if (OB_ISNULL(sum_expr = avg_expr->get_sum_expr())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("avg expr don't have sum expr", K(avg_expr), K(ret));
+        LOG_WDIAG("avg expr don't have sum expr", K(avg_expr), K(ret));
       } else if (OB_ISNULL(count_expr = avg_expr->get_count_expr())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("avg expr don't have count expr", K(avg_expr), K(ret));
+        LOG_WDIAG("avg expr don't have count expr", K(avg_expr), K(ret));
       } else if (OB_FAIL(set_index_for_expr(sum_expr))) {
-        LOG_WARN("fail to set index for sum expr", K(ret));
+        LOG_WDIAG("fail to set index for sum expr", K(ret));
       } else if (OB_FAIL(set_index_for_expr(count_expr))) {
-        LOG_WARN("fail to set index for count expr", K(ret));
+        LOG_WDIAG("fail to set index for count expr", K(ret));
       }
     } else if (expr->has_agg() && !expr->is_agg()) {
       // If the expression contains an aggregate, but it is not an aggregate function, 
@@ -411,13 +418,13 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
       ObProxyFuncExpr *func_expr = dynamic_cast<ObProxyFuncExpr*>(expr);
       if (OB_ISNULL(func_expr)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+        LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
       } else {
         ObSEArray<ObProxyExpr*, 4>& param_array = func_expr->get_param_array();
         for (int64_t i = 0; OB_SUCC(ret) && i < param_array.count(); i++) {
           ObProxyExpr* param_expr = param_array.at(i);
           if (OB_FAIL(set_index_for_expr(param_expr))) {
-            LOG_WARN("fail to set index for expr", K(ret));
+            LOG_WDIAG("fail to set index for expr", K(ret));
           }
         }
       }

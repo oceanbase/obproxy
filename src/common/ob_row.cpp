@@ -77,7 +77,15 @@ bool ObNewRow::operator==(const ObNewRow &other)
     is_equal = false;
   } else {
     for (int64_t i = 0; is_equal && i < count1; i++) {
-      is_equal = (get_cell(i) == other.get_cell(i));
+      const ObObj *obj1 = get_cell(i);
+      const ObObj *obj2 = other.get_cell(i);
+      if (OB_ISNULL(obj1) && OB_ISNULL(obj2)) {
+        is_equal = true;
+      } else if (OB_NOT_NULL(obj1) && OB_NOT_NULL(obj2)) {
+        is_equal = (*obj1 == *obj2); 
+      } else {
+        is_equal = false;
+      }
     }
   }
   return is_equal;
@@ -89,7 +97,7 @@ int ObNewRow::deep_copy(const ObNewRow &src, char *buf, int64_t len, int64_t &po
 
   if (src.get_deep_copy_size() + pos > len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow, ", K(ret), "need", src.get_deep_copy_size() + pos, K(len));
+    LOG_WDIAG("size overflow, ", K(ret), "need", src.get_deep_copy_size() + pos, K(len));
   } else {
     cells_ = new(buf + pos) ObObj[src.count_];
     pos += src.count_ * sizeof(ObObj);
@@ -98,7 +106,7 @@ int ObNewRow::deep_copy(const ObNewRow &src, char *buf, int64_t len, int64_t &po
 
   for (int64_t i = 0; OB_SUCC(ret) && i < src.count_; ++i) {
     if (OB_FAIL(cells_[i].deep_copy(src.cells_[i], buf, len, pos))) {
-      LOG_WARN("fail to deep copy cell, ", K(ret));
+      LOG_WDIAG("fail to deep copy cell, ", K(ret));
     }
   }
 
@@ -135,13 +143,13 @@ DEFINE_DESERIALIZE(ObNewRow)
       count_ = count;
     } else {
       ret = OB_ERR_SYS;
-      COMMON_LOG(ERROR, "count must not larger than count_", K(ret), K(count), K(count_));
+      COMMON_LOG(EDIAG, "count must not larger than count_", K(ret), K(count), K(count_));
     }
   }
   if (OB_SUCCESS == ret && count_ > 0) {
     if (OB_ISNULL(cells_)) {
       ret = OB_NOT_INIT;
-      LOG_WARN("cells is null");
+      LOG_WDIAG("cells is null");
     } else {
       OB_UNIS_DECODE_ARRAY(cells_, count_);
     }
@@ -154,7 +162,7 @@ DEFINE_DESERIALIZE(ObNewRow)
       projector_size_ = projector_size;
     } else {
       ret = OB_ERR_SYS;
-      COMMON_LOG(ERROR, "projector_size must not larger than projector_size_",
+      COMMON_LOG(EDIAG, "projector_size must not larger than projector_size_",
           K(ret), K(projector_size), K(projector_size_));
     }
   }
@@ -162,7 +170,7 @@ DEFINE_DESERIALIZE(ObNewRow)
   if (OB_SUCCESS == ret && projector_size_ > 0) {
     if (OB_ISNULL(projector_)) {
       ret = OB_NOT_INIT;
-      LOG_WARN("projector is null");
+      LOG_WDIAG("projector is null");
     } else {
       OB_UNIS_DECODE_ARRAY(projector_, projector_size_);
     }

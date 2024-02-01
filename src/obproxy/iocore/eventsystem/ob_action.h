@@ -123,10 +123,10 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(NULL != cont) && OB_UNLIKELY(cont != continuation_)) {
       ret = common::OB_INVALID_ARGUMENT;
-      PROXY_EVENT_LOG(WARN, "invalid argument, it should not happened", K(cont), K_(continuation), K(this), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "invalid argument, it should not happened", K(cont), K_(continuation), K(this), K(ret));
     } else if (OB_UNLIKELY(cancelled_)) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_EVENT_LOG(WARN, "it has already be cancelled, it should not happened", K_(cancelled), K(this), K(ret));
+      PROXY_EVENT_LOG(WDIAG, "it has already be cancelled, it should not happened", K_(cancelled), K(this), K(ret));
     } else {
       cancelled_ = true;
     }

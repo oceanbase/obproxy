@@ -17,6 +17,7 @@
 #include "lib/string/ob_sql_string.h"
 #include "proxy/route/ob_table_cache.h"
 #include "proxy/route/ob_route_utils.h"
+#include "obutils/ob_config_server_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::json;
@@ -36,6 +37,7 @@ static const char *JSON_HTTP_STATUS                       = "Success";
 static const char *JSON_HTTP_CODE                         = "Code";
 static const char *JSON_CONFIG_DATA                       = "Data";
 static const char *JSON_CONFIG_VERSION                    = "Version";
+static const char *JSON_CONFIG_VERSION_LOWER              = "version";
 static const char *JSON_CLUSTER_LIST                      = "ObRootServiceInfoUrlList";
 static const char *JSON_OB_REGION                         = "ObRegion";
 static const char *JSON_OB_CLUSTER                        = "ObCluster";
@@ -82,7 +84,7 @@ const char *cluster_role_to_str(ObClusterRole role)
       break;
     case INVALID_CLUSTER_ROLE:
     default:
-      LOG_WARN("invalid role", K(role));
+      LOG_WDIAG("invalid role", K(role));
       break;
   }
   return str_ret;
@@ -96,7 +98,7 @@ ObClusterRole str_to_cluster_role(const ObString &role_str)
   } else if (role_str.case_compare(STANDBY_ROLE) == 0) {
     role = STANDBY;
   } else {
-    LOG_WARN("invalid role_str", K(role_str));
+    LOG_WDIAG("invalid role_str", K(role_str));
   }
   return role;
 }
@@ -116,9 +118,9 @@ int ObProxyConfigString::parse(const Value *json_value)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_STRING))) {
-    LOG_WARN("fail to check json string type", K(json_value), K(ret));
+    LOG_WDIAG("fail to check json string type", K(json_value), K(ret));
   } else if (OB_FAIL(ObProxyJsonUtils::check_config_string(json_value->get_string(), size_limit_))) {
-    LOG_WARN("fail to check config string", K(json_value->get_string()), K(ret));
+    LOG_WDIAG("fail to check config string", K(json_value->get_string()), K(ret));
   } else {
     set_value(json_value->get_string());
   }
@@ -139,13 +141,13 @@ int ObProxyConfigUrl::parse(const Value *value, ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(value, JT_STRING))) {
-    LOG_WARN("fail to check rs url typr", K(value), K(ret));
+    LOG_WDIAG("fail to check rs url typr", K(value), K(ret));
   } else if (OB_UNLIKELY(NULL != url_str_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid cluster info, url should be null", K(url_str_), K(ret));
+    LOG_WDIAG("invalid cluster info, url should be null", K(url_str_), K(ret));
   } else if (OB_ISNULL(url_str_ = static_cast<char *>(allocator.alloc(value->get_string().length() + 1)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for rs url", K(ret));
+    LOG_EDIAG("fail to alloc mem for rs url", K(ret));
   } else {
     MEMCPY(url_str_, value->get_string().ptr(), value->get_string().length());
     url_str_[value->get_string().length()] = '\0';
@@ -159,7 +161,7 @@ int ObProxyConfigUrl::set_url(char *buffer, const int64_t len)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buffer) || len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid url for set url", K(ret));
+    LOG_WDIAG("invalid url for set url", K(ret));
   } else {
     url_str_ = buffer;
     url_.assign_ptr(url_str_, static_cast<int32_t>(len));
@@ -198,10 +200,10 @@ int ObProxyClusterInfo::get_rs_list_hash(const int64_t cluster_id, uint64_t &has
   }
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(get_sub_cluster_info(real_cluster_id, sub_cluster_info))) {
-    LOG_WARN("cluster not exist, ignore", K_(cluster_name), K(real_cluster_id), K(ret));
+    LOG_WDIAG("cluster not exist, ignore", K_(cluster_name), K(real_cluster_id), K(ret));
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("sub cluster info is null", K_(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("sub cluster info is null", K_(cluster_name), K(cluster_id), K(ret));
   } else {
     hash = sub_cluster_info->rs_list_hash_;
   }
@@ -229,7 +231,7 @@ int ObProxySubClusterInfo::update_rslist(const LocationList &web_rs_list, const 
              "old rslist", web_rs_list_,
              "new rslist", web_rs_list, K_(cluster_id));
     if (OB_FAIL(web_rs_list_.assign(web_rs_list))) {
-      LOG_WARN("fail to set cluster web_rs_list", K_(cluster_id), K(web_rs_list), K(ret));
+      LOG_WDIAG("fail to set cluster web_rs_list", K_(cluster_id), K(web_rs_list), K(ret));
     } else {
       if (0 == cur_rs_list_hash) {
         rs_list_hash_ = ObProxyClusterInfo::get_server_list_hash(web_rs_list);
@@ -318,16 +320,16 @@ int ObProxyClusterInfo::parse(const Value *json_value, ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check cluster info", K(json_value), K(ret));
+    LOG_WDIAG("fail to check cluster info", K(json_value), K(ret));
   } else {
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == JSON_OB_REGION) {
         if(OB_FAIL(cluster_name_.parse(it->value_))) {
-          LOG_WARN("fail to parse cluster name", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse cluster name", K(it->name_), K(ret));
         }
       } else if (it->name_ == JSON_RS_URL) {
         if (OB_FAIL(rs_url_.parse(it->value_, allocator))) {
-          LOG_WARN("fail to parse rs url", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse rs url", K(it->name_), K(ret));
         }
       } else {
         // ignore other json key name, for later compatibile with new config items
@@ -382,27 +384,27 @@ int ObProxyMetaTableInfo::parse(const Value *json_value, ObIAllocator &allocator
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check meta table info", K(json_value), K(ret));
+    LOG_WDIAG("fail to check meta table info", K(json_value), K(ret));
   } else {
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == JSON_META_DATABASE) {
         if (OB_FAIL(db_.parse(it->value_))) {
-          LOG_WARN("fail to parse meta db", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse meta db", K(it->name_), K(ret));
         }
       } else if (it->name_ == JSON_META_USER) {
         if (OB_FAIL(username_.parse(it->value_))) {
-          LOG_WARN("fail to parse meta username", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse meta username", K(it->name_), K(ret));
         } else if (OB_FAIL(check_and_trim_username())) {
-          LOG_WARN("fail to check and trim username", K(ret));
+          LOG_WDIAG("fail to check and trim username", K(ret));
         }
       } else if (it->name_ == JSON_META_PASSWORD) {
         if (OB_FAIL(password_.parse(it->value_))) {
-          LOG_WARN("fail to parse meta password", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse meta password", K(it->name_), K(ret));
         }
       } else if (it->name_ == OB_META_DB_CLUSTER_NAME) {
         cluster_info_.cluster_name_.set_value(it->name_);
         if (OB_FAIL(cluster_info_.rs_url_.parse(it->value_, allocator))) {
-          LOG_WARN("fail to parse meta db rs url", K(OB_META_DB_CLUSTER_NAME), K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse meta db rs url", K(OB_META_DB_CLUSTER_NAME), K(it->name_), K(ret));
         }
       } else {
         // ignore other json key name, for later compatibile with new config items
@@ -419,7 +421,7 @@ int ObProxyMetaTableInfo::check_and_trim_username()
   if (OB_UNLIKELY(!cluster.empty())) {
     if (OB_UNLIKELY(cluster != OB_META_DB_CLUSTER_NAME)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("username parsed from config server contains an unexpected cluster name", K_(username), K(ret));
+      LOG_WDIAG("username parsed from config server contains an unexpected cluster name", K_(username), K(ret));
     } else {
       // trim cluster name
       ObString tmp_str(username_.length() - cluster.length() - 1, username_.ptr());
@@ -479,7 +481,7 @@ int ObProxyClusterArrayInfo::parse(const Value *json_value, ObIAllocator &alloca
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_ARRAY))) {
-    LOG_WARN("fail to check cluster array info", K(json_value), K(ret));
+    LOG_WDIAG("fail to check cluster array info", K(json_value), K(ret));
   } else {
     ObProxyClusterInfo *cluster_info = NULL;
     DLIST_FOREACH(it, json_value->get_array()) {
@@ -488,18 +490,18 @@ int ObProxyClusterArrayInfo::parse(const Value *json_value, ObIAllocator &alloca
       if (OB_LIKELY(NULL != cluster_info)) {
         if (OB_FAIL(cluster_info->parse(it, allocator))) {
           ret = OB_INVALID_CONFIG;
-          LOG_WARN("fail to parse cluster info", K(it), K(ret));
+          LOG_WDIAG("fail to parse cluster info", K(it), K(ret));
         } else {
           ret = ci_map_.unique_set(cluster_info);
           if (OB_SUCCESS == ret) {
           } else if (OB_HASH_EXIST == ret) {
             ret = OB_INVALID_CONFIG;
-            LOG_WARN("cluster info already exist", K(ret));
+            LOG_WDIAG("cluster info already exist", K(ret));
           } else { }
         }
       } else {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for cluster info", K(cluster_info), K(ret));
+        LOG_WDIAG("fail to alloc memory for cluster info", K(cluster_info), K(ret));
       }
       if (OB_FAIL(ret) && OB_LIKELY(NULL != cluster_info)) {
         op_free(cluster_info);
@@ -521,9 +523,9 @@ int ObProxyClusterArrayInfo::parse_ob_region(const Value *json_value,
 
   if (root_service_url_template.empty()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("not for version v2, wrong resposne", K(ret));
+    LOG_WDIAG("not for version v2, wrong resposne", K(ret));
   } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_ARRAY))) {
-    LOG_WARN("fail to check obregion array info", K(json_value), K(ret));
+    LOG_WDIAG("fail to check obregion array info", K(json_value), K(ret));
   } else {
     ObProxyClusterInfo *cluster_info = NULL;
     DLIST_FOREACH(it, json_value->get_array()) {
@@ -531,24 +533,24 @@ int ObProxyClusterArrayInfo::parse_ob_region(const Value *json_value,
       cluster_info = op_alloc(ObProxyClusterInfo);
       if (OB_LIKELY(NULL != cluster_info)) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it, JT_STRING))) {
-          LOG_WARN("fail to check config info type", K(it), K(ret));
+          LOG_WDIAG("fail to check config info type", K(it), K(ret));
         } else if (OB_FAIL(cluster_info->cluster_name_.parse(it))) {
-          LOG_WARN("fail to parse region name", K(ret));
+          LOG_WDIAG("fail to parse region name", K(ret));
         } else if (OB_FAIL(generate_cluster_url(cluster_info->cluster_name_.get_string(),
                 root_service_url_template.get_string(), cluster_info->rs_url_, allocator))) {
-          LOG_WARN("generate cluster url failed", K(cluster_info->cluster_name_),
+          LOG_WDIAG("generate cluster url failed", K(cluster_info->cluster_name_),
               K(root_service_url_template));
         } else {
           ret = ci_map_.unique_set(cluster_info);
           if (OB_SUCCESS == ret) {
           } else if (OB_HASH_EXIST == ret) {
             ret = OB_INVALID_CONFIG;
-            LOG_WARN("cluster info already exist", K(ret));
+            LOG_WDIAG("cluster info already exist", K(ret));
           } else {}
         }
       } else {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for cluster info", K(ret));
+        LOG_WDIAG("fail to alloc memory for cluster info", K(ret));
       }
 
       if (OB_FAIL(ret) && OB_LIKELY(NULL != cluster_info)) {
@@ -573,14 +575,14 @@ int ObProxyClusterArrayInfo::generate_cluster_url(const ObString &cluster_name,
 
   if (cluster_name.empty() || root_service_url_template.empty()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid argument", K(ret), K(cluster_name), K(root_service_url_template));
+    LOG_WDIAG("invalid argument", K(ret), K(cluster_name), K(root_service_url_template));
   } else {
     int64_t url_len = root_service_url_template.length() + cluster_name.length() + 1;
     char *buffer = NULL;
     int64_t pos = 0;
     if (OB_ISNULL(buffer = static_cast<char*>(allocator.alloc(url_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc memory", K(url_len), K(ret));
+      LOG_EDIAG("fail to alloc memory", K(url_len), K(ret));
     } else {
       int64_t index = root_service_url_template.find(REGION_TEMPLATE);
       if (-1 == index) {
@@ -588,7 +590,7 @@ int ObProxyClusterArrayInfo::generate_cluster_url(const ObString &cluster_name,
       }
       if (OB_UNLIKELY(-1 == index)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("not find ${ObRegion}", K(ret), K(root_service_url_template));
+        LOG_WDIAG("not find ${ObRegion}", K(ret), K(root_service_url_template));
       } else {
         MEMCPY(buffer + pos, root_service_url_template.ptr(), index);
         pos += index;
@@ -596,7 +598,7 @@ int ObProxyClusterArrayInfo::generate_cluster_url(const ObString &cluster_name,
         pos += cluster_name.length();
         buffer[pos] = '\0';
         if (OB_FAIL(url.set_url(buffer, pos))) {
-          LOG_WARN("set url failed", K(ret), K(buffer));
+          LOG_WDIAG("set url failed", K(ret), K(buffer));
         }
       }
     }
@@ -690,33 +692,33 @@ int ObProxyDataInfo::parse(const Value *json_value, ObIAllocator &allocator)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check Data info type", K(json_value), K(ret));
+    LOG_WDIAG("fail to check Data info type", K(json_value), K(ret));
   } else {
     Value *region_v2 = NULL;
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == JSON_CONFIG_VERSION) {
         if (OB_FAIL(version_.parse(it->value_))) {
-          LOG_WARN("fail to parse md5 version", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse md5 version", K(it->name_), K(ret));
         }
       } else if (it->name_ == JSON_CLUSTER_LIST) {
         if (OB_FAIL(cluster_array_.parse(it->value_, allocator))) {
-          LOG_WARN("fail to parse rs info list", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse rs info list", K(it->name_), K(ret));
         }
       } else if (it->name_ == JSON_META_TABLE_INFO) {
         if (OB_FAIL(meta_table_info_.parse(it->value_, allocator))) {
-          LOG_WARN("fail to parse metadb table info", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse metadb table info", K(it->name_), K(ret));
         }
       } else if (it->name_ == JSON_BIN_URL) {
         if (OB_FAIL(bin_url_.parse(it->value_, allocator))) {
-          LOG_WARN("fail to parse bin info", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse bin info", K(it->name_), K(ret));
         }
       } else if (it->name_ == JSON_ROOT_SERVICE_INFO_URL_TEMPLATE) {
         if (OB_FAIL(root_service_url_template_.parse(it->value_))) {
-          LOG_WARN("fail to parse rootserviceinfourltemplate", K(ret));
+          LOG_WDIAG("fail to parse rootserviceinfourltemplate", K(ret));
         }
       } else if (it->name_ == JSON_ROOT_SERVICE_INFO_URL_TEMPLATE_V2) {
         if (OB_FAIL(root_service_url_template_v2_.parse(it->value_))) {
-          LOG_WARN("fail to parse rootserviceinfourltemplate v2", K(ret));
+          LOG_WDIAG("fail to parse rootserviceinfourltemplate v2", K(ret));
         }
       } else if (it->name_ == JSON_OB_REGION || it->name_ == JSON_DATA_CLUSTER_LIST) {
         region_v2 = it->value_;
@@ -728,7 +730,7 @@ int ObProxyDataInfo::parse(const Value *json_value, ObIAllocator &allocator)
     if (OB_SUCC(ret) && NULL != region_v2) {
       if (OB_FAIL(cluster_array_.parse_ob_region(region_v2,
               root_service_url_template_, allocator))) {
-        LOG_WARN("fail to parse obregion for v2", K(ret));
+        LOG_WDIAG("fail to parse obregion for v2", K(ret));
       }
     }
   }
@@ -739,7 +741,7 @@ int ObProxyDataInfo::parse_version(const Value *value, const ObString &version)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(value, JT_OBJECT))) {
-    LOG_WARN("fail to check json config info type", K(ret));
+    LOG_WDIAG("fail to check json config info type", K(ret));
   } else {
     Value *data_info = NULL;
     DLIST_FOREACH(it, value->get_object()) {
@@ -750,7 +752,7 @@ int ObProxyDataInfo::parse_version(const Value *value, const ObString &version)
     }
 
     if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(data_info, JT_OBJECT))) {
-      LOG_WARN("fail to check Data info type", K(ret));
+      LOG_WDIAG("fail to check Data info type", K(ret));
     } else {
       DLIST_FOREACH(it, data_info->get_object()) {
         if (it->name_ == JSON_CONFIG_VERSION) {
@@ -792,9 +794,9 @@ int ObProxyJsonConfigInfo::parse(const Value *json_value)
   int ret = OB_SUCCESS;
   Value *value = NULL;
   if (OB_FAIL(ObProxyJsonUtils::parse_header(json_value, value))) {
-    LOG_WARN("fail to parse proxy json", K(json_value), K(ret));
+    LOG_WDIAG("fail to parse proxy json", K(json_value), K(ret));
   } else if (OB_FAIL(data_info_.parse(value, allocator_))) {
-    LOG_WARN("fail to parse data info", K(value), K(ret));
+    LOG_WDIAG("fail to parse data info", K(value), K(ret));
   }
   return ret;
 }
@@ -827,7 +829,7 @@ int ObProxyJsonConfigInfo::parse_local_rslist(const Value *root)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(root, JT_ARRAY))) {
-    LOG_WARN("fail to check local rs list", K(ret));
+    LOG_WDIAG("fail to check local rs list", K(ret));
   } else {
     bool is_from_local = true;
     ObString app_name = ObString::make_empty_string();
@@ -847,19 +849,19 @@ int ObProxyJsonConfigInfo::parse_local_rslist(const Value *root)
           // here e_again means local rslist for this cluster is empty, do nothing and go on parsing
           ret = OB_SUCCESS;
         } else {
-          LOG_WARN("fail to parse rslist data", K(ret));
+          LOG_WDIAG("fail to parse rslist data", K(ret));
         }
       }
 
       if (OB_SUCC(ret) && is_primary) {
         int64_t master_cluster_id = OB_DEFAULT_CLUSTER_ID;
         if (OB_FAIL(get_master_cluster_id(cluster_name, master_cluster_id))) {
-          LOG_WARN("fail to get master cluster id",  K(cluster_name), K(ret));
+          LOG_WDIAG("fail to get master cluster id",  K(cluster_name), K(ret));
         } else if (OB_DEFAULT_CLUSTER_ID == master_cluster_id) {
           if (OB_FAIL(set_master_cluster_id(cluster_name, json_cluster_id))) {
-            LOG_WARN("fail to set master cluster id",  K(json_cluster_id), K(ret));
+            LOG_WDIAG("fail to set master cluster id",  K(json_cluster_id), K(ret));
           } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name, OB_DEFAULT_CLUSTER_ID, web_rslist, !is_from_local))) {
-            LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(web_rslist), K(ret));
+            LOG_WDIAG("fail to build and add dummy entry", K(cluster_name), K(web_rslist), K(ret));
           }
         }
       }
@@ -884,7 +886,7 @@ int ObProxyJsonConfigInfo::parse_rslist_array_data(const Value *root, const ObSt
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(root, JT_ARRAY))) {
-    LOG_WARN("fail to check local rs list", K(ret));
+    LOG_WDIAG("fail to check local rs list", K(ret));
   } else {
     int64_t json_cluster_id = OB_DEFAULT_CLUSTER_ID;
     LocationList web_rslist;
@@ -906,7 +908,7 @@ int ObProxyJsonConfigInfo::parse_rslist_array_data(const Value *root, const ObSt
           // here e_again means local rslist for this cluster is empty, do nothing and go on parsing
           ret = OB_SUCCESS;
         } else {
-          LOG_WARN("fail to parse rslist data", K(ret));
+          LOG_WDIAG("fail to parse rslist data", K(ret));
         }
       }
 
@@ -924,10 +926,10 @@ int ObProxyJsonConfigInfo::parse_rslist_array_data(const Value *root, const ObSt
     if (OB_SUCC(ret)) {
       if (!is_multi_primary && OB_DEFAULT_CLUSTER_ID != primary_cluster_id) {
         if (OB_FAIL(set_master_cluster_id(is_from_local ? primary_cluster_name : appname, primary_cluster_id))) {
-          LOG_WARN("fail to set master cluster id",  K(json_cluster_id), K(ret));
+          LOG_WDIAG("fail to set master cluster id",  K(json_cluster_id), K(ret));
         } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(
                    is_from_local ? primary_cluster_name : appname, OB_DEFAULT_CLUSTER_ID, primary_web_rslist, !is_from_local))) {
-          LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(web_rslist), K(ret));
+          LOG_WDIAG("fail to build and add dummy entry", K(cluster_name), K(web_rslist), K(ret));
         }
       }
     }
@@ -968,7 +970,7 @@ int ObProxyJsonConfigInfo::parse_local_idc_list(const Value *root)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(root, JT_ARRAY))) {
-    LOG_WARN("fail to check local rs list", K(ret));
+    LOG_WDIAG("fail to check local rs list", K(ret));
   } else {
     ObString tmp_cluster_name;
     ObProxyIDCList idc_list;
@@ -976,13 +978,13 @@ int ObProxyJsonConfigInfo::parse_local_idc_list(const Value *root)
     DLIST_FOREACH(it, root->get_array()) {
       idc_list.reuse();
       if (OB_FAIL(parse_idc_list_data(it, tmp_cluster_name, cluster_id, idc_list))) {
-        LOG_WARN("fail to parse idc list data", K(ret));
+        LOG_WDIAG("fail to parse idc list data", K(ret));
       } else if (OB_FAIL(set_idc_list(tmp_cluster_name, cluster_id, idc_list))) {
         if (OB_EAGAIN == ret) {
           ret = OB_SUCCESS;
           LOG_DEBUG("idc_list is not changed, no need to update", K(tmp_cluster_name), K(ret));
         } else {
-          LOG_WARN("fail to update_idc_list", K(tmp_cluster_name), K(cluster_id), K(idc_list), K(ret));
+          LOG_WDIAG("fail to update_idc_list", K(tmp_cluster_name), K(cluster_id), K(idc_list), K(ret));
         }
       }
     }  //end traverse local idc list array
@@ -1018,19 +1020,19 @@ int ObProxyJsonConfigInfo::parse_remote_rslist(const Value *root, const ObString
   Value *value = NULL;
   bool is_from_local = false;
   if (OB_FAIL(ObProxyJsonUtils::parse_header(root, value))) {
-    LOG_WARN("fail to parse remote rslist header", K(root), K(ret));
+    LOG_WDIAG("fail to parse remote rslist header", K(root), K(ret));
   } else if (OB_ISNULL(value)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("rs info data is null", K(appname), K(ret));
+    LOG_WDIAG("rs info data is null", K(appname), K(ret));
     // primary-slave and no cluster id case
   } else if (value->get_type() == JT_ARRAY) {
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     // parse all cluster rs list for the cluster name, including master and all followers
     if (OB_FAIL(parse_rslist_array_data(value, appname))) {
-      LOG_WARN("fail to parse remote rslist array", K(appname), K(cluster_id), K(ret));
+      LOG_WDIAG("fail to parse remote rslist array", K(appname), K(cluster_id), K(ret));
     } else if (OB_FAIL(reset_is_used_flag(appname))) {
       // need reset IsUse Flag after fetch newest rs list
-      LOG_WARN("fail to reset is_used flag", K(appname), K(ret));
+      LOG_WDIAG("fail to reset is_used flag", K(appname), K(ret));
     } else if (OB_FAIL(get_sub_cluster_info(appname, cluster_id, sub_cluster_info))) {
       if (OB_DEFAULT_CLUSTER_ID == cluster_id) {
         LOG_INFO("no primary cluster id exist, will try random cluster", K(cluster_id), K(appname));
@@ -1041,23 +1043,23 @@ int ObProxyJsonConfigInfo::parse_remote_rslist(const Value *root, const ObString
         if (appname == OB_META_DB_CLUSTER_NAME) {
           bool is_master_changed = false;
           if (OB_FAIL(get_next_master_cluster_info(appname, sub_cluster_info, is_master_changed))) {
-            LOG_WARN("fail to get next masrer cluster info", K(appname), K(ret));
+            LOG_WDIAG("fail to get next masrer cluster info", K(appname), K(ret));
           }
         } else {
           ret = OB_SUCCESS;
         }
       } else {
-        LOG_WARN("fail to get sub cluster info", K(appname), K(cluster_id), K(ret));
+        LOG_WDIAG("fail to get sub cluster info", K(appname), K(cluster_id), K(ret));
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_ISNULL(sub_cluster_info)) {
         if (OB_DEFAULT_CLUSTER_ID != cluster_id || appname == OB_META_DB_CLUSTER_NAME) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("sub cluster info is null", K(appname), K(cluster_id), K(ret));
+          LOG_WDIAG("sub cluster info is null", K(appname), K(cluster_id), K(ret));
         }
       } else if (OB_FAIL(web_rslist.assign(sub_cluster_info->web_rs_list_))){
-        LOG_WARN("fail to assign web rs list", KPC(sub_cluster_info), K(web_rslist), K(ret));
+        LOG_WDIAG("fail to assign web rs list", KPC(sub_cluster_info), K(web_rslist), K(ret));
       }
     }
     // 1. not primary-slave and no cluster id case
@@ -1073,16 +1075,16 @@ int ObProxyJsonConfigInfo::parse_remote_rslist(const Value *root, const ObString
     ObString cluster_name;
     if (OB_FAIL(parse_rslist_data(value, appname, json_cluster_id, web_rslist, is_primary,
                                   cluster_name, is_from_local, need_update_dummy_entry)) && OB_EAGAIN != ret) {
-      LOG_WARN("fail to parse remote rslist data", K(ret));
+      LOG_WDIAG("fail to parse remote rslist data", K(ret));
     // If there is no cluster id, there must be no active/standby case.
     // It must be set, otherwise the cluster resource of the main library cannot be obtained when get_cluster_resource
     // If you bring the cluster id, because you want to access a specific library, the main library information is not updated
     } else if (OB_DEFAULT_CLUSTER_ID == cluster_id) {
       if (OB_FAIL(set_master_cluster_id(is_from_local ? cluster_name : appname, json_cluster_id))) {
-        LOG_WARN("fail to set master cluster id",  K(json_cluster_id), K(ret));
+        LOG_WDIAG("fail to set master cluster id",  K(json_cluster_id), K(ret));
       } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(
                       is_from_local ? cluster_name : appname, OB_DEFAULT_CLUSTER_ID, web_rslist, !is_from_local))) {
-        LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(cluster_id), K(web_rslist), K(ret));
+        LOG_WDIAG("fail to build and add dummy entry", K(cluster_name), K(cluster_id), K(web_rslist), K(ret));
       }
     }
   }
@@ -1106,42 +1108,42 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
   bool is_cluster_name_alias = false;
   int64_t json_cluster_id = cluster_id;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check rslist data", K(json_value), K(ret));
+    LOG_WDIAG("fail to check rslist data", K(json_value), K(ret));
   } else {
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == JSON_OB_REGION || it->name_ == JSON_OB_CLUSTER) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_STRING))) {
-          LOG_WARN("fail to check cluster name", K(ret));
+          LOG_WDIAG("fail to check cluster name", K(ret));
         } else {
           cluster_name = it->value_->get_string();
         }
       } else if (it->name_ == JSON_OB_CLUSTER_ALIAS) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_STRING))) {
-          LOG_WARN("fail to check cluster name", K(ret));
+          LOG_WDIAG("fail to check cluster name", K(ret));
         } else {
           cluster_name_alias = it->value_->get_string();
         }
       } else if (it->name_ == JSON_OB_REGION_ID || it->name_ == JSON_OB_CLUSTER_ID) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_NUMBER))) {
-          LOG_WARN("fail to check cluster id", K(ret));
+          LOG_WDIAG("fail to check cluster id", K(ret));
         } else {
           json_cluster_id = it->value_->get_number();
         }
       } else if (it->name_ == JSON_OB_CLUSTER_TYPE) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_STRING))) {
-          LOG_WARN("fail to check region role", K(cluster_name), K(ret));
+          LOG_WDIAG("fail to check region role", K(cluster_name), K(ret));
         } else {
           role_str = it->value_->get_string();
         }
       } else if (is_from_local && it->name_ == JSON_REAL_META_REGION) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_STRING))) {
-          LOG_WARN("fail to check real meta cluster name", K(ret));
+          LOG_WDIAG("fail to check real meta cluster name", K(ret));
         } else {
           real_meta_cluster_name = it->value_->get_string();
         }
       } else if (is_from_local && it->name_ == JSON_OB_REAL_CLUSTER_NAME) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_STRING))) {
-          LOG_WARN("fail to check real meta cluster name", K(ret));
+          LOG_WDIAG("fail to check real meta cluster name", K(ret));
         } else {
           real_cluster_name = it->value_->get_string();
         }
@@ -1175,10 +1177,10 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
         data_info_.meta_table_info_.real_cluster_name_.set_value(cluster_name);
       } else if (OB_UNLIKELY(appname != cluster_name && appname != cluster_name_alias)) {
         ret = OB_OBCONFIG_APPNAME_MISMATCH;
-        LOG_WARN("obconfig appname mismatch", K(cluster_name), K(appname), K(cluster_name_alias), K(ret));
+        LOG_WDIAG("obconfig appname mismatch", K(cluster_name), K(appname), K(cluster_name_alias), K(ret));
       } else if (OB_UNLIKELY(cluster_id != json_cluster_id)) {
         ret = OB_OBCONFIG_APPNAME_MISMATCH;
-        LOG_WARN("obconfig cluster_id mismatch", K(cluster_id), K(json_cluster_id), K(ret));
+        LOG_WDIAG("obconfig cluster_id mismatch", K(cluster_id), K(json_cluster_id), K(ret));
       }
     }
     if ((is_from_local && cluster_name != real_cluster_name) || (!is_from_local && !cluster_name_alias.empty() && cluster_name != cluster_name_alias)) {
@@ -1188,12 +1190,12 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
     if (OB_SUCC(ret)) {
       web_rslist.reuse();
       if (OB_FAIL(parse_rslist_item(rslist, is_from_local ? cluster_name : appname, web_rslist, false))) {
-        LOG_WARN("fail to parse rslist item", K(rslist), K(ret));
+        LOG_WDIAG("fail to parse rslist item", K(rslist), K(ret));
       } else if (NULL != readonly_rslist
           && OB_FAIL(parse_rslist_item(readonly_rslist, is_from_local ? cluster_name : appname, web_rslist, true))) {
-        LOG_WARN("fail to parse readonly_rslist item", K(readonly_rslist), K(ret));
+        LOG_WDIAG("fail to parse readonly_rslist item", K(readonly_rslist), K(ret));
       } else if (OB_FAIL(reset_create_failure_count(is_from_local ? cluster_name : appname, json_cluster_id))) {
-        LOG_WARN("fail to reset_create_failure_count", K(json_cluster_id), K(ret));
+        LOG_WDIAG("fail to reset_create_failure_count", K(json_cluster_id), K(ret));
       } else if (web_rslist.empty()) {
         LOG_INFO("rslist is empty", K(web_rslist), K(json_cluster_id), K(cluster_name));
       } else if (OB_FAIL(set_cluster_web_rs_list(is_from_local ? cluster_name : appname, json_cluster_id, web_rslist,
@@ -1205,7 +1207,7 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
           LOG_DEBUG("web rslist is not changed, no need to update", K(role_str), K(ret));
           ret = OB_SUCCESS;
         } else {
-          LOG_WARN("fail to set cluster web rs list", K(web_rslist), K(role_str), K(ret));
+          LOG_WDIAG("fail to set cluster web rs list", K(web_rslist), K(role_str), K(ret));
         }
       }
     }
@@ -1219,18 +1221,18 @@ int ObProxyJsonConfigInfo::parse_rslist_data(const Value *json_value, const ObSt
         // reset master_cluster_id to OB_DEFAULT_CLUSTER_ID
         int64_t cur_master_cluster_id = OB_DEFAULT_CLUSTER_ID;
         if (OB_FAIL(get_master_cluster_id(is_from_local ? cluster_name : appname, cur_master_cluster_id))) {
-          LOG_WARN("cur_master_cluster_id does not exist", K(cluster_name), K(appname), K(ret));
+          LOG_WDIAG("cur_master_cluster_id does not exist", K(cluster_name), K(appname), K(ret));
         } else if (json_cluster_id == cur_master_cluster_id
                    && OB_FAIL(set_master_cluster_id(is_from_local ? cluster_name : appname,
                                                     OB_DEFAULT_CLUSTER_ID))) {
-          LOG_WARN("fail to reset master cluster id", K(cluster_name), K(appname), K(ret));
+          LOG_WDIAG("fail to reset master cluster id", K(cluster_name), K(appname), K(ret));
         }
       }
       if (OB_SUCC(ret) && need_update_dummy_entry) {
         const bool is_rslist = !is_from_local;
         if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(
             is_from_local ? cluster_name : appname, json_cluster_id, web_rslist, is_rslist))) {
-          LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(cluster_id), K(web_rslist), K(ret));
+          LOG_WDIAG("fail to build and add dummy entry", K(cluster_name), K(cluster_id), K(web_rslist), K(ret));
         }
       }
     }
@@ -1243,22 +1245,22 @@ int ObProxyJsonConfigInfo::swap_origin_web_rslist_and_build_sys(const ObString &
   int ret = OB_SUCCESS;
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(reset_create_failure_count(cluster_name, cluster_id))) {
-    LOG_WARN("fail to reset_create_failure_count", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to reset_create_failure_count", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_FAIL(get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-    LOG_WARN("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
   } else {
     LOG_INFO("will update rslist", K(cluster_name), K(cluster_id),
              "real cluster_id", sub_cluster_info->cluster_id_,
              "old rslist", sub_cluster_info->web_rs_list_,
              "new rslist", sub_cluster_info->origin_web_rs_list_);
     if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(sub_cluster_info->origin_web_rs_list_))) {
-      LOG_WARN("fail to set cluster web_rs_list", K(cluster_name), K(cluster_id),
+      LOG_WDIAG("fail to set cluster web_rs_list", K(cluster_name), K(cluster_id),
                "origin_web_rs_list", sub_cluster_info->origin_web_rs_list_, K(ret));
     } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name, cluster_id, sub_cluster_info->origin_web_rs_list_, true))) {
-      LOG_WARN("fail to build and add dummy entry", K(cluster_name), K(cluster_id),
+      LOG_WDIAG("fail to build and add dummy entry", K(cluster_name), K(cluster_id),
                "origin_web_rs_list", sub_cluster_info->origin_web_rs_list_, K(ret));
     } else if (need_save_rslist_hash) {
       sub_cluster_info->rs_list_hash_ = ObProxyClusterInfo::get_server_list_hash(sub_cluster_info->origin_web_rs_list_);
@@ -1294,9 +1296,9 @@ int ObProxyJsonConfigInfo::parse_remote_idc_list(const Value *root,
   int ret = OB_SUCCESS;
   Value *value = NULL;
   if (OB_FAIL(ObProxyJsonUtils::parse_header(root, value))) {
-    LOG_WARN("fail to parse remote idc list header", K(root), K(ret));
+    LOG_WDIAG("fail to parse remote idc list header", K(root), K(ret));
   } else if (OB_FAIL(parse_idc_list_data(value, cluster_name, cluster_id, idc_list))) {
-    LOG_WARN("fail to parse remote idc list data", K(ret));
+    LOG_WDIAG("fail to parse remote idc list data", K(ret));
   }
   return ret;
 }
@@ -1307,18 +1309,18 @@ int ObProxyJsonConfigInfo::parse_idc_list_data(const Value *json_value,
   int ret = OB_SUCCESS;
   Value *json_idc_list = NULL;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check idc list data", K(json_value), K(ret));
+    LOG_WDIAG("fail to check idc list data", K(json_value), K(ret));
   } else {
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == JSON_OB_REGION || it->name_ == JSON_OB_CLUSTER) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_STRING))) {
-          LOG_WARN("fail to check cluster name", K(ret));
+          LOG_WDIAG("fail to check cluster name", K(ret));
         } else {
           cluster_name = it->value_->get_string();
         }
       } else if (it->name_ == JSON_OB_REGION_ID || it->name_ == JSON_OB_CLUSTER_ID) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_NUMBER))) {
-          LOG_WARN("fail to check cluster id", K(ret));
+          LOG_WDIAG("fail to check cluster id", K(ret));
         } else {
           cluster_id = it->value_->get_number();
         }
@@ -1331,7 +1333,7 @@ int ObProxyJsonConfigInfo::parse_idc_list_data(const Value *json_value,
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(parse_idc_list_item(json_idc_list, idc_list))) {
-      LOG_WARN("fail to parse idc list item", K(ret));
+      LOG_WDIAG("fail to parse idc list item", K(ret));
     } else {
       LOG_DEBUG("succ to parse idc list item", K(cluster_name), K(idc_list), K(ret));
     }
@@ -1343,23 +1345,23 @@ int ObProxyJsonConfigInfo::parse_idc_list_item(const Value *json_value, ObProxyI
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_ARRAY))) {
-    LOG_WARN("fail to check cluster array info", K(json_value), K(ret));
+    LOG_WDIAG("fail to check cluster array info", K(json_value), K(ret));
   } else {
     idc_list.reset();
     ObProxyIDCInfo idc_info;
     DLIST_FOREACH(it, json_value->get_array()) {
       if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it, JT_OBJECT))) {
-        LOG_WARN("fail to check idc list", K(ret));
+        LOG_WDIAG("fail to check idc list", K(ret));
       } else {
         idc_info.reset();
         DLIST_FOREACH(p, it->get_object()) {
           if (p->name_ == JSON_REGION) {
             if (OB_FAIL(idc_info.region_name_.parse(p->value_))) {
-              LOG_WARN("fail to parse region name", K(p->value_), K(ret));
+              LOG_WDIAG("fail to parse region name", K(p->value_), K(ret));
             }
           } else if (p->name_ == JSON_IDC) {
             if (OB_FAIL(idc_info.idc_name_.parse(p->value_))) {
-              LOG_WARN("fail to parse idc name", K(p->value_), K(ret));
+              LOG_WDIAG("fail to parse idc name", K(p->value_), K(ret));
             } else {
               idc_info.idc_name_.to_lower_case();
               idc_info.idc_hash_ = idc_info.idc_name_.hash();
@@ -1369,10 +1371,10 @@ int ObProxyJsonConfigInfo::parse_idc_list_item(const Value *json_value, ObProxyI
           }
         }
         if (OB_FAIL(ret) || OB_UNLIKELY(!idc_info.is_valid())) {
-          LOG_WARN("ignore invalid info, continue", K(idc_info), K(ret));
+          LOG_WDIAG("ignore invalid info, continue", K(idc_info), K(ret));
           ret = OB_SUCCESS;
         } else if (OB_FAIL(idc_list.push_back(idc_info))) {
-          LOG_WARN("fail to push back idc_info", K(idc_info), K(ret));
+          LOG_WDIAG("fail to push back idc_info", K(idc_info), K(ret));
         } else {
           LOG_DEBUG("succ to push back idc_info", K(idc_info), K(ret));
         }
@@ -1388,7 +1390,7 @@ int ObProxyJsonConfigInfo::parse_rslist_item(const Value *rs_list, const ObStrin
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(rs_list, JT_ARRAY))) {
-    LOG_WARN("fail to check rs list item", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to check rs list item", K(cluster_name), K(ret));
   } else {
     int64_t sql_port = OB_INVALID_INDEX;
     ObString address_str;
@@ -1396,24 +1398,24 @@ int ObProxyJsonConfigInfo::parse_rslist_item(const Value *rs_list, const ObStrin
     const ObReplicaType replica_type = (is_readonly_zone ? REPLICA_TYPE_READONLY : REPLICA_TYPE_FULL);
     DLIST_FOREACH(it, rs_list->get_array()) {
       if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it, JT_OBJECT))) {
-        LOG_WARN("fail to check rs list", K(cluster_name), K(ret));
+        LOG_WDIAG("fail to check rs list", K(cluster_name), K(ret));
       } else {
         DLIST_FOREACH(p, it->get_object()) {
           if (p->name_ == JSON_ADDRESS) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, JT_STRING))) {
-              LOG_WARN("fail to check address", K(cluster_name), K(ret));
+              LOG_WDIAG("fail to check address", K(cluster_name), K(ret));
             } else {
               address_str = p->value_->get_string();
             }
           } else if (p->name_ == JSON_ROLE) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, JT_STRING))) {
-              LOG_WARN("fail to check rs role", K(cluster_name), K(ret));
+              LOG_WDIAG("fail to check rs role", K(cluster_name), K(ret));
             } else {
               role_str = p->value_->get_string();
             }
           } else if (p->name_ == JSON_SQL_PORT) {
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, JT_NUMBER))) {
-              LOG_WARN("fail to check port", K(cluster_name), K(ret));
+              LOG_WDIAG("fail to check port", K(cluster_name), K(ret));
             } else {
               sql_port = p->value_->get_number();
             }
@@ -1422,7 +1424,7 @@ int ObProxyJsonConfigInfo::parse_rslist_item(const Value *rs_list, const ObStrin
           }
         } // end traverse one root addr item
         if (OB_SUCC(ret) && OB_FAIL(add_to_list(address_str, role_str, cluster_name, sql_port, replica_type, web_rslist))) {
-          LOG_WARN("fail to add rs address into web rslist", K(cluster_name), K(ret));
+          LOG_WDIAG("fail to add rs address into web rslist", K(cluster_name), K(ret));
         }
       }
     } // end traverse root addr array
@@ -1442,9 +1444,9 @@ int ObProxyJsonConfigInfo::add_to_list(const ObString &ip, const ObString &role,
   int64_t w_len = snprintf(buf, MAX_IP_PORT_LENGTH, "%.*s", ip.length(), ip.ptr());
   if (OB_UNLIKELY(w_len <= 0) || OB_UNLIKELY(w_len >= MAX_IP_PORT_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fill ip_port buf error", K(w_len), K(ip), K(cluster_name), K(ret));
+    LOG_WDIAG("fill ip_port buf error", K(w_len), K(ip), K(cluster_name), K(ret));
   } else if (OB_FAIL(replica.server_.parse_from_cstring(buf))) {
-    LOG_WARN("fail to parse addr from ip string", K(buf), K(cluster_name), K(ret));
+    LOG_WDIAG("fail to parse addr from ip string", K(buf), K(cluster_name), K(ret));
     ret = OB_SUCCESS; // ignore ret
   } else {
     replica.server_.set_port(static_cast<int32_t>(sql_port));
@@ -1455,14 +1457,14 @@ int ObProxyJsonConfigInfo::add_to_list(const ObString &ip, const ObString &role,
       replica.role_ = FOLLOWER;
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected role", K(role), K(ip), K(cluster_name), K(ret));
+      LOG_WDIAG("unexpected role", K(role), K(ip), K(cluster_name), K(ret));
     }
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(!replica.is_valid())) {
         //if addr is invalid, just print warn log and ignore it
-        LOG_WARN("addr is invalid", K(replica), K(cluster_name));
+        LOG_WDIAG("addr is invalid", K(replica), K(cluster_name));
       } else if (OB_FAIL(web_rslist.push_back(replica))) {
-        LOG_WARN("fail to add addr to web rslist", K(replica), K(cluster_name), K(ret));
+        LOG_WDIAG("fail to add addr to web rslist", K(replica), K(cluster_name), K(ret));
       }
     }
   }
@@ -1547,18 +1549,18 @@ int ObProxyJsonConfigInfo::rslist_to_json(char *buf, const int64_t buf_len, int6
 
   if (OB_ISNULL(buf) || OB_UNLIKELY(buf_len <= 0)) {
      ret = OB_INVALID_ARGUMENT;
-     LOG_WARN("invalid rs list buffer", K(buf), K(buf_len), K(ret));
+     LOG_WDIAG("invalid rs list buffer", K(buf), K(buf_len), K(ret));
   } else if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", "["))) {
-    LOG_WARN("fail to append string", K(buf_len), K(pos), K(ret));
+    LOG_WDIAG("fail to append string", K(buf_len), K(pos), K(ret));
   } else if (OB_FAIL(ObProxyJsonUtils::cluster_rslist_to_json(data_info_.meta_table_info_.cluster_info_,
                                                               buf, buf_len, pos,
                                                               data_info_.meta_table_info_.real_cluster_name_.ptr()))) {
-    LOG_WARN("fail to convert meta db rs list to json", K(buf_len), K(pos),  K(ret));
+    LOG_WDIAG("fail to convert meta db rs list to json", K(buf_len), K(pos),  K(ret));
   } else {
     for (ObProxyClusterArrayInfo::CIHashMap::iterator it = data_info_.cluster_array_.ci_map_.begin();
          OB_SUCC(ret) && it != data_info_.cluster_array_.ci_map_.end(); ++it) {
       if (OB_FAIL(ObProxyJsonUtils::cluster_rslist_to_json(*it, buf, buf_len, pos))) {
-        LOG_WARN("fail to convert rs list to json", K(*it), K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("fail to convert rs list to json", K(*it), K(buf_len), K(pos), K(ret));
       }
     }
   }
@@ -1568,7 +1570,7 @@ int ObProxyJsonConfigInfo::rslist_to_json(char *buf, const int64_t buf_len, int6
     if (OB_LIKELY(buf[pos - 1] == ',')) {
       --pos;
       if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", "]"))) {
-        LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
       }
     }
     data_len = pos;
@@ -1584,18 +1586,18 @@ int ObProxyJsonConfigInfo::idc_list_to_json(char *buf, const int64_t buf_len, in
 
   if (OB_ISNULL(buf) || OB_UNLIKELY(buf_len <= 0)) {
      ret = OB_INVALID_ARGUMENT;
-     LOG_WARN("invalid idc list buffer", K(buf), K(buf_len), K(ret));
+     LOG_WDIAG("invalid idc list buffer", K(buf), K(buf_len), K(ret));
   } else if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", "["))) {
-    LOG_WARN("fail to append string", K(buf_len), K(pos), K(ret));
+    LOG_WDIAG("fail to append string", K(buf_len), K(pos), K(ret));
   } else if (OB_FAIL(ObProxyJsonUtils::cluster_idc_list_to_json(data_info_.meta_table_info_.cluster_info_,
                                                                 buf, buf_len, pos,
                                                                 data_info_.meta_table_info_.real_cluster_name_.ptr()))) {
-    LOG_WARN("fail to convert meta db idc list to json", K(buf_len), K(pos),  K(ret));
+    LOG_WDIAG("fail to convert meta db idc list to json", K(buf_len), K(pos),  K(ret));
   } else {
     for (ObProxyClusterArrayInfo::CIHashMap::iterator it = data_info_.cluster_array_.ci_map_.begin();
          OB_SUCC(ret) && it != data_info_.cluster_array_.ci_map_.end(); ++it) {
       if (OB_FAIL(ObProxyJsonUtils::cluster_idc_list_to_json(*it, buf, buf_len, pos))) {
-        LOG_WARN("fail to convert idc list to json", K(*it), K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("fail to convert idc list to json", K(*it), K(buf_len), K(pos), K(ret));
       }
     }
   }
@@ -1605,7 +1607,7 @@ int ObProxyJsonConfigInfo::idc_list_to_json(char *buf, const int64_t buf_len, in
     if (OB_LIKELY(buf[pos - 1] == ',')) {
       --pos;
       if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", "]"))) {
-        LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
       }
     }
     data_len = pos;
@@ -1622,7 +1624,7 @@ int ObProxyJsonConfigInfo::get_master_cluster_id(const ObString &cluster_name, i
   } else {
     ObProxyClusterInfo *cluster_info = NULL;
     if (OB_FAIL(data_info_.cluster_array_.get(cluster_name, cluster_info))) {
-      LOG_WARN("cluster not exist", K(cluster_name), K(ret));
+      LOG_WDIAG("cluster not exist", K(cluster_name), K(ret));
     } else {
       cluster_id = cluster_info->master_cluster_id_;
     }
@@ -1639,10 +1641,10 @@ int ObProxyJsonConfigInfo::get_next_master_cluster_info(
   ObProxyClusterInfo *cluster_info = NULL;
   sub_cluster_info = NULL;
   if (OB_FAIL(get_cluster_info(cluster_name, cluster_info))) {
-    LOG_WARN("fail to get cluster info", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get cluster info", K(cluster_name), K(ret));
   } else if (OB_ISNULL(cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster info is null", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster info is null", K(cluster_name), K(ret));
   } else {
     bool found = false;
     ObProxyClusterInfo::SubCIHashMap &map = const_cast<ObProxyClusterInfo::SubCIHashMap &>(cluster_info->sub_ci_map_);
@@ -1673,10 +1675,10 @@ int ObProxyJsonConfigInfo::reset_is_used_flag(const ObString &cluster_name)
   if (cluster_name == OB_META_DB_CLUSTER_NAME) {
     cluster_info = &data_info_.meta_table_info_.cluster_info_;
   } else if (OB_FAIL(data_info_.cluster_array_.get(cluster_name, cluster_info))) {
-    LOG_WARN("cluster not exist, ignore", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster not exist, ignore", K(cluster_name), K(ret));
   } else if (OB_ISNULL(cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster info is null", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster info is null", K(cluster_name), K(ret));
   }
   if (OB_SUCC(ret)) {
     ObProxyClusterInfo::SubCIHashMap &map = cluster_info->sub_ci_map_;
@@ -1697,14 +1699,14 @@ int ObProxyJsonConfigInfo::get_rs_list_hash(const ObString &cluster_name,
   if (cluster_name == OB_META_DB_CLUSTER_NAME) {
     cluster_info = const_cast<ObProxyClusterInfo *>(&data_info_.meta_table_info_.cluster_info_);
   } else if (OB_FAIL(data_info_.cluster_array_.get(cluster_name, cluster_info))) {
-    LOG_WARN("cluster not exist, ignore", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster not exist, ignore", K(cluster_name), K(ret));
   } else if (OB_ISNULL(cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster info is null", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster info is null", K(cluster_name), K(ret));
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(cluster_info->get_rs_list_hash(cluster_id, rs_list_hash))) {
-      LOG_WARN("fail to get rs list hash", K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("fail to get rs list hash", K(cluster_name), K(cluster_id), K(ret));
     }
   }
   return ret;
@@ -1716,10 +1718,10 @@ bool ObProxyJsonConfigInfo::is_cluster_idc_list_exists(const common::ObString &c
   int ret = OB_SUCCESS;
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-    LOG_WARN("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
   } else {
     ret_bool = !sub_cluster_info->idc_list_.empty();
   }
@@ -1745,10 +1747,10 @@ int ObProxyJsonConfigInfo::get_sub_cluster_info(const ObString &cluster_name, co
   ObProxyClusterInfo *cluster_info = NULL;
   sub_cluster_info = NULL;
   if (OB_FAIL(get_cluster_info(cluster_name, cluster_info))) {
-    LOG_WARN("fail to get cluster info", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get cluster info", K(cluster_name), K(ret));
   } else if (OB_ISNULL(cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster info is null", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster info is null", K(cluster_name), K(ret));
   } else {
     ret = cluster_info->get_sub_cluster_info(cluster_id, sub_cluster_info);
   }
@@ -1761,10 +1763,10 @@ int64_t ObProxyJsonConfigInfo::inc_create_failure_count(const common::ObString &
   int ret = OB_SUCCESS;
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-    LOG_WARN("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
   } else {
     ret_count = ++(sub_cluster_info->create_failure_count_);
   }
@@ -1777,10 +1779,10 @@ int ObProxyJsonConfigInfo::get_default_cluster_name(char *buf, const int64_t len
   const ObString &name = data_info_.cluster_array_.default_cluster_name_;
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid cluster name buf", K(buf), K(ret));
+    LOG_WDIAG("invalid cluster name buf", K(buf), K(ret));
   } else if (OB_UNLIKELY(len <= name.length())) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("buf len is not enough", "default cluster name size",
+    LOG_WDIAG("buf len is not enough", "default cluster name size",
              name.length(), K(len));
   } else {
     MEMCPY(buf, name.ptr(), name.length());
@@ -1794,10 +1796,10 @@ int ObProxyJsonConfigInfo::copy_bin_url(char *bin_url, const int64_t len) const
   int ret = OB_SUCCESS;
   if (OB_ISNULL(bin_url) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid buffer", K(bin_url), K(len), K(ret));
+    LOG_WDIAG("invalid buffer", K(bin_url), K(len), K(ret));
   } else if (OB_UNLIKELY(len <= data_info_.bin_url_.length())) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("bin url buffer is not enough", K(data_info_.bin_url_), K(len), K(ret));
+    LOG_WDIAG("bin url buffer is not enough", K(data_info_.bin_url_), K(len), K(ret));
   } else {
     MEMCPY(bin_url, data_info_.bin_url_.ptr(), data_info_.bin_url_.length());
     bin_url[data_info_.bin_url_.length()] = '\0';
@@ -1822,7 +1824,7 @@ int ObProxyJsonConfigInfo::set_cluster_web_rs_list(const ObString &cluster_name,
       LOG_DEBUG("cluster not exist", K(cluster_name), K(ret));
     } else if (OB_ISNULL(cluster_info)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("cluster info is null", K(ret));
+      LOG_WDIAG("cluster info is null", K(ret));
     }
     if (OB_SUCC(ret)) {
       cluster_info->real_cluster_name_.set_value(real_cluster_name);
@@ -1832,23 +1834,23 @@ int ObProxyJsonConfigInfo::set_cluster_web_rs_list(const ObString &cluster_name,
           // add new sub cluster info
           if (OB_ISNULL(sub_cluster_info = op_alloc(ObProxySubClusterInfo))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("fail to alloc memory for sub cluster info", K(ret), K(cluster_id), K(cluster_name));
+            LOG_WDIAG("fail to alloc memory for sub cluster info", K(ret), K(cluster_id), K(cluster_name));
           } else {
             new_sub_cluster_info = true;
             ret = OB_SUCCESS;
             sub_cluster_info->cluster_id_ = cluster_id;
           }
         } else {
-          LOG_WARN("fail to get sub_cluster_info", K(cluster_name), K(cluster_id), K(ret));
+          LOG_WDIAG("fail to get sub_cluster_info", K(cluster_name), K(cluster_id), K(ret));
         }
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_ISNULL(sub_cluster_info)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("sub cluster info is null", K(ret));
+        LOG_WDIAG("sub cluster info is null", K(ret));
       } else if (!origin_web_rs_list.empty() && OB_FAIL(sub_cluster_info->origin_web_rs_list_.assign(origin_web_rs_list))) {
-        LOG_WARN("fail to set cluster origin_web_rs_list", K(cluster_name), K(cluster_id), K(origin_web_rs_list), K(ret));
+        LOG_WDIAG("fail to set cluster origin_web_rs_list", K(cluster_name), K(cluster_id), K(origin_web_rs_list), K(ret));
       } else if (!web_rs_list.empty()) {
         if (!sub_cluster_info->is_web_rs_list_changed(web_rs_list)
                    && !sub_cluster_info->is_cluster_role_changed(role)) {
@@ -1860,7 +1862,7 @@ int ObProxyJsonConfigInfo::set_cluster_web_rs_list(const ObString &cluster_name,
                    "old cluster role", cluster_role_to_str(sub_cluster_info->role_),
                    K(role), K(cluster_name), K(cluster_id));
           if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(web_rs_list))) {
-            LOG_WARN("fail to set cluster web_rs_list", K(cluster_name), K(cluster_id), K(web_rs_list), K(ret));
+            LOG_WDIAG("fail to set cluster web_rs_list", K(cluster_name), K(cluster_id), K(web_rs_list), K(ret));
           } else {
             if (0 == cur_rs_list_hash) {
               sub_cluster_info->rs_list_hash_ = ObProxyClusterInfo::get_server_list_hash(web_rs_list);
@@ -1873,7 +1875,7 @@ int ObProxyJsonConfigInfo::set_cluster_web_rs_list(const ObString &cluster_name,
               sub_cluster_info->role_ = STANDBY;
             } else {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("unexpected role", K(role), K(cluster_name), K(cluster_id), K(ret));
+              LOG_WDIAG("unexpected role", K(role), K(cluster_name), K(cluster_id), K(ret));
             }
           }
         }
@@ -1884,7 +1886,7 @@ int ObProxyJsonConfigInfo::set_cluster_web_rs_list(const ObString &cluster_name,
         ret = cluster_info->sub_ci_map_.unique_set(sub_cluster_info);
         if (OB_HASH_EXIST == ret) {
           ret = OB_INVALID_CONFIG;
-          LOG_WARN("cluster info already exist", K(cluster_name), K(cluster_id), K(ret));
+          LOG_WDIAG("cluster info already exist", K(cluster_name), K(cluster_id), K(ret));
         } else {
           LOG_INFO("succ to add sub cluster info", K(cluster_name), K(cluster_id));
         }
@@ -1928,13 +1930,13 @@ int ObProxyJsonConfigInfo::reset_create_failure_count(const common::ObString &cl
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
     if (OB_ENTRY_NOT_EXIST != ret) {
-      LOG_WARN("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
     } else {
       ret = OB_SUCCESS;
     }
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
   } else {
     sub_cluster_info->create_failure_count_ = 0;
   }
@@ -1959,10 +1961,10 @@ int ObProxyJsonConfigInfo::set_idc_list(const common::ObString &cluster_name, co
   int ret = OB_SUCCESS;
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-    LOG_WARN("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
   } else {
     if (!sub_cluster_info->is_idc_list_changed(idc_list)) {
       ret = OB_EAGAIN;
@@ -1971,7 +1973,7 @@ int ObProxyJsonConfigInfo::set_idc_list(const common::ObString &cluster_name, co
                "old idc list", sub_cluster_info->idc_list_,
                "new idc list", idc_list, K(cluster_name), K(cluster_id));
       if (OB_FAIL(sub_cluster_info->idc_list_.assign(idc_list))) {
-        LOG_WARN("fail to set cluster idc_list", K(cluster_name), K(cluster_id), K(idc_list), K(ret));
+        LOG_WDIAG("fail to set cluster idc_list", K(cluster_name), K(cluster_id), K(idc_list), K(ret));
       }
     }
   }
@@ -1983,10 +1985,10 @@ int ObProxyJsonConfigInfo::delete_cluster_rslist(const common::ObString &cluster
   int ret = OB_SUCCESS;
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_FAIL(get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-    LOG_WARN("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster not exist", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_ISNULL(sub_cluster_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("cluster_info is NULL", K(cluster_name), K(cluster_id), K(ret));
   } else {
     LOG_INFO("this cluster rslist will be deleted", K(cluster_name), KPC(sub_cluster_info));
     sub_cluster_info->reuse_rslist();
@@ -2002,25 +2004,25 @@ int ObProxyJsonConfigInfo::add_default_cluster_info(ObProxyClusterInfo *cluster_
   ObProxySubClusterInfo *sub_cluster_info = NULL;
   if (OB_ISNULL(cluster_info)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("null cluster info", K(ret));
+    LOG_WDIAG("null cluster info", K(ret));
   } else if (OB_ISNULL(sub_cluster_info = op_alloc(ObProxySubClusterInfo))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for sub_cluster_info", K(ret));
+    LOG_EDIAG("fail to alloc mem for sub_cluster_info", K(ret));
   } else {
     cluster_info->master_cluster_id_ = default_cluster_id;
     sub_cluster_info->cluster_id_ = default_cluster_id;
     sub_cluster_info->role_ = PRIMARY;
     if (OB_FAIL(sub_cluster_info->origin_web_rs_list_.assign(web_rs_list))) {
-      LOG_WARN("fail to set default cluster origin_web_rs_list", K(cluster_info), K(web_rs_list), K(ret));
+      LOG_WDIAG("fail to set default cluster origin_web_rs_list", K(cluster_info), K(web_rs_list), K(ret));
     } else if (OB_FAIL(sub_cluster_info->web_rs_list_.assign(web_rs_list))) {
-      LOG_WARN("fail to set default cluster web_rs_list", K(cluster_info), K(web_rs_list), K(ret));
+      LOG_WDIAG("fail to set default cluster web_rs_list", K(cluster_info), K(web_rs_list), K(ret));
     } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(
             cluster_info->cluster_name_, default_cluster_id, web_rs_list, is_rslist))) {
-      LOG_WARN("fail to update user specified cluster dummy table entry", K(ret));
+      LOG_WDIAG("fail to update user specified cluster dummy table entry", K(ret));
     } else if (OB_FAIL(data_info_.cluster_array_.ci_map_.unique_set(cluster_info))) {
-      LOG_WARN("fail to add user specified cluster info", K(cluster_info), K(ret));
+      LOG_WDIAG("fail to add user specified cluster info", K(cluster_info), K(ret));
     } else if (OB_FAIL(cluster_info->sub_ci_map_.unique_set(sub_cluster_info))) {
-      LOG_WARN("fail to add user specified sub cluster info", K(sub_cluster_info), K(ret));
+      LOG_WDIAG("fail to add user specified sub cluster info", K(sub_cluster_info), K(ret));
     }
   }
   if (OB_FAIL(ret) && OB_LIKELY(NULL != sub_cluster_info)) {
@@ -2036,7 +2038,7 @@ int ObProxyJsonUtils::check_config_info_type(const Value *json_value, const Type
   int ret = OB_SUCCESS;
   if (OB_ISNULL(json_value) || OB_UNLIKELY(type != json_value->get_type())) {
     ret = OB_INVALID_CONFIG;
-    LOG_WARN("invalid json value", K(json_value), K(type), K(ret));
+    LOG_WDIAG("invalid json value", K(json_value), K(type), K(ret));
   }
   return ret;
 }
@@ -2046,11 +2048,11 @@ int ObProxyJsonUtils::check_config_string(const ObString &value, int64_t size_li
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(value.empty())) {
     ret = OB_INVALID_CONFIG;
-    LOG_WARN("empty value", K(value), K(ret));
+    LOG_WDIAG("empty value", K(value), K(ret));
   } else if (OB_UNLIKELY(value.length() >= size_limit)) {
     //config_string_ ends with '\0', so value length must be < size_limit
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("value is over size, buffer is not enough", K(value), K(size_limit), K(ret));
+    LOG_WDIAG("value is over size, buffer is not enough", K(value), K(size_limit), K(ret));
   } else { }
   return ret;
 }
@@ -2063,24 +2065,24 @@ int ObProxyJsonUtils::parse_header(const Value *json_value, Value *&value)
   value = NULL;
   Value *tmp_value = NULL;
   if (OB_FAIL(check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check json info type", K(value), K(ret));
+    LOG_WDIAG("fail to check json info type", K(value), K(ret));
   } else {
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == JSON_HTTP_MESSAGE) {
         if (OB_FAIL(check_config_info_type(it->value_, JT_STRING))) {
-          LOG_WARN("fail to check http message", K(it->name_), K(ret));
+          LOG_WDIAG("fail to check http message", K(it->name_), K(ret));
         } else {
           http_message = it->value_->get_string();
         }
       } else if (it->name_ == JSON_HTTP_CODE) {
         if (OB_FAIL(check_config_info_type(it->value_, JT_NUMBER))) {
-          LOG_WARN("fail to check http code", K(it->name_), K(ret));
+          LOG_WDIAG("fail to check http code", K(it->name_), K(ret));
         } else {
           http_code = it->value_->get_number();
         }
       } else if (it->name_ == JSON_HTTP_STATUS) {
         if (OB_FAIL(check_config_info_type(it->value_, JT_TRUE))) {
-          LOG_WARN("fail to check http status", K(it->name_), K(ret));
+          LOG_WDIAG("fail to check http status", K(it->name_), K(ret));
         } else {
           http_status = it->value_->get_type();
         }
@@ -2096,7 +2098,7 @@ int ObProxyJsonUtils::parse_header(const Value *json_value, Value *&value)
     if (OB_UNLIKELY(http_message != HTTP_SUCC_MESSAGE)
         || OB_UNLIKELY(JT_TRUE != http_status) || OB_UNLIKELY(2 != http_code/100)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("invalid json config http header", K(http_message), K(http_status), K(http_code), K(ret));
+      LOG_WDIAG("invalid json config http header", K(http_message), K(http_status), K(http_code), K(ret));
     } else {
       value = tmp_value;
     }
@@ -2120,9 +2122,9 @@ int ObProxyJsonUtils::cluster_rslist_to_json(const ObProxyClusterInfo &cluster_i
                                       buf, buf_len, pos,
                                       cluster_info.real_cluster_name_.ptr(),
                                       real_meta_cluster))) {
-      LOG_WARN("fail to dump sub cluster rslist", K_(cluster_info.cluster_name), K(*it), K(ret));
+      LOG_WDIAG("fail to dump sub cluster rslist", K_(cluster_info.cluster_name), K(*it), K(ret));
     } else if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", ","))) {
-      LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+      LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
     }
   }
   return ret;
@@ -2137,14 +2139,14 @@ int ObProxyJsonUtils::rslist_to_json(const LocationList &addr_list, const char *
     if (OB_FAIL(databuff_printf(buf, buf_len, pos, "{\"%s\":\"%s\",\"%s\":%ld,\"%s\":\"%s\",\"%s\":\"%s\",\"%s\":\"%s\",\"%s\":[",
         JSON_OB_REGION, appname, JSON_OB_REGION_ID, cluster_id, JSON_OB_CLUSTER_TYPE, PRIMARY == role ? "PRIMARY" : "STANDBY",
         JSON_OB_REAL_CLUSTER_NAME, real_cluster_name, JSON_REAL_META_REGION, real_meta_cluster, JSON_RS_LIST))) {
-      LOG_WARN("assign string failed", K(buf_len), K(pos), K(ret));
+      LOG_WDIAG("assign string failed", K(buf_len), K(pos), K(ret));
     }
   } else {
     if (OB_FAIL(databuff_printf(buf, buf_len, pos, "{\"%s\":\"%s\",\"%s\":%ld,\"%s\":\"%s\",\"%s\":\"%s\",\"%s\":[",
                                 JSON_OB_REGION, appname, JSON_OB_REGION_ID, cluster_id,
                                 JSON_OB_CLUSTER_TYPE, PRIMARY == role ? "PRIMARY" : "STANDBY",
                                 JSON_OB_REAL_CLUSTER_NAME, real_cluster_name, JSON_RS_LIST))) {
-      LOG_WARN("assign string failed", K(buf_len), K(pos), K(ret));
+      LOG_WDIAG("assign string failed", K(buf_len), K(pos), K(ret));
     }
   }
   if (OB_SUCC(ret)) {
@@ -2153,25 +2155,25 @@ int ObProxyJsonUtils::rslist_to_json(const LocationList &addr_list, const char *
       ip_buf[0] = '\0';
       if (i > 0) {
         if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", ","))) {
-          LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+          LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
         }
       }
       if (OB_FAIL(ret)) {
       } else if (!addr_list.at(i).server_.ip_to_string(ip_buf, sizeof(ip_buf))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("convert ip to string failed", K(ret), "server", addr_list.at(i).server_);
+        LOG_WDIAG("convert ip to string failed", K(ret), "server", addr_list.at(i).server_);
       } else if (OB_FAIL(databuff_printf(buf, buf_len, pos,
           "{\"%s\":\"%s:%d\",\"%s\":\"%s\",\"%s\":%d}",
           JSON_ADDRESS, ip_buf, addr_list.at(i).server_.get_port(),
           JSON_ROLE, LEADER == addr_list.at(i).role_ ? "LEADER" : "FOLLOWER",
           JSON_SQL_PORT, addr_list.at(i).server_.get_port()))) {
-        LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", "]}"))) {
-        LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
       }
     }
   }
@@ -2189,9 +2191,9 @@ int ObProxyJsonUtils::cluster_idc_list_to_json(const ObProxyClusterInfo &cluster
       // do nothing
     } else if (OB_FAIL(idc_list_to_json(it->idc_list_, cluster_info.cluster_name_.ptr(),
                                         it->cluster_id_, buf, buf_len, pos, real_meta_cluster))) {
-      LOG_WARN("fail to dump sub cluster idc rslist", K_(cluster_info.cluster_name), K(*it), K(ret));
+      LOG_WDIAG("fail to dump sub cluster idc rslist", K_(cluster_info.cluster_name), K(*it), K(ret));
     } else if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", ","))) {
-      LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+      LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
     }
   }
   return ret;
@@ -2206,20 +2208,20 @@ int ObProxyJsonUtils::idc_list_to_json(const ObProxyIDCList &idc_list, const cha
     if (OB_FAIL(databuff_printf(buf, buf_len, pos, "{\"%s\":\"%s\",\"%s\":%ld,\"%s\":\"%s\",\"%s\":[",
         JSON_OB_REGION, appname, JSON_OB_REGION_ID, cluster_id,
         JSON_REAL_META_REGION, real_meta_cluster, JSON_IDC_LIST))) {
-      LOG_WARN("assign string failed", K(buf_len), K(pos), K(ret));
+      LOG_WDIAG("assign string failed", K(buf_len), K(pos), K(ret));
     }
   } else {
     if (OB_FAIL(databuff_printf(buf, buf_len, pos, "{\"%s\":\"%s\",\"%s\":%ld,\"%s\":[",
                                 JSON_OB_REGION, appname, JSON_OB_REGION_ID, cluster_id,
                                 JSON_IDC_LIST))) {
-      LOG_WARN("assign string failed", K(buf_len), K(pos), K(ret));
+      LOG_WDIAG("assign string failed", K(buf_len), K(pos), K(ret));
     }
   }
   if (OB_SUCC(ret)) {
     for (int64_t i = 0; OB_SUCC(ret) && i < idc_list.count(); ++i) {
       if (i > 0) {
         if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", ","))) {
-          LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+          LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
         }
       }
       const ObProxyIDCInfo &idc_info = idc_list.at(i);
@@ -2231,13 +2233,13 @@ int ObProxyJsonUtils::idc_list_to_json(const ObProxyIDCList &idc_list, const cha
                                   JSON_REGION,
                                   idc_info.region_name_.name_string_.length(),
                                   idc_info.region_name_.name_string_.ptr()))) {
-        LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(databuff_printf(buf, buf_len, pos, "%s", "]}"))) {
-        LOG_WARN("append string failed", K(buf_len), K(pos), K(ret));
+        LOG_WDIAG("append string failed", K(buf_len), K(pos), K(ret));
       }
     }
   }
@@ -2248,9 +2250,9 @@ int ObProxyNameString::parse(const Value *json_value)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_STRING))) {
-    LOG_WARN("fail to check json string type", K(json_value), K(ret));
+    LOG_WDIAG("fail to check json string type", K(json_value), K(ret));
   } else if (OB_FAIL(ObProxyJsonUtils::check_config_string(json_value->get_string(), size_limit_))) {
-    LOG_WARN("fail to check config string", K(json_value->get_string()), K(ret));
+    LOG_WDIAG("fail to check config string", K(json_value->get_string()), K(ret));
   } else {
     set_value(json_value->get_string());
   }
@@ -2261,24 +2263,24 @@ int ObProxyObInstance::parse(const Value *json_value)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check config info type", K(ret));
+    LOG_WDIAG("fail to check config info type", K(ret));
   } else {
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == "obCluster") {
         if (OB_FAIL(ob_cluster_.parse(it->value_))) {
-          LOG_WARN("ob cluster parse failed", K(ret));
+          LOG_WDIAG("ob cluster parse failed", K(ret));
         }
       } else if (it->name_ == "obClusterId") {
         ob_cluster_id_ = it->value_->get_number();
       } else if (it->name_ == "obTenant") {
         if (OB_FAIL(ob_tenant_.parse(it->value_))) {
-          LOG_WARN("ob tenant parse failed", K(ret));
+          LOG_WDIAG("ob tenant parse failed", K(ret));
         }
       } else if (it->name_ == "obTenantId") {
         ob_tenant_id_ = it->value_->get_number();
       } else if (it->name_ == "role") {
         if (OB_FAIL(role_.parse(it->value_))) {
-          LOG_WARN("role parse failed", K(ret));
+          LOG_WDIAG("role parse failed", K(ret));
         }
       }
     }
@@ -2328,18 +2330,18 @@ int ObProxyLdgObInstacne::parse(const Value *json_value)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
-    LOG_WARN("fail to check ldg info", K(json_value), K(ret));
+    LOG_WDIAG("fail to check ldg info", K(json_value), K(ret));
   } else {
     DLIST_FOREACH(it, json_value->get_object()) {
       if (it->name_ == "ldgCluster") {
         if (OB_FAIL(ldg_cluster_.parse(it->value_))) {
-          LOG_WARN("ldg cluster parse failed", K(ret));
+          LOG_WDIAG("ldg cluster parse failed", K(ret));
         }
       } else if (it->name_ == "ldgDatabaseId") {
         cluster_id_ = it->value_->get_number();
       } else if (it->name_ == "ldgTenant") {
         if (OB_FAIL(ldg_tenant_.parse(it->value_))) {
-          LOG_WARN("ldg tenant parse failed", K(ret));
+          LOG_WDIAG("ldg tenant parse failed", K(ret));
         }
       } else if (it->name_ == "ldgTenantId") {
         tenant_id_ = it->value_->get_number();
@@ -2348,7 +2350,7 @@ int ObProxyLdgObInstacne::parse(const Value *json_value)
           ObProxyObInstance *ob_instance = NULL;
           if (NULL == (ob_instance = op_alloc(ObProxyObInstance))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("alloc memory for ob instacne failed", K(ret));
+            LOG_WDIAG("alloc memory for ob instacne failed", K(ret));
           } else {
             ob_instance->inc_ref();
           }
@@ -2357,11 +2359,11 @@ int ObProxyLdgObInstacne::parse(const Value *json_value)
             if (OB_FAIL(ob_instance->parse(ita))) {
               ob_instance->dec_ref();
               ob_instance = NULL;
-              LOG_WARN("instance info parse failed", K(ret));
+              LOG_WDIAG("instance info parse failed", K(ret));
             } else if (OB_FAIL(instance_array_.push_back(ob_instance))) {
               ob_instance->dec_ref();
               ob_instance = NULL;
-              LOG_WARN("instance array push back failed", K(ret));
+              LOG_WDIAG("instance array push back failed", K(ret));
             }
           }
         }
@@ -2385,16 +2387,83 @@ DEF_TO_STRING(ObProxyLdgInfo)
   return pos;
 }
 
-int ObProxyLdgInfo::update_ldg_instance(ObProxyLdgObInstacne *ldg_instance)
+void ObProxyLdgInfo::remove_single_ldg_instance(ObProxyLdgObInstacne *ldg_instance)
 {
-  int ret = OB_SUCCESS;
   ObProxyLdgObInstacne *tmp_instance = NULL;
-  if (NULL != (tmp_instance = ldg_instance_map_.remove(ldg_instance->get_hash_key()))) {
+  if (OB_NOT_NULL(ldg_instance) && NULL != (tmp_instance = ldg_instance_map_.remove(ldg_instance->get_hash_key()))) {
     op_free(tmp_instance);
     tmp_instance = NULL;
   }
+}
+
+int ObProxyLdgInfo::update_ldg_instance(ObProxyLdgObInstacne *ldg_instance)
+{
+  int ret = OB_SUCCESS;
+  remove_single_ldg_instance(ldg_instance);
   if (OB_SUCC(ret) && OB_FAIL(ldg_instance_map_.unique_set(ldg_instance))) {
-    LOG_WARN("ldg instance map add instance failed", K(ret));
+    LOG_WDIAG("ldg instance map add instance failed", K(ret));
+  }
+  return ret;
+}
+
+bool ObProxyLdgInfo::is_cluster_exist(ObProxyLdgObInstacne *ldg_instance, ObIArray<LdgClusterVersionPair>& cluster_info_array)
+{
+  // 查找ldg_cluster是否在cluster_info_array中
+  bool bret = false;
+  int64_t len = cluster_info_array.count();
+  ObString& ldg_cluster_name = ldg_instance->ldg_cluster_.config_string_;
+  for (int64_t i = 0; i < len; ++i) {
+    if (ldg_cluster_name == cluster_info_array.at(i).first.config_string_) {
+      bret = true;
+      break;
+    }
+  }
+  return bret;
+}
+
+int ObProxyLdgInfo::remove_ldg_instances(ObIArray<LdgClusterVersionPair>& cluster_info_array)
+{
+  int ret = OB_SUCCESS;
+  ObSEArray<ObProxyLdgObInstacne*, 20> drop_ldg_array;
+  LdgInstanceMap::iterator last = ldg_instance_map_.end();
+  for (LdgInstanceMap::iterator iter = ldg_instance_map_.begin(); OB_SUCC(ret) && iter != last; ++iter) {
+    if (is_cluster_exist(iter.value_, cluster_info_array) && OB_FAIL(drop_ldg_array.push_back(iter.value_))) {
+      LOG_WDIAG("fail to push back drop ldg array", K(ret));
+    }
+  }
+  for (int64_t i = 0; i < OB_SUCC(ret) && drop_ldg_array.count(); ++i) {
+    remove_single_ldg_instance(drop_ldg_array.at(i));
+  }
+  return ret;
+}
+
+int ObProxyLdgInfo::update_ldg_info(ObProxyLdgInfo* new_ldg_info, ObIArray<LdgClusterVersionPair>& cluster_info_array)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(new_ldg_info) || this == new_ldg_info) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("NULL point or new_ldg_info is self", K(new_ldg_info), K(this), K(ret));
+  } else {
+    // 遍历所有ldg_instance，删除并释放内存：cluster_info_array对应的ldg_instance
+    if (OB_FAIL(remove_ldg_instances(cluster_info_array))) {
+      LOG_WDIAG("fail to delete ldg instance", K(ret));
+    } else {
+      // 拷贝new_ldg_info的所有实例: 拷贝完一个，删除一个，移交指针所有权，防止double free
+      LdgInstanceMap& ldg_instance_map = new_ldg_info->ldg_instance_map_;
+      int64_t len = ldg_instance_map.count();
+      for (int64_t i = 0; OB_SUCC(ret) && i < len; ++i) {
+        LdgInstanceMap::iterator iter = ldg_instance_map.begin();
+        if (OB_FAIL(update_ldg_instance(iter.value_))) {
+          LOG_WDIAG("fail to update ldg instance", K(ret));
+        } else {
+          ldg_instance_map.remove(iter.value_->get_hash_key());
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      LOG_DEBUG("success to update ldg info");
+    }
   }
   return ret;
 }
@@ -2405,41 +2474,132 @@ int ObProxyLdgInfo::get_ldg_instance(const common::ObString &key, ObProxyLdgObIn
   ObProxyLdgObInstacne *tmp_instance = NULL;
   ldg_instance = NULL;
   if (OB_FAIL(ldg_instance_map_.get_refactored(key, tmp_instance))) {
-    // LOG_WARN("ldg not exist", K(ret), K(key), K(*this));
+    // LOG_WDIAG("ldg not exist", K(ret), K(key), K(*this));
   } else {
     ldg_instance = tmp_instance;
   }
   return ret;
 }
 
-int ObProxyLdgInfo::parse(const Value *json_value)
+bool ObProxyLdgInfo::is_version_diff(const ObString &version, const ObString &cluster_name, ObIArray<LdgClusterVersionPair> &cluster_info_array)
+{
+  bool bret = false;
+  int64_t len = cluster_info_array.count();
+  for (int64_t i = 0; i < len; ++i) {
+    LdgClusterVersionPair& cluster_info = cluster_info_array.at(i);
+    if (cluster_name == cluster_info.first.config_string_ && version != cluster_info.second.config_string_) {
+      bret = true;
+      break;
+    }
+  }
+  return bret;
+}
+
+int ObProxyLdgInfo::parse_cluster(const json::Value *json_value, const ObString &cluster_name, ObIArray<LdgClusterVersionPair> &cluster_info_array, ObIArray<LdgClusterVersionPair>& change_cluster_info_array)
+{
+  int ret = OB_SUCCESS;
+  ObProxyLdgObInstacne *ldg_instance_info = NULL;
+
+  if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, JT_OBJECT))) {
+    LOG_WDIAG("fail to check ldg info", K(json_value), K(ret));
+  } else {
+    bool is_version_change = false;
+    DLIST_FOREACH(it, json_value->get_object()) {
+      /*收到的json结果：
+          "version": "3737208e31900ec12b7d150b20420d42",
+          "tenantList": [
+            {
+              "ldgCluster": "postmen_new_dev",
+              "ldgClusterId": 102261565,
+              "ldgDatabase": "*",
+              "ldgDatabaseId": 0,
+              "ldgTenant": "xh_0801_test0_3942",
+              "ldgTenantId": 1011,
+              "obInstanceList": [
+                {
+                  "obCluster": "ocpmeta_sit",
+                  "obClusterId": 93,
+                  "obDatabase": "*",
+                  "obDatabaseId": 0,
+                  "obTenant": "xh_0801_s_test0_3943",
+                  "obTenantId": 1008,
+                  "role": "LDG STANDBY",
+                  "rootserver": ""
+                },
+      */
+      if (it->name_ == JSON_CONFIG_VERSION_LOWER) {     // 遍历到版本号
+       /* 获取集群的版本，如果首次登录，集群的版本设置为空；
+          如果版本号变化，才继续解析，否则跳到下一个集群；
+        */
+        ObProxyConfigString version(ObProxyBaseInfo::OB_PROXY_MAX_CONFIG_STRING_LENGTH);
+        if (OB_FAIL(version.parse(it->value_))) {
+          LOG_WDIAG("fail to parse ldg cluster version", K(it->name_), K(ret));
+        } else if (true == (is_version_change = is_version_diff(version.config_string_, cluster_name, cluster_info_array))) {
+          ObProxyConfigString new_cluster_name;
+          ObProxyConfigString new_cluster_version(version);
+          new_cluster_name.set_value(cluster_name);
+          LdgClusterVersionPair cluster_info(new_cluster_name, new_cluster_version);
+          if (OB_FAIL(change_cluster_info_array.push_back(cluster_info))) {
+            LOG_WDIAG("fail to push back ldg cluster_info to array", K(cluster_name), K(ret));
+          }
+        }
+        LOG_DEBUG("succ to parse ldg cluster version", K(cluster_name), K(version.config_string_), K(is_version_change));
+      }
+    }
+    // 添加第二次遍历解析ldg tenant
+    if (OB_SUCC(ret) && is_version_change) {
+      DLIST_FOREACH(it, json_value->get_object()) {
+        if (it->name_ == "tenantList") {  // 更新LDG实例
+          if (ObProxyJsonUtils::check_config_info_type(it->value_, JT_ARRAY)) {
+            LOG_WDIAG("fail to check ldg instance info", K(ret));
+          } else {
+            DLIST_FOREACH(ita, it->value_->get_array()) {   // 遍历ldg_instance
+              if (OB_ISNULL(ldg_instance_info = op_alloc(ObProxyLdgObInstacne))) {
+                ret = OB_ALLOCATE_MEMORY_FAILED;
+                LOG_WDIAG("alloc ldg instance failed", K(ret));
+              } else if (OB_FAIL(ldg_instance_info->parse(ita))) {
+                op_free(ldg_instance_info);
+                ldg_instance_info = NULL;
+                LOG_WDIAG("ldg instacne info parse failed", K(ret));
+              } else if (OB_FAIL(update_ldg_instance(ldg_instance_info))) {
+                op_free(ldg_instance_info);
+                ldg_instance_info = NULL;
+                LOG_WDIAG("ldg instance array push back failed", K(ret));
+              }
+            }
+            LOG_DEBUG("succ to parse ldg instance", K(cluster_name));
+          }
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+int ObProxyLdgInfo::parse(const Value *json_value, ObIArray<LdgClusterVersionPair> &cluster_info_array, ObIArray<LdgClusterVersionPair>& change_cluster_info_array)
 {
   int ret = OB_SUCCESS;
   Value *value = NULL;
   if (OB_FAIL(ObProxyJsonUtils::parse_header(json_value, value))) {
-    LOG_WARN("fail to parse ldg info", K(json_value), K(ret));
+    LOG_WDIAG("fail to parse ldg info", K(json_value), K(ret));
   } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(value, JT_OBJECT))) {
-    LOG_WARN("fail to check ldg info", K(value), K(ret));
+    LOG_WDIAG("fail to check ldg info", K(value), K(ret));
   } else {
     DLIST_FOREACH(it, value->get_object()) {
       if (it->name_ == JSON_CONFIG_VERSION) {
         if (OB_FAIL(version_.parse(it->value_))) {
-          LOG_WARN("fail to parse md5 version", K(it->name_), K(ret));
+          LOG_WDIAG("fail to parse md5 version", K(it->name_), K(ret));
         }
-      } else if (it->name_ == "LdgObInstanceList") {
-        DLIST_FOREACH(ita, it->value_->get_array()) {
-          ObProxyLdgObInstacne *ldg_instance_info = NULL;
-          if (OB_ISNULL(ldg_instance_info = op_alloc(ObProxyLdgObInstacne))) {
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("alloc ldg instance failed", K(ret));
-          } else if (OB_FAIL(ldg_instance_info->parse(ita))) {
-            op_free(ldg_instance_info);
-            ldg_instance_info = NULL;
-            LOG_WARN("ldg instacne info parse failed", K(ret));
-          } else if (OB_FAIL(update_ldg_instance(ldg_instance_info))) {
-            op_free(ldg_instance_info);
-            ldg_instance_info = NULL;
-            LOG_WARN("ldg instance array push back failed", K(ret));
+      } else if (it->name_ == "cluster") {
+        // 开始遍历每个集群，会先获取集群名;
+        if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(it->value_, JT_OBJECT))) {
+          LOG_WDIAG("fail to check ldg cluster info", K(value), K(ret));
+        } else {
+          DLIST_FOREACH(ita, it->value_->get_object()) {
+            const String& cluster_name = ita->name_;
+            if (OB_FAIL(parse_cluster(ita->value_, cluster_name, cluster_info_array, change_cluster_info_array))) {
+              LOG_WDIAG("LDG cluster instance info parse failed", K(ret));
+            }
           }
         }
       }
@@ -2456,7 +2616,7 @@ int ObProxyLdgInfo::get_primary_role_instance(const ObString &tenant_name,
   instance = NULL;
   if (tenant_name.empty() || cluster_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("get primary role instance failed", K(ret), K(tenant_name), K(cluster_name));
+    LOG_WDIAG("get primary role instance failed", K(ret), K(tenant_name), K(cluster_name));
   } else {
     char buf[OB_PROXY_FULL_USER_NAME_MAX_LEN];
     int32_t len = 0;
@@ -2472,11 +2632,11 @@ int ObProxyLdgInfo::get_primary_role_instance(const ObString &tenant_name,
     ObProxyLdgObInstacne *tmp_ldg_instacne = NULL;
     if (OB_FAIL(get_ldg_instance(key, tmp_ldg_instacne))) {
       if (OB_HASH_NOT_EXIST != ret) {
-        LOG_WARN("get ldg instance failed", K(ret), K(key));
+        LOG_WDIAG("get ldg instance failed", K(ret), K(key));
       }
     } else if (OB_ISNULL(tmp_ldg_instacne)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("ldg instance is null unexpected", K(ret), K(key));
+      LOG_WDIAG("ldg instance is null unexpected", K(ret), K(key));
     } else {
       for (int64_t i = 0; OB_SUCC(ret) && i < tmp_ldg_instacne->instance_array_.count(); i++) {
         ObProxyObInstance *ob_instance = tmp_ldg_instacne->instance_array_.at(i);

@@ -40,6 +40,12 @@ typedef int (*BuildFunc)(ObMysqlSM *sm, event::ObMIOBuffer &, ObClientSessionInf
 class ObMysqlRequestBuilder
 {
 public:
+  static int build_request_packet(ObString sql,
+                                  obmysql::ObMySQLCmd cmd,
+                                  ObMysqlSM *sm,
+                                  event::ObMIOBuffer &mio_buf,
+                                  ObMysqlServerSession *server_session,
+                                  const ObProxyProtocol ob_proxy_protocol);
   // build login packet to send first login request
   static int build_first_login_packet(ObMysqlSM *sm,
                                       event::ObMIOBuffer &mio_buf,
@@ -120,7 +126,8 @@ public:
                                  const obmysql::ObMySQLCmd cmd,
                                  const common::ObString &sql,
                                  const bool need_compress,
-                                 const bool is_checksum_on);
+                                 const bool is_checksum_on, 
+                                 const int64_t compression_level);
 
   // build mysql prepare request packet
   static int build_prepare_request(ObMysqlSM *sm,
@@ -203,10 +210,11 @@ inline int ObMysqlRequestBuilder::build_mysql_request(event::ObMIOBuffer &mio_bu
                                                       const obmysql::ObMySQLCmd cmd,
                                                       const common::ObString &sql,
                                                       const bool need_compress,
-                                                      const bool is_checksum_on)
+                                                      const bool is_checksum_on,
+                                                      const int64_t compression_level)
 {
-  uint8_t compressed_seq = 0;
-  return packet::ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, sql, compressed_seq, need_compress, is_checksum_on);
+  proxy::ObCmpHeaderParam param(0, is_checksum_on, compression_level);
+  return packet::ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, sql, need_compress, param);
 }
 
 } // end of namespace proxy

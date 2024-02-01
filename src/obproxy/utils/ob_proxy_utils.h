@@ -45,6 +45,9 @@ private:
 int get_int_value(const common::ObString &str, int64_t &value, const int radix = 10);
 int get_double_value(const common::ObString &str, double &value);
 
+// get ObString from int64_t
+int int_to_string(common::ObIAllocator& allocater, const int64_t& num, common::ObString& str);
+
 // Numerical operation
 inline int64_t round(const int64_t input, const int64_t align)
 {

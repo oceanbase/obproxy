@@ -22,15 +22,15 @@ DEFINE_SERIALIZE(ObRowkeyColumn)
   int64_t tmp_pos = pos;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(buf_len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(buf_len), K(ret));
   } else if (OB_FAIL(serialization::encode_vi64(buf, buf_len, tmp_pos, length_))) {
-    COMMON_LOG(WARN, "encode length error.", K_(length), K(ret));
+    COMMON_LOG(WDIAG, "encode length error.", K_(length), K(ret));
   } else if (OB_FAIL(serialization::encode_vi64(buf, buf_len, tmp_pos, column_id_))) {
-    COMMON_LOG(WARN, "encode column_id error.", K_(column_id), K(ret));
+    COMMON_LOG(WDIAG, "encode column_id error.", K_(column_id), K(ret));
   } else if (OB_FAIL(type_.serialize(buf, buf_len, tmp_pos))) {
-    COMMON_LOG(WARN, "encode type error.", K_(type), K(ret));
+    COMMON_LOG(WDIAG, "encode type error.", K_(type), K(ret));
   } else if (OB_FAIL(serialization::encode_vi32(buf, buf_len, tmp_pos, order_))) {
-    COMMON_LOG(WARN, "encode order error.", K_(order), K(ret));
+    COMMON_LOG(WDIAG, "encode order error.", K_(order), K(ret));
   } else {
     pos = tmp_pos;
   }
@@ -43,18 +43,18 @@ DEFINE_DESERIALIZE(ObRowkeyColumn)
   int64_t tmp_pos = pos;
   if (NULL == buf || data_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(data_len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(data_len), K(ret));
   } else if (OB_FAIL(serialization::decode_vi64(
       buf, data_len, tmp_pos, &length_))) {
-    COMMON_LOG(WARN, "decode length error.", K_(length), K(ret));
+    COMMON_LOG(WDIAG, "decode length error.", K_(length), K(ret));
   } else if (OB_FAIL(serialization::decode_vi64(
       buf, data_len, tmp_pos, reinterpret_cast<int64_t *>(&column_id_)))) {
-    COMMON_LOG(WARN, "decode column_id error.", K_(column_id), K(ret));
+    COMMON_LOG(WDIAG, "decode column_id error.", K_(column_id), K(ret));
   } else if (OB_FAIL(type_.deserialize(buf, data_len, pos))) {
-    COMMON_LOG(WARN, "decode type error.", K_(type), K(ret));
+    COMMON_LOG(WDIAG, "decode type error.", K_(type), K(ret));
   } else if (OB_FAIL(serialization::decode_vi32(
       buf, data_len, tmp_pos, reinterpret_cast<int32_t *>(&order_)))) {
-    COMMON_LOG(WARN, "decode order error.", K_(order), K(ret));
+    COMMON_LOG(WDIAG, "decode order error.", K_(order), K(ret));
   } else {
     pos = tmp_pos;
   }
@@ -91,10 +91,10 @@ int ObRowkeyInfo::get_column(const int64_t index, ObRowkeyColumn &column) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(index < 0 || index >= size_)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument.", K(index), K_(size), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument.", K(index), K_(size), K(ret));
   } else if (!is_valid()) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "columns has not initialized.",
+    COMMON_LOG(WDIAG, "columns has not initialized.",
                KP_(columns), K_(size), K(index), K(ret));
   } else {
     column = columns_[index];
@@ -109,10 +109,10 @@ const ObRowkeyColumn *ObRowkeyInfo::get_column(const int64_t index) const
   int tmp_ret = OB_SUCCESS;
   if (OB_UNLIKELY(index < 0 || index >= size_)) {
     tmp_ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument.", K(index), K_(size), K(tmp_ret));
+    COMMON_LOG(WDIAG, "Invalid argument.", K(index), K_(size), K(tmp_ret));
   } else if (!is_valid()) {
     tmp_ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "columns has not initialized.",
+    COMMON_LOG(WDIAG, "columns has not initialized.",
                KP_(columns), K_(size), K(index), K(tmp_ret));
   } else {
     ret = &columns_[index];
@@ -125,10 +125,10 @@ int ObRowkeyInfo::get_column_id(const int64_t index, uint64_t &column_id) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(index < 0 || index >= size_)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument.", K(index), K_(size), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument.", K(index), K_(size), K(ret));
   } else if (!is_valid()) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "columns has not initialized.",
+    COMMON_LOG(WDIAG, "columns has not initialized.",
                KP_(columns), K_(size), K(index), K(ret));
   } else {
     column_id = columns_[index].column_id_;
@@ -144,7 +144,7 @@ int ObRowkeyInfo::get_index(const uint64_t column_id, int64_t &index, ObRowkeyCo
   int64_t i = 0;
   if (OB_UNLIKELY(OB_INVALID_ID == column_id)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument.", K(column_id), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument.", K(column_id), K(ret));
   } else if (!is_valid()) {
     ret = OB_ENTRY_NOT_EXIST;
     COMMON_LOG(INFO, "table has no rowkeys.",
@@ -170,7 +170,7 @@ int ObRowkeyInfo::get_index(const uint64_t column_id, int64_t &index) const
   index = -1;
   if (OB_UNLIKELY(OB_INVALID_ID == column_id)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument.", K(column_id), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument.", K(column_id), K(ret));
   } else if (!is_valid()) {
     ret = OB_ENTRY_NOT_EXIST;
     COMMON_LOG(INFO, "table has no rowkeys.",
@@ -195,7 +195,7 @@ int ObRowkeyInfo::is_rowkey_column(const uint64_t column_id, bool &is_rowkey) co
   is_rowkey = false;
   if (OB_UNLIKELY(OB_INVALID_ID == column_id)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument.", K(column_id), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument.", K(column_id), K(ret));
   } else if (!is_valid()) {
     // some table has no rowkey;
     is_rowkey = false;
@@ -204,7 +204,7 @@ int ObRowkeyInfo::is_rowkey_column(const uint64_t column_id, bool &is_rowkey) co
       is_rowkey = false;
       ret = OB_SUCCESS;
     } else {
-      COMMON_LOG(WARN, "get index of column failed.",
+      COMMON_LOG(WDIAG, "get index of column failed.",
                  K(column_id), K(ret));
     }
   } else if (index >= 0) {
@@ -219,21 +219,21 @@ int ObRowkeyInfo::add_column(const ObRowkeyColumn &column)
   int ret = OB_SUCCESS;
   if (!column.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", K(column), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", K(column), K(ret));
   } else if (NULL == columns_) {
     if (OB_FAIL(expand(DEFAULT_ROWKEY_COLUMN_ARRAY_CAPACITY))) {
-      COMMON_LOG(WARN, "Fail to allocate memory.", K(ret));
+      COMMON_LOG(WDIAG, "Fail to allocate memory.", K(ret));
     }
   } else if (size_ >= capacity_) {
     if (OB_FAIL(expand(capacity_ * 2))) {
-      COMMON_LOG(WARN, "Fail to allocate memory.", K(ret));
+      COMMON_LOG(WDIAG, "Fail to allocate memory.", K(ret));
     }
   }
 
   if (OB_SUCC(ret)) {
     if (NULL == columns_) {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "columns_ cannot be NULL.", K(ret));
+      COMMON_LOG(WDIAG, "columns_ cannot be NULL.", K(ret));
     } else {
       columns_[size_] = column;
       ++size_;
@@ -247,11 +247,11 @@ int ObRowkeyInfo::set_column(const int64_t idx, const ObRowkeyColumn &column)
   int ret = OB_SUCCESS;
   if (idx < 0 || !column.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid argument.", K(idx), K(column), K(ret));
+    COMMON_LOG(WDIAG, "invalid argument.", K(idx), K(column), K(ret));
   } else {
     if (idx >= capacity_) {
       if (OB_FAIL(expand(idx + 1))) {
-        COMMON_LOG(WARN, "Fail to expand rowkey info.", K(idx), K(ret));
+        COMMON_LOG(WDIAG, "Fail to expand rowkey info.", K(idx), K(ret));
       }
     }
 
@@ -279,11 +279,11 @@ int ObRowkeyInfo::reserve(const int64_t capacity)
 
   if (NULL != columns_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The columns has been allocated.", K(ret));
+    COMMON_LOG(WDIAG, "The columns has been allocated.", K(ret));
   } else if (capacity < 0) {
-    COMMON_LOG(WARN, "invalid arguments.", K(capacity), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", K(capacity), K(ret));
   } else if (OB_FAIL(expand(capacity))) {
-    COMMON_LOG(WARN, "fail to expand memory.", K(capacity), K(ret));
+    COMMON_LOG(WDIAG, "fail to expand memory.", K(capacity), K(ret));
   }
 
   return ret;
@@ -306,17 +306,17 @@ int ObRowkeyInfo::expand(const int64_t size)
   int ret = OB_SUCCESS;
   if (size < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid expand size.", K(size), K(ret));
+    COMMON_LOG(WDIAG, "invalid expand size.", K(size), K(ret));
   } else if (OB_ISNULL(allocator_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "allocator is NULL.", K(ret));
+    COMMON_LOG(WDIAG, "allocator is NULL.", K(ret));
   } else if (size > capacity_) {
     COMMON_LOG(DEBUG, "Expand rowkey info array.", "old_size", capacity_, "new_size", size);
     ObRowkeyColumn *tmp = static_cast<ObRowkeyColumn*>(allocator_->alloc(sizeof(ObRowkeyColumn)
         * size));
     if (NULL == tmp) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "Fail to allocate memory.", K(size), K(ret));
+      COMMON_LOG(WDIAG, "Fail to allocate memory.", K(size), K(ret));
     } else {
       memset(tmp, 0, sizeof(ObRowkeyColumn) * size);
       if (NULL != columns_) {
@@ -336,17 +336,17 @@ DEFINE_SERIALIZE(ObRowkeyInfo)
   int64_t tmp_pos = pos;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(buf), K(buf_len), K(ret));
   } else if (OB_FAIL(serialization::encode_vi64(
       buf, buf_len, tmp_pos, size_))) {
-    COMMON_LOG(WARN, "encode size failed.",
+    COMMON_LOG(WDIAG, "encode size failed.",
                KP(buf), K(buf_len), K(pos), K_(size), K(ret));
   }
 
   for (int32_t index = 0; OB_SUCC(ret) && index < size_; ++index) {
     if (OB_FAIL(columns_[index].serialize(buf, buf_len, tmp_pos))) {
-      COMMON_LOG(WARN, "serialize column failed.",
+      COMMON_LOG(WDIAG, "serialize column failed.",
                  KP(buf), K(buf_len), K(pos), K(columns_[index]), K(ret));
     }
   }
@@ -364,17 +364,17 @@ DEFINE_DESERIALIZE(ObRowkeyInfo)
   ObRowkeyColumn column;
   if (NULL == buf || data_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(data_len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(data_len), K(ret));
   } else if (OB_FAIL(serialization::decode_vi64(buf, data_len, tmp_pos, &tmp_size))) {
-    COMMON_LOG(WARN, "decode column size failed.",
+    COMMON_LOG(WDIAG, "decode column size failed.",
                KP(buf), K(data_len), K(pos), K(tmp_size), K(ret));
   }
 
   for (int64_t index = 0; OB_SUCC(ret) && index < tmp_size; ++index) {
     if (OB_FAIL(column.deserialize(buf, data_len, tmp_pos))) {
-      COMMON_LOG(WARN, "Fail to deserialize column.", K(ret));
+      COMMON_LOG(WDIAG, "Fail to deserialize column.", K(ret));
     } else if (OB_FAIL(add_column(column))) {
-      COMMON_LOG(WARN, "Fail to add column.", K(ret));
+      COMMON_LOG(WDIAG, "Fail to add column.", K(ret));
     }
   }
   if (OB_SUCC(ret)) {
@@ -398,11 +398,11 @@ int ObRowkeyInfo::get_column_ids(ObIArray<uint64_t> &column_ids) const
   int ret = OB_SUCCESS;
   if (OB_ISNULL(columns_)) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid columns array", K(columns_));
+    COMMON_LOG(WDIAG, "invalid columns array", K(columns_));
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < size_; i++) {
     if (OB_FAIL(column_ids.push_back(columns_[i].column_id_))) {
-      COMMON_LOG(WARN, "fail to push back column id", K(ret), K(i));
+      COMMON_LOG(WDIAG, "fail to push back column id", K(ret), K(i));
     }
   }
   return ret;

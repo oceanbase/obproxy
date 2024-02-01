@@ -39,19 +39,19 @@ int ObProxyParallelCont::do_open(ObAction *&action, ObIArray<ObProxyParallelPara
 
   if (OB_UNLIKELY(NULL != parallel_action_array_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("array buf is not null", K_(parallel_action_array), K(ret));
+    LOG_WDIAG("array buf is not null", K_(parallel_action_array), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(buf_size_)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K_(buf_size), K(ret));
+    LOG_WDIAG("fail to alloc mem", K_(buf_size), K(ret));
   } else if (FALSE_IT(MEMSET(buf, 0, buf_size_))) {
     // nerver here
   } else if (OB_ISNULL(parallel_action_array_ = new (buf) ObAction *[parallel_task_count_])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to init parallel action array", K_(parallel_task_count), K(ret));
+    LOG_WDIAG("fail to init parallel action array", K_(parallel_task_count), K(ret));
   } else if (OB_FAIL(schedule_timeout())) {
-    LOG_WARN("fail to schedule timeout action", K(ret));
+    LOG_WDIAG("fail to schedule timeout action", K(ret));
   } else if (OB_FAIL(handle_parallel_task(parallel_param, allocator))) {
-    LOG_WARN("fail to handle parallel task", K(ret));
+    LOG_WDIAG("fail to handle parallel task", K(ret));
   } else {
     action = &get_action();
     LOG_DEBUG("succ to schedule parallel task", KP(this));
@@ -71,25 +71,25 @@ int ObProxyParallelCont::main_handler(int event, void *data)
 
   if (OB_UNLIKELY(this_ethread() != mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(ret));
   } else {
     switch (event) {
       case ASYNC_PROCESS_DONE_EVENT: {
         if (OB_FAIL(handle_parallel_task_complete(data, is_need_free_data))) {
-          LOG_WARN("fail to handle parallel task complete", K(ret));
+          LOG_WDIAG("fail to handle parallel task complete", K(ret));
         }
         break;
       }
       case EVENT_INTERVAL: {
         if (OB_FAIL(handle_timeout())) {
-          LOG_WARN("fail to handle timeout event", K(ret));
+          LOG_WDIAG("fail to handle timeout event", K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected event", K(event), K(ret));
+        LOG_WDIAG("unexpected event", K(event), K(ret));
         break;
       }
     }
@@ -124,15 +124,15 @@ int ObProxyParallelCont::handle_parallel_task(ObIArray<ObProxyParallelParam> &pa
     mutex = NULL;
     if (OB_ISNULL(mutex = new_proxy_mutex())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc memory for mutex", K(ret));
+      LOG_EDIAG("fail to alloc memory for mutex", K(ret));
     // child task's submit thread same as this cont's submit thread. so here no need to switch thread
     } else if (OB_ISNULL(execute_cont = op_alloc_args(ObProxyParallelExecuteCont, mutex, this, submit_thread_))) {
-      LOG_WARN("fail to alloc parallel execute cont", K(ret));
+      LOG_WDIAG("fail to alloc parallel execute cont", K(ret));
     } else if (OB_FAIL(execute_cont->init(parallel_param.at(i), i, allocator, timeout_ms_))) {
-      LOG_WARN("fail to init execute cont", K(ret));
+      LOG_WDIAG("fail to init execute cont", K(ret));
     } else if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_CALL))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule parallel execute cont", K(ret));
+      LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
     } else {
       ++target_task_count_;
       parallel_action_array_[i] = &execute_cont->get_action();
@@ -155,7 +155,7 @@ int ObProxyParallelCont::handle_parallel_task_complete(void *data, bool &is_need
 
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fetch result is null", K(ret));
+    LOG_WDIAG("fetch result is null", K(ret));
   } else {
     if (action_.cancelled_) {
       terminate_ = true;
@@ -168,7 +168,7 @@ int ObProxyParallelCont::handle_parallel_task_complete(void *data, bool &is_need
 
       if (OB_UNLIKELY(cont_index < 0) || OB_UNLIKELY(cont_index >= parallel_task_count_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected cont result", K(cont_index), K(ret));
+        LOG_WDIAG("unexpected cont result", K(cont_index), K(ret));
       } else {
         parallel_action_array_[cont_index] = NULL;
 
@@ -192,11 +192,11 @@ int ObProxyParallelCont::schedule_timeout()
 
   if (OB_UNLIKELY(NULL != timeout_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("timeout action must be NULL", K_(timeout_action), K(ret));
+    LOG_WDIAG("timeout action must be NULL", K_(timeout_action), K(ret));
   // no need switch thread
   } else if (OB_ISNULL(timeout_action_ = submit_thread_->schedule_in(this, HRTIME_MSECONDS(timeout_ms_)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule timeout", K_(timeout_action), K(ret));
+    LOG_WDIAG("fail to schedule timeout", K_(timeout_action), K(ret));
   }
 
   return ret;
@@ -204,7 +204,7 @@ int ObProxyParallelCont::schedule_timeout()
 
 int ObProxyParallelCont::handle_timeout()
 {
-  int ret = OB_SUCCESS;  
+  int ret = OB_SUCCESS;
   LOG_INFO("timeout to execute parallel task", KP(this));
 
   timeout_action_ = NULL;
@@ -240,7 +240,7 @@ int ObProxyParallelCont::notify_caller_error()
 }
 
 void ObProxyParallelCont::cancel_timeout_action()
-{ 
+{
   if (NULL != timeout_action_) {
     timeout_action_->cancel();
     timeout_action_ = NULL;

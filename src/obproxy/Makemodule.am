@@ -91,6 +91,8 @@ ${rpc_obmysql_packet_sources} ${obproxy_rpc_obmysql_sources} ${rpc_common_source
 ${obproxy_sql_sources}\
 ${obproxy_sources}
 
+obproxy_libobproxy_la_CXXFLAGS := ${AM_CXXFLAGS} -Wno-conversion
+
 if HAVE_SO
   obproxy_libobproxy_so_la_SOURCES :=
   obproxy_libobproxy_so_la_LIBADD := obproxy/libobproxy.la lib/compress/libzlib_1.0.la lib/compress/libzstd_1.3.8.la ${BIN_LDFLAGS} ${DEP_DIR}/lib64/libprometheus-cpp-pull.a ${DEP_DIR}/lib64/libprometheus-cpp-core.a ${RUNTIME_DIR}/lib/libob_sql_proxy_parser_static.a ${DEP_DIR}/lib/libssl.a ${DEP_DIR}/lib/libcrypto.a -lpthread

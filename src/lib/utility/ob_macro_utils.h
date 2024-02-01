@@ -477,7 +477,7 @@ for (__typeof__((c).at(0)) *it = ((c).count() > 0 ? &(c).at(0) : NULL), *__INNER
       switch (v) {                                                      \
         def(DEF_ENUM_CASE)                                              \
         default:                                                        \
-          LIB_LOG(WARN, "unknow " #type "value", "value", v);           \
+          LIB_LOG(WDIAG, "unknow " #type "value", "value", v);           \
           return NULL;                                                  \
       }                                                                 \
     }                                                                   \
@@ -488,12 +488,12 @@ for (__typeof__((c).at(0)) *it = ((c).count() > 0 ? &(c).at(0) : NULL), *__INNER
     type get_##func_name##_value(const common::ObString &str)           \
     {                                                                   \
       if (str.empty()) {                                                \
-        LIB_LOG(WARN, "invalid argument, empty str");                   \
+        LIB_LOG(WDIAG, "invalid argument, empty str");                   \
         return static_cast<type>(0);                                    \
       } else {                                                          \
        def(DEF_ENUM_STRCMP)                                             \
       }                                                                 \
-      LIB_LOG(WARN, "unknow " #type "string", K(str));                  \
+      LIB_LOG(WDIAG, "unknow " #type "string", K(str));                  \
       return static_cast<type>(0);                                      \
     }
 
@@ -593,8 +593,8 @@ for (__typeof__((c).at(0)) *it = ((c).count() > 0 ? &(c).at(0) : NULL), *__INNER
   do{                                                   \
     bool v=(x);                                         \
     if(OB_UNLIKELY(!(v))) {                             \
-      _OB_LOG(ERROR, "assert fail, exp=%s", #x);        \
-      BACKTRACE(ERROR, 1, "assert fail");               \
+      _OB_LOG(EDIAG, "assert fail, exp=%s", #x);        \
+      BACKTRACE(EDIAG, 1, "assert fail");               \
       assert(v);                                        \
     }                                                   \
   } while(false)
@@ -605,8 +605,8 @@ for (__typeof__((c).at(0)) *it = ((c).count() > 0 ? &(c).at(0) : NULL), *__INNER
   do{                                                 \
     bool v=(x);                                       \
     if(OB_UNLIKELY(!(v))) {                           \
-      _OB_LOG(ERROR, "assert fail, exp=%s", #x);      \
-      BACKTRACE(ERROR, 1, ##msg);                     \
+      _OB_LOG(EDIAG, "assert fail, exp=%s", #x);      \
+      BACKTRACE(EDIAG, 1, ##msg);                     \
       assert(v);                                      \
     }                                                 \
   } while(false)
@@ -615,8 +615,8 @@ for (__typeof__((c).at(0)) *it = ((c).count() > 0 ? &(c).at(0) : NULL), *__INNER
   do{                                                   \
     bool v=(x);                                         \
     if(OB_UNLIKELY(!(v))) {                             \
-      _OB_LOG(ERROR, "assert fail, exp=%s", #x);        \
-      BACKTRACE(ERROR, 1, "assert fail");               \
+      _OB_LOG(EDIAG, "assert fail, exp=%s", #x);        \
+      BACKTRACE(EDIAG, 1, "assert fail");               \
       abort();                                          \
       exit(1);                                          \
     }                                                   \

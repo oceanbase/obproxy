@@ -39,9 +39,9 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(is_inited_)) {
       ret = common::OB_INIT_TWICE;
-      PROXY_LOG(WARN, "init twice", K_(is_inited), K(ret));
+      PROXY_LOG(WDIAG, "init twice", K_(is_inited), K(ret));
     } else if (OB_FAIL(pointer_map_.init())) {
-      PROXY_LOG(WARN, "fail to init pointer_map", K(ret));
+      PROXY_LOG(WDIAG, "fail to init pointer_map", K(ret));
     } else {
       is_inited_ = true;
     }
@@ -56,7 +56,7 @@ public:
       for (int64_t i = 0; (i < sub_map_count) && OB_SUCC(ret); ++i) {
         for (EntryIterator it = begin(i); (it != end(i)) && OB_SUCC(ret); ++it) {
           if (OB_FAIL(erase(it, i))) { // dec_ref
-            PROXY_LOG(WARN, "fail to erase", K(ret));
+            PROXY_LOG(WDIAG, "fail to erase", K(ret));
             ret = common::OB_SUCCESS; // ignore ret
           }
         }
@@ -72,13 +72,13 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_ISNULL(value)) {
       ret = common::OB_INVALID_ARGUMENT;
-      PROXY_LOG(WARN, "invalid input value", K(value), K(ret));
+      PROXY_LOG(WDIAG, "invalid input value", K(value), K(ret));
     } else {
       const K &k = get_key_(value);
       value->inc_ref();
       V over_written_value = NULL;
       if (OB_FAIL(pointer_map_.set_refactored(k, value, over_written_value, 1, 1))) {
-        PROXY_LOG(WARN, "fail to set value", K(k), KPC(value), K(ret));
+        PROXY_LOG(WDIAG, "fail to set value", K(k), KPC(value), K(ret));
       } else {
         if (NULL != over_written_value) {
           over_written_value->dec_ref(); // free the old one

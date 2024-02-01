@@ -42,6 +42,9 @@ do {\
 #define RETURN_NAME_OB() \
   { store_func_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NAME_OB; }
 
+#define RETURN_NONE_PARAM_FUNC() \
+  { store_func_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NONE_PARAM_FUNC; }
+
 #define RETURN_NAME_OB_WITH_QUOTE(quote_type) \
 { \
   store_func_expr_str_with_quote(quote_type, yytext + 1, yyleng - 2, yytext + yyleng, yyscanner); \
@@ -65,8 +68,8 @@ space                   [ \t\n\r\f]
 identifer               ([A-Za-z0-9$_]*)
 
 /* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
-int_num                 [\-\+]?[0-9]{1,17}
-number      ([\-]?[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*E[-+]?[0-9]+)|([\-]?"."[0-9]+E[-+]?[0-9]+)|([\-]?[0-9]+"."[0-9]*)|([\-]?"."[0-9]+)|([\-\+]?[0-9]{18,})
+int_num                 [0-9]{1,17}
+number      ([0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*E[-+]?[0-9]+)|("."[0-9]+E[-+]?[0-9]+)|([0-9]+"."[0-9]*)|("."[0-9]+)|([0-9]{18,})
 
 
 whitespace              ({space}+)
@@ -100,22 +103,14 @@ rightbracket  \)
 endtoken \#
 
 %%
-substr        { return FUNC_SUBSTR; }
-substring     { return FUNC_SUBSTR; }
-concat        { return FUNC_CONCAT; }
-hash          { return FUNC_HASH; }
-toint         { return FUNC_TOINT; }
-div           { return FUNC_DIV; }
-add           { return FUNC_ADD; }
-sub           { return FUNC_SUB; }
-mul           { return FUNC_MUL; }
-testload      { return FUNC_TESTLOAD; }
-to_date       { return FUNC_TO_DATE; }
-to_timestamp  { return FUNC_TO_TIMESTAMP; }
-nvl           { return FUNC_NVL; }
-to_char       { return FUNC_TO_CHAR; }
-mod           { return FUNC_MOD; }
-sysdate       { return FUNC_SYSDATE; }
+systimestamp      { RETURN_NONE_PARAM_FUNC(); }
+sysdate           { RETURN_NONE_PARAM_FUNC(); }
+current_date      { RETURN_NONE_PARAM_FUNC(); }
+curdate           { RETURN_NONE_PARAM_FUNC(); }
+current_time      { RETURN_NONE_PARAM_FUNC(); }
+curtime           { RETURN_NONE_PARAM_FUNC(); }
+current_timestamp { RETURN_NONE_PARAM_FUNC(); }
+now               { RETURN_NONE_PARAM_FUNC(); }
 
 {endtoken}  { return TOKEN_SPECIAL; }
 

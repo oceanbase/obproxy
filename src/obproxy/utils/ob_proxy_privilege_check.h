@@ -72,7 +72,7 @@ class ObProxySessionPrivInfo
 public:
   ObProxySessionPrivInfo()
   : has_all_privilege_(false), cs_id_(common::OB_INVALID_FILE_ID), user_priv_set_(-1),
-    cluster_name_str_(NULL), tenant_name_str_(NULL), user_name_str_(NULL) { }
+    cluster_name_str_(NULL), tenant_name_str_(NULL), user_name_str_(NULL), logic_user_name_str_(NULL) { }
   ~ObProxySessionPrivInfo() { reset(); }
 
   void reset();
@@ -80,6 +80,7 @@ public:
   bool is_same_cluster(const ObProxySessionPrivInfo &other_priv_info) const;
   bool is_same_tenant(const ObProxySessionPrivInfo &other_priv_info) const;
   bool is_same_user(const ObProxySessionPrivInfo &other_priv_info) const;
+  bool is_same_logic_user(const ObProxySessionPrivInfo &other_priv_info) const;
   bool has_super_privilege() const { return OB_TEST_PRIVS(user_priv_set_, OB_PRIV_SUPER); }
   bool has_process_privilege() const { return OB_TEST_PRIVS(user_priv_set_, OB_PRIV_PROCESS); }
   static bool is_user_priv_set_available(const ObPrivSet user_priv_set) { return -1 != user_priv_set; };
@@ -96,11 +97,13 @@ public:
   common::ObString cluster_name_;
   common::ObString tenant_name_;
   common::ObString user_name_;
+  common::ObString logic_user_name_;  //just for sharding
 
 private:
   char *cluster_name_str_;
   char *tenant_name_str_;
   char *user_name_str_;
+  char *logic_user_name_str_;
 
   DISALLOW_COPY_AND_ASSIGN(ObProxySessionPrivInfo);
 };

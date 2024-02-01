@@ -47,9 +47,20 @@ int64_t ObPartDescRange::to_string(char *buf, const int64_t buf_len) const
   int64_t pos = 0;
   J_OBJ_START();
 
-  J_KV("part_type", "range",
-       K_(part_array_size));
-
+  J_KV("part_type", "range", K_(part_array_size), "part_func_type", share::schema::get_partition_func_type_str(part_func_type_));
+  J_COMMA();
+  BUF_PRINTO("part_array");
+  J_COLON();
+  J_ARRAY_START();
+  for (int i = 0; i < part_array_size_; i++) {
+    if (part_array_ + i != NULL) {
+      BUF_PRINTO(part_array_[i]);
+      if (i + 1 < part_array_size_) {
+        J_COMMA();
+      }
+    }
+  }
+  J_ARRAY_END();
   J_OBJ_END();
   return pos;
 }
@@ -138,7 +149,7 @@ int ObPartDescRange::get_part(ObNewRange &range,
       || OB_UNLIKELY(part_array_[0].is_max_value_)
       || (!range.start_key_.is_valid() && !range.end_key_.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid argument", K_(part_array), K_(part_array_size), K(range), K(ret));
+    COMMON_LOG(DEBUG, "invalid argument", K_(part_array), K_(part_array_size), K(range), K(ret));
     // use the fisrt range as the type to cast
   } else if (OB_FAIL(cast_key(range.start_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
     COMMON_LOG(DEBUG, "fail to cast start key ",
@@ -152,9 +163,9 @@ int ObPartDescRange::get_part(ObNewRange &range,
     part_idx = start;
     for (int64_t i = start; OB_SUCC(ret) && i <= end; i ++) {
       if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
-        COMMON_LOG(WARN, "fail to push part id", K(ret));
+        COMMON_LOG(WDIAG, "fail to push part id", K(ret));
       } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
-        COMMON_LOG(WARN, "fail to push tablet id", K(ret));
+        COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
       }
     }
   }
@@ -166,9 +177,9 @@ int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t
   int ret = OB_SUCCESS;
   int64_t part_idx = num % part_array_size_;
   if (OB_FAIL(part_ids.push_back(part_array_[part_idx].part_id_))) {
-    COMMON_LOG(WARN, "fail to push part id", K(ret));
+    COMMON_LOG(WDIAG, "fail to push part id", K(ret));
   } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
-    COMMON_LOG(WARN, "fail to push tablet id", K(ret));
+    COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
   }
   return ret;
 }
@@ -198,6 +209,46 @@ int ObPartDescRange::cast_key(ObRowkey &src_key,
     }
   }
   return ret;
+}
+
+int64_t ObPartDescRange::to_plain_string(char* buf, const int64_t buf_len) const {
+  // "partition by range() (p0["BIGINT":11111,"BIGINT":111111], p1["BIGINT":22222, "BIGINT":222222], ....)"
+  int64_t pos = 0;
+  if (part_level_ == share::schema::ObPartitionLevel::PARTITION_LEVEL_TWO) {
+    BUF_PRINTF("sub");
+  }
+  BUF_PRINTF("partition by range ");
+  BUF_PRINTF("(");
+  for (int i = 0; i < part_array_size_; i++) {
+    if (OB_ISNULL(part_array_ + i)) {
+      /* do nothing */
+    } else {
+      if (i != 0) {
+        J_COMMA();
+      }
+      BUF_PRINTF("P%ld", part_array_[i].part_id_);
+      J_ARRAY_START();
+      for (int j = 0; j < part_array_[i].high_bound_val_.get_obj_cnt(); j++) {
+        if (j != 0) {
+          J_COMMA();
+        }
+        if (OB_NOT_NULL(part_array_[i].high_bound_val_.get_obj_ptr() + j)) {
+          const ObObj *obj = part_array_[i].high_bound_val_.get_obj_ptr() + j;
+          BUF_PRINTF("%s:", ob_obj_type_str(obj->get_type()));
+          obj->print_plain_str_literal(buf, buf_len, pos);
+          if (obj->is_ext()) {
+            BUF_PRINTF("maxvalue");
+          }
+          if (obj->is_string_type()) {
+            BUF_PRINTF("<%s>", ObCharset::collation_name(obj->get_collation_type()));
+          }
+        }
+      }
+      J_ARRAY_END();
+    }
+  }
+  BUF_PRINTF(")");
+  return pos;
 }
 
 } // end of common

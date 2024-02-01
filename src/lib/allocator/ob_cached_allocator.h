@@ -62,7 +62,7 @@ ObCachedAllocator<T>::~ObCachedAllocator()
     --cached_count_;
   }
   if (0 != allocated_count_ || 0 != cached_count_) {
-    LIB_LOG(WARN, "some allocated object is not freed",
+    LIB_LOG(WDIAG, "some allocated object is not freed",
               K(allocated_count_), K(cached_count_));
   }
 }
@@ -75,7 +75,7 @@ T *ObCachedAllocator<T>::alloc()
   if (OB_SUCCESS != cached_objs_.pop_back(ret)) {
     void *p = pool_.alloc();
     if (OB_ISNULL(p)) {
-      LIB_LOG(ERROR, "no memory");
+      LIB_LOG(EDIAG, "no memory");
     } else {
       ret = new(p) T();
       ++ allocated_count_;
@@ -94,7 +94,7 @@ void ObCachedAllocator<T>::free(T *obj)
     int ret = OB_SUCCESS;
     ObSpinLockGuard guard(lock_);
     if (OB_FAIL(cached_objs_.push_back(obj))) {
-      LIB_LOG(ERROR, "failed to push obj into array", K(ret));
+      LIB_LOG(EDIAG, "failed to push obj into array", K(ret));
       // free directly
       obj->~T();
       pool_.free(obj);

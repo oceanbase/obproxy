@@ -83,7 +83,7 @@ int ObPartitionCacheCont::get_partition_entry(const int event, ObEvent *e)
         tmp_entry->dec_ref();
         tmp_entry = NULL;
       }
-      LOG_WARN("fail to get partition entry", K_(key), K(ret));
+      LOG_WDIAG("fail to get partition entry", K_(key), K(ret));
     }
 
     if (OB_SUCC(ret) && !is_locked) {
@@ -91,7 +91,7 @@ int ObPartitionCacheCont::get_partition_entry(const int event, ObEvent *e)
                 LITERAL_K(ObPartitionCacheParam::SCHEDULE_PARTITION_CACHE_CONT_INTERVAL));
       if (OB_ISNULL(self_ethread().schedule_in(this, ObPartitionCacheParam::SCHEDULE_PARTITION_CACHE_CONT_INTERVAL))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule in", K(ret));
+        LOG_WDIAG("fail to schedule in", K(ret));
       }
       he_ret = EVENT_CONT;
     } else {
@@ -128,7 +128,7 @@ int ObPartitionCacheCont::get_partition_entry_local(
   if (lock_bucket.is_locked()) {
     is_locked = true;
     if (OB_FAIL(partition_cache.run_todo_list(partition_cache.part_num(hash)))) {
-      LOG_WARN("fail to run todo list", K(key), K(hash), K(ret));
+      LOG_WDIAG("fail to run todo list", K(key), K(hash), K(ret));
     } else {
       entry = partition_cache.lookup_entry(hash, key);
       if (NULL != entry) {
@@ -144,7 +144,7 @@ int ObPartitionCacheCont::get_partition_entry_local(
           entry = NULL;
           // remove the expired partition entry in locked
           if (OB_FAIL(partition_cache.remove_partition_entry(key))) {
-            LOG_WARN("fail to remove partition entry", K(key), K(ret));
+            LOG_WDIAG("fail to remove partition entry", K(key), K(ret));
           }
         } else {
           entry->inc_ref();
@@ -158,7 +158,7 @@ int ObPartitionCacheCont::get_partition_entry_local(
     if (NULL == entry) {
       if (is_add_building_entry) {
         if (OB_FAIL(add_building_part_entry(partition_cache, key))) {
-          LOG_WARN("fail to building part entry", K(key), K(ret));
+          LOG_WDIAG("fail to building part entry", K(key), K(ret));
         } else {
           // nothing
         }
@@ -182,16 +182,16 @@ int ObPartitionCacheCont::add_building_part_entry(ObPartitionCache &partition_ca
   const char *ip_str = "88.88.88.88"; // fake ip
   int32_t port = 8; // fake port
   if (OB_FAIL(replica_location.add_addr(ip_str, port))) {
-    LOG_WARN("fail to add ip or port", K(ip_str), K(port), K(ret));
+    LOG_WDIAG("fail to add ip or port", K(ip_str), K(port), K(ret));
   } else if (OB_FAIL(ObPartitionEntry::alloc_and_init_partition_entry(key, replica_location, entry))) {
-    LOG_WARN("fail to alloc and init partition entry", K(key), K(replica_location), K(ret));
+    LOG_WDIAG("fail to alloc and init partition entry", K(key), K(replica_location), K(ret));
   } else if (OB_ISNULL(entry)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("part entry is NULL", K(entry), K(ret));
+    LOG_WDIAG("part entry is NULL", K(entry), K(ret));
   } else {
     entry->set_building_state();
     if (OB_FAIL(partition_cache.add_partition_entry(*entry, false))) {
-      LOG_WARN("fail to add part entry", KPC(entry), K(ret));
+      LOG_WDIAG("fail to add part entry", KPC(entry), K(ret));
       entry->dec_ref();
       entry = NULL;
     } else {
@@ -250,12 +250,12 @@ int ObPartitionCache::init(const int64_t bucket_size)
   int64_t sub_bucket_size = bucket_size / MT_HASHTABLE_PARTITIONS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(bucket_size <= 0 || sub_bucket_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
+    LOG_WDIAG("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
   } else if (OB_FAIL(PartitionEntryHashMap::init(sub_bucket_size, PARTITION_ENTRY_MAP_LOCK, gc_partition_entry))) {
-    LOG_WARN("fail to init hash partition of partition cache", K(sub_bucket_size), K(ret));
+    LOG_WDIAG("fail to init hash partition of partition cache", K(sub_bucket_size), K(ret));
   } else {
     for (int64_t i = 0; i < MT_HASHTABLE_PARTITIONS; ++i) {
       todo_lists_[i].init("partition_todo_list",
@@ -298,11 +298,11 @@ int ObPartitionCache::get_partition_entry(
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(ppentry) || OB_ISNULL(cont)
              || OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid arugument", K(ppentry), K(key), K(cont), K(ret));
+    LOG_WDIAG("invalid arugument", K(ppentry), K(key), K(cont), K(ret));
   } else {
     uint64_t hash = key.hash();
     LOG_DEBUG("begin to get partition location entry", K(ppentry), K(key), K(cont), K(hash));
@@ -315,7 +315,7 @@ int ObPartitionCache::get_partition_entry(
         tmp_entry->dec_ref();
         tmp_entry = NULL;
       }
-      LOG_WARN("fail to get partition entry", K(key), K(ret));
+      LOG_WDIAG("fail to get partition entry", K(key), K(ret));
     } else {
       if (is_locked) {
         *ppentry = tmp_entry;
@@ -326,7 +326,7 @@ int ObPartitionCache::get_partition_entry(
         ObPartitionCacheCont *partition_cont = NULL;
         if (OB_ISNULL(partition_cont = op_alloc_args(ObPartitionCacheCont, *this))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("fail to allocate memory for partition cache continuation", K(ret));
+          LOG_EDIAG("fail to allocate memory for partition cache continuation", K(ret));
         } else {
           partition_cont->action_.set_continuation(cont);
           partition_cont->mutex_ = cont->mutex_;
@@ -339,7 +339,7 @@ int ObPartitionCache::get_partition_entry(
           if (OB_ISNULL(self_ethread().schedule_in(partition_cont,
                   ObPartitionCacheParam::SCHEDULE_PARTITION_CACHE_CONT_INTERVAL))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to schedule imm", K(partition_cont), K(ret));
+            LOG_WDIAG("fail to schedule imm", K(partition_cont), K(ret));
           } else {
             action = &partition_cont->action_;
           }
@@ -363,7 +363,7 @@ int ObPartitionCache::add_partition_entry(ObPartitionEntry &entry, bool direct_a
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     ObPartitionEntryKey key = entry.get_key();
     uint64_t hash = key.hash();
@@ -373,7 +373,7 @@ int ObPartitionCache::add_partition_entry(ObPartitionEntry &entry, bool direct_a
       MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
       if (lock.is_locked()) {
         if (OB_FAIL(run_todo_list(part_num(hash)))) {
-          LOG_WARN("fail to run todo list", K(ret));
+          LOG_WDIAG("fail to run todo list", K(ret));
         } else {
           ObPartitionEntry *tmp_entry = insert_entry(hash, key, &entry);
           if (NULL != tmp_entry) {
@@ -392,7 +392,7 @@ int ObPartitionCache::add_partition_entry(ObPartitionEntry &entry, bool direct_a
       ObPartitionCacheParam *param = op_alloc(ObPartitionCacheParam);
       if (OB_ISNULL(param)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for partition param", K(param), K(ret));
+        LOG_EDIAG("fail to allocate memory for partition param", K(param), K(ret));
       } else {
         param->op_ = ObPartitionCacheParam::ADD_PARTITION_OP;
         param->hash_ = hash;
@@ -411,10 +411,10 @@ int ObPartitionCache::remove_partition_entry(const ObPartitionEntryKey &key)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(key), K(ret));
+    LOG_WDIAG("invalid input value", K(key), K(ret));
   } else {
     uint64_t hash = key.hash();
     ObPartitionEntry *entry = NULL;
@@ -422,7 +422,7 @@ int ObPartitionCache::remove_partition_entry(const ObPartitionEntryKey &key)
     MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
     if (lock.is_locked()) {
       if (OB_FAIL(run_todo_list(part_num(hash)))) {
-        LOG_WARN("fail to run todo list", K(ret));
+        LOG_WDIAG("fail to run todo list", K(ret));
       } else {
         entry = remove_entry(hash, key);
         LOG_INFO("this entry will be removed from partition cache", KPC(entry));
@@ -436,7 +436,7 @@ int ObPartitionCache::remove_partition_entry(const ObPartitionEntryKey &key)
       ObPartitionCacheParam *param = op_alloc(ObPartitionCacheParam);
       if (OB_ISNULL(param)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for location param", K(param), K(ret));
+        LOG_EDIAG("fail to allocate memory for location param", K(param), K(ret));
       } else {
         param->op_ = ObPartitionCacheParam::REMOVE_PARTITION_OP;
         param->hash_ = hash;
@@ -454,10 +454,10 @@ int ObPartitionCache::run_todo_list(const int64_t buck_id)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(buck_id < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buck_id), K(ret));
+    LOG_WDIAG("invalid input value", K(buck_id), K(ret));
   } else {
     ObPartitionCacheParam *pre = NULL;
     ObPartitionCacheParam *cur = NULL;
@@ -492,7 +492,7 @@ int ObPartitionCache::process(const int64_t buck_id, ObPartitionCacheParam *para
   int ret = OB_SUCCESS;
   if (OB_ISNULL(param) || OB_UNLIKELY(buck_id < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buck_id), K(param), K(ret));
+    LOG_WDIAG("invalid input value", K(buck_id), K(param), K(ret));
   } else {
     LOG_DEBUG("begin to process ObPartitionCacheParam", K(buck_id), KPC(param));
     ObPartitionEntry *entry = NULL;
@@ -523,7 +523,7 @@ int ObPartitionCache::process(const int64_t buck_id, ObPartitionCacheParam *para
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("ObPartitionCache::process unrecognized op",
+        LOG_EDIAG("ObPartitionCache::process unrecognized op",
                   "op", param->op_, K(buck_id), KPC(param), K(ret));
         break;
       }
@@ -564,7 +564,7 @@ int init_partition_map_for_thread()
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_partition_map_for_one_thread(i))) {
-      LOG_WARN("fail to init partition_map", K(i), K(ret));
+      LOG_WDIAG("fail to init partition_map", K(i), K(ret));
     }
   }
   return ret;
@@ -576,16 +576,16 @@ int init_partition_map_for_one_thread(int64_t index)
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else {
     if (OB_ISNULL(ethreads[index]->partition_map_ = new (std::nothrow) ObPartitionRefHashMap(ObModIds::OB_PROXY_PARTITION_ENTRY_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new ObPartitionRefHashMap", K(index), K(ethreads[index]), K(ret));
+      LOG_WDIAG("fail to new ObPartitionRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->partition_map_->init())) {
-      LOG_WARN("fail to init partition_map", K(ret));
+      LOG_WDIAG("fail to init partition_map", K(ret));
     }
   }
   return ret;
@@ -600,7 +600,7 @@ int ObPartitionRefHashMap::clean_hash_map()
       if ((*it)->is_deleted_state()) {
         LOG_INFO("this partition entry will erase from tc map", KPC((*it)));
         if (OB_FAIL(erase(it, i))) {
-          LOG_WARN("fail to erase partition entry", K(i), K(ret));
+          LOG_WDIAG("fail to erase partition entry", K(i), K(ret));
         }
 
         if ((NULL != this_ethread()) && (NULL != this_ethread()->mutex_)) {

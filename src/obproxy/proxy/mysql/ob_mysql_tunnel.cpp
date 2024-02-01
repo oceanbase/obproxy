@@ -32,6 +32,8 @@
 #include "proxy/mysql/ob_mysql_tunnel.h"
 #include "proxy/mysql/ob_mysql_sm.h"
 #include "proxy/mysql/ob_mysql_debug_names.h"
+#include "lib/ptr/ob_ptr.h"
+#include "proxy/mysqllib/ob_protocol_diagnosis.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -49,30 +51,43 @@ namespace proxy
 ObPacketAnalyzer::ObPacketAnalyzer()
     : producer_(NULL), request_analyzer_(NULL), resp_analyzer_(NULL),
       packet_reader_(NULL), server_response_(NULL), packet_type_(MYSQL_NONE),
-      last_server_event_(VC_EVENT_NONE), skip_bytes_(0)
+      last_server_event_(VC_EVENT_NONE), skip_bytes_(0), protocol_diagnosis_(NULL)
 {
 }
 
-inline int ObPacketAnalyzer::process_content(bool &cmd_complete, bool &trans_complete, uint8_t &request_pkt_seq)
+ObPacketAnalyzer::~ObPacketAnalyzer() {
+  DEC_SHARED_REF(protocol_diagnosis_);
+}
+
+inline int ObPacketAnalyzer::process_content(
+  bool &cmd_complete,
+  bool &trans_complete,
+  uint8_t &request_pkt_seq,
+  obmysql::ObMySQLCmd cmd)
 {
   int ret = OB_SUCCESS;
 
   if (MYSQL_REQUEST == packet_type_) {
-    if (OB_FAIL(process_request_content(cmd_complete, trans_complete, request_pkt_seq))) {
-      LOG_WARN("fail to process_request_content", K(ret));
+    if (OB_FAIL(process_request_content(cmd_complete, trans_complete,
+                                        request_pkt_seq, cmd))) {
+      LOG_WDIAG("fail to process_request_content", K(ret), K(cmd));
     }
   } else if (MYSQL_RESPONSE == packet_type_) {
     if (OB_FAIL(process_response_content(cmd_complete, trans_complete))) {
-      LOG_WARN("fail to process_response_content", K(ret));
+      LOG_WDIAG("fail to process_response_content", K(ret));
     }
   } else {
     ret = OB_ERR_SYS;
-    LOG_WARN("unsupported packet_type", K(packet_type_), K(ret));
+    LOG_WDIAG("unsupported packet_type", K(packet_type_), K(ret));
   }
   return ret;
 }
 
-inline int ObPacketAnalyzer::process_request_content(bool &cmd_complete, bool &trans_complete, uint8_t &request_pkt_seq)
+inline int ObPacketAnalyzer::process_request_content(
+  bool &cmd_complete,
+  bool &trans_complete,
+  uint8_t &request_pkt_seq,
+  obmysql::ObMySQLCmd cmd)
 {
   int ret = OB_SUCCESS;
   cmd_complete = false;
@@ -86,12 +101,13 @@ inline int ObPacketAnalyzer::process_request_content(bool &cmd_complete, bool &t
     // need check client request is finished
     if (OB_ISNULL(packet_reader_)) {
       ret = OB_ERR_SYS;
-      LOG_WARN("packet_reader is null", K(ret));
+      LOG_WDIAG("packet_reader is null", K(ret));
     } else  {
       int64_t data_size = packet_reader_->read_avail();
       if (data_size > 0) {
-        if (OB_FAIL(request_analyzer_->is_request_finished(*packet_reader_, trans_complete))) {
-          LOG_WARN("fail to analyze_request_is_finish", K(ret));
+        if (OB_FAIL(request_analyzer_->is_request_finished(*packet_reader_, trans_complete, cmd,
+                                                            data_size, protocol_diagnosis_))) {
+          LOG_WDIAG("fail to analyze_request_is_finish", K(ret));
         } else {
           if (trans_complete) {
             // if request packet larger than 16MB, then we will received more than one packet,
@@ -108,11 +124,11 @@ inline int ObPacketAnalyzer::process_request_content(bool &cmd_complete, bool &t
   }
 
   if (OB_SUCC(ret) && (NULL != packet_reader_) && OB_FAIL(packet_reader_->consume_all())) {
-    LOG_WARN("fail to consume all", K(ret));
+    LOG_WDIAG("fail to consume all", K(ret));
   }
 
   LOG_DEBUG("process_request_content",
-            K_(packet_type), "vc_type", producer_->vc_type_, K(trans_complete));
+            K_(packet_type), "vc_type", producer_->vc_type_, K(trans_complete), K(cmd));
   return ret;
 }
 
@@ -134,7 +150,7 @@ inline int ObPacketAnalyzer::process_response_content(bool &cmd_complete, bool &
 
     if (data_size > 0) {
       if (OB_FAIL(resp_analyzer_->analyze_response(*packet_reader_, server_response_))) {
-        LOG_WARN("fail to analyze response", K(ret));
+        LOG_WDIAG("fail to analyze response", K(ret));
       } else {
         trans_complete = server_response_->get_analyze_result().is_trans_completed();
         cmd_complete = server_response_->get_analyze_result().is_resp_completed();
@@ -149,7 +165,7 @@ inline int ObPacketAnalyzer::process_response_content(bool &cmd_complete, bool &
 
   if (NULL != packet_reader_ && OB_SUCC(ret)) {
     if (OB_FAIL(packet_reader_->consume_all())) {
-      LOG_WARN("fail to consume all", K(ret));
+      LOG_WDIAG("fail to consume all", K(ret));
     }
   }
 
@@ -289,7 +305,7 @@ ObMysqlTunnelProducer *ObMysqlTunnel::add_producer(
 
   if (OB_ISNULL(vc) || OB_ISNULL(reader_start) || OB_ISNULL(name_arg)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("add_producer, invalid argument", K(vc), K(reader_start), K(name_arg), K(ret));
+    LOG_WDIAG("add_producer, invalid argument", K(vc), K(reader_start), K(name_arg), K(ret));
   } else {
     LOG_DEBUG("adding producer", K_(sm_->sm_id), K(name_arg), K(nbytes_arg));
     read_avail = reader_start->read_avail();
@@ -304,14 +320,14 @@ ObMysqlTunnelProducer *ObMysqlTunnel::add_producer(
       ntodo = nbytes_arg - read_avail;
       if (OB_UNLIKELY(ntodo < 0)) {
         ret = OB_ERR_SYS;
-        LOG_ERROR("add_producer, invalid producer ntodo",
+        LOG_EDIAG("add_producer, invalid producer ntodo",
                   K(nbytes_arg), K(read_avail), K(ntodo), K(ret));
       }
     }
 
     if (OB_UNLIKELY(OB_SUCCESS == ret && MYSQL_TUNNEL_STATIC_PRODUCER == vc && 0 != ntodo)) {
       ret = OB_ERR_SYS;
-      LOG_ERROR("add_producer, invalid static producer ntodo",
+      LOG_EDIAG("add_producer, invalid static producer ntodo",
                 K(nbytes_arg), K(read_avail), K(ntodo), K(ret));
     }
 
@@ -365,10 +381,10 @@ ObMysqlTunnelConsumer *ObMysqlTunnel::add_consumer(
 
   if (OB_ISNULL(vc) || OB_ISNULL(producer) || OB_ISNULL(name_arg) || OB_UNLIKELY(skip_bytes < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("add_consumer, invalid argument", K(vc), K(producer), K(name_arg), K(skip_bytes), K(ret));
+    LOG_WDIAG("add_consumer, invalid argument", K(vc), K(producer), K(name_arg), K(skip_bytes), K(ret));
   } else if (OB_ISNULL(p = get_producer(producer))) {
     ret = OB_ERR_SYS;
-    LOG_WARN("add_consumer, failed to get producer", K(producer), K(ret));
+    LOG_WDIAG("add_consumer, failed to get producer", K(producer), K(ret));
   } else {
     LOG_DEBUG("adding consumer", K_(sm_->sm_id), K(name_arg));
 
@@ -404,21 +420,21 @@ int ObMysqlTunnel::tunnel_run(ObMysqlTunnelProducer *p_arg)
 
   if (OB_LIKELY(NULL != p_arg)) {
     if (OB_FAIL(producer_run(*p_arg))) {
-      LOG_WARN("failed to run producer", K(ret));
+      LOG_WDIAG("failed to run producer", K(ret));
     }
   } else {
     ObMysqlTunnelProducer *p = NULL;
 
     if (active_) {
       ret = OB_ERR_SYS;
-      LOG_ERROR("tunnel_run, rerun active tunnel", K_(active));
+      LOG_EDIAG("tunnel_run, rerun active tunnel", K_(active));
     } else {
       for (int64_t i = 0; i < MAX_PRODUCERS && OB_SUCC(ret); ++i) {
         p = producers_ + i;
         if (NULL != p->vc_ && (p->alive_ || (MT_STATIC == p->vc_type_ && NULL != p->buffer_start_))) {
           ret = producer_run(*p);
           if (OB_FAIL(ret)) {
-            LOG_WARN("failed to run producer", K(ret));
+            LOG_WDIAG("failed to run producer", K(ret));
           }
         }
       }
@@ -447,7 +463,7 @@ int ObMysqlTunnel::producer_run(ObMysqlTunnelProducer &p)
 
   if (OB_ISNULL(p.vc_) || OB_UNLIKELY(num_producers_ <= 0)) {
     ret = OB_ERR_SYS;
-    LOG_ERROR("producer_run, invalid internal state", K_(p.vc), K_(num_producers));
+    LOG_EDIAG("producer_run, invalid internal state", K_(p.vc), K_(num_producers));
   } else {
     active_ = true;
 
@@ -461,7 +477,7 @@ int ObMysqlTunnel::producer_run(ObMysqlTunnelProducer &p)
 
     if (OB_UNLIKELY(producer_n < 0)) {
       ret = OB_ERR_SYS;
-      LOG_ERROR("invalid producer ntodo", K(producer_n));
+      LOG_EDIAG("invalid producer ntodo", K(producer_n));
     } else {
       LOG_DEBUG("producer_run", K_(sm_->sm_id), K(consumer_n), K(producer_n),
                 "this_thread", this_ethread());
@@ -478,12 +494,12 @@ int ObMysqlTunnel::producer_run(ObMysqlTunnelProducer &p)
     // us to implement skip bytes
     if (OB_ISNULL(c->buffer_reader_ = p.buffer_start_->clone())) {
       ret = OB_ERR_SYS;
-      LOG_ERROR("failed to clone buffer reader", K(ret));
+      LOG_EDIAG("failed to clone buffer reader", K(ret));
     } else if (c->skip_bytes_ > 0) {
       // Consume bytes of the reader if we skipping bytes
       if (c->skip_bytes_ > c->buffer_reader_->read_avail()) {
         ret = OB_ERR_SYS;
-        LOG_ERROR("skip bytes is more than read avail bytes",
+        LOG_EDIAG("skip bytes is more than read avail bytes",
                   K_(c->skip_bytes), "read_avail", c->buffer_reader_->read_avail());
       } else {
         // - if we don't know the length leave it at
@@ -495,7 +511,7 @@ int ObMysqlTunnel::producer_run(ObMysqlTunnelProducer &p)
           c_write -= c->skip_bytes_;
         }
         if (OB_FAIL(c->buffer_reader_->consume(c->skip_bytes_))) {
-          PROXY_TXN_LOG(WARN, "fail to consume ", K(c->skip_bytes_), K(ret));
+          PROXY_TXN_LOG(WDIAG, "fail to consume ", K(c->skip_bytes_), K(ret));
         }
       }
     }
@@ -503,7 +519,7 @@ int ObMysqlTunnel::producer_run(ObMysqlTunnelProducer &p)
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(c_write < 0)) {
         ret = OB_ERR_SYS;
-        LOG_ERROR("consumer to write length < 0", K(c_write));
+        LOG_EDIAG("consumer to write length < 0", K(c_write));
       } else if (OB_UNLIKELY(0 == c_write)) {
         // Nothing to do, call back the cleanup handlers
         c->write_vio_ = NULL;
@@ -525,7 +541,7 @@ int ObMysqlTunnel::producer_run(ObMysqlTunnelProducer &p)
         c->write_vio_ = c->vc_->do_io_write(this, c_write, c->buffer_reader_);
         if (OB_ISNULL(c->write_vio_)) {
           ret = OB_ERR_SYS;
-          LOG_WARN("failed to do_io_write", K(ret));
+          LOG_WDIAG("failed to do_io_write", K(ret));
         } else {
           LOG_DEBUG("producer_run", K_(sm_->sm_id), K(c), K_(c->write_vio_->nbytes),
                     K_(c->write_vio_->ndone));
@@ -555,7 +571,7 @@ int ObMysqlTunnel::producer_run(ObMysqlTunnelProducer &p)
         p.read_vio_ = p.vc_->do_io_read(this, producer_n, p.read_buffer_);
         if (OB_ISNULL(p.read_vio_)) {
           ret = OB_ERR_SYS;
-          LOG_WARN("failed to do_io_read", K(ret));
+          LOG_WDIAG("failed to do_io_read", K(ret));
         }
       }
     }
@@ -595,18 +611,33 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
       // If we couldn't understand the encoding, return an error
       ObHRTime packet_analyze_begin = get_based_hrtime();
       uint8_t &request_pkt_seq = sm_->trans_state_.trans_info_.client_request_.get_packet_meta().pkt_seq_;
-      if (OB_UNLIKELY(OB_SUCCESS != p.packet_analyzer_.process_content(cmd_complete, trans_complete, request_pkt_seq))) {
-        LOG_WARN("process response content analyze response error",
-                 K_(sm_->sm_id), K_(p.name), K(cmd_complete), K(trans_complete));
+      // when transfer content of file, request contains lots of packet
+      // and empty packet is the last packet of the request
+      if (OB_UNLIKELY(OB_SUCCESS != p.packet_analyzer_.process_content(cmd_complete, trans_complete, request_pkt_seq,
+                                                                       sm_->trans_state_.trans_info_.sql_cmd_))) {
+        LOG_WDIAG("process request content analyze request error",
+                 K_(p.packet_analyzer_.packet_type), K_(sm_->sm_id),
+                 K_(p.name),
+                 K(cmd_complete), K(trans_complete));
         // FIX ME: we return EOS here since it will cause the
         // the client to be reenabled. ERROR makes more sense
         // but no reenables follow
+
+        COLLECT_INTERNAL_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                                   OB_PROXY_INTERNAL_TRACE,
+                                   OB_PLUGIN_TRANSFERRING_ERROR,
+                                   "proxy packet analyzer can't not handle "
+                                   "this packet, packet_type:%d",
+                                   p.packet_analyzer_.packet_type_);
         ret = VC_EVENT_EOS;
         break;
       }
 
-      sm_->cmd_time_stats_.server_response_analyze_time_ +=
-        milestone_diff(packet_analyze_begin, get_based_hrtime());
+      if (MYSQL_REQUEST == p.packet_analyzer_.packet_type_) {
+        sm_->cmd_time_stats_.client_request_analyze_time_ += milestone_diff(packet_analyze_begin, get_based_hrtime());
+      } else if (MYSQL_RESPONSE == p.packet_analyzer_.packet_type_) {
+        sm_->cmd_time_stats_.server_response_analyze_time_ += milestone_diff(packet_analyze_begin, get_based_hrtime());
+      }
 
       // For resultset protocol, there is an extra ok packet at the tail. After analyze the
       // resultset response, we known the length of the extra ok packet, we tell all the consumers
@@ -623,7 +654,7 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
           }
           LOG_DEBUG("after reserved, reader avail size", "size", c->buffer_reader_->read_avail());
           if (OB_UNLIKELY(reserved_size > 0) && OB_UNLIKELY(c->buffer_reader_->read_avail() < 0)) {
-            LOG_ERROR("unexpected read_avail size, BUG!", K(reserved_size),
+            LOG_EDIAG("unexpected read_avail size, BUG!", K(reserved_size),
                       "read avail size", c->buffer_reader_->read_avail());
             // set reserved_size_ to INT64_MAX, so we can reserver all data then disconnect
             c->buffer_reader_->reserved_size_ = INT64_MAX;
@@ -702,9 +733,9 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
       p.bytes_read_ = 0;
       jump_point = p.vc_handler_;
       if (OB_ISNULL(jump_point)) {
-        LOG_ERROR("producer vc handler is NULL");
+        LOG_EDIAG("producer vc handler is NULL");
       } else if (OB_SUCCESS != (sm_->*jump_point)(event, p)) {
-        LOG_WARN("failed to call producer vc handler");
+        LOG_WDIAG("failed to call producer vc handler");
       }
       sm_callback = true;
       p.update_state_if_not_set(MYSQL_SM_REQUEST_TRANSFER_SUCCESS);
@@ -742,9 +773,9 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
       jump_point = p.vc_handler_;
       p.cost_time_ += (get_based_hrtime() - last_handler_event_time_);
       if (OB_ISNULL(jump_point)) {
-        LOG_ERROR("producer vc handler is NULL");
+        LOG_EDIAG("producer vc handler is NULL");
       } else if (OB_SUCCESS != (sm_->*jump_point)(event, p)) {
-        LOG_WARN("failed to call producer vc handler");
+        LOG_WDIAG("failed to call producer vc handler");
       }
       sm_callback = true;
       p.update_state_if_not_set(MYSQL_SM_REQUEST_TRANSFER_SUCCESS);
@@ -774,9 +805,9 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
       jump_point = p.vc_handler_;
       p.cost_time_ += (get_based_hrtime() - last_handler_event_time_);
       if (OB_ISNULL(jump_point)) {
-        LOG_ERROR("producer vc handler is NULL");
+        LOG_EDIAG("producer vc handler is NULL");
       } else if (OB_SUCCESS != (sm_->*jump_point)(event, p)) {
-        LOG_WARN("failed to call producer vc handler");
+        LOG_WDIAG("failed to call producer vc handler");
       }
       sm_callback = true;
       p.update_state_if_not_set(MYSQL_SM_REQUEST_TRANSFER_CLIENT_FAIL);
@@ -786,7 +817,7 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
     case VC_EVENT_WRITE_COMPLETE:
     default:
       // Producers should not get these events
-      LOG_ERROR("producer_handler, Unknown event", "event", ObMysqlDebugNames::get_event_name(event));
+      LOG_EDIAG("producer_handler, Unknown event", "event", ObMysqlDebugNames::get_event_name(event));
       break;
   }
 
@@ -895,7 +926,7 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
             "event", ObMysqlDebugNames::get_event_name(event));
 
   if (OB_ISNULL(p) || OB_UNLIKELY(!c.alive_) || OB_ISNULL(c.buffer_reader_)) {
-    LOG_ERROR("consumer_handler, invalid internal tunnel state",
+    LOG_EDIAG("consumer_handler, invalid internal tunnel state",
              K(p), K_(c.alive), K_(c.buffer_reader));
   }
 
@@ -904,6 +935,16 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
      client_vc = static_cast<ObMysqlClientSession *>(c.vc_);
      // cancel net_write_timeout, set wait_timeout
      if (NULL != client_vc) {
+       if (event == VC_EVENT_INACTIVITY_TIMEOUT) {
+        if (sm_ != NULL) {
+          COLLECT_TIMEOUT_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                                    OB_TIMEOUT_DISCONNECT_TRACE,
+                                    sm_->client_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : sm_->client_session_->get_inactivity_timeout_event(),
+                                    sm_->client_session_ == NULL ? 0 : sm_->client_session_->get_timeout_record(),
+                                    OB_PROXY_INACTIVITY_TIMEOUT,
+                                    NULL);
+        }
+       }
        client_vc->set_wait_timeout();
      }
   }
@@ -926,9 +967,9 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
       jump_point = c.vc_handler_;
       c.cost_time_ += (get_based_hrtime() - last_handler_event_time_);
       if (OB_ISNULL(jump_point)) {
-        LOG_ERROR("consumer vc handler is NULL");
+        LOG_EDIAG("consumer vc handler is NULL");
       } else if (OB_SUCCESS != (sm_->*jump_point)(event, c)) {
-        LOG_WARN("failed to call consumer vc handler");
+        LOG_WDIAG("failed to call consumer vc handler");
       }
       sm_callback = true;
 
@@ -956,7 +997,7 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
           c.buffer_reader_->reserved_size_ = 0;
           int ret = OB_SUCCESS;
           if (OB_FAIL(c.buffer_reader_->consume(reserved_size))) {
-            LOG_WARN("fail to consume ", K(reserved_size), K(ret));
+            LOG_WDIAG("fail to consume ", K(reserved_size), K(ret));
           }
         }
         // Deallocate the reader after calling back the sm
@@ -997,7 +1038,7 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
     case VC_EVENT_READ_COMPLETE:
     default:
       // Consumers should not get these events
-      LOG_ERROR("consumer_handler, Unknown event", "event", ObMysqlDebugNames::get_event_name(event));
+      LOG_EDIAG("consumer_handler, Unknown event", "event", ObMysqlDebugNames::get_event_name(event));
       break;
   }
 
@@ -1033,7 +1074,9 @@ void ObMysqlTunnel::chain_abort_all(ObMysqlTunnelProducer &p)
 
   if (p.alive_) {
     p.alive_ = false;
-    p.bytes_read_ = p.read_vio_->ndone_;
+    if (NULL != p.read_vio_) {
+      p.bytes_read_ = p.read_vio_->ndone_;
+    }
     if (NULL != p.self_consumer_) {
       p.self_consumer_->alive_ = false;
     }
@@ -1054,14 +1097,14 @@ int ObMysqlTunnel::finish_all_internal(ObMysqlTunnelProducer &p, const bool chai
 
   if (OB_UNLIKELY(p.alive_)) {
     ret = OB_ERR_SYS;
-    LOG_ERROR("finish_all_internal, invalid alive producer", K_(p.alive));
+    LOG_EDIAG("finish_all_internal, invalid alive producer", K_(p.alive));
   }
 
   for (ObMysqlTunnelConsumer *c = p.consumer_list_.head_; NULL != c && OB_SUCC(ret); c = c->link_.next_) {
     if (c->alive_) {
       if (OB_ISNULL(c->write_vio_) || OB_ISNULL(c->buffer_reader_)) {
         ret = OB_ERR_SYS;
-        LOG_ERROR("finish_all_internal, invalid member variables", K_(c->write_vio), K_(c->buffer_reader));
+        LOG_EDIAG("finish_all_internal, invalid member variables", K_(c->write_vio), K_(c->buffer_reader));
       } else {
         total_bytes = p.bytes_read_ + p.init_bytes_done_;
         c->write_vio_->nbytes_ = total_bytes - c->skip_bytes_ - c->buffer_reader_->reserved_size_;
@@ -1070,12 +1113,12 @@ int ObMysqlTunnel::finish_all_internal(ObMysqlTunnelProducer &p, const bool chai
 
         if (c->write_vio_->nbytes_ < 0) {
           ret = OB_ERR_SYS;
-          LOG_ERROR("finish_all_internal, Incorrect nbytes",
+          LOG_EDIAG("finish_all_internal, Incorrect nbytes",
                     K_(c->write_vio_->nbytes), K(total_bytes), K_(c->skip_bytes),
                     K_(c->buffer_reader_->reserved_size));
         } else if (chain && NULL != c->self_producer_
             && OB_FAIL(chain_finish_all(*c->self_producer_))) {
-          LOG_WARN("failed to chain_finish_all", K(ret));
+          LOG_WDIAG("failed to chain_finish_all", K(ret));
         } else {
           // The IO Core will not call us back if there
           // is nothing to do. Check to see if there is
@@ -1111,7 +1154,7 @@ int ObMysqlTunnel::main_handler(int event, void *data)
             K_(sm_->sm_id), "event", ObMysqlDebugNames::get_event_name(event), K(data));
 
   if (OB_UNLIKELY(MYSQL_SM_MAGIC_ALIVE != sm_->magic_)) {
-    LOG_WARN("failed to check sm magic", K_(sm_->magic), "expected", MYSQL_SM_MAGIC_ALIVE);
+    LOG_WDIAG("failed to check sm magic", K_(sm_->magic), "expected", MYSQL_SM_MAGIC_ALIVE);
   }
 
   // Find the appropriate entry
@@ -1125,7 +1168,7 @@ int ObMysqlTunnel::main_handler(int event, void *data)
   } else {
     if (OB_LIKELY(NULL != (c = get_consumer(reinterpret_cast<ObVIO *>(data))))) {
       if (c->write_vio_ != data) {
-        LOG_WARN("failed to check vio, data must equal to write vio", K_(c->write_vio), K(data));
+        LOG_WDIAG("failed to check vio, data must equal to write vio", K_(c->write_vio), K(data));
       }
       sm_callback = consumer_handler(event, *c);
       if (OB_UNLIKELY(get_global_performance_params().enable_trace_ && !sm_callback)) {
@@ -1134,7 +1177,7 @@ int ObMysqlTunnel::main_handler(int event, void *data)
         last_handler_event_time_ = current_time;
       }
     } else {
-      LOG_WARN("ObMysqlTunnel::main_handler, unknown data",
+      LOG_WDIAG("ObMysqlTunnel::main_handler, unknown data",
                "event", ObMysqlDebugNames::get_event_name(event), K(data), K(this),
                K_(num_producers), K_(num_consumers));
     }

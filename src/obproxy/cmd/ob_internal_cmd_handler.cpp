@@ -559,6 +559,7 @@ int ObInternalCmdHandler::fill_external_buf()
   int ret = OB_SUCCESS;
 
   if (OB_LIKELY(protocol_ == ObProxyProtocol::PROTOCOL_OB20)) {
+    // cli - proxy not supports compressed ob20
     if (OB_FAIL(ObProto20Utils::consume_and_compress_data(internal_reader_, external_buf_,
                                                           internal_reader_->read_avail(), ob20_param_))) {
       WARN_ICMD("fail to consume and compress to ob20 packet", K(ret), K_(ob20_param));

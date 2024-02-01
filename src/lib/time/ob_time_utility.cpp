@@ -79,7 +79,7 @@ int64_t ObTimeUtility::current_time_coarse()
   const int tmp = clock_gettime(CLOCK_REALTIME, &t);
 #endif
   if (OB_UNLIKELY(tmp != 0)) {
-    LOG_WARN("failed to get time coarse", KERRMSGS);
+    LOG_WDIAG("failed to get time coarse", KERRMSGS);
   }
   return (static_cast<int64_t>(t.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>
           (t.tv_nsec / 1000));
@@ -103,7 +103,7 @@ int ObTimeUtility::make_second(struct tm &t, time_t &second)
       ret = OB_SUCCESS;
     } else {
       ret = OB_ERR_SYS;
-      LOG_ERROR("make time failed", KERRMSGS,
+      LOG_EDIAG("make time failed", KERRMSGS,
                 K(t.tm_sec), K(t.tm_min), K(t.tm_hour), K(t.tm_mday), K(t.tm_mon), K(t.tm_year));
     }
   }
@@ -136,9 +136,9 @@ int ObTimeUtility::usec_format_to_str(int64_t usec, const ObString &format, char
   t.tm_isdst = -1;
   if (NULL == localtime_r(&second, &t)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("convert second to struct tm failed", K(second));
+    LOG_EDIAG("convert second to struct tm failed", K(second));
   } else if (OB_FAIL(timestamp_format_to_str(t, incre_usec, format, buf, buf_len, pos))) {
-    LOG_WARN("format date failed", K(ret));
+    LOG_WDIAG("format date failed", K(ret));
   }
   return ret;
 }
@@ -166,7 +166,7 @@ int ObTimeUtility::timestamp_format_to_str(const struct tm &t, int64_t usec, con
       || OB_UNLIKELY(!is_valid_date(t.tm_year + 1900, t.tm_mon + 1, t.tm_mday))
       || OB_UNLIKELY(!is_valid_time(t.tm_hour, t.tm_min, t.tm_sec, static_cast<int>(usec)))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(format), K(buf), K(buf_len), K(t.tm_year), K(t.tm_mon),
+    LOG_WDIAG("invalid argument", K(format), K(buf), K(buf_len), K(t.tm_year), K(t.tm_mon),
              K(t.tm_mday), K(t.tm_hour), K(t.tm_min), K(t.tm_sec), K(usec));
   } else if (pos >= buf_len) {
     ret = OB_SIZE_OVERFLOW;
@@ -179,7 +179,7 @@ int ObTimeUtility::timestamp_format_to_str(const struct tm &t, int64_t usec, con
         ++format_ptr;
         if (format_ptr >= end_ptr) {
           ret = OB_INVALID_ARGUMENT;
-          LOG_WARN("format string is invalid", K(format));
+          LOG_WDIAG("format string is invalid", K(format));
           break;
         }
         switch (*format_ptr) {
@@ -453,7 +453,7 @@ int ObTimeUtility::extract_usec(const ObString &str, int64_t &pos, int64_t &usec
   if (OB_ISNULL(str.ptr()) || OB_UNLIKELY(str.length() <= 0)
       || OB_UNLIKELY(pos < 0) || OB_UNLIKELY(pos >= str.length())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(str), K(pos));
+    LOG_WDIAG("invalid argument", K(str), K(pos));
   } else {
     const char *cur_ptr = str.ptr() + pos;
     const char *end_ptr = str.ptr() + str.length();
@@ -467,7 +467,7 @@ int ObTimeUtility::extract_usec(const ObString &str, int64_t &pos, int64_t &usec
     }
     if (cur_ptr >= end_ptr) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("current ptr is invalid", K(cur_ptr), K(end_ptr));
+      LOG_WDIAG("current ptr is invalid", K(cur_ptr), K(end_ptr));
     } else {
       while (cur_ptr < end_ptr && scanned < 6 && *cur_ptr <= '9' && *cur_ptr >= '0') {
         cur_value = *cur_ptr - '0';
@@ -502,10 +502,10 @@ int ObTimeUtility::str_to_time(const ObString &date, int64_t &usec, DecimalDigts
   int64_t sec = 0;
   int64_t tmp_usec = 0;
   if (OB_FAIL(extract_int(date, 13, pos, sec))) {
-    LOG_WARN("extract second failed", K(ret));
+    LOG_WDIAG("extract second failed", K(ret));
   } else if (OB_ISNULL(date.ptr()) || OB_UNLIKELY(date.length() <= 0) || OB_UNLIKELY(pos >= date.length())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("date string is invalid", K(date), K(pos));
+    LOG_WDIAG("date string is invalid", K(date), K(pos));
   } else {
     usec = sec * 1000000L;
     const char *ptr = date.ptr();
@@ -516,7 +516,7 @@ int ObTimeUtility::str_to_time(const ObString &date, int64_t &usec, DecimalDigts
     if (pos < date.length()) {
       ++pos; //skip '.'
       if (OB_FAIL(extract_usec(date, pos, tmp_usec, num_flag))) {
-        LOG_WARN("extract usec part failed", K(ret));
+        LOG_WDIAG("extract usec part failed", K(ret));
       } else {
         usec += tmp_usec;
       }
@@ -540,18 +540,18 @@ int ObTimeUtility::str_to_timestamp(const ObString &date, struct tm &t, int64_t 
   //match year value
   if (OB_ISNULL(date.ptr()) || OB_UNLIKELY(date.length() <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("date string is invalid", K(date));
+    LOG_WDIAG("date string is invalid", K(date));
   }
   IS_MINUS(date, is_minus);
   for (int i = 0; OB_SUCC(ret) && i < 7; i++) {
     if (OB_UNLIKELY(6 == matched)) {
       //to match usec
       if (OB_FAIL(ObTimeUtility::extract_usec(date, pos, dates[i], DIGTS_INSENSITIVE))) {
-        LOG_WARN("extract usec with digts insensitive failed", K(ret));
+        LOG_WDIAG("extract usec with digts insensitive failed", K(ret));
       }
     } else {
       if (OB_FAIL(ObTimeUtility::extract_date(date, 0, pos, dates[i]))) {
-        LOG_WARN("extract date failed", K(ret));
+        LOG_WDIAG("extract date failed", K(ret));
       }
     }
     ++matched;
@@ -563,7 +563,7 @@ int ObTimeUtility::str_to_timestamp(const ObString &date, struct tm &t, int64_t 
     }
     if (OB_UNLIKELY(matched < 3)) {
       ret = OB_INVALID_DATE_FORMAT;
-      LOG_WARN("year, month, day is necessary in date format", K(date));
+      LOG_WDIAG("year, month, day is necessary in date format", K(date));
     }
     //check the date value whether valid
     else if (!is_valid_date(static_cast<int>(dates[0]), static_cast<int>(dates[1]),
@@ -572,7 +572,7 @@ int ObTimeUtility::str_to_timestamp(const ObString &date, struct tm &t, int64_t 
                                static_cast<int>(dates[5]),
                                static_cast<int>(dates[6]))) {
       ret = OB_INVALID_DATE_FORMAT;
-      LOG_WARN("the date format is invalid");
+      LOG_WDIAG("the date format is invalid");
     } else {
       //not use fuzzy year rule making by MySQL
       /*
@@ -609,9 +609,9 @@ int ObTimeUtility::str_to_usec(const ObString &date, int64_t &usec)
   memset(&t, 0, sizeof(struct tm));
   t.tm_isdst = -1;
   if (OB_FAIL(str_to_timestamp(date, t, tmp_usec))) {
-    LOG_WARN("parse string to date failed", K(ret));
+    LOG_WDIAG("parse string to date failed", K(ret));
   } else if (OB_FAIL(make_second(t, sec))) {
-    LOG_WARN("parse time to usec failed", K(ret));
+    LOG_WDIAG("parse time to usec failed", K(ret));
   } else {
     usec = sec * 1000L * 1000L + tmp_usec;
   }
@@ -689,7 +689,7 @@ bool ObTimeUtility::is_valid_mday(int year, int month, int mday)
     }
     default: {
       ret = false;
-      LOG_WARN("month must between 1 and 12", K(month));
+      LOG_WDIAG("month must between 1 and 12", K(month));
       break;
     }
   }

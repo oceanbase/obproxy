@@ -59,8 +59,8 @@ private:
   Ob20ProtolTransPluginState state_;
 
   event::ObIOBufferReader *local_reader_;
-  event::ObMIOBuffer *out_buffer_;                  // save temp result, after produce, consume all
-  event::ObIOBufferReader *out_buffer_reader_;  // reader of out_buffer_
+  event::ObMIOBuffer *mysql_decompress_buffer_;                  // save temp result, after produce, consume all
+  event::ObIOBufferReader *mysql_decompress_buffer_reader_;  // reader of mysql_decompress_buffer_
 
   DISALLOW_COPY_AND_ASSIGN(ObMysqlResponseOb20ProtocolTransformPlugin);
 };
@@ -95,7 +95,7 @@ public:
         transaction.add_plugin(plugin);
         PROXY_API_LOG(DEBUG, "add ObMysqlResponseOb20ProtocolTransformPlugin", K(plugin));
       } else {
-        PROXY_API_LOG(ERROR, "fail to alloc mem for ObMysqlResponseOb20ProtocolTransformPlugin");
+        PROXY_API_LOG(EDIAG, "fail to alloc mem for ObMysqlResponseOb20ProtocolTransformPlugin");
       }
     } else {
       PROXY_API_LOG(DEBUG, "no need setup ObMysqlResponseOb20ProtocolTransformPlugin");

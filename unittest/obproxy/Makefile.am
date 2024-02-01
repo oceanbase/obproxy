@@ -48,6 +48,7 @@ pub_sources=                                           \
 								 ob_mysql_test_utils.h
 
 bin_PROGRAMS =                                         \
+                 test_atomic_store                     \
                  test_proxy_config                     \
                  test_event_processor                  \
                  test_ethread                          \
@@ -67,13 +68,13 @@ bin_PROGRAMS =                                         \
                  test_resultset_fetcher                \
                  test_config_server_processor          \
                  test_vip_tenant_cache                 \
-				 test_white_list_processor             \
+				         test_white_list_processor             \
                  test_tenant_processor                 \
                  test_proxy_json_config_info           \
                  test_mysql_transact									 \
                  test_ldc_location  									 \
                  obproxy_task_flow_controller_checker  \
-				                 ob_expr_parser_checker                \
+				         ob_expr_parser_checker                \
 								 ob_func_expr_parser_checker           \
 								 test_zlib_stream_compressor           \
 								 test_fast_zlib_stream_compressor      \
@@ -82,14 +83,15 @@ bin_PROGRAMS =                                         \
 								 test_safe_snapshot_manager            \
 								 foo_client                            \
 								 foo_server                            \
-                 test_mysql_request_analyzer                           \
-								 test_dual_parser \
-								 obproxy_parser_test \
-								 test_ob_blowfish \
-                 test_mysql_version
+                 test_mysql_request_analyzer           \
+								 test_dual_parser                      \
+								 obproxy_parser_test                   \
+								 test_ob_blowfish                      \
+                 test_mysql_version\
+                 test_stack_overflow
 ##               test_layout
 
-
+test_atomic_store_SOURCES = test_atomic_store.cpp
 test_dual_parser_SOURCES = test_dual_parser.cpp ${pub_sources}
 obproxy_parser_test_SOURCES = obproxy_parser_test.cpp
 test_proxy_config_SOURCES = test_proxy_config.cpp
@@ -131,4 +133,5 @@ foo_client_SOURCES = foo_client.cpp
 foo_server_SOURCES = foo_server.cpp
 test_ob_blowfish_SOURCES = test_ob_blowfish.cpp
 test_mysql_version_SOURCES = test_mysql_version.cpp
+test_stack_overflow_SOURCES = test_stack_overflow.cpp
 ##test_layout_SOURCES = test_layout.cpp

@@ -18,6 +18,7 @@
 #include "iocore/eventsystem/ob_event_processor.h"
 #include "iocore/eventsystem/ob_task.h"
 #include "cmd/ob_show_sqlaudit_handler.h"
+#include "lib/allocator/ob_mem_leak_checker.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::lib;
@@ -42,6 +43,7 @@ enum
   OB_MMC_USED,
   OB_MMC_COUNT,
   OB_MMC_AVG_USED,
+  OB_MMC_BACKTRACE,
   OB_MMC_MAX_MOD_MEMORY_COLUMN_ID,
 };
 
@@ -55,6 +57,7 @@ enum
   OB_OPC_TYPE_SIZE,
   OB_OPC_CHUNK_COUNT,
   OB_OPC_CHUNK_BYTE_SIZE,
+  OB_OPC_BACKTRACE,
   OB_OPC_MAX_OBJPOOL_COLUMN_ID,
 };
 
@@ -65,6 +68,7 @@ const ObProxyColumnSchema MOD_MEMORY_COLUMN_ARRAY[OB_MMC_MAX_MOD_MEMORY_COLUMN_I
     ObProxyColumnSchema::make_schema(OB_MMC_USED,       "used",       obmysql::OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_MMC_COUNT,      "count",      obmysql::OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_MMC_AVG_USED,   "avg_used",   obmysql::OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_MMC_BACKTRACE,  "hold bytes, alloc times and backtraces(addr2line -Cfe obproxy 0xXXXX)",  obmysql::OB_MYSQL_TYPE_VARCHAR),
 };
 
 const ObProxyColumnSchema OBJPOOL_COLUMN_ARRAY[OB_OPC_MAX_OBJPOOL_COLUMN_ID] = {
@@ -75,12 +79,14 @@ const ObProxyColumnSchema OBJPOOL_COLUMN_ARRAY[OB_OPC_MAX_OBJPOOL_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_OPC_TYPE_SIZE,        "type_size",        obmysql::OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_OPC_CHUNK_COUNT,      "chunk_count",      obmysql::OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_OPC_CHUNK_BYTE_SIZE,  "chunk_byte_size",  obmysql::OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_OPC_BACKTRACE,        "hold bytes, alloc times and backtraces(addr2line -Cfe obproxy 0xXXXX)",  obmysql::OB_MYSQL_TYPE_VARCHAR),
 };
 
 ObShowMemoryHandler::ObShowMemoryHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf,
                                          const ObInternalCmdInfo &info)
   :  ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type())
 {
+  backtrace_count_ = info.get_first_int() > 0 ? info.get_first_int() : 0;
 }
 
 int ObShowMemoryHandler::handle_show_memory(int event, void *data)
@@ -96,30 +102,40 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
     const ObModSet &mod_set = get_global_mod_set();
     ObModItem mod_item;
     ObMallocAllocator *allocator = ObMallocAllocator::get_instance();
-    if (OB_ISNULL(allocator)) {
+    static const int max_backtrace_len = 8192;
+    ObString backtrace;
+    int64_t backtrace_len = 0;
+    char * backtrace_buf = (char*) ob_malloc(max_backtrace_len, ObMemLeakChecker::MOD_ID_FOR_CHECK);
+    if (OB_ISNULL(allocator) || OB_ISNULL(backtrace_buf)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("ob_malloc_allocator is null", K(ret));
+      LOG_WDIAG("ob_malloc_allocator or backtrace_buf is null", K(allocator), K(backtrace_buf), K(ret));
     }
     for (int64_t i = 0; OB_SUCC(ret) && i < ObModSet::MOD_COUNT_LIMIT; ++i) {
       allocator->get_tenant_mod_usage(OB_SERVER_TENANT_ID, static_cast<int32_t>(i), mod_item);
       if (mod_item.hold_ > 0) {
-        if (OB_FAIL(dump_mod_memory(mod_set.get_mod_name(i), is_allocator_mod(i) ? "allocator" : "user",
-                                    mod_item.hold_, mod_item.used_, mod_item.count_))) {
+        backtrace.reset();
+        if (OB_FAIL(get_global_mem_leak_checker().load_backtrace_info_for_id(i, backtrace_count_, backtrace_buf, max_backtrace_len, backtrace_len))) {
+          LOG_WDIAG("fail to load backtrace info", K(i), K(ret));
+        } else if (FALSE_IT(backtrace.assign_ptr(backtrace_buf, (common::ObString::obstr_size_t)backtrace_len))) {
+          // nothing
+        } else if (OB_FAIL(dump_mod_memory(mod_set.get_mod_name(i), is_allocator_mod(i) ? "allocator" : "user",
+                                           mod_item.hold_, mod_item.used_, mod_item.count_, backtrace))) {
           WARN_ICMD("fail to dump mod memory", K(mod_set.get_mod_name(i)), K(ret));
         }
       }
     }
+
+    if (OB_NOT_NULL(backtrace_buf)) {
+      ob_free(backtrace_buf);
+    }
+
     if (OB_SUCC(ret)) {
       // dump memory allocated by glibc
-#ifdef EL9_PLATFORM
-      struct mallinfo2 mi = mallinfo2();
-#else
       struct mallinfo mi = mallinfo();
-#endif
       int64_t allocated = mi.arena + mi.hblkhd;
       int64_t used = allocated - mi.fordblks;
       if (OB_FAIL(dump_mod_memory("GLIBC", "user", allocated, used, mi.hblks))) {
-        LOG_WARN("fail to dump memory info", K(ret));
+        LOG_WDIAG("fail to dump memory info", K(ret));
       }
     }
     if (OB_SUCC(ret)) {
@@ -136,7 +152,7 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
       }
 
       if (OB_FAIL(dump_mod_memory("OB_SQL_AUDIT", "user", hold, hold, count))) {
-        LOG_WARN("fail to dump memory info", K(ret));
+        LOG_WDIAG("fail to dump memory info", K(ret));
       }
 
       if (OB_SUCC(ret)) {
@@ -147,7 +163,7 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
         }
 
         if (OB_FAIL(dump_mod_memory("OB_SQL_AUDIT_LAST", "user", hold, hold, count))) {
-          LOG_WARN("fail to dump memory info", K(ret));
+          LOG_WDIAG("fail to dump memory info", K(ret));
         }
       }
     }
@@ -183,7 +199,7 @@ int ObShowMemoryHandler::format_int_to_str(const int64_t value, ObSqlString &str
 }
 
 int ObShowMemoryHandler::dump_mod_memory(const char *name, const char *type, const int64_t hold,
-                                         const int64_t used, const int64_t count)
+                                         const int64_t used, const int64_t count, const ObString& backtrace /* "" */)
 {
   int ret = OB_SUCCESS;
   int64_t pos = 0;
@@ -192,14 +208,14 @@ int ObShowMemoryHandler::dump_mod_memory(const char *name, const char *type, con
   cells[OB_MMC_MODE_NAME].set_varchar(name);
   cells[OB_MMC_MOD_TYPE].set_varchar(type);
   if (OB_FAIL(format_int_to_str(hold, value))) {
-    LOG_WARN("fail to format_int_to_str", K(ret));
+    LOG_WDIAG("fail to format_int_to_str", K(ret));
   } else {
     cells[OB_MMC_HOLD].set_varchar(value.ptr() + pos);
     pos = value.length();
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str(used, value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_MMC_USED].set_varchar(value.ptr() + pos);
       pos = value.length();
@@ -207,7 +223,7 @@ int ObShowMemoryHandler::dump_mod_memory(const char *name, const char *type, con
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str(count, value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_MMC_COUNT].set_varchar(value.ptr() + pos);
       pos = value.length();
@@ -215,11 +231,14 @@ int ObShowMemoryHandler::dump_mod_memory(const char *name, const char *type, con
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str((0 == count) ? 0 : used / count, value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_MMC_AVG_USED].set_varchar(value.ptr() + pos);
       pos = value.length();
     }
+  }
+  if (OB_SUCC(ret)) {
+    cells[OB_MMC_BACKTRACE].set_varchar(backtrace);
   }
 
   if (OB_SUCC(ret)) {
@@ -245,13 +264,31 @@ int ObShowMemoryHandler::handle_show_objpool(int event, void *data)
   } else {
     ObVector<common::ObObjFreeList *> fll;
     if (OB_FAIL(ObObjFreeListList::get_freelists().get_info(fll))) {
-      LOG_WARN("fail to get free list info", K(ret));
+      LOG_WDIAG("fail to get free list info", K(ret));
     } else {
+      static const int max_backtrace_len = 8192;
+      ObString backtrace;
+      int64_t backtrace_len = 0;
+      char * backtrace_buf = (char*) ob_malloc(max_backtrace_len, ObMemLeakChecker::MOD_ID_FOR_CHECK);
+      if (OB_ISNULL(backtrace_buf)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("backtrace_buf is null", K(backtrace_buf), K(ret));
+      }
       for (int64_t i = 0; OB_SUCC(ret) && i < fll.size(); ++i) {
-        if (match_like(fll[i]->get_name(), like_name_)
-            && OB_FAIL(dump_objpool_memory(fll[i]))) {
-         WARN_ICMD("fail to dump objpool memory", K(ret));
+        if (match_like(fll[i]->get_name(), like_name_)) {
+          // objpool use ObObjFreeList* as id
+          if (OB_FAIL(get_global_objpool_leak_checker().load_backtrace_info_for_id((int64_t)fll[i], backtrace_count_, backtrace_buf, max_backtrace_len, backtrace_len))) {
+            LOG_WDIAG("fail to load backtrace info", K(i), K(ret));
+          } else if (FALSE_IT(backtrace.assign_ptr(backtrace_buf, (common::ObString::obstr_size_t)backtrace_len))) {
+            // nothing
+          } else if (OB_FAIL(dump_objpool_memory(fll[i], backtrace))) {
+            WARN_ICMD("fail to dump objpool memory", K(ret));
+          }
         }
+      }
+
+      if (OB_NOT_NULL(backtrace_buf)) {
+        ob_free(backtrace_buf);
       }
     }
   }
@@ -281,7 +318,7 @@ int ObShowMemoryHandler::dump_objpool_header()
   return ret;
 }
 
-int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl)
+int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl, const ObString& backtrace /* "" */)
 {
   int ret = OB_SUCCESS;
   int64_t pos = 0;
@@ -289,14 +326,14 @@ int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl)
   ObObj cells[OB_OPC_MAX_OBJPOOL_COLUMN_ID];
   cells[OB_OPC_FREE_LIST_NAME].set_varchar(fl->get_name());
   if (OB_FAIL(format_int_to_str((fl->get_allocated() - fl->get_allocated_base()) * fl->get_type_size(), value))) {
-    LOG_WARN("fail to format_int_to_str", K(ret));
+    LOG_WDIAG("fail to format_int_to_str", K(ret));
   } else {
     cells[OB_OPC_ALLOCATED].set_varchar(value.ptr() + pos);
     pos = value.length();
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str((fl->get_used() - fl->get_used_base()) * fl->get_type_size(), value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_OPC_IN_USE].set_varchar(value.ptr() + pos);
       pos = value.length();
@@ -304,7 +341,7 @@ int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl)
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str(fl->get_used() - fl->get_used_base(), value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_OPC_COUNT].set_varchar(value.ptr() + pos);
       pos = value.length();
@@ -312,7 +349,7 @@ int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl)
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str(fl->get_type_size(), value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_OPC_TYPE_SIZE].set_varchar(value.ptr() + pos);
       pos = value.length();
@@ -320,7 +357,7 @@ int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl)
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str(fl->get_chunk_count(), value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_OPC_CHUNK_COUNT].set_varchar(value.ptr() + pos);
       pos = value.length();
@@ -328,11 +365,14 @@ int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl)
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(format_int_to_str(fl->get_chunk_byte_size(), value))) {
-      LOG_WARN("fail to format_int_to_str", K(ret));
+      LOG_WDIAG("fail to format_int_to_str", K(ret));
     } else {
       cells[OB_OPC_CHUNK_BYTE_SIZE].set_varchar(value.ptr() + pos);
       pos = value.length();
     }
+  }
+  if (OB_SUCC(ret)) {
+    cells[OB_OPC_BACKTRACE].set_varchar(backtrace);
   }
 
   if (OB_SUCC(ret)) {

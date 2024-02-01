@@ -55,7 +55,7 @@ int ObRecordHeaderV2::check_header_checksum() const
 
   if (0 != checksum) {
     ret = OB_CHECKSUM_ERROR;
-    COMMON_LOG(WARN, "record check checksum failed.", K(*this), K(ret));
+    COMMON_LOG(WDIAG, "record check checksum failed.", K(*this), K(ret));
   }
 
   return ret;
@@ -67,23 +67,23 @@ int ObRecordHeaderV2::check_payload_checksum(const char *buf, const int64_t len)
 
   if (NULL == buf || len < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(buf), K(len), K(ret));
   } else if (0 == len && (0 != data_zlength_ || 0 != data_length_ || 0 != data_checksum_)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(buf), K(len),
                K_(data_zlength), K_(data_length),
                K_(data_checksum), K(ret));
   } else if ((data_zlength_ != len)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "data length is not correct.",
+    COMMON_LOG(WDIAG, "data length is not correct.",
                K_(data_zlength), K(len), K(ret));
   } else {
     int64_t crc_check_sum = ob_crc64_sse42(buf, len);
     if (crc_check_sum !=  data_checksum_) {
       ret = OB_CHECKSUM_ERROR;
-      COMMON_LOG(WARN, "checksum error.",
+      COMMON_LOG(WDIAG, "checksum error.",
                  K(crc_check_sum), K_(data_checksum), K(ret));
     }
   }
@@ -104,11 +104,11 @@ int ObRecordHeaderV2::check_record(
 
   if (NULL == ptr || size < 0 || magic < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(ptr), K(size), K(magic), K(ret));
   } else if (record_header_len > size) {
     ret = OB_BUF_NOT_ENOUGH;
-    COMMON_LOG(WARN,
+    COMMON_LOG(WDIAG,
               "invalid arguments, header size too small.",
               K(record_header_len), K(size), K(ret));
   } else {
@@ -120,17 +120,17 @@ int ObRecordHeaderV2::check_record(
   if (OB_SUCC(ret)) {
     if (magic != header.magic_) {
       ret = OB_INVALID_DATA;
-      COMMON_LOG(WARN, "record header magic is not match",
+      COMMON_LOG(WDIAG, "record header magic is not match",
                      K(header), K(magic), K(ret));
     } else if (HEADER_VERSION != header.version_) {
       ret = OB_INVALID_DATA;
-      COMMON_LOG(WARN, "record header version is not match",
+      COMMON_LOG(WDIAG, "record header version is not match",
                            K(header), K(ret));
     }else if (OB_FAIL(header.check_header_checksum())) {
-      COMMON_LOG(WARN, "check header checksum failed.",
+      COMMON_LOG(WDIAG, "check header checksum failed.",
                  K(header), K(record_header_len), K(ret));
     } else if (OB_FAIL(header.check_payload_checksum(payload_ptr, payload_size))) {
-      COMMON_LOG(WARN, "check data checksum failed.",
+      COMMON_LOG(WDIAG, "check data checksum failed.",
                  K(header), KP(payload_ptr), K(payload_size), K(ret));
     }
   }
@@ -151,7 +151,7 @@ int ObRecordHeaderV2::check_record(
 
   if (NULL == ptr || size < 0 || magic < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(ptr), K(size), K(magic), K(ret));
   } else if (OB_FAIL(check_record(ptr,
                                   size,
@@ -159,7 +159,7 @@ int ObRecordHeaderV2::check_record(
                                   header,
                                   payload_ptr,
                                   payload_size))) {
-    COMMON_LOG(WARN, "check record failed.",
+    COMMON_LOG(WDIAG, "check record failed.",
                KP(ptr), K(size), K(magic), K(header),
                KP(payload_ptr), K(payload_size), K(ret));
   }
@@ -178,10 +178,10 @@ int ObRecordHeaderV2::get_record_header(
 
   if (NULL == buf || size < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(size), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(size), K(ret));
   } else if (static_cast<int64_t>(sizeof(ObRecordHeaderV2)) > size) {
     ret = OB_BUF_NOT_ENOUGH;
-    COMMON_LOG(WARN, "invalid arguments, header size too small.",
+    COMMON_LOG(WDIAG, "invalid arguments, header size too small.",
                K(sizeof(ObRecordHeaderV2)), K(size), K(ret));
   } else {
     MEMCPY(&header, buf, sizeof(ObRecordHeaderV2));

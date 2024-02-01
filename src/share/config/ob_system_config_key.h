@@ -151,10 +151,10 @@ inline int ObSystemConfigKey::set_zone(const ObString &zone)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(zone.ptr())) {
     ret = OB_INVALID_ARGUMENT;
-    SHARE_LOG(WARN, "invalid zone", K(zone), K(ret));
+    SHARE_LOG(WDIAG, "invalid zone", K(zone), K(ret));
   } else {
     if (OB_FAIL(zone_.assign(zone))) {
-      SHARE_LOG(WARN, "set string failed", K(zone), K(ret));
+      SHARE_LOG(WDIAG, "set string failed", K(zone), K(ret));
     }
   }
   return ret;

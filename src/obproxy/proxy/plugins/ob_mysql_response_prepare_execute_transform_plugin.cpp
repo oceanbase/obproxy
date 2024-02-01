@@ -10,7 +10,7 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#include "ob_mysql_response_new_ps_transform_plugin.h"
+#include "ob_mysql_response_prepare_execute_transform_plugin.h"
 #include "ob_mysql_response_cursor_transform_plugin.h"
 #include "rpc/obmysql/packet/ompk_prepare.h"
 #include "rpc/obmysql/packet/ompk_field.h"
@@ -55,9 +55,10 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::consume(event::ObIOBufferReade
   int64_t write_size = 0;
   ObMysqlAnalyzeResult result;
 
-  // why use two reader?
-  // local_analyze_reader for analyze. after analyze one mysql packet, will move to next mysql packet
-  // local_reader for output data to tunnel, need from start pos
+  // 这里为什么要 clone 两个 reader，是因为:
+  // local_analyze_reader 用于分析, 当分析完一个 mysql 包，就要往前移动到下一个 mysql 包;
+  // local_reader 用于把数据输出给tunnel，这里需要从开始的位置输出;
+  // 这里也可以clone一个reader，使用start_pos_ 来移动
   if (NULL == local_reader_) {
     local_reader_ = reader->clone();
     local_analyze_reader_ = local_reader_->clone();
@@ -69,7 +70,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::consume(event::ObIOBufferReade
   if (PREPARE_EXECUTE_END != prepare_execute_state_) {
     while (OB_SUCC(ret) && local_analyze_reader_->read_avail()) {
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*local_analyze_reader_, result))) {
-        PROXY_API_LOG(ERROR, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
+        PROXY_API_LOG(EDIAG, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
       } else {
         if (ANALYZE_DONE == result.status_) {
           if (MYSQL_ERR_PACKET_TYPE == result.meta_.pkt_type_) {
@@ -82,7 +83,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::consume(event::ObIOBufferReade
               ret = handle_prepare_execute_ok(local_analyze_reader_);
             } else {
               ret = OB_ERR_UNEXPECTED;
-              PROXY_API_LOG(ERROR, "the type of first packet is impossible", K(ret));
+              PROXY_API_LOG(EDIAG, "the type of first packet is impossible", K(ret));
             }
             break;
           case PREPARE_EXECUTE_PARAM :
@@ -98,7 +99,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::consume(event::ObIOBufferReade
               prepare_execute_state_ = PREPARE_EXECUTE_END;
             } else if (OB_FAIL(ObMysqlResponseCursorTransformPlugin::handle_resultset_row(local_analyze_reader_, sm_, field_types_,
                                                                                           hava_cursor_, num_columns_))) {
-              PROXY_API_LOG(ERROR, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+              PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
             }
             break;
           default :
@@ -112,7 +113,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::consume(event::ObIOBufferReade
 
           if (OB_SUCC(ret)) {
             if (OB_FAIL(local_analyze_reader_->consume(result.meta_.pkt_len_))) {
-              PROXY_API_LOG(WARN, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+              PROXY_API_LOG(WDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
             } else {
               write_size += result.meta_.pkt_len_;
             }
@@ -130,12 +131,12 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::consume(event::ObIOBufferReade
     int64_t actual_size = 0;
     if (write_size != (actual_size = produce(local_reader_, write_size))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(WARN, "fail to produce", "expected size", write_size,
+      PROXY_API_LOG(WDIAG, "fail to produce", "expected size", write_size,
                     "actual size", actual_size, K(ret));
     } else if (write_size == local_reader_->read_avail() && OB_FAIL(local_analyze_reader_->consume_all())) {
-      PROXY_API_LOG(WARN, "fail to consume all local analyze reader", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to consume all local analyze reader", K(ret));
     } else if (OB_FAIL(local_reader_->consume(write_size))) {
-      PROXY_API_LOG(WARN, "fail to consume local reader", K(write_size), K(ret));
+      PROXY_API_LOG(WDIAG, "fail to consume local reader", K(write_size), K(ret));
     }
   }
 
@@ -155,7 +156,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::handle_prepare_execute_eof(eve
   obmysql::OMPKEOF eof_packet;
   pkt_reader_.reset();
   if (OB_FAIL(pkt_reader_.get_packet(*reader, eof_packet))) {
-    PROXY_API_LOG(ERROR, "fail to get preaprea ok packet from reader", K(ret));
+    PROXY_API_LOG(EDIAG, "fail to get preaprea ok packet from reader", K(ret));
   } else {
     if (eof_packet.get_server_status().status_flags_.OB_SERVER_MORE_RESULTS_EXISTS) {
       prepare_execute_state_ = PREPARE_EXECUTE_HEADER;
@@ -184,7 +185,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::handle_prepare_column(event::O
 
     pkt_reader_.reset();
     if (OB_FAIL(pkt_reader_.get_packet(*reader, field_packet))) {
-      PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
+      PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
     } else {
       field_types_.push_back(field.type_);
       if (OB_MYSQL_TYPE_CURSOR == field.type_) {
@@ -228,7 +229,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::handle_prepare_execute_ok(even
   obmysql::OMPKPrepare prepare_packet;
   pkt_reader_.reset();
   if (OB_FAIL(pkt_reader_.get_packet(*reader, prepare_packet))) {
-    PROXY_API_LOG(ERROR, "fail to get preaprea ok packet from reader", K(ret));
+    PROXY_API_LOG(EDIAG, "fail to get preaprea ok packet from reader", K(ret));
   } else {
     num_columns_ = prepare_packet.get_column_num();
     num_params_ = prepare_packet.get_param_num();
@@ -236,7 +237,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::handle_prepare_execute_ok(even
     uint32_t client_ps_id = sm_->get_client_session()->get_session_info().get_client_ps_id();
     reader->replace(reinterpret_cast<const char*>(&client_ps_id), sizeof(client_ps_id), MYSQL_NET_META_LENGTH);
 
-    // only have column and have result set, need analyze
+    /* 只有有 column 信息, 并且当前有结果集才需要分析 */
     if (num_columns_ > 0 && 1 == prepare_packet.has_result_set()) {
       if (num_params_ > 0) {
         prepare_execute_state_ = PREPARE_EXECUTE_PARAM;

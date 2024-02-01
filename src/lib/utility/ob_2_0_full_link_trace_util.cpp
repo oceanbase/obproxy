@@ -28,14 +28,14 @@ int Ob20FullLinkTraceTransUtil::store_type_and_len(char *buf, int64_t len, int64
   
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret));
+    LOG_WDIAG("invalid input", K(ret));
   } else if (len < pos + FLT_TYPE_AND_LEN) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int2(buf, len, type, pos))){
-    LOG_WARN("failed to store type", K(ret), K(type), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(ret), K(type), K(buf), K(len));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int4(buf, len, v_len, pos))) {
-    LOG_WARN("failed to store v_len", K(ret), K(buf));
+    LOG_WDIAG("failed to store v_len", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -50,9 +50,9 @@ int Ob20FullLinkTraceTransUtil::store_str(char *buf, int64_t len, int64_t &pos, 
   
   if (len < pos + str_len + FLT_TYPE_AND_LEN) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos), K(str_len));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos), K(str_len));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, str_len))) {
-    LOG_WARN("fail to store type and len", K(ret));
+    LOG_WDIAG("fail to store type and len", K(ret));
   } else {
     MEMCPY(buf + pos, str, str_len);
     pos += str_len;
@@ -68,11 +68,11 @@ int Ob20FullLinkTraceTransUtil::store_int1(char *buf, int64_t len, int64_t &pos,
   int32_t v_len = 1;
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type and len", K(v), K(buf), K(len)); 
+    LOG_WDIAG("failed to store type and len", K(v), K(buf), K(len)); 
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int1(buf, len, v, pos))) {
-    LOG_WARN("failed to store int1", K(ret), K(buf));
+    LOG_WDIAG("failed to store int1", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -87,11 +87,11 @@ int Ob20FullLinkTraceTransUtil::store_int2(char *buf, int64_t len, int64_t &pos,
   int32_t v_len = 2;
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(v), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(v), K(buf), K(len));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int2(buf, len, v, pos))) {
-    LOG_WARN("failed to store int2", K(ret), K(buf));
+    LOG_WDIAG("failed to store int2", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -106,11 +106,11 @@ int Ob20FullLinkTraceTransUtil::store_int3(char *buf, int64_t len, int64_t &pos,
   int32_t v_len = 3;
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(v), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(v), K(buf), K(len));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int3(buf, len, v, pos))) {
-    LOG_WARN("failed to store int3", K(ret), K(buf));
+    LOG_WDIAG("failed to store int3", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -125,11 +125,11 @@ int Ob20FullLinkTraceTransUtil::store_int4(char *buf, int64_t len, int64_t &pos,
   int32_t v_len = 4;
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(v), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(v), K(buf), K(len));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int4(buf, len, v, pos))) {
-    LOG_WARN("failed to store int4", K(ret), K(buf));
+    LOG_WDIAG("failed to store int4", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -144,11 +144,11 @@ int Ob20FullLinkTraceTransUtil::store_int5(char *buf, int64_t len, int64_t &pos,
   int32_t v_len = 5;
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(v), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(v), K(buf), K(len));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int5(buf, len, v, pos))) {
-    LOG_WARN("failed to store int5", K(ret), K(buf));
+    LOG_WDIAG("failed to store int5", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -163,11 +163,11 @@ int Ob20FullLinkTraceTransUtil::store_int6(char *buf, int64_t len, int64_t &pos,
   int32_t v_len = 6;
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(v), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(v), K(buf), K(len));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int6(buf, len, v, pos))) {
-    LOG_WARN("failed to store int6", K(ret), K(buf));
+    LOG_WDIAG("failed to store int6", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -182,11 +182,11 @@ int Ob20FullLinkTraceTransUtil::store_int8(char *buf, int64_t len, int64_t &pos,
   int32_t v_len = 8;
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(v), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(v), K(buf), K(len));
   } else if (OB_FAIL(obmysql::ObMySQLUtil::store_int8(buf, len, v, pos))) {
-    LOG_WARN("failed to store int8", K(ret), K(buf));
+    LOG_WDIAG("failed to store int8", K(ret), K(buf));
   } else {
     // do nothing
   }
@@ -201,9 +201,9 @@ int Ob20FullLinkTraceTransUtil::store_double(char *buf, const int64_t len, int64
   int32_t v_len = sizeof(double);
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos), K(v_len));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos), K(v_len));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(type), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(type), K(buf), K(len));
   } else {
     MEMCPY(buf + pos, &val, v_len);
     pos += v_len;
@@ -219,9 +219,9 @@ int Ob20FullLinkTraceTransUtil::store_float(char *buf, const int64_t len, int64_
   int32_t v_len = sizeof(float);
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos), K(v_len));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos), K(v_len));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("failed to store type", K(type), K(buf), K(len));
+    LOG_WDIAG("failed to store type", K(type), K(buf), K(len));
   } else {
     MEMCPY(buf + pos, &val, v_len);
     pos += v_len;
@@ -237,11 +237,11 @@ int Ob20FullLinkTraceTransUtil::store_uuid(char *buf, const int64_t len, int64_t
   int32_t v_len = static_cast<int32_t>(uuid.get_serialize_size());
   if (len < pos + FLT_TYPE_AND_LEN + v_len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(len), K(pos));
+    LOG_WDIAG("size overflow", K(ret), K(len), K(pos));
   } else if (OB_FAIL(store_type_and_len(buf, len, pos, type, v_len))) {
-    LOG_WARN("fail to store type", K(ret));
+    LOG_WDIAG("fail to store type", K(ret));
   } else if (OB_FAIL(uuid.serialize(buf, len, pos))) {
-    LOG_WARN("fail to serialize UUID", K(ret));
+    LOG_WDIAG("fail to serialize UUID", K(ret));
   } else {
     //nothing
   }
@@ -259,10 +259,10 @@ int Ob20FullLinkTraceTransUtil::resolve_type_and_len(const char *buf,
   
   if (OB_ISNULL(buf)){
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
   } else if (len < pos + FLT_TYPE_AND_LEN) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(pos), K(len));
+    LOG_WDIAG("size overflow", K(ret), K(pos), K(len));
   } else {
     const char *tmp_buf = buf + pos;
     obmysql::ObMySQLUtil::get_int2(tmp_buf, type);
@@ -280,7 +280,7 @@ int Ob20FullLinkTraceTransUtil::get_str(const char *buf, int64_t len, int64_t &p
   
   if (pos + str_len > len) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("size overflow", K(ret), K(pos), K(str_len), K(len));
+    LOG_WDIAG("size overflow", K(ret), K(pos), K(str_len), K(len));
   } else {
     str = (char *)(buf + pos);
     pos += str_len;
@@ -295,7 +295,7 @@ int Ob20FullLinkTraceTransUtil::get_int1(const char *buf, int64_t len, int64_t &
   
   if (pos + v_len > len || v_len != 1) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(pos), K(v_len), K(len));
+    LOG_WDIAG("invalid input", K(ret), K(pos), K(v_len), K(len));
   } else {
     const char *data = buf + pos;
     obmysql::ObMySQLUtil::get_int1(data, val);
@@ -311,7 +311,7 @@ int Ob20FullLinkTraceTransUtil::get_int2(const char *buf, int64_t len, int64_t &
   
   if (pos + v_len > len || v_len != 2) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(pos), K(v_len), K(len));
+    LOG_WDIAG("invalid input", K(ret), K(pos), K(v_len), K(len));
   } else {
     const char *data = buf + pos;
     obmysql::ObMySQLUtil::get_int2(data, val);
@@ -327,7 +327,7 @@ int Ob20FullLinkTraceTransUtil::get_int3(const char *buf, int64_t len, int64_t &
   
   if (pos + v_len > len || v_len != 3) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(pos), K(v_len), K(len));
+    LOG_WDIAG("invalid input", K(ret), K(pos), K(v_len), K(len));
   } else {
     const char *data = buf + pos;
     obmysql::ObMySQLUtil::get_int3(data, val);
@@ -343,7 +343,7 @@ int Ob20FullLinkTraceTransUtil::get_int4(const char *buf, int64_t len, int64_t &
 
   if (pos + v_len > len || v_len != 4) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(pos), K(v_len), K(len));
+    LOG_WDIAG("invalid input", K(ret), K(pos), K(v_len), K(len));
   } else {
     const char *data = buf + pos;
     obmysql::ObMySQLUtil::get_int4(data, val);
@@ -359,7 +359,7 @@ int Ob20FullLinkTraceTransUtil::get_int8(const char *buf, int64_t len, int64_t &
   
   if (pos + v_len > len || v_len != 8) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(pos), K(v_len), K(len));
+    LOG_WDIAG("invalid input", K(ret), K(pos), K(v_len), K(len));
   } else {
     const char *data = buf + pos;
     obmysql::ObMySQLUtil::get_int8(data, val);
@@ -376,7 +376,7 @@ int Ob20FullLinkTraceTransUtil::get_double(const char *buf, int64_t len, int64_t
   int64_t d_len = sizeof(double);
   if (pos + v_len > len || v_len != d_len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(pos), K(v_len), K(len), K(d_len));
+    LOG_WDIAG("invalid input", K(pos), K(v_len), K(len), K(d_len));
   } else {
     val = (*((double *)(buf + pos)));
     pos += d_len;
@@ -392,7 +392,7 @@ int Ob20FullLinkTraceTransUtil::get_float(const char *buf, int64_t len, int64_t 
   int64_t f_len = sizeof(float);
   if (pos + v_len > len || v_len != f_len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(pos), K(v_len), K(len), K(f_len));
+    LOG_WDIAG("invalid input", K(pos), K(v_len), K(len), K(f_len));
   } else {
     val = (*((float *)(buf + pos)));
     pos += f_len;
@@ -408,9 +408,9 @@ int Ob20FullLinkTraceTransUtil::get_uuid(const char *buf, int64_t len, int64_t &
   int64_t uuid_len = sizeof(trace::UUID);
   if (pos + v_len > len || v_len != uuid_len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(pos), K(v_len), K(len), K(uuid_len));
+    LOG_WDIAG("invalid input", K(ret), K(pos), K(v_len), K(len), K(uuid_len));
   } else if (OB_FAIL(uuid.deserialize(buf, len, pos))) {
-    LOG_WARN("fail to deserialize uuid", K(ret));
+    LOG_WDIAG("fail to deserialize uuid", K(ret));
   } else {
     //nothing
   }
@@ -430,10 +430,10 @@ int Ob20FullLinkTraceTransUtil::resolve_type(const char *buf, int64_t len, int64
   
   if (OB_ISNULL(buf)){
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Invalid argument, null buf ptr.");
+    LOG_WDIAG("Invalid argument, null buf ptr.");
   } else if (pos + 2 > len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Failed to check pos len", K(pos), K(len));
+    LOG_WDIAG("Failed to check pos len", K(pos), K(len));
   } else {
     const char *data_type = buf + pos;
     obmysql::ObMySQLUtil::get_int2(data_type, type);

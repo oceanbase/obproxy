@@ -80,7 +80,7 @@ private:
       if (OB_SUCC(ret)) { \
         if (OB_SUCCESS != (ret = sql.append_fmt("%s%s", \
             (values).empty() ? "" : ", ", (column)))) { \
-          _OB_LOG(WARN, "sql append column %s failed, ret %d", (column), ret); \
+          _OB_LOG(WDIAG, "sql append column %s failed, ret %d", (column), ret); \
         } \
       } \
     } while (false)
@@ -91,7 +91,7 @@ private:
       if (OB_SUCC(ret)) { \
         if (OB_SUCCESS != (ret = (values).append_fmt( \
             "%s" fmt, (values).empty() ? "" : ", ", (v)))) { \
-          _OB_LOG(WARN, "sql append value failed, ret %d, " #v " " fmt, ret, (v)); \
+          _OB_LOG(WDIAG, "sql append value failed, ret %d, " #v " " fmt, ret, (v)); \
         } \
       } \
     } while (false)
@@ -102,7 +102,7 @@ private:
         if (OB_SUCCESS != (ret = (values).append_fmt( \
             "%s'%.*s'", (values).empty() ? "" : ", ", \
             static_cast<int32_t>(v_len), (v)))) { \
-          _OB_LOG(WARN, "sql append value failed, ret %d, " #v " %.*s", \
+          _OB_LOG(WDIAG, "sql append value failed, ret %d, " #v " %.*s", \
               ret, static_cast<int32_t>(v_len), (v)); \
         } \
       } \
@@ -114,9 +114,9 @@ private:
       SQL_APPEND_COLUMN_NAME(sql, values, column); \
       if (OB_SUCC(ret)) { \
         if (OB_SUCCESS != (ret = (values).append((values).empty() ? "'" : ", "))) { \
-          _OB_LOG(WARN, "sql append ', ' failed, ret %d", ret); \
+          _OB_LOG(WDIAG, "sql append ', ' failed, ret %d", ret); \
         } else if (OB_SUCCESS != (ret = sql_append_hex_escape_str((v), v_len, (values)))) { \
-          _OB_LOG(WARN, "sql append escaped value failed, ret %d, " #v " %.*s", \
+          _OB_LOG(WDIAG, "sql append escaped value failed, ret %d, " #v " %.*s", \
               ret, static_cast<int32_t>((v_len)), (v)); \
         } \
       } \

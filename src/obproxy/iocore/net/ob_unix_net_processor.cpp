@@ -116,13 +116,13 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
 
   if (OB_ISNULL(na = create_net_accept())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "fail to create_net_accept", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to create_net_accept", K(ret));
   } else if (OB_UNLIKELY(opt.local_port_ < 0) || OB_UNLIKELY(opt.local_port_ > 65536)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(ERROR, "invalid argument", K(opt.local_port_));
+    PROXY_NET_LOG(EDIAG, "invalid argument", K(opt.local_port_));
   } else if (OB_ISNULL(na->action_ = new(std::nothrow) ObNetAcceptAction())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "fail to new ObNetAcceptAction", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to new ObNetAcceptAction", K(ret));
   } else {
     // Potentially upgrade to SSL.
     upgrade_etype(upgraded_etype);
@@ -161,23 +161,23 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
     if (opt.frequent_accept_) {
       if (accept_threads_ > 0) {
         if (OB_FAIL(na->do_listen(BLOCKING))) {
-          PROXY_NET_LOG(ERROR, "fail to do_listen BLOCKING", K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to do_listen BLOCKING", K(ret));
         } else {
           for (int64_t i = 1; (i < accept_threads_) && OB_SUCC(ret); ++i) {
             if (OB_ISNULL(net_accept = new (std::nothrow) ObNetAccept())){
               ret = OB_ALLOCATE_MEMORY_FAILED;
-              PROXY_NET_LOG(ERROR, "fail to new ObNetAccept", K(ret));
+              PROXY_NET_LOG(EDIAG, "fail to new ObNetAccept", K(ret));
             } else if (OB_FAIL(net_accept->deep_copy(*na))) {
-              PROXY_NET_LOG(ERROR, "fail to deep_copy ObNetAccept", K(i), K(ret));
+              PROXY_NET_LOG(EDIAG, "fail to deep_copy ObNetAccept", K(i), K(ret));
             } else {
               ret_len = snprintf(thr_name, MAX_THREAD_NAME_LENGTH, "[ACCEPT %ld:%d]", i - 1,
                                  ops_ip_port_host_order(accept_ip));
               if (OB_UNLIKELY(ret_len <= 0) || OB_UNLIKELY(ret_len >= MAX_THREAD_NAME_LENGTH)) {
                 ret = OB_SIZE_OVERFLOW;
-                PROXY_NET_LOG(ERROR, "fail to snprintf thr_name", K(ret));
+                PROXY_NET_LOG(EDIAG, "fail to snprintf thr_name", K(ret));
               } else {
                 if (OB_FAIL(net_accept->init_accept_loop(thr_name, opt.stacksize_))) {
-                  PROXY_NET_LOG(ERROR, "fail to init_accept_loop", K(i), K(accept_ip));
+                  PROXY_NET_LOG(EDIAG, "fail to init_accept_loop", K(i), K(accept_ip));
                 } else {
                   PROXY_NET_LOG(DEBUG, "created accept thread", K(i), K(accept_ip));
                 }
@@ -197,10 +197,10 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
                                ops_ip_port_host_order(accept_ip));
             if (OB_UNLIKELY(ret_len <= 0) || OB_UNLIKELY(ret_len >= MAX_THREAD_NAME_LENGTH)) {
               ret = OB_SIZE_OVERFLOW;
-              PROXY_NET_LOG(ERROR, "fail to snprintf thr_name", K(ret));
+              PROXY_NET_LOG(EDIAG, "fail to snprintf thr_name", K(ret));
             } else {
               if (OB_FAIL(na->init_accept_loop(thr_name, opt.stacksize_))) {
-                PROXY_NET_LOG(ERROR, "fail to init_accept_loop", K(accept_ip));
+                PROXY_NET_LOG(EDIAG, "fail to init_accept_loop", K(accept_ip));
                 delete na;
                 na = NULL;
               } else {
@@ -211,12 +211,12 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
         } // end na->do_listen(BLOCKING)
       } else { // true == opt.frequent_accept_ && 0 == accept_threads_
         if(OB_FAIL(na->init_accept_per_thread())) {
-          PROXY_NET_LOG(ERROR, "fail to init_accept_per_thread", K(ret));
+          PROXY_NET_LOG(EDIAG, "fail to init_accept_per_thread", K(ret));
         }
       }
     } else { // false == opt.frequent_accept_
       if (OB_FAIL(na->init_accept())) {
-        PROXY_NET_LOG(ERROR, "fail to init_accept", K(ret));
+        PROXY_NET_LOG(EDIAG, "fail to init_accept", K(ret));
       }
     }
 
@@ -230,7 +230,7 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
                                                TCP_DEFER_ACCEPT,
                                                &defer_accept_timeout,
                                                sizeof(int32_t)))) {
-      PROXY_NET_LOG(ERROR, "can't set defer accept timeout", K(defer_accept_timeout), K(ret));
+      PROXY_NET_LOG(EDIAG, "can't set defer accept timeout", K(defer_accept_timeout), K(ret));
     }
 #endif
 
@@ -242,7 +242,7 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
                                                TCP_INIT_CWND,
                                                &tcp_init_cwnd,
                                                sizeof(int32_t)))) {
-      PROXY_NET_LOG(ERROR, "can't set initial congestion window", K(tcp_init_cwnd), K(ret));
+      PROXY_NET_LOG(EDIAG, "can't set initial congestion window", K(tcp_init_cwnd), K(ret));
     }
 #endif
   }
@@ -272,10 +272,10 @@ inline int ObUnixNetProcessor::connect_internal(
 
   if (OB_ISNULL(cont.mutex_) || OB_ISNULL(ethread = cont.mutex_->thread_holding_)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(ERROR, "invalid argument", K(ret));
+    PROXY_NET_LOG(EDIAG, "invalid argument", K(ret));
   } else if (OB_ISNULL(vc = reinterpret_cast<ObUnixNetVConnection *>(allocate_vc()))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "fail to allocate_vc", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to allocate_vc", K(ret));
   } else {
     if (NULL != opt) {
       vc->options_ = *opt;
@@ -293,7 +293,7 @@ inline int ObUnixNetProcessor::connect_internal(
     vc->source_type_ = (opt->is_inner_connect_ ? ObUnixNetVConnection::VC_INNER_CONNECT : ObUnixNetVConnection::VC_CONNECT);
     if (OB_UNLIKELY(!ops_ip_copy(vc->server_addr_, target))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_NET_LOG(ERROR, "fail to ops_ip_copy vc->server_addr_", K(vc), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to ops_ip_copy vc->server_addr_", K(vc), K(ret));
     } else {
       //opt->ethread_ direct to client vc created thread
       //ethread direct to client session->mutex_->thread_holding_ thread
@@ -303,14 +303,14 @@ inline int ObUnixNetProcessor::connect_internal(
                       KPC(ethread), "expected thread", *(opt->ethread_));
         if (OB_ISNULL(opt->ethread_->schedule_imm(vc))) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_NET_LOG(WARN, "fail to schedule switch thread", "ethread", *(opt->ethread_), K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to schedule switch thread", "ethread", *(opt->ethread_), K(ret));
         }
       } else if (OB_UNLIKELY(!ethread->is_event_thread_type(opt->etype_))) {
         //we need use ET_CALL thread for connect_up.
         //we will never arrive here now, here it's just for defense
         if (OB_ISNULL(g_event_processor.schedule_imm(vc, opt->etype_))) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_NET_LOG(WARN, "fail to schedule switch thread", "type", opt->etype_, K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to schedule switch thread", "type", opt->etype_, K(ret));
         }
       } else {
         MUTEX_TRY_LOCK(cont_lock, cont.mutex_, ethread);
@@ -323,7 +323,7 @@ inline int ObUnixNetProcessor::connect_internal(
             ret = vc->connect_up(*ethread, NO_FD);
             // some error happen, has callout in connect_up, just free vc
             if (OB_FAIL(ret)) {
-              PROXY_NET_LOG(WARN, "fail to connect_up, vc will be free", K(ret));
+              PROXY_NET_LOG(WDIAG, "fail to connect_up, vc will be free", K(ret));
               vc->free();
               vc = NULL;
               ret = OB_SUCCESS;
@@ -332,12 +332,12 @@ inline int ObUnixNetProcessor::connect_internal(
             PROXY_NET_LOG(DEBUG, "lock net_handler failed, need retry", KPC(ethread));
             if (OB_ISNULL(ethread->schedule_imm(vc))) {
               ret = OB_ERR_UNEXPECTED;
-              PROXY_NET_LOG(WARN, "fail to schedule retry connect", KPC(opt->ethread_), K(ret));
+              PROXY_NET_LOG(WDIAG, "fail to schedule retry connect", KPC(opt->ethread_), K(ret));
             }
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_NET_LOG(ERROR, "lock failed, it should not happened", KPC(ethread), K(ret));
+          PROXY_NET_LOG(EDIAG, "lock failed, it should not happened", KPC(ethread), K(ret));
         }
       }
     }
@@ -407,7 +407,7 @@ private:
         break;
 
       case NET_EVENT_OPEN_FAILED:
-        PROXY_NET_LOG(WARN, "connect net open failed");
+        PROXY_NET_LOG(WDIAG, "connect net open failed");
         if (!action_.cancelled_) {
           action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED, reinterpret_cast<void *>(e));
         }
@@ -422,10 +422,10 @@ private:
         if (!action_.cancelled_) {
           if (OB_FAIL(ObSocketManager::getsockopt(vc_->con_.fd_, SOL_SOCKET, SO_ERROR,
               reinterpret_cast<void *>(&optval), &optlen))) {
-            PROXY_NET_LOG(WARN, "fail to getsockopt", "addr", vc_->con_.addr_, K(ret));
+            PROXY_NET_LOG(WDIAG, "fail to getsockopt", "addr", vc_->con_.addr_, K(ret));
           } else if (0 != optval) {
             ret = OB_ERR_SYS;
-            PROXY_NET_LOG(WARN, "detect socket error", K(optval), "addr", vc_->con_.addr_, K(ret));
+            PROXY_NET_LOG(WDIAG, "detect socket error", K(optval), "addr", vc_->con_.addr_, K(ret));
           } else {
             PROXY_NET_LOG(DEBUG, "connection established");
             // disable write on vc
@@ -451,7 +451,7 @@ private:
       }
 
       case VC_EVENT_INACTIVITY_TIMEOUT:
-        PROXY_NET_LOG(WARN, "connect timed out", "addr", vc_->con_.addr_, K(this), K_(timeout));
+        PROXY_NET_LOG(WDIAG, "connect timed out", "addr", vc_->con_.addr_, K(this), K_(timeout));
         vc_->do_io_close();
         if (!action_.cancelled_) {
           action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED,
@@ -460,7 +460,7 @@ private:
         break;
 
       case VC_EVENT_DETECT_SERVER_DEAD:
-        PROXY_NET_LOG(WARN, "detect server addr dead", "addr", vc_->con_.addr_, K(this));
+        PROXY_NET_LOG(WDIAG, "detect server addr dead", "addr", vc_->con_.addr_, K(this));
         vc_->do_io_close();
         if (!action_.cancelled_) {
           action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED,
@@ -469,7 +469,7 @@ private:
         break;
 
       default:
-        PROXY_NET_LOG(WARN, "unknown connect event");
+        PROXY_NET_LOG(WDIAG, "unknown connect event");
         if (!action_.cancelled_) {
           action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED,
                                              reinterpret_cast<void *>(-ENET_CONNECT_FAILED));
@@ -517,12 +517,12 @@ int ObNetProcessor::connect(ObContinuation &cont, const sockaddr &target,
 
   if (OB_ISNULL(cont.mutex_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get cont mutex, it's null", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get cont mutex, it's null", K(ret));
   } else if (OB_ISNULL(c = new(std::nothrow) ObCheckConnect(*cont.mutex_))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "fail to new ObCheckConnect", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to new ObCheckConnect", K(ret));
   } else if (OB_FAIL(c->connect(cont, target, action, timeout, opt))) {
-    PROXY_NET_LOG(WARN, "fail to connect with timeout", K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to connect with timeout", K(ret));
   }
   return ret;
 }
@@ -540,7 +540,7 @@ int ObUnixNetProcessor::start()
   ObEThread **ethreads = g_event_processor.event_thread_[etype];
   for (int64_t i = 0; i < net_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(initialize_thread_for_net(ethreads[i]))) {
-      PROXY_NET_LOG(ERROR, "fail to initialize thread for net", K(i), K(ret));
+      PROXY_NET_LOG(EDIAG, "fail to initialize thread for net", K(i), K(ret));
     }
   }
   return ret;
@@ -553,9 +553,9 @@ inline ObNetAccept *ObUnixNetProcessor::create_net_accept()
   int ret = OB_SUCCESS;
   ObNetAccept *na = NULL;
   if (OB_ISNULL(na = new(std::nothrow) ObNetAccept())) {
-    PROXY_NET_LOG(ERROR, "fail to allocate memory for create_net_accept an ObNetAccept");
+    PROXY_NET_LOG(EDIAG, "fail to allocate memory for create_net_accept an ObNetAccept");
   } else if (OB_FAIL(na->init())) {
-    PROXY_NET_LOG(ERROR, "fail to init ObNetAccept", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to init ObNetAccept", K(ret));
     delete na;
     na = NULL;
   }
@@ -567,9 +567,9 @@ inline ObNetVConnection *ObUnixNetProcessor::allocate_vc()
   int ret = OB_SUCCESS;
   ObUnixNetVConnection *conn = NULL;
   if (OB_ISNULL(conn = op_reclaim_alloc(ObUnixNetVConnection))) {
-    PROXY_NET_LOG(ERROR, "fail to allocate memory for allocate_vc an ObUnixNetVConnection");
+    PROXY_NET_LOG(EDIAG, "fail to allocate memory for allocate_vc an ObUnixNetVConnection");
   } else if (OB_FAIL(conn->init())) {
-    PROXY_NET_LOG(ERROR, "fail to init ObUnixNetVConnection", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to init ObUnixNetVConnection", K(ret));
     op_reclaim_free(conn);
     conn = NULL;
   }

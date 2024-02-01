@@ -147,7 +147,7 @@ inline int ObProxyParser::obparse(const common::ObString &sql_string,
   parse_result.sql_mode_ = DEFAULT_MYSQL_MODE; // DEFAULT_MYSQL_MODE;
   if(sql_string.empty()) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "sql_string is empty", K(ret));
+    PROXY_LOG(WDIAG, "sql_string is empty", K(ret));
   } else {
     common::ObString parse_sql_string = sql_string;
     //set ; ob parse need end with ;
@@ -159,12 +159,12 @@ inline int ObProxyParser::obparse(const common::ObString &sql_string,
     }
     if (0 != init_ob_result(parse_result, parse_sql_string)) {
       ret = common::OB_ERR_PARSER_INIT;
-      PROXY_LOG(WARN, "failed to initialized parser", KERRMSGS, K(ret));
+      PROXY_LOG(WDIAG, "failed to initialized parser", KERRMSGS, K(ret));
     } else {
       sql::ObSQLParser sql_parser(*(common::ObIAllocator *)(parse_result.malloc_pool_),
                            parse_result.sql_mode_);
       if (OB_FAIL(sql_parser.parse(parse_sql_string.ptr(),  parse_sql_string.length(), parse_result))) {
-        PROXY_LOG(WARN, "failed to do obparse", K(sql_string), K(ret));
+        PROXY_LOG(WDIAG, "failed to do obparse", K(sql_string), K(ret));
       } else {
         PROXY_LOG(DEBUG, "obparse succ", K(sql_string), K(ret));
       }
@@ -183,7 +183,7 @@ inline int ObProxyParser::parse(const common::ObString &sql_string,
   int ret = common::OB_SUCCESS;
   if (0 != init_result(parse_result, sql_string.ptr())) {
     ret = common::OB_ERR_PARSER_INIT;
-    PROXY_LOG(WARN, "failed to initialized parser", KERRMSGS, K(ret));
+    PROXY_LOG(WDIAG, "failed to initialized parser", KERRMSGS, K(ret));
   } else {
     switch (connection_collation) {
       //case 28/*CS_TYPE_GBK_CHINESE_CI*/:

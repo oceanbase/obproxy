@@ -20,6 +20,7 @@ lib/allocator/ob_fifo_allocator.h\
 lib/allocator/page_arena.h\
 lib/allocator/ob_pcounter.h\
 lib/allocator/ob_mem_leak_checker.h\
+lib/allocator/ob_mem_leak_checker.cpp\
 lib/allocator/ob_concurrent_fifo_allocator.h\
 lib/allocator/ob_lf_fifo_allocator.h\
 lib/allocator/ob_retire_station.h\
@@ -72,6 +73,7 @@ lib/container/ob_fixed_array.h\
 lib/container/ob_array_helper.h\
 lib/container/ob_array_serialization.h\
 lib/container/ob_array_iterator.h\
+lib/coro/co_var.h\
 lib/file/file_directory_utils.cpp\
 lib/file/ob_file.h\
 lib/file/ob_file.cpp\
@@ -118,6 +120,8 @@ lib/lock/ob_drw_lock.h\
 lib/lock/ob_bucket_lock.h\
 lib/lock/ob_recursive_mutex.h\
 lib/lock/ob_tc_ref.h\
+lib/number/ob_number_format_models.h\
+lib/number/ob_number_format_models.cpp\
 lib/number/ob_number_v2.h\
 lib/number/ob_number_v2.cpp\
 lib/objectpool/ob_global_factory.h\
@@ -209,6 +213,8 @@ lib/utility/ob_preload.h\
 lib/utility/ob_print_kv.h\
 lib/utility/ob_print_utils.h\
 lib/utility/ob_print_utils.cpp\
+lib/utility/ob_backtrace.h\
+lib/utility/ob_backtrace.cpp\
 lib/utility/utility.h\
 lib/utility/utility.cpp\
 lib/utility/ob_macro_utils.h\
@@ -222,6 +228,9 @@ lib/utility/ob_2_0_full_link_trace_info.h\
 lib/utility/ob_2_0_full_link_trace_info.cpp\
 lib/utility/ob_2_0_sess_veri.h\
 lib/utility/ob_2_0_sess_veri.cpp\
+lib/utility/ob_fast_convert.h\
+lib/utility/ob_fast_convert.cpp\
+lib/utility/ob_tracepoint.h\
 lib/net/ob_addr.h\
 lib/net/ob_addr.cpp\
 lib/net/tbnetutil.cpp\
@@ -288,7 +297,13 @@ lib/mysqlclient/ob_isql_connection.h\
 lib/encode/ob_base64_encode.h\
 lib/encode/ob_base64_encode.cpp\
 lib/rowid/ob_urowid.h\
-lib/rowid/ob_urowid.cpp
+lib/rowid/ob_urowid.cpp\
+lib/wide_integer/ob_wide_integer_cmp_funcs.cpp\
+lib/wide_integer/ob_wide_integer_cmp_funcs.h\
+lib/wide_integer/ob_wide_integer_str_funcs.cpp\
+lib/wide_integer/ob_wide_integer_str_funcs.h\
+lib/wide_integer/ob_wide_integer.cpp\
+lib/wide_integer/ob_wide_integer.h
 
 libregex_sources:=\
 lib/regex/regex/regerrs.h\

@@ -65,6 +65,8 @@ public:
   void set_unknown_part_key(bool has_unknown_part_key) { has_unknown_part_key_ = has_unknown_part_key; }
   bool is_template_table() const { return is_template_table_; }
   void set_template_table(bool is_template_table) { is_template_table_ = is_template_table; }
+   bool is_primary_key_as_part_expr() const { return is_primary_key_as_part_expr_; }
+  void set_primary_key_as_part_expr(bool is_pk_as_part_expr) { is_primary_key_as_part_expr_ = is_pk_as_part_expr; }
 
   share::schema::ObPartitionLevel get_part_level() const { return part_level_; }
   common::ObCollationType get_table_cs_type() const { return table_cs_type_; }
@@ -90,6 +92,7 @@ private:
   bool has_generated_key_;
   bool has_unknown_part_key_;
   bool is_template_table_;
+  bool is_primary_key_as_part_expr_;
   share::schema::ObPartitionLevel part_level_;
   common::ObCollationType table_cs_type_;
 

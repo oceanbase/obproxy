@@ -87,14 +87,14 @@ int ObProxyPbUtils::parse_database_prop_rule(const std::string &prop_rule, ObDat
   ObArenaAllocator allocator(ObModIds::OB_JSON_PARSER);
   Parser parser;
   if (OB_FAIL(parser.init(&allocator))) {
-    LOG_WARN("json parser init failed", K(ret));
+    LOG_WDIAG("json parser init failed", K(ret));
   } else if (OB_FAIL(parser.parse(prop_rule.c_str(), prop_rule.length(), json_root))) {
-    LOG_WARN("parse json failed", K(ret), "json_str", prop_rule.c_str());
+    LOG_WDIAG("parse json failed", K(ret), "json_str", prop_rule.c_str());
   } else if (OB_ISNULL(json_root)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json root is null", K(ret));
+    LOG_WDIAG("json root is null", K(ret));
   } else if (OB_FAIL(child_info.parse_db_prop_rule(*json_root))) {
-    LOG_WARN("fail to parse db prop rule", K(child_info), K(ret));
+    LOG_WDIAG("fail to parse db prop rule", K(child_info), K(ret));
   }
   return ret;
 }
@@ -110,7 +110,7 @@ int ObProxyPbUtils::parse_group_cluster(const std::string &gc_name, const std::s
   int64_t last_eid = -1; // start from -1
   while (OB_SUCC(ret) && std::string::npos != (pos = es_str.find(",", pos))) {
     if (OB_FAIL(parse_es_info(es_str.substr(start, pos - start), gc_info, last_eid))) {
-      LOG_WARN("fail to parse es_info", "group value", es_str.c_str());
+      LOG_WDIAG("fail to parse es_info", "group value", es_str.c_str());
     } else {
       ++pos;
       start = pos;
@@ -118,7 +118,7 @@ int ObProxyPbUtils::parse_group_cluster(const std::string &gc_name, const std::s
   }
   if (OB_SUCC(ret) && start < es_str.length()) {
     if (OB_FAIL(parse_es_info(es_str.substr(start), gc_info, last_eid))) {
-      LOG_WARN("fail to parse es_info", "group value", es_str.c_str());
+      LOG_WDIAG("fail to parse es_info", "group value", es_str.c_str());
     }
   }
   return ret;
@@ -133,7 +133,7 @@ int ObProxyPbUtils::parse_es_info(const std::string &sub_str, ObGroupCluster &gc
   size_t rw_pos = std::string::npos;
   if (std::string::npos == (colon_pos1 = sub_str.find(":"))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid tpo config", "group value", sub_str.c_str());
+    LOG_WDIAG("invalid tpo config", "group value", sub_str.c_str());
   } else if (std::string::npos != (colon_pos2 = sub_str.find(":", colon_pos1 + 1))) {
     rw_pos = sub_str.find("w", colon_pos2 + 1);
   } else {
@@ -141,7 +141,7 @@ int ObProxyPbUtils::parse_es_info(const std::string &sub_str, ObGroupCluster &gc
   }
   if (std::string::npos == rw_pos) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid tpo config", "group value", sub_str.c_str());
+    LOG_WDIAG("invalid tpo config", "group value", sub_str.c_str());
   }
   if (OB_SUCC(ret)) {
     ObString tmp_str;
@@ -173,24 +173,24 @@ int ObProxyPbUtils::parse_shard_rule(const std::string &rule_name,
   if (rule_name.compare("tbNamePattern") == 0) {
     rule_info.tb_name_pattern_.set_value(rule_value.length(), rule_value.c_str());
     if (OB_FAIL(parse_rule_pattern(rule_value, rule_info.tb_prefix_, rule_info.tb_size_, rule_info.tb_suffix_len_, rule_info.tb_tail_))) {
-      LOG_WARN("fail to parse tbNamePattern", K(ret), "pattern_str", rule_value.c_str());
+      LOG_WDIAG("fail to parse tbNamePattern", K(ret), "pattern_str", rule_value.c_str());
     }
   } else if (rule_name.compare("dbNamePattern") == 0) {
     rule_info.db_name_pattern_.set_value(rule_value.length(), rule_value.c_str());
     if (OB_FAIL(parse_rule_pattern(rule_value, rule_info.db_prefix_, rule_info.db_size_, rule_info.db_suffix_len_, rule_info.db_tail_))) {
-      LOG_WARN("fail to parse dbNamePattern", K(ret), "pattern_str", rule_value.c_str());
+      LOG_WDIAG("fail to parse dbNamePattern", K(ret), "pattern_str", rule_value.c_str());
     }
   } else if (rule_name.compare("tbRules") == 0) {
     if (OB_FAIL(parse_json_rules(rule_value, rule_info.tb_rules_, rule_info.allocator_))) {
-      LOG_WARN("fail to parse tb rules", K(ret), "rules_str", rule_value.c_str());
+      LOG_WDIAG("fail to parse tb rules", K(ret), "rules_str", rule_value.c_str());
     }
   } else if (rule_name.compare("dbRules") == 0) {
     if (OB_FAIL(parse_json_rules(rule_value, rule_info.db_rules_, rule_info.allocator_))) {
-      LOG_WARN("fail to parse db rules", K(ret), "rules_str", rule_value.c_str());
+      LOG_WDIAG("fail to parse db rules", K(ret), "rules_str", rule_value.c_str());
     }
   } else if (rule_name.compare("elasticRules") == 0) {
     if (OB_FAIL(parse_json_rules(rule_value, rule_info.es_rules_, rule_info.allocator_))) {
-      LOG_WARN("fail to parse elastic rules", K(ret), "rules_str", rule_value.c_str());
+      LOG_WDIAG("fail to parse elastic rules", K(ret), "rules_str", rule_value.c_str());
     }
   } else if (rule_name.compare("tbSuffixPadding") == 0) {
     rule_info.tb_suffix_.set_value(rule_value.length(), rule_value.c_str());
@@ -209,11 +209,11 @@ int ObProxyPbUtils::parse_json_rules(const std::string &json_str, ObProxyShardRu
     ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
     Parser parser;
     if (OB_FAIL(parser.init(&json_allocator))) {
-      LOG_WARN("json parser init failed", K(ret));
+      LOG_WDIAG("json parser init failed", K(ret));
     } else if (OB_FAIL(parser.parse(json_str.c_str(), json_str.length(), json_root))) {
       LOG_INFO("parse json failed", "json_str", json_str.c_str(), K(ret));
     } else if (OB_FAIL(do_parse_json_rules(json_root, rule_list, allocator))) {
-      LOG_WARN("fail to do_parse_json_rules", "json_str", json_str.c_str(), K(ret));
+      LOG_WDIAG("fail to do_parse_json_rules", "json_str", json_str.c_str(), K(ret));
     }
   }
   if (OB_FAIL(ret) && json_str.compare("null") == 0) {
@@ -228,7 +228,7 @@ int ObProxyPbUtils::do_parse_json_rules(Value *json_root, ObProxyShardRuleList &
   int ret = OB_SUCCESS;
   if (OB_ISNULL(json_root)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json root is null", K(ret));
+    LOG_WDIAG("json root is null", K(ret));
   } else if (JT_STRING == json_root->get_type()) {
   } else if (JT_ARRAY == json_root->get_type()) {
     ObProxyShardRuleInfo rule;
@@ -236,7 +236,7 @@ int ObProxyPbUtils::do_parse_json_rules(Value *json_root, ObProxyShardRuleList &
       rule.reset();
       if (JT_STRING == it->get_type()) {
         if (OB_FAIL(force_parse_groovy(it->get_string(), rule, allocator))) {
-          LOG_WARN("fail to pare groovy", K(ret));
+          LOG_WDIAG("fail to pare groovy", K(ret));
         } else if (rule.is_valid()) {
           rule_list.push_back(rule);
         }
@@ -244,7 +244,7 @@ int ObProxyPbUtils::do_parse_json_rules(Value *json_root, ObProxyShardRuleList &
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid json config", K(ret));
+    LOG_WDIAG("invalid json config", K(ret));
   }
 
   return ret;
@@ -265,14 +265,14 @@ int ObProxyPbUtils::parse_rule_pattern(const std::string &pattern, ObProxyConfig
     start_str.assign_ptr(sm1.str(2).c_str(), static_cast<int32_t>(sm1.str(2).length()));
     suffix_len = start_str.length();
     if (OB_FAIL(get_int_value(start_str, start))) {
-      LOG_WARN("fail to get int value for start", K(start_str), K(ret));
+      LOG_WDIAG("fail to get int value for start", K(start_str), K(ret));
     }
 
     if (OB_SUCC(ret)) {
       ObString end_str;
       end_str.assign_ptr(sm1.str(3).c_str(), static_cast<int32_t>(sm1.str(3).length()));
       if (OB_FAIL(get_int_value(end_str, end))) {
-        LOG_WARN("fail to get int value for end", K(end_str), K(ret));
+        LOG_WDIAG("fail to get int value for end", K(end_str), K(ret));
       }
     }
 
@@ -283,10 +283,9 @@ int ObProxyPbUtils::parse_rule_pattern(const std::string &pattern, ObProxyConfig
         name_tail.set_value(tail_str);
         LOG_INFO("tail_str ", "pattern", pattern.c_str(),K(tail_str));
       }
+      count = end - start + 1;
+      name_prefix.set_value(sm1.str(1).length(), sm1.str(1).c_str());
     }
-
-    count = end - start + 1;
-    name_prefix.set_value(sm1.str(1).length(), sm1.str(1).c_str());
   } else {
     // single tb or db group
     count = 1;
@@ -328,9 +327,9 @@ int ObProxyPbUtils::force_parse_groovy(const ObString &expr,
     start_str.assign_ptr(sm.str(2).c_str(), static_cast<int32_t>(sm.str(2).length()));
     end_str.assign_ptr(sm.str(3).c_str(), static_cast<int32_t>(sm.str(3).length()));
     if (OB_FAIL(get_int_value(start_str, start_pos))) {
-      LOG_WARN("fail to get int value for sub_string_start_", K(start_str), K(ret));
+      LOG_WDIAG("fail to get int value for sub_string_start_", K(start_str), K(ret));
     } else if (OB_FAIL(get_int_value(end_str, end_pos))) {
-      LOG_WARN("fail to get int value for sub_string_end", K(end_str), K(ret));
+      LOG_WDIAG("fail to get int value for sub_string_end", K(end_str), K(ret));
     } else {
       if (sub_str_match1) {
         snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(substr(%.*s, %ld, %ld))",
@@ -367,14 +366,14 @@ int ObProxyPbUtils::force_parse_groovy(const ObString &expr,
     ObFuncExprResolverContext ctx(&allocator, &factory);
     ObFuncExprResolver resolver(ctx);
     if (OB_FAIL(parser.parse(parse_sql, result))) {
-      LOG_WARN("parse failed", K(ret), K(parse_sql));
+      LOG_WDIAG("parse failed", K(ret), K(parse_sql));
     } else if (OB_FAIL(resolver.resolve(result.param_node_, info.expr_))) {
-      LOG_WARN("proxy expr resolve failed", K(ret));
+      LOG_WDIAG("proxy expr resolve failed", K(ret));
     }
   }
 
   if (OB_FAIL(ret)) {
-    LOG_WARN("sharding expr not supported", K(expr));
+    LOG_WDIAG("sharding expr not supported", K(expr));
     ret = OB_SUCCESS;
   }
 
@@ -429,7 +428,7 @@ int ObProxyPbUtils::parse_shard_url(const std::string &shard_url, ObShardConnect
           ObIpAddr ip_addr;
           int64_t valid_cnt;
           if (OB_FAIL(get_addr_by_host(hname, &ip_addr, 1, false, valid_cnt))) {
-            LOG_WARN("invalid shard url, can not parse connector info", "shard_url", shard_url.c_str(), K(ret));
+            LOG_WDIAG("invalid shard url, can not parse connector info", "shard_url", shard_url.c_str(), K(ret));
           } else {
             conn_info.is_physic_ip_ = false;
           }
@@ -448,7 +447,7 @@ int ObProxyPbUtils::parse_shard_url(const std::string &shard_url, ObShardConnect
     get_str_value_by_name(shard_url, "database=", conn_info.database_name_);
     get_str_value_by_name(shard_url, "read_consistency=", conn_info.read_consistency_);
   } else {
-    LOG_WARN("invalid shard url, can not parse connector info", "shard_url", shard_url.c_str());
+    LOG_WDIAG("invalid shard url, can not parse connector info", "shard_url", shard_url.c_str());
   }
 
   return ret;
@@ -469,7 +468,7 @@ void ObProxyPbUtils::parse_shard_auth_user(ObShardConnector &conn_info)
   ObProxyAuthParser::analyze_user_name_attr(full_user_name, is_standard_username, separator);
   if (OB_FAIL(ObProxyAuthParser::handle_full_user_name(full_user_name, separator, user, tenant,
                                                        cluster, cluster_id_str))) {
-    LOG_WARN("fail to handle full user name", K(full_user_name), K(separator), K(ret));
+    LOG_WDIAG("fail to handle full user name", K(full_user_name), K(separator), K(ret));
   } else {
     conn_info.tenant_name_.assign_ptr(tenant.ptr(), tenant.length());
     conn_info.cluster_name_.assign_ptr(cluster.ptr(), cluster.length());
@@ -484,7 +483,7 @@ int ObProxyPbUtils::dump_tenant_info_to_file(ObDbConfigLogicTenant &tenant_info)
   char cur_timestamp[OB_MAX_TIMESTAMP_LENGTH];
   if (OB_FAIL(convert_timestamp_to_version(hrtime_to_usec(get_hrtime_internal()),
                                            cur_timestamp, OB_MAX_TIMESTAMP_LENGTH))) {
-    LOG_WARN("fail to convert current timestamp to version", K(ret));
+    LOG_WDIAG("fail to convert current timestamp to version", K(ret));
   } else {
     ObString version;
     version.assign_ptr(cur_timestamp, static_cast<int32_t>(strlen(cur_timestamp)));
@@ -497,11 +496,11 @@ int ObProxyPbUtils::dump_tenant_info_to_file(ObDbConfigLogicTenant &tenant_info)
              get_global_layout().get_dbconfig_dir(),
              static_cast<int32_t>(tenant_name.length()), tenant_name.ptr());
     if (OB_FAIL(tenant_info.to_json_str(buf))) {
-      LOG_WARN("fail to get json str for tenant info", K(tenant_name), K(ret));
+      LOG_WDIAG("fail to get json str for tenant info", K(tenant_name), K(ret));
     } else if (OB_FAIL(tenant_info.get_file_name(file_name, FileDirectoryUtils::MAX_PATH))) {
-      LOG_WARN("fail to get file name for tenant info", K(tenant_name), K(ret));
+      LOG_WDIAG("fail to get file name for tenant info", K(tenant_name), K(ret));
     } else if (OB_FAIL(ObProxyFileUtils::write_to_file(tenant_path, file_name, buf.ptr(), buf.length(), need_backup))) {
-      LOG_WARN("fail to write child info to file", K(ret), K(tenant_name));
+      LOG_WDIAG("fail to write child info to file", K(ret), K(tenant_name));
     }
   }
   return ret;
@@ -524,27 +523,27 @@ int ObProxyPbUtils::dump_database_info_to_file(ObDbConfigLogicDb &db_info)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(dump_child_array_to_file(db_info.da_array_))) {
-      LOG_WARN("fail to write database authorities into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write database authorities into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(dump_child_array_to_file(db_info.dv_array_))) {
-      LOG_WARN("fail to write database variables into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write database variables into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(dump_child_array_to_file(db_info.dp_array_))) {
-      LOG_WARN("fail to write database properties into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write database properties into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(dump_child_array_to_file(db_info.st_array_))) {
-      LOG_WARN("fail to write shards topologies into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write shards topologies into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(dump_child_array_to_file(db_info.sr_array_))) {
-      LOG_WARN("fail to write shards routers into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write shards routers into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(dump_child_array_to_file(db_info.sd_array_))) {
-      LOG_WARN("fail to write shards distributes  into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write shards distributes  into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(dump_child_array_to_file(db_info.sc_array_))) {
-      LOG_WARN("fail to write shards connectors into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write shards connectors into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(dump_child_array_to_file(db_info.sp_array_))) {
-      LOG_WARN("fail to write shard properties into file", K(tenant_name), K(database_name), K(ret));
+      LOG_WDIAG("fail to write shard properties into file", K(tenant_name), K(database_name), K(ret));
     } else if (OB_FAIL(db_info.to_json_str(buf))) {
-      LOG_WARN("fail to get json str for database", K(ret));
+      LOG_WDIAG("fail to get json str for database", K(ret));
     } else if (OB_FAIL(db_info.get_file_name(file_name, FileDirectoryUtils::MAX_PATH))) {
-      LOG_WARN("fail to get file name for database", K(database_name), K(ret));
+      LOG_WDIAG("fail to get file name for database", K(database_name), K(ret));
     } else if (OB_FAIL(ObProxyFileUtils::write_to_file(db_path, file_name, buf.ptr(), buf.length(), need_backup))) {
-      LOG_WARN("fail to write database to file", K(ret));
+      LOG_WDIAG("fail to write database to file", K(ret));
     }
   }
 
@@ -561,7 +560,7 @@ int ObProxyPbUtils::dump_child_array_to_file(ObDbConfigChildArrayInfo<T> &cr_arr
     if (!it->need_dump_config()) {
       // do nothing
     } else if (OB_FAIL(dump_child_info_to_file(*it))) {
-      LOG_WARN("fail to dump child info into file",  K(ret));
+      LOG_WDIAG("fail to dump child info into file",  K(ret));
     } else {
       it->set_need_dump_config(false);
     }
@@ -583,11 +582,11 @@ int ObProxyPbUtils::dump_child_info_to_file(const ObDbConfigChild &child_info)
            static_cast<int32_t>(tenant_name.length()), tenant_name.ptr(),
            static_cast<int32_t>(database_name.length()), database_name.ptr());
   if (OB_FAIL(child_info.to_json_str(buf))) {
-    LOG_WARN("fail to get json str for child info", K(child_info), K(ret));
+    LOG_WDIAG("fail to get json str for child info", K(child_info), K(ret));
   } else if (OB_FAIL(child_info.get_file_name(file_name, FileDirectoryUtils::MAX_PATH))) {
-    LOG_WARN("fail to get file name for child info", K(child_info), K(ret));
+    LOG_WDIAG("fail to get file name for child info", K(child_info), K(ret));
   } else if (OB_FAIL(ObProxyFileUtils::write_to_file(db_path, file_name, buf.ptr(), buf.length(), need_backup))) {
-    LOG_WARN("fail to write child info to file", K(ret), K(child_info));
+    LOG_WDIAG("fail to write child info to file", K(ret), K(child_info));
   }
   return ret;
 }
@@ -604,13 +603,13 @@ int ObProxyPbUtils::init_and_dump_config_to_buf(common::ObSqlString &opt,
   //const ObString &tenant_name = tenant_info.tenant_name_.config_string_;
   ObSqlString buf;
   if (OB_FAIL(child_info_p->to_json_str(buf))) {
-    LOG_WARN("fail to get json str for tenant info", K(tenant_name), K(ret));
+    LOG_WDIAG("fail to get json str for tenant info", K(tenant_name), K(ret));
   } else if (OB_FAIL(child_info_p->get_file_name(file_name, FileDirectoryUtils::MAX_PATH))){
-     LOG_WARN("fail to get file name for tenant info", K(tenant_name), K(ret));
+     LOG_WDIAG("fail to get file name for tenant info", K(tenant_name), K(ret));
   } else if (OB_FAIL(dump_config_to_buf(opt, buf.ptr(), static_cast<int>(buf.length()), tenant_name,
                                         tenant_len, logical_db, logical_db_len,
                                         type, file_name, static_cast<int>(STRLEN(file_name))))){
-     LOG_WARN("fail to init child info to buf", K(ret), K(tenant_name));
+     LOG_WDIAG("fail to init child info to buf", K(ret), K(tenant_name));
   }
   return ret;
 }
@@ -625,7 +624,7 @@ int ObProxyPbUtils::dump_config_to_buf(ObSqlString &opt_str,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("error to dump CRD info to buf", K(ret));
+    LOG_WDIAG("error to dump CRD info to buf", K(ret));
   } else {
     const char *zone = get_global_proxy_config().server_zone;
     const char *ip = get_global_proxy_config().instance_ip;
@@ -646,10 +645,10 @@ int ObProxyPbUtils::dump_config_to_buf(ObSqlString &opt_str,
     if (OB_FAIL(ObTimeUtility::usec_format_to_str(time_us,
                                                 ObString(OBPROXY_CONFIG_LOG_TIMESTAMP_FORMAT),
                                                 cur_timestamp, cur_timestamp_len, pos))) {
-      LOG_WARN("fail to format timestamp  to str", K(time_us), K(ret));
+      LOG_WDIAG("fail to format timestamp  to str", K(time_us), K(ret));
     } else if (OB_UNLIKELY(pos < 3)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("invalid timestamp", K(time_us), K(pos), K(ret));
+      LOG_WDIAG("invalid timestamp", K(time_us), K(pos), K(ret));
     } else {
       cur_timestamp[pos - 3] = '\0'; // ms
     }
@@ -665,7 +664,7 @@ int ObProxyPbUtils::dump_config_to_buf(ObSqlString &opt_str,
                         CONFIG_NAME, file_name_len, file_name,
                         CONFIG_VALUE, buf_len, buf)
        )) {
-      LOG_WARN("dump config file into buffer error", K(ret), K(buf), K(logical_db), K(type), K(file_name));
+      LOG_WDIAG("dump config file into buffer error", K(ret), K(buf), K(logical_db), K(type), K(file_name));
     }
   }
   return ret;
@@ -678,7 +677,7 @@ int ObProxyPbUtils::dump_tenant_info_to_log(ObDbConfigLogicTenant &tenant_info)
   ObSqlString log_buf;
   if (OB_FAIL(init_and_dump_config_to_buf(log_buf, &tenant_info, tenant_name.ptr(), tenant_name.length(),
                                           "", 0, TYPE_TENANT))) {
-    LOG_WARN("fail to write tenant info to log", K(ret));
+    LOG_WDIAG("fail to write tenant info to log", K(ret));
   } else {
     LOG_DEBUG("CRD log info", K(ret), K(log_buf));
     _OBPROXY_CONFIG_LOG(INFO, "%.*s", static_cast<int>(log_buf.length()), log_buf.ptr());
@@ -697,24 +696,24 @@ int ObProxyPbUtils::dump_database_info_to_log(ObDbConfigLogicDb &db_info)
   const ObString &database_name = db_info_key.database_name_.config_string_;
 
   if (OB_FAIL(dump_child_array_to_log(db_info.da_array_, TYPE_DATABASE_AUTH))) {
-    LOG_WARN("fail to write database authorities into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write database authorities into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(dump_child_array_to_log(db_info.dv_array_, TYPE_DATABASE_VAR))) {
-    LOG_WARN("fail to write database variables into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write database variables into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(dump_child_array_to_log(db_info.dp_array_, TYPE_DATABASE_PROP))) {
-    LOG_WARN("fail to write database properties into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write database properties into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(dump_child_array_to_log(db_info.st_array_, TYPE_SHARDS_TPO))) {
-    LOG_WARN("fail to write shards topologies into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write shards topologies into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(dump_child_array_to_log(db_info.sr_array_, TYPE_SHARDS_ROUTER))) {
-    LOG_WARN("fail to write shards routers into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write shards routers into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(dump_child_array_to_log(db_info.sd_array_, TYPE_SHARDS_DIST))) {
-    LOG_WARN("fail to write shards distributes into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write shards distributes into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(dump_child_array_to_log(db_info.sc_array_, TYPE_SHARDS_CONNECTOR))) {
-    LOG_WARN("fail to write shards connectors into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write shards connectors into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(dump_child_array_to_log(db_info.sp_array_, TYPE_SHARDS_PROP))) {
-    LOG_WARN("fail to write shard properties into log", K(tenant_name), K(database_name), K(ret));
+    LOG_WDIAG("fail to write shard properties into log", K(tenant_name), K(database_name), K(ret));
   } else if (OB_FAIL(init_and_dump_config_to_buf(log_buf, &db_info, tenant_name.ptr(), tenant_name.length(),
                                                  database_name.ptr(), database_name.length(), TYPE_DATABASE))) {
-    LOG_WARN("fail to write database to file", K(ret));
+    LOG_WDIAG("fail to write database to file", K(ret));
   } else {
     LOG_DEBUG("CRD log info ", K(ret), K(log_buf)); // keep it in DEBUG log
     _OBPROXY_CONFIG_LOG(INFO, "%.*s", static_cast<int>(log_buf.length()), log_buf.ptr());
@@ -733,7 +732,7 @@ int ObProxyPbUtils::dump_child_array_to_log(ObDbConfigChildArrayInfo<T> &cr_arra
   typename ObDbConfigChildArrayInfo<T>::CCRHashMap::iterator it = map.begin();
   for (; OB_SUCC(ret) && it != map.end(); ++it) {
     if (OB_FAIL(dump_child_info_to_log(*it, type))) {
-      LOG_WARN("fail to dump child info into log",  K(ret));
+      LOG_WDIAG("fail to dump child info into log",  K(ret));
     }
   }
   return ret;
@@ -748,7 +747,7 @@ int ObProxyPbUtils::dump_child_info_to_log(const ObDbConfigChild &child_info, co
   const ObString &database_name = child_info.db_info_key_.database_name_.config_string_;
   if (OB_FAIL(init_and_dump_config_to_buf(log_buf, &child_info, tenant_name.ptr(), tenant_name.length(),
                                           database_name.ptr(), database_name.length(), type))) {
-    LOG_WARN("fail to write child info to log", K(ret), K(child_info));
+    LOG_WDIAG("fail to write child info to log", K(ret), K(child_info));
   } else {
     LOG_DEBUG("CRD log info ", K(ret), K(log_buf), K(log_buf.length())); //
     _OBPROXY_CONFIG_LOG(INFO, "%.*s", static_cast<int>(log_buf.length()), log_buf.ptr());
@@ -776,9 +775,9 @@ int ObProxyPbUtils::parse_local_child_config(ObDbConfigChild &child_info)
              static_cast<int32_t>(database_name.length()), database_name.ptr());
   }
   if (OB_FAIL(child_info.get_file_name(file_name, FileDirectoryUtils::MAX_PATH))) {
-    LOG_WARN("fail to get local file name", K(ret), K(database_name), K(tenant_name));
+    LOG_WDIAG("fail to get local file name", K(ret), K(database_name), K(tenant_name));
   } else if (OB_FAIL(do_parse_from_local_file(db_path, file_name, child_info))) {
-    LOG_WARN("fail to do parse from local file", K(db_path), K(file_name), K(ret));
+    LOG_WDIAG("fail to do parse from local file", K(db_path), K(file_name), K(ret));
   }
   return ret;
 }
@@ -793,26 +792,26 @@ int ObProxyPbUtils::do_parse_from_local_file(const char *dir, const char *file_n
   ObString json_str;
   if (OB_ISNULL(dir) || OB_ISNULL(file_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid config file name or dir", K(dir), K(file_name), K(ret));
+    LOG_WDIAG("invalid config file name or dir", K(dir), K(file_name), K(ret));
   } else if (OB_FAIL(ObProxyFileUtils::calc_file_size(dir, file_name, buf_size))) {
-    LOG_WARN("fail to get file size", K(dir), K(file_name), K(ret));
+    LOG_WDIAG("fail to get file size", K(dir), K(file_name), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret), K(buf_size));
+    LOG_WDIAG("fail to alloc memory", K(ret), K(buf_size));
   } else if (OB_FAIL(ObProxyFileUtils::read_from_file(dir, file_name, buf, buf_size, read_len))) {
-    LOG_WARN("fail to read child config from file", K(ret), K(dir), K(file_name), K(buf_size));
+    LOG_WDIAG("fail to read child config from file", K(ret), K(dir), K(file_name), K(buf_size));
   } else {
     ObArenaAllocator allocator(ObModIds::OB_JSON_PARSER);
     Parser parser;
     if (OB_FAIL(parser.init(&allocator))) {
-      LOG_WARN("json parser init failed", K(ret));
+      LOG_WDIAG("json parser init failed", K(ret));
     } else if (OB_FAIL(parser.parse(buf, read_len, json_root))) {
       LOG_INFO("parse json failed", K(ret));
     } else if (OB_ISNULL(json_root)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json root is null", K(ret));
+      LOG_WDIAG("json root is null", K(ret));
     } else if (OB_FAIL(child_info.parse_from_json(*json_root))) {
-      LOG_WARN("fail to parse from json", K(ret), K(child_info));
+      LOG_WDIAG("fail to parse from json", K(ret), K(child_info));
     } else {
       LOG_INFO("succ to parse child info from json", K(child_info));
     }
@@ -843,7 +842,7 @@ int ObProxyPbUtils::get_physic_ip(const common::ObString& addr_str, bool is_phys
   ObIpEndpoint ip;
   if (is_physic_ip) {
     if (OB_FAIL(ops_ip_pton(addr_str, ip))) {
-      LOG_WARN("fail to ops ip pton", "physic_addr", addr_str);
+      LOG_WDIAG("fail to ops ip pton", "physic_addr", addr_str);
     } else {
       addr = ip.sa_;
     }
@@ -854,7 +853,7 @@ int ObProxyPbUtils::get_physic_ip(const common::ObString& addr_str, bool is_phys
     ObIpAddr ip_addr;
     int64_t valid_cnt;
     if (OB_FAIL(get_addr_by_host(hname, &ip_addr, 1, false, valid_cnt))) {
-      LOG_WARN("invalid physic addr can not parse connector info", "physic addr", addr_str);
+      LOG_WDIAG("invalid physic addr can not parse connector info", "physic addr", addr_str);
     } else {
       ip.assign(ip_addr);
       addr = ip.sa_;

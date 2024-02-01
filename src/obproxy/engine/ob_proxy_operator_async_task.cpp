@@ -40,7 +40,7 @@ int ObOperatorAsyncCommonTask::init_async_task(event::ObContinuation *cont, even
   void *tmp_buf = NULL;
   if (OB_ISNULL(cont)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), KP(this));
+    LOG_WDIAG("invalid input", K(ret), KP(this));
   } else {
     /* init the parament of ObAsyncCommonTask */
     buf_size_ = sizeof(event::ObAction) * parallel_task_count_;
@@ -50,13 +50,13 @@ int ObOperatorAsyncCommonTask::init_async_task(event::ObContinuation *cont, even
     if (parallel_task_count_ > 0) {
       if (OB_ISNULL(tmp_buf = static_cast<char *>(op_fixed_mem_alloc(buf_size_)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem", K_(buf_size), K(ret));
+        LOG_WDIAG("fail to alloc mem", K_(buf_size), K(ret));
       } else if (FALSE_IT(MEMSET(tmp_buf, 0, buf_size_))) {
         // nerver here
       } else if (OB_ISNULL(parallel_action_array_
                     = new (tmp_buf) event::ObAction *[parallel_task_count_])) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to init parallel action array", K(parallel_task_count_), K(ret));
+        LOG_WDIAG("fail to init parallel action array", K(parallel_task_count_), K(ret));
       } 
     }
   }
@@ -95,10 +95,10 @@ int ObOperatorAsyncCommonTask::main_handler(int event, void *data)
 
   if (OB_ISNULL(ob_operator_)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("ObOperatorAsyncCommonTask::main_handler invilid operator object", K(ret));
+    LOG_WDIAG("ObOperatorAsyncCommonTask::main_handler invilid operator object", K(ret));
   } else if (OB_UNLIKELY(this_ethread() != mutex_->thread_holding_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(ret));
   } else if (action_.cancelled_) {
     LOG_INFO("ObOperatorAsyncCommonTask::main_handler action has canceled()", K(event), K(ret),
@@ -109,12 +109,12 @@ int ObOperatorAsyncCommonTask::main_handler(int event, void *data)
       case VC_EVENT_READ_COMPLETE: {
         --target_task_count_;
         if (OB_FAIL(ob_operator_->process_complete_data(data))) {
-          LOG_WARN("fail to handle parallel task complete", K(ret), K(ob_operator_->op_name()));
+          LOG_WDIAG("fail to handle parallel task complete", K(ret), K(ob_operator_->op_name()));
         } else {
           int64_t cont_index = 0; //TODO need to update pres->get_cont_index();
           if (OB_UNLIKELY(cont_index < 0) || OB_UNLIKELY(cont_index >= parallel_task_count_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpected cont result", K(ob_operator_->op_name()), K(cont_index), K(parallel_task_count_), K(ret));
+            LOG_WDIAG("unexpected cont result", K(ob_operator_->op_name()), K(cont_index), K(parallel_task_count_), K(ret));
           } else {
             parallel_action_array_[cont_index] = NULL;
           }
@@ -128,18 +128,18 @@ int ObOperatorAsyncCommonTask::main_handler(int event, void *data)
       }
       case VC_EVENT_READ_READY:
         if (OB_FAIL(ob_operator_->process_ready_data(data, event_ret))) {
-          LOG_WARN("fail to handle ready data", K(ret), K(ob_operator_->op_name()));
+          LOG_WDIAG("fail to handle ready data", K(ret), K(ob_operator_->op_name()));
         }
         break;
       case VC_EVENT_ACTIVE_TIMEOUT: {
         if (OB_FAIL(handle_timeout())) {
-          LOG_WARN("fail to handle timeout event", K(ret), K(ob_operator_->op_name()));
+          LOG_WDIAG("fail to handle timeout event", K(ret), K(ob_operator_->op_name()));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected event", K(event), K(ret), K(ob_operator_->op_name()));
+        LOG_WDIAG("unexpected event", K(event), K(ret), K(ob_operator_->op_name()));
         break;
       }
     }

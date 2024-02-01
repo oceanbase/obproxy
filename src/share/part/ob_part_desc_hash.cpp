@@ -58,7 +58,7 @@ int ObPartDescHash::get_part(ObNewRange &range,
       // not need to cast any more and break loop
       if (valid_obj_cnt == 0) {
         ret = OB_INVALID_ARGUMENT;
-        COMMON_LOG(WARN, "not support hash partition calc with range", K(range));
+        COMMON_LOG(DEBUG, "not support hash partition calc with range", K(range));
       }
       break;
     } else {
@@ -66,15 +66,10 @@ int ObPartDescHash::get_part(ObNewRange &range,
       if (OB_ISNULL(src_obj)) {
         // here src_obj shouldn't be null
         ret = OB_ERR_NULL_VALUE;
-        COMMON_LOG(ERROR, "unexpected null pointer src_obj");
-      } else if (src_obj->is_null()) {
-        // here src_obj shouldn't be null type
-        ret = OB_OBJ_TYPE_ERROR;
-        COMMON_LOG(ERROR, "unexpected null type", K(src_obj));
-      // oracle mode cast all valid objs to target type
+        COMMON_LOG(DEBUG, "unexpected null pointer src_obj");
       } else if (is_oracle_mode_) {
         if(OB_FAIL(cast_obj(*src_obj, obj_types_[i], cs_types_[i], allocator, ctx, accuracies_.at(i)))) {
-          COMMON_LOG(WARN, "cast obj failed", K(src_obj), "obj_type", obj_types_[i], "cs_type", cs_types_[i]);
+          COMMON_LOG(DEBUG, "cast obj failed", K(src_obj), "obj_type", obj_types_[i], "cs_type", cs_types_[i]);
           // TODO: handle failure
         }
       // mysql mode only cast first valid obj to int type then break loop
@@ -84,6 +79,9 @@ int ObPartDescHash::get_part(ObNewRange &range,
           COMMON_LOG(DEBUG, "failed to cast to ObIntType", K(src_obj), K(ret));
         }
         break;
+      }
+      if (OB_SUCC(ret)) {
+        COMMON_LOG(DEBUG, "succ to cast target obj", K(src_obj));
       }
     }
   }
@@ -101,13 +99,13 @@ int ObPartDescHash::get_part(ObNewRange &range,
     }
     int64_t part_id = -1;
     if (OB_SUCC(ret) && OB_FAIL(calc_hash_part_idx(result, part_num_, part_idx))) {
-      COMMON_LOG(WARN, "fail to cal hash part idx", K(ret), K(result), K(part_num_));
+      COMMON_LOG(DEBUG, "fail to cal hash part idx", K(ret), K(result), K(part_num_));
     } else if (OB_FAIL(get_part_hash_idx(part_idx, part_id))) {
-      COMMON_LOG(WARN, "fail to get part hash id", K(part_idx), K(ret));
+      COMMON_LOG(DEBUG, "fail to get part hash id", K(part_idx), K(ret));
     } else if (OB_FAIL(part_ids.push_back(part_id))) {
-      COMMON_LOG(WARN, "fail to push part_id", K(ret));
+      COMMON_LOG(DEBUG, "fail to push part_id", K(ret));
     } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
-      COMMON_LOG(WARN, "fail to push tablet_id", K(ret));
+      COMMON_LOG(DEBUG, "fail to push tablet_id", K(ret));
     } else {}
   }
 
@@ -120,11 +118,11 @@ int ObPartDescHash::get_part_by_num(const int64_t num, common::ObIArray<int64_t>
   int64_t part_id = -1;
   int64_t part_idx = num % part_num_;
   if (OB_FAIL(get_part_hash_idx(part_idx, part_id))) {
-    COMMON_LOG(WARN, "fail to get part hash id", K(num), K(ret));
+    COMMON_LOG(DEBUG, "fail to get part hash id", K(num), K(ret));
   } else if (OB_FAIL(part_ids.push_back(part_id))) {
-    COMMON_LOG(WARN, "fail to push part_id", K(ret));
+    COMMON_LOG(DEBUG, "fail to push part_id", K(ret));
   } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
-    COMMON_LOG(WARN, "fail to push tablet_id", K(ret));
+    COMMON_LOG(DEBUG, "fail to push tablet_id", K(ret));
   }
   return ret;
 }
@@ -151,6 +149,7 @@ bool ObPartDescHash::is_oracle_supported_type(const ObObjType type)
     case ObNumberFloatType:
     case ObNCharType:
     case ObNVarchar2Type:
+    case ObDecimalIntType:
     {
       supported = true;
       break;
@@ -208,7 +207,7 @@ int ObPartDescHash::calc_value_for_oracle(const ObObj *objs,
   uint64_t hash_code = 0;
   if (OB_ISNULL(objs) || 0 == objs_cnt) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "objs_stack is null or number incorrect", K(objs), K(objs_cnt), K(ret));
+    COMMON_LOG(DEBUG, "objs_stack is null or number incorrect", K(objs), K(objs_cnt), K(ret));
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < objs_cnt; ++i) {
     const ObObj &obj = objs[i];
@@ -217,7 +216,11 @@ int ObPartDescHash::calc_value_for_oracle(const ObObj *objs,
       //do nothing, hash_code not changed
     } else if (!is_oracle_supported_type(type)) {
       ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(WARN, "type is wrong", K(ret), K(obj), K(type));
+      COMMON_LOG(WDIAG, "type is wrong", K(ret), K(obj), K(type));
+    } else if (obj.is_decimal_int()) {
+      if (OB_FAIL(decimal_int_murmur_hash(obj, hash_code, hash_code))) {
+        COMMON_LOG(DEBUG, "fail to calc hash value of decimal int", K(ret), K(obj), K(hash_code));
+      }
     } else {
       hash_code = calc_hash_value_with_seed(obj, ctx.get_cluster_version(), hash_code);
     }
@@ -225,9 +228,9 @@ int ObPartDescHash::calc_value_for_oracle(const ObObj *objs,
   result = static_cast<int64_t>(hash_code);
   result = result < 0 ? -result : result;
   if (OB_SUCC(ret)) {
-    COMMON_LOG(TRACE, "succ to calc hash value with oracle mode", KP(objs), K(objs[0]), K(objs_cnt), K(result), K(ret));
+    COMMON_LOG(DEBUG, "succ to calc hash value with oracle mode", KP(objs), K(objs[0]), K(objs_cnt), K(result), K(ret));
   } else {
-    COMMON_LOG(WARN, "fail to calc hash value with oracle mode", KP(objs), K(objs_cnt), K(result), K(ret));
+    COMMON_LOG(DEBUG, "fail to calc hash value with oracle mode", KP(objs), K(objs_cnt), K(result), K(ret));
   }
   return ret;
 }
@@ -237,13 +240,13 @@ int ObPartDescHash::calc_value_for_mysql(const ObObj *obj, int64_t &result)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(obj)) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "unexpected null ptr", K(ret));
+    COMMON_LOG(DEBUG, "unexpected null ptr", K(ret));
   } else if (OB_UNLIKELY(obj->is_null())) {
     result = 0;
   } else {
     int64_t num = 0;
     if (OB_FAIL(obj->get_int(num))) {
-      COMMON_LOG(WARN, "fail to get int", K(obj), K(ret));
+      COMMON_LOG(DEBUG, "fail to get int", K(obj), K(ret));
     } else {
       if (OB_UNLIKELY(INT64_MIN == num)) {
         num = INT64_MAX;
@@ -271,7 +274,7 @@ int ObPartDescHash::calc_hash_part_idx(const uint64_t val,
     N = static_cast<int64_t>(std::log(part_num) / std::log(2));
     if (N >= max_part_num_log2) {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "result is too big", K(N), K(part_num), K(val));
+      COMMON_LOG(DEBUG, "result is too big", K(N), K(part_num), K(val));
     } else {
       powN = (1ULL << N);
       partition_idx = val & (powN - 1); //pow(2, N));
@@ -303,5 +306,52 @@ int ObPartDescHash::get_part_hash_idx(const int64_t part_idx, int64_t &part_id)
   }
   return ret;
 }
+
+int ObPartDescHash::set_cs_types(int64_t pos, const ObCollationType cs_type)
+{
+  int ret = OB_SUCCESS;
+  if (cs_types_.count() <= pos || pos < 0) {
+    ret = OB_ARRAY_OUT_OF_RANGE;
+    COMMON_LOG(WDIAG, "set part desc cs types out of range", K(pos), K(ret));
+  } else {
+    cs_types_.at(pos) = cs_type;
+  }
+
+  return ret;
+}
+
+int ObPartDescHash::set_obj_types(int64_t pos, const ObObjType obj_type)
+{
+  int ret = OB_SUCCESS;
+  if (obj_types_.count() <= pos || pos < 0) {
+    ret = OB_ARRAY_OUT_OF_RANGE;
+    COMMON_LOG(WDIAG, "set part desc obj types out of range", K(pos), K(ret));
+  } else {
+    obj_types_.at(pos) = obj_type;
+  }
+
+  return ret;
+}
+
+
+int64_t ObPartDescHash::to_plain_string(char* buf, const int64_t buf_len) const {
+    // "partition by <part_type>(<type>(<charset>), <type>(<charset>), <type>(<charset>)) partitions <part_num>"
+    int64_t pos = 0;
+    if (part_level_ == share::schema::ObPartitionLevel::PARTITION_LEVEL_TWO) {
+      BUF_PRINTF("sub");
+    }
+    BUF_PRINTF("partition by hash");
+    BUF_PRINTF("(");
+    for (int i = 0; i < obj_types_.count() && i < cs_types_.count(); i++) {
+      if (i != 0) {
+        J_COMMA();
+      }
+      BUF_PRINTF("%s<%s>", ob_sql_type_str(obj_types_[i]), ObCharset::collation_name(cs_types_[i]));
+    }
+    BUF_PRINTF(")");
+    BUF_PRINTF(" partitions %ld", part_num_);
+    return pos;
+}
+
 } // end of common
 } // end of oceanbase

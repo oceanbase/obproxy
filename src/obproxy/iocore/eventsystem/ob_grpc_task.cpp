@@ -32,7 +32,7 @@ int ObGrpcTaskProcessor::start(const int64_t grpc_threads, const int64_t stacksi
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(g_event_processor.spawn_event_threads(grpc_threads, "ET_GRPC", stacksize, ET_GRPC))) {
-    LOG_WARN("fail to spawn event threads for ET_GRPC", K(ret));
+    LOG_WDIAG("fail to spawn event threads for ET_GRPC", K(ret));
   } else {
     LOG_INFO("succ to start grpc threads", K(grpc_threads));
   }

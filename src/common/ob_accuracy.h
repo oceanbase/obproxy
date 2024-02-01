@@ -72,7 +72,7 @@ public:
   // why we expose this 3 arrays directly?
   // imagine that we add 'if ... else' statements in ddl_default_accuracy() first,
   // and 'int ret = OB_SUCCESS' and 'return ret' statements too.
-  // then the caller must add some 'if (OB_FAIL(...)) ... else LOG_WARN()'.
+  // then the caller must add some 'if (OB_FAIL(...)) ... else LOG_WDIAG()'.
   // at last we get much more codes which are very, very, very ugly.
   // so I think this is a better way: expose this 3 static const arrays directly.
   static const ObAccuracy DDL_DEFAULT_ACCURACY[ObMaxType];

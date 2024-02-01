@@ -48,6 +48,9 @@ obproxy/proxy/mysqllib/ob_mysql_analyzer_utils.cpp\
 obproxy/proxy/mysqllib/ob_mysql_analyzer_utils.h\
 obproxy/proxy/mysqllib/ob_mysql_compressed_packet.h\
 obproxy/proxy/mysqllib/ob_mysql_compressed_packet.cpp\
-obproxy/proxy/mysqllib/ob_i_mysql_respone_analyzer.h\
+obproxy/proxy/mysqllib/ob_i_mysql_response_analyzer.h\
+obproxy/proxy/mysqllib/ob_i_mysql_response_analyzer.cpp\
 obproxy/proxy/mysqllib/ob_resultset_fetcher.cpp\
-obproxy/proxy/mysqllib/ob_resultset_fetcher.h
+obproxy/proxy/mysqllib/ob_resultset_fetcher.h\
+obproxy/proxy/mysqllib/ob_protocol_diagnosis.h\
+obproxy/proxy/mysqllib/ob_protocol_diagnosis.cpp

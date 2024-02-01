@@ -208,7 +208,7 @@ size_t ObCharset::scan_str(const char *str,
   ObCharsetInfo *cs = &ob_charset_bin;
   size_t result = 0;
   if (OB_ISNULL(str) || OB_ISNULL(end) || OB_ISNULL(cs)) {
-    BACKTRACE(ERROR, true, "invalid argument. str = %p, end = %p, cs = %p", str, end, cs);
+    BACKTRACE(EDIAG, true, "invalid argument. str = %p, end = %p, cs = %p", str, end, cs);
   } else {
     result = cs->cset->scan(cs, str, end, sq);
   }
@@ -375,7 +375,7 @@ uint64_t ObCharset::hash(ObCollationType collation_type,
 
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->coll)) {
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->coll));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->coll));
     } else {
       seed = 0xc6a4a7935bd1e995;
       cs->coll->hash_sort(cs, reinterpret_cast<const uchar *>(str), str_len,
@@ -402,7 +402,7 @@ int ObCharset::like_range(ObCollationType collation_type,
                   OB_ISNULL(max_str_len) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret),
               K(collation_type), K(ObCharset::charset_arr[collation_type]),
               K(max_str), K(max_str_len),
@@ -414,7 +414,7 @@ int ObCharset::like_range(ObCollationType collation_type,
     size_t res_size = *min_str_len < *max_str_len ? *min_str_len : *max_str_len;
     if (OB_ISNULL(cs->coll)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->coll));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->coll));
     } else if (0 != cs->coll->like_range(cs,
                                   like_str.ptr(),
                                   like_str.length(),
@@ -440,11 +440,11 @@ size_t ObCharset::strlen_char(const ObCollationType collation_type,
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
+    LOG_EDIAG("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->cset)) {
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       ret = cs->cset->numchars(cs, str, str + str_len);
     }
@@ -460,11 +460,11 @@ size_t ObCharset::strlen_byte_no_sp(const ObCollationType collation_type,
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
+    LOG_EDIAG("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->cset)) {
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       ret = cs->cset->lengthsp(cs, str, str_len);
     }
@@ -480,22 +480,22 @@ int ObCharset::well_formed_len(ObCollationType collation_type, const char *str,
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
+    LOG_EDIAG("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else if (OB_UNLIKELY(NULL == str && 0 != str_len)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, str is null  and  str_len is nonzero",
+    LOG_WDIAG("invalid argument, str is null  and  str_len is nonzero",
              KP(str), K(str_len), K(ret));
   } else if (str_len > 0) {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->cset)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       int32_t error = 0;
       well_formed_len = cs->cset->well_formed_len(cs, str, str + str_len, UINT64_MAX, &error);
       if (0 != error) {
         ret = OB_ERR_INCORRECT_STRING_VALUE;
-        LOG_WARN("well_formed_len failed. invalid char found",
+        LOG_WDIAG("well_formed_len failed. invalid char found",
                  K(ret), K(error), "str", ObString(str_len, str));
       }
     }
@@ -514,16 +514,16 @@ int ObCharset::well_formed_len(ObCollationType collation_type, const char *str,
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
+    LOG_EDIAG("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else if (OB_UNLIKELY(NULL == str && 0 != str_len)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, str is null  and  str_len is nonzero",
+    LOG_WDIAG("invalid argument, str is null  and  str_len is nonzero",
              KP(str), K(str_len), K(ret));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->cset)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       well_formed_len = cs->cset->well_formed_len(cs, str, str + str_len, UINT64_MAX, &well_formed_error);
     }
@@ -542,11 +542,11 @@ size_t ObCharset::charpos(const ObCollationType collation_type,
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
+    LOG_EDIAG("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->cset)) {
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       res_pos = cs->cset->charpos(cs, str, str + str_len, length);
       if (res_pos > str_len) {
@@ -569,11 +569,11 @@ bool ObCharset::wildcmp(ObCollationType collation_type,
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
+    LOG_EDIAG("unexpected error. invalid argument(s)", K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->coll)) {
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->coll));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->coll));
     } else {
       int tmp = cs->coll->wildcmp(cs, str.ptr(), str.ptr() + str.length(),
                                 wildstr.ptr(), wildstr.ptr() + wildstr.length(),
@@ -600,14 +600,14 @@ int ObCharset::mb_wc(ObCollationType collation_type,
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     ob_wc_t my_wc;
     if (OB_ISNULL(cs->cset)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       int tmp = cs->cset->mb_wc(cs, &my_wc, reinterpret_cast<const uchar*>(mb),
                                 reinterpret_cast<const uchar*>(mb + mb_size));
@@ -629,12 +629,12 @@ int ObCharset::wc_mb(ObCollationType collation_type, int32_t wc, char *buff, int
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID || collation_type >= CS_TYPE_MAX)
       || OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)", K(ret), K(collation_type));
+    LOG_EDIAG("unexpected error. invalid argument(s)", K(ret), K(collation_type));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs) || OB_ISNULL(cs->cset)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(ret));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(ret));
     } else {
       int tmp = cs->cset->wc_mb(cs, wc, reinterpret_cast<uchar*>(buff),
                                 reinterpret_cast<uchar*>(buff + buff_len));
@@ -711,7 +711,7 @@ int ObCharset::collation_name(ObCollationType collation_type, ObString &coll_nam
   }
   if (OB_ISNULL(charset_info)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid collation type", K(ret), K(collation_type));
+    LOG_WDIAG("invalid collation type", K(ret), K(collation_type));
   } else {
     coll_name = ObString(charset_info->name);
   }
@@ -791,7 +791,7 @@ ObCharsetType ObCharset::charset_type(const char *cs_name)
 {
   ObCharsetType ct = CHARSET_INVALID;
   if (OB_ISNULL(cs_name)) {
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ct), K(cs_name), K(ct));
   } else {
     ObString cs_name_str = ObString::make_string(cs_name);
@@ -987,9 +987,9 @@ int ObCharset::charset_name_by_coll(const ObString &coll_name, ObString &cs_name
   ObCollationType coll_type = collation_type(coll_name);
   if (OB_UNLIKELY(CS_TYPE_INVALID == coll_type)) {
     ret = OB_ERR_UNKNOWN_COLLATION;
-    LOG_WARN("invalid collation type", K(ret), K(coll_name));
+    LOG_WDIAG("invalid collation type", K(ret), K(coll_name));
   } else if (OB_FAIL(charset_name_by_coll(coll_type, cs_name))) {
-    LOG_WARN("fail to get charset type by collation type", K(ret), K(coll_type), K(coll_name));
+    LOG_WDIAG("fail to get charset type by collation type", K(ret), K(coll_type), K(coll_name));
   }
   return ret;
 }
@@ -999,17 +999,17 @@ int ObCharset::charset_name_by_coll(ObCollationType collation_type, ObString &cs
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(CS_TYPE_INVALID == collation_type)) {
     ret = OB_ERR_UNKNOWN_COLLATION;
-    LOG_WARN("invalid collation type", K(ret), K(collation_type));
+    LOG_WDIAG("invalid collation type", K(ret), K(collation_type));
   } else {
     ObCharsetType charset_type = charset_type_by_coll(collation_type);
     if (OB_UNLIKELY(CHARSET_INVALID == charset_type)) {
       ret = OB_ERR_UNKNOWN_CHARSET;
-      LOG_WARN("has no charset type of this collation type", K(ret), K(collation_type));
+      LOG_WDIAG("has no charset type of this collation type", K(ret), K(collation_type));
     } else {
       ObString tmp_cs_name = ObString(charset_name(charset_type));
       if (OB_UNLIKELY(tmp_cs_name == "invalid_type")) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("charset str is invalid_type", K(ret), K(charset_type), K(collation_type));
+        LOG_EDIAG("charset str is invalid_type", K(ret), K(charset_type), K(collation_type));
       } else {
         cs_name = tmp_cs_name;
       }
@@ -1045,7 +1045,7 @@ int ObCharset::result_collation(
       || CS_TYPE_INVALID == collation_type1
       || CS_TYPE_INVALID == collation_type2)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid collation level or type", K(collation_level1), K(collation_type1), K(collation_level2), K(collation_type2));
+    LOG_WDIAG("invalid collation level or type", K(collation_level1), K(collation_type1), K(collation_level2), K(collation_type2));
   } else if (collation_level1 == collation_level2) {
     if (CS_LEVEL_EXPLICIT == collation_level1 && collation_type1 != collation_type2) {
       // ERROR 1267 (HY000): Illegal mix of collations (utf8_general_ci,EXPLICIT) and (utf8_bin,EXPLICIT) for operation '='
@@ -1093,7 +1093,7 @@ int ObCharset::aggregate_collation(
       || CS_TYPE_INVALID == collation_type1
       || CS_TYPE_INVALID == collation_type2)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid collation level or type",
+    LOG_EDIAG("invalid collation level or type",
               K(ret), K(collation_level1), K(collation_type1), K(collation_level2), K(collation_type2));
   } else {
     /** compare level first
@@ -1127,7 +1127,7 @@ int ObCharset::aggregate_collation(
             OB_UNLIKELY(collation_type2 != CS_TYPE_UTF8MB4_BIN
               && collation_type2 != CS_TYPE_UTF8MB4_GENERAL_CI)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid collation level or type",
+          LOG_WDIAG("invalid collation level or type",
                    K(ret), K(collation_level1), K(collation_type1), K(collation_level2), K(collation_type2));
         } else {
           if (collation_type1 == CS_TYPE_UTF8MB4_BIN || collation_type2 == CS_TYPE_UTF8MB4_BIN) {
@@ -1139,12 +1139,12 @@ int ObCharset::aggregate_collation(
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("Unexpected charset", K(collation_type1), K(collation_type2), K(lbt()));
+        LOG_EDIAG("Unexpected charset", K(collation_type1), K(collation_type2), K(lbt()));
       }
     }
   }
   if (OB_FAIL(ret)) {
-    LOG_WARN("Illegal mix of collations", K(ret),
+    LOG_WDIAG("Illegal mix of collations", K(ret),
              "type1", ObCharset::collation_name(collation_type1),
              "level1", ObCharset::collation_level(collation_level1),
              "type2", ObCharset::collation_name(collation_type2),
@@ -1159,7 +1159,7 @@ bool ObCharset::is_bin_sort(ObCollationType collation_type)
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1288,7 +1288,7 @@ int ObCharset::get_default_collation(ObCharsetType charset_type, ObCollationType
     }
     default: {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid charset type", K(ret), K(charset_type));
+      LOG_WDIAG("invalid charset type", K(ret), K(charset_type));
       break;
     }
   }
@@ -1366,11 +1366,11 @@ int ObCharset::first_valid_char(
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else if (OB_UNLIKELY(NULL == buf)) {
     ret = OB_NOT_INIT;
-    LOG_ERROR("Null buffer passed in", K(ret), K(buf));
+    LOG_EDIAG("Null buffer passed in", K(ret), K(buf));
   } else if (buf_size <= 0) {
     char_len = 0;
   } else {
@@ -1379,14 +1379,14 @@ int ObCharset::first_valid_char(
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
     if (OB_ISNULL(cs->cset)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
+      LOG_EDIAG("unexpected error. invalid argument(s)", K(cs), K(cs->cset));
     } else {
       len = static_cast<int64_t>(cs->cset->well_formed_len(cs, buf, buf + buf_size, 1, &error));
       if (OB_LIKELY(0 == error)) {
         char_len = len;
       } else {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid encoding found");
+        LOG_WDIAG("invalid encoding found");
       }
     }
   }
@@ -1404,7 +1404,7 @@ int ObCharset::last_valid_char(
 
   if (OB_ISNULL(cs)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("collation type is invalid", K(collation_type), K(ret));
+    LOG_WDIAG("collation type is invalid", K(collation_type), K(ret));
   } else {
     if (buf_size <= 0 || OB_ISNULL(buf)) {
       char_len = 0;
@@ -1421,7 +1421,7 @@ int ObCharset::last_valid_char(
       }
       if (len > cs->mbmaxlen) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid encoding found", K(ret), "str", ObString(buf_size, buf));
+        LOG_WDIAG("invalid encoding found", K(ret), "str", ObString(buf_size, buf));
       }
     }
   }
@@ -1441,7 +1441,7 @@ int ObCharset::check_and_fill_info(ObCharsetType &charset_type, ObCollationType 
   } else {
     if (!ObCharset::is_valid_collation(charset_type, collation_type)) {
       ret = OB_ERR_COLLATION_MISMATCH;
-      LOG_WARN("invalid collation info", K(charset_type), K(collation_type));
+      LOG_WDIAG("invalid collation info", K(charset_type), K(collation_type));
     }
   }
   return ret;
@@ -1531,7 +1531,7 @@ bool ObCharset::case_mode_equal(const ObNameCaseMode case_mode, const ObString &
   bool is_equal = false;
   if (OB_UNLIKELY(OB_NAME_CASE_INVALID >= case_mode ||
                   case_mode >= OB_NAME_CASE_MAX)) {
-    LOG_ERROR("unexpected error. invalid cast_mode",
+    LOG_EDIAG("unexpected error. invalid cast_mode",
               K(case_mode));
   } else {
     ObCollationType collation_type = CS_TYPE_INVALID;
@@ -1555,7 +1555,7 @@ bool ObCharset::is_space(const ObCollationType collation_type, char c)
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1570,7 +1570,7 @@ bool ObCharset::is_graph(const ObCollationType collation_type, char c)
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1585,7 +1585,7 @@ bool ObCharset::usemb(const ObCollationType collation_type)
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1600,7 +1600,7 @@ int ObCharset::is_mbchar(const ObCollationType collation_type, const char *str, 
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1614,7 +1614,7 @@ const ObCharsetInfo *ObCharset::get_charset(const ObCollationType collation_type
   ObCharsetInfo *ret = NULL;
   if (OB_UNLIKELY(collation_type <= CS_TYPE_INVALID ||
                   collation_type >= CS_TYPE_MAX)) {
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(collation_type));
   } else {
     ret = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1629,7 +1629,7 @@ int ObCharset::get_mbmaxlen_by_coll(const ObCollationType collation_type, int64_
                   collation_type >= CS_TYPE_MAX) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
               K(ret), K(collation_type), K(ObCharset::charset_arr[collation_type]));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1670,7 +1670,7 @@ int ObCharset::fit_string(const ObCollationType collation_type,
                   OB_ISNULL(str) ||
                   OB_ISNULL(ObCharset::charset_arr[collation_type])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error. invalid argument(s)",
+    LOG_EDIAG("unexpected error. invalid argument(s)",
         K(collation_type), K(str), K(str_len), K(len_limit_in_byte));
   } else {
     ObCharsetInfo *cs = static_cast<ObCharsetInfo *>(ObCharset::charset_arr[collation_type]);
@@ -1710,7 +1710,7 @@ bool ObCharset::is_argument_valid(const ObCharsetInfo *cs, const char *str, int6
       OB_ISNULL(cs) ||
       OB_ISNULL(cs->cset)) {
     is_arg_valid = false;
-    BACKTRACE(ERROR, true, "invalid argument. charset info = %p, str = %p, str_len = %ld", cs, str, str_len);
+    BACKTRACE(EDIAG, true, "invalid argument. charset info = %p, str = %p, str_len = %ld", cs, str, str_len);
   }
   return is_arg_valid;
 }
@@ -1765,7 +1765,7 @@ int ObCharset::charset_convert(const ObCollationType from_type,
                   || (OB_ISNULL(to_str)
                   || OB_UNLIKELY(to_len <= 0)))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid convert", K(ret), K(from_type), K(to_type),
+    LOG_WDIAG("invalid convert", K(ret), K(from_type), K(to_type),
              K(from_str), K(to_str), K(from_len), K(to_len));
   } else {
     ObCharsetInfo *from_cs = static_cast<ObCharsetInfo*>(ObCharset::charset_arr[from_type]);
@@ -1782,12 +1782,12 @@ int ObCharset::charset_convert(const ObCollationType from_type,
     unsigned int errors;
     if (NULL == from_cs || NULL == to_cs || NULL == from_str || NULL == to_str) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid arugment", K(from_cs), K(to_cs), K(from_str), K(to_str));
+      LOG_WDIAG("invalid arugment", K(from_cs), K(to_cs), K(from_str), K(to_str));
     } else {
       result_len = ob_convert(to_str, to_len, to_cs, from_str, from_len, from_cs, &errors, trim_incomplete_tail);
       if (errors != 0) {
         ret = OB_ERR_INCORRECT_STRING_VALUE;
-        LOG_WARN("ob_convert failed", K(ret), K(errors),
+        LOG_WDIAG("ob_convert failed", K(ret), K(errors),
                  K(from_type), K(to_type), K(ObString(from_len, from_str)), K(to_len));
       }
     }
@@ -1796,6 +1796,47 @@ int ObCharset::charset_convert(const ObCollationType from_type,
   return ret;
 }
 
+bool ObStringScanner::next_character(ObString &encoding_value, int32_t &unicode_value, int &ret)
+{
+  bool has_next = false;
+  ret = next_character(encoding_value, unicode_value);
+
+  if (OB_ITER_END == ret) {
+    has_next = false;
+    ret = OB_SUCCESS;
+  } else if (OB_SUCC(ret)) {
+    has_next = true;
+  } else {
+    LOG_WDIAG("fail to get next character", K(ret), K(*this));
+    has_next = false;
+  }
+  return has_next;
+}
+
+int ObStringScanner::next_character(ObString &encoding_value, int32_t &unicode_value)
+{
+  int ret = OB_SUCCESS;
+  int32_t length = 0;
+
+  ObString &str = str_;
+
+  if (str.empty()) {
+    ret = OB_ITER_END;
+  } else if (OB_FAIL(ObCharset::mb_wc(collation_type_, str.ptr(), str.length(), length, unicode_value))) {
+    if (!!(IGNORE_INVALID_CHARACTER & flags_)) {
+      ret = OB_SUCCESS;
+      length = 1;
+    } else {
+      ret = OB_ERR_INCORRECT_STRING_VALUE;
+      LOG_WDIAG("fail to call mb_wc", K(ret), K(str));
+    }
+  }
+  if (OB_SUCC(ret)) {
+    encoding_value.assign_ptr(str.ptr(), length);
+    str += length;
+  }
+  return ret;
+}
 
 } // namespace common
 } // namespace oceanbase

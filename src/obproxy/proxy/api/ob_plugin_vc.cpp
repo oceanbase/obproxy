@@ -92,7 +92,7 @@ using namespace common;
 #define PVC_TYPE    ((PLUGIN_VC_ACTIVE == vc_type_) ? "Active" : "Passive")
 
 #define DEBUG_PVC(tag, fmt...) _PROXY_PVC_LOG(DEBUG, ##fmt)
-#define ERROR_PVC(tag, fmt...) _PROXY_PVC_LOG(ERROR, ##fmt)
+#define ERROR_PVC(tag, fmt...) _PROXY_PVC_LOG(EDIAG, ##fmt)
 
 ObPluginVC::ObPluginVC(ObPluginVCCore *core_obj)
     : ObNetVConnection(), magic_(PLUGIN_VC_MAGIC_ALIVE),
@@ -409,7 +409,7 @@ int64_t ObPluginVC::transfer_bytes(ObMIOBuffer *transfer_to, ObIOBufferReader *t
 
     act_on -= moved;
     if (OB_FAIL(transfer_from->consume(moved))) {
-      PROXY_TRANSFORM_LOG(WARN, "fail to consume", K(moved), K(ret));
+      PROXY_TRANSFORM_LOG(WDIAG, "fail to consume", K(moved), K(ret));
     }
 
     total_added += moved;

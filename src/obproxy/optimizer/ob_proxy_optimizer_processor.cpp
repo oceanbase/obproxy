@@ -32,7 +32,7 @@ int ObProxyOptimizerProcessor::alloc_allocator(ObIAllocator *&allocator)
 
   if (OB_ISNULL(allocator = op_alloc_args(ObArenaAllocator, ObModIds::OB_PLAN_EXECUTE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc ObArenaAllocator", K(ret));
+    LOG_WDIAG("fail to alloc ObArenaAllocator", K(ret));
   }
 
   return ret;
@@ -43,7 +43,7 @@ int ObProxyOptimizerProcessor::free_allocator(ObIAllocator *allocator)
   int ret = OB_SUCCESS;  
   if (OB_ISNULL(allocator)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("allocator is null", K(ret));
+    LOG_WDIAG("allocator is null", K(ret));
   } else {
     LOG_DEBUG("MEM TOTAL temp before free:", K(allocator->total()));//, K(allocator->used()));
     op_free(reinterpret_cast<ObArenaAllocator*>(allocator));

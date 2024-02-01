@@ -95,7 +95,7 @@ public:
         transaction.add_plugin(plugin);
         PROXY_API_LOG(DEBUG, "add ObMysqlRequestExecuteTransformPlugin", K(plugin), K(req_pkt_len));
       } else {
-        PROXY_API_LOG(ERROR, "fail to allocate memory for ObMysqlRequestExecuteTransformPlugin");
+        PROXY_API_LOG(EDIAG, "fail to allocate memory for ObMysqlRequestExecuteTransformPlugin");
       }
     } else {
       PROXY_API_LOG(DEBUG, "handle_read_request, no need setup ObMysqlRequestExecuteTransformPlugin");
@@ -113,12 +113,12 @@ public:
     bool bret = false;
 
     if (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
-        && sm->trans_state_.trans_info_.request_content_length_ > 0
+        && ObMysqlTransact::need_use_tunnel(sm->trans_state_)
         && obmysql::OB_MYSQL_COM_STMT_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_) {
       ObClientSessionInfo &cs_info = sm->get_client_session()->get_session_info();
       ObPsIdEntry* ps_id_entry = cs_info.get_ps_id_entry();
       if (OB_ISNULL(ps_id_entry)) {
-        PROXY_API_LOG(WARN, "client ps id entry is null");
+        PROXY_API_LOG(WDIAG, "client ps id entry is null");
       } else {
         int64_t param_num = ps_id_entry->get_param_count();
         if (param_num > 0) {

@@ -71,7 +71,7 @@ ObFixedLengthString<N>::ObFixedLengthString(const char *str)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(assign(str))) {
-    LIB_LOG(WARN, "assign failed", K(str), K(ret));
+    LIB_LOG(WDIAG, "assign failed", K(str), K(ret));
   }
 }
 
@@ -80,7 +80,7 @@ ObFixedLengthString<N>::ObFixedLengthString(const ObString &str)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(assign(str))) {
-    LIB_LOG(WARN, "assign failed", K(str), K(ret));
+    LIB_LOG(WDIAG, "assign failed", K(str), K(ret));
   }
 }
 
@@ -89,7 +89,7 @@ ObFixedLengthString<N>::ObFixedLengthString(const ObFixedLengthString &str)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(assign(str.buf_))) {
-    LIB_LOG(WARN, "assign failed", K(str), K(ret));
+    LIB_LOG(WDIAG, "assign failed", K(str), K(ret));
   }
 }
 
@@ -100,7 +100,7 @@ ObFixedLengthString<N> &ObFixedLengthString<N>::operator =(
   int ret = OB_SUCCESS;
   if (this != &str) {
     if (OB_FAIL(assign(str.buf_))) {
-      LIB_LOG(WARN, "assign failed", K(str), K(ret));
+      LIB_LOG(WDIAG, "assign failed", K(str), K(ret));
     }
   }
   return *this;
@@ -145,7 +145,7 @@ int ObFixedLengthString<N>::assign(const char *str)
     buf_[0] = '\0';
   } else if ((nwrite = snprintf(buf_, N, "%s", str)) >= N || nwrite < 0) {
     ret = OB_BUF_NOT_ENOUGH;
-    LIB_LOG(WARN, "buf is not long enough, truncate",
+    LIB_LOG(WDIAG, "buf is not long enough, truncate",
         K(N), "str len", strlen(str), K(nwrite), K(ret));
     buf_[N-1] = '\0';
   }
@@ -159,7 +159,7 @@ int ObFixedLengthString<N>::assign(const ObString &str)
   int nwrite = 0;
   if ((nwrite = snprintf(buf_, N, "%.*s", str.length(), str.ptr())) >= N || nwrite < 0) {
     ret = OB_BUF_NOT_ENOUGH;
-    LIB_LOG(WARN, "buf is not long enough, truncate",
+    LIB_LOG(WDIAG, "buf is not long enough, truncate",
         K(N), "str len", str.length(), K(nwrite), K(ret));
     buf_[N-1] = '\0';
   }

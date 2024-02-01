@@ -66,7 +66,7 @@ int ObMysqlResponsePrepareTransformPlugin::consume(event::ObIOBufferReader *read
   if (PREPARE_END != prepare_state_) {
     while (OB_SUCC(ret) && local_analyze_reader_->read_avail()) {
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*local_analyze_reader_, result))) {
-        PROXY_API_LOG(ERROR, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
+        PROXY_API_LOG(EDIAG, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
       } else {
         if (ANALYZE_DONE == result.status_) {
           switch(prepare_state_) {
@@ -77,7 +77,7 @@ int ObMysqlResponsePrepareTransformPlugin::consume(event::ObIOBufferReader *read
               ret = handle_prepare_ok(local_analyze_reader_);
             } else {
               ret = OB_ERR_UNEXPECTED;
-              PROXY_API_LOG(ERROR, "the type of first packet is impossible", K(ret));
+              PROXY_API_LOG(EDIAG, "the type of first packet is impossible", K(ret));
             }
             break;
           case PREPARE_PARAM :
@@ -97,7 +97,7 @@ int ObMysqlResponsePrepareTransformPlugin::consume(event::ObIOBufferReader *read
 
           if (OB_SUCC(ret)) {
             if (OB_FAIL(local_analyze_reader_->consume(result.meta_.pkt_len_))) {
-              PROXY_API_LOG(WARN, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+              PROXY_API_LOG(WDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
             } else {
               write_size += result.meta_.pkt_len_;
             }
@@ -115,12 +115,12 @@ int ObMysqlResponsePrepareTransformPlugin::consume(event::ObIOBufferReader *read
     int64_t actual_size = 0;
     if (write_size != (actual_size = produce(local_reader_, write_size))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(WARN, "fail to produce", "expected size", write_size,
+      PROXY_API_LOG(WDIAG, "fail to produce", "expected size", write_size,
                     "actual size", actual_size, K(ret));
     } else if (write_size == local_reader_->read_avail() && OB_FAIL(local_analyze_reader_->consume_all())) {
-      PROXY_API_LOG(WARN, "fail to consume all local analyze reader", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to consume all local analyze reader", K(ret));
     } else if (OB_FAIL(local_reader_->consume(write_size))) {
-      PROXY_API_LOG(WARN, "fail to consume local reader", K(write_size), K(ret));
+      PROXY_API_LOG(WDIAG, "fail to consume local reader", K(write_size), K(ret));
     }
   }
 
@@ -166,13 +166,13 @@ int ObMysqlResponsePrepareTransformPlugin::handle_prepare_param(event::ObIOBuffe
   } else {
     pkt_reader_.reset();
     if (OB_FAIL(pkt_reader_.get_packet(*reader, field_packet))) {
-      PROXY_API_LOG(ERROR, "fail to get filed packet from reader", K(ret));
+      PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
     } else {
       ObClientSessionInfo &cs_info = sm_->get_client_session()->get_session_info();
       ObPsIdEntry* ps_id_entry = cs_info.get_ps_id_entry();
       if (OB_ISNULL(ps_id_entry)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_API_LOG(WARN, "ps id entry is null", K(ret), KPC(ps_id_entry));
+        PROXY_API_LOG(WDIAG, "ps id entry is null", K(ret), KPC(ps_id_entry));
       } else {
         ObIArray<obmysql::EMySQLFieldType> &param_types = ps_id_entry->get_ps_sql_meta().get_param_types();
         param_types.push_back(field.type_);
@@ -190,7 +190,7 @@ int ObMysqlResponsePrepareTransformPlugin::handle_prepare_ok(event::ObIOBufferRe
   obmysql::OMPKPrepare prepare_packet;
   pkt_reader_.reset();
   if (OB_FAIL(pkt_reader_.get_packet(*reader, prepare_packet))) {
-    PROXY_API_LOG(ERROR, "fail to get preaprea ok packet from reader", K(ret));
+    PROXY_API_LOG(EDIAG, "fail to get preaprea ok packet from reader", K(ret));
   } else {
     num_columns_ = prepare_packet.get_column_num();
     num_params_ = prepare_packet.get_param_num();
@@ -201,7 +201,7 @@ int ObMysqlResponsePrepareTransformPlugin::handle_prepare_ok(event::ObIOBufferRe
     ObPsIdEntry* ps_id_entry = cs_info.get_ps_id_entry();
     if (OB_ISNULL(ps_id_entry)) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(WARN, "ps id entry is null", K(ret), KPC(ps_id_entry));
+      PROXY_API_LOG(WDIAG, "ps id entry is null", K(ret), KPC(ps_id_entry));
     } else {
       if (num_params_ > 0) {
         ps_id_entry->get_ps_sql_meta().set_param_count(num_params_);

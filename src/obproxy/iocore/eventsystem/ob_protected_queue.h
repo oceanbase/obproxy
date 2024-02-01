@@ -84,11 +84,11 @@ inline int ObProtectedQueue::init()
   int ret = common::OB_SUCCESS;
   ObEvent e;
   if (OB_FAIL(common::mutex_init(&lock_))) {
-    PROXY_EVENT_LOG(WARN, "failed to init mutex", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "failed to init mutex", K(ret));
   } else if (OB_FAIL(atomic_list_.init("ObProtectedQueue", reinterpret_cast<char *>(&e.link_.next_) - reinterpret_cast<char *>(&e)))) {
-    PROXY_EVENT_LOG(WARN, "failed to init atomic_list_", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "failed to init atomic_list_", K(ret));
   } else if (OB_FAIL(cond_init(&might_have_data_))) {
-    PROXY_EVENT_LOG(WARN, "failed to init ObProxyThreadCond", K(ret));
+    PROXY_EVENT_LOG(WDIAG, "failed to init ObProxyThreadCond", K(ret));
   } else {
     is_inited_ = 0;
   }
@@ -100,15 +100,15 @@ inline int ObProtectedQueue::signal()
   int ret = common::OB_SUCCESS;
   // Need to get the lock before you can signal the thread
   if (OB_FAIL(common::mutex_acquire(&lock_))) {
-    PROXY_EVENT_LOG(ERROR, "failed to acquire lock", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "failed to acquire lock", K(ret));
   } else {
     if (OB_FAIL(cond_signal(&might_have_data_))) {
-      PROXY_EVENT_LOG(WARN, "failed to call cond_signal", K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to call cond_signal", K(ret));
     }
 
     int tmp_ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(common::OB_SUCCESS != ( tmp_ret = common::mutex_release(&lock_)))) {
-      PROXY_EVENT_LOG(WARN, "fail to release mutex", K(tmp_ret));
+      PROXY_EVENT_LOG(WDIAG, "fail to release mutex", K(tmp_ret));
     }
   }
   return ret;
@@ -120,12 +120,12 @@ inline int ObProtectedQueue::try_signal()
   // Need to get the lock before you can signal the thread
   if (common::mutex_try_acquire(&lock_)) {
     if (OB_FAIL(cond_signal(&might_have_data_))) {
-      PROXY_EVENT_LOG(WARN, "failed to call cond_signal",  K(ret));
+      PROXY_EVENT_LOG(WDIAG, "failed to call cond_signal",  K(ret));
     }
 
     int tmp_ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(common::OB_SUCCESS != ( tmp_ret = common::mutex_release(&lock_)))) {
-      PROXY_EVENT_LOG(WARN, "fail to release mutex", K(tmp_ret));
+      PROXY_EVENT_LOG(WDIAG, "fail to release mutex", K(tmp_ret));
     }
   } else {
     ret = common::OB_ERR_SYS;
@@ -137,9 +137,9 @@ inline int ObProtectedQueue::try_signal()
 inline void ObProtectedQueue::enqueue_local(ObEvent *e)
 {
   if (OB_ISNULL(e)) {
-    PROXY_EVENT_LOG(WARN, "event NULL, it should not happened");
+    PROXY_EVENT_LOG(WDIAG, "event NULL, it should not happened");
   } else if (OB_UNLIKELY(e->in_the_prot_queue_) || OB_UNLIKELY(e->in_the_priority_queue_)) {
-    PROXY_EVENT_LOG(WARN, "event has already in queue, it should not happened", K(*e));
+    PROXY_EVENT_LOG(WDIAG, "event has already in queue, it should not happened", K(*e));
   } else {
     e->in_the_prot_queue_ = 1;
     local_queue_.enqueue(e);
@@ -150,11 +150,11 @@ inline void ObProtectedQueue::enqueue_local(ObEvent *e)
 inline void ObProtectedQueue::remove(ObEvent *e)
 {
   if (OB_ISNULL(e)) {
-    PROXY_EVENT_LOG(WARN, "event NULL, it should not happened");
+    PROXY_EVENT_LOG(WDIAG, "event NULL, it should not happened");
   } else if (OB_UNLIKELY(!e->in_the_prot_queue_)) {
-    PROXY_EVENT_LOG(WARN, "event is not in_the_prot_queue_, it should not happened", K(*e));
+    PROXY_EVENT_LOG(WDIAG, "event is not in_the_prot_queue_, it should not happened", K(*e));
   } else if (OB_UNLIKELY(e->in_the_priority_queue_)) {
-    PROXY_EVENT_LOG(WARN, "event has already in queue, it should not happened", K(*e));
+    PROXY_EVENT_LOG(WDIAG, "event has already in queue, it should not happened", K(*e));
   } else {
     if (NULL == atomic_list_.remove(e)) {
       // Attention! if remove it from local queue, we will do not reduce atomic_list_size_
@@ -172,9 +172,9 @@ inline ObEvent *ObProtectedQueue::dequeue_local()
   ObEvent *event_ret = local_queue_.dequeue();
   if (NULL != event_ret) {
     if (OB_UNLIKELY(!event_ret->in_the_prot_queue_)) {
-      PROXY_EVENT_LOG(WARN, "event is not in_the_prot_queue_, it should not happened", K(*event_ret));
+      PROXY_EVENT_LOG(WDIAG, "event is not in_the_prot_queue_, it should not happened", K(*event_ret));
     } else if (OB_UNLIKELY(event_ret->in_the_priority_queue_)) {
-      PROXY_EVENT_LOG(WARN, "event has already in queue, it should not happened", K(*event_ret));
+      PROXY_EVENT_LOG(WDIAG, "event has already in queue, it should not happened", K(*event_ret));
     } else {
       event_ret->in_the_prot_queue_ = 0;
       --local_queue_size_;

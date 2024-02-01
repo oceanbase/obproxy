@@ -57,7 +57,7 @@ int ObSMRow::encode_cell(
           buf, len, *cell, type_, pos, cell_idx, bitmap, tz_info_, &fields_->at(idx));
     }
     if (OB_FAIL(ret)) {
-      SERVER_LOG(WARN, "failed to encode cell", K(ret));
+      SERVER_LOG(WDIAG, "failed to encode cell", K(ret));
     }
   }
 

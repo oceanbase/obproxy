@@ -274,7 +274,7 @@ int ObDFMUtil::match_int_value_with_comma(ObDFMParseCtx &ctx,
 
   if (OB_UNLIKELY(!ctx.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
   }
   while (OB_SUCC(ret)
          && !stop_flag
@@ -297,7 +297,7 @@ int ObDFMUtil::match_int_value_with_comma(ObDFMParseCtx &ctx,
         if (OB_UNLIKELY(!isdigit(cur_char))) {
           ret = OB_ERR_NON_NUMERIC_CHARACTER_VALUE;  // ORA-01858: a non-numeric character was found where a numeric was
                                                      // expected
-          LOG_WARN("failed to match int value", K(ret));
+          LOG_WDIAG("failed to match int value", K(ret));
         } else {
           temp_value *= 10;
           temp_value += cur_char - '0';
@@ -309,7 +309,7 @@ int ObDFMUtil::match_int_value_with_comma(ObDFMParseCtx &ctx,
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(check_int_value_length(ctx, expected_len, real_data_len))) {
-      LOG_WARN("int value length is not equal to expected len", K(ret), K(real_data_len), K(expected_len), K(ctx));
+      LOG_WDIAG("int value length is not equal to expected len", K(ret), K(real_data_len), K(expected_len), K(ctx));
     } else {
       value_len = real_data_len;
       result = temp_value;
@@ -335,12 +335,12 @@ int ObDFMUtil::match_chars_until_space(ObDFMParseCtx &ctx, ObString &result, int
   int32_t str_len = 0;
   if (OB_UNLIKELY(ctx.is_parse_finish())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
   }
   while (OB_SUCC(ret) && str_len < ctx.remain_len_ && !isspace(ctx.cur_ch_[str_len])) {
     if (OB_UNLIKELY(str_len >= value_len)) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("size over flow", K(ret));
+      LOG_WDIAG("size over flow", K(ret));
     } else {
       ++str_len;
     }
@@ -391,7 +391,7 @@ int ObDFMUtil::match_int_value(ObDFMParseCtx &ctx,
       || OB_UNLIKELY(expected_len < 0)
       || OB_UNLIKELY(value_sign != -1 && value_sign != 1)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(ctx), K(expected_len), K(value_sign));
+    LOG_WDIAG("invalid argument", K(ret), K(ctx), K(expected_len), K(value_sign));
   } else if (!isdigit(ctx.cur_ch_[0])) {       // check the first char
     ret = OB_ERR_NON_NUMERIC_CHARACTER_VALUE;  // ORA-01858: a non-numeric character was found where a numeric was
                                                // expected
@@ -404,7 +404,7 @@ int ObDFMUtil::match_int_value(ObDFMParseCtx &ctx,
 
     if (temp_value * 10LL > INT32_MAX - cur_digit) {
       ret = OB_OPERATE_OVERFLOW;
-      LOG_WARN("datetime part value is out of range", K(ret));
+      LOG_WDIAG("datetime part value is out of range", K(ret));
     } else {
       temp_value = temp_value * 10 + cur_digit;
       ++real_data_len;
@@ -413,7 +413,7 @@ int ObDFMUtil::match_int_value(ObDFMParseCtx &ctx,
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(check_int_value_length(ctx, expected_len, real_data_len))) {
-      LOG_WARN("int value length is not equal to expected len", K(ret), K(real_data_len), K(expected_len), K(ctx));
+      LOG_WDIAG("int value length is not equal to expected len", K(ret), K(real_data_len), K(expected_len), K(ctx));
     } else {
       value_len = real_data_len;
       result = temp_value * value_sign;
@@ -444,9 +444,9 @@ int ObDFMUtil::parse_datetime_format_string(const ObString &fmt_str, ObDFMElemAr
         }
 
         if (OB_FAIL(parse_one_elem(parse_ctx, value_elem))) {
-          LOG_WARN("failed to parse one element", K(ret));
+          LOG_WDIAG("failed to parse one element", K(ret));
         } else if (OB_FAIL(elements.push_back(value_elem))) {
-          LOG_WARN("failed to push back elem", K(ret));
+          LOG_WDIAG("failed to push back elem", K(ret));
         }
       }
     }
@@ -463,7 +463,7 @@ int ObDFMUtil::parse_one_elem(ObDFMParseCtx &ctx, ObDFMElem &elem)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!ctx.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
   } else {
     int64_t winner_flag = ObDFMFlag::INVALID_FLAG;
     int64_t max_matched_len = 0;
@@ -491,7 +491,7 @@ int ObDFMUtil::parse_one_elem(ObDFMParseCtx &ctx, ObDFMElem &elem)
           case ObDFMFlag::BC: {
             if (OB_UNLIKELY(ctx.remain_len_ < 2)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("winner flag length must bigger than 2", K(ret), K(elem));
+              LOG_WDIAG("winner flag length must bigger than 2", K(ret), K(elem));
             } else if (isupper(ctx.cur_ch_[0]) && isupper(ctx.cur_ch_[1])) {
               elem.upper_case_mode_ = ObDFMElem::ALL_CHARACTER;
             } else if (isupper(ctx.cur_ch_[0])) {
@@ -508,7 +508,7 @@ int ObDFMUtil::parse_one_elem(ObDFMParseCtx &ctx, ObDFMElem &elem)
           case ObDFMFlag::BC2: {
             if (OB_UNLIKELY(ctx.remain_len_ < 4)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("winner flag length must bigger than 4", K(ret), K(elem));
+              LOG_WDIAG("winner flag length must bigger than 4", K(ret), K(elem));
             } else if (isupper(ctx.cur_ch_[0])) {
               elem.upper_case_mode_ = ObDFMElem::ALL_CHARACTER;
             } else {
@@ -522,7 +522,7 @@ int ObDFMUtil::parse_one_elem(ObDFMParseCtx &ctx, ObDFMElem &elem)
         ctx.update(max_matched_len);
       } else {
         ret = OB_INVALID_DATE_FORMAT;
-        LOG_WARN("date format is invalid", K(ret), K(ctx.remain_len_));
+        LOG_WDIAG("date format is invalid", K(ret), K(ctx.remain_len_));
       }
     }
   }
@@ -543,10 +543,10 @@ int ObDFMUtil::special_mode_sprintf(char *buf,
       || OB_ISNULL(buf)
       || OB_UNLIKELY(padding > 0 && padding < str.len_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(str.len_), KP(str.ptr_), KP(buf));
+    LOG_WDIAG("invalid argument", K(ret), K(str.len_), KP(str.ptr_), KP(buf));
   } else if (OB_UNLIKELY(pos + (padding > 0 ? padding : str.len_) >= buf_len)) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("buf is overflow", K(ret), K(buf_len), K(str.len_));
+    LOG_WDIAG("buf is overflow", K(ret), K(buf_len), K(str.len_));
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < str.len_; ++i) {
       char cur_char = str.ptr_[i];
@@ -570,7 +570,7 @@ int ObDFMUtil::special_mode_sprintf(char *buf,
           }
           default: {
             ret = OB_INVALID_ARGUMENT;
-            LOG_WARN("unknown dfm elem mode", K(ret), K(mode));
+            LOG_WDIAG("unknown dfm elem mode", K(ret), K(mode));
             break;
           }
         }
@@ -599,21 +599,21 @@ int ObDFMUtil::check_semantic(const ObDFMElemArr &elements,
     int64_t flag = elements.at(i).elem_flag_;
     if (OB_UNLIKELY(!ObDFMFlag::is_flag_valid(flag))) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid array value", K(ret), K(flag));
+      LOG_WDIAG("invalid array value", K(ret), K(flag));
     }
     // The following datetime format elements can be used in timestamp and interval format models,
     // but not in the original DATE format model: FF, TZD, TZH, TZM, and TZR
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(flag >= ObDFMFlag::FF1 && flag <= ObDFMFlag::FF && !HAS_TYPE_ORACLE(mode))) {
         ret = OB_INVALID_DATE_FORMAT;
-        LOG_WARN("oracle date type can not have fractional seconds", K(ret), K(mode), K(ObDFMFlag::PATTERN[flag]));
+        LOG_WDIAG("oracle date type can not have fractional seconds", K(ret), K(mode), K(ObDFMFlag::PATTERN[flag]));
       } else if (OB_UNLIKELY(!HAS_TYPE_TIMEZONE(mode)
                              && (ObDFMFlag::TZD == flag
                                  || ObDFMFlag::TZR == flag
                                  || ObDFMFlag::TZH == flag
                                  || ObDFMFlag::TZM == flag))) {
         ret = OB_INVALID_DATE_FORMAT;
-        LOG_WARN("oracle timestamp or timestamp with local timezone can not has timezone",
+        LOG_WDIAG("oracle timestamp or timestamp with local timezone can not has timezone",
             K(ret),
             K(mode),
             K(ObDFMFlag::PATTERN[flag]));
@@ -624,9 +624,9 @@ int ObDFMUtil::check_semantic(const ObDFMElemArr &elements,
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(flag_bitmap.has_member(flag))) {
         ret = OB_ERR_FORMAT_CODE_APPEARS_TWICE;  // ORA-01810: format code appears twice
-        LOG_WARN("datetime format model check failed", K(ret), "flag", ObString(ObDFMFlag::PATTERN[flag].ptr_));
+        LOG_WDIAG("datetime format model check failed", K(ret), "flag", ObString(ObDFMFlag::PATTERN[flag].ptr_));
       } else if (OB_FAIL(flag_bitmap.add_member(flag))) {
-        LOG_WARN("failed to add bitmap", K(ret), "flag", ObString(ObDFMFlag::PATTERN[flag].ptr_));
+        LOG_WDIAG("failed to add bitmap", K(ret), "flag", ObString(ObDFMFlag::PATTERN[flag].ptr_));
       }
     }
     // check conflict in group which the element belongs to
@@ -635,7 +635,7 @@ int ObDFMUtil::check_semantic(const ObDFMElemArr &elements,
       if (ObDFMFlag::need_check_conflict(conf_group)) {
         if (OB_UNLIKELY(0 != (conflict_group_bitset & (1 << conf_group)))) {
           ret = ObDFMFlag::CONFLICT_GROUP_ERR[conf_group];
-          LOG_WARN("invalid element in group conflict check",
+          LOG_WDIAG("invalid element in group conflict check",
               K(ret),
               "elem offset",
               i,
@@ -653,7 +653,7 @@ int ObDFMUtil::check_semantic(const ObDFMElemArr &elements,
   if (OB_SUCC(ret)) {
     if (OB_UNLIKELY(flag_bitmap.has_member(ObDFMFlag::TZM) && !flag_bitmap.has_member(ObDFMFlag::TZH))) {
       ret = OB_INVALID_DATE_FORMAT;
-      LOG_WARN("given TZM without TZH is forbidden", K(ret));
+      LOG_WDIAG("given TZM without TZH is forbidden", K(ret));
     }
   }
 
@@ -672,7 +672,7 @@ int ObDFMUtil::match_char(ObDFMParseCtx &ctx, const char c, const int err_code)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_ctx_valid(ctx, err_code))) {
-    LOG_WARN("parsing finished", K(ret));
+    LOG_WDIAG("parsing finished", K(ret));
   } else if (OB_UNLIKELY(c != ctx.cur_ch_[0])) {
     ret = err_code;
   } else {

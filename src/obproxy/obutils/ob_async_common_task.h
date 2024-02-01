@@ -72,7 +72,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (NULL != pending_action_) {
       if (OB_FAIL(pending_action_->cancel())) {
-        PROXY_LOG(WARN, "fail to cancel pending action", K_(pending_action), K(ret));
+        PROXY_LOG(WDIAG, "fail to cancel pending action", K_(pending_action), K(ret));
       } else {
         pending_action_ = NULL;
       }
@@ -84,7 +84,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (NULL != timeout_action_) {
       if (OB_FAIL(timeout_action_->cancel())) {
-        PROXY_LOG(WARN, "fail to cancel timeout action", K_(timeout_action), K(ret));
+        PROXY_LOG(WDIAG, "fail to cancel timeout action", K_(timeout_action), K(ret));
       } else {
         timeout_action_ = NULL;
       }
@@ -146,7 +146,7 @@ inline int ObAsyncCommonTask::destroy_repeat_task(ObAsyncCommonTask *&cont)
     if (OB_ISNULL(event::g_event_processor.schedule_imm(cont, cont->etype_,
                   ASYNC_PROCESS_DESTROY_SELF_EVENT))) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(WARN, "fail to schedule destroy repeat task cont", K(ret));
+      PROXY_LOG(WDIAG, "fail to schedule destroy repeat task cont", K(ret));
     } else {
       cont = NULL;
     }
@@ -161,7 +161,7 @@ inline int ObAsyncCommonTask::update_task_interval(ObAsyncCommonTask *cont)
     if (OB_ISNULL(event::g_event_processor.schedule_imm(cont, cont->etype_,
                   ASYNC_PROCESS_SET_INTERVAL_EVENT))) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(WARN, "fail to schedule set interval event", K(cont));
+      PROXY_LOG(WDIAG, "fail to schedule set interval event", K(cont));
     }
   }
   return ret;
@@ -180,13 +180,13 @@ inline ObAsyncCommonTask *ObAsyncCommonTask::create_and_start_repeat_task(
   event::ObProxyMutex *mutex = NULL;
   if (OB_ISNULL(process_func)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "process func is null", K(ret));
+    PROXY_LOG(WDIAG, "process func is null", K(ret));
   } else if (OB_ISNULL(mutex = event::new_proxy_mutex())) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_LOG(ERROR, "fail to alloc memory for mutex", K(ret));
+    PROXY_LOG(EDIAG, "fail to alloc memory for mutex", K(ret));
   } else if (OB_ISNULL(cont = new(std::nothrow) ObAsyncCommonTask(mutex, task_name, process_func, update_func, is_repeat, etype))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_LOG(ERROR, "fail to alloc memory for mutex", K(ret));
+    PROXY_LOG(EDIAG, "fail to alloc memory for mutex", K(ret));
     if (OB_LIKELY(NULL != mutex)) {
       mutex->free();
       mutex = NULL;
@@ -197,12 +197,12 @@ inline ObAsyncCommonTask *ObAsyncCommonTask::create_and_start_repeat_task(
       if (OB_ISNULL(event::g_event_processor.schedule_imm(cont, etype,
                     ASYNC_PROCESS_START_REPEAT_TASK_EVENT))) {
         ret = common::OB_ERR_UNEXPECTED;
-        PROXY_LOG(WARN, "fail to schedule repeat task", K(interval_us), K(ret));
+        PROXY_LOG(WDIAG, "fail to schedule repeat task", K(interval_us), K(ret));
       }
     } else if (OB_ISNULL(event::g_event_processor.schedule_in(cont, HRTIME_USECONDS(interval_us),
                etype, ASYNC_PROCESS_DO_REPEAT_TASK_EVENT))) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(WARN, "fail to schedule repeat task", K(interval_us), K(ret));
+      PROXY_LOG(WDIAG, "fail to schedule repeat task", K(interval_us), K(ret));
     }
   }
 

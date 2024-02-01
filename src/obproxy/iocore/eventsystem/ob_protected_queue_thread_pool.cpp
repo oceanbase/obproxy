@@ -27,16 +27,16 @@ namespace event
 void ObProtectedQueueThreadPool::enqueue(ObEvent *e)
 {
   if (OB_ISNULL(e)) {
-    LOG_WARN("event NULL, it should not happened");
+    LOG_WDIAG("event NULL, it should not happened");
   } else if (OB_UNLIKELY(e->in_the_prot_queue_) || OB_UNLIKELY(e->in_the_priority_queue_)) {
-    LOG_WARN("event has already in queue, it should not happened", K(*e));
+    LOG_WDIAG("event has already in queue, it should not happened", K(*e));
   } else {
     int ret = OB_SUCCESS;
     e->in_the_prot_queue_ = 1;
     atomic_list_.push(e);
 
     if (OB_FAIL(signal())) {
-      LOG_WARN("fail to do signal, it should not happened", K(ret));
+      LOG_WDIAG("fail to do signal, it should not happened", K(ret));
     }
   }
 }
@@ -49,7 +49,7 @@ int ObProtectedQueueThreadPool::dequeue_timed(const ObHRTime timeout, ObEvent *&
     event->in_the_prot_queue_ = 0;
   } else {
     if (OB_FAIL(mutex_acquire(&lock_))) {
-      LOG_ERROR("fail to acquire mutex", K(ret));
+      LOG_EDIAG("fail to acquire mutex", K(ret));
     } else {
       if (atomic_list_.empty()) {
         timespec ts = hrtime_to_timespec(timeout);
@@ -62,7 +62,7 @@ int ObProtectedQueueThreadPool::dequeue_timed(const ObHRTime timeout, ObEvent *&
 
       int tmp_ret = OB_SUCCESS;
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = mutex_release(&lock_)))) {
-        LOG_ERROR("fail to release mutex", K(tmp_ret));
+        LOG_EDIAG("fail to release mutex", K(tmp_ret));
       }
     }
   }

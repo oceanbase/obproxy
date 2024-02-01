@@ -100,7 +100,7 @@ int ObKillGlobalSessionHandler::handle_kill_session_info()
     LOG_DEBUG("kill dbkey", K(dbkey));
     ObMysqlServerSessionListPool* ss_list_pool = get_global_session_manager().get_server_session_list_pool(dbkey);
     if (OB_ISNULL(ss_list_pool)) {
-      LOG_WARN("ss_list_pool not exist", K(dbkey));
+      LOG_WDIAG("ss_list_pool not exist", K(dbkey));
       snprintf(err_msg_, ERR_MSG_BUF_SIZE, "dbkey:%.*s not exists", dbkey.length(), dbkey.ptr());
       ret = OB_INVALID_ARGUMENT;
     } else {
@@ -121,14 +121,14 @@ int ObKillGlobalSessionHandler::handle_kill_session_by_ssid(const ObString& dbke
   LOG_DEBUG("handle_kill_session_by_ssid", K(dbkey), K(ss_id));
   ObMysqlServerSessionListPool* ss_list_pool = get_global_session_manager().get_server_session_list_pool(dbkey);
   if (OB_ISNULL(ss_list_pool)) {
-      LOG_WARN("ss_list_pool not exist", K(dbkey));
+      LOG_WDIAG("ss_list_pool not exist", K(dbkey));
       snprintf(err_msg_, ERR_MSG_BUF_SIZE, "dbkey:%.*s not exists", dbkey.length(), dbkey.ptr());
       ret = OB_INVALID_ARGUMENT;
   } else {
     ret = ss_list_pool->do_kill_session_by_ssid(ss_id);
     if (OB_FAIL(ret)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("ssid not found", K(ss_id));
+      LOG_WDIAG("ssid not found", K(ss_id));
       snprintf(err_msg_, ERR_MSG_BUF_SIZE, "ssid:%ld not exists", ss_id);
     }
   }

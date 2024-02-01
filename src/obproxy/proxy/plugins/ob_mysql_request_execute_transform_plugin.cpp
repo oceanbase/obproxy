@@ -49,7 +49,7 @@ int ObMysqlRequestExecuteTransformPlugin::consume(event::ObIOBufferReader *reade
   int ret = OB_SUCCESS;
   if (OB_ISNULL(reader)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_API_LOG(WARN, "invalid argument", K(reader), K(ret));
+    PROXY_API_LOG(WDIAG, "invalid argument", K(reader), K(ret));
   } else {
     int64_t read_avail = 0;
 
@@ -58,11 +58,14 @@ int ObMysqlRequestExecuteTransformPlugin::consume(event::ObIOBufferReader *reade
       ObClientSessionInfo &session_info = sm_->get_client_session()->get_session_info();
       if (OB_UNLIKELY(ps_pkt_len_ >= MYSQL_PACKET_MAX_LENGTH)) {
         ret = OB_NOT_SUPPORTED;
-        PROXY_API_LOG(WARN, "we cannot support packet which is larger than 16MB", K_(ps_pkt_len),
+        COLLECT_INTERNAL_DIAGNOSIS(sm_->connection_diagnosis_trace_,
+                                   OB_PROXY_INTERNAL_TRACE, OB_NOT_SUPPORTED,
+                                   "user request is over 16MB, not supported");
+        PROXY_API_LOG(WDIAG, "we cannot support packet which is larger than 16MB", K_(ps_pkt_len),
                       K(MYSQL_PACKET_MAX_LENGTH), K(ret));
       } else if (OB_ISNULL(ps_id_entry_ = session_info.get_ps_id_entry()) || !ps_id_entry_->is_valid()) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_API_LOG(WARN, "ps id entry does not exist", KPC(ps_id_entry_), K(ret));
+        PROXY_API_LOG(WDIAG, "ps id entry does not exist", KPC(ps_id_entry_), K(ret));
       } else {
         if (OB_LIKELY((param_num_ = ps_id_entry_->get_param_count()) > 0)) {
           param_type_pos_ = MYSQL_NET_META_LENGTH + MYSQL_PS_EXECUTE_HEADER_LENGTH + ((param_num_ + 7) /8) + 1;
@@ -77,10 +80,10 @@ int ObMysqlRequestExecuteTransformPlugin::consume(event::ObIOBufferReader *reade
         // If there are no parameters, you can directly transfer
         if (param_num_ == 0 || is_handle_finished_) {
           if (OB_FAIL(produce_data(local_reader_, read_avail))) {
-            PROXY_API_LOG(WARN, "fail to consume local transfer reader", K(param_num_), K(ret));
+            PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(param_num_), K(ret));
           }
         } else if (OB_FAIL(analyze_ps_execute_request(read_avail))) {
-          PROXY_API_LOG(WARN, "fail to analyze ps execute request", K(read_avail),  K(ret));
+          PROXY_API_LOG(WDIAG, "fail to analyze ps execute request", K(read_avail),  K(ret));
         }
       }
     }
@@ -103,14 +106,14 @@ int ObMysqlRequestExecuteTransformPlugin::rewrite_pkt_length_and_flag()
   const ObString& param_type = ps_id_entry_->get_ps_sql_meta().get_param_type();
   if (OB_UNLIKELY(pkt_length <= 0) || OB_UNLIKELY(param_type.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_API_LOG(WARN, "invalid pkt_length or param_type is empty", K(pkt_length), K(param_type), K(ret));
+    PROXY_API_LOG(WDIAG, "invalid pkt_length or param_type is empty", K(pkt_length), K(param_type), K(ret));
   } else {
     pkt_length += param_type.length();
 
     char header[MYSQL_PAYLOAD_LENGTH_LENGTH];
     int64_t pos = 0;
     if (OB_FAIL(obmysql::ObMySQLUtil::store_int3(header, MYSQL_PAYLOAD_LENGTH_LENGTH, pkt_length, pos))) {
-      PROXY_API_LOG(WARN, "fail to store pkg meta header", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to store pkg meta header", K(ret));
     } else {
       int64_t new_param_bound_flag_pos = param_type_pos_ - 1;
       int8_t new_param_bound_flag = 1;
@@ -132,7 +135,7 @@ int ObMysqlRequestExecuteTransformPlugin::produce_param_type()
   const ObString& param_type = ps_id_entry_->get_ps_sql_meta().get_param_type();
   if (OB_UNLIKELY(param_type.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_API_LOG(WARN, "invalid param_type", K(param_type), K(ret));
+    PROXY_API_LOG(WDIAG, "invalid param_type", K(param_type), K(ret));
   } else {
     ObMIOBuffer* mio_new = NULL;
     int64_t written_len = 0;
@@ -141,17 +144,17 @@ int ObMysqlRequestExecuteTransformPlugin::produce_param_type()
 
     if (OB_ISNULL(mio_new = new_miobuffer(param_type.length()))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_API_LOG(WARN, "fail to alloc miobuffer for reader_buffer_tmp", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to alloc miobuffer for reader_buffer_tmp", K(ret));
     } else if (OB_ISNULL(reader_tmp = mio_new->alloc_reader())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_API_LOG(WARN, "fail to alloc reader for reader_tmp", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to alloc reader for reader_tmp", K(ret));
     } else if (OB_FAIL(mio_new->write(param_type.ptr(), param_type.length(), written_len))) {
-      PROXY_API_LOG(WARN, "fail to write to reader_tmp", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to write to reader_tmp", K(ret));
     } else if (OB_UNLIKELY(written_len != (param_type.length()))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(WARN, "fail to write to reader_tmp", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to write to reader_tmp", K(ret));
     } else if (OB_FAIL(produce_data(reader_tmp, written_len))) {
-      PROXY_API_LOG(WARN, "fail to produce param type", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to produce param type", K(ret));
     }
 
     if (NULL != mio_new) {
@@ -168,16 +171,16 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_without_flag(const int64_t loc
   // At this point, the packet length and new_param_bound_flag_ fields are already there,
   // you can directly rewrite them, and append the type content
   if (OB_FAIL(rewrite_pkt_length_and_flag())) {
-    PROXY_API_LOG(WARN, "fail to rewrite header length", K(ret));
+    PROXY_API_LOG(WDIAG, "fail to rewrite header length", K(ret));
     // Send out the previous content first
   } else if (OB_FAIL(produce_data(local_reader_, param_type_pos_))) {
-    PROXY_API_LOG(WARN, "fail to produce execute", K(ret));
+    PROXY_API_LOG(WDIAG, "fail to produce execute", K(ret));
     // Output type content
   } else if (OB_FAIL(produce_param_type())) {
-    PROXY_API_LOG(WARN, "fail to consume reader_tmp transfer reader", K(ret));
+    PROXY_API_LOG(WDIAG, "fail to consume reader_tmp transfer reader", K(ret));
     // Output the remaining content of this time
   } else if (local_read_avail > param_type_pos_ && OB_FAIL(produce_data(local_reader_, local_read_avail - param_type_pos_))) {
-    PROXY_API_LOG(WARN, "fail to consume rewrite transfer reader", K(ret));
+    PROXY_API_LOG(WDIAG, "fail to consume rewrite transfer reader", K(ret));
   } else {
     is_handle_finished_ = true;
   }
@@ -195,9 +198,9 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_with_flag(const int64_t local_
   // and the previous content can be consumed directly
   if (is_first_analyze_with_flag_) {
     if (OB_FAIL(produce_data(local_reader_, param_type_pos_))) {
-      PROXY_API_LOG(WARN, "fail to produce local reader", K_(param_type_pos), K(ret));
+      PROXY_API_LOG(WDIAG, "fail to produce local reader", K_(param_type_pos), K(ret));
     } else if (OB_FAIL(param_type_buf_.reserve(2 * param_num_))) {
-      PROXY_API_LOG(WARN, "fail to reserve param type buf", "param_type_len", 2 * param_num_, K(ret));
+      PROXY_API_LOG(WDIAG, "fail to reserve param type buf", "param_type_len", 2 * param_num_, K(ret));
     } else {
       is_first_analyze_with_flag_ = false;
       consume_len -= param_type_pos_;
@@ -215,7 +218,7 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_with_flag(const int64_t local_
       if (OB_LIKELY(ret == OB_SIZE_OVERFLOW)) {
         ret = OB_SUCCESS;
       } else {
-        PROXY_API_LOG(WARN, "fail to parse param type from reader", K(ret));
+        PROXY_API_LOG(WDIAG, "fail to parse param type from reader", K(ret));
       }
     }
 
@@ -223,7 +226,7 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_with_flag(const int64_t local_
       param_type_len = param_type_buf_.length() + analyzed_len;
       if (OB_UNLIKELY(param_type_len > param_type_buf_.capacity())) {
         if (OB_FAIL(param_type_buf_.reserve(param_type_len))) {
-          PROXY_API_LOG(WARN, "fail to reserve param type buf", K(param_type_len), K(ret));
+          PROXY_API_LOG(WDIAG, "fail to reserve param type buf", K(param_type_len), K(ret));
         }
       }
     }
@@ -231,14 +234,14 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_with_flag(const int64_t local_
     if (OB_SUCC(ret)) {
       local_reader_->copy(param_type_buf_.ptr() + param_type_buf_.length(), analyzed_len, 0);
       if (OB_FAIL(param_type_buf_.set_length(param_type_len))) {
-        PROXY_API_LOG(WARN, "fail to set param type len", K(param_type_len), K(ret));
+        PROXY_API_LOG(WDIAG, "fail to set param type len", K(param_type_len), K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       if (is_handle_finished_) {
         if (OB_FAIL(ps_id_entry_->get_ps_sql_meta().set_param_type(param_type_buf_.ptr(), param_type_len))) {
-          PROXY_API_LOG(WARN, "fail to set param type", K(param_type_len), K(ret));
+          PROXY_API_LOG(WDIAG, "fail to set param type", K(param_type_len), K(ret));
         }
       } else {
         consume_len = analyzed_len;
@@ -248,7 +251,7 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_with_flag(const int64_t local_
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(produce_data(local_reader_, consume_len))) {
-      PROXY_API_LOG(WARN, "fail to produce local reader", K(local_read_avail), K(consume_len), K(ret));
+      PROXY_API_LOG(WDIAG, "fail to produce local reader", K(local_read_avail), K(consume_len), K(ret));
     }
   }
 
@@ -267,7 +270,7 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_ps_execute_request(const int64
       local_reader_->copy(reinterpret_cast<char *>(&new_param_bound_flag_), 1, new_param_bound_flag_pos);
       if (1 != new_param_bound_flag_ && 0 != new_param_bound_flag_) {
         ret = OB_DATA_OUT_OF_RANGE;
-        PROXY_API_LOG(WARN, "fail to get new_param_bound_flag", K_(new_param_bound_flag), K(ret));
+        PROXY_API_LOG(WDIAG, "fail to get new_param_bound_flag", K_(new_param_bound_flag), K(ret));
       }
     }
   }
@@ -275,11 +278,11 @@ int ObMysqlRequestExecuteTransformPlugin::analyze_ps_execute_request(const int64
   if (OB_SUCC(ret)) {
     if (1 == new_param_bound_flag_) {
       if (OB_FAIL(analyze_with_flag(local_read_avail))) {
-        PROXY_API_LOG(WARN, "fail to analyze with flag", K(ret));
+        PROXY_API_LOG(WDIAG, "fail to analyze with flag", K(ret));
       }
     } else if (0 == new_param_bound_flag_) {
       if (OB_FAIL(analyze_without_flag(local_read_avail))) {
-        PROXY_API_LOG(WARN, "fail to analyze without flag", K(ret));
+        PROXY_API_LOG(WDIAG, "fail to analyze without flag", K(ret));
       }
     }
   }
@@ -297,19 +300,19 @@ int ObMysqlRequestExecuteTransformPlugin::produce_data(event::ObIOBufferReader *
   int64_t produce_length = 0;
   if (OB_ISNULL(reader)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_API_LOG(WARN, "invalid argument", K(reader), K(ret));
+    PROXY_API_LOG(WDIAG, "invalid argument", K(reader), K(ret));
   } else if (OB_UNLIKELY(produce_size < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_API_LOG(WARN, "invalid argument", K(produce_size), K(ret));
+    PROXY_API_LOG(WDIAG, "invalid argument", K(produce_size), K(ret));
   } else if (OB_UNLIKELY((produce_size > reader->read_avail()))){
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(WARN, "produce_size is larger than read_avail", K(produce_size), K(reader->read_avail()), K(ret));
+    PROXY_API_LOG(WDIAG, "produce_size is larger than read_avail", K(produce_size), K(reader->read_avail()), K(ret));
   } else if (OB_UNLIKELY(produce_size != (produce_length = produce(reader, produce_size)))) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(WARN, "fail to produce", "expected size", produce_size,
+    PROXY_API_LOG(WDIAG, "fail to produce", "expected size", produce_size,
                   "actual size", produce_length, K(ret));
   } else if (OB_FAIL(reader->consume(produce_size))) {
-    PROXY_API_LOG(WARN, "fail to consume local transfer reader", K(produce_size), K(ret));
+    PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(produce_size), K(ret));
   }
 
   return ret;

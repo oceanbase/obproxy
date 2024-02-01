@@ -23,6 +23,7 @@ namespace obproxy
 {
 namespace proxy
 {
+class ObProtocolDiagnosis;
 typedef common::ObString ObRespBuffer;
 static const int64_t FIXED_MEMORY_BUFFER_SIZE = 32;
 
@@ -204,7 +205,7 @@ public:
   void reset();
 
   // analyze byte flow, and determine whether response is over
-  int analyze_mysql_resp(ObBufferReader &buf_reader, ObRespResult &result, ObMysqlResp *resp);
+  int analyze_mysql_resp(ObBufferReader &buf_reader, ObRespResult &result, ObMysqlResp *resp, ObProtocolDiagnosis *&protocol_diagnosis);
 
   ObMysqlProtocolMode get_mysql_mode() const { return mysql_mode_; }
   void set_mysql_mode(const ObMysqlProtocolMode mode) { mysql_mode_ = mode; }

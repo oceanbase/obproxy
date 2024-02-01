@@ -64,13 +64,13 @@ int ObClientMysqlRespWrapper::init(ObClientMysqlResp **resp)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_ISNULL(resp)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input vlue", K(resp), K(ret));
+    LOG_WDIAG("invalid input vlue", K(resp), K(ret));
   } else if (OB_FAIL(run_cond_.init(ObWaitEventIds::DEFAULT_COND_WAIT))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to init run cond", K(ret));
+    LOG_EDIAG("fail to init run cond", K(ret));
   } else {
     resp_ = resp;
     is_received_resp_ = false;
@@ -173,11 +173,11 @@ int ObMysqlProxyCont::async_post_request(const ObMysqlRequestParam &request_para
   action = NULL;
   if (OB_UNLIKELY(!request_param.is_valid())
       || OB_UNLIKELY(timeout_ms <= 0)
-      || (!request_param.is_detect_client_ && OB_ISNULL(client_pool))) {
+      || ((ObMysqlRequestParam::CLIENT_VC_TYPE_NORMAL == request_param.client_vc_type_) && OB_ISNULL(client_pool))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(request_param), K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid input value", K(request_param), K(timeout_ms), K(ret));
   } else if (OB_FAIL(request_param_.deep_copy(request_param))) {
-    LOG_WARN("fail to deep_copy", K(request_param), K(ret));
+    LOG_WDIAG("fail to deep_copy", K(request_param), K(ret));
   } else {
     is_nonblock_ = true;
     timeout_ms_ = timeout_ms;
@@ -189,7 +189,7 @@ int ObMysqlProxyCont::async_post_request(const ObMysqlRequestParam &request_para
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(do_post_request())) {
-      LOG_WARN("fail to post request", K(ret));
+      LOG_WDIAG("fail to post request", K(ret));
     } else {
       action = &get_action();
     }
@@ -205,9 +205,9 @@ int ObMysqlProxyCont::sync_post_request(const ObString &sql, ObClientMysqlRespWr
   if (OB_UNLIKELY(sql.empty()) || OB_UNLIKELY(!wrapper.is_valid())
       || OB_UNLIKELY(timeout_ms <= 0) || OB_ISNULL(client_pool)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(sql), K(wrapper), K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid input value", K(sql), K(wrapper), K(timeout_ms), K(ret));
   } else if (OB_FAIL(request_param_.deep_copy_sql(sql))) {
-    LOG_WARN("fail to deep_copy_sql", K(ret));
+    LOG_WDIAG("fail to deep_copy_sql", K(ret));
   } else {
     is_nonblock_ = false;
     timeout_ms_ = timeout_ms;
@@ -219,17 +219,17 @@ int ObMysqlProxyCont::sync_post_request(const ObString &sql, ObClientMysqlRespWr
   if (OB_SUCC(ret)) {
     if (OB_UNLIKELY(NULL != mysql_client_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("mysql client must be null here", K_(mysql_client), K(ret));
+      LOG_WDIAG("mysql client must be null here", K_(mysql_client), K(ret));
     } else if (OB_ISNULL(mysql_client_ = client_pool_->acquire_mysql_client())) {
       // sync post request is only called in timer thread, so mysql client is free when acquired
       ret = OB_RESOURCE_OUT;
-      LOG_WARN("fail to acquire mysql client for sync request", K(ret));
+      LOG_WDIAG("fail to acquire mysql client for sync request", K(ret));
     } else if (OB_ISNULL(mutex_ = mysql_client_->get_common_mutex())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("common mutex is null", K(ret));
+      LOG_WDIAG("common mutex is null", K(ret));
     } else if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL, MYSQL_PROXY_POST_REQUEST_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule blocking post request", K(ret));
+      LOG_WDIAG("fail to schedule blocking post request", K(ret));
     }
   }
 
@@ -245,37 +245,37 @@ int ObMysqlProxyCont::main_handler(int event, void *data)
 
   if (OB_UNLIKELY(MYSQL_PROXY_MAGIC_ALIVE != magic_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this ObMysqlProxyCont is dead", K_(magic), K(ret));
+    LOG_EDIAG("this ObMysqlProxyCont is dead", K_(magic), K(ret));
   } else if (OB_UNLIKELY(this_ethread() != mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(ret));
   } else {
     switch (event) {
       case MYSQL_PROXY_POST_REQUEST_EVENT: {
         pending_action_ = NULL;
         if (OB_FAIL(do_post_request())) {
-          LOG_WARN("fail to do_post_request", K(ret));
+          LOG_WDIAG("fail to do_post_request", K(ret));
         }
         break;
       }
       case EVENT_INTERVAL: {
         timeout_action_ = NULL;
         if (OB_FAIL(handle_timeout())) {
-          LOG_WARN("fail to handle timeout", K(ret));
+          LOG_WDIAG("fail to handle timeout", K(ret));
         }
         break;
       }
       case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
         pending_action_ = NULL;
         if (OB_FAIL(notify_caller(data))) {
-          LOG_WARN("fail to notify caller", K(ret));
+          LOG_WDIAG("fail to notify caller", K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown event", K(event), K(ret));
+        LOG_WDIAG("unknown event", K(event), K(ret));
         break;
       }
     }
@@ -295,7 +295,7 @@ int ObMysqlProxyCont::schedule_timeout()
   if (OB_ISNULL(timeout_action_ = self_ethread().schedule_in(
             this, HRTIME_MSECONDS(timeout_ms_)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule in", K_(timeout_ms), K(ret));
+    LOG_WDIAG("fail to schedule in", K_(timeout_ms), K(ret));
   }
   return ret;
 }
@@ -308,17 +308,17 @@ int ObMysqlProxyCont::do_post_request()
     // treat is as active timeout
     if (NULL != timeout_action_) {
       if (OB_FAIL(cancel_timeout_action())) {
-        LOG_WARN("fail to cancel timeout action", K(ret));
+        LOG_WDIAG("fail to cancel timeout action", K(ret));
       }
     }
     // for defense
     if (OB_SUCC(ret) && OB_FAIL(handle_timeout())) {
-      LOG_WARN("fail to handle timeout", K(ret));
+      LOG_WDIAG("fail to handle timeout", K(ret));
     }
   } else {
     if (NULL == timeout_action_) {
       if (OB_FAIL(schedule_timeout())) {
-        LOG_WARN("fail to schedule timeout action", K(ret));
+        LOG_WDIAG("fail to schedule timeout action", K(ret));
       }
     }
     if (OB_SUCC(ret)) {
@@ -341,11 +341,11 @@ int ObMysqlProxyCont::do_post_request()
             // fail to try lock mysql client common mutex, will retry
             mysql_client_ = NULL;
           } else {
-            LOG_WARN("fail to post request", K(ret));
+            LOG_WDIAG("fail to post request", K(ret));
           }
         } else if (OB_ISNULL(action)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("action cannot be null", K(action), K(ret));
+          LOG_WDIAG("action cannot be null", K(action), K(ret));
         } else {
           pending_action_ = action;
         }
@@ -359,10 +359,10 @@ int ObMysqlProxyCont::do_post_request()
         if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(
                 this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), MYSQL_PROXY_POST_REQUEST_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to schedule in", LITERAL_K(RETRY_INTERVAL_MS), K(ret));
+          LOG_WDIAG("fail to schedule in", LITERAL_K(RETRY_INTERVAL_MS), K(ret));
         }
       } else {
-        LOG_WARN("fail to post request", K(ret));
+        LOG_WDIAG("fail to post request", K(ret));
       }
     }
   }
@@ -375,9 +375,9 @@ int ObMysqlProxyCont::handle_timeout()
   int ret = OB_SUCCESS;
   LOG_INFO("MysqlProxyCont active timeout", K(this));
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   } else if (OB_FAIL(notify_caller(NULL))) {
-    LOG_WARN("fail to notiry caller", K(ret));
+    LOG_WDIAG("fail to notiry caller", K(ret));
   }
 
   return ret;
@@ -399,7 +399,7 @@ int ObMysqlProxyCont::notify_caller(void *resp)
     }
   } else { // blocking
     if (OB_FAIL(resp_wrapper_->run_cond_.lock())) {
-      LOG_WARN("fail to lock", K(ret));
+      LOG_WDIAG("fail to lock", K(ret));
     }
     if (OB_SUCC(ret)) {
       resp_wrapper_->is_received_resp_ = true;
@@ -407,12 +407,12 @@ int ObMysqlProxyCont::notify_caller(void *resp)
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(resp_wrapper_->run_cond_.signal())) {
-        LOG_WARN("fail to signal", K(ret));
+        LOG_WDIAG("fail to signal", K(ret));
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(resp_wrapper_->run_cond_.unlock())) {
-        LOG_WARN("fail to unlock", K(ret));
+        LOG_WDIAG("fail to unlock", K(ret));
       }
     }
   }
@@ -428,10 +428,10 @@ void ObMysqlProxyCont::kill_this()
   LOG_DEBUG("ObMysqlProxyCont will be free", KPC(this));
   int ret = OB_SUCCESS;
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
 
   mysql_client_ = NULL;
@@ -477,12 +477,12 @@ int ObMysqlProxy::init(const int64_t timeout_ms,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(timeout_ms <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid input value", K(timeout_ms), K(ret));
   } else if (OB_FAIL(raw_mysql_client_.init(user_name, password, database, cluster_name, password1))) {
-    LOG_WARN("fail to init raw mysql client", K(ret));
+    LOG_WDIAG("fail to init raw mysql client", K(ret));
   } else {
     timeout_ms_ = timeout_ms;
     is_inited_ = true;
@@ -504,13 +504,13 @@ int ObMysqlProxy::rebuild_client_pool(ObShardConnector *shard_conn,
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("mysql proxy has not been inited", K_(is_inited), K(ret));
+    LOG_WDIAG("mysql proxy has not been inited", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(user_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(user_name));
+    LOG_WDIAG("invalid input value", K(user_name));
   } else {
     if (OB_FAIL(alloc_client_pool(is_meta_mysql_client, user_name, password, database, "", password1, client_pool_option))) {
-      LOG_WARN("fail to alloc client pool", K(is_meta_mysql_client), K(user_name), K(database), K(ret));
+      LOG_WDIAG("fail to alloc client pool", K(is_meta_mysql_client), K(user_name), K(database), K(ret));
     } else {
       client_pool_->set_shard_conn(shard_conn);
       client_pool_->set_shard_prop(shard_prop);
@@ -533,23 +533,23 @@ int ObMysqlProxy::rebuild_client_pool(ObClusterResource *cluster_resource,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("mysql proxy has not been inited", K_(is_inited), K(ret));
+    LOG_WDIAG("mysql proxy has not been inited", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(user_name.empty()
              || OB_UNLIKELY(cluster_name.empty()))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(user_name));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(user_name));
   } else {
     char full_user_name[OB_PROXY_FULL_USER_NAME_MAX_LEN + 1];
     full_user_name[0] = '\0';
     int64_t pos = 0;
     if (OB_FAIL(databuff_printf(full_user_name, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1, pos, "%.*s#%.*s:%ld",
                 user_name.length(), user_name.ptr(), cluster_name.length(), cluster_name.ptr(), cluster_id))) {
-      LOG_WARN("fail to databuff_printf", K(user_name), K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("fail to databuff_printf", K(user_name), K(cluster_name), K(cluster_id), K(ret));
     } else {
       ObString full_username(full_user_name);
       if (OB_FAIL(alloc_client_pool(is_meta_mysql_client, full_username,
                                              password, database, cluster_name, password1, client_pool_option))) {
-        LOG_WARN("fail to alloc client pool", K(user_name), K(database), K(ret));
+        LOG_WDIAG("fail to alloc client pool", K(user_name), K(database), K(ret));
       } else {
         client_pool_->set_cluster_resource(cluster_resource);
       }
@@ -611,34 +611,34 @@ int ObMysqlProxy::async_execute(ObContinuation *cont,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(stop_)) {
     ret = OB_IN_STOP_STATE;
-    LOG_WARN("mysql proxy has stopped", K_(stop), K(ret));
+    LOG_WDIAG("mysql proxy has stopped", K_(stop), K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(is_raw_execute_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("in raw execute state, can not async execute", K(request_param), K(ret));
+    LOG_WDIAG("in raw execute state, can not async execute", K(request_param), K(ret));
   } else {
     LOG_DEBUG("ObMysqlProxy::async_execute", K(cont), K(request_param), K(timeout_ms), K(ret));
     ObMysqlProxyCont *mp_cont = NULL;
     ObMysqlClientPool *pool = NULL;
-    if (!request_param.is_detect_client_ && OB_ISNULL(pool = acquire_client_pool())) {
+    if ((ObMysqlRequestParam::CLIENT_VC_TYPE_NORMAL == request_param.client_vc_type_) && OB_ISNULL(pool = acquire_client_pool())) {
       ret = OB_ENTRY_NOT_EXIST;
-      LOG_WARN("client pool is null", K(ret));
+      LOG_WDIAG("client pool is null", K(ret));
     } else {
       if (OB_ISNULL(cont) || OB_ISNULL(cont->mutex_) || OB_UNLIKELY(!request_param.is_valid())
           || OB_UNLIKELY(timeout_ms <= 0)) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid input value", K(cont), K(request_param), K(timeout_ms), K(ret));
+        LOG_WDIAG("invalid input value", K(cont), K(request_param), K(timeout_ms), K(ret));
       } else if (OB_ISNULL(mp_cont = op_alloc_args(ObMysqlProxyCont, cont->mutex_, cont))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc ObMysqlProxyCont", K(ret));
+        LOG_WDIAG("fail to alloc ObMysqlProxyCont", K(ret));
       } else if (OB_FAIL(mp_cont->async_post_request(request_param, timeout_ms, pool, action))) {
-        LOG_WARN("fail to post request", K(ret));
+        LOG_WDIAG("fail to post request", K(ret));
         if (OB_UNLIKELY(NULL != action)) {
           int tmp_ret = OB_SUCCESS;
           if (OB_FAIL(tmp_ret = action->cancel())) {
-            LOG_WARN("fail to cancel unexpected action", K(tmp_ret));
+            LOG_WDIAG("fail to cancel unexpected action", K(tmp_ret));
           } else {
             action = NULL;
           }
@@ -664,28 +664,28 @@ int ObMysqlProxy::read(const char *sql, ObMysqlResultHandler &result_handler)
   ObClientMysqlResp *resp = NULL;
   if (OB_UNLIKELY(stop_)) {
     ret = OB_IN_STOP_STATE;
-    LOG_WARN("mysql proxy has stopped", K_(stop), K(ret));
+    LOG_WDIAG("mysql proxy has stopped", K_(stop), K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     if (is_raw_execute_) {
       if (OB_FAIL(raw_mysql_client_.sync_raw_execute(sql, timeout_ms_, resp))) {
-        LOG_WARN("fail to sync raw execute", K(sql), K_(timeout_ms), K(resp), K(ret));
+        LOG_WDIAG("fail to sync raw execute", K(sql), K_(timeout_ms), K(resp), K(ret));
       }
     } else {
       if (OB_FAIL(sync_execute(sql, timeout_ms_, resp))) {
-        LOG_WARN("fail to sync execute", K(sql), K_(timeout_ms), K(resp), K(ret));
+        LOG_WDIAG("fail to sync execute", K(sql), K_(timeout_ms), K(resp), K(ret));
       }
     }
     if (OB_SUCC(ret)) {
       if (NULL == resp) {
         ret = OB_EMPTY_RESULT;
-        LOG_WARN("resp is NULL", K(ret));
+        LOG_WDIAG("resp is NULL", K(ret));
       } else {
         if (resp->is_error_resp()) {
           ret = -resp->get_err_code();
-          LOG_WARN("fail to execute sql", K(sql), K(ret));
+          LOG_WDIAG("fail to execute sql", K(sql), K(ret));
           op_free(resp);
           resp = NULL;
         } else if (resp->is_resultset_resp()) {
@@ -693,7 +693,7 @@ int ObMysqlProxy::read(const char *sql, ObMysqlResultHandler &result_handler)
           // nothing
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected resp", K(ret));
+          LOG_WDIAG("unexpected resp", K(ret));
           op_free(resp);
           resp = NULL;
         }
@@ -709,38 +709,38 @@ int ObMysqlProxy::write(const char *sql, int64_t &affected_rows)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(stop_)) {
     ret = OB_IN_STOP_STATE;
-    LOG_WARN("mysql proxy has stopped", K_(stop), K(ret));
+    LOG_WDIAG("mysql proxy has stopped", K_(stop), K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     ObClientMysqlResp *resp = NULL;
     if (is_raw_execute_) {
       if (OB_FAIL(raw_mysql_client_.sync_raw_execute(sql, timeout_ms_, resp))) {
-        LOG_WARN("fail to sync raw execute", K(sql), K_(timeout_ms), K(resp), K(ret));
+        LOG_WDIAG("fail to sync raw execute", K(sql), K_(timeout_ms), K(resp), K(ret));
       }
     } else {
       if (OB_FAIL(sync_execute(sql, timeout_ms_, resp))) {
-        LOG_WARN("fail to sync execute", K(sql), K_(timeout_ms), K(resp), K(ret));
+        LOG_WDIAG("fail to sync execute", K(sql), K_(timeout_ms), K(resp), K(ret));
       }
     }
     if (OB_SUCC(ret)) {
       if (NULL == resp) {
         ret = OB_EMPTY_RESULT;
-        LOG_WARN("resp is NULL", K(ret));
+        LOG_WDIAG("resp is NULL", K(ret));
       } else {
         if (resp->is_error_resp()) {
           ret = -resp->get_err_code();
-          LOG_WARN("fail to execute sql", K(sql), K(ret));
+          LOG_WDIAG("fail to execute sql", K(sql), K(ret));
         } else if (resp->is_ok_resp()) {
           if (OB_FAIL(resp->get_affected_rows(affected_rows))) {
-            LOG_WARN("fail to get affected rows", K(ret));
+            LOG_WDIAG("fail to get affected rows", K(ret));
           } else {
             LOG_DEBUG("write succ", K(affected_rows));
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected resp", K(ret));
+          LOG_WDIAG("unexpected resp", K(ret));
         }
         op_free(resp);
         resp = NULL;
@@ -759,33 +759,33 @@ int ObMysqlProxy::sync_execute(const char *sql, const int64_t timeout_ms, ObClie
   LOG_DEBUG("ObMysqlProxy::sync_execute", K(sql), K(timeout_ms), K(ret));
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(sql) || OB_UNLIKELY(timeout_ms <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(sql), K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid input value", K(sql), K(timeout_ms), K(ret));
   } else if (OB_ISNULL(mp_cont = op_alloc_args(ObMysqlProxyCont, NULL, NULL))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc ObMysqlProxyCont", K(ret));
+    LOG_WDIAG("fail to alloc ObMysqlProxyCont", K(ret));
   } else if (OB_FAIL(wrapper.init(&res))) {
-    LOG_WARN("fail to init wrapper", K(ret));
+    LOG_WDIAG("fail to init wrapper", K(ret));
   } else {
     if (!wrapper.is_received_resp_) {
       if (OB_FAIL(wrapper.run_cond_.lock())) {
-        LOG_WARN("fail to lock", K(ret));
+        LOG_WDIAG("fail to lock", K(ret));
       } else {
         ObMysqlClientPool *pool = NULL;
         if (OB_ISNULL(pool = acquire_client_pool())) {
           ret = OB_ENTRY_NOT_EXIST;
-          LOG_WARN("client pool is null", K(ret));
+          LOG_WDIAG("client pool is null", K(ret));
         } else {
           if (OB_FAIL(mp_cont->sync_post_request(ObString::make_string(sql), wrapper, timeout_ms, pool))) {
-            LOG_WARN("fail to sync post request", K(sql), K(timeout_ms), K(ret));
+            LOG_WDIAG("fail to sync post request", K(sql), K(timeout_ms), K(ret));
           } else {
             LOG_DEBUG("farword request succ, and blocking wait for resp", K(sql));
             // wait for resp
             while ((!wrapper.is_received_resp_) && OB_SUCC(ret)) {
               if (OB_FAIL(wrapper.run_cond_.wait())) {
-                LOG_WARN("fail to wait", K(ret));
+                LOG_WDIAG("fail to wait", K(ret));
               }
             }
             if (OB_SUCC(ret)) {
@@ -796,7 +796,7 @@ int ObMysqlProxy::sync_execute(const char *sql, const int64_t timeout_ms, ObClie
 
         int tmp_ret = OB_SUCCESS;
         if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = wrapper.run_cond_.unlock()))) {
-          LOG_WARN("fail to unlock", K(tmp_ret));
+          LOG_WDIAG("fail to unlock", K(tmp_ret));
           if (OB_SUCC(ret)) {
             ret = tmp_ret;
           }
@@ -823,7 +823,7 @@ int ObMysqlProxy::set_raw_execute(const ObIArray<ObProxyReplicaLocation> &replic
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(raw_mysql_client_.set_target_server(replicas))) {
-    LOG_WARN("fail to set server addrs", K(ret));
+    LOG_WDIAG("fail to set server addrs", K(ret));
   } else {
     is_raw_execute_ = true;
   }
@@ -842,15 +842,15 @@ int ObMysqlProxy::alloc_client_pool(const bool is_meta_mysql_client,
   ObMysqlClientPool *client_pool = NULL;
   if (OB_UNLIKELY(user_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(user_name), K(ret));
+    LOG_WDIAG("invalid input value", K(user_name), K(ret));
   } else if (OB_ISNULL(client_pool = op_alloc(ObMysqlClientPool))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for client pool", K(ret));
+    LOG_EDIAG("fail to alloc memory for client pool", K(ret));
   } else if (FALSE_IT(client_pool->inc_ref())) {
     // will dec_ref in destroy()
   } else if (OB_FAIL(client_pool->init(is_meta_mysql_client, user_name,
              password, database, cluster_name, password1, client_pool_option))) {
-    LOG_WARN("fail to init client pool", K(user_name), K(password),
+    LOG_WDIAG("fail to init client pool", K(user_name), K(password),
              K(database), K(is_meta_mysql_client), K(ret));
   } else {
     CLIENT_POOL_INCREMENT_DYN_STAT(CREATE_CLUSTER_CLIENT_POOL_SUCC_COUNT);
@@ -869,7 +869,7 @@ int ObMysqlProxy::alloc_client_pool(const bool is_meta_mysql_client,
     }
     info.set_need_skip_stage2(need_skip_stage2);
     if (OB_FAIL(info.set_names(user_name, password, database, cluster_name))) {
-      LOG_WARN("fail to set raw mysql client request info", K(ret));
+      LOG_WDIAG("fail to set raw mysql client request info", K(ret));
     }
   }
 

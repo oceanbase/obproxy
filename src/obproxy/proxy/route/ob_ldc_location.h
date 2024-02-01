@@ -447,10 +447,10 @@ inline int ObLDCLocation::shuffle_dummy_ldc(ObLDCLocation &dummy_ldc, const int6
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(dummy_ldc.is_empty())) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "this is not dummy_ldc", K(dummy_ldc), K(ret));
+    PROXY_LOG(WDIAG, "this is not dummy_ldc", K(dummy_ldc), K(ret));
   } else if (OB_UNLIKELY(replica_count <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "replica_count is invalid", K(replica_count), K(ret));
+    PROXY_LOG(WDIAG, "replica_count is invalid", K(replica_count), K(ret));
   } else if (is_weak_read && NULL != dummy_ldc.get_safe_snapshot_manager()) {
     //we will shuffle after fill replicas
   } else {

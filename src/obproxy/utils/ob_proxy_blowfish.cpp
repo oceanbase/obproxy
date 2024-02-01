@@ -52,7 +52,7 @@ int ObBlowFish::do_bf_ecb_encrypt(const unsigned char *in, const int64_t in_str_
       || OB_UNLIKELY(in_str_len > out_len)
       || OB_UNLIKELY(BF_ENCRYPT != enc_mode && BF_DECRYPT != enc_mode)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(in), K(out), K(in_str_len), K(out_len),
+    LOG_WDIAG("invalid argument", K(in), K(out), K(in_str_len), K(out_len),
              K(enc_mode), K(ret));
   } else {
     BF_KEY bf_key;
@@ -76,7 +76,7 @@ int ObBlowFish::covert_hex_to_string(const char *hex_str, const int64_t hex_len,
       || OB_ISNULL(str) || OB_UNLIKELY(hex_len % 2 != 0)
       || OB_UNLIKELY(hex_len / 2 >= str_len)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(hex_str), K(hex_len), K(str), K(str_len), K(ret));
+    LOG_WDIAG("invalid argument", K(hex_str), K(hex_len), K(str), K(str_len), K(ret));
   } else {
     char tmp[3];
     int64_t tmp_len = hex_len / 2;
@@ -98,12 +98,12 @@ int ObBlowFish::covert_string_to_hex(const char *str, const int64_t str_len,
   if (OB_ISNULL(str) || OB_ISNULL(hex_str)
       || OB_UNLIKELY(hex_len <= str_len * 2)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(hex_str), K(hex_len), K(str), K(str_len), K(ret));
+    LOG_WDIAG("invalid argument", K(hex_str), K(hex_len), K(str), K(str_len), K(ret));
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < str_len; ++i) {
       if (OB_UNLIKELY(-1 == sprintf(hex_str, "%.2x", static_cast<unsigned char>(str[i])))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to call sprintf", KERRMSGS, K(ret));
+        LOG_WDIAG("fail to call sprintf", KERRMSGS, K(ret));
       } else {
         hex_str += 2;
       }
@@ -134,7 +134,7 @@ int ObBlowFish::convert_large_str_to_hex(const char *str, const int64_t str_len,
   }
   if (NULL != last_minus_pos && last_minus_pos != str) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(str), K(last_minus_pos), K(ret));
+    LOG_WDIAG("invalid argument", K(str), K(last_minus_pos), K(ret));
   } else {
     if (NULL == last_minus_pos) {
       cursor = str;
@@ -289,7 +289,7 @@ int ObBlowFish::encode(char *in, const int64_t in_len, char *out, const int64_t 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(in) || OB_ISNULL(out)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(in), K(out), K(in_len), K(out_len), K(ret));
+    LOG_WDIAG("invalid argument", K(in), K(out), K(in_len), K(out_len), K(ret));
   } else {
     char tmp_out[OB_MAX_PASSWORD_LENGTH];
     memset(tmp_out, 0, sizeof(tmp_out));
@@ -297,7 +297,7 @@ int ObBlowFish::encode(char *in, const int64_t in_len, char *out, const int64_t 
     int64_t padding_len = BF_BLOCK - in_str_len % BF_BLOCK;
     if (OB_UNLIKELY(in_str_len + padding_len >= in_len)) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("in buffer size is not enough", K(padding_len), K(in), K(in_len), K(ret));
+      LOG_WDIAG("in buffer size is not enough", K(padding_len), K(in), K(in_len), K(ret));
     } else {
       for (int64_t i = in_str_len; i < in_str_len + padding_len; ++i) {
         in[i] = static_cast<char>(padding_len);
@@ -306,9 +306,9 @@ int ObBlowFish::encode(char *in, const int64_t in_len, char *out, const int64_t 
                                     in_str_len + padding_len,
                                     reinterpret_cast<unsigned char *>(tmp_out),
                                     OB_MAX_PASSWORD_LENGTH, BF_ENCRYPT))) {
-        LOG_WARN("fail to do bf ecb encrypt", K(in), K(padding_len), K(ret));
+        LOG_WDIAG("fail to do bf ecb encrypt", K(in), K(padding_len), K(ret));
       } else if (OB_FAIL(covert_string_to_hex(tmp_out, strlen(tmp_out), out, out_len))) {
-        LOG_WARN("fail to convert str to hex", K(ret));
+        LOG_WDIAG("fail to convert str to hex", K(ret));
       }
     }
   }
@@ -320,19 +320,19 @@ int ObBlowFish::decode(const char *in, const int64_t in_str_len, char *out, cons
   int ret = OB_SUCCESS;
   if (OB_ISNULL(in) || OB_ISNULL(out)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(in), K(out), K(in_str_len), K(out_len), K(ret));
+    LOG_WDIAG("invalid argument", K(in), K(out), K(in_str_len), K(out_len), K(ret));
   } else {
     char tmp_out[OB_MAX_PASSWORD_LENGTH];
     memset(tmp_out, 0, sizeof(tmp_out));
     int64_t tmp_out_len = 0;
     if (OB_FAIL(convert_large_str_to_hex(in, in_str_len, tmp_out,
                                          OB_MAX_PASSWORD_LENGTH, tmp_out_len))) {
-      LOG_WARN("failt to convert large str to hex", K(in), K(in_str_len), K(ret));
+      LOG_WDIAG("failt to convert large str to hex", K(in), K(in_str_len), K(ret));
     } else if (OB_FAIL(do_bf_ecb_encrypt(reinterpret_cast<const unsigned char *>(tmp_out),
                                          tmp_out_len,
                                          reinterpret_cast<unsigned char *>(out),
                                          out_len, BF_DECRYPT))) {
-      LOG_WARN("fail to do bf ecn encrypt", K(ret));
+      LOG_WDIAG("fail to do bf ecn encrypt", K(ret));
     } else {
       // trim padding number
       int64_t result_len = strlen(out);

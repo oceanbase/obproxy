@@ -67,7 +67,7 @@ int ObStringBufT<PageAllocatorT, PageArenaT> :: write_string(const ObString &str
   int ret = OB_SUCCESS;
   if (OB_ISNULL(stored_str)) {
     ret = OB_BAD_NULL_ERROR;
-    _OB_LOG(WARN, "stored str is null, ret=%d", ret);
+    _OB_LOG(WDIAG, "stored str is null, ret=%d", ret);
   } else if (OB_UNLIKELY(0 == str.length() || NULL == str.ptr())) {
     stored_str->assign(NULL, 0);
   } else {
@@ -75,7 +75,7 @@ int ObStringBufT<PageAllocatorT, PageArenaT> :: write_string(const ObString &str
     char *str_clone = arena_.dup(str.ptr(), str_length);
     if (OB_UNLIKELY(NULL == str_clone)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      _OB_LOG(WARN, "failed to dup string, ret=%d", ret);
+      _OB_LOG(WDIAG, "failed to dup string, ret=%d", ret);
     } else {
       stored_str->assign(str_clone, static_cast<int32_t>(str_length));
     }
@@ -91,9 +91,9 @@ int ObStringBufT<PageAllocatorT, PageArenaT> :: write_number(const number::ObNum
   int ret = OB_SUCCESS;
   if (OB_ISNULL(stored_nmb)) {
     ret = OB_BAD_NULL_ERROR;
-    _OB_LOG(WARN, "stored nmb is null, ret=%d", ret);
+    _OB_LOG(WDIAG, "stored nmb is null, ret=%d", ret);
   } else if (OB_FAIL(stored_nmb->from(nmb, arena_))) {
-    _OB_LOG(WARN, "failed to construct number, ret=%d", ret);
+    _OB_LOG(WDIAG, "failed to construct number, ret=%d", ret);
   }
   return ret;
 }
@@ -106,7 +106,7 @@ int ObStringBufT<PageAllocatorT, PageArenaT> :: write_string(const ObRowkey &row
   int ret = OB_SUCCESS;
   if (OB_ISNULL(stored_rowkey)) {
     ret = OB_BAD_NULL_ERROR;
-    _OB_LOG(WARN, "stored rowkey is null, ret=%d", ret);
+    _OB_LOG(WDIAG, "stored rowkey is null, ret=%d", ret);
   } else if (OB_UNLIKELY(0 == rowkey.length() || NULL == rowkey.ptr())) {
     stored_rowkey->assign(NULL, 0);
   } else {
@@ -114,11 +114,11 @@ int ObStringBufT<PageAllocatorT, PageArenaT> :: write_string(const ObRowkey &row
     char *buf = arena_.alloc(str_length);
     if (OB_ISNULL(buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      _OB_LOG(WARN, "no memory, ret=%d", ret);
+      _OB_LOG(WDIAG, "no memory, ret=%d", ret);
     } else {
       ObRawBufAllocatorWrapper allocator(buf, str_length);
       if (OB_FAIL(rowkey.deep_copy(*stored_rowkey, allocator))) {
-        _OB_LOG(WARN, "failed to deep copy rowkey, ret=%d", ret);
+        _OB_LOG(WDIAG, "failed to deep copy rowkey, ret=%d", ret);
       } else {}
     }
   }
@@ -132,7 +132,7 @@ int ObStringBufT<PageAllocatorT, PageArenaT> :: write_obj(const ObObj &obj, ObOb
 
   if (OB_ISNULL(stored_obj)) {
     ret = OB_BAD_NULL_ERROR;
-    _OB_LOG(WARN, "stored obj is null, ret=%d", ret);
+    _OB_LOG(WDIAG, "stored obj is null, ret=%d", ret);
   } else {
     *stored_obj = obj;
     ObObjType type = obj.get_type();

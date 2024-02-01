@@ -107,10 +107,10 @@ int ObServerStateRefreshCont::init(ObClusterResource *cr,
 
   if (OB_UNLIKELY(ss_refresh_interval_us <= 0 || NULL == cr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ss_refresh_interval_us), K(ret));
+    LOG_WDIAG("invalid argument", K(ss_refresh_interval_us), K(ret));
   } else if (OB_ISNULL(mutex_ = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mutex", K(ret));
+    LOG_WDIAG("fail to allocate mutex", K(ret));
   } else {
     cr->inc_ref();
     cluster_resource_ = cr;
@@ -133,7 +133,7 @@ void ObServerStateRefreshCont::kill_this()
     // cancel pending action at first
     // ignore ret
     if (OB_FAIL(cancel_pending_action())) {
-      LOG_WARN("fail to cancel pending action", K(ret));
+      LOG_WDIAG("fail to cancel pending action", K(ret));
     }
 
     if (OB_LIKELY(NULL != cluster_resource_)) {
@@ -175,16 +175,16 @@ int ObServerStateRefreshCont::schedule_refresh_server_state(const bool imm /*fal
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending action should be null here", K_(pending_action), K(ret));
   } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_CALL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("server state refresh cont must be scheduled in work thread", K(ret));
+    LOG_EDIAG("server state refresh cont must be scheduled in work thread", K(ret));
   } else {
     need_reset_in_error_ = false;
     int64_t delay_us = 0;
@@ -196,17 +196,17 @@ int ObServerStateRefreshCont::schedule_refresh_server_state(const bool imm /*fal
       if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(
               this,  need_refresh_cluster_role? REFRESH_CLUSTER_ROLE_EVENT : REFRESH_ZONE_STATE_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule refresh server state", K_(cluster_name), K_(cluster_id), K(imm), K(ret));
+        LOG_WDIAG("fail to schedule refresh server state", K_(cluster_name), K_(cluster_id), K(imm), K(ret));
       }
     } else {
       delay_us = ObRandomNumUtils::get_random_half_to_full(ss_refresh_interval_us_);
       if (OB_UNLIKELY(delay_us <= 0)) {
         ret = OB_INNER_STAT_ERROR;
-        LOG_WARN("delay must greater than zero", K(delay_us), K(ret));
+        LOG_WDIAG("delay must greater than zero", K(delay_us), K(ret));
       } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(
               this, HRTIME_USECONDS(delay_us), need_refresh_cluster_role ? REFRESH_CLUSTER_ROLE_EVENT : REFRESH_ZONE_STATE_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule refresh server state", K_(cluster_name), K_(cluster_id), K(delay_us), K(ret));
+        LOG_WDIAG("fail to schedule refresh server state", K_(cluster_name), K_(cluster_id), K(delay_us), K(ret));
       }
     }
 
@@ -235,7 +235,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
                  " we should reschedule destroy event", KPC(this));
         if (OB_ISNULL(self_ethread().schedule_imm(this, DESTROY_SERVER_STATE_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to schedule DESTROY_SERVER_STATE_EVENT", KPC(this), K(ret));
+          LOG_WDIAG("fail to schedule DESTROY_SERVER_STATE_EVENT", KPC(this), K(ret));
         }
       }
       break;
@@ -244,9 +244,9 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       // cancel pending action and reschedule task with newest interval
       ATOMIC_DEC(&set_interval_task_count_);
       if (OB_FAIL(cancel_pending_action())) {
-        LOG_WARN("fail to cancel pending action", K(ret));
+        LOG_WDIAG("fail to cancel pending action", K(ret));
       } else if (OB_FAIL(schedule_refresh_server_state())) {
-        LOG_WARN("fail to schedule refresh server state", K(ret));
+        LOG_WDIAG("fail to schedule refresh server state", K(ret));
       }
       break;
     }
@@ -254,7 +254,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       pending_action_ = NULL;
       cur_job_event_ = event;
       if (OB_FAIL(refresh_cluster_role())) {
-        LOG_WARN("fail to refresh cluster role", K(ret));
+        LOG_WDIAG("fail to refresh cluster role", K(ret));
       }
       break;
     }
@@ -262,7 +262,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       pending_action_ = NULL;
       cur_job_event_ = event;
       if (OB_FAIL(refresh_zone_state())) {
-        LOG_WARN("fail to refresh zone state", K(ret));
+        LOG_WDIAG("fail to refresh zone state", K(ret));
       }
       break;
     }
@@ -270,7 +270,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       pending_action_ = NULL;
       cur_job_event_ = event;
       if (OB_FAIL(refresh_server_state())) {
-        LOG_WARN("fail to refresh server state", K(ret));
+        LOG_WDIAG("fail to refresh server state", K(ret));
       }
       break;
     }
@@ -278,7 +278,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       pending_action_ = NULL;
       cur_job_event_ = event;
       if (OB_FAIL(refresh_ldg_info())) {
-        LOG_WARN("fail to refresh ldg info", K(ret));
+        LOG_WDIAG("fail to refresh ldg info", K(ret));
       }
       break;
     }
@@ -286,7 +286,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       pending_action_ = NULL;
       cur_job_event_ = event;
       if (OB_FAIL(refresh_all_tenant())) {
-        LOG_WARN("fail to refresh all tenant", K(ret));
+        LOG_WDIAG("fail to refresh all tenant", K(ret));
       }
       break;
     }
@@ -294,32 +294,32 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       pending_action_ = NULL;
       if (REFRESH_CLUSTER_ROLE_EVENT == cur_job_event_) {
         if (OB_FAIL(handle_cluster_role(data))) {
-          LOG_WARN("fail to handle cluster role", K(data), K(ret));
+          LOG_WDIAG("fail to handle cluster role", K(data), K(ret));
         }
       } else if (REFRESH_ZONE_STATE_EVENT == cur_job_event_) {
         if (OB_FAIL(handle_zone_state(data))) {
-          LOG_WARN("fail to handle zone state", K(data), K(ret));
+          LOG_WDIAG("fail to handle zone state", K(data), K(ret));
         }
       } else if (REFRESH_SERVER_STATE_EVENT == cur_job_event_) {
         if (OB_FAIL(handle_server_state(data))) {
-          LOG_WARN("fail to handle server state", K(data), K(ret));
+          LOG_WDIAG("fail to handle server state", K(data), K(ret));
         } else {
           ss_refresh_failure_ = 0;//reset
         }
       } else if (REFRESH_LDG_INFO_EVENT == cur_job_event_) {
         if (OB_FAIL(handle_ldg_info(data))) {
-          LOG_WARN("fail to handle ldg info", K(data), K(ret));
+          LOG_WDIAG("fail to handle ldg info", K(data), K(ret));
         }
       } else if (REFRESH_ALL_TENANT_EVENT == cur_job_event_) {
         if (OB_FAIL(handle_all_tenant(data))) {
-          LOG_WARN("fail to handle all tenant", K(data), K(ret));
+          LOG_WDIAG("fail to handle all tenant", K(data), K(ret));
         }
       }
       break;
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown event", K(event), K(ret));
+      LOG_WDIAG("unknown event", K(event), K(ret));
       break;
     }
   }
@@ -338,7 +338,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
     if (-OB_CLUSTER_NO_MATCH == ret) {
       imm_reschedule = false;
       if (OB_FAIL(handle_delete_cluster_resource(OB_DEFAULT_CLUSTER_ID))) {
-        LOG_WARN("fail to delete cluster resource", K(ret));
+        LOG_WDIAG("fail to delete cluster resource", K(ret));
       }
     } else if (ss_refresh_failure_ >= MAX_REFRESH_FAILURE) {
       bool need_refresh_cluster_role = get_global_proxy_config().with_config_server_
@@ -352,12 +352,12 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
 
       if (need_refresh_cluster_role) {
         if (OB_FAIL(handle_delete_cluster_resource(OB_DEFAULT_CLUSTER_ID))) {
-          LOG_WARN("fail to delete cluster resource", K(ret));
+          LOG_WDIAG("fail to delete cluster resource", K(ret));
         }
       } else {
         bool need_update_dummy_entry = true;
         if (OB_FAIL(add_refresh_rslist_task(need_update_dummy_entry))) {
-          LOG_WARN("fail to add refresh rslist task", K(ret));
+          LOG_WDIAG("fail to add refresh rslist task", K(ret));
         } else {
           ss_refresh_failure_ = 0;
         }
@@ -375,19 +375,19 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
     }
 
     if (OB_FAIL(cancel_pending_action())) {
-      LOG_WARN("fail to cancel pending action", K(ret));
+      LOG_WDIAG("fail to cancel pending action", K(ret));
     } else if (OB_FAIL(schedule_refresh_server_state(imm_reschedule))) {
-      LOG_WARN("fail to schedule refresh server state", K(imm_reschedule), K(ret));
+      LOG_WDIAG("fail to schedule refresh server state", K(imm_reschedule), K(ret));
     }
 
     if (OB_FAIL(ret) && OB_SERVER_IS_STOPPING != ret) {
-      LOG_ERROR("ObServerStateRefreshCont will stop running", K_(cluster_name),
+      LOG_EDIAG("ObServerStateRefreshCont will stop running", K_(cluster_name),
                 K_(cluster_id), K_(ss_refresh_interval_us), K(ret));
     }
   }
 
   if (get_global_proxy_config().with_config_server_ && OB_FAIL(check_add_refresh_idc_list_task())) {
-    LOG_WARN("fail to add refresh idc list task", K_(cluster_name), K_(cluster_id), K(ret));
+    LOG_WDIAG("fail to add refresh idc list task", K_(cluster_name), K_(cluster_id), K(ret));
   }
 
   if (kill_this_) {
@@ -403,7 +403,7 @@ int ObServerStateRefreshCont::cancel_pending_action()
   int ret = OB_SUCCESS;
   if (NULL != pending_action_) {
     if (OB_FAIL(pending_action_->cancel())) {
-      LOG_WARN("fail to cancel pending action", K_(pending_action), K(ret));
+      LOG_WDIAG("fail to cancel pending action", K_(pending_action), K(ret));
     } else {
       pending_action_ = NULL;
     }
@@ -420,15 +420,15 @@ int ObServerStateRefreshCont::refresh_cluster_role()
   int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_CLUSTER_ROEL_SQL);
   if (OB_UNLIKELY(len <= 0 || len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
-    LOG_WARN("fail to sync read cluster role", K(sql), K(ret));
+    LOG_WDIAG("fail to sync read cluster role", K(sql), K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
   }
   return ret;
 }
@@ -449,15 +449,15 @@ int ObServerStateRefreshCont::refresh_zone_state()
 
   if (OB_UNLIKELY(len <= 0 || len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
-    LOG_WARN("fail to syanc read zone state", K(sql), K(ret));
+    LOG_WDIAG("fail to syanc read zone state", K(sql), K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
   }
   return ret;
 }
@@ -477,15 +477,15 @@ int ObServerStateRefreshCont::refresh_server_state()
   }
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
-    LOG_WARN("fail to syanc read zone state", K(sql), K(ret));
+    LOG_WDIAG("fail to syanc read zone state", K(sql), K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
   }
   return ret;
 }
@@ -495,7 +495,7 @@ int ObServerStateRefreshCont::handle_ldg_info(void *data)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid data, fail to handle ldg info", K(data), K_(cluster_name), K_(cluster_id),
+    LOG_WDIAG("invalid data, fail to handle ldg info", K(data), K_(cluster_name), K_(cluster_id),
         K_(ss_refresh_failure), K(ret));
     ++ss_refresh_failure_;
   } else {
@@ -521,7 +521,7 @@ int ObServerStateRefreshCont::handle_ldg_info(void *data)
         ObSysLdgInfo *sys_ldg_info = NULL;
         if (OB_ISNULL(sys_ldg_info = op_alloc(ObSysLdgInfo))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("fail to alloc memory for sys ldg info", K(ret));
+          LOG_EDIAG("fail to alloc memory for sys ldg info", K(ret));
         } else {
           sys_ldg_info->tenant_id_ = tenant_id;
           sys_ldg_info->set_tenant_name(tenant_name);
@@ -531,7 +531,7 @@ int ObServerStateRefreshCont::handle_ldg_info(void *data)
           if (OB_FAIL(cluster_resource_->update_sys_ldg_info(sys_ldg_info))) {
             op_free(sys_ldg_info);
             sys_ldg_info = NULL;
-            LOG_WARN("update sys ldg info failed", K(ret));
+            LOG_WDIAG("update sys ldg info failed", K(ret));
           }
         }
       }
@@ -544,7 +544,7 @@ int ObServerStateRefreshCont::handle_ldg_info(void *data)
       } else if (ER_NO_SUCH_TABLE == resp->get_err_code()) {
         LOG_DEBUG("table ldg_standby_status not exist");
       } else {
-        LOG_WARN("fail to get all ldg info", K(ret), K(resp->get_err_code()));
+        LOG_WDIAG("fail to get all ldg info", K(ret), K(resp->get_err_code()));
       }
       LOG_DEBUG("fail to get ldg info", K(ret), K_(cluster_name));
     } else {
@@ -552,7 +552,7 @@ int ObServerStateRefreshCont::handle_ldg_info(void *data)
       LOG_DEBUG("get ldg info succ", K(ret), K_(cluster_name));
     }
     if (OB_SUCC(ret) && OB_FAIL(schedule_imm(REFRESH_SERVER_STATE_EVENT))) {
-      LOG_WARN("fail to schedule imm", K(ret));
+      LOG_WDIAG("fail to schedule imm", K(ret));
     }
   }
 
@@ -564,7 +564,7 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid data, fail to refresh all tenant", K(data), K_(cluster_name), K_(cluster_id),
+    LOG_WDIAG("invalid data, fail to refresh all tenant", K(data), K_(cluster_name), K_(cluster_id),
         K_(ss_refresh_failure), K(ret));
     ++ss_refresh_failure_;
   } else {
@@ -587,11 +587,11 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "locality", locality);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "previous_locality", previous_locality);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "primary_zone", primary_zone);
-      
+
       if (OB_FAIL(tenant_array.push_back(tenant_name))) {
-        LOG_WARN("tenant array push back failed", K(ret));
+        LOG_WDIAG("tenant array push back failed", K(ret));
       } else if (OB_FAIL(primary_zone_array.push_back(primary_zone))) {
-        LOG_WARN("primary zone array push back failed", K(ret));
+        LOG_WDIAG("primary zone array push back failed", K(ret));
       } else {
         /*
          * in oceanbase.__all_tenant, the column of previous_locality not empty
@@ -599,11 +599,11 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
          */
         if (previous_locality.empty()) {
           if (OB_FAIL(locality_array.push_back(locality))) {
-            LOG_WARN("fail to push locality to array", K(ret));
+            LOG_WDIAG("fail to push locality to array", K(ret));
           }
         } else {
           if (OB_FAIL(locality_array.push_back(previous_locality))) {
-            LOG_WARN("fail to push previous locality to array", K(ret));
+            LOG_WDIAG("fail to push previous locality to array", K(ret));
           }
         }
       }
@@ -615,11 +615,11 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
         LOG_DEBUG("access denied for __all_teannt");
         ret = OB_SUCCESS;
       } else {
-        LOG_WARN("fail to get all tenant info", K(ret));
+        LOG_WDIAG("fail to get all tenant info", K(ret));
       }
     } else {
       if (OB_FAIL(cluster_resource_->update_location_tenant_info(tenant_array, locality_array, primary_zone_array))) {
-        LOG_WARN("update location tenant info failed", K(ret));
+        LOG_WDIAG("update location tenant info failed", K(ret));
       } else {
         LOG_DEBUG("update location tenant info succ");
       }
@@ -627,7 +627,7 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
     }
 
     if (OB_SUCC(ret) && OB_FAIL(schedule_refresh_server_state())) {
-      LOG_WARN("fail to schedule refresh server state", K(ret));
+      LOG_WDIAG("fail to schedule refresh server state", K(ret));
     }
   }
 
@@ -643,7 +643,7 @@ int ObServerStateRefreshCont::handle_delete_cluster_resource(int64_t master_clus
   if (OB_DEFAULT_CLUSTER_ID == master_cluster_id) {
     LOG_INFO("current cluster has been switched to STANDBY or FailOver, but ob does not return new primary cluster id", K_(cluster_name));
   } else if (OB_FAIL(csp.set_master_cluster_id(cluster_name_, master_cluster_id))) {
-    LOG_WARN("fail to set master cluster id", K_(cluster_name), K(master_cluster_id), K(ret));
+    LOG_WDIAG("fail to set master cluster id", K_(cluster_name), K(master_cluster_id), K(ret));
     ret = OB_SUCCESS;
   }
   //2. delete cluster resource
@@ -651,10 +651,10 @@ int ObServerStateRefreshCont::handle_delete_cluster_resource(int64_t master_clus
   if (cluster_name_ == OB_META_DB_CLUSTER_NAME) {
     const bool ignore_cluster_not_exist = true;
     if (OB_FAIL(rpp.rebuild_metadb(ignore_cluster_not_exist))) {
-      PROXY_CS_LOG(WARN, "fail to rebuild metadb cluster resource", K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to rebuild metadb cluster resource", K(ret));
     }
   } else if (OB_FAIL(rpp.delete_cluster_resource(cluster_name_, cluster_id_))) {
-    LOG_WARN("fail to delete cluster resource", K_(cluster_name), K(OB_DEFAULT_CLUSTER_ID), K(ret));
+    LOG_WDIAG("fail to delete cluster resource", K_(cluster_name), K(OB_DEFAULT_CLUSTER_ID), K(ret));
   }
 
   return ret;
@@ -665,7 +665,7 @@ int ObServerStateRefreshCont::handle_cluster_role(void *data)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid data, fail to refresh cluster role",
+    LOG_WDIAG("invalid data, fail to refresh cluster role",
              K(data), K_(cluster_name), K_(cluster_id), K_(ss_refresh_failure), K(ret));
     ++ss_refresh_failure_;
   } else {
@@ -674,17 +674,17 @@ int ObServerStateRefreshCont::handle_cluster_role(void *data)
     ObMysqlResultHandler handler;
     handler.set_resp(resp);
     if (OB_FAIL(ObServerStateRefreshUtils::check_cluster_role(handler, master_cluster_id))) {
-      LOG_WARN("fail to check cluster role, will reschedule", K(ret));
+      LOG_WDIAG("fail to check cluster role, will reschedule", K(ret));
       if (OB_NOT_MASTER == ret) {
         int tmp_ret = OB_SUCCESS;
         if (OB_SUCCESS != (tmp_ret = handle_delete_cluster_resource(master_cluster_id))) {
-          LOG_WARN("fail to delete cluster resource", K_(cluster_name), K(master_cluster_id), K(tmp_ret));
+          LOG_WDIAG("fail to delete cluster resource", K_(cluster_name), K(master_cluster_id), K(tmp_ret));
         }
         // cluster resouce delete succes, no need reschedule refresh task
         ret = OB_SUCC(tmp_ret) ? tmp_ret : ret;
       }
     } else if (OB_FAIL(schedule_imm(REFRESH_ZONE_STATE_EVENT))) {
-      LOG_WARN("fail to schedule imm", K(ret));
+      LOG_WDIAG("fail to schedule imm", K(ret));
     }
   }
   return ret;
@@ -695,7 +695,7 @@ int ObServerStateRefreshCont::handle_zone_state(void *data)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid data, fail to refresh zone state", K(data), K_(cluster_name), K_(cluster_id), K_(ss_refresh_failure), K(ret));
+    LOG_WDIAG("invalid data, fail to refresh zone state", K(data), K_(cluster_name), K_(cluster_id), K_(ss_refresh_failure), K(ret));
     ++ss_refresh_failure_;
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
@@ -703,22 +703,22 @@ int ObServerStateRefreshCont::handle_zone_state(void *data)
     handler.set_resp(resp);
     cur_zones_state_.reset();
     if (OB_FAIL(ObServerStateRefreshUtils::get_zone_state_info(handler, cur_zones_state_))) {
-      LOG_WARN("fail to get zone state", K_(cur_zones_state), K(ret));
+      LOG_WDIAG("fail to get zone state", K_(cur_zones_state), K(ret));
     } else {
       if (cur_zones_state_.empty()) {
         LOG_INFO("current zones are empty, unnormal state, reschedule");
         if (OB_FAIL(schedule_refresh_server_state())) {
-          LOG_WARN("fail to schedule refresh server state", K(ret));
+          LOG_WDIAG("fail to schedule refresh server state", K(ret));
         }
       } else {
         bool is_metadb = (0 == cluster_resource_->cluster_info_key_.cluster_name_.get_string().case_compare(OB_META_DB_CLUSTER_NAME));
         if (get_global_proxy_config().enable_ldg && !is_metadb) {
           if (OB_FAIL(schedule_imm(REFRESH_LDG_INFO_EVENT))) {
-            LOG_WARN("fail to schedule imm ldg info event", K(ret));
+            LOG_WDIAG("fail to schedule imm ldg info event", K(ret));
           }
         } else {
           if (OB_FAIL(schedule_imm(REFRESH_SERVER_STATE_EVENT))) {
-            LOG_WARN("fail to schedule imm", K(ret));
+            LOG_WDIAG("fail to schedule imm", K(ret));
           }
         }
       }
@@ -733,7 +733,7 @@ int ObServerStateRefreshCont::handle_server_state(void *data)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid data, fail to refresh server state", K(data), K_(ss_refresh_failure), K(ret));
+    LOG_WDIAG("invalid data, fail to refresh server state", K(data), K_(ss_refresh_failure), K(ret));
     ++ss_refresh_failure_;
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
@@ -747,18 +747,18 @@ int ObServerStateRefreshCont::handle_server_state(void *data)
 
     if (OB_FAIL(ObServerStateRefreshUtils::get_server_state_info(
             handler, cur_zones_state_, servers_state, has_invalid_server))) {
-      LOG_WARN("fail to get server state", K_(cur_zones_state), K(servers_state), K(ret));
+      LOG_WDIAG("fail to get server state", K_(cur_zones_state), K(servers_state), K(ret));
     } else {
       // 1. handle zones
       if (OB_FAIL(handle_newest_zone(cur_zones_state_, is_zones_state_changed, has_invalid_zone))) {
-        LOG_WARN("fail to handle newest zone", K_(cur_zones_state), K(ret));
+        LOG_WDIAG("fail to handle newest zone", K_(cur_zones_state), K(ret));
         need_reset_in_error_ = true;
       }
 
       // 2. handle servers
       if (!has_invalid_zone && !has_invalid_server && OB_SUCC(ret)) {
         if (OB_FAIL(handle_newest_server(servers_state, is_servers_state_changed, has_invalid_server))) {
-          LOG_WARN("fail to handle newest server", K(servers_state), K(ret));
+          LOG_WDIAG("fail to handle newest server", K(servers_state), K(ret));
           need_reset_in_error_ = true;
         }
       }
@@ -767,21 +767,21 @@ int ObServerStateRefreshCont::handle_server_state(void *data)
         // 3. update last zones state and servers state
         if (OB_FAIL(update_last_zs_state(is_zones_state_changed, is_servers_state_changed,
                                          cur_zones_state_, servers_state))) {
-          LOG_WARN("fail to update last zone and server state", K(ret));
+          LOG_WDIAG("fail to update last zone and server state", K(ret));
           need_reset_in_error_ = true;
         }
 
         // 4. update sys tenant' __all_dummy entry
         if (OB_SUCC(ret) && !servers_state.empty() && OB_LIKELY(cluster_resource_->is_avail())) {
           if (OB_FAIL(update_all_dummy_entry(servers_state))) {
-            LOG_WARN("fail to update all dummy entry", K(servers_state), K(ret));
+            LOG_WDIAG("fail to update all dummy entry", K(servers_state), K(ret));
           }
         }
 
         // 5. update read snapshot entry
         if (OB_SUCC(ret) && !servers_state.empty() && OB_LIKELY(cluster_resource_->is_avail())) {
           if (OB_FAIL(update_safe_snapshot_manager(servers_state))) {
-            LOG_WARN("fail to update snapshot manager", K(servers_state), K(ret));
+            LOG_WDIAG("fail to update snapshot manager", K(servers_state), K(ret));
           }
         }
       }
@@ -791,11 +791,11 @@ int ObServerStateRefreshCont::handle_server_state(void *data)
   if (OB_SUCC(ret)) {
     if (get_global_proxy_config().check_tenant_locality_change) {
       if (OB_FAIL(schedule_imm(REFRESH_ALL_TENANT_EVENT))) {
-        LOG_WARN("fail to schedule imm all tenant event", K(ret));
+        LOG_WDIAG("fail to schedule imm all tenant event", K(ret));
       }
     } else {
       if (OB_FAIL(schedule_refresh_server_state())) {
-        LOG_WARN("fail to schedule refresh server state", K(ret));
+        LOG_WDIAG("fail to schedule refresh server state", K(ret));
       }
     }
   }
@@ -811,15 +811,15 @@ int ObServerStateRefreshCont::refresh_ldg_info()
   const int64_t len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SYS_LDG_INFO_SQL));
   if (OB_UNLIKELY(len < 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
-    LOG_WARN("fail to async read all tenant", K(sql), K(ret));
+    LOG_WDIAG("fail to async read all tenant", K(sql), K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
   }
   return ret;
 }
@@ -834,15 +834,15 @@ int ObServerStateRefreshCont::refresh_all_tenant()
     IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_) ? "previous_locality = ''" : "previous_locality is null"));
   if (OB_UNLIKELY(len <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(sql), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
-    LOG_WARN("fail to async read all tenant", K(sql), K(ret));
+    LOG_WDIAG("fail to async read all tenant", K(sql), K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
   }
   return ret;
 }
@@ -859,20 +859,20 @@ int ObServerStateRefreshCont::update_last_zs_state(
       // do nothing
     } else {
       if (OB_FAIL(last_zones_state_.assign(zones_state))) {
-        LOG_WARN("fail to assign last zone state", K(zones_state), K(ret));
+        LOG_WDIAG("fail to assign last zone state", K(zones_state), K(ret));
       } else {
         ObZoneStateInfo *tmp_zsi = NULL;
         ObString target_zname;
         for (int64_t i = 0; (i < servers_state.count()) && OB_SUCC(ret); ++i) {
           if (OB_ISNULL(servers_state.at(i).zone_state_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("zone state can not be NULL", K(servers_state), K(i), K(ret));
+            LOG_WDIAG("zone state can not be NULL", K(servers_state), K(i), K(ret));
           } else {
             target_zname = servers_state.at(i).zone_state_->zone_name_;
             tmp_zsi = ObServerStateRefreshUtils::get_zone_info_ptr(last_zones_state_, target_zname);
             if (OB_ISNULL(tmp_zsi)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("can not find zone info", K(target_zname), K(ret));
+              LOG_WDIAG("can not find zone info", K(target_zname), K(ret));
             } else {
               servers_state.at(i).zone_state_ = tmp_zsi;
             }
@@ -880,7 +880,7 @@ int ObServerStateRefreshCont::update_last_zs_state(
         }
         if (OB_SUCC(ret)) {
           if (OB_FAIL(last_servers_state_.assign(servers_state))) {
-            LOG_WARN("fail to assign last servers state", K(servers_state), K(ret));
+            LOG_WDIAG("fail to assign last servers state", K(servers_state), K(ret));
           } else {
             if (!congestion_manager_->is_base_servers_added()) {
               congestion_manager_->set_base_servers_added();
@@ -899,20 +899,20 @@ int ObServerStateRefreshCont::update_last_zs_state(
                 ObServerStateInfo &server_state = servers_state.at(i);
                 if (OB_ISNULL(server_state.zone_state_)) {
                   ret = OB_ERR_UNEXPECTED;
-                  LOG_WARN("zone_state_ is NULL", "server_state", server_state, K(ret));
+                  LOG_WDIAG("zone_state_ is NULL", "server_state", server_state, K(ret));
                 } else {
                   simple_server_info.reset();
                   simple_server_info.is_merging_ = server_state.zone_state_->is_merging_;
                   simple_server_info.is_force_congested_ = server_state.is_treat_as_force_congested();
                   simple_server_info.zone_type_ = server_state.zone_state_->zone_type_;
                   if (OB_FAIL(simple_server_info.set_addr(server_state.replica_.server_))) {
-                    LOG_WARN("fail to set addr", "addr", server_state.replica_.server_, K(ret));
+                    LOG_WDIAG("fail to set addr", "addr", server_state.replica_.server_, K(ret));
                   } else if (OB_FAIL(simple_server_info.set_zone_name(server_state.zone_state_->zone_name_))) {
-                    LOG_WARN("fail to set zone name", "zone_name", server_state.zone_state_->zone_name_, K(ret));
+                    LOG_WDIAG("fail to set zone name", "zone_name", server_state.zone_state_->zone_name_, K(ret));
                   } else if (OB_FAIL(simple_server_info.set_region_name(server_state.zone_state_->region_name_))) {
-                    LOG_WARN("fail to set region name", "region_name", server_state.zone_state_->region_name_, K(ret));
+                    LOG_WDIAG("fail to set region name", "region_name", server_state.zone_state_->region_name_, K(ret));
                   } else if (OB_FAIL(simple_server_info.set_idc_name(server_state.zone_state_->idc_name_))) {
-                    LOG_WARN("fail to set idc name", "idc_name", server_state.zone_state_->idc_name_, K(ret));
+                    LOG_WDIAG("fail to set idc name", "idc_name", server_state.zone_state_->idc_name_, K(ret));
                   }
                   if (OB_SUCC(ret)) {
                     for (int64_t i = 0; i < old_server_state_info.count(); i++) {
@@ -927,7 +927,7 @@ int ObServerStateRefreshCont::update_last_zs_state(
                     }
                     LOG_DEBUG("update server state info", K(simple_server_info), K(new_ss_version));
                     if (OB_FAIL(server_state_info.push_back(simple_server_info))) {
-                      LOG_WARN("fail to push back server_info", K(simple_server_info), K(ret));
+                      LOG_WDIAG("fail to push back server_info", K(simple_server_info), K(ret));
                     }
                   }
                 }
@@ -957,13 +957,13 @@ int ObServerStateRefreshCont::schedule_imm(const int event)
   int ret = OB_SUCCESS;
   if (NULL != pending_action_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action must be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action must be NULL", K_(pending_action), K(ret));
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, event))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to schedule imm", K(event), K(ret));
+    LOG_EDIAG("fail to schedule imm", K(event), K(ret));
   }
   return ret;
 }
@@ -985,7 +985,7 @@ int ObServerStateRefreshCont::handle_newest_zone(
     for (int64_t i = 0; OB_SUCC(ret) && (i < total_zone_count); ++i) {
       // do not call handle_deleted_zone if one of zone_state is not valid;
       if (!zones_state.at(i).is_valid()) {
-        LOG_WARN("invalid zone state", K(zones_state.at(i)));
+        LOG_WDIAG("invalid zone state", K(zones_state.at(i)));
         has_invalid_zone = true;
         break; // no need continue
       } else {
@@ -1030,13 +1030,13 @@ int ObServerStateRefreshCont::handle_newest_zone(
       if (is_zones_state_changed) {
         if (total_zone_count != (active_zone_count + merge_zone_count + upgrade_zone_count)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("zone count missmatch", K(active_zone_count), K(merge_zone_count),
+          LOG_WDIAG("zone count missmatch", K(active_zone_count), K(merge_zone_count),
                    K(upgrade_zone_count), K(total_zone_count), K(zones_state), K(ret));
         } else {
           for (int64_t i = 0; (i < total_zone_count); ++i) {
             const ObZoneStateInfo &zs_info = zones_state.at(i);
             if (OB_FAIL(do_update_zone(zs_info))) {
-              LOG_WARN("fail to update zone state", K(zs_info),  K(ret));
+              LOG_WDIAG("fail to update zone state", K(zs_info),  K(ret));
             }
           }
         }
@@ -1044,7 +1044,7 @@ int ObServerStateRefreshCont::handle_newest_zone(
         // handle deleted zone, if has
         if (OB_SUCC(ret)) {
           if (OB_FAIL(handle_deleted_zone(zones_state))) {
-            LOG_WARN("fail to handle deleted zone", K(zones_state), K(ret));
+            LOG_WDIAG("fail to handle deleted zone", K(zones_state), K(ret));
           }
         }
 
@@ -1076,7 +1076,7 @@ int ObServerStateRefreshCont::do_update_zone(const ObZoneStateInfo &zs_info)
   if (need_update) {
     bool is_init = !congestion_manager_->is_base_servers_added();
     if (OB_FAIL(congestion_manager_->update_zone(zs_info.zone_name_, zs_info.region_name_, zs_info.cgt_zone_state_, is_init))) {
-      LOG_WARN("fail to update zone state", KPC(last_zs_info), K(zs_info), K(is_init), K(ret));
+      LOG_WDIAG("fail to update zone state", KPC(last_zs_info), K(zs_info), K(is_init), K(ret));
     } else {
       LOG_INFO("zone state has changed, update it", KPC(last_zs_info), K(zs_info), K(is_init), K(ret));
     }
@@ -1093,14 +1093,14 @@ int ObServerStateRefreshCont::handle_rs_changed(const ObIArray<ObServerStateInfo
   ObProxyJsonConfigInfo *json_info = cs_processor.acquire();
   if (OB_ISNULL(json_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json config info is null", K(ret));
+    LOG_WDIAG("json config info is null", K(ret));
   } else {
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     if (OB_FAIL(json_info->get_sub_cluster_info(cluster_name_, cluster_id_, sub_cluster_info))) {
-      LOG_WARN("fail to get cluster info", K_(cluster_name), K_(cluster_id), K(ret));
+      LOG_WDIAG("fail to get cluster info", K_(cluster_name), K_(cluster_id), K(ret));
     } else if (OB_ISNULL(sub_cluster_info)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("cluster info is null", K_(cluster_name), K_(cluster_id), K(ret));
+      LOG_WDIAG("cluster info is null", K_(cluster_name), K_(cluster_id), K(ret));
     } else {
       const LocationList &rslist = sub_cluster_info->web_rs_list_;
       for (int64_t i = 0; found_rs && i < rslist.count(); ++i) {
@@ -1124,7 +1124,7 @@ int ObServerStateRefreshCont::handle_rs_changed(const ObIArray<ObServerStateInfo
     //otherwise the sys dummy entry will come from rslist. it is dangerous in some case
     bool need_update_dummy_entry = false;
     if (OB_FAIL(add_refresh_rslist_task(need_update_dummy_entry))) {
-      LOG_WARN("fail to add refresh rslist", K(ret));
+      LOG_WDIAG("fail to add refresh rslist", K(ret));
     }
   }
   return ret;
@@ -1141,7 +1141,7 @@ int ObServerStateRefreshCont::handle_newest_server(
     ObCongestionEntry::ObServerState state = ObCongestionEntry::ACTIVE;
     for (int64_t i = 0; OB_SUCC(ret) && (i < servers_state.count()); ++i) {
       if (!servers_state.at(i).is_valid()) {
-        LOG_WARN("invalid server stat", K(servers_state.at(i)));
+        LOG_WDIAG("invalid server stat", K(servers_state.at(i)));
         has_invalid_server = true;
         break; // no need continue
       } else {
@@ -1194,19 +1194,19 @@ int ObServerStateRefreshCont::handle_newest_server(
       if (is_servers_state_changed || 0 != get_global_resource_pool_processor().ip_set_.size()) {
         // check rslist to see if need to update rslist, ignore ret
         if (OB_FAIL(handle_rs_changed(servers_state))) {
-          LOG_WARN("fail to handle rslist changed", K(ret));
+          LOG_WDIAG("fail to handle rslist changed", K(ret));
         }
 
         // update server
         for (int64_t i = 0; OB_SUCC(ret) && (i < servers_state.count()); ++i) {
           if (OB_FAIL(do_update_server(servers_state.at(i)))) {
-            LOG_WARN("fail to update server state", K(servers_state), K(ret));
+            LOG_WDIAG("fail to update server state", K(servers_state), K(ret));
           }
         }
         // handle deleted server,if has
         if (OB_SUCC(ret)) {
           if (OB_FAIL(handle_deleted_server(servers_state))) {
-            LOG_WARN("fail to handle deleted server", K(servers_state), K(ret));
+            LOG_WDIAG("fail to handle deleted server", K(servers_state), K(ret));
           }
         }
         LOG_INFO("server state info", K(servers_state));
@@ -1249,7 +1249,7 @@ int ObServerStateRefreshCont::do_update_server(const ObServerStateInfo &ss_info)
     bool is_init = !congestion_manager_->is_base_servers_added();
     int64_t cr_version = cluster_resource_->version_;
     if (OB_FAIL(congestion_manager_->update_server(ip, cr_version, cgt_server_state, zone_name, region_name, is_init))) {
-      LOG_WARN("fail to update update server", KPC(last_ss_info), K(cr_version),
+      LOG_WDIAG("fail to update update server", KPC(last_ss_info), K(cr_version),
                K(ss_info),  K(is_init), K(ret));
     } else {
       LOG_INFO("server state has changed, update it", KPC(last_ss_info), K(cr_version), K(ss_info), K(is_init), K(ret));
@@ -1267,12 +1267,12 @@ int ObServerStateRefreshCont::add_refresh_rslist_task(const bool need_update_dum
   if (0 == ATOMIC_CAS(&cluster_resource_->fetch_rslist_task_count_, 0, 1)) {
     if (OB_ISNULL(mutex = new_proxy_mutex())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc memory for mutex", K(ret));
+      LOG_EDIAG("fail to alloc memory for mutex", K(ret));
     } else if (FALSE_IT(cluster_resource_->inc_ref())) {
       // impossible
     } else if (OB_ISNULL(cont = new(std::nothrow) ObRslistFetchCont(cluster_resource_, mutex, need_update_dummy_entry, NULL))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc memory for ObRslist", K(ret));
+      LOG_EDIAG("fail to alloc memory for ObRslist", K(ret));
       if (OB_LIKELY(NULL != mutex)) {
         mutex->free();
         mutex = NULL;
@@ -1280,7 +1280,7 @@ int ObServerStateRefreshCont::add_refresh_rslist_task(const bool need_update_dum
       cluster_resource_->dec_ref();
     } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_TASK))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule refresh rslist task", K(ret));
+      LOG_WDIAG("fail to schedule refresh rslist task", K(ret));
       cluster_resource_->dec_ref();
     } else {
       cluster_resource_->last_rslist_refresh_time_ns_ = get_hrtime();
@@ -1314,12 +1314,12 @@ int ObServerStateRefreshCont::check_add_refresh_idc_list_task()
     if (0 == ATOMIC_CAS(&cluster_resource_->fetch_idc_list_task_count_, 0, 1)) {
       if (OB_ISNULL(mutex = new_proxy_mutex())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc memory for mutex", K(ret));
+        LOG_EDIAG("fail to alloc memory for mutex", K(ret));
       } else if (FALSE_IT(cluster_resource_->inc_ref())) {
         // impossible
-      } else if (OB_ISNULL(cont = new(std::nothrow) ObIDCListFetchCont(cluster_resource_, mutex))) {
+      } else if (OB_ISNULL(cont = new(std::nothrow) ObIDCListFetchCont(cluster_resource_, mutex, NULL))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc memory for ObIDCListFetchCont", K(ret));
+        LOG_EDIAG("fail to alloc memory for ObIDCListFetchCont", K(ret));
         if (OB_LIKELY(NULL != mutex)) {
           mutex->free();
           mutex = NULL;
@@ -1327,7 +1327,7 @@ int ObServerStateRefreshCont::check_add_refresh_idc_list_task()
         cluster_resource_->dec_ref();
       } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_TASK))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule refresh idc list task", K(ret));
+        LOG_WDIAG("fail to schedule refresh idc list task", K(ret));
         cluster_resource_->dec_ref();
       } else {
         cluster_resource_->last_idc_list_refresh_time_ns_ = get_hrtime();
@@ -1365,7 +1365,7 @@ int ObServerStateRefreshCont::update_all_dummy_entry(const ObIArray<ObServerStat
   LocationList server_list; //save the ordered servers
 
   if (OB_FAIL(ObServerStateRefreshUtils::order_servers_state(servers_state, server_list))) {
-    LOG_WARN("fail to order servers state", K(ret));
+    LOG_WDIAG("fail to order servers state", K(ret));
   }
 
   // update rslist
@@ -1379,7 +1379,7 @@ int ObServerStateRefreshCont::update_all_dummy_entry(const ObIArray<ObServerStat
     if (servers_state.count() != last_servers_state_.count()) {
       is_rs_list_changed = true;
     } else if (OB_FAIL(cs_processor.get_rs_list_hash(cluster_name_, cluster_id_, last_rs_list_hash))) {
-      LOG_WARN("fail to get_last_rs_list_hash", K_(cluster_name), K_(cluster_id), K(ret));
+      LOG_WDIAG("fail to get_last_rs_list_hash", K_(cluster_name), K_(cluster_id), K(ret));
     } else if (last_rs_list_hash != last_server_list_hash_) {
       LOG_INFO("rs list maybe update by rs refresh task, current used dummy entry maybe old one. "
                "We need stop to update server list and dummy entry this time",
@@ -1393,7 +1393,7 @@ int ObServerStateRefreshCont::update_all_dummy_entry(const ObIArray<ObServerStat
                                    K(is_rs_list_changed), K_(cluster_name), K_(cluster_id));
     if (is_rs_list_changed) {
       if (OB_FAIL(cs_processor.update_rslist(cluster_name_, cluster_id_, server_list, cur_server_list_hash))) {
-        LOG_WARN("fail to update rslist", K(cluster_name_), K_(cluster_id), K(server_list), K(ret));
+        LOG_WDIAG("fail to update rslist", K(cluster_name_), K_(cluster_id), K(server_list), K(ret));
       } else {
         last_server_list_hash_ = cur_server_list_hash;
         LOG_DEBUG("succ to update rslist", K(cluster_name_), K_(cluster_id), K(server_list));
@@ -1408,16 +1408,16 @@ int ObServerStateRefreshCont::update_all_dummy_entry(const ObIArray<ObServerStat
     ObTableCache &table_cache = get_global_table_cache();
     const bool is_rslist = false;
     if (OB_FAIL(ObRouteUtils::build_sys_dummy_entry(cluster_name_, cluster_id_, server_list, is_rslist, entry))) {
-      LOG_WARN("fail to build sys dummy entry", K(server_list), K_(cluster_name), K_(cluster_id), K(ret));
+      LOG_WDIAG("fail to build sys dummy entry", K(server_list), K_(cluster_name), K_(cluster_id), K(ret));
     } else if (OB_ISNULL(entry) || OB_UNLIKELY(!entry->is_valid())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("entry can not be NULL here", K(entry), K(ret));
+      LOG_WDIAG("entry can not be NULL here", K(entry), K(ret));
     } else {
       ObTableEntry *tmp_entry = NULL;
       tmp_entry = entry;
       tmp_entry->inc_ref();//just for print
       if (OB_FAIL(ObTableCache::add_table_entry(table_cache, *entry))) {
-        LOG_WARN("fail to add table entry", K(*entry), K(ret));
+        LOG_WDIAG("fail to add table entry", K(*entry), K(ret));
       } else {
         obsys::CWLockGuard guard(cluster_resource_->dummy_entry_rwlock_);
         if (NULL != cluster_resource_->dummy_entry_) {
@@ -1454,7 +1454,7 @@ int ObServerStateRefreshCont::update_safe_snapshot_manager(
     const ObServerStateInfo &server_state = servers_state.at(i);
     if (NULL == cluster_resource_->safe_snapshot_mgr_.get(server_state.replica_.server_)) {
       if (OB_FAIL(cluster_resource_->safe_snapshot_mgr_.add(server_state.replica_.server_))) {
-        LOG_WARN("failed to add server", K(server_state.replica_.server_), K(ret));
+        LOG_WDIAG("failed to add server", K(server_state.replica_.server_), K(ret));
         // ignore ret and go on
         ret = OB_SUCCESS;
       }
@@ -1480,7 +1480,7 @@ int ObServerStateRefreshCont::handle_deleted_zone(ObIArray<ObZoneStateInfo> &zon
       if (OB_FAIL(congestion_manager_->update_zone(last_zs_info.zone_name_,
                                                    last_zs_info.region_name_,
                                                    ObCongestionZoneState::DELETED))) {
-        LOG_WARN("fail to delete zone", K(last_zs_info), K(ret));
+        LOG_WDIAG("fail to delete zone", K(last_zs_info), K(ret));
       }
     }
   }
@@ -1510,7 +1510,7 @@ int ObServerStateRefreshCont::handle_deleted_server(ObIArray<ObServerStateInfo> 
       if (OB_FAIL(congestion_manager_->update_server(ip, cr_version, ObCongestionEntry::DELETED,
           last_ss_info.zone_state_->zone_name_,
           last_ss_info.zone_state_->region_name_, is_init))) {
-        LOG_WARN("fail to delete server", KPC(last_ss_info.zone_state_), K(cr_version), K(ret));
+        LOG_WDIAG("fail to delete server", KPC(last_ss_info.zone_state_), K(cr_version), K(ret));
       }
     }
   }
@@ -1522,7 +1522,7 @@ int ObServerStateRefreshCont::set_server_state_refresh_interval(const int64_t in
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(interval <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid server state refresh interval", K(interval), K(ret));
+    LOG_WDIAG("invalid server state refresh interval", K(interval), K(ret));
   } else {
     // add set_interval_task_count_ before schedule_imm, and dec when failed
     ss_refresh_interval_us_ = interval;
@@ -1530,7 +1530,7 @@ int ObServerStateRefreshCont::set_server_state_refresh_interval(const int64_t in
     if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL))) {
       ATOMIC_DEC(&set_interval_task_count_);
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("schedule imm ss_refresh task error", K(ret));
+      LOG_WDIAG("schedule imm ss_refresh task error", K(ret));
     }
   }
   return ret;
@@ -1539,7 +1539,7 @@ int ObServerStateRefreshCont::set_server_state_refresh_interval(const int64_t in
 //----------------------------ObServerStateRefreshUtils------------------------------------//
 
 // if current cluster is master, cluster_role = primary, primary_cluster_id = NULL
-// if current cluster is slave, cluster_role = standby, primary_cluster_id is primary clusuter id 
+// if current cluster is slave, cluster_role = standby, primary_cluster_id is primary clusuter id
 int ObServerStateRefreshUtils::check_cluster_role(ObMysqlResultHandler &handler, int64_t &master_cluster_id)
 {
   int ret = OB_SUCCESS;
@@ -1551,7 +1551,7 @@ int ObServerStateRefreshUtils::check_cluster_role(ObMysqlResultHandler &handler,
       LOG_DEBUG("v$ob_cluster is denied access, maybe revoke proxyro, no need check", K(ret));
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("fail to get resultset row for cluster role", K(ret));
+      LOG_WDIAG("fail to get resultset row for cluster role", K(ret));
     }
   } else {
     ObString cluster_role;
@@ -1565,7 +1565,7 @@ int ObServerStateRefreshUtils::check_cluster_role(ObMysqlResultHandler &handler,
         // if OBServer do not election primary cluster, primary_cluster_id is NULL. ignore return value
         PROXY_EXTRACT_INT_FIELD_MYSQL(handler, "primary_cluster_id", master_cluster_id, int64_t);
         ret = OB_NOT_MASTER;
-        LOG_WARN("fail to check PRIMARY cluster role",
+        LOG_WDIAG("fail to check PRIMARY cluster role",
                  "remote cluster role", cluster_role,
                  "remote cluster status", cluster_status, K(master_cluster_id), K(ret));
       }
@@ -1635,13 +1635,13 @@ int ObServerStateRefreshUtils::get_zone_state_info(ObMysqlResultHandler &result_
     if (OB_SUCC(ret)) {
       zone_state.zone_status_ = ObZoneStatus::get_status(zone_status);
       if (OB_FAIL(zone_state.set_zone_name(zone_name))) {
-        LOG_WARN("fail to set zone name", K(zone_name), K(ret));
+        LOG_WDIAG("fail to set zone name", K(zone_name), K(ret));
       } else if (OB_FAIL(zone_state.set_region_name(region_name))) {
-        LOG_WARN("fail to set region name", K(region_name), K(ret));
+        LOG_WDIAG("fail to set region name", K(region_name), K(ret));
       } else if (OB_FAIL(zone_state.set_idc_name(idc_name))) {
-        LOG_WARN("fail to set idc name", K(region_name), K(ret));
+        LOG_WDIAG("fail to set idc name", K(region_name), K(ret));
       } else if (OB_FAIL(zone_info.push_back(zone_state))) {
-        LOG_WARN("fail to push back zone_info", K(zone_state), K(ret));
+        LOG_WDIAG("fail to push back zone_info", K(zone_state), K(ret));
       } else {
         // do nothing
       }
@@ -1649,7 +1649,7 @@ int ObServerStateRefreshUtils::get_zone_state_info(ObMysqlResultHandler &result_
   }
 
   if (ret != OB_ITER_END) {
-    LOG_WARN("fail to get zone state info", K(ret));
+    LOG_WDIAG("fail to get zone state info", K(ret));
   } else {
     ret = OB_SUCCESS;
     LOG_DEBUG("get zone state info succ", K(zone_info));
@@ -1696,13 +1696,13 @@ int ObServerStateRefreshUtils::get_server_state_info(
       server_state.server_status_ = ObServerStatus::OB_DISPLAY_MAX;
       if (OB_FAIL(ObServerStatus::str2display_status(
           display_status_str, server_state.server_status_))) {
-        LOG_WARN("display string to status failed", K(ret), K(display_status_str));
+        LOG_WDIAG("display string to status failed", K(ret), K(display_status_str));
       } else if ((server_state.server_status_ < 0)
                  || (server_state.server_status_ >= ObServerStatus::OB_DISPLAY_MAX)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid display status", "server_status", server_state.server_status_, K(ret));
+        LOG_WDIAG("invalid display status", "server_status", server_state.server_status_, K(ret));
       } else if (OB_FAIL(server_state.add_addr(ip_str, port))) {
-        LOG_WARN("fail to add addr", K(ip_str), K(port), K(ret));
+        LOG_WDIAG("fail to add addr", K(ip_str), K(port), K(ret));
         has_invalid_server = true;
         //if svr_ip or svr_port in __all_virtual_proxy_server_stat is wrong,
         //we can skip over this server_state.
@@ -1723,14 +1723,14 @@ int ObServerStateRefreshUtils::get_server_state_info(
           server_state.replica_.replica_type_ = REPLICA_TYPE_FULL;
         }
         if (OB_FAIL(servers_state.push_back(server_state))) {
-          LOG_WARN("fail to push back server_state", K(server_state), K(ret));
+          LOG_WDIAG("fail to push back server_state", K(server_state), K(ret));
         }
       }
     }
   }
 
   if (OB_ITER_END != ret) {
-    LOG_WARN("fail to get server state info", K(ret));
+    LOG_WDIAG("fail to get server state info", K(ret));
   } else {
     LOG_DEBUG("get server state info succ", K(servers_state));
     ret = OB_SUCCESS;
@@ -1793,7 +1793,7 @@ int ObServerStateRefreshUtils::order_servers_state(const ObIArray<ObServerStateI
     if (last_zone_name != server_info->zone_state_->zone_name_) {
       // save first idx in zone
       if (OB_FAIL(first_idx_in_zone.push_back(i))) {
-        LOG_WARN("fail to push back first_idx_in_zone", K(i), K(ret));
+        LOG_WDIAG("fail to push back first_idx_in_zone", K(i), K(ret));
       } else {
         last_zone_name = server_info->zone_state_->zone_name_;
       }
@@ -1803,7 +1803,7 @@ int ObServerStateRefreshUtils::order_servers_state(const ObIArray<ObServerStateI
   if (OB_SUCC(ret)) {
     //virtual invalid idx, just used for compute svr_count_in_zone
     if (OB_FAIL(first_idx_in_zone.push_back(server_count))) {
-      LOG_WARN("fail to push back first_idx_in_zone", K(server_count), K(ret));
+      LOG_WDIAG("fail to push back first_idx_in_zone", K(server_count), K(ret));
     }
   }
 
@@ -1822,9 +1822,9 @@ int ObServerStateRefreshUtils::order_servers_state(const ObIArray<ObServerStateI
     for (int64_t i = 0; i < zone_count && OB_SUCC(ret); ++i) {
       if (OB_UNLIKELY(0 >= (svr_count_in_zone = first_idx_in_zone.at(i + 1) - first_idx_in_zone.at(i)))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("it should not happened", K(first_idx_in_zone), K(svr_count_in_zone), K(ret));
+        LOG_WDIAG("it should not happened", K(first_idx_in_zone), K(svr_count_in_zone), K(ret));
       } else if (OB_FAIL(unused_server_count.push_back(svr_count_in_zone))) {
-        LOG_WARN("fail to push back unused_server_count", K(i), K(svr_count_in_zone), K(ret));
+        LOG_WDIAG("fail to push back unused_server_count", K(i), K(svr_count_in_zone), K(ret));
       } else {/*do nothing*/}
     }
     if (OB_SUCC(ret)) {
@@ -1840,7 +1840,7 @@ int ObServerStateRefreshUtils::order_servers_state(const ObIArray<ObServerStateI
             svr_count_in_zone = first_idx_in_zone.at(i + 1) - first_idx_in_zone.at(i);
             svr_idx = first_idx_in_zone.at(i) + (init_idx + i) % svr_count_in_zone;
             if (OB_FAIL(server_list.push_back(servers_state.at(svr_idx).replica_))) {
-              LOG_WARN("fail to push back server_list", "replica", servers_state.at(svr_idx).replica_,
+              LOG_WDIAG("fail to push back server_list", "replica", servers_state.at(svr_idx).replica_,
                        K(i), K(unused_server_count), K(ret));
             } else {
               ++finish_count;
@@ -1872,10 +1872,10 @@ int ObDetectServerStateCont::init(ObClusterResource *cr, int64_t server_detect_r
 
   if (OB_UNLIKELY(server_detect_refresh_interval_us <= 0 || NULL == cr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(server_detect_refresh_interval_us), K(ret));
+    LOG_WDIAG("invalid argument", K(server_detect_refresh_interval_us), K(ret));
   } else if (OB_ISNULL(mutex_ = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mutex", K(ret));
+    LOG_WDIAG("fail to allocate mutex", K(ret));
   } else {
     cr->inc_ref();
     cluster_resource_ = cr;
@@ -1893,7 +1893,7 @@ void ObDetectServerStateCont::kill_this()
     // cancel pending action at first
     // ignore ret
     if (OB_FAIL(cancel_pending_action())) {
-      LOG_WARN("fail to cancel pending action", K(ret));
+      LOG_WDIAG("fail to cancel pending action", K(ret));
     }
 
     if (OB_LIKELY(NULL != cluster_resource_)) {
@@ -1924,13 +1924,13 @@ int ObDetectServerStateCont::schedule_detect_server_state()
   const int64_t server_detect_mode = get_global_proxy_config().server_detect_mode;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_CALL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("server state refresh cont must be scheduled in work thread", K(ret));
+    LOG_EDIAG("server state refresh cont must be scheduled in work thread", K(ret));
   } else if (server_detect_mode > 0) {
     int64_t ss_version = cluster_resource_->server_state_version_;
     common::DRWLock &server_state_lock = cluster_resource_->get_server_state_lock(ss_version);
@@ -1954,12 +1954,12 @@ int ObDetectServerStateCont::schedule_detect_server_state()
         ObDetectOneServerStateCont *cont = NULL;
         if (OB_ISNULL(cont = op_alloc(ObDetectOneServerStateCont))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc ObDetectOneServerStateCont", K(ret));
+          LOG_WDIAG("fail to alloc ObDetectOneServerStateCont", K(ret));
         } else if (OB_FAIL(cont->init(cluster_resource_, info.addr_))) {
-          LOG_WARN("fail to init detect server state cont", K(ret));
+          LOG_WDIAG("fail to init detect server state cont", K(ret));
         } else if (OB_ISNULL(self_ethread().schedule_imm(cont, DETECT_SERVER_STATE_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("schedule detect one server state failed", K(ret));
+          LOG_WDIAG("schedule detect one server state failed", K(ret));
         }
         LOG_DEBUG("schedule detect one server state", K(info), K(ss_version));
       } else {
@@ -1978,12 +1978,12 @@ int ObDetectServerStateCont::schedule_detect_server_state()
       ObDetectOneServerStateCont *cont = NULL;
       if (OB_ISNULL(cont = op_alloc(ObDetectOneServerStateCont))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc ObDetectOneServerStateCont", K(ret));
+        LOG_WDIAG("fail to alloc ObDetectOneServerStateCont", K(ret));
       } else if (OB_FAIL(cont->init(cluster_resource_, addr))) {
-        LOG_WARN("fail to init detect server cont", K(ret));
+        LOG_WDIAG("fail to init detect server cont", K(ret));
       } else if (OB_ISNULL(self_ethread().schedule_imm(cont, DETECT_SERVER_STATE_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("schedule detect one server state failed", K(ret));
+        LOG_WDIAG("schedule detect one server state failed", K(ret));
       }
       it++;
       LOG_DEBUG("schedule detect one server state", K(addr), K(ss_version));
@@ -1993,11 +1993,11 @@ int ObDetectServerStateCont::schedule_detect_server_state()
 
   if (OB_UNLIKELY(server_detect_state_interval_us_ <= 0)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("delay must greater than zero", K_(server_detect_state_interval_us), K(ret));
+    LOG_WDIAG("delay must greater than zero", K_(server_detect_state_interval_us), K(ret));
   } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(this,
               HRTIME_USECONDS(server_detect_state_interval_us_), DETECT_SERVER_STATE_EVENT))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule refresh server state", K_(server_detect_state_interval_us),
+    LOG_WDIAG("fail to schedule refresh server state", K_(server_detect_state_interval_us),
               K(server_detect_mode), KPC_(cluster_resource), K(ret));
   }
 
@@ -2024,7 +2024,7 @@ int ObDetectServerStateCont::main_handler(int event, void *data)
             " we should reschedule destroy event", KPC(this));
         if (OB_ISNULL(self_ethread().schedule_imm(this, DESTROY_SERVER_STATE_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to schedule DESTROY_SERVER_STATE_EVENT", KPC(this), K(ret));
+          LOG_WDIAG("fail to schedule DESTROY_SERVER_STATE_EVENT", KPC(this), K(ret));
         }
       }
       break;
@@ -2032,22 +2032,22 @@ int ObDetectServerStateCont::main_handler(int event, void *data)
     case EVENT_IMMEDIATE: {
       ATOMIC_DEC(&set_interval_task_count_);
       if (OB_FAIL(cancel_pending_action())) {
-        LOG_WARN("cancel pending action failed", K(ret));
+        LOG_WDIAG("cancel pending action failed", K(ret));
       } else if (OB_FAIL(schedule_detect_server_state())) {
-        LOG_WARN("fail to schedule detect server state", K(ret));
+        LOG_WDIAG("fail to schedule detect server state", K(ret));
       }
       break;
     }
     case DETECT_SERVER_STATE_EVENT: {
       pending_action_ = NULL;
       if (OB_FAIL(schedule_detect_server_state())) {
-        LOG_WARN("fail to schedule detect server state", K(ret));
+        LOG_WDIAG("fail to schedule detect server state", K(ret));
       }
       break;
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown event", K(event), K(ret));
+      LOG_WDIAG("unknown event", K(event), K(ret));
       break;
     }
   }
@@ -2065,7 +2065,7 @@ int ObDetectServerStateCont::cancel_pending_action()
   int ret = OB_SUCCESS;
   if (NULL != pending_action_) {
     if (OB_FAIL(pending_action_->cancel())) {
-      LOG_WARN("fail to cancel pending action", K_(pending_action), K(ret));
+      LOG_WDIAG("fail to cancel pending action", K_(pending_action), K(ret));
     } else {
       pending_action_ = NULL;
     }
@@ -2079,14 +2079,14 @@ int ObDetectServerStateCont::set_detect_server_state_interval(const int64_t refr
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(refresh_interval <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid detect server state interval", K(refresh_interval), K(ret));
+    LOG_WDIAG("invalid detect server state interval", K(refresh_interval), K(ret));
   } else {
     server_detect_state_interval_us_ = refresh_interval;
     ATOMIC_INC(&set_interval_task_count_);
     if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL))) {
       ATOMIC_DEC(&set_interval_task_count_);
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("schedule imm detect_server_state task error", K(ret));
+      LOG_WDIAG("schedule imm detect_server_state task error", K(ret));
     }
 
   }
@@ -2109,7 +2109,7 @@ int ObDetectOneServerStateCont::init(ObClusterResource *cluster_resource, ObAddr
   const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().detect_server_timeout);
   if (OB_UNLIKELY(NULL == cluster_resource || !addr.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("init obdetectserverstate cont failed", K(cluster_resource), K(ret));
+    LOG_WDIAG("init obdetectserverstate cont failed", K(cluster_resource), K(ret));
     // The detection only depends on whether OBServer returns OB_MYSQL_COM_HANDSHAKE,
     // and will not log in. The following parameters will not be actually used,
     // only for the initialization of class objects
@@ -2117,16 +2117,16 @@ int ObDetectOneServerStateCont::init(ObClusterResource *cluster_resource, ObAddr
     // password : detect_password
     // database : detect_database
   } else if (OB_FAIL(mysql_proxy_.init(timeout_ms, ObProxyTableInfo::DETECT_USERNAME_USER, "detect_password", "detect_database"))) {
-    LOG_WARN("fail to init mysql proxy", K(ret));
+    LOG_WDIAG("fail to init mysql proxy", K(ret));
   } else {
     cluster_resource->inc_ref();
     cluster_resource_ = cluster_resource;
     addr_ = addr;
     if (OB_ISNULL(mysql_client_ = op_alloc(ObMysqlClient))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate ObMysqlClient", K(ret));
+      LOG_WDIAG("fail to allocate ObMysqlClient", K(ret));
     } else if (OB_FAIL(mysql_client_->init_detect_client(cluster_resource_))) {
-      LOG_WARN("fail to init detect client", K(ret));
+      LOG_WDIAG("fail to init detect client", K(ret));
     }
 
     if (OB_FAIL(ret) && (NULL != mysql_client_)) {
@@ -2151,11 +2151,11 @@ void ObDetectOneServerStateCont::kill_this()
     mysql_client_ = NULL;
   }
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
 
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
 
   action_.set_continuation(NULL);
@@ -2171,19 +2171,19 @@ int ObDetectOneServerStateCont::main_handler(int event, void *data)
     case EVENT_IMMEDIATE:
     case DETECT_SERVER_STATE_EVENT: {
       if (OB_FAIL(detect_server_state_by_sql())) {
-        LOG_WARN("detect server by sql failed", K(ret));
+        LOG_WDIAG("detect server by sql failed", K(ret));
       }
       break;
     }
     case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
       if (OB_FAIL(handle_client_resp(data))) {
-        LOG_WARN("fail to handle client resp", K(ret));
+        LOG_WDIAG("fail to handle client resp", K(ret));
       }
       break;
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown event", K(event), K(data), K(ret));
+      LOG_WDIAG("unknown event", K(event), K(data), K(ret));
       break;
     }
   }
@@ -2205,10 +2205,10 @@ int ObDetectOneServerStateCont::detect_server_state_by_sql()
   ObMysqlRequestParam request_param(sql);
   request_param.set_target_addr(addr_);
   request_param.set_mysql_client(mysql_client_);
-  request_param.set_is_detect_client(true);
+  request_param.set_client_vc_type(ObMysqlRequestParam::CLIENT_VC_TYPE_DETECT);
   const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().detect_server_timeout);
   if (OB_FAIL(mysql_proxy_.async_read(this, request_param, pending_action_, timeout_ms))) {
-    LOG_WARN("fail to async read", K(ret));
+    LOG_WDIAG("fail to async read", K(ret));
   }
 
   return ret;
@@ -2237,7 +2237,7 @@ int ObDetectOneServerStateCont::handle_client_resp(void *data)
         LOG_DEBUG("detect server alive", K(info));
       } else {
         int64_t fail_cnt = ATOMIC_AAF(&info.detect_fail_cnt_, 1);
-        LOG_WARN("detect server dead", K(info));
+        LOG_WDIAG("detect server dead", K(info));
         if (fail_cnt >= get_global_proxy_config().server_detect_fail_threshold) {
           // If the detection failure exceeds the number of retries, the server needs to be added to the blacklist
           (void)ATOMIC_SET(&info.detect_fail_cnt_, 0);
@@ -2253,7 +2253,7 @@ int ObDetectOneServerStateCont::handle_client_resp(void *data)
         int64_t cr_version = cluster_resource_->version_;
         if (OB_FAIL(congestion_manager.update_server(ip, cr_version, state,
                 info.zone_name_, info.region_name_, is_init))) {
-          LOG_WARN("fail to update update server", K(cr_version), K(ip),  K(is_init), K(ret));
+          LOG_WDIAG("fail to update update server", K(cr_version), K(ip),  K(is_init), K(ret));
         }
       }
       found = true;
@@ -2264,7 +2264,7 @@ int ObDetectOneServerStateCont::handle_client_resp(void *data)
     ObIpEndpoint ip(addr_.get_sockaddr());
     get_global_resource_pool_processor().ip_set_.erase_refactored(ip);
     cluster_resource_->alive_addr_set_.erase_refactored(ip);
-    LOG_WARN("server not in cluster", K(ip), KPC_(cluster_resource));
+    LOG_WDIAG("server not in cluster", K(ip), KPC_(cluster_resource));
   }
   server_state_lock2.rdunlock();
   server_state_lock1.rdunlock();

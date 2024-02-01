@@ -47,9 +47,7 @@ enum ObLogItemType {
   LOG_ITEM_TINY = 0,
   LOG_ITEM_NORMAL,
   LOG_ITEM_LARGE,
-  LOG_ITEM_TINY_FOR_WARN_ERR,
-  LOG_ITEM_NORMAL_FOR_WARN_ERR,
-  LOG_ITEM_LARGE_FOR_WARN_ERR,
+  LOG_ITEM_FOR_WARN_ERROR,
   MAX_LOG_ITEM_TYPE,
 };
 
@@ -58,8 +56,6 @@ static int64_t LOG_ITEM_SIZE[MAX_LOG_ITEM_TYPE] = {
   4 * 1024,
   64 * 1024,
   1 * 1024,
-  4 * 1024,
-  64 * 1024,
 };
 
 class ObLogItem
@@ -82,32 +78,48 @@ public:
   {
     return MAX_LOG_ITEM_TYPE == item_type_ ? 0 : (LOG_ITEM_SIZE[item_type_] - sizeof(ObLogItem));
   }
-  int get_log_level() const { return log_level_; }
-  void set_log_level(const int log_level) { log_level_ = log_level; }
-  int64_t get_timestamp() const { return timestamp_; }
-  void set_timestamp(const int64_t timestamp) { timestamp_ = timestamp;}
-  void set_timestamp(const timeval &tv)
-  {
-    timestamp_ = static_cast<int64_t>(tv.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>(tv.tv_usec);
-  }
+  int get_log_level() const { return header_.log_level_; }
+  int64_t get_timestamp() const { return header_.timestamp_; }
   bool is_large_log_item() const { return LOG_ITEM_LARGE == item_type_; }
   bool is_size_overflow() const { return get_data_len() >= (get_buf_size() - 1); }
   ObLogItemType get_item_type() const { return item_type_; }
   void set_item_type(const ObLogItemType type) { item_type_ = type; }
-  ObLogFDType get_fd_type() const { return fd_type_; }
-  void set_fd_type(const ObLogFDType fd_type) { fd_type_ = fd_type;}
-  bool is_xflush_file() const { return FD_XFLUSH_FILE == fd_type_; }
-  bool is_default_file() const { return FD_DEFAULT_FILE == fd_type_; }
-  bool is_trace_file() const { return FD_TRACE_FILE == fd_type_; }
+  ObLogFDType get_fd_type() const { return header_.fd_type_; }
+  bool is_xflush_file() const { return FD_XFLUSH_FILE == header_.fd_type_; }
+  bool is_default_file() const { return FD_DEFAULT_FILE == header_.fd_type_; }
+  bool is_trace_file() const { return FD_TRACE_FILE == header_.fd_type_; }
   void deep_copy_header_only(const ObLogItem &other);
+
+  void set_header(const timeval tv, const int32_t level, const ObLogFDType type,
+                  const uint64_t trace_id_0, const uint64_t trace_id_1, const char *mod_name,
+                  const char *file, const int32_t line, const char* function, const uint64_t dropped_log_count,
+                  const int64_t tid);
+
+  struct ObLogItemHeader {
+  public:
+    ObLogItemHeader() { reset(); }
+    ~ObLogItemHeader() { reset(); }
+    void reset();
+    ObLogFDType fd_type_;
+    int log_level_;
+    int64_t timestamp_;
+    const char *mod_name_;
+    const char *file_name_;
+    const char *function_name_;
+    int32_t line_;
+    uint64_t trace_id_0_;
+    uint64_t trace_id_1_;
+    uint64_t dropped_log_count_;
+    int64_t tid_;
+   };
+
+  const ObLogItemHeader& get_log_header() const { return header_; }
 
 private:
   ObLogItemType item_type_;
-  ObLogFDType fd_type_;
-  int log_level_;
-  int64_t timestamp_;
   int64_t header_pos_;
   int64_t pos_;
+  ObLogItemHeader header_;
   char *buf_;
 
   DISALLOW_COPY_AND_ASSIGN(ObLogItem);

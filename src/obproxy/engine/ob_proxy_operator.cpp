@@ -86,7 +86,7 @@ int ObProxyOperator::set_children_pointer(ObProxyOperator **children, uint32_t c
   int ret = common::OB_SUCCESS;
   if (child_cnt > 0 && NULL == children) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(op_name()), K(child_cnt), KP(children));
+    LOG_WDIAG("invalid argument", K(ret), K(op_name()), K(child_cnt), KP(children));
   } else {
     children_ = children;
     child_cnt_ = child_cnt;
@@ -110,10 +110,10 @@ int ObProxyOperator::set_child(const uint32_t idx, ObProxyOperator *child)
   int ret = common::OB_SUCCESS;
   if (idx >= child_max_cnt_ || OB_ISNULL(child)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(op_name()), K(idx), K(child_max_cnt_), KP(child));
+    LOG_WDIAG("invalid argument", K(ret), K(op_name()), K(idx), K(child_max_cnt_), KP(child));
   } else if (idx > child_cnt_) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(op_name()), K(idx), K(child_cnt_), KP(child));
+    LOG_WDIAG("invalid argument", K(ret), K(op_name()), K(idx), K(child_cnt_), KP(child));
   } else {
     children_[idx] = child;
     if (0 == idx) {
@@ -134,7 +134,7 @@ ObProxyOperator* ObProxyOperator::get_child(const uint32_t idx)
   int ret = common::OB_SUCCESS;
   if (idx >= child_cnt_ &&  PHY_TABLE_SCAN != type_) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(op_name()), K(idx), K(child_cnt_));
+    LOG_WDIAG("invalid argument", K(ret), K(op_name()), K(idx), K(child_cnt_));
   } else if (PHY_TABLE_SCAN != type_) { //TableScan not has valid child
     op = children_[idx];
   }
@@ -153,14 +153,14 @@ int ObProxyOperator::init()
     children_ = reinterpret_cast<ObProxyOperator **>(allocator_.alloc(alloc_size));
     if (OB_ISNULL(children_)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(child_max_cnt_),
+      LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(child_max_cnt_),
           K(alloc_size));
     }
   }
 
   if (OB_SUCC(ret) && OB_FAIL(init_row_set(cur_result_rows_))) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("init result_rows error", K(ret), K(op_name()));
+    LOG_WDIAG("init result_rows error", K(ret), K(op_name()));
   }
 
   LOG_DEBUG("ObProxyOperator::init end", K(ret), K(op_name()));
@@ -180,27 +180,27 @@ int ObProxyOperator::open(event::ObContinuation *cont, event::ObAction *&action,
   action  = NULL;
   if (OB_ISNULL(cont)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret));
+    LOG_WDIAG("invalid input", K(ret));
   } else if (OB_ISNULL(tmp_buf = static_cast<char *>(allocator_.alloc(sizeof(ObOperatorAsyncCommonTask))))){
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K(ret));
+    LOG_WDIAG("fail to alloc mem", K(ret));
   } else if (OB_ISNULL(operator_async_task_ = new (tmp_buf) ObOperatorAsyncCommonTask(child_cnt_, this))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to init ObOperatorAsyncCommonTask object", K(ret));
+    LOG_WDIAG("failed to init ObOperatorAsyncCommonTask object", K(ret));
   } else {
     action = &operator_async_task_->get_action();
     if (OB_FAIL(operator_async_task_->init_async_task(cont, &self_ethread()))) {
-      LOG_WARN("failed to init init ObOperatorAsyncCommonTask task", K(ret));
+      LOG_WDIAG("failed to init init ObOperatorAsyncCommonTask task", K(ret));
     } else if (get_op_type() != PHY_TABLE_SCAN) { //TABLE_SCAN operator not need to init child
       for (int64_t i = 0; OB_SUCC(ret) && i < child_cnt_; i++) {
         if (OB_ISNULL(children_[i])) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid child to open", K(ret));
+          LOG_WDIAG("invalid child to open", K(ret));
         } else if (OB_FAIL(children_[i]->open(operator_async_task_, operator_async_task_->parallel_action_array_[i], timeout_ms))) {
-          LOG_WARN("open child operator failed", K(ret), K(children_[i]));
+          LOG_WDIAG("open child operator failed", K(ret), K(children_[i]));
         } else if (OB_ISNULL(operator_async_task_->parallel_action_array_[i])) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("not get the action from child", K(ret), K(children_[i]), K(i)); 
+          LOG_WDIAG("not get the action from child", K(ret), K(children_[i]), K(i));
         } else {
           operator_async_task_->add_target_task_count();
         }
@@ -230,7 +230,7 @@ void ObProxyOperator::close()
   LOG_DEBUG("ObProxyOperator::close exit", K(op_name()));
 }
 
-int ObProxyOperator::get_next_row() 
+int ObProxyOperator::get_next_row()
 {
   LOG_DEBUG("ObProxyOperator::get_next_row enter", K(op_name()));
   int ret = common::OB_SUCCESS;
@@ -238,7 +238,7 @@ int ObProxyOperator::get_next_row()
 
   for (int64_t i = 0; OB_SUCC(ret) && i < child_cnt_; ++i) {
     if (OB_FAIL(children_[i]->get_next_row())) {
-      LOG_WARN("ObProxyProOp::get_next_row failed", K(ret));
+      LOG_WDIAG("ObProxyProOp::get_next_row failed", K(ret));
       break;
     }
   }
@@ -256,7 +256,7 @@ int ObProxyOperator::calc_result(ResultRow &row, ResultRow &result,
   if (OB_ISNULL(&row) || row.count() == 0 || added_row_count < 0
          || row.count() <= added_row_count) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input for ObProxyOperator::cal_result", K(ret), K(row));
+    LOG_WDIAG("invalid input for ObProxyOperator::cal_result", K(ret), K(row));
   } else if (expr_has_calced_) {
     int64_t expect_row_count = row.count() - added_row_count;
     for (int i = 0; i < expect_row_count; i++) {
@@ -279,20 +279,20 @@ int ObProxyOperator::calc_result(ResultRow &row, ResultRow &result,
     ResultFields *field_info = NULL;
     if (OB_ISNULL(field_info = get_result_fields())) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("ObProxyOperator::calc_result not have field info", K(ret));
+      LOG_WDIAG("ObProxyOperator::calc_result not have field info", K(ret));
     } else if (field_info->count() != row_count) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("ObProxyOperator::calc_result have invalid field info", K(ret), K(row_count),
+      LOG_WDIAG("ObProxyOperator::calc_result have invalid field info", K(ret), K(row_count),
                       K(field_info->count()));
     }
 
     LOG_DEBUG("row display before calc:", K(row));
     if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(common::ObObj) * exprs_count))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("alloc memory failed", K(ret), K(sizeof(common::ObObj) * exprs_count));
+      LOG_WDIAG("alloc memory failed", K(ret), K(sizeof(common::ObObj) * exprs_count));
     } else if (OB_ISNULL(obj_array = new (tmp_buf) common::ObObj[exprs_count])) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("init ObObj Array error", K(ret));
+      LOG_WDIAG("init ObObj Array error", K(ret));
     }
 
     int64_t k = 0;
@@ -311,7 +311,7 @@ int ObProxyOperator::calc_result(ResultRow &row, ResultRow &result,
         ctx.set_scale(field_info->at(j).accuracy_.get_accuracy());
         result.push_back(obj_array + i); // result will be put into *(obj_array + i)
         if (OB_FAIL(expr_ptr->calc(ctx, calc_item, result))) {
-          LOG_WARN("internal error when calc the value for the expr", K(ret), K(i), K(str));
+          LOG_WDIAG("internal error when calc the value for the expr", K(ret), K(i), K(str));
         } else {
           i++;//to next expr
         }
@@ -324,7 +324,7 @@ int ObProxyOperator::calc_result(ResultRow &row, ResultRow &result,
                K(result.count()));
     if (OB_SUCC(ret) && result.count() != expect_row_count) {
       ret = common::OB_ERR_UNEXPECTED;
-      LOG_WARN("ObProxyOperator::calc_result fail not get all result from expr->calc",
+      LOG_WDIAG("ObProxyOperator::calc_result fail not get all result from expr->calc",
                    K(ret), K(result.count()), K(expect_row_count));
     }
   }
@@ -336,7 +336,7 @@ int ObProxyOperator::put_result_row(ResultRow *row)
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(row)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input for ObProxyOperator::put_result_row", K(row));
+    LOG_WDIAG("invalid input for ObProxyOperator::put_result_row", K(row));
   } else {
     cur_result_rows_->push_back(row);
   }
@@ -350,9 +350,9 @@ int ObProxyOperator::process_ready_data(void *data, int &event)
   ObProxyResultResp *result = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid param, data is null", "op_name", op_name(), K(ret));
+    LOG_WDIAG("invalid param, data is null", "op_name", op_name(), K(ret));
   } else if (OB_FAIL(handle_result(data, is_final, result))) {
-    LOG_WARN("fail to handle result", "op_name", op_name(), K(ret));
+    LOG_WDIAG("fail to handle result", "op_name", op_name(), K(ret));
   } else if (!is_final && OB_ISNULL(result)) {
     event = VC_EVENT_CONT;
   } else if (is_final || result->is_error_resp()) {
@@ -374,14 +374,14 @@ int ObProxyOperator::handle_result(void *data, bool &is_final, ObProxyResultResp
   ObProxyResultResp *pres = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, data is NULL", K(ret));
-  } else if (OB_ISNULL(pres = reinterpret_cast<ObProxyResultResp*>(data))) { 
+    LOG_WDIAG("invalid input, data is NULL", K(ret));
+  } else if (OB_ISNULL(pres = reinterpret_cast<ObProxyResultResp*>(data))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input, pres type is not match", K(ret));
+    LOG_WDIAG("invalid input, pres type is not match", K(ret));
   } else {
     if (pres->is_resultset_resp()) {
       if (OB_FAIL(handle_response_result(pres, is_final, result))) {
-        LOG_WARN("failed to handle resultset_resp", K(ret));
+        LOG_WDIAG("failed to handle resultset_resp", K(ret));
       }
     } else if (pres->is_error_resp() || pres->is_ok_resp()) {
       // The ok/error package only needs to be processed in the table_scan operator
@@ -390,7 +390,7 @@ int ObProxyOperator::handle_result(void *data, bool &is_final, ObProxyResultResp
     }
     LOG_DEBUG("handle_result success", K(ret), K(pres));
   }
-  return ret; 
+  return ret;
 }
 
 int ObProxyOperator::handle_response_result(void *src, bool &is_final, ObProxyResultResp *&result)
@@ -408,12 +408,12 @@ int ObProxyOperator::process_complete_data(void *data)
   ObProxyResultResp *result = NULL;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid param, data is null", K(ret));
+    LOG_WDIAG("invalid param, data is null", K(ret));
   } else if (OB_FAIL(handle_result(data, is_final, result))) {
-    LOG_WARN("fail to handle result", K(ret));
+    LOG_WDIAG("fail to handle result", K(ret));
   } else if (OB_ISNULL(result)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("reulst is NULL, something error", K(ret));
+    LOG_WDIAG("reulst is NULL, something error", K(ret));
   } else {
     result_ = result;
   }
@@ -426,7 +426,7 @@ inline void print_error_info(void *data, const char *name)
 {
   ObProxyResultResp *result = NULL;
   if (OB_NOT_NULL(data) && OB_NOT_NULL(result = static_cast<ObProxyResultResp*>(data))) {
-    LOG_WARN("handle error info", K(name), K(result->get_err_code()), K(result->is_error_resp()),
+    LOG_WDIAG("handle error info", K(name), K(result->get_err_code()), K(result->is_error_resp()),
              K(result->get_err_msg()), K(result->get_err_msg().length()));
   }
 }
@@ -436,7 +436,7 @@ int ObProxyOperator::put_row(ResultRow *&row)
   int ret = common::OB_SUCCESS;
   if (NULL == row) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invaild argument", K(row));
+    LOG_WDIAG("invaild argument", K(row));
   } else {
     cur_result_rows_->push_back(row);
   }
@@ -450,7 +450,7 @@ int ObProxyOperator::init_row(ResultRow *&row)
   row = NULL;
   if (OB_ISNULL(buf = allocator_.alloc(sizeof(ResultRow)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRow)));
+    LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRow)));
   } else {
     row = new (buf) ResultRow(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
   }
@@ -464,7 +464,7 @@ int ObProxyOperator::init_row_set(ResultRows *&rows)
   rows = NULL;
   if (OB_ISNULL(buf = allocator_.alloc(sizeof(ResultRows)))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
+    LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ResultRows)));
   } else {
     rows = new (buf) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
   }
@@ -479,15 +479,15 @@ int ObProxyOperator::packet_result_set(ObProxyResultResp *&res, ResultRows *rows
   void *tmp_buf = NULL;
   if (OB_ISNULL(rows) || OB_ISNULL(fields)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("pack_result_set error", K(ret), K(op_name()), K(rows), K(fields));
+    LOG_WDIAG("pack_result_set error", K(ret), K(op_name()), K(rows), K(fields));
   } else if(OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObProxyResultResp)))) {
     res = NULL;
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObProxyResultResp)));
+    LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObProxyResultResp)));
   } else {
     res = new (tmp_buf) ObProxyResultResp(allocator_, get_cont_index());
     if (OB_FAIL(res->init_result(rows, fields))) {
-          LOG_WARN("packet resultset packet error", K(ret));
+          LOG_WDIAG("packet resultset packet error", K(ret));
       res->set_packet_flag(PCK_ERR_RESPONSE);
     } else {
       res->set_has_calc_exprs(expr_has_calced_);
@@ -506,7 +506,7 @@ int ObProxyOperator::packet_result_set_eof(ObProxyResultResp *&res)
   if(OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObProxyResultResp)))) {
     res = NULL;
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObProxyResultResp)));
+    LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObProxyResultResp)));
   } else {
     res = new (tmp_buf) ObProxyResultResp(allocator_, get_cont_index());
     res->set_packet_flag(PCK_RESULTSET_EOF_RESPONSE);
@@ -523,15 +523,15 @@ int ObProxyOperator::packet_error_info(ObProxyResultResp *&res, PacketErrInfo *e
   void *tmp_buf = NULL;
   if (OB_ISNULL(err)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("pack_result_set error", K(ret), K(op_name()), K(err));
+    LOG_WDIAG("pack_result_set error", K(ret), K(op_name()), K(err));
   } else if(OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObProxyResultResp)))) {
     res = NULL;
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObProxyResultResp)));
+    LOG_WDIAG("no have enough memory to init", K(ret), K(op_name()), K(sizeof(ObProxyResultResp)));
   } else {
     res = new (tmp_buf) ObProxyResultResp(allocator_, get_cont_index());
     res->set_err_info(err);
-    LOG_WARN("MEM_MSG:", K(res));
+    LOG_WDIAG("MEM_MSG:", K(res));
     res->set_packet_flag(PCK_ERR_RESPONSE);
   }
   LOG_DEBUG("ObProxyOperator::packet_error_info exit", K(op_name()), K(ret), K(res->get_packet_flag()));
@@ -544,7 +544,7 @@ int ObProxyOperator::packet_error_info(ObProxyResultResp *&res, char *err_msg, i
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(err_msg)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret), K(err_msg), K(err_msg_len), K(error_no));
+    LOG_WDIAG("invalid argument", K(ret), K(err_msg), K(err_msg_len), K(error_no));
   } else {
     LOG_DEBUG("will be packet error packet:", K(err_msg), K(err_msg_len), K(error_no));
     res = NULL;
@@ -555,7 +555,7 @@ int ObProxyOperator::packet_error_info(ObProxyResultResp *&res, char *err_msg, i
 
     if (OB_ISNULL(err_buf) || OB_ISNULL(info_buf)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("not allocat enougth memeory", K(sizeof(PacketErrorInfo)),
+      LOG_WDIAG("not allocat enougth memeory", K(sizeof(PacketErrorInfo)),
                K(err_msg_len + 1));
     } else {
       PacketErrorInfo *err_info = new (err_buf) PacketErrorInfo();
@@ -577,7 +577,7 @@ int ObProxyOperator::build_ok_packet(ObProxyResultResp *&res)
   res = NULL;
   if(OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ObProxyResultResp)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("no have enough memory to init", K(ret), "op_name", op_name());
+    LOG_WDIAG("no have enough memory to init", K(ret), "op_name", op_name());
   } else {
     res = new (tmp_buf) ObProxyResultResp(allocator_, get_cont_index());
     res->set_packet_flag(PCK_OK_RESPONSE);

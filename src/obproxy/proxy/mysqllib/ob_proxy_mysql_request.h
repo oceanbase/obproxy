@@ -128,6 +128,9 @@ public:
   inline void borrow_req_buf(char *&req_buf, int64_t &req_buf_len_);
   common::ObIAllocator &get_param_allocator() { return allocator_; }
 
+  void set_enable_internal_kill_connection(const bool enable_internal_kill) { enable_internal_kill_connection_ = enable_internal_kill; }
+  bool is_enable_internal_kill_connection() const { return enable_internal_kill_connection_; }
+
   ObInternalCmdInfo *cmd_info_;
   ObProxyKillQueryInfo *query_info_;
 
@@ -151,6 +154,7 @@ private:
   bool is_large_request_;
   bool enable_analyze_internal_cmd_;//indicate whether need analyze internal cmd
   bool is_mysql_req_in_ob20_payload_; // whether the mysql req is in ob20 protocol req payload
+  bool enable_internal_kill_connection_; // whether internal handle OBPROXY_T_SUB_KILL_CONNECTION
 
   common::ObArenaAllocator allocator_;
   char sql_id_buf_[common::OB_MAX_SQL_ID_LENGTH + 1];
@@ -187,11 +191,11 @@ inline void ObProxyMysqlRequest::reset(bool is_reset_origin_db_table /* true */)
   allocator_.reset();
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(free_request_buf())) {
-    PROXY_LOG(ERROR, "free request buf error", K(ret));
+    PROXY_LOG(EDIAG, "free request buf error", K(ret));
   }
 
   if (OB_FAIL(free_prepare_execute_request_buf())) {
-    PROXY_LOG(ERROR, "free prepare execute request buf error", K(ret));
+    PROXY_LOG(EDIAG, "free prepare execute request buf error", K(ret));
   }
 }
 
@@ -222,14 +226,14 @@ inline int ObProxyMysqlRequest::alloc_request_buf(int64_t buf_len)
   // free buf if has alloc
   if (OB_UNLIKELY(NULL != req_buf_)) {
     if (OB_FAIL(free_request_buf())) {
-      PROXY_LOG(ERROR, "free request buf error", K(ret));
+      PROXY_LOG(EDIAG, "free request buf error", K(ret));
     }
   }
   if (OB_SUCC(ret)) {
     char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(buf_len));
     if (OB_UNLIKELY(NULL == buf)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_LOG(ERROR, "fail to alloc mem", K(buf_len), K(ret));
+      PROXY_LOG(EDIAG, "fail to alloc mem", K(buf_len), K(ret));
     } else {
       req_buf_ = buf;
       req_buf_len_ = buf_len;
@@ -244,7 +248,7 @@ inline int ObProxyMysqlRequest::free_request_buf()
   if (NULL != req_buf_) {
     if (req_buf_len_ <= 0) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(ERROR, "req_buf_len_ must > 0", K_(req_buf_len), K_(req_buf), K(ret));
+      PROXY_LOG(EDIAG, "req_buf_len_ must > 0", K_(req_buf_len), K_(req_buf), K(ret));
     } else {
       op_fixed_mem_free(req_buf_, req_buf_len_);
       req_buf_ = NULL;
@@ -260,13 +264,13 @@ inline int ObProxyMysqlRequest::alloc_prepare_execute_request_buf(const int64_t 
 
   if (OB_UNLIKELY(buf_len < 0)) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(ERROR, "buf_len must > 0", K(buf_len), K(ret));
+    PROXY_LOG(EDIAG, "buf_len must > 0", K(buf_len), K(ret));
   }
 
   // free buf if has alloc
   if (OB_SUCC(ret) && OB_UNLIKELY(NULL != req_buf_for_prepare_execute_)) {
     if (OB_FAIL(free_prepare_execute_request_buf())) {
-      PROXY_LOG(ERROR, "free prepare execute request buf error", K(ret));
+      PROXY_LOG(EDIAG, "free prepare execute request buf error", K(ret));
     }
   }
 
@@ -274,7 +278,7 @@ inline int ObProxyMysqlRequest::alloc_prepare_execute_request_buf(const int64_t 
     char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(buf_len));
     if (OB_UNLIKELY(NULL == buf)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_LOG(ERROR, "fail to alloc mem", K(buf_len), K(ret));
+      PROXY_LOG(EDIAG, "fail to alloc mem", K(buf_len), K(ret));
     } else {
       req_buf_for_prepare_execute_ = buf;
       req_buf_for_prepare_execute_len_ = buf_len;
@@ -296,7 +300,7 @@ inline int ObProxyMysqlRequest::free_prepare_execute_request_buf()
   if (NULL != req_buf_for_prepare_execute_) {
     if (req_buf_for_prepare_execute_len_ <= 0) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(ERROR, "req_buf_len_ must > 0", K_(req_buf_for_prepare_execute_len), K_(req_buf_for_prepare_execute), K(ret));
+      PROXY_LOG(EDIAG, "req_buf_len_ must > 0", K_(req_buf_for_prepare_execute_len), K_(req_buf_for_prepare_execute), K(ret));
     } else {
       op_fixed_mem_free(req_buf_for_prepare_execute_, req_buf_for_prepare_execute_len_);
       req_buf_for_prepare_execute_ = NULL;
@@ -320,12 +324,12 @@ inline common::ObString ObProxyMysqlRequest::get_sql()
       const char *pos = req_buf_ + MYSQL_NET_META_LENGTH + MYSQL_PS_EXECUTE_HEADER_LENGTH; // skip 9 bytes
       int64_t buf_len = req_pkt_len_ - MYSQL_NET_META_LENGTH - MYSQL_PS_EXECUTE_HEADER_LENGTH;
       if (OB_FAIL(ObMysqlPacketUtil::get_length(pos, buf_len, query_len))) {
-        PROXY_LOG(ERROR, "failed to get length", K(ret));
+        PROXY_LOG(EDIAG, "failed to get length", K(ret));
       } else if (query_len > 0) {
         int64_t copy_len = std::min(static_cast<int64_t>(query_len), req_buf_len_ - PARSE_EXTRA_CHAR_NUM);
         if (OB_ISNULL(req_buf_for_prepare_execute_) || OB_UNLIKELY(req_buf_for_prepare_execute_len_ != req_buf_len_)) {
           if (OB_FAIL(alloc_prepare_execute_request_buf(req_buf_len_))) {
-            PROXY_LOG(ERROR, "fail to alloc buf", K_(req_buf_len), K(ret));
+            PROXY_LOG(EDIAG, "fail to alloc buf", K_(req_buf_len), K(ret));
           } else {
             PROXY_LOG(DEBUG, "alloc request buf ", K_(req_buf_len));
           }

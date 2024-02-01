@@ -38,12 +38,13 @@ private:
   int format_int_to_str(const int64_t value, common::ObSqlString &string);
   int dump_mod_memory_header();
   int dump_mod_memory(const char *name, const char *type, const int64_t hold,
-                      const int64_t used, const int64_t count);
+                      const int64_t used, const int64_t count, const ObString& backtrace = ObString(""));
 
   int dump_objpool_header();
-  int dump_objpool_memory(const common::ObObjFreeList *fl);
+  int dump_objpool_memory(const common::ObObjFreeList *fl, const ObString& backtrace = ObString(""));
 
 private:
+  int64_t backtrace_count_;
   const ObProxyBasicStmtSubType sub_type_;
 
   DISALLOW_COPY_AND_ASSIGN(ObShowMemoryHandler);

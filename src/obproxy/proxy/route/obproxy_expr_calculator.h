@@ -15,6 +15,8 @@
 #include "opsql/expr_parser/ob_expr_parse_result.h"
 #include "lib/charset/ob_charset.h"
 #include "common/ob_obj_type.h"
+#include "common/ob_object.h"
+#include "lib/container/ob_se_array.h"
 
 namespace oceanbase
 {
@@ -50,8 +52,8 @@ class ObRouteDiagnosis;
 class ObProxyExprCalculator
 {
 public:
-  ObProxyExprCalculator() {}
-  ~ObProxyExprCalculator() {}
+  ObProxyExprCalculator() : route_diagnosis_(NULL) {}
+  ~ObProxyExprCalculator() { set_route_diagnosis(NULL); }
   int calculate_partition_id(common::ObArenaAllocator &allocator,
                              const common::ObString &req_sql,
                              const obutils::ObSqlParseResult &parse_result,
@@ -59,12 +61,12 @@ public:
                              ObClientSessionInfo &client_info,
                              ObServerRoute &route,
                              ObProxyPartInfo &part_info,
-                             int64_t &partition_id,
-                             ObRouteDiagnosis *rd);
+                             int64_t &partition_id);
   int calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
                                                int64_t &first_part_id,
                                                int64_t &sub_part_id,
                                                int64_t &phy_part_id);
+  void set_route_diagnosis(ObRouteDiagnosis *route_diagnosis);
 private:
   // do parse -> do resolve -> do partition id calc
   int do_expr_parse(const common::ObString &req_sql,
@@ -82,8 +84,7 @@ private:
                       common::ObIAllocator &allocator,
                       opsql::ObExprResolverResult &resolve_result,
                       const obutils::ObSqlParseResult &sql_parse_result,
-                      int64_t &partition_id,
-                      ObRouteDiagnosis *rd);
+                      int64_t &partition_id);
   int do_partition_id_calc(opsql::ObExprResolverResult &resolve_result,
                            ObClientSessionInfo &client_info,
                            ObServerRoute &route,
@@ -118,7 +119,10 @@ private:
                                        common::ObIAllocator &allocator,
                                        opsql::ObExprResolverResult &resolve_result,
                                        ObProxyPartInfo &part_info,
-                                       int64_t &partition_id);
+                                       int64_t &partition_id,
+                                       int32_t &state,
+                                       int16_t &version);
+  ObRouteDiagnosis *route_diagnosis_;
 };
 
 class ObExprCalcTool {
@@ -136,6 +140,7 @@ public:
   static int build_dtc_params(ObClientSessionInfo *session_info,
                               common::ObObjType obj_type,
                               common::ObDataTypeCastParams &dtc_params);
+  static bool is_contains_null_params(common::ObSEArray<common::ObObj, 4> &param_result);
 };
 
 

@@ -144,14 +144,14 @@ public:
         ret_(OB_SUCCESS)
   {
     if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.rdlock(latch_id)))) {
-      COMMON_LOG(ERROR, "lock error, ", K(latch_id), K(ret_));
+      COMMON_LOG(EDIAG, "lock error, ", K(latch_id), K(ret_));
     }
   }
   ~ObLatchRGuard()
   {
     if (OB_LIKELY(OB_SUCCESS == ret_)) {
       if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.unlock()))) {
-        COMMON_LOG(ERROR, "unlock error, ", K(ret_));
+        COMMON_LOG(EDIAG, "unlock error, ", K(ret_));
       }
     }
   }
@@ -171,14 +171,14 @@ public:
         ret_(OB_SUCCESS)
   {
     if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.wrlock(latch_id)))) {
-      COMMON_LOG(ERROR, "lock error, ", K(latch_id), K(ret_));
+      COMMON_LOG(EDIAG, "lock error, ", K(latch_id), K(ret_));
     }
   }
   ~ObLatchWGuard()
   {
     if (OB_LIKELY(OB_SUCCESS == ret_)) {
       if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.unlock()))) {
-        COMMON_LOG(ERROR, "unlock error, ", K(ret_));
+        COMMON_LOG(EDIAG, "unlock error, ", K(ret_));
       }
     }
   }

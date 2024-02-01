@@ -72,13 +72,13 @@ int ObTraceStats::append_new_trace_block()
   char *buf = NULL;
   if (OB_ISNULL(current_block_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("current_block_ is null", K(ret));
+    LOG_WDIAG("current_block_ is null", K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(sizeof(ObTraceBlock))))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for ObTraceBlock", "alloc_size", sizeof(ObTraceBlock), K(ret));
+    LOG_EDIAG("fail to alloc mem for ObTraceBlock", "alloc_size", sizeof(ObTraceBlock), K(ret));
   } else if (OB_ISNULL(new_block = new (buf) ObTraceBlock())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("failed to placement new for ObTraceBlock", K(ret));
+    LOG_EDIAG("failed to placement new for ObTraceBlock", K(ret));
     op_fixed_mem_free(buf, sizeof(ObTraceBlock));
     buf = NULL;
   } else {
@@ -96,7 +96,7 @@ int ObTraceStats::get_current_record(ObTraceRecord *&record)
   record = NULL;
   if (OB_ISNULL(current_block_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    LOG_WARN("current_block_ is null", K(ret));
+    LOG_WDIAG("current_block_ is null", K(ret));
   } else {
     if (need_reuse_trace_stats()) {
       //when last_trace_end_time_ is zero, we need reset stats
@@ -105,9 +105,9 @@ int ObTraceStats::get_current_record(ObTraceRecord *&record)
       if (current_block_->next_idx_ >= ObTraceBlock::TRACE_BLOCK_ENTRIES) {
         if (current_block_->block_idx_ >= TRACE_STATS_ENTRIES) {
           ret = OB_SIZE_OVERFLOW;
-          LOG_WARN("there is too many blocks", LITERAL_K(TRACE_STATS_ENTRIES), KPC(current_block_), K(ret));
+          LOG_WDIAG("there is too many blocks", LITERAL_K(TRACE_STATS_ENTRIES), KPC(current_block_), K(ret));
         } else if (OB_FAIL(append_new_trace_block())) {
-          LOG_WARN("failed to append new trace block", K(ret));
+          LOG_WDIAG("failed to append new trace block", K(ret));
         }
       }
     }

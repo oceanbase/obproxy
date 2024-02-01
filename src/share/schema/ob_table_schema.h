@@ -463,7 +463,7 @@ int ObTableSchema::build_index_table_name(Allocator &allocator,
   char buf[buf_size];
   if ((nwrite = snprintf(buf, buf_size, "%lu", data_table_id)) >= buf_size || nwrite < 0) {
     ret = common::OB_BUF_NOT_ENOUGH;
-    SHARE_SCHEMA_LOG(WARN, "buf is not large enough", K(buf_size), K(data_table_id), K(ret));
+    SHARE_SCHEMA_LOG(WDIAG, "buf is not large enough", K(buf_size), K(data_table_id), K(ret));
   } else {
     common::ObString table_id_str = common::ObString::make_string(buf);
     int32_t src_len = table_id_str.length() + index_name.length()
@@ -474,7 +474,7 @@ int ObTableSchema::build_index_table_name(Allocator &allocator,
       index_table_name.assign(NULL, 0);
     } else if (NULL == (ptr = static_cast<char *>(allocator.alloc(src_len)))) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      SHARE_SCHEMA_LOG(WARN, "alloc memory failed", K(ret), "size", src_len);
+      SHARE_SCHEMA_LOG(WDIAG, "alloc memory failed", K(ret), "size", src_len);
     } else {
       int64_t pos = 0;
       MEMCPY(ptr + pos, common::OB_INDEX_PREFIX, strlen(common::OB_INDEX_PREFIX));
@@ -489,7 +489,7 @@ int ObTableSchema::build_index_table_name(Allocator &allocator,
         index_table_name.assign_ptr(ptr, src_len);
       } else {
         ret = common::OB_ERR_UNEXPECTED;
-        SHARE_SCHEMA_LOG(ERROR, "length mismatch", K(ret));
+        SHARE_SCHEMA_LOG(EDIAG, "length mismatch", K(ret));
       }
     }
   }
@@ -509,12 +509,12 @@ int ObTableSchema::get_index_name(Allocator &allocator, uint64_t table_id,
   char table_id_buf[BUF_SIZE] = {'\0'};
   if (common::OB_INVALID_ID == table_id || src.empty()) {
     ret = common::OB_INVALID_ARGUMENT;
-    SHARE_SCHEMA_LOG(WARN, "invalid argument", K(ret), K(table_id), K(src));
+    SHARE_SCHEMA_LOG(WDIAG, "invalid argument", K(ret), K(table_id), K(src));
   } else {
     int64_t n = snprintf(table_id_buf, BUF_SIZE, "%lu", table_id);
     if (n < 0 || n >= BUF_SIZE) {
       ret = common::OB_BUF_NOT_ENOUGH;
-      SHARE_SCHEMA_LOG(WARN, "buffer not enough", K(ret), K(n), LITERAL_K(BUF_SIZE));
+      SHARE_SCHEMA_LOG(WDIAG, "buffer not enough", K(ret), K(n), LITERAL_K(BUF_SIZE));
     } else {
       common::ObString table_id_str = common::ObString::make_string(table_id_buf);
       pos += static_cast<int32_t>(strlen(common::OB_INDEX_PREFIX));
@@ -525,7 +525,7 @@ int ObTableSchema::get_index_name(Allocator &allocator, uint64_t table_id,
         dst.assign(NULL, 0);
       } else if (NULL == (ptr = static_cast<char *>(allocator.alloc(dst_len)))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        SHARE_SCHEMA_LOG(WARN, "alloc memory failed", K(ret), "size", dst_len);
+        SHARE_SCHEMA_LOG(WDIAG, "alloc memory failed", K(ret), "size", dst_len);
       } else {
         MEMCPY(ptr, src.ptr() + pos, dst_len);
         dst.assign_ptr(ptr, dst_len);

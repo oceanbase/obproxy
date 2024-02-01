@@ -23,6 +23,7 @@
 #include "rpc/obmysql/packet/ompk_handshake.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
 #include "proxy/mysqllib/ob_mysql_resp_analyzer.h"
+#include "proxy/mysqllib/ob_proxy_session_info_handler.h"
 #include "proxy/mysqllib/ob_2_0_protocol_struct.h"
 #include "lib/utility/ob_2_0_full_link_trace_info.h"
 
@@ -50,9 +51,10 @@ struct ObRespAnalyzeResult
 
   bool has_more_compress_packet() const { return has_more_compress_packet_; }
   bool is_decompressed() const { return is_decompressed_; }
-  bool is_trans_completed() const { return is_trans_completed_; }
-  bool is_resp_completed() const { return is_resp_completed_; }
+  bool is_trans_completed() const { return is_trans_completed_ && is_compressed_ob20_pkt_completed_; } // the default val of is_compressed_ob20_pkt_completed_ is true
+  bool is_resp_completed() const { return is_resp_completed_ && is_compressed_ob20_pkt_completed_; } // the default val of is_compressed_ob20_pkt_completed_ is true
   bool is_partition_hit() const { return is_partition_hit_; }
+  ObWeakReadHitReplica get_weak_read_hit_replica() const { return weak_read_hit_replica_; }
   bool is_last_insert_id_changed() const { return is_last_insert_id_changed_; }
   bool is_server_db_reset() const { return is_server_db_reset_; }
   bool has_new_sys_var() const { return has_new_sys_var_; }
@@ -63,18 +65,20 @@ struct ObRespAnalyzeResult
   bool is_ok_resp() const { return OK_PACKET_ENDING_TYPE == ending_type_; }
   bool is_eof_resp() const { return EOF_PACKET_ENDING_TYPE == ending_type_; }
   bool is_handshake_pkt() const { return HANDSHAKE_PACKET_ENDING_TYPE == ending_type_; }
+  bool is_auth_switch_req() const { return is_auth_switch_req_; }
   obmysql::OMPKError &get_error_pkt() { return error_pkt_; }
   const obmysql::OMPKError &get_error_pkt() const { return error_pkt_; }
   uint16_t get_error_code() const { return error_pkt_.get_err_code(); }
   common::ObString get_error_message() const { return error_pkt_.get_message(); }
   int64_t get_reserved_len() const { return reserved_len_; }
-  int64_t get_reserved_len_for_ob20_ok() const { return reserved_len_for_ob20_ok_; }
+  int64_t get_reserved_len_of_last_ok() const { return reserved_len_of_last_ok_; }
   int64_t get_last_ok_pkt_len() const { return last_ok_pkt_len_; }
   int64_t get_rewritten_last_ok_pkt_len() const { return rewritten_last_ok_pkt_len_; }
   uint32_t get_connection_id() const { return connection_id_; }
   common::ObString get_scramble_string() const { return common::ObString::make_string(scramble_buf_); }
   ObOKPacketActionType get_ok_packet_action_type() const { return ok_packet_action_type_; }
   bool is_resultset_resp() const { return is_resultset_resp_; }
+  bool is_local_infile_0xfb_resp() const { return ending_type_ == LOCAL_INFILE_ENDING_TYPE; }
   bool is_server_can_use_compress() const { return (1 == server_capabilities_lower_.capability_flag_.OB_SERVER_CAN_USE_COMPRESS); }
   void set_server_trace_id(const common::ObString &trace_id);
   bool support_ssl() const { return 1 == server_capabilities_lower_.capability_flag_.OB_SERVER_SSL; }
@@ -147,6 +151,10 @@ struct ObRespAnalyzeResult
   {
     return (is_error_resp() && -common::OB_INTERNAL_ERROR == error_pkt_.get_err_code());
   }
+  bool is_client_session_killed_error() const
+  {
+    return (is_error_resp() && -common::OB_ERR_KILL_CLIENT_SESSION == error_pkt_.get_err_code());
+  }
 
   inline uint32_t get_server_capability() const
   {
@@ -163,6 +171,7 @@ struct ObRespAnalyzeResult
   bool is_decompressed_;
   bool is_trans_completed_;
   bool is_resp_completed_;
+  bool is_compressed_ob20_pkt_completed_; // makr wheather one compressed ob20 packet was decompressed completely
   // indicate this mysql response ending pkt type(ok, error, eof, string eof,etc.)
   ObMysqlRespEndingType ending_type_;
   // indicate whether request data hit the target observer,
@@ -186,10 +195,12 @@ struct ObRespAnalyzeResult
   char scramble_buf_[obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE + 1];
   ObOKPacketActionType ok_packet_action_type_;
   int64_t reserved_len_;
-  int64_t reserved_len_for_ob20_ok_;
+  int64_t reserved_len_of_last_ok_;
   int64_t last_ok_pkt_len_;
   int64_t rewritten_last_ok_pkt_len_;
   bool is_last_ok_handled_;
+  ObWeakReadHitReplica weak_read_hit_replica_;
+
   // only one of structs below is valid, according to ending_type_
   obmysql::OMPKError error_pkt_;
   obutils::ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> error_pkt_buf_; // only store error pkt
@@ -199,6 +210,7 @@ struct ObRespAnalyzeResult
   Ob20ExtraInfo extra_info_;
   common::FLTObjManage flt_;
   bool is_server_trans_internal_routing_;
+  bool is_auth_switch_req_;
   DISALLOW_COPY_AND_ASSIGN(ObRespAnalyzeResult);
 };
 
@@ -226,6 +238,7 @@ inline void ObRespAnalyzeResult::reset()
   is_decompressed_ = false;
   is_trans_completed_ = false;
   is_resp_completed_ = false;
+  is_compressed_ob20_pkt_completed_ = true;
   ending_type_ = MAX_PACKET_ENDING_TYPE;
   is_partition_hit_ = true;
   is_last_insert_id_changed_ = false;
@@ -236,10 +249,11 @@ inline void ObRespAnalyzeResult::reset()
   scramble_buf_[0] = '\0';
   ok_packet_action_type_ = OK_PACKET_ACTION_SEND;
   reserved_len_ = 0;
-  reserved_len_for_ob20_ok_ = 0;
+  reserved_len_of_last_ok_ = 0;
   last_ok_pkt_len_ = 0;
   rewritten_last_ok_pkt_len_ = 0;
   is_last_ok_handled_ = false;
+  weak_read_hit_replica_ = MAX_REPLICA;
   error_pkt_buf_.reset();
   server_capabilities_lower_.capability_ = 0;
   server_capabilities_upper_.capability_ = 0;
@@ -248,6 +262,7 @@ inline void ObRespAnalyzeResult::reset()
   extra_info_.reset();
   flt_.reset();
   is_server_trans_internal_routing_ = false;
+  is_auth_switch_req_ = false;
 }
 
 inline void ObRespAnalyzeResult::set_server_trace_id(const common::ObString &trace_id)

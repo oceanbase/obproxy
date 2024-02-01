@@ -184,7 +184,7 @@ inline ObThreadAllocator &get_thread_allocator()
   static __thread ObThreadAllocator *thread_allocator = NULL;
   if (OB_ISNULL(thread_allocator)
       && OB_ISNULL(thread_allocator = new (std::nothrow) ObThreadAllocator())) {
-    OB_LOG(ERROR, "failed to new ObThreadAllocator");
+    OB_LOG(EDIAG, "failed to new ObThreadAllocator");
   }
   return *thread_allocator;
 }

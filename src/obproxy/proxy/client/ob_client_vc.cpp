@@ -60,10 +60,10 @@ int ObClientVC::main_handler(int event, void *data)
              "thread", this_ethread());
   if (OB_UNLIKELY(CLIENT_MAGIC_ALIVE != magic_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this client_vc is dead", K_(magic), K(this), K(ret));
+    LOG_EDIAG("this client_vc is dead", K_(magic), K(this), K(ret));
   } else if (OB_UNLIKELY(this_ethread() != mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(this), K(ret));
   } else {
     switch (event) {
@@ -85,7 +85,7 @@ int ObClientVC::main_handler(int event, void *data)
       case CLIENT_INFORM_MYSQL_CLIENT_TRANSFER_RESP_EVENT: {
         pending_action_ = NULL;
         if (OB_FAIL(transfer_bytes())) {
-          LOG_ERROR("fail to transfer bytes", K(ret));
+          LOG_EDIAG("fail to transfer bytes", K(ret));
         }
         break;
       }
@@ -105,7 +105,7 @@ int ObClientVC::main_handler(int event, void *data)
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected event", K(event), K(ret));
+        LOG_WDIAG("unexpected event", K(event), K(ret));
         break;
       }
     }
@@ -171,7 +171,7 @@ void ObClientVC::do_io_close(const int lerrno)
   if (NULL != pending_action_) {
     int ret = OB_SUCCESS;
     if (OB_FAIL(pending_action_->cancel())) {
-      LOG_ERROR("fail to cancel pending action", K(ret));
+      LOG_EDIAG("fail to cancel pending action", K(ret));
     } else {
       pending_action_ = NULL;
     }
@@ -205,7 +205,7 @@ void ObClientVC::reenable_re(ObVIO *vio)
         if (OB_ISNULL(pending_action_ = mutex_->thread_holding_->schedule_imm(
                 this, CLIENT_INFORM_MYSQL_CLIENT_TRANSFER_RESP_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_ERROR("fail to schedule imm", K(ret));
+          LOG_EDIAG("fail to schedule imm", K(ret));
         }
       }
     } else if (ObVIO::READ == vio->op_) { // read_vio
@@ -236,7 +236,7 @@ int ObClientVC::transfer_bytes()
   ObIOBufferReader *reader = vio.get_reader();
   if (OB_ISNULL(reader)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get reader", K(ret));
+    LOG_WDIAG("fail to get reader", K(ret));
   } else {
     int64_t bytes_avail = reader->read_avail();
     int64_t act_on = MIN(bytes_avail, ntodo);
@@ -245,17 +245,17 @@ int ObClientVC::transfer_bytes()
 
     if (act_on <= 0) {
       ret = OB_INVALID_ARGUMENT;
-      _LOG_WARN("act on data can not <= 0, avail=%ld, ntodo=%ld, "
+      _LOG_WDIAG("act on data can not <= 0, avail=%ld, ntodo=%ld, "
                 "act_on=%ld, ret=%d", bytes_avail, ntodo, act_on, ret);
     } else if (OB_ISNULL(transfer_to)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("resp buffer can not be NULL", K(transfer_to), K(ret));
+      LOG_WDIAG("resp buffer can not be NULL", K(transfer_to), K(ret));
     } else if (OB_FAIL(transfer_to->write(reader, act_on, total_added, 0))
         || act_on != total_added) {
-      LOG_WARN("failed to transfer data from iobuffer reader to iobfer",
+      LOG_WDIAG("failed to transfer data from iobuffer reader to iobfer",
           K(act_on), K(total_added), K(ret));
     } else if (OB_FAIL(reader->consume(total_added))) {
-      LOG_WARN("fail to consume", K(total_added), K(ret));
+      LOG_WDIAG("fail to consume", K(total_added), K(ret));
     } else {
       vio.ndone_ += total_added;
       LOG_DEBUG("transfer_bytes succ", "ndone", vio.ndone_, "nbytes", vio.nbytes_);
@@ -300,15 +300,15 @@ int ObMysqlClient::init(ObMysqlClientPool *pool,
   ObProxyMutex *mutex = NULL;
   if (OB_ISNULL(pool) || OB_UNLIKELY(user_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(pool), K(user_name), K(ret));
+    LOG_WDIAG("invalid input value", K(pool), K(user_name), K(ret));
   } else if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex(CLIENT_VC_LOCK))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mutex", K(ret));
+    LOG_WDIAG("fail to allocate mutex", K(ret));
   } else if (OB_FAIL(info_.set_names(user_name, password, database, cluster_name, password1))) {
-    LOG_WARN("fail to set names", K(user_name), K(password), K(database), K(cluster_name), K(ret));
+    LOG_WDIAG("fail to set names", K(user_name), K(password), K(database), K(cluster_name), K(ret));
   } else {
     if (client_pool_option != NULL) {
       info_.set_need_skip_stage2(client_pool_option->need_skip_stage2_);
@@ -327,6 +327,7 @@ int ObMysqlClient::init(ObMysqlClientPool *pool,
   return ret;
 }
 
+// 初始化探测客户端
 int ObMysqlClient::init_detect_client(ObClusterResource *cr)
 {
   int ret = OB_SUCCESS;
@@ -334,12 +335,12 @@ int ObMysqlClient::init_detect_client(ObClusterResource *cr)
   ObString password(get_global_proxy_config().observer_sys_password.str());
   if (OB_UNLIKELY(is_inited_ ||NULL == cr)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex(CLIENT_VC_LOCK))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mutex", K(ret));
+    LOG_WDIAG("fail to allocate mutex", K(ret));
   } else if (OB_FAIL(info_.set_names(ObProxyTableInfo::DETECT_USERNAME_USER, password, "obproxy", "obproxy"))) {
-    LOG_WARN("fail to set names", K(ret));
+    LOG_WDIAG("fail to set names", K(ret));
   } else {
     common_mutex_ = mutex;
     mutex_ = common_mutex_;
@@ -348,6 +349,41 @@ int ObMysqlClient::init_detect_client(ObClusterResource *cr)
     cr_ = cr;
     is_inited_ = true;
     use_short_connection_ = true;
+  }
+  return ret;
+}
+
+// 初始化binlog客户端
+int ObMysqlClient::init_binlog_client(const ObString cluster_name, const ObString tenant_name)
+{
+  int ret = OB_SUCCESS;
+  ObProxyMutex *mutex = NULL;
+  ObString password(get_global_proxy_config().observer_sys_password.str());
+  ObClusterResource *cr = get_global_resource_pool_processor().acquire_avail_cluster_resource(cluster_name);
+  if (OB_UNLIKELY(is_inited_ ||NULL == cr)) {
+    ret = OB_INIT_TWICE;
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
+  } else if (OB_ISNULL(mutex = new_proxy_mutex(CLIENT_VC_LOCK))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to allocate mutex", K(ret));
+  } else {
+    char full_user_name[OB_PROXY_FULL_USER_NAME_MAX_LEN + 1];
+    full_user_name[0] = '\0';
+    int64_t pos = 0;
+    if (OB_FAIL(databuff_printf(full_user_name, OB_PROXY_FULL_USER_NAME_MAX_LEN + 1, pos, "%s@%.*s#%.*s",
+            ObProxyTableInfo::BINLOG_USERNAME_USER, tenant_name.length(), tenant_name.ptr(),
+            cluster_name.length(), cluster_name.ptr()))) {
+      LOG_WDIAG("fail to databuff_printf", K(cluster_name), K(tenant_name), K(ret));
+    } else if (OB_FAIL(info_.set_names(full_user_name, password, "binlog", cluster_name))) {
+      LOG_WDIAG("fail to set names", K(ret));
+    } else {
+      common_mutex_ = mutex;
+      mutex_ = common_mutex_;
+      next_action_ = CLIENT_ACTION_CONNECT;
+      cr_ = cr;
+      is_inited_ = true;
+      use_short_connection_ = true;
+    }
   }
   return ret;
 }
@@ -363,24 +399,24 @@ int ObMysqlClient::post_request(
   int ret = OB_SUCCESS;
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(mutex_ != common_mutex_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("mysql client mutex is should be equal to common mutex", "mutex", mutex_.ptr_,
+    LOG_EDIAG("mysql client mutex is should be equal to common mutex", "mutex", mutex_.ptr_,
               "common_mutex", common_mutex_.ptr_, K(ret));
   } else if (OB_ISNULL(cont) || OB_ISNULL(cont->mutex_)
              || OB_ISNULL(cont->mutex_->thread_holding_)
              || OB_UNLIKELY(!request_param.is_valid()) || OB_UNLIKELY(timeout_ms <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cont), K(request_param), K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid input value", K(cont), K(request_param), K(timeout_ms), K(ret));
   } else if (OB_UNLIKELY(this_ethread() != (cont->mutex_->thread_holding_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with the caller's thread_holding",
+    LOG_EDIAG("this_ethread must be equal with the caller's thread_holding",
               "this_ethread", this_ethread(), "caller's thread_holding",
               cont->mutex_->thread_holding_, K(ret));
   } else if (!is_avail()) {
     ret = OB_OP_NOT_ALLOW;
-    LOG_WARN("some client request is flying", "current sql", request_param.sql_,
+    LOG_WDIAG("some client request is flying", "current sql", request_param.sql_,
              "flying sql", info_.get_request_sql(),  K(ret));
   } else if (cont->mutex_ != common_mutex_) {
     // in sync post request, cont->mutex is common mutex, no need to swap mutex
@@ -390,14 +426,14 @@ int ObMysqlClient::post_request(
       // under lock, double check
       if (!is_avail()) {
         ret = OB_OP_NOT_ALLOW;
-        LOG_WARN("some client request is flying", "current sql", request_param.sql_,
+        LOG_WDIAG("some client request is flying", "current sql", request_param.sql_,
                  "flying sql", info_.get_request_sql(),  K(ret));
       } else {
         mutex_ = cont->mutex_;
         if (NULL != client_vc_) {
           if (OB_UNLIKELY(client_vc_->mutex_ != common_mutex_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("client_vc mutex must be common mutex in idle time",
+            LOG_EDIAG("client_vc mutex must be common mutex in idle time",
                       "client vc mutex", client_vc_->mutex_.ptr_,
                       "common mutex", common_mutex_.ptr_, K(ret));
           } else {
@@ -414,25 +450,25 @@ int ObMysqlClient::post_request(
   if (OB_SUCC(ret)) {
     if (OB_UNLIKELY(NULL != mysql_resp_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("mysql_resp_ should be null, it should not happened",
+      LOG_WDIAG("mysql_resp_ should be null, it should not happened",
                K(mysql_resp_), K(ret));
     } else if (OB_ISNULL(mysql_resp_ = op_alloc(ObClientMysqlResp))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate ObClientMysqlResp", K(ret));
+      LOG_WDIAG("fail to allocate ObClientMysqlResp", K(ret));
     } else if (OB_FAIL(mysql_resp_->init())) {
-      LOG_WARN("fail to init client mysql resp", K(ret));
+      LOG_WDIAG("fail to init client mysql resp", K(ret));
     } else if (OB_FAIL(info_.set_request_param(request_param))) {
-      LOG_WARN("fail to set request sql", K(request_param), K(ret));
+      LOG_WDIAG("fail to set request sql", K(request_param), K(ret));
     } else {
       active_timeout_ms_ = timeout_ms;
       if (CLIENT_ACTION_CONNECT == next_action_ && info_.can_change_password()) {
         retry_times_ = 1;
       }
       if (OB_FAIL(do_post_request())) {
-        LOG_WARN("fail to do post request", K(ret));
+        LOG_WDIAG("fail to do post request", K(ret));
       } else if (OB_ISNULL(client_vc_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("client vc is null, connection may has been closed", K(ret));
+        LOG_WDIAG("client vc is null, connection may has been closed", K(ret));
       } else {
         action_.set_continuation(cont);
         action_.cancelled_ = false;
@@ -463,32 +499,32 @@ int ObMysqlClient::main_handler(int event, void *data)
             "next action", get_client_action_name(next_action_), K(data), "thread", this_ethread());
   if (OB_UNLIKELY(CLIENT_MAGIC_ALIVE != magic_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this mysql client is dead", K_(magic), K(this), K(ret));
+    LOG_EDIAG("this mysql client is dead", K_(magic), K(this), K(ret));
   } else if (this_ethread() != mutex_->thread_holding_ && CLIENT_DESTROY_SELF_EVENT != event) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(this), K(ret));
   } else {
     switch (event) {
       case VC_EVENT_READ_READY: { // response received
         if (OB_FAIL(do_next_action(data))) {
-          LOG_WARN("fail to do next action", "next_action",
+          LOG_WDIAG("fail to do next action", "next_action",
                    get_client_action_name(next_action_), K(ret));
         }
         break;
       }
       case CLIENT_VC_DISCONNECT_EVENT: {
         if (OB_FAIL(handle_client_vc_disconnect())) {
-          LOG_WARN("fail to hanlde client vc disconnect", K(ret));
+          LOG_WDIAG("fail to hanlde client vc disconnect", K(ret));
         }
         break;
       }
       case CLIENT_DESTROY_SELF_EVENT: {
         // 1. treat as active timeout
         if (OB_FAIL(cancel_active_timeout())) {
-          LOG_WARN("fail to cancel active timeout", K(ret));
+          LOG_WDIAG("fail to cancel active timeout", K(ret));
         } else if (OB_FAIL(handle_active_timeout())) {
-          LOG_WARN("fail to handle active timeout", K(ret));
+          LOG_WDIAG("fail to handle active timeout", K(ret));
         }
         // 2. kill this
         terminate_ = true;
@@ -497,13 +533,13 @@ int ObMysqlClient::main_handler(int event, void *data)
       case EVENT_INTERVAL: {
         active_timeout_action_ = NULL;
         if (OB_FAIL(handle_active_timeout())) {
-          LOG_WARN("fail to handle active timeout", K(ret));
+          LOG_WDIAG("fail to handle active timeout", K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown event", K(event), K(ret));
+        LOG_WDIAG("unknown event", K(event), K(ret));
         break;
       }
     }
@@ -521,9 +557,9 @@ int ObMysqlClient::main_handler(int event, void *data)
         op_free(mysql_resp_);
         if (OB_ISNULL(mysql_resp_ = op_alloc(ObClientMysqlResp))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to allocate ObClientMysqlResp", K(ret));
+          LOG_WDIAG("fail to allocate ObClientMysqlResp", K(ret));
         } else if (mysql_resp_->init()) {
-          LOG_WARN("fail to init client mysql resp", K(ret));
+          LOG_WDIAG("fail to init client mysql resp", K(ret));
         }
       }
 
@@ -533,12 +569,12 @@ int ObMysqlClient::main_handler(int event, void *data)
 
       --reentrancy_count_;
       if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-        LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count), K(this));
+        LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count), K(this));
       }
     } else {
       if (is_request_complete_) {
         if (OB_FAIL(handle_request_complete())) {
-          LOG_WARN("fail to handle request complete", K(ret));
+          LOG_WDIAG("fail to handle request complete", K(ret));
         }
       }
 
@@ -548,14 +584,14 @@ int ObMysqlClient::main_handler(int event, void *data)
       } else {
         --reentrancy_count_;
         if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-          LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count), K(this));
+          LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count), K(this));
         }
       }
     }
   } else {
     --reentrancy_count_;
     if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-      LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count), K(this));
+      LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count), K(this));
     }
   }
 
@@ -601,7 +637,7 @@ int ObMysqlClient::handle_request_complete()
   ObContinuation *cont = action_.continuation_;
   if (NULL != cont) {
     if (OB_FAIL(cancel_active_timeout())) {
-      LOG_WARN("fail to cancel active timeout", K(ret));
+      LOG_WDIAG("fail to cancel active timeout", K(ret));
     } else {
       ObClientMysqlResp *mysql_resp = NULL;
       bool need_callback = false;
@@ -636,20 +672,20 @@ int ObMysqlClient::schedule_active_timeout()
   int64_t timeout_ms = active_timeout_ms_;
   if (timeout_ms <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid input value", K(timeout_ms), K(ret));
   } else if (OB_FAIL(cancel_active_timeout())) {
-    LOG_WARN("fail to cancel active timeout", K(ret));
+    LOG_WDIAG("fail to cancel active timeout", K(ret));
   } else {
     ObEThread *this_thread = this_ethread();
     if (OB_ISNULL(this_thread)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("this thread can not be NULL", K(this_thread), K(ret));
+      LOG_WDIAG("this thread can not be NULL", K(this_thread), K(ret));
     } else {
       active_timeout_action_ = this_thread->schedule_in(
         this, HRTIME_MSECONDS(timeout_ms));
       if (OB_ISNULL(active_timeout_action_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule in", K(ret));
+        LOG_WDIAG("fail to schedule in", K(ret));
       }
     }
   }
@@ -662,7 +698,7 @@ int ObMysqlClient::cancel_active_timeout()
   int ret = OB_SUCCESS;
   if (NULL != active_timeout_action_) {
     if (OB_FAIL(active_timeout_action_->cancel())) {
-      LOG_WARN("fail to cancel active timeout", K(ret));
+      LOG_WDIAG("fail to cancel active timeout", K(ret));
     } else {
       active_timeout_action_ = NULL;
     }
@@ -686,7 +722,7 @@ int ObMysqlClient::handle_active_timeout()
   }
 
   if (OB_FAIL(handle_client_vc_disconnect())) {
-    LOG_WARN("fail to handle client vc disconnect", K(ret));
+    LOG_WDIAG("fail to handle client vc disconnect", K(ret));
   }
 
   return ret;
@@ -712,7 +748,7 @@ int ObMysqlClient::handle_client_vc_disconnect()
       // when fail to new connection, it will come here
       if (NULL != active_timeout_action_) {
         if (OB_FAIL(cancel_active_timeout())) {
-          LOG_WARN("fail to cancel active timeout", K(ret));
+          LOG_WDIAG("fail to cancel active timeout", K(ret));
         }
       }
     }
@@ -728,14 +764,14 @@ int ObMysqlClient::do_post_request()
     case CLIENT_ACTION_CONNECT: {
       if (OB_ISNULL(request_buf_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc request miobuffer", K(ret));
+        LOG_WDIAG("fail to alloc request miobuffer", K(ret));
       } else if (OB_ISNULL(request_reader_ = request_buf_->alloc_reader())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to alloc reader", K(ret));
+        LOG_WDIAG("fail to alloc reader", K(ret));
       } else if (OB_FAIL(schedule_active_timeout())) {
-        LOG_WARN("fail to schedule_active_timeout", K(ret));
+        LOG_WDIAG("fail to schedule_active_timeout", K(ret));
       } else if (OB_FAIL(setup_read_handshake())) {
-        LOG_WARN("fail to setup read handshake", K(ret));
+        LOG_WDIAG("fail to setup read handshake", K(ret));
       }
       if (OB_FAIL(ret) && (NULL != request_buf_)) {
         free_miobuffer(request_buf_);
@@ -746,11 +782,11 @@ int ObMysqlClient::do_post_request()
     }
     case CLIENT_ACTION_READ_NORMAL_RESP: {
      if (OB_FAIL(setup_read_normal_resp())) {
-        LOG_WARN("fail to setup read normal resp", K(ret));
+        LOG_WDIAG("fail to setup read normal resp", K(ret));
       } else if (OB_FAIL(schedule_active_timeout())) {
-        LOG_WARN("fail to schedule_active_timeout", K(ret));
+        LOG_WDIAG("fail to schedule_active_timeout", K(ret));
       } else if (OB_FAIL(forward_mysql_request())) {
-        LOG_WARN("fail to schedule post reuqest", K(ret));
+        LOG_WDIAG("fail to schedule post reuqest", K(ret));
       }
       break;
     }
@@ -759,7 +795,7 @@ int ObMysqlClient::do_post_request()
     case CLIENT_ACTION_SET_AUTOCOMMIT:
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("client' next action can not be this action", "next_action",
+      LOG_WDIAG("client' next action can not be this action", "next_action",
                get_client_action_name(next_action_), K(ret));
       break;
     }
@@ -776,60 +812,60 @@ int ObMysqlClient::do_next_action(void *data)
 
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(data), K(ret));
+    LOG_WDIAG("invalid input value", K(data), K(ret));
   } else {
     ObVIO &vio = *(reinterpret_cast<ObVIO *>(data));
     switch (next_action_) {
       case CLIENT_ACTION_READ_HANDSHAKE: {
         if (OB_FAIL(transfer_and_analyze_response(vio, OB_MYSQL_COM_HANDSHAKE))) {
-          LOG_WARN("fail to transfer and analyze resposne", K(ret));
+          LOG_WDIAG("fail to transfer and analyze resposne", K(ret));
         } else if (!mysql_resp_->is_resp_completed()) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("mysql resp must be received complete", K(ret));
+          LOG_WDIAG("mysql resp must be received complete", K(ret));
         } else if (OB_FAIL(notify_transfer_completed())) {
-          LOG_WARN("fail to notify transfer completed", K(ret));
+          LOG_WDIAG("fail to notify transfer completed", K(ret));
         } else if (NULL != client_vc_) { // NULL means client_vc has closed
           if (mysql_resp_->is_error_resp()) {
             if (OB_FAIL(transport_mysql_resp())) {
-              LOG_WARN("fail to transfrom mysql resp", K(ret));
+              LOG_WDIAG("fail to transfrom mysql resp", K(ret));
             }
           } else {
             if (OB_FAIL(setup_read_login_resp())) {
-              LOG_WARN("fail to setup read login resp", K(ret));
+              LOG_WDIAG("fail to setup read login resp", K(ret));
             } else if (OB_FAIL(forward_mysql_request())) {
-              LOG_WARN("fail to schedule post reuqest", K(ret));
+              LOG_WDIAG("fail to schedule post reuqest", K(ret));
             }
           }
         }
         break;
       }
       case CLIENT_ACTION_READ_LOGIN_RESP: {
-        if (info_.get_request_param().is_detect_client_) {
+        if (ObMysqlRequestParam::CLIENT_VC_TYPE_DETECT == info_.get_request_param().client_vc_type_) {
           is_request_complete_ = true;
         } else if (OB_FAIL(transfer_and_analyze_response(vio, OB_MYSQL_COM_LOGIN))) {
-          LOG_WARN("fail to transfer and analyze resposne", K(ret));
+          LOG_WDIAG("fail to transfer and analyze resposne", K(ret));
         } else if (!mysql_resp_->is_resp_completed()) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("mysql resp must be received complete", K(ret));
+          LOG_WDIAG("mysql resp must be received complete", K(ret));
         } else if (OB_FAIL(notify_transfer_completed())) {
-          LOG_WARN("fail to notify transfer completed", K(ret));
+          LOG_WDIAG("fail to notify transfer completed", K(ret));
         } else if (NULL != client_vc_) { // NULL means client_vc has closed
           if (mysql_resp_->is_error_resp()) {
             if (OB_FAIL(transport_mysql_resp())) {
-              LOG_WARN("fail to transfrom mysql resp", K(ret));
+              LOG_WDIAG("fail to transfrom mysql resp", K(ret));
             }
           } else if (info_.get_request_param().ob_client_flags_.is_skip_autocommit()) {
             if (OB_FAIL(setup_read_normal_resp())) {
-              LOG_WARN("fail to setup read normal resp", K(ret));
+              LOG_WDIAG("fail to setup read normal resp", K(ret));
             } else if (OB_FAIL(forward_mysql_request())) {
-              LOG_WARN("fail to schedule post request", K(ret));
+              LOG_WDIAG("fail to schedule post request", K(ret));
             }
           } else {
             retry_times_ = 0;
             if (OB_FAIL(setup_read_autocommit_resp())) {
-              LOG_WARN("fail to setup read autocommit resp", K(ret));
+              LOG_WDIAG("fail to setup read autocommit resp", K(ret));
             } else if (OB_FAIL(forward_mysql_request())) {
-              LOG_WARN("fail to schedule post reuqest", K(ret));
+              LOG_WDIAG("fail to schedule post reuqest", K(ret));
             }
           }
         }
@@ -837,22 +873,22 @@ int ObMysqlClient::do_next_action(void *data)
       }
       case CLIENT_ACTION_SET_AUTOCOMMIT: {
         if (OB_FAIL(transfer_and_analyze_response(vio, obmysql::OB_MYSQL_COM_QUERY))) {
-          LOG_WARN("fail to transfer and analyze resposne", K(ret));
+          LOG_WDIAG("fail to transfer and analyze resposne", K(ret));
         } else if (!mysql_resp_->is_resp_completed()) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("mysql resp must be received complete", K(ret));
+          LOG_WDIAG("mysql resp must be received complete", K(ret));
         } else if (OB_FAIL(notify_transfer_completed())) {
-          LOG_WARN("fail to notify transfer completed", K(ret));
+          LOG_WDIAG("fail to notify transfer completed", K(ret));
         } else if (NULL != client_vc_) { // NULL means client_vc has closed
           if (mysql_resp_->is_error_resp()) {
             if (OB_FAIL(transport_mysql_resp())) {
-              LOG_WARN("fail to transfrom mysql resp", K(ret));
+              LOG_WDIAG("fail to transfrom mysql resp", K(ret));
             }
           } else {
             if (OB_FAIL(setup_read_normal_resp())) {
-              LOG_WARN("fail to setup read normal resp", K(ret));
+              LOG_WDIAG("fail to setup read normal resp", K(ret));
             } else if (OB_FAIL(forward_mysql_request())) {
-              LOG_WARN("fail to schedule post reuqest", K(ret));
+              LOG_WDIAG("fail to schedule post reuqest", K(ret));
             }
           }
         }
@@ -860,22 +896,22 @@ int ObMysqlClient::do_next_action(void *data)
       }
       case CLIENT_ACTION_READ_NORMAL_RESP: {
         if (OB_FAIL(transfer_and_analyze_response(vio, obmysql::OB_MYSQL_COM_QUERY))) {
-          LOG_WARN("fail to transfer and analyze resposne", K(ret));
+          LOG_WDIAG("fail to transfer and analyze resposne", K(ret));
         } else if (!mysql_resp_->is_resp_completed()) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("mysql resp must be received complete", K(ret));
+          LOG_WDIAG("mysql resp must be received complete", K(ret));
         } else if (OB_FAIL(notify_transfer_completed())) {
-          LOG_WARN("fail to notify transfer completed", K(ret));
+          LOG_WDIAG("fail to notify transfer completed", K(ret));
         } else if (NULL != client_vc_) { // NULL means client_vc has closed
           if (OB_FAIL(transport_mysql_resp())) {
-            LOG_WARN("fail to transfrom mysql resp", K(ret));
+            LOG_WDIAG("fail to transfrom mysql resp", K(ret));
           }
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        _LOG_WARN("unknown action, action=%d, ret=%d", next_action_, ret);
+        _LOG_WDIAG("unknown action, action=%d, ret=%d", next_action_, ret);
       }
     }
   }
@@ -890,14 +926,14 @@ int ObMysqlClient::transfer_and_analyze_response(ObVIO &vio, const obmysql::ObMy
   if (vio.ndone_ == vio.nbytes_) {
     LOG_DEBUG("transfer_and_analyze_response");
     if (OB_FAIL(mysql_resp_->analyze_resp(cmd))) {
-      LOG_WARN("fail to analyze_trans_response", K(ret));
+      LOG_WDIAG("fail to analyze_trans_response", K(ret));
     } else if (!mysql_resp_->is_resp_completed()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("mysql response must be received completed here", K(ret));
+      LOG_WDIAG("mysql response must be received completed here", K(ret));
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ndone should be equal to nbytes",
+    LOG_WDIAG("ndone should be equal to nbytes",
              K_(vio.ndone), K_(vio.nbytes), K(ret));
   }
 
@@ -922,7 +958,7 @@ int ObMysqlClient::notify_transfer_completed()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(client_vc_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("client vc can not be NULL", K_(client_vc), K(ret));
+    LOG_WDIAG("client vc can not be NULL", K_(client_vc), K(ret));
   } else {
     client_vc_->handle_event(CLIENT_MYSQL_RESP_TRANSFER_COMPLETE_EVENT, NULL);
   }
@@ -936,19 +972,19 @@ int ObMysqlClient::setup_read_login_resp()
   // 1. before write new rquest, check valid firstly
   if (OB_ISNULL(request_buf_) || OB_ISNULL(request_reader_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("request_buf or request_reader is null", K_(request_buf), K_(request_reader), K(ret));
+    LOG_WDIAG("request_buf or request_reader is null", K_(request_buf), K_(request_reader), K(ret));
   } else if (OB_UNLIKELY(request_reader_->read_avail() > 0)) {
-    LOG_WARN("request buf has remain data, unnormal state", K_(request_reader), K_(request_buf),
+    LOG_WDIAG("request buf has remain data, unnormal state", K_(request_reader), K_(request_buf),
              "read_avail", request_reader_->read_avail());
     if (OB_FAIL(request_reader_->consume_all())) {
-      LOG_WARN("fail to consume all", K(ret));
+      LOG_WDIAG("fail to consume all", K(ret));
     }
   }
 
   // 2. prepare handshake response packet
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ObClientUtils::build_handshake_response_packet(mysql_resp_, &info_, request_buf_))) {
-      LOG_WARN("fail to build handsake response packet", K_(info), K(ret));
+      LOG_WDIAG("fail to build handsake response packet", K_(info), K(ret));
     } else {
       // 3. set next action
       next_action_ = CLIENT_ACTION_READ_LOGIN_RESP;
@@ -965,12 +1001,12 @@ int ObMysqlClient::setup_read_autocommit_resp()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(request_buf_) || OB_ISNULL(request_reader_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("request_buf or request_reader is null", K_(request_buf), K_(request_reader), K(ret));
+    LOG_WDIAG("request_buf or request_reader is null", K_(request_buf), K_(request_reader), K(ret));
   } else if (OB_UNLIKELY(request_reader_->read_avail() > 0)) {
-    LOG_WARN("request buf has remain data, unnormal state", K_(request_reader), K_(request_buf),
+    LOG_WDIAG("request buf has remain data, unnormal state", K_(request_reader), K_(request_buf),
              "read_avail", request_reader_->read_avail());
     if (OB_FAIL(request_reader_->consume_all())) {
-      LOG_WARN("fail to consume all", K(ret));
+      LOG_WDIAG("fail to consume all", K(ret));
     }
   }
 
@@ -980,8 +1016,8 @@ int ObMysqlClient::setup_read_autocommit_resp()
     // current all inner request use normal mysql protocol
     ObString sql ("SET @@autocommit = 1");
     if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*request_buf_, obmysql::OB_MYSQL_COM_QUERY, sql,
-        use_compress, is_checksum_on))) {
-      LOG_WARN("fail to write buffer", K(sql), K_(request_buf), K(ret));
+                                                           use_compress, is_checksum_on, 0))) {
+      LOG_WDIAG("fail to write buffer", K(sql), K_(request_buf), K(ret));
     } else {
       mysql_resp_->consume_resp_buf();
       next_action_ = CLIENT_ACTION_SET_AUTOCOMMIT;
@@ -998,12 +1034,12 @@ int ObMysqlClient::setup_read_normal_resp()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(request_buf_) || OB_ISNULL(request_reader_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("request_buf or request_reader is null", K_(request_buf), K_(request_reader), K(ret));
+    LOG_WDIAG("request_buf or request_reader is null", K_(request_buf), K_(request_reader), K(ret));
   } else if (OB_UNLIKELY(request_reader_->read_avail() > 0)) {
-    LOG_WARN("request buf has remain data, unnormal state", K_(request_reader), K_(request_buf),
+    LOG_WDIAG("request buf has remain data, unnormal state", K_(request_reader), K_(request_buf),
              "read_avail", request_reader_->read_avail());
     if (OB_FAIL(request_reader_->consume_all())) {
-      LOG_WARN("fail to consume all", K(ret));
+      LOG_WDIAG("fail to consume all", K(ret));
     }
   }
 
@@ -1012,8 +1048,8 @@ int ObMysqlClient::setup_read_normal_resp()
     const bool use_compress = false;
     const bool is_checksum_on = false;
     if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*request_buf_, obmysql::OB_MYSQL_COM_QUERY, sql,
-        use_compress, is_checksum_on))) {
-      LOG_WARN("fail to write buffer", K(sql), K_(request_buf), K(ret));
+                                                           use_compress, is_checksum_on, 0))) {
+      LOG_WDIAG("fail to write buffer", K(sql), K_(request_buf), K(ret));
     } else {
       mysql_resp_->consume_resp_buf();
       next_action_ = CLIENT_ACTION_READ_NORMAL_RESP;
@@ -1034,11 +1070,11 @@ int ObMysqlClient::do_new_connection_with_shard_conn(ObMysqlClientSession *clien
   LOG_DEBUG("new connection", KP(shard_conn), KP(shard_prop));
   if (OB_ISNULL(shard_conn)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard conn should not be null here", K(ret));
+    LOG_WDIAG("shard conn should not be null here", K(ret));
     client_session->destroy();
   } else if (OB_FAIL(client_session->new_connection(client_vc_, request_buf_, request_reader_,
                                                     shard_conn, shard_prop))) {
-    LOG_WARN("fail to new_connection", K(ret));
+    LOG_WDIAG("fail to new_connection", K(ret));
   }
 
   if (NULL != shard_conn) {
@@ -1066,10 +1102,10 @@ int ObMysqlClient::do_new_connection_with_cr(ObMysqlClientSession *client_sessio
   LOG_DEBUG("new connection", K(cr), KPC(cr));
   if (OB_ISNULL(cr)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cluster resource should not be null here", K(ret));
+    LOG_WDIAG("cluster resource should not be null here", K(ret));
     client_session->destroy();
   } else if (OB_FAIL(client_session->new_connection(client_vc_, request_buf_, request_reader_, cr))) {
-    LOG_WARN("fail to new_connection", K(ret));
+    LOG_WDIAG("fail to new_connection", K(ret));
   }
 
   if (NULL != cr) {
@@ -1084,10 +1120,10 @@ int ObMysqlClient::setup_read_handshake()
   ObMysqlClientSession *client_session = NULL;
   if (OB_ISNULL(client_vc_ = op_alloc_args(ObClientVC, *this))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate ObClientVC", K(ret));
+    LOG_WDIAG("fail to allocate ObClientVC", K(ret));
   } else if (OB_ISNULL(client_session = op_reclaim_alloc(ObMysqlClientSession))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate ObMysqlClientSession", K(ret));
+    LOG_WDIAG("fail to allocate ObMysqlClientSession", K(ret));
   } else {
     client_vc_->mutex_ = mutex_;
     client_session->set_proxy_mysql_client();
@@ -1108,11 +1144,11 @@ int ObMysqlClient::setup_read_handshake()
     next_action_ = CLIENT_ACTION_READ_HANDSHAKE;
     if ((NULL != pool_ && pool_->is_cluster_param()) || NULL != cr_) {
       if (OB_FAIL(do_new_connection_with_cr(client_session))) {
-        LOG_WARN("fail to new connection with cr", K(ret));
+        LOG_WDIAG("fail to new connection with cr", K(ret));
       }
     } else {
       if (OB_FAIL(do_new_connection_with_shard_conn(client_session))) {
-        LOG_WARN("fail to new connection with shard conn", K(ret));
+        LOG_WDIAG("fail to new connection with shard conn", K(ret));
       }
     }
 
@@ -1139,12 +1175,12 @@ void ObMysqlClient::release(bool is_need_check_reentry)
   if (OB_LIKELY(!is_need_check_reentry || 1 == reentrancy_count_) && OB_LIKELY(!terminate_)) {
     int ret = OB_SUCCESS;
     if (OB_FAIL(cancel_active_timeout())) {
-      LOG_ERROR("fail to cancel timeout action,"
+      LOG_EDIAG("fail to cancel timeout action,"
                 "we can not release it back to client pool", K(ret));
     } else {
       // for defense, make sure client vc's mutex is common mutex when release to client pool;
       // Never free client vc in mysql client, it will be free by mysql_sm
-      if (!info_.get_request_param().is_detect_client_ && NULL != client_vc_ && client_vc_->mutex_ != common_mutex_) {
+      if ((ObMysqlRequestParam::CLIENT_VC_TYPE_DETECT != info_.get_request_param().client_vc_type_) && NULL != client_vc_ && client_vc_->mutex_ != common_mutex_) {
         client_vc_->handle_event(CLIENT_VC_SWAP_MUTEX_EVENT, common_mutex_.ptr_);
         if (NULL != client_vc_) {
           client_vc_->mutex_ = common_mutex_;
@@ -1171,7 +1207,7 @@ void ObMysqlClient::kill_this()
   int ret = OB_SUCCESS;
   // ignore ret, continue
   if (OB_FAIL(cancel_active_timeout())) {
-    LOG_WARN("fail to cancel active timeout");
+    LOG_WDIAG("fail to cancel active timeout");
   }
 
   // free client vc
@@ -1227,9 +1263,9 @@ int ObMysqlClient::alloc(ObMysqlClientPool *pool, ObMysqlClient *&client,
   client = NULL;
   if (OB_ISNULL(client = op_alloc(ObMysqlClient))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate ObMysqlClient", K(ret));
+    LOG_WDIAG("fail to allocate ObMysqlClient", K(ret));
   } else if (OB_FAIL(client->init(pool, user_name, password, database, is_meta_mysql_client, cluster_name, password1, client_pool_option))) {
-    LOG_WARN("fail to init client", K(ret));
+    LOG_WDIAG("fail to init client", K(ret));
   }
   if (OB_FAIL(ret) && (NULL != client)) {
     client->kill_this();

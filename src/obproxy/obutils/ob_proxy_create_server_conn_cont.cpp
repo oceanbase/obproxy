@@ -139,7 +139,7 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
       // end one loop, schedule next loop
       ret = schedule_create_conn_cont();
     } else if (OB_FAIL(ret)) {
-      LOG_WARN("handle_get_one_conn_info failed", K(ret));
+      LOG_WDIAG("handle_get_one_conn_info failed", K(ret));
     } else {
       schema_key = schema_key_conn_info_->schema_key_;
       server_type = schema_key.get_db_server_type();
@@ -148,14 +148,14 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
         if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this,
             CONN_ENTRY_CREATE_SERVER_SESSION_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to schedule create session", K(schema_key));
+          LOG_WDIAG("fail to schedule create session", K(schema_key));
         }
       } else if ((DB_OB_MYSQL == server_type || DB_OB_ORACLE == server_type)) { 
         if (OB_FAIL(handle_create_cluster_resource())) {
-          LOG_WARN("fail to handle_create_cluster_resource", K(ret));
+          LOG_WDIAG("fail to handle_create_cluster_resource", K(ret));
         }
       } else {
-        LOG_WARN("unexpected type", K(server_type), K(schema_key_conn_info_));
+        LOG_WDIAG("unexpected type", K(server_type), K(schema_key_conn_info_));
         ret = OB_ERR_UNEXPECTED;
       }
     }
@@ -163,23 +163,23 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
   case CONN_ENTRY_CREATE_CLUSTER_RESOURCE_EVENT: {
     pending_action_ = NULL;
     if (OB_FAIL(handle_create_cluster_resource())) {
-      LOG_WARN("fail to handle_create_cluster_resource", K(ret));
+      LOG_WDIAG("fail to handle_create_cluster_resource", K(ret));
     }
     break;
   }
   case CLUSTER_RESOURCE_CREATE_COMPLETE_EVENT: {
     pending_action_ = NULL;
     if (OB_FAIL(handle_create_cluster_resource_complete(data))) {
-      LOG_WARN("fail to handle creat complete", K(ret));
+      LOG_WDIAG("fail to handle creat complete", K(ret));
     }
     break;
   }
   case CONN_ENTRY_CREATE_SERVER_SESSION_EVENT: {
     pending_action_ = NULL;
     if (OB_FAIL(do_create_server_conn())) {
-      LOG_WARN("fail to create server conn", K(ret));
+      LOG_WDIAG("fail to create server conn", K(ret));
     } else if (OB_FAIL(handle_create_session())) {
-      LOG_WARN("handle create session fail", K(ret));
+      LOG_WDIAG("handle create session fail", K(ret));
     } else {
       LOG_DEBUG("handle create session succ");
     }
@@ -189,14 +189,14 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
     pending_action_ = NULL;
     schema_key = schema_key_conn_info_->schema_key_;
     if (OB_FAIL(handle_client_resp(data))) {
-      LOG_WARN("fail to handle client resp", K(ret));
+      LOG_WDIAG("fail to handle client resp", K(ret));
       get_global_session_manager().incr_fail_count(schema_key.dbkey_.config_string_,
           schema_key_conn_info_->addr_);
     } else {
       get_global_session_manager().reset_fail_count(schema_key.dbkey_.config_string_, schema_key_conn_info_->addr_);
       if (create_count_ < conn_count_) {
         if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, CONN_ENTRY_CREATE_SERVER_SESSION_EVENT, NULL))) {
-          LOG_WARN("fail to schedule create conn", K(ret));
+          LOG_WDIAG("fail to schedule create conn", K(ret));
         } else {
           LOG_DEBUG("continue create server conn", K(create_count_), K(conn_count_),
             K(schema_key_conn_info_->addr_), K(schema_key.dbkey_.config_string_));
@@ -204,7 +204,7 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
       } else {
         // continue handle next one
         if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, CONN_ENTRY_GET_ONE_CONN_INFO_EVENT, NULL))) {
-          LOG_WARN("fail to schedule get conn", K(ret));
+          LOG_WDIAG("fail to schedule get conn", K(ret));
         }
       }
     }
@@ -212,7 +212,7 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
   }
   default: {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unknown event", K(event), K(data), K(ret));
+    LOG_WDIAG("unknown event", K(event), K(data), K(ret));
     break;
   }
   };
@@ -220,10 +220,10 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
     // may be fail in handle one
     LOG_INFO("failed in handle one", K(ret));
     if (OB_FAIL(cancel_pending_action())) {
-      LOG_WARN("fail to cancel_pending_action", K(ret));
+      LOG_WDIAG("fail to cancel_pending_action", K(ret));
     }
     if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, CONN_ENTRY_GET_ONE_CONN_INFO_EVENT, NULL))) {
-      LOG_WARN("fail to schedule get conn", K(ret));
+      LOG_WDIAG("fail to schedule get conn", K(ret));
     }
   }
   if (terminate_ && (1 == reentrancy_count_)) {
@@ -231,7 +231,7 @@ int ObProxyCreateServerConnCont::main_handler(int event, void *data)
   } else {
     --reentrancy_count_;
     if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-      LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count));
+      LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count));
     }
   }
   return ret;
@@ -245,7 +245,7 @@ int ObProxyCreateServerConnCont::handle_create_session() {
   const ObMysqlRequestParam request_param(sql);
   LOG_DEBUG("handle create session sql is ", K(sql));
   if (OB_FAIL(proxy_->async_read(this, request_param, pending_action_))) {
-    LOG_WARN("fail to nonblock read", K(sql), K(ret));
+    LOG_WDIAG("fail to nonblock read", K(sql), K(ret));
   }
   return ret;
 }
@@ -267,23 +267,23 @@ int ObProxyCreateServerConnCont::handle_client_resp(void *data) {
     ObResultSetFetcher *rs_fetcher = NULL;
     if (resp->is_resultset_resp()) {
       if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher))) {
-        LOG_WARN("fail to get resultset fetcher", K(ret));
+        LOG_WDIAG("fail to get resultset fetcher", K(ret));
       } else if (OB_ISNULL(rs_fetcher)) {
-        LOG_WARN("resultset fetcher is NULL", K(ret));
+        LOG_WDIAG("resultset fetcher is NULL", K(ret));
         ret = OB_ERR_UNEXPECTED;
       } else if (OB_FAIL(handle_select_value_resp(*rs_fetcher))) {
-        LOG_WARN("fail to get value", K(ret));
+        LOG_WDIAG("fail to get value", K(ret));
       }
     } else {
       const int64_t error_code = resp->get_err_code();
-      LOG_WARN("fail to get resp from remote", K(error_code));
+      LOG_WDIAG("fail to get resp from remote", K(error_code));
       ret = OB_ERR_UNEXPECTED;
     }
     op_free(resp);
     resp = NULL;
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("handle_client_resp fail ", K(ret));
+    LOG_WDIAG("handle_client_resp fail ", K(ret));
   }
   if (NULL != proxy_) {
     op_free(proxy_);
@@ -301,7 +301,7 @@ int ObProxyCreateServerConnCont::handle_create_cluster_resource()
   if (OB_FAIL(rp_processor.get_cluster_resource(*this,
               (process_async_task_pfn)&ObProxyCreateServerConnCont::handle_create_cluster_resource_complete,
               false, cluster_name, OB_DEFAULT_CLUSTER_ID, NULL, pending_action_))) {
-    LOG_WARN("fail to get cluster resource", "cluster name", cluster_name, K(ret));
+    LOG_WDIAG("fail to get cluster resource", "cluster name", cluster_name, K(ret));
   } else if (NULL == pending_action_) { // created succ
     LOG_INFO("cluster resource was created by others, no need create again");
   }
@@ -321,11 +321,11 @@ int ObProxyCreateServerConnCont::handle_create_cluster_resource_complete(void *d
                                         this, HRTIME_MSECONDS(RETRY_INTERVAL_MS),
                                         CONN_ENTRY_CREATE_CLUSTER_RESOURCE_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule fetch rslist task", K(ret));
+        LOG_WDIAG("fail to schedule fetch rslist task", K(ret));
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create cluste resource, no chance retry", K(data),
+      LOG_WDIAG("fail to create cluste resource, no chance retry", K(data),
                K(schema_key.get_cluster_name()));
     }
   } else {
@@ -335,7 +335,7 @@ int ObProxyCreateServerConnCont::handle_create_cluster_resource_complete(void *d
     retry_count_ = INT32_MAX;
   }
   if (OB_SUCC(ret) && OB_FAIL(handle_event(CONN_ENTRY_CREATE_SERVER_SESSION_EVENT))) {
-    LOG_WARN("fail to schedule");
+    LOG_WDIAG("fail to schedule");
   }
   return ret;
 }
@@ -345,27 +345,27 @@ int ObProxyCreateServerConnCont::schedule_create_conn_cont(bool imm)
   if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
     terminate_ = true;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending action should be null here", K_(pending_action), K(ret));
   } else {
     int64_t delay_us = 0;
     if (imm) {
       // must be done in work thread
       if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL, CONN_ENTRY_GET_ONE_CONN_INFO_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule create_server_conn event", K(ret));
+        LOG_WDIAG("fail to schedule create_server_conn event", K(ret));
       }
     } else {
       delay_us = ObRandomNumUtils::get_random_half_to_full(refresh_interval_us_);
       if (OB_UNLIKELY(delay_us <= 0)) {
         ret = OB_INNER_STAT_ERROR;
-        LOG_WARN("delay must greater than zero", K(delay_us), K(ret));
+        LOG_WDIAG("delay must greater than zero", K(delay_us), K(ret));
       } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(
           this, HRTIME_USECONDS(delay_us), CONN_ENTRY_GET_ONE_CONN_INFO_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule create_server_conn cont", K(delay_us), K(ret));
+        LOG_WDIAG("fail to schedule create_server_conn cont", K(delay_us), K(ret));
       }
     }
   }
@@ -403,18 +403,18 @@ int ObProxyCreateServerConnCont::do_create_server_conn()
   client_pool_option.schema_key_ = schema_key;
   int64_t timeout_ms = get_global_resource_pool_processor().config_.short_async_task_timeout_;
   if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(login_info.password_, passwd_string))) {
-    LOG_WARN("fail to encrypt_passwd_to_stage1", K(login_info), K(ret));
+    LOG_WDIAG("fail to encrypt_passwd_to_stage1", K(login_info), K(ret));
   } else {
     passwd_string += 1;//trim the head'*'
     const bool is_meta_mysql_client = true;
     ObMysqlProxy* proxy = op_alloc(ObMysqlProxy);
     if (proxy != NULL) {
       if (OB_FAIL(proxy->init(timeout_ms, login_info.username_, passwd_string, login_info.db_))) {
-        LOG_WARN("fail to init proxy", K(login_info.username_), K(login_info.db_));
+        LOG_WDIAG("fail to init proxy", K(login_info.username_), K(login_info.db_));
       } else if (DB_OB_ORACLE == server_type || DB_OB_MYSQL == server_type) {
         if (OB_FAIL(proxy->rebuild_client_pool(cr_, is_meta_mysql_client,
                          cluster_name, OB_DEFAULT_CLUSTER_ID, login_info.username_, passwd_string, login_info.db_, "", &client_pool_option))) {
-          LOG_WARN("fail to create mysql client pool", K(login_info), K(ret));
+          LOG_WDIAG("fail to create mysql client pool", K(login_info), K(ret));
         } else {
           LOG_DEBUG("succ to create ob client pool", K(login_info.username_), K(server_type),
             K(schema_key_conn_info_->addr_));
@@ -422,14 +422,14 @@ int ObProxyCreateServerConnCont::do_create_server_conn()
       } else if (DB_MYSQL == server_type) {
         if (OB_FAIL(proxy->rebuild_client_pool(schema_key.shard_conn_, NULL,
               is_meta_mysql_client, user_name, passwd_string, database_name, "", &client_pool_option))) {
-          LOG_WARN("fail to create mysql client pool", K(user_name), K(database_name), K(ret));
+          LOG_WDIAG("fail to create mysql client pool", K(user_name), K(database_name), K(ret));
         } else {
           LOG_DEBUG("succ to create mysql clinet pool", K(login_info.username_), K(database_name), K(server_type),
             K(schema_key_conn_info_->addr_));
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid type", K(server_type));
+        LOG_WDIAG("invalid type", K(server_type));
       }
     }
     if (OB_FAIL(ret)) {

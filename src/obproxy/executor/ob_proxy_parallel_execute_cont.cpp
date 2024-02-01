@@ -55,15 +55,15 @@ int ObProxyParallelResp::init(ObClientMysqlResp *resp, ObIAllocator *allocator)
 
   if (OB_ISNULL(resp_ = resp) || OB_ISNULL(allocator_ = allocator)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("resp can not be NULL", KP(resp), KP(allocator), K(ret));
+    LOG_WDIAG("resp can not be NULL", KP(resp), KP(allocator), K(ret));
   }
 
   if (OB_SUCC(ret) && is_resultset_resp()) {
     if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher_))) {
-      LOG_WARN("fail to get resultset fetcher", K(ret));
+      LOG_WDIAG("fail to get resultset fetcher", K(ret));
     } else if (OB_ISNULL(rs_fetcher_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("rs_fetcher can not be NULL", K(ret));
+      LOG_WDIAG("rs_fetcher can not be NULL", K(ret));
     } else {
       column_count_ = rs_fetcher_->get_column_count();
     }
@@ -81,16 +81,16 @@ int ObProxyParallelResp::next(ObObj *&rows)
 
   if (OB_FAIL(rs_fetcher_->next())) {
     if (OB_ITER_END != ret) {
-      LOG_WARN("fail to get next row", K(ret));
+      LOG_WDIAG("fail to get next row", K(ret));
     }
   } else if (OB_ISNULL(buf = static_cast<char *>(allocator_->alloc(buf_len)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K(buf_len), K(ret));
+    LOG_WDIAG("fail to alloc mem", K(buf_len), K(ret));
   } else {
     rows = new (buf) ObObj[column_count_];
     for (int64_t i = 0; OB_SUCC(ret) && i < column_count_; i++) {
       if (OB_FAIL(rs_fetcher_->get_obj(i, rows[i]))) {
-        LOG_WARN("fail to get varchar", K(i), K(ret));
+        LOG_WDIAG("fail to get varchar", K(i), K(ret));
       }
     }
   }
@@ -112,19 +112,19 @@ int ObProxyParallelExecuteCont::init(const ObProxyParallelParam &parallel_param,
   char passwd_staged1_buf[ENC_STRING_BUF_LEN]; // 1B '*' + 40B octal num
   ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
   if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(passwd, passwd_string))) {
-    LOG_WARN("fail to encrypt_passwd_to_stage1", K(ret));
+    LOG_WDIAG("fail to encrypt_passwd_to_stage1", K(ret));
   } else {
     passwd_string += 1;//trim the head'*'
     if (OB_ISNULL(mysql_proxy_ = op_alloc(ObMysqlProxy))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc ObMysqlProxy");
+      LOG_WDIAG("fail to alloc ObMysqlProxy");
     } else if (OB_FAIL(mysql_proxy_->init(timeout_ms, username, passwd_string, database_name))) {
-      LOG_WARN("fail to init proxy", K(username), K(database_name));
+      LOG_WDIAG("fail to init proxy", K(username), K(database_name));
     } else if (OB_FAIL(mysql_proxy_->rebuild_client_pool(shard_conn_, parallel_param.shard_prop_,
                                                          false, username, passwd_string, database_name))) {
-      LOG_WARN("fail to create mysql client pool", K(username), K(database_name), K(ret));
+      LOG_WDIAG("fail to create mysql client pool", K(username), K(database_name), K(ret));
     } else if (OB_FAIL(deep_copy_sql(parallel_param.request_sql_))) {
-      LOG_WARN("fail to deep_copy_sql", K(parallel_param.request_sql_), K(ret));
+      LOG_WDIAG("fail to deep_copy_sql", K(parallel_param.request_sql_), K(ret));
     } else {
       cont_index_ = cont_index;
       allocator_ = allocator;
@@ -142,10 +142,10 @@ int ObProxyParallelExecuteCont::deep_copy_sql(const common::ObString &sql)
   char *buf = NULL;
   if (OB_UNLIKELY(sql.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(sql), K(ret));
+    LOG_WDIAG("invalid input value", K(sql), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(sql.length())))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", "alloc_size", sql.length(), K(ret));
+    LOG_WDIAG("fail to alloc mem", "alloc_size", sql.length(), K(ret));
   } else {
     reset_request_sql();
     MEMCPY(buf, sql.ptr(), sql.length());
@@ -173,7 +173,7 @@ int ObProxyParallelExecuteCont::init_task()
   request_param.ob_client_flags_.client_flags_.OB_CLIENT_SEND_REQUEST_DIRECT = 1;
   request_param.sql_ = request_sql_;
   if (OB_FAIL(mysql_proxy_->async_read(this, request_param, pending_action_))) {
-    LOG_WARN("fail to async read", K_(request_sql), K(ret));
+    LOG_WDIAG("fail to async read", K_(request_sql), K(ret));
   }
 
   return ret;
@@ -190,10 +190,10 @@ int ObProxyParallelExecuteCont::finish_task(void *data)
     ObClientMysqlResp *resp = NULL;
     if (OB_ISNULL(result_set_ = op_alloc_args(ObProxyParallelResp, cont_index_))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate ObProxyParallelResp", K(ret));
+      LOG_WDIAG("fail to allocate ObProxyParallelResp", K(ret));
     } else if (FALSE_IT(resp = reinterpret_cast<ObClientMysqlResp *>(data))) {
     } else if (OB_FAIL(result_set_->init(resp, allocator_))) {
-      LOG_WARN("fail to init ObProxyParallelResp", K(ret));
+      LOG_WDIAG("fail to init ObProxyParallelResp", K(ret));
     }
 
     if (OB_FAIL(ret)) {

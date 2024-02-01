@@ -35,7 +35,7 @@ void ObMysqlServerSession::destroy()
   PROXY_SS_LOG(DEBUG, "ObMysqlServerSession::destroy()", K(ss_id_), K(server_sessid_));
   if (OB_UNLIKELY(NULL != server_vc_) || OB_UNLIKELY(NULL == read_buffer_)
       || OB_UNLIKELY(0 != server_trans_stat_)) {
-    PROXY_SS_LOG(WARN, "the server session cannot be destroyed", K(server_vc_),
+    PROXY_SS_LOG(WDIAG, "the server session cannot be destroyed", K(server_vc_),
                  K(read_buffer_), K(server_trans_stat_));
   }
   is_inited_ = false;
@@ -43,7 +43,7 @@ void ObMysqlServerSession::destroy()
   if (NULL != buf_reader_) {
     int ret = OB_SUCCESS;
     if (OB_FAIL(buf_reader_->consume(buf_reader_->read_avail()))) {
-      PROXY_SS_LOG(WARN, "fail to consume ", K(ret));
+      PROXY_SS_LOG(WDIAG, "fail to consume ", K(ret));
     }
   }
   if (OB_LIKELY(NULL != read_buffer_)) {
@@ -62,7 +62,7 @@ int ObMysqlServerSession::new_connection(ObMysqlClientSession &client_session, O
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    PROXY_SS_LOG(WARN, "init twice", K(is_inited_), K(ret));
+    PROXY_SS_LOG(WDIAG, "init twice", K(is_inited_), K(ret));
   } else {
     client_session_ = &client_session;
     server_vc_ = &new_vc;
@@ -71,9 +71,9 @@ int ObMysqlServerSession::new_connection(ObMysqlClientSession &client_session, O
     if (client_session.is_session_pool_client()) {
       is_pool_session_ = true;
       if (OB_FAIL(ObMysqlSessionUtils::init_schema_key_with_client_session(schema_key_, client_session_))) {
-        PROXY_SS_LOG(WARN, "init_schema_key_with_client_session failed", K(ret));
+        PROXY_SS_LOG(WDIAG, "init_schema_key_with_client_session failed", K(ret));
       } else if (OB_FAIL(ObMysqlSessionUtils::init_common_addr_with_client_session(common_addr_, server_ip_, client_session_))) {
-        PROXY_SS_LOG(WARN, "init_common_addr_with_client_session failed", K(ret));
+        PROXY_SS_LOG(WDIAG, "init_common_addr_with_client_session failed", K(ret));
       } else {
         OBPROXY_POOL_LOG(INFO, "new_connection", K(schema_key_), K(local_ip_), K(server_ip_));
       }
@@ -99,7 +99,7 @@ int ObMysqlServerSession::new_connection(ObMysqlClientSession &client_session, O
          */
         read_buffer_->water_mark_ = MYSQL_NET_META_LENGTH;
         if (OB_FAIL(session_info_.init())) {
-          PROXY_SS_LOG(WARN, "fail to init session_info", K_(ss_id), K(ret));
+          PROXY_SS_LOG(WDIAG, "fail to init session_info", K_(ss_id), K(ret));
         } else {
           DBServerType server_type = client_session.get_session_info().get_server_type();
           session_info_.set_server_type(server_type);
@@ -116,7 +116,7 @@ int ObMysqlServerSession::new_connection(ObMysqlClientSession &client_session, O
         }
       } else {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_SS_LOG(WARN, "alloc mem for read_buffer_ error", K(ret));
+        PROXY_SS_LOG(WDIAG, "alloc mem for read_buffer_ error", K(ret));
       }
     }
   }
@@ -216,7 +216,7 @@ int ObMysqlServerSession::release()
       // for v1 user save password for check
       const ObString& password = client_session_->get_session_info().get_login_req().get_hsr_result().response_.get_auth_response();
       if (OB_ISNULL(schema_key_.shard_conn_)) {
-        PROXY_SS_LOG(WARN, "shard_conn_ is null, unexpected", K(schema_key_));
+        PROXY_SS_LOG(WDIAG, "shard_conn_ is null, unexpected", K(schema_key_));
       } else if (schema_key_.shard_conn_->password_.empty()) {
         PROXY_SS_LOG(DEBUG, "save password", K(password.hash()));
         schema_key_.shard_conn_->password_.set_value(password);
@@ -227,7 +227,7 @@ int ObMysqlServerSession::release()
       }
     }
     if (OB_FAIL(get_global_session_manager().release_session(*this))) {
-      PROXY_SS_LOG(WARN, "fail to release server session to global, it will be closed", K(ret));
+      PROXY_SS_LOG(WDIAG, "fail to release server session to global, it will be closed", K(ret));
       do_io_close();
     }
   } else  {
@@ -236,11 +236,11 @@ int ObMysqlServerSession::release()
     if (OB_NOT_NULL(shard_conn)) {
       if (OB_FAIL(client_session_->get_session_manager_new().release_session(
                   shard_conn->shard_name_.config_string_, *this))) {
-        PROXY_SS_LOG(WARN, "fail to release server session to new session manager, it will be closed", K(ret));
+        PROXY_SS_LOG(WDIAG, "fail to release server session to new session manager, it will be closed", K(ret));
       }
     } else {
       if (OB_FAIL(client_session_->get_session_manager().release_session(*this))) {
-        PROXY_SS_LOG(WARN, "fail to release server session, it will be closed", K(ret));
+        PROXY_SS_LOG(WDIAG, "fail to release server session, it will be closed", K(ret));
       }
     }
 
@@ -301,7 +301,7 @@ int ObServerAddrLookupHandler::main_handler(int event, void *data)
 {
   UNUSED(data);
   UNUSED(event);
-  PROXY_SS_LOG(ERROR, "it should not arrive here", K(event), KP(data));
+  PROXY_SS_LOG(EDIAG, "it should not arrive here", K(event), KP(data));
   return EVENT_DONE;
 }
 
@@ -317,13 +317,13 @@ int ObServerAddrLookupHandler::handle_lookup_with_proxy_conn_id(int event, void 
     if (OB_NEED_RETRY == ret) {
       if (OB_ISNULL(ethread.schedule_in(this, HRTIME_MSECONDS(1)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_SS_LOG(ERROR, "fail to schedule self", K(ethread.id_), K(ret));
+        PROXY_SS_LOG(EDIAG, "fail to schedule self", K(ethread.id_), K(ret));
       } else {
         need_callback = false;
         PROXY_SS_LOG(DEBUG, "fail to do lookup_server_addr_with_proxy_conn_id, need reschedule", K(ethread.id_), K(ret));
       }
     } else {
-      PROXY_SS_LOG(WARN, "fail to do lookup_server_addr_with_proxy_conn_id", K(ethread.id_), K(ret));
+      PROXY_SS_LOG(WDIAG, "fail to do lookup_server_addr_with_proxy_conn_id", K(ethread.id_), K(ret));
     }
   }
 
@@ -346,13 +346,13 @@ int ObServerAddrLookupHandler::handle_lookup_with_server_conn_id(int event, void
     if (OB_NEED_RETRY == ret) {
       if (OB_ISNULL(ethread.schedule_in(this, HRTIME_MSECONDS(1)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_SS_LOG(ERROR, "fail to schedule self", K(ethread.id_), K(ret));
+        PROXY_SS_LOG(EDIAG, "fail to schedule self", K(ethread.id_), K(ret));
       } else {
         need_callback = false;
         PROXY_SS_LOG(DEBUG, "fail to do lookup_server_addr_with_server_conn_id, need reschedule", K(ethread.id_), K(ret));
       }
     } else {
-      PROXY_SS_LOG(WARN, "fail to do lookup_server_addr_with_server_conn_id", K(is_finished), K(ethread.id_), K(ret));
+      PROXY_SS_LOG(WDIAG, "fail to do lookup_server_addr_with_server_conn_id", K(is_finished), K(ethread.id_), K(ret));
     }
   } else if (!is_finished) {
     const int64_t next_id = ((ethread.id_ + 1) % g_event_processor.thread_count_for_type_[ET_NET]);
@@ -360,7 +360,7 @@ int ObServerAddrLookupHandler::handle_lookup_with_server_conn_id(int event, void
       need_callback = false;
       if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][next_id]->schedule_imm(this))) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_SS_LOG(WARN, "schedule event error, event is null", K(ret));
+        PROXY_SS_LOG(WDIAG, "schedule event error, event is null", K(ret));
       }
     } else {
       query_info_.errcode_ = OB_UNKNOWN_CONNECTION; //not found the specific session
@@ -388,7 +388,7 @@ int ObServerAddrLookupHandler::lookup_server_addr_with_server_conn_id(const ObET
     ObMysqlClientSessionMap::IDHashMap &id_map = cs_map.id_map_;
     cs_id_array_.reuse();
     if (OB_FAIL(cs_id_array_.reserve(id_map.count()))) {
-      PROXY_SS_LOG(WARN, "fail to reserve cs_id_array", K(ethread.id_), "cs count", id_map.count(), K(ret));
+      PROXY_SS_LOG(WDIAG, "fail to reserve cs_id_array", K(ethread.id_), "cs count", id_map.count(), K(ret));
     } else {
       ObMysqlClientSessionMap::IDHashMap::iterator spot = id_map.begin();
       ObMysqlClientSessionMap::IDHashMap::iterator end = id_map.end();
@@ -396,7 +396,7 @@ int ObServerAddrLookupHandler::lookup_server_addr_with_server_conn_id(const ObET
       for (; OB_SUCC(ret) && spot != end; ++spot) {
         cs_id_handler.cs_id_ = spot->get_cs_id();
         if (OB_FAIL(cs_id_array_.push_back(cs_id_handler))) {
-          PROXY_SS_LOG(WARN, "fail to push_back cs_id_array", K(cs_id_handler), K(ethread.id_), K(ret));
+          PROXY_SS_LOG(WDIAG, "fail to push_back cs_id_array", K(cs_id_handler), K(ethread.id_), K(ret));
         }
       }
     }
@@ -417,11 +417,11 @@ int ObServerAddrLookupHandler::lookup_server_addr_with_server_conn_id(const ObET
         cs_id_array_.at(i).is_used_ = true;
         ret = OB_SUCCESS;
       } else {
-        PROXY_SS_LOG(WARN, "fail to get cs from cs map ", K(curr_cs_id), K(ret));
+        PROXY_SS_LOG(WDIAG, "fail to get cs from cs map ", K(curr_cs_id), K(ret));
       }
     } else if (OB_ISNULL(cs)) {
       ret = OB_ERR_NULL_VALUE;
-      PROXY_SS_LOG(WARN, "cs is null", K(curr_cs_id), K(ret));
+      PROXY_SS_LOG(WDIAG, "cs is null", K(curr_cs_id), K(ret));
     } else {
       MUTEX_TRY_LOCK(lock, cs->mutex_, this_ethread());
       if (OB_UNLIKELY(!lock.is_locked())) {
@@ -431,7 +431,7 @@ int ObServerAddrLookupHandler::lookup_server_addr_with_server_conn_id(const ObET
         cs_id_array_.at(i).is_used_ = true;
         if (cs->is_hold_conn_id(cs_id)) {
           if (OB_FAIL(lookup_server_addr(*cs, priv_info_, query_info_))) {
-            PROXY_SS_LOG(WARN, "fail to lookup_server_addr", K(cs_id), K(ret));
+            PROXY_SS_LOG(WDIAG, "fail to lookup_server_addr", K(cs_id), K(ret));
           } else {
             is_finished = true;
             PROXY_SS_LOG(DEBUG, "succ to lookup_server_addr", K(cs_id));
@@ -465,7 +465,7 @@ int ObServerAddrLookupHandler::handle_callback(int event, void *data)
     SET_HANDLER(&ObServerAddrLookupHandler::handle_callback);
     if (OB_ISNULL(submit_thread_->schedule_imm(this))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_SS_LOG(WARN, "schedule event error, event is null", K(ret));
+      PROXY_SS_LOG(WDIAG, "schedule event error, event is null", K(ret));
     }
   } else {
     PROXY_SS_LOG(DEBUG, "The same thread, directly execute", K(query_info_));
@@ -479,7 +479,7 @@ int ObServerAddrLookupHandler::handle_callback(int event, void *data)
       delete this;
     } else if (OB_ISNULL(submit_thread_->schedule_in(this, HRTIME_MSECONDS(1)))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_SS_LOG(WARN, "schedule event error, event is null", K(ret));
+      PROXY_SS_LOG(WDIAG, "schedule event error, event is null", K(ret));
     }
   }
   return EVENT_DONE;
@@ -494,12 +494,12 @@ int ObServerAddrLookupHandler::create_continuation(ObContinuation &cont,
   mutex = NULL;
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(ERROR, "fail to new ObProxyMutex", K(ret));
+    PROXY_SM_LOG(EDIAG, "fail to new ObProxyMutex", K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObServerAddrLookupHandler(*mutex, cont, query_info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(ERROR, "fail to new ObServerAddrLookupHandler", K(ret));
+    PROXY_SM_LOG(EDIAG, "fail to new ObServerAddrLookupHandler", K(ret));
   } else if (OB_FAIL(handler->priv_info_.deep_copy(&priv_info))) {
-    PROXY_SS_LOG(WARN, "fail to deep copy session priv", K(priv_info), K(ret));
+    PROXY_SS_LOG(WDIAG, "fail to deep copy session priv", K(priv_info), K(ret));
   } else {
     //do noting
   }
@@ -530,23 +530,23 @@ int ObServerAddrLookupHandler::lookup_server_addr(ObContinuation &cont,
   ObProxyMutex *mutex = NULL;
 
   if (OB_FAIL(query_info.do_privilege_check(priv_info))) {
-    PROXY_SS_LOG(WARN, "fail to do privilege check", K(query_info), K(ret));
+    PROXY_SS_LOG(WDIAG, "fail to do privilege check", K(query_info), K(ret));
   } else if (OB_UNLIKELY(!is_conn_id_avail(query_info.cs_id_, is_proxy_conn_id))) {
     ret = OB_ERR_UNEXPECTED;
     query_info.errcode_ = OB_UNKNOWN_CONNECTION;
-    PROXY_SS_LOG(WARN, "cs_id is not avail", K(query_info));
+    PROXY_SS_LOG(WDIAG, "cs_id is not avail", K(query_info));
   } else {
     if (is_proxy_conn_id) {
       //session id got from obproxy
       if (OB_FAIL(extract_thread_id(static_cast<uint32_t>(query_info.cs_id_), thread_id))) {
         query_info.errcode_ = OB_RESULT_UNKNOWN;
-        PROXY_SS_LOG(WARN, "fail to extract thread id, it should not happen", K(query_info), K(ret));
+        PROXY_SS_LOG(WDIAG, "fail to extract thread id, it should not happen", K(query_info), K(ret));
       } else {
         //the same thread
         if (thread_id == ethread.id_
             && OB_FAIL(lookup_server_addr_with_proxy_conn_id(ethread, priv_info, query_info))
             && OB_NEED_RETRY != ret) {
-          PROXY_SS_LOG(WARN, "fail to do lookup_server_addr_with_proxy_conn_id", K(ethread.id_), K(ret));
+          PROXY_SS_LOG(WDIAG, "fail to do lookup_server_addr_with_proxy_conn_id", K(ethread.id_), K(ret));
         } else {
           //not the same thread or need retry
           if (thread_id == ethread.id_  && OB_SUCC(ret)) {
@@ -557,7 +557,7 @@ int ObServerAddrLookupHandler::lookup_server_addr(ObContinuation &cont,
             if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][thread_id]->schedule_imm(handler))) {
               query_info.errcode_ = OB_RESULT_UNKNOWN;
               ret = OB_ERR_UNEXPECTED;
-              PROXY_SS_LOG(WARN, "schedule event error, event is null", K(ret));
+              PROXY_SS_LOG(WDIAG, "schedule event error, event is null", K(ret));
               addr_lookup_action_handle = NULL;
             } else {
               PROXY_SS_LOG(INFO, "succ to schedule ObServerAddrLookupHandler with proxy conn_id", K(query_info));
@@ -572,7 +572,7 @@ int ObServerAddrLookupHandler::lookup_server_addr(ObContinuation &cont,
         if (OB_ISNULL(ethread.schedule_imm(handler))) {
           query_info.errcode_ = OB_RESULT_UNKNOWN;
           ret = OB_ERR_UNEXPECTED;
-          PROXY_SS_LOG(WARN, "schedule event error, event is null", K(ret));
+          PROXY_SS_LOG(WDIAG, "schedule event error, event is null", K(ret));
           addr_lookup_action_handle = NULL;
         } else {
           PROXY_SS_LOG(INFO, "succ to schedule ObServerAddrLookupHandler with server conn_id", K(query_info));
@@ -602,17 +602,25 @@ int ObServerAddrLookupHandler::lookup_server_addr(const ObMysqlClientSession &cs
   const ObProxySessionPrivInfo &target_priv_info = cs.get_session_info().get_priv_info();
   if (priv_info.has_all_privilege_) {
     has_privilege = true;
-  } else if (priv_info.is_same_tenant(target_priv_info)) {
+  } else if (!cs.get_session_info().is_sharding_user() && priv_info.is_same_tenant(target_priv_info)) {
     if (priv_info.has_super_privilege() || priv_info.is_same_user(target_priv_info)) {
       has_privilege = true;
     } else {
       query_info.errcode_ = OB_ERR_KILL_DENIED;
-      PROXY_SS_LOG(WARN, "same cluster.tenant, but different user, not the owner to others",
+      PROXY_SS_LOG(WDIAG, "same cluster.tenant, but different user, not the owner to others",
+                   K(query_info.errcode_));
+    }
+  } else if (cs.get_session_info().is_sharding_user()) {
+    if (priv_info.is_same_logic_user(target_priv_info)) {
+      has_privilege = true;
+    } else {
+      query_info.errcode_ = OB_ERR_KILL_DENIED;
+      PROXY_SS_LOG(WDIAG, "different logic user, not the owner to others",
                    K(query_info.errcode_));
     }
   } else {
     query_info.errcode_ = OB_UNKNOWN_CONNECTION;
-    PROXY_SS_LOG(WARN, "curr use has no privilege to kill query others",
+    PROXY_SS_LOG(WDIAG, "curr use has no privilege to kill query others",
             K(query_info.errcode_));
   }
 
@@ -645,9 +653,9 @@ int ObServerAddrLookupHandler::lookup_server_addr_with_proxy_conn_id(const ObETh
     MUTEX_TRY_LOCK(lock, cs->mutex_, this_ethread());
     if (OB_UNLIKELY(!lock.is_locked())) {
       ret = OB_NEED_RETRY;
-      PROXY_SS_LOG(WARN, "fail to try lock cs in cs_map, need retry", K(cs_id), K(ethread.id_), K(ret));
+      PROXY_SS_LOG(WDIAG, "fail to try lock cs in cs_map, need retry", K(cs_id), K(ethread.id_), K(ret));
     } else if (OB_FAIL(lookup_server_addr(*cs, priv_info, query_info))) {
-      PROXY_SS_LOG(WARN, "fail to lookup_server_addr", K(cs->get_cs_id()), K(ret));
+      PROXY_SS_LOG(WDIAG, "fail to lookup_server_addr", K(cs->get_cs_id()), K(ret));
     } else {
       PROXY_SS_LOG(DEBUG, "succ to lookup_server_addr", K(cs->get_cs_id()));
     }
@@ -662,7 +670,7 @@ int ObServerAddrLookupHandler::build_kill_query_sql(const uint32_t conn_id, comm
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(sql.append_fmt("KILL QUERY %u", conn_id))) {
-    PROXY_SS_LOG(WARN, "fail to build_kill_query_sql ", K(conn_id), K(ret));
+    PROXY_SS_LOG(WDIAG, "fail to build_kill_query_sql ", K(conn_id), K(ret));
   } else {
     PROXY_SS_LOG(DEBUG, "succ to build_kill_query_sql", K(sql), "length", sql.length());
   }

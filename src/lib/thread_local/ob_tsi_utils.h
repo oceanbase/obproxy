@@ -133,7 +133,7 @@ public:
   inline void get_value(T &result, int64_t idx = 0) const
   {
     if (idx < 0 || idx >= MAX_ELEMENTS_SIZE) {
-      _LIB_LOG(ERROR, "get_value param is out of range, idx[0,%ld) = %ld",
+      _LIB_LOG(EDIAG, "get_value param is out of range, idx[0,%ld) = %ld",
                 MAX_ELEMENTS_SIZE, idx);
     } else {
       int64_t thread_count = get_max_itid();
@@ -149,7 +149,7 @@ public:
   {
     int64_t tid = get_itid();
     if (tid >= MAX_THREAD_NUM || idx < 0 || idx >= MAX_ELEMENTS_SIZE) {
-      _LIB_LOG(ERROR, "inc param is out of range, thread num[0,%ld) = %ld, idx[0,%ld) = %ld",
+      _LIB_LOG(EDIAG, "inc param is out of range, thread num[0,%ld) = %ld, idx[0,%ld) = %ld",
                       MAX_THREAD_NUM, tid, MAX_ELEMENTS_SIZE, idx);
     } else {
       items_[tid][idx] += item;

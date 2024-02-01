@@ -34,7 +34,7 @@ int init_warning_stats()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(warning_rsb = g_stat_processor.allocate_raw_stat_block(MAX_WARNING_STATS_COUNT, XFH_WARNING_STATE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for warning_rsb", K(ret));
+    LOG_WDIAG("fail to alloc mem for warning_rsb", K(ret));
   } else {
     PROXY_REGISTER_RAW_STAT(warning_rsb, RECT_PROCESS, "current_core_count",
                                          RECD_INT, CURRENT_CORE_COUNT, SYNC_SUM, RECP_PERSISTENT);

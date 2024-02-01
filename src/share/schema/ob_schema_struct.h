@@ -517,7 +517,7 @@ int ObSchema::set_replica_options(const SRCSCHEMA &src, DSTSCHEMA &dst, const bo
   /*
   if (dst.get_primary_zone().empty() || force_update) {
     if (OB_FAIL(dst.set_primary_zone(src.get_primary_zone()))) {
-      SHARE_SCHEMA_LOG(WARN, "set_primary_zone failed", K(ret));
+      SHARE_SCHEMA_LOG(WDIAG, "set_primary_zone failed", K(ret));
     }
   }
   */
@@ -525,7 +525,7 @@ int ObSchema::set_replica_options(const SRCSCHEMA &src, DSTSCHEMA &dst, const bo
   if (OB_SUCC(ret)) {
     if (dst.get_zone_list().count() <= 0 || force_update) {
       if (OB_FAIL(dst.set_zone_list(src.get_zone_list()))) {
-        SHARE_SCHEMA_LOG(WARN, "set_zone_list failed", "zone_list", src.get_zone_list(), K(ret));
+        SHARE_SCHEMA_LOG(WDIAG, "set_zone_list failed", "zone_list", src.get_zone_list(), K(ret));
       }
     }
   }
@@ -542,7 +542,7 @@ int ObSchema::set_charset_and_collation_options(const SRCSCHEMA &src, DSTSCHEMA 
     if (src.get_charset_type() == common::CHARSET_INVALID
         || src.get_collation_type() == common::CS_TYPE_INVALID) {
       ret = common::OB_ERR_UNEXPECTED;
-      SHARE_SCHEMA_LOG(WARN, "charset type or collation type is invalid ", K(ret));
+      SHARE_SCHEMA_LOG(WDIAG, "charset type or collation type is invalid ", K(ret));
     } else {
       dst.set_charset_type(src.get_charset_type());
       dst.set_collation_type(src.get_collation_type());
@@ -551,7 +551,7 @@ int ObSchema::set_charset_and_collation_options(const SRCSCHEMA &src, DSTSCHEMA 
     common::ObCharsetType charset_type = dst.get_charset_type();
     common::ObCollationType collation_type = dst.get_collation_type();
     if (OB_FAIL(common::ObCharset::check_and_fill_info(charset_type, collation_type))) {
-      SHARE_SCHEMA_LOG(WARN, "fail to check charset collation",
+      SHARE_SCHEMA_LOG(WDIAG, "fail to check charset collation",
                        K(charset_type), K(collation_type), K(ret));
     } else {
       dst.set_charset_type(charset_type);
@@ -562,7 +562,7 @@ int ObSchema::set_charset_and_collation_options(const SRCSCHEMA &src, DSTSCHEMA 
       !common::ObCharset::is_valid_collation(dst.get_charset_type(),
                                              dst.get_collation_type())) {
     ret = common::OB_ERR_UNEXPECTED;
-    SHARE_SCHEMA_LOG(WARN, "invalid collation!", K(dst.get_charset_type()),
+    SHARE_SCHEMA_LOG(WDIAG, "invalid collation!", K(dst.get_charset_type()),
                      K(dst.get_collation_type()), K(ret));
   }
   return ret;

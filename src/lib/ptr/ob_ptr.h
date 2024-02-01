@@ -27,6 +27,25 @@ namespace oceanbase
 {
 namespace common
 {
+#define DEC_SHARED_REF(ref_ptr) \
+  do {  \
+    if (OB_NOT_NULL(ref_ptr)) { \
+      ref_ptr->dec_ref(); \
+      ref_ptr = NULL; \
+    } \
+  } while(0)
+
+#define INC_SHARED_REF(des_ref_ptr, src_ref_ptr) \
+  do {  \
+    if (OB_NOT_NULL(des_ref_ptr)) { \
+      des_ref_ptr->dec_ref(); \
+      des_ref_ptr = NULL; \
+    } \
+    if (OB_NOT_NULL(src_ref_ptr)) { \
+      des_ref_ptr = src_ref_ptr;  \
+      des_ref_ptr->inc_ref(); \
+    } \
+  } while(0)
 
 class ObSharedRefCount
 {

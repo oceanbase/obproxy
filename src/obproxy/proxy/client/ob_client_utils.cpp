@@ -46,7 +46,7 @@ void ObMysqlRequestParam::reset()
   target_addr_.reset();
   ob_client_flags_.flags_ = 0;
   mysql_client_ = NULL;
-  is_detect_client_ = false;
+  client_vc_type_ = CLIENT_VC_TYPE_NORMAL;
 }
 
 void ObMysqlRequestParam::reset_sql()
@@ -64,10 +64,10 @@ int ObMysqlRequestParam::deep_copy_sql(const common::ObString &sql)
   char *buf = NULL;
   if (OB_UNLIKELY(sql.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(sql), K(ret));
+    LOG_WDIAG("invalid input value", K(sql), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(sql.length())))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", "alloc_size", sql.length(), K(ret));
+    LOG_WDIAG("fail to alloc mem", "alloc_size", sql.length(), K(ret));
   } else {
     reset();
     MEMCPY(buf, sql.ptr(), sql.length());
@@ -81,14 +81,14 @@ int ObMysqlRequestParam::deep_copy(const ObMysqlRequestParam &other)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(deep_copy_sql(other.sql_))) {
-    LOG_WARN("fail to deep_copy_sql", K(other), K(ret));
+    LOG_WDIAG("fail to deep_copy_sql", K(other), K(ret));
   } else {
     is_user_idc_name_set_ = other.is_user_idc_name_set_;
     need_print_trace_stat_ = other.need_print_trace_stat_;
     target_addr_ = other.target_addr_;
     ob_client_flags_.flags_ = other.ob_client_flags_.flags_;
     mysql_client_ = other.mysql_client_;
-    is_detect_client_ = other.is_detect_client_;
+    client_vc_type_ = other.client_vc_type_;
     if (other.is_user_idc_name_set_ && !other.current_idc_name_.empty()) {
       MEMCPY(current_idc_name_buf_, other.current_idc_name_.ptr(), other.current_idc_name_.length());
       current_idc_name_.assign_ptr(current_idc_name_buf_, other.current_idc_name_.length());
@@ -125,13 +125,13 @@ int ObClientMysqlResp::init()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_ISNULL(response_buf_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc response miobuffer", K(ret));
+    LOG_WDIAG("fail to alloc response miobuffer", K(ret));
   } else if (OB_ISNULL(response_reader_ = response_buf_->alloc_reader())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to alloc reader", K(ret));
+    LOG_WDIAG("fail to alloc reader", K(ret));
   } else {
     is_inited_ = true;
   }
@@ -147,14 +147,14 @@ int ObClientMysqlResp::analyze_resp(const ObMySQLCmd cmd)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     reset();
     analyzer_.set_server_cmd(cmd, STANDARD_MYSQL_PROTOCOL_MODE, false, false);
 
     if (response_reader_->read_avail() > 0) {
       if (OB_FAIL(analyzer_.analyze_trans_response(*response_reader_, &mysql_resp_))) {
-        LOG_WARN("fail to analyze_trans_response", K(ret));
+        LOG_WDIAG("fail to analyze_trans_response", K(ret));
       } else if (!analyzer_.is_resp_completed()) {
         ret = OB_EAGAIN;
         LOG_INFO("response has not received complete", K(ret));
@@ -162,9 +162,9 @@ int ObClientMysqlResp::analyze_resp(const ObMySQLCmd cmd)
         if (is_resultset_resp()) {
           if (OB_ISNULL(rs_fetcher_ = op_alloc(ObResultSetFetcher))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("fail to allocate ObResultSetFetcher", K(ret));
+            LOG_WDIAG("fail to allocate ObResultSetFetcher", K(ret));
           } else if (OB_FAIL(rs_fetcher_->init(response_reader_))) {
-            LOG_WARN("fail to init rs fetcher", K(ret));
+            LOG_WDIAG("fail to init rs fetcher", K(ret));
           }
           if (OB_FAIL(ret) && (NULL != rs_fetcher_)) {
             op_free(rs_fetcher_);
@@ -186,17 +186,17 @@ int ObClientMysqlResp::get_affected_rows(int64_t &affected_row)
       ObMySQLCapabilityFlags cap(ObClientUtils::CAPABILITY_FLAGS);
       ObMysqlPacketReader pkt_reader;
       if (OB_FAIL(pkt_reader.get_ok_packet(*response_reader_, 0, cap, src_ok))) {
-        LOG_WARN("fail to get ok packet", K(ret));
+        LOG_WDIAG("fail to get ok packet", K(ret));
       } else {
         affected_row = static_cast<int64_t>(src_ok.get_affected_rows());
       }
     } else {
       ret = OB_INNER_STAT_ERROR;
-      LOG_WARN("response reader is not valid", K_(response_reader), K(ret));
+      LOG_WDIAG("response reader is not valid", K_(response_reader), K(ret));
     }
   } else {
     ret = OB_STATE_NOT_MATCH;
-    LOG_WARN("the resp is not ok packet", K(ret));
+    LOG_WDIAG("the resp is not ok packet", K(ret));
   }
 
   return ret;
@@ -207,7 +207,7 @@ int ObClientMysqlResp::get_resultset_fetcher(ObResultSetFetcher *&result)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(rs_fetcher_)) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("this response is not the resultset response", K_(mysql_resp), K(ret));
+    LOG_WDIAG("this response is not the resultset response", K_(mysql_resp), K(ret));
   } else {
     result = rs_fetcher_;
   }
@@ -229,7 +229,7 @@ int ObMysqlResultHandler::next()
   int ret = OB_SUCCESS;
   if (NULL == rs_fetcher_) {
     if (OB_FAIL(get_resultset_fetcher(rs_fetcher_))) {
-      LOG_WARN("fail to get rs_fetcher", K(ret));
+      LOG_WDIAG("fail to get rs_fetcher", K(ret));
     }
   }
 
@@ -246,18 +246,18 @@ int ObMysqlResultHandler::get_resultset_fetcher(ObResultSetFetcher *&rs_fetcher)
   rs_fetcher = NULL;
   if (!is_valid()) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("result handler is not valid", K_(resp), K(ret));
+    LOG_WDIAG("result handler is not valid", K_(resp), K(ret));
   } else {
     if (resp_->is_error_resp()) {
       ret = -resp_->get_err_code();
-      LOG_WARN("fail to execute sql", K(ret));
+      LOG_WDIAG("fail to execute sql", K(ret));
     } else if (resp_->is_resultset_resp()) {
       if (OB_FAIL(resp_->get_resultset_fetcher(rs_fetcher))) {
-        LOG_WARN("fail to get resultset fetcher", K(ret));
+        LOG_WDIAG("fail to get resultset fetcher", K(ret));
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected resp", K(ret));
+      LOG_WDIAG("unexpected resp", K(ret));
     }
   }
 
@@ -324,7 +324,7 @@ int ObClientRequestInfo::set_names(const ObString &user_name,
   int ret = OB_SUCCESS;
   if (user_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("user_name can not be NULL", K(user_name), K(ret));
+    LOG_WDIAG("user_name can not be NULL", K(user_name), K(ret));
   } else {
     reset_names();
     int64_t total_len = user_name.length() + password.length() + password1.length()
@@ -340,7 +340,7 @@ int ObClientRequestInfo::set_names(const ObString &user_name,
 
     if (OB_ISNULL(name_ = static_cast<char *>(op_fixed_mem_alloc(total_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate mem", "alloc size", total_len, K(ret));
+      LOG_WDIAG("fail to allocate mem", "alloc size", total_len, K(ret));
     } else {
       int64_t pos = 0;
       name_len_ = total_len;
@@ -389,7 +389,7 @@ int ObClientRequestInfo::set_names(const ObString &user_name,
       }
       if (pos != total_len) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("pos must be equal to total len", K(pos), K(total_len), K(ret));
+        LOG_WDIAG("pos must be equal to total len", K(pos), K(total_len), K(ret));
       }
     }
   }
@@ -402,9 +402,9 @@ int ObClientRequestInfo::set_request_param(const ObMysqlRequestParam &request_pa
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!request_param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("reqeust sql can not be NULL", K(request_param), K(ret));
+    LOG_WDIAG("reqeust sql can not be NULL", K(request_param), K(ret));
   } else if (OB_FAIL(request_param_.deep_copy(request_param))) {
-    LOG_WARN("fail to deep_copy request_param_", K(ret));
+    LOG_WDIAG("fail to deep_copy request_param_", K(ret));
   }
 
   return ret;
@@ -424,11 +424,11 @@ int ObClientUtils::get_auth_password_from_stage1(const ObString &passwd_stage1,
   ObString passwd_stage1_hex_str(SCRAMBLE_LENGTH, passwd_stage1_hex);
   //1. we restore the stored, displayable stage1 hash to its hex form
   if (OB_FAIL(ObEncryptedHelper::displayable_to_hex(passwd_stage1, passwd_stage1_hex_str))) {
-    LOG_WARN("fail to displayable_to_hex", K(passwd_stage1), K(ret));
+    LOG_WDIAG("fail to displayable_to_hex", K(passwd_stage1), K(ret));
   //2. we call the mysql validation logic.
   } else if (OB_FAIL(ObEncryptedHelper::encrypt_stage1_hex(passwd_stage1_hex_str,
       scramble_string, pwd_buf, pwd_len, copy_len))) {
-    LOG_WARN("fail to encrypt_stage1", K(passwd_stage1), K(passwd_stage1_hex_str), K(ret));
+    LOG_WDIAG("fail to encrypt_stage1", K(passwd_stage1), K(passwd_stage1_hex_str), K(ret));
   }
   return ret;
 }
@@ -441,14 +441,14 @@ int ObClientUtils::get_scramble(ObIOBufferReader *response_reader, char *buf,
       || OB_UNLIKELY(response_reader->read_avail() <= MYSQL_NET_HEADER_LENGTH)
       || OB_ISNULL(buf) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(response_reader), KP(buf), K(buf_len), K(ret));
+    LOG_WDIAG("invalid input value", K(response_reader), KP(buf), K(buf_len), K(ret));
   } else {
     OMPKHandshake handshake;
     ObMysqlPacketReader pkt_reader;
     if (OB_FAIL(pkt_reader.get_packet(*response_reader, handshake))) {
-      LOG_WARN("fail to get handshake packet", K(ret));
+      LOG_WDIAG("fail to get handshake packet", K(ret));
     } else if (OB_FAIL(handshake.get_scramble(buf, buf_len, copy_len))) {
-      LOG_WARN("fail to get scramble", K(ret));
+      LOG_WDIAG("fail to get scramble", K(ret));
     }
   }
 
@@ -463,7 +463,7 @@ int ObClientUtils::build_handshake_response_packet(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(handshake) || OB_ISNULL(info) || OB_ISNULL(handshake_resp_buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(handshake), K(info),
+    LOG_WDIAG("invalid input value", K(handshake), K(info),
              K(handshake_resp_buf), K(ret));
   } else {
     // prepare handshake response packet
@@ -491,7 +491,7 @@ int ObClientUtils::build_handshake_response_packet(
     //1. get challenge random number
     if (OB_FAIL(ObClientUtils::get_scramble(handshake->get_response_reader(),
         scramble_buf, obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE, actual_len))) {
-      LOG_WARN("fail to get scramble", K(ret));
+      LOG_WDIAG("fail to get scramble", K(ret));
     } else {
       ObString scramble_string(actual_len, scramble_buf);
       const ObString &passwd_stage1 = info->get_password();
@@ -502,7 +502,7 @@ int ObClientUtils::build_handshake_response_packet(
         //2. get auth_password from stage1
         if (OB_FAIL(ObClientUtils::get_auth_password_from_stage1(passwd_stage1,
             scramble_string, pwd_buf, pwd_buf_len, actual_len))) {
-          LOG_WARN("fail to get get_auth_password_from_stage1", K(ret));
+          LOG_WDIAG("fail to get get_auth_password_from_stage1", K(ret));
         } else {
           ObString auth_str(actual_len, pwd_buf);
           login_hsr.set_auth_response(auth_str);
@@ -514,7 +514,7 @@ int ObClientUtils::build_handshake_response_packet(
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObMysqlPacketWriter::write_packet(*handshake_resp_buf, login_hsr))) {
-        LOG_WARN("fail to write hsr pkt", K(ret));
+        LOG_WDIAG("fail to write hsr pkt", K(ret));
       }
     }
 
@@ -535,7 +535,7 @@ const ObString& ObClientRequestInfo::get_password()
     password_.reset();
     if (OB_FAIL(get_global_config_processor().get_proxy_config(
             addr, cluster_name_, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD, item))) {
-      LOG_WARN("get observer_sys_password config failed", K_(cluster_name), K(ret));
+      LOG_WDIAG("get observer_sys_password config failed", K_(cluster_name), K(ret));
     } else if (40 == strlen(item.str())) {
       MEMCPY(password0_.ptr(), item.str(), strlen(item.str()));
       password_ = password0_;
@@ -548,7 +548,7 @@ const ObString& ObClientRequestInfo::get_password()
     if (OB_SUCC(ret)) {
       if (OB_FAIL(get_global_config_processor().get_proxy_config(
               addr, cluster_name_, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD1, item))) {
-        LOG_WARN("get observer_sys_password1 config failed", K_(cluster_name), K(ret));
+        LOG_WDIAG("get observer_sys_password1 config failed", K_(cluster_name), K(ret));
       } else if (40 == strlen(item.str())) {
         MEMCPY(password1_.ptr(), item.str(), strlen(item.str()));
       } else {

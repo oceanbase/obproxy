@@ -44,14 +44,19 @@ public:
   void set_oracle_mode(bool is_oracle_mode) { is_oracle_mode_ = is_oracle_mode; }
 
   ObIArray<ObObjType> &get_obj_types() { return obj_types_; }
+  int set_obj_types(int64_t pos, const ObObjType obj_type);
   ObIArray<ObCollationType> &get_cs_types() { return cs_types_; }
+  int set_cs_types(int64_t pos, const ObCollationType cs_type);
 
   VIRTUAL_TO_STRING_KV("part_type", "hash",
                        K_(is_oracle_mode),
                        K_(part_num),
                        K_(part_space),
                        K_(part_level),
-                       K_(part_func_type));
+                       "part_func_type", share::schema::get_partition_func_type_str(part_func_type_),
+                       K_(obj_types),
+                       K_(cs_types));
+  virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const;
 private:
   uint64_t calc_hash_value_with_seed(const ObObj &obj, const int64_t cluster_version, int64_t seed);
   bool is_oracle_supported_type(const ObObjType type);

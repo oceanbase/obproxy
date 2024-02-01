@@ -33,16 +33,16 @@ int ObProxyProOp::handle_response_result(void *data, bool &is_final, ObProxyResu
 
   if (OB_ISNULL(data)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(ret), K(data));
+    LOG_WDIAG("invalid input", K(ret), K(data));
   } else if (OB_ISNULL(opres = reinterpret_cast<ObProxyResultResp*>(data))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyProOp::handle_response_result not response result", K(data), KP(data));
+    LOG_WDIAG("ObProxyProOp::handle_response_result not response result", K(data), KP(data));
   } else if (!opres->is_resultset_resp()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ObProxyProOp::handle_response_result not response result", K(data), KP(opres), K(opres->is_resultset_resp()));
+    LOG_WDIAG("ObProxyProOp::handle_response_result not response result", K(data), KP(opres), K(opres->is_resultset_resp()));
   } else if (OB_ISNULL(input = dynamic_cast<ObProxyProInput*>(get_input()))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("input is invalid", K(ret));
+    LOG_WDIAG("input is invalid", K(ret));
   } else {
     if (OB_ISNULL(get_result_fields())) {
       result_fields_ = opres->get_fields();
@@ -64,7 +64,7 @@ int ObProxyProOp::handle_response_result(void *data, bool &is_final, ObProxyResu
         result_obj_array.reuse();
         ObProxyExpr *calc_expr = calc_exprs.at(i);
         if (OB_FAIL(calc_expr->calc(ctx, calc_item, result_obj_array))) {
-          LOG_WARN("fail to get next row", K(i), K(ret));
+          LOG_WDIAG("fail to get next row", K(i), K(ret));
         } else {
           *row->at(calc_expr->get_index()) = result_obj_array.at(0);
         }
@@ -78,7 +78,7 @@ int ObProxyProOp::handle_response_result(void *data, bool &is_final, ObProxyResu
  
       if (OB_SUCC(ret)) {
         if (OB_FAIL(current_rows_.push_back(row))) {
-          LOG_WARN("fail to push back row", K(ret));
+          LOG_WDIAG("fail to push back row", K(ret));
         } else if (limit_offset_size > 0 && current_rows_.count() == limit_offset_size) {
           is_final = true;
           break;
@@ -95,13 +95,13 @@ int ObProxyProOp::handle_response_result(void *data, bool &is_final, ObProxyResu
       void *tmp_buf_fields = NULL;
       if (OB_ISNULL(result_fields_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("ObProxyProOp::handle_response_result not result field", K(data), KP(result_fields_));
+        LOG_WDIAG("ObProxyProOp::handle_response_result not result field", K(data), KP(result_fields_));
       } else if (OB_ISNULL(tmp_buf_rows = allocator_.alloc(sizeof(ResultRows)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
+        LOG_WDIAG("no have enough memory to init", "size", sizeof(ResultRows), K(ret));
       } else if (OB_ISNULL(tmp_buf_fields = allocator_.alloc(sizeof(ResultFields)))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("no have enough memory to init", K(op_name()), K(sizeof(ResultFields)), K(ret));
+        LOG_WDIAG("no have enough memory to init", K(op_name()), K(sizeof(ResultFields)), K(ret));
       } else {
         ResultRows *rows = new (tmp_buf_rows) ResultRows(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_);
         ResultFields *new_fields = (new (tmp_buf_fields) ResultFields(ENGINE_ARRAY_NEW_ALLOC_SIZE, allocator_));
@@ -117,13 +117,13 @@ int ObProxyProOp::handle_response_result(void *data, bool &is_final, ObProxyResu
 
         for (int64_t i = limit_offset; OB_SUCC(ret) && i < count; i++) {
           if (OB_FAIL(rows->push_back(current_rows_.at(i)))) {
-            LOG_WARN("fail to push back row", K(i), K(count), K(limit_offset), K(limit_offset_size), K(ret));
+            LOG_WDIAG("fail to push back row", K(i), K(count), K(limit_offset), K(limit_offset_size), K(ret));
           }
         }
 
         if (OB_SUCC(ret)) {
           if (OB_FAIL(packet_result_set(res, rows, new_fields))) {
-            LOG_WARN("packet resultset packet error", K(ret));
+            LOG_WDIAG("packet resultset packet error", K(ret));
           } else if (OB_NOT_NULL(res)) {
             res->set_column_count(new_fields->count());
           }

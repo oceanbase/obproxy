@@ -82,9 +82,9 @@ inline int ObRoutineEntryCont::init(ObRoutineParam &param)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid routine param", K(param), K(ret));
+    LOG_WDIAG("invalid routine param", K(param), K(ret));
   } else if (OB_FAIL(param_.deep_copy(param))) {
-    LOG_WARN("fail to deep copy param", K(param), K(ret));
+    LOG_WDIAG("fail to deep copy param", K(param), K(ret));
   } else {
     action_.set_continuation(param.cont_);
     mutex_ = param.cont_->mutex_;
@@ -99,7 +99,7 @@ void ObRoutineEntryCont::kill_this()
   int ret = OB_SUCCESS;
   if (NULL != pending_action_) {
     if (OB_FAIL(pending_action_->cancel())) {
-      LOG_WARN("fail to cancel pending action", K_(pending_action), K(ret));
+      LOG_WDIAG("fail to cancel pending action", K_(pending_action), K(ret));
     } else {
       pending_action_ = NULL;
     }
@@ -166,29 +166,29 @@ int ObRoutineEntryCont::main_handler(int event, void *data)
             "event", get_event_name(event), K(data));
   if (OB_CONT_MAGIC_ALIVE != magic_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this routine entry cont is dead", K_(magic), K(ret));
+    LOG_EDIAG("this routine entry cont is dead", K_(magic), K(ret));
   } else if (this_ethread() != mutex_->thread_holding_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(ret));
   } else {
     pending_action_ = NULL;
     switch (event) {
       case ROUTINE_ENTRY_LOOKUP_START_EVENT: {
         if (OB_FAIL(start_lookup_entry())) {
-          LOG_WARN("fail to start lookup entry", K(ret));
+          LOG_WDIAG("fail to start lookup entry", K(ret));
         }
         break;
       }
       case ROUTINE_ENTRY_LOOKUP_CACHE_EVENT: {
         if (OB_FAIL(lookup_entry_in_cache())) {
-          LOG_WARN("fail to lookup enty in cache", K(ret));
+          LOG_WDIAG("fail to lookup enty in cache", K(ret));
         }
         break;
       }
       case ROUTINE_ENTRY_LOOKUP_REMOTE_EVENT: {
         if (OB_FAIL(lookup_entry_remote())) {
-          LOG_WARN("fail to lookup enty remote", K(ret));
+          LOG_WDIAG("fail to lookup enty remote", K(ret));
         }
         break;
       }
@@ -201,21 +201,21 @@ int ObRoutineEntryCont::main_handler(int event, void *data)
       __attribute__ ((fallthrough));
       case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
         if (OB_FAIL(handle_client_resp(data))) {
-          LOG_WARN("fail to handle client resp", K(ret));
+          LOG_WDIAG("fail to handle client resp", K(ret));
         } else if (OB_FAIL(notify_caller())) {
-          LOG_WARN("fail to notify caller result", K(ret));
+          LOG_WDIAG("fail to notify caller result", K(ret));
         }
         break;
       }
       case ROUTINE_ENTRY_LOOKUP_CACHE_DONE: {
         if (OB_FAIL(handle_lookup_cache_done())) {
-          LOG_WARN("fail to handle lookup cache done", K(ret));
+          LOG_WDIAG("fail to handle lookup cache done", K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknow event", K(event), K(data), K(ret));
+        LOG_WDIAG("unknow event", K(event), K(data), K(ret));
         break;
       }
     }
@@ -229,7 +229,7 @@ int ObRoutineEntryCont::main_handler(int event, void *data)
     }
     param_.result_.is_from_remote_ = false;
     if (OB_FAIL(notify_caller())) {
-      LOG_WARN("fail to notify caller result", K(ret));
+      LOG_WDIAG("fail to notify caller result", K(ret));
     }
   }
 
@@ -246,11 +246,11 @@ int ObRoutineEntryCont::start_lookup_entry()
 
   if (param_.need_fetch_from_remote()) {
     if (OB_FAIL(lookup_entry_remote())) {
-      LOG_WARN("fail to lookup enty remote", K(ret));
+      LOG_WDIAG("fail to lookup enty remote", K(ret));
     }
   } else {
     if (OB_FAIL(lookup_entry_in_cache())) {
-      LOG_WARN("fail to lookup enty in cache", K(ret));
+      LOG_WDIAG("fail to lookup enty in cache", K(ret));
     }
   }
   return ret;
@@ -266,20 +266,20 @@ int ObRoutineEntryCont::handle_client_resp(void *data)
     ObRoutineEntry *entry = NULL;
     if (resp->is_resultset_resp()) {
       if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher))) {
-        LOG_WARN("fail to get resultset fetcher", K(ret));
+        LOG_WDIAG("fail to get resultset fetcher", K(ret));
       } else if (OB_ISNULL(rs_fetcher)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("rs_fetcher and entry can not be NULL", K(rs_fetcher), K(entry), K(ret));
+        LOG_WDIAG("rs_fetcher and entry can not be NULL", K(rs_fetcher), K(entry), K(ret));
       } else if (OB_FAIL(ObRouteUtils::fetch_one_routine_entry_info(
               *rs_fetcher, param_.name_, param_.cr_version_, param_.cr_id_, entry, param_.cluster_version_))) {
-        LOG_WARN("fail to fetch one routine entry info", K(ret));
+        LOG_WDIAG("fail to fetch one routine entry info", K(ret));
       } else if (NULL == entry) {
         PROCESSOR_INCREMENT_DYN_STAT(GET_ROUTINE_ENTRY_FROM_REMOTE_FAIL);
         LOG_INFO("no valid routine entry, empty resultset", "name", param_.name_);
       } else if (entry->is_valid()) {
         entry->inc_ref(); // Attention!! before add to table cache, must inc_ref
         if (OB_FAIL(get_global_routine_cache().add_routine_entry(*entry, false))) {
-          LOG_WARN("fail to add table entry", KPC(entry), K(ret));
+          LOG_WDIAG("fail to add table entry", KPC(entry), K(ret));
           entry->dec_ref(); // paired the ref count above
         } else {
           LOG_INFO("get routine entry from remote succ", KPC(entry));
@@ -308,7 +308,7 @@ int ObRoutineEntryCont::handle_client_resp(void *data)
     } else {
       PROCESSOR_INCREMENT_DYN_STAT(GET_ROUTINE_ENTRY_FROM_REMOTE_FAIL);
       const int64_t error_code = resp->get_err_code();
-      LOG_WARN("fail to get routine entry from remote", K(param_.name_),
+      LOG_WDIAG("fail to get routine entry from remote", K(param_.name_),
                 K(error_code));
     }
 
@@ -350,7 +350,7 @@ int ObRoutineEntryCont::handle_client_resp(void *data)
              K(is_add_succ), K(key));
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = get_global_routine_cache().remove_routine_entry(key))) {
-      LOG_WARN("fail to remove part entry", K(key), K(ret), K(tmp_ret));
+      LOG_WDIAG("fail to remove part entry", K(key), K(ret), K(tmp_ret));
       if (OB_SUCC(ret)) {
         ret = tmp_ret;
       }
@@ -374,7 +374,7 @@ int ObRoutineEntryCont::handle_lookup_cache_done()
     int64_t diff_us = hrtime_to_usec(get_hrtime()) - gcached_entry_->get_create_time_us();
     // just for defense
     if (diff_us > (6 * 60 * 1000 * 1000)) { // 6min
-      LOG_ERROR("building state entry has cost so mutch time, will fetch from"
+      LOG_EDIAG("building state entry has cost so mutch time, will fetch from"
                 " remote again", K(diff_us), K_(param));
       need_notify_caller = false;
     }
@@ -414,7 +414,7 @@ int ObRoutineEntryCont::handle_lookup_cache_done()
       param_.result_.target_entry_ = gcached_entry_;
       gcached_entry_ = NULL;
       if (OB_FAIL(notify_caller())) { // notify_caller
-        LOG_WARN("fail to notify caller", K(ret));
+        LOG_WDIAG("fail to notify caller", K(ret));
       }
     } else {
       if (NULL != gcached_entry_) {
@@ -423,7 +423,7 @@ int ObRoutineEntryCont::handle_lookup_cache_done()
       }
 
       if (OB_FAIL(lookup_entry_remote())) {
-        LOG_WARN("fail to lookup enty remote", K(ret));
+        LOG_WDIAG("fail to lookup enty remote", K(ret));
       }
     }
   }
@@ -439,11 +439,11 @@ int ObRoutineEntryCont::lookup_entry_remote()
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
   if (OB_FAIL(ObRouteUtils::get_routine_entry_sql(sql, OB_SHORT_SQL_LENGTH, param_.name_, param_.cluster_version_))) {
-    LOG_WARN("fail to get table entry sql", K(sql), K(ret));
+    LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, param_.current_idc_name_);
     if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-      LOG_WARN("fail to nonblock read", K(sql), K_(param), K(ret));
+      LOG_WDIAG("fail to nonblock read", K(sql), K_(param), K(ret));
     }
   }
 
@@ -452,7 +452,7 @@ int ObRoutineEntryCont::lookup_entry_remote()
     // just treat as execute failed
     if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, ROUTINE_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule imm", K(ret));
+      LOG_WDIAG("fail to schedule imm", K(ret));
     }
   }
   return ret;
@@ -469,12 +469,12 @@ int ObRoutineEntryCont::lookup_entry_in_cache()
                                                            &gcached_entry_,
                                                            is_add_building_entry,
                                                            action))) {
-    LOG_WARN("fail to get routine loaction entry", K_(param), K(ret));
+    LOG_WDIAG("fail to get routine loaction entry", K_(param), K(ret));
   } else {
     if (NULL != action) {
       pending_action_ = action;
     } else if (OB_FAIL(handle_lookup_cache_done())) {
-      LOG_WARN("fail to handle lookup cache done", K(ret));
+      LOG_WDIAG("fail to handle lookup cache done", K(ret));
     }
   }
   return ret;
@@ -492,7 +492,7 @@ int ObRoutineEntryCont::notify_caller()
   if (NULL != entry && entry->is_avail_state()) {
     ObRoutineRefHashMap &routine_map = self_ethread().get_routine_map();
     if (OB_FAIL(routine_map.set(entry))) {
-      LOG_WARN("fail to set routine map", KPC(entry), K(ret));
+      LOG_WDIAG("fail to set routine map", KPC(entry), K(ret));
       ret = OB_SUCCESS; // ignore ret
     } else {
       LOG_DEBUG("succ to update into thread cache", KPC(entry), K(ret));
@@ -559,9 +559,9 @@ inline int ObRoutineParam::deep_copy(ObRoutineParam &other)
     name_buf_ = static_cast<char *>(op_fixed_mem_alloc(name_buf_len_));
     if (OB_ISNULL(name_buf_)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K_(name_buf_len), K(ret));
+      LOG_WDIAG("fail to alloc mem", K_(name_buf_len), K(ret));
     } else if (OB_FAIL(name_.deep_copy(other.name_, name_buf_, name_buf_len_))) {
-      LOG_WARN("fail to deep copy table entry name", K(ret));
+      LOG_WDIAG("fail to deep copy table entry name", K(ret));
     }
 
     if (OB_FAIL(ret) && (NULL != name_buf_)) {
@@ -580,10 +580,10 @@ int ObRoutineProcessor::get_routine_entry(ObRoutineParam &param, ObAction *&acti
   ObRoutineEntry *tmp_entry = NULL;
   if (OB_UNLIKELY(!param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(param), K(ret));
+    LOG_WDIAG("invalid input value", K(param), K(ret));
   // 1. find routine entry from thread cache
   } else if (OB_FAIL(get_routine_entry_from_thread_cache(param, tmp_entry))) {
-    LOG_WARN("fail to get routine entry in thread cache", K(param), K(ret));
+    LOG_WDIAG("fail to get routine entry in thread cache", K(param), K(ret));
   } else if (NULL != tmp_entry) { // thread cache hit
     ObProxyMutex *mutex_ = param.cont_->mutex_;
     PROCESSOR_INCREMENT_DYN_STAT(GET_ROUTINE_ENTRY_FROM_THREAD_CACHE_HIT);
@@ -597,14 +597,14 @@ int ObRoutineProcessor::get_routine_entry(ObRoutineParam &param, ObAction *&acti
     ObRoutineEntryCont *cont = op_alloc(ObRoutineEntryCont);
     if (OB_ISNULL(cont)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc ObRoutineEntryCont", K(ret));
+      LOG_WDIAG("fail to alloc ObRoutineEntryCont", K(ret));
     } else if (OB_FAIL(cont->init(param))) {
-      LOG_WARN("fail to init routine entry cont", K(ret));
+      LOG_WDIAG("fail to init routine entry cont", K(ret));
     } else {
       action = cont->get_action();
       if (OB_ISNULL(self_ethread().schedule_imm(cont, ROUTINE_ENTRY_LOOKUP_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule imm", K(ret));
+        LOG_WDIAG("fail to schedule imm", K(ret));
       }
     }
 
@@ -629,7 +629,7 @@ int ObRoutineProcessor::get_routine_entry_from_thread_cache(
   entry = NULL;
   if (OB_UNLIKELY(!param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(param), K(ret));
+    LOG_WDIAG("invalid input value", K(param), K(ret));
   } else if (!param.need_fetch_from_remote()) {
     // find entry from thread cache
     ObRoutineRefHashMap &routine_map = self_ethread().get_routine_map();
@@ -651,7 +651,7 @@ int ObRoutineProcessor::get_routine_entry_from_thread_cache(
       } else if (tmp_entry->is_avail_state() || tmp_entry->is_updating_state()) { // avail
         find_succ = true;
       } else if (tmp_entry->is_building_state()) {
-        LOG_ERROR("building state routine entry can not in thread cache", KPC(tmp_entry));
+        LOG_EDIAG("building state routine entry can not in thread cache", KPC(tmp_entry));
       } else if (tmp_entry->is_dirty_state()) {
         // dirty entry need to fetch from remote
       } else {

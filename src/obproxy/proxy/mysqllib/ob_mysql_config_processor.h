@@ -152,6 +152,7 @@ public:
   CfgIp local_bound_ipv6_ip_;
   CfgTime read_stale_retry_interval_;
   CfgTime ob_max_read_stale_time_;
+  CfgInt client_session_id_version_ ;
   char proxy_idc_name_[OB_PROXY_MAX_IDC_NAME_LENGTH + 1];
   char proxy_primary_zone_name_[common::MAX_ZONE_LENGTH + 1];
 };

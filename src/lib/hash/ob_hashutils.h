@@ -1003,10 +1003,10 @@ int do_create(Array &array, const int64_t total_size, const int64_t array_size, 
   if (total_size <= 0 || item_size <= 0) {
     ret = -1;
   } else if (NULL == (array = (Array)alloc.alloc(total_size * item_size))) {
-    _OB_LOG(WARN, "alloc memory failed,size:%ld", total_size * item_size);
+    _OB_LOG(WDIAG, "alloc memory failed,size:%ld", total_size * item_size);
     ret = -1;
   } else {
-    //BACKTRACE(WARN, total_size * item_size > 65536, "hashutil create init size=%ld", total_size * item_size);
+    //BACKTRACE(WDIAG, total_size * item_size > 65536, "hashutil create init size=%ld", total_size * item_size);
     memset(array, 0, total_size * item_size);
   }
   return ret;
@@ -1188,7 +1188,7 @@ public:
         if (NULL == (block = (Block *)allocer_.alloc(sizeof(Block)))) {
           HASH_WRITE_LOG(HASH_WARNING, "new block fail");
         } else {
-          // BACKTRACE(WARN, ((int64_t)sizeof(Block))>DEFAULT_BLOCK_SIZE,
+          // BACKTRACE(WDIAG, ((int64_t)sizeof(Block))>DEFAULT_BLOCK_SIZE,
           // "hashutil alloc block=%ld node=%ld T=%ld N=%d",
           //               sizeof(Block), sizeof(Node), sizeof(T), NODE_NUM);
           //memset(block, 0, sizeof(Block));

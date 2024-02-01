@@ -100,7 +100,7 @@ int ObProxyQosStatNode::store_stat(int64_t cost)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(push_index())) {
-    PROXY_LOG(WARN, "fail to push index", K(ret));
+    PROXY_LOG(WDIAG, "fail to push index", K(ret));
   } else {
     // after updating, current time must less than index time
     // acquire read lock, avoid other update index_time
@@ -122,7 +122,7 @@ int ObProxyQosStatNode::calc_qps(int64_t limit_qps, bool &is_reach)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(push_index())) {
-    PROXY_LOG(WARN, "fail to push index", K(ret));
+    PROXY_LOG(WDIAG, "fail to push index", K(ret));
   } else {
     const int64_t MAX_BUF_LEN = 1024;
     char debug_buf[MAX_BUF_LEN];
@@ -163,7 +163,7 @@ int ObProxyQosStatNode::calc_rt(int64_t limit_rt, bool &is_reach)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(push_index())) {
-    PROXY_LOG(WARN, "fail to push index", K(ret));
+    PROXY_LOG(WDIAG, "fail to push index", K(ret));
   } else {
     const int64_t MAX_BUF_LEN = 2048;
     char debug_buf[MAX_BUF_LEN];
@@ -214,9 +214,9 @@ int ObProxyQosStatNode::calc_cost(int64_t &cost, int64_t time_window)
 
   if (time_window < 1 || time_window > 10) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "time window is wrong number", K(ret), K(time_window));
+    PROXY_LOG(WDIAG, "time window is wrong number", K(ret), K(time_window));
   } else if (OB_FAIL(push_index())) {
-    PROXY_LOG(WARN, "fail to push index", K(ret));
+    PROXY_LOG(WDIAG, "fail to push index", K(ret));
   } else {
     int64_t index = -1;
     int64_t index_time_sec = index_time_sec_;
@@ -274,7 +274,7 @@ int ObProxyQosStatNodeRoot::create_node(ObProxyQosStatNode *&node, ObProxyQosNod
 
   if (OB_ISNULL(node)) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_LOG(WARN, "fail to allocate memory", K(node_type), K(ret));
+    PROXY_LOG(WDIAG, "fail to allocate memory", K(node_type), K(ret));
   }
 
   return ret;
@@ -288,14 +288,14 @@ int ObProxyQosStatNodeRoot::create_node(const ObString &key, ObProxyQosStatNode 
   if (OB_FAIL(hash_nodes_.get_refactored(key, node))) {
     if (common::OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(create_node(node, node_type))) {
-        PROXY_LOG(WARN, "fail to create node", K(node_type), K(ret));
+        PROXY_LOG(WDIAG, "fail to create node", K(node_type), K(ret));
       } else {
         is_new = true;
         node->inc_ref();
         if (OB_FAIL(node->init(key))) {
-          PROXY_LOG(WARN, "fail to init node", K(key), K(ret));
+          PROXY_LOG(WDIAG, "fail to init node", K(key), K(ret));
         } else if (OB_FAIL(hash_nodes_.unique_set(node))) {
-          PROXY_LOG(WARN, "fail to set node into hashmap", KPC(node), K(ret));
+          PROXY_LOG(WDIAG, "fail to set node into hashmap", KPC(node), K(ret));
         }
       }
 

@@ -28,11 +28,22 @@ class ObMIOBuffer;
 }
 namespace proxy
 {
-
+class ObProtocolDiagnosis;
+class ObMysqlResp;
 class ObIMysqlRespAnalyzer
 {
 public:
+  ObIMysqlRespAnalyzer() : protocol_diagnosis_(NULL) {}
+  ~ObIMysqlRespAnalyzer();
   virtual int analyze_response(event::ObIOBufferReader &reader, ObMysqlResp *resp = NULL) = 0;
+  virtual void reset() = 0;
+  ObProtocolDiagnosis *&get_protocol_diagnosis_ref();
+  ObProtocolDiagnosis *get_protocol_diagnosis();
+  const ObProtocolDiagnosis *get_protocol_diagnosis() const;
+protected:
+  ObProtocolDiagnosis *protocol_diagnosis_;
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObIMysqlRespAnalyzer);
 };
 
 } // end of namespace proxy

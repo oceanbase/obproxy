@@ -106,7 +106,7 @@ inline int ObUnixNetVConnection::read_signal_and_update(const int event)
 {
   int ret = OB_SUCCESS;
   int event_ret = EVENT_CONT;
-
+  event_record_ = event;
   ++(recursion_);
   if (OB_LIKELY(NULL != read_.vio_.cont_)) {
     ObCurTraceId::set(reinterpret_cast<uint64_t>(read_.vio_.cont_->mutex_.ptr_));
@@ -123,14 +123,14 @@ inline int ObUnixNetVConnection::read_signal_and_update(const int event)
       break;
     default:
       closed_ = 1;
-      PROXY_NET_LOG(ERROR, "unexpected event", K(event), K(this));
+      PROXY_NET_LOG(EDIAG, "unexpected event", K(event), K(this));
       break;
     }
   }
 
   if (0 == --(recursion_) && closed_) {
     if (OB_FAIL(close())) {
-      PROXY_NET_LOG(WARN, "fail to close unix net vconnection", K(this), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to close unix net vconnection", K(this), K(ret));
     }
     event_ret = EVENT_DONE;
   }
@@ -141,7 +141,7 @@ inline int ObUnixNetVConnection::write_signal_and_update(const int event)
 {
   int ret = OB_SUCCESS;
   int event_ret = EVENT_CONT;
-
+  event_record_ = event;
   ++(recursion_);
   if (OB_LIKELY(NULL != write_.vio_.cont_)) {
     ObCurTraceId::set(reinterpret_cast<uint64_t>(write_.vio_.cont_->mutex_.ptr_));
@@ -158,14 +158,14 @@ inline int ObUnixNetVConnection::write_signal_and_update(const int event)
       break;
     default:
       closed_ = 1;
-      PROXY_NET_LOG(ERROR, "unexpected event", K(event), K(this));
+      PROXY_NET_LOG(EDIAG, "unexpected event", K(event), K(this));
       break;
     }
   }
 
   if (0 == --(recursion_) && closed_) {
     if (OB_FAIL(close())) {
-      PROXY_NET_LOG(WARN, "fail to close unix net vconnection", K(this), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to close unix net vconnection", K(this), K(ret));
     }
     event_ret = EVENT_DONE;
   }
@@ -222,7 +222,7 @@ inline bool ObUnixNetVConnection::check_read_state()
     read_disable();
     ret = false;
   } else if (OB_ISNULL(read_.vio_.buffer_.writer())) {
-    PROXY_NET_LOG(ERROR, "fail to get writer from buf", "vc", this);
+    PROXY_NET_LOG(EDIAG, "fail to get writer from buf", "vc", this);
     read_disable();
     ret = false;
   }
@@ -239,7 +239,7 @@ inline bool ObUnixNetVConnection::check_write_state()
     ret = false;
   } else if (OB_ISNULL(write_.vio_.buffer_.reader())
              || OB_ISNULL(write_.vio_.buffer_.writer())) {
-    PROXY_NET_LOG(ERROR, "fail to get reader or writer from buf", "vc: ", this);
+    PROXY_NET_LOG(EDIAG, "fail to get reader or writer from buf", "vc: ", this);
     write_disable();
     ret = false;
   }
@@ -416,7 +416,7 @@ inline bool ObUnixNetVConnection::handle_write_to_net_success(
 
   int ret = OB_SUCCESS;
   if (OB_FAIL(write_.vio_.buffer_.reader()->consume(total_write))) {
-    PROXY_NET_LOG(WARN, "fail to consume ", K(total_write), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to consume ", K(total_write), K(ret));
   }
   write_.vio_.ndone_ += total_write;
 
@@ -465,11 +465,11 @@ inline int ObUnixNetVConnection::close()
   }
 
   if (OB_FAIL(ep_->stop())) {
-    PROXY_NET_LOG(WARN, "fail to stop event io", "vc: ", this, K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to stop event io", "vc: ", this, K(ret));
   }
 
   if (OB_FAIL(con_.close())) {
-    PROXY_NET_LOG(WARN, "fail to close connection", "vc: ", this, K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to close connection", "vc: ", this, K(ret));
   }
 
   next_inactivity_timeout_at_ = 0;
@@ -478,7 +478,7 @@ inline int ObUnixNetVConnection::close()
 
   if (NULL != active_timeout_action_) {
     if (OB_FAIL(active_timeout_action_->cancel(this))) {
-      PROXY_NET_LOG(WARN, "fail to cancel active timeout action", K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to cancel active timeout action", K(ret));
     }
     active_timeout_action_ = NULL;
   }
@@ -554,7 +554,7 @@ inline int ObUnixNetVConnection::read_from_net_internal(
 
       if (using_ssl_) {
         if (OB_FAIL(ObSocketManager::ssl_read(ssl_, tiovec[0].iov_base, tiovec[0].iov_len, count, tmp_code))) {
-          PROXY_NET_LOG(WARN, "ssl read failed", K(ret));
+          PROXY_NET_LOG(WDIAG, "ssl read failed", K(ret));
         } else if (count > 0) {
           total_read += count;
         } else {
@@ -605,7 +605,7 @@ inline void ObUnixNetVConnection::read_from_net(ObEThread &thread)
   if (OB_UNLIKELY(!lock.is_locked())) {
     read_reschedule();
   } else if (OB_UNLIKELY(!check_read_state())) {
-    PROXY_NET_LOG(WARN, "fail to check_read_state", K(this));
+    PROXY_NET_LOG(WDIAG, "fail to check_read_state", K(this));
   } else {
     reenable_read_time_at_ = 0;
     ntodo = read_.vio_.ntodo();
@@ -631,7 +631,7 @@ inline void ObUnixNetVConnection::read_from_net(ObEThread &thread)
         ++read_.active_count_;
         // just check it
         if (OB_UNLIKELY(ntodo < 0)) {
-          PROXY_NET_LOG(ERROR, "occur fatal error", K(ntodo), K(this));
+          PROXY_NET_LOG(EDIAG, "occur fatal error", K(ntodo), K(this));
         }
         is_done = handle_read_from_net_success(thread, lock.get_mutex(), total_read);
       }
@@ -715,7 +715,7 @@ inline int ObUnixNetVConnection::write_to_net_internal(ObIOBufferReader &reader,
 
         if (using_ssl_) {
           if (OB_FAIL(ObSocketManager::ssl_write(ssl_, tiovec[0].iov_base, tiovec[0].iov_len, count, tmp_code))) {
-            PROXY_NET_LOG(WARN, "ssl write failed", K(ret));
+            PROXY_NET_LOG(WDIAG, "ssl write failed", K(ret));
           } else if (count > 0)  {
             total_write += count;
           } else {
@@ -794,7 +794,7 @@ inline void ObUnixNetVConnection::write_to_net(ObEThread &thread)
         write_disable();
       } else {
         if (OB_UNLIKELY(read_avail < 0)) {
-          PROXY_NET_LOG(ERROR, "write vio buffer's reader read_avail < 0",
+          PROXY_NET_LOG(EDIAG, "write vio buffer's reader read_avail < 0",
                         K(read_avail), K(towrite), K(total_write), K(signalled));
         }
         write_reschedule();
@@ -813,6 +813,7 @@ ObUnixNetVConnection::ObUnixNetVConnection()
       ep_(NULL),
       nh_(NULL),
       id_(0),
+      event_record_(0),
       flags_(0),
       recursion_(0),
       submit_time_(0),
@@ -822,6 +823,7 @@ ObUnixNetVConnection::ObUnixNetVConnection()
       ssl_type_(SSL_NONE),
       ssl_(NULL),
       can_shutdown_ssl_(true),
+      ssl_err_code_(SSL_ERROR_NONE),
       io_type_(IO_NONE),
       is_inited_(false)
 {
@@ -840,7 +842,7 @@ inline void ObUnixNetVConnection::reenable(ObVIO *vio)
       ObEThread &ethread = self_ethread();
       if (OB_UNLIKELY(closed_) || OB_UNLIKELY(vio->mutex_->thread_holding_ != &ethread)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_NET_LOG(ERROR, "occur fatal error", K(closed_),
+        PROXY_NET_LOG(EDIAG, "occur fatal error", K(closed_),
                       K(vio->mutex_->thread_holding_),
                       K(&ethread), K(this), K(ret));
       } else {
@@ -921,7 +923,7 @@ void ObUnixNetVConnection::reenable_re(ObVIO *vio)
     ObEThread &ethread = self_ethread();
     if (OB_UNLIKELY(vio->mutex_->thread_holding_ != &ethread)) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_NET_LOG(ERROR, "occur fatal error",
+      PROXY_NET_LOG(EDIAG, "occur fatal error",
                     K(vio->mutex_->thread_holding_),
                     K(&ethread), K(this), K(ret));
     } else {
@@ -961,7 +963,7 @@ void ObUnixNetVConnection::reenable_in(event::ObVIO *vio, const ObHRTime atimeou
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(atimeout_in < 0) || OB_UNLIKELY(vio != &read_.vio_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "occur fatal error",
+    PROXY_NET_LOG(EDIAG, "occur fatal error",
                          K(atimeout_in), K(vio), K(&read_.vio_),
                          K(this), K(ret));
   } else {
@@ -1057,12 +1059,14 @@ void ObUnixNetVConnection::do_io_close(const int alerrno /* = -1 */)
     closed_ = -1;
   }
 
+  event_record_ = 0;
+
   PROXY_NET_LOG(DEBUG, "do_io_close", K(this), K(recursion_), K(&ethread),
                 K(nh_->mutex_->thread_holding_),
                 K(close_inline));
   if (close_inline) {
     if (OB_FAIL(close())) {
-      PROXY_NET_LOG(WARN, "fail to close unix net vconnection", K(this), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to close unix net vconnection", K(this), K(ret));
     }
   }
 }
@@ -1073,7 +1077,7 @@ void ObUnixNetVConnection::do_io_shutdown(const ShutdownHowToType howto)
   switch (howto) {
     case IO_SHUTDOWN_READ:
       if (OB_FAIL(ObSocketManager::shutdown(con_.fd_, 0))) {
-        PROXY_NET_LOG(WARN, "fail to shutdown IO_SHUTDOWN_READ", K(con_.fd_), K(ret));
+        PROXY_NET_LOG(WDIAG, "fail to shutdown IO_SHUTDOWN_READ", K(con_.fd_), K(ret));
       }
       read_.enabled_ = false;
       read_.vio_.buffer_.destroy();
@@ -1084,7 +1088,7 @@ void ObUnixNetVConnection::do_io_shutdown(const ShutdownHowToType howto)
 
     case IO_SHUTDOWN_WRITE:
       if (OB_FAIL(ObSocketManager::shutdown(con_.fd_, 1))) {
-        PROXY_NET_LOG(WARN, "fail to shutdown IO_SHUTDOWN_WRITE", K(con_.fd_), K(ret));
+        PROXY_NET_LOG(WDIAG, "fail to shutdown IO_SHUTDOWN_WRITE", K(con_.fd_), K(ret));
       }
       write_.enabled_ = false;
       write_.vio_.buffer_.destroy();
@@ -1095,7 +1099,7 @@ void ObUnixNetVConnection::do_io_shutdown(const ShutdownHowToType howto)
 
     case IO_SHUTDOWN_READWRITE:
       if (OB_FAIL(ObSocketManager::shutdown(con_.fd_, 2))) {
-        PROXY_NET_LOG(WARN, "fail to shutdown IO_SHUTDOWN_READWRITE", K(con_.fd_), K(ret));
+        PROXY_NET_LOG(WDIAG, "fail to shutdown IO_SHUTDOWN_READWRITE", K(con_.fd_), K(ret));
       }
       read_.enabled_ = false;
       write_.enabled_ = false;
@@ -1109,7 +1113,7 @@ void ObUnixNetVConnection::do_io_shutdown(const ShutdownHowToType howto)
       break;
 
     default:
-      PROXY_NET_LOG(WARN, "can't reach here");
+      PROXY_NET_LOG(WDIAG, "can't reach here");
       break;
   }
 }
@@ -1124,7 +1128,7 @@ inline int ObUnixNetVConnection::set_active_timeout(const ObHRTime timeout)
   if (NULL != active_timeout_action_) {
     if (OB_FAIL(active_timeout_action_->cancel(this))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_NET_LOG(WARN, "fail to cancel reenable action", K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to cancel reenable action", K(ret));
     } else {
       active_timeout_action_ = NULL;
     }
@@ -1134,36 +1138,36 @@ inline int ObUnixNetVConnection::set_active_timeout(const ObHRTime timeout)
     if (read_.enabled_) {
       if (OB_FAIL(read_.vio_.mutex_->thread_holding_ != ethread) || OB_ISNULL(thread_)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_NET_LOG(ERROR, "occur fatal error", K(read_.vio_.mutex_->thread_holding_),
+        PROXY_NET_LOG(EDIAG, "occur fatal error", K(read_.vio_.mutex_->thread_holding_),
                       K(ethread), K(thread_), K(ret));
       } else {
         if (read_.vio_.mutex_->thread_holding_ == thread_) {
           if (OB_ISNULL(active_timeout_action_ = thread_->schedule_in_local(this, active_timeout_in_))) {
             ret = OB_ERR_UNEXPECTED;
-            PROXY_NET_LOG(ERROR, "thread_ fail to schedule_in_local", K(this), K(active_timeout_in_), K(ret));
+            PROXY_NET_LOG(EDIAG, "thread_ fail to schedule_in_local", K(this), K(active_timeout_in_), K(ret));
           }
         } else {
           if (OB_ISNULL(active_timeout_action_ = thread_->schedule_in(this, active_timeout_in_))) {
             ret = OB_ERR_UNEXPECTED;
-            PROXY_NET_LOG(ERROR, "thread_ fail to schedule_in", K(this), K(active_timeout_in_), K(ret));
+            PROXY_NET_LOG(EDIAG, "thread_ fail to schedule_in", K(this), K(active_timeout_in_), K(ret));
           }
         }
       }
     } else if (write_.enabled_) {
       if (OB_FAIL(write_.vio_.mutex_->thread_holding_ != ethread) || OB_ISNULL(thread_)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_NET_LOG(ERROR, "occur fatal error", K(write_.vio_.mutex_->thread_holding_),
+        PROXY_NET_LOG(EDIAG, "occur fatal error", K(write_.vio_.mutex_->thread_holding_),
                       K(ethread), K(thread_), K(ret));
       } else {
         if (write_.vio_.mutex_->thread_holding_ == thread_) {
           if (OB_ISNULL(active_timeout_action_ = thread_->schedule_in_local(this, active_timeout_in_))) {
             ret = OB_ERR_UNEXPECTED;
-            PROXY_NET_LOG(ERROR, "thread_ fail to schedule_in_local", K(this), K(active_timeout_in_), K(ret));
+            PROXY_NET_LOG(EDIAG, "thread_ fail to schedule_in_local", K(this), K(active_timeout_in_), K(ret));
           }
         } else {
           if (OB_ISNULL(active_timeout_action_ = thread_->schedule_in(this, active_timeout_in_))) {
             ret = OB_ERR_UNEXPECTED;
-            PROXY_NET_LOG(ERROR, "thread_ fail to schedule_in", K(this), K(active_timeout_in_), K(ret));
+            PROXY_NET_LOG(EDIAG, "thread_ fail to schedule_in", K(this), K(active_timeout_in_), K(ret));
           }
         }
       }
@@ -1266,7 +1270,7 @@ int ObUnixNetVConnection::apply_options()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(con_.apply_options(options_))) {
-    PROXY_NET_LOG(WARN, "fail to apply_options", K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to apply_options", K(ret));
   }
   return ret;
 }
@@ -1285,7 +1289,7 @@ int ObUnixNetVConnection::set_tcp_init_cwnd(const int32_t init_cwnd)
 #ifdef TCP_INIT_CWND
   uint32_t val = init_cwnd;
   if (OB_FAIL(ObSocketManager::setsockopt(con_.fd_, IPPROTO_TCP, TCP_INIT_CWND, &val, sizeof(val)))) {
-    PROXY_NET_LOG(WARN, "fail to set TCP initial congestion window", K(init_cwnd), K(con_.fd_), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to set TCP initial congestion window", K(init_cwnd), K(con_.fd_), K(ret));
   }
 #endif
   return ret;
@@ -1296,10 +1300,10 @@ int ObUnixNetVConnection::init()
   int ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    PROXY_NET_LOG(ERROR, "init ObUnixNetVConnection twice", K(this), K(ret));
+    PROXY_NET_LOG(EDIAG, "init ObUnixNetVConnection twice", K(this), K(ret));
   } else if (OB_ISNULL(ep_ = op_reclaim_alloc(ObEventIO))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(ERROR, "fail to new ObEventIO", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to new ObEventIO", K(ret));
   } else {
     is_inited_ = true;
   }
@@ -1324,7 +1328,7 @@ inline void ObUnixNetVConnection::free()
 
   if (NO_FD != con_.fd_) {
     if (OB_FAIL(con_.close())) {
-      PROXY_NET_LOG(WARN, "fail to close fd", K(con_.fd_), K(this), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to close fd", K(con_.fd_), K(this), K(ret));
     }
   }
 
@@ -1350,41 +1354,42 @@ inline void ObUnixNetVConnection::free()
   options_.reset();
   source_type_ = VC_ACCEPT;
   closed_ = 0; // reuse, so this vc isn't closed now
+  event_record_ = 0; // record last handle event
 
   // jsut check
   if (OB_UNLIKELY(NULL != read_.ready_link_.prev_)) {
-    PROXY_NET_LOG(WARN, "read_.ready_link_.prev_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "read_.ready_link_.prev_ isn't empty", K(this));
   }
   if (OB_UNLIKELY(NULL != read_.ready_link_.next_)) {
-    PROXY_NET_LOG(WARN, "read_.ready_link_.next_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "read_.ready_link_.next_ isn't empty", K(this));
   }
   if (OB_UNLIKELY(NULL != read_.enable_link_.next_)) {
-    PROXY_NET_LOG(WARN, "read_.enable_link_.next_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "read_.enable_link_.next_ isn't empty", K(this));
   }
 
   if (OB_UNLIKELY(NULL != write_.ready_link_.prev_)) {
-    PROXY_NET_LOG(WARN, "write_.ready_link_.prev_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "write_.ready_link_.prev_ isn't empty", K(this));
   }
   if (OB_UNLIKELY(NULL != write_.ready_link_.next_)) {
-    PROXY_NET_LOG(WARN, "write_.ready_link_.next_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "write_.ready_link_.next_ isn't empty", K(this));
   }
   if (OB_UNLIKELY(NULL != write_.enable_link_.next_)) {
-    PROXY_NET_LOG(WARN, "write_.enable_link_.next_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "write_.enable_link_.next_ isn't empty", K(this));
   }
 
   if (OB_UNLIKELY(NULL != link_.next_)) {
-    PROXY_NET_LOG(WARN, "link_.next_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "link_.next_ isn't empty", K(this));
   }
   if (OB_UNLIKELY(NULL != link_.prev_)) {
-    PROXY_NET_LOG(WARN, "link_.prev_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "link_.prev_ isn't empty", K(this));
   }
 
   if (OB_UNLIKELY(NULL != active_timeout_action_)) {
-    PROXY_NET_LOG(WARN, "active_timeout_action_ isn't empty", K(this));
+    PROXY_NET_LOG(WDIAG, "active_timeout_action_ isn't empty", K(this));
   }
 
   if (OB_UNLIKELY(NO_FD != con_.fd_)) {
-    PROXY_NET_LOG(WARN, "con_.fd_ isn't NO_FD", K(con_.fd_), K(this));
+    PROXY_NET_LOG(WDIAG, "con_.fd_ isn't NO_FD", K(con_.fd_), K(this));
   }
 
   op_reclaim_free(this);
@@ -1397,7 +1402,7 @@ int ObUnixNetVConnection::accept_event(int event, ObEvent *e)
 
   if (OB_ISNULL(e)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "occur fatal error", K(this), K(ret));
+    PROXY_NET_LOG(WDIAG, "occur fatal error", K(this), K(ret));
     event_ret = EVENT_DONE;
   } else {
     thread_ = &(e->get_ethread());
@@ -1406,12 +1411,12 @@ int ObUnixNetVConnection::accept_event(int event, ObEvent *e)
       if (EVENT_NONE == event) {
         if (OB_ISNULL(thread_->schedule_in(this, NET_RETRY_DELAY))) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_NET_LOG(WARN, "thread fail to schedule_in", K(this), K(ret));
+          PROXY_NET_LOG(WDIAG, "thread fail to schedule_in", K(this), K(ret));
         }
         event_ret = EVENT_DONE;
       } else {
         if (OB_FAIL(e->schedule_in(NET_RETRY_DELAY))) {
-          PROXY_NET_LOG(WARN, "ObEvent fail to schedule_in", K(this), K(ret));
+          PROXY_NET_LOG(WDIAG, "ObEvent fail to schedule_in", K(this), K(ret));
         }
         event_ret = EVENT_CONT;
       }
@@ -1425,10 +1430,10 @@ int ObUnixNetVConnection::accept_event(int event, ObEvent *e)
 
       if (OB_FAIL(ep_->start(thread_->get_net_poll().get_poll_descriptor(),
                              *this, EVENTIO_READ | EVENTIO_WRITE))) {
-        PROXY_NET_LOG(WARN, "fail to start ObEventIO", K(this), K(ret));
+        PROXY_NET_LOG(WDIAG, "fail to start ObEventIO", K(this), K(ret));
 
         if (OB_FAIL(close())) {
-          PROXY_NET_LOG(WARN, "fail to close unix net vconnection", K(this), K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to close unix net vconnection", K(this), K(ret));
         }
         event_ret = EVENT_DONE;
       }
@@ -1442,7 +1447,7 @@ int ObUnixNetVConnection::accept_event(int event, ObEvent *e)
 
         if (active_timeout_in_ > 0) {
           if (OB_FAIL(set_active_timeout(active_timeout_in_))) {
-            PROXY_NET_LOG(WARN, "fail to set_active_timeout", K(active_timeout_in_), K(this), K(ret));
+            PROXY_NET_LOG(WDIAG, "fail to set_active_timeout", K(active_timeout_in_), K(this), K(ret));
           }
         }
 
@@ -1471,13 +1476,13 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
 
   if (OB_ISNULL(e)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "occur fatal error", K(event), K(e), K(ret));
+    PROXY_NET_LOG(WDIAG, "occur fatal error", K(event), K(e), K(ret));
   } else if (OB_UNLIKELY(EVENT_IMMEDIATE != event && EVENT_INTERVAL != event && EVENT_ERROR != event)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "occur fatal error", K(event), K(e), K(ret));
+    PROXY_NET_LOG(WDIAG, "occur fatal error", K(event), K(e), K(ret));
   } else if (thread_ != this_ethread()) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "occur fatal error", K(thread_), K(event), K(e), K(ret));
+    PROXY_NET_LOG(WDIAG, "occur fatal error", K(thread_), K(event), K(e), K(ret));
   } else {
     ObNetHandler &nh = thread_->get_net_handler();
     ObEThread &ethread = e->get_ethread();
@@ -1491,7 +1496,7 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
         (NULL != write_.vio_.mutex_.ptr_ && wlock.get_mutex() != write_.vio_.mutex_.ptr_)) {
       if (e == active_timeout_action_) {
         if (OB_FAIL(e->schedule_in(NET_RETRY_DELAY))) {
-          PROXY_NET_LOG(WARN, "ObEvent fail to schedule_in", K(this), K(ret));
+          PROXY_NET_LOG(WDIAG, "ObEvent fail to schedule_in", K(this), K(ret));
         }
       }
       event_ret = EVENT_CONT;
@@ -1526,7 +1531,7 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
 
         if (closed_) {
           if (OB_FAIL(close())) {
-            PROXY_NET_LOG(WARN, "fail to close unix net vconnection", K(this), K(ret));
+            PROXY_NET_LOG(WDIAG, "fail to close unix net vconnection", K(this), K(ret));
           }
           event_ret = EVENT_DONE;
         } else if (ObVIO::READ == read_.vio_.op_
@@ -1551,7 +1556,7 @@ int ObUnixNetVConnection::connect_up(ObEThread &ethread, int fd)
 
   if (NO_FD == fd) {
     if (OB_FAIL(con_.open(options_))) {
-      PROXY_NET_LOG(WARN, "fail to open connection", K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to open connection", K(ret));
     }
   } else {
     // This call will fail if fd is not a socket
@@ -1559,9 +1564,9 @@ int ObUnixNetVConnection::connect_up(ObEThread &ethread, int fd)
     // That is ok, because sock_type is only used when setting up the socket.
     int32_t len = sizeof(con_.sock_type_);
     if (OB_FAIL(ObSocketManager::getsockopt(fd, SOL_SOCKET, SO_TYPE, &con_.sock_type_, &len))) {
-      PROXY_NET_LOG(WARN, "fail to getsockopt SO_TYPE", K(fd), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to getsockopt SO_TYPE", K(fd), K(ret));
     } else if ((OB_FAIL(ObSocketManager::nonblocking(fd)))) {
-      PROXY_NET_LOG(WARN, "fail to getsockopt SO_TYP", K(fd), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to getsockopt SO_TYP", K(fd), K(ret));
     } else {
       con_.fd_ = fd;
       con_.is_connected_ = true;
@@ -1574,11 +1579,11 @@ int ObUnixNetVConnection::connect_up(ObEThread &ethread, int fd)
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ep_->start(thread_->get_net_poll().get_poll_descriptor(),
                            *this, EVENTIO_READ | EVENTIO_WRITE))) {
-      PROXY_NET_LOG(WARN, "fail to start ObEventIO", K(con_.fd_), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to start ObEventIO", K(con_.fd_), K(ret));
     } else if (NO_FD == fd && OB_FAIL(con_.connect(server_addr_.sa_, options_))) {
-      PROXY_NET_LOG(WARN, "fail to connect", K(con_.fd_), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to connect", K(con_.fd_), K(ret));
     } else if (OB_FAIL(set_local_addr())) {
-      PROXY_NET_LOG(WARN, "fail to set_local_addr", K(con_.fd_), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to set_local_addr", K(con_.fd_), K(ret));
     } else {
       SET_HANDLER(&ObUnixNetVConnection::main_event);
       nh_ = &(thread_->get_net_handler());
@@ -1589,7 +1594,7 @@ int ObUnixNetVConnection::connect_up(ObEThread &ethread, int fd)
 
   if (OB_FAIL(ret)) {
      lerrno_ = ret;
-     PROXY_NET_LOG(WARN, "fail to connect up, will inform out", K(ret));
+     PROXY_NET_LOG(WDIAG, "fail to connect up, will inform out", K(ret));
      // informed out
      action_.continuation_->handle_event(NET_EVENT_OPEN_FAILED, reinterpret_cast<void *>(ret));
   }
@@ -1623,23 +1628,23 @@ int ObUnixNetVConnection::start_event(int event, ObEvent *e)
   int event_ret = EVENT_DONE;
   if (OB_ISNULL(e)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "fail to start event", K(e), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to start event", K(e), K(ret));
   } else {
     MUTEX_TRY_LOCK(lock, e->get_ethread().get_net_handler().mutex_, &(e->get_ethread()));
     if (!lock.is_locked()) {
       if (OB_FAIL(e->schedule_in(NET_RETRY_DELAY))) {
-        PROXY_NET_LOG(WARN, "ObEvent fail to schedule_in", K(e), K(ret));
+        PROXY_NET_LOG(WDIAG, "ObEvent fail to schedule_in", K(e), K(ret));
       } else {
         event_ret = EVENT_CONT;
       }
     } else {
       if (!action_.cancelled_) {
         if (OB_FAIL(connect_up(e->get_ethread(), NO_FD))) {
-          PROXY_NET_LOG(WARN, "fail to connect_up", K(e), K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to connect_up", K(e), K(ret));
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_NET_LOG(WARN, "action has been cancelled", K(ret));
+        PROXY_NET_LOG(WDIAG, "action has been cancelled", K(ret));
       }
     }
   }
@@ -1652,22 +1657,23 @@ int ObUnixNetVConnection::start_event(int event, ObEvent *e)
 
 int ObUnixNetVConnection::ssl_init(const SSLType ssl_type,
                                    const ObString &cluster_name,
-                                   const ObString &tenant_name)
+                                   const ObString &tenant_name,
+                                   const uint64_t options)
 {
   int ret = OB_SUCCESS;
 
   if (NULL != ssl_ || ssl_connected_ || using_ssl_) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "ssl is not null, init before", K(ret),
+    PROXY_NET_LOG(WDIAG, "ssl is not null, init before", K(ret),
         K(ssl_connected_), K(using_ssl_), K(ssl_));
   } else {
-    ssl_ = g_ssl_processor.create_new_ssl(cluster_name, tenant_name);
+    ssl_ = g_ssl_processor.create_new_ssl(cluster_name, tenant_name, options);
     if (NULL == ssl_) {
       ret = OB_SSL_ERROR;
-      PROXY_NET_LOG(WARN, "ssl new failed", K(ret));
+      PROXY_NET_LOG(WDIAG, "ssl new failed", K(ret));
     } else if (OB_SSL_SUCC_RET != SSL_set_fd(ssl_, con_.fd_)) {
       ret = OB_SSL_ERROR;
-      PROXY_NET_LOG(WARN, "ssl set fd failed", K(ret));
+      PROXY_NET_LOG(WDIAG, "ssl set fd failed", K(ret));
     } else {
       using_ssl_ = true;
       ssl_type_ = ssl_type;
@@ -1690,7 +1696,7 @@ void ObUnixNetVConnection::do_ssl_io(ObEThread &thread)
     }
 
     if (OB_FAIL(ssl_start_handshake(thread))) {
-      PROXY_NET_LOG(WARN, "ssl start handlshake failed", K(ret));
+      PROXY_NET_LOG(WDIAG, "ssl start handlshake failed", K(ret));
     }
   } else if (IO_READ == io_type_) {
     ObCurTraceId::set(reinterpret_cast<uint64_t>(read_.vio_.cont_->mutex_.ptr_));
@@ -1703,7 +1709,7 @@ void ObUnixNetVConnection::do_ssl_io(ObEThread &thread)
     read_.triggered_ = false;
     write_to_net(thread);
   } else {
-    PROXY_NET_LOG(WARN, "wrong write ssl io type", K(io_type_));
+    PROXY_NET_LOG(WDIAG, "wrong write ssl io type", K(io_type_));
   }
 }
 
@@ -1713,14 +1719,14 @@ int ObUnixNetVConnection::ssl_start_handshake(ObEThread &thread)
 
   if (ssl_type_ >= SSL_MAX_TYPE || ssl_type_ <= SSL_NONE) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid ssl argument", K(ret), K(ssl_type_));
+    PROXY_NET_LOG(WDIAG, "invalid ssl argument", K(ret), K(ssl_type_));
   } else if (NULL == ssl_) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "init ssl failed", K(ret));
+    PROXY_NET_LOG(WDIAG, "init ssl failed", K(ret));
   } else if (SSL_SERVER == ssl_type_ && OB_FAIL(ssl_server_handshake(thread))) {
-    PROXY_NET_LOG(WARN, "ssl server handshake failed", K(ret));
+    PROXY_NET_LOG(WDIAG, "ssl server handshake failed", K(ret));
   } else if (SSL_CLIENT == ssl_type_ && OB_FAIL(ssl_client_handshake(thread))) {
-    PROXY_NET_LOG(WARN, "ssl client handshake failed", K(ret));
+    PROXY_NET_LOG(WDIAG, "ssl client handshake failed", K(ret));
   }
   return ret;
 }
@@ -1733,7 +1739,7 @@ int ObUnixNetVConnection::ssl_server_handshake(ObEThread &thread)
 
   if (NULL == ssl_) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "ssl server handshake event", K(ret));
+    PROXY_NET_LOG(WDIAG, "ssl server handshake event", K(ret));
   } else if (!lock.is_locked()) {
     nh_->write_ready_list_.in_or_enqueue(this);
     nh_->read_ready_list_.in_or_enqueue(this);
@@ -1743,7 +1749,7 @@ int ObUnixNetVConnection::ssl_server_handshake(ObEThread &thread)
     write_.triggered_ = false;
     nh_->read_ready_list_.remove(this);
     nh_->write_ready_list_.remove(this);
-    PROXY_NET_LOG(WARN, "ssl accepte failed", K(ret), K(tmp_code));
+    PROXY_NET_LOG(WDIAG, "ssl accepte failed", K(ret), K(tmp_code));
     read_signal_done(VC_EVENT_EOS);
   } else if (ssl_connected_) {
     reenable(&read_.vio_);
@@ -1765,7 +1771,7 @@ int ObUnixNetVConnection::ssl_client_handshake(ObEThread &thread)
 
   if (NULL == ssl_) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(WARN, "ssl client handshake event", K(ret));
+    PROXY_NET_LOG(WDIAG, "ssl client handshake event", K(ret));
   } else if (!lock.is_locked()) {
     nh_->write_ready_list_.in_or_enqueue(this);
     nh_->read_ready_list_.in_or_enqueue(this);
@@ -1775,7 +1781,7 @@ int ObUnixNetVConnection::ssl_client_handshake(ObEThread &thread)
     read_.triggered_ = false;
     nh_->read_ready_list_.remove(this);
     nh_->write_ready_list_.remove(this);
-    PROXY_NET_LOG(WARN, "ssl connect failed", K(ret), K(tmp_code));
+    PROXY_NET_LOG(WDIAG, "ssl connect failed", K(ret), K(tmp_code));
     write_signal_done(VC_EVENT_EOS);
   } else if (ssl_connected_) {
     reenable(&write_.vio_);
@@ -1791,6 +1797,7 @@ int ObUnixNetVConnection::ssl_client_handshake(ObEThread &thread)
 
 void ObUnixNetVConnection::handle_ssl_err_code(const int err_code)
 {
+  ssl_err_code_ = err_code;
   switch(err_code) {
   case SSL_ERROR_NONE:
   case SSL_ERROR_WANT_READ:
@@ -1803,35 +1810,35 @@ void ObUnixNetVConnection::handle_ssl_err_code(const int err_code)
     PROXY_NET_LOG(DEBUG, "ssl return SSL_ERROR_WANT_ACCEPT");
     break;
   case SSL_ERROR_WANT_X509_LOOKUP:
-    PROXY_NET_LOG(WARN, "ssl return SSL_ERROR_WANT_X509_LOOKUP");
+    PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_WANT_X509_LOOKUP");
     break;
   // case SSL_ERROR_WANT_ASYNC:
-  //   PROXY_NET_LOG(WARN, "ssl return SSL_ERROR_WANT_ASYNC");
+  //   PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_WANT_ASYNC");
   //   break;
   // case SSL_ERROR_WANT_ASYNC_JOB:
-  //   PROXY_NET_LOG(WARN, "ssl return SSL_ERROR_WANT_ASYNC_JOB");
+  //   PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_WANT_ASYNC_JOB");
   //   break;
   // case SSL_ERROR_WANT_CLIENT_HELLO_CB:
-  //   PROXY_NET_LOG(WARN, "ssl return SSL_ERROR_WANT_CLIENT_HELLO_CB");
+  //   PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_WANT_CLIENT_HELLO_CB");
   //   break;
   case SSL_ERROR_ZERO_RETURN:
     PROXY_NET_LOG(INFO, "ssl return SSL_ERROR_ZERO_RETURN");
     close_ssl();
     break;
   case SSL_ERROR_SYSCALL:
-    PROXY_NET_LOG(WARN, "ssl return SSL_ERROR_SYSCALL");
+    PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_SYSCALL");
     can_shutdown_ssl_ = false;
     close_ssl();
     break;
   case SSL_ERROR_SSL:
-    PROXY_NET_LOG(ERROR, "ssl return SSL_ERROR_SYSCALL");
+    PROXY_NET_LOG(EDIAG, "ssl return SSL_ERROR_SYSCALL");
     can_shutdown_ssl_ = false;
     close_ssl();
     break;
   default:
     can_shutdown_ssl_ = false;
     close_ssl();
-    PROXY_NET_LOG(ERROR, "unknown ssl error code, should not happen");
+    PROXY_NET_LOG(EDIAG, "unknown ssl error code, should not happen");
     break;
   }
 }

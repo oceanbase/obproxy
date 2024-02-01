@@ -25,17 +25,17 @@ void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool)
   void *ptr = NULL;
   size_t headlen = sizeof(int64_t);
   if (OB_ISNULL(malloc_pool)) {
-    LOG_ERROR("malloc pool is NULL");
+    LOG_EDIAG("malloc pool is NULL");
   } else if (OB_UNLIKELY(nbyte <= 0)) {
-    LOG_ERROR("wrong size of obproxy_parse_malloc", K(nbyte));
+    LOG_EDIAG("wrong size of obproxy_parse_malloc", K(nbyte));
   } else {
     ObIAllocator *alloc_buf = static_cast<ObIAllocator *>(malloc_pool);
     if (OB_UNLIKELY(NULL == (ptr = alloc_buf->alloc(headlen + nbyte)))) {
-      LOG_ERROR("alloc memory failed", K(nbyte));
+      LOG_EDIAG("alloc memory failed", K(nbyte));
     } else {
       *(static_cast<int64_t *>(ptr)) = nbyte;
       ptr = static_cast<char *>(ptr) + headlen;
-      //MEMSET(ptr, 0, nbyte);
+      MEMSET(ptr, 0, nbyte);
     }
   }
   return ptr;
@@ -47,7 +47,7 @@ void *obproxy_parse_realloc(void *ptr, size_t nbyte, void *malloc_pool)
   void *new_ptr = NULL;
   //need not to check nbyte
   if (OB_ISNULL(malloc_pool)) {
-    LOG_ERROR("malloc pool is NULL");
+    LOG_EDIAG("malloc pool is NULL");
   } else {
     ObIAllocator *alloc_buf = static_cast<ObIAllocator *>(malloc_pool);
     if (OB_UNLIKELY(NULL == ptr)) {
@@ -55,7 +55,7 @@ void *obproxy_parse_realloc(void *ptr, size_t nbyte, void *malloc_pool)
     } else {
       size_t headlen = sizeof(int64_t);
       if (OB_UNLIKELY(NULL == (new_ptr = alloc_buf->alloc(headlen + nbyte)))) {
-        LOG_ERROR("alloc memory failed");
+        LOG_EDIAG("alloc memory failed");
       } else {
         int64_t obyte = *(reinterpret_cast<int64_t *>(static_cast<char *>(ptr) - headlen));
         *(static_cast<int64_t *>(new_ptr)) = nbyte;
@@ -73,14 +73,14 @@ char *obproxy_parse_strndup(const char *str, size_t nbyte, void *malloc_pool)
   char *new_str = NULL;
   //need not to check nbyte
   if (OB_ISNULL(str)) {
-    LOG_ERROR("duplicate string is NULL");
+    LOG_EDIAG("duplicate string is NULL");
   } else {
     if (OB_LIKELY(NULL != (new_str = static_cast<char *>(obproxy_parse_malloc(nbyte + 1,
                                                                               malloc_pool))))) {
       MEMMOVE(new_str, str, nbyte);
       new_str[nbyte] = '\0';
     } else {
-      LOG_ERROR("parse_strdup gets string buffer error");
+      LOG_EDIAG("parse_strdup gets string buffer error");
     }
   }
   return new_str;
@@ -90,9 +90,9 @@ char *obproxy_parse_strdup(const char *str, void *malloc_pool, int64_t *out_len)
 {
   char *out_str = NULL;
   if (OB_ISNULL(str)) {
-    LOG_ERROR("duplicate string is NULL");
+    LOG_EDIAG("duplicate string is NULL");
   } else if (OB_ISNULL(out_len)) {
-    LOG_ERROR("out_len is NULL");
+    LOG_EDIAG("out_len is NULL");
   } else {
     size_t dup_len = STRLEN(str);
     out_str = obproxy_parse_strndup(str, dup_len, malloc_pool);

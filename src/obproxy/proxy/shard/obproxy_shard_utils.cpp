@@ -59,17 +59,17 @@ int ObProxyShardUtils::check_logic_database(ObMysqlTransact::ObTransState &trans
   ObShardUserPrivInfo &saved_up_info = session_info.get_shard_user_priv();
 
   if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
-    LOG_WARN("fail to get_logic_tenant_name", K(ret));
+    LOG_WDIAG("fail to get_logic_tenant_name", K(ret));
   } else if (OB_ISNULL(db_info = get_global_dbconfig_cache().get_exist_db_info(logic_tenant_name, db_name))) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("logic db does not exist", K(ret), K(db_name), K(logic_tenant_name));
+    LOG_WDIAG("logic db does not exist", K(ret), K(db_name), K(logic_tenant_name));
   } else if (session_info.enable_shard_authority()) {
     ObShardUserPrivInfo up_info;
     if (OB_FAIL(db_info->get_user_priv_info(username, host, up_info))) {
-      LOG_WARN("fail to get user priv info", K(db_name), K(username), K(host), K(ret));
+      LOG_WDIAG("fail to get user priv info", K(db_name), K(username), K(host), K(ret));
     } else if (saved_up_info.password_stage2_ != up_info.password_stage2_) {
       ret = OB_PASSWORD_WRONG;
-      LOG_WARN("pass word is wrong", K(saved_up_info), K(up_info), K(ret));
+      LOG_WDIAG("pass word is wrong", K(saved_up_info), K(up_info), K(ret));
     } else {
       saved_up_info.assign(up_info);
     }
@@ -78,16 +78,16 @@ int ObProxyShardUtils::check_logic_database(ObMysqlTransact::ObTransState &trans
     }
   } else if (!client_session.is_local_connection() && !db_info->enable_remote_connection()) {
     ret = OB_ERR_NO_DB_PRIVILEGE;
-    LOG_WARN("Access denied for database from remote addr", K(db_name), K(ret));
+    LOG_WDIAG("Access denied for database from remote addr", K(db_name), K(ret));
   }
 
   // switch logic database, random get one shard connector
   if (OB_SUCC(ret)) {
     if (OB_FAIL(db_info->acquire_random_shard_connector(shard_conn))) {
-      LOG_WARN("fail to get random shard connector", K(ret), KPC(db_info));
+      LOG_WDIAG("fail to get random shard connector", K(ret), KPC(db_info));
     } else if (*prev_shard_conn != *shard_conn) {
       if (OB_FAIL(change_connector(*db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-        LOG_WARN("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
+        LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
       }
     }
   }
@@ -126,18 +126,18 @@ int ObProxyShardUtils::check_logic_db_priv_for_cur_user(const ObString &logic_te
 
   if (OB_ISNULL(db_info = get_global_dbconfig_cache().get_exist_db_info(logic_tenant_name, db_name))) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("logic db does not exist", K(ret), K(db_name), K(logic_tenant_name));
+    LOG_WDIAG("logic db does not exist", K(ret), K(db_name), K(logic_tenant_name));
   } else if (session_info.enable_shard_authority()) {
     ObShardUserPrivInfo new_up_info;
     if (OB_FAIL(db_info->get_user_priv_info(username, host, new_up_info))) {
-      LOG_WARN("fail to get user priv info", K(db_name), K(username), K(host), K(ret));
+      LOG_WDIAG("fail to get user priv info", K(db_name), K(username), K(host), K(ret));
     } else if (saved_up_info.password_stage2_ != new_up_info.password_stage2_) {
       ret = OB_PASSWORD_WRONG;
-      LOG_WARN("pass word is wrong", K(saved_up_info), K(new_up_info), K(ret));
+      LOG_WDIAG("pass word is wrong", K(saved_up_info), K(new_up_info), K(ret));
     }
   } else if (!client_session.is_local_connection() && db_info->enable_remote_connection()) {
     ret = OB_ERR_NO_DB_PRIVILEGE;
-    LOG_WARN("Access denied for database from remote addr", K(db_name), K(ret));
+    LOG_WDIAG("Access denied for database from remote addr", K(db_name), K(ret));
   }
 
   if (NULL != db_info) {
@@ -161,7 +161,7 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
     // because first SQL should not think as in trans
     if (OB_UNLIKELY(ObMysqlTransact::is_in_trans(trans_state))) {
       ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-      LOG_WARN("not support distributed transaction", K(trans_state.current_.state_),
+      LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
                K(trans_state.is_auth_request_),
                K(trans_state.is_hold_start_trans_),
                K(trans_state.is_hold_xa_start_),
@@ -174,7 +174,7 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(handle_sys_read_consitency_prop(logic_db_info, *shard_conn, session_info))) {
-      LOG_WARN("fail to handle_sys_read_consitency_prop", KPC(shard_conn));
+      LOG_WDIAG("fail to handle_sys_read_consitency_prop", KPC(shard_conn));
     } else {
       ObShardProp* shard_prop = NULL;
       if (OB_FAIL(logic_db_info.get_shard_prop(shard_conn->shard_name_, shard_prop))) {
@@ -195,7 +195,7 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
       bool is_cluster_changed = (prev_shard_conn->cluster_name_ != shard_conn->cluster_name_);
       bool is_tenant_changed = (prev_shard_conn->tenant_name_ != shard_conn->tenant_name_);
       if (OB_FAIL(change_user_auth(client_session, *shard_conn, is_cluster_changed, is_tenant_changed))) {
-        LOG_ERROR("fail to change user auth", KPC(shard_conn), K(is_cluster_changed), K(is_tenant_changed), K(ret));
+        LOG_EDIAG("fail to change user auth", KPC(shard_conn), K(is_cluster_changed), K(is_tenant_changed), K(ret));
       }
     }
   }
@@ -230,11 +230,11 @@ int ObProxyShardUtils::change_user_auth(ObMysqlClientSession &client_session,
 
   if (shard_conn.is_enc_beyond_trust() && OB_UNLIKELY(password.empty())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("not support beyond trust password", K(ret));
+    LOG_EDIAG("not support beyond trust password", K(ret));
   }
   if (OB_FAIL(ObProxySessionInfoHandler::rewrite_login_req_by_sharding(session_info, full_user_name,
               password, database, tenant_name, cluster_name))) {
-    LOG_WARN("fail to rewrite_login_req_by_sharding", K(full_user_name), K(tenant_name), K(cluster_name), K(ret));
+    LOG_WDIAG("fail to rewrite_login_req_by_sharding", K(full_user_name), K(tenant_name), K(cluster_name), K(ret));
   }
 
   return ret;
@@ -285,7 +285,7 @@ int ObProxyShardUtils::rewrite_shard_dml_request(const ObString &sql,
   ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(parse_result.get_proxy_stmt());
   if (OB_ISNULL(dml_stmt)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null select stmt", K(ret));
+    LOG_WDIAG("unexpected null select stmt", K(ret));
   } else {
     ObProxyDMLStmt::TablePosArray &table_pos_array = dml_stmt->get_table_pos_array();
     std::sort(table_pos_array.begin(), table_pos_array.end());
@@ -296,7 +296,7 @@ int ObProxyShardUtils::rewrite_shard_dml_request(const ObString &sql,
 
       if (OB_ISNULL(expr_table)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected null expr table", K(ret));
+        LOG_WDIAG("unexpected null expr table", K(ret));
       } else {
         int64_t table_pos = expr_table_pos.get_table_pos();
         int64_t database_pos = expr_table_pos.get_database_pos();
@@ -308,11 +308,11 @@ int ObProxyShardUtils::rewrite_shard_dml_request(const ObString &sql,
 
         ObString real_table_name;
         if (OB_FAIL(table_name_map.get_refactored(table_name, real_table_name))) {
-          LOG_WARN("fail to get real table name", K(table_name), K(ret));
+          LOG_WDIAG("fail to get real table name", K(table_name), K(ret));
         } else if (OB_FAIL(rewrite_shard_request_table(sql_ptr, database_pos, database_len,
                                                        table_pos, table_len, real_table_name, real_database_name,
                                                        is_oracle_mode, is_single_shard_db_table, new_sql, copy_pos))) {
-          LOG_WARN("fail to rewrite table", K(ret));
+          LOG_WDIAG("fail to rewrite table", K(ret));
         }
       }
     }
@@ -422,7 +422,7 @@ int ObProxyShardUtils::rewrite_shard_request_table(const char *sql_ptr,
   if (OB_FAIL(rewrite_shard_request_db(sql_ptr, database_pos, table_pos, database_len,
                                        real_database_name, is_oracle_mode,
                                        is_single_shard_db_table, new_sql, copy_pos))) {
-    LOG_WARN("fail to rewrite db", K(ret));
+    LOG_WDIAG("fail to rewrite db", K(ret));
   } else {
     // replace table name
     if (is_oracle_mode) {
@@ -498,23 +498,23 @@ int ObProxyShardUtils::rewrite_shard_request(ObClientSessionInfo &session_info,
   if (OB_FAIL(rewrite_shard_request_hint_table(sql_ptr, index_table_pos, index_table_len,
                                                real_table_name, is_oracle_mode,
                                                is_single_shard_db_table,new_sql, copy_pos))) {
-    LOG_WARN("fail to rewrite hint table", K(ret));
+    LOG_WDIAG("fail to rewrite hint table", K(ret));
   } else {
     if (OB_INVALID_INDEX == database_pos || database_pos < table_pos) {
       if (OB_FAIL(rewrite_shard_request_table(sql_ptr, database_pos, database_len,
                                               table_pos, table_len, real_table_name, real_database_name,
                                               is_oracle_mode, is_single_shard_db_table, new_sql, copy_pos))) {
-        LOG_WARN("fail to rewrite table", K(ret));
+        LOG_WDIAG("fail to rewrite table", K(ret));
       }
     } else {
       if (OB_FAIL(rewrite_shard_request_table(sql_ptr, 0, database_len,
                                               table_pos, table_len, real_table_name, real_database_name,
                                               is_oracle_mode, is_single_shard_db_table, new_sql, copy_pos))) {
-        LOG_WARN("fail to rewrite table", K(ret));
+        LOG_WDIAG("fail to rewrite table", K(ret));
       } else if (OB_FAIL(rewrite_shard_request_db(sql_ptr, database_pos, table_pos, database_len,
                                                   real_database_name, is_oracle_mode,
                                                   is_single_shard_db_table, new_sql, copy_pos))) {
-        LOG_WARN("fail to rewrite db", K(ret));
+        LOG_WDIAG("fail to rewrite db", K(ret));
       }
     }
   }
@@ -532,16 +532,16 @@ int ObProxyShardUtils::testload_check_obparser_node_is_valid(const ParseNode *no
   int ret = OB_SUCCESS;
   if (OB_ISNULL(node)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("checkout node failed: node is NULL", K(ret), K(type));
+    LOG_WDIAG("checkout node failed: node is NULL", K(ret), K(type));
   } else if (type != node->type_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("checkout node failed: type is not equal", K(ret), K(type), K(node->type_));
+    LOG_WDIAG("checkout node failed: type is not equal", K(ret), K(type), K(node->type_));
   } else {
     switch (type) {
       case T_HINT_OPTION_LIST: {
         if (T_HINT_OPTION_LIST != node->type_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("checkout node failed: node type error", K(ret), K(type), K(node->type_));
+          LOG_WDIAG("checkout node failed: node type error", K(ret), K(type), K(node->type_));
         }
         break;
       }
@@ -551,7 +551,7 @@ int ObProxyShardUtils::testload_check_obparser_node_is_valid(const ParseNode *no
                 || T_RELATION_FACTOR_IN_HINT != (node->children_[1]->type_)
                 || OB_T_RELATION_FACTOR_IN_HINT_NUM_CHILD /* 2 */ != node->children_[1]->num_child_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("error T_INDEX node for sql to handle", K(ret));
+            LOG_WDIAG("error T_INDEX node for sql to handle", K(ret));
         }
         break;
       }
@@ -562,10 +562,10 @@ int ObProxyShardUtils::testload_check_obparser_node_is_valid(const ParseNode *no
               || -1 == node->children_[1]->token_len_
               || -1 == node->children_[1]->token_off_) { //must be contain table entry
          ret = OB_ERR_UNEXPECTED;
-         LOG_WARN("unexpected T_RELATION_FACTOR node", K(ret));
+         LOG_WDIAG("unexpected T_RELATION_FACTOR node", K(ret));
        }
-       break; 
-      } 
+       break;
+      }
       case T_COLUMN_REF: {
         if (OB_T_COLUMN_REF_NUM_CHILD /* 3 */ > node->num_child_
              || OB_ISNULL(node->children_[2])
@@ -576,7 +576,7 @@ int ObProxyShardUtils::testload_check_obparser_node_is_valid(const ParseNode *no
              || (T_IDENT == node->children_[2]->type_
                          && -1 == node->children_[2]->token_off_)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected T_COLUMN_REF node", K(ret));
+          LOG_WDIAG("unexpected T_COLUMN_REF node", K(ret));
         }
         break;
       }
@@ -586,9 +586,9 @@ int ObProxyShardUtils::testload_check_obparser_node_is_valid(const ParseNode *no
               || 0 > node->token_off_
               || 0 > node->token_len_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected T_IDENT node", K(ret));
+          LOG_WDIAG("unexpected T_IDENT node", K(ret));
         }
-      } 
+      }
       default:
         break; // other type not to use
     }
@@ -606,16 +606,16 @@ int ObProxyShardUtils::testload_get_obparser_db_and_table_node(const ParseNode *
   int ret = OB_SUCCESS;
   if (OB_ISNULL(root)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("checkout node failed: node is NULL", K(ret));
+    LOG_WDIAG("checkout node failed: node is NULL", K(ret));
   } else {
     db_node = NULL;
     table_node = NULL;
     const ObItemType &type = root->type_;
-    
+
     if (T_RELATION_FACTOR != type && T_COLUMN_REF != type) {
-      LOG_WARN("not is not T_RELATION_FACTOR or T_COLUMN_REF node", K(ret), K(type));
+      LOG_WDIAG("not is not T_RELATION_FACTOR or T_COLUMN_REF node", K(ret), K(type));
     } else if (OB_FAIL(testload_check_obparser_node_is_valid(root, type))) {
-      LOG_WARN("not is not invalid  T_RELATION_FACTOR or T_COLUMN_REF node", K(ret), K(type));
+      LOG_WDIAG("not is not invalid  T_RELATION_FACTOR or T_COLUMN_REF node", K(ret), K(type));
     } else {
       // not need to check table node and db node at here, will check it when use
       db_node = root->children_[0];  // set db_node
@@ -636,9 +636,9 @@ int ObProxyShardUtils::testload_rewrite_name_base_on_parser_node(common::ObSqlSt
   UNUSED(sql_len);
   if (OB_ISNULL(node) || OB_ISNULL(sql_ptr) || OB_ISNULL(new_name)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("use NULL node to rewrite sql", K(ret), K(last_pos));
+    LOG_WDIAG("use NULL node to rewrite sql", K(ret), K(last_pos));
   } else if (OB_FAIL(testload_check_obparser_node_is_valid(node, T_IDENT))) { //check T_IDENT node
-    LOG_WARN("use invalid node to rewrite sql", K(ret), K(last_pos));
+    LOG_WDIAG("use invalid node to rewrite sql", K(ret), K(last_pos));
   } else {
     if (last_pos < node->token_off_) {
       new_sql.append(sql_ptr + last_pos, node->token_off_ - last_pos);
@@ -701,18 +701,18 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_hint_index(common::Ob
         if (OB_NOT_NULL(index_node = node->children_[j]) && T_INDEX /* 3 */ == index_node->type_) {
           if (OB_FAIL(testload_check_obparser_node_is_valid(index_node, T_INDEX))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("error T_INDEX node for sql to handle", K(ret), K(sql_ptr));
+            LOG_WDIAG("error T_INDEX node for sql to handle", K(ret), K(sql_ptr));
           } else if ((OB_ISNULL(relation_node = index_node->children_[1]->children_[0]))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("error T_RELATION_FACTOR_IN_HINT node for sql to handle", K(ret), K(sql_ptr));
+            LOG_WDIAG("error T_RELATION_FACTOR_IN_HINT node for sql to handle", K(ret), K(sql_ptr));
           // relation_node will be check when use
           } else if (OB_FAIL(testload_get_obparser_db_and_table_node(relation_node, db_node, tb_node))) {
-            LOG_WARN("fail get table_node or db_node from T_RELATION_FACTOR", K(ret), K(relation_node),
+            LOG_WDIAG("fail get table_node or db_node from T_RELATION_FACTOR", K(ret), K(relation_node),
                       K(db_node), K(tb_node));
           } else if (OB_NOT_NULL(db_node) // rewrite db node
                        && OB_FAIL(testload_rewrite_name_base_on_parser_node(new_sql, real_database_name.ptr(),
                                   sql_ptr, sql_len, last_pos, db_node))) {
-            LOG_WARN("fail to rewrite db_node for T_RELATION_FACTOR", K(ret), K(db_node));
+            LOG_WDIAG("fail to rewrite db_node for T_RELATION_FACTOR", K(ret), K(db_node));
           } else {
             // table_name_len must be less than OB_MAX_TABLE_NAME_LENGTH
             std::string new_name;
@@ -720,12 +720,12 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_hint_index(common::Ob
             if (use_hint_table_name) {
               new_name.append(hint_table.ptr()); // use hint table
             } else if (OB_FAIL(logic_db_info.check_and_get_testload_table(table_name, new_name))) {
-              LOG_WARN("check and get table name is fail", K(ret));
+              LOG_WDIAG("check and get table name is fail", K(ret));
             }
             if (OB_SUCC(ret) // rewrite table node
                   && OB_FAIL(testload_rewrite_name_base_on_parser_node(new_sql, new_name.c_str(),
                                                              sql_ptr, sql_len, last_pos, tb_node))) {
-              LOG_WARN("fail to rewrite db_node for T_RELATION_FACTOR", K(ret), K(tb_node));
+              LOG_WDIAG("fail to rewrite db_node for T_RELATION_FACTOR", K(ret), K(tb_node));
             }
           } /* end else */
         }
@@ -741,7 +741,7 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_hint_index(common::Ob
  * Args:
  *   @param	session_info	: client session info
  *   @param	client_request	: client request
- *   @param	is_single_shard_db_table: 
+ *   @param	is_single_shard_db_table:
  *   @param	real_database_name	: real database name in Server
  *   @param	logic_db_info		: config info for database
  * */
@@ -753,7 +753,7 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
                                     const ObString& sql,
                                     common::ObSqlString& new_sql)
 {
-  int ret = OB_SUCCESS; 
+  int ret = OB_SUCCESS;
   UNUSED(is_single_shard_db_table);
 
   const char *sql_ptr = sql.ptr();
@@ -768,13 +768,13 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
 
   if (OB_FAIL(alias_table_map.create(OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM,
                                       ObModIds::OB_HASH_ALIAS_TABLE_MAP))) {
-    LOG_WARN("failed to create alias_table_map map");
+    LOG_WDIAG("failed to create alias_table_map map");
   } else if (OB_FAIL(all_table_map.create(OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM,
                                           ObModIds::OB_HASH_ALIAS_TABLE_MAP))) {
-    LOG_WARN("failed to create all_table_map map");
+    LOG_WDIAG("failed to create all_table_map map");
   } else if (OB_ISNULL(parse_result.get_ob_parser_result())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to init obparser result tree:", K(ret));
+    LOG_WDIAG("failed to init obparser result tree:", K(ret));
   } else if (OB_FAIL(ObProxySqlParser::ob_load_testload_parse_node(
                                    parse_result.get_ob_parser_result()->result_tree_,
                                    1, /* level */
@@ -784,11 +784,11 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
                                    all_table_map,
                                    alias_table_map,
                                    allocator))) {
-    LOG_WARN("ob_load_testload_parse_node failed", K(ret));
+    LOG_WDIAG("ob_load_testload_parse_node failed", K(ret));
   } else if (use_hint_table_name && 1 != (all_table_map.size())) {
     // There is more than one table in SQL, alias table node will be added in all table name
     ret = OB_ERR_MORE_TABLES_WITH_TABLE_HINT;
-    LOG_WARN("check_and_rewrite_testload_request failed for more table in testload request with table_name hint",
+    LOG_WDIAG("check_and_rewrite_testload_request failed for more table in testload request with table_name hint",
              "ret", ret, "all_table_name", all_table_map.size(), "alias_table_name", alias_table_map.size());
   } else {
     LOG_DEBUG("check_and_rewrite_testload_request:", K(use_hint_table_name), K(relation_table_node),
@@ -809,30 +809,30 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
                                                            hint_table,
                                                            real_database_name,
                                                            logic_db_info))) { //need to check table info
-      LOG_WARN("check_and_rewrite_testload_hint_index failed", K(ret), K(last_pos), K(new_sql));
+      LOG_WDIAG("check_and_rewrite_testload_hint_index failed", K(ret), K(last_pos), K(new_sql));
     }
 
     while (OB_SUCC(ret) && i < relation_table_node.count()) {
       db_node = NULL;
       if (OB_ISNULL(node = relation_table_node[i]->get_node())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected node in relation_table_node", K(ret));
+        LOG_WDIAG("unexpected node in relation_table_node", K(ret));
       } else {
         switch (node->type_) {
           case T_RELATION_FACTOR:
             if (OB_FAIL(testload_check_obparser_node_is_valid(node, T_RELATION_FACTOR))) {
-              LOG_WARN("unexpected node T_RELATION_FACTOR", K(ret));
+              LOG_WDIAG("unexpected node T_RELATION_FACTOR", K(ret));
             } else if (OB_FAIL(testload_get_obparser_db_and_table_node(node, db_node, node))){
-              LOG_WARN("get tb_node or db_node fail for T_RELATION_FACTOR", K(ret));
+              LOG_WDIAG("get tb_node or db_node fail for T_RELATION_FACTOR", K(ret));
             } else {
               LOG_DEBUG("will check the table is testload table", K(ret), "table", (node->str_value_));
             }
             break;
           case T_COLUMN_REF:
             if (OB_FAIL(testload_check_obparser_node_is_valid(node, T_COLUMN_REF))) {
-              LOG_WARN("unexpected node T_RELATION_FACTOR", K(ret));
+              LOG_WDIAG("unexpected node T_RELATION_FACTOR", K(ret));
             } else if (OB_FAIL(testload_get_obparser_db_and_table_node(node, db_node, node))){
-              LOG_WARN("get tb_node or db_node fail for T_RELATION_FACTOR", K(ret));
+              LOG_WDIAG("get tb_node or db_node fail for T_RELATION_FACTOR", K(ret));
             } else {
               ObString ob_str;
               ObString table_str = ObString::make_string(node->str_value_);
@@ -854,7 +854,7 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
       if (OB_SUCC(ret)) {
         if (OB_FAIL(testload_check_obparser_node_is_valid(node, T_IDENT))) { // check table node first
           //ret = OB_ERR_UNEXPECTED; // not to be here
-          LOG_WARN("it is not valid table node", K(ret));
+          LOG_WDIAG("it is not valid table node", K(ret));
         } else {
           LOG_DEBUG("ObProxyShardUtils::check_and_rewrite_testload_request before rewrite",
                     K(i), K(last_pos), K(node->token_off_), K(new_sql), K(last_pos));
@@ -862,18 +862,18 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
 
           if (OB_NOT_NULL(db_node)
                  && OB_FAIL(testload_rewrite_name_base_on_parser_node(new_sql, real_database_name.ptr(),
-                                                                      sql_ptr, sql_len, last_pos, db_node))) { 
-            LOG_WARN("check and rewrite db name is fail", K(ret), "db_name", real_database_name.ptr());
+                                                                      sql_ptr, sql_len, last_pos, db_node))) {
+            LOG_WDIAG("check and rewrite db name is fail", K(ret), "db_name", real_database_name.ptr());
           // rewrite table name
           } else if (use_hint_table_name) {
             new_name.clear();
             new_name.append(hint_table.ptr());
           } else if (OB_FAIL(logic_db_info.check_and_get_testload_table(table_name, new_name))) {
-            LOG_WARN("check and rewrite table name is fail", K(ret), "table_name", node->str_value_);
+            LOG_WDIAG("check and rewrite table name is fail", K(ret), "table_name", node->str_value_);
           }
           if (OB_SUCC(ret) && OB_FAIL(testload_rewrite_name_base_on_parser_node(new_sql, new_name.c_str(), sql_ptr,
                                                                                 sql_len, last_pos, node))) {
-            LOG_WARN("check and rewrite table name is fail", K(ret), "table_name", new_name.c_str());
+            LOG_WDIAG("check and rewrite table name is fail", K(ret), "table_name", new_name.c_str());
           }
         }
         LOG_DEBUG("ObProxyShardUtils::check_and_rewrite_testload_request after rewrite", K(new_sql), K(last_pos));
@@ -882,7 +882,7 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
     }
     if (sql_len >= last_pos) {
       LOG_DEBUG("TAIL SQL is", K(last_pos), K(sql_len), "sql_prt", ObString::make_string(sql_ptr));
-      new_sql.append(sql_ptr + last_pos, sql_len - last_pos); //added 
+      new_sql.append(sql_ptr + last_pos, sql_len - last_pos); //added
     }
   }
   LOG_DEBUG("ObProxyShardUtils::check_and_rewrite_testload_request all", K(ret), K(new_sql));
@@ -913,7 +913,7 @@ int ObProxyShardUtils::get_logic_db_info(ObMysqlTransact::ObTransState &s, ObCli
     // if no db name in sql and saved, just return, no rewrite sql and change user
     if (database_name.empty() && saved_database_name.empty()) {
       ret = OB_ERR_NO_DB_SELECTED;
-      LOG_WARN("no database selected", K(ret));
+      LOG_WDIAG("no database selected", K(ret));
     } else {
       ObDbConfigCache &dbconfig_cache = get_global_dbconfig_cache();
       // 0. get db name. if there is not db name in sql, get the saved logic db name
@@ -923,10 +923,10 @@ int ObProxyShardUtils::get_logic_db_info(ObMysqlTransact::ObTransState &s, ObCli
       // 1. get real db_name and table_name
       if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
         ret = OB_ERR_UNEXPECTED; // no need response, just return ret and disconnect
-        LOG_ERROR("fail to get logic tenant name", K(ret));
+        LOG_EDIAG("fail to get logic tenant name", K(ret));
       } else if (OB_ISNULL(logic_db_info = dbconfig_cache.get_exist_db_info(logic_tenant_name, database_name))) {
         ret = OB_ERR_BAD_DATABASE;
-        LOG_WARN("database not exist", K(logic_tenant_name), K(database_name));
+        LOG_WDIAG("database not exist", K(logic_tenant_name), K(database_name));
       }
     }
   }
@@ -938,8 +938,8 @@ int ObProxyShardUtils::check_shard_request(ObMysqlClientSession &client_session,
                        ObDbConfigLogicDb &logic_db_info)
 {
   int ret = OB_SUCCESS;
+
   ObClientSessionInfo &session_info = client_session.get_session_info();
-  ObHSRResult &hsr = session_info.get_login_req().get_hsr_result();
   const ObString &database_name = logic_db_info.db_name_.config_string_;
   ObString saved_database_name;
   session_info.get_logic_database_name(saved_database_name);
@@ -947,30 +947,30 @@ int ObProxyShardUtils::check_shard_request(ObMysqlClientSession &client_session,
     bool sql_has_database = !parse_result.get_origin_database_name().empty();
     const ObShardUserPrivInfo &up_info = session_info.get_shard_user_priv();
     if (sql_has_database && database_name != saved_database_name) {
-      const ObString &username = hsr.user_name_;
+      const ObString &username = session_info.get_origin_username();
       const ObString &host = session_info.get_client_host();
       ObShardUserPrivInfo new_up_info;
       if (OB_FAIL(logic_db_info.get_user_priv_info(username, host, new_up_info))) {
         ret = OB_ERR_NO_DB_PRIVILEGE;
-        LOG_WARN("fail to get user priv info for new database", K(database_name), K(username), K(host), K(ret));
+        LOG_WDIAG("fail to get user priv info for new database", K(database_name), K(username), K(host), K(ret));
       } else if (OB_UNLIKELY(up_info.password_stage2_ != new_up_info.password_stage2_)) {
         // client does not change password, so here we assume same user has same password in different logic db
         // orignal login password is not saved, we just use stage2 to check password
         ret = OB_ERR_NO_DB_PRIVILEGE;
-        LOG_WARN("fail to check password for new database", K(new_up_info), K(up_info), K(ret));
+        LOG_WDIAG("fail to check password for new database", K(new_up_info), K(up_info), K(ret));
       } else if (!check_shard_authority(new_up_info, parse_result)) {
         ret = OB_ERR_NO_PRIVILEGE;
-        LOG_WARN("no privilege to do stmt", K(new_up_info), K(parse_result), K(ret));
+        LOG_WDIAG("no privilege to do stmt", K(new_up_info), K(parse_result), K(ret));
       }
     } else {
       if (!check_shard_authority(up_info, parse_result)) {
         ret = OB_ERR_NO_PRIVILEGE;
-        LOG_WARN("no privilege to do stmt", K(up_info), K(parse_result), K(ret));
+        LOG_WDIAG("no privilege to do stmt", K(up_info), K(parse_result), K(ret));
       }
     }
   } else if (!client_session.is_local_connection() && !logic_db_info.enable_remote_connection()) {
     ret = OB_ERR_NO_DB_PRIVILEGE;
-    LOG_WARN("Access denied for database from remote addr", K(database_name), K(ret));
+    LOG_WDIAG("Access denied for database from remote addr", K(database_name), K(ret));
   }
   return ret;
 }
@@ -986,7 +986,7 @@ int ObProxyShardUtils::handle_possible_probing_stmt(const ObString& sql,
                     && parse_result.is_select_stmt())) {
       ObProxySqlParser sql_parser;
       if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
-        LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
+        LOG_WDIAG("parse_sql_by_obparser failed", K(ret), K(sql));
       } else {
         ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(parse_result.get_proxy_stmt());
         ObIArray<ObProxyExpr*> &select_expr_array = dml_stmt->select_exprs_;
@@ -1020,7 +1020,7 @@ int ObProxyShardUtils::get_shard_hint(const ObString &table_name,
                              group_index, tb_index, es_index,
                              hint_table_name, testload_type,
                              is_sticky_session))) {
-    LOG_WARN("fail to get shard hint", K(ret));
+    LOG_WDIAG("fail to get shard hint", K(ret));
   } else if (is_sticky_session) {
     group_index = session_info.get_group_id();
     tb_index = session_info.get_table_id();
@@ -1043,13 +1043,13 @@ int ObProxyShardUtils::get_shard_hint(const ObString &table_name,
     }
   }
 
-  if (OB_SUCC(ret) && !logic_db_info.is_single_shard_db_table()) {
+  if (OB_SUCC(ret) && !table_name.empty() && !logic_db_info.is_single_shard_db_table()) {
     ObShardRule *logic_tb_info = NULL;
     if (OB_FAIL(logic_db_info.get_shard_rule(logic_tb_info, table_name))) {
-      LOG_WARN("fail to get shard rule", K(table_name), K(ret));
+      LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
     } else if (group_index != OBPROXY_MAX_DBMESH_ID && group_index >= logic_tb_info->db_size_) {
       ret = OB_NOT_SUPPORTED;
-      LOG_WARN("sql with group hint and greater than db size",
+      LOG_WDIAG("sql with group hint and greater than db size",
                "db_size", logic_tb_info->db_size_, K(group_index), K(ret));
     }
   }
@@ -1115,7 +1115,8 @@ bool ObProxyShardUtils::is_unsupport_type_in_multi_stmt(ObSqlParseResult& parse_
          || parse_result.is_multi_stmt()
          || parse_result.is_show_tables_stmt()
          || parse_result.is_show_full_tables_stmt()
-         || parse_result.is_show_table_status_stmt();
+         || parse_result.is_show_table_status_stmt()
+         || parse_result.is_show_create_table_stmt();
 }
 
 int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &client_session,
@@ -1131,10 +1132,10 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
   ObString sql = client_request.get_parse_sql();
   ObProxyDMLStmt *dml_stmt = NULL;
   if (OB_FAIL(sql_parser.parse_sql_by_obparser(sql, NORMAL_PARSE_MODE, parse_result, true))) {
-    LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
+    LOG_WDIAG("parse_sql_by_obparser failed", K(ret), K(sql));
   } else if (OB_ISNULL(dml_stmt = dynamic_cast<ObProxyDMLStmt*>(parse_result.get_proxy_stmt()))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dml stmt is null, unexpected", K(ret));
+    LOG_WDIAG("dml stmt is null, unexpected", K(ret));
   } else {
     ObClientSessionInfo &cs_info = client_session.get_session_info();
     ObDbConfigLogicDb *logic_db_info = NULL;
@@ -1163,7 +1164,7 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
           last_database_name = database_name;
         } else if (0 != last_database_name.case_compare(database_name)) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("do not support two schema", K(database_name), K(last_database_name), K(ret));
+          LOG_WDIAG("do not support two schema", K(database_name), K(last_database_name), K(ret));
         }
 
         if (OB_SUCC(ret) && NULL == shard_conn) {
@@ -1172,18 +1173,18 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
           ObDbConfigCache &dbconfig_cache = get_global_dbconfig_cache();
           if (OB_ISNULL(prev_shard_conn)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("prev shard connector info is null", K(ret));
+            LOG_WDIAG("prev shard connector info is null", K(ret));
           } else if (OB_FAIL(cs_info.get_logic_tenant_name(logic_tenant_name))) {
             ret = OB_ERR_UNEXPECTED; // no need response, just return ret and disconnect
-            LOG_ERROR("fail to get logic tenant name", K(ret));
+            LOG_EDIAG("fail to get logic tenant name", K(ret));
           } else if (OB_ISNULL(logic_db_info = dbconfig_cache.get_exist_db_info(logic_tenant_name, database_name))) {
             ret = OB_ERR_BAD_DATABASE;
-            LOG_WARN("database not exist", K(logic_tenant_name), K(database_name));
+            LOG_WDIAG("database not exist", K(logic_tenant_name), K(database_name));
           } else if (OB_FAIL(logic_db_info->get_first_group_shard_connector(shard_conn, OBPROXY_MAX_DBMESH_ID, false, TESTLOAD_NON))) {
-            LOG_WARN("fail to get random shard connector", K(ret), KPC(logic_db_info));
+            LOG_WDIAG("fail to get random shard connector", K(ret), KPC(logic_db_info));
           } else if (*prev_shard_conn != *shard_conn) {
             if (OB_FAIL(change_connector(*logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-              LOG_WARN("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
+              LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
             }
           }
 
@@ -1198,7 +1199,7 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
 
     if (OB_SUCC(ret) && last_database_name.empty()) {
       ret = OB_NOT_SUPPORTED;
-      LOG_WARN("do not support zero schema", K(ret));
+      LOG_WDIAG("do not support zero schema", K(ret));
     }
 
     for (int64_t i = 0; OB_SUCC(ret) && i < db_table_pos_array.count(); i++) {
@@ -1209,7 +1210,7 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
         if (OB_FAIL(rewrite_shard_request_db(sql_ptr, database_pos, 0, database_name.length(),
                                              real_database_name, cs_info.is_oracle_mode(),
                                              is_single_shard_db_table, new_sql, copy_pos))) {
-          LOG_WARN("fail to rewrite db", K(ret));
+          LOG_WDIAG("fail to rewrite db", K(ret));
         } else {
           is_rewrite_sql = true;
         }
@@ -1226,12 +1227,12 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
             // If the table does not exist, ignore the table name
             ret = OB_SUCCESS;
           } else {
-            LOG_WARN("fail to get real table name", K(table_name), K(tb_index), K(testload_type), K(ret));
+            LOG_WDIAG("fail to get real table name", K(table_name), K(tb_index), K(testload_type), K(ret));
           }
         } else if (OB_FAIL(rewrite_shard_request_table_no_db(sql_ptr, table_pos, table_name.length(), real_table_name,
                                                              cs_info.is_oracle_mode(), is_single_shard_db_table,
                                                              new_sql, copy_pos))) {
-          LOG_WARN("fail to rewrite table", K(ret));
+          LOG_WDIAG("fail to rewrite table", K(ret));
         } else {
           is_rewrite_sql = true;
         }
@@ -1244,17 +1245,17 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
 
       // 4. push reader forward by consuming old buffer and write new sql into buffer
       if (OB_FAIL(client_buffer_reader.consume_all())) {
-        LOG_WARN("fail to consume all", K(ret));
+        LOG_WDIAG("fail to consume all", K(ret));
       } else {
         ObMIOBuffer *writer = client_buffer_reader.mbuf_;
         if (OB_ISNULL(writer)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected null values ", K(writer), K(ret));
+          LOG_WDIAG("unexpected null values ", K(writer), K(ret));
           // no need compress here, if server session support compress, it will compress later
-        } else if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*writer, obmysql::OB_MYSQL_COM_QUERY, new_sql.string(), false, false))) {
-          LOG_WARN("fail to build_mysql_request", K(new_sql), K(ret));
+        } else if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*writer, obmysql::OB_MYSQL_COM_QUERY, new_sql.string(), false, false, 0))) {
+          LOG_WDIAG("fail to build_mysql_request", K(new_sql), K(ret));
         } else if (OB_FAIL(ObProxySessionInfoHandler::rewrite_query_req_by_sharding(cs_info, client_request, client_buffer_reader))) {
-          LOG_WARN("fail to rewrite_query_req_by_sharding", K(ret));
+          LOG_WDIAG("fail to rewrite_query_req_by_sharding", K(ret));
         }
       }
     }
@@ -1278,7 +1279,7 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
  *   use last shard connector
  *
  * if no hint
- *   Read and write separation based on weight 
+ *   Read and write separation based on weight
  *
  * if have hint
  *   it have table_id and 0, ignore. otherwise report an error
@@ -1286,7 +1287,7 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
  *   if have testload or table name
  *     if sql do not have table name, report an error
  *     if sql have table name, rewrite sql
- *   if have es_id, route based on es_id. otherwise based on weight  
+ *   if have es_id, route based on es_id. otherwise based on weight
  *   ignore other hint
  */
 int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &client_session,
@@ -1318,7 +1319,7 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
   bool is_sticky_session = false;
   if (OB_FAIL(get_shard_hint(logic_db_info, parse_result,
               group_index, tb_index, es_index, hint_table, testload_type, is_sticky_session))) {
-    LOG_WARN("fail to get shard hint", K(ret));
+    LOG_WDIAG("fail to get shard hint", K(ret));
   } else {
     // some case can skip rewrite check:
     //   1. if sql have table name, can not skip
@@ -1332,7 +1333,7 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
                                                   || parse_result.is_show_table_status_stmt()
                                                   || (parse_result.is_select_stmt() && parse_result.has_last_insert_id())
                                                   || parse_result.is_commit_stmt()
-                                                  || parse_result.is_rollback_stmt()); 
+                                                  || parse_result.is_rollback_stmt());
     // three case need rewrite sql:
     //   1. sql have db
     //   2. have testload flag
@@ -1346,7 +1347,7 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
         || (OBPROXY_MAX_DBMESH_ID != group_index && 0 != group_index)
         || (is_need_rewrite_sql && table_name.empty())) {
       ret = OB_NOT_SUPPORTED;
-      LOG_WARN("sql with dbmesh route hint and no table name is unsupported", K(tb_index), K(group_index), K(is_need_rewrite_sql), K(ret));
+      LOG_WDIAG("sql with dbmesh route hint and no table name is unsupported", K(tb_index), K(group_index), K(is_need_rewrite_sql), K(ret));
     }
   }
 
@@ -1363,14 +1364,14 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
                                                     real_table_name, OB_MAX_TABLE_NAME_LENGTH,
                                                     group_index, tb_index, es_index,
                                                     hint_table, testload_type, is_read_stmt, last_es_index))) {
-      LOG_WARN("shard tpo info is null", K(ret));
+      LOG_WDIAG("shard tpo info is null", K(ret));
     } else if (OB_ISNULL(shard_conn) || OB_ISNULL(prev_shard_conn)) {
       ret = OB_EXPR_CALC_ERROR;
-      LOG_WARN("shard connector info or prev shard connector info is null", KP(shard_conn),
+      LOG_WDIAG("shard connector info or prev shard connector info is null", KP(shard_conn),
                KP(prev_shard_conn), K(ret));
     } else if (*prev_shard_conn != *shard_conn) {
       if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-        LOG_WARN("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
+        LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
       }
     }
     if (OB_NOT_NULL(shard_conn)) {
@@ -1379,28 +1380,28 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
     }
 
     if (OB_SUCC(ret)) {
-      if (!is_skip_rewrite_check) {      
+      if (!is_skip_rewrite_check) {
         if (TESTLOAD_ALIPAY_COMPATIBLE == testload_type && hint_table.empty()) { /* testload = 8 */
           ret = OB_ERR_TESTLOAD_ALIPAY_COMPATIBLE;
-          LOG_WARN("not have table_name's hint for 'testload=8' (TESTLOAD_ALIPAY_COMPATIBLE)", K(ret));
+          LOG_WDIAG("not have table_name's hint for 'testload=8' (TESTLOAD_ALIPAY_COMPATIBLE)", K(ret));
         } else if (TESTLOAD_NON != testload_type) { //rewrite table name for testload
           LOG_DEBUG("check_and_rewrite_testload_request", K(testload_type), K(ret));
           ObProxySqlParser sql_parser;
-          if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), 
+          if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql),
                                                       NORMAL_PARSE_MODE, parse_result, false))) {
-            LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
-          } else if (OB_FAIL(testload_check_and_rewrite_testload_request(parse_result, false, hint_table, 
-                                                                        ObString::make_string(real_database_name), 
+            LOG_WDIAG("parse_sql_by_obparser failed", K(ret), K(sql));
+          } else if (OB_FAIL(testload_check_and_rewrite_testload_request(parse_result, false, hint_table,
+                                                                        ObString::make_string(real_database_name),
                                                                         logic_db_info, sql, new_sql))) {
-            LOG_WARN("fail to check and rewrite testload request");
+            LOG_WDIAG("fail to check and rewrite testload request");
           }
         } else if (is_need_rewrite_sql) {
-          if (OB_FAIL(rewrite_shard_request(session_info, parse_result, table_name, 
+          if (OB_FAIL(rewrite_shard_request(session_info, parse_result, table_name,
                                             logic_db_info.db_name_.config_string_, ObString::make_string(real_table_name),
                                             ObString::make_string(real_database_name), true, sql, new_sql))) {
-              LOG_WARN("fail to rewrite shard request", K(ret), K(table_name),
+              LOG_WDIAG("fail to rewrite shard request", K(ret), K(table_name),
                       K(logic_db_info.db_name_), K(real_table_name), K(real_database_name));
-          } 
+          }
         } else {
           //no need to rewrite sql, just append to new sql;
           ret = new_sql.append(sql);
@@ -1411,7 +1412,7 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
         ret = new_sql.append(sql);
         LOG_DEBUG("not need to rewrite sql by rules", K(real_database_name), K(real_table_name));
       }
-    } 
+    }
   }
   return ret;
 }
@@ -1436,16 +1437,16 @@ int ObProxyShardUtils::handle_single_shard_request(ObMysqlClientSession &client_
   int64_t last_es_index = OBPROXY_MAX_DBMESH_ID;
   int64_t last_group_index = OBPROXY_MAX_DBMESH_ID;
   if (OB_FAIL(ObProxySqlParser::split_multiple_stmt(origin_sql, sql_array))) {
-    LOG_WARN("fail to split sql", K(ret));
+    LOG_WDIAG("fail to split sql", K(ret));
   } else if (OB_UNLIKELY(sql_array.count() <= 0)){
     ret = OB_ERR_PARSER_SYNTAX;
-    LOG_WARN("fail to split sql and the sql num is wrong", K(ret));
-  } else if (OB_UNLIKELY((sql_array.count() > 1) 
+    LOG_WDIAG("fail to split sql and the sql num is wrong", K(ret));
+  } else if (OB_UNLIKELY((sql_array.count() > 1)
              && OB_FAIL(ObProxySqlParser::preprocess_multi_stmt(allocator,
                                                                 multi_sql_buf,
                                                                 origin_sql.length(),
                                                                 sql_array)))) {
-    LOG_WARN("fail to preprocess multi stmt", K(ret));
+    LOG_WDIAG("fail to preprocess multi stmt", K(ret));
   } else {
     bool is_multi_stmt = sql_array.count() > 1;
     ObSqlParseResult parse_result;
@@ -1461,7 +1462,7 @@ int ObProxyShardUtils::handle_single_shard_request(ObMysqlClientSession &client_
                                       static_cast<common::ObCollationType>(client_session.get_session_info().get_collation_connection()),
                                       false/*drop_origin_db_table_name*/,
                                       true /*is sharding user*/))) {
-        LOG_WARN("fail to handle single shard request for single sql", K(ret), K(sql));
+        LOG_WDIAG("fail to handle single shard request for single sql", K(ret), K(sql));
       } else {
         real_parse_result = &parse_result;
       }
@@ -1469,16 +1470,16 @@ int ObProxyShardUtils::handle_single_shard_request(ObMysqlClientSession &client_
       if (OB_SUCC(ret)) {
         if (OB_UNLIKELY(real_parse_result->is_invalid_stmt() && real_parse_result->has_shard_comment())) {
           ret = OB_ERR_PARSER_SYNTAX;
-          LOG_WARN("fail to parse shard sql with shard comment","sql", client_request.get_sql(), K(ret));
+          LOG_WDIAG("fail to parse shard sql with shard comment","sql", client_request.get_sql(), K(ret));
         } else if (OB_UNLIKELY(is_multi_stmt && ObProxyShardUtils::is_unsupport_type_in_multi_stmt(*real_parse_result))) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("unsupport type in multi stmt", K(ret), K(sql));
-        } else if (OB_FAIL(do_handle_single_shard_request(client_session, trans_state, logic_db_info, sql, new_sql,  
+          LOG_WDIAG("unsupport type in multi stmt", K(ret), K(sql));
+        } else if (OB_FAIL(do_handle_single_shard_request(client_session, trans_state, logic_db_info, sql, new_sql,
                                                           *real_parse_result, es_index, group_index, last_es_index))) {
-          LOG_WARN("fail to handle single shard request for single sql", K(ret), K(sql), K(new_sql));
+          LOG_WDIAG("fail to handle single shard request for single sql", K(ret), K(sql), K(new_sql));
         } else if (OB_UNLIKELY((i > 0) && ((es_index != last_es_index) || (group_index != last_group_index)))) {
           ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-          LOG_WARN("different elastic index or group index for multi stmt is not supported", K(es_index), K(last_es_index), K(group_index), 
+          LOG_WDIAG("different elastic index or group index for multi stmt is not supported", K(es_index), K(last_es_index), K(group_index),
                                                                                             K(last_group_index), K(sql), K(new_sql), K(ret));
         } else {
           last_es_index = es_index;
@@ -1493,7 +1494,7 @@ int ObProxyShardUtils::handle_single_shard_request(ObMysqlClientSession &client_
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(build_shard_request_packet(session_info, client_request, client_buffer_reader, new_sql.string()))) {
-      LOG_WARN("fail to build sharding request packet", K(ret));  
+      LOG_WDIAG("fail to build sharding request packet", K(ret));
     }
   }
 
@@ -1528,16 +1529,16 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlClientSession &client_session
   bool is_scan_all = false;
 
   if (OB_FAIL(ObProxySqlParser::split_multiple_stmt(origin_sql, sql_array))) {
-    LOG_WARN("fail to split sql", K(ret));
+    LOG_WDIAG("fail to split sql", K(ret));
   } else if (OB_UNLIKELY(sql_array.count() <= 0)){
     ret = OB_ERR_PARSER_SYNTAX;
-    LOG_WARN("fail to split sql and the sql num is wrong", K(ret));
-  } else if (OB_UNLIKELY((sql_array.count() > 1) 
+    LOG_WDIAG("fail to split sql and the sql num is wrong", K(ret));
+  } else if (OB_UNLIKELY((sql_array.count() > 1)
              && OB_FAIL(ObProxySqlParser::preprocess_multi_stmt(allocator,
                                                                 multi_sql_buf,
                                                                 origin_sql.length(),
                                                                 sql_array)))) {
-    LOG_WARN("fail to preprocess multi stmt", K(ret));
+    LOG_WDIAG("fail to preprocess multi stmt", K(ret));
   } else {
     bool is_multi_stmt = sql_array.count() > 1;
     ObSqlParseResult parse_result;
@@ -1553,7 +1554,7 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlClientSession &client_session
                                       static_cast<common::ObCollationType>(client_session.get_session_info().get_collation_connection()),
                                       false/*drop_origin_db_table_name*/,
                                       true /*is sharding user*/))) {
-        LOG_WARN("fail to handle single shard request for single sql", K(ret), K(sql));
+        LOG_WDIAG("fail to handle single shard request for single sql", K(ret), K(sql));
       } else {
         real_parse_result = &parse_result;
       }
@@ -1561,20 +1562,20 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlClientSession &client_session
       if (OB_SUCC(ret)) {
         if (OB_UNLIKELY(real_parse_result->is_invalid_stmt() && real_parse_result->has_shard_comment())) {
           ret = OB_ERR_PARSER_SYNTAX;
-          LOG_WARN("fail to parse shard sql with shard comment","sql", client_request.get_sql(), K(ret));
+          LOG_WDIAG("fail to parse shard sql with shard comment","sql", client_request.get_sql(), K(ret));
         } else if (OB_UNLIKELY(is_multi_stmt && ObProxyShardUtils::is_unsupport_type_in_multi_stmt(*real_parse_result))) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("unsupport type in multi stmt", K(ret), K(sql));
-        } else if (OB_FAIL(do_handle_shard_request(client_session, trans_state, logic_db_info, sql, new_sql, *real_parse_result, 
+          LOG_WDIAG("unsupport type in multi stmt", K(ret), K(sql));
+        } else if (OB_FAIL(do_handle_shard_request(client_session, trans_state, logic_db_info, sql, new_sql, *real_parse_result,
                                                   es_index, group_index, last_es_index, is_scan_all))) {
-          LOG_WARN("fail to handle single shard request for single sql", K(ret), K(sql), K(new_sql));
+          LOG_WDIAG("fail to handle single shard request for single sql", K(ret), K(sql), K(new_sql));
         } else if (OB_UNLIKELY((i > 0) && ((es_index != last_es_index) || (group_index != last_group_index)))) {
           ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-          LOG_WARN("different elastic index or group index for multi stmt is not supported", K(es_index), K(last_es_index), K(group_index), 
+          LOG_WDIAG("different elastic index or group index for multi stmt is not supported", K(es_index), K(last_es_index), K(group_index),
                                                                                             K(last_group_index), K(sql), K(new_sql), K(ret));
         } else if (OB_UNLIKELY(is_multi_stmt && is_scan_all)) {
           ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-          LOG_WARN("scan all sql in multi stmt is not supported", K(sql), K(new_sql), K(ret));
+          LOG_WDIAG("scan all sql in multi stmt is not supported", K(sql), K(new_sql), K(ret));
         } else {
           last_es_index = es_index;
           last_group_index = group_index;
@@ -1588,16 +1589,16 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlClientSession &client_session
     if (OB_SUCC(ret)) {
       if (is_scan_all) {
         if (OB_FAIL(handle_scan_all_real_info(logic_db_info, client_session, trans_state, first_table_name))) {
-          LOG_WARN("fail to handle scan all real info", K(first_table_name), K(ret));
+          LOG_WDIAG("fail to handle scan all real info", K(first_table_name), K(ret));
         }
       } else {
         if (OB_FAIL(build_shard_request_packet(session_info, client_request, client_buffer_reader, new_sql.string()))) {
-          LOG_WARN("fail to build sharding request packet", K(new_sql), K(ret));  
+          LOG_WDIAG("fail to build sharding request packet", K(new_sql), K(ret));
         }
-      }  
+      }
     }
   }
-  
+
   if(NULL != multi_sql_buf) {
     allocator.free(multi_sql_buf);
   }
@@ -1624,25 +1625,25 @@ int ObProxyShardUtils::do_handle_shard_request(ObMysqlClientSession &client_sess
     // Let it go for now, keep compatible
     new_sql.append(sql);
   } else if (parse_result.is_show_stmt() || parse_result.is_desc_table_stmt()) {
-    if (OB_FAIL(handle_other_request(client_session, trans_state, table_name, db_info, 
+    if (OB_FAIL(handle_other_request(client_session, trans_state, table_name, db_info,
                                      sql, new_sql, parse_result, es_index, group_index))) {
-      LOG_WARN("fail to handle other request", K(ret), K(sql), K(new_sql), K(table_name));
+      LOG_WDIAG("fail to handle other request", K(ret), K(sql), K(new_sql), K(table_name));
     }
   } else if (parse_result.is_select_stmt()) {
-    if (OB_FAIL(handle_select_request(client_session, trans_state, table_name, db_info, 
+    if (OB_FAIL(handle_select_request(client_session, trans_state, table_name, db_info,
                                       sql, new_sql, parse_result, es_index, group_index, last_es_index, is_scan_all))) {
-      LOG_WARN("fail to handle select request", K(ret), K(sql), K(new_sql), K(table_name));
+      LOG_WDIAG("fail to handle select request", K(ret), K(sql), K(new_sql), K(table_name));
     }
   } else if (parse_result.is_dml_stmt()) {
     if (OB_FAIL(handle_dml_request(client_session, trans_state, table_name, db_info,
                                    sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
-      LOG_WARN("fail to handle dml request", K(table_name), K(sql), K(new_sql), K(ret));
+      LOG_WDIAG("fail to handle dml request", K(table_name), K(sql), K(new_sql), K(ret));
     }
   } else {
     ret = OB_NOT_SUPPORTED;
-    LOG_WARN("stmt is unsupported for sharding table", "stmt type", parse_result.get_stmt_type(), K(ret));
+    LOG_WDIAG("stmt is unsupported for sharding table", "stmt type", parse_result.get_stmt_type(), K(ret));
   }
-  
+
   return ret;
 }
 
@@ -1655,17 +1656,17 @@ int ObProxyShardUtils::build_shard_request_packet(ObClientSessionInfo &session_i
 
   // 4. push reader forward by consuming old buffer and write new sql into buffer
   if (OB_FAIL(client_buffer_reader.consume_all())) {
-    LOG_WARN("fail to consume all", K(ret));
+    LOG_WDIAG("fail to consume all", K(ret));
   } else {
     ObMIOBuffer *writer = client_buffer_reader.mbuf_;
     if (OB_ISNULL(writer)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected null values ", K(writer), K(ret));
+      LOG_WDIAG("unexpected null values ", K(writer), K(ret));
       // no need compress here, if server session support compress, it will compress later
-    } else if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*writer, obmysql::OB_MYSQL_COM_QUERY, sql, false, false))) {
-      LOG_WARN("fail to build_mysql_request", K(sql), K(ret));
+    } else if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*writer, obmysql::OB_MYSQL_COM_QUERY, sql, false, false, 0))) {
+      LOG_WDIAG("fail to build_mysql_request", K(sql), K(ret));
     } else if (OB_FAIL(ObProxySessionInfoHandler::rewrite_query_req_by_sharding(session_info, client_request, client_buffer_reader))) {
-      LOG_WARN("fail to rewrite_query_req_by_sharding", K(ret));
+      LOG_WDIAG("fail to rewrite_query_req_by_sharding", K(ret));
     }
   }
 
@@ -1686,23 +1687,35 @@ int ObProxyShardUtils::handle_ddl_request(ObMysqlSM *sm,
   ObProxyMysqlRequest &client_request = trans_state.trans_info_.client_request_;
   ObString sql = client_request.get_parse_sql();
   ObSqlParseResult &parse_result = client_request.get_parse_result();
+  ObString table_name = parse_result.get_origin_table_name();
   ObString logic_tenant_name;
   ObEThread *cb_thread = &self_ethread();
-  if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
+
+  int64_t group_id = OBPROXY_MAX_DBMESH_ID;
+  //unused variables
+  int64_t table_id = OBPROXY_MAX_DBMESH_ID;
+  int64_t es_id = OBPROXY_MAX_DBMESH_ID;
+  ObTestLoadType testload_type = TESTLOAD_NON;
+  ObString hint_table_name;
+  if (OB_FAIL(get_shard_hint(table_name, session_info, db_info, parse_result,
+                             group_id, table_id, es_id, hint_table_name, testload_type))) {
+    LOG_WDIAG("fail to get shard hint", K(ret));
+  } else if (FALSE_IT(group_id = (group_id == OBPROXY_MAX_DBMESH_ID) ? -1 : group_id)) {
+    //impossible
+  } if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
     ret = OB_ERR_UNEXPECTED; // no need response, just return ret and disconnect
-    LOG_ERROR("fail to get logic tenant name", K(ret));
+    LOG_EDIAG("fail to get logic tenant name", K(ret));
   } else if (OB_ISNULL(cont = new(std::nothrow) ObShardDDLCont(sm, cb_thread))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObShardDDLCont", K(ret));
+    LOG_WDIAG("fail to alloc memory for ObShardDDLCont", K(ret));
   } else if (OB_FAIL(cont->init(logic_tenant_name, db_info.db_name_.config_string_,
-                                sql, parse_result.cmd_info_.integer_[0],
-                                parse_result.get_stmt_type(), parse_result.get_cmd_sub_type()))) {
-    LOG_WARN("fail to init ObShardDDLCont", K(ret));
+                                sql, group_id, hint_table_name, parse_result))) {
+    LOG_WDIAG("fail to init ObShardDDLCont", K(ret));
   } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_TASK))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule ob shard ddl task", K(ret));
+    LOG_WDIAG("fail to schedule ob shard ddl task", K(ret));
   } else if (OB_FAIL(sm->setup_handle_shard_ddl(&cont->get_action()))) {
-    LOG_WARN("fail to setup handle shard ddl", K(ret));
+    LOG_WDIAG("fail to setup handle shard ddl", K(ret));
   } else {
     need_wait_callback = true;
     LOG_INFO("succ to schedule ob shard ddl task");
@@ -1736,14 +1749,14 @@ int ObProxyShardUtils::handle_other_request(ObMysqlClientSession &client_session
 
   if (OB_FAIL(handle_other_real_info(db_info, client_session, trans_state, table_name,
                                      real_database_name, OB_MAX_DATABASE_NAME_LENGTH,
-                                     real_table_name, OB_MAX_TABLE_NAME_LENGTH, 
+                                     real_table_name, OB_MAX_TABLE_NAME_LENGTH,
                                      parse_result, es_index, group_index))) {
-    LOG_WARN("fail to handle other real info", K(ret), K(session_info), K(table_name));
+    LOG_WDIAG("fail to handle other real info", K(ret), K(session_info), K(table_name));
   } else if (OB_FAIL(rewrite_shard_request(session_info, parse_result,
                                            table_name, db_info.db_name_.config_string_,
                                            ObString::make_string(real_table_name),
                                            ObString::make_string(real_database_name), false, sql, new_sql))) {
-    LOG_WARN("fail to rewrite shard request", K(ret), K(table_name),
+    LOG_WDIAG("fail to rewrite shard request", K(ret), K(table_name),
              K(db_info.db_name_), K(real_table_name), K(real_database_name));
   }
 
@@ -1766,12 +1779,12 @@ int ObProxyShardUtils::handle_select_request(ObMysqlClientSession &client_sessio
   SqlFieldResult& sql_result = parse_result.get_sql_filed_result();
   ObProxySqlParser sql_parser;
   if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
-    LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
+    LOG_WDIAG("parse_sql_by_obparser failed", K(ret), K(sql));
   } else if (FALSE_IT(is_scan_all = need_scan_all(parse_result))) {
     // impossible
   } else if (is_scan_all) {
     if (OB_FAIL(need_scan_all_by_index(table_name, db_info, sql_result, is_scan_all))) {
-      LOG_WARN("fail to exec scan all by index", K(table_name), K(ret));
+      LOG_WDIAG("fail to exec scan all by index", K(table_name), K(ret));
     }
   }
 
@@ -1779,9 +1792,9 @@ int ObProxyShardUtils::handle_select_request(ObMysqlClientSession &client_sessio
     if (is_scan_all) {
       //handle scan all later
     } else {
-      if (OB_FAIL(handle_dml_real_info(db_info, client_session, trans_state, table_name, 
+      if (OB_FAIL(handle_dml_real_info(db_info, client_session, trans_state, table_name,
                                        sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
-        LOG_WARN("fail to handle dml real info", K(table_name), K(ret));
+        LOG_WDIAG("fail to handle dml real info", K(table_name), K(ret));
       }
     }
   }
@@ -1803,10 +1816,10 @@ int ObProxyShardUtils::handle_dml_request(ObMysqlClientSession &client_session,
   int ret = OB_SUCCESS;
   ObProxySqlParser sql_parser;
   if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
-    LOG_WARN("parse_sql_by_obparser failed", K(ret), K(sql));
-  } else if (OB_FAIL(handle_dml_real_info(db_info, client_session, trans_state, table_name, 
+    LOG_WDIAG("parse_sql_by_obparser failed", K(ret), K(sql));
+  } else if (OB_FAIL(handle_dml_real_info(db_info, client_session, trans_state, table_name,
                                        sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
-    LOG_WARN("fail to handle dml real info", K(table_name), K(ret));
+    LOG_WDIAG("fail to handle dml real info", K(table_name), K(ret));
   }
 
   return ret;
@@ -1820,7 +1833,7 @@ int ObProxyShardUtils::check_topology(ObSqlParseResult &parse_result,
   ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(parse_result.get_proxy_stmt());
   if (OB_ISNULL(dml_stmt)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("select stmt is null, unexpected", K(ret));
+    LOG_WDIAG("select stmt is null, unexpected", K(ret));
   } else {
     int64_t last_db_size = -1;
     int64_t last_tb_size = -1;
@@ -1834,14 +1847,14 @@ int ObProxyShardUtils::check_topology(ObSqlParseResult &parse_result,
       ObShardRule *logic_tb_info = NULL;
       if (OB_ISNULL(expr)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("expr is null, unexpected", K(ret));
+        LOG_WDIAG("expr is null, unexpected", K(ret));
       } else if (OB_ISNULL(table_expr = dynamic_cast<ObProxyExprTable*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to cast to table expr", K(expr), K(ret));
+        LOG_WDIAG("fail to cast to table expr", K(expr), K(ret));
       } else {
         ObString &table_name = table_expr->get_table_name();
         if (OB_FAIL(db_info.get_shard_rule(logic_tb_info, table_name))) {
-          LOG_WARN("fail to get shard rule", K(table_name), K(ret));
+          LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
         }
       }
 
@@ -1878,7 +1891,8 @@ bool ObProxyShardUtils::need_scan_all(ObSqlParseResult &parse_result)
 {
   if (parse_result.is_select_stmt() && !parse_result.has_for_update()
       && (parse_result.get_dbp_route_info().scan_all_
-          || (!parse_result.has_shard_comment() && get_global_proxy_config().auto_scan_all))) {
+          || (!(parse_result.has_dbmesh_hint() || parse_result.is_use_dbp_hint())
+                && get_global_proxy_config().auto_scan_all))) {
     return true;
   }
 
@@ -1895,7 +1909,7 @@ int ObProxyShardUtils::need_scan_all_by_index(const ObString &table_name,
   ObShardRule *logic_tb_info = NULL;
   ObSEArray<int64_t, 4> index_array;
   if (OB_FAIL(db_info.get_shard_rule(logic_tb_info, table_name))) {
-    LOG_WARN("fail to get shard rule", K(table_name), K(ret));
+    LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
     // It is possible to have no where condition, but only one database and one table
   } else if (logic_tb_info->tb_size_ == 1 && logic_tb_info->db_size_ == 1) {
     is_scan_all = false;
@@ -1905,14 +1919,14 @@ int ObProxyShardUtils::need_scan_all_by_index(const ObString &table_name,
       if (OB_FAIL(ObShardRule::get_physic_index_array(sql_result, logic_tb_info->db_rules_,
                                                       logic_tb_info->db_size_,
                                                       TESTLOAD_NON, index_array))) {
-        LOG_WARN("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
+        LOG_WDIAG("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
       }
     } else {
       // Sub-library and sub-table, calculated according to tb rule
       if (OB_FAIL(ObShardRule::get_physic_index_array(sql_result, logic_tb_info->tb_rules_,
                                                       logic_tb_info->tb_size_,
                                                       TESTLOAD_NON, index_array))) {
-        LOG_WARN("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
+        LOG_WDIAG("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
       }
     }
 
@@ -1934,13 +1948,13 @@ int ObProxyShardUtils::update_sys_read_consistency_if_need(ObClientSessionInfo &
     LOG_DEBUG("update_sys_read_consistency_if_need", K(level));
     ObObj obj;
     if (OB_FAIL(session_info.get_sys_variable_value(ObString::make_string(OB_SV_READ_CONSISTENCY), obj))) {
-      LOG_WARN("get_sys_variable_value fail", K(ret));
+      LOG_WDIAG("get_sys_variable_value fail", K(ret));
     } else {
       int64_t sys_val = obj.get_int();
       if (sys_val != level) {
         obj.set_int(level);
         if (OB_FAIL(session_info.update_sys_variable(ObString::make_string(OB_SV_READ_CONSISTENCY), obj))) {
-          LOG_WARN("fail to update read_consistency", K(obj), K(ret));
+          LOG_WDIAG("fail to update read_consistency", K(obj), K(ret));
         } else {
           LOG_DEBUG("update read_consistency succ", K(obj));
         }
@@ -2022,7 +2036,7 @@ int ObProxyShardUtils::init_shard_common_session(ObClientSessionInfo &session_in
     name = ObString::make_string(it->first.c_str());
     obj.set_int(it->second);
     if (OB_FAIL(session_info.update_common_sys_variable(name, obj, true, false))) {
-      LOG_WARN("init int_sys failed", K(name), K(obj));
+      LOG_WDIAG("init int_sys failed", K(name), K(obj));
     }
   }
   for(std::map<std::string, uint64_t>::iterator it = uint_session_map.begin();
@@ -2031,7 +2045,7 @@ int ObProxyShardUtils::init_shard_common_session(ObClientSessionInfo &session_in
     name = ObString::make_string(it->first.c_str());
     obj.set_uint(ObUInt64Type, it->second);
     if (OB_FAIL(session_info.update_common_sys_variable(name, obj, true, false))) {
-      LOG_WARN("init unt_sys failed", K(name), K(obj));
+      LOG_WDIAG("init unt_sys failed", K(name), K(obj));
     }
   }
   if (OB_SUCC(ret)) {
@@ -2042,7 +2056,7 @@ int ObProxyShardUtils::init_shard_common_session(ObClientSessionInfo &session_in
       obj.set_varchar(ObString::make_string(it->second.c_str()));
       obj.set_collation_type(ObCharset::get_system_collation());
       if (OB_FAIL(session_info.update_common_sys_variable(name, obj, true, false))) {
-        LOG_WARN("init str_sys failed", K(name), K(obj));
+        LOG_WDIAG("init str_sys failed", K(name), K(obj));
       }
     }
   }
@@ -2080,43 +2094,43 @@ int ObProxyShardUtils::handle_shard_auth(ObMysqlClientSession &client_session, c
     const ObString &host = session_info.get_client_host();
     ObShardUserPrivInfo &up_info = session_info.get_shard_user_priv();
     if (OB_FAIL(init_shard_common_session(session_info))) {
-      LOG_WARN("init_shard_common_session failed", K(ret));
+      LOG_WDIAG("init_shard_common_session failed", K(ret));
     } else if (OB_FAIL(session_info.set_origin_username(username))) {
-      LOG_WARN("fail to set origin username", K(username), K(ret));
+      LOG_WDIAG("fail to set origin username", K(username), K(ret));
     } else if (session_info.enable_shard_authority()) {
       if (database.empty()) {
         if (OB_FAIL(tenant_info->acquire_random_logic_db_with_auth(username, host, up_info, db_info))) {
           ret = OB_USER_NOT_EXIST;
-          LOG_WARN("fail to acquire random shard connector", K(username), K(host), K(ret));
+          LOG_WDIAG("fail to acquire random shard connector", K(username), K(host), K(ret));
         }
       } else if (NULL != (db_info = tenant_info->get_exist_db(database))) {
         if (OB_FAIL(db_info->get_user_priv_info(username, host, up_info))) {
-          LOG_WARN("fail to get user priv info", K(username), K(host), K(database), K(ret));
+          LOG_WDIAG("fail to get user priv info", K(username), K(host), K(database), K(ret));
           ret = OB_USER_NOT_EXIST;
         }
       }
       if (OB_SUCC(ret) && NULL != db_info) {
         if (OB_FAIL(check_login(password, client_session.get_scramble_string(),
                                 up_info.password_stage2_.config_string_))) {
-          LOG_WARN("fail to check login", K(ret));
+          LOG_WDIAG("fail to check login", K(ret));
         }
       }
     } else {
       if (database.empty()) {
         if (OB_FAIL(tenant_info->acquire_random_logic_db(db_info))) {
-          LOG_WARN("fail to get random logic db", K(ret), KPC(tenant_info));
+          LOG_WDIAG("fail to get random logic db", K(ret), KPC(tenant_info));
         }
       } else if (NULL != (db_info = tenant_info->get_exist_db(database))) {
         if (!client_session.is_local_connection() && !db_info->enable_remote_connection()) {
           ret = OB_ERR_NO_DB_PRIVILEGE;
-          LOG_WARN("Access denied for database from remote addr", K(database), K(ret));
+          LOG_WDIAG("Access denied for database from remote addr", K(database), K(ret));
         }
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_ISNULL(db_info)) {
         ret = OB_ERR_BAD_DATABASE;
-        LOG_WARN("database does not exist", K(database), K(ret));
+        LOG_WDIAG("database does not exist", K(database), K(ret));
       } else if (!database.empty()) {
         session_info.set_logic_database_name(database);
         LOG_DEBUG("succ to get logic db", KPC(db_info));
@@ -2126,11 +2140,11 @@ int ObProxyShardUtils::handle_shard_auth(ObMysqlClientSession &client_session, c
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(db_info->acquire_random_shard_connector(shard_conn))) {
-        LOG_WARN("fail to get random shard connector", K(ret), KPC(db_info));
+        LOG_WDIAG("fail to get random shard connector", K(ret), KPC(db_info));
       } else {
         if (DB_OB_MYSQL == shard_conn->server_type_ || DB_OB_ORACLE == shard_conn->server_type_) {
           if (OB_FAIL(change_user_auth(client_session, *shard_conn, true, true))) {
-            LOG_WARN("fail to change user auth", K(ret), KPC(shard_conn));
+            LOG_WDIAG("fail to change user auth", K(ret), KPC(shard_conn));
           }
         }
 
@@ -2179,7 +2193,7 @@ int ObProxyShardUtils::handle_shard_use_db(ObMysqlTransact::ObTransState &trans_
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_logic_database(trans_state, client_session, db_name))) {
-    LOG_WARN("fail to check logic database", K(db_name), K(ret));
+    LOG_WDIAG("fail to check logic database", K(db_name), K(ret));
   }
   return ret;
 }
@@ -2192,7 +2206,7 @@ int ObProxyShardUtils::get_db_version(const ObString &logic_tenant_name,
   ObDbConfigLogicDb *logic_db_info = NULL;
   ObDbConfigCache &dbconfig_cache = get_global_dbconfig_cache();
   if (OB_ISNULL(logic_db_info = dbconfig_cache.get_exist_db_info(logic_tenant_name, logic_database_name))) {
-    LOG_WARN("logic db is not exist", K(logic_tenant_name), K(logic_database_name));
+    LOG_WDIAG("logic db is not exist", K(logic_tenant_name), K(logic_database_name));
   } else {
     db_version = logic_db_info->get_version();
   }
@@ -2231,7 +2245,7 @@ int ObProxyShardUtils::get_all_schema_table(const ObString &logic_tenant_name, c
   ObDbConfigCache &dbconfig_cache = get_global_dbconfig_cache();
   if (NULL != (logic_db_info = dbconfig_cache.get_exist_db_info(logic_tenant_name, logic_database_name))) {
     if (OB_FAIL(logic_db_info->get_all_shard_table(table_names))) {
-      LOG_WARN("fail to get all shard tables", K(logic_tenant_name), K(logic_database_name), K(ret));
+      LOG_WDIAG("fail to get all shard tables", K(logic_tenant_name), K(logic_database_name), K(ret));
     }
   }
   if (NULL != logic_db_info) {
@@ -2250,12 +2264,12 @@ int ObProxyShardUtils::add_table_name_to_map(ObIAllocator &allocator,
   char *buf = NULL;
   if (OB_ISNULL(buf = (char*) allocator.alloc(real_table_name.length()))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc table name buf", K(real_table_name), K(ret));
+    LOG_WDIAG("fail to alloc table name buf", K(real_table_name), K(ret));
   } else {
     memcpy(buf, real_table_name.ptr(), real_table_name.length());
     ObString real_table_name_buf(real_table_name.length(), buf);
     if (OB_FAIL(table_name_map.set_refactored(table_name, real_table_name_buf))) {
-      LOG_WARN("fail to set table name buf", K(table_name), K(ret));
+      LOG_WDIAG("fail to set table name buf", K(table_name), K(ret));
     }
   }
 
@@ -2272,6 +2286,9 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
                                               int64_t& es_id, int64_t& group_id)
 {
   int ret = OB_SUCCESS;
+
+  ObShardTpo *shard_tpo = NULL;
+  ObGroupCluster *gc_info = NULL;
   ObShardConnector *shard_conn = NULL;
   ObClientSessionInfo &cs_info = client_session.get_session_info();
   ObShardConnector *prev_shard_conn = cs_info.get_shard_connector();
@@ -2286,13 +2303,13 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
 
   if (OB_ISNULL(prev_shard_conn)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard connector info is null", K(ret));
+    LOG_WDIAG("shard connector info is null", K(ret));
   } else if (OB_FAIL(get_shard_hint(table_name, cs_info, logic_db_info, parse_result,
                                     group_id, table_id, es_id, hint_table, testload_type))) {
-    LOG_WARN("fail to get shard hint", K(ret));
+    LOG_WDIAG("fail to get shard hint", K(ret));
   // get group_id
   } else if (OB_FAIL(logic_db_info.get_shard_rule(logic_tb_info, table_name))) {
-    LOG_WARN("fail to get shard rule", K(table_name), K(ret));
+    LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
   } else {
     int64_t last_group_id = cs_info.get_group_id();
     ObString saved_database_name;
@@ -2303,7 +2320,7 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
     if (group_id != OBPROXY_MAX_DBMESH_ID) {
       if (group_id >= logic_tb_info->db_size_) {
         ret = OB_NOT_SUPPORTED;
-        LOG_WARN("sql with group hint and greater than db size",
+        LOG_WDIAG("sql with group hint and greater than db size",
                  "db_size", logic_tb_info->db_size_, K(group_id), K(ret));
       }
     // If no group_id is specified, and the database accessed by the current SQL is the session database, the last_group_id is used
@@ -2313,54 +2330,52 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
     }
 
     if (OB_SUCC(ret)) {
-      ObShardTpo *shard_tpo = NULL;
-      ObGroupCluster *gc_info = NULL;
       if (OB_FAIL(logic_db_info.get_shard_tpo(shard_tpo))) {
-        LOG_WARN("fail to get shard tpo info", K(ret));
+        LOG_WDIAG("fail to get shard tpo info", K(ret));
       } else if (OB_ISNULL(shard_tpo)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("shard tpo info is null", K(ret));
+        LOG_WDIAG("shard tpo info is null", K(ret));
       } else if (OB_FAIL(ObShardRule::get_physic_index_random(logic_tb_info->db_size_, group_id))) {
-        LOG_WARN("fail to get physic db index", "db_size", logic_tb_info->db_size_, K(group_id), K(ret));
+        LOG_WDIAG("fail to get physic db index", "db_size", logic_tb_info->db_size_, K(group_id), K(ret));
       // reuse real_database_name to store group name instead of using a new buffer
       // real_database_name will be set after shard connector is chosen
       } else  if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->db_size_, logic_tb_info->db_suffix_len_, group_id,
                                                                 logic_tb_info->db_prefix_.config_string_,
                                                                 logic_tb_info->db_tail_.config_string_,
                                                                 real_database_name, db_name_len))) {
-        LOG_WARN("fail to get real group name", K(group_id), KPC(logic_tb_info), K(ret));
+        LOG_WDIAG("fail to get real group name", K(group_id), KPC(logic_tb_info), K(ret));
       } else if (OB_FAIL(shard_tpo->get_group_cluster(ObString::make_string(real_database_name), gc_info))) {
         LOG_DEBUG("group does not exist", "phy_db_name", real_database_name, K(ret));
       } else if (OB_ISNULL(gc_info)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("group cluster info is null", "phy_db_name", real_database_name, K(ret));
+        LOG_WDIAG("group cluster info is null", "phy_db_name", real_database_name, K(ret));
       } else {
         int64_t es_size = gc_info->get_es_size();
         bool is_read_stmt = false;
         ObString shard_name;
         if (-1 == es_id || OBPROXY_MAX_DBMESH_ID == es_id) {
           if (OB_FAIL(gc_info->get_elastic_id_by_weight(es_id, is_read_stmt))) {
-            LOG_WARN("fail to get eid by read weight", KPC(gc_info));
+            LOG_WDIAG("fail to get eid by read weight", KPC(gc_info));
           } else {
             LOG_DEBUG("succ to get eid by weight", K(es_id));
           }
         } else if (OB_UNLIKELY(es_id >= es_size)) {
           ret = OB_EXPR_CALC_ERROR;
-          LOG_WARN("es index is larger than elastic array", K(es_id), K(es_size), K(ret));
+          LOG_WDIAG("es index is larger than elastic array", K(es_id), K(es_size), K(ret));
         }
 
         if (OB_SUCC(ret)) {
           shard_name = gc_info->get_shard_name_by_eid(es_id);
           if (TESTLOAD_NON != testload_type) {
             if (OB_FAIL(logic_db_info.get_testload_shard_connector(shard_name, logic_db_info.testload_prefix_.config_string_, shard_conn))) {
-              LOG_WARN("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
+              LOG_WDIAG("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
                        K(shard_name), "testload_prefix", logic_db_info.testload_prefix_, K(ret));
             }
           } else if (OB_FAIL(logic_db_info.get_shard_connector(shard_name, shard_conn))) {
-            LOG_WARN("shard connector does not exist", K(shard_name), K(ret));
+            LOG_WDIAG("shard connector does not exist", K(shard_name), K(ret));
           } else if (*prev_shard_conn != *shard_conn) {
             if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-              LOG_WARN("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
+              LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
             }
           }
         }
@@ -2383,7 +2398,7 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
         if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->tb_size_, logic_tb_info->tb_suffix_len_, table_id,
                                                         logic_tb_info->tb_prefix_.config_string_,
                                                         logic_tb_info->tb_tail_.config_string_, real_table_name, tb_name_len))) {
-          LOG_WARN("fail to get real table name", KPC(logic_tb_info), K(ret));
+          LOG_WDIAG("fail to get real table name", KPC(logic_tb_info), K(ret));
         } else if (TESTLOAD_NON != testload_type) {
           snprintf(real_table_name + strlen(real_table_name), tb_name_len - strlen(real_table_name), "_T");
         }
@@ -2401,6 +2416,11 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
   if (NULL != shard_conn) {
     shard_conn->dec_ref();
     shard_conn = NULL;
+  }
+
+  if (NULL != shard_tpo) {
+    shard_tpo->dec_ref();
+    shard_tpo = NULL;
   }
 
   return ret;
@@ -2423,22 +2443,22 @@ int ObProxyShardUtils::handle_scan_all_real_info(ObDbConfigLogicDb &logic_db_inf
   ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(parse_result.get_proxy_stmt());
   if (OB_ISNULL(dml_stmt)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dml stmt is null, unexpected", K(ret));
+    LOG_WDIAG("dml stmt is null, unexpected", K(ret));
   } else if (dml_stmt->has_unsupport_expr_type()) {
     ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
-    LOG_WARN("unsupport sql", K(ret));
+    LOG_WDIAG("unsupport sql", K(ret));
   } else if (OB_FAIL(check_topology(parse_result, logic_db_info))) {
     if (OB_ERR_UNSUPPORT_DIFF_TOPOLOGY != ret) {
-      LOG_WARN("fail to check topology", K(ret));
+      LOG_WDIAG("fail to check topology", K(ret));
     }
   } else if (OB_FAIL(get_global_optimizer_processor().alloc_allocator(allocator))) {
-    LOG_WARN("alloc allocator failed", K(ret));
+    LOG_WDIAG("alloc allocator failed", K(ret));
   } else if (OB_FAIL(handle_sharding_select_real_info(logic_db_info, client_session, trans_state,
                                                       table_name, *allocator,
                                                       shard_connector_array,
                                                       shard_prop_array,
                                                       table_name_map_array))) {
-    LOG_WARN("fail to handle sharding select real info", K(ret), K(table_name));
+    LOG_WDIAG("fail to handle sharding select real info", K(ret), K(table_name));
   } else {
     LOG_DEBUG("proxy stmt", K(dml_stmt->get_stmt_type()), K(dml_stmt->limit_offset_), K(dml_stmt->limit_size_));
     LOG_DEBUG("select expr");
@@ -2459,12 +2479,12 @@ int ObProxyShardUtils::handle_scan_all_real_info(ObDbConfigLogicDb &logic_db_inf
     void *ptr = NULL;
     if (OB_ISNULL(ptr = allocator->alloc(sizeof(ObShardingSelectLogPlan)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc select plan buf", "size", sizeof(ObShardingSelectLogPlan), K(ret));
+      LOG_WDIAG("fail to alloc select plan buf", "size", sizeof(ObShardingSelectLogPlan), K(ret));
     } else {
       select_plan = new(ptr) ObShardingSelectLogPlan(client_request, allocator);
       client_session.set_sharding_select_log_plan(select_plan);
       if (OB_FAIL(select_plan->generate_plan(shard_connector_array, shard_prop_array, table_name_map_array))) {
-        LOG_WARN("fail to generate plan", K(ret));
+        LOG_WDIAG("fail to generate plan", K(ret));
       }
     }
   }
@@ -2508,14 +2528,14 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
 
   if (OB_ISNULL(dml_stmt)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dml stmt is null, unexpected", K(ret));
+    LOG_WDIAG("dml stmt is null, unexpected", K(ret));
   } else if (OB_FAIL(table_name_map.create(OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM,
                                            ObModIds::OB_HASH_ALIAS_TABLE_MAP))) {
-    LOG_WARN("fail to create table name map", K(ret));
+    LOG_WDIAG("fail to create table name map", K(ret));
   } else if (OB_FAIL(get_shard_hint(table_name, session_info, logic_db_info, parse_result,
                                     group_index, tb_index, es_index,
                                     hint_table, testload_type))) {
-    LOG_WARN("fail to get shard hint", K(ret));
+    LOG_WDIAG("fail to get shard hint", K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -2525,17 +2545,17 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
 
     if (!hint_table.empty() && table_exprs_map.size() > 1) {
       ret = OB_ERR_MORE_TABLES_WITH_TABLE_HINT;
-      LOG_WARN("more table with table_name hint", "table size", table_exprs_map.size(), K(hint_table), K(ret));
+      LOG_WDIAG("more table with table_name hint", "table size", table_exprs_map.size(), K(hint_table), K(ret));
     } else if (OB_FAIL(logic_db_info.get_shard_table_info(table_name, sql_result, shard_conn,
                                                           real_database_name, OB_MAX_DATABASE_NAME_LENGTH,
                                                           real_table_name, OB_MAX_TABLE_NAME_LENGTH,
                                                           group_index, tb_index, es_index,
                                                           hint_table, testload_type, is_read_stmt, last_es_index))) {
-      LOG_WARN("fail to get real info", K(table_name), K(group_index), K(tb_index),
+      LOG_WDIAG("fail to get real info", K(table_name), K(group_index), K(tb_index),
                K(es_index), K(hint_table), K(testload_type), K(is_read_stmt), K(ret));
     } else if (OB_ISNULL(shard_conn) || OB_ISNULL(prev_shard_conn)) {
       ret = OB_EXPR_CALC_ERROR;
-      LOG_WARN("shard connector info or prev shard connector info is null", KP(shard_conn),
+      LOG_WDIAG("shard connector info or prev shard connector info is null", KP(shard_conn),
                KP(prev_shard_conn), K(ret));
     }
 
@@ -2544,19 +2564,19 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
       ObProxyExprTable *table_expr = NULL;
       if (OB_ISNULL(expr)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("expr is null, unexpected", K(ret));
+        LOG_WDIAG("expr is null, unexpected", K(ret));
       } else if (OB_ISNULL(table_expr = dynamic_cast<ObProxyExprTable*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to cast to table expr", K(expr), K(ret));
+        LOG_WDIAG("fail to cast to table expr", K(expr), K(ret));
       } else {
         ObString &sql_table_name = table_expr->get_table_name();
         if (OB_FAIL(logic_db_info.get_real_table_name(sql_table_name, sql_result,
                                                       real_table_name, OB_MAX_TABLE_NAME_LENGTH,
                                                       tb_index, hint_table, testload_type))) {
-          LOG_WARN("fail to get real table name", K(sql_table_name), K(tb_index),
+          LOG_WDIAG("fail to get real table name", K(sql_table_name), K(tb_index),
                    K(hint_table), K(testload_type), K(ret));
         } else if (OB_FAIL(add_table_name_to_map(allocator, table_name_map, sql_table_name, real_table_name))) {
-          LOG_WARN("fail to add table name to map", K(sql_table_name), K(real_table_name), K(ret));
+          LOG_WDIAG("fail to add table name to map", K(sql_table_name), K(real_table_name), K(ret));
         }
       }
     }
@@ -2566,13 +2586,13 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
     if (OB_FAIL(rewrite_shard_dml_request(sql, new_sql, parse_result,
                                           session_info.is_oracle_mode(), table_name_map,
                                           ObString::make_string(real_database_name), false))) {
-      LOG_WARN("fail to rewrite shard request", K(real_database_name), K(ret));
+      LOG_WDIAG("fail to rewrite shard request", K(real_database_name), K(ret));
     }
   }
 
   if (OB_SUCC(ret) && *prev_shard_conn != *shard_conn) {
     if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-      LOG_WARN("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
+      LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
     }
   }
 
@@ -2613,13 +2633,13 @@ int ObProxyShardUtils::get_real_info(ObClientSessionInfo &session_info,
   ObString hint_table;
   if (OB_FAIL(get_shard_hint(table_name, session_info, logic_db_info, parse_result,
               group_index, tb_index, es_index, hint_table, testload_type))) {
-    LOG_WARN("fail to get shard hint", K(ret));
+    LOG_WDIAG("fail to get shard hint", K(ret));
   } else if (OB_FAIL(logic_db_info.get_real_info(table_name, parse_result, shard_conn,
                                           real_database_name, db_name_len,
                                           real_table_name, tb_name_len,
                                           group_index, tb_index, es_index,
                                           hint_table, testload_type, is_read_stmt))) {
-    LOG_WARN("fail to get real info", K(table_name), K(group_index), K(tb_index),
+    LOG_WDIAG("fail to get real info", K(table_name), K(group_index), K(tb_index),
              K(es_index), K(hint_table), K(testload_type), K(is_read_stmt), K(ret));
   }
 
@@ -2651,9 +2671,9 @@ int ObProxyShardUtils::check_login(const ObString &login_reply, const ObString &
   int ret = OB_SUCCESS;
   bool pass = false;
   if (OB_FAIL(ObEncryptedHelper::check_login(login_reply, scramble_str, stored_stage2, pass))) {
-    LOG_WARN("fail to check login", K(login_reply), K(stored_stage2), K(ret));
+    LOG_WDIAG("fail to check login", K(login_reply), K(stored_stage2), K(ret));
   } else if (!pass) {
-    LOG_WARN("password is wrong", K(login_reply), K(stored_stage2), K(ret));
+    LOG_WDIAG("password is wrong", K(login_reply), K(stored_stage2), K(ret));
   }
   if (OB_FAIL(ret) || !pass) {
     ret = OB_PASSWORD_WRONG;
@@ -2674,9 +2694,9 @@ bool ObProxyShardUtils::check_shard_authority(const ObShardUserPrivInfo &up_info
     bret = up_info.priv_set_ & (OB_PRIV_DELETE | OB_PRIV_INSERT);
   } else if (parse_result.is_delete_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_DELETE;
-  } else if (parse_result.is_create_stmt() 
-             || parse_result.is_rename_stmt() 
-             || parse_result.is_stop_ddl_task_stmt() 
+  } else if (parse_result.is_create_stmt()
+             || parse_result.is_rename_stmt()
+             || parse_result.is_stop_ddl_task_stmt()
              || parse_result.is_retry_ddl_task_stmt()) {
     bret = up_info.priv_set_ & OB_PRIV_CREATE;
   } else if (parse_result.is_alter_stmt()) {
@@ -2742,7 +2762,7 @@ int ObProxyShardUtils::build_error_packet(int err_code,
     trans_state.mysql_errcode_ = err_code;
     trans_state.mysql_errmsg_ = ob_strerror(err_code);
     if (OB_FAIL(ObMysqlTransact::build_error_packet(trans_state, client_session))) {
-      LOG_WARN("fail to build err resp", K(ret));
+      LOG_WDIAG("fail to build err resp", K(ret));
     }
   }
   return ret;
@@ -2772,14 +2792,14 @@ int ObProxyShardUtils::handle_sharding_select_real_info(ObDbConfigLogicDb &logic
   if (OB_FAIL(get_shard_hint(table_name, session_info, logic_db_info, parse_result,
                              group_index, tb_index, es_index,
                              hint_table, testload_type))) {
-    LOG_WARN("fail to get shard hint", K(ret));
+    LOG_WDIAG("fail to get shard hint", K(ret));
   } else if (OB_FAIL(logic_db_info.get_sharding_select_info(table_name, parse_result,
                                                             testload_type, is_read_stmt, es_index,
                                                             allocator,
                                                             shard_connector_array,
                                                             shard_prop_array,
                                                             table_name_map_array))) {
-    LOG_WARN("fail to get sharding select info", K(table_name),
+    LOG_WDIAG("fail to get sharding select info", K(table_name),
              K(testload_type), K(is_read_stmt), K(ret));
   }
 

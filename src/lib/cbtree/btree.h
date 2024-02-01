@@ -837,7 +837,7 @@ public:
         else if (node->is_leaf()) {
           break;
         } else if (BTREE_SUCCESS != (ret = path_.push(reinterpret_cast<Node *>(node->get_val(pos)), 0))) {
-          BTREE_LOG(ERROR, "push fail err=%d", ret);
+          BTREE_LOG(EDIAG, "push fail err=%d", ret);
         }
       }
       return ret;
@@ -1560,13 +1560,13 @@ public:
     if (OB_ISNULL(root)) {
       ret = BTREE_INVAL;
     } else if (BTREE_SUCCESS != (ret = handle.acquire_ref())) {
-      BTREE_LOG(ERROR, "acquire_ref fail, err=%d", ret);
+      BTREE_LOG(EDIAG, "acquire_ref fail, err=%d", ret);
     } else if (BTREE_SUCCESS != (ret = handle.find_path(old_root = CBT_AL(root), key))) {
-      BTREE_LOG(ERROR, "path.search(%p)=>%d", root, ret);
+      BTREE_LOG(EDIAG, "path.search(%p)=>%d", root, ret);
     } else if (BTREE_SUCCESS != (ret = handle.insert_and_split_upward(key, val, overwrite,
                                                                       new_root = old_root))) {
       if (BTREE_DUPLICATE != ret && BTREE_EAGAIN != ret && BTREE_NOMEM != ret) {
-        BTREE_LOG(ERROR, "insert_upward(%p)=>%d", val, ret);
+        BTREE_LOG(EDIAG, "insert_upward(%p)=>%d", val, ret);
       }
     } else if (old_root != new_root) {
       if (NULL != new_root) {
@@ -1593,14 +1593,14 @@ public:
     if (OB_ISNULL(root)) {
       ret = BTREE_INVAL;
     } else if (BTREE_SUCCESS != (ret = handle.acquire_ref())) {
-      BTREE_LOG(ERROR, "acquire_ref fail, err=%d", ret);
+      BTREE_LOG(EDIAG, "acquire_ref fail, err=%d", ret);
     } else if (BTREE_SUCCESS != (ret = handle.find_path(old_root = CBT_AL(root), key))) {
       if (BTREE_NOENT != ret) {
-        BTREE_LOG(ERROR, "path.search(%p)=>%d", root, ret);
+        BTREE_LOG(EDIAG, "path.search(%p)=>%d", root, ret);
       }
     } else if (BTREE_SUCCESS != (ret = handle.delete_and_merge_upward(key, val, new_root = old_root))) {
       if (BTREE_NOENT != ret && BTREE_EAGAIN != ret && BTREE_NOMEM != ret) {
-        BTREE_LOG(ERROR, "delete_upward(root=%p, %p)=>%d", old_root, val, ret);
+        BTREE_LOG(EDIAG, "delete_upward(root=%p, %p)=>%d", old_root, val, ret);
       }
     } else if (old_root != new_root) {
       if (NULL != new_root) {
@@ -1624,7 +1624,7 @@ public:
     if (OB_ISNULL(root)) {
       ret = BTREE_INVAL;
     } else if (BTREE_SUCCESS != (ret = handle.acquire_ref())) {
-      BTREE_LOG(ERROR, "acquire_ref fail, err=%d", ret);
+      BTREE_LOG(EDIAG, "acquire_ref fail, err=%d", ret);
     } else if (BTREE_SUCCESS != (ret = handle.find_path(CBT_AL(root), key)))
     {}
     return ret;
@@ -1636,7 +1636,7 @@ public:
     if (OB_ISNULL(root)) {
       ret = BTREE_INVAL;
     } else if (BTREE_SUCCESS != (ret = handle.acquire_ref())) {
-      BTREE_LOG(ERROR, "acquire_ref fail, err=%d", ret);
+      BTREE_LOG(EDIAG, "acquire_ref fail, err=%d", ret);
     } else if (BTREE_SUCCESS != (ret = handle.get(CBT_AL(root), key, val)))
     {}
     return ret;

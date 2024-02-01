@@ -14,6 +14,7 @@
 #define _OB_PROXY_PROTOCOL_V2_PACKET_H_
 
 #include "lib/net/ob_addr.h"
+#include "obproxy/obutils/ob_proxy_buf.h"
 
 namespace oceanbase
 {
@@ -29,7 +30,8 @@ enum ANALYZE_STATE
 class ProxyProtocolV2
 {
 public:
-  ProxyProtocolV2() : ver_cmd_(0), fam_(0), len_(0), src_addr_(), dst_addr_(), total_len_(0), is_finished_(false), analyze_state_(ANALYZE_HEADER) {}
+  ProxyProtocolV2() : ver_cmd_(0), fam_(0), len_(0), src_addr_(), dst_addr_(), total_len_(0),
+                vpc_info_(), is_finished_(false), analyze_state_(ANALYZE_HEADER) {}
   ~ProxyProtocolV2() {}
   int analyze_packet(char *buf, int64_t buf_len);
   inline int64_t get_total_len() const { return total_len_; }
@@ -38,7 +40,7 @@ public:
   bool is_finished() const { return is_finished_; }
 public:
   static const int64_t PROXY_PROTOCOL_V2_HEADER_LEN = 16;
-private:
+
   uint8_t sig_[12];
   uint8_t ver_cmd_;
   uint8_t fam_;
@@ -46,6 +48,7 @@ private:
   common::ObAddr src_addr_;
   common::ObAddr dst_addr_;
   int64_t total_len_;
+  obproxy::obutils::ObVariableLenBuffer<64> vpc_info_;
   bool is_finished_;
   ANALYZE_STATE analyze_state_;
 };

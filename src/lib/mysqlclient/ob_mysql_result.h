@@ -35,7 +35,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", K(column_name), K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", K(column_name), K(ret)); \
     }\
   }
 
@@ -54,7 +54,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
     }\
   }
 
@@ -65,7 +65,7 @@
     bool bool_value = 0; \
     if (OB_SUCCESS != (ret = (result).get_bool(column_name, bool_value)))  \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", K(column_name), K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", K(column_name), K(ret)); \
     } \
     else \
     { \
@@ -88,7 +88,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", K(column_name), K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", K(column_name), K(ret)); \
     } \
   }
 
@@ -98,7 +98,7 @@
     int64_t int_value = 0; \
     if (OB_SUCCESS != (ret = (result).get_int(column_name, int_value)))  \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", "column_name", column_name, K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", "column_name", column_name, K(ret)); \
     } \
     else \
     { \
@@ -113,7 +113,7 @@
     int64_t int_value = 0; \
     if (OB_SUCCESS != (ret = (result).get_int(#column_name, int_value)))  \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
     } \
     else \
     { \
@@ -127,7 +127,7 @@
     uint64_t int_value = 0; \
     if (OB_SUCCESS != (ret = (result).get_uint(#column_name, int_value)))  \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
     } \
     else \
     { \
@@ -150,7 +150,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
     }\
   }
 
@@ -170,7 +170,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", K(column_name), K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", K(column_name), K(ret)); \
     } \
   }
 
@@ -180,7 +180,7 @@
     double double_value = 0; \
     if (OB_SUCCESS != (ret = (result).get_double(column_name, double_value)))  \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", "column_name", column_name, K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", "column_name", column_name, K(ret)); \
     } \
     else \
     { \
@@ -195,7 +195,7 @@
     double double_value = 0; \
     if (OB_SUCCESS != (ret = (result).get_double(#column_name, double_value)))  \
     { \
-      SQL_LOG(WARN, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
+      SQL_LOG(WDIAG, "fail to get column in row. ", "column_name", #column_name, K(ret)); \
     } \
     else \
     { \
@@ -209,7 +209,7 @@
   { \
     if (OB_SUCCESS != (ret = (result).get_varchar(column_name, field))) \
     { \
-      SQL_LOG(WARN, "fail to get varchar. ", K(ret)); \
+      SQL_LOG(WDIAG, "fail to get varchar. ", K(ret)); \
     } \
   }
 
@@ -224,7 +224,7 @@
       } \
       else \
       { \
-        SQL_LOG(WARN, "get varchar failed", K(ret)); \
+        SQL_LOG(WDIAG, "get varchar failed", K(ret)); \
       } \
     } \
   }
@@ -238,7 +238,7 @@
       if(str_value.length() >= max_length) \
       { \
         ret = OB_SIZE_OVERFLOW; \
-        SQL_LOG(WARN, "field max length is not enough:", \
+        SQL_LOG(WDIAG, "field max length is not enough:", \
                   "max length", max_length, "str length", str_value.length()); \
       } \
       else \
@@ -256,7 +256,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to extract strbuf field mysql. ", K(ret)); \
+      SQL_LOG(WDIAG, "fail to extract strbuf field mysql. ", K(ret)); \
     } \
   }
 
@@ -270,7 +270,7 @@
       if(str_value.length() >= max_length) \
       { \
         ret = OB_SIZE_OVERFLOW; \
-        SQL_LOG(WARN, "field max length is not enough:", \
+        SQL_LOG(WDIAG, "field max length is not enough:", \
                   "max length", max_length, "str length", str_value.length()); \
       } \
       else \
@@ -284,7 +284,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to extract strbuf field mysql. ", K(ret)); \
+      SQL_LOG(WDIAG, "fail to extract strbuf field mysql. ", K(ret)); \
     } \
   }
 
@@ -298,7 +298,7 @@
       if(str_value.length() > max_length) \
       { \
         ret = OB_SIZE_OVERFLOW; \
-        SQL_LOG(WARN, "field max length is not enough:", \
+        SQL_LOG(WDIAG, "field max length is not enough:", \
                   "max length", max_length, "str length", str_value.length()); \
       } \
       else \
@@ -308,7 +308,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to extract strbuf field mysql. ", K(ret)); \
+      SQL_LOG(WDIAG, "fail to extract strbuf field mysql. ", K(ret)); \
     } \
   }
 
@@ -322,7 +322,7 @@
       if(str_value.length() >= max_length) \
       { \
         ret = OB_SIZE_OVERFLOW; \
-        SQL_LOG(WARN, "field max length is not enough:", \
+        SQL_LOG(WDIAG, "field max length is not enough:", \
                   "max length", max_length, "str length", str_value.length()); \
       } \
       else \
@@ -334,7 +334,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to extract strbuf field mysql. ", K(ret)); \
+      SQL_LOG(WDIAG, "fail to extract strbuf field mysql. ", K(ret)); \
     } \
   }
 
@@ -376,7 +376,7 @@
         ObObjCaster<FromBuffer> caster(buffer, OB_CAST_TO_VARCHAR_MAX_LENGTH, used_buf_len); \
         if (OB_SUCCESS != (ret = caster.obj_cast(def_obj, data_type, NULL, res_obj, res_cell))) \
         { \
-          SQL_LOG(WARN, "cast obj failed, ", "src type", def_obj.get_type(), "dest type", data_type); \
+          SQL_LOG(WDIAG, "cast obj failed, ", "src type", def_obj.get_type(), "dest type", data_type); \
         } \
         else \
         { \
@@ -386,7 +386,7 @@
     } \
     else \
     { \
-      SQL_LOG(WARN, "fail to default value field mysql. ", K(ret)); \
+      SQL_LOG(WDIAG, "fail to default value field mysql. ", K(ret)); \
     } \
   }
 
@@ -404,7 +404,7 @@
           if (OB_ERR_NULL_VALUE == ret) {               \
             ret = OB_SUCCESS;                           \
           } else {                                      \
-            LOG_WARN("get column failed", K(ret));      \
+            LOG_WDIAG("get column failed", K(ret));      \
           }                                             \
         }                                               \
       }                                                 \

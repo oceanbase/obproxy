@@ -275,6 +275,15 @@ struct ObTransactionStat
   bool is_in_testload_trans_;
 };
 
+// record connection stat, won't reset by cmd_complete
+struct ObConnectionMilestones {
+  ObConnectionMilestones() { reset(); }
+  ~ObConnectionMilestones() { }
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+  void reset() { MEMSET(this, 0, sizeof(ObConnectionMilestones)); }
+  ObHRTime last_cmd_complete_;
+};
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

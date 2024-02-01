@@ -41,7 +41,7 @@ int ObVipTenantProcessor::init()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else {
     is_inited_ = true;
   }
@@ -54,6 +54,8 @@ int ObVipTenantProcessor::get_vip_tenant(ObVipTenant &vip_tennat)
   if (OB_FAIL(vt_cache_.get(vip_tennat.vip_addr_, vip_tennat))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
       LOG_INFO("vip tenant not in cache", "vip_addr", vip_tennat.vip_addr_, K(ret));
+    } else if (OB_INVALID_ARGUMENT == ret) {
+      LOG_DEBUG("vip tenant not in cache", "vip_addr", vip_tennat.vip_addr_, K(ret));
     } else {
       LOG_INFO("fail to get vip tenant in cache", "vip_addr", vip_tennat.vip_addr_, K(ret));
     }

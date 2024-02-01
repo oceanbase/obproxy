@@ -35,7 +35,7 @@ int init_resource_pool_stats()
   if (OB_ISNULL(resource_pool_rsb = g_stat_processor.allocate_raw_stat_block(RESOURCE_POOL_STAT_COUNT,
       XFH_CLUSTER_RESOURCE_STATE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_LOG(WARN, "fail to alloc mem for resource_pool_rsb", K(ret));
+    PROXY_LOG(WDIAG, "fail to alloc mem for resource_pool_rsb", K(ret));
   } else {
     RESOURCE_POOL_REGISTER_RAW_STAT(resource_pool_rsb, RECT_PROCESS, "create_cluster_resource_count",
                                     RECD_INT, CREATE_CLUSTER_RESOURCE_COUNT, SYNC_SUM, RECP_NULL);

@@ -47,10 +47,10 @@ inline int ObEvent::check_schedule_common()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("it was not inited, it should not happened", K(is_inited_), K(ret));
+    LOG_WDIAG("it was not inited, it should not happened", K(is_inited_), K(ret));
   } else if (OB_ISNULL(ethread_) || OB_UNLIKELY(ethread_->id_ != self_ethread().id_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ethread_ is not curr ethread, it should not happened", K(ethread_), K(ret));
+    LOG_WDIAG("ethread_ is not curr ethread, it should not happened", K(ethread_), K(ret));
   } else {/*do nothing*/}
   return ret;
 }
@@ -59,7 +59,7 @@ int ObEvent::schedule_imm(const int32_t acallback_event/*EVENT_IMMEDIATE*/)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_schedule_common())) {
-    LOG_WARN("fail to check schedule common", K(ret));
+    LOG_WDIAG("fail to check schedule common", K(ret));
   } else {
     if (in_the_priority_queue_) {
       ethread_->event_queue_.remove(this);
@@ -79,10 +79,10 @@ int ObEvent::schedule_at(const ObHRTime atimeout_at, const int32_t acallback_eve
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_schedule_common())) {
-    LOG_WARN("fail to check schedule common", K(ret));
+    LOG_WDIAG("fail to check schedule common", K(ret));
   } else if (OB_UNLIKELY(atimeout_at <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("atimeout_at need bigger than zero", K(atimeout_at), K(ret));
+    LOG_WDIAG("atimeout_at need bigger than zero", K(atimeout_at), K(ret));
   } else {
     if (in_the_priority_queue_) {
       ethread_->event_queue_.remove(this);
@@ -102,7 +102,7 @@ int ObEvent::schedule_in(const ObHRTime atimeout_in, const int32_t acallback_eve
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_schedule_common())) {
-    LOG_WARN("fail to check schedule common", K(ret));
+    LOG_WDIAG("fail to check schedule common", K(ret));
   } else {
     if (in_the_priority_queue_) {
       ethread_->event_queue_.remove(this);
@@ -122,10 +122,10 @@ int ObEvent::schedule_every(const ObHRTime aperiod, const int32_t acallback_even
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_schedule_common())) {
-    LOG_WARN("fail to check schedule common", K(ret));
+    LOG_WDIAG("fail to check schedule common", K(ret));
   } else if (OB_UNLIKELY(0 == aperiod)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("aperiod need not zero", K(aperiod), K(ret));
+    LOG_WDIAG("aperiod need not zero", K(aperiod), K(ret));
   } else {
     if (in_the_priority_queue_) {
       ethread_->event_queue_.remove(this);

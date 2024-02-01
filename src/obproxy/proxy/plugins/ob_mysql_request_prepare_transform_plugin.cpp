@@ -55,7 +55,7 @@ int ObMysqlRequestPrepareTransformPlugin::consume(event::ObIOBufferReader *reade
   int ret = OB_SUCCESS;
   if (OB_ISNULL(reader)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_API_LOG(WARN, "invalid argument", K(reader), K(ret));
+    PROXY_API_LOG(WDIAG, "invalid argument", K(reader), K(ret));
   } else {
     int64_t produce_size = 0;
     int64_t local_read_avail = 0;
@@ -64,42 +64,42 @@ int ObMysqlRequestPrepareTransformPlugin::consume(event::ObIOBufferReader *reade
       local_reader_ = reader->clone();
       if (NULL != ps_or_text_ps_sql_buf_) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_API_LOG(ERROR, "ps_or_text_ps_sql_buf_ must be NULL here", K_(ps_or_text_ps_sql_buf), K(ret));
+        PROXY_API_LOG(EDIAG, "ps_or_text_ps_sql_buf_ must be NULL here", K_(ps_or_text_ps_sql_buf), K(ret));
       } else if (OB_UNLIKELY(ps_pkt_len_ >= MYSQL_PACKET_MAX_LENGTH)) {
         ret = OB_NOT_SUPPORTED;
-        PROXY_API_LOG(WARN, "we cannot support packet which is larger than 16MB", K_(ps_pkt_len),
+        PROXY_API_LOG(WDIAG, "we cannot support packet which is larger than 16MB", K_(ps_pkt_len),
             K(MYSQL_PACKET_MAX_LENGTH), K(ret));
       } else if (OB_ISNULL(ps_or_text_ps_sql_buf_ = static_cast<char *>(op_fixed_mem_alloc(ps_pkt_len_)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_API_LOG(WARN, "fail to alloc mem for ps sql buf", K_(ps_or_text_ps_sql_buf), K_(ps_pkt_len), K(ret));
-      } 
+        PROXY_API_LOG(WDIAG, "fail to alloc mem for ps sql buf", K_(ps_or_text_ps_sql_buf), K_(ps_pkt_len), K(ret));
+      }
     }
 
     if (OB_SUCC(ret)) {
       local_read_avail = local_reader_->read_avail();
       if (local_read_avail > 0) {
         if (OB_FAIL(copy_ps_or_text_ps_sql(local_read_avail))) {
-          PROXY_API_LOG(WARN, "fail to copy ps sql", K(local_read_avail),  K(ret));
+          PROXY_API_LOG(WDIAG, "fail to copy ps sql", K(local_read_avail),  K(ret));
         } else if (copy_offset_ >= ps_pkt_len_) {
           if (copy_offset_ > ps_pkt_len_) {
             ret = OB_ERR_UNEXPECTED;
-            PROXY_API_LOG(ERROR, "copied packet length is larger than ps_pkt_len",
+            PROXY_API_LOG(EDIAG, "copied packet length is larger than ps_pkt_len",
                 K_(copy_offset), K_(ps_pkt_len), K(ret));
-          } else if (OB_MYSQL_COM_STMT_PREPARE == sm_->trans_state_.trans_info_.sql_cmd_ && 
+          } else if (OB_MYSQL_COM_STMT_PREPARE == sm_->trans_state_.trans_info_.sql_cmd_ &&
               OB_FAIL(handle_ps_prepare())) {
-            PROXY_API_LOG(WARN, "fail to handle ps prepare", K(ret));
+            PROXY_API_LOG(WDIAG, "fail to handle ps prepare", K(ret));
           } else if (sm_->trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_prepare_stmt()
               && OB_FAIL(handle_text_ps_prepare())) {
-            PROXY_API_LOG(WARN, "fail to handle text ps prepare", K(ret));
+            PROXY_API_LOG(WDIAG, "fail to handle text ps prepare", K(ret));
           }
         }
         if (OB_SUCC(ret)) {
           if (local_read_avail != (produce_size = produce(local_reader_, local_read_avail))) {
             ret = OB_ERR_UNEXPECTED;
-            PROXY_API_LOG(WARN, "fail to produce", "expected size", local_read_avail,
+            PROXY_API_LOG(WDIAG, "fail to produce", "expected size", local_read_avail,
                 "actual size", produce_size, K(ret));
           } else if (OB_FAIL(local_reader_->consume(local_read_avail))) {
-            PROXY_API_LOG(WARN, "fail to consume local transfer reader", K(local_read_avail), K(ret));
+            PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(local_read_avail), K(ret));
           }
         }
       }
@@ -120,7 +120,7 @@ int ObMysqlRequestPrepareTransformPlugin::copy_ps_or_text_ps_sql(int64_t copy_si
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(copy_size + copy_offset_ > ps_pkt_len_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(WARN, "invalid packet", K(copy_size), K_(copy_offset), K_(ps_pkt_len), K(ret));
+    PROXY_API_LOG(WDIAG, "invalid packet", K(copy_size), K_(copy_offset), K_(ps_pkt_len), K(ret));
   } else {
     local_reader_->copy(ps_or_text_ps_sql_buf_ + copy_offset_, copy_size, 0);
     copy_offset_ += copy_size;
@@ -134,7 +134,7 @@ int ObMysqlRequestPrepareTransformPlugin::handle_ps_prepare()
   ObString ps_sql;
   ps_sql.assign_ptr(ps_or_text_ps_sql_buf_ + MYSQL_NET_META_LENGTH, static_cast<int32_t>(ps_pkt_len_ - MYSQL_NET_META_LENGTH));
   if (OB_FAIL(sm_->do_analyze_ps_prepare_request(ps_sql))) {
-    PROXY_API_LOG(WARN, "fail to do_analyze_ps_prepare_request", K(ps_sql), K(ret));
+    PROXY_API_LOG(WDIAG, "fail to do_analyze_ps_prepare_request", K(ps_sql), K(ret));
   }
 
   return ret;
@@ -146,7 +146,7 @@ int ObMysqlRequestPrepareTransformPlugin::handle_text_ps_prepare()
   ObString text_ps_sql;
   text_ps_sql.assign_ptr(ps_or_text_ps_sql_buf_ + MYSQL_NET_META_LENGTH, static_cast<int32_t>(ps_pkt_len_ - MYSQL_NET_META_LENGTH));
   if (OB_FAIL(sm_->do_analyze_text_ps_prepare_request(text_ps_sql))) {
-    PROXY_API_LOG(WARN, "fail to do_analyze_text_ps_prepare_request", K(text_ps_sql), K(ret));
+    PROXY_API_LOG(WDIAG, "fail to do_analyze_text_ps_prepare_request", K(text_ps_sql), K(ret));
   }
 
   return ret;
@@ -171,10 +171,10 @@ int ObMysqlRequestPrepareTransformPlugin::check_last_data_segment(
   const int64_t read_avail = reader.read_avail();
   int64_t ntodo = -1;
   if (OB_FAIL(get_write_ntodo(ntodo))) {
-    PROXY_API_LOG(ERROR, "fail to get write ntodo", K(ret));
+    PROXY_API_LOG(EDIAG, "fail to get write ntodo", K(ret));
   } else if (OB_UNLIKELY(ntodo <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(ERROR, "get_data_to_read must > 0", K(ntodo), K(ret));
+    PROXY_API_LOG(EDIAG, "get_data_to_read must > 0", K(ntodo), K(ret));
   } else if (OB_UNLIKELY(read_avail > ntodo)) { // just defense
     if (read_avail >= (ntodo + MYSQL_NET_META_LENGTH)) {
       char tmp_buff[MYSQL_NET_META_LENGTH]; // print the next packet's meta
@@ -182,10 +182,10 @@ int ObMysqlRequestPrepareTransformPlugin::check_last_data_segment(
       int64_t payload_len = uint3korr(tmp_buff);
       int64_t seq = uint1korr(tmp_buff + 3);
       int64_t cmd = static_cast<uint8_t>(tmp_buff[4]);
-      PROXY_API_LOG(ERROR, "next packet meta is", K(payload_len), K(seq), K(cmd));
+      PROXY_API_LOG(EDIAG, "next packet meta is", K(payload_len), K(seq), K(cmd));
     }
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(ERROR, "invalid data, maybe client received more than one mysql packet,"
+    PROXY_API_LOG(EDIAG, "invalid data, maybe client received more than one mysql packet,"
                   " will disconnect", K(read_avail), K(ntodo), K(ret));
   } else {
     is_last_segment = (read_avail == ntodo);

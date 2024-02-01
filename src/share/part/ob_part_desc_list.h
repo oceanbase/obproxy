@@ -62,7 +62,7 @@ public:
                ObPartDescCtx &ctx);
 
   DECLARE_VIRTUAL_TO_STRING;
-
+  virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const;
 private:
   ListPartition *part_array_;
   int64_t part_array_size_;

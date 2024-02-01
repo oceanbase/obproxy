@@ -21,9 +21,9 @@
 #include "proxy/plugins/ob_mysql_response_prepare_transform_plugin.h"
 #include "proxy/plugins/ob_mysql_request_compress_transform_plugin.h"
 #include "proxy/plugins/ob_mysql_response_cursor_transform_plugin.h"
-#include "proxy/plugins/ob_mysql_response_new_ps_transform_plugin.h"
+#include "proxy/plugins/ob_mysql_response_prepare_execute_transform_plugin.h"
 #include "proxy/plugins/ob_mysql_request_execute_transform_plugin.h"
-#include "proxy/plugins/ob_mysql_response_ob20_transform_plugin.h"
+#include "proxy/plugins/ob_mysql_response_ob20_protocol_transform_plugin.h"
 
 /****************************************************************
  *  IMPORTANT - READ ME
@@ -332,7 +332,7 @@ static void *thread_trampoline(void *data)
 
   thread = (ObThreadInternal *) data;
   if (OB_UNLIKELY(OB_SUCCESS != thread->set_specific())) {
-    PROXY_EVENT_LOG(ERROR, "failed to set_specific for thread");
+    PROXY_EVENT_LOG(EDIAG, "failed to set_specific for thread");
   } else {
     ret = thread->func_(thread->data_);
   }
@@ -459,7 +459,7 @@ int api_init()
           init_mysql_response_prepare_transform();
           init_mysql_response_cursor_transform();
           init_mysql_response_prepare_execute_transform();
-          init_mysql_response_ob20_protocol_transform();  
+          init_mysql_response_ob20_protocol_transform();
       // }
     }
   }

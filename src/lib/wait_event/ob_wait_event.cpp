@@ -53,7 +53,7 @@ int64_t ObWaitEventDesc::to_string(char *buf, const int64_t buf_len) const
   int ret = OB_SUCCESS;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(buf), K(buf_len), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(buf), K(buf_len), K(ret));
   } else if (event_no_ >= 0 && event_no_ < ObWaitEventIds::WAIT_EVENT_END) {
     J_KV(K_(event_no), K_(p1), K_(p2), K_(p3), K_(wait_begin_time), K_(wait_end_time), K_(wait_time), K_(timeout_ms), K_(level), K_(parent),
         "event_id", OB_WAIT_EVENTS[event_no_].event_id_,

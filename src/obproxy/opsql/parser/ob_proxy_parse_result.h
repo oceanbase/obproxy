@@ -114,6 +114,8 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_ROLLBACK,
   OBPROXY_T_SHOW,
   OBPROXY_T_DESC,
+  OBPROXY_T_LOAD_DATA_LOCAL_INFILE,
+  OBPROXY_T_LOAD_DATA_INFILE,
   OBPROXY_T_OTHERS,
 
   OBPROXY_T_SET_OB_READ_CONSISTENCY,
@@ -218,7 +220,8 @@ typedef enum ObProxyBasicStmtSubType
   //ddl
   OBPROXY_T_SUB_CREATE_TABLE,
   OBPROXY_T_SUB_CREATE_INDEX,
-
+  OBPROXY_T_SUB_CREATE_TABLEGROUP,
+  OBPROXY_T_SUB_DROP_TABLEGROUP,
   OBPROXY_T_SUB_MAX
 } ObProxyBasicStmtSubType;
 
@@ -425,6 +428,7 @@ typedef struct _ObProxyParseResult
   bool has_explain_route_;
   bool has_simple_route_info_;
   bool has_anonymous_block_;
+  bool has_trace_log_hint_; // true for digest, false for not digest
   bool has_connection_id_;
   bool has_sys_context_;
 

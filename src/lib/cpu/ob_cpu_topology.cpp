@@ -36,7 +36,7 @@ int ObCpuTopology::init()
   int err = OB_SUCCESS;
   FILE *fp = NULL;
   if ((fp = popen("lscpu -p", "r")) == NULL) {
-    LIB_LOG(ERROR, "to get cpu topology error");
+    LIB_LOG(EDIAG, "to get cpu topology error");
   } else {
     char buf[BUFSIZ];
     int64_t core_id = 0;
@@ -61,7 +61,7 @@ int ObCpuTopology::init()
         nodes_[node_id].cores_[nodes_[node_id].core_number_++] = core_id;
         cores_map_[core_id] = node_id;
       } else {
-        LIB_LOG(ERROR, "Too many cores", K_(core_number), K_(node_number));
+        LIB_LOG(EDIAG, "Too many cores", K_(core_number), K_(node_number));
       }
     }
     pclose(fp);
@@ -124,7 +124,7 @@ void ObCpuTopology::bind_cpu(uint64_t core_id)
     CPU_SET(core_id, &cpuset);
     pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpuset);
   } else {
-    LIB_LOG(ERROR, "bind_cpu get an invalid", K(core_id));
+    LIB_LOG(EDIAG, "bind_cpu get an invalid", K(core_id));
   }
   if (pre_bind_info.valid_ == 1) {
     _LIB_LOG(INFO, "bind_cpu tid=%ld core_id=%ld node_id=%ld, "

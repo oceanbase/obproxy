@@ -129,7 +129,7 @@ int ObInterceptPlugin::do_read()
   } else {
     ObMysqlAnalyzeResult result;
     if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*(input_.reader_), result))) {
-      PROXY_API_LOG(WARN, "fail to analyze one packet", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to analyze one packet", K(ret));
     } else {
       switch (result.status_) {
         case ANALYZE_ERROR:
@@ -150,7 +150,7 @@ int ObInterceptPlugin::do_read()
           DEBUG_API("done parsing client request");
           consume(input_.reader_);
           if (OB_FAIL(input_.reader_->consume(avail))) {
-            PROXY_LOG(WARN, "fail to consume ", K(avail), K(ret));
+            PROXY_LOG(WDIAG, "fail to consume ", K(avail), K(ret));
           }
 
           // Modify the input VIO to reflect how much data we've completed.
@@ -159,7 +159,7 @@ int ObInterceptPlugin::do_read()
           break;
 
         default:
-          PROXY_LOG(ERROR, "not reached");
+          PROXY_LOG(EDIAG, "not reached");
           break;
       }
     }

@@ -90,7 +90,7 @@ static const int64_t OB_MYSQL_RESP_ENDING_TYPE_COUNT = (MAX_PACKET_ENDING_TYPE +
 enum ObMysqlRespType
 {
   RESULT_SET_RESP_TYPE = 0, // for result set
-  LOCAL_INFILE_RESP_TYPE,   // for local infile, not supported now
+  LOCAL_INFILE_RESP_TYPE,   // 0xfb for load data local infile
   OTHERS_RESP_TYPE,         // for OK or EOF or ERROR or HANDSHAKE
   MAX_RESP_TYPE
 };
@@ -173,7 +173,6 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     case obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA:
     case obmysql::OB_MYSQL_COM_STMT_CLOSE:
     case obmysql::OB_MYSQL_COM_STMT_RESET:
-    // Stored Procedures
     case obmysql::OB_MYSQL_COM_STMT_FETCH:
     case obmysql::OB_MYSQL_COM_CHANGE_USER:
     // binlog related
@@ -183,13 +182,14 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     // pieceinfo
     case obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
     case obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA:
+    case obmysql::OB_MYSQL_COM_SET_OPTION:
+    case obmysql::OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT:
+    case obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP:
       ret = true;
       break;
     // Replication Protocol
     case obmysql::OB_MYSQL_COM_TABLE_DUMP:
     case obmysql::OB_MYSQL_COM_CONNECT_OUT:
-    // Stored Procedures
-    case obmysql::OB_MYSQL_COM_SET_OPTION:
       ret = false;
       break;
     default:

@@ -26,7 +26,7 @@ namespace common
       SHARE_LOG(DEBUG, "row " #name " :value is null");\
       ret = OB_SUCCESS;\
     } else {\
-      SHARE_LOG(WARN, "failed to get " #name " from __all_sys_parameter", K(ret));\
+      SHARE_LOG(WDIAG, "failed to get " #name " from __all_sys_parameter", K(ret));\
     }\
   }
 
@@ -35,7 +35,7 @@ int ObSystemConfig::update(ObMySQLProxy::MySQLResult &result)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(result.get_result())) {
     ret = OB_ERR_UNEXPECTED;
-    SHARE_LOG(WARN, "system config result is null", K(ret));
+    SHARE_LOG(WDIAG, "system config result is null", K(ret));
   }
 
   while (OB_SUCC(ret) && OB_SUCC(result.get_result()->next())) {
@@ -46,7 +46,7 @@ int ObSystemConfig::update(ObMySQLProxy::MySQLResult &result)
     common::sqlclient::ObMySQLResult *rs = result.get_result();
     if (OB_ISNULL(rs)) {
       ret = OB_ERR_UNEXPECTED;
-      SHARE_LOG(WARN, "system config result is null", K(ret));
+      SHARE_LOG(WDIAG, "system config result is null", K(ret));
     }
 
     GET_CONFIG_COLUMN_VALUE(varchar, name, key.set_name(val_varchar));
@@ -62,10 +62,10 @@ int ObSystemConfig::update(ObMySQLProxy::MySQLResult &result)
         if (OB_ERR_NULL_VALUE == ret) {
           ret = OB_SUCCESS;
         } else {
-          SHARE_LOG(WARN, "failed to get zone from __all_sys_parameter", K(ret));
+          SHARE_LOG(WDIAG, "failed to get zone from __all_sys_parameter", K(ret));
         }
       } else if (OB_FAIL(key.set_zone(val_varchar))) {
-        SHARE_LOG(WARN, "set zone failed", K(ret), K(val_varchar));
+        SHARE_LOG(WDIAG, "set zone failed", K(ret), K(val_varchar));
       }
     }
     GET_CONFIG_COLUMN_VALUE(int, svr_port, key.set_int(ObString::make_string("svr_port"), val_int));
@@ -74,7 +74,7 @@ int ObSystemConfig::update(ObMySQLProxy::MySQLResult &result)
         key.set_version(val_int);
         version_ = max(version_, val_int);
       } else {
-        SHARE_LOG(WARN, "failed to get config_version from __all_sys_parameter", K(ret));
+        SHARE_LOG(WDIAG, "failed to get config_version from __all_sys_parameter", K(ret));
       }
     }
 
@@ -83,10 +83,10 @@ int ObSystemConfig::update(ObMySQLProxy::MySQLResult &result)
       hash_ret = map_.set_refactored(key, value);
       if (OB_SUCCESS != hash_ret) {
         if (OB_HASH_EXIST == hash_ret) {
-          SHARE_LOG(WARN, "sys config insert repeatly", "name", key.name(), K(hash_ret));
+          SHARE_LOG(WDIAG, "sys config insert repeatly", "name", key.name(), K(hash_ret));
         } else {
           ret = hash_ret;
-          SHARE_LOG(WARN, "sys config map set failed", "name", key.name(), K(ret));
+          SHARE_LOG(WDIAG, "sys config map set failed", "name", key.name(), K(ret));
         }
       }
     }
@@ -95,7 +95,7 @@ int ObSystemConfig::update(ObMySQLProxy::MySQLResult &result)
   if (OB_ITER_END == ret) {
     ret = OB_SUCCESS;
   } else {
-    SHARE_LOG(WARN, "failed to get result from result set", K(ret));
+    SHARE_LOG(WDIAG, "failed to get result from result set", K(ret));
   }
 
   return ret;
@@ -197,7 +197,7 @@ int ObSystemConfig::reload(FILE *fp)
   size_t cnt = 0;
   if (OB_ISNULL(fp)) {
     ret = OB_ERR_UNEXPECTED;
-    SHARE_LOG(ERROR, "Got NULL file pointer", K(ret));
+    SHARE_LOG(EDIAG, "Got NULL file pointer", K(ret));
   } else {
     ObSystemConfigKey key;
     ObSystemConfigValue value;
@@ -207,20 +207,20 @@ int ObSystemConfig::reload(FILE *fp)
           break;
         } else {
           ret = OB_ERR_UNEXPECTED;
-          SHARE_LOG(WARN, "fail to read config from file", KERRMSGS, K(ret));
+          SHARE_LOG(WDIAG, "fail to read config from file", KERRMSGS, K(ret));
         }
       } else if (1 != (cnt = fread(&value, sizeof(value), 1, fp))) {
         ret = OB_ERR_UNEXPECTED;
-        SHARE_LOG(WARN, "fail to read config from file", KERRMSGS, K(ret));
+        SHARE_LOG(WDIAG, "fail to read config from file", KERRMSGS, K(ret));
       } else {
         int hash_ret = OB_SUCCESS;
         hash_ret = map_.set_refactored(key, value);
         if (OB_SUCCESS != hash_ret) {
           if (OB_HASH_EXIST == hash_ret) {
-            SHARE_LOG(WARN, "system config insert repeatly", "name", key.name());
+            SHARE_LOG(WDIAG, "system config insert repeatly", "name", key.name());
           } else {
             ret = hash_ret;
-            SHARE_LOG(WARN, "system config map set fail", "name", key.name(), K(ret));
+            SHARE_LOG(WDIAG, "system config map set fail", "name", key.name(), K(ret));
           }
         }
       }
@@ -240,9 +240,9 @@ int ObSystemConfig::read_int32(const ObSystemConfigKey &key,
   if (OB_SUCC(find_newest(key, pvalue, version)) && OB_LIKELY(NULL != pvalue)) {
     value = static_cast<int32_t>(strtol(pvalue->value(), &p, 0));
     if (p == pvalue->value()) {
-      SHARE_LOG(ERROR, "config is not integer", "name", key.name(), "value", p);
+      SHARE_LOG(EDIAG, "config is not integer", "name", key.name(), "value", p);
     } else if (OB_ISNULL(p) || OB_UNLIKELY('\0' != *p)) {
-      SHARE_LOG(WARN, "config was truncated", "name", key.name(), "value", p);
+      SHARE_LOG(WDIAG, "config was truncated", "name", key.name(), "value", p);
     } else {
       SHARE_LOG(INFO, "use internal config", "name", key.name(), K(value));
     }
@@ -265,9 +265,9 @@ int ObSystemConfig::read_int64(const ObSystemConfigKey &key,
   if (OB_SUCC(find_newest(key, pvalue, version)) && OB_LIKELY(NULL != pvalue)) {
     value = strtoll(pvalue->value(), &p, 0);
     if (p == pvalue->value()) {
-      SHARE_LOG(ERROR, "config is not integer", "name", key.name(), "value", p);
+      SHARE_LOG(EDIAG, "config is not integer", "name", key.name(), "value", p);
     } else if (OB_ISNULL(p) || OB_UNLIKELY('\0' != *p)) {
-      SHARE_LOG(WARN, "config was truncated", "name", key.name(), "value", p);
+      SHARE_LOG(WDIAG, "config was truncated", "name", key.name(), "value", p);
     } else {
       SHARE_LOG(INFO, "use internal config", "name", key.name(), K(value));
     }
@@ -289,9 +289,9 @@ int ObSystemConfig::read_str(const ObSystemConfigKey &key,
   if (OB_SUCC(find_newest(key, pvalue, version)) && OB_LIKELY(NULL != pvalue)) {
     int wlen = 0;
     if ((wlen = snprintf(buf, len, "%s", pvalue->value())) < 0) {
-      SHARE_LOG(ERROR, "reload config error", "name", key.name());
+      SHARE_LOG(EDIAG, "reload config error", "name", key.name());
     } else if (wlen >= len) {
-      SHARE_LOG(WARN, "config was truncated", "name", key.name());
+      SHARE_LOG(WDIAG, "config was truncated", "name", key.name());
     } else {
       SHARE_LOG(INFO, "use internal config", "name", key.name(), K(buf));
     }
@@ -301,7 +301,7 @@ int ObSystemConfig::read_str(const ObSystemConfigKey &key,
     if (buf != def) {
       int64_t pos = 0;
       if(OB_FAIL(databuff_printf(buf, len, pos, "%s", def))) {
-        SHARE_LOG(WARN, "buf is not long enough", K(key.name()), K(def), K(pvalue), K(ret));
+        SHARE_LOG(WDIAG, "buf is not long enough", K(key.name()), K(def), K(pvalue), K(ret));
       }
     }
     SHARE_LOG(INFO, "use default config", "name", key.name(), K(def), K(pvalue), K(ret));
@@ -323,7 +323,7 @@ int ObSystemConfig::read_config(const ObSystemConfigKey &key,
     } else {
       if (!item.set_value(pvalue->value())) {
         // without set ret
-        SHARE_LOG(WARN, "set config item value failed",
+        SHARE_LOG(WDIAG, "set config item value failed",
                   K(key.name()), K(pvalue->value()), K(version));
       }
       item.set_version(version);

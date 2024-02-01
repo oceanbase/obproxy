@@ -100,10 +100,10 @@ int ObIOHandle::init(ObIOController *control, ObIOProcessor *processor)
   int ret = OB_SUCCESS;
   if (NULL == control || NULL == processor) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(ret));
   } else if (inited_) {
     ret = OB_INIT_TWICE;
-    COMMON_LOG(WARN, "The inner control_ is not NULL, ", K(ret));
+    COMMON_LOG(WDIAG, "The inner control_ is not NULL, ", K(ret));
   } else {
     ObIOManager::get_instance().inc_ref(control);
     control_ = control;
@@ -118,10 +118,10 @@ int ObIOHandle::wait(const int64_t timeout_ms)
   int ret = OB_SUCCESS;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOHandle has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOHandle has not been inited, ", K(ret));
   } else if (timeout_ms < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(timeout_ms), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(timeout_ms), K(ret));
   } else {
     if (!control_->has_finished_) {
       ObWaitEventGuard wait_guard(
@@ -139,19 +139,19 @@ int ObIOHandle::wait(const int64_t timeout_ms)
       if (!control_->has_finished_) {
         int tmp_ret = OB_SUCCESS;
         if (OB_SUCCESS != (tmp_ret = processor_->record_wait_begin(*control_))) {
-          COMMON_LOG(WARN, "fail to record wait begin, ", K(tmp_ret));
+          COMMON_LOG(WDIAG, "fail to record wait begin, ", K(tmp_ret));
         }
         if (OB_FAIL(control_->cond_.wait(wait_timeout))) {
-          COMMON_LOG(WARN, "fail to wait cond, ", K(ret));
+          COMMON_LOG(WDIAG, "fail to wait cond, ", K(ret));
         }
         if (OB_SUCCESS == tmp_ret) {
           if (OB_SUCCESS != (tmp_ret = processor_->record_wait_end(*control_))) {
-            COMMON_LOG(WARN, "fail to record wait end, ", K(tmp_ret));
+            COMMON_LOG(WDIAG, "fail to record wait end, ", K(tmp_ret));
           }
         }
 
         if (OB_TIMEOUT == ret) {
-          COMMON_LOG(WARN, "IO wait timeout, ", K(timeout_ms), K(ret), K(get_wait_time_us()),
+          COMMON_LOG(WDIAG, "IO wait timeout, ", K(timeout_ms), K(ret), K(get_wait_time_us()),
               K(get_queue_wait_time_us()), K(get_disk_wait_time_us()));
         }
       }
@@ -161,7 +161,7 @@ int ObIOHandle::wait(const int64_t timeout_ms)
     if (OB_SUCC(ret)) {
       if (!control_->is_success_) {
         ret = OB_IO_ERROR;
-        COMMON_LOG(WARN, "IO error, ", K(ret));
+        COMMON_LOG(WDIAG, "IO error, ", K(ret));
       }
     }
 
@@ -240,10 +240,10 @@ int64_t ObIOHandle::to_string(char *buf, const int64_t buf_len) const
   int ret = OB_SUCCESS;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(buf), K(buf_len), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(buf), K(buf_len), K(ret));
   } else if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOHandle has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOHandle has not been inited, ", K(ret));
   } else {
     const int64_t ref_cnt = control_->ref_cnt_;
     J_KV("data_offset_", control_->data_offset_,
@@ -284,10 +284,10 @@ int ObIOQueue::init(ObIOController **item_array, const int64_t array_size)
   int ret = OB_SUCCESS;
   if (inited_) {
     ret = OB_INIT_TWICE;
-    COMMON_LOG(WARN, "The ObIOQueue has been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOQueue has been inited, ", K(ret));
   } else if (NULL == item_array || array_size <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(item_array), K(array_size), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(item_array), K(array_size), K(ret));
   } else {
     item_array_ = item_array;
     array_size_ = array_size;
@@ -320,10 +320,10 @@ int ObIOQueue::push(ObIOController *item)
   int ret = OB_SUCCESS;
   if (NULL == item) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(item), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(item), K(ret));
   } else if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOQueue has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOQueue has not been inited, ", K(ret));
   } else {
     item->req_submit_time_ = ::oceanbase::common::ObTimeUtility::current_time();
     ObSpinLockGuard guard(lock_);
@@ -346,12 +346,12 @@ int ObIOQueue::pop(ObIOController *&item)
   int ret = OB_SUCCESS;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOQueue has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOQueue has not been inited, ", K(ret));
   } else {
     ObSpinLockGuard guard(lock_);
     if (consumer_ >= producer_) {
       ret = OB_ENTRY_NOT_EXIST;
-      COMMON_LOG(WARN, "The entry not exist, ", K(ret));
+      COMMON_LOG(WDIAG, "The entry not exist, ", K(ret));
     } else {
       item = item_array_[consumer_ % array_size_];
       ++consumer_;
@@ -366,10 +366,10 @@ int ObIOQueue::record_wait_begin(ObIOController *item)
   int ret = OB_SUCCESS;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOQueue has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOQueue has not been inited, ", K(ret));
   } else if (NULL == item) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(item), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(item), K(ret));
   } else {
     item->wait_begin_time_ = ::oceanbase::common::ObTimeUtility::current_time();
     ObSpinLockGuard guard(lock_);
@@ -384,10 +384,10 @@ int ObIOQueue::record_wait_end(ObIOController *item)
   int ret = OB_SUCCESS;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOQueue has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOQueue has not been inited, ", K(ret));
   } else if (NULL == item) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(item), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(item), K(ret));
   } else {
     item->wait_end_time_ = ::oceanbase::common::ObTimeUtility::current_time();
     ObSpinLockGuard guard(lock_);
@@ -415,7 +415,7 @@ int ObIOQueue::can_pop(bool &bool_ret)
   int64_t cur_time = ::oceanbase::common::ObTimeUtility::current_time();
  if (!inited_) {
   ret = OB_NOT_INIT;
-  COMMON_LOG(WARN, "The ObIOQueue has not been inited, ", K(ret));
+  COMMON_LOG(WDIAG, "The ObIOQueue has not been inited, ", K(ret));
   } else {
     ObSpinLockGuard guard(lock_);
     if (producer_ - consumer_ > min_queue_hold_) {
@@ -449,12 +449,12 @@ int ObIOProcessor::init(const int64_t event_thread_cnt)
   int ret = OB_SUCCESS;
   if (event_thread_cnt <= 0 || event_thread_cnt > MAX_THREAD_CNT ) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(event_thread_cnt), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(event_thread_cnt), K(ret));
   } else if (inited_) {
     ret = OB_INIT_TWICE;
-    COMMON_LOG(WARN, "The ObIOProcessor has been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOProcessor has been inited, ", K(ret));
   } else if (OB_FAIL(queue_cond_.init(ObWaitEventIds::IO_PROCESSOR_COND_WAIT))) {
-    COMMON_LOG(WARN, "Fai to init queue cond, ", K(ret));
+    COMMON_LOG(WDIAG, "Fai to init queue cond, ", K(ret));
   } else {
     memset(&context_, 0, sizeof(context_));
     memset(&submited_cnt_, 0, sizeof(submited_cnt_));
@@ -462,15 +462,15 @@ int ObIOProcessor::init(const int64_t event_thread_cnt)
     for (int64_t i = 0; OB_SUCC(ret) && i < IO_QUEUE_CNT; ++i) {
       if (NULL == (item_array = (ObIOController**) allocator_.alloc(sizeof(ObIOController*) * MAX_IO_QUEUE_DEPTH))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        COMMON_LOG(WARN, "Fail to allocate memory, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to allocate memory, ", K(ret));
       } else if (OB_FAIL(queue_[i].init(item_array, MAX_IO_QUEUE_DEPTH))) {
-        COMMON_LOG(WARN, "Fail to init queue, ", K(i), K(ret));
+        COMMON_LOG(WDIAG, "Fail to init queue, ", K(i), K(ret));
       }
     }
     for (int64_t i = 0; OB_SUCC(ret) && i < event_thread_cnt; ++i) {
       if (0 != io_setup(MAX_AIO_EVENT_CNT, &context_[i])) {
         ret = OB_IO_ERROR;
-        COMMON_LOG(WARN, "Fail to setup aio context, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to setup aio context, ", K(ret));
       }
     }
 
@@ -485,7 +485,7 @@ int ObIOProcessor::init(const int64_t event_thread_cnt)
       if ((event_thread_cnt + 1) != start()) {
         inited_ = false;
         ret = OB_ERR_UNEXPECTED;
-        COMMON_LOG(WARN, "The started thread num is not enough, ", K(event_thread_cnt), K(ret));
+        COMMON_LOG(WDIAG, "The started thread num is not enough, ", K(event_thread_cnt), K(ret));
       }
     }
   }
@@ -516,7 +516,7 @@ int ObIOProcessor::submit(ObIOController &control)
   int ret = OB_SUCCESS;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOProcessor has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOProcessor has not been inited, ", K(ret));
   } else {
     ObIOManager::get_instance().inc_ref(&control);
     int64_t queue_idx = get_queue_idx(control);
@@ -525,13 +525,13 @@ int ObIOProcessor::submit(ObIOController &control)
       if (NULL != control.callback_) {
         int tmp_ret = OB_SUCCESS;
         if (OB_SUCCESS != (tmp_ret = control.callback_->process(control.is_success_))) {
-          COMMON_LOG(WARN, "Fail to callback, ", K(tmp_ret));
+          COMMON_LOG(WDIAG, "Fail to callback, ", K(tmp_ret));
         }
       }
       control.has_finished_ = true;
       ObIOManager::get_instance().dec_ref(&control);
       ret = OB_IO_ERROR;
-      COMMON_LOG(WARN, "Fail to submit io request to queue, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to submit io request to queue, ", K(ret));
     } else {
       queue_cond_.lock();
       queue_cond_.signal();
@@ -546,10 +546,10 @@ int ObIOProcessor::record_wait_begin(ObIOController &control)
   int ret = OB_SUCCESS;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOProcessor has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOProcessor has not been inited, ", K(ret));
   } else {
     if (OB_FAIL(queue_[get_queue_idx(control)].record_wait_begin(&control))) {
-      COMMON_LOG(WARN, "Fail to record wait begin, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to record wait begin, ", K(ret));
     }
   }
   return ret;
@@ -560,10 +560,10 @@ int ObIOProcessor::record_wait_end(ObIOController &control)
   int ret = OB_SUCCESS;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOProcessor has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOProcessor has not been inited, ", K(ret));
   } else {
     if (OB_FAIL(queue_[get_queue_idx(control)].record_wait_end(&control))) {
-      COMMON_LOG(WARN, "Fail to record wait end, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to record wait end, ", K(ret));
     }
   }
   return ret;
@@ -573,7 +573,7 @@ void ObIOProcessor::balance()
 {
   if (!inited_) {
     int ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOProcessor has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOProcessor has not been inited, ", K(ret));
   } else {
     int64_t score = 0;
     int64_t max_idx = -1;
@@ -599,7 +599,7 @@ void ObIOProcessor::balance()
       int tmp_ret = OB_SUCCESS;
       bool can_pop = false;
       if (OB_SUCCESS != (tmp_ret = queue_[max_idx].can_pop(can_pop))) {
-        COMMON_LOG(WARN, "Fail to test can pop, ", K(tmp_ret));
+        COMMON_LOG(WDIAG, "Fail to test can pop, ", K(tmp_ret));
       } else if (can_pop) {
         queue_cond_.lock();
         queue_cond_.signal();
@@ -639,11 +639,11 @@ void ObIOProcessor::inner_submit()
   bool is_busy = true;
   while (!_stop) {
     if (OB_FAIL(need_wait(is_need_wait))) {
-      COMMON_LOG(WARN, "Fail to test need wait, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to test need wait, ", K(ret));
     } else if (is_need_wait) {
       queue_cond_.lock();
       if (OB_FAIL(need_wait(is_need_wait))) {
-        COMMON_LOG(WARN, "Fail to test need wait, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to test need wait, ", K(ret));
       } else if (is_need_wait) {
         queue_cond_.wait(queue_cond_wait_ms);
       }
@@ -652,10 +652,10 @@ void ObIOProcessor::inner_submit()
     is_busy = false;
     while (OB_SUCCESS == ret && !is_busy) {
       if (OB_FAIL(is_all_thread_busy(is_busy))) {
-        COMMON_LOG(WARN, "Fail to test can pop, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to test can pop, ", K(ret));
       } else if (!is_busy) {
         if (OB_FAIL(queue_[queue_idx].can_pop(can_pop))) {
-          COMMON_LOG(WARN, "Fail to test can pop, ", K(ret));
+          COMMON_LOG(WDIAG, "Fail to test can pop, ", K(ret));
         } else if (can_pop) {
           if (OB_SUCC(queue_[queue_idx].pop(control))) {
             queue_empty[queue_idx] = false;
@@ -675,7 +675,7 @@ void ObIOProcessor::inner_submit()
               if (i == event_thread_cnt_) {
                 //fail to submit request
                 ret = OB_IO_ERROR;
-                COMMON_LOG(WARN, "Fail to submit io request to os, ", K(io_ret), K(ret));
+                COMMON_LOG(WDIAG, "Fail to submit io request to os, ", K(io_ret), K(ret));
                 control->is_success_ = false;
                 notify(*control);
               }
@@ -714,11 +714,11 @@ int ObIOProcessor::need_wait(bool &bool_ret)
   bool can_pop = false;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOProcessor has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOProcessor has not been inited, ", K(ret));
   } else {
     for (int64_t i = 0; i < IO_QUEUE_CNT; ++i) {
       if (OB_SUCCESS != (tmp_ret = queue_[i].can_pop(can_pop))) {
-        COMMON_LOG(WARN, "Fail to test can pop, ", K(tmp_ret));
+        COMMON_LOG(WDIAG, "Fail to test can pop, ", K(tmp_ret));
       } else if (can_pop) {
         bool_ret = false;
         break;
@@ -764,7 +764,7 @@ void ObIOProcessor::notify(ObIOController &control)
   int ret = OB_SUCCESS;
   if (NULL != control.callback_) {
     if (OB_FAIL(control.callback_->process(control.is_success_))) {
-      COMMON_LOG(WARN, "Fail to callback, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to callback, ", K(ret));
     }
   }
   control.cond_.lock();
@@ -780,7 +780,7 @@ int ObIOProcessor::is_all_thread_busy(bool &bool_ret)
   bool_ret = true;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOProcessor has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOProcessor has not been inited, ", K(ret));
   } else {
     for (int64_t i = 0; bool_ret && i < event_thread_cnt_; ++i) {
       if (ATOMIC_LOAD(&submited_cnt_[i]) < MAX_AIO_EVENT_CNT) {
@@ -814,18 +814,18 @@ int ObIOManager::init(const int64_t mem_limit, const int64_t thread_cnt_per_disk
   int ret = OB_SUCCESS;
   if (inited_) {
     ret = OB_INIT_TWICE;
-    COMMON_LOG(WARN, "The ObIOManager has been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has been inited, ", K(ret));
   } else if (mem_limit < OB_MALLOC_BIG_BLOCK_SIZE || thread_cnt_per_disk <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "The mem limit is too small, ", K(mem_limit), K(thread_cnt_per_disk), K(ret));
+    COMMON_LOG(WDIAG, "The mem limit is too small, ", K(mem_limit), K(thread_cnt_per_disk), K(ret));
   } else if (OB_FAIL(processor_map_.create(MAX_DISK_NUM, ObModIds::OB_SSTABLE_AIO))) {
-    COMMON_LOG(WARN, "Fail to init processor map, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to init processor map, ", K(ret));
   } else if (OB_FAIL(io_allocator_.init(mem_limit, OB_MALLOC_BIG_BLOCK_SIZE, OB_MALLOC_BIG_BLOCK_SIZE))) {
-    COMMON_LOG(WARN, "Fail to init io allocator, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to init io allocator, ", K(ret));
   } else if (OB_FAIL(timer_.init())) {
-    COMMON_LOG(WARN, "Fail to init timer, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to init timer, ", K(ret));
   } else if (OB_FAIL(timer_.schedule(inner_task_, BALANCE_INTERVAL_US, true))) {
-    COMMON_LOG(WARN, "Fail to schedule balance task, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to schedule balance task, ", K(ret));
   } else {
     io_allocator_.set_mod_id(ObModIds::OB_SSTABLE_AIO);
     thread_cnt_per_disk_ = thread_cnt_per_disk;
@@ -861,14 +861,14 @@ int ObIOManager::read(const ObIOInfo &info, ObIOHandle &handle, const uint64_t t
 
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOManager has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has not been inited, ", K(ret));
   } else if (!info.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "the argument is invalid, ", K(info), K(ret));
+    COMMON_LOG(WDIAG, "the argument is invalid, ", K(info), K(ret));
   } else if (OB_FAIL(aio_read(info, handle))) {
-    COMMON_LOG(WARN, "Fail to submit aio read request, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to submit aio read request, ", K(ret));
   } else if (OB_FAIL(handle.wait(timeout_ms))) {
-    COMMON_LOG(WARN, "Fail to wait io finish, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to wait io finish, ", K(ret));
   }
   return ret;
 }
@@ -879,14 +879,14 @@ int ObIOManager::write(const ObIOInfo &info, const char *data, const uint64_t ti
   ObIOHandle handle;
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOManager has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has not been inited, ", K(ret));
   } else if (!info.is_valid() || NULL == data) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "the argument is invalid, ", K(info), KP(data), K(ret));
+    COMMON_LOG(WDIAG, "the argument is invalid, ", K(info), KP(data), K(ret));
   } else if (OB_FAIL(aio_write(info, data, handle))) {
-    COMMON_LOG(WARN, "Fail to submit aio write request, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to submit aio write request, ", K(ret));
   } else if (OB_FAIL(handle.wait(timeout_ms))) {
-    COMMON_LOG(WARN, "Fail to wait io finish, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to wait io finish, ", K(ret));
   }
   return ret;
 }
@@ -902,19 +902,19 @@ int ObIOManager::aio_read(const ObIOInfo &info, ObIOHandle &handle)
 
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOManager has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has not been inited, ", K(ret));
   } else if (!info.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "the argument is invalid, ", K(info), K(ret));
+    COMMON_LOG(WDIAG, "the argument is invalid, ", K(info), K(ret));
   } else {
     handle.reset();
     align_offset_size(info.offset_, info.size_, offset, size);
     if (OB_SUCCESS != (ret = get_processor(info, processor))) {
-      COMMON_LOG(WARN, "Fail to get io processor, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to get io processor, ", K(ret));
     } else if (NULL == (buf = (char*)io_allocator_.alloc(sizeof(ObIOController)
         + size + DIO_ALIGN_SIZE))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "Fail to allocate memory, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to allocate memory, ", K(ret));
     } else {
       control = new (buf) ObIOController();
       control->buf_ = (char*) upper_align((int64_t)buf + sizeof(ObIOController), DIO_ALIGN_SIZE);
@@ -925,9 +925,9 @@ int ObIOManager::aio_read(const ObIOInfo &info, ObIOHandle &handle)
       inc_ref(control);
 
       if (OB_SUCCESS != (ret = handle.init(control, processor))) {
-        COMMON_LOG(WARN, "Fail to init read handle, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to init read handle, ", K(ret));
       } else if (OB_SUCCESS != (ret = processor->submit(*control))) {
-        COMMON_LOG(WARN, "Fail to submit aio read request, ", K(ret));
+        COMMON_LOG(WDIAG, "Fail to submit aio read request, ", K(ret));
       }
 
       dec_ref(control);
@@ -945,21 +945,21 @@ int ObIOManager::aio_read(const ObIOInfo &info, char *buf, ObIOCallback &callbac
 
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOManager has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has not been inited, ", K(ret));
   } else if (!info.is_valid() || NULL == buf) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "the argument is invalid, ", K(info), KP(buf), K(ret));
+    COMMON_LOG(WDIAG, "the argument is invalid, ", K(info), KP(buf), K(ret));
   } else if (OB_FAIL(get_processor(info, processor))) {
-    COMMON_LOG(WARN, "Fail to get io processor, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to get io processor, ", K(ret));
   } else if (!info.is_aligned()) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "The offset or size is not aligned, ", K(ret));
+    COMMON_LOG(WDIAG, "The offset or size is not aligned, ", K(ret));
   } else if (0 != (int64_t) buf % DIO_ALIGN_SIZE) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "The read buffer is not aligned, ", K(ret));
+    COMMON_LOG(WDIAG, "The read buffer is not aligned, ", K(ret));
   } else if (NULL == (tmp = (char*) (io_allocator_.alloc(sizeof(ObIOController) + callback.size())))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "Fail to allocate memory, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to allocate memory, ", K(ret));
   } else {
     control = new (tmp) ObIOController();
     control->buf_ = buf;
@@ -971,11 +971,11 @@ int ObIOManager::aio_read(const ObIOInfo &info, char *buf, ObIOCallback &callbac
 
     if (OB_FAIL(callback.deep_copy(tmp + sizeof(ObIOController),
         callback.size(), control->callback_))) {
-      COMMON_LOG(WARN, "Fail to deep copy callback function, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to deep copy callback function, ", K(ret));
     } else if (OB_FAIL(handle.init(control, processor))) {
-      COMMON_LOG(WARN, "Fail to init read handle, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to init read handle, ", K(ret));
     } else if (OB_FAIL(processor->submit(*control))) {
-      COMMON_LOG(WARN, "Fail to submit aio read request, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to submit aio read request, ", K(ret));
     }
 
     dec_ref(control);
@@ -994,19 +994,19 @@ int ObIOManager::aio_write(const ObIOInfo &info, const char *data, ObIOHandle &h
   handle.reset();
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOManager has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has not been inited, ", K(ret));
   } else if (!info.is_valid() || NULL == data) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "the argument is invalid, ", K(info), KP(data), K(ret));
+    COMMON_LOG(WDIAG, "the argument is invalid, ", K(info), KP(data), K(ret));
   } else if (OB_FAIL(get_processor(info, processor))) {
-    COMMON_LOG(WARN, "Fail to get io processor, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to get io processor, ", K(ret));
   } else if (!info.is_aligned()) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "The write position is not aligned, ", K(ret));
+    COMMON_LOG(WDIAG, "The write position is not aligned, ", K(ret));
   } else if (NULL == (buf = (char*) io_allocator_.alloc(sizeof(ObIOController)
       + info.size_ + DIO_ALIGN_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "Fail to allocate memory, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to allocate memory, ", K(ret));
   } else {
     control = new (buf) ObIOController();
     control->buf_ = (char*)(upper_align((int64_t) buf + sizeof(ObIOController), DIO_ALIGN_SIZE));
@@ -1018,9 +1018,9 @@ int ObIOManager::aio_write(const ObIOInfo &info, const char *data, ObIOHandle &h
     inc_ref(control);
 
     if (OB_FAIL(handle.init(control, processor))) {
-      COMMON_LOG(WARN, "Fail to init write handle, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to init write handle, ", K(ret));
     } else if (OB_FAIL(processor->submit(*control))) {
-      COMMON_LOG(WARN, "Fail to submit aio write request, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to submit aio write request, ", K(ret));
     }
 
     dec_ref(control);
@@ -1037,13 +1037,13 @@ int ObIOManager::get_processor(const ObIOInfo &info, ObIOProcessor *&processor)
 
   if (!inited_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOManager has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has not been inited, ", K(ret));
   } else if (!info.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(ret));
   } else if (0 != fstat(info.fd_, &stat)) {
     ret = OB_IO_ERROR;
-    COMMON_LOG(WARN, "Fail to get file stat info, ", K(ret));
+    COMMON_LOG(WDIAG, "Fail to get file stat info, ", K(ret));
   } else {
     int hash_ret = OB_HASH_NOT_EXIST;
     {
@@ -1052,7 +1052,7 @@ int ObIOManager::get_processor(const ObIOInfo &info, ObIOProcessor *&processor)
         //success found, do nothing
       } else if (OB_HASH_NOT_EXIST != hash_ret) {
         ret = hash_ret;
-        COMMON_LOG(WARN, "Unexpected error, ", K(hash_ret), K(ret));
+        COMMON_LOG(WDIAG, "Unexpected error, ", K(hash_ret), K(ret));
       }
     }
 
@@ -1063,14 +1063,14 @@ int ObIOManager::get_processor(const ObIOInfo &info, ObIOProcessor *&processor)
       } else if (OB_HASH_NOT_EXIST == hash_ret) {
         if (NULL == (buf = inner_allocator_.alloc(sizeof(ObIOProcessor)))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          COMMON_LOG(WARN, "Fail to allocate memory, ", K(ret));
+          COMMON_LOG(WDIAG, "Fail to allocate memory, ", K(ret));
         } else {
           processor = new (buf) ObIOProcessor();
           if (OB_FAIL(processor->init(thread_cnt_per_disk_))) {
-            COMMON_LOG(WARN, "Fail to init io processor, ", K(ret));
+            COMMON_LOG(WDIAG, "Fail to init io processor, ", K(ret));
           } else if (OB_SUCCESS != (hash_ret = processor_map_.set_refactored(stat.st_dev, processor))) {
             ret = hash_ret;
-            COMMON_LOG(WARN, "Fail to set processor to map, ", K(ret));
+            COMMON_LOG(WDIAG, "Fail to set processor to map, ", K(ret));
           }
 
           if (OB_FAIL(ret)) {
@@ -1081,7 +1081,7 @@ int ObIOManager::get_processor(const ObIOInfo &info, ObIOProcessor *&processor)
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        COMMON_LOG(WARN, "Unexpected error, ", K(hash_ret), K(ret));
+        COMMON_LOG(WDIAG, "Unexpected error, ", K(hash_ret), K(ret));
       }
     }
   }
@@ -1093,7 +1093,7 @@ void ObIOManager::balance()
 {
   if (!inited_) {
     int ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The ObIOManager has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The ObIOManager has not been inited, ", K(ret));
   } else {
     DRWLock::RDLockGuard guard(lock_);
     hash::ObHashMap<__dev_t, ObIOProcessor*>::iterator iter;

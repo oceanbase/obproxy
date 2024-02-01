@@ -39,10 +39,10 @@ do { \
         || OB_UNLIKELY(len <= 0) \
         || OB_UNLIKELY(pos < 0)) { \
       ret = common::OB_INVALID_ARGUMENT; \
-      PROXY_LOG(WARN, "invalid argument", KP(buf), K(len), K(pos), K(ret)); \
+      PROXY_LOG(WDIAG, "invalid argument", KP(buf), K(len), K(pos), K(ret)); \
     } else if (OB_UNLIKELY(pos >= len)) { \
       ret = common::OB_SIZE_OVERFLOW; \
-      PROXY_LOG(WARN, "buf is no enough", KP(buf), K(len), K(pos), K(ret)); \
+      PROXY_LOG(WDIAG, "buf is no enough", KP(buf), K(len), K(pos), K(ret)); \
     } \
   } \
 } while(0)
@@ -65,11 +65,11 @@ do { \
     uint64_t tmp_num = 0; \
     const char *tmp_buf_start = buf + pos; \
     if (OB_FAIL(::oceanbase::obmysql::ObMySQLUtil::get_length(tmp_buf_start, tmp_num))) { \
-      PROXY_LOG(ERROR, "fail to get length", K(pos), K(ret)); \
+      PROXY_LOG(EDIAG, "fail to get length", K(pos), K(ret)); \
     } else if (FALSE_IT(pos += (tmp_buf_start - buf - pos))) { \
     } else if (OB_UNLIKELY(pos > len)) { \
       ret = common::OB_ERR_UNEXPECTED; \
-      PROXY_LOG(ERROR, "invalid pos or len", K(pos), K(len), K(num), K(ret)); \
+      PROXY_LOG(EDIAG, "invalid pos or len", K(pos), K(len), K(num), K(ret)); \
     } else { \
       num = static_cast<type>(tmp_num); \
     }\
@@ -150,16 +150,16 @@ int ObProxyRerouteInfo::deserialize_struct(const char *buf, const int64_t len, i
   if (OB_SUCC(ret)) {
     if (OB_UNLIKELY(struct_len <= 0)) {
       ret = common::OB_INVALID_DATA;
-      PROXY_LOG(ERROR, "struct_len must > 0", K(pos), K(struct_len), K(len), K(ret));
+      PROXY_LOG(EDIAG, "struct_len must > 0", K(pos), K(struct_len), K(len), K(ret));
     } else if ((pos + struct_len) > len) {
       ret = common::OB_INVALID_DATA;
-      PROXY_LOG(ERROR, "invalid data buf", K(pos), K(struct_len), K(len), K(ret));
+      PROXY_LOG(EDIAG, "invalid data buf", K(pos), K(struct_len), K(len), K(ret));
     } else {
       int64_t orig_pos = pos;
       int64_t curr_len = pos + struct_len;
 
       if (OB_FAIL(deserialize_struct_content(buf, curr_len, pos))) {
-        PROXY_LOG(ERROR, "fail to deserialize_struct_content", K(buf), K(curr_len), K(pos), K(ret));
+        PROXY_LOG(EDIAG, "fail to deserialize_struct_content", K(buf), K(curr_len), K(pos), K(ret));
       } else {
         if (pos < orig_pos + struct_len) {
           // means current is old version, just skip
@@ -167,7 +167,7 @@ int ObProxyRerouteInfo::deserialize_struct(const char *buf, const int64_t len, i
         } else if (OB_UNLIKELY(pos > orig_pos + struct_len)) {
           // impossible, just for defense
           ret = common::OB_ERR_UNEXPECTED;
-          PROXY_LOG(ERROR, "unexpect error", K(pos), K(orig_pos), K(struct_len), K(len), K(ret));
+          PROXY_LOG(EDIAG, "unexpect error", K(pos), K(orig_pos), K(struct_len), K(len), K(ret));
         } else {
           // pos == orig_pos + struct_len, normal case
         }
@@ -194,7 +194,7 @@ int ObProxyRerouteInfo::deserialize_struct_content(const char *buf, const int64_
     OB_FB_DECODE_INT(ipv6_low, uint64_t);
   } else {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(ERROR, "invalid ip version", K(version), K(ret));
+    PROXY_LOG(EDIAG, "invalid ip version", K(version), K(ret));
   }
   OB_FB_DECODE_INT(port, int32_t);
   OB_FB_DECODE_INT(replica_.role_, common::ObRole);
@@ -212,10 +212,10 @@ int ObProxyRerouteInfo::deserialize_struct_content(const char *buf, const int64_
     if (OB_UNLIKELY(table_name_len > common::OB_MAX_TABLE_NAME_LENGTH)
         || OB_UNLIKELY(table_name_len < 0)) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(ERROR, "invalid table name len", K(pos), K(len), K(table_name_len), K(ret));
+      PROXY_LOG(EDIAG, "invalid table name len", K(pos), K(len), K(table_name_len), K(ret));
     } else if (pos + table_name_len > len) {
       ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(ERROR, "invalid pos or len", K(pos), K(len), K(table_name_len), K(ret));
+      PROXY_LOG(EDIAG, "invalid pos or len", K(pos), K(len), K(table_name_len), K(ret));
     } else {
       MEMCPY(table_name_buf_, buf + pos, table_name_len);
       table_name_buf_[table_name_len] = '\0';

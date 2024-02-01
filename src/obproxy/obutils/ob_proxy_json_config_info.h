@@ -16,9 +16,12 @@
 #include "lib/utility/ob_print_utils.h"
 #include "lib/json/ob_json.h"
 #include "lib/hash/ob_build_in_hashmap.h"
+#include "lib/string/ob_string.h"
 #include "utils/ob_proxy_lib.h"
 #include "utils/ob_layout.h"
 #include "proxy/route/ob_table_entry.h"
+#include "lib/hash/ob_hashmap.h"
+#include <utility>
 
 namespace oceanbase
 {
@@ -46,7 +49,7 @@ public:
 
   virtual bool is_valid() const = 0;
   virtual int parse(const json::Value *value) = 0;
-
+  friend class ObProxyLdgInfo;
 protected:
   static const int64_t OB_PROXY_MAX_CONFIG_STRING_LENGTH = 512;
   static const int64_t OB_PROXY_MAX_PASSWORD_LENGTH = 64;
@@ -64,6 +67,21 @@ public:
   ObProxyConfigString() : size_limit_(0) { reset(); }
   explicit ObProxyConfigString(const int64_t size_limit) : size_limit_(size_limit) { reset(); }
   virtual ~ObProxyConfigString() { }
+
+  explicit ObProxyConfigString(const ObProxyConfigString &other): ObProxyBaseInfo()
+  {
+    if (this != &other) {
+      set_value(other.config_string_);
+    }
+  }
+
+  ObProxyConfigString& operator=(const ObProxyConfigString &other)
+  {
+    if (this != &other) {
+      set_value(other.config_string_);
+    }
+    return *this;
+  }
 
   uint64_t hash(uint64_t seed = 0) const { return config_string_.hash(seed); }
   void reset() { config_string_.reset(); }
@@ -122,7 +140,6 @@ public:
 private:
   int64_t size_limit_;
   char config_string_str_[OB_PROXY_MAX_CONFIG_STRING_LENGTH];
-  DISALLOW_COPY_AND_ASSIGN(ObProxyConfigString);
 };
 
 class ObProxyConfigUrl : public ObProxyBaseInfo
@@ -404,7 +421,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_LIKELY(this != &other)) {
       if (OB_FAIL(cluster_name_.assign(other.cluster_name_))) {
-        _PROXY_LOG(WARN, "cluster_info_key assign error, ret = [%d]", ret);
+        _PROXY_LOG(WDIAG, "cluster_info_key assign error, ret = [%d]", ret);
       } else {
         master_cluster_id_ = other.master_cluster_id_;
         is_cluster_name_alias_ = other.is_cluster_name_alias_;
@@ -491,15 +508,15 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_LIKELY(this != &other)) {
       if (OB_FAIL(db_.assign(other.db_))) {
-        _PROXY_LOG(WARN, "db assign error, ret = [%d]", ret);
+        _PROXY_LOG(WDIAG, "db assign error, ret = [%d]", ret);
       } else if (OB_FAIL(username_.assign(other.username_))) {
-        _PROXY_LOG(WARN, "username assign error, ret = [%d]", ret);
+        _PROXY_LOG(WDIAG, "username assign error, ret = [%d]", ret);
       } else if (OB_FAIL(password_.assign(other.password_))) {
-        _PROXY_LOG(WARN, "password assign error, ret = [%d]", ret);
+        _PROXY_LOG(WDIAG, "password assign error, ret = [%d]", ret);
       } else if (OB_FAIL(real_cluster_name_.assign(other.real_cluster_name_))) {
-        _PROXY_LOG(WARN, "real_cluster_name assign error, ret = [%d]", ret);
+        _PROXY_LOG(WDIAG, "real_cluster_name assign error, ret = [%d]", ret);
       } else if (OB_FAIL(cluster_info_.assign(other.cluster_info_))) {
-        _PROXY_LOG(WARN, "meta_cluster_info assign error, ret = [%d]", ret);
+        _PROXY_LOG(WDIAG, "meta_cluster_info assign error, ret = [%d]", ret);
       }
     }
     return ret;
@@ -701,7 +718,7 @@ public:
   {
     int ret = common::OB_SUCCESS;
     if (OB_FAIL(table_info.assign(data_info_.meta_table_info_))) {
-      _PROXY_LOG(WARN, "fail to assign meta table info, ret = [%d]", ret);
+      _PROXY_LOG(WDIAG, "fail to assign meta table info, ret = [%d]", ret);
     }
     return ret;
   }
@@ -710,7 +727,7 @@ public:
   {
     int ret = common::OB_SUCCESS;
     if (OB_FAIL(username.assign(data_info_.meta_table_info_.username_))) {
-      _PROXY_LOG(WARN, "fail to assign meta table username, ret = [%d]", ret);
+      _PROXY_LOG(WDIAG, "fail to assign meta table username, ret = [%d]", ret);
     }
     return ret;
   }
@@ -722,11 +739,11 @@ public:
   {
     int ret = common::OB_SUCCESS;
     if (OB_FAIL(info.username_.assign(data_info_.meta_table_info_.username_))) {
-      PROXY_LOG(WARN, "fail to assign meta table username", K(ret));
+      PROXY_LOG(WDIAG, "fail to assign meta table username", K(ret));
     } else if (OB_FAIL(info.password_.assign(data_info_.meta_table_info_.password_))) {
-      PROXY_LOG(WARN, "fail to assign meta table password", K(ret));
+      PROXY_LOG(WDIAG, "fail to assign meta table password", K(ret));
     } else if (OB_FAIL(info.db_.assign(data_info_.meta_table_info_.db_))) {
-      PROXY_LOG(WARN, "fail to assign meta table db", K(ret));
+      PROXY_LOG(WDIAG, "fail to assign meta table db", K(ret));
     } else {/*do nothing*/}
     return ret;
   }
@@ -868,12 +885,13 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyLdgObInstacne);
 };
 
-class ObProxyLdgInfo : public ObProxyBaseInfo, public common::ObRefCountObj
+class ObProxyLdgInfo : public common::ObRefCountObj
 {
 public:
-  ObProxyLdgInfo() : version_(OB_PROXY_MAX_CONFIG_STRING_LENGTH), ldg_instance_map_() {}
+  ObProxyLdgInfo() : version_(ObProxyBaseInfo::OB_PROXY_MAX_CONFIG_STRING_LENGTH), ldg_instance_map_() {}
   ~ObProxyLdgInfo() { destroy(); }
-  int parse(const json::Value *value);
+  typedef std::pair<ObProxyConfigString, ObProxyConfigString> LdgClusterVersionPair;
+  int parse(const json::Value *json_value, ObIArray<LdgClusterVersionPair> &cluster_info_array, ObIArray<LdgClusterVersionPair>& change_cluster_info_array);
   bool is_valid() const
   {
     bool bret = true;
@@ -891,14 +909,23 @@ public:
     static Key key(Value *value) { return value->get_hash_key(); }
     static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
   };
+  void remove_single_ldg_instance(ObProxyLdgObInstacne *ldg_instance);
   int update_ldg_instance(ObProxyLdgObInstacne *ldg_instance);
   int get_ldg_instance(const common::ObString &key, ObProxyLdgObInstacne *&ldg_instance);
   
   int get_primary_role_instance(const ObString &tenant_name, const ObString &cluster_name, ObProxyObInstance* &instance);
   void destroy();
   typedef common::hash::ObBuildInHashMap<ObProxyLdgObInstacneHashing> LdgInstanceMap;
+
+  bool is_cluster_exist(ObProxyLdgObInstacne *ldg_instance, ObIArray<LdgClusterVersionPair>& cluster_info_array);
+  int update_ldg_info(ObProxyLdgInfo* new_ldg_info, ObIArray<LdgClusterVersionPair>& cluster_info_array);
+  int remove_ldg_instances(ObIArray<LdgClusterVersionPair>& cluster_info_array);
+  bool is_version_diff(const ObString &verison, const ObString &cluster_name, ObIArray<LdgClusterVersionPair> &cluster_info_array);
+
+
   DECLARE_TO_STRING;
 private:
+  int parse_cluster(const json::Value *json_value, const ObString &cluster_name, ObIArray<LdgClusterVersionPair> &cluster_info_array, ObIArray<LdgClusterVersionPair>& change_cluster_info_array);
   ObProxyConfigString version_;
   LdgInstanceMap ldg_instance_map_;
   DISALLOW_COPY_AND_ASSIGN(ObProxyLdgInfo);

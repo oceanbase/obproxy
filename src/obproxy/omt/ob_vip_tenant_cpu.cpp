@@ -77,14 +77,14 @@ int ObTenantCpu::init()
   if (cgroup_ctrl_.is_valid()) {
     if (!is_inited_) {
       if (OB_FAIL(cgroup_ctrl_.create_tenant_cgroup(tenant_id))) {
-        LOG_WARN("create tenant cgroup failed", K(ret), K(tenant_id));
+        LOG_WDIAG("create tenant cgroup failed", K(ret), K(tenant_id));
       } else {
         is_inited_ = true;
       }
     }
   } else {
     ret = OB_FILE_NOT_EXIST;
-    LOG_WARN("cgroup is not valid", K(ret));
+    LOG_WDIAG("cgroup is not valid", K(ret));
   }
   return ret;
 }
@@ -114,7 +114,7 @@ void ObTenantCpu::remove_tenant_cgroup()
   int tmp_ret = OB_SUCCESS;
   ObString tenant_id = full_name_;
   if (cgroup_ctrl_.is_valid() && OB_SUCCESS != (tmp_ret = cgroup_ctrl_.remove_tenant_cgroup(tenant_id))) {
-    LOG_WARN("remove tenant cgroup failed", K(tmp_ret), K(tenant_id));
+    LOG_WDIAG("remove tenant cgroup failed", K(tmp_ret), K(tenant_id));
   }
   is_inited_ = false;
 }
@@ -138,7 +138,7 @@ int ObTenantCpu::acquire_more_worker(const int64_t tid)
   int tmp_ret = OB_SUCCESS;
   ObString tenant_id = full_name_;
   if (cgroup_ctrl_.is_valid() && OB_SUCCESS != (tmp_ret = cgroup_ctrl_.add_thread_to_cgroup(tenant_id, tid))) {
-    LOG_WARN("add thread to cgroup failed", K(ret), K(tenant_id), K(tid));
+    LOG_WDIAG("add thread to cgroup failed", K(ret), K(tenant_id), K(tid));
   }
   return ret;
 }
@@ -150,13 +150,13 @@ int ObTenantCpu::set_unit_max_cpu(double cpu)
   if (cgroup_ctrl_.is_valid()) {
     int32_t cfs_period_us = 0;
     if (OB_FAIL(cgroup_ctrl_.get_cpu_cfs_period(tenant_id, cfs_period_us))) {
-      LOG_WARN("get cpu cfs period failed", K(ret), K(tenant_id), K(cfs_period_us));
+      LOG_WDIAG("get cpu cfs period failed", K(ret), K(tenant_id), K(cfs_period_us));
     } else if (OB_FAIL(cgroup_ctrl_.set_cpu_cfs_quota(tenant_id, (uint32_t)(cfs_period_us * cpu)))) {
-      LOG_WARN("set cpu cfs quota failed", K(ret), K(tenant_id), K(cfs_period_us * cpu));
+      LOG_WDIAG("set cpu cfs quota failed", K(ret), K(tenant_id), K(cfs_period_us * cpu));
     }
   } else {
     ret = OB_FILE_NOT_EXIST;
-    LOG_WARN("cgroup is not valid", K(ret));
+    LOG_WDIAG("cgroup is not valid", K(ret));
   }
   return ret;
 }
@@ -178,7 +178,7 @@ int ObTenantCpuCache::get(ObString& key_name, ObTenantCpu*& tenant_cpu)
   int ret = OB_SUCCESS;
   if (key_name.empty() || key_name.length() > OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("name invalid", K(key_name), K(ret));
+    LOG_WDIAG("name invalid", K(key_name), K(ret));
   } else if (OB_FAIL(vt_cpu_map_.get_refactored(key_name, tenant_cpu))) {
     LOG_DEBUG("fail to get tenant cpu", K(key_name), K(ret));
   }
@@ -190,9 +190,9 @@ int ObTenantCpuCache::set(ObTenantCpu* tenant_cpu)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(tenant_cpu)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("tenant cpu is null", K(ret));
+    LOG_WDIAG("tenant cpu is null", K(ret));
   } else if (OB_FAIL(vt_cpu_map_.unique_set(tenant_cpu))) {
-    LOG_WARN("fail to set tenant cpu", K(tenant_cpu), K(ret));
+    LOG_WDIAG("fail to set tenant cpu", K(tenant_cpu), K(ret));
   }
   return ret;
 }
@@ -203,7 +203,7 @@ int ObTenantCpuCache::erase(ObString& cluster_name, ObString& tenant_name)
   LOG_INFO("erase cpu config");
   if (cluster_name.empty() || tenant_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(ret), K(cluster_name), K(tenant_name));
+    LOG_WDIAG("invalid input value", K(ret), K(cluster_name), K(tenant_name));
   } else {
     VTCpuHashMap::iterator last = vt_cpu_map_.end();
     for (VTCpuHashMap::iterator it = vt_cpu_map_.begin(); it != last;) {
@@ -246,7 +246,7 @@ int ObTenantCpuCache::recover()
         it->max_cpu_usage_ = it->backup_max_cpu_usage_;
         it->max_thread_num_ = it->backup_max_thread_num_;
         if (OB_FAIL(it->set_unit_max_cpu(it->max_cpu_usage_))) {
-          LOG_WARN("set max cpu failed", K(ret));
+          LOG_WDIAG("set max cpu failed", K(ret));
         }
       }
       ++it;
@@ -270,7 +270,7 @@ int ObTenantCpuCache::check()
   }
   if ((max_cpu_value - (double)cpu_num  > 0) || (max_thread_hold > MAX_THREADS_IN_EACH_TYPE)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("check config params failed", K(max_cpu_value), K(max_thread_hold), K(cpu_num));
+    LOG_WDIAG("check config params failed", K(max_cpu_value), K(max_thread_hold), K(cpu_num));
   }
   return ret;
 }
@@ -283,9 +283,9 @@ int ObTenantCpuCache::update()
   for (VTCpuHashMap::iterator it = vt_cpu_map_.begin(); it != last && OB_SUCC(ret); ++it) {
     if (INSTANCE_CREATE_STATUS == it->instance_status_ || INSTANCE_UPDATE_STATUS == it->instance_status_) {
       if (OB_FAIL(it->init())) {
-        LOG_WARN("init tenant cgroup failed", K(ret));
+        LOG_WDIAG("init tenant cgroup failed", K(ret));
       } else if (OB_FAIL(it->set_unit_max_cpu(it->max_cpu_usage_))) {
-        LOG_WARN("set max cpu failed", K(ret));
+        LOG_WDIAG("set max cpu failed", K(ret));
       }
     }
   }

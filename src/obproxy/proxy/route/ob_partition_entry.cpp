@@ -56,12 +56,12 @@ int ObPartitionEntry::alloc_and_init_partition_entry(
                   || OB_INVALID_ID == partition_id)
                   || replicas.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(table_id), K(partition_id), K(cr_version), K(cr_id), K(replicas), K(ret));
+    LOG_WDIAG("invalid input value", K(table_id), K(partition_id), K(cr_version), K(cr_id), K(replicas), K(ret));
   } else if (OB_ISNULL(entry = op_reclaim_alloc(ObPartitionEntry))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc parttition entry", K(ret));
+    LOG_WDIAG("fail to alloc parttition entry", K(ret));
   } else if (OB_FAIL(entry->set_pl(replicas))) {
-    LOG_WARN("fail to set pl", K(replicas), K(ret));
+    LOG_WDIAG("fail to set pl", K(replicas), K(ret));
     entry->free();
     entry = NULL;
   } else {
@@ -96,10 +96,10 @@ int ObPartitionEntry::alloc_and_init_partition_entry(
   int ret = OB_SUCCESS;
   ObSEArray<ObProxyReplicaLocation, 1> replicas;
   if (OB_FAIL(replicas.push_back(replica))) {
-    LOG_WARN("fail to add replica location", K(replica), K(ret));
+    LOG_WDIAG("fail to add replica location", K(replica), K(ret));
   } else if (OB_FAIL(alloc_and_init_partition_entry(key.table_id_, key.partition_id_,
       key.cr_version_, key.cr_id_, replicas, entry))) {
-    LOG_WARN("fail to alloc and init partition entry", K(key), K(replicas), K(ret));
+    LOG_WDIAG("fail to alloc and init partition entry", K(key), K(replicas), K(ret));
   } else {}
   return ret;
 }

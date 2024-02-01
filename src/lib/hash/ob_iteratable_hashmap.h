@@ -146,7 +146,7 @@ public:
          it != other.end();
          ++it) {
       if (OB_FAIL(set_refactored((*it).first, (*it).second))) {
-        _OB_LOG(ERROR, "fail set value. ret=%d", ret);
+        _OB_LOG(EDIAG, "fail set value. ret=%d", ret);
         break;
       }
     }

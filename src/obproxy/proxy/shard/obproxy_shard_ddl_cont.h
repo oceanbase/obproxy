@@ -29,8 +29,10 @@ typedef int64_t (* write_func)(void *ptr, int64_t size, int64_t nmemb, void *str
 enum ObShardDDLOperation {
   SHARD_DDL_OPERATION_CREATE_TABLE,
   SHARD_DDL_OPERATION_CREATE_INDEX,
+  SHARD_DDL_OPERATION_CREATE_TABLEGROUP,
   SHARD_DDL_OPERATION_ALTER,
   SHARD_DDL_OPERATION_DROP,
+  SHARD_DDL_OPERATION_DROP_TABLEGROUP,
   SHARD_DDL_OPERATION_RENAME,
   SHARD_DDL_OPERATION_TRUNCATE,
   SHARD_DDL_OPERATION_STOP,
@@ -132,10 +134,9 @@ public:
   virtual int init_task();
   virtual void *get_callback_data() { return static_cast<void *>(&ddl_status_); }
 
-  int init(const ObString &instance_id, const ObString &schema,
-           const ObString &sql, const int64_t task_id, const ObProxyBasicStmtType stmt_type,
-           const ObProxyBasicStmtSubType sub_stmt_type);
-
+  int init(const ObString &instance_id, const ObString &schema, const ObString &sql, 
+           const int64_t group_id, const ObString& hint_table_name,
+           const obutils::ObSqlParseResult& parse_result);
 private:
   int get_ddl_url_by_type(char *&buf);
   int get_ddl_json_by_type(ObSqlString &buf);
@@ -161,6 +162,8 @@ private:
   bool is_first_;
   common::ObArenaAllocator allocator_;
   ObString instance_id_;
+  ObString group_id_;
+  ObString hint_table_name_;
   ObString schema_;
   ObString sql_;
   ObShardDDLOperation operation_;

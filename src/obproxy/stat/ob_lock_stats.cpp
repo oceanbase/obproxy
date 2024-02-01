@@ -35,7 +35,7 @@ int init_lock_stats()
   if (OB_ISNULL(lock_rsb = g_stat_processor.allocate_raw_stat_block(MAX_LOCK_COUNT,
       XFH_LOCK_STATE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_LOG(WARN, "fail to alloc mem for lock_rsb", K(ret));
+    PROXY_LOG(WDIAG, "fail to alloc mem for lock_rsb", K(ret));
   } else {
     LOCK_REGISTER_RAW_STAT(lock_rsb, RECT_PROCESS, "net_vc_lock_conflict_count",
                                      RECD_INT, NET_VC_LOCK, SYNC_SUM, RECP_NULL);

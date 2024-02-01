@@ -32,9 +32,9 @@ int FLTExtraInfo::deserialize(const char *buf, const int64_t len, int64_t &pos)
     int32_t v_len = 0;
     int16_t id = 0;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::resolve_type_and_len(buf, buf_end, pos, id, v_len))) {
-      LOG_WARN("fail to resolve type and len", K(ret));
+      LOG_WDIAG("fail to resolve type and len", K(ret));
     } else if (OB_FAIL(deserialize_field(static_cast<FullLinkTraceExtraInfoId>(id), v_len, buf, buf_end, pos))) {
-      LOG_WARN("fail to deserialize field", K(ret), K(id));
+      LOG_WDIAG("fail to deserialize field", K(ret), K(id));
     } else {
       //nothing
     }
@@ -50,28 +50,28 @@ int FLTControlInfo::serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx
   int64_t orig_pos = pos;
   if (pos + FLT_TYPE_AND_LEN > len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("buf size overflow", K(len), K(pos));
+    LOG_WDIAG("buf size overflow", K(len), K(pos));
   } else {
     pos += FLT_TYPE_AND_LEN;
 
     if (OB_FAIL(ret)) {
       // nothing
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int1(buf, len, pos, level_, FLT_LEVEL))) {
-      LOG_WARN("fail to store int1", K(ret));
+      LOG_WDIAG("fail to store int1", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_double(buf, len, pos, sample_percentage_,
                                                                 FLT_SAMPLE_PERCENTAGE))) {
-      LOG_WARN("fail to store sample pct", K(ret));
+      LOG_WDIAG("fail to store sample pct", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int1(buf, len, pos, record_policy_, FLT_RECORD_POLICY))) {
-      LOG_WARN("fail to store int1", K(ret));
+      LOG_WDIAG("fail to store int1", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_double(buf, len, pos, print_sample_percentage_,
                                                                 FLT_PRINT_SAMPLE_PCT))) {
-      LOG_WARN("fail to store print sample pct", K(ret));
+      LOG_WDIAG("fail to store print sample pct", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int8(buf, len, pos, slow_query_threshold_,
                                                               FLT_SLOW_QUERY_THRES))) {
-      LOG_WARN("fail to store slow query threshold", K(ret));
+      LOG_WDIAG("fail to store slow query threshold", K(ret));
     } else if (ctx.flt_ext_enable_) {
       if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int1(buf, len, pos, show_trace_enable_, FLT_SHOW_TRACE_ENABLE))) {
-        LOG_WARN("fail to serialize show trace", K(ret));
+        LOG_WDIAG("fail to serialize show trace", K(ret));
       }
     } else {
       // nothing
@@ -80,7 +80,7 @@ int FLTControlInfo::serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx
     if (OB_SUCC(ret)) {
       int32_t total_len = static_cast<int32_t>(pos - orig_pos - FLT_TYPE_AND_LEN);
       if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_type_and_len(buf, len, orig_pos, type_, total_len))) {
-        LOG_WARN("fail to store type and len", K(ret));
+        LOG_WDIAG("fail to store type and len", K(ret));
       } else {
         LOG_DEBUG("succ to serialize control info", K(pos), K(len), K(total_len), KPC(this));
       }
@@ -100,31 +100,31 @@ int FLTControlInfo::deserialize_field(FullLinkTraceExtraInfoId id,
 
   if (id == FLT_LEVEL) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int1(buf, len, pos, v_len, level_))) {
-      LOG_WARN("fail to resolve level", K(ret));
+      LOG_WDIAG("fail to resolve level", K(ret));
     }
   } else if (id == FLT_SAMPLE_PERCENTAGE) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_double(buf, len, pos, v_len, sample_percentage_))) {
-      LOG_WARN("fail to resolve sample percentage", K(ret));
+      LOG_WDIAG("fail to resolve sample percentage", K(ret));
     }
   } else if (id == FLT_RECORD_POLICY) {
     int8_t rc = 0;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int1(buf, len, pos, v_len, rc))) {
-      LOG_WARN("fail to resolve record policy", K(ret));
+      LOG_WDIAG("fail to resolve record policy", K(ret));
     } else {
       record_policy_ = static_cast<FullLinkTraceRecordPolicy>(rc);
     }
   } else if (id == FLT_PRINT_SAMPLE_PCT) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_double(buf, len, pos, v_len, print_sample_percentage_))) {
-      LOG_WARN("fail to resolve print sample percentage", K(ret));
+      LOG_WDIAG("fail to resolve print sample percentage", K(ret));
     }
   } else if (id == FLT_SLOW_QUERY_THRES) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int8(buf, len, pos, v_len, slow_query_threshold_))) {
-      LOG_WARN("fail to resolve slow query threshold", K(ret));
+      LOG_WDIAG("fail to resolve slow query threshold", K(ret));
     }
   } else if (id == FLT_SHOW_TRACE_ENABLE) {
     int8_t v = 0;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int1(buf, len, pos, v_len, v))) {
-      LOG_WARN("fail to resolve trace enable", K(ret));
+      LOG_WDIAG("fail to resolve trace enable", K(ret));
     } else {
       show_trace_enable_ = static_cast<bool>(v);
     }    
@@ -169,28 +169,28 @@ int FLTSpanInfo::serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &c
   int64_t orig_pos = pos;
   if (pos + FLT_TYPE_AND_LEN > len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("buf size overflow", K(len), K(pos));
+    LOG_WDIAG("buf size overflow", K(len), K(pos));
   } else {
     pos += FLT_TYPE_AND_LEN;
 
     if (OB_FAIL(ret)) {
       //nothing
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int1(buf, len, pos, trace_enable_, FLT_TRACE_ENABLE))) {
-      LOG_WARN("fail to store int1", K(ret));
+      LOG_WDIAG("fail to store int1", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int1(buf, len, pos, force_print_, FLT_FORCE_PRINT))) {
-      LOG_WARN("fail to store int1", K(ret));
+      LOG_WDIAG("fail to store int1", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int1(buf, len, pos, ref_type_, FLT_REF_TYPE))) {
-      LOG_WARN("fail to store int1", K(ret));
+      LOG_WDIAG("fail to store int1", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_uuid(buf, len, pos, trace_id_, FLT_TRACE_ID))) {
-      LOG_WARN("fail to store trace id", K(ret));
+      LOG_WDIAG("fail to store trace id", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_uuid(buf, len, pos, span_id_, FLT_SPAN_ID))) {
-      LOG_WARN("fail to store span id", K(ret));
+      LOG_WDIAG("fail to store span id", K(ret));
     } else {
       // fill type and len in the head
       int32_t total_len = static_cast<int32_t>(pos - orig_pos - FLT_TYPE_AND_LEN);
       if (OB_SUCC(ret)
           && OB_FAIL(Ob20FullLinkTraceTransUtil::store_type_and_len(buf, len, orig_pos, type_, total_len))) {
-        LOG_WARN("fail to store type and len in head", K(ret));
+        LOG_WDIAG("fail to store type and len in head", K(ret));
       } else {
         LOG_DEBUG("succ to seri span info", K(pos), K(len), K(type_), K(total_len));
       }
@@ -207,7 +207,7 @@ int FLTSpanInfo::serialize_as_json_format(char *buf, const int64_t len, int64_t 
   int64_t orig_pos = pos;
   if (pos + FLT_TYPE_AND_LEN > len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("buf size overflow", K(len), K(pos));
+    LOG_WDIAG("buf size overflow", K(len), K(pos));
   } else {
     LOG_DEBUG("before serialize as json format", K(pos), K(len));
     pos += FLT_TYPE_AND_LEN;
@@ -226,12 +226,12 @@ int FLTSpanInfo::serialize_as_json_format(char *buf, const int64_t len, int64_t 
                     "false");
     if (pos > len) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected pos and len", K(ret), K(pos), K(len));
+      LOG_WDIAG("unexpected pos and len", K(ret), K(pos), K(len));
     } else {
       int32_t total_len = static_cast<int32_t>(pos - orig_pos - FLT_TYPE_AND_LEN);
       if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_type_and_len(buf, len, orig_pos,
                                                                  FLT_DRV_SHOW_TRACE_SPAN, total_len))) {
-        LOG_WARN("fail to store type and len in head", K(ret));
+        LOG_WDIAG("fail to store type and len in head", K(ret));
       } else {
         LOG_DEBUG("succ to seri span info as json format", K(pos), K(len), K(total_len));
       }
@@ -252,31 +252,31 @@ int FLTSpanInfo::deserialize_field(FullLinkTraceExtraInfoId id,
   if (id == FLT_TRACE_ENABLE) {
     int8_t v = 0;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int1(buf, len, pos, v_len, v))) {
-      LOG_WARN("fail to resolve trace enable", K(ret));
+      LOG_WDIAG("fail to resolve trace enable", K(ret));
     } else {
       trace_enable_ = static_cast<bool>(v);
     }
   } else if (id == FLT_FORCE_PRINT) {
     int8_t v = 0;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int1(buf, len, pos, v_len, v))) {
-      LOG_WARN("fail to resolve force print", K(ret));
+      LOG_WDIAG("fail to resolve force print", K(ret));
     } else {
       force_print_ = static_cast<bool>(v);
     }
   } else if (id == FLT_TRACE_ID) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_uuid(buf, len, pos, v_len, trace_id_))) {
-      LOG_WARN("fail to resolve trace id", K(ret));
+      LOG_WDIAG("fail to resolve trace id", K(ret));
     }
   } else if (id == FLT_REF_TYPE) {
     int8_t v = 0;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int1(buf, len, pos, v_len, v))) {
-      LOG_WARN("fail to get ref type", K(ret));
+      LOG_WDIAG("fail to get ref type", K(ret));
     } else {
       ref_type_ = static_cast<FLTSpanRefType>(v);
     }
   } else if (id == FLT_SPAN_ID) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_uuid(buf, len, pos, v_len, span_id_))) {
-      LOG_WARN("fail to get span id", K(ret));
+      LOG_WDIAG("fail to get span id", K(ret));
     }
   } else {
     pos += v_len;
@@ -323,18 +323,18 @@ int FLTQueryInfo::serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &
   int64_t orig_pos = pos;
   if (pos + FLT_TYPE_AND_LEN > len) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("buf size overflow", K(len), K(pos));
+    LOG_WDIAG("buf size overflow", K(len), K(pos));
   } else {
     pos += FLT_TYPE_AND_LEN;
 
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int8(buf, len, pos, query_start_ts_, FLT_QUERY_START_TIMESTAMP))) {
-      LOG_WARN("fail to store int8", K(ret));
+      LOG_WDIAG("fail to store int8", K(ret));
     } else if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_int8(buf, len, pos, query_end_ts_, FLT_QUERY_END_TIMESTAMP))) {
-      LOG_WARN("fail to store int8", K(ret));
+      LOG_WDIAG("fail to store int8", K(ret));
     } else {
       int32_t total_len = static_cast<int32_t>(pos - orig_pos - FLT_TYPE_AND_LEN);
       if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_type_and_len(buf, len, orig_pos, type_, total_len))) {
-        LOG_WARN("fail to store type and len", K(ret));
+        LOG_WDIAG("fail to store type and len", K(ret));
       } else {
         LOG_DEBUG("succ to serialize query info", K(pos), K(len), K(total_len));
       }
@@ -354,15 +354,15 @@ int FLTQueryInfo::deserialize_field(FullLinkTraceExtraInfoId id,
 
   if (id == FLT_QUERY_START_TIMESTAMP) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int8(buf, len, pos, v_len, query_start_ts_))) {
-      LOG_WARN("fail to resolve query start timestamp", K(ret));
+      LOG_WDIAG("fail to resolve query start timestamp", K(ret));
     }
   } else if (id == FLT_QUERY_END_TIMESTAMP) {
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_int8(buf, len, pos, v_len, query_end_ts_))) {
-      LOG_WARN("fail to resolve query end timestamp", K(ret));
+      LOG_WDIAG("fail to resolve query end timestamp", K(ret));
     }
   } else {
     pos += v_len;
-    LOG_WARN("unexpected query info id, ignore", K(id), K(v_len));
+    LOG_WDIAG("unexpected query info id, ignore", K(id), K(v_len));
   }
 
   return ret;
@@ -384,7 +384,7 @@ int FLTAppInfo::serialize(char *buf, const int64_t len, int64_t &pos, FLTCtx &ct
 
   if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_str(buf, len, pos, flt_app_info_buf_,
                                                     static_cast<int32_t>(flt_app_info_buf_len_), FLT_APP_INFO))) {
-    LOG_WARN("fail to store str as app info", K(ret));
+    LOG_WDIAG("fail to store str as app info", K(ret));
   } else {
     LOG_DEBUG("succ to serialize FLTAppInfo");
   }
@@ -446,7 +446,7 @@ int FLTDriverSpanInfo::serialize(char *buf, const int64_t len, int64_t &pos, FLT
   UNUSED(ctx);
   
   int ret = OB_ERR_UNEXPECTED;
-  LOG_WARN("unexpected serialize type", K(type_));
+  LOG_WDIAG("unexpected serialize type", K(type_));
   
   return ret;
 }
@@ -464,13 +464,13 @@ int FLTDriverSpanInfo::deserialize_field(FullLinkTraceExtraInfoId id,
   if (id == FLT_DRV_SPAN) {
     char *ptr = NULL;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::get_str(buf, len, pos, v_len, ptr))) {
-      LOG_WARN("fail to get str for driver span info", K(ret));
+      LOG_WDIAG("fail to get str for driver span info", K(ret));
     } else {
       curr_driver_span_.assign_ptr(ptr, static_cast<int32_t>(v_len));
     }
   } else {
     pos += v_len;
-    LOG_WARN("unexpected driver span info id, ignore", K(id), K(v_len));
+    LOG_WDIAG("unexpected driver span info id, ignore", K(id), K(v_len));
   }
   
   return ret;
@@ -519,7 +519,7 @@ int FLTShowTraceJsonSpanInfo::deep_copy_drv_show_trace_span(FLTShowTraceJsonSpan
     char *dst_buf = NULL;
     if (OB_ISNULL(dst_buf = (char *)ob_malloc(src_len, common::ObModIds::OB_PROXY_SHOW_TRACE_JSON))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(src_len));
+      LOG_WDIAG("fail to alloc mem", K(src_len));
     } else {
       char *orig_buf = flt_drv_show_trace_span_.ptr();
       if (orig_buf != NULL && span_is_alloc_) {
@@ -548,7 +548,7 @@ int FLTShowTraceJsonSpanInfo::deserialize(const char *buf, const int64_t len, in
     int32_t v_len = 0;
     int16_t id = 0;
     if (OB_FAIL(Ob20FullLinkTraceTransUtil::resolve_type_and_len(buf, buf_end, pos, id, v_len))) {
-      LOG_WARN("fail to resolve type and len", K(ret));
+      LOG_WDIAG("fail to resolve type and len", K(ret));
     } else {
       FullLinkTraceExtraInfoId info_id = static_cast<FullLinkTraceExtraInfoId>(id);
       if (info_id != FLT_DRV_SHOW_TRACE_SPAN) {
@@ -580,7 +580,7 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
     int64_t orig_pos = pos;
     if (pos + FLT_TYPE_AND_LEN > len) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("buf size overflow", K(len), K(pos));
+      LOG_WDIAG("buf size overflow", K(len), K(pos));
     } else {
       pos += FLT_TYPE_AND_LEN;    // for obj head info, type2 + len4, fill at last
     }
@@ -591,7 +591,7 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
         if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_str(buf, len, pos, flt_drv_show_trace_span_.ptr(),
                                                           flt_drv_show_trace_span_.length(),
                                                           FLT_DRV_SHOW_TRACE_SPAN))) {
-          LOG_WARN("fail to store drv show trace str", K(ret), K(flt_drv_show_trace_span_));
+          LOG_WDIAG("fail to store drv show trace str", K(ret), K(flt_drv_show_trace_span_));
         } else {
           LOG_DEBUG("save driver show trace json span", K(flt_drv_show_trace_span_), K(pos), K(len));
         }
@@ -601,7 +601,7 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
           ctx.span_start_ts_ = drv_show_by_proxy_.last_drv_span_start_ts_;
           ctx.span_end_ts_ = drv_show_by_proxy_.last_drv_span_end_ts_;
           if (OB_FAIL(drv_show_by_proxy_.last_drv_span_info_.serialize_as_json_format(buf, len, pos, ctx))) {
-            LOG_WARN("fail to serialize span info as json format", K(ret));
+            LOG_WDIAG("fail to serialize span info as json format", K(ret));
           } else {
             LOG_DEBUG("serialize drv span as json by proxy", K(pos), K(len), K(ctx));
           }
@@ -616,7 +616,7 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
       int64_t sub_orig_pos = pos;
       if (pos + FLT_TYPE_AND_LEN > len) {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WARN("buf size overflow", K(ret), K(len), K(pos));
+        LOG_WDIAG("buf size overflow", K(ret), K(len), K(pos));
       } else {
         pos += FLT_TYPE_AND_LEN;
         
@@ -625,10 +625,10 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
         sub_ret = snprintf(buf + pos, len - pos, "[");
         if (sub_ret <= 0) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
+          LOG_WDIAG("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
         } else if (len - pos < 0) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to check pos and len", K(ret), K(len), K(pos));
+          LOG_WDIAG("fail to check pos and len", K(ret), K(len), K(pos));
         } else {
           pos += sub_ret;
         }
@@ -640,10 +640,10 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
           sub_ret = snprintf(buf + pos, len - pos, "%s", each_json.ptr());
           if (sub_ret <= 0) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
+            LOG_WDIAG("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
           } else if (len - pos < 0) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to check pos and len", K(ret), K(len), K(pos));
+            LOG_WDIAG("fail to check pos and len", K(ret), K(len), K(pos));
           } else {
             pos += sub_ret;
           }
@@ -653,10 +653,10 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
             sub_ret = snprintf(buf + pos, len - pos, ",");
             if (sub_ret <= 0) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
+              LOG_WDIAG("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
             } else if (len - pos < 0) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("fail to check pos and len", K(ret), K(len), K(pos));
+              LOG_WDIAG("fail to check pos and len", K(ret), K(len), K(pos));
             } else {
               pos += sub_ret;
             }
@@ -667,10 +667,10 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
         sub_ret = snprintf(buf + pos, len - pos, "]");
         if (sub_ret <= 0) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
+          LOG_WDIAG("fail to snprintf, please check buffer and pos", K(ret), K(sub_ret), K(pos), K(len));
         } else if (len - pos < 0) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to check pos and len", K(ret), K(len), K(pos));
+          LOG_WDIAG("fail to check pos and len", K(ret), K(len), K(pos));
         } else {
           pos += sub_ret;
         }
@@ -678,14 +678,14 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
         // length check
         if (pos > len) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("after fill total show trace span info, pos larger than buf len", K(ret), K(pos), K(len));
+          LOG_WDIAG("after fill total show trace span info, pos larger than buf len", K(ret), K(pos), K(len));
         } else {
           buf[pos] = '\0';
           // fill sub type and sub len in head
           int32_t sub_total_len = static_cast<int32_t>(pos - sub_orig_pos - FLT_TYPE_AND_LEN);
           if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_type_and_len(buf, len, sub_orig_pos,
                                                                      FLT_PROXY_SHOW_TRACE_SPAN, sub_total_len))) {
-            LOG_WARN("fail to store sub type and len", K(ret), K(sub_orig_pos), K(pos), K(len), K(sub_total_len));
+            LOG_WDIAG("fail to store sub type and len", K(ret), K(sub_orig_pos), K(pos), K(len), K(sub_total_len));
           }
         }
       }
@@ -695,7 +695,7 @@ int FLTShowTraceJsonSpanInfo::serialize(char *buf, const int64_t len, int64_t &p
     if (OB_SUCC(ret)) {
       int32_t total_len = static_cast<int32_t>(pos - orig_pos - FLT_TYPE_AND_LEN);
       if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_type_and_len(buf, len, orig_pos, type_, total_len))) {
-        LOG_WARN("fail to store type and len in head", K(ret), K(orig_pos), K(len), K(total_len));
+        LOG_WDIAG("fail to store type and len in head", K(ret), K(orig_pos), K(len), K(total_len));
       } else {
         LOG_DEBUG("succ to seri show trace span info", K(pos), K(len), K(type_), K(total_len));
       }
@@ -850,10 +850,10 @@ int FLTObjManage::deserialize(const char *buf, const int64_t len, int64_t &pos) 
                                                                  pos,
                                                                  first_type,
                                                                  first_len))) {
-      LOG_WARN("fail to resolve first type and len", K(ret), K(buf), K(len), K(pos));
+      LOG_WDIAG("fail to resolve first type and len", K(ret), K(buf), K(len), K(pos));
       break;
     } else if (OB_FAIL(get_extra_info_ref_by_type(static_cast<FullLinkTraceExtraInfoType>(first_type), extra))) {
-      LOG_WARN("fail to get extra info ref by type", K(ret));
+      LOG_WDIAG("fail to get extra info ref by type", K(ret));
       break;
     } else if (OB_ISNULL(extra)) {
       pos += first_len;
@@ -861,10 +861,10 @@ int FLTObjManage::deserialize(const char *buf, const int64_t len, int64_t &pos) 
     } else {
       int64_t second_pos = 0;
       if (OB_FAIL(extra->deserialize(buf + pos, first_len, second_pos))) {
-        LOG_WARN("fail to deserialize extra", K(ret));
+        LOG_WDIAG("fail to deserialize extra", K(ret));
       } else if (second_pos != first_len) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected error, please check the packet content or the deserialize logic",
+        LOG_WDIAG("unexpected error, please check the packet content or the deserialize logic",
                  K(ret), K(first_len), K(second_pos));
       } else {
         pos += second_pos;
@@ -881,7 +881,7 @@ int FLTObjManage::get_extra_info_ref_by_type(FullLinkTraceExtraInfoType type, FL
 
   if (type <= FLT_EXTRA_TYPE_BEGIN || type >= FLT_EXTRA_TYPE_END) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected flt extra info type", K(ret), K(type));
+    LOG_WDIAG("unexpected flt extra info type", K(ret), K(type));
   } else {
     if (type == FLT_SPAN_INFO) {
       span_info_.reset();

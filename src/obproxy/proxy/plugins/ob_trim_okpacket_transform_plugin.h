@@ -61,7 +61,7 @@ public:
       read_avail = local_reader_->read_avail();
       if (common::OB_SUCCESS != resultset_analyzer_.analyze_resultset_stream(
           local_reader_, consume_size, stream_status)) {
-        _PROXY_API_LOG(WARN, "failed to analyze result set stream, reader=%p", local_reader_);
+        _PROXY_API_LOG(WDIAG, "failed to analyze result set stream, reader=%p", local_reader_);
         // if we analyze failed, we transform the origin result
         consume_size = read_avail;
       }
@@ -69,13 +69,13 @@ public:
 
     if (consume_size > 0) {
       if (consume_size != (produce_size = produce(local_reader_, consume_size))) {
-        _PROXY_API_LOG(WARN, "failed to produce expected_produce_size=%ld, produce_szie=%ld",
+        _PROXY_API_LOG(WDIAG, "failed to produce expected_produce_size=%ld, produce_szie=%ld",
                 consume_size, produce_size);
       }
 
       int ret = OB_SUCCESS;
       if (OB_FAIL(local_reader_->consume(consume_size))) {
-        PROXY_API_LOG(WARN, "fail to consume ", K(consume_size), K(ret));
+        PROXY_API_LOG(WDIAG, "fail to consume ", K(consume_size), K(ret));
       } else {
         remain_size = read_avail - consume_size;
         if (RSS_END_NORMAL_STATUS == stream_status) {
@@ -85,7 +85,7 @@ public:
         } else if (remain_size > 0 && remain_size > local_reader_->mbuf_->water_mark_) {
           ObMysqlAnalyzeResult result;
           if (OB_UNLIKELY(OB_SUCCESS != ObProxyParserUtils::analyze_one_packet(*local_reader_, result))) {
-            _PROXY_API_LOG(WARN, "failed to analyze one packet");
+            _PROXY_API_LOG(WDIAG, "failed to analyze one packet");
           } else if (ANALYZE_DONE != result.status_
                      && result.meta_.pkt_len_ > local_reader_->mbuf_->water_mark_) {
             // ensure the input buffer can cache the last ok packt
@@ -119,7 +119,7 @@ public:
         char *content_start = local_reader_->start() + MYSQL_NET_HEADER_LENGTH;
         ObString content(content_len, content_start);
         if (OB_SUCCESS != (ret = save_changed_session_info(content))) {
-          _PROXY_API_LOG(WARN, "failed to save changed session info, ret=%d", ret);
+          _PROXY_API_LOG(WDIAG, "failed to save changed session info, ret=%d", ret);
         }
       } else {
         // this ok packet is in multi miobuffer
@@ -127,16 +127,16 @@ public:
         char *buf = (char *)op_fixed_mem_alloc(read_avail);
         if (NULL == buf) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          _PROXY_API_LOG(WARN, "failed to alloc mem, size = %ld, ret=%d", read_avail, ret);
+          _PROXY_API_LOG(WDIAG, "failed to alloc mem, size = %ld, ret=%d", read_avail, ret);
         } else {
           char *written_pos = local_reader_->copy(buf, read_avail, 0);
           if (written_pos != buf + read_avail) {
             ret = OB_ERR_UNEXPECTED;
-            _PROXY_API_LOG(WARN, "not copy completely", K(written_pos), K(buf), K(read_avail), K(ret));
+            _PROXY_API_LOG(WDIAG, "not copy completely", K(written_pos), K(buf), K(read_avail), K(ret));
           } else {
             ObString content(read_avail - MYSQL_NET_HEADER_LENGTH, buf + MYSQL_NET_HEADER_LENGTH);
             if (OB_SUCCESS != (ret = save_changed_session_info(content))) {
-              _PROXY_API_LOG(WARN, "failed to save changed session info, ret=%d", ret);
+              _PROXY_API_LOG(WDIAG, "failed to save changed session info, ret=%d", ret);
             }
           }
           if (NULL != buf) {
@@ -148,7 +148,7 @@ public:
     }
 
     if (OB_FAIL(local_reader_->consume(local_reader_->read_avail()))) {
-      PROXY_API_LOG(WARN, "fail to consume ", K(ret));
+      PROXY_API_LOG(WDIAG, "fail to consume ", K(ret));
     }
     return ret;
   }
@@ -179,16 +179,16 @@ public:
           sm_->trans_state_.trans_info_.server_response_.get_analyze_result();
 
         if (OB_SUCCESS != (ret = src_ok.decode())) {
-          PROXY_API_LOG(WARN, "fail to decode ok packet", K(src_ok), K(ret));
+          PROXY_API_LOG(WDIAG, "fail to decode ok packet", K(src_ok), K(ret));
         } else if (OB_SUCCESS != (ret = ObProxySessionInfoHandler::save_changed_session_info(
             client_info, server_info, sm_->trans_state_.is_auth_request_, NULL, src_ok, analyze_result, sm_->trans_state_.trace_log_))) {
-          _PROXY_API_LOG(WARN, "fail to save changed session info, is_auth_request=%d, ret=%d",
+          _PROXY_API_LOG(WDIAG, "fail to save changed session info, is_auth_request=%d, ret=%d",
                          sm_->trans_state_.is_auth_request_, ret);
         }
         PROXY_API_LOG(DEBUG, "analyze last ok packet of result set", K(src_ok));
       } else {
         ret = OB_ERROR;
-        _PROXY_API_LOG(WARN, "server session is dead, server_session=NULL");
+        _PROXY_API_LOG(WDIAG, "server session is dead, server_session=NULL");
       }
     }
 
@@ -229,7 +229,7 @@ public:
         transaction.add_plugin(plugin);
         _PROXY_API_LOG(DEBUG, "add ObTrimOkPakcetTransformPlugin=%p", plugin);
       } else {
-        _PROXY_API_LOG(ERROR, "failed to allocate memory for ObTrimOkPakcetTransformPlugin");
+        _PROXY_API_LOG(EDIAG, "failed to allocate memory for ObTrimOkPakcetTransformPlugin");
       }
     }
 

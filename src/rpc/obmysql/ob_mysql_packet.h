@@ -77,11 +77,36 @@ enum ObMySQLCmd
   // When the connection is disconnected, the session needs to be deleted, but at this time it may not be obtained in the callback function disconnect
   // Session lock, at this time, an asynchronous task will be added to the obmysql queue
   OB_MYSQL_COM_DELETE_SESSION = OBPROXY_MYSQL_CMD_START,
-  // OB_MYSQL_COM_HANDSHAKE and OB_MYSQL_COM_LOGIN are not standard mysql package types, they are used in ObProxy
-  // OB_MYSQL_COM_HANDSHAKE represents client---->on_connect && observer--->hand shake or error
-  // OB_MYSQL_COM_LOGIN represents client---->hand shake response && observer---> ok or error
+  /*
+    MySQL Connection Phase
+    obproxy ----- connect ---------------> observer
+                  ^--- COM_HANDSHAKE(non-standard)
+    obproxy <---- handshake -------------- observer
+    obproxy ----- handshake response ----> observer
+                  ^--- COM_LOGIN(non-standard)
+    obproxy <---- ok/err packet ---------- observer
+  */
   OB_MYSQL_COM_HANDSHAKE,
   OB_MYSQL_COM_LOGIN,
+  /*
+    MySQL Command Phase: load data local infile
+    obproxy ----- COM_QUERY: load data local ----> observer
+    obproxy <---- 0xFB filename ------------------ observer
+    obproxy ----- content of file ---------------> observer
+                  ^--- COM_LOAD_DATA_TRANSFER_CONTENT(non-standard)
+    obproxy ----- empty packet ------------------> observer
+    obproxy <---- ok/err packet ------------------ observer
+  */
+  OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT,
+  /*
+    proxy ----- COM_CHANGE_USER -----> server
+    proxy <--------- 0xFE ------------ server
+                       ^--- COM_AUTH_SWITCH_REQUEST(non-standard)
+    proxy ---------- data -----------> server
+                       ^--- COM_AUTH_SWITCH_RESPONSE(non-standard)
+    proxy <--------- ok/err ---------- server
+  */
+  OB_MYSQL_COM_AUTH_SWITCH_RESP,
   OB_MYSQL_COM_MAX_NUM
 };
 
@@ -279,7 +304,7 @@ public:
   static int store_string_kv(char* buf, int64_t len, const ObStringKV& str, int64_t& pos);
   static uint64_t get_kv_encode_len(const ObStringKV& string_kv);
   static ObStringKV get_separator_kv();  // separator for system variables and user variables
-  
+
   VIRTUAL_TO_STRING_KV("header", hdr_);
 
 protected:

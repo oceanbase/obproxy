@@ -51,7 +51,7 @@ int ObProxyMonitorUtils::sql_escape(const char *sql, const int32_t sql_len,
    || OB_ISNULL(new_sql) || OB_UNLIKELY(new_sql_size <= 0)) {
     new_sql_len = 0;
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid_argument", KP(sql), K(sql_len), KP(new_sql), K(new_sql_size), K(ret));
+    LOG_WDIAG("invalid_argument", KP(sql), K(sql_len), KP(new_sql), K(new_sql_size), K(ret));
   } else {
     int32_t i = 0;
     for (i = 0, new_sql_len = 0; i < sql_len && new_sql_len < new_sql_size; i++, sql++) {

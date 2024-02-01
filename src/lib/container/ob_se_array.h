@@ -80,11 +80,11 @@ public:
     } else {
       if (OB_LIKELY(count_ <= LOCAL_ARRAY_SIZE)) {
         if (OB_FAIL(copy_assign(obj, local_data_[idx]))) {
-          LIB_LOG(WARN, "failed to copy data", K(ret));
+          LIB_LOG(WDIAG, "failed to copy data", K(ret));
         }
       } else {
         if (OB_FAIL(copy_assign(obj, array_.at(idx)))) {
-          LIB_LOG(WARN, "failed to copy data", K(ret));
+          LIB_LOG(WDIAG, "failed to copy data", K(ret));
         }
       }
     }
@@ -93,7 +93,7 @@ public:
   inline T &at(int64_t idx)     // dangerous
   {
     if (OB_UNLIKELY(0 > idx || idx >= count_)) {
-      LIB_LOG(ERROR, "idx out of range", K(idx), K_(count));
+      LIB_LOG(EDIAG, "idx out of range", K(idx), K_(count));
     }
 
     if (OB_LIKELY(count_ <= LOCAL_ARRAY_SIZE)) {
@@ -105,7 +105,7 @@ public:
   inline const T &at(int64_t idx) const // dangerous
   {
     if (OB_UNLIKELY(0 > idx || idx >= count_)) {
-      LIB_LOG(ERROR, "idx out of range", K(idx), K_(count));
+      LIB_LOG(EDIAG, "idx out of range", K(idx), K_(count));
     }
 
     if (OB_LIKELY(count_ <= LOCAL_ARRAY_SIZE)) {
@@ -117,7 +117,7 @@ public:
   inline const T &operator[](int64_t idx) const  // dangerous
   {
     if (OB_UNLIKELY(0 > idx || idx >= count_)) {
-      LIB_LOG(ERROR, "idx out of range", K(idx), K_(count));
+      LIB_LOG(EDIAG, "idx out of range", K(idx), K_(count));
     }
 
     if (OB_LIKELY(count_ <= LOCAL_ARRAY_SIZE)) {
@@ -202,11 +202,11 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
 {
   int ret = OB_SUCCESS;
   if (OB_SUCCESS != (ret = serialization::encode_vi64(buf, buf_len, pos, count()))) {
-    LIB_LOG(WARN, "fail to encode ob array count", K(ret));
+    LIB_LOG(WDIAG, "fail to encode ob array count", K(ret));
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < count(); i ++) {
     if (OB_SUCCESS != (ret = serialization::encode(buf, buf_len, pos, at(i)))) {
-      LIB_LOG(WARN, "fail to encode item", K(i), K(ret));
+      LIB_LOG(WDIAG, "fail to encode item", K(i), K(ret));
     }
   }
   return ret;
@@ -221,13 +221,13 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
   T item;
   reset();
   if (OB_SUCCESS != (ret = serialization::decode_vi64(buf, data_len, pos, &count))) {
-    LIB_LOG(WARN, "fail to decode ob array count", K(ret));
+    LIB_LOG(WDIAG, "fail to decode ob array count", K(ret));
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < count; i ++) {
     if (OB_SUCCESS != (ret = serialization::decode(buf, data_len, pos, item))) {
-      LIB_LOG(WARN, "fail to decode array item", K(ret));
+      LIB_LOG(WDIAG, "fail to decode array item", K(ret));
     } else if (OB_SUCCESS != (ret = push_back(item))) {
-      LIB_LOG(WARN, "fail to add item to array", K(ret));
+      LIB_LOG(WDIAG, "fail to add item to array", K(ret));
     }
   }
   return ret;
@@ -282,7 +282,7 @@ ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArrayT>
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(LOCAL_ARRAY_SIZE != count_ || 0 != array_.count())) {
     ret = OB_ERR_UNEXPECTED;
-    LIB_LOG(ERROR, "invalid count", K_(count), K(array_.count()), K(ret));
+    LIB_LOG(EDIAG, "invalid count", K_(count), K(array_.count()), K(ret));
   } else {
     array_.reserve(count_);
     for (int64_t i = 0; OB_SUCC(ret) && i < count_; ++i) {
@@ -300,13 +300,13 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
   if (count_ < LOCAL_ARRAY_SIZE) {
     if (count_ < valid_count_) {
       if (OB_FAIL(copy_assign(local_data_[count_], obj))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       } else {
         ++count_;
       }
     } else {
       if (OB_FAIL(construct_assign(local_data_[count_], obj))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       } else {
         ++valid_count_;
         ++count_;
@@ -332,17 +332,17 @@ ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArrayT>
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(array_.count() != LOCAL_ARRAY_SIZE)) {
-    LIB_LOG(ERROR, "invalid move_to_local action", K(LOCAL_ARRAY_SIZE), K(array_.count()));
+    LIB_LOG(EDIAG, "invalid move_to_local action", K(LOCAL_ARRAY_SIZE), K(array_.count()));
   }
 
   for (int64_t i = 0; OB_SUCC(ret) && i < valid_count_; ++i) {
     if (OB_FAIL(copy_assign(local_data_[i], array_.at(i)))) {
-      LIB_LOG(WARN, "failed to copy data", K(ret));
+      LIB_LOG(WDIAG, "failed to copy data", K(ret));
     }
   }
   for (int64_t i = valid_count_; OB_SUCC(ret) && i < LOCAL_ARRAY_SIZE; ++i) {
     if (OB_FAIL(construct_assign(local_data_[i], array_.at(i)))) {
-      LIB_LOG(WARN, "failed to copy data", K(ret));
+      LIB_LOG(WDIAG, "failed to copy data", K(ret));
     }
   }
   array_.reset();
@@ -359,7 +359,7 @@ void ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarAr
     array_.pop_back();
     if (array_.count() == LOCAL_ARRAY_SIZE) {
       if (OB_UNLIKELY(OB_SUCCESS != move_to_local())) {
-        LIB_LOG(WARN, "failed to move_to_local()");
+        LIB_LOG(WDIAG, "failed to move_to_local()");
       }
     }
     --count_;
@@ -375,14 +375,14 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
     ret = OB_ENTRY_NOT_EXIST;
   } else if (count_ <= LOCAL_ARRAY_SIZE) {
     if (OB_FAIL(copy_assign(obj, local_data_[--count_]))) {
-      LIB_LOG(WARN, "failed to copy data", K(ret));
+      LIB_LOG(WDIAG, "failed to copy data", K(ret));
     }
   } else {
     ret = array_.pop_back(obj);
     if (OB_SUCC(ret)) {
       if (array_.count() == LOCAL_ARRAY_SIZE) {
         if (OB_FAIL(move_to_local())) {
-          LIB_LOG(WARN, "failed to move_to_local()", K(ret));
+          LIB_LOG(WDIAG, "failed to move_to_local()", K(ret));
         }
       }
       --count_;
@@ -401,7 +401,7 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
   } else if (count_ <= LOCAL_ARRAY_SIZE) {
     for (int64_t i = idx; OB_SUCC(ret) && i < count_ - 1; ++i) {
       if (OB_FAIL(copy_assign(local_data_[i], local_data_[i + 1]))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       }
     }
     --count_;
@@ -410,7 +410,7 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
     if (OB_SUCC(ret)) {
       if (array_.count() == LOCAL_ARRAY_SIZE) {
         if (OB_FAIL(move_to_local())) {
-          LIB_LOG(WARN, "failed to move_to_local()", K(ret));
+          LIB_LOG(WDIAG, "failed to move_to_local()", K(ret));
         }
       }
       --count_;
@@ -426,7 +426,7 @@ inline  T *ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode,
   T *ptr = NULL;
   if (count_ < LOCAL_ARRAY_SIZE) {
     if (OB_UNLIKELY(valid_count_ < count_)) {
-      LIB_LOG(ERROR, "ObSEArray inner state retor",
+      LIB_LOG(EDIAG, "ObSEArray inner state retor",
               K(LOCAL_ARRAY_SIZE), K_(valid_count), K_(count));
       ptr = NULL; // unexpected
     } else if (valid_count_ == count_) {
@@ -529,7 +529,7 @@ ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArrayT>
       for (i = 0; OB_LIKELY(OB_SUCCESS == copy_assign_ret_) && i < N; ++i) {
         if (OB_UNLIKELY(OB_SUCCESS != (copy_assign_ret_ = construct_assign(local_data_[i],
                                                                           other.local_data_[i])))) {
-          LIB_LOG(WARN, "failed to copy data", K(copy_assign_ret_));
+          LIB_LOG(WDIAG, "failed to copy data", K(copy_assign_ret_));
           count_ = i;
         }
       }
@@ -542,7 +542,7 @@ ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArrayT>
     } else {
       this->array_ = other.array_;
       if (OB_UNLIKELY(OB_SUCCESS != (copy_assign_ret_ = this->array_.get_copy_assign_ret()))) {
-        LIB_LOG(WARN, "error when assign array_", K(copy_assign_ret_));
+        LIB_LOG(WDIAG, "error when assign array_", K(copy_assign_ret_));
         count_ = this->array_.count();
       } else {
         count_ = other.count_;
@@ -563,13 +563,13 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
       const int64_t assign = std::min(valid_count_, N);
       for (int64_t i = 0; OB_SUCC(ret) && i < assign; ++i) {
         if (OB_FAIL(copy_assign(local_data_[i], other.at(i)))) {
-          LIB_LOG(WARN, "failed to copy data", K(ret));
+          LIB_LOG(WDIAG, "failed to copy data", K(ret));
           count_ = i;
         }
       }
       for (int64_t i = assign; OB_SUCC(ret) && i < N; ++i) {
         if (OB_FAIL(construct_assign(local_data_[i], other.at(i)))) {
-          LIB_LOG(WARN, "failed to copy data", K(ret));
+          LIB_LOG(WDIAG, "failed to copy data", K(ret));
           count_ = i;
         }
       }
@@ -581,7 +581,7 @@ int ObSEArray<T, LOCAL_ARRAY_SIZE, BlockAllocatorT, CallBack, ItemEncode, VarArr
       }
     } else {
       if (OB_FAIL(this->array_.assign(other))) {
-        LIB_LOG(WARN, "error when assign array_", K(ret));
+        LIB_LOG(WDIAG, "error when assign array_", K(ret));
         count_ = this->array_.count();
       } else {
         this->count_ = N;

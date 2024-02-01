@@ -1,0 +1,25 @@
+1 + 2 + 3 + 4 + 5
+1 * 2 * 3 * 4
+1 + 2 * 3
+1 * 2 + 3
+(1 + 2) * 3
+((1+2)*(9*9)/(9*9))
+trim(' a ')
+ltrim(' a ')
+rtrim(' a ')
+isnull(2)
+isnull(0)
+isnull(null)
+abs(-1)
+abs(-(1))
+floor(0.1024)
+ceil(0.1024)
+round(1.1024)
+round(1.1024, 2)
+round(1.1024, 3)
+round(1.5596)
+round(1.5596, 2)
+round(1.5596, 3)
+substring('texttext', 1, 4)
+length('texttext')
+concat('text', 'text')

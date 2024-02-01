@@ -201,7 +201,7 @@ private: // helpers
       total_  += sz;
       ++pages_;
     } else {
-      _OB_LOG(ERROR, "cannot allocate memory.sz=%ld, pages_=%ld,total_=%ld",
+      _OB_LOG(EDIAG, "cannot allocate memory.sz=%ld, pages_=%ld,total_=%ld",
                 sz, pages_, total_);
     }
 
@@ -218,7 +218,7 @@ private: // helpers
       } else {
         page = alloc_new_page(sz);
         if (NULL == page) {
-          _OB_LOG(ERROR, "extend_page sz =%ld cannot alloc new page", sz);
+          _OB_LOG(EDIAG, "extend_page sz =%ld cannot alloc new page", sz);
         } else {
           insert_tail(page);
         }
@@ -325,7 +325,7 @@ public: // API
         pages_(0), used_(0), total_(0), page_allocator_(alloc)
   {
     if (page_size < (int64_t)sizeof(Page)) {
-      _OB_LOG(ERROR, "invalid page size(page_size=%ld, page=%ld)", page_size,
+      _OB_LOG(EDIAG, "invalid page size(page_size=%ld, page=%ld)", page_size,
               (int64_t)sizeof(Page));
     }
   }
@@ -391,7 +391,7 @@ public: // API
     T *ret = NULL;
     void *tmp = (void *)alloc_aligned(sizeof(T));
     if (NULL == tmp) {
-      _OB_LOG(WARN, "fail to alloc mem for T");
+      _OB_LOG(WDIAG, "fail to alloc mem for T");
     } else {
       ret = new(tmp)T();
     }

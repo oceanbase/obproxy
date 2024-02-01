@@ -34,6 +34,7 @@ ObProxyPartInfo::ObProxyPartInfo() : is_oracle_mode_(false)
                                    , has_generated_key_(false)
                                    , has_unknown_part_key_(false)
                                    , is_template_table_(true)
+                                   , is_primary_key_as_part_expr_(false)
                                    , part_level_(PARTITION_LEVEL_ZERO)
                                    , table_cs_type_(CS_TYPE_INVALID)
                                    , allocator_()
@@ -67,12 +68,15 @@ int64_t ObProxyPartInfo::to_string(char *buf, const int64_t buf_len) const
        K_(has_generated_key),
        K_(has_unknown_part_key),
        K_(is_template_table),
+       K_(is_primary_key_as_part_expr),
        K_(part_level),
        K_(table_cs_type),
        K_(first_part_option),
        K_(sub_part_option),
        "part_key_info", ObProxyPartKeyInfoPrintWrapper(part_key_info_),
-       K_(part_mgr)
+       K_(part_mgr),
+       K_(part_columns),
+       K_(sub_part_columns)
        );
 
   J_OBJ_END();
@@ -85,7 +89,7 @@ int ObProxyPartInfo::alloc(ObProxyPartInfo *&part_info)
   char *buf = static_cast<char *>(op_fixed_mem_alloc(sizeof(ObProxyPartInfo)));
   if (OB_ISNULL(buf)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K(sizeof(ObProxyPartInfo)), K(ret));
+    LOG_WDIAG("fail to alloc mem", K(sizeof(ObProxyPartInfo)), K(ret));
   } else {
     part_info = new (buf) ObProxyPartInfo();
   }
@@ -95,6 +99,8 @@ int ObProxyPartInfo::alloc(ObProxyPartInfo *&part_info)
 void ObProxyPartInfo::free()
 {
   part_mgr_.destroy();
+  part_columns_.reset();
+  sub_part_columns_.reset();
   allocator_.reset();
   op_fixed_mem_free(this, sizeof(ObProxyPartInfo));
 }

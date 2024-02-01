@@ -132,7 +132,7 @@ inline int ObAPIHook::invoke(int event, void *edata)
 {
   if ((EVENT_IMMEDIATE == event) || (EVENT_INTERVAL == event)) {
     if (ATOMIC_FAA((int *)&cont_->event_count_, 1) < 0) {
-      PROXY_API_LOG(ERROR, "not reached");
+      PROXY_API_LOG(EDIAG, "not reached");
     }
   }
 
@@ -150,7 +150,7 @@ inline int ObAPIHooks::prepend(ObContInternal *cont)
   ObAPIHook *api_hook = NULL;
   if (OB_ISNULL(api_hook = op_reclaim_alloc(ObAPIHook))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_API_LOG(ERROR, "failed to allocate memory for ObAPIHook", K(ret));
+    PROXY_API_LOG(EDIAG, "failed to allocate memory for ObAPIHook", K(ret));
   } else {
     api_hook->cont_ = cont;
     hooks_.push(api_hook);
@@ -164,7 +164,7 @@ inline int ObAPIHooks::append(ObContInternal *cont)
   ObAPIHook *api_hook = NULL;
   if (OB_ISNULL(api_hook = op_reclaim_alloc(ObAPIHook))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_API_LOG(ERROR, "failed to allocate memory for ObAPIHook", K(ret));
+    PROXY_API_LOG(EDIAG, "failed to allocate memory for ObAPIHook", K(ret));
   } else {
     api_hook->cont_ = cont;
     hooks_.enqueue(api_hook);

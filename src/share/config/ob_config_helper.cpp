@@ -102,7 +102,7 @@ int64_t ObConfigCapacityParser::get(const char *str, bool &valid)
       value <<= CAP_PB;
     } else {
       valid = false;
-      OB_LOG(ERROR, "set capacity error", K(str), K(p_unit));
+      OB_LOG(EDIAG, "set capacity error", K(str), K(p_unit));
     }
   }
 

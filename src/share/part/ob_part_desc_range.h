@@ -62,6 +62,7 @@ public:
                ObPartDescCtx &ctx);
 
   DECLARE_VIRTUAL_TO_STRING;
+  virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const;
 private:
   int64_t get_start(const RangePartition *part_array,
                     const int64_t size,

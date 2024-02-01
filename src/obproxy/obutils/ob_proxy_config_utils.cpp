@@ -62,64 +62,64 @@ int ObProxyConfigUtils::dump_config_update_sql(const char *file_dir)
 
   if (OB_ISNULL(file_dir)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid file dir", K(ret));
+    LOG_WDIAG("invalid file dir", K(ret));
   } else if (OB_FAIL(prepare_sql_file(file_dir, fd))) {
-    LOG_WARN("fail to prepare sql file", K(file_dir), K(ret));
+    LOG_WDIAG("fail to prepare sql file", K(file_dir), K(ret));
   } else if (OB_ISNULL(sql = static_cast<char *>(op_fixed_mem_alloc(len)))) {// 4k
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else {
     // create proxy info table
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy table sql", K(len), K(ret));
       } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-        LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+        LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
       }
     }
 
     // create proxy config table
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_config_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy config table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy config table sql", K(len), K(ret));
       } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-        LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+        LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
       }
     }
 
     // create proxy stat table
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_stat_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy stat table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy stat table sql", K(len), K(ret));
       } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-        LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+        LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
       }
     }
 
     // create proxy kv table
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_kv_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy kv table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy kv table sql", K(len), K(ret));
       } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-        LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+        LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
       }
     }
 
     // create proxy vip tenant table
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_vip_tenant_table_sql(sql, len))) {
-        LOG_WARN("fail to get create vip tenant table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create vip tenant table sql", K(len), K(ret));
       } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-        LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+        LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
       }
     }
 
     // insert vip tenant version into proxy kv table
     if (OB_SUCC(ret)) {
       if (OB_FAIL(get_insert_vip_tenant_version_sql(sql, len))) {
-        LOG_WARN("fail to get insert vip tenant version sql", K(len), K(ret));
+        LOG_WDIAG("fail to get insert vip tenant version sql", K(len), K(ret));
       } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-        LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+        LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
       }
     }
 
@@ -127,9 +127,9 @@ int ObProxyConfigUtils::dump_config_update_sql(const char *file_dir)
     if (OB_SUCC(ret)) {
       int64_t expect_affected_rows = 0;
       if (OB_FAIL(get_insert_all_proxy_upgrade_sql(sql, len, expect_affected_rows))) {
-        LOG_WARN("fail to get insert all proxy upgrade sql", K(len), K(ret));
+        LOG_WDIAG("fail to get insert all proxy upgrade sql", K(len), K(ret));
       } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-        LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+        LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
       } else {/*do noting*/}
     }
 
@@ -138,7 +138,7 @@ int ObProxyConfigUtils::dump_config_update_sql(const char *file_dir)
       ObProxyConfig *all_proxy_config = NULL;
       if (OB_ISNULL(all_proxy_config = new (std::nothrow) ObProxyConfig())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to new memory for ObProxyConfig", K(ret));
+        LOG_WDIAG("fail to new memory for ObProxyConfig", K(ret));
       } else {
         const ObConfigContainer &container = all_proxy_config->get_container();
         ObConfigContainer::const_iterator it = container.begin();
@@ -147,12 +147,12 @@ int ObProxyConfigUtils::dump_config_update_sql(const char *file_dir)
         for (; OB_SUCC(ret) && it != container.end(); ++it) {
           if (OB_ISNULL(item = it->second)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpected error happened, config item must not be null", K(ret));
+            LOG_WDIAG("unexpected error happened, config item must not be null", K(ret));
           } else if (USER_LEVEL == item->visible_level()) {
             if (OB_FAIL(get_config_item_sql(*item, sql, len))) {
-              LOG_WARN("fail to get config item sql", K(len), K(ret));
+              LOG_WDIAG("fail to get config item sql", K(len), K(ret));
             } else if (OB_FAIL(write_sql_to_file(fd, sql))) {
-              LOG_ERROR("fail to write sql to file", K(sql), K(fd), K(ret));
+              LOG_EDIAG("fail to write sql to file", K(sql), K(fd), K(ret));
             }
           }
         }
@@ -172,7 +172,7 @@ int ObProxyConfigUtils::dump_config_update_sql(const char *file_dir)
 
   if (OB_LIKELY(fd >= 0) && OB_UNLIKELY(0 != close(fd))) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to close file fd", K(fd), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to close file fd", K(fd), KERRMSGS, K(ret));
   }
   return ret;
 }
@@ -188,22 +188,22 @@ int ObProxyConfigUtils::prepare_sql_file(const char *file_dir, int &file_fd)
 
   if (OB_ISNULL(file_dir)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid file dir", K(file_dir), K(ret));
+    LOG_WDIAG("invalid file dir", K(file_dir), K(ret));
   } else if (OB_FAIL(databuff_printf(sql_file, OB_MAX_FILE_NAME_LENGTH, pos, "%s", file_dir))) {
-    LOG_WARN("fail to append sql file dir", K(ret));
+    LOG_WDIAG("fail to append sql file dir", K(ret));
   } else if (OB_FAIL(common::FileDirectoryUtils::create_full_path(sql_file))) {
-    LOG_ERROR("fail to create sql file dir", K(file_dir), K(ret));
+    LOG_EDIAG("fail to create sql file dir", K(file_dir), K(ret));
   } else if (OB_FAIL(databuff_printf(sql_file, OB_MAX_FILE_NAME_LENGTH, pos, "%s", "obproxy_config_update.sql"))) {
-    LOG_WARN("fail to append sql file name", K(ret));
+    LOG_WDIAG("fail to append sql file name", K(ret));
   } else if (OB_UNLIKELY((fd = open(sql_file, O_RDWR | O_CREAT, S_IRUSR | S_IWUSR)) < 0)) {
     ret = OB_IO_ERROR;
-    LOG_WARN("can't open sql file", KERRMSGS, K(sql_file), K(ret));
+    LOG_WDIAG("can't open sql file", KERRMSGS, K(sql_file), K(ret));
   } else if (OB_UNLIKELY(lockf(fd, F_TLOCK, 0) < 0)) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to lock sql file", KERRMSGS, K(ret));
+    LOG_WDIAG("fail to lock sql file", KERRMSGS, K(ret));
   } else if (OB_UNLIKELY(ftruncate(fd, 0) < 0)) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to truncate sql file", KERRMSGS, K(ret));
+    LOG_WDIAG("fail to truncate sql file", KERRMSGS, K(ret));
   } else {
     file_fd = fd;
   }
@@ -218,10 +218,10 @@ int ObProxyConfigUtils::write_sql_to_file(const int fd, const char *sql)
 
   if (OB_ISNULL(sql) || OB_UNLIKELY((sql_len = STRLEN(sql)) <= 0) || OB_UNLIKELY(fd < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(sql), K(fd), K(ret));
+    LOG_WDIAG("invalid argument", K(sql), K(fd), K(ret));
   } else if (OB_UNLIKELY(sql_len != ::write(fd, sql, sql_len))) {
     ret =  OB_IO_ERROR;
-    LOG_WARN("write sql file error", KERRMSGS, K(sql), K(ret));
+    LOG_WDIAG("write sql file error", KERRMSGS, K(sql), K(ret));
   }
 
   return ret;
@@ -235,19 +235,19 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
 
   if (OB_ISNULL(sql = static_cast<char *>(op_fixed_mem_alloc(len)))) {// 4k
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else {
     int64_t affected_rows = -1;
 
     // create proxy info table
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy table sql", K(len), K(ret));
       } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (OB_UNLIKELY(0 != affected_rows)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
+        LOG_WDIAG("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
       }
     }
 
@@ -255,12 +255,12 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
     if (OB_SUCC(ret)) {
       affected_rows = -1;
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_config_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy config table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy config table sql", K(len), K(ret));
       } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (OB_UNLIKELY(0 != affected_rows)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
+        LOG_WDIAG("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
       }
     }
 
@@ -268,12 +268,12 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
     if (OB_SUCC(ret)) {
       affected_rows = -1;
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_stat_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy stat table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy stat table sql", K(len), K(ret));
       } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (OB_UNLIKELY(0 != affected_rows)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
+        LOG_WDIAG("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
       }
     }
 
@@ -281,12 +281,12 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
     if (OB_SUCC(ret)) {
       affected_rows = -1;
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_kv_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy kv table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy kv table sql", K(len), K(ret));
       } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (OB_UNLIKELY(0 != affected_rows)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
+        LOG_WDIAG("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
       }
     }
 
@@ -294,12 +294,12 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
     if (OB_SUCC(ret)) {
       affected_rows = -1;
       if (OB_FAIL(ObProxyTableInfo::get_create_proxy_vip_tenant_table_sql(sql, len))) {
-        LOG_WARN("fail to get create proxy vip tenant table sql", K(len), K(ret));
+        LOG_WDIAG("fail to get create proxy vip tenant table sql", K(len), K(ret));
       } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (OB_UNLIKELY(0 != affected_rows)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
+        LOG_WDIAG("in this scenario, affeted_rows must be 0", K(sql), K(affected_rows), K(ret));
       }
     }
 
@@ -307,12 +307,12 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
     if (OB_SUCC(ret)) {
       affected_rows = -1;
       if (OB_FAIL(get_insert_vip_tenant_version_sql(sql, len))) {
-        LOG_WARN("fail to get insert vip tenant version sql", K(len), K(ret));
+        LOG_WDIAG("fail to get insert vip tenant version sql", K(len), K(ret));
       } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (OB_UNLIKELY(1 != affected_rows) && OB_UNLIKELY(0 != affected_rows)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("in this scenario, affeted_rows must be 1 or 0", K(sql),
+        LOG_WDIAG("in this scenario, affeted_rows must be 1 or 0", K(sql),
                  K(affected_rows), K(ret));
       }
     }
@@ -322,12 +322,12 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
       affected_rows = -1;
       int64_t expect_affected_rows = -1;
       if (OB_FAIL(get_insert_all_proxy_upgrade_sql(sql, len, expect_affected_rows))) {
-        LOG_WARN("fail to get insert all proxy upgrade sql", K(len), K(sql), K(ret));
+        LOG_WDIAG("fail to get insert all proxy upgrade sql", K(len), K(sql), K(ret));
       } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-        LOG_WARN("fail to execute sql", K(sql), K(ret));
+        LOG_WDIAG("fail to execute sql", K(sql), K(ret));
       } else if (OB_UNLIKELY(affected_rows > expect_affected_rows) || OB_UNLIKELY(affected_rows < 0)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("in this scenario, affeted_rows must be lower than expect_affected_rows", K(sql),
+        LOG_WDIAG("in this scenario, affeted_rows must be lower than expect_affected_rows", K(sql),
                  K(affected_rows), K(expect_affected_rows), K(ret));
       }
     }
@@ -337,7 +337,7 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
       ObProxyConfig *all_proxy_config = NULL;
       if (OB_ISNULL(all_proxy_config = new (std::nothrow) ObProxyConfig())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to new memory for ObProxyConfig", K(ret));
+        LOG_WDIAG("fail to new memory for ObProxyConfig", K(ret));
       } else {
         const ObConfigContainer &container = all_proxy_config->get_container();
         ObConfigContainer::const_iterator it = container.begin();
@@ -347,15 +347,15 @@ int ObProxyConfigUtils::execute_config_update_sql(ObMysqlProxy &sql_proxy)
           affected_rows = -1;
           if (OB_ISNULL(item = it->second)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpected error happened, config item must not be null", K(ret));
+            LOG_WDIAG("unexpected error happened, config item must not be null", K(ret));
           } else if (USER_LEVEL == item->visible_level()) {
             if (OB_FAIL(get_config_item_sql(*item, sql, len))) {
-              LOG_WARN("fail to get config item sql", K(len), K(ret));
+              LOG_WDIAG("fail to get config item sql", K(len), K(ret));
             } else if (OB_FAIL(sql_proxy.write(sql, affected_rows))) {
-              LOG_WARN("fail to execute sql", K(sql), K(ret));
+              LOG_WDIAG("fail to execute sql", K(sql), K(ret));
             } else if (OB_UNLIKELY(1 != affected_rows) && OB_UNLIKELY(0 != affected_rows)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("in this scenario, affeted_rows must either 1 or 0",
+              LOG_WDIAG("in this scenario, affeted_rows must either 1 or 0",
                        K(sql), K(affected_rows), K(ret));
             }
           }
@@ -384,7 +384,7 @@ int ObProxyConfigUtils::get_insert_vip_tenant_version_sql(char *str, const int64
 
   if (OB_ISNULL(str) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(str), K(len), K(ret));
+    LOG_WDIAG("invalid argument", K(str), K(len), K(ret));
   } else {
     ObObj default_value;
     default_value.set_int(ObProxyTableInfo::PROXY_VIP_TENANT_VERSION_DEFAULT_VALUE);
@@ -395,7 +395,7 @@ int ObProxyConfigUtils::get_insert_vip_tenant_version_sql(char *str, const int64
                                 default_value.get_type(),
                                 default_value.get_int(),
                                 "obproxy newest vip tenant version"))) {
-      LOG_WARN("fail to append config version sql", K(ret));
+      LOG_WDIAG("fail to append config version sql", K(ret));
     }
   }
   return ret;
@@ -407,7 +407,7 @@ int ObProxyConfigUtils::get_insert_all_proxy_upgrade_sql(char *str, const int64_
   int ret = OB_SUCCESS;
   if (OB_ISNULL(str) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(str), K(len), K(ret));
+    LOG_WDIAG("invalid argument", K(str), K(len), K(ret));
   } else {
     const int64_t ALL_PROXY_BINARY_MAX_SIZE = 9;
     const char *all_proxy_upgrade_info[ALL_PROXY_BINARY_MAX_SIZE] = {
@@ -479,7 +479,7 @@ int ObProxyConfigUtils::get_insert_all_proxy_upgrade_sql(char *str, const int64_
                                 bianry_md5[RELEASE_7U].length(), bianry_md5[RELEASE_7U].ptr(),
                                 string_value.get_type(), varchar.length(), varchar.ptr(),
                                 all_proxy_upgrade_info[8]))) {
-      LOG_WARN("fail to append all proxy rows sql", K(len), K(pos), K(ret));
+      LOG_WDIAG("fail to append all proxy rows sql", K(len), K(pos), K(ret));
     } else {
       affected_rows = ALL_PROXY_BINARY_MAX_SIZE;
     }
@@ -496,11 +496,11 @@ int ObProxyConfigUtils::get_config_item_sql(const ObConfigItem &item,
 
   if (OB_ISNULL(str) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(str), K(len), K(ret));
+    LOG_WDIAG("invalid argument", K(str), K(len), K(ret));
   } else if (OB_FAIL(databuff_printf(str, len, pos, INSERT_CONFIG_TABLE_ALL_PROXY_SQL,
                                      ObProxyTableInfo::PROXY_CONFIG_TABLE_NAME, item.name(), item.str(),
                                      need_reboot_str, item.info()))) {
-    LOG_WARN("fail to append config item sql", K(ret));
+    LOG_WDIAG("fail to append config item sql", K(ret));
   }
 
   return ret;
@@ -527,27 +527,27 @@ int ObProxyConfigUtils::dump2file(const ObProxyConfig &proxy_config)
 
   if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(OB_PROXY_CONFIG_BUFFER_SIZE, mem_attr)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("ob tc malloc memory for buf fail", K(ret));
+    LOG_WDIAG("ob tc malloc memory for buf fail", K(ret));
   } else {
     obsys::CRLockGuard guard(proxy_config.rwlock_);
     if (OB_FAIL(proxy_config.serialize(buf, OB_PROXY_CONFIG_BUFFER_SIZE, pos))) {
-      LOG_WARN("fail to serialize proxy config", K(ret));
+      LOG_WDIAG("fail to serialize proxy config", K(ret));
     } else if (OB_UNLIKELY(pos > OB_PROXY_CONFIG_BUFFER_SIZE)) {
       ret = OB_SERIALIZE_ERROR;
-      LOG_WARN("fail to serialize", K(pos), K(OB_PROXY_CONFIG_BUFFER_SIZE), K(ret));
+      LOG_WDIAG("fail to serialize", K(pos), K(OB_PROXY_CONFIG_BUFFER_SIZE), K(ret));
     } else {/*do nothing*/}
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(mutex_acquire(&file_mutex))) {
-      LOG_ERROR("fail to acquire mutex", K(ret));
+      LOG_EDIAG("fail to acquire mutex", K(ret));
     } else {
       if (OB_FAIL(ObProxyFileUtils::write(CFG_DUMP_NAME, buf, pos))) {
-        LOG_WARN("fail to write config bin to file", K(CFG_DUMP_NAME), K(ret));
+        LOG_WDIAG("fail to write config bin to file", K(CFG_DUMP_NAME), K(ret));
       }
       int tmp_ret = OB_SUCCESS;
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = mutex_release(&file_mutex)))) {
-        LOG_ERROR("fail to release mutex", K(tmp_ret));
+        LOG_EDIAG("fail to release mutex", K(tmp_ret));
       }
     }
   }
@@ -570,7 +570,7 @@ int ObProxyConfigUtils::load_config_from_file(ObProxyConfig &proxy_config)
 
   if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(OB_PROXY_CONFIG_BUFFER_SIZE, mem_attr)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("ob tc malloc memory for buf fail", K(ret));
+    LOG_WDIAG("ob tc malloc memory for buf fail", K(ret));
   // If it is a rich client mode, the configuration will not be read from the local file
   } else if (RUN_MODE_PROXY == g_run_mode
              && OB_FAIL(ObProxyFileUtils::read(CFG_DUMP_NAME, buf, OB_PROXY_CONFIG_BUFFER_SIZE, read_len))) {
@@ -578,10 +578,10 @@ int ObProxyConfigUtils::load_config_from_file(ObProxyConfig &proxy_config)
   } else {
     obsys::CWLockGuard guard(proxy_config.rwlock_);
     if (OB_FAIL(proxy_config.deserialize(buf, read_len, pos))) {
-      LOG_WARN("fail to deserialize proxy config", K(ret));
+      LOG_WDIAG("fail to deserialize proxy config", K(ret));
     } else if (OB_UNLIKELY(pos != read_len)) {
       ret = OB_DESERIALIZE_ERROR;
-      LOG_WARN("deserialize proxy config failed", K(ret));
+      LOG_WDIAG("deserialize proxy config failed", K(ret));
     } else {
       proxy_config.set_app_name(proxy_config.app_name);
     }
@@ -598,9 +598,9 @@ int ObProxyFileUtils::write(const char *file_name, const char *buf, const int64_
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(write_to_file(get_global_layout().get_etc_dir(), file_name, buf, len))) {
-    LOG_WARN("fail to write file to etc dir", K(file_name), K(ret));
+    LOG_WDIAG("fail to write file to etc dir", K(file_name), K(ret));
   } else if (OB_FAIL(write_to_file(get_global_layout().get_conf_dir(), file_name, buf, len))) {
-    LOG_WARN("fail to write file to conf dir", K(file_name), K(ret));
+    LOG_WDIAG("fail to write file to conf dir", K(file_name), K(ret));
   }
   return ret;
 }
@@ -617,7 +617,7 @@ int ObProxyFileUtils::write_to_file(const char *dir, const char *file_name,
   if (OB_ISNULL(dir) || OB_ISNULL(file_name)
       || OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(dir), K(file_name), K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid input value", K(dir), K(file_name), K(buf), K(len), K(ret));
   } else {
     int64_t path_len = 0;
     int64_t pos_tmp = 0;
@@ -626,24 +626,24 @@ int ObProxyFileUtils::write_to_file(const char *dir, const char *file_name,
     mem_attr.mod_id_ = ObModIds::OB_PROXY_FILE;
     ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
     if (OB_FAIL(FileDirectoryUtils::create_full_path(dir))) {
-      LOG_WARN("fail to makedir", K(dir), K(ret));
+      LOG_WDIAG("fail to makedir", K(dir), K(ret));
     } else if (OB_FAIL(ObLayout::merge_file_path(dir, file_name, allocator, path))) {
-      LOG_WARN("fail to merge file path", K(file_name), K(ret));
+      LOG_WDIAG("fail to merge file path", K(file_name), K(ret));
     } else if (OB_ISNULL(path) || OB_UNLIKELY((path_len = STRLEN(path)) <= 0)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("invalid path", K(path), K(ret));
+      LOG_WDIAG("invalid path", K(path), K(ret));
     } else if (OB_ISNULL(tmp_path =  static_cast<char *>(ob_malloc(path_len + 8, mem_attr)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("ob malloc memory for tmp_path fail", K(ret));
+      LOG_WDIAG("ob malloc memory for tmp_path fail", K(ret));
     } else if (OB_FAIL(databuff_printf(tmp_path, path_len + 8, pos_tmp, "%s.tmp", path))) {
-      LOG_WARN("fail to fill tmp_path", K(path), K(tmp_path), K(ret));
+      LOG_WDIAG("fail to fill tmp_path", K(path), K(tmp_path), K(ret));
     } else if (OB_ISNULL(old_path =  static_cast<char *>(ob_malloc(path_len + 8, mem_attr)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("ob malloc memory for old_path fail", K(ret));
+      LOG_WDIAG("ob malloc memory for old_path fail", K(ret));
     } else if (OB_FAIL(databuff_printf(old_path, path_len + 8, pos_old, "%s.old", path))) {
-      LOG_WARN("fail to fill old_path", K(path), K(old_path), K(ret));
+      LOG_WDIAG("fail to fill old_path", K(path), K(old_path), K(ret));
     } else if (OB_FAIL(write_and_backup_file(path, tmp_path, old_path, buf, len, need_backup))) {
-      LOG_WARN("fail to write and backup file", K(path), K(tmp_path), K(old_path), K(ret));
+      LOG_WDIAG("fail to write and backup file", K(path), K(tmp_path), K(old_path), K(ret));
     } else {
       LOG_INFO("write file successfully!", K(path), K(old_path), K(len), K(ret));
     }
@@ -667,7 +667,7 @@ int ObProxyFileUtils::write_and_backup_file(const char *path, const char *tmp_pa
   if (OB_ISNULL(path) || OB_ISNULL(tmp_path) || OB_ISNULL(old_path)
       || OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid path or buffer", K(path), K(tmp_path), K(old_path), K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid path or buffer", K(path), K(tmp_path), K(old_path), K(buf), K(len), K(ret));
   } else {
     // Attention: when we use FileUtils to write file, we should set sync flag to false
     // otherwise it will sync all system io buffer to the write queue, which will cost much time
@@ -675,10 +675,10 @@ int ObProxyFileUtils::write_and_backup_file(const char *path, const char *tmp_pa
     if (OB_UNLIKELY((fd = ::open(tmp_path, O_WRONLY | O_CREAT | O_TRUNC,
                       S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)) < 0)) {
       ret = OB_IO_ERROR;
-      LOG_WARN("fail to create file", KERRMSGS, K(tmp_path), K(ret));
+      LOG_WDIAG("fail to create file", KERRMSGS, K(tmp_path), K(ret));
     } else if (OB_UNLIKELY(len != unintr_write(fd, buf, len))) {
       ret = OB_IO_ERROR;
-      LOG_WARN("fail to write buf to file", K(fd), KP(buf), K(len), KERRMSGS, K(tmp_path), K(ret));
+      LOG_WDIAG("fail to write buf to file", K(fd), KP(buf), K(len), KERRMSGS, K(tmp_path), K(ret));
     } else {
       bool is_old_file_existed = true;
       if (OB_UNLIKELY(0 != ::rename(path, old_path))) {
@@ -689,7 +689,7 @@ int ObProxyFileUtils::write_and_backup_file(const char *path, const char *tmp_pa
                    "origial name", path);
         } else {
           ret = OB_ERR_SYS;
-          LOG_WARN("fail to move file", KERRMSGS,
+          LOG_WDIAG("fail to move file", KERRMSGS,
                    "origial name", path, "new name", old_path, K(ret));
         }
       }
@@ -697,13 +697,13 @@ int ObProxyFileUtils::write_and_backup_file(const char *path, const char *tmp_pa
       if (OB_SUCC(ret)) {
         if (OB_UNLIKELY(0 != ::rename(tmp_path, path))) {
           ret = OB_ERR_SYS;
-          LOG_WARN("fail to move file", KERRMSGS,
+          LOG_WDIAG("fail to move file", KERRMSGS,
                    "origial name", tmp_path, "new name", path, K(ret));
 
           //we need rollback the old file
           if (is_old_file_existed) {
             if (OB_UNLIKELY(0 != ::rename(old_path, path))) {
-              LOG_WARN("fail to move file", KERRMSGS,
+              LOG_WDIAG("fail to move file", KERRMSGS,
                        "origial name", old_path, "new name", path);
             }
           }
@@ -743,9 +743,9 @@ int ObProxyFileUtils::read(const char *file_name, char *buf, const int64_t len, 
     mem_attr.mod_id_ = ObModIds::OB_PROXY_FILE;
     if (OB_ISNULL(old_file_name =  static_cast<char *>(ob_malloc(file_name_len + 8, mem_attr)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("ob malloc memory for old_file_name fail", K(ret));
+      LOG_WDIAG("ob malloc memory for old_file_name fail", K(ret));
     } else if (OB_FAIL(databuff_printf(old_file_name, file_name_len + 8, pos, "%s.old", file_name))) {
-      LOG_WARN("fail to fill old_file_name", K(file_name), K(file_name_len), K(ret));
+      LOG_WDIAG("fail to fill old_file_name", K(file_name), K(file_name_len), K(ret));
     } else {
       dir = get_global_layout().get_etc_dir();
       if (OB_FAIL(read_from_file(dir, old_file_name, buf, len, read_len))) {
@@ -756,7 +756,7 @@ int ObProxyFileUtils::read(const char *file_name, char *buf, const int64_t len, 
         }
       }
       if (OB_SUCC(ret)) {
-        LOG_WARN("Attention: old file was read", K(dir), K(old_file_name), K(file_name), K(read_len), K(len));
+        LOG_WDIAG("Attention: old file was read", K(dir), K(old_file_name), K(file_name), K(read_len), K(len));
       }
     }
 
@@ -777,22 +777,22 @@ int ObProxyFileUtils::read_from_file(const char *dir, const char *file_name,
   if (OB_ISNULL(dir) || OB_ISNULL(file_name)
       || OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(dir), K(file_name), K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid input value", K(dir), K(file_name), K(buf), K(len), K(ret));
   } else {
     char *path = NULL;
     ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
     if (OB_FAIL(ObLayout::merge_file_path(dir, file_name, allocator, path))) {
-      LOG_WARN("fail to merge file path", K(file_name), K(ret));
+      LOG_WDIAG("fail to merge file path", K(file_name), K(ret));
     } else if (OB_ISNULL(path)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("invalid path", K(path), K(ret));
+      LOG_WDIAG("invalid path", K(path), K(ret));
     } else {
       int fd = -1;
       if (OB_UNLIKELY((fd = ::open(path, O_RDONLY, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) < 0)) {
         ret = OB_IO_ERROR;
       } else if (OB_UNLIKELY((read_len = unintr_pread(fd, buf, len, 0)) < 0)) {
         ret = OB_IO_ERROR;
-        LOG_WARN("read file error!", K(path), K(read_len), K(ret));
+        LOG_WDIAG("read file error!", K(path), K(read_len), K(ret));
       } else if (OB_LIKELY(read_len < len)) {
         buf[read_len] = '\0';
       }
@@ -824,9 +824,9 @@ int ObProxyFileUtils::get_file_size(const char *file_name, int64_t &size)
     mem_attr.mod_id_ = ObModIds::OB_PROXY_FILE;
     if (OB_ISNULL(old_file_name =  static_cast<char *>(ob_malloc(file_name_len + 8, mem_attr)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("ob malloc memory for old_file_name fail", K(ret));
+      LOG_WDIAG("ob malloc memory for old_file_name fail", K(ret));
     } else if (OB_FAIL(databuff_printf(old_file_name, file_name_len + 8, pos, "%s.old", file_name))) {
-      LOG_WARN("fail to fill old_file_name", K(file_name), K(file_name_len), K(ret));
+      LOG_WDIAG("fail to fill old_file_name", K(file_name), K(file_name_len), K(ret));
     } else {
       dir = get_global_layout().get_etc_dir();
       if (OB_FAIL(calc_file_size(dir, old_file_name, size))) {
@@ -837,7 +837,7 @@ int ObProxyFileUtils::get_file_size(const char *file_name, int64_t &size)
         }
       }
       if (OB_SUCC(ret)) {
-        LOG_WARN("Attention: old file was calc size", K(dir), K(old_file_name), K(size), K(file_name));
+        LOG_WDIAG("Attention: old file was calc size", K(dir), K(old_file_name), K(size), K(file_name));
       }
     }
 
@@ -855,15 +855,15 @@ int ObProxyFileUtils::calc_file_size(const char *dir, const char *file_name, int
   size = 0;
   if (OB_ISNULL(dir) || OB_ISNULL(file_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(dir), K(file_name), K(ret));
+    LOG_WDIAG("invalid input value", K(dir), K(file_name), K(ret));
   } else {
     char *path = NULL;
     ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
     if (OB_FAIL(ObLayout::merge_file_path(dir, file_name, allocator, path))) {
-      LOG_WARN("fail to merge file path", K(file_name), K(ret));
+      LOG_WDIAG("fail to merge file path", K(file_name), K(ret));
     } else if (OB_ISNULL(path)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("invalid path", K(path), K(ret));
+      LOG_WDIAG("invalid path", K(path), K(ret));
     } else {
       struct stat st;
       if (OB_UNLIKELY(0 != (stat(path, &st)))) {
@@ -881,10 +881,10 @@ int ObProxyFileUtils::move_file_dir(const char *src_dir, const char *dst_dir)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(src_dir) || OB_ISNULL(dst_dir)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(src_dir), K(dst_dir), K(ret));
+    LOG_WDIAG("invalid input value", K(src_dir), K(dst_dir), K(ret));
   } if (OB_UNLIKELY(0 != ::rename(src_dir, dst_dir))) {
     ret = OB_ERR_SYS;
-    LOG_WARN("fail to move dir", KERRMSGS,
+    LOG_WDIAG("fail to move dir", KERRMSGS,
              "src dir", src_dir, "dst dir", dst_dir, K(ret));
   }
   return ret;
@@ -909,7 +909,7 @@ void ObProxyFileUtils::clear_dir(const char *dir)
         } else if (ent->d_type == DT_UNKNOWN) {
           struct stat st;
           if (0 != (stat(tmp_path, &st))) {
-            LOG_WARN("fail to stat dir", K(tmp_path), KERRMSGS);
+            LOG_WDIAG("fail to stat dir", K(tmp_path), KERRMSGS);
           } else {
             is_dir = S_ISDIR(st.st_mode);
           }
@@ -922,7 +922,7 @@ void ObProxyFileUtils::clear_dir(const char *dir)
         }
       }
       if (OB_UNLIKELY(0 != closedir(file_dir))) {
-        LOG_WARN("fail to close dir", "dir", dir, KERRMSGS);
+        LOG_WDIAG("fail to close dir", "dir", dir, KERRMSGS);
       } else {
         ::rmdir(dir);
       }

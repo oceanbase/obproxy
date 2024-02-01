@@ -49,7 +49,9 @@ static const char JOIN_SEPARATOR = '?';
 static const char PARAM_SEPARATOR = '&';
 static const char * const CONFIG_URL_KEY_STRING_1 = "GetObProxyConfig";
 static const char * const CONFIG_URL_KEY_STRING_2 = "GetObRootServiceInfoUrlTemplate";
-static const ObString LDG_INSTANCE_INFO_ALL_STRING = ObString::make_string("LdgInstanceInfoAll");
+static const ObString LDG_INSTANCE_INFO_BATCH_STRING = ObString::make_string("LdgInstanceInfoBatchQuery");
+static const int64_t LDG_BATCH_SIZE = 10;
+static const int64_t LDG_MAX_URL_LENGTH = 256 + OB_PROXY_MAX_CLUSTER_NAME_LENGTH * LDG_BATCH_SIZE;
 
 static const int64_t MAX_CLUSTER_ID_LENGTH = 10; // see ob_max_cluster_id = 4294901759 in ob_define.h
 
@@ -75,11 +77,11 @@ ObConfigServerProcessor::~ObConfigServerProcessor()
     curl_global_cleanup();
     int ret = OB_SUCCESS;
     if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(refresh_cont_))) {
-      LOG_WARN("fail to destroy refresh config server task", K(ret));
+      LOG_WDIAG("fail to destroy refresh config server task", K(ret));
     }
 
     if (NULL != refresh_ldg_cont_ && OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(refresh_ldg_cont_))) {
-      LOG_WARN("fail to destroy refresh ldg cont task", K(ret));
+      LOG_WDIAG("fail to destroy refresh ldg cont task", K(ret));
     }
 
     {
@@ -112,20 +114,20 @@ int ObConfigServerProcessor::init(const bool load_local_config_succ)
   ObProxyJsonConfigInfo *json_info = NULL;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("the fetch config processor has already been inited", K(ret));
+    LOG_WDIAG("the fetch config processor has already been inited", K(ret));
   } else if (CURLE_OK != (curl_ret = curl_global_init(CURL_GLOBAL_ALL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to do curl_global_init", K(curl_ret), K(ret));
+    LOG_WDIAG("fail to do curl_global_init", K(curl_ret), K(ret));
   } else if (OB_FAIL(init_proxy_kernel_release())) {
-    LOG_WARN("fail to init proxy kernel release", K(ret));
+    LOG_WDIAG("fail to init proxy kernel release", K(ret));
   } else if (OB_UNLIKELY(NULL != json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ should be null before inited", K(ret));
+    LOG_WDIAG("json_config_info_ should be null before inited", K(ret));
   } else if (OB_ISNULL(json_info = op_alloc(ObProxyJsonConfigInfo))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for json_config_info_", K(ret));
+    LOG_EDIAG("fail to alloc mem for json_config_info_", K(ret));
   } else if (OB_FAIL(swap(json_info))) {
-    LOG_WARN("fail to init json_config_info_", K(ret));
+    LOG_WDIAG("fail to init json_config_info_", K(ret));
   } else {
     if (proxy_config_.with_config_server_) {
       // if load_local_config_succ is true, we try to load json from local at first
@@ -134,9 +136,9 @@ int ObConfigServerProcessor::init(const bool load_local_config_succ)
         // 1 load json info from local at first
         // 2 if fail, try to get from remote config server, ignore ret because we have a timer task to do it
         if (OB_FAIL(load_config_from_local())) {
-          LOG_WARN("fail to load json config info from local, now try to get from remote", K(ret));
+          LOG_WDIAG("fail to load json config info from local, now try to get from remote", K(ret));
           if (OB_FAIL(refresh_json_config_info())) {
-            LOG_WARN("fail to get json config info from remote config server,"
+            LOG_WDIAG("fail to get json config info from remote config server,"
             "ignore ret and proxy will schedule a timer task to get later", K(ret));
           }
         }
@@ -153,7 +155,7 @@ int ObConfigServerProcessor::init(const bool load_local_config_succ)
           }
         }
       } else if (OB_FAIL(refresh_json_config_info())) {
-        LOG_WARN("fail to get json config info from remote config server, try load local file and "
+        LOG_WDIAG("fail to get json config info from remote config server, try load local file and "
                  "schedule a timer task to update later", K(ret));
         if (OB_FAIL(load_config_from_local())) {
           LOG_INFO("fail to load json config info from local, we can get from config server later", K(ret));
@@ -173,10 +175,13 @@ int ObConfigServerProcessor::init(const bool load_local_config_succ)
     }
 
     if (OB_SUCC(ret) && proxy_config_.enable_ldg) {
-      if (OB_FAIL(refresh_ldg_config_info())) {
-        LOG_WARN("refresh ldg info failed", K(ret));
+      // init Hash bucket_num for cluster_name
+      // HashMap插入的是集群名-版本号，预计集群的数量一般最多10+
+      LdgHashMap& ldg_cluster_hash = get_global_config_server_processor().ldg_cluster_hash_;
+      if (OB_FAIL(ldg_cluster_hash.create(4, ObModIds::OB_HASH_BUCKET_CONF_CONTAINER, ObModIds::OB_HASH_NODE_CONF_CONTAINER))) {
+        LOG_WDIAG("ldg cluster name HashSet init failed", K(ret));
       } else {
-        LOG_INFO("refresh ldg info success");
+        LOG_INFO("success to init ldg info hash");
       }
     }
 
@@ -194,13 +199,13 @@ int ObConfigServerProcessor::fetch_newest_cluster_rslist(const ObString &cluster
   char *url = NULL;
   ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
 
-  //1. get cluster url
+  //1、get cluster url
   if (OB_FAIL(get_cluster_url(cluster_name, allocator, url, cluster_id))) {
-    LOG_WARN("fail to get cluster url", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to get cluster url", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_FAIL(fetch_rs_list_from_url(url, cluster_name, cluster_id, web_rslist, need_update_dummy_entry))) {
-    //2. fetch web rs list with cluster name and url
+    //2、fetch web rs list with cluster name and url
     if (OB_EAGAIN != ret) {
-      LOG_WARN("fail to fetch web rs list from url", K(url), K(ret));
+      LOG_WDIAG("fail to fetch web rs list from url", K(url), K(ret));
     } else {
       ret = OB_SUCCESS;
     }
@@ -215,32 +220,38 @@ int ObConfigServerProcessor::get_newest_cluster_rs_list(const ObString &cluster_
     ObIArray<ObAddr> &rs_list, const bool need_update_dummy_entry /*true*/)
 {
   int ret = OB_SUCCESS;
+  #ifdef ERRSIM
+  if (OB_FAIL(OB_E(EventTable::EN_FETCH_RSLIST_FAIL) OB_SUCCESS)) {
+    return ret;
+  }
+  #endif
+
   LocationList web_rslist;
   int64_t last_master_cluster_id = OB_DEFAULT_CLUSTER_ID;
   int64_t cur_master_cluster_id = OB_DEFAULT_CLUSTER_ID;
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_master_cluster_id(cluster_name, last_master_cluster_id))) {
     LOG_DEBUG("last master cluster id does not exist", K(cluster_name), K(ret));
     ret = OB_SUCCESS;
   }
   if (OB_SUCC(ret) && OB_FAIL(fetch_newest_cluster_rslist(cluster_name, cluster_id, web_rslist, need_update_dummy_entry))) {
-    // 1. fetch newest cluster rslist
-    LOG_WARN("fail to fetch newest cluster rslist", K(cluster_name), K(cluster_id), K(ret));
+    // 1、fetch newest cluster rslist
+    LOG_WDIAG("fail to fetch newest cluster rslist", K(cluster_name), K(cluster_id), K(ret));
   }
 
-  //2. convert web_rslist to obaddr list
-  // allow be empty, chech by caller
+  //2、convert web_rslist to obaddr list
+  // 当前允许为空, 由上层使用方检测
   if (OB_SUCC(ret) && OB_LIKELY(!web_rslist.empty())
       && OB_FAIL(convert_root_addr_to_addr(web_rslist, rs_list))) {
-    LOG_WARN("fail to convert web rslist to rslist", K(ret));
+    LOG_WDIAG("fail to convert web rslist to rslist", K(ret));
   }
   if (OB_SUCC(ret) && OB_FAIL(get_master_cluster_id(cluster_name, cur_master_cluster_id))) {
-    LOG_WARN("master cluster id does not exist", K(cluster_name), K(ret));
+    LOG_WDIAG("master cluster id does not exist", K(cluster_name), K(ret));
   }
-  // if master clsuter id changed, need delete current master cluster's cluster resource on geting primary cluster rslist
+  // 拉主集群rslist时，如果主集群master cluster id发生变化，需要删除当前主集群cluster resource
   if (OB_SUCC(ret) && last_master_cluster_id != cur_master_cluster_id
       && OB_DEFAULT_CLUSTER_ID != last_master_cluster_id
       && OB_DEFAULT_CLUSTER_ID == cluster_id) {
@@ -249,7 +260,7 @@ int ObConfigServerProcessor::get_newest_cluster_rs_list(const ObString &cluster_
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = get_global_resource_pool_processor().delete_cluster_resource(
                        cluster_name, OB_DEFAULT_CLUSTER_ID))) {
-      LOG_WARN("fail to delete primary cluster resource", K(cluster_name), K(tmp_ret));
+      LOG_WDIAG("fail to delete primary cluster resource", K(cluster_name), K(tmp_ret));
     }
   }
   return ret;
@@ -262,18 +273,18 @@ int ObConfigServerProcessor::get_cluster_rs_list(const ObString &cluster_name,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-      LOG_WARN("fail to get cluster info", K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("fail to get cluster info", K(cluster_name), K(cluster_id), K(ret));
     } else if (OB_ISNULL(sub_cluster_info)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("null cluster info pointer", K(ret));
+      LOG_WDIAG("null cluster info pointer", K(ret));
     } else if (OB_FAIL(convert_root_addr_to_addr(sub_cluster_info->web_rs_list_, rs_list))) {
       LOG_INFO("fail to get cluster rs list, maybe we have not fetch rslist yet", KPC(sub_cluster_info), K(ret));
     } else { }
@@ -288,12 +299,12 @@ bool ObConfigServerProcessor::has_slave_clusters(const ObString &cluster_name)
   ObProxyClusterInfo *cluster_info = NULL;
   CRLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
-    LOG_WARN("json config info is null");
+    LOG_WDIAG("json config info is null");
   } else if (OB_FAIL(json_config_info_->get_cluster_info(cluster_name, cluster_info))) {
-    LOG_WARN("fail to get cluster info", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get cluster info", K(cluster_name), K(ret));
   } else if (OB_ISNULL(cluster_info)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("null cluster info pointer", K(ret));
+    LOG_WDIAG("null cluster info pointer", K(ret));
   } else {
     bret = cluster_info->get_sub_cluster_count() > 1;
   }
@@ -307,19 +318,19 @@ int ObConfigServerProcessor::get_next_master_cluster_rslist(const ObString &clus
   bool is_master_changed = false;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     // will change master cluster id, so we need write lock here
     CWLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_next_master_cluster_info(cluster_name, sub_cluster_info, is_master_changed))) {
-      LOG_WARN("fail to get next master cluster info", K(cluster_name), K(ret));
+      LOG_WDIAG("fail to get next master cluster info", K(cluster_name), K(ret));
     } else if (OB_ISNULL(sub_cluster_info)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("null cluster info pointer", K(ret));
+      LOG_WDIAG("null cluster info pointer", K(ret));
     } else if (OB_FAIL(convert_root_addr_to_addr(sub_cluster_info->web_rs_list_, rs_list))) {
       LOG_INFO("fail to get cluster rs list, maybe we have not fetch rslist yet", KPC(sub_cluster_info), K(ret));
     } else if (is_master_changed) {
@@ -335,12 +346,12 @@ int ObConfigServerProcessor::refresh_idc_list(const ObString &cluster_name, cons
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     char *url = NULL;
     ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
     if (OB_FAIL(get_idc_url(cluster_name, allocator, url, cluster_id))) {
-      LOG_WARN("fail to get cluster url", K(cluster_name), K(cluster_id), K(ret));
+      LOG_INFO("fail to get cluster url", K(cluster_name), K(cluster_id), K(ret));
     } else if (OB_FAIL(refresh_idc_list_from_url(url, cluster_name, cluster_id, idc_list))) {
       LOG_INFO("fail to refresh idc list from url", K(url), K(ret));
     }
@@ -356,24 +367,24 @@ int ObConfigServerProcessor::get_cluster_idc_region(const common::ObString &clus
   region_name.reset();
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (!idc_name.empty()) {
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
       if (OB_ENTRY_NOT_EXIST == ret) {
         ret = OB_SUCCESS;
       } else {
-        LOG_WARN("fail to get cluster info", K(cluster_name), K(cluster_id), K(ret));
+        LOG_WDIAG("fail to get cluster info", K(cluster_name), K(cluster_id), K(ret));
       }
     } else if (OB_ISNULL(sub_cluster_info)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("null cluster info pointer", K(ret));
+      LOG_WDIAG("null cluster info pointer", K(ret));
     } else if (OB_FAIL(sub_cluster_info->get_idc_region(idc_name, region_name))) {
-      LOG_WARN("fail to get idc region", K(sub_cluster_info->idc_list_), K(idc_name), K(ret));
+      LOG_WDIAG("fail to get idc region", K(sub_cluster_info->idc_list_), K(idc_name), K(ret));
     } else if (region_name.empty()) {
       LOG_INFO("can not find region from id list, ignore", KPC(sub_cluster_info), K(idc_name));
     }
@@ -387,9 +398,9 @@ int ObConfigServerProcessor::get_master_cluster_id(const common::ObString &clust
   CRLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ is null", K(ret));
+    LOG_WDIAG("json_config_info_ is null", K(ret));
   } else if (OB_FAIL(json_config_info_->get_master_cluster_id(cluster_name, cluster_id))) {
-    LOG_WARN("fail to get cluster id", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get cluster id", K(cluster_name), K(ret));
   }
   return ret;
 }
@@ -400,9 +411,9 @@ int ObConfigServerProcessor::set_master_cluster_id(const ObString &cluster_name,
   CWLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ is null", K(ret));
+    LOG_WDIAG("json_config_info_ is null", K(ret));
   } else if (OB_FAIL(json_config_info_->set_master_cluster_id(cluster_name, cluster_id))) {
-    LOG_WARN("fail to set master cluster id", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to set master cluster id", K(cluster_name), K(cluster_id), K(ret));
   } else {
     need_dump_rslist_res_ = true;
   }
@@ -417,9 +428,9 @@ int ObConfigServerProcessor::get_rs_list_hash(const common::ObString &cluster_na
   CRLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ is null", K(ret));
+    LOG_WDIAG("json_config_info_ is null", K(ret));
   } else if (OB_FAIL(json_config_info_->get_rs_list_hash(cluster_name, cluster_id, rs_list_hash))) {
-    LOG_WARN("fail to get cluster rs list hash", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to get cluster rs list hash", K(cluster_name), K(cluster_id), K(ret));
   }
   return ret;
 }
@@ -429,14 +440,14 @@ int ObConfigServerProcessor::get_default_cluster_name(char *buffer, const int64_
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_default_cluster_name(buffer, len))) {
-      LOG_WARN("fail to get default cluster info", K(ret));
+      LOG_WDIAG("fail to get default cluster info", K(ret));
     }
   }
   return ret;
@@ -452,24 +463,24 @@ int ObConfigServerProcessor::get_cluster_url(
   buffer = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObProxyClusterInfo *cluster_info = NULL;
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_cluster_info(cluster_name, cluster_info))) {
-      LOG_WARN("fail to get cluster info", K(cluster_name), K(ret));
+      LOG_WDIAG("fail to get cluster info", K(cluster_name), K(ret));
     } else if (OB_ISNULL(cluster_info)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("null cluster info pointer", K(ret));
+      LOG_WDIAG("null cluster info pointer", K(ret));
     } else {
       // origin_url + separator + "version=2" + "&cluster_id=" + cluster_id + '\0'
       int64_t url_len = cluster_info->rs_url_.length() + 1 + RS_URL_V2.length() + RS_URL_V2_REGION_ID.length() + MAX_CLUSTER_ID_LENGTH + 1;
       if (OB_ISNULL(buffer = static_cast<char *>(allocator.alloc(url_len)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc mem for rs url", K(cluster_info), K(url_len), K(cluster_id), K(ret));
+        LOG_EDIAG("fail to alloc mem for rs url", K(cluster_info), K(url_len), K(cluster_id), K(ret));
       } else {
         int64_t pos = 0;
         const char join_char = NULL == cluster_info->rs_url_.url_.find(JOIN_SEPARATOR) ? JOIN_SEPARATOR : PARAM_SEPARATOR;
@@ -486,7 +497,7 @@ int ObConfigServerProcessor::get_cluster_url(
                                    RS_URL_V2_REGION_ID.ptr(), cluster_id);
           if (OB_UNLIKELY(w_len < 0) || OB_UNLIKELY(w_len > url_len - pos)) {
             ret = OB_BUF_NOT_ENOUGH;
-            LOG_ERROR("fail to snprintf for cluster url", K(pos), K(url_len), K(cluster_id), K(ret));
+            LOG_EDIAG("fail to snprintf for cluster url", K(pos), K(url_len), K(cluster_id), K(ret));
           }
         }
       }
@@ -505,30 +516,30 @@ int ObConfigServerProcessor::get_idc_url(
   buffer = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObProxyClusterInfo *cluster_info = NULL;
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_cluster_info(cluster_name, cluster_info))) {
-      LOG_WARN("fail to get cluster info", K(cluster_name), K(ret));
+      LOG_WDIAG("fail to get cluster info", K(cluster_name), K(ret));
     } else if (OB_ISNULL(cluster_info)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("null cluster info pointer", KPC(cluster_info), K(ret));
+      LOG_WDIAG("null cluster info pointer", KPC(cluster_info), K(ret));
     } else if (OB_UNLIKELY(!cluster_info->rs_url_.is_valid())) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("rs_url_ is invalid", KPC(cluster_info), K(ret));
+      LOG_INFO("rs_url_ is invalid", KPC(cluster_info), K(ret));
     } else {
       const int64_t idc_url_len = cluster_info->rs_url_.length() + IDC_URL_TAILER_STRING.length()
         + 1 + RS_URL_V2.length() + RS_URL_V2_REGION_ID.length() + MAX_CLUSTER_ID_LENGTH + 1;
       if (OB_ISNULL(buffer = static_cast<char *>(allocator.alloc(idc_url_len)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc mem for rs url", K(idc_url_len), K(ret));
+        LOG_EDIAG("fail to alloc mem for rs url", K(idc_url_len), K(ret));
       } else if (OB_FAIL(get_idc_url(cluster_info->rs_url_.buf_ptr(), cluster_info->rs_url_.length(),
               buffer, idc_url_len, cluster_id))) {
-        LOG_WARN("fail to get_idc_url", K(ret));
+        LOG_WDIAG("fail to get_idc_url", K(ret));
       }
     }
   }
@@ -543,10 +554,17 @@ int ObConfigServerProcessor::get_idc_url(const char *rs_url_buf, const int64_t r
       || OB_ISNULL(idc_url_buf)
       || OB_UNLIKELY(idc_url_buf_len <= rs_url_buf_len)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is invalid", KP(rs_url_buf), KP(idc_url_buf), K(rs_url_buf_len),
+    LOG_WDIAG("argument is invalid", KP(rs_url_buf), KP(idc_url_buf), K(rs_url_buf_len),
              K(idc_url_buf_len), K(ret));
   } else {
     const char *pos = strcasestr(rs_url_buf, RS_URL_KEY_STRING);
+    /*
+     * rs url
+     * http://x.x.x.x:xxxx/services?Action=ObRootServiceInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
+     *
+     * idc url
+     * http://x.x.x.x:xxxx/services?Action=ObIDCRegionInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
+     * */
     if (NULL != pos) {
       const int64_t url_head_len = static_cast<int64_t>(pos - rs_url_buf);
       const int64_t url_key_len = static_cast<int64_t>(strlen(RS_URL_KEY_STRING));
@@ -558,6 +576,13 @@ int ObConfigServerProcessor::get_idc_url(const char *rs_url_buf, const int64_t r
              url_tailer_len);
       idc_url_buf[url_head_len + IDC_URL_KEY_STRING.length() + url_tailer_len] = '\0';
     } else {
+      /*
+       * rs url
+       * http://x.x.x.x:xxxx/oceanbase_obconfig/${cluster_name}
+       *
+       * idc url
+       * http://x.x.x.x:xxxx/oceanbase_obconfig/${cluster_name}
+       * */
       MEMCPY(idc_url_buf, rs_url_buf, rs_url_buf_len);
       MEMCPY(idc_url_buf + rs_url_buf_len,
              IDC_URL_TAILER_STRING.ptr(),
@@ -575,7 +600,7 @@ int ObConfigServerProcessor::get_idc_url(const char *rs_url_buf, const int64_t r
                                cluster_id);
       if (OB_UNLIKELY(w_len < 0) || OB_UNLIKELY(w_len > idc_url_buf_len - offset)) {
         ret = OB_BUF_NOT_ENOUGH;
-        LOG_ERROR("fail to snprintf for cluster idc url", K(offset), K(idc_url_buf_len), K(cluster_id), K(ret));
+        LOG_EDIAG("fail to snprintf for cluster idc url", K(offset), K(idc_url_buf_len), K(cluster_id), K(ret));
       }
     }
     if (OB_SUCC(ret)) {
@@ -602,12 +627,12 @@ int ObConfigServerProcessor::inc_and_get_create_failure_count(const ObString &cl
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     CWLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else {
       new_failure_count = json_config_info_->inc_create_failure_count(cluster_name, cluster_id);
     }
@@ -622,18 +647,18 @@ int ObConfigServerProcessor::get_create_failure_count(const ObString &cluster_na
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json config info is null", K(ret));
+      LOG_WDIAG("json config info is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-      LOG_WARN("fail to get cluster info", K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("fail to get cluster info", K(cluster_name), K(cluster_id), K(ret));
     } else if (OB_ISNULL(sub_cluster_info)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("null cluster info pointer", K(ret));
+      LOG_WDIAG("null cluster info pointer", K(ret));
     } else {
       new_failure_count = sub_cluster_info->create_failure_count_;
       LOG_DEBUG("succ to get create_failure_count", K(cluster_name), K(cluster_id), K(new_failure_count));
@@ -649,7 +674,7 @@ int ObConfigServerProcessor::get_real_cluster_name(ObString &real_cluster_name, 
   ObProxyClusterInfo *cluster_info;
   CRLockGuard lock(json_info_lock_);
   if (OB_FAIL(json_config_info_->get_cluster_info(cluster_name, cluster_info))) {
-    LOG_WARN("fail to get cluster info", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get cluster info", K(cluster_name), K(ret));
   } else {
     real_cluster_name = cluster_info->real_cluster_name_;
   }
@@ -693,13 +718,13 @@ int ObConfigServerProcessor::get_cluster_info(const common::ObString &cluster_na
   CRLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ is null", K(cluster_name), K(ret));
+    LOG_WDIAG("json_config_info_ is null", K(cluster_name), K(ret));
   } else if (!json_config_info_->is_cluster_exists(cluster_name)) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("cluster_name do not exists in current proxy", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster_name do not exists in current proxy", K(cluster_name), K(ret));
   } else if (is_from_default && (json_config_info_->get_cluster_count() > 1)) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("cluster_name do not exists in login info", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster_name do not exists in login info", K(cluster_name), K(ret));
   } else {
     if (cluster_name == OB_META_DB_CLUSTER_NAME) {
       const ObString &name = json_config_info_->get_real_meta_cluster_name();
@@ -719,9 +744,9 @@ int ObConfigServerProcessor::get_proxy_meta_table_info(ObProxyMetaTableInfo &tab
   CRLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ is null", K(ret));
+    LOG_WDIAG("json_config_info_ is null", K(ret));
   } else if (OB_FAIL(json_config_info_->get_meta_table_info(table_info))) {
-    LOG_WARN("fail to get meta table info", K(ret));
+    LOG_WDIAG("fail to get meta table info", K(ret));
   }
   return ret;
 }
@@ -732,9 +757,9 @@ int ObConfigServerProcessor::get_proxy_meta_table_username(ObProxyConfigString &
   CRLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ is null", K(ret));
+    LOG_WDIAG("json_config_info_ is null", K(ret));
   } else if (OB_FAIL(json_config_info_->get_meta_table_username(username))) {
-    LOG_WARN("fail to get meta table username", K(ret));
+    LOG_WDIAG("fail to get meta table username", K(ret));
   }
   return ret;
 }
@@ -745,9 +770,9 @@ int ObConfigServerProcessor::get_proxy_meta_table_login_info(ObProxyLoginInfo &i
   CRLockGuard lock(json_info_lock_);
   if (OB_ISNULL(json_config_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("json_config_info_ is null", K(ret));
+    LOG_WDIAG("json_config_info_ is null", K(ret));
   } else if (OB_FAIL(json_config_info_->get_meta_table_login_info(info))) {
-    LOG_WARN("fail to get meta table login info", K(ret));
+    LOG_WDIAG("fail to get meta table login info", K(ret));
   }
   return ret;
 }
@@ -758,9 +783,9 @@ ObProxyJsonConfigInfo *ObConfigServerProcessor::acquire()
   if (OB_LIKELY(is_inited_)) {
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_info = json_config_info_)) {
-      LOG_WARN("json_config_info_ is null");
+      LOG_WDIAG("json_config_info_ is null");
     } else if (OB_UNLIKELY(json_info->refcount_inc() <= 1)) {
-      LOG_WARN("json info refcount must be at least 2 now", "refcount", json_info->refcount());
+      LOG_WDIAG("json info refcount must be at least 2 now", "refcount", json_info->refcount());
       json_info = NULL;
     }
   }
@@ -789,7 +814,7 @@ int ObConfigServerProcessor::swap(ObProxyJsonConfigInfo *json_info)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(json_info)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(json_info), K(ret));
+    LOG_WDIAG("invalid input value", K(json_info), K(ret));
   } else {
     json_info->refcount_inc();
     ObProxyJsonConfigInfo *tmp_json = NULL;
@@ -811,14 +836,14 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
   int ret = OB_SUCCESS;
   if (OB_ISNULL(new_json_info)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(new_json_info), K(ret));
+    LOG_WDIAG("invalid input value", K(new_json_info), K(ret));
   } else {
     new_json_info->refcount_inc();
     {
       CRLockGuard lock(json_info_lock_);
       if (OB_ISNULL(json_config_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json config info is null", K(ret));
+        LOG_WDIAG("json config info is null", K(ret));
       } else {
         //1. deep copy meta_cluster_ rslist,
         //if metadb changed, no need to copy, will fetch newest rslist in rebuild metadb cluster resource
@@ -827,23 +852,23 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
         if (!is_metadb_changed) {
           if (OB_FAIL(old_cluster_info.get_sub_cluster_info(old_cluster_info.master_cluster_id_, sub_cluster_info))) {
             if (OB_ENTRY_NOT_EXIST != ret) {
-              LOG_WARN("fail to get meta db cluster info", K(old_cluster_info), K(ret));
+              LOG_WDIAG("fail to get meta db cluster info", K(old_cluster_info), K(ret));
             } else {
               LOG_DEBUG("old meta db cluster info has no sub cluster info, ignore it", K(old_cluster_info));
               ret = OB_SUCCESS;
             }
           } else if (OB_ISNULL(sub_cluster_info)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("sub_cluster_info of meta db cluster is null", K(ret));
+            LOG_WDIAG("sub_cluster_info of meta db cluster is null", K(ret));
           }
           if (OB_FAIL(ret)) {
             // do nothing
           } else if (OB_FAIL(new_json_info->set_real_meta_cluster_name(json_config_info_->get_real_meta_cluster_name()))) {
-            LOG_WARN("fail to set real meta cluster name", "name", json_config_info_->get_real_meta_cluster_name(), K(ret));
+            LOG_WDIAG("fail to set real meta cluster name", "name", json_config_info_->get_real_meta_cluster_name(), K(ret));
           } else if (OB_DEFAULT_CLUSTER_ID != old_cluster_info.master_cluster_id_
                      && OB_FAIL(new_json_info->set_master_cluster_id(old_cluster_info.cluster_name_,
                      old_cluster_info.master_cluster_id_))) {
-            LOG_WARN("fail to set cluster id", K(old_cluster_info), K(ret));
+            LOG_WDIAG("fail to set cluster id", K(old_cluster_info), K(ret));
           } else if (NULL != sub_cluster_info
                   && OB_FAIL(new_json_info->set_cluster_web_rs_list(old_cluster_info.cluster_name_, old_cluster_info.master_cluster_id_,
                                                                     sub_cluster_info->web_rs_list_, sub_cluster_info->origin_web_rs_list_,
@@ -851,7 +876,7 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
                                                                     old_cluster_info.real_cluster_name_,
                                                                     old_cluster_info.is_cluster_name_alias()))) {
             if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
-              LOG_WARN("fail to set cluster web rs_list", K(old_cluster_info), K(ret));
+              LOG_WDIAG("fail to set cluster web rs_list", K(old_cluster_info), K(ret));
             } else {
               //Here we no need copy cluster_create_failure_
               LOG_DEBUG("new json config info has no this cluster to set cluster web rs_list, ignore it",
@@ -862,7 +887,7 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
           if (OB_FAIL(ret)) {
           } else if (NULL != sub_cluster_info && OB_FAIL(new_json_info->set_idc_list(old_cluster_info.cluster_name_, old_cluster_info.master_cluster_id_, sub_cluster_info->idc_list_))) {
             if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
-              LOG_WARN("fail to set idc list", K(old_cluster_info), K(ret));
+              LOG_WDIAG("fail to set idc list", K(old_cluster_info), K(ret));
             } else {
               LOG_DEBUG("new json config info has no this cluster to set idc list, ignore it",
                         K(old_cluster_info), K(ret));
@@ -884,7 +909,7 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
                     && OB_FAIL(new_json_info->set_master_cluster_id(old_it->cluster_name_,
                     old_it->master_cluster_id_))) {
                   if (OB_ENTRY_NOT_EXIST != ret) {
-                    LOG_WARN("fail to set cluster id", KPC(old_it.value_), K(ret));
+                    LOG_WDIAG("fail to set cluster id", KPC(old_it.value_), K(ret));
                   }
                 }
               }
@@ -895,7 +920,7 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
                                                                         old_it->real_cluster_name_,
                                                                         old_it->is_cluster_name_alias()))) {
                 if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
-                  LOG_WARN("fail to set cluster web rs_list", KPC(old_it.value_), K(ret));
+                  LOG_WDIAG("fail to set cluster web rs_list", KPC(old_it.value_), K(ret));
                 } else if (OB_EAGAIN == ret) {
                   LOG_DEBUG("rslist does not changed, no need set", KPC(old_it.value_), K(ret));
                   ret = OB_SUCCESS;
@@ -904,7 +929,7 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
               if (OB_FAIL(ret)) {
               } else if (OB_FAIL(new_json_info->set_idc_list(old_it->cluster_name_, sub_it->cluster_id_, sub_it->idc_list_))) {
                 if (OB_ENTRY_NOT_EXIST != ret && OB_EAGAIN != ret) {
-                  LOG_WARN("fail to set idc list", KPC(old_it.value_), K(ret));
+                  LOG_WDIAG("fail to set idc list", KPC(old_it.value_), K(ret));
                 } else if (OB_EAGAIN == ret) {
                   LOG_DEBUG("idc list does not changed, no need set", KPC(old_it.value_), K(ret));
                   ret = OB_SUCCESS;
@@ -917,7 +942,7 @@ int ObConfigServerProcessor::swap_with_rslist(ObProxyJsonConfigInfo *new_json_in
                 LOG_INFO("this cluster has been deleted in config server,"
                          " we will delete its cluster resource", "cluster name", old_it->cluster_name_, "cluster_id", sub_it->cluster_id_);
                 if (OB_FAIL(get_global_resource_pool_processor().add_cluster_delete_task(old_it->cluster_name_, sub_it->cluster_id_))) {
-                  LOG_WARN("fail to add delete cluster resource task",
+                  LOG_WDIAG("fail to add delete cluster resource task",
                            "cluster name", old_it->cluster_name_, "cluster_id", sub_it->cluster_id_, K(ret));
                 }
                 ret = OB_SUCCESS; // continue
@@ -951,26 +976,26 @@ int ObConfigServerProcessor::do_fetch_proxy_bin(const char *bin_save_path, const
 
   if (OB_ISNULL(bin_save_path) || OB_ISNULL(binary_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is null", K(bin_save_path), K(binary_name));
+    LOG_WDIAG("argument is null", K(bin_save_path), K(binary_name));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("ObConfigServerProcessor is not inited", K(ret));
+    LOG_WDIAG("ObConfigServerProcessor is not inited", K(ret));
   } else {
     ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
     if (OB_FAIL(build_proxy_bin_url(binary_name, allocator, bin_url))) {
-      LOG_WARN("fail to get proxy_bin_path", K(ret));
+      LOG_WDIAG("fail to get proxy_bin_path", K(ret));
     } else {
       int fd = -1;
       if ((fd = ::open(bin_save_path, O_WRONLY | O_CREAT | O_TRUNC,
                     S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)) < 0) {
         ret = OB_IO_ERROR;
-        LOG_WARN("fail to open file", K(bin_save_path), K(ret));
+        LOG_WDIAG("fail to open file", K(bin_save_path), K(ret));
       } else if(OB_FAIL(fetch_by_curl(bin_url, usec_to_sec(proxy_config_.fetch_proxy_bin_timeout),
           reinterpret_cast<void *>((int64_t)fd), write_proxy_bin))) {
-        LOG_WARN("fail to fetch new proxy bin", K(bin_url), K(bin_save_path), K(ret));
+        LOG_WDIAG("fail to fetch new proxy bin", K(bin_url), K(bin_save_path), K(ret));
       } else { }
 
-      if (fd >= 0) {
+      if (fd > 0) {
         ::close(fd);
       }
     }
@@ -989,19 +1014,19 @@ int ObConfigServerProcessor::set_default_rs_list(const ObString &cluster_name)
   int64_t total_size = config.rootservice_list.size();
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_UNLIKELY(total_size <= 0)) {
     ret = OB_INVALID_CONFIG;
-    LOG_WARN("default rslist is empty", K(ret));
+    LOG_WDIAG("default rslist is empty", K(ret));
   } else if (!json_config_info_->cluster_info_empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("cluster_info has already been set", K(json_config_info_), K(ret));
+    LOG_WDIAG("cluster_info has already been set", K(json_config_info_), K(ret));
   } else if (cluster_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("empty cluster name", K(cluster_name), K(ret));
+    LOG_WDIAG("empty cluster name", K(cluster_name), K(ret));
   } else if (cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("cluster name buffer is not enough", K(cluster_name), K(ret));
+    LOG_WDIAG("cluster name buffer is not enough", K(cluster_name), K(ret));
   } else {
     //parse rs list and push back into cluster_info_
     ObProxyClusterInfo *cluster_info = op_alloc(ObProxyClusterInfo);
@@ -1017,21 +1042,21 @@ int ObConfigServerProcessor::set_default_rs_list(const ObString &cluster_name)
           addr.role_ = LEADER;
         }
         if (OB_FAIL(config.rootservice_list.get(i, addr_buf, static_cast<int64_t>(sizeof(addr_buf))))) {
-          LOG_WARN("get root server ip failed", K(ret));
+          LOG_WDIAG("get root server ip failed", K(ret));
         } else if (OB_FAIL(addr.server_.parse_from_cstring(addr_buf))) {
-          LOG_WARN("parse_rs_addr failed", K(addr_buf), K(ret));
+          LOG_WDIAG("parse_rs_addr failed", K(addr_buf), K(ret));
         } else if (OB_FAIL(web_rs_list.push_back(addr))) {
-          LOG_WARN("fail to push web rs list", K(addr), K(ret));
+          LOG_WDIAG("fail to push web rs list", K(addr), K(ret));
         }
       }
       if (OB_SUCC(ret)) {
         if (OB_FAIL(json_config_info_->add_default_cluster_info(cluster_info, web_rs_list))) {
-          LOG_WARN("fail to add cluster info", K(cluster_info), K(ret));
+          LOG_WDIAG("fail to add cluster info", K(cluster_info), K(ret));
         }
       }
     } else {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc memory for cluster info", K(cluster_info), K(ret));
+      LOG_WDIAG("fail to alloc memory for cluster info", K(cluster_info), K(ret));
     }
     if (OB_FAIL(ret) && NULL != cluster_info) {
       op_free(cluster_info);
@@ -1050,10 +1075,10 @@ int ObConfigServerProcessor::get_kernel_release_by_uname(ObProxyKernelRelease &r
   struct utsname u_info;
   if (0 != uname(&u_info)) {
     ret = OB_ERROR;
-    LOG_WARN("fail to get Linux server info", K(ret));
+    LOG_WDIAG("fail to get Linux server info", K(ret));
   } else if (OB_ISNULL(u_info.release)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("release name is null", K(ret));
+    LOG_WDIAG("release name is null", K(ret));
   } else if (NULL != strstr(u_info.release, ".el5")) {
     release = RELEASE_5U;
   } else if (NULL != strstr(u_info.release, ".alios5")) {
@@ -1068,7 +1093,7 @@ int ObConfigServerProcessor::get_kernel_release_by_uname(ObProxyKernelRelease &r
     release = RELEASE_7U;
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unknown uname release", K(u_info.release), K(ret));
+    LOG_WDIAG("unknown uname release", K(u_info.release), K(ret));
   }
   if (OB_SUCC(ret)) {
     LOG_INFO("succ to get_kernel_release_by_uname", K(u_info.release),
@@ -1088,10 +1113,10 @@ int ObConfigServerProcessor::get_kernel_release_by_redhat(ObProxyKernelRelease &
 
   if (OB_UNLIKELY((fd = ::open("/etc/redhat-release", O_RDONLY)) < 0)) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to open /etc/redhat-release info", K(ret));
+    LOG_WDIAG("fail to open /etc/redhat-release info", K(ret));
   } else if (OB_UNLIKELY((read_count = unintr_pread(fd, result, OB_MAX_UNAME_INFO_LEN, 0)) <= 0)) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to read /etc/redhat-release", K(read_count), K(ret));
+    LOG_WDIAG("fail to read /etc/redhat-release", K(read_count), K(ret));
   } else {
     char a = result[read_count -1];
     if ('\n' == a || '\t' == a || OB_MAX_UNAME_INFO_LEN == read_count) {
@@ -1108,7 +1133,7 @@ int ObConfigServerProcessor::get_kernel_release_by_redhat(ObProxyKernelRelease &
       release = RELEASE_7U;
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown redhat release", K(result), K(ret));
+      LOG_WDIAG("unknown redhat release", K(result), K(ret));
     }
   }
 
@@ -1117,7 +1142,7 @@ int ObConfigServerProcessor::get_kernel_release_by_redhat(ObProxyKernelRelease &
              "release", get_kernel_release_string(release));
   }
 
-  if (fd >= 0) {
+  if (fd > 0) {
     ::close(fd);
   }
   return ret;
@@ -1132,11 +1157,11 @@ int ObConfigServerProcessor::get_kernel_release_by_glibc(ObProxyKernelRelease &r
 
   if (OB_ISNULL(fp = popen("rpm -q glibc | grep x86_64", "r"))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get glibc info", K(ret));
+    LOG_WDIAG("fail to get glibc info", K(ret));
   } else {
     if (OB_ISNULL(fgets(result, OB_MAX_UNAME_INFO_LEN, fp))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to get glibc release", K(ret));
+      LOG_WDIAG("fail to get glibc release", K(ret));
     } else if (NULL != strstr(result, ".el5")) {
       release = RELEASE_5U;
     } else if (NULL != strstr(result, ".alios5")) {
@@ -1151,7 +1176,7 @@ int ObConfigServerProcessor::get_kernel_release_by_glibc(ObProxyKernelRelease &r
       release = RELEASE_7U;
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown release from glibc", K(result), K(ret));
+      LOG_WDIAG("unknown release from glibc", K(result), K(ret));
     }
   }
 
@@ -1181,12 +1206,12 @@ int ObConfigServerProcessor::init_proxy_kernel_release()
              "enable_strict_kernel_release", proxy_config_.enable_strict_kernel_release.str());
   } else {
     if (OB_FAIL(get_kernel_release_by_uname(uname_release))) {
-      LOG_WARN("fail to get_kernel_release_by_uname", K(ret));
+      LOG_WDIAG("fail to get_kernel_release_by_uname", K(ret));
     } else {
       kernel_release_ = uname_release;
 
       if (OB_FAIL(get_kernel_release_by_redhat(redhat_release))) {
-        LOG_WARN("fail to get_kernel_release_by_redhat", K(ret));
+        LOG_WDIAG("fail to get_kernel_release_by_redhat", K(ret));
       } else if ((kernel_release_ != redhat_release)
                   && OB_SUCC(get_kernel_release_by_glibc(glibc_release))
                   && (redhat_release == glibc_release)) {
@@ -1208,7 +1233,7 @@ int ObConfigServerProcessor::check_kernel_release(const char *release_str) const
   ObProxyKernelRelease provided_release = RELEASE_MAX;
   if (OB_ISNULL(release_str) || 0 == strlen(release_str)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is null", K(release_str), K(ret));
+    LOG_WDIAG("argument is null", K(release_str), K(ret));
   } else if (NULL != strstr(release_str, ".el5")) {
     provided_release = RELEASE_5U;
   } else if (NULL != strstr(release_str, ".alios5")) {
@@ -1223,13 +1248,13 @@ int ObConfigServerProcessor::check_kernel_release(const char *release_str) const
     provided_release = RELEASE_7U;
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to parser kernel release", K(release_str), K(provided_release), K(ret));
+    LOG_WDIAG("failed to parser kernel release", K(release_str), K(provided_release), K(ret));
   }
 
   if (OB_SUCC(ret)) {
     if (provided_release != kernel_release_) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("the kernel release is not the same with current proxy kernel_release",
+      LOG_WDIAG("the kernel release is not the same with current proxy kernel_release",
                K(provided_release), K(kernel_release_), K(release_str), K(ret));
     }
   }
@@ -1241,12 +1266,12 @@ int ObConfigServerProcessor::check_kernel_release(const common::ObString &releas
   int ret = OB_SUCCESS;
   if (release_string.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("release_string is null", K(release_string), K(ret));
+    LOG_WDIAG("release_string is null", K(release_string), K(ret));
   } else {
     char *release_str = static_cast<char *>(op_fixed_mem_alloc(release_string.length() + 1));
     if (OB_ISNULL(release_str)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", "len", release_string.length() + 1, K(ret));
+      LOG_WDIAG("fail to alloc mem", "len", release_string.length() + 1, K(ret));
     } else {
       MEMCPY(release_str, release_string.ptr(), release_string.length());
       release_str[release_string.length()] = '\0';
@@ -1278,17 +1303,17 @@ int ObConfigServerProcessor::load_config_from_local()
     LOG_INFO("fail to get config server info file size, maybe file does not exist", K(ret));
   } else if (OB_UNLIKELY(buf_size <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("buf size is invalid", K(buf_size), K(ret));
+    LOG_WDIAG("buf size is invalid", K(buf_size), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else if (OB_FAIL(ObProxyFileUtils::read(CFG_SERVER_INFO_DUMP_NAME, buf, buf_size, read_len))) {
-    LOG_WARN("fail to read config server info from file", K(ret));
+    LOG_WDIAG("fail to read config server info from file", K(ret));
   } else if (OB_FAIL(ObRecordHeader::check_record(buf, read_len, OB_PROXY_CONFIG_MAGIC))) {
-    LOG_WARN("fail to check file header", K(ret));
+    LOG_WDIAG("fail to check file header", K(ret));
   } else if (OB_FAIL(ObRecordHeader::get_record_header(buf, OB_RECORD_HEADER_LENGTH,
                                                        record_header, payload_ptr, payload_size))) {
-    LOG_WARN("fail to get record header", K(ret));
+    LOG_WDIAG("fail to get record header", K(ret));
   } else {
     LOG_DEBUG("record header", K(record_header.version_),
                                K(record_header.data_zlength_),
@@ -1306,36 +1331,36 @@ int ObConfigServerProcessor::load_config_from_local()
 
       if (OB_UNLIKELY(record_header.data_zlength_ <= 0) || OB_UNLIKELY(record_header.data_length_ <= 0)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("the length of data or the length of the compressed data is error",
+        LOG_WDIAG("the length of data or the length of the compressed data is error",
                  K(record_header.data_zlength_),
                  K(record_header.data_length_));
       } else if ((read_len - OB_RECORD_HEADER_LENGTH) != record_header.data_zlength_) {
         // defense
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("record_header.data_zlength must equal read_len - OB_RECORD_HEADER_LENGTH",
+        LOG_WDIAG("record_header.data_zlength must equal read_len - OB_RECORD_HEADER_LENGTH",
                  K(read_len), K(OB_RECORD_HEADER_LENGTH), K(record_header.data_zlength_), K(ret));
       } else if (OB_FAIL(compressor.add_decompress_data(buf + OB_RECORD_HEADER_LENGTH, record_header.data_zlength_))) {
-        LOG_WARN("fail to add decompress data", K(record_header.data_zlength_), K(record_header.data_length_), K(ret));
+        LOG_WDIAG("fail to add decompress data", K(record_header.data_zlength_), K(record_header.data_length_), K(ret));
       } else if (OB_ISNULL(json_buf = static_cast<char *>(ob_malloc(json_buf_length, ObModIds::OB_PROXY_FILE)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc buffer for json data", K(ret));
+        LOG_WDIAG("fail to alloc buffer for json data", K(ret));
       } else if (OB_FAIL(compressor.decompress(json_buf, json_buf_length, filled_len))) {
-        LOG_WARN("fail to decompress", K(filled_len), K(record_header.data_zlength_),
+        LOG_WDIAG("fail to decompress", K(filled_len), K(record_header.data_zlength_),
                                        K(record_header.data_length_), K(ret));
       } else if (OB_UNLIKELY(json_buf_length <= filled_len)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("we have allocated sufficient memory to store the decompressed data", K(json_buf_length), K(ret));
+        LOG_WDIAG("we have allocated sufficient memory to store the decompressed data", K(json_buf_length), K(ret));
       } else {
         json.assign_ptr(json_buf, record_header.data_length_);
       }
 
     } else {
       ret = OB_NOT_SUPPORTED;
-      LOG_WARN("not supported record header", K(record_header.version_), K(ret));
+      LOG_WDIAG("not supported record header", K(record_header.version_), K(ret));
     }
 
     if (OB_SUCC(ret) && OB_FAIL(parse_json_config_info(json))) {
-      LOG_WARN("fail to parse local json config info", K(ret));
+      LOG_WDIAG("fail to parse local json config info", K(ret));
     }
   }
 
@@ -1364,9 +1389,9 @@ int ObConfigServerProcessor::dump_json_config_to_local(char *json_info_buf, cons
 
   if (buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid buf_len", K(buf_len), K(ret));
+    LOG_WDIAG("invalid buf_len", K(buf_len), K(ret));
   } else if (OB_FAIL(ObZlibStreamCompressor::get_max_overflow_size(buf_len, max_overflow_size))) {
-    LOG_WARN("fail to get max overflow size", K(buf_len), K(ret));
+    LOG_WDIAG("fail to get max overflow size", K(buf_len), K(ret));
   } else {
     // more alloc one byte,
     // just to decide whether compress is end
@@ -1377,24 +1402,24 @@ int ObConfigServerProcessor::dump_json_config_to_local(char *json_info_buf, cons
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(json_info_buf) || OB_UNLIKELY(data_len <= 0) || max_overflow_size <= 0) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid json config info buffer", K(json_info_buf), K(data_len), K(max_overflow_size), K(ret));
+      LOG_WDIAG("invalid json config info buffer", K(json_info_buf), K(data_len), K(max_overflow_size), K(ret));
     } else if (OB_FAIL(compressor.add_compress_data(json_info_buf + OB_RECORD_HEADER_LENGTH, data_len, true))) {
-      LOG_WARN("fail to add compress data", K(buf_len), K(data_len), K(ret));
+      LOG_WDIAG("fail to add compress data", K(buf_len), K(data_len), K(ret));
     } else if (OB_ISNULL(buffer = static_cast<char *>(ob_malloc(compress_buf_len, ObModIds::OB_PROXY_FILE)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc buffer for compressed data", K(ret));
+      LOG_WDIAG("fail to alloc buffer for compressed data", K(ret));
     } else if (OB_FAIL(compressor.compress(buffer + OB_RECORD_HEADER_LENGTH,
                                            compress_buf_len - OB_RECORD_HEADER_LENGTH,
                                            filled_len))) {
-      LOG_WARN("fail to compress", K(buf_len), K(compress_buf_len), K(filled_len));
+      LOG_WDIAG("fail to compress", K(buf_len), K(compress_buf_len), K(filled_len));
     } else if (OB_UNLIKELY((compress_buf_len - OB_RECORD_HEADER_LENGTH) <= filled_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("compressed data cannot be larger than before", K(buf_len), K(data_len), K(filled_len), K(ret));
+      LOG_WDIAG("compressed data cannot be larger than before", K(buf_len), K(data_len), K(filled_len), K(ret));
     } else if (OB_FAIL(add_serialized_file_header(buffer, compress_buf_len, filled_len, data_len))) {
-      LOG_WARN("fail to serialize json config info", K(ret));
+      LOG_WDIAG("fail to serialize json config info", K(ret));
     } else if (OB_FAIL(ObProxyFileUtils::write(CFG_SERVER_INFO_DUMP_NAME, buffer, filled_len + OB_RECORD_HEADER_LENGTH))) {
       dump_config_res_ = false;
-      LOG_WARN("fail to dump config server info to file", K(ret));
+      LOG_WDIAG("fail to dump config server info to file", K(ret));
     } else {
       dump_config_res_ = true;
     }
@@ -1421,27 +1446,27 @@ int ObConfigServerProcessor::load_rslist_info_from_local()
     LOG_INFO("fail to get rslist info buf size, maybe file does not exist", K(ret));
   } else if (OB_UNLIKELY(buf_size <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("buf size is invalid", K(buf_size), K(ret));
+    LOG_WDIAG("buf size is invalid", K(buf_size), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else if (OB_FAIL(ObProxyFileUtils::read(CFG_RSLIST_INFO_DUMP_NAME, buf, buf_size, read_len))) {
     // no need to print log, the caller will do it
   } else if (OB_FAIL(ObRecordHeader::check_record(buf, read_len, OB_PROXY_CONFIG_MAGIC))) {
-    LOG_WARN("fail to check file header", K(ret));
+    LOG_WDIAG("fail to check file header", K(ret));
   } else if (FALSE_IT(json.assign_ptr(buf + OB_RECORD_HEADER_LENGTH, static_cast<int32_t>(read_len - OB_RECORD_HEADER_LENGTH)))) {
     // impossible
   } else {
     ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
     if (OB_FAIL(init_json(json, rs_list, json_allocator))) {
-      LOG_WARN("fail to init json rslist", K(ret));
+      LOG_WDIAG("fail to init json rslist", K(ret));
     } else {
       CWLockGuard lock(json_info_lock_);
       if (OB_ISNULL(json_config_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json_config_info_ is null", K(ret));
+        LOG_WDIAG("json_config_info_ is null", K(ret));
       } else if (OB_FAIL(json_config_info_->parse_local_rslist(rs_list))) {
-        LOG_WARN("fail to parse local rs list", K(ret));
+        LOG_WDIAG("fail to parse local rs list", K(ret));
       }
     }
   }
@@ -1466,14 +1491,14 @@ int ObConfigServerProcessor::load_idc_list_info_from_local()
     LOG_INFO("fail to get idc list info buf size, maybe file does not exist", K(ret));
   } else if (OB_UNLIKELY(buf_size <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("buf size is invalid", K(buf_size), K(ret));
+    LOG_WDIAG("buf size is invalid", K(buf_size), K(ret));
   } else if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory", K(ret));
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else if (OB_FAIL(ObProxyFileUtils::read(CFG_IDC_LIST_INFO_DUMP_NAME, buf, buf_size, read_len))) {
     // no need to print log, the caller will do it
   } else if (OB_FAIL(ObRecordHeader::check_record(buf, read_len, OB_PROXY_CONFIG_MAGIC))) {
-    LOG_WARN("fail to check file header", K(ret));
+    LOG_WDIAG("fail to check file header", K(ret));
   } else if (FALSE_IT(json.assign_ptr(buf + OB_RECORD_HEADER_LENGTH, static_cast<int32_t>(read_len - OB_RECORD_HEADER_LENGTH)))) {
     // impossible
   } else {
@@ -1484,9 +1509,9 @@ int ObConfigServerProcessor::load_idc_list_info_from_local()
       CWLockGuard lock(json_info_lock_);
       if (OB_ISNULL(json_config_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json_config_info_ is null", K(ret));
+        LOG_WDIAG("json_config_info_ is null", K(ret));
       } else if (OB_FAIL(json_config_info_->parse_local_idc_list(idc_list))) {
-        LOG_WARN("fail to parse local rs list", K(ret));
+        LOG_WDIAG("fail to parse local rs list", K(ret));
       }
     }
   }
@@ -1510,12 +1535,12 @@ int ObConfigServerProcessor::dump_rslist_info_to_local()
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json_config_info_ is null", K(ret));
+      LOG_WDIAG("json_config_info_ is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_rslist_file_max_size(buf_size))) {
-      LOG_WARN("fail to get rslist file max size", K(ret));
+      LOG_WDIAG("fail to get rslist file max size", K(ret));
     } else if (OB_UNLIKELY(buf_size < 0)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("buf_size is unexpected", K(buf_size), K(ret));
+      LOG_WDIAG("buf_size is unexpected", K(buf_size), K(ret));
     } else {
       LOG_INFO("succ to get rslist file max size", K(buf_size));
     }
@@ -1524,15 +1549,15 @@ int ObConfigServerProcessor::dump_rslist_info_to_local()
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(rslist_buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc memory", K(ret));
+      LOG_WDIAG("fail to alloc memory", K(ret));
     } else {
       CRLockGuard lock(json_info_lock_);
       if (OB_ISNULL(json_config_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json_config_info_ is null", K(ret));
+        LOG_WDIAG("json_config_info_ is null", K(ret));
       } else if (OB_FAIL(json_config_info_->rslist_to_json(rslist_buf + OB_RECORD_HEADER_LENGTH,
                                                    buf_size - OB_RECORD_HEADER_LENGTH, data_len))) {
-        LOG_WARN("fail to format json_config_info_ to string",
+        LOG_WDIAG("fail to format json_config_info_ to string",
                  KPC(json_config_info_), K(buf_size), K(OB_RECORD_HEADER_LENGTH), K(data_len), K(ret));
       }
     }
@@ -1540,10 +1565,10 @@ int ObConfigServerProcessor::dump_rslist_info_to_local()
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(add_serialized_file_header(rslist_buf, buf_size, data_len, data_len))) {
-      LOG_WARN("fail to serialize rslist info", K(ret));
+      LOG_WDIAG("fail to serialize rslist info", K(ret));
     } else if (OB_FAIL(ObProxyFileUtils::write(CFG_RSLIST_INFO_DUMP_NAME,
         rslist_buf, data_len + OB_RECORD_HEADER_LENGTH))) {
-      LOG_WARN("fail to dump rslist info to file", K(ret));
+      LOG_WDIAG("fail to dump rslist info to file", K(ret));
       need_dump_rslist_res_ = true;
     } else {
       // Only at this place we set it false
@@ -1570,12 +1595,12 @@ int ObConfigServerProcessor::dump_idc_list_info_to_local()
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json_config_info_ is null", K(ret));
+      LOG_WDIAG("json_config_info_ is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_idc_list_file_max_size(buf_size))) {
-      LOG_WARN("fail to get idc list file max size", K(ret));
+      LOG_WDIAG("fail to get idc list file max size", K(ret));
     } else if (OB_UNLIKELY(buf_size < 0)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("buf_size is unexpected", K(buf_size), K(ret));
+      LOG_WDIAG("buf_size is unexpected", K(buf_size), K(ret));
     } else {
       LOG_INFO("succ to get idc list file max size", K(buf_size));
     }
@@ -1584,15 +1609,15 @@ int ObConfigServerProcessor::dump_idc_list_info_to_local()
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(idc_list_buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc memory", K(ret));
+      LOG_WDIAG("fail to alloc memory", K(ret));
     } else {
       CRLockGuard lock(json_info_lock_);
       if (OB_ISNULL(json_config_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json_config_info_ is null", K(ret));
+        LOG_WDIAG("json_config_info_ is null", K(ret));
       } else if (OB_FAIL(json_config_info_->idc_list_to_json(idc_list_buf + OB_RECORD_HEADER_LENGTH,
                                                    buf_size - OB_RECORD_HEADER_LENGTH, data_len))) {
-        LOG_WARN("fail to format json_config_info_ to string",
+        LOG_WDIAG("fail to format json_config_info_ to string",
                  KPC(json_config_info_), K(buf_size), K(OB_RECORD_HEADER_LENGTH), K(data_len), K(ret));
       }
     }
@@ -1600,10 +1625,10 @@ int ObConfigServerProcessor::dump_idc_list_info_to_local()
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(add_serialized_file_header(idc_list_buf, buf_size, data_len, data_len))) {
-      LOG_WARN("fail to serialize idc list info", K(ret));
+      LOG_WDIAG("fail to serialize idc list info", K(ret));
     } else if (OB_FAIL(ObProxyFileUtils::write(CFG_IDC_LIST_INFO_DUMP_NAME,
         idc_list_buf, data_len + OB_RECORD_HEADER_LENGTH))) {
-      LOG_WARN("fail to dump idc list info to file", K(ret));
+      LOG_WDIAG("fail to dump idc list info to file", K(ret));
       need_dump_idc_list_res_ = true;
     } else {
       // Only at this place we set it false
@@ -1624,14 +1649,14 @@ int ObConfigServerProcessor::delete_rslist(const common::ObString &cluster_name,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(cluster_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(ret));
   } else {
     CWLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json_config_info_ is null", K(ret));
+      LOG_WDIAG("json_config_info_ is null", K(ret));
     } else if (OB_FAIL(json_config_info_->delete_cluster_rslist(cluster_name, cluster_id))) {
-      LOG_WARN("fail to delete cluster rslist", K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("fail to delete cluster rslist", K(cluster_name), K(cluster_id), K(ret));
     }
   }
   return ret;
@@ -1644,24 +1669,24 @@ int ObConfigServerProcessor::update_rslist(const common::ObString &cluster_name,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(cluster_name.empty() || OB_UNLIKELY(rs_list.count() <= 0))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(rs_list), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(rs_list), K(ret));
   } else {
     ObProxySubClusterInfo *sub_cluster_info = NULL;
     CWLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json_config_info_ is null", K(ret));
+      LOG_WDIAG("json_config_info_ is null", K(ret));
     } else if (OB_FAIL(json_config_info_->get_sub_cluster_info(cluster_name, cluster_id, sub_cluster_info))) {
-      LOG_WARN("sub_cluster_info does not exist", K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("sub_cluster_info does not exist", K(cluster_name), K(cluster_id), K(ret));
     } else if (OB_ISNULL(sub_cluster_info)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("sub_cluster_info is null", K(cluster_name), K(cluster_id), K(ret));
+      LOG_WDIAG("sub_cluster_info is null", K(cluster_name), K(cluster_id), K(ret));
     } else if (OB_FAIL(sub_cluster_info->update_rslist(rs_list, cur_rs_list_hash))) {
       if (OB_EAGAIN == ret) {
         ret = OB_SUCCESS;
         LOG_DEBUG("rs_list is not changed, no need to update", K(ret));
       } else {
-        LOG_WARN("fail to set cluster web rs list", K(ret));
+        LOG_WDIAG("fail to set cluster web rs list", K(ret));
       }
     } else {
       // It is not real time, let timer thread dump rslist
@@ -1678,7 +1703,7 @@ int ObConfigServerProcessor::refresh_all_rslist()
   ObProxyJsonConfigInfo *json_info = NULL;
   if (OB_ISNULL(json_info = acquire())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("proxy_json_config_info is null", K(ret));
+    LOG_WDIAG("proxy_json_config_info is null", K(ret));
   } else {
     LocationList web_rslist;
     ObProxyClusterArrayInfo &cluster_array = const_cast<ObProxyClusterArrayInfo &>(json_info->get_cluster_array());
@@ -1690,7 +1715,7 @@ int ObConfigServerProcessor::refresh_all_rslist()
         web_rslist.reuse();
         if (!sub_it->web_rs_list_.empty()) {
           if (OB_FAIL(fetch_newest_cluster_rslist(it->cluster_name_, sub_it->cluster_id_, web_rslist))) {
-            LOG_WARN("fail to fetch newest cluster rslist", K_(it->cluster_name), K_(sub_it->cluster_id), K(ret));
+            LOG_WDIAG("fail to fetch newest cluster rslist", K_(it->cluster_name), K_(sub_it->cluster_id), K(ret));
             ret = OB_SUCCESS;  // continue
           }
         }
@@ -1700,7 +1725,7 @@ int ObConfigServerProcessor::refresh_all_rslist()
     if (OB_SUCC(ret)) {
       web_rslist.reuse();
       if (OB_FAIL(fetch_newest_cluster_rslist(ObString::make_string(OB_META_DB_CLUSTER_NAME), OB_DEFAULT_CLUSTER_ID, web_rslist))) {
-        LOG_WARN("fail to fetch newest meta dabase rslist", K(ret));
+        LOG_WDIAG("fail to fetch newest meta dabase rslist", K(ret));
       }
     }
   }
@@ -1715,7 +1740,7 @@ int ObConfigServerProcessor::refresh_all_idc_list()
   ObProxyJsonConfigInfo *json_info = NULL;
   if (OB_ISNULL(json_info = acquire())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("proxy_json_config_info is null", K(ret));
+    LOG_WDIAG("proxy_json_config_info is null", K(ret));
   } else {
     ObProxyIDCList idc_list;
     ObProxyClusterArrayInfo &cluster_array = const_cast<ObProxyClusterArrayInfo &>(json_info->get_cluster_array());
@@ -1765,16 +1790,16 @@ int ObConfigServerProcessor::refresh_json_config_info(const bool force_refresh /
   }
   if (OB_UNLIKELY(url_len <= 1)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("obproxy_config_server_url is invalid", K(url_len), K(ret));
+    LOG_WDIAG("obproxy_config_server_url is invalid", K(url_len), K(ret));
   } else if (OB_ISNULL(url = static_cast<char *>(op_fixed_mem_alloc(url_len)))) {
     ret =  OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for config server url", K(ret));
+    LOG_EDIAG("fail to alloc mem for config server url", K(ret));
   } else {
     CRLockGuard guard(get_global_proxy_config().rwlock_);
     if (OB_FAIL(databuff_printf(url, url_len, pos, "%s%.*s",
                                 proxy_config_.obproxy_config_server_url.str(),
                                 APPEND_VERSION.length(), APPEND_VERSION.ptr()))) {
-      LOG_WARN("fail to build config server url", K(ret));
+      LOG_WDIAG("fail to build config server url", K(ret));
     }
   }
 
@@ -1782,14 +1807,14 @@ int ObConfigServerProcessor::refresh_json_config_info(const bool force_refresh /
     const bool version_only = true;
     if (OB_FAIL(get_json_config_info(url, version_only))) {
       if (OB_EAGAIN != ret) {
-        LOG_WARN("fail to get json config version", K(ret));
+        LOG_WDIAG("fail to get json config version", K(ret));
       }
     }
     if (OB_SUCC(ret) || (force_refresh && OB_EAGAIN == ret)) {
       // cut APPEND_VERSION
       url[pos - APPEND_VERSION.length()] = '\0';
       if (OB_FAIL(get_json_config_info(url))) {
-        LOG_WARN("fail to get_json_config_info", K(ret));
+        LOG_WDIAG("fail to get_json_config_info", K(ret));
       }
     }
     if (OB_EAGAIN == ret) {
@@ -1825,7 +1850,7 @@ int ObConfigServerProcessor::get_json_config_info(const char *url, const bool ve
 
   if (OB_ISNULL(url)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid url", K(url), K(ret));
+    LOG_WDIAG("invalid url", K(url), K(ret));
   } else {
     // we should reserve some bytes space for the next step to add a record header
     // for json config info file, so we should set a offset for the buf before fetching origin json config info
@@ -1835,10 +1860,10 @@ int ObConfigServerProcessor::get_json_config_info(const char *url, const bool ve
       buf_size = buf_count * OBPROXY_MAX_JSON_INFO_SIZE;
       if (OB_UNLIKELY(NULL != buf)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("buf should be null before memory allocated", K(buf), K(ret));
+        LOG_WDIAG("buf should be null before memory allocated", K(buf), K(ret));
       } else if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(buf_size, ObModIds::OB_PROXY_FILE)))) {
         ret =  OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc memory", K(ret));
+        LOG_EDIAG("fail to alloc memory", K(ret));
       } else if (FALSE_IT(json.assign_buffer(buf + OB_RECORD_HEADER_LENGTH,
                  static_cast<int32_t>(buf_size - OB_RECORD_HEADER_LENGTH)))) {
         // impossible
@@ -1851,7 +1876,7 @@ int ObConfigServerProcessor::get_json_config_info(const char *url, const bool ve
             buf = NULL;
           }
         }
-        LOG_WARN("fail to fetch json info", "try_attempts", try_attempts, K(buf_count), K(ret));
+        LOG_WDIAG("fail to fetch json info", "try_attempts", try_attempts, K(buf_count), K(ret));
       }
       ++try_attempts;
     } while (OB_SIZE_OVERFLOW == ret && try_attempts < 4);
@@ -1859,7 +1884,7 @@ int ObConfigServerProcessor::get_json_config_info(const char *url, const bool ve
     if (OB_SUCC(ret)) {
       if (OB_FAIL(parse_json_config_info(json, version_only))) {
         if (OB_EAGAIN != ret) {
-          LOG_WARN("fail to parse json config info", K(version_only), K(json), K(ret));
+          LOG_WDIAG("fail to parse json config info", K(version_only), K(json), K(ret));
         }
       } else if (!version_only) {
         if (FALSE_IT(dump_json_config_to_local(buf, buf_size, json.length()))) {
@@ -1883,12 +1908,12 @@ int ObConfigServerProcessor::parse_json_config_info(const ObString &json, const 
   ObArenaAllocator allocator(ObModIds::OB_JSON_PARSER);
 
   if (OB_FAIL(init_json(json, root, allocator))) {
-    LOG_WARN("fail to convert config string to json format", K(ret));
+    LOG_WDIAG("fail to convert config string to json format", K(ret));
   } else if (version_only) {
     CRLockGuard lock(json_info_lock_);
     if (OB_FAIL(ObProxyDataInfo::parse_version(root, json_config_info_->get_data_version()))) {
       if (OB_EAGAIN != ret) {
-        LOG_WARN("fail to parse json config version", K(ret));
+        LOG_WDIAG("fail to parse json config version", K(ret));
       }
     }
   } else {
@@ -1896,12 +1921,12 @@ int ObConfigServerProcessor::parse_json_config_info(const ObString &json, const 
     bool is_metadb_changed = false;
     if (OB_ISNULL(json_info = op_alloc(ObProxyJsonConfigInfo))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc mem for json config info", K(ret));
+      LOG_EDIAG("fail to alloc mem fot json config info", K(ret));
     } else if (OB_FAIL(json_info->parse(root))) {
-      LOG_WARN("fail to parse json info", K(ret));
+      LOG_WDIAG("fail to parse json info", K(ret));
     } else if (!json_info->is_valid()) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("new json info is invalid", K(*json_info), K(ret));
+      LOG_WDIAG("new json info is invalid", K(*json_info), K(ret));
     } else {
       CRLockGuard lock(json_info_lock_);
       if (json_config_info_->is_meta_db_changed(*json_info)) {
@@ -1912,10 +1937,10 @@ int ObConfigServerProcessor::parse_json_config_info(const ObString &json, const 
       // update first cluster name in resource pool, ignore ret
       if (OB_FAIL(get_global_resource_pool_processor().set_first_cluster_name(
               json_info->get_cluster_array().default_cluster_name_))) {
-        LOG_WARN("fail to update resource pool default cluster name", K(ret));
+        LOG_WDIAG("fail to update resource pool default cluster name", K(ret));
       }
       if (OB_FAIL(swap_with_rslist(json_info, is_metadb_changed))) {
-        LOG_WARN("fail to update json config info", K(ret));
+        LOG_WDIAG("fail to update json config info", K(ret));
       }
     }
     if (OB_FAIL(ret) && OB_LIKELY(NULL != json_info)) {
@@ -1925,7 +1950,7 @@ int ObConfigServerProcessor::parse_json_config_info(const ObString &json, const 
     if (OB_SUCC(ret) && is_metadb_changed) {
       if (OB_FAIL(get_global_resource_pool_processor().add_cluster_delete_task(
                   ObString::make_string(OB_META_DB_CLUSTER_NAME), OB_DEFAULT_CLUSTER_ID))) {
-        LOG_WARN("fail to add rebuild metabd task", K(ret));
+        LOG_WDIAG("fail to add rebuild metabd task", K(ret));
         ret = OB_SUCCESS;
       }
     }
@@ -1942,23 +1967,23 @@ int ObConfigServerProcessor::fetch_rs_list_from_url(const char *url, const ObStr
   ObString json;
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(OB_PROXY_CONFIG_BUFFER_SIZE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for rs list json info", K(ret));
+    LOG_EDIAG("fail to alloc memory for rs list json info", K(ret));
   } else if (FALSE_IT(json.assign_buffer(buf, static_cast<int32_t>(OB_PROXY_CONFIG_BUFFER_SIZE)))) {
     // impossible
   } else if (OB_FAIL(do_fetch_json_info(url, json))) {
-    LOG_WARN("fail to fetch rslist json info", K(json), K(ret));
+    LOG_WDIAG("fail to fetch rslist json info", K(json), K(ret));
   } else {
     Value *root = NULL;
     ObArenaAllocator allocator(ObModIds::OB_JSON_PARSER);
     if (OB_FAIL(init_json(json, root, allocator))) {
-      LOG_WARN("fail to init json root for rslist", K(ret));
+      LOG_WDIAG("fail to init json root for rslist", K(ret));
     } else {
       CWLockGuard lock(json_info_lock_);
       if (OB_ISNULL(json_config_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json_config_info_ is null", K(ret));
+        LOG_WDIAG("json_config_info_ is null", K(ret));
       } else if (OB_FAIL(json_config_info_->parse_remote_rslist(root, appname, cluster_id, web_rslist, need_update_dummy_entry)) && OB_EAGAIN != ret) {
-        LOG_WARN("fail to parse remote rslist", K(root), K(appname), K(cluster_id), K(ret));
+        LOG_WDIAG("fail to parse remote rslist", K(root), K(appname), K(cluster_id), K(ret));
       }
     }
   }
@@ -1975,7 +2000,7 @@ int ObConfigServerProcessor::swap_origin_web_rslist_and_build_sys(const ObString
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(json_config_info_->swap_origin_web_rslist_and_build_sys(cluster, cluster_id, need_save_rslist_hash))) {
-    LOG_WARN("fail to parse remote rslist", K(cluster), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to parse remote rslist", K(cluster), K(cluster_id), K(ret));
   }
 
   return ret;
@@ -1992,7 +2017,7 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
   bool is_cluster_alias = is_cluster_name_alias(cluster_name);
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(OB_PROXY_CONFIG_BUFFER_SIZE)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for region idc json info", K(ret));
+    LOG_EDIAG("fail to alloc memory for region idc json info", K(ret));
   } else if (FALSE_IT(json.assign_buffer(buf, static_cast<int32_t>(OB_PROXY_CONFIG_BUFFER_SIZE)))) {
     // impossible
   } else if (OB_FAIL(do_fetch_json_info(url, json, CURL_IDC_TRANSFER_TIMEOUT))) {
@@ -2003,29 +2028,29 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
     if (OB_FAIL(init_json(json, root, allocator))) {
       LOG_INFO("fail to init json root for idc list", K(ret));
     } else if (OB_FAIL(ObProxyJsonConfigInfo::parse_remote_idc_list(root, cluster_name_from_url, cluster_id_from_url, idc_list))) {
-      LOG_WARN("fail to parse remote idc list", K(root), K(ret));
+      LOG_WDIAG("fail to parse remote idc list", K(root), K(ret));
     } 
   }
   if (OB_SUCC(ret)){
     if (!is_cluster_alias) {
       if (cluster_name != OB_META_DB_CLUSTER_NAME && cluster_name_from_url != cluster_name) {
         ret = OB_OBCONFIG_APPNAME_MISMATCH;
-        LOG_WARN("obconfig cluster name mismatch", K(cluster_name), K(cluster_name_from_url), K(ret));
+        LOG_WDIAG("obconfig cluster name mismatch", K(cluster_name), K(cluster_name_from_url), K(ret));
       }
     } else {
       ObString real_cluster_name;
       if (OB_FAIL(get_real_cluster_name(real_cluster_name, cluster_name))) {
-        LOG_WARN("fail to get real cluster name", K(cluster_name), K(ret));
+        LOG_WDIAG("fail to get real cluster name", K(cluster_name), K(ret));
       } else if (real_cluster_name != cluster_name) {
         ret = OB_OBCONFIG_APPNAME_MISMATCH;
-        LOG_WARN("obconfig cluster name mismatch", K(cluster_name), K(real_cluster_name), K(cluster_name_from_url), K(ret));
+        LOG_WDIAG("obconfig cluster name mismatch", K(cluster_name), K(real_cluster_name), K(cluster_name_from_url), K(ret));
       }
     }
   }
   if (OB_SUCC(ret)) {
     if (cluster_id != OB_DEFAULT_CLUSTER_ID && cluster_id != cluster_id_from_url) {
       ret = OB_OBCONFIG_APPNAME_MISMATCH;
-      LOG_WARN("obconfig cluster id mismatch", K(cluster_id), K(cluster_id_from_url), K(ret));
+      LOG_WDIAG("obconfig cluster id mismatch", K(cluster_id), K(cluster_id_from_url), K(ret));
     } else {
       LOG_DEBUG("succ to get idc list", K(cluster_name), K(cluster_name_from_url),
                 K(cluster_id), K(cluster_id_from_url), K(idc_list), K(ret));
@@ -2041,13 +2066,13 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
     CWLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json_config_info_ is null", K(ret));
+      LOG_WDIAG("json_config_info_ is null", K(ret));
     } else if (OB_FAIL(json_config_info_->set_idc_list(cluster_name, cluster_id, idc_list))) {
       if (OB_EAGAIN == ret) {
         ret = OB_SUCCESS;
         LOG_DEBUG("idc_list is not changed, no need to update", K(cluster_name), K(cluster_id), K(ret));
       } else {
-        LOG_WARN("fail to update_idc_list", K(cluster_name), K(cluster_id), K(idc_list), K(ret));
+        LOG_WDIAG("fail to update_idc_list", K(cluster_name), K(cluster_id), K(idc_list), K(ret));
       }
     } else {
       need_dump_idc_list_res_ = true;
@@ -2056,25 +2081,24 @@ int ObConfigServerProcessor::refresh_idc_list_from_url(const char *url,
   return ret;
 }
 
-int ObConfigServerProcessor::do_fetch_json_info(const char *url, ObString &json, int64_t timeout)
+int ObConfigServerProcessor::do_fetch_json_info(const char *url, ObString &json, int64_t timeout/*CURL_TRANSFER_TIMEOUT*/, const char* data/*NULL*/)
 {
   int ret = OB_SUCCESS;
 
   if (OB_UNLIKELY(json.size() <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid buffer", "json", get_print_json(json), K(ret));
+    LOG_WDIAG("invalid buffer", "json", get_print_json(json), K(ret));
   } else {
     int64_t fetch_attempts = 0;
     do {
-      if (OB_FAIL(fetch_by_curl(url, timeout,
-          static_cast<void *>(&json), write_data))) {
-        LOG_WARN("fail to fetch json info", "try attempts:", fetch_attempts, K(url), K(is_inited_), K(ret));
+      if (OB_FAIL(fetch_by_curl(url, timeout, static_cast<void*>(&json), write_data, data))) {
+        LOG_WDIAG("fail to fetch json info", "try attempts:", fetch_attempts, K(url), K(is_inited_), K(data), K(ret));
       }
       ++fetch_attempts;
     } while (OB_FAIL(ret) && OB_SIZE_OVERFLOW != ret && !is_inited_ && fetch_attempts < 3);
     if (OB_SUCC(ret)) {
       if (OB_FAIL(handle_content_string(json.ptr(), json.length()))) {
-        LOG_WARN("fail to handle content", "json", get_print_json(json), K(ret));
+        LOG_WDIAG("fail to handle content", "json", get_print_json(json), K(ret));
       }
     }
   }
@@ -2090,7 +2114,7 @@ int ObConfigServerProcessor::handle_content_string(char *content, const int64_t 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(content) || OB_UNLIKELY(content_length <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("empty json content", K(content), K(ret));
+    LOG_WDIAG("empty json content", K(content), K(ret));
   } else {
     for (int64_t i = 0; i < content_length; ++i) {
       if (isspace(content[i])) {
@@ -2107,7 +2131,7 @@ int ObConfigServerProcessor::init_json(const ObString &json_str, Value *&json_ro
   json_root = NULL;
   Parser parser;
   if (OB_FAIL(parser.init(&allocator))) {
-    LOG_WARN("json parser init failed", K(ret));
+    LOG_WDIAG("json parser init failed", K(ret));
   } else if (OB_FAIL(parser.parse(json_str.ptr(), json_str.length(), json_root))) {
     LOG_INFO("parse json failed", K(ret), "json_str", get_print_json(json_str));
   } else { }
@@ -2127,7 +2151,7 @@ int ObConfigServerProcessor::convert_root_addr_to_addr(const LocationList &web_r
       addr.reset();
       addr = web_rs_list[i].server_;
       if (OB_FAIL(rs_list.push_back(addr))) {
-        LOG_WARN("fail to push addr to rs list", K(addr), K(ret));
+        LOG_WDIAG("fail to push addr to rs list", K(addr), K(ret));
       }
     }
   }
@@ -2143,13 +2167,13 @@ int ObConfigServerProcessor::build_proxy_bin_url(const char *binary_name, ObIAll
 
   if (OB_ISNULL(binary_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid bin url buf", K(binary_name), K(ret));
+    LOG_WDIAG("invalid bin url buf", K(binary_name), K(ret));
   } else {
-    //1. get the bin root catalogur length from json_config_info_
+    //1、get the bin root catalogur length from json_config_info_
     CRLockGuard lock(json_info_lock_);
     if (OB_ISNULL(json_config_info_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("json_config_info_ is null", K(ret));
+      LOG_WDIAG("json_config_info_ is null", K(ret));
     } else {
       len = json_config_info_->get_bin_url().length() + 1 + STRLEN(binary_name) + APPEND_HEADER.length();
     }
@@ -2158,14 +2182,14 @@ int ObConfigServerProcessor::build_proxy_bin_url(const char *binary_name, ObIAll
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(bin_url = static_cast<char *>(allocator.alloc(len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc mem for bin url", K(ret));
+      LOG_EDIAG("fail to alloc mem for bin url", K(ret));
     } else {
       CRLockGuard lock(json_info_lock_);
       if (OB_ISNULL(json_config_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json_config_info_ is null", K(ret));
+        LOG_WDIAG("json_config_info_ is null", K(ret));
       } else if (OB_FAIL(json_config_info_->copy_bin_url(bin_url, len))) {
-        LOG_WARN("fail to get bin url root catalogue", K(ret));
+        LOG_WDIAG("fail to get bin url root catalogue", K(ret));
       }
     }
   }
@@ -2173,11 +2197,11 @@ int ObConfigServerProcessor::build_proxy_bin_url(const char *binary_name, ObIAll
   if (OB_SUCC(ret)) {
     int64_t pos = STRLEN(bin_url);
     if (OB_FAIL(check_kernel_release(binary_name))) {
-      LOG_WARN("failed to parser linux kernel release in new_proxy_bin_version, maybe not supported",
+      LOG_WDIAG("failed to parser linux kernel release in new_proxy_bin_version, maybe not supported",
                K(binary_name), K_(kernel_release), K(ret));
     } else if (OB_FAIL(databuff_printf(bin_url, len, pos, "%.*s%s",
                                        APPEND_HEADER.length(), APPEND_HEADER.ptr(), binary_name))) {
-      LOG_WARN("fail to fill full proxy bin url", K(ret));
+      LOG_WDIAG("fail to fill full proxy bin url", K(ret));
     }
   }
 
@@ -2187,47 +2211,96 @@ int ObConfigServerProcessor::build_proxy_bin_url(const char *binary_name, ObIAll
   return ret;
 }
 
-int ObConfigServerProcessor::fetch_by_curl(const char *url, int64_t timeout, void *content, write_func write_func_callback /*NULL*/)
+int ObConfigServerProcessor::concat_cluster_name_array(char *data, const char *cluster_name_array)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(data) || OB_ISNULL(cluster_name_array)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("NULL pointer, invalid curl or url", K(ret));
+  } else {
+    /* 批量逻辑租户接口：
+    curl --location --request GET 'http://127.0.0.1:8000/services?User_ID=alibaba&UID=HNBC&Action=LdgInstanceInfoBatchQuery' --header 'Content-Type: application/json' --data '{
+    "LdgClusters": "cluster1,cluster2"}'
+    */
+    char tail[] = "\"}";
+    int64_t len_data = strlen(data);
+    int64_t len_cluster_name = strlen(cluster_name_array);
+    int64_t len_tail = strlen(tail);
+    int64_t len_append = std::max<int64_t>(std::min<int64_t>(LDG_MAX_URL_LENGTH - len_data - 1, len_cluster_name), 0);
+    MEMCPY(data + len_data, cluster_name_array, len_append);
+    len_data += len_append;
+    len_append = std::max<int64_t>(std::min<int64_t>(LDG_MAX_URL_LENGTH - len_data - 1, len_tail), 0);
+    MEMCPY(data + len_data, tail, len_append);
+    len_data += len_append;
+    data[len_data++] = '\0';
+    LOG_DEBUG("succ to concate ldg url data", K(data), K(cluster_name_array));
+  }
+  return ret;
+}
+
+int ObConfigServerProcessor::fetch_by_curl(const char *url, int64_t timeout, void *content, write_func write_func_callback /*NULL*/, const char *data/*NULL*/)
 {
   int ret = OB_SUCCESS;
   CURL *curl = NULL;
   if (OB_ISNULL(url) || OB_ISNULL(content) || OB_UNLIKELY(timeout <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("NULL pointer, invalid fetch by curl", K(url), K(content), K(ret));
+    LOG_WDIAG("NULL pointer, invalid fetch by curl", K(url), K(content), K(ret));
   } else if (OB_ISNULL(curl = curl_easy_init())) {
     ret = OB_CURL_ERROR;
-    LOG_WARN("init curl failed", K(ret));
+    LOG_WDIAG("init curl failed", K(ret));
   } else {
     CURLcode cc = CURLE_OK;
     int64_t http_code = 0;
     //set curl options
     if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_URL, url))) {
-      LOG_WARN("set url failed", K(cc), "url", url);
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L))) {
-      LOG_WARN("set no signal failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L))) {
-      LOG_WARN("set tcp_nodelay failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3))) {//set max redirect
-      LOG_WARN("set max redirect failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1))) {//for http redirect 301 302
-      LOG_WARN("set follow location failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CURL_CONNECTION_TIMEOUT))) {
-      LOG_WARN("set connect timeout failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout))) {
-      LOG_WARN("set transfer timeout failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_func_callback))) {
-      LOG_WARN("set write callback failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, content))) {
-      LOG_WARN("set write data failed", K(cc));
-    } else if (CURLE_OK != (cc = curl_easy_perform(curl))) {
-      LOG_WARN("curl easy perform failed", K(cc));
-    } else if(CURLE_OK != (cc = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code))) {
-      LOG_WARN("curl getinfo failed", K(cc));
+      LOG_WDIAG("set url failed", K(cc), "url", url);
     } else {
-      // http status code 2xx means success
-      if (http_code / 100 != 2) {
-        ret = OB_CURL_ERROR;
-        LOG_WARN("unexpected http status code", K(http_code), K(content), K(url), K(ret));
+      struct curl_slist* headerList = NULL;
+      if (OB_NOT_NULL(data)) {
+        // set header
+        LOG_DEBUG("ldg url data, ", K(data));
+        headerList = curl_slist_append(headerList, "Content-Type: application/json");
+        // 添加--request GET参数
+        if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "GET"))) {
+          LOG_WDIAG("set --request GET failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headerList))) { // 添加--header 'Content-Type: application/json' 参数
+          LOG_WDIAG("set --header Content failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data))) {       // 添加--data '{ 
+          LOG_WDIAG("set --data Content failed", K(cc));
+        }
+      }
+      if (CURLE_OK == cc) {
+        if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1L))) {
+          LOG_WDIAG("set no signal failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_TCP_NODELAY, 1L))) {
+          LOG_WDIAG("set tcp_nodelay failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 3))) {//set max redirect
+          LOG_WDIAG("set max redirect failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1))) {//for http redirect 301 302
+          LOG_WDIAG("set follow location failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, CURL_CONNECTION_TIMEOUT))) {
+          LOG_WDIAG("set connect timeout failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_TIMEOUT, timeout))) {
+          LOG_WDIAG("set transfer timeout failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_func_callback))) {
+          LOG_WDIAG("set write callback failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_setopt(curl, CURLOPT_WRITEDATA, content))) {
+          LOG_WDIAG("set write data failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_perform(curl))) {
+          LOG_WDIAG("curl easy perform failed", K(cc));
+        } else if (CURLE_OK != (cc = curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &http_code))) {
+          LOG_WDIAG("curl getinfo failed", K(cc));
+        } else {
+          // http status code 2xx means success
+          if (http_code / 100 != 2) {
+            ret = OB_CURL_ERROR;
+            LOG_WDIAG("unexpected http status code", K(http_code), K(content), K(url), K(ret));
+          }
+        }
+
+      }
+      if (OB_NOT_NULL(headerList)) {
+        curl_slist_free_all(headerList);    // 清理header，防止内存泄漏
       }
     }
 
@@ -2237,7 +2310,7 @@ int ObConfigServerProcessor::fetch_by_curl(const char *url, int64_t timeout, voi
       } else {
         ret = OB_CURL_ERROR;
       }
-      LOG_WARN("curl error", "curl_error_code", cc, "curl_error_message",
+      LOG_WDIAG("curl error", "curl_error_code", cc, "curl_error_message",
           curl_easy_strerror(cc), K(ret), K(url));
     }
     curl_easy_cleanup(curl);
@@ -2253,14 +2326,14 @@ int64_t ObConfigServerProcessor::write_proxy_bin(void *ptr, int64_t size,
 
   if (OB_ISNULL(stream) || OB_ISNULL(ptr) || OB_UNLIKELY(size < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(stream), K(ptr), K(size), K(ret));
+    LOG_WDIAG("invalid argument", K(stream), K(ptr), K(size), K(ret));
   } else {
     real_size = size * nmemb;
     if (real_size > 0) {
       int fd = static_cast<int>(reinterpret_cast<int64_t>(stream));
       if (real_size != unintr_write(fd, static_cast<const char *>(ptr), real_size)) {
         ret = OB_IO_ERROR;
-        LOG_WARN("write proxy bin error", K(ret));
+        LOG_WDIAG("write proxy bin error", K(ret));
       }
     }
   }
@@ -2276,21 +2349,21 @@ int64_t ObConfigServerProcessor::write_data(void *ptr, int64_t size,
 
   if (OB_ISNULL(stream) || OB_ISNULL(ptr) || OB_UNLIKELY(size < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(stream), K(ptr), K(size), K(ret));
+    LOG_WDIAG("invalid argument", K(stream), K(ptr), K(size), K(ret));
   } else {
     real_size = size * nmemb;
     if (real_size > 0) {
       content = static_cast<ObString *>(stream);
       if (real_size + content->length() > content->size()) {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WARN("unexpected long content",
+        LOG_WDIAG("unexpected long content",
             "new_byte", real_size,
             "recved_byte", content->length(),
             "content_size", content->size(),
             K(ret));
       } else if (content->write(static_cast<const char *>(ptr), static_cast<int32_t>(real_size)) <= 0) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("append data failed", K(ret));
+        LOG_WDIAG("append data failed", K(ret));
       }
     }
   }
@@ -2305,7 +2378,7 @@ int ObConfigServerProcessor::add_serialized_file_header(char *buf, const int64_t
 
   if (OB_ISNULL(buf) || OB_UNLIKELY(data_len + OB_RECORD_HEADER_LENGTH > buf_len)) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("invalid buffer", K(buf), K(buf_len), K(data_len), K(ret));
+    LOG_WDIAG("invalid buffer", K(buf), K(buf_len), K(data_len), K(ret));
   } else {
     ObRecordHeader header;
     header.magic_ = OB_PROXY_CONFIG_MAGIC;
@@ -2317,7 +2390,7 @@ int ObConfigServerProcessor::add_serialized_file_header(char *buf, const int64_t
     header.set_header_checksum();
 
     if (OB_FAIL(header.serialize(buf, buf_len, start))) {
-      LOG_WARN("fail to serialize record header", K(ret));
+      LOG_WDIAG("fail to serialize record header", K(ret));
     }
   }
   return ret;
@@ -2328,11 +2401,11 @@ int ObConfigServerProcessor::set_refresh_interval()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("config server processor is not inited", K(ret));
+    LOG_WDIAG("config server processor is not inited", K(ret));
   } else if (OB_FAIL(ObAsyncCommonTask::update_task_interval(refresh_cont_))) {
-    LOG_WARN("fail to set config server refresh interval", K(ret));
+    LOG_WDIAG("fail to set config server refresh interval", K(ret));
   } else if (OB_FAIL(ObAsyncCommonTask::update_task_interval(refresh_ldg_cont_))) {
-    LOG_WARN("fail to set ldg refresh interval", K(ret));
+    LOG_WDIAG("fail to set ldg refresh interval", K(ret));
   }
   return ret;
 }
@@ -2342,13 +2415,13 @@ int ObConfigServerProcessor::start_refresh_task()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("config server is not inited", K(ret));
+    LOG_WDIAG("config server is not inited", K(ret));
   } else if (OB_UNLIKELY(NULL != refresh_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("refresh cont should be null here", K_(refresh_cont), K(ret));
+    LOG_WDIAG("refresh cont should be null here", K_(refresh_cont), K(ret));
   } else if (OB_UNLIKELY(NULL != refresh_ldg_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ldg refresh cont should be null here", K_(refresh_ldg_cont), K(ret));
+    LOG_WDIAG("ldg refresh cont should be null here", K_(refresh_ldg_cont), K(ret));
   } else {
     int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(
                           get_global_proxy_config().config_server_refresh_interval);
@@ -2357,7 +2430,7 @@ int ObConfigServerProcessor::start_refresh_task()
                                   ObConfigServerProcessor::do_repeat_task,
                                   ObConfigServerProcessor::update_interval))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start config server refresh task", K(interval_us));
+      LOG_WDIAG("fail to create and start config server refresh task", K(interval_us));
     } else {
       LOG_INFO("succ to create and start config server refresh task", K(interval_us));
     }
@@ -2369,7 +2442,7 @@ int ObConfigServerProcessor::start_refresh_task()
               ObConfigServerProcessor::do_ldg_repeat_task,
               ObConfigServerProcessor::update_ldg_interval))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to create and start ldg refresh task");
+        LOG_WDIAG("fail to create and start ldg refresh task");
       } else {
         LOG_INFO("succ to create and start ldg refresh task");
       }
@@ -2387,7 +2460,7 @@ int ObConfigServerProcessor::do_ldg_repeat_task()
 {
   int ret = OB_SUCCESS;
   if (get_global_proxy_config().enable_ldg && OB_FAIL(get_global_config_server_processor().refresh_ldg_config_info())) {
-    LOG_WARN("ldg refresh ldg config info failed", K(ret));
+    LOG_WDIAG("ldg refresh ldg config info failed", K(ret));
   }
   return ret;
 }
@@ -2415,18 +2488,18 @@ int ObConfigServerProcessor::refresh_config_server()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("config server is not inited", K(ret));
+    LOG_WDIAG("config server is not inited", K(ret));
   } else {
     bool force_refresh = proxy_config_.refresh_json_config;
     if (OB_FAIL(refresh_json_config_info(force_refresh))) {
-      LOG_WARN("fail to do refresh json config info", K(force_refresh), K(ret));
+      LOG_WDIAG("fail to do refresh json config info", K(force_refresh), K(ret));
     } else if (force_refresh) {
       proxy_config_.refresh_json_config = false;
     }
 
     if (proxy_config_.refresh_rslist) {
       if (OB_FAIL(refresh_all_rslist())) {
-        LOG_WARN("fail to refresh all cluster rslist", K(ret));
+        LOG_WDIAG("fail to refresh all cluster rslist", K(ret));
       } else {
         proxy_config_.refresh_rslist = false;
       }
@@ -2434,7 +2507,7 @@ int ObConfigServerProcessor::refresh_config_server()
 
     if (proxy_config_.refresh_idc_list) {
       if (OB_FAIL(refresh_all_idc_list())) {
-        LOG_WARN("fail to refresh all cluster idc list", K(ret));
+        LOG_WDIAG("fail to refresh all cluster idc list", K(ret));
       } else {
         proxy_config_.refresh_idc_list = false;
       }
@@ -2443,72 +2516,30 @@ int ObConfigServerProcessor::refresh_config_server()
   return ret;
 }
 
-int ObConfigServerProcessor::refresh_ldg_config_info()
-{
+int ObConfigServerProcessor::request_ldg_cluster_info(ObProxyLdgInfo *ldg_info, const char *ldg_url, const char* cluster_name_array, ObIArray<LdgClusterVersionPair> &cluster_info_array, ObIArray<LdgClusterVersionPair>& change_cluster_info_array) {
   int ret = OB_SUCCESS;
-  char ldg_url[256];
-  char *url = NULL;
-  int64_t url_len = 0;
-  const char *pos = NULL;
-  int64_t url_key_len = static_cast<int64_t>(strlen(CONFIG_URL_KEY_STRING_2));
+  ObString json;
+  char *buf = NULL;
 
-  {
-    CRLockGuard guard(get_global_proxy_config().rwlock_);
-    url_len = STRLEN(proxy_config_.obproxy_config_server_url.str());
-    if (OB_UNLIKELY(url_len <= 0)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("obproxy config server url is invalid", K(url_len), K(ret));
-    } else if (OB_ISNULL(url = static_cast<char *>(op_fixed_mem_alloc(url_len + 1)))) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc mem for config server url", K(ret));
-    } else {
-      if (0 >= snprintf(url, url_len, proxy_config_.obproxy_config_server_url.str())) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to build config server url", K(ret));
-      }
-    }
-  }
-
-  if (NULL == url || OB_FAIL(ret)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("argument is invalid", K(ret), K(url));
-  } else if ((pos = strcasestr(url, CONFIG_URL_KEY_STRING_2)) == NULL) {
-    if ((pos = strcasestr(url, CONFIG_URL_KEY_STRING_1)) == NULL) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("cannot find GetObProxyConfig in url", K(ret), K(url));
-    } else {
-      url_key_len = static_cast<int64_t>(strlen(CONFIG_URL_KEY_STRING_1));
-    }
-  }
-
-  if (OB_SUCC(ret)) {
-    const int64_t url_head_len = static_cast<int64_t>(pos - url);
-    const int64_t url_tailer_len = url_len - url_head_len - url_key_len;
-    MEMCPY(ldg_url, url, url_head_len);
-    MEMCPY(ldg_url + url_head_len, LDG_INSTANCE_INFO_ALL_STRING.ptr(), LDG_INSTANCE_INFO_ALL_STRING.length());
-    MEMCPY(ldg_url + url_head_len + LDG_INSTANCE_INFO_ALL_STRING.length(),
-        url + url_head_len + url_key_len,
-        url_tailer_len);
-    ldg_url[url_head_len + LDG_INSTANCE_INFO_ALL_STRING.length() + url_tailer_len] = '\0';
-    LOG_DEBUG("begin to refresh ldg config info", K(ldg_url));
-
-    ObString json;
-    char *buf = NULL;
-
-    int64_t try_attempts = 0;
-    int64_t buf_count = 1;
-    int64_t buf_size = 0;
+  // 把json解析结果，读到buffer，buffer最大=8*64K=512K
+  int64_t try_attempts = 0;
+  int64_t buf_count = 1;
+  int64_t buf_size = 0;
+  char data[LDG_MAX_URL_LENGTH] = "{\"LdgClusters\": \"";
+  if (OB_FAIL(concat_cluster_name_array(data, cluster_name_array))) {
+    LOG_WDIAG("fail to concat cluster name", K(data), K(cluster_name_array), K(ret));
+  } else {
     do {
       buf_size = buf_count * OBPROXY_MAX_JSON_INFO_SIZE;
       if (OB_UNLIKELY(NULL != buf)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("buf should be null before memory allocated", K(buf), K(ret));
+        LOG_WDIAG("buf should be null before memory allocated", K(buf), K(ret));
       } else if (OB_ISNULL(buf = static_cast<char*>(op_fixed_mem_alloc(buf_size)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc memory for ldg json info", K(ret));
+        LOG_EDIAG("fail to alloc memory for ldg json info", K(ret));
       } else if (FALSE_IT(json.assign_buffer(buf, static_cast<int32_t>(buf_size)))) {
         // impossible
-      } else if (OB_FAIL(do_fetch_json_info(ldg_url, json))) {
+      } else if (OB_FAIL(do_fetch_json_info(ldg_url, json, CURL_TRANSFER_TIMEOUT, data))) {
         if (OB_SIZE_OVERFLOW == ret) {
           // double buf size
           buf_count = buf_count << 1L;
@@ -2517,52 +2548,190 @@ int ObConfigServerProcessor::refresh_ldg_config_info()
             buf = NULL;
           }
         }
-        LOG_WARN("fail to fetch ldg info", "try_attempts", try_attempts, K(buf_count), K(ret));
+        LOG_WDIAG("fail to fetch ldg info", "try_attempts", try_attempts,
+          K(buf_count), K(ret));
       }
       ++try_attempts;
     } while (OB_SIZE_OVERFLOW == ret && try_attempts < 4);
+  }
 
-    if (OB_SUCC(ret)) {
-      Value *root = NULL;
-      ObArenaAllocator allocator(ObModIds::OB_JSON_PARSER);
-      ObProxyLdgInfo *ldg_info = NULL;
-      if (OB_ISNULL(ldg_info = op_alloc(ObProxyLdgInfo))) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc memory for ldg info", K(ret));
-      } else if (OB_FAIL(init_json(json, root, allocator))) {
-        LOG_WARN("fail to init json root for ldg", K(ret));
-      } else if (OB_FAIL(ldg_info->parse(root))) {
-        LOG_WARN("fail to parse ldg info", K(ret));
-      } else {
-        ldg_info->refcount_inc();
-        {
-          ObProxyLdgInfo *tmp_info = NULL;
-          DRWLock::WRLockGuard lock(ldg_info_lock_);
-          tmp_info = ldg_info_;
-          ldg_info_ = ldg_info;
-          LOG_DEBUG("get ldg info from configserver succ", K(*ldg_info));
-          release(tmp_info);
-        }
-      }
-
-      if (OB_FAIL(ret) && NULL != ldg_info) {
-        op_free(ldg_info);
-      }
-    }
-
-    if (OB_LIKELY(NULL != buf)) {
-      op_fixed_mem_free(buf, buf_size);
-      buf = NULL;
+  // parse json to ldg_info
+  ObArenaAllocator allocator(ObModIds::OB_JSON_PARSER);
+  Value *root = NULL;
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(init_json(json, root, allocator))) {
+      LOG_WDIAG("fail to init json root for ldg", K(ret));
+    } else if (OB_FAIL(ldg_info->parse(root, cluster_info_array, change_cluster_info_array))) {
+      LOG_WDIAG("fail to parse ldg info", K(ret));
     }
   }
 
+  if (OB_LIKELY(NULL != buf)) {
+    op_fixed_mem_free(buf, buf_size);
+    buf = NULL;
+  }
+  return ret;
+}
+
+int ObConfigServerProcessor::copy_cluster_info(ObIArray<LdgClusterVersionPair>& cluster_info_array, const ObString &login_cluster_name)
+{
+  int ret = OB_SUCCESS;
+  // 如果login_cluster_name!=null，则是首次登录，只拉取其登录的集群名
+  // 否则login_cluster_name==null，拉取全局Hashset存储的集群名
+  if (login_cluster_name.empty()) {
+    DRWLock::RDLockGuard lock(ldg_info_lock_);
+    LdgHashMap& ldg_cluster_hash = get_global_config_server_processor().ldg_cluster_hash_;
+    LdgHashMap::iterator last = ldg_cluster_hash.end();
+    for (LdgHashMap::iterator iter = ldg_cluster_hash.begin(); iter != last; ++iter) {
+      LdgClusterVersionPair tmp_cluster_info(iter->first, iter->second);
+      if (OB_FAIL(cluster_info_array.push_back(tmp_cluster_info))) {
+        LOG_WDIAG("fail to push back cluster name and version", K(login_cluster_name), K(iter->second), K(ret));
+      }
+    }
+  } else {
+    ObProxyConfigString cluster_name;
+    ObProxyConfigString cluster_version;
+    cluster_name.set_value(login_cluster_name);
+    LdgClusterVersionPair tmp_cluster_info(cluster_name, cluster_version);
+    if (OB_FAIL(cluster_info_array.push_back(tmp_cluster_info))) {
+      LOG_WDIAG("fail to insert cluster name and version to HashMap when login", K(ret));
+    }
+  }
+  return ret;
+}
+
+int ObConfigServerProcessor::update_cluster_version(ObIArray<LdgClusterVersionPair>& change_cluster_info_array)
+{
+  int ret = OB_SUCCESS;
+
+  LdgHashMap& ldg_cluster_hash = get_global_config_server_processor().ldg_cluster_hash_;
+  // 外面需要加写锁，会修改全局对象
+  // change_cluster_info_array::parse中申请，覆盖对应全局变量的version
+  // 全局变量被替换的旧version，内存需要释放
+  for (int64_t i = 0; OB_SUCC(ret) && i < change_cluster_info_array.count(); ++i) {
+    LdgClusterVersionPair& cluster_info = change_cluster_info_array.at(i);
+    if (OB_FAIL(ldg_cluster_hash.set_refactored(cluster_info.first, cluster_info.second, 1))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to insert cluster name and version to HashMap", K(cluster_info.first), K(cluster_info.second), K(ret));
+    }
+  }
+  return ret;
+}
+
+int ObConfigServerProcessor::refresh_ldg_config_info(const ObString &login_cluster_name/*NULL*/)
+{
+  int ret = OB_SUCCESS;
+  char ldg_url[256];
+  char *url = NULL;
+  int64_t url_len = 0;
+  const char *pos = NULL;
+  int64_t url_key_len = static_cast<int64_t>(strlen(CONFIG_URL_KEY_STRING_2));
+  {
+    CRLockGuard guard(get_global_proxy_config().rwlock_);
+    url_len = STRLEN(proxy_config_.obproxy_config_server_url.str());
+    if (OB_UNLIKELY(url_len <= 0)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("obproxy config server url is invalid", K(url_len), K(ret));
+    } else if (OB_ISNULL(url = static_cast<char *>(op_fixed_mem_alloc(url_len + 1)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_EDIAG("fail to alloc mem for config server url", K(ret));
+    } else {
+      if (0 >= snprintf(url, url_len + 1, "%s", proxy_config_.obproxy_config_server_url.str())) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to build config server url", K(ret));
+      }
+    }
+  }
+  ObSEArray<LdgClusterVersionPair, 10> cluster_info_array;           // (cluster_name, cluster_version)
+  ObSEArray<LdgClusterVersionPair, 10> change_cluster_info_array;    // 版本号改变的cluster
+  if (OB_FAIL(copy_cluster_info(cluster_info_array, login_cluster_name))) {
+    LOG_WDIAG("fail to copy cluster name and version for HashMap", K(ret));
+  }
+
+  if (NULL == url || OB_FAIL(ret)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("argument is invalid", K(ret), K(url));
+  } else if ((pos = strcasestr(url, CONFIG_URL_KEY_STRING_2)) == NULL) {
+    if ((pos = strcasestr(url, CONFIG_URL_KEY_STRING_1)) == NULL) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("cannot find GetObProxyConfig in url", K(ret), K(url));
+    } else {
+      url_key_len = static_cast<int64_t>(strlen(CONFIG_URL_KEY_STRING_1));
+    }
+  }
+  // 向ldg_url添加新接口参数
+  if (OB_SUCC(ret)) {
+    int64_t len_ldg_url = 0;
+    const int64_t url_head_len = static_cast<int64_t>(pos - url);
+    const int64_t url_tailer_len = url_len - url_head_len - url_key_len;
+    MEMCPY(ldg_url + len_ldg_url, url, url_head_len);
+    len_ldg_url += url_head_len;
+    MEMCPY(ldg_url + len_ldg_url, LDG_INSTANCE_INFO_BATCH_STRING.ptr(), LDG_INSTANCE_INFO_BATCH_STRING.length());
+    len_ldg_url += LDG_INSTANCE_INFO_BATCH_STRING.length();
+    MEMCPY(ldg_url + len_ldg_url, url + url_head_len + url_key_len, url_tailer_len);
+    len_ldg_url += url_tailer_len;
+    ldg_url[len_ldg_url] = '\0';
+    ObProxyLdgInfo *ldg_info = NULL;
+    if (OB_ISNULL(ldg_info = op_alloc(ObProxyLdgInfo))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to alloc memory for ldg info", K(ret));
+    } else {
+      char cluster_name_url[LDG_MAX_URL_LENGTH] = {};    // 应该设置为LDG_BATCH_SIZE个集群的最大长度
+      int64_t len_cluster_name_url = 0;
+      int64_t len_array = cluster_info_array.count();
+      // 每组LDG_BATCH_SIZE（默认10）个集群，分批发送请求
+      for (int64_t i = 1; i <= len_array; i++) {
+        if ((i - 1) % LDG_BATCH_SIZE != 0) {
+          cluster_name_url[len_cluster_name_url++] = ',';
+        }
+        ObString& cur_cluster_name_url = const_cast<ObString&>(cluster_info_array[i - 1].first.config_string_);
+        int64_t len_cur_cluster_name = std::max<int64_t>(std::min<int64_t>(LDG_MAX_URL_LENGTH - len_cluster_name_url - 1, cur_cluster_name_url.length()), 0);
+        MEMCPY(cluster_name_url + len_cluster_name_url, cur_cluster_name_url.ptr(), len_cur_cluster_name);
+        len_cluster_name_url += len_cur_cluster_name;
+        if (i % LDG_BATCH_SIZE == 0 || (i == len_array)) {
+          // 拼接集群名，发送请求
+          cluster_name_url[len_cluster_name_url++] = '\0';
+          LOG_DEBUG("concat cluster = ", K(cluster_name_url));
+          if (OB_FAIL(request_ldg_cluster_info(ldg_info, ldg_url, cluster_name_url, cluster_info_array, change_cluster_info_array))) {
+            LOG_WDIAG("fail to mutil-batch request ldg cluster info", K(ret));
+          }
+          len_cluster_name_url = 0;
+        }
+      }
+    }
+    // 更新LDG_INFO
+    if (OB_SUCC(ret)) {
+      DRWLock::WRLockGuard lock(ldg_info_lock_);
+      if (OB_ISNULL(ldg_info_)) {   // 是第一次创建ldg_info，直接交换指针即可
+        ldg_info_ = ldg_info;
+        ldg_info = NULL;
+        LOG_DEBUG("first to create ldg info", K(login_cluster_name));
+      } else {
+        if (OB_FAIL(ldg_info_->update_ldg_info(ldg_info, change_cluster_info_array))) {
+          LOG_WDIAG("fail to update ldg info", K(ret));
+        } else if (OB_FAIL(update_cluster_version(change_cluster_info_array))) {
+          LOG_WDIAG("fail to update cluster version", K(ret));
+        } else {
+          op_free(ldg_info);
+          ldg_info = NULL;
+          LOG_DEBUG("succ to get ldg info from configserver", K(ret));
+        }
+      }
+    }
+    
+    if (OB_FAIL(ret) && NULL != ldg_info) {
+      op_free(ldg_info);
+      ldg_info = NULL;
+    }
+  }
+
+  // 应该释放url_len + 1
   if (OB_LIKELY(NULL != url)) {
     op_fixed_mem_free(url, url_len + 1);
     url = NULL;
   }
-
   if (OB_FAIL(ret)) {
-    LOG_WARN("get ldg info from ocp failed");
+    LOG_WDIAG("fail to get ldg info from ocp");
   }
 
   return ret;
@@ -2575,17 +2744,55 @@ int ObConfigServerProcessor::get_ldg_primary_role_instance(
 {
   int ret = OB_SUCCESS;
   instance = NULL;
-  DRWLock::RDLockGuard lock(ldg_info_lock_);
+  // 加锁原因：refresh_ldg_config_info调用copy_cluster_name，会读取ldg_cluster_hash；如果此时ldg_cluster_hash.set_refactored()，可能会影响迭代器遍历Hashset;
+  // 全局的ldg_cluster_hash_只会增加/被覆盖，不会减少;
+  ObProxyConfigString insert_cluster_name;
+  insert_cluster_name.set_value(cluster_name);
+  LdgHashMap& ldg_cluster_hash = get_global_config_server_processor().ldg_cluster_hash_;
+  bool is_exist_cluster_name = (NULL != ldg_cluster_hash.get(insert_cluster_name));
+  // char *copy_ptr = NULL;
+  if (false == is_exist_cluster_name) {
+    DRWLock::WRLockGuard lock(ldg_info_lock_);
+    is_exist_cluster_name = (NULL != ldg_cluster_hash.get(insert_cluster_name));
+    if (!is_exist_cluster_name) {
+      ObProxyConfigString insert_cluster_version;
+      if (OB_FAIL(ldg_cluster_hash.set_refactored(insert_cluster_name, insert_cluster_version))) {
+        LOG_WDIAG("fail to insert cluster name and version to ldg hashmap", K(insert_cluster_name), K(insert_cluster_version), K(ret));
+      } else {
+        LOG_DEBUG("success to insert cluster name and version to ldg hashmap", K(insert_cluster_name));
+      }
+    }
+  }
+  // 已释放写锁，更新LDG信息
+  if (OB_SUCC(ret) && !is_exist_cluster_name) {
+    if (OB_FAIL(refresh_ldg_config_info(cluster_name))) {
+      LOG_WDIAG("refresh ldg info failed", K(ret));
+    } else {
+      LOG_DEBUG("succ to first login, refresh ldg info", K(cluster_name));
+    }
+  }
+
   if (OB_ISNULL(ldg_info_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("ldg_info is null", K(ret));
+    LOG_WDIAG("ldg_info is null", K(ret));
   } else if (OB_FAIL(ldg_info_->get_primary_role_instance(tenant_name, cluster_name, instance))) {
-    LOG_WARN("ldg info get primary role instance failed", K(ret), K(cluster_name), K(tenant_name));
+    LOG_WDIAG("ldg info get primary role instance failed", K(ret), K(cluster_name), K(tenant_name));
   } else if (NULL != instance) {
     instance->inc_ref();
   }
 
   return ret;
+}
+
+bool ObConfigServerProcessor::is_cluster_array_empty()
+{
+  int bret = false;
+  if (json_config_info_ == NULL) {
+    bret = true;
+  } else if (json_config_info_->get_cluster_count() <= 0) {
+    bret = true;
+  }
+  return bret;
 }
 
 }//end of namespace obutils

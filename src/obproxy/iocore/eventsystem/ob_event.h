@@ -253,7 +253,7 @@ inline int ObEvent::init(ObContinuation &cont, const ObHRTime atimeout_at, const
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = common::OB_INIT_TWICE;
-    PROXY_EVENT_LOG(WARN, "it has been inited, it should not happened", K(is_inited_), K(*this), K(ret));
+    PROXY_EVENT_LOG(WDIAG, "it has been inited, it should not happened", K(is_inited_), K(*this), K(ret));
   } else {
     continuation_ = &cont;
     timeout_at_ = atimeout_at;

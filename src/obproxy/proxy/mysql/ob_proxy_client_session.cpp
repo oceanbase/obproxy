@@ -99,7 +99,7 @@ int ObProxyClientSession::state_api_callout(int event, void *data)
             if (!plugin_lock.is_locked()) {
               CLIENT_SESSION_SET_DEFAULT_HANDLER(&ObProxyClientSession::state_api_callout);
               if (OB_ISNULL(mutex_->thread_holding_->schedule_in(this, HRTIME_MSECONDS(1)))) {
-                LOG_WARN("schedule in error");
+                LOG_WDIAG("schedule in error");
               }
             } else {
               api_current_ = api_current_->next();
@@ -121,7 +121,7 @@ int ObProxyClientSession::state_api_callout(int event, void *data)
       break;
 
     default:
-      LOG_WARN("invalid event, event", K(event));
+      LOG_WDIAG("invalid event, event", K(event));
       break;
   }
 
@@ -133,7 +133,7 @@ int ObProxyClientSession::do_api_callout(ObMysqlHookID id)
   int ret = OB_SUCCESS;
   if (OB_MYSQL_SSN_START_HOOK != id && OB_MYSQL_SSN_CLOSE_HOOK != id) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid hook id", K(id), K(ret));
+    LOG_WDIAG("invalid hook id", K(id), K(ret));
   } else {
     api_hookid_ = id;
     api_scope_ = API_HOOK_SCOPE_GLOBAL;
@@ -165,7 +165,7 @@ void ObProxyClientSession::handle_api_return(int event)
       if (OB_EVENT_MYSQL_ERROR == event) {
         do_io_close();
       } else if (OB_FAIL(start())) {
-        LOG_WARN("start client session failed, connection will be closed", K(ret));
+        LOG_WDIAG("start client session failed, connection will be closed", K(ret));
       }
       break;
 
@@ -174,7 +174,7 @@ void ObProxyClientSession::handle_api_return(int event)
       break;
 
     default:
-      LOG_WARN("received invalid session hook", "hook name",
+      LOG_WDIAG("received invalid session hook", "hook name",
                ObMysqlApiDebugNames::get_api_hook_name(hookid), K(hookid));
       break;
   }

@@ -101,11 +101,12 @@ public:
 
 public:
   struct SSLAttributes {
-    SSLAttributes() : force_using_ssl_(false) {}
+    SSLAttributes() : force_using_ssl_(false), options_(SSL_OP_NO_SSLv2|SSL_OP_NO_SSLv3) {}
     ~SSLAttributes() {
       force_using_ssl_ = false;
     }
     bool force_using_ssl_;
+    uint64_t options_;
   };
 
 public:

@@ -48,10 +48,10 @@ int ObRoutineEntry::init(char *buf_start, const int64_t buf_len)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(buf_len <= 0) || OB_ISNULL(buf_start)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf_len), K(buf_start), K(ret));
+    LOG_WDIAG("invalid input value", K(buf_len), K(buf_start), K(ret));
   } else {
     create_time_us_ = ObTimeUtility::current_time();
     buf_len_ = buf_len;
@@ -69,12 +69,12 @@ int ObRoutineEntry::set_names_sql(const ObRoutineEntryName &names,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!names.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(names), K(ret));
+    LOG_WDIAG("invalid input value", K(names), K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_FAIL(names_.deep_copy(names, buf_start_, buf_len_ - route_sql.length() - parse_extra_char_num))) {
-    LOG_WARN("fail to deep copy table entry names", K(ret));
+    LOG_WDIAG("fail to deep copy table entry names", K(ret));
   } else {
     if (route_sql.empty()) {
       route_sql_.reset();
@@ -115,7 +115,7 @@ int ObRoutineEntry::alloc_and_init_routine_entry(
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!names.is_valid() || cr_version < 0 || NULL != entry)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(names), K(cr_version), K(entry), K(ret));
+    LOG_WDIAG("invalid input value", K(names), K(cr_version), K(entry), K(ret));
   } else {
     const uint32_t PARSE_EXTRA_CHAR_NUM = 2;
     const int64_t name_size = names.get_total_str_len();
@@ -125,14 +125,14 @@ int ObRoutineEntry::alloc_and_init_routine_entry(
     char *buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size));
     if (OB_ISNULL(buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(alloc_size), K(ret));
+      LOG_WDIAG("fail to alloc mem", K(alloc_size), K(ret));
     } else {
       LOG_DEBUG("alloc entry succ", K(alloc_size), K(obj_size), K(name_size), K(sql_size), K(route_sql), K(names));
       entry = new (buf) ObRoutineEntry();
       if (OB_FAIL(entry->init(buf + obj_size, name_size + sql_size))) {
-        LOG_WARN("fail to init entry", K(alloc_size), K(ret));
+        LOG_WDIAG("fail to init entry", K(alloc_size), K(ret));
       } else if (OB_FAIL(entry->set_names_sql(names, route_sql, PARSE_EXTRA_CHAR_NUM))) {
-        LOG_WARN("fail to set name", K(names), K(route_sql), K(ret));
+        LOG_WDIAG("fail to set name", K(names), K(route_sql), K(ret));
       } else {
         entry->inc_ref();
         entry->renew_last_access_time();

@@ -15,6 +15,7 @@
 #include "ob_malloc_allocator.h"
 #include "lib/alloc/alloc_struct.h"
 #include "lib/alloc/object_set.h"
+#include "lib/allocator/ob_mem_leak_checker.h"
 
 using namespace oceanbase::lib;
 using namespace oceanbase::common;
@@ -22,7 +23,7 @@ using namespace oceanbase::common;
 ObMallocAllocator *ObMallocAllocator::instance_ = NULL;
 
 ObMallocAllocator::ObMallocAllocator()
-    : locks_(), allocators_(), reserved_(0), urgent_(0)
+    : locks_(), allocators_(), reserved_(0), urgent_(0), disabled_mod_id_(-1)
 {
 }
 
@@ -53,10 +54,14 @@ void *ObMallocAllocator::alloc(
   int ret = OB_SUCCESS;
   void *ptr = NULL;
   ObIAllocator *allocator = NULL;
-  if (OB_UNLIKELY(0 == attr.tenant_id_)
+  
+  if (OB_UNLIKELY(disabled_mod_id_ == attr.mod_id_)) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("mod is disabled alloc", K_(disabled_mod_id), K(attr.tenant_id_));
+  } else if (OB_UNLIKELY(0 == attr.tenant_id_)
       || OB_UNLIKELY(INT64_MAX == attr.tenant_id_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("invalid argument", K(lbt()), K(attr.tenant_id_), K(ret));
+    LOG_EDIAG("invalid argument", K(lbt()), K(attr.tenant_id_), K(ret));
   } else if (OB_UNLIKELY(attr.tenant_id_ >= PRESERVED_TENANT_COUNT)) {
     const int64_t slot = attr.tenant_id_ % PRESERVED_TENANT_COUNT;
     obsys::CRLockGuard guard(locks_[slot]);
@@ -73,7 +78,7 @@ void *ObMallocAllocator::alloc(
   // If there isn't tenant allocator, create one than re-allocate.
   if (OB_SUCC(ret) && OB_ISNULL(ptr) && OB_ISNULL(allocator)) {
     if (OB_FAIL(create_tenant_allocator(attr.tenant_id_))) {
-      LOG_ERROR("create tenant allocator fail");
+      LOG_EDIAG("create tenant allocator fail");
     } else {
       if (OB_UNLIKELY(attr.tenant_id_ >= PRESERVED_TENANT_COUNT)) {
         const int64_t slot = attr.tenant_id_ % PRESERVED_TENANT_COUNT;
@@ -98,7 +103,9 @@ void *ObMallocAllocator::realloc(
 {
   // Won't create tenant allocator!!
   void *nptr = NULL;
-  if (OB_UNLIKELY(attr.tenant_id_ >= PRESERVED_TENANT_COUNT)) {
+  if (OB_UNLIKELY(disabled_mod_id_ == attr.mod_id_)) {
+    LOG_WDIAG("mod is disabled alloc", K_(disabled_mod_id), K(attr.tenant_id_));
+  } else if (OB_UNLIKELY(attr.tenant_id_ >= PRESERVED_TENANT_COUNT)) {
     const int64_t slot = attr.tenant_id_ % PRESERVED_TENANT_COUNT;
     obsys::CRLockGuard guard(locks_[slot]);
     ObIAllocator *allocator = get_tenant_allocator(attr.tenant_id_);
@@ -128,7 +135,8 @@ void ObMallocAllocator::free(void *ptr)
     abort_unless(block->check_magic_code());
     abort_unless(block->in_use_);
     abort_unless(block->obj_set_ != NULL);
-
+    
+    common::get_global_mem_leak_checker().on_free(obj->mod_id_, get_global_mod_set().get_mod_name(obj->mod_id_), ptr);
     ObjectSet *set = block->obj_set_;
     set->lock();
     set->free_object(obj);
@@ -159,8 +167,8 @@ int ObMallocAllocator::create_tenant_allocator(uint64_t tenant_id)
 {
   int ret = OB_SUCCESS;
   if (0 == tenant_id || INT64_MAX == tenant_id) {
-    ret = OB_INVALID_ARGUMENT;    LOG_ERROR("invalid argument", K(lbt()), K(tenant_id), K(ret));
-    LOG_ERROR("invalid argument", K(lbt()), K(tenant_id), K(ret));
+    ret = OB_INVALID_ARGUMENT;    LOG_EDIAG("invalid argument", K(lbt()), K(tenant_id), K(ret));
+    LOG_EDIAG("invalid argument", K(lbt()), K(tenant_id), K(ret));
  } else if (tenant_id < PRESERVED_TENANT_COUNT) {
     if (NULL == allocators_[tenant_id]) {
       ObMemAttr attr;

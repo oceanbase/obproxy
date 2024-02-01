@@ -201,11 +201,11 @@ inline bool ObTableEntry::is_tenant_servers_valid() const
 {
   bool bret = false;
   if (OB_UNLIKELY(!is_inited_)) {
-    PROXY_LOG(WARN, "not init", K_(is_inited));
+    PROXY_LOG(WDIAG, "not init", K_(is_inited));
   } else if (OB_UNLIKELY(!is_dummy_entry())) {
-    PROXY_LOG(WARN, "non dummy entry has no tenant_servers_ for random server");
+    PROXY_LOG(WDIAG, "non dummy entry has no tenant_servers_ for random server");
   } else if (OB_ISNULL(tenant_servers_) || OB_UNLIKELY(!tenant_servers_->is_valid())) {
-    PROXY_LOG(WARN, "tenant_servers_ is not valid", K(*this));
+    PROXY_LOG(WDIAG, "tenant_servers_ is not valid", K(*this));
   } else {
     bret = true;
   }
@@ -265,10 +265,10 @@ inline const ObProxyReplicaLocation *ObTableEntry::get_replica_location(
   const ObProxyReplicaLocation *replica = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
-    PROXY_LOG(WARN, "not init", K_(is_inited), K(ret));
+    PROXY_LOG(WDIAG, "not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(!is_valid())) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(ERROR, "current entry is not available", K(*this), K(ret));
+    PROXY_LOG(EDIAG, "current entry is not available", K(*this), K(ret));
   } else {
     if (is_dummy_entry()) {
       replica = tenant_servers_->get_replica_location(chosen_partition_idx, init_replica_idx, idx);
@@ -302,13 +302,13 @@ inline int ObTableEntry::set_first_partition_location(ObProxyPartitionLocation *
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = common::OB_NOT_INIT;
-    PROXY_LOG(WARN, "not init", K_(is_inited), K(ret));
+    PROXY_LOG(WDIAG, "not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(!is_location_entry())) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "dummy entry or partition can not set first_pl", K(ret));
+    PROXY_LOG(WDIAG, "dummy entry or partition can not set first_pl", K(ret));
   } else if (OB_ISNULL(first_location) || OB_UNLIKELY(!first_location->is_valid())) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid input value", KPC(first_location), K(ret));
+    PROXY_LOG(WDIAG, "invalid input value", KPC(first_location), K(ret));
   } else {
     PROXY_LOG(DEBUG, "will set first partition location", KPC(first_pl_), KPC(first_location));
     if (NULL != first_pl_) {

@@ -62,12 +62,12 @@ public:
     int ret = common::OB_SUCCESS;
     int result = -1;
     if (OB_FAIL(ObSocketManager::epoll_create(POLL_DESCRIPTOR_SIZE, epoll_fd_))) {
-      PROXY_SOCK_LOG(WARN, "fail to epoll_create epoll",
+      PROXY_SOCK_LOG(WDIAG, "fail to epoll_create epoll",
                      K(epoll_fd_), KERRMSGS, K(ret));
     } else if (OB_FAIL(ObSocketManager::fcntl(epoll_fd_, F_SETFD, FD_CLOEXEC, result))) {
-      PROXY_SOCK_LOG(WARN, "fail to set FD_CLOSEXEC", KERRMSGS, K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to set FD_CLOSEXEC", KERRMSGS, K(ret));
       if (0 != close(epoll_fd_)) {
-        PROXY_SOCK_LOG(WARN, "fail to close epoll fd", K_(epoll_fd), KERRMSGS);
+        PROXY_SOCK_LOG(WDIAG, "fail to close epoll fd", K_(epoll_fd), KERRMSGS);
       }
       epoll_fd_ = common::OB_INVALID_INDEX;
     }
@@ -79,7 +79,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(index < 0) || OB_UNLIKELY(index >= POLL_DESCRIPTOR_SIZE)) {
       ret = common::OB_INVALID_ARGUMENT;
-      PROXY_SOCK_LOG(WARN, "invalid argument", K(index), K(ret));
+      PROXY_SOCK_LOG(WDIAG, "invalid argument", K(index), K(ret));
     } else {
       events = epoll_triggered_events_[index].events;
     }
@@ -91,7 +91,7 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(index < 0) || OB_UNLIKELY(index >= POLL_DESCRIPTOR_SIZE)) {
       ret = common::OB_INVALID_ARGUMENT;
-      PROXY_SOCK_LOG(WARN, "invalid argument", K(index), K(ret));
+      PROXY_SOCK_LOG(WDIAG, "invalid argument", K(index), K(ret));
     } else {
       data = epoll_triggered_events_[index].data.ptr;
     }

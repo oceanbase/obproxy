@@ -34,7 +34,7 @@ int init_congestion_control()
 {
   int ret = OB_SUCCESS;
   if(OB_FAIL(register_congest_stats())) {
-    LOG_WARN("failed to register congest stats variables", K(ret));
+    LOG_WDIAG("failed to register congest stats variables", K(ret));
   }
   return ret;
 }
@@ -109,7 +109,7 @@ void ObCongestionManager::destroy()
       MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
       if (lock.is_locked()) {
         if (OB_FAIL(run_todo_list(i))) {
-          LOG_WARN("failed to run todo list", K(ret));
+          LOG_WDIAG("failed to run todo list", K(ret));
         }
         ret = OB_SUCCESS; // ingore ret
         // remove all congestion entry
@@ -123,7 +123,7 @@ void ObCongestionManager::destroy()
         }
       } else {
         // fail to lock, never happen
-        LOG_ERROR("fail to lock bucket mutex", K(i), K(bucket_mutex),
+        LOG_EDIAG("fail to lock bucket mutex", K(i), K(bucket_mutex),
                   "thread_holding", bucket_mutex->thread_holding_,
                   "thread_holding_count",  bucket_mutex->thread_holding_count_);
       }
@@ -154,17 +154,17 @@ int ObCongestionManager::init(const int64_t table_size)
 
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("congestion manager init twice", K(ret));
+    LOG_WDIAG("congestion manager init twice", K(ret));
   } else if (OB_UNLIKELY(table_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(table_size), K(ret));
+    LOG_WDIAG("invalid argument", K(table_size), K(ret));
   } else if (OB_FAIL(CongestionTable::init(table_size, CONGESTION_TABLE_LOCK))) {
-    LOG_WARN("fail to init hash table of congestion manager", K(ret));
+    LOG_WDIAG("fail to init hash table of congestion manager", K(ret));
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < MT_HASHTABLE_PARTITIONS; ++i) {
       if (OB_FAIL(todo_lists_[i].init("cong_todo_list",
           reinterpret_cast<int64_t>(&(reinterpret_cast<ObCongestRequestParam *> (0))->link_)))) {
-        LOG_WARN("fail to init todo_lists_[]", K(i), K(ret));
+        LOG_WDIAG("fail to init todo_lists_[]", K(i), K(ret));
       }
     }
     is_inited_ = true;
@@ -198,10 +198,10 @@ int ObCongestionManager::update_congestion_config(
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("congestion manager not init", K(ret));
+    LOG_WDIAG("congestion manager not init", K(ret));
   } else if (OB_ISNULL(config)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(config), K(ret));
+    LOG_WDIAG("invalid argument", K(config), K(ret));
   } else {
     SpinWLockGuard guarlockd(rw_lock_);
     if (NULL == config_) {
@@ -215,7 +215,7 @@ int ObCongestionManager::update_congestion_config(
         config_->inc_ref();
         // add asyn revalidate config task
         if (OB_FAIL(revalidate_config(config_))) {
-          LOG_WARN("failed to revaildate config", K_(config), K(ret));
+          LOG_WDIAG("failed to revaildate config", K_(config), K(ret));
         }
       }
     }
@@ -234,7 +234,7 @@ int ObCongestionManager::update_zone(const ObString &zone_name,
             ObCongestionZoneState::get_zone_state_name(state), K(is_init));
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("congestion manager not init", K(ret));
+    LOG_WDIAG("congestion manager not init", K(ret));
   } else {
     ObCongestionZoneState **zone_state = NULL;
     ObCongestionZoneState *new_zone_state = NULL;
@@ -253,7 +253,7 @@ int ObCongestionManager::update_zone(const ObString &zone_name,
       handle_changed_zone = true;
     } else if (region_name != (*zone_state)->region_name_) {
       handle_changed_zone = true;
-      LOG_WARN("region name has changed",
+      LOG_WDIAG("region name has changed",
                "old_region_name", (*zone_state)->region_name_, "new_region_name", region_name);
     } else if ((*zone_state)->state_ != state) { // zone already exist and state has changed
       if (ObCongestionZoneState::DELETED == state) {
@@ -271,7 +271,7 @@ int ObCongestionManager::update_zone(const ObString &zone_name,
       new_zone_state = op_alloc_args(ObCongestionZoneState, zone_name, region_name, state);
       if (OB_ISNULL(new_zone_state)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("failed to allocate memory for zone state", K(ret));
+        LOG_WDIAG("failed to allocate memory for zone state", K(ret));
       } else {
         if (NULL != zone_state) {
           (*zone_state)->dec_ref();
@@ -281,7 +281,7 @@ int ObCongestionManager::update_zone(const ObString &zone_name,
           if (!is_init) {
             (*zone_state)->inc_ref();
             if (OB_FAIL(revalidate_zone(*zone_state))) {
-              LOG_WARN("failed to revalidate zone", K(zone_state), K(ret));
+              LOG_WDIAG("failed to revalidate zone", K(zone_state), K(ret));
             }
           }
         } else if (zone_count_ < MAX_ZONE_NUM) {
@@ -291,7 +291,7 @@ int ObCongestionManager::update_zone(const ObString &zone_name,
           ++zone_count_;
         } else {
           ret = OB_SIZE_OVERFLOW;
-          LOG_WARN("too many zones", K_(zone_count), K(MAX_ZONE_NUM), K(ret));
+          LOG_WDIAG("too many zones", K_(zone_count), K(MAX_ZONE_NUM), K(ret));
         }
       }
     }
@@ -314,13 +314,13 @@ int ObCongestionManager::update_server(const ObIpEndpoint &ip,
 
   if (is_init) {
     if (OB_FAIL(add_new_server(ip, cr_version, state, zone_name, region_name, is_init))) {
-      LOG_WARN("failed to handle new server", K(ip), K(cr_version), "server_state",
+      LOG_WDIAG("failed to handle new server", K(ip), K(cr_version), "server_state",
                 ObCongestionEntry::get_server_state_name(state), K(zone_name), K(region_name),
                 K(is_init), K(ret));
     }
   } else {
     if (OB_FAIL(revalidate_server(ip, cr_version, state, zone_name, region_name))) {
-      LOG_WARN("failed to handle revalidate server", K(ip), K(cr_version), "server_state",
+      LOG_WDIAG("failed to handle revalidate server", K(ip), K(cr_version), "server_state",
                 ObCongestionEntry::get_server_state_name(state), K(zone_name), K(region_name), K(ret));
     }
   }
@@ -343,7 +343,7 @@ int ObCongestionManager::add_new_server(const net::ObIpEndpoint &ip,
     // need not add deleted server
   } else if (OB_ISNULL(config = get_congestion_control_config())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("failed to get congestion control config", K(ret));
+    LOG_WDIAG("failed to get congestion control config", K(ret));
   } else {
     if (NULL == (zone_state = get_zone_state(zone_name))) {
       LOG_INFO("failed to get congestion zone state,"
@@ -351,10 +351,10 @@ int ObCongestionManager::add_new_server(const net::ObIpEndpoint &ip,
                "with DELTED state", K(zone_name));
       bool direct_add = true;
       if (OB_FAIL(update_zone(zone_name, region_name, ObCongestionZoneState::DELETED, direct_add))) {
-        PROXY_LOG(WARN,"failed to update zone", K(zone_name), K(ret));
+        PROXY_LOG(WDIAG,"failed to update zone", K(zone_name), K(ret));
       } else if (OB_ISNULL(zone_state = get_zone_state(zone_name))) { // try to get zone state again
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("failed to get congestion zone state", K(zone_name), K(ret));
+        LOG_WDIAG("failed to get congestion zone state", K(zone_name), K(ret));
       }
     }
 
@@ -362,9 +362,9 @@ int ObCongestionManager::add_new_server(const net::ObIpEndpoint &ip,
       ObCongestionEntry *entry = op_alloc_args(ObCongestionEntry, ip);
       if (OB_ISNULL(entry)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("failed to allocate memory for congestion server entry", K(ret));
+        LOG_WDIAG("failed to allocate memory for congestion server entry", K(ret));
       } else if (OB_FAIL(entry->init(config, zone_state))) {
-        LOG_WARN("failed to init congestion entry", K(ret));
+        LOG_WDIAG("failed to init congestion entry", K(ret));
       } else {
         entry->cr_version_ = cr_version;
         entry->server_state_ = state;
@@ -394,7 +394,7 @@ int ObCongestionManager::add_new_server(const net::ObIpEndpoint &ip,
             break;
         }
         if (OB_FAIL(add_record(ip, entry, is_init))) {
-          LOG_WARN("failed to add server congestion entry", K(ret));
+          LOG_WDIAG("failed to add server congestion entry", K(ret));
         }
       }
       zone_state->dec_ref();
@@ -410,7 +410,7 @@ int ObCongestionManager::add_record(const ObIpEndpoint &ip, ObCongestionEntry *e
   int ret = OB_SUCCESS;
   // just defence
   if ((NULL != entry) && (entry->cr_version_ <= 0)) {
-    LOG_ERROR("cr_version_ can not <= 0 ", KPC(entry));
+    LOG_EDIAG("cr_version_ can not <= 0 ", KPC(entry));
   }
 
   uint64_t hash = do_hash(ip, 0);
@@ -419,7 +419,7 @@ int ObCongestionManager::add_record(const ObIpEndpoint &ip, ObCongestionEntry *e
     MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
     if (lock.is_locked()) {
       if (OB_FAIL(run_todo_list(part_num(hash)))) {
-        LOG_WARN("failed to run todo list", K(ret));
+        LOG_WDIAG("failed to run todo list", K(ret));
       } else {
         entry->inc_ref();
         ObCongestionEntry *tmp = insert_entry(hash, ip, entry);
@@ -430,10 +430,10 @@ int ObCongestionManager::add_record(const ObIpEndpoint &ip, ObCongestionEntry *e
         }
       }
     } else if (OB_FAIL(add_record_todo_list(hash, ip, entry))) {
-      LOG_WARN("failed to add record todo list", K(ret));
+      LOG_WDIAG("failed to add record todo list", K(ret));
     }
   } else if (OB_FAIL(add_record_todo_list(hash, ip, entry))) {
-    LOG_WARN("failed to add record todo list", K(ret));
+    LOG_WDIAG("failed to add record todo list", K(ret));
   }
   return ret;
 }
@@ -446,7 +446,7 @@ int ObCongestionManager::add_record_todo_list(const uint64_t hash,
   ObCongestRequestParam *param = op_alloc(ObCongestRequestParam);
   if (OB_ISNULL(param)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("failed to allocate memory for congest request parameter", K(ret));
+    LOG_EDIAG("failed to allocate memory for congest request parameter", K(ret));
   } else {
     param->op_ = ObCongestRequestParam::ADD_RECORD;
     param->hash_ = hash;
@@ -471,7 +471,7 @@ int ObCongestionManager::remove_all_records()
     MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
     if (lock.is_locked()) {
       if (OB_FAIL(run_todo_list(part))) {
-        LOG_WARN("failed to run todo list", K(ret));
+        LOG_WDIAG("failed to run todo list", K(ret));
       } else {
         entry = first_entry(part, it);
         while (NULL != entry) {
@@ -485,7 +485,7 @@ int ObCongestionManager::remove_all_records()
       param = op_alloc(ObCongestRequestParam);
       if (OB_ISNULL(param)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("failed to allocate memory for congest request parameter", K(ret));
+        LOG_EDIAG("failed to allocate memory for congest request parameter", K(ret));
       } else {
         param->op_ = ObCongestRequestParam::REMOVE_ALL_RECORDS;
         param->hash_ = part;
@@ -506,7 +506,7 @@ int ObCongestionManager::remove_record(const ObIpEndpoint &ip)
   MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
   if (lock.is_locked()) {
     if (OB_FAIL(run_todo_list(part_num(hash)))) {
-      LOG_WARN("failed to run todo list", K(ret));
+      LOG_WDIAG("failed to run todo list", K(ret));
     } else {
       entry = remove_entry(hash, ip);
       if (NULL != entry) {
@@ -519,7 +519,7 @@ int ObCongestionManager::remove_record(const ObIpEndpoint &ip)
     ObCongestRequestParam *param = op_alloc(ObCongestRequestParam);
     if (OB_ISNULL(param)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("failed to allocate memory for congest request parameter", K(ret));
+      LOG_EDIAG("failed to allocate memory for congest request parameter", K(ret));
     } else {
       param->op_ = ObCongestRequestParam::REMOVE_RECORD;
       param->key_ = ip;
@@ -537,7 +537,7 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
 
   if (OB_ISNULL(param)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, param is NULL", K(ret));
+    LOG_WDIAG("invalid argument, param is NULL", K(ret));
   } else {
     switch (param->op_) {
       case ObCongestRequestParam::ADD_RECORD:
@@ -573,13 +573,13 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
 
       case ObCongestRequestParam::REVALIDATE_BUCKET_CONFIG:
         if (OB_FAIL(revalidate_bucket_config(buck_id, param->config_))) {
-          LOG_WARN("failed to revalidate_bucket_config", K(ret));
+          LOG_WDIAG("failed to revalidate_bucket_config", K(ret));
         }
         break;
 
       case ObCongestRequestParam::REVALIDATE_BUCKET_ZONE:
         if (OB_FAIL(revalidate_bucket_zone(buck_id, param->zone_state_))) {
-          LOG_WARN("failed to revalidate_bucket_zone", K(ret));
+          LOG_WDIAG("failed to revalidate_bucket_zone", K(ret));
         }
         break;
 
@@ -621,7 +621,7 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
         } else {
           if (OB_ISNULL(param->zone_state_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("zone state can not be NULL here", K(ret));
+            LOG_EDIAG("zone state can not be NULL here", K(ret));
           } else {
             // server not existent, just add it
             bool is_init = false;
@@ -631,7 +631,7 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
             LOG_DEBUG("will add new server", K(zone_name), K(region_name), K(cr_version), "ip", param->key_);
             if (OB_FAIL(add_new_server(param->key_, cr_version, param->server_state_,
                     zone_name, region_name, is_init))) {
-              LOG_WARN("fail to handle new server", "ip", param->key_, K(cr_version),
+              LOG_WDIAG("fail to handle new server", "ip", param->key_, K(cr_version),
                        "server_state", ObCongestionEntry::get_server_state_name(param->server_state_),
                        K(zone_name), K(region_name), K(is_init), K(ret));
             }
@@ -647,7 +647,7 @@ int ObCongestionManager::process(const int64_t buck_id, ObCongestRequestParam *p
 
       default:
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("ObCongestionManager::process unrecognized op", K(ret));
+        LOG_WDIAG("ObCongestionManager::process unrecognized op", K(ret));
     }
   }
   return ret;
@@ -658,7 +658,7 @@ int ObCongestionManager::run_todo_list(const int64_t buck_id)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(buck_id < 0 || buck_id >= MT_HASHTABLE_PARTITIONS)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(buck_id), K(ret));
+    LOG_WDIAG("invalid argument", K(buck_id), K(ret));
   } else {
     ObCongestRequestParam *param = NULL;
     ObCongestRequestParam *cur = NULL;
@@ -672,7 +672,7 @@ int ObCongestionManager::run_todo_list(const int64_t buck_id)
       while (NULL != param) {
         // ignore process return, finish todo list
         if (OB_SUCCESS != process(buck_id, param)) {
-          LOG_WARN("failed to process buck_id", K(buck_id), K(ret));
+          LOG_WDIAG("failed to process buck_id", K(buck_id), K(ret));
         }
         cur = param;
         param = param->link_.prev_;
@@ -693,15 +693,15 @@ int ObCongestionManager::revalidate_bucket_config(
 
   if (OB_ISNULL(config)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, config is NULL", K(ret));
+    LOG_WDIAG("invalid argument, config is NULL", K(ret));
   } else {
     cur = first_entry(buck_id, it);
     while (OB_SUCC(ret) && NULL != cur) {
       if (OB_FAIL(cur->validate_config(config))) {
-        LOG_WARN("failed to validate_config", K(config), K(ret));
+        LOG_WDIAG("failed to validate_config", K(config), K(ret));
         if (remove_entry(buck_id, it) != cur) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("failed to remove entry", K(buck_id));
+          LOG_WDIAG("failed to remove entry", K(buck_id));
         } else {
           cur->set_entry_deleted_state();
           cur->dec_ref();
@@ -727,15 +727,15 @@ int ObCongestionManager::revalidate_bucket_zone(
 
   if (OB_ISNULL(zone_state)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, zone_state is NULL", K(ret));
+    LOG_WDIAG("invalid argument, zone_state is NULL", K(ret));
   } else {
     cur = first_entry(buck_id, it);
     while (OB_SUCC(ret) && NULL != cur) {
       if (OB_FAIL(cur->validate_zone(zone_state))) {
-        LOG_WARN("failed to validate_zone", K(zone_state), K(ret));
+        LOG_WDIAG("failed to validate_zone", K(zone_state), K(ret));
         if (remove_entry(buck_id, it) != cur) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("failed to remove entry", K(buck_id));
+          LOG_WDIAG("failed to remove entry", K(buck_id));
         } else {
           cur->set_entry_deleted_state();
           cur->dec_ref();
@@ -781,17 +781,17 @@ int ObCongestionManagerCont::get_congest_list(int event, ObEvent *e)
           ret = OB_ERR_UNEXPECTED;
         } else {
           if (OB_FAIL(congestion_manager_->run_todo_list(cur_partition_id_))) {
-            LOG_WARN("failed to run todo list", K(ret));
+            LOG_WDIAG("failed to run todo list", K(ret));
           } else {
             entry = congestion_manager_->first_entry(cur_partition_id_, it);
             while (NULL != entry && OB_SUCC(ret)) {
               if (entry->is_congested()) {
                 len = entry->to_string(buf, 1024);
                 if (OB_FAIL(iobuf_->write(buf, len, written_len))) {
-                  LOG_WARN("failed to write to iobuffer", K(len), K(written_len), K(ret));
+                  LOG_WDIAG("failed to write to iobuffer", K(len), K(written_len), K(ret));
                 } else if (OB_UNLIKELY(len != written_len)) {
                   ret = OB_ERR_UNEXPECTED;
-                  LOG_WARN("failed to write to iobuffer", K(len), K(written_len), K(ret));
+                  LOG_WDIAG("failed to write to iobuffer", K(len), K(written_len), K(ret));
                 }
               }
               entry = congestion_manager_->next_entry(cur_partition_id_, it);
@@ -825,12 +825,12 @@ int ObCongestionManagerCont::get_congest_entry(int event, ObEvent *e)
     MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
     if (lock_bucket.is_locked()) {
       if (OB_FAIL(congestion_manager_->run_todo_list(congestion_manager_->part_num(hash_)))) {
-        LOG_WARN("failed to run todo list", K(ret));
+        LOG_WDIAG("failed to run todo list", K(ret));
       } else {
         entry = congestion_manager_->lookup_entry(hash_, server_ip_);
         if (NULL != entry) {
           if (OB_FAIL(congestion_manager_->update_tc_congestion_map(*entry))) {
-            LOG_WARN("fail to update tc congetsion map", KPC(entry), K(ret));
+            LOG_WDIAG("fail to update tc congetsion map", KPC(entry), K(ret));
             ret = OB_SUCCESS; // ignore ret
           }
           PROCESSOR_INCREMENT_DYN_STAT(GET_CONGESTION_FROM_GLOBAL_CACHE_HIT);
@@ -850,9 +850,9 @@ int ObCongestionManagerCont::get_congest_entry(int event, ObEvent *e)
       LOG_INFO("cont::get_congest_entry MUTEX_TRY_LOCK failed, will reschedule");
       if (OB_ISNULL(e)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("event is null", K(ret));
+        LOG_EDIAG("event is null", K(ret));
       } else if (OB_FAIL(e->schedule_in(SCHEDULE_CONGEST_CONT_INTERVAL))) {
-        LOG_ERROR("fail to schedule ObCongestionManagerCont", K(ret));
+        LOG_EDIAG("fail to schedule ObCongestionManagerCont", K(ret));
       } else {
         event_ret = EVENT_CONT;
       }
@@ -870,7 +870,7 @@ int ObCongestionManager::revalidate_config(ObCongestionControlConfig *config)
 
   if (OB_ISNULL(config)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, config is NULL", K(ret));
+    LOG_WDIAG("invalid argument, config is NULL", K(ret));
   } else {
     LOG_DEBUG("congestion control revalidating ObCongestionManager");
     for (int64_t i = 0; OB_SUCC(ret) && i < get_sub_part_count(); ++i) {
@@ -879,18 +879,18 @@ int ObCongestionManager::revalidate_config(ObCongestionControlConfig *config)
         MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
         if (lock_bucket.is_locked()) {
           if (OB_FAIL(run_todo_list(i))) {
-            LOG_WARN("failed to run todo list", K(ret));
+            LOG_WDIAG("failed to run todo list", K(ret));
           } else {
             config->inc_ref();
             if (OB_FAIL(revalidate_bucket_config(i, config))) {
-              LOG_WARN("failed to revalidate bucket config", "bucket_id", i, K(config));
+              LOG_WDIAG("failed to revalidate bucket config", "bucket_id", i, K(config));
             }
           }
         } else {
           param = op_alloc(ObCongestRequestParam);
           if (OB_ISNULL(param)) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("failed to allocate memory for congest request parameter", K(ret));
+            LOG_WDIAG("failed to allocate memory for congest request parameter", K(ret));
           } else {
             param->op_ = ObCongestRequestParam::REVALIDATE_BUCKET_CONFIG;
             config->inc_ref();
@@ -914,7 +914,7 @@ int ObCongestionManager::revalidate_zone(ObCongestionZoneState *zone_state)
   ObCongestRequestParam *param = NULL;
   if (OB_ISNULL(zone_state)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument, zone_state is NULL", K(ret));
+    LOG_WDIAG("invalid argument, zone_state is NULL", K(ret));
   } else {
     LOG_DEBUG("revalidating zone state");
     // asyn task, do not handle FAIL
@@ -924,18 +924,18 @@ int ObCongestionManager::revalidate_zone(ObCongestionZoneState *zone_state)
         MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
         if (lock_bucket.is_locked()) {
           if (OB_FAIL(run_todo_list(i))) {
-            LOG_WARN("failed to run todo list", K(ret));
+            LOG_WDIAG("failed to run todo list", K(ret));
           } else {
             zone_state->inc_ref();
             if (OB_FAIL(revalidate_bucket_zone(i, zone_state))) {
-               LOG_WARN("failed to revalidate bucket zone", "bucket_id", i, K(zone_state));
+               LOG_WDIAG("failed to revalidate bucket zone", "bucket_id", i, K(zone_state));
             }
           }
         } else {
           param = op_alloc(ObCongestRequestParam);
           if (OB_ISNULL(param)) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("failed to allocate memory for congest request parameter", K(ret));
+            LOG_WDIAG("failed to allocate memory for congest request parameter", K(ret));
           } else {
             param->op_ = ObCongestRequestParam::REVALIDATE_BUCKET_ZONE;
             zone_state->inc_ref();
@@ -966,7 +966,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
   MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
   if (lock_bucket.is_locked()) {
     if (OB_FAIL(run_todo_list(part_num(hash)))) {
-      LOG_WARN("failed to run todo list", K(ret));
+      LOG_WDIAG("failed to run todo list", K(ret));
     } else {
       entry = lookup_entry(hash, ip);
       LOG_DEBUG("lock bucket succ, find the entry", "server_state",
@@ -1009,7 +1009,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
         // if server not existent add it
         bool is_init = false;
         if (OB_FAIL(add_new_server(ip, cr_version, server_state, zone_name, region_name, is_init))) {
-          LOG_WARN("failed to handle new server", K(ip), K(cr_version), "server_state",
+          LOG_WDIAG("failed to handle new server", K(ip), K(cr_version), "server_state",
                     ObCongestionEntry::get_server_state_name(server_state),
                     K(zone_name), K(is_init), K(ret));
         }
@@ -1021,7 +1021,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
     ObCongestRequestParam *param = op_alloc(ObCongestRequestParam);
     if (OB_ISNULL(param)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("failed to allocate memory for congest request parameter", K(ret));
+      LOG_EDIAG("failed to allocate memory for congest request parameter", K(ret));
     } else {
       param->op_ = ObCongestRequestParam::REVALIDATE_SERVER;
       param->hash_ = hash;
@@ -1032,7 +1032,7 @@ int ObCongestionManager::revalidate_server(const ObIpEndpoint &ip,
       param->zone_state_ = op_alloc_args(ObCongestionZoneState, zone_name, region_name, ObCongestionZoneState::ACTIVE);
       if (OB_ISNULL(param->zone_state_)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to allocate memory for zone state", K(ret));
+        LOG_WDIAG("fail to allocate memory for zone state", K(ret));
         op_free(param);
         param = NULL;
       } else {
@@ -1077,7 +1077,7 @@ int ObCongestionManager::get_congest_entry(
   ObCongestionControlConfig *config = get_congestion_control_config();
   if (OB_ISNULL(config) || OB_ISNULL(cont)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(config), K(cont), K(ret));
+    LOG_WDIAG("invalid input value", K(config), K(cont), K(ret));
   } else if (config->conn_failure_threshold_ <= 0 && config->alive_failure_threshold_ <= 0) {
     is_congestion_enabled_ = false;
     // no congestion control
@@ -1099,7 +1099,7 @@ int ObCongestionManager::get_congest_entry(
         if (tmp_entry->is_entry_deleted()) {
           LOG_DEBUG("this cgt entry is deleted", KPC(tmp_entry));
         } else {
-          LOG_ERROR("unexpected branch", KPC(tmp_entry));
+          LOG_EDIAG("unexpected branch", KPC(tmp_entry));
         }
         tmp_entry->dec_ref();
         tmp_entry = NULL;
@@ -1119,12 +1119,12 @@ int ObCongestionManager::get_congest_entry(
       MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
       if (lock_bucket.is_locked()) {
         if (OB_FAIL(run_todo_list(part_num(hash)))) {
-          LOG_WARN("failed to run todo list", K(ret));
+          LOG_WDIAG("failed to run todo list", K(ret));
         } else {
           *ppentry = lookup_entry(hash, ip);
           if (NULL != *ppentry) {
             if (OB_FAIL(update_tc_congestion_map(**ppentry))) {
-              LOG_WARN("fail to update congetsion map", KPC(*ppentry), K(ret));
+              LOG_WDIAG("fail to update congetsion map", KPC(*ppentry), K(ret));
               ret = OB_SUCCESS; // ignore ret
             }
             PROCESSOR_INCREMENT_DYN_STAT(GET_CONGESTION_FROM_GLOBAL_CACHE_HIT);
@@ -1141,7 +1141,7 @@ int ObCongestionManager::get_congest_entry(
         ObCongestionManagerCont *congest_cont = op_alloc_args(ObCongestionManagerCont, *this);
         if (OB_ISNULL(congest_cont)) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("failed to allocate memory for congestion manager continuation", K(ret));
+          LOG_EDIAG("failed to allocate memory for congestion manager continuation", K(ret));
         } else {
           congest_cont->action_.set_continuation(cont);
           congest_cont->mutex_ = cont->mutex_;
@@ -1154,7 +1154,7 @@ int ObCongestionManager::get_congest_entry(
           SET_CONTINUATION_HANDLER(congest_cont, &ObCongestionManagerCont::get_congest_entry);
           if(OB_ISNULL(cont->mutex_->thread_holding_->schedule_in(congest_cont, SCHEDULE_CONGEST_CONT_INTERVAL))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("failed to schedule get_congest_entry");
+            LOG_WDIAG("failed to schedule get_congest_entry");
           } else {
             action = &congest_cont->action_;
           }
@@ -1185,17 +1185,17 @@ int ObCongestionManager::get_congest_list(ObContinuation *cont, ObMIOBuffer *buf
       MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
       if (lock_bucket.is_locked()) {
         if (OB_FAIL(run_todo_list(i))) {
-          LOG_WARN("failed to run todo list", K(ret));
+          LOG_WDIAG("failed to run todo list", K(ret));
         } else {
           entry = first_entry(i, it);
           while (NULL != entry && OB_SUCC(ret)) {
             if (entry->is_congested()) {
               len = entry->to_string(buf, 1024);
               if (OB_FAIL(buffer->write(buf, len, written_len))) {
-                LOG_WARN("failed to write to iobuffer", K(len), K(written_len), K(ret));
+                LOG_WDIAG("failed to write to iobuffer", K(len), K(written_len), K(ret));
               } else if (OB_UNLIKELY(len != written_len)) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("failed to write to iobuffer", K(len), K(written_len), K(ret));
+                LOG_WDIAG("failed to write to iobuffer", K(len), K(written_len), K(ret));
               }
             }
             entry = next_entry(i, it);
@@ -1206,7 +1206,7 @@ int ObCongestionManager::get_congest_list(ObContinuation *cont, ObMIOBuffer *buf
         congest_cont = op_alloc_args(ObCongestionManagerCont, *this);
         if (OB_ISNULL(congest_cont)) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("failed to allocate memory for congestion manager continuation", K(ret));
+          LOG_EDIAG("failed to allocate memory for congestion manager continuation", K(ret));
         } else {
           congest_cont->cur_partition_id_ = i;
           congest_cont->iobuf_ = buffer;
@@ -1215,7 +1215,7 @@ int ObCongestionManager::get_congest_list(ObContinuation *cont, ObMIOBuffer *buf
           SET_CONTINUATION_HANDLER(congest_cont, &ObCongestionManagerCont::get_congest_list);
           if (OB_ISNULL(g_event_processor.schedule_in(congest_cont, SCHEDULE_CONGEST_CONT_INTERVAL, ET_NET))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("failed to schedule get_congest_list", K(ret));
+            LOG_WDIAG("failed to schedule get_congest_list", K(ret));
           } else {
             action = &congest_cont->action_;
           }
@@ -1246,11 +1246,11 @@ int ObCongestionManager::update_tc_congestion_map(ObCongestionEntry &entry)
     LOG_DEBUG("the cgt entry will add to tc congestion map", K(entry));
     ObCongestionEntry *tmp_entry = &entry;
     if (OB_FAIL(cgt_map.set(tmp_entry))) {
-      LOG_WARN("fail to set table map", K(entry), K(ret));
+      LOG_WDIAG("fail to set table map", K(entry), K(ret));
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("unavail state, can not add to cgt map", K(entry), K(ret));
+    LOG_WDIAG("unavail state, can not add to cgt map", K(entry), K(ret));
   }
   return ret;
 }
@@ -1262,14 +1262,14 @@ int init_congestion_map_for_thread()
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else {
     for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
       if (OB_ISNULL(ethreads[i]->congestion_map_ = new (std::nothrow) ObCongestionRefHashMap(ObModIds::OB_PROXY_CONGESTION_ENTRY_MAP))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to new ObCongestionRefHashMap", K(i), K(ethreads[i]), K(ret));
+        LOG_WDIAG("fail to new ObCongestionRefHashMap", K(i), K(ethreads[i]), K(ret));
       } else if (OB_FAIL(ethreads[i]->congestion_map_->init())) {
-        LOG_WARN("fail to init cgt_map", K(ret));
+        LOG_WDIAG("fail to init cgt_map", K(ret));
       }
     }
   }
@@ -1282,16 +1282,16 @@ int init_congestion_map_for_one_thread(int64_t index)
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else {
     if (OB_ISNULL(ethreads[index]->congestion_map_ = new (std::nothrow) ObCongestionRefHashMap(ObModIds::OB_PROXY_CONGESTION_ENTRY_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new ObCongestionRefHashMap", K(index), K(ethreads[index]), K(ret));
+      LOG_WDIAG("fail to new ObCongestionRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->congestion_map_->init())) {
-      LOG_WARN("fail to init cgt_map", K(ret));
+      LOG_WDIAG("fail to init cgt_map", K(ret));
     }
   }
   return ret;
@@ -1307,7 +1307,7 @@ int ObCongestionRefHashMap::clean_hash_map()
       if ((*it)->is_entry_deleted()) {
         LOG_INFO("this congestion enty will erase from tc map", K(*it), KPC(*it));
         if (OB_FAIL(erase(it, i))) {
-          LOG_WARN("fail to erase cgt entry", K(i), K(ret));
+          LOG_WDIAG("fail to erase cgt entry", K(i), K(ret));
         }
       }
     }

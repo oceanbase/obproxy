@@ -59,21 +59,21 @@ int ObExprRegexContext::init(const ObString &pattern,
   int regex_error_num = 0;
   if (OB_UNLIKELY(inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("already inited", K(ret), K(this));
+    LOG_WDIAG("already inited", K(ret), K(this));
   } else {
     int64_t wc_pattern_length = 0;
     wchar_t *wc_pattern = NULL;
     if (OB_FAIL(getwc(pattern, wc_pattern, wc_pattern_length, string_buf))) {
-      LOG_WARN("failed to getwc", K(ret));
+      LOG_WDIAG("failed to getwc", K(ret));
     } else if (OB_ISNULL(wc_pattern)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("getwc function failed.", K(ret));
+      LOG_WDIAG("getwc function failed.", K(ret));
     } else {
       reg_.re_endp = wc_pattern + wc_pattern_length;
       regex_error_num = ob_re_wcomp(&reg_, wc_pattern, wc_pattern_length, (cflags | OB_REG_ADVANCED));
       if (OB_UNLIKELY(0 != regex_error_num)) {
         ret = convert_reg_err_code_to_ob_err_code(regex_error_num);
-        LOG_WARN("regex compilation failed", K(ret));
+        LOG_WDIAG("regex compilation failed", K(ret));
         destroy();
       } else {
         inited_ = true;
@@ -93,17 +93,17 @@ int ObExprRegexContext::match(const ObString &text,
   is_match = false;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret), K(this));
+    LOG_WDIAG("not inited", K(ret), K(this));
   } else {
     const static int64_t NMATCH = 1;
     ob_regmatch_t pmatch[NMATCH];
     wchar_t *wc_text = NULL;
     int64_t wc_length = 0;
     if (OB_FAIL(getwc(text, wc_text, wc_length, string_buf))) {
-      LOG_WARN("failed to getwc", K(ret));
+      LOG_WDIAG("failed to getwc", K(ret));
     } else if (OB_ISNULL(wc_text)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("getwc function failed.", K(ret));
+      LOG_WDIAG("getwc function failed.", K(ret));
     } else {
       pmatch[0].rm_so = start_offset;
       pmatch[0].rm_eo = wc_length;
@@ -117,7 +117,7 @@ int ObExprRegexContext::match(const ObString &text,
           LOG_TRACE("regex not match", K(ret));
         } else {
           ret = convert_reg_err_code_to_ob_err_code(regex_error_num);
-          LOG_WARN("regex match error", K(ret));
+          LOG_WDIAG("regex match error", K(ret));
         }
       } else {
         is_match = true;
@@ -139,7 +139,7 @@ int ObExprRegexContext::substr(const ObString &text,
   sub.reset();
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("regexp context not inited yet", K(ret), K(this));
+    LOG_WDIAG("regexp context not inited yet", K(ret), K(this));
   } else if (reg_.re_nsub >= subexpr) {
     size_t nsub = reg_.re_nsub;
     ob_regmatch_t pmatch[nsub + 1];
@@ -149,10 +149,10 @@ int ObExprRegexContext::substr(const ObString &text,
     wchar_t *wc_text = NULL;
     int64_t wc_length = 0;
     if (OB_FAIL(getwc(text, wc_text, wc_length, string_buf))) {
-      LOG_WARN("failed to getwc", K(ret));
+      LOG_WDIAG("failed to getwc", K(ret));
     } else if (OB_ISNULL(wc_text)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("getwc function failed.", K(ret));
+      LOG_WDIAG("getwc function failed.", K(ret));
     } else {
       for (int64_t idx = 0; OB_SUCC(ret) && idx < begin_locations.count() && occurrence > 0; ++idx) {
         start = begin_locations.at(idx);
@@ -168,7 +168,7 @@ int ObExprRegexContext::substr(const ObString &text,
               LOG_TRACE("regex not match, str=%.*s", K(wc_length));
             } else {
               ret = convert_reg_err_code_to_ob_err_code(error);;
-              LOG_WARN("regex match error", K(ret));
+              LOG_WDIAG("regex match error", K(ret));
             }
           } else if ( pmatch[0].rm_eo + tmp_start == start && start < wc_length){
             start = start + 1;
@@ -183,7 +183,7 @@ int ObExprRegexContext::substr(const ObString &text,
               pmatch[subexpr].rm_eo < 0 || pmatch[subexpr].rm_eo > wc_length ||
               OB_UNLIKELY(tmp_start + pmatch[subexpr].rm_so > wc_length)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("regexp library error, get invalid offset from pmatch", K(ret));
+            LOG_WDIAG("regexp library error, get invalid offset from pmatch", K(ret));
           } else {
             int64_t offset = static_cast<int64_t>(pmatch[subexpr].rm_eo - pmatch[subexpr].rm_so);
             if(offset > 0){
@@ -191,10 +191,10 @@ int ObExprRegexContext::substr(const ObString &text,
               int64_t length_chr = 0;
               if (OB_FAIL(w2c(wc_text + pmatch[subexpr].rm_so + tmp_start, offset,
                               tmp_char, length_chr, string_buf))) {
-                LOG_WARN("failed to w2c.", K(ret));
+                LOG_WDIAG("failed to w2c.", K(ret));
               } else if (OB_ISNULL(tmp_char)) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("w2c function failed.", K(ret));
+                LOG_WDIAG("w2c function failed.", K(ret));
               } else {
                 sub.assign_ptr(tmp_char, static_cast<ObString::obstr_size_t>(length_chr));
               }
@@ -218,7 +218,7 @@ int ObExprRegexContext::count_match_str(const ObString &text,
   sub = 0;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("regexp context not inited yet", K(ret), K(this));
+    LOG_WDIAG("regexp context not inited yet", K(ret), K(this));
   } else if (reg_.re_nsub >= subexpr) {
     size_t nsub = reg_.re_nsub;
     ob_regmatch_t pmatch[nsub + 1];
@@ -229,10 +229,10 @@ int ObExprRegexContext::count_match_str(const ObString &text,
     wchar_t *wc_text = NULL;
     int64_t wc_length = 0;
     if (OB_FAIL(getwc(text, wc_text, wc_length, string_buf))) {
-      LOG_WARN("failed to getwc", K(ret));
+      LOG_WDIAG("failed to getwc", K(ret));
     } else if (OB_ISNULL(wc_text)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("getwc function failed.", K(ret));
+      LOG_WDIAG("getwc function failed.", K(ret));
     } else {
       for (int64_t idx = 0; OB_SUCC(ret) && idx < begin_locations.count(); ++idx) {
         start = begin_locations.at(idx);
@@ -246,7 +246,7 @@ int ObExprRegexContext::count_match_str(const ObString &text,
               LOG_TRACE("regex not match, ", K(wc_length));
             } else {
               ret = convert_reg_err_code_to_ob_err_code(error);
-              LOG_WARN("regex match error", K(ret));
+              LOG_WDIAG("regex match error", K(ret));
             }
           } else if ( pmatch[0].rm_eo + tmp_start == start && start < wc_length) {
             start = start + 1;
@@ -262,7 +262,7 @@ int ObExprRegexContext::count_match_str(const ObString &text,
           if (pmatch[subexpr].rm_so < 0 || pmatch[subexpr].rm_so > wc_length
               || pmatch[subexpr].rm_eo < 0 || pmatch[subexpr].rm_eo > wc_length) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("regexp library error, get invalid offset from pmatch", K(ret));
+            LOG_WDIAG("regexp library error, get invalid offset from pmatch", K(ret));
           }
         }
         sub = count;
@@ -285,7 +285,7 @@ int ObExprRegexContext::instr(const ObString &text,
   sub = -1;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("regexp context not inited yet", K(ret), K(this));
+    LOG_WDIAG("regexp context not inited yet", K(ret), K(this));
   } else if (reg_.re_nsub >= subexpr) {
     size_t nsub = reg_.re_nsub;
     ob_regmatch_t pmatch[nsub + 1];
@@ -295,10 +295,10 @@ int ObExprRegexContext::instr(const ObString &text,
     wchar_t *wc_text = NULL;
     int64_t wc_length = 0;
     if (OB_FAIL(getwc(text, wc_text, wc_length, string_buf))) {
-      LOG_WARN("failed to getwc", K(ret));
+      LOG_WDIAG("failed to getwc", K(ret));
     } else if (OB_ISNULL(wc_text)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("getwc function failed.", K(ret));
+      LOG_EDIAG("getwc function failed.", K(ret));
     } else {
       for (int64_t idx = 0; OB_SUCC(ret) && idx < begin_locations.count() && occurrence > 0; ++idx) {
         start = begin_locations.at(idx);
@@ -312,7 +312,7 @@ int ObExprRegexContext::instr(const ObString &text,
                LOG_TRACE("regex not match", K(ret));
             } else {
               ret = convert_reg_err_code_to_ob_err_code(error);
-              LOG_WARN("regex match error", K(ret));
+              LOG_WDIAG("regex match error", K(ret));
             }
           } else if ( pmatch[0].rm_eo + tmp_start == start && start < wc_length){
             start = start + 1;
@@ -327,7 +327,7 @@ int ObExprRegexContext::instr(const ObString &text,
               pmatch[subexpr].rm_eo < 0 || pmatch[subexpr].rm_eo > wc_length ||
               OB_UNLIKELY(tmp_start + pmatch[subexpr].rm_so > wc_length)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("regexp library error, get invalid offset from pmatch", K(ret));
+            LOG_WDIAG("regexp library error, get invalid offset from pmatch", K(ret));
           } else {
             sub = return_option ? pmatch[subexpr].rm_eo + tmp_start : pmatch[subexpr].rm_so + tmp_start;
           }
@@ -349,7 +349,7 @@ int ObExprRegexContext::like(const ObString &text,
   sub = false;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("regexp context not inited yet", K(ret), K(this));
+    LOG_WDIAG("regexp context not inited yet", K(ret), K(this));
   } else {
   //} else if (reg_.re_nsub >= 0) {
     size_t nsub = reg_.re_nsub;
@@ -360,10 +360,10 @@ int ObExprRegexContext::like(const ObString &text,
     wchar_t *wc_text = NULL;
     int64_t wc_length = 0;
     if (OB_FAIL(getwc(text, wc_text, wc_length, string_buf))) {
-      LOG_WARN("failed to getwc", K(ret));
+      LOG_WDIAG("failed to getwc", K(ret));
     } else if (OB_ISNULL(wc_text)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("getwc function failed.", K(ret));
+      LOG_WDIAG("getwc function failed.", K(ret));
     } else {
       for (int64_t idx = 0; OB_SUCC(ret) && idx < begin_locations.count() && occurrence > 0; ++idx) {
         start = begin_locations.at(idx);
@@ -377,7 +377,7 @@ int ObExprRegexContext::like(const ObString &text,
                LOG_TRACE("regex not match", K(ret));
             } else {
               ret = convert_reg_err_code_to_ob_err_code(error);
-              LOG_WARN("regex match error", K(error));
+              LOG_WDIAG("regex match error", K(error));
             }
           } else if ( pmatch[0].rm_eo + tmp_start == start && start < wc_length) {
             start = start + 1;
@@ -391,7 +391,7 @@ int ObExprRegexContext::like(const ObString &text,
           if (pmatch[0].rm_so < 0 || pmatch[0].rm_so > wc_length
               || pmatch[0].rm_eo < 0 || pmatch[0].rm_eo > wc_length) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("regexp library error, get invalid offset from pmatch", K(ret));
+            LOG_WDIAG("regexp library error, get invalid offset from pmatch", K(ret));
           } else {
             sub = true;
           }
@@ -422,10 +422,10 @@ int ObExprRegexContext::replace_substr(const ObString &text_string,
   ObSEArray<ObSEArray<ObString, 8>, 8> subexpr_arrays;
   if (OB_UNLIKELY(!inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("regexp context not inited yet", K(ret), K(this));
+    LOG_WDIAG("regexp context not inited yet", K(ret), K(this));
   } else if (OB_ISNULL(text)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid param, source text is null", K(ret), K(text));
+    LOG_WDIAG("invalid param, source text is null", K(ret), K(text));
   } else {
   //} else if (reg_.re_nsub >= 0) {
     size_t nsub = reg_.re_nsub;
@@ -433,10 +433,10 @@ int ObExprRegexContext::replace_substr(const ObString &text_string,
     wchar_t *wc_text = NULL;
     int64_t length = 0;
     if (OB_FAIL(getwc(text_string, wc_text, length, string_buf))) {
-      LOG_WARN("failed to getwc", K(ret));
+      LOG_WDIAG("failed to getwc", K(ret));
     } else if (OB_ISNULL(wc_text)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("getwc function failed.", K(ret));
+      LOG_WDIAG("getwc function failed.", K(ret));
     } else {
       if (0 != occurrence) {
         ob_regmatch_t pmatch[nsub + 1];
@@ -453,7 +453,7 @@ int ObExprRegexContext::replace_substr(const ObString &text_string,
                 LOG_TRACE("regex not match", K(length));
               } else {
                 ret = convert_reg_err_code_to_ob_err_code(error);
-                LOG_WARN("regex match error", K(ret));
+                LOG_WDIAG("regex match error", K(ret));
               }
             } else if ( pmatch[0].rm_eo + tmp_start == start && start < length){
               start = start + 1;
@@ -467,38 +467,38 @@ int ObExprRegexContext::replace_substr(const ObString &text_string,
             if (pmatch[0].rm_so < 0 || pmatch[0].rm_so > length ||
                 pmatch[0].rm_eo < 0 || pmatch[0].rm_eo > length) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("regexp library error, get invalid offset from pmatch", K(ret));
+              LOG_WDIAG("regexp library error, get invalid offset from pmatch", K(ret));
             } else if (extract_subpre_string(wc_text, length, tmp_start, pmatch, nsub + 1,
                                              string_buf, subexpr_array)) {
-              LOG_WARN("failed to extract subpre string", K(ret));
+              LOG_WDIAG("failed to extract subpre string", K(ret));
             } else if (OB_FAIL(subexpr_arrays.push_back(subexpr_array))) {
-              LOG_WARN("failed to push back subexpr array", K(ret));
+              LOG_WDIAG("failed to push back subexpr array", K(ret));
             } else if (pmatch[0].rm_eo == pmatch[0].rm_so) {
               if (OB_UNLIKELY(pmatch[0].rm_so + tmp_start >= ch_position.count())) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
+                LOG_WDIAG("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
               } else if (OB_FAIL(locations_and_length.push_back(static_cast<unsigned int>(ch_position.at(pmatch[0].rm_so + tmp_start))))
                          || OB_FAIL(locations_and_length.push_back(0))) {
-                LOG_WARN("locations_and_length push_back error", K(ret));
+                LOG_WDIAG("locations_and_length push_back error", K(ret));
               } else if (OB_FAIL(replace(text_string, replace_string, locations_and_length, string_buf, subexpr_arrays, sub))) {
-                LOG_WARN("replace function failed", K(ret));
+                LOG_WDIAG("replace function failed", K(ret));
               }
             } else {
               int64_t length_chr = 0;
               if (OB_FAIL(w2c(wc_text + pmatch[0].rm_so + tmp_start, pmatch[0].rm_eo - pmatch[0].rm_so,
                               tmp, length_chr, string_buf))) {
-                LOG_WARN("failed to w2c.", K(ret));
+                LOG_WDIAG("failed to w2c.", K(ret));
               } else if (OB_ISNULL(tmp)) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_ERROR("w2c function failed", K(ret));
+                LOG_EDIAG("w2c function failed", K(ret));
               } else if (OB_UNLIKELY(pmatch[0].rm_so + tmp_start >= ch_position.count())) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
+                LOG_WDIAG("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
               } else if (OB_FAIL(locations_and_length.push_back(static_cast<unsigned int>(ch_position.at(pmatch[0].rm_so + tmp_start))))
                          || OB_FAIL(locations_and_length.push_back(static_cast<unsigned int>(length_chr)))) {
-                LOG_WARN("locations_and_length push_back error", K(ret));
+                LOG_WDIAG("locations_and_length push_back error", K(ret));
               } else if (OB_FAIL(replace(text_string, replace_string, locations_and_length, string_buf, subexpr_arrays, sub))) {
-                LOG_WARN("replace function failed", K(ret));
+                LOG_WDIAG("replace function failed", K(ret));
               }
             }
           } else {
@@ -522,20 +522,20 @@ int ObExprRegexContext::replace_substr(const ObString &text_string,
                 LOG_TRACE("regex not match", K(length), K(text + start));
               } else {
                 ret = convert_reg_err_code_to_ob_err_code(error);
-                LOG_WARN("regex match error", K(ret));
+                LOG_WDIAG("regex match error", K(ret));
               }
             } else if (pmatch[0].rm_eo == pmatch[0].rm_so) {
               if (OB_UNLIKELY(pmatch[0].rm_so + tmp_start >= ch_position.count())) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
+                LOG_WDIAG("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
               } else if (OB_FAIL(locations_and_length.push_back(static_cast<unsigned int>(ch_position.at(pmatch[0].rm_so + tmp_start))))
                          || OB_FAIL(locations_and_length.push_back(0))) {
-                LOG_WARN("locations_and_length push_back error", K(ret));
+                LOG_WDIAG("locations_and_length push_back error", K(ret));
               } else if (extract_subpre_string(wc_text, length, tmp_start, pmatch, nsub + 1,
                                                string_buf, subexpr_array)) {
-                LOG_WARN("failed to extract subpre string", K(ret));
+                LOG_WDIAG("failed to extract subpre string", K(ret));
               } else if (OB_FAIL(subexpr_arrays.push_back(subexpr_array))) {
-                LOG_WARN("failed to push back subexpr array", K(ret));
+                LOG_WDIAG("failed to push back subexpr array", K(ret));
               } else if (pmatch[0].rm_eo + tmp_start == start && start < length) {
                 start = start + 1;
               } else {
@@ -545,21 +545,21 @@ int ObExprRegexContext::replace_substr(const ObString &text_string,
               int64_t length_chr = 0;
               if (OB_FAIL(w2c(wc_text + pmatch[0].rm_so + tmp_start, pmatch[0].rm_eo - pmatch[0].rm_so,
                               tmp, length_chr, string_buf))) {
-                LOG_WARN("failed to w2c.", K(ret));
+                LOG_WDIAG("failed to w2c.", K(ret));
               } else if (OB_ISNULL(tmp)) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("w2c function failed", K(ret));
+                LOG_WDIAG("w2c function failed", K(ret));
               } else if (OB_UNLIKELY(pmatch[0].rm_so + tmp_start >= ch_position.count())) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
+                LOG_WDIAG("beyond array boundary", K(ret), K(pmatch[0].rm_so + tmp_start), K(ch_position.count()));
               } else if (extract_subpre_string(wc_text, length, tmp_start, pmatch, nsub + 1,
                                                string_buf, subexpr_array)) {
-                LOG_WARN("failed to extract subpre string", K(ret));
+                LOG_WDIAG("failed to extract subpre string", K(ret));
               } else if (OB_FAIL(subexpr_arrays.push_back(subexpr_array))) {
-                LOG_WARN("failed to push back subexpr array", K(ret));
+                LOG_WDIAG("failed to push back subexpr array", K(ret));
               } else if (OB_FAIL(locations_and_length.push_back(static_cast<unsigned int>(ch_position.at(pmatch[0].rm_so + tmp_start))))
                          || OB_FAIL(locations_and_length.push_back(static_cast<unsigned int>(length_chr)))) {
-                LOG_WARN("locations_and_length push_back error", K(ret));
+                LOG_WDIAG("locations_and_length push_back error", K(ret));
               } else if (pmatch[0].rm_eo + tmp_start == start && start < length) {
                 start = start + 1;
               } else {
@@ -571,7 +571,7 @@ int ObExprRegexContext::replace_substr(const ObString &text_string,
         if (OB_SUCC(ret)) {
           if (!locations_and_length.empty()) {
             if (OB_FAIL(replace(text_string, replace_string, locations_and_length, string_buf, subexpr_arrays, sub))) {
-              LOG_WARN("replace function failed", K(ret));
+              LOG_WDIAG("replace function failed", K(ret));
             }
           } else {
             sub = text_string;
@@ -595,9 +595,9 @@ int ObExprRegexContext::replace(const ObString &text,
   sub.reset();
   if (OB_UNLIKELY(text.length() <= 0 || to.length() < 0 || locations_and_length.count() <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("text_string or to_string or locations_and_length is null or invalid", K(ret));
+    LOG_WDIAG("text_string or to_string or locations_and_length is null or invalid", K(ret));
   } else if (OB_FAIL(pre_process_replace_str(text, to, string_buf, subexpr_arrays, to_strings))) {
-    LOG_WARN("failed to pre process replace str", K(ret));
+    LOG_WDIAG("failed to pre process replace str", K(ret));
   } else {
     int64_t sum_length = 0;
     int64_t length_text = text.length();
@@ -610,17 +610,17 @@ int ObExprRegexContext::replace(const ObString &text,
     }
     if (OB_UNLIKELY(OB_MAX_VARCHAR_LENGTH < count_location / 2 * (length_to + length_text) + length_text - sum_length)) {
       ret = OB_ERR_VARCHAR_TOO_LONG;
-      LOG_WARN("Result of replace_all_str() was larger than OB_MAX_VARCHAR_LENGTH.",
+      LOG_WDIAG("Result of replace_all_str() was larger than OB_MAX_VARCHAR_LENGTH.",
                K(length_text), K(length_to), K(OB_MAX_VARCHAR_LENGTH), K(ret));
     } else if (OB_UNLIKELY((tot_length = count_location / 2 * (length_to + length_text) + length_text - sum_length) < 0)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("the tot_length is invalid", K(length_text), K(tot_length), K(ret));
+      LOG_WDIAG("the tot_length is invalid", K(length_text), K(tot_length), K(ret));
     } else if (tot_length != 0) {
       char *buf = static_cast<char *>(string_buf.alloc(tot_length));
       int64_t real_tot_length = 0;
       if (OB_ISNULL(buf)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("alloc memory failed.", K(tot_length), K(ret));
+        LOG_EDIAG("alloc memory failed.", K(tot_length), K(ret));
       } else {
         MEMSET(buf, 0, tot_length);
         int64_t pos = 0;
@@ -635,7 +635,7 @@ int ObExprRegexContext::replace(const ObString &text,
           text_ptr_upper = text_ptr_start + pos;
           if (OB_UNLIKELY(text_ptr_upper - text_ptr_lower < 0 || text_ptr_end - text_ptr_upper < 0)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("get offset is invalid", K(text_ptr_upper - text_ptr_lower), K(text_ptr_end - text_ptr_upper), K(ret));
+            LOG_WDIAG("get offset is invalid", K(text_ptr_upper - text_ptr_lower), K(text_ptr_end - text_ptr_upper), K(ret));
           } else {
             MEMCPY(tmp_buf, text_ptr_lower, text_ptr_upper - text_ptr_lower);
             tmp_buf += text_ptr_upper - text_ptr_lower;
@@ -643,7 +643,7 @@ int ObExprRegexContext::replace(const ObString &text,
             text_ptr_lower = text_ptr_upper + locations_and_length.at(i+1);
             if (OB_UNLIKELY(to_strings.at(j).length() < 0)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("get offset is invalid", K(to_strings.at(j).length()), K(ret));
+              LOG_WDIAG("get offset is invalid", K(to_strings.at(j).length()), K(ret));
             } else {
               MEMCPY(tmp_buf, to_ptr, to_strings.at(j).length());
               tmp_buf += to_strings.at(j).length();
@@ -657,7 +657,7 @@ int ObExprRegexContext::replace(const ObString &text,
         }
         if (OB_UNLIKELY(real_tot_length > tot_length)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("get invalid argument", K(real_tot_length), K(tot_length), K(ret));
+          LOG_WDIAG("get invalid argument", K(real_tot_length), K(tot_length), K(ret));
         } else {
           char *real_buf = static_cast<char *>(string_buf.alloc(real_tot_length));
           MEMSET(real_buf, 0, real_tot_length);
@@ -681,7 +681,7 @@ int ObExprRegexContext::getwc(const ObString &text,
   wc_length = 0;
   if (OB_ISNULL(text.ptr()) || text.length() <= 0) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("source text is null or length is invalid", K(ret), K(text.length()));
+    LOG_WDIAG("source text is null or length is invalid", K(ret), K(text.length()));
   } else {
     int64_t length = text.length();
     ObSEArray<size_t, 1024> byte_num;
@@ -689,16 +689,16 @@ int ObExprRegexContext::getwc(const ObString &text,
     wc = static_cast<wchar_t*>(string_buf.alloc((length + 1) * sizeof(wchar_t)));
     if (OB_ISNULL(wc)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("alloc memory failed.", K(wc), K(ret));
+      LOG_WDIAG("alloc memory failed.", K(wc), K(ret));
     } else if (OB_FAIL(ObExprUtil::get_mb_str_info(text,
                                             ObCharset::get_default_collation_oracle(CHARSET_UTF8MB4),
                                             byte_num,
                                             byte_offsets))) {
-      LOG_WARN("failed to get mb str info", K(ret));
+      LOG_WDIAG("failed to get mb str info", K(ret));
     } else if (OB_UNLIKELY(byte_num.count() >= length + 1 ||
                            byte_num.count() != byte_offsets.count() - 1)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("get unexpected error", K(ret), K(length + 1 ), K(byte_num.count()),
+      LOG_WDIAG("get unexpected error", K(ret), K(length + 1 ), K(byte_num.count()),
                                        K(byte_offsets.count()));
     } else {
       wmemset(wc, 0, length + 1);
@@ -708,13 +708,13 @@ int ObExprRegexContext::getwc(const ObString &text,
         int32_t unused_length = 0;
         if (OB_UNLIKELY(byte_offsets.at(i) + byte_num.at(i) > text.length())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("get unexpected error", K(byte_offsets.at(i)), K(byte_num.at(i)), K(ret));
+          LOG_WDIAG("get unexpected error", K(byte_offsets.at(i)), K(byte_num.at(i)), K(ret));
         } else if (OB_FAIL(ObCharset::mb_wc(ObCharset::get_default_collation_oracle(CHARSET_UTF8MB4),
                                             text.ptr() + byte_offsets.at(i),
                                             byte_num.at(i),
                                             unused_length,
                                             wc_int))) {
-          LOG_WARN("failed to multi byte to wide char", K(ret));
+          LOG_WDIAG("failed to multi byte to wide char", K(ret));
         } else {
           wc[i] = static_cast<wchar_t>(wc_int);
         }
@@ -736,7 +736,7 @@ int ObExprRegexContext::w2c(const wchar_t *wc,
   chr = NULL;
   if (OB_ISNULL(wc) || length <= 0){
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("source text is null or length is vaild", K(ret), K(wc), K(length));
+    LOG_WDIAG("source text is null or length is vaild", K(ret), K(wc), K(length));
   } else {
     int32_t buff_len = sizeof(wchar_t);
     char *buff = static_cast<char *>(string_buf.alloc(buff_len));
@@ -753,10 +753,10 @@ int ObExprRegexContext::w2c(const wchar_t *wc,
                                    buff,
                                    buff_len,
                                    real_length))) {
-        LOG_WARN("failed to multi byte to wide char", K(ret));
+        LOG_WDIAG("failed to multi byte to wide char", K(ret));
       } else if (OB_UNLIKELY(chr_length + real_length > chr_len)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("get unexpected error", K(chr_length), K(real_length), K(chr_len), K(ret));
+        LOG_WDIAG("get unexpected error", K(chr_length), K(real_length), K(chr_len), K(ret));
       } else {
         MEMCPY(tmp_chr, buff, real_length);
         chr_length += real_length;
@@ -788,13 +788,13 @@ int ObExprRegexContext::pre_process_replace_str(const ObString &text,
   int64_t tot_length = 0;
   if (OB_UNLIKELY(OB_MAX_VARCHAR_LENGTH < (tot_length = length_text + length_to))) {
       ret = OB_ERR_VARCHAR_TOO_LONG;
-      LOG_WARN("Result of replace_all_str() was larger than OB_MAX_VARCHAR_LENGTH.",
+      LOG_WDIAG("Result of replace_all_str() was larger than OB_MAX_VARCHAR_LENGTH.",
                K(length_text), K(length_to), K(OB_MAX_VARCHAR_LENGTH), K(ret));
   } else if (tot_length != 0) {
     char *buf = static_cast<char *>(string_buf.alloc(tot_length));
     if (OB_ISNULL(buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("alloc memory failed.", K(tot_length), K(ret));
+      LOG_EDIAG("alloc memory failed.", K(tot_length), K(ret));
     } else {
       for (int64_t j = 0; OB_SUCC(ret) && j < subexpr_arrays.count(); ++j) {
         ObString tmp_string;
@@ -912,7 +912,7 @@ int ObExprRegexContext::pre_process_replace_str(const ObString &text,
           tmp_string.assign_ptr(real_buf, static_cast<ObString::obstr_size_t>(real_tot_length));
         }
         if (OB_SUCC(ret) && OB_FAIL(to_strings.push_back(tmp_string))) {
-          LOG_WARN("failed to push back string", K(ret));
+          LOG_WDIAG("failed to push back string", K(ret));
         }
       }
     }
@@ -932,31 +932,31 @@ int ObExprRegexContext::extract_subpre_string(const wchar_t *wc_text,
   if (OB_ISNULL(wc_text) || OB_ISNULL(pmatch) ||
       OB_UNLIKELY(wc_length < 0 || start_pos < 0 || pmatch_size <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("get unexpected nullptr", K(ret), K(wc_text), K(wc_length),
+    LOG_WDIAG("get unexpected nullptr", K(ret), K(wc_text), K(wc_length),
                                        K(start_pos), K(pmatch), K(pmatch_size));
   } else {
     for (int64_t i = 1; OB_SUCC(ret) && i < pmatch_size; ++i) {
       ObString sub;
       if (OB_UNLIKELY(start_pos + pmatch[i].rm_so > wc_length)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("regexp library error, get invalid offset from pmatch", K(ret));
+        LOG_WDIAG("regexp library error, get invalid offset from pmatch", K(ret));
       } else {
         int64_t offset = static_cast<int64_t>(pmatch[i].rm_eo - pmatch[i].rm_so);
         if (offset > 0){
           char *tmp_char = NULL;
           int64_t length = 0;
           if (OB_FAIL(w2c(wc_text + pmatch[i].rm_so + start_pos, offset, tmp_char, length, string_buf))) {
-            LOG_WARN("failed to w2c.", K(ret));
+            LOG_WDIAG("failed to w2c.", K(ret));
           } else if (OB_ISNULL(tmp_char)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("w2c function failed.", K(ret));
+            LOG_WDIAG("w2c function failed.", K(ret));
           } else {
             sub.assign_ptr(tmp_char, static_cast<ObString::obstr_size_t>(length));
           }
         }
         if (OB_SUCC(ret)) {
           if (OB_FAIL(subexpr_array.push_back(sub))) {
-            LOG_WARN("failed to push back string", K(ret));
+            LOG_WDIAG("failed to push back string", K(ret));
           }
         }
       }
@@ -965,7 +965,7 @@ int ObExprRegexContext::extract_subpre_string(const wchar_t *wc_text,
       ObString sub;
       if (OB_SUCC(ret)) {
         if (OB_FAIL(subexpr_array.push_back(sub))) {
-          LOG_WARN("failed to push back string", K(ret));
+          LOG_WDIAG("failed to push back string", K(ret));
         }
       }
     }

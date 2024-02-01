@@ -33,10 +33,10 @@ int ObRandomNumUtils::get_random_num(const int64_t min, const int64_t max, int64
   random_num = 0;
   if (OB_UNLIKELY(min > max)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(min), K(max), K(ret));
+    LOG_WDIAG("invalid input value", K(min), K(max), K(ret));
   } else if (!is_seed_inited_) {
     if (OB_FAIL(init_seed())) {
-      LOG_WARN("fail to init random seed", K(ret));
+      LOG_WDIAG("fail to init random seed", K(ret));
     }
   }
   if (OB_SUCC(ret)) {
@@ -51,11 +51,11 @@ int64_t ObRandomNumUtils::get_random_half_to_full(const int64_t full_num)
   int64_t ret_value = 0;
   if (OB_UNLIKELY(full_num < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(full_num), K(ret));
+    LOG_WDIAG("invalid input value", K(full_num), K(ret));
   } else if (OB_UNLIKELY(0 == full_num)) {
     LOG_INFO("full_num is zero, will return 0 as random num");
   } else if (OB_FAIL(get_random_num(full_num / 2, full_num, ret_value))) {
-    LOG_WARN("fail to get random num, will return full_num as random num", K(ret));
+    LOG_WDIAG("fail to get random num, will return full_num as random num", K(ret));
     ret_value = full_num;
   } else {/*do nothing*/}
   return ret_value;
@@ -66,7 +66,7 @@ int ObRandomNumUtils::init_seed()
   int ret = OB_SUCCESS;
   if (OB_LIKELY(!is_seed_inited_)) {
     if (OB_FAIL(get_random_seed(seed_))) {
-      LOG_WARN("fail to get random seed", K(ret));
+      LOG_WDIAG("fail to get random seed", K(ret));
     } else {
       srandom(static_cast<uint32_t>(seed_));
       is_seed_inited_ = true;
@@ -81,7 +81,7 @@ int ObRandomNumUtils::get_random_seed(int64_t &seed)
   ObFileReader file_reader;
   const bool dio = false;
   if (OB_FAIL(file_reader.open(ObString::make_string("/dev/urandom"), dio))) {
-    LOG_WARN("fail to open /dev/urandom", KERRMSGS, K(ret));
+    LOG_WDIAG("fail to open /dev/urandom", KERRMSGS, K(ret));
   } else {
     int64_t random_value = 0;
     int64_t ret_size = 0;
@@ -89,10 +89,10 @@ int ObRandomNumUtils::get_random_seed(int64_t &seed)
     int64_t offset = 0;
     char *buf = reinterpret_cast<char *>(&random_value);
     if (OB_FAIL(file_reader.pread(buf, read_size, offset, ret_size))) {
-      LOG_WARN("fail to read", KERRMSGS, K(ret));
+      LOG_WDIAG("fail to read", KERRMSGS, K(ret));
     } else if (OB_UNLIKELY(read_size != ret_size)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("readed data is not enough", K(read_size), K(ret_size), K(ret));
+      LOG_WDIAG("readed data is not enough", K(read_size), K(ret_size), K(ret));
     } else {
       seed = labs(random_value);
     }
@@ -106,7 +106,7 @@ int get_int_value(const ObString &str, int64_t &value, const int radix /*10*/)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(str.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("str is empty", K(str), K(ret));
+    LOG_WDIAG("str is empty", K(str), K(ret));
   } else {
     static const int32_t MAX_INT64_STORE_LEN = 31;
     char int_buf[MAX_INT64_STORE_LEN + 1];
@@ -119,7 +119,7 @@ int get_int_value(const ObString &str, int64_t &value, const int radix /*10*/)
       // succ, do nothing
     } else {
       ret = OB_INVALID_DATA;
-      LOG_WARN("invalid int value", K(value), K(ret), K(str));
+      LOG_WDIAG("invalid int value", K(value), K(ret), K(str));
     }
   }
   return ret;
@@ -131,7 +131,7 @@ int get_double_value(const ObString &str, double &value)
 
   if (OB_UNLIKELY(str.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("str is empty", K(str), K(ret));
+    LOG_WDIAG("str is empty", K(str), K(ret));
   } else {
     double ret_val = 0.0;
     static const int32_t MAX_UINT64_STORE_LEN = 32;
@@ -146,8 +146,26 @@ int get_double_value(const ObString &str, double &value)
       value = ret_val;
     } else {
       ret = OB_INVALID_DATA;
-      LOG_WARN("invalid dobule value", K(value), K(str), K(ret));
+      LOG_WDIAG("invalid dobule value", K(value), K(str), K(ret));
     }
+  }
+
+  return ret;
+}
+ 
+int int_to_string(common::ObIAllocator& allocater, const int64_t& num, ObString& str)
+{
+  int ret = OB_SUCCESS;
+
+  const int MAX_NUM_LEN = 24;
+  char* buf = NULL;
+  if (OB_ISNULL(buf = (char*)allocater.alloc(MAX_NUM_LEN))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LIB_LOG(WDIAG, "fail to allocate memory for converting int to string", K(ret), K(num));
+  } else {
+    MEMSET(buf, '\0', MAX_NUM_LEN);
+    snprintf(buf, MAX_NUM_LEN, "%ld", num);
+    str.assign_ptr(buf, static_cast<common::ObString::obstr_size_t>(strlen(buf)));
   }
 
   return ret;
@@ -261,7 +279,7 @@ int str_replace(char *input_buf, const int32_t input_size,
       || OB_ISNULL(target_key) || OB_UNLIKELY(target_key_len <= 0)
       || OB_UNLIKELY(output_pos < 0) || OB_UNLIKELY(output_pos >= output_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid_argument", KP(input_buf), K(input_size), KP(output_buf), K(output_size),
+    LOG_WDIAG("invalid_argument", KP(input_buf), K(input_size), KP(output_buf), K(output_size),
              KP(target_key), K(target_key_len), K(output_pos), K(ret));
   } else {
     char *found_ptr = NULL;
@@ -316,10 +334,10 @@ int convert_timestamp_to_version(int64_t time_us, char *buf, int64_t len)
   int64_t pos = 0;
   if (OB_FAIL(ObTimeUtility::usec_format_to_str(time_us, ObString(OBPROXY_TIMESTAMP_VERSION_FORMAT),
                                                 buf, len, pos))) {
-    LOG_WARN("fail to format timestamp  to str", K(time_us), K(ret));
+    LOG_WDIAG("fail to format timestamp  to str", K(time_us), K(ret));
   } else if (OB_UNLIKELY(pos < 3)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid timestamp", K(time_us), K(pos), K(ret));
+    LOG_WDIAG("invalid timestamp", K(time_us), K(pos), K(ret));
   } else {
     buf[pos - 3] = '\0'; // ms
   }
@@ -336,9 +354,9 @@ int paste_tenant_and_cluster_name(const ObString &tenant_name, const ObString &c
     "%.*s#%.*s", tenant_name.length(), tenant_name.ptr(), cluster_name.length(), cluster_name.ptr()));
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill buf", K(ret), K(tenant_name), K(cluster_name));
+    LOG_WDIAG("fail to fill buf", K(ret), K(tenant_name), K(cluster_name));
   } else if (OB_FAIL(key_string.assign(buf))) {
-    LOG_WARN("assign failed", K(ret));
+    LOG_WDIAG("assign failed", K(ret));
   }
 
   return ret;
@@ -368,9 +386,9 @@ int split_weight_group(ObString weight_group_str,
         group_finish = true;
       }
       if (OB_FAIL(items.push_back(item))) {
-        LOG_WARN("fail to push back item", K(item), K(ret));
+        LOG_WDIAG("fail to push back item", K(item), K(ret));
       } else if (OB_FAIL(weights.push_back(weight))) {
-        LOG_WARN("fail to push back weight", K(weight), K(ret));
+        LOG_WDIAG("fail to push back weight", K(weight), K(ret));
       } else { /* succ */}
     }
     weight++; 

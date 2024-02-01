@@ -72,7 +72,7 @@ static inline int mutex_init(ObMutex *m)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(0 != pthread_mutex_init(m, NULL))) {
     ret = OB_ERR_SYS;
-    LIB_LOG(ERROR, "mutex init fail", K(ret));
+    LIB_LOG(EDIAG, "mutex init fail", K(ret));
   }
   return ret;
 }
@@ -87,7 +87,7 @@ static inline int mutex_acquire(ObMutex *m)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(0 != pthread_mutex_lock(m))) {
     ret = OB_ERR_SYS;
-    LIB_LOG(ERROR, "mutex acquire fail", K(ret));
+    LIB_LOG(EDIAG, "mutex acquire fail", K(ret));
   }
   return ret;
 }
@@ -97,7 +97,7 @@ static inline int mutex_release(ObMutex *m)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(0 != pthread_mutex_unlock(m))) {
     ret = OB_ERR_SYS;
-    LIB_LOG(ERROR, "mutex release fail", K(ret));
+    LIB_LOG(EDIAG, "mutex release fail", K(ret));
   }
   return ret;
 }

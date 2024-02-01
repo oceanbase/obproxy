@@ -59,7 +59,7 @@ private:
   EnumPrepareStateType prepare_state_;
   uint16_t num_columns_;
   uint16_t num_params_;
-  uint16_t pkt_count_;
+  uint32_t pkt_count_;
 
   DISALLOW_COPY_AND_ASSIGN(ObMysqlResponsePrepareTransformPlugin);
 };
@@ -93,7 +93,7 @@ public:
         transaction.add_plugin(plugin);
         PROXY_API_LOG(DEBUG, "add ObMysqlResponsePrepareTransformPlugin", K(plugin));
       } else {
-        PROXY_API_LOG(ERROR, "fail to allocate memory for ObMysqlResponsePrepareTransformPlugin");
+        PROXY_API_LOG(EDIAG, "fail to allocate memory for ObMysqlResponsePrepareTransformPlugin");
       }
     } else {
       PROXY_API_LOG(DEBUG, "no need setup ObMysqlResponsePrepareTransformPlugin");

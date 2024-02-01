@@ -15,6 +15,7 @@
 
 #include "lib/timezone/ob_timezone_info.h"
 #include "common/ob_object.h"
+#include "lib/wide_integer/ob_wide_integer_str_funcs.h"
 
 namespace oceanbase
 {
@@ -906,7 +907,7 @@ template <>
       ret = databuff_printf(buffer, length, pos, N_CURRENT_TIMESTAMP);
       break;
     default:
-      _OB_LOG(WARN, "ext %ld should not be print as sql", obj.get_ext());
+      _OB_LOG(WDIAG, "ext %ld should not be print as sql", obj.get_ext());
       ret = OB_INVALID_ARGUMENT;
       break;
   }
@@ -933,7 +934,7 @@ template <>
       ret = databuff_printf(buffer, length, pos, "'%s'",  N_CURRENT_TIMESTAMP);
       break;
     default:
-      _OB_LOG(WARN, "ext %ld should not be print as sql varchar literal", obj.get_ext());
+      _OB_LOG(WDIAG, "ext %ld should not be print as sql varchar literal", obj.get_ext());
       ret = OB_INVALID_ARGUMENT;
       break;
   }
@@ -960,7 +961,7 @@ template <>
       ret = databuff_printf(buffer, length, pos, N_CURRENT_TIMESTAMP);
       break;
     default:
-      _OB_LOG(WARN, "ext %ld should not be print as sql", obj.get_ext());
+      _OB_LOG(WDIAG, "ext %ld should not be print as sql", obj.get_ext());
       ret = OB_INVALID_ARGUMENT;
       break;
   }
@@ -1509,6 +1510,190 @@ DEF_RAW_FUNCS(ObRawType, raw, ObString);
 
 DEF_NVARCHAR_FUNCS(ObNVarchar2Type, nvarchar2, ObString);
 DEF_NVARCHAR_FUNCS(ObNCharType, nchar, ObString);
+
+// ================ ObDecimalIntType
+
+// serialization & deserialization
+template <>
+    int obj_val_serialize<ObDecimalIntType>(const ObObj &obj, char *buf, const int64_t buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  const ObDecimalInt *decint = obj.get_decimal_int();
+  int32_t val_len = obj.get_val_len();
+  ObScale scale = obj.get_scale();
+  OB_UNIS_ENCODE(val_len);
+  OB_UNIS_ENCODE(scale);
+  if (OB_FAIL(ret)) {
+    COMMON_LOG(WDIAG, "failed to encode val_len", K(ret), K(val_len));
+  } else if (OB_UNLIKELY(pos + val_len > buf_len)) {
+    ret = OB_BUF_NOT_ENOUGH;
+    COMMON_LOG(WDIAG, "buf not enough", K(ret), K(pos), K(buf_len), K(val_len));
+  } else if (OB_UNLIKELY(val_len == 0)) {
+    // zero value
+    // do nothing
+  } else if (OB_ISNULL(decint)) {
+    ret = OB_ERR_UNEXPECTED;
+    COMMON_LOG(WDIAG, "invalid null decint", K(ret));
+  } else {
+    MEMCPY(buf + pos, decint, val_len);
+    pos += val_len;
+  }
+  return ret;
+}
+
+template<>
+int obj_val_deserialize<ObDecimalIntType>(ObObj &obj, const char *buf, const int64_t data_len,
+                                          int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  int32_t val_len;
+  ObScale scale(0);
+  OB_UNIS_DECODE(val_len);
+  OB_UNIS_DECODE(scale);
+  if (OB_FAIL(ret)) {
+    COMMON_LOG(WDIAG, "failed to decode val_len", K(ret));
+  } else if (pos + val_len > data_len) {
+    ret = OB_DESERIALIZE_ERROR;
+    COMMON_LOG(WDIAG, "data buf is not enoght", K(ret), K(data_len), K(pos), K(val_len));
+  } else {
+    ObDecimalInt *decint = nullptr;
+    if (val_len > 0) {
+      decint = (ObDecimalInt *)(buf + pos);
+    }
+    obj.set_decimal_int(val_len, scale, decint);
+    pos += val_len;
+  }
+  return ret;
+}
+
+template<>
+int64_t obj_val_get_serialize_size<ObDecimalIntType>(const ObObj &obj)
+{
+  int64_t len = 0;
+  const int32_t val_len = obj.get_val_len();
+  const ObScale scale = obj.get_scale();
+  OB_UNIS_ADD_LEN(val_len);
+  OB_UNIS_ADD_LEN(scale);
+  len += val_len;
+  return len;
+}
+
+// print functions
+template <>
+int obj_print_sql<ObDecimalIntType>(const ObObj &obj, char *buffer, int64_t length,
+                                    int64_t &pos, const ObObjPrintParams &)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(wide::to_string(obj.get_decimal_int(), obj.get_int_bytes(), obj.get_scale(),
+                                     buffer, length, pos))) {
+    COMMON_LOG(WDIAG, "to_string failed", K(ret));
+  } else if (OB_UNLIKELY(pos >= length)) {
+    ret = OB_SIZE_OVERFLOW;
+    COMMON_LOG(WDIAG, "buffer size is overflow", K(ret));
+  } else {
+    buffer[pos] = '\0';
+  }
+  return ret;
+}
+
+template <>
+int obj_print_str<ObDecimalIntType>(const ObObj &obj, char *buffer, int64_t length,
+                                           int64_t &pos, const ObObjPrintParams &params)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(length - pos < number::ObNumber::MAX_APPEND_LEN)) {
+    ret = OB_SIZE_OVERFLOW;
+    COMMON_LOG(WDIAG, "buffer size is overflow", K(ret));
+  } else if (OB_FALSE_IT(buffer[pos++] = '\'')) {
+  } else if (OB_FAIL(obj_print_sql<ObDecimalIntType>(obj, buffer, length, pos, params))) {
+    COMMON_LOG(WDIAG, "fail to print decimal int sql", K(ret));
+  } else if (OB_UNLIKELY(pos + 1 >= length)) {
+    ret = OB_SIZE_OVERFLOW;
+    COMMON_LOG(WDIAG, "buffer size is overflow", K(ret));
+  } else {
+    buffer[pos++] = '\'';
+    buffer[pos] = '\0';
+  }
+  return ret;
+}
+
+template<>
+inline int obj_print_plain_str<ObDecimalIntType>(const ObObj &obj, char *buffer, int64_t length,
+                                                 int64_t &pos, const ObObjPrintParams &params)
+{
+  int ret = OB_SUCCESS;
+  ret = obj_print_sql<ObDecimalIntType>(obj, buffer, length, pos, params);
+  return ret;
+}
+
+template<>
+inline int obj_print_json<ObDecimalIntType>(const ObObj &obj, char *buf, int64_t buf_len,
+                                            int64_t &pos, const ObObjPrintParams &)
+{
+  int ret = OB_SUCCESS;
+  J_OBJ_START();
+  PRINT_META();
+  BUF_PRINTO(ob_obj_type_str(obj.get_type()));
+  J_COLON();
+  if (OB_FAIL(wide::to_string(obj.get_decimal_int(), obj.get_int_bytes(), obj.get_scale(), buf,
+                              buf_len, pos))) {
+    // do nothing
+  }
+  J_OBJ_END();
+  return ret;
+}
+
+// hash functions
+template<>
+inline int64_t obj_crc64<ObDecimalIntType>(const ObObj &obj, const int64_t current)
+{
+  int type = obj.get_type();
+  ObScale scale = obj.get_scale();
+  int32_t val_len = obj.get_val_len();
+  int64_t result = current;
+  result = ob_crc64_sse42(result, &type, sizeof(type));
+  result = ob_crc64_sse42(result, &scale, sizeof(scale));
+  result = ob_crc64_sse42(result, obj.get_decimal_int(), val_len);
+  return result;
+}
+
+template<>
+    void obj_batch_checksum<ObDecimalIntType>(const ObObj &obj, ObBatchChecksum &bc)
+{
+  int type = obj.get_type();
+  ObScale scale = obj.get_scale();
+  int32_t val_len = obj.get_val_len();
+  bc.fill(&type, sizeof(type));
+  bc.fill(&scale, sizeof(scale));
+  bc.fill(obj.get_decimal_int(), val_len);
+}
+
+template<typename T, typename P>
+struct ObjHashCalculator<ObDecimalIntType, T, P>
+{
+  static uint64_t calc_hash_value(const P &params, const uint64_t hash)
+  {
+    uint64_t result = 0;
+    const ObDecimalInt *decint = params.get_decimal_int();
+    int32_t int_bytes = params.get_int_bytes();
+    result = T::hash(decint, int_bytes, hash);
+    return result;
+  }
+};
+
+template <>
+    uint64_t obj_murmurhash<ObDecimalIntType>(const ObObj &obj, const uint64_t hash)
+{
+  uint64_t result;
+  int type = obj.get_type();
+  ObScale scale = obj.get_scale();
+  result = hash;
+  result = murmurhash(&type, sizeof(type), result);
+  result = murmurhash(&scale, sizeof(scale), result);
+  result =
+    ObjHashCalculator<ObDecimalIntType, ObMurmurHash, ObObj>::calc_hash_value(obj, result);
+  return result;
+}
 
 }
 }

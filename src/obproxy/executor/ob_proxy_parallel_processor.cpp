@@ -33,18 +33,18 @@ int ObProxyParallelProcessor::open(ObContinuation &cont, ObAction *&action, ObIA
   ObProxyParallelCont *parallel_cont = NULL;
   if (OB_ISNULL(cont.mutex_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(&cont), K(ret));
+    LOG_WDIAG("invalid input value", K(&cont), K(ret));
   } else if (OB_UNLIKELY(&self_ethread() != cont.mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("current thread is not equal with thread which holds sm mutex", K(ret));
+    LOG_WDIAG("current thread is not equal with thread which holds sm mutex", K(ret));
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_ISNULL(parallel_cont = op_alloc_args(ObProxyParallelCont, &cont, &self_ethread()))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc ObProxyParallelCont", K(ret));
+    LOG_WDIAG("fail to alloc ObProxyParallelCont", K(ret));
   } else if (OB_FAIL(parallel_cont->do_open(action, parallel_param, allocator, timeout_ms))) {
-    LOG_WARN("fail to open ObProxyParallelCont", K(ret));
+    LOG_WDIAG("fail to open ObProxyParallelCont", K(ret));
   }
 
   if (OB_FAIL(ret) && (NULL != parallel_cont)) {

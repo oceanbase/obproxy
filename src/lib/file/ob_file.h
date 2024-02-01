@@ -416,7 +416,7 @@ ObWaitablePool<T, SIZE>::ObWaitablePool() : list_(NULL),
   ObMemAttr memattr;
   memattr.mod_id_ = ObModIds::OB_WAITABLE_POOL;
   if (NULL == (objs_ = (Node *)ob_malloc(sizeof(Node) * SIZE, memattr))) {
-    _OB_LOG(ERROR, "alloc obj array fail");
+    _OB_LOG(EDIAG, "alloc obj array fail");
   } else {
     for (int64_t i = 0; i < SIZE; i++) {
       new(&objs_[i].data) T();
@@ -439,7 +439,7 @@ ObWaitablePool<T, SIZE>::~ObWaitablePool()
   }
   if (NULL != objs_) {
     if (SIZE != counter) {
-      _OB_LOG(ERROR, "still have %ld node not been free, memory=%p will leek", SIZE - counter, objs_);
+      _OB_LOG(EDIAG, "still have %ld node not been free, memory=%p will leek", SIZE - counter, objs_);
     } else {
       ob_free(objs_);
     }

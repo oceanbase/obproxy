@@ -80,9 +80,9 @@ inline ObPriorityEventQueue::ObPriorityEventQueue()
 inline void ObPriorityEventQueue::enqueue(ObEvent *e, const ObHRTime now)
 {
   if (OB_ISNULL(e)) {
-    PROXY_EVENT_LOG(WARN, "event NULL, it should not happened");
+    PROXY_EVENT_LOG(WDIAG, "event NULL, it should not happened");
   } else if (OB_UNLIKELY(e->in_the_priority_queue_) || OB_UNLIKELY(e->in_the_prot_queue_)) {
-    PROXY_EVENT_LOG(WARN, "event has already in queue, it should not happened", K(*e));
+    PROXY_EVENT_LOG(WDIAG, "event has already in queue, it should not happened", K(*e));
   } else {
     ObHRTime t = e->timeout_at_ - now;
     uint32_t i = 0;
@@ -135,11 +135,11 @@ inline void ObPriorityEventQueue::enqueue(ObEvent *e, const ObHRTime now)
 inline void ObPriorityEventQueue::remove(ObEvent *e)
 {
   if (OB_ISNULL(e)) {
-    PROXY_EVENT_LOG(WARN, "event NULL, it should not happened");
+    PROXY_EVENT_LOG(WDIAG, "event NULL, it should not happened");
   } else if (OB_UNLIKELY(!e->in_the_priority_queue_)) {
-    PROXY_EVENT_LOG(WARN, "event is not in_the_priority_queue, it should not happened", K(*e));
+    PROXY_EVENT_LOG(WDIAG, "event is not in_the_priority_queue, it should not happened", K(*e));
   } else if (OB_UNLIKELY(OB_UNLIKELY(e->in_the_prot_queue_))) {
-    PROXY_EVENT_LOG(WARN, "event has already in in_the_prot_queue_, it should not happened", K(*e));
+    PROXY_EVENT_LOG(WDIAG, "event has already in in_the_prot_queue_, it should not happened", K(*e));
   } else {
     e->in_the_priority_queue_ = 0;
     after_queue_[e->in_heap_].remove(e);
@@ -152,9 +152,9 @@ inline ObEvent *ObPriorityEventQueue::dequeue_ready()
   ObEvent *event_ret = after_queue_[0].dequeue();
   if (NULL != event_ret) {
     if (OB_UNLIKELY(!event_ret->in_the_priority_queue_)) {
-      PROXY_EVENT_LOG(WARN, "event is not in_the_priority_queue, it should not happened", K(*event_ret));
+      PROXY_EVENT_LOG(WDIAG, "event is not in_the_priority_queue, it should not happened", K(*event_ret));
     } else if (OB_UNLIKELY(OB_UNLIKELY(event_ret->in_the_prot_queue_))) {
-      PROXY_EVENT_LOG(WARN, "event has already in in_the_prot_queue_, it should not happened", K(*event_ret));
+      PROXY_EVENT_LOG(WDIAG, "event has already in in_the_prot_queue_, it should not happened", K(*event_ret));
     } else {
       event_ret->in_the_priority_queue_ = 0;
       --after_queue_size_;

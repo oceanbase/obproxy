@@ -26,11 +26,30 @@
 #define YYLEX_PARAM result->yyscan_info_
 extern void yyerror(YYLTYPE* yylloc, ObExprParseResult* p, char* s,...);
 extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
+extern void obproxy_parse_free(void *ptr);
 
 static inline bool is_equal(ObProxyParseString *l, ObProxyParseString *r)
 {
   return NULL != l && NULL != r && l->str_len_ == r->str_len_
          && 0 == strncasecmp(l->str_, r->str_, l->str_len_);
+}
+
+static inline bool is_parameter_token_type(const ObProxyTokenType type)
+{
+  bool bret = false;
+  switch (type)
+  {
+  case TOKEN_STR_VAL:
+  case TOKEN_INT_VAL:
+  case TOKEN_FUNC:
+  case TOKEN_NULL:
+    bret = true; 
+    break;
+  default:
+    bret = false;
+    break;
+  }
+  return bret;
 }
 
 static inline void add_token(ObProxyTokenList *list, ObExprParseResult *result, ObProxyTokenNode *node)
@@ -49,14 +68,16 @@ static inline void add_token(ObProxyTokenList *list, ObExprParseResult *result, 
   }
 }
 
-// expr in (xxx,xxx,xxx)
+// column in (xxx,xxx,xxx) / column = func(xxx,xxx,xxx)
+// we only care about the first parameter of the first case
+// and function parameters only support str/int/func/null
 static inline void add_token_list(ObProxyTokenList *list, ObProxyTokenList *next_list)
 {
   if (OB_ISNULL(list) || OB_ISNULL(next_list)) {
   } else if (NULL != list->tail_
              && NULL  != next_list->head_
-             && (TOKEN_INT_VAL == list->tail_->type_ || TOKEN_STR_VAL == list->tail_->type_ || TOKEN_FUNC == list->tail_->type_)
-             && (TOKEN_INT_VAL == next_list->head_->type_ || TOKEN_STR_VAL == next_list->head_->type_ || TOKEN_FUNC == next_list->head_->type_)) {
+             && is_parameter_token_type(list->tail_->type_)
+             && is_parameter_token_type(next_list->head_->type_)) {
     list->tail_->next_ = next_list->head_;
     list->tail_ = next_list->head_;
     list->tail_->next_ = NULL;
@@ -139,6 +160,56 @@ static inline void init_part_key_all_match(ObExprParseResult *result)
       result->part_key_info_.part_keys_[i].is_exist_in_sql_ = true;
   }
 }
+
+#define store_const_str(str_value, str, str_len)                 \
+  do {                                                           \
+    str_value.str_ = str;                                        \
+    if (str == NULL) {                                           \
+      str_value.str_len_ = 0;                                    \
+      str_value.end_ptr_ = NULL;                                 \
+    } else {                                                     \
+      str_value.str_len_ = str_len;                              \
+      str_value.end_ptr_ = str_value.str_ + str_value.str_len_;  \
+    }                                                            \
+  } while (0)
+
+#define malloc_func_node(node, result, operator)                           \
+  do {                                                                     \
+    if (OB_ISNULL(node = ((ObProxyTokenNode *)obproxy_parse_malloc(        \
+                      sizeof(ObProxyTokenNode), result->malloc_pool_)))) { \
+      YYABORT;                                                             \
+    } else {                                                               \
+      node->type_ = TOKEN_FUNC;                                            \
+      node->child_ = NULL;                                                 \
+      node->next_ = NULL;                                                  \
+      node->str_value_.str_len_ = 1;                                       \
+      switch (operator) {                                                  \
+        case OPT_ADD:                                                      \
+          store_const_str(node->str_value_, "+", 1);                       \
+          break;                                                           \
+        case OPT_MINUS:                                                    \
+          store_const_str(node->str_value_, "-", 1);                       \
+          break;                                                           \
+        case OPT_MUL:                                                      \
+          store_const_str(node->str_value_, "*", 1);                       \
+          break;                                                           \
+        case OPT_DIV:                                                      \
+          store_const_str(node->str_value_, "/", 1);                       \
+          break;                                                           \
+        case OPT_MOD:                                                      \
+          store_const_str(node->str_value_, "%", 1);                       \
+          break;                                                           \
+        case OPT_AND:                                                      \
+          store_const_str(node->str_value_, "&", 1);                       \
+          break;                                                           \
+        case OPT_NOT:                                                      \
+          store_const_str(node->str_value_, "!", 1);                       \
+          break;                                                           \
+        default:                                                           \
+          break;                                                           \
+      }                                                                    \
+    }                                                                      \
+  } while (0)
 
 #define malloc_node(node, result, type)                                                       \
   do {                                                                                        \
@@ -452,23 +523,94 @@ static inline void add_right_relation_value(ObExprParseResult *result,
   }
 }
 
+static inline ObProxyTokenNode* calc_unary_operator(ObProxyTokenNode *node, ObExprParseResult *result, 
+                                       ObProxyOperatorType operator)
+{
+  ObProxyTokenNode *token_node = node;
+  if (node == NULL) {
+    // do nothing
+  } else if (OPT_MINUS != operator) {
+    // only need handle '-' now
+    // do nothing
+  } else if (TOKEN_INT_VAL == node->type_) {
+    // don't worry out of range
+    node->int_value_ = - node->int_value_;
+  } else if (TOKEN_STR_VAL == node->type_) {
+    // convert 'str' -> '-str'
+    void *tmp_buf = NULL;
+    if (OB_ISNULL(tmp_buf = ((char *)obproxy_parse_malloc(node->str_value_.str_len_ + 1, result->malloc_pool_)))) { 
+        //do nothing                                                                                
+    } else {
+      node->str_value_.str_len_ = node->str_value_.str_len_ + 1;
+      if (OPT_ADD == operator) {
+        memcpy(tmp_buf, "+", 1);
+      } else {
+        memcpy(tmp_buf, "-", 1);
+      }
+      memcpy(tmp_buf + 1, node->str_value_.str_, node->str_value_.str_len_ - 1);
+      node->str_value_.str_ = tmp_buf;
+      node->str_value_.end_ptr_ = node->str_value_.str_ + node->str_value_.str_len_;
+    }
+  } else if (TOKEN_FUNC == node->type_) {
+    // convert func: [-xxx()] ->  [0 - xxx()]                                                                
+    ObProxyTokenNode *dummy_param = NULL;
+    ObProxyTokenList *list = NULL;
+    // we do nothing in obproxy_parse_free, memory will be free in allocator.resuse() finnaly
+    if (OB_ISNULL(token_node = ((ObProxyTokenNode *)obproxy_parse_malloc(sizeof(ObProxyTokenNode), result->malloc_pool_)))) {
+      // return NULL
+    } else if (OB_ISNULL(dummy_param = ((ObProxyTokenNode *)obproxy_parse_malloc(sizeof(ObProxyTokenNode), result->malloc_pool_)))) {
+      token_node = NULL;
+      obproxy_parse_free(token_node);
+      // return NULL
+    } else if (OB_ISNULL(list = ((ObProxyTokenList *)obproxy_parse_malloc(sizeof(ObProxyTokenList), result->malloc_pool_)))) {
+      token_node = NULL;
+      list = NULL;
+      obproxy_parse_free(token_node);
+      obproxy_parse_free(list);
+      // return NULL
+    } else {
+      token_node->type_ = TOKEN_FUNC;                                                               
+      token_node->child_ = list;                                                                    
+      token_node->next_ = NULL;
+      store_const_str(token_node->str_value_, "-", 1);
+      dummy_param->type_ = TOKEN_INT_VAL;
+      dummy_param->child_ = NULL;
+      dummy_param->next_ = NULL;
+      dummy_param->int_value_ = 0;
+      list->head_ = dummy_param;
+      list->tail_ = dummy_param;
+      list->tail_->next_ = node;
+      list->tail_ = node;
+    }
+  }
+  return token_node;
+}
+
 %}
 
  /* dummy node */
 %token DUMMY_SELECT_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
-%token WHERE AS VALUES SET END_WHERE JOIN
-%token AND_OP OR_OP IN ON BETWEEN IS TOKEN_NULL NOT
+%token WHERE AS VALUES SET END_WHERE JOIN BOTH LEADING TRAILING FROM
+%token AND_OP OR_OP IN ON BETWEEN IS NULL_VAL NOT
 %token COMP_EQ COMP_NSEQ COMP_GE COMP_GT COMP_LE COMP_LT COMP_NE
 %token PLACE_HOLDER
 %token END_P ERROR IGNORED_WORD
+ /* expression priority */
+ %left '&'
+ %left '+' '-'
+ %left '*' '/' '%'
+ %nonassoc LOWER_PARENS
+ %left '(' 
+ %right ')'
+ %nonassoc HIGHER_PARENS
+ %right '!'
  /* type token */
-%token<str> NAME_OB STR_VAL ROW_ID REVERSED_EXPR_FUNC HEX_VAL
+%token<str> NAME_OB STR_VAL ROW_ID NONE_PARAM_FUNC HEX_VAL TRIM 
 %token<num> INT_VAL POS_PLACE_HOLDER
 %type<func> comp
-%type<node> token opt_column
-%type<list> expr token_list in_expr_list column_list func_param_list
-%type<operator> operator
+%type<node> token opt_column simple_expr trim_type
+%type<list> expr token_list in_expr_list column_list func_param_list trim_param_list trim_type_list
 %type<relation> bool_pri
 %start start
 %%
@@ -481,7 +623,6 @@ select_root: WHERE cond_expr end_flag { YYACCEPT; }
            | error { YYACCEPT; }
 
 end_flag: END_WHERE
-        | ')'
         | ';'
         | END_P
 
@@ -504,7 +645,6 @@ cond_expr: bool_pri { check_and_add_relation(result, $1); }
          | '(' cond_expr OR_OP bool_pri ')' { check_and_add_relation(result, $4); }
 
 bool_pri: expr comp expr { add_relation(result, $1, $2,$3); $$ = get_relation(result, $1, $2, $3); }
-        | expr comp '(' expr ')' { add_relation(result, $1, $2,$4); $$ = get_relation(result, $1, $2, $4); }
         | '(' expr comp expr ')' { $$ = get_relation(result, $2, $3, $4); add_relation(result, $2, $3,$4); }
         | expr IN '(' in_expr_list ')' { $$ = get_relation(result, $1, F_COMP_EQ, $4); add_relation(result, $1, F_COMP_EQ,$4); }
         | expr BETWEEN expr AND_OP expr
@@ -517,8 +657,24 @@ bool_pri: expr comp expr { add_relation(result, $1, $2,$3); $$ = get_relation(re
           add_relation(result, $1, F_COMP_LE, $5);
           $$ = NULL;
         }
-        | expr IS TOKEN_NULL { $$ = NULL; }
-        | expr IS NOT TOKEN_NULL { $$ = NULL; }
+        | expr IS NULL_VAL
+        {
+          ObProxyTokenNode *null_node = NULL;
+          ObProxyTokenList *token_list = NULL;
+          malloc_node(null_node, result, TOKEN_NULL);
+          malloc_list(token_list, result, null_node);
+          add_relation(result, $1, F_COMP_EQ, token_list);
+          $$ = get_relation(result, $1, F_COMP_EQ, token_list);
+        }
+        | expr IS NOT NULL_VAL
+        {
+          ObProxyTokenNode *null_node = NULL;
+          ObProxyTokenList *token_list = NULL;
+          malloc_node(null_node, result, TOKEN_NULL);
+          malloc_list(token_list, result, null_node);
+          add_relation(result, $1, F_COMP_NE, token_list);
+          $$ = get_relation(result, $1, F_COMP_NE, token_list);
+        }
 
 comp: COMP_EQ   { $$ = F_COMP_EQ; }
     | COMP_NSEQ { $$ = F_COMP_NSEQ; }
@@ -533,13 +689,95 @@ in_expr_list: expr { $$ = $1; }
 
 expr: token_list { $$ = $1; }
 
-token_list: token { malloc_list($$, result, $1); }
-          | token_list token { add_token($1, result, $2); $$ = $1; }
+token_list: simple_expr { malloc_list($$, result, $1); }
+          | token_list token { add_token($1, result, $2); $$ = $1; } 
+
+simple_expr: token { $$ = $1; }
+          | '(' simple_expr ')' %prec HIGHER_PARENS { $$ = $2; }
+          | '+' simple_expr %prec '*' { $$ = calc_unary_operator($2, result, OPT_ADD); }
+          | '-' simple_expr %prec '*' { $$ = calc_unary_operator($2, result, OPT_MINUS); }
+          | '!' simple_expr %prec '!'
+          {
+            ObProxyTokenList *dummylist = NULL;
+            malloc_list(dummylist, result, $2);
+            malloc_func_node($$, result, OPT_NOT);
+            $$->child_ = dummylist;
+          }
+          | simple_expr '+' simple_expr %prec '+'
+          {
+            ObProxyTokenList *dummylist = NULL;
+            malloc_list(dummylist, result, $1);
+            add_token(dummylist, result, $3);
+            malloc_func_node($$, result, OPT_ADD);
+            $$->child_ = dummylist;
+          }
+          | simple_expr '-' simple_expr %prec '-'
+          {
+            ObProxyTokenList *dummylist = NULL;
+            malloc_list(dummylist, result, $1);
+            add_token(dummylist, result, $3);
+            malloc_func_node($$, result, OPT_MINUS);
+            $$->child_ = dummylist;
+          }
+          | simple_expr '*' simple_expr %prec '*'
+          {
+            ObProxyTokenList *dummylist = NULL;
+            malloc_list(dummylist, result, $1);
+            add_token(dummylist, result, $3);
+            malloc_func_node($$, result, OPT_MUL);
+            $$->child_ = dummylist;
+          }
+          | simple_expr '/' simple_expr %prec '/'
+          {
+            ObProxyTokenList *dummylist = NULL;
+            malloc_list(dummylist, result, $1);
+            add_token(dummylist, result, $3);
+            malloc_func_node($$, result, OPT_DIV);
+            $$->child_ = dummylist;
+          }
+          | simple_expr '&' simple_expr %prec '&' 
+          {
+            ObProxyTokenList *dummylist = NULL;
+            malloc_list(dummylist, result, $1);
+            add_token(dummylist, result, $3);
+            malloc_func_node($$, result, OPT_AND);
+            $$->child_ = dummylist;
+          }
+          | simple_expr '%' simple_expr %prec '%'
+          {
+            ObProxyTokenList *dummylist = NULL;
+            malloc_list(dummylist, result, $1);
+            add_token(dummylist, result, $3);
+            malloc_func_node($$, result, OPT_MOD);
+            $$->child_ = dummylist;
+          }
 
 func_param_list: { $$ = NULL; } /* empty */
                | token_list ',' token_list         { add_token_list($1, $3); $$ = $1; }
                | func_param_list ',' token_list    { add_token_list($1, $3); $$ = $1; }
 
+trim_param_list: simple_expr { malloc_list($$, result, $1); }
+               | trim_type_list FROM token { add_token($1, result, $3); $$ = $1; }
+
+trim_type_list: trim_type { malloc_list($$, result, $1); }
+              | token 
+              { 
+                ObProxyTokenNode *default_type = NULL;
+                malloc_node(default_type, result, TOKEN_INT_VAL);
+                default_type->int_value_ = 0;
+                malloc_list($$, result, default_type);
+                add_token($$, result, $1); 
+              }
+              | trim_type token
+              {
+                malloc_list($$, result, $1);
+                add_token($$, result, $2);
+              }
+
+trim_type: BOTH { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = 0; }
+         | LEADING { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = 1; }
+         | TRAILING { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = 2; }
+               
 token:
      ROW_ID
      {
@@ -570,11 +808,28 @@ token:
        $$->part_key_idx_ = get_part_key_idx(&$1, &$3, &$5, result);
        $$->column_name_ = $5;
      }
-     | REVERSED_EXPR_FUNC 
+     | NONE_PARAM_FUNC
      {
        malloc_node($$, result, TOKEN_FUNC);
        $$->str_value_ = $1;
      } 
+     | NONE_PARAM_FUNC '(' ')'
+     {
+       malloc_node($$, result, TOKEN_FUNC);
+       $$->str_value_ = $1;
+     }
+     | NONE_PARAM_FUNC '(' token_list ')'
+     {
+       malloc_node($$, result, TOKEN_FUNC);
+       $$->str_value_ = $1;
+       $$->child_ = $3;
+     }
+     | TRIM '(' trim_param_list ')' 
+     {
+      malloc_node($$, result, TOKEN_FUNC);
+      $$->str_value_ = $1;
+      $$->child_ = $3;
+     }
      | NAME_OB '(' token_list ')'
      {
        malloc_node($$, result, TOKEN_FUNC);
@@ -585,11 +840,10 @@ token:
      {
        malloc_node($$, result, TOKEN_FUNC);
        $$->str_value_ = $1;
-	   $$->child_ = $3;
+	     $$->child_ = $3;
      }
      | INT_VAL { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = $1; }
      | STR_VAL { malloc_node($$, result, TOKEN_STR_VAL); $$->str_value_ = $1; }
-     | operator { malloc_node($$, result, TOKEN_OPERATOR); $$->operator_ = $1; }
      | PLACE_HOLDER
      {
        result->placeholder_list_idx_++;
@@ -601,14 +855,10 @@ token:
        malloc_node($$, result, TOKEN_PLACE_HOLDER);
        $$->placeholder_idx_ = $1;
      }
-
-operator: '+' { $$ = OPT_ADD; }
-        | '-' { $$ = OPT_MINUS; }
-        | '*' { $$ = OPT_MUL; }
-        | '/' { $$ = OPT_DIV; }
-        | '%' { $$ = OPT_MOD; }
-        | '&' { $$ = OPT_AND; }
-        | '!' { $$ = OPT_NOT; }
+     | NULL_VAL
+     {
+       malloc_node($$, result, TOKEN_NULL);
+     }
 
 insert_root: opt_column_list VALUES values_expr_lists end_flag { YYACCEPT; }
            | SET set_expr opt_where_clause end_flag { YYACCEPT; }

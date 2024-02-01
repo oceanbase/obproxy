@@ -72,7 +72,7 @@ public:
           break;
         } else if (OB_LIKELY((*array_)[ARRAY_INDEX(pos)] == item)) {
           if (OB_UNLIKELY(idx != ARRAY_INDEX(pos))) {
-            _OB_LOG(WARN, "idx %ld, exist idx %lu", idx,
+            _OB_LOG(WDIAG, "idx %ld, exist idx %lu", idx,
                     static_cast<uint64_t>(ARRAY_INDEX(pos)));
             ret = OB_ENTRY_EXIST;
           }
@@ -85,7 +85,7 @@ public:
 
       if (OB_UNLIKELY(N == i)) {
         ret = OB_HASH_FULL;
-        _OB_LOG(ERROR, "hash bucket are full, N %lu, ret %d", N, ret);
+        _OB_LOG(EDIAG, "hash bucket are full, N %lu, ret %d", N, ret);
       }
     }
     return ret;

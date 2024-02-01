@@ -44,14 +44,14 @@ int OMPKHandshakeResponse::decode()
   if (NULL != cdata_) {
     if (len < 2) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("error hand shake response packet", K(len), K(ret));
+      LOG_WDIAG("error hand shake response packet", K(len), K(ret));
     }
 
     if (OB_SUCC(ret) && pos < end) {
       capability_.capability_ = uint2korr(pos);
       if (4 == len && !capability_.cap_flags_.OB_CLIENT_PROTOCOL_41) {
         ret = OB_NOT_SUPPORTED;
-        LOG_ERROR("ob only support mysql client protocol 4.1", K(ret));
+        LOG_EDIAG("ob only support mysql client protocol 4.1", K(ret));
       } else {
         ObMySQLUtil::get_uint4(pos, capability_.capability_);
         ObMySQLUtil::get_uint4(pos, max_packet_size_); //16MB
@@ -77,7 +77,7 @@ int OMPKHandshakeResponse::decode()
           auth_response_.assign_ptr(pos, static_cast<uint32_t>(auth_response_len));
           pos += auth_response_len;
         } else {
-          LOG_WARN("fail to get len encode number", K(ret));
+          LOG_WDIAG("fail to get len encode number", K(ret));
         }
       } else if (capability_.cap_flags_.OB_CLIENT_SECURE_CONNECTION) {
         // 1           length of auth-response
@@ -138,7 +138,7 @@ int OMPKHandshakeResponse::decode()
                 if (pos > end) {
                   if (!maybe_connector_j) {
                     ret = OB_ERR_UNEXPECTED;
-                    LOG_WARN("unexpected error pos > end", K(ret), K(pos), K(end));
+                    LOG_WDIAG("unexpected error pos > end", K(ret), K(pos), K(end));
                   } else {
                     ret = OB_INVALID_ARGUMENT;
                     LOG_DEBUG("unexpected error pos > end, may by connector/j", K(ret), K(pos), K(end));
@@ -158,47 +158,43 @@ int OMPKHandshakeResponse::decode()
                       if (end - pos >= value_len) {
                         pos += value_len;
                         if (OB_FAIL(connect_attrs_.push_back(str_kv))) {
-                          LOG_WARN("fail to push back str_kv", K(str_kv), K(ret));
+                          LOG_WDIAG("fail to push back str_kv", K(str_kv), K(ret));
                         }
                       }
                     } else {
-                      ret = OB_INVALID_ARGUMENT;
                       if (!maybe_connector_j) {
-                        LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(value_len));
+                        LOG_EDIAG("invalid packet", K(all_attrs_len), K(value_len));
                       } else {
-                        LOG_DEBUG("invalid packet, may by connector/j", K(ret), K(all_attrs_len), K(value_len));
+                        LOG_DEBUG("invalid packet, may by connector/j", K(all_attrs_len), K(value_len));
                       }
                     }
                   } else {
-                    ret = OB_INVALID_ARGUMENT;
                     if (!maybe_connector_j) {
-                      LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(value_inc_len));
+                      LOG_EDIAG("invalid packet", K(all_attrs_len), K(value_inc_len));
                     } else {
-                      LOG_DEBUG("invalid packet, may by connector/j", K(ret), K(all_attrs_len), K(value_inc_len));
+                      LOG_DEBUG("invalid packet, may by connector/j", K(all_attrs_len), K(value_inc_len));
                     }
                   }
                 }
               } else {
-                ret = OB_INVALID_ARGUMENT;
                 if (!maybe_connector_j) {
-                  LOG_ERROR("invalid packet", K(ret), K(all_attrs_len), K(key_len));
+                  LOG_EDIAG("invalid packet", K(all_attrs_len), K(key_len));
                 } else {
-                  LOG_DEBUG("invalid packet, may by connector/j", K(ret), K(all_attrs_len), K(key_len));
+                  LOG_DEBUG("invalid packet, may by connector/j", K(all_attrs_len), K(key_len));
                 }
               }
             } else {
-              ret = OB_INVALID_ARGUMENT;
               if (!maybe_connector_j) {
-                LOG_ERROR("error", K(ret), K(all_attrs_len), K(key_inc_len));
+                LOG_EDIAG("error", K(all_attrs_len), K(key_inc_len));
               } else {
-                LOG_DEBUG("error, may by connector/j", K(ret), K(all_attrs_len), K(key_inc_len));
+                LOG_DEBUG("error, may by connector/j", K(all_attrs_len), K(key_inc_len));
               }
             }
           }
         } else {
           ret = OB_INVALID_ARGUMENT;
           if (!maybe_connector_j) {
-            LOG_ERROR("get len fail", K(ret), K(pos), K(all_attrs_len));
+            LOG_EDIAG("get len fail", K(ret), K(pos), K(all_attrs_len));
           } else {
             LOG_DEBUG("get len fail, may by connector/j", K(ret), K(pos), K(all_attrs_len));
           }
@@ -213,7 +209,7 @@ int OMPKHandshakeResponse::decode()
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(ret), K(cdata_));
+    LOG_EDIAG("null input", K(ret), K(cdata_));
   }
   // MySQL doesn't care whether there's bytes remain, we do so.  JDBC
   // won't set OB_CLIENT_CONNECT_WITH_DB but leaves a '\0' in the db
@@ -261,60 +257,60 @@ int OMPKHandshakeResponse::serialize(char *buffer, const int64_t length, int64_t
   int ret = OB_SUCCESS;
 
   if (NULL == buffer || length - pos < static_cast<int64_t>(get_serialize_size())) {
-    LOG_WARN("invalid argument", K(buffer), K(length), K(pos), "need_size", get_serialize_size());
+    LOG_WDIAG("invalid argument", K(buffer), K(length), K(pos), "need_size", get_serialize_size());
     ret = OB_INVALID_ARGUMENT;
   } else {
     if (OB_FAIL(ObMySQLUtil::store_int4(buffer, length, capability_ .capability_, pos))) {
-      LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+      LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int4(buffer, length, max_packet_size_, pos))) {
-      LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+      LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
     } else if (OB_FAIL(ObMySQLUtil::store_int1(buffer, length, character_set_, pos))) {
-      LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+      LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
     } else {
       char reserved[HAND_SHAKE_RESPONSE_RESERVED_SIZE];
       memset(reserved, 0, sizeof (reserved));
       if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buffer, length, reserved, sizeof (reserved), pos))) {
-        LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+        LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
       }
       if (OB_SUCC(ret)) {
         if (OB_FAIL(ObMySQLUtil::store_obstr_zt(buffer, length, username_, pos))) {
-          LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+          LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
         }
       }
       if (capability_.cap_flags_.OB_CLIENT_PLUGIN_AUTH_LENENC_CLIENT_DATA) {
         if (OB_SUCC(ret)) {
           if (OB_FAIL(ObMySQLUtil::store_obstr(buffer, length, auth_response_, pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           }
         }
       } else if (capability_.cap_flags_.OB_CLIENT_SECURE_CONNECTION ) {
         if (OB_SUCC(ret)) {
           if (OB_FAIL(ObMySQLUtil::store_int1(buffer, length,
               static_cast<uint8_t>(auth_response_.length()), pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buffer, length,
               auth_response_.ptr(), auth_response_.length(), pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           }
         }
       } else {
         if (OB_SUCC(ret)) {
           if (OB_FAIL(ObMySQLUtil::store_obstr_zt(buffer, length, auth_response_, pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           }
         }
       }
       if (capability_.cap_flags_.OB_CLIENT_CONNECT_WITH_DB) {
         if (OB_SUCC(ret)) {
           if (OB_FAIL(ObMySQLUtil::store_obstr_zt(buffer, length, database_, pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           }
         }
       }
       if (capability_.cap_flags_.OB_CLIENT_PLUGIN_AUTH) {
         if (OB_SUCC(ret)) {
           if (OB_FAIL(ObMySQLUtil::store_obstr_zt(buffer, length, auth_plugin_name_, pos)))  {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           }
         }
       }
@@ -322,7 +318,7 @@ int OMPKHandshakeResponse::serialize(char *buffer, const int64_t length, int64_t
         uint64_t all_attr_len = get_connect_attrs_len();
         if (OB_SUCC(ret)) {
           if (OB_FAIL(ObMySQLUtil::store_length(buffer, length, all_attr_len, pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           }
         }
 
@@ -330,9 +326,9 @@ int OMPKHandshakeResponse::serialize(char *buffer, const int64_t length, int64_t
         for (int64_t i = 0; OB_SUCC(ret) && i <  connect_attrs_.count(); ++i) {
           string_kv = connect_attrs_.at(i);
           if (OB_FAIL(ObMySQLUtil::store_obstr(buffer, length, string_kv.key_, pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           } else if (OB_FAIL(ObMySQLUtil::store_obstr(buffer, length, string_kv.value_, pos))) {
-            LOG_WARN("store fail", K(ret), K(buffer), K(length), K(pos));
+            LOG_WDIAG("store fail", K(ret), K(buffer), K(length), K(pos));
           }
         }
       }
@@ -347,9 +343,9 @@ int OMPKHandshakeResponse::add_connect_attr(const ObStringKV &string_kv)
   int ret = OB_SUCCESS;
   if (string_kv.key_.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(string_kv), K(ret));
+    LOG_WDIAG("invalid input value", K(string_kv), K(ret));
   } else if (OB_FAIL(connect_attrs_.push_back(string_kv))) {
-    LOG_WARN("fail to push back string kv", K(string_kv), K(ret));
+    LOG_WDIAG("fail to push back string kv", K(string_kv), K(ret));
   }
   return ret;
 }

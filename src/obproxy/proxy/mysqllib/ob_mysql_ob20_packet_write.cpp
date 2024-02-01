@@ -31,7 +31,7 @@ namespace proxy
 
 int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
                                                      const ObMySQLRawPacket &packet,
-                                                     const Ob20ProtocolHeaderParam &ob20_head_param,
+                                                     Ob20HeaderParam &ob20_head_param,
                                                      const common::ObIArray<ObObJKV> *extra_info)
 {
   int ret = OB_SUCCESS;
@@ -41,15 +41,15 @@ int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
   const int64_t packet_len = packet.get_clen() + MYSQL_NET_META_LENGTH;
   if (OB_ISNULL(tmp_mio_buf = new_miobuffer(packet_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to new miobuffer", K(ret));
+    LOG_WDIAG("fail to new miobuffer", K(ret));
   } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to alloc reader", K(ret));
+    LOG_WDIAG("fail to alloc reader", K(ret));
   } else if (OB_FAIL(packet::ObMysqlPacketWriter::write_raw_packet(*tmp_mio_buf, packet))) {
-    LOG_WARN("fail to write raw packet", K(ret));
+    LOG_WDIAG("fail to write raw packet", K(ret));
   } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
                        tmp_mio_reader->read_avail(), ob20_head_param, extra_info))) {
-    LOG_WARN("fail to consume and compress data", K(ret));
+    LOG_WDIAG("fail to consume and compress data", K(ret));
   } else {
     // nothing
   }
@@ -65,7 +65,7 @@ int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
 
 int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
                                                      const obmysql::ObMySQLPacket &packet,
-                                                     const Ob20ProtocolHeaderParam &ob20_head_param)
+                                                     Ob20HeaderParam &ob20_head_param)
 {
   int ret = OB_SUCCESS;
 
@@ -78,18 +78,18 @@ int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
 
   if (OB_ISNULL(tmp_mio_buf = new_miobuffer(packet_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to new miobuffer", K(ret), K(packet_len));
+    LOG_WDIAG("fail to new miobuffer", K(ret), K(packet_len));
   } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to alloc reader", K(ret));
+    LOG_WDIAG("fail to alloc reader", K(ret));
   } else if (ObMySQLPacket::encode_packet(tmp_mio_buf->end(), tmp_len, pos, packet)) {
-    LOG_WARN("fail to encode packet",  K(ret), K(tmp_len), K(pos), K(pos), K(packet_len), K(packet));
+    LOG_WDIAG("fail to encode packet",  K(ret), K(tmp_len), K(pos), K(pos), K(packet_len), K(packet));
   } else if (OB_FAIL(tmp_mio_buf->fill(pos))) {
     // move start pointer
-    LOG_WARN("fail to fill iobuffer", K(ret), K(pos));
+    LOG_WDIAG("fail to fill iobuffer", K(ret), K(pos));
   } else if (ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
                                                        tmp_mio_reader->read_avail(), ob20_head_param)) {
-    LOG_WARN("fail to consume and compress data", K(ret));
+    LOG_WDIAG("fail to consume and compress data", K(ret));
   } else {
     // nothing
   }
@@ -105,7 +105,7 @@ int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
 }
 
 int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const common::ObString &packet_str,
-                                              const Ob20ProtocolHeaderParam &ob20_head_param)
+                                             Ob20HeaderParam &ob20_head_param)
 {
   int ret = OB_SUCCESS;
 
@@ -114,25 +114,25 @@ int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const
   const int64_t buf_len = packet_str.length(); 
   if (OB_UNLIKELY(buf == NULL) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument before write raw packet", K(ret), K(buf), K(buf_len));
+    LOG_WDIAG("invalid argument before write raw packet", K(ret), K(buf), K(buf_len));
   } else {
     ObMIOBuffer *tmp_mio_buf = NULL;
     ObIOBufferReader *tmp_mio_reader = NULL;
     int64_t written_len = 0;
     if (OB_ISNULL(tmp_mio_buf = new_miobuffer(buf_len))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new miobuffer", K(ret), K(buf_len));
+      LOG_WDIAG("fail to new miobuffer", K(ret), K(buf_len));
     } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to alloc reader", K(ret));
+      LOG_WDIAG("fail to alloc reader", K(ret));
     } else if (OB_FAIL(tmp_mio_buf->write(buf, buf_len, written_len))) {
-      LOG_WARN("fail to write", K(buf_len), K(ret));
+      LOG_WDIAG("fail to write", K(buf_len), K(ret));
     } else if (OB_UNLIKELY(written_len != buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("written_len dismatch", K(written_len), K(buf_len), K(ret));
+      LOG_WDIAG("written_len dismatch", K(written_len), K(buf_len), K(ret));
     } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
                                                                  tmp_mio_reader->read_avail(), ob20_head_param))) {
-      LOG_WARN("fail to consume and compress data", K(ret));
+      LOG_WDIAG("fail to consume and compress data", K(ret));
     } else {
       LOG_DEBUG("succ to write raw packet in ob20 format");
     }
@@ -150,34 +150,22 @@ int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const
 int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf,
                                                   const ObMySQLCmd cmd,
                                                   const common::ObString &sql_str,
-                                                  const uint32_t conn_id,
-                                                  const uint32_t req_id,
-                                                  const uint8_t compressed_seq,
-                                                  const uint8_t pkt_seq,
-                                                  const bool is_last_packet,
-                                                  const bool is_weak_read,
-                                                  const bool is_need_reroute,
-                                                  const bool is_new_extra_info,
-                                                  const bool is_trans_internal_routing,
-                                                  const bool is_proxy_switch_route,
+                                                  Ob20HeaderParam &ob20_head_param,
                                                   const common::ObIArray<ObObJKV> *extra_info)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(sql_str.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(sql_str), K(ret));
+    LOG_WDIAG("invalid argument", K(sql_str), K(ret));
   } else if (OB_UNLIKELY(sql_str.length() > MYSQL_PACKET_MAX_LENGTH)) {
     ret = OB_NOT_SUPPORTED;
-    LOG_WARN("we cannot support packet which is larger than 16MB", K(sql_str),
+    LOG_WDIAG("we cannot support packet which is larger than 16MB", K(sql_str),
              K(MYSQL_PACKET_MAX_LENGTH), K(ret));
   } else {
-    Ob20ProtocolHeaderParam ob20_head_param(conn_id, req_id, compressed_seq, pkt_seq, is_last_packet,
-                                            is_weak_read, is_need_reroute,
-                                            is_new_extra_info, is_trans_internal_routing, is_proxy_switch_route);
     ObMySQLRawPacket com_pkt(cmd);
     com_pkt.set_content(sql_str.ptr(), static_cast<uint32_t>(sql_str.length()));
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_compressed_packet(mio_buf, com_pkt, ob20_head_param, extra_info))) {
-      LOG_WARN("write packet failed", K(sql_str), K(ret));
+      LOG_WDIAG("write packet failed", K(sql_str), K(ret));
     }
   }
   return ret;
@@ -186,7 +174,7 @@ int ObMysqlOB20PacketWriter::write_request_packet(ObMIOBuffer &mio_buf,
 int ObMysqlOB20PacketWriter::write_packet(ObMIOBuffer &mio_buf,
                                           const char *buf,
                                           const int64_t buf_len,
-                                          const Ob20ProtocolHeaderParam &ob20_head_param)
+                                         Ob20HeaderParam &ob20_head_param)
 {
   int ret = OB_SUCCESS;
 
@@ -199,16 +187,16 @@ int ObMysqlOB20PacketWriter::write_packet(ObMIOBuffer &mio_buf,
 
 int ObMysqlOB20PacketWriter::write_packet(ObMIOBuffer &mio_buf,
                                           const obmysql::ObMySQLPacket &packet,
-                                          const Ob20ProtocolHeaderParam &ob20_head_param)
+                                         Ob20HeaderParam &ob20_head_param)
 {
   int ret = OB_SUCCESS;
   
   int64_t serialize_size = packet.get_serialize_size();
   if (OB_UNLIKELY(serialize_size < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid serialize size", K(ret), K(serialize_size));
+    LOG_WDIAG("invalid serialize size", K(ret), K(serialize_size));
   } else if (OB_FAIL(write_compressed_packet(mio_buf, packet, ob20_head_param))) {
-    LOG_WARN("fail to write compressed packet", K(ret), K(serialize_size));
+    LOG_WDIAG("fail to write compressed packet", K(ret), K(serialize_size));
   } else {
     // nothing
   }

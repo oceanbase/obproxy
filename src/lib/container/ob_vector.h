@@ -120,7 +120,7 @@ public:
   inline value_type &at(const int64_t index) const
   {
     if (OB_UNLIKELY(index < 0 || index >= size())) {
-      COMMON_LOG(ERROR, "invalid index", K(index), "size", size());
+      COMMON_LOG(EDIAG, "invalid index", K(index), "size", size());
     }
     return *(mem_begin_ + index);
   }
@@ -190,7 +190,7 @@ public:
     if (this != &other) {
       ret = vector_.assign(other.vector_);
       if (OB_FAIL(ret)) {
-        COMMON_LOG(WARN, "assign vector failed", K(ret));
+        COMMON_LOG(WDIAG, "assign vector failed", K(ret));
       }
     }
     return ret;
@@ -199,7 +199,7 @@ public:
   {
     int ret = assign(other);
     if (OB_FAIL(ret)) {
-      COMMON_LOG(WARN, "assign failed", K(ret));
+      COMMON_LOG(WDIAG, "assign failed", K(ret));
     }
     return *this;
   }
@@ -207,7 +207,7 @@ public:
   {
     int ret = assign(other);
     if (OB_FAIL(ret)) {
-      COMMON_LOG(WARN, "assign failed", K(ret));
+      COMMON_LOG(WDIAG, "assign failed", K(ret));
     }
   }
 

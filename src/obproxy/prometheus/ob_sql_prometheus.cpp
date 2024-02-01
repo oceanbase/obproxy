@@ -41,7 +41,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   const ObString vip_addr_name;
   if (OB_FAIL(handle_prometheus(logic_tenant_name, logic_database_name, cluster_name,
                                 tenant_name, vip_addr_name, database_name, stmt_type, metric, args))) {
-    LOG_WARN("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
+    LOG_WDIAG("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
              K(cluster_name), K(tenant_name), K(vip_addr_name), K(database_name), K(metric), K(ret));
   }
 
@@ -85,7 +85,7 @@ int ObSQLPrometheus::handle_prometheus(const ObClientSessionInfo &cs_info,
 
   if (OB_FAIL(handle_prometheus(logic_tenant_name, logic_database_name, cluster_name,
                                 tenant_name, vip_addr_name, database_name, OBPROXY_T_MAX, metric, args))) {
-    LOG_WARN("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
+    LOG_WDIAG("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
              K(cluster_name), K(tenant_name), K(vip_addr_name), K(database_name), K(metric), K(ret));
   }
 
@@ -118,7 +118,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   {
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
     if (OB_FAIL(g_ob_prometheus_processor.handle_counter(TRANSACTION_TOTAL, TRANSACTION_TOTAL_HELP, label_vector))) {
-      LOG_WARN("fail to handle counter with TRANSACTION_TOTAL", K(ret));
+      LOG_WDIAG("fail to handle counter with TRANSACTION_TOTAL", K(ret));
     }
     break;
   }
@@ -132,7 +132,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_TOTAL, REQUEST_TOTAL_HELP, label_vector))) {
-      LOG_WARN("fail to handle counter with REQUEST_TOTAL", K(ret));
+      LOG_WDIAG("fail to handle counter with REQUEST_TOTAL", K(ret));
     }
     break;
   }
@@ -147,7 +147,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_TIME_TYPE, ObProxyPrometheusUtils::get_metric_lable(metric), false);
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(COST_TOTAL, COST_TOTAL_HELP, label_vector, value))) {
-      LOG_WARN("fail to handle gauge with COST_TOTAL", K(ret));
+      LOG_WDIAG("fail to handle gauge with COST_TOTAL", K(ret));
     }
 
     /*
@@ -156,7 +156,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     buckets.push_back(get_global_proxy_config().monitor_stat_middle_threshold);
     buckets.push_back(get_global_proxy_config().monitor_stat_high_threshold);
     if (OB_FAIL(g_ob_prometheus_processor.handle_histogram(COST_TOTAL, COST_TOTAL_HELP, label_vector, value, buckets))) {
-      LOG_WARN("fail to handle counter with COST_TOTAL", K(ret));
+      LOG_WDIAG("fail to handle counter with COST_TOTAL", K(ret));
     }
     */
     break;
@@ -170,7 +170,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(CURRENT_SESSION, CURRENT_SESSION_HELP,
                                                        label_vector, value, false))) {
-      LOG_WARN("fail to handle counter with CURRENT_SESSION", K(ret));
+      LOG_WDIAG("fail to handle counter with CURRENT_SESSION", K(ret));
     }
     break;
   }
@@ -182,7 +182,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(USED_CONNECTIONS, USED_CONNECTIONS_HELP,
                                                        label_vector, value, false))) {
-      LOG_WARN("fail to handle counter with USED_CONNECTIONS", K(ret));
+      LOG_WDIAG("fail to handle counter with USED_CONNECTIONS", K(ret));
     }
     break;
   }

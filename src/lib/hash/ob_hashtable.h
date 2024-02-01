@@ -63,6 +63,11 @@ template <class _key_type,
           class _bucket_allocer>
 class ObHashTableConstIterator;
 
+template <class _value_type,
+          class _lock_type,
+          class _cond_type>
+class ObHashTableBucketNodeConstIterator;
+
 template<class _value_type>
 struct ObHashTableNode
 {
@@ -71,12 +76,299 @@ struct ObHashTableNode
   ObHashTableNode *next;
 };
 
+template <class _value_type,
+          class _lock_type,
+          class _cond_type>
+class ObHashTableBucketNodeIterator
+{
+private:
+  typedef ObHashTableNode<_value_type> hashnode;
+  typedef ObHashTableBucketNodeIterator<_value_type,
+                                        _lock_type, _cond_type> iterator;
+  typedef ObHashTableBucketNodeConstIterator<_value_type,
+                                             _lock_type, _cond_type> const_iterator;
+  typedef _value_type &reference;
+  typedef _value_type *pointer;
+  friend class ObHashTableBucketNodeConstIterator<_value_type, _lock_type, _cond_type>;
+public:
+  ObHashTableBucketNodeIterator() : node_(0)
+  {
+  }
+
+  ObHashTableBucketNodeIterator(const iterator &other) :
+      node_(other.node_)
+  {
+  }
+
+  ObHashTableBucketNodeIterator(
+                      hashnode *node) :
+      node_(node)
+  {
+  }
+
+  reference operator *() const
+  {
+    return node_->data;
+  }
+
+  pointer operator ->() const
+  {
+    _value_type *p = NULL;
+    if (OB_ISNULL(node_)) {
+      HASH_WRITE_LOG(HASH_FATAL, "node is null, backtrace=%s", lbt());
+    } else {
+      p = &(node_->data);
+    }
+    return p;
+  }
+
+  bool operator ==(const iterator &iter) const
+  {
+    return node_ == iter.node_;
+  }
+
+  bool operator !=(const iterator &iter) const
+  {
+    return node_ != iter.node_;
+  }
+
+  iterator &operator ++()
+  {
+    if (NULL != node_) {
+      node_ = node_->next;
+    }
+    return *this;
+  }
+
+  iterator operator ++(int)
+  {
+    iterator iter = *this;
+    ++*this;
+    return iter;
+  }
+
+private:
+  hashnode *node_;
+};
+
+template <class _value_type,
+          class _lock_type,
+          class _cond_type>
+class ObHashTableBucketNodeConstIterator
+{
+private:
+  typedef ObHashTableNode<_value_type> hashnode;
+  typedef ObHashTableBucketNodeIterator<_value_type,
+                                        _lock_type, _cond_type> iterator;
+  typedef ObHashTableBucketNodeConstIterator<_value_type,
+                                        _lock_type, _cond_type> const_iterator;
+  typedef const _value_type &const_reference;
+  typedef const _value_type *const_pointer;
+  friend class ObHashTableBucketNodeIterator<_value_type, _lock_type, _cond_type>;
+public:
+  ObHashTableBucketNodeConstIterator() : node_(0)
+  {
+  }
+
+  ObHashTableBucketNodeConstIterator(const const_iterator &other) :
+      node_(other.node_)
+  {
+  }
+
+  ObHashTableBucketNodeConstIterator(const iterator &other) :
+      node_(other.node_)
+  {
+  }
+
+  ObHashTableBucketNodeConstIterator(
+                      hashnode *node) :
+      node_(node)
+  {
+  }
+
+  const_reference operator *() const
+  {
+    return node_->data;
+  }
+
+  const_pointer operator ->() const
+  {
+    _value_type *p = NULL;
+    if (OB_ISNULL(node_)) {
+      HASH_WRITE_LOG(HASH_FATAL, "node is null, backtrace=%s", lbt());
+    } else {
+      p = &(node_->data);
+    }
+    return p;
+  }
+
+  bool operator ==(const const_iterator &iter) const
+  {
+    return node_ == iter.node_;
+  }
+
+  bool operator !=(const const_iterator &iter) const
+  {
+    return node_ != iter.node_;
+  }
+
+  const_iterator &operator ++()
+  {
+    if (NULL != node_) {
+      node_ = node_->next;
+    }
+    return *this;
+  }
+
+  const_iterator operator ++(int)
+  {
+    const_iterator iter = *this;
+    ++*this;
+    return iter;
+  }
+
+private:
+  hashnode *node_;
+};
+
 template<class _value_type, class _lock_type, class _cond_type = NCond>
 struct ObHashTableBucket: public MProtect
 {
   mutable _lock_type lock;
   mutable _cond_type cond;
   ObHashTableNode<_value_type> *node;
+  typedef ObHashTableBucketNodeIterator<_value_type, _lock_type, _cond_type> iterator;
+  typedef ObHashTableBucketNodeConstIterator<_value_type, _lock_type, _cond_type> const_iterator;
+  iterator node_begin()
+  {
+    return iterator(node);
+  }
+  const_iterator node_begin() const
+  {
+    return const_iterator(node);
+  }
+  iterator node_end()
+  {
+    return iterator(nullptr);
+  }
+  const_iterator node_end() const
+  {
+    return const_iterator(nullptr);
+  }
+};
+
+template<class _value_type, class _defendmode>
+struct ObBucketLockCond
+{
+  typedef ObHashTableBucket<_value_type,
+                            typename _defendmode::lock_type,
+                            typename _defendmode::cond_type> bucket_type;
+  explicit ObBucketLockCond(bucket_type &bucket)
+    : bucket_(bucket)
+  {
+  }
+  typename _defendmode::lock_type &lock()
+  {
+    return bucket_.lock;
+  }
+  typename _defendmode::cond_type &cond()
+  {
+    return bucket_.cond;
+  }
+private:
+  bucket_type &bucket_;
+};
+
+template <class _key_type,
+          class _value_type,
+          class _hashfunc,
+          class _equal,
+          class _getkey,
+          class _allocer,
+          class _defendmode,
+          template <class> class _bucket_array,
+          class _bucket_allocer>
+class ObHashTableBucketIterator
+{
+private:
+  typedef ObHashTable<_key_type,
+                      _value_type,
+                      _hashfunc,
+                      _equal,
+                      _getkey,
+                      _allocer,
+                      _defendmode,
+                      _bucket_array,
+                      _bucket_allocer> hashtable;
+  typedef ObHashTableBucketIterator<_key_type,
+                              _value_type,
+                              _hashfunc,
+                              _equal,
+                              _getkey,
+                              _allocer,
+                              _defendmode,
+                              _bucket_array,
+                              _bucket_allocer> iterator;
+  typedef typename hashtable::hashbucket &reference;
+  typedef typename hashtable::hashbucket *pointer;
+public:
+  ObHashTableBucketIterator() : ht_(NULL), bucket_pos_(-1), bucket_(NULL)
+  {
+  }
+
+  ObHashTableBucketIterator(const iterator &other) :
+    ht_(other.ht_), bucket_pos_(other.bucket_pos_), bucket_(other.bucket_)
+  {
+  }
+
+  ObHashTableBucketIterator(const hashtable *ht, int64_t bucket_pos, pointer bucket) :
+    ht_(ht), bucket_pos_(bucket_pos), bucket_(bucket)
+  {
+  }
+
+  reference operator *() const
+  {
+    return *bucket_;
+  }
+
+  pointer operator ->() const
+  {
+    return bucket_;
+  }
+
+  bool operator ==(const iterator &iter) const
+  {
+    return bucket_ == iter.bucket_;
+  }
+
+  bool operator !=(const iterator &iter) const
+  {
+    return bucket_ != iter.bucket_;
+  }
+
+  iterator &operator ++()
+  {
+    if (OB_ISNULL(ht_)) {
+      HASH_WRITE_LOG(HASH_FATAL, "node is null, backtrace=%s", lbt());
+    } else if (++bucket_pos_ >= ht_->bucket_num_) {
+      bucket_ = nullptr;
+    } else {
+      bucket_ = &ht_->buckets_[bucket_pos_];
+    }
+    return *this;
+  }
+
+  iterator operator ++(int)
+  {
+    iterator iter = *this;
+    ++*this;
+    return iter;
+  }
+
+private:
+  const hashtable *ht_;
+  int64_t bucket_pos_;
+  pointer bucket_;
 };
 
 template <class _key_type,
@@ -349,6 +641,15 @@ template <class _key_type,
 class ObHashTable
 {
 public:
+  typedef ObHashTableBucketIterator<_key_type,
+                                    _value_type,
+                                    _hashfunc,
+                                    _equal,
+                                    _getkey,
+                                    _allocer,
+                                    _defendmode,
+                                    _bucket_array,
+                                    _bucket_allocer> bucket_iterator;
   typedef ObHashTableIterator<_key_type,
                               _value_type,
                               _hashfunc,
@@ -367,15 +668,20 @@ public:
                                    _defendmode,
                                    _bucket_array,
                                    _bucket_allocer> const_iterator;
+  typedef typename _defendmode::lock_type lock_type;
+  typedef typename _defendmode::cond_type cond_type;
+  typedef ObHashTableBucket<_value_type,
+                            lock_type,
+                            cond_type> hashbucket;
   typedef ObHashTableNode<_value_type> hashnode;
+  typedef ObBucketLockCond<_value_type, _defendmode> bucket_lock_cond;
+  typedef typename _defendmode::readlocker readlocker;
+  typedef typename _defendmode::writelocker writelocker;
+
 private:
   // ARRAY_SIZE * hashbucket is approximately equal to 1M, must be 2 << N.
   static const int64_t ARRAY_SIZE = 1024 * 16;
 
-  typedef typename _defendmode::readlocker readlocker;
-  typedef typename _defendmode::writelocker writelocker;
-  typedef typename _defendmode::lock_type lock_type;
-  typedef typename _defendmode::cond_type cond_type;
   typedef typename _defendmode::cond_waiter cond_waiter;
   typedef typename _defendmode::cond_broadcaster cond_broadcaster;
   typedef ObHashTable<_key_type,
@@ -387,11 +693,17 @@ private:
                       _defendmode,
                       _bucket_array,
                       _bucket_allocer> hashtable;
-  typedef ObHashTableBucket<_value_type,
-                            lock_type,
-                            cond_type> hashbucket;
   typedef pre_proc<_value_type> preproc;
   typedef typename _bucket_array<hashbucket>::array_type bucket_array;
+  friend class ObHashTableBucketIterator<_key_type,
+                                   _value_type,
+                                   _hashfunc,
+                                   _equal,
+                                   _getkey,
+                                   _allocer,
+                                   _defendmode,
+                                   _bucket_array,
+                                   _bucket_allocer>;                                
   friend class ObHashTableIterator<_key_type,
                                    _value_type,
                                    _hashfunc,
@@ -512,6 +824,25 @@ public:
   {
    return clear();
   }
+  
+  bucket_iterator bucket_begin()
+  {
+    hashbucket *bucket = NULL;
+    int64_t bucket_pos = 0;
+    //if (NULL == buckets_ || NULL == allocer_)
+    if (OB_UNLIKELY(!inited(buckets_)) || OB_UNLIKELY(NULL == allocer_)) {
+      HASH_WRITE_LOG(HASH_WARNING, "hashtable not init, backtrace=%s", lbt());
+    } else {
+      bucket = &buckets_[bucket_pos];
+    }
+    return bucket_iterator(this, bucket_pos, bucket);
+  }
+
+  bucket_iterator bucket_end()
+  {
+    return bucket_iterator(this, bucket_num_, NULL);
+  }
+
   iterator begin()
   {
     hashnode *node = NULL;

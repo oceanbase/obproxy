@@ -67,15 +67,15 @@ ObMysqlClientDestroyCont *ObMysqlClientDestroyCont::alloc(ObMysqlClientPool *poo
   ObProxyMutex *mutex = NULL;
   if (OB_ISNULL(pool)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("pool is null", K(ret));
+    LOG_WDIAG("pool is null", K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for mutex", K(ret));
+    LOG_EDIAG("fail to alloc memory for mutex", K(ret));
   } else {
     pool->inc_ref();
     if (OB_ISNULL(cont = new(std::nothrow) ObMysqlClientDestroyCont(mutex, pool))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to alloc memory for ObMysqlClientDestroyCont", K(ret));
+      LOG_EDIAG("fail to alloc memory for ObMysqlClientDestroyCont", K(ret));
       if (OB_LIKELY(NULL != mutex)) {
         mutex->free();
         mutex = NULL;
@@ -94,11 +94,11 @@ int ObMysqlClientDestroyCont::main_handler(int event, void *data)
   if (OB_LIKELY(CLIENT_DESTROY_SELF_EVENT == event)) {
     int ret = OB_SUCCESS;
     if (OB_FAIL(handle_destroy_mysql_client())) {
-      LOG_WARN("fail to handle destroy mysql client", K(ret));
+      LOG_WDIAG("fail to handle destroy mysql client", K(ret));
     }
   } else {
     terminate_ = true;
-    LOG_WARN("unknown event", K(event));
+    LOG_WDIAG("unknown event", K(event));
   }
 
   if (terminate_) {
@@ -113,7 +113,7 @@ int ObMysqlClientDestroyCont::handle_destroy_mysql_client()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(pool_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("client pool is null, ObMysqlClientDestroyCont will be destroyed", K(ret));
+    LOG_WDIAG("client pool is null, ObMysqlClientDestroyCont will be destroyed", K(ret));
     terminate_ = true;
   } else {
     ObAtomicList &todo_list = pool_->get_free_mysql_client_list();
@@ -123,7 +123,7 @@ int ObMysqlClientDestroyCont::handle_destroy_mysql_client()
       next = reinterpret_cast<ObMysqlClient *>(mysql_client->link_.next_);
       if (OB_ISNULL(self_ethread().schedule_imm(mysql_client, CLIENT_DESTROY_SELF_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule destroy mysql client event, memory will leak", K(ret));
+        LOG_WDIAG("fail to schedule destroy mysql client event, memory will leak", K(ret));
       }
       // ignore ret, continue
       mysql_client = next;
@@ -135,10 +135,10 @@ int ObMysqlClientDestroyCont::handle_destroy_mysql_client()
       LOG_INFO("all mysql client has been scheduled to destroy self", K_(deleted_count));
     } else if (deleted_count_ > pool_->count()) {
       terminate_ = true;
-      LOG_ERROR("delete count must be less than total count",
+      LOG_EDIAG("delete count must be less than total count",
                 K_(deleted_count), "total_count", pool_->count());
     } else if (OB_ISNULL(self_ethread().schedule_in(this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), CLIENT_DESTROY_SELF_EVENT))) {
-      LOG_WARN("fail to reschedule destroy mysql client list event", K(this),
+      LOG_WDIAG("fail to reschedule destroy mysql client list event", K(this),
                LITERAL_K(RETRY_INTERVAL_MS));
       terminate_ = true;
     }
@@ -165,24 +165,24 @@ int ObMysqlClientPool::init(
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(user_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(user_name), K(ret));
+    LOG_WDIAG("invalid input value", K(user_name), K(ret));
   } else if (OB_FAIL(free_mc_list_.init("mysql client list",
           reinterpret_cast<int64_t>(&(reinterpret_cast<ObMysqlClient *>(0))->link_)))) {
-    LOG_WARN("fail to init mc_list", K(ret));
+    LOG_WDIAG("fail to init mc_list", K(ret));
   } else {
     ObMysqlClient *mysql_client = NULL;
     const int64_t mc_count = get_mysql_client_pool_count(is_meta_mysql_client);
     for (int64_t i = 0; (i < mc_count && OB_SUCC(ret)); ++i) {
       if (OB_FAIL(ObMysqlClient::alloc(this, mysql_client, user_name, password, database, is_meta_mysql_client,
                                        cluster_name, password1, client_pool_option))) {
-        LOG_WARN("fail to alloc mysql client", K(user_name), K(password),
+        LOG_WDIAG("fail to alloc mysql client", K(user_name), K(password),
                  K(database), "idx", i, K(is_meta_mysql_client), K(ret));
       } else if (OB_ISNULL(mysql_client)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("mysql client can not be NULL here", K(mysql_client), K(ret));
+        LOG_WDIAG("mysql client can not be NULL here", K(mysql_client), K(ret));
       } else {
         free_mc_list_.push(mysql_client);
       }
@@ -232,10 +232,10 @@ void ObMysqlClientPool::destroy()
     ObMysqlClientDestroyCont *cont = NULL;
     if (OB_ISNULL(cont = ObMysqlClientDestroyCont::alloc(this))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to alloc ObMysqlClientDestroyCont", K(ret));
+      LOG_WDIAG("fail to alloc ObMysqlClientDestroyCont", K(ret));
     } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL, CLIENT_DESTROY_SELF_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule ObMysqlClientDestroyCont", K(cont), K(ret));
+      LOG_WDIAG("fail to schedule ObMysqlClientDestroyCont", K(cont), K(ret));
     }
     if (OB_FAIL(ret) && OB_LIKELY(NULL != cont)) {
       cont->destroy();

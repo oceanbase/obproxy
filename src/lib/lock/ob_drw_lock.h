@@ -37,14 +37,14 @@ public:
     explicit RDLockGuard(DRWLock &rwlock): rwlock_(rwlock), ret_(OB_SUCCESS)
     {
       if (OB_UNLIKELY(OB_SUCCESS != (ret_ = rwlock_.rdlock()))) {
-        COMMON_LOG(WARN, "Fail to read lock, ", K_(ret));
+        COMMON_LOG(WDIAG, "Fail to read lock, ", K_(ret));
       }
     }
     ~RDLockGuard()
     {
       if (OB_LIKELY(OB_SUCCESS == ret_)) {
         if (OB_UNLIKELY(OB_SUCCESS != (ret_ = rwlock_.rdunlock()))) {
-          COMMON_LOG(WARN, "Fail to read unlock, ", K_(ret));
+          COMMON_LOG(WDIAG, "Fail to read unlock, ", K_(ret));
         }
       }
     }
@@ -61,14 +61,14 @@ public:
     explicit WRLockGuard(DRWLock &rwlock): rwlock_(rwlock), ret_(OB_SUCCESS)
     {
       if (OB_UNLIKELY(OB_SUCCESS != (ret_ = rwlock_.wrlock()))) {
-        COMMON_LOG(WARN, "Fail to write lock, ", K_(ret));
+        COMMON_LOG(WDIAG, "Fail to write lock, ", K_(ret));
       }
     }
     ~WRLockGuard()
     {
       if (OB_LIKELY(OB_SUCCESS == ret_)) {
         if (OB_UNLIKELY(OB_SUCCESS != (ret_ = rwlock_.wrunlock()))) {
-          COMMON_LOG(WARN, "Fail to write unlock, ", K_(ret));
+          COMMON_LOG(WDIAG, "Fail to write unlock, ", K_(ret));
         }
       }
     }
@@ -110,14 +110,14 @@ inline int DRWLock::wrlock()
   int64_t i = 0;
   for (i = 0; i < OB_MAX_CPU_NUM; ++i) {
     if (OB_FAIL(latches_[i].latch_.wrlock(latch_id_))) {
-      COMMON_LOG(WARN, "Fail to lock latch, ", K(i), K(ret));
+      COMMON_LOG(WDIAG, "Fail to lock latch, ", K(i), K(ret));
       break;
     }
   }
   if (OB_FAIL(ret)) {
     for (--i; i >= 0; --i) {
       if (OB_SUCCESS != (tmp_ret = latches_[i].latch_.unlock())) {
-        COMMON_LOG(WARN, "Fail to unlock latch, ", K(i), K(tmp_ret));
+        COMMON_LOG(WDIAG, "Fail to unlock latch, ", K(i), K(tmp_ret));
       }
     }
   }
@@ -131,7 +131,7 @@ inline int DRWLock::wrunlock()
   for (int64_t i = OB_MAX_CPU_NUM - 1; i >= 0; --i) {
     if (OB_SUCCESS != (tmp_ret = latches_[i].latch_.unlock())) {
       ret = tmp_ret;
-      COMMON_LOG(WARN, "Fail to unlock latch, ", K(i), K(tmp_ret));
+      COMMON_LOG(WDIAG, "Fail to unlock latch, ", K(i), K(tmp_ret));
     }
   }
   return ret;
@@ -149,14 +149,14 @@ inline int DRWLock::try_wrlock()
   int64_t i = 0;
   for (i = 0; i < OB_MAX_CPU_NUM; ++i) {
     if (OB_FAIL(latches_[i].latch_.try_wrlock(latch_id_))) {
-      COMMON_LOG(WARN, "Fail to try lock latch, ", K(i), K(ret));
+      COMMON_LOG(WDIAG, "Fail to try lock latch, ", K(i), K(ret));
       break;
     }
   }
   if (OB_FAIL(ret)) {
     for (--i; i >= 0; --i) {
       if (OB_SUCCESS != (tmp_ret = latches_[i].latch_.unlock())) {
-        COMMON_LOG(WARN, "Fail to try unlock latch, ", K(i), K(tmp_ret));
+        COMMON_LOG(WDIAG, "Fail to try unlock latch, ", K(i), K(tmp_ret));
       }
     }
   }

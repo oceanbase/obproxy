@@ -54,7 +54,7 @@ inline int ObRootAddrAgent::init(common::ObServerConfig &config)
   int ret = common::OB_SUCCESS;
   if (inited_) {
     ret = common::OB_INIT_TWICE;
-    SHARE_LOG(WARN, "init twice", K(ret));
+    SHARE_LOG(WDIAG, "init twice", K(ret));
   } else {
     config_ = &config;
     inited_ = true;

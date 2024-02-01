@@ -44,13 +44,13 @@ int ObRawMysqlClientActor::init(ObClientRequestInfo &info)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_ISNULL(request_buf_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc request miobuffer", K(ret));
+    LOG_WDIAG("fail to alloc request miobuffer", K(ret));
   } else if (OB_ISNULL(request_reader_ = request_buf_->alloc_reader())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to alloc reader", K(ret));
+    LOG_WDIAG("fail to alloc reader", K(ret));
   } else {
     info_ = &info;
     is_inited_ = true;
@@ -88,35 +88,35 @@ int ObRawMysqlClientActor::sync_raw_execute(const char *sql, const int64_t timeo
             "observer", addr_, K(sql), K(timeout_ms));
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(sql) || OB_UNLIKELY(timeout_ms <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid intput value", K(sql), K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid intput value", K(sql), K(timeout_ms), K(ret));
   } else if (NULL != resp_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resp must be NULL", K_(resp), K(ret));
+    LOG_WDIAG("resp must be NULL", K_(resp), K(ret));
   } else if (OB_ISNULL(resp_ = op_alloc(ObClientMysqlResp))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate ObClientMysqlResp", K(ret));
+    LOG_WDIAG("fail to allocate ObClientMysqlResp", K(ret));
   } else if (OB_FAIL(resp_->init())) {
-    LOG_WARN("fail to init client mysql resp", K(ret));
+    LOG_WDIAG("fail to init client mysql resp", K(ret));
   } else {
     // Get the password again, it may be changed
     if (!is_avail() &&
         OB_FAIL(connect(addr_, timeout_ms))) {
       if (!is_avail() && info_->change_password()) {
         if (OB_FAIL(connect(addr_, timeout_ms))) {
-          LOG_WARN("fail to connect using password1", "addr", addr_, K(ret));
+          LOG_WDIAG("fail to connect using password1", "addr", addr_, K(ret));
         }
       } else {
-        LOG_WARN("fail to connect using password", "addr", addr_, K(ret));
+        LOG_WDIAG("fail to connect using password", "addr", addr_, K(ret));
       }
     }
 
     if (OB_FAIL(ret)) {
       // do nothing
     } if (OB_FAIL(send_request(sql))) {
-      LOG_WARN("fail to post request", K(sql), K(ret));
+      LOG_WDIAG("fail to post request", K(sql), K(ret));
     } else {
       resp = resp_;
       resp_ = NULL; // set to NULL;
@@ -142,7 +142,7 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
   int ret = OB_SUCCESS;
   if (!addr.is_valid() || timeout_ms <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid addr", K(addr), K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid addr", K(addr), K(timeout_ms), K(ret));
   } else {
     ObNetVCOptions options;
     options.f_blocking_connect_ = false; // no blocking connect
@@ -151,9 +151,9 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
     ObIpEndpoint ip;
     ip.assign(addr.get_sockaddr());
     if (OB_FAIL(con_.open(options))) {
-      LOG_WARN("fail to open connection", K(ret));
+      LOG_WDIAG("fail to open connection", K(ret));
     } else if (OB_FAIL(con_.connect(ip.sa_, options))) {
-      LOG_WARN("fail to connect", K(con_.fd_), K(ret));
+      LOG_WDIAG("fail to connect", K(con_.fd_), K(ret));
     }
 
     const int POLL_EVENT_SIZE = 1;
@@ -166,22 +166,22 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
       // for connect timeout
       if (OB_FAIL(ObSocketManager::poll(poll_fds, POLL_EVENT_SIZE,
                                         static_cast<int>(timeout_ms), event_count))) {
-        LOG_WARN("fail to poll", K(timeout_ms), K(ret));
+        LOG_WDIAG("fail to poll", K(timeout_ms), K(ret));
       } else {
         if (0 == event_count) {
           ret = OB_TIMEOUT;
-          LOG_WARN("connect timeout", K(timeout_ms), K(addr), K_(con_.fd), K(ret));
+          LOG_WDIAG("connect timeout", K(timeout_ms), K(addr), K_(con_.fd), K(ret));
         } else if ((1 == event_count) && (poll_fds[0].fd == con_.fd_)) {
           // first detect sock error, if any
           int32_t optval = -1;
           int32_t optlen = sizeof(int32_t);
           if (OB_FAIL(ObSocketManager::getsockopt(con_.fd_, SOL_SOCKET, SO_ERROR,
                   reinterpret_cast<void *>(&optval), &optlen))) {
-            LOG_WARN("fail to getsockopt", KERRMSGS, K_(con_.fd),
+            LOG_WDIAG("fail to getsockopt", KERRMSGS, K_(con_.fd),
                      "revents", poll_fds[0].revents, K(ret));
           } else if (0 != optval) {
             ret = OB_ERR_SYS;
-            LOG_WARN("detect socket error", K(optval), K_(con_.fd),
+            LOG_WDIAG("detect socket error", K(optval), K_(con_.fd),
                      "revents", poll_fds[0].revents, K(ret));
           } else {
             if (poll_fds[0].revents & POLLOUT) {
@@ -189,23 +189,23 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
               ObIpEndpoint client_addr;
               int64_t len = sizeof(client_addr);
               if (OB_FAIL(ObSocketManager::getsockname(con_.fd_, &client_addr.sa_, &len))) {
-                PROXY_SOCK_LOG(WARN, "failed to getsockname", K(addr_), KERRMSGS, K(ret));
+                PROXY_SOCK_LOG(WDIAG, "failed to getsockname", K(addr_), KERRMSGS, K(ret));
               }
               ret = OB_SUCCESS; // ignore ret
               LOG_INFO("mysql raw client connect establish", K_(con_.fd), K(addr), K(client_addr), K(ret));
             } else if (poll_fds[0].revents & POLLERR) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_ERROR("mysql raw client connect error", KERRMSGS, K_(con_.fd), K(addr),
+              LOG_EDIAG("mysql raw client connect error", KERRMSGS, K_(con_.fd), K(addr),
                         "revents", poll_fds[0].revents,  K(ret));
             } else {
               ret = OB_ERR_UNEXPECTED;
-              LOG_ERROR("unexpected state, fail to poll", K(event_count), KERRMSGS,
+              LOG_EDIAG("unexpected state, fail to poll", K(event_count), KERRMSGS,
                         "revents", poll_fds[0].revents, K_(con_.fd), K(addr), K(ret));
             }
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected state, fail to connect", K(event_count), KERRMSGS,
+          LOG_WDIAG("unexpected state, fail to connect", K(event_count), KERRMSGS,
                    K_(con_.fd), K(addr), K(ret));
         }
       }
@@ -218,26 +218,26 @@ int ObRawMysqlClientActor::connect(const ObAddr &addr, const int64_t timeout_ms)
       t.tv_sec = static_cast<int>(msec_to_sec(timeout_ms));
       t.tv_usec = static_cast<int>(msec_to_usec(timeout_ms % 1000));
       if (OB_FAIL(ObSocketManager::setsockopt(con_.fd_, SOL_SOCKET, SO_SNDTIMEO, &t, sizeof(t)))) {
-        LOG_WARN("fail to set socket opt send timeout", K_(con_.fd), K(timeout_ms), K(ret));
+        LOG_WDIAG("fail to set socket opt send timeout", K_(con_.fd), K(timeout_ms), K(ret));
       } else if (OB_FAIL(ObSocketManager::setsockopt(con_.fd_, SOL_SOCKET, SO_RCVTIMEO, &t, sizeof(t)))) {
-        LOG_WARN("fail to set socket opt recv timeout", K_(con_.fd), K(timeout_ms), K(ret));
+        LOG_WDIAG("fail to set socket opt recv timeout", K_(con_.fd), K(timeout_ms), K(ret));
       }
     }
 
     // do auth job
     if (OB_SUCC(ret)) {
       if (OB_FAIL(read_response(OB_MYSQL_COM_HANDSHAKE))) {
-        LOG_WARN("fail to read response", K(ret));
+        LOG_WDIAG("fail to read response", K(ret));
       } else if (resp_->is_error_resp()) {
         ret = -resp_->get_err_code();
-        LOG_WARN("fail to connect", K(ret));
+        LOG_WDIAG("fail to connect", K(ret));
       } else if (OB_FAIL(send_handshake_response())) {
-        LOG_WARN("fail to send handshake response", K(ret));
+        LOG_WDIAG("fail to send handshake response", K(ret));
       } else if (OB_FAIL(read_response(OB_MYSQL_COM_LOGIN))) {
-        LOG_WARN("fail to read response", K(ret));
+        LOG_WDIAG("fail to read response", K(ret));
       } else if (resp_->is_error_resp()) {
         ret = -resp_->get_err_code();
-        LOG_WARN("fail to auth", K(ret));
+        LOG_WDIAG("fail to auth", K(ret));
       }
     }
   }
@@ -255,16 +255,16 @@ int ObRawMysqlClientActor::send_request(const char *sql)
   const bool is_checksum_on = false;
   if (OB_ISNULL(sql) || strlen(sql) <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(sql), K(ret));
+    LOG_WDIAG("invalid input value", KP(sql), K(ret));
   } else if (OB_FAIL(ObMysqlRequestBuilder::build_mysql_request(*request_buf_, OB_MYSQL_COM_QUERY, sql,
-      use_compress, is_checksum_on))) {
-    LOG_WARN("fail to write buffer", K(sql), K_(request_buf), K(ret));
+                                                                use_compress, is_checksum_on, 0))) {
+    LOG_WDIAG("fail to write buffer", K(sql), K_(request_buf), K(ret));
   } else {
     resp_->consume_resp_buf(); // consume the handsake response packet data
     if (OB_FAIL(write_request(request_reader_))) {
-      LOG_WARN("fail to write request", K(ret));
+      LOG_WDIAG("fail to write request", K(ret));
     } else if (OB_FAIL(read_response(OB_MYSQL_COM_QUERY))) {
-      LOG_WARN("fail to read_response", K(ret));
+      LOG_WDIAG("fail to read_response", K(ret));
     }
   }
   return ret;
@@ -274,11 +274,11 @@ int ObRawMysqlClientActor::send_handshake_response()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObClientUtils::build_handshake_response_packet(resp_, info_, request_buf_))) {
-    LOG_WARN("fail to build handshake reponse", K(ret));
+    LOG_WDIAG("fail to build handshake reponse", K(ret));
   } else {
     resp_->consume_resp_buf(); // consume the handsake packet data
     if (OB_FAIL(write_request(request_reader_))) {
-      LOG_WARN("fail to write request", K(ret));
+      LOG_WDIAG("fail to write request", K(ret));
     }
   }
 
@@ -290,22 +290,22 @@ int ObRawMysqlClientActor::write_request(ObIOBufferReader *request_reader)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(request_reader) || OB_UNLIKELY(request_reader->read_avail() <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(request_reader), K(ret));
+    LOG_WDIAG("invalid input value", K(request_reader), K(ret));
   } else {
     int64_t buf_len = request_reader->read_avail();
     char *buf = NULL;
     if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(buf_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate mem", "alloc_len", buf_len, K(ret));
+      LOG_WDIAG("fail to allocate mem", "alloc_len", buf_len, K(ret));
     } else {
       char *written_pos = request_reader->copy(buf, buf_len, 0);
       if (OB_UNLIKELY(written_pos != buf + buf_len)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("not copy completely", K(written_pos), K(buf), K(buf_len), K(ret));
+        LOG_WDIAG("not copy completely", K(written_pos), K(buf), K(buf_len), K(ret));
       } else if (OB_FAIL(write_request(buf, buf_len))) {
-        LOG_WARN("fail to write_request", K(ret));
+        LOG_WDIAG("fail to write_request", K(ret));
       } else if (OB_FAIL(request_reader->consume(request_reader->read_avail()))) {
-        LOG_WARN("fail to consume ", K(ret));
+        LOG_WDIAG("fail to consume ", K(ret));
       } else {/*do nothing*/}
     }
     if (NULL != buf) {
@@ -323,7 +323,7 @@ int ObRawMysqlClientActor::write_request(const char *buf, int64_t buf_len)
   int ret = OB_SUCCESS;
   if ((NULL == buf) || (buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(buf), K(buf_len), K(ret));
+    LOG_WDIAG("invalid input value", KP(buf), K(buf_len), K(ret));
   } else {
     int64_t total_write = 0;
     int64_t write_count = 0;
@@ -331,7 +331,7 @@ int ObRawMysqlClientActor::write_request(const char *buf, int64_t buf_len)
       if (OB_SUCC(ObSocketManager::write(con_.fd_, buf, buf_len, write_count))) {
         total_write += write_count;
       } else {
-        LOG_WARN("fail to write", K(buf_len), K(total_write), K_(con_.fd),
+        LOG_WDIAG("fail to write", K(buf_len), K(total_write), K_(con_.fd),
                  K(write_count), K(ret));
       }
     }
@@ -357,7 +357,7 @@ int ObRawMysqlClientActor::read_response(const ObMySQLCmd cmd)
     if (0 == block_write_avail) {
       if (OB_FAIL(mio_buf->check_add_block())) {
         buf = NULL;
-        LOG_WARN("fail to check and add block", K(ret));
+        LOG_WDIAG("fail to check and add block", K(ret));
       } else {
         block = mio_buf->first_write_block();
         block_write_avail = block->write_avail();
@@ -368,14 +368,14 @@ int ObRawMysqlClientActor::read_response(const ObMySQLCmd cmd)
     }
     if (OB_ISNULL(buf) || OB_ISNULL(block) || block_write_avail <= 0) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error", K(buf), K(block), K(block_write_avail), K(ret));
+      LOG_WDIAG("unexpected error", K(buf), K(block), K(block_write_avail), K(ret));
     } else if (OB_FAIL(ObSocketManager::read(con_.fd_, buf, block_write_avail, read_count))) {
-      LOG_WARN("fail to read", K(ret));
+      LOG_WDIAG("fail to read", K(ret));
     } else if (read_count > 0) {
       buf += read_count;
       block_write_avail -= read_count;
       if (OB_FAIL(block->fill(read_count))) {
-        LOG_WARN("failed to fill iobuffer block", K(ret));
+        LOG_WDIAG("failed to fill iobuffer block", K(ret));
       } else {
         ret = resp_->analyze_resp(cmd);
         if (OB_EAGAIN == ret) {
@@ -386,12 +386,12 @@ int ObRawMysqlClientActor::read_response(const ObMySQLCmd cmd)
           read_complete = true;
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("analyze_resp error", K(ret));
+          LOG_WDIAG("analyze_resp error", K(ret));
         }
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to read", K(read_count), K(ret));
+      LOG_WDIAG("fail to read", K(read_count), K(ret));
     }
     read_count = 0;
   }
@@ -407,17 +407,17 @@ int ObRawMysqlClient::init(const ObString &user_name,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(user_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(user_name), K(ret));
+    LOG_WDIAG("invalid input value", K(user_name), K(ret));
   } else if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_FAIL(mutex_init(&mutex_))) {
-    LOG_WARN("fail to init mutex", K(ret));
+    LOG_WDIAG("fail to init mutex", K(ret));
   } else if (OB_FAIL(info_.set_names(user_name, password, database, cluster_name, password1))) {
-    LOG_WARN("fail to set names", K(user_name), K(password), K(password1), K(database), K(ret));
+    LOG_WDIAG("fail to set names", K(user_name), K(password), K(password1), K(database), K(ret));
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = mutex_destroy(&mutex_))) {
-      LOG_ERROR("fail to destroy mutex", K(tmp_ret));
+      LOG_EDIAG("fail to destroy mutex", K(tmp_ret));
     }
   } else {
     is_inited_ = true;
@@ -431,7 +431,7 @@ void ObRawMysqlClient::destroy()
   if (is_inited_) {
     int ret = OB_SUCCESS;
     if (OB_FAIL(mutex_destroy(&mutex_))) {
-      LOG_ERROR("fail to destroy mutex", K(ret));
+      LOG_EDIAG("fail to destroy mutex", K(ret));
     }
     info_.reset();
     actor_.reset();
@@ -454,7 +454,7 @@ int ObRawMysqlClient::set_server_addr(const ObIArray<common::ObAddr> &addrs)
   int ret = OB_SUCCESS;
   if (addrs.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("addrs are empty", K(ret));
+    LOG_WDIAG("addrs are empty", K(ret));
   } else {
     int64_t max_count = DEFAULT_SERVER_ADDRS_COUNT;
     int64_t count = std::min(addrs.count(), max_count);
@@ -472,7 +472,7 @@ int ObRawMysqlClient::set_target_server(const common::ObIArray<ObProxyReplicaLoc
   int ret = OB_SUCCESS;
   if (replicas.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("addrs are empty", K(ret));
+    LOG_WDIAG("addrs are empty", K(ret));
   } else {
     int64_t max_count = DEFAULT_SERVER_ADDRS_COUNT;
     int64_t count = std::min(replicas.count(), max_count);
@@ -489,17 +489,17 @@ int ObRawMysqlClient::sync_raw_execute(const char *sql, const int64_t timeout_ms
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(sql) || OB_UNLIKELY(timeout_ms <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid intput value", K(sql), K(timeout_ms), K(ret));
+    LOG_WDIAG("invalid intput value", K(sql), K(timeout_ms), K(ret));
   } else if (OB_FAIL(mutex_acquire(&mutex_))) {
-    LOG_WARN("fail to acquire mutex", K(ret));
+    LOG_WDIAG("fail to acquire mutex", K(ret));
   } else {
     bool retry = true;
     if (actor_.is_avail()) {
       if (OB_FAIL(actor_.sync_raw_execute(sql, timeout_ms, resp))) {
-        LOG_WARN("fail to sync raw execute, will retry", K(sql), K(timeout_ms), K(ret));
+        LOG_WDIAG("fail to sync raw execute, will retry", K(sql), K(timeout_ms), K(ret));
       } else {
         retry = false;
       }
@@ -529,11 +529,11 @@ int ObRawMysqlClient::sync_raw_execute(const char *sql, const int64_t timeout_ms
             LOG_INFO("ObRawMysqlClient::sync_raw_execute will connect to",
                       "replica", replicas[idx], K(idx), K(is_strong_stml));
             if (OB_FAIL(actor_.init(info_))) {
-              LOG_WARN("fail to init actor", K(ret));
+              LOG_WDIAG("fail to init actor", K(ret));
             } else if (OB_FAIL(actor_.set_addr(replicas[idx].server_))) {
-              LOG_WARN("fail to set addr", "replica", replicas[idx], K(ret));
+              LOG_WDIAG("fail to set addr", "replica", replicas[idx], K(ret));
             } else if (OB_FAIL(actor_.sync_raw_execute(sql, timeout_ms, resp))) {
-              LOG_WARN("fail to sync raw execute", "replica", replicas[idx], K(sql), K(timeout_ms), K(ret));
+              LOG_WDIAG("fail to sync raw execute", "replica", replicas[idx], K(sql), K(timeout_ms), K(ret));
               tmp_ret = ret;//we need save last err ret
               ret = OB_SUCCESS;
             } else {
@@ -553,7 +553,7 @@ int ObRawMysqlClient::sync_raw_execute(const char *sql, const int64_t timeout_ms
     // do not forget to release mutex
     int mutex_ret = OB_SUCCESS;
     if (OB_UNLIKELY(OB_SUCCESS != (mutex_ret = mutex_release(&mutex_)))) {
-      LOG_WARN("fail to release mutex", K(mutex_ret));
+      LOG_WDIAG("fail to release mutex", K(mutex_ret));
     }
   }
   return ret;
@@ -563,11 +563,11 @@ int ObRawMysqlClient::disconnect()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(mutex_acquire(&mutex_))) {
-    LOG_WARN("fail to acquire mutex", K(ret));
+    LOG_WDIAG("fail to acquire mutex", K(ret));
   } else {
     actor_.reset();
     if (OB_FAIL(mutex_release(&mutex_))) {
-      LOG_WARN("fail to release mutex", K(ret));
+      LOG_WDIAG("fail to release mutex", K(ret));
     }
   }
   return ret;

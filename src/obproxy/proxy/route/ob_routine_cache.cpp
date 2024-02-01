@@ -90,11 +90,11 @@ int ObRoutineCacheCont::deep_copy_key(const ObRoutineEntryKey &other)
   name_buf_ = static_cast<char *>(op_fixed_mem_alloc(name_buf_len_));
   if (OB_ISNULL(name_buf_)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K_(name_buf_len), K(ret));
+    LOG_WDIAG("fail to alloc mem", K_(name_buf_len), K(ret));
   } else {
     ObTableEntryName *name = new (name_buf_) ObTableEntryName();
     if (OB_FAIL(name->deep_copy(*other.name_, name_buf_ + obj_size, name_size))) {
-      LOG_WARN("fail to deep copy table entry name", K(ret));
+      LOG_WDIAG("fail to deep copy table entry name", K(ret));
     } else {
       key_.name_ = name;
       key_.cr_version_ = other.cr_version_;
@@ -129,7 +129,7 @@ int ObRoutineCacheCont::get_routine_entry(const int event, ObEvent *e)
         tmp_entry->dec_ref();
         tmp_entry = NULL;
       }
-      LOG_WARN("fail to get routine entry", K_(key), K(ret));
+      LOG_WDIAG("fail to get routine entry", K_(key), K(ret));
     }
 
     if (OB_SUCC(ret) && !is_locked) {
@@ -137,7 +137,7 @@ int ObRoutineCacheCont::get_routine_entry(const int event, ObEvent *e)
                 LITERAL_K(ObRoutineCacheParam::SCHEDULE_ROUTINE_CACHE_CONT_INTERVAL));
       if (OB_ISNULL(self_ethread().schedule_in(this, ObRoutineCacheParam::SCHEDULE_ROUTINE_CACHE_CONT_INTERVAL))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule in", K(ret));
+        LOG_WDIAG("fail to schedule in", K(ret));
       }
       he_ret = EVENT_CONT;
     } else {
@@ -174,7 +174,7 @@ int ObRoutineCacheCont::get_routine_entry_local(
   if (lock_bucket.is_locked()) {
     is_locked = true;
     if (OB_FAIL(routine_cache.run_todo_list(routine_cache.part_num(hash)))) {
-      LOG_WARN("fail to run todo list", K(key), K(hash), K(ret));
+      LOG_WDIAG("fail to run todo list", K(key), K(hash), K(ret));
     } else {
       entry = routine_cache.lookup_entry(hash, key);
       if (NULL != entry) {
@@ -184,7 +184,7 @@ int ObRoutineCacheCont::get_routine_entry_local(
           entry = NULL;
           // remove the expired routine entry in locked
           if (OB_FAIL(routine_cache.remove_routine_entry(key))) {
-            LOG_WARN("fail to remove routine entry", K(key), K(ret));
+            LOG_WDIAG("fail to remove routine entry", K(key), K(ret));
           }
         } else {
           entry->inc_ref();
@@ -198,7 +198,7 @@ int ObRoutineCacheCont::get_routine_entry_local(
     if (NULL == entry) {
       if (is_add_building_entry) {
         if (OB_FAIL(add_building_routine_entry(routine_cache, key))) {
-          LOG_WARN("fail to building routine entry", K(key), K(ret));
+          LOG_WDIAG("fail to building routine entry", K(key), K(ret));
         } else {
           // nothing
         }
@@ -220,14 +220,14 @@ int ObRoutineCacheCont::add_building_routine_entry(ObRoutineCache &routine_cache
   ObString empty_sql;
   if (OB_FAIL(ObRoutineEntry::alloc_and_init_routine_entry(*key.name_, key.cr_version_, key.cr_id_,
       empty_sql, entry))) {
-    LOG_WARN("fail to alloc and init routine entry", K(key), K(empty_sql), K(ret));
+    LOG_WDIAG("fail to alloc and init routine entry", K(key), K(empty_sql), K(ret));
   } else if (OB_ISNULL(entry)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("routine entry is NULL", K(entry), K(ret));
+    LOG_WDIAG("routine entry is NULL", K(entry), K(ret));
   } else {
     entry->set_building_state();
     if (OB_FAIL(routine_cache.add_routine_entry(*entry, false))) {
-      LOG_WARN("fail to add routine entry", KPC(entry), K(ret));
+      LOG_WDIAG("fail to add routine entry", KPC(entry), K(ret));
       entry->dec_ref();
       entry = NULL;
     } else {
@@ -256,11 +256,11 @@ int ObRoutineCacheParam::deep_copy_key(const ObRoutineEntryKey &other)
   name_buf_ = static_cast<char *>(op_fixed_mem_alloc(name_buf_len_));
   if (OB_ISNULL(name_buf_)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K_(name_buf_len), K(ret));
+    LOG_WDIAG("fail to alloc mem", K_(name_buf_len), K(ret));
   } else {
     ObTableEntryName *name = new (name_buf_) ObTableEntryName();
     if (OB_FAIL(name->deep_copy(*other.name_, name_buf_ + obj_size, name_size))) {
-      LOG_WARN("fail to deep copy table entry name", K(ret));
+      LOG_WDIAG("fail to deep copy table entry name", K(ret));
     } else {
       key_ = other;
       key_.name_ = name;
@@ -319,12 +319,12 @@ int ObRoutineCache::init(const int64_t bucket_size)
   int64_t sub_bucket_size = bucket_size / MT_HASHTABLE_PARTITIONS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(bucket_size <= 0 || sub_bucket_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
+    LOG_WDIAG("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
   } else if (OB_FAIL(RoutineEntryHashMap::init(sub_bucket_size, ROUTINE_ENTRY_MAP_LOCK, gc_routine_entry))) {
-    LOG_WARN("fail to init hash routine of routine cache", K(sub_bucket_size), K(ret));
+    LOG_WDIAG("fail to init hash routine of routine cache", K(sub_bucket_size), K(ret));
   } else {
     for (int64_t i = 0; i < MT_HASHTABLE_PARTITIONS; ++i) {
       todo_lists_[i].init("routine_todo_list",
@@ -367,11 +367,11 @@ int ObRoutineCache::get_routine_entry(
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_ISNULL(ppentry) || OB_ISNULL(cont)
              || OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid arugument", K(ppentry), K(key), K(cont), K(ret));
+    LOG_WDIAG("invalid arugument", K(ppentry), K(key), K(cont), K(ret));
   } else {
     uint64_t hash = key.hash();
     LOG_DEBUG("begin to get routine location entry", K(ppentry), K(key), K(cont), K(hash));
@@ -384,7 +384,7 @@ int ObRoutineCache::get_routine_entry(
         tmp_entry->dec_ref();
         tmp_entry = NULL;
       }
-      LOG_WARN("fail to get routine entry", K(key), K(ret));
+      LOG_WDIAG("fail to get routine entry", K(key), K(ret));
     } else {
       if (is_locked) {
         *ppentry = tmp_entry;
@@ -395,9 +395,9 @@ int ObRoutineCache::get_routine_entry(
         ObRoutineCacheCont *routine_cont = NULL;
         if (OB_ISNULL(routine_cont = op_alloc_args(ObRoutineCacheCont, *this))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("fail to allocate memory for routine cache continuation", K(ret));
+          LOG_EDIAG("fail to allocate memory for routine cache continuation", K(ret));
         } else if (OB_FAIL(routine_cont->deep_copy_key(key))) { // use to save name buf
-          LOG_WARN("fail to deep_copy_key", K(key), K(ret));
+          LOG_WDIAG("fail to deep_copy_key", K(key), K(ret));
         } else {
           routine_cont->action_.set_continuation(cont);
           routine_cont->mutex_ = cont->mutex_;
@@ -409,7 +409,7 @@ int ObRoutineCache::get_routine_entry(
           if (OB_ISNULL(self_ethread().schedule_in(routine_cont,
                   ObRoutineCacheParam::SCHEDULE_ROUTINE_CACHE_CONT_INTERVAL))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to schedule imm", K(routine_cont), K(ret));
+            LOG_WDIAG("fail to schedule imm", K(routine_cont), K(ret));
           } else {
             action = &routine_cont->action_;
           }
@@ -433,7 +433,7 @@ int ObRoutineCache::add_routine_entry(ObRoutineEntry &entry, bool direct_add)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     ObRoutineEntryKey key;
     entry.get_key(key);
@@ -444,7 +444,7 @@ int ObRoutineCache::add_routine_entry(ObRoutineEntry &entry, bool direct_add)
       MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
       if (lock.is_locked()) {
         if (OB_FAIL(run_todo_list(part_num(hash)))) {
-          LOG_WARN("fail to run todo list", K(ret));
+          LOG_WDIAG("fail to run todo list", K(ret));
         } else {
           ObRoutineEntry *tmp_entry = insert_entry(hash, key, &entry);
           if (NULL != tmp_entry) {
@@ -463,7 +463,7 @@ int ObRoutineCache::add_routine_entry(ObRoutineEntry &entry, bool direct_add)
       ObRoutineCacheParam *param = op_alloc(ObRoutineCacheParam);
       if (OB_ISNULL(param)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for routine param", K(param), K(ret));
+        LOG_EDIAG("fail to allocate memory for routine param", K(param), K(ret));
       } else {
         param->op_ = ObRoutineCacheParam::ADD_ROUTINE_OP;
         param->hash_ = hash;
@@ -483,10 +483,10 @@ int ObRoutineCache::remove_routine_entry(const ObRoutineEntryKey &key)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(key), K(ret));
+    LOG_WDIAG("invalid input value", K(key), K(ret));
   } else {
     uint64_t hash = key.hash();
     ObRoutineEntry *entry = NULL;
@@ -494,7 +494,7 @@ int ObRoutineCache::remove_routine_entry(const ObRoutineEntryKey &key)
     MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
     if (lock.is_locked()) {
       if (OB_FAIL(run_todo_list(part_num(hash)))) {
-        LOG_WARN("fail to run todo list", K(ret));
+        LOG_WDIAG("fail to run todo list", K(ret));
       } else {
         entry = remove_entry(hash, key);
         LOG_INFO("this entry will be removed from routine cache", KPC(entry));
@@ -508,7 +508,7 @@ int ObRoutineCache::remove_routine_entry(const ObRoutineEntryKey &key)
       ObRoutineCacheParam *param = op_alloc(ObRoutineCacheParam);
       if (OB_ISNULL(param)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for location param", K(param), K(ret));
+        LOG_EDIAG("fail to allocate memory for location param", K(param), K(ret));
       } else {
         param->op_ = ObRoutineCacheParam::REMOVE_ROUTINE_OP;
         param->hash_ = hash;
@@ -526,10 +526,10 @@ int ObRoutineCache::run_todo_list(const int64_t buck_id)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(buck_id < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buck_id), K(ret));
+    LOG_WDIAG("invalid input value", K(buck_id), K(ret));
   } else {
     ObRoutineCacheParam *pre = NULL;
     ObRoutineCacheParam *cur = NULL;
@@ -564,7 +564,7 @@ int ObRoutineCache::process(const int64_t buck_id, ObRoutineCacheParam *param)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(param) || OB_UNLIKELY(buck_id < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buck_id), K(param), K(ret));
+    LOG_WDIAG("invalid input value", K(buck_id), K(param), K(ret));
   } else {
     LOG_DEBUG("begin to process ObRoutineCacheParam", K(buck_id), KPC(param));
     ObRoutineEntry *entry = NULL;
@@ -595,7 +595,7 @@ int ObRoutineCache::process(const int64_t buck_id, ObRoutineCacheParam *param)
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_ERROR("ObRoutineCache::process unrecognized op",
+        LOG_EDIAG("ObRoutineCache::process unrecognized op",
                   "op", param->op_, K(buck_id), KPC(param), K(ret));
         break;
       }
@@ -636,7 +636,7 @@ int init_routine_map_for_thread()
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_routine_map_for_one_thread(i))) {
-      LOG_WARN("fail to init routine_map", K(i), K(ret));
+      LOG_WDIAG("fail to init routine_map", K(i), K(ret));
     }
   }
   return ret;
@@ -648,16 +648,16 @@ int init_routine_map_for_one_thread(int64_t index)
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else {
     if (OB_ISNULL(ethreads[index]->routine_map_ = new (std::nothrow) ObRoutineRefHashMap(ObModIds::OB_PROXY_ROUTINE_ENTRY_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new ObRoutineRefHashMap", K(index), K(ethreads[index]), K(ret));
+      LOG_WDIAG("fail to new ObRoutineRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->routine_map_->init())) {
-      LOG_WARN("fail to init routine_map", K(ret));
+      LOG_WDIAG("fail to init routine_map", K(ret));
     }
   }
   return ret;
@@ -672,7 +672,7 @@ int ObRoutineRefHashMap::clean_hash_map()
       if ((*it)->is_deleted_state()) {
         LOG_INFO("this routine entry will erase from tc map", KPC((*it)));
         if (OB_FAIL(erase(it, i))) {
-          LOG_WARN("fail to erase routine entry", K(i), K(ret));
+          LOG_WDIAG("fail to erase routine entry", K(i), K(ret));
         }
 
         if ((NULL != this_ethread()) && (NULL != this_ethread()->mutex_)) {

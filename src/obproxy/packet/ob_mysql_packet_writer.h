@@ -17,6 +17,7 @@
 #include "rpc/obmysql/packet/ompk_field.h"
 #include "rpc/obmysql/packet/ompk_row.h"
 #include "utils/ob_proxy_lib.h"
+#include "proxy/mysqllib/ob_mysql_analyzer_utils.h"
 
 namespace oceanbase
 {
@@ -56,9 +57,8 @@ public:
   static int write_request_packet(event::ObMIOBuffer &mio_buf,
                                   const obmysql::ObMySQLCmd cmd,
                                   const common::ObString &sql_str,
-                                  uint8_t &compressed_seq,
                                   const bool need_compress,
-                                  const bool is_checksum_on);
+                                  proxy::ObCmpHeaderParam &compressed_param);
 private:
   // @packet, normal mysql packet
   // compress the packet and write compressed packet to mio_buf
@@ -71,8 +71,7 @@ private:
   // and more efficient.
   static int write_compressed_packet(event::ObMIOBuffer &mio_buf,
                                      const obmysql::ObMySQLRawPacket &packet,
-                                     uint8_t &compressed_seq,
-                                     const bool is_checksum_on);
+                                     proxy::ObCmpHeaderParam &compressed_param);
   
   DISALLOW_COPY_AND_ASSIGN(ObMysqlPacketWriter);
 };

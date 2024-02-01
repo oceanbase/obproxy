@@ -49,7 +49,7 @@ struct NotImplementItemEncode
     UNUSED(buf_len);
     UNUSED(pos);
     UNUSED(item);
-    _OB_LOG(WARN, "call not implemented function.");
+    _OB_LOG(WDIAG, "call not implemented function.");
     return OB_NOT_IMPLEMENT;
   }
 
@@ -59,7 +59,7 @@ struct NotImplementItemEncode
     UNUSED(data_len);
     UNUSED(pos);
     UNUSED(item);
-    _OB_LOG(WARN, "call not implemented function.");
+    _OB_LOG(WDIAG, "call not implemented function.");
     return OB_NOT_IMPLEMENT;
   }
 
@@ -107,12 +107,12 @@ public:
     int ret = OB_SUCCESS;
     if (OB_UNLIKELY(OB_SUCCESS != error_)) {
       ret = OB_ERROR;
-      _OB_LOG(ERROR, "array in error state");
+      _OB_LOG(EDIAG, "array in error state");
     } else if (OB_UNLIKELY(0 > idx || idx >= count_)) {
       ret = OB_ARRAY_OUT_OF_RANGE;
     } else {
       if(OB_FAIL(copy_assign(obj, data_[idx]))) {
-        LIB_LOG(WARN, "failed to copy obj", K(ret));
+        LIB_LOG(WDIAG, "failed to copy obj", K(ret));
       }
     }
     return ret;
@@ -168,7 +168,7 @@ public:
       count_ = (capacity > count_) ? capacity : count_;
       valid_count_ = (capacity > valid_count_) ? capacity : valid_count_;
     } else {
-      OB_LOG(WARN, "Reserve capacity error", K(ret));
+      OB_LOG(WDIAG, "Reserve capacity error", K(ret));
     }
     return ret;
   }
@@ -190,9 +190,9 @@ public:
     int ret = OB_SUCCESS;
     // if (NULL == data_) {
     //   // do nothing, return OB_SUCCESS
-    //   LIB_LOG(WARN, "mprotect data_ while data_ is NULL", K(ret), K(lbt()));
+    //   LIB_LOG(WDIAG, "mprotect data_ while data_ is NULL", K(ret), K(lbt()));
     // } else if (OB_SUCCESS != (ret = ob_mprotect(data_, prot))) {
-    //   LIB_LOG(WARN, "fail to mprotect data_", K(ret), K(data_), K(lbt()));
+    //   LIB_LOG(WDIAG, "fail to mprotect data_", K(ret), K(data_), K(lbt()));
     // }
     UNUSED(prot);
     return ret;
@@ -218,7 +218,7 @@ private:
         int64_t failed_idx = 0;
         for (int64_t i = 0; OB_SUCC(ret) && i < count_; ++i) {
           if (OB_FAIL(construct_assign(new_data[i], data_[i]))) {
-            LIB_LOG(WARN, "failed to copy new_data", K(ret));
+            LIB_LOG(WDIAG, "failed to copy new_data", K(ret));
             failed_idx = i;
           }
         }
@@ -247,7 +247,7 @@ private:
         data_ = new_data;
       }
     } else {
-      _OB_LOG(ERROR, "no memory");
+      _OB_LOG(EDIAG, "no memory");
       new_data = NULL;
       ret = OB_ALLOCATE_MEMORY_FAILED;
     }
@@ -315,7 +315,7 @@ T *ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::alloc_place_holder()
     }
     count_++;
   } else {
-    _OB_LOG(WARN, "extend buf error, "
+    _OB_LOG(WDIAG, "extend buf error, "
               "count_=%ld, data_size_=%ld, (int64_t)sizeof(T)=%ld, data_size_/(int64_t)sizeof(T)=%ld",
               count_, data_size_, static_cast<int64_t>(sizeof(T)), data_size_ / static_cast<int64_t>(sizeof(T)));
   }
@@ -345,20 +345,20 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::push_back(const T &obj)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(OB_SUCCESS != error_)) {
     ret = OB_ERROR;
-    _OB_LOG(ERROR, "array in error state");
+    _OB_LOG(EDIAG, "array in error state");
   } else if (count_ >= data_size_ / (int64_t)sizeof(T)) {
     extend_buf();
   }
   if (OB_SUCCESS == ret && (count_ < data_size_ / (int64_t)sizeof(T))) {
     if (count_ < valid_count_) {
       if (OB_FAIL(copy_assign(data_[count_], obj))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       } else {
         ++count_;
       }
     } else {
       if (OB_FAIL(construct_assign(data_[count_], obj))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       } else {
         ++valid_count_;
         ++count_;
@@ -368,7 +368,7 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::push_back(const T &obj)
     if (OB_SUCC(ret)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
     }
-    _OB_LOG(WARN, "count_=%ld, data_size_=%ld, (int64_t)sizeof(T)=%ld, data_size_/(int64_t)sizeof(T)=%ld, ret=%d",
+    _OB_LOG(WDIAG, "count_=%ld, data_size_=%ld, (int64_t)sizeof(T)=%ld, data_size_/(int64_t)sizeof(T)=%ld, ret=%d",
               count_, data_size_, static_cast<int64_t>(sizeof(T)), data_size_ / static_cast<int64_t>(sizeof(T)),
               ret);
   }
@@ -389,7 +389,7 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::pop_back(T &obj)
   int ret = OB_ENTRY_NOT_EXIST;
   if (0 < count_) {
     if (OB_FAIL(copy_assign(obj, data_[--count_]))) {
-      LIB_LOG(WARN, "failed to copy data", K(ret));
+      LIB_LOG(WDIAG, "failed to copy data", K(ret));
     }
   }
   return ret;
@@ -404,7 +404,7 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::remove(int64_t idx)
   } else {
     for (int64_t i = idx; OB_SUCC(ret) && i < count_ - 1; ++i) {
       if (OB_FAIL(copy_assign(data_[i], data_[i + 1]))) {
-        LIB_LOG(WARN, "failed to copy data", K(ret));
+        LIB_LOG(WDIAG, "failed to copy data", K(ret));
       }
     }
     count_--;
@@ -432,19 +432,19 @@ ObArray<T, BlockAllocatorT, CallBack, ItemEncode>
     this->reset();
     this->reserve(other.count());
     if (OB_UNLIKELY(static_cast<uint64_t>(data_size_) < (sizeof(T)*other.count_))) {
-      _OB_LOG(ERROR, "no memory");
+      _OB_LOG(EDIAG, "no memory");
       error_ = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       const int64_t assign = std::min(valid_count_, other.count_);
       for (int64_t i = 0; OB_LIKELY(OB_SUCCESS == error_) && i < assign; ++i) {
         if (OB_UNLIKELY(OB_SUCCESS != (error_ = copy_assign(data_[i], other.data_[i])))) {
-          LIB_LOG(WARN, "failed to copy data", K(error_));
+          LIB_LOG(WDIAG, "failed to copy data", K(error_));
           count_ = i;
         }
       }
       for (int64_t i = assign; OB_LIKELY(OB_SUCCESS == error_) && i < other.count_; ++i) {
         if (OB_UNLIKELY(OB_SUCCESS != (error_ = construct_assign(data_[i], other.data_[i])))) {
-          LIB_LOG(WARN, "failed to copy data", K(error_));
+          LIB_LOG(WDIAG, "failed to copy data", K(error_));
           count_ = i;
         }
       }
@@ -468,19 +468,19 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::assign(const ObIArray<T> 
     int64_t N = other.count();
     (void)this->reserve(other.count());
     if (OB_UNLIKELY(static_cast<uint64_t>(data_size_) < (sizeof(T)*N))) {
-      _OB_LOG(WARN, "no memory");
+      _OB_LOG(WDIAG, "no memory");
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       const int64_t assign = std::min(valid_count_, N);
       for (int64_t i = 0; OB_SUCC(ret) && i < assign; ++i) {
         if (OB_FAIL(copy_assign(data_[i], other.at(i)))) {
-          LIB_LOG(WARN, "failed to copy data", K(ret));
+          LIB_LOG(WDIAG, "failed to copy data", K(ret));
           count_ = i;
         }
       }
       for (int64_t i = assign; OB_SUCC(ret) && i < N; ++i) {
         if (OB_FAIL(construct_assign(data_[i], other.at(i)))) {
-          LIB_LOG(WARN, "failed to copy data", K(ret));
+          LIB_LOG(WDIAG, "failed to copy data", K(ret));
           count_ = i;
         }
       }

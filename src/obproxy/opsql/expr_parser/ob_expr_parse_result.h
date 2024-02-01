@@ -67,7 +67,7 @@ typedef enum ObProxyFunctionType
   F_COMP_NE,
 } ObProxyFunctionType;
 
-typedef enum ObProxyOperatorType
+typedef enum _ObProxyOperatorType
 {
   OPT_NONE,
   OPT_ADD,
@@ -79,7 +79,6 @@ typedef enum ObProxyOperatorType
   OPT_NOT,
   OPT_COMMA,
 } ObProxyOperatorType;
-
 typedef enum ObProxyTokenType
 {
   TOKEN_NONE = 0,
@@ -90,6 +89,7 @@ typedef enum ObProxyTokenType
   TOKEN_COLUMN,
   TOKEN_PLACE_HOLDER,
   TOKEN_HEX_VAL,
+  TOKEN_NULL
 } ObProxyTokenType;
 
 typedef enum ObProxyPartKeyLevel
@@ -162,9 +162,9 @@ typedef struct _ObProxyPartKey
   ObProxyParseString name_;
   ObProxyParseString default_value_; // serialized value
   ObProxyPartKeyLevel level_;
-  int64_t idx_; // pos in schema columns 
+  int64_t idx_; // pos in schema columns
   int64_t obj_type_; // ObObjType
-  int64_t cs_type_; // ObCollationType 
+  int64_t cs_type_; // ObCollationType
   bool is_exist_in_sql_;  // is part key exist in sql
 
   bool is_generated_;

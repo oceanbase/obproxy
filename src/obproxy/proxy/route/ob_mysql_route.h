@@ -93,8 +93,10 @@ public:
       is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false),
       is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(NULL),
       route_(NULL), cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
-      cluster_version_(0), route_diagnosis_(NULL), cr_(NULL) {}
+      cluster_version_(0), route_diagnosis_(NULL), binlog_service_ip_(), cr_(NULL) {}
   ~ObRouteParam() { reset(); }
+
+  void set_route_diagnosis(ObRouteDiagnosis *route_diagnosis);
 
   void reset();
   bool is_valid() const;
@@ -125,6 +127,7 @@ public:
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
   int64_t cluster_version_;
   ObRouteDiagnosis *route_diagnosis_;
+  common::ObString binlog_service_ip_;
 
 private:
   // for defense, ensure mysql_proxy_ is safely used
@@ -163,6 +166,8 @@ inline void ObRouteParam::reset()
   set_cluster_resource(NULL);
   current_idc_name_.reset();
   cluster_version_ = 0;
+  binlog_service_ip_.reset();
+  set_route_diagnosis(NULL);
 }
 
 // all route related work, include table entry lookup, sql fast parse,

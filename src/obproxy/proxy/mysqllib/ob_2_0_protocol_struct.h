@@ -139,7 +139,7 @@ int Ob20ExtraInfo::get_next_sess_info(common::ObString &sess_info)
   uint64_t buf_length = sess_info_buf_.length(); 
   if (sess_info_offset_ + length > buf_length) {
     ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(WARN, "unexpected length of sess info buffer", K(ret), K(sess_info_offset_), K(length));
+    PROXY_LOG(WDIAG, "unexpected length of sess info buffer", K(ret), K(sess_info_offset_), K(length));
   } else {
     sess_info.assign_ptr(sess_info_buf_.ptr() + sess_info_offset_, static_cast<int32_t>(length));
     sess_info_offset_ += length;
@@ -153,11 +153,11 @@ int Ob20ExtraInfo::add_sess_info_buf(const char *value, const int64_t len)
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(NULL == value || 0 >= len)) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid argument", K(value), K(len), K(ret));
+    PROXY_LOG(WDIAG, "invalid argument", K(value), K(len), K(ret));
   } else if (OB_FAIL(sess_info_buf_.append(value, len))) {
-    PROXY_LOG(WARN, "fail to append sess info buf", K(value), K(len), K(ret));
+    PROXY_LOG(WDIAG, "fail to append sess info buf", K(value), K(len), K(ret));
   } else if (OB_FAIL(sess_info_length_.push_back(len))) {
-    PROXY_LOG(WARN, "fail to record sess info buf length", K(ret));
+    PROXY_LOG(WDIAG, "fail to record sess info buf length", K(ret));
   } else {
     is_exist_sess_info_ = true;
     sess_info_count_++;
@@ -204,88 +204,6 @@ public:
                K_(flag_.flags),
                K_(reserved));
 };
-
-// used for transfer function argument
-// flag ref to Protocol20Flags
-class Ob20ProtocolHeaderParam {
-public:
-  Ob20ProtocolHeaderParam() : connection_id_(0),
-                              request_id_(0),
-                              compressed_seq_(0),
-                              pkt_seq_(0),
-                              is_last_packet_(false),
-                              is_weak_read_(false),
-                              is_need_reroute_(false),
-                              is_new_extra_info_(false),
-                              is_trans_internal_routing_(false),
-                              is_switch_route_(false) {}
-  Ob20ProtocolHeaderParam(uint32_t conn_id, uint32_t req_id, uint8_t compressed_seq, uint8_t pkt_seq,
-                          bool is_last_packet, bool is_weak_read, bool is_need_reroute,
-                          bool is_new_extra_info, bool is_trans_internal_routing, bool is_switch_route)
-    : connection_id_(conn_id), request_id_(req_id), compressed_seq_(compressed_seq), pkt_seq_(pkt_seq),
-      is_last_packet_(is_last_packet), is_weak_read_(is_weak_read), is_need_reroute_(is_need_reroute),
-      is_new_extra_info_(is_new_extra_info), is_trans_internal_routing_(is_trans_internal_routing),
-      is_switch_route_(is_switch_route) {}
-  ~Ob20ProtocolHeaderParam() {}
-
-  Ob20ProtocolHeaderParam(const Ob20ProtocolHeaderParam &param) {
-    *this = param;
-  }
-
-  Ob20ProtocolHeaderParam &operator=(const Ob20ProtocolHeaderParam &param) {
-    if (this != &param) {
-      connection_id_ = param.connection_id_;
-      request_id_ = param.request_id_;
-      compressed_seq_ = param.compressed_seq_;
-      pkt_seq_ = param.pkt_seq_;
-      is_last_packet_ = param.is_last_packet_;
-      is_weak_read_ = param.is_weak_read_;
-      is_need_reroute_ = param.is_need_reroute_;
-      is_new_extra_info_ = param.is_new_extra_info_;
-      is_trans_internal_routing_ = param.is_trans_internal_routing_;
-      is_switch_route_ = param.is_switch_route_;
-    }
-    return *this;
-  }
-
-  uint32_t get_connection_id() const { return connection_id_; }
-  uint32_t get_request_id() const { return request_id_; }
-  uint8_t get_compressed_seq() const { return compressed_seq_; }
-  uint8_t get_pkt_seq() const { return pkt_seq_; }
-  bool is_last_packet() const { return is_last_packet_; }
-  bool is_weak_read() const { return is_weak_read_; }
-  bool is_need_reroute() const { return is_need_reroute_; }
-  bool is_new_extra_info() const { return is_new_extra_info_; }
-  bool is_trans_internal_routing() const { return is_trans_internal_routing_; }
-  bool is_switch_route() const { return is_switch_route_; }
-  
-  void reset()
-  {
-    MEMSET(this, 0x0, sizeof(Ob20ProtocolHeaderParam));
-    is_last_packet_ = false;
-    is_weak_read_ = false;
-    is_need_reroute_ = false;
-    is_new_extra_info_ = false;
-    is_trans_internal_routing_ = false;
-    is_switch_route_ = false;
-  }
-
-  TO_STRING_KV(K_(connection_id), K_(request_id), K_(compressed_seq), K_(pkt_seq),
-               K_(is_last_packet), K_(is_weak_read), K_(is_need_reroute), K_(is_new_extra_info),
-               K_(is_trans_internal_routing), K_(is_switch_route));
-private:
-  uint32_t connection_id_;
-  uint32_t request_id_;
-  uint8_t compressed_seq_;
-  uint8_t pkt_seq_;
-  bool is_last_packet_;
-  bool is_weak_read_;
-  bool is_need_reroute_;
-  bool is_new_extra_info_;
-  bool is_trans_internal_routing_;
-  bool is_switch_route_;              // send to observer only
-};
-
 
 } // end of namespace proxy
 } // end of namespace obproxy

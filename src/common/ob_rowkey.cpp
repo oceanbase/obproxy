@@ -71,17 +71,17 @@ int ObRowkey::serialize(char *buf, const int64_t buf_len, int64_t &pos) const
   int ret = OB_SUCCESS;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(buf), K(buf_len), K(ret));
   } else if (OB_UNLIKELY(!is_legal())) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "illegal rowkey.",
+    COMMON_LOG(WDIAG, "illegal rowkey.",
                KP_(obj_ptr), K_(obj_cnt), K(ret));
   } else if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, obj_cnt_))) {
-    COMMON_LOG(WARN, "encode object count failed.",
+    COMMON_LOG(WDIAG, "encode object count failed.",
                KP(buf), K(buf_len), K(pos), K_(obj_cnt), K(ret));
   } else if (OB_FAIL(serialize_objs(buf, buf_len, pos))) {
-    COMMON_LOG(WARN, "serialize objects failed.",
+    COMMON_LOG(WDIAG, "serialize objects failed.",
                KP(buf), K(buf_len), K(pos), K_(obj_cnt), K(ret));
   }
   return ret;
@@ -93,19 +93,19 @@ int ObRowkey::deserialize(const char *buf, const int64_t buf_len, int64_t &pos)
   int64_t obj_cnt = 0;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(buf), K(buf_len), K(ret));
   } else if (OB_FAIL(serialization::decode_vi64(buf, buf_len, pos, &obj_cnt))) {
-    COMMON_LOG(WARN, "decode object count failed.",
+    COMMON_LOG(WDIAG, "decode object count failed.",
                KP(buf), K(buf_len), K(pos), K(obj_cnt), K(ret));
   } else if (obj_cnt_ < obj_cnt) {
     ret = OB_BUF_NOT_ENOUGH;
-    COMMON_LOG(ERROR, "obj number greater than expected.",
+    COMMON_LOG(EDIAG, "obj number greater than expected.",
                K_(obj_cnt), K(obj_cnt), K(ret));
   } else {
     obj_cnt_ = obj_cnt;
     if (OB_FAIL(deserialize_objs(buf, buf_len, pos))) {
-      COMMON_LOG(WARN, "decode objects failed.",
+      COMMON_LOG(WDIAG, "decode objects failed.",
                  KP(buf), K(buf_len), K(pos), K(obj_cnt), K(ret));
     }
   }
@@ -124,15 +124,15 @@ int ObRowkey::serialize_objs(char *buf, const int64_t buf_len, int64_t &pos) con
   int ret = OB_SUCCESS;
   if (NULL == buf || buf_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(buf_len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(buf_len), K(ret));
   } else if (OB_UNLIKELY(!is_legal())) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "illegal rowkey.",
+    COMMON_LOG(WDIAG, "illegal rowkey.",
                KP_(obj_ptr), K_(obj_cnt), K(ret));
   }
   for (int64_t i = 0; i < obj_cnt_ && OB_SUCCESS == ret; ++i) {
     if (OB_FAIL(obj_ptr_[i].serialize(buf, buf_len, pos))) {
-      COMMON_LOG(WARN, "serialize object failed.",
+      COMMON_LOG(WDIAG, "serialize object failed.",
                  K(i), KP(buf), K(buf_len), K(pos), K(ret));
     }
   }
@@ -154,11 +154,11 @@ int ObRowkey::deserialize_objs(const char *buf, const int64_t buf_len, int64_t &
   int ret = OB_SUCCESS;
   if (NULL == obj_ptr_) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(ERROR, "obj array is NULL", K(ret));
+    COMMON_LOG(EDIAG, "obj array is NULL", K(ret));
   } else {
     for (int64_t i = 0; i < obj_cnt_ && OB_SUCCESS == ret; ++i) {
       if (OB_FAIL(obj_ptr_[i].deserialize(buf, buf_len, pos))) {
-        COMMON_LOG(WARN, "deserialize object failed.",
+        COMMON_LOG(WDIAG, "deserialize object failed.",
                    K(i), KP(buf), K(buf_len), K(pos), K(ret));
       }
     }
@@ -172,7 +172,7 @@ int64_t ObRowkey::to_string(char *buffer, const int64_t length) const
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buffer) || OB_ISNULL(obj_ptr_)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "arg is null", KP(buffer), KP(obj_ptr_));
+    COMMON_LOG(WDIAG, "arg is null", KP(buffer), KP(obj_ptr_));
   } else {
     for (int i = 0; OB_SUCC(ret) && i < obj_cnt_; ++i) {
       if (pos < length) {
@@ -180,17 +180,17 @@ int64_t ObRowkey::to_string(char *buffer, const int64_t length) const
           obj_ptr_[i].print_range_value(buffer, length, pos);
         } else if (obj_ptr_[i].is_min_value()) {
           if (OB_FAIL(databuff_printf(buffer, length, pos, "MIN"))) {
-            COMMON_LOG(WARN, "Failed to print", K(obj_ptr_[i]), K(ret));
+            COMMON_LOG(WDIAG, "Failed to print", K(obj_ptr_[i]), K(ret));
           }
         } else {
           if (OB_FAIL(databuff_printf(buffer, length, pos, "MAX"))) {
-            COMMON_LOG(WARN, "Failed to print", K(obj_ptr_[i]), K(ret));
+            COMMON_LOG(WDIAG, "Failed to print", K(obj_ptr_[i]), K(ret));
           }
         }
         if (OB_SUCC(ret)) {
           if (i < obj_cnt_ - 1) {
             if (OB_FAIL(databuff_printf(buffer, length, pos, ","))) {
-              COMMON_LOG(WARN, "Failed to print", K(ret));
+              COMMON_LOG(WDIAG, "Failed to print", K(ret));
             }
           }
         }
@@ -210,21 +210,21 @@ int64_t ObRowkey::to_plain_string(char *buffer, const int64_t length) const
     if (pos < length) {
       if (!obj_ptr_[i].is_max_value() && !obj_ptr_[i].is_min_value()) {
         if (OB_FAIL(obj_ptr_[i].print_plain_str_literal(buffer, length, pos))) {
-          COMMON_LOG(WARN, "Failed to print", K(obj_ptr_[i]), K(ret));
+          COMMON_LOG(WDIAG, "Failed to print", K(obj_ptr_[i]), K(ret));
         }
       } else if (obj_ptr_[i].is_min_value()) {
         if (OB_FAIL(databuff_printf(buffer, length, pos, "MIN"))) {
-          COMMON_LOG(WARN, "Failed to print", K(obj_ptr_[i]), K(ret));
+          COMMON_LOG(WDIAG, "Failed to print", K(obj_ptr_[i]), K(ret));
         }
       } else {
         if (OB_FAIL(databuff_printf(buffer, length, pos, "MAX"))) {
-          COMMON_LOG(WARN, "Failed to print", K(obj_ptr_[i]), K(ret));
+          COMMON_LOG(WDIAG, "Failed to print", K(obj_ptr_[i]), K(ret));
         }
       }
       if (OB_SUCC(ret)) {
         if (i < obj_cnt_ - 1) {
           if (OB_FAIL(databuff_printf(buffer, length, pos, ","))) {
-            COMMON_LOG(WARN, "Failed to print", K(ret));
+            COMMON_LOG(WDIAG, "Failed to print", K(ret));
           }
         }
       }
@@ -242,7 +242,7 @@ int ObRowkey::checksum(ObBatchChecksum &bc) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_legal())) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "illegal rowkey.",
+    COMMON_LOG(WDIAG, "illegal rowkey.",
                KP_(obj_ptr), K_(obj_cnt), K(ret));
   } else if (0 < obj_cnt_ && NULL != obj_ptr_) {
     for (int64_t i = 0; i < obj_cnt_; i++) {
@@ -258,7 +258,7 @@ uint64_t ObRowkey::murmurhash(const uint64_t hash) const
   uint64_t ret = hash;
   if (OB_UNLIKELY(!is_legal())) {
     tmp_ret = OB_INVALID_DATA;
-    COMMON_LOG(ERROR, "illegal rowkey.",
+    COMMON_LOG(EDIAG, "illegal rowkey.",
                KP_(obj_ptr), K_(obj_cnt), K(tmp_ret));
   } else if (0 < obj_cnt_ && NULL != obj_ptr_) {
     if (is_min_row() || is_max_row()) {

@@ -34,7 +34,7 @@ int ObTraceProfile::init(const char *module, const int64_t warn_timeout,
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(module) || warn_timeout < 0) {
-    COMMON_LOG(WARN, "invalid argument", KP(module), K(warn_timeout));
+    COMMON_LOG(WDIAG, "invalid argument", KP(module), K(warn_timeout));
     ret = OB_INVALID_ARGUMENT;
   } else {
     module_name_ = module;
@@ -161,7 +161,7 @@ void ObTraceProfile::report_trace()
       }
       databuff_printf(buf, buf_len, pos, "%ld]", entry_[i].time_ - begin_time);
     }
-    COMMON_LOG(WARN, "trace_info", "info", buf);
+    COMMON_LOG(WDIAG, "trace_info", "info", buf);
   }
 }
 

@@ -74,7 +74,7 @@ size_t malloc_usable_size(void *ptr)
       // debug mode
       abort();
     #else
-      _OB_LOG(ERROR,
+      _OB_LOG(EDIAG,
               "unexpected magic, memory broken or mismatched hook function is invoked!!!");
       return 0;
     #endif
@@ -155,7 +155,7 @@ void free(void *ptr)
       // debug mode
       abort();
     #else
-      _OB_LOG(ERROR,
+      _OB_LOG(EDIAG,
               "unexpected magic, memory broken or mismatched hook function is invoked!!!");
       return;
     #endif
@@ -185,7 +185,7 @@ void *realloc(void *ptr, size_t size)
       // debug mode
       abort();
     #else
-      _OB_LOG(ERROR,
+      _OB_LOG(EDIAG,
               "unexpected magic, memory broken or mismatched hook function is invoked!!!");
       return NULL;
     #endif

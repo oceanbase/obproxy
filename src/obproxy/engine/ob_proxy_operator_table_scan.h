@@ -28,7 +28,7 @@ class ObProxyTableScanOp : public ObProxyOperator
 {
 public:
   ObProxyTableScanOp(ObProxyOpInput *input, common::ObIAllocator &allocator)
-    : ObProxyOperator(input, allocator), sub_sql_count_(0) {
+    : ObProxyOperator(input, allocator), all_resultset_rows_sum_(0), sub_sql_count_(0) , pres_array_(){
     set_op_type(PHY_TABLE_SCAN);
   }
 
@@ -52,6 +52,7 @@ private:
   int set_index_for_expr(opsql::ObProxyExpr *expr);
 
 protected:
+  int64_t all_resultset_rows_sum_;
   int64_t sub_sql_count_;
   common::ObSEArray<executor::ObProxyParallelResp*, 4> pres_array_;
 };
@@ -122,8 +123,9 @@ public:
     return order_exprs_;
   }
 
-private:
+public:
   ObString request_sql_;
+private:
   ObSEArray<hash::ObHashMapWrapper<common::ObString, common::ObString>, 4> table_name_maps_;
   common::ObSEArray<dbconfig::ObShardConnector*, 4> db_key_names_;
   common::ObSEArray<dbconfig::ObShardProp*, 4> shard_props_;

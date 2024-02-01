@@ -45,6 +45,19 @@ namespace proxy
 const ObString PROXY_IDC_NAME_USER_SESSION_VAR     = common::ObString::make_string("proxy_idc_name");
 const ObString PROXY_ROUTE_POLICY_USER_SESSION_VAR = common::ObString::make_string("proxy_route_policy");
 
+ObWeakReadHitReplica get_weak_read_hit_replica_enum(const ObString &value)
+{
+  ObWeakReadHitReplica hit_replica = MAX_REPLICA;
+  if (value == ObString::make_string("1")) {
+    hit_replica = INVALID_REPLICA;
+  } else if (value == ObString::make_string("2")) {
+    hit_replica = ALL_LEADER_REPLICA;
+  } else if (value == ObString::make_string("3")) {
+    hit_replica = PART_HIT_REPLICA;
+  }
+  return hit_replica;
+}
+
 int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,
                                                        ObClientSessionInfo &client_info,
                                                        ObServerSessionInfo &server_info,
@@ -63,11 +76,11 @@ int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,
     int64_t offset = reader.read_avail() - pkt_len;
     // get ok packet
     if (OB_FAIL(pkt_reader.get_ok_packet(reader, offset, cap, src_ok))) {
-      LOG_WARN("fail to get ok packet", K(ret));
+      LOG_WDIAG("fail to get ok packet", K(ret));
     // save changed info
     } else if (OB_FAIL(save_changed_session_info(client_info, server_info, false,
                                                  need_handle_sysvar, src_ok, resp_result, trace_log, false))) {
-      LOG_WARN("fail to save changed session info", K(ret));
+      LOG_WDIAG("fail to save changed session info", K(ret));
     } else {
       LOG_DEBUG("analyze_extra_ok_packet", K(src_ok));
     }
@@ -82,9 +95,9 @@ int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,
   ObMIOBuffer *writer = reader.writer();
   if (OB_ISNULL(writer)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpect null writer", K(writer), K(ret));
+    LOG_WDIAG("unexpect null writer", K(writer), K(ret));
   } else if (OB_FAIL(writer->trim(reader, pkt_len))) {
-    LOG_WARN("failed to trim last pkt", K(writer), K(pkt_len), K(ret));
+    LOG_WDIAG("failed to trim last pkt", K(writer), K(pkt_len), K(ret));
   }
 
   return ret;
@@ -105,14 +118,14 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
   if (pkt_len > OB_SIMPLE_OK_PKT_LEN) {
     ObMysqlPacketReader pkt_reader;
     const ObMySQLCapabilityFlags cap = server_info.get_compatible_capability_flags();
-    
+
     OMPKOK src_ok;
     int64_t offset = reader.read_avail() - pkt_len;
     LOG_DEBUG("rebuild_ok_packet", K(reader.read_avail()), K(pkt_len), K(offset));
 
     // 1. get ok packet from buffer
     if (OB_FAIL(pkt_reader.get_ok_packet(reader, offset, cap, src_ok))) {
-      LOG_WARN("fail to get ok packet", K(offset), K(ret));
+      LOG_WDIAG("fail to get ok packet", K(offset), K(ret));
       // 2. save seesion info
     } else if (OB_FAIL(save_changed_session_info(client_info,
                                           server_info,
@@ -122,31 +135,31 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
                                           resp_result,
                                           trace_log,
                                           is_save_to_common_sys))) {
-      LOG_WARN("fail to save changed session info", K(is_auth_request), K(ret));
+      LOG_WDIAG("fail to save changed session info", K(is_auth_request), K(ret));
     } else {
       // 3. rewrite ok packet
       OMPKOK des_ok;
       char cap_buf[OB_MAX_UINT64_BUF_LEN];
       const ObMySQLCapabilityFlags &orig_cap = client_info.get_orig_capability_flags();
-      
+
       if (OB_FAIL(ObMysqlPacketRewriter::rewrite_ok_packet(src_ok, orig_cap, des_ok, client_info,
                                                            cap_buf, OB_MAX_UINT64_BUF_LEN, is_auth_request))) {
-        LOG_WARN("fail to rewrite ok packet", K(src_ok), K(ret));
+        LOG_WDIAG("fail to rewrite ok packet", K(src_ok), K(ret));
       } else {
         LOG_DEBUG("rebuild_ok_packet succ", K(src_ok), "src_size", src_ok.get_serialize_size(),
                   K(des_ok), "dst_size", des_ok.get_serialize_size());
-          
+
         // 4. trim the orig ok packet
         resp_result.rewritten_last_ok_pkt_len_ = des_ok.get_serialize_size() + MYSQL_NET_HEADER_LENGTH;
         ObMIOBuffer *writer = reader.writer();
         if (OB_ISNULL(writer)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpect null writer", K(writer), K(ret));
+          LOG_WDIAG("unexpect null writer", K(writer), K(ret));
         } else if (OB_FAIL(writer->trim(reader, pkt_len))) {
-          LOG_WARN("failed to trim last pkt", K(writer), K(pkt_len), K(ret));
+          LOG_WDIAG("failed to trim last pkt", K(writer), K(pkt_len), K(ret));
           // 5. write the new ok packet
         } else if (OB_FAIL(ObMysqlPacketWriter::write_packet(*writer, des_ok))) {
-          LOG_WARN("fail to write ok packet", K(src_ok), K(ret));
+          LOG_WDIAG("fail to write ok packet", K(src_ok), K(ret));
         } else {
           // do nothing
         }
@@ -181,7 +194,7 @@ int ObProxySessionInfoHandler::rewrite_query_req_by_sharding(ObClientSessionInfo
                                           client_request, tmp_req_cmd, status);
 
   if (OB_UNLIKELY(ANALYZE_DONE != status)) {
-    LOG_WARN("fail to analyze request", K(status), K(ret));
+    LOG_WDIAG("fail to analyze request", K(status), K(ret));
     if (ANALYZE_OBPARSE_ERROR == status) {
       ret = OB_ERR_PARSER_SYNTAX;
     } else {
@@ -206,10 +219,10 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
   // 1. alloc tmp buffer
   if (OB_ISNULL(target_hsr_buf = new_miobuffer(BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
+    LOG_WDIAG("fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
   } else if (OB_ISNULL(target_hsr_reader = target_hsr_buf->alloc_reader())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc reader for ObIOBufferReader", K(ret));
+    LOG_WDIAG("fail to alloc reader for ObIOBufferReader", K(ret));
   } else {
     // 2. rewrite handshake response
     OMPKHandshakeResponse target_hsr;
@@ -231,7 +244,7 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
     char passwd_staged1_buf[ENC_STRING_BUF_LEN]; // 1B '*' + 40B octal num
     ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
     if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(password, passwd_string))) {
-      LOG_WARN("fail to encrypt_passwd_to_stage1", K(ret));
+      LOG_WDIAG("fail to encrypt_passwd_to_stage1", K(ret));
     } else {
       passwd_string += 1;
       int64_t actual_len = 0;
@@ -240,7 +253,7 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
                                         : client_info.get_scramble_string());
       if (OB_FAIL(ObClientUtils::get_auth_password_from_stage1(passwd_string,
               scramble_string, pwd_buf, pwd_buf_len, actual_len))) {
-            LOG_WARN("fail to get get_auth_password_from_stage1", K(ret));
+            LOG_WDIAG("fail to get get_auth_password_from_stage1", K(ret));
       } else {
         ObString auth_str(actual_len, pwd_buf);
         target_hsr.set_auth_response(auth_str);
@@ -256,11 +269,11 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
     target_hsr.set_database(database);
 
     if (OB_FAIL(ObMysqlPacketWriter::write_packet(*target_hsr_buf, target_hsr))) {
-      LOG_WARN("fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
+      LOG_WDIAG("fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
     } else if (OB_FAIL(ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(
                            target_ctx, target_hsr_reader,
                            tenant_name, cluster_name))) {
-      LOG_WARN("fail to int request analyze context", K(ret));
+      LOG_WDIAG("fail to int request analyze context", K(ret));
     } else {
       ObMysqlAnalyzeStatus status = ANALYZE_CONT;
       obmysql::ObMySQLCmd tmp_req_cmd = obmysql::OB_MYSQL_COM_MAX_NUM;
@@ -271,13 +284,14 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
                                               tmp_request, tmp_req_cmd, status);
       if (OB_UNLIKELY(ANALYZE_DONE != status)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to analyze request", K(status), K(ret));
+        LOG_WDIAG("fail to analyze request", K(status), K(ret));
       } else {
         // reload priv info
         ObProxySessionPrivInfo &priv_info = client_info.get_priv_info();
         priv_info.cluster_name_ = auth_req.get_hsr_result().cluster_name_;
         priv_info.tenant_name_ = auth_req.get_hsr_result().tenant_name_;
         priv_info.user_name_ = auth_req.get_hsr_result().user_name_;
+        priv_info.logic_user_name_ = client_info.get_origin_username();
         LOG_DEBUG("succ to rewrite login packet", K(username), K(priv_info));
       }
     }
@@ -302,10 +316,10 @@ int ObProxySessionInfoHandler::rewrite_login_req(ObClientSessionInfo &client_inf
   // 1. alloc tmp buffer
   if (OB_ISNULL(target_hsr_buf = new_miobuffer(BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
+    LOG_WDIAG("fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
   } else if (OB_ISNULL(target_hsr_reader = target_hsr_buf->alloc_reader())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc reader for ObIOBufferReader", K(ret));
+    LOG_WDIAG("fail to alloc reader for ObIOBufferReader", K(ret));
   } else {
     // 2. rewrite handshake response
     OMPKHandshakeResponse target_hsr;
@@ -315,18 +329,18 @@ int ObProxySessionInfoHandler::rewrite_login_req(ObClientSessionInfo &client_inf
     ObString default_cluster_name;
 
     if (OB_FAIL(client_info.get_tenant_name(default_tenant_name))) {
-      LOG_WARN("fail to get tenant name", K(ret));
+      LOG_WDIAG("fail to get tenant name", K(ret));
     } else if (OB_FAIL(client_info.get_cluster_name(default_cluster_name))) {
-      LOG_WARN("fail to get cluster name", K(ret));
+      LOG_WDIAG("fail to get cluster name", K(ret));
     } else if (OB_FAIL(ObMysqlPacketRewriter::rewrite_handshake_response_packet(auth_req, param, target_hsr))) {
-      LOG_WARN("fail to rewrite handshake response packet", K(ret));
+      LOG_WDIAG("fail to rewrite handshake response packet", K(ret));
       // 3. analyze the rewrited handshake response
     } else if (OB_FAIL(ObMysqlPacketWriter::write_packet(*target_hsr_buf, target_hsr))) {
-      LOG_WARN("fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
+      LOG_WDIAG("fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
     } else if (OB_FAIL(ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(
             target_ctx, target_hsr_reader,
             default_tenant_name, default_cluster_name))) {
-      LOG_WARN("fail to int request analyze context", K(ret));
+      LOG_WDIAG("fail to int request analyze context", K(ret));
     } else {
       ObMysqlAnalyzeStatus status = ANALYZE_CONT;
       obmysql::ObMySQLCmd tmp_req_cmd = obmysql::OB_MYSQL_COM_MAX_NUM;
@@ -337,7 +351,7 @@ int ObProxySessionInfoHandler::rewrite_login_req(ObClientSessionInfo &client_inf
                                               tmp_request, tmp_req_cmd, status, client_info.is_oracle_mode());
       if (OB_UNLIKELY(ANALYZE_DONE != status)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to analyze request", K(status), K(ret));
+        LOG_WDIAG("fail to analyze request", K(status), K(ret));
       } else {
         // reload priv info
         ObProxySessionPrivInfo &priv_info = client_info.get_priv_info();
@@ -369,10 +383,10 @@ int  ObProxySessionInfoHandler::rewrite_ldg_login_req(ObClientSessionInfo &clien
   // 1.alloc tmp buffer
   if (OB_ISNULL(target_hsr_buf = new_miobuffer(BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_CS_LOG(WARN, "fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
   } else if (OB_ISNULL(target_hsr_reader = target_hsr_buf->alloc_reader())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_CS_LOG(WARN, "fail to alloc reader for ObIOBufferReader", K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to alloc reader for ObIOBufferReader", K(ret));
   } else {
     OMPKHandshakeResponse target_hsr;
     ObRequestAnalyzeCtx target_ctx;
@@ -410,7 +424,7 @@ int  ObProxySessionInfoHandler::rewrite_ldg_login_req(ObClientSessionInfo &clien
                                               tmp_request, tmp_req_cmd, status);
       if (OB_UNLIKELY(ANALYZE_DONE != status)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WARN, "fail to analyze request", K(status), K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to analyze request", K(status), K(ret));
       } else {
         ObProxySessionPrivInfo &priv_info = client_info.get_priv_info();
         priv_info.cluster_name_ = auth_req.get_hsr_result().cluster_name_;
@@ -440,10 +454,10 @@ int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo
   // 1.alloc tmp buffer
   if (OB_ISNULL(target_hsr_buf = new_miobuffer(BUFFER_SIZE))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_CS_LOG(WARN, "fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to allocate memory for ObMIOBuffer", "size", BUFFER_SIZE, K(ret));
   } else if (OB_ISNULL(target_hsr_reader = target_hsr_buf->alloc_reader())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_CS_LOG(WARN, "fail to alloc reader for ObIOBufferReader", K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to alloc reader for ObIOBufferReader", K(ret));
   } else {
     OMPKHandshakeResponse target_hsr;
     ObRequestAnalyzeCtx target_ctx;
@@ -462,13 +476,13 @@ int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo
     ObString default_tenant_name;
     ObString default_cluster_name;
     if (OB_FAIL(client_info.get_tenant_name(default_tenant_name))) {
-      LOG_WARN("fail to get tenant name", K(ret));
+      LOG_WDIAG("fail to get tenant name", K(ret));
     } else if (OB_FAIL(client_info.get_cluster_name(default_cluster_name))) {
-      LOG_WARN("fail to get cluster name", K(ret));
+      LOG_WDIAG("fail to get cluster name", K(ret));
     } else if (OB_FAIL(ObMysqlPacketWriter::write_packet(*target_hsr_buf, target_hsr))) {
       PROXY_CS_LOG(WARN, "fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
     } else if (OB_FAIL(ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(
-                                            target_ctx, target_hsr_reader, 
+                                            target_ctx, target_hsr_reader,
                                             default_tenant_name, default_cluster_name))) {
       PROXY_CS_LOG(WARN, "fail to init request analyze context", K(ret));
     } else {
@@ -480,7 +494,7 @@ int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo
                                               tmp_request, tmp_req_cmd, status);
       if (OB_UNLIKELY(ANALYZE_DONE != status)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WARN, "fail to analyze request", K(status), K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to analyze request", K(status), K(ret));
       } else {
         ObProxySessionPrivInfo &priv_info = client_info.get_priv_info();
         priv_info.cluster_name_ = auth_req.get_hsr_result().cluster_name_;
@@ -490,7 +504,7 @@ int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo
       }
     }
   }
-  
+
   // 4. free the buffer if need
   if (OB_LIKELY(NULL != target_hsr_buf)) {
     free_miobuffer(target_hsr_buf);
@@ -521,7 +535,8 @@ int ObProxySessionInfoHandler::rewrite_ssl_req(ObClientSessionInfo &client_info)
   return ret;
 }
 
-int ObProxySessionInfoHandler::rewrite_first_login_req(ObClientSessionInfo &client_info,
+int ObProxySessionInfoHandler::rewrite_first_login_req(ObHandshakeResponseParam &param,
+                                                       ObClientSessionInfo &client_info,
                                                        const ObString &cluster_name,
                                                        const int64_t cluster_id,
                                                        const uint32_t server_sessid,
@@ -529,33 +544,25 @@ int ObProxySessionInfoHandler::rewrite_first_login_req(ObClientSessionInfo &clie
                                                        const ObString &server_scramble,
                                                        const ObString &proxy_scramble,
                                                        const ObAddr &client_addr,
-                                                       const bool use_compress,
-                                                       const bool use_ob_protocol_v2,
-                                                       const bool use_ssl,
-                                                       const bool enable_client_ip_checkout){
+                                                       const uint32_t cs_id,
+                                                       const int64_t connected_time) {
   int ret = OB_SUCCESS;
-  // first login packet, which will be sent to observer at first auth
-  // (include modified packet data and analyzed result, with -D database)
-  ObHandshakeResponseParam param;
-  param.is_saved_login_ = false;
-  param.use_compress_ = use_compress;
-  param.use_ob_protocol_v2_ = use_ob_protocol_v2;
-  param.use_ssl_ = use_ssl;
-  param.enable_client_ip_checkout_ = enable_client_ip_checkout;
   // in the first login packet the version is set to 0,
   // in the saved login packet the version is set to the global vars version
   // observer used this value to judge whether the connection is first server session
   const int64_t global_vars_version = 0;
+  param.is_saved_login_ = false;
   if (OB_FAIL(rewrite_common_login_req(client_info, param, global_vars_version, cluster_name,
-      cluster_id, server_sessid, proxy_sessid, server_scramble, proxy_scramble, client_addr))) {
-    LOG_WARN("fail to rewrite_common_login_req", K(param), K(ret));
+      cluster_id, server_sessid, proxy_sessid, server_scramble, proxy_scramble, client_addr, cs_id, connected_time))) {
+    LOG_WDIAG("fail to rewrite_common_login_req", K(param), K(ret));
   } else {
     LOG_DEBUG("succ to rewrite_first_login_req", K(param));
   }
   return ret;
 }
 
-int ObProxySessionInfoHandler::rewrite_saved_login_req(ObClientSessionInfo &client_info,
+int ObProxySessionInfoHandler::rewrite_saved_login_req(ObHandshakeResponseParam &param,
+                                                       ObClientSessionInfo &client_info,
                                                        const ObString &cluster_name,
                                                        const int64_t cluster_id,
                                                        const uint32_t server_sessid,
@@ -563,26 +570,17 @@ int ObProxySessionInfoHandler::rewrite_saved_login_req(ObClientSessionInfo &clie
                                                        const ObString &server_scramble,
                                                        const ObString &proxy_scramble,
                                                        const ObAddr &client_addr,
-                                                       const bool use_compress,
-                                                       const bool use_ob_protocol_v2,
-                                                       const bool use_ssl,
-                                                       const bool enable_client_ip_checkout){
+                                                       const uint32_t cs_id,
+                                                       const int64_t connected_time) {
   int ret = OB_SUCCESS;
-  // saved login packet, which will be sent to observer later
-  // (include modified packet data and analyzed result, without -D database)
-  ObHandshakeResponseParam param;
-  param.is_saved_login_ = true;
-  param.use_compress_ = use_compress;
-  param.use_ob_protocol_v2_ = use_ob_protocol_v2;
-  param.use_ssl_ = use_ssl;
-  param.enable_client_ip_checkout_ = enable_client_ip_checkout;
   // in the first login packet the version is set to 0,
   // in the saved login packet the version is set to the global vars version
   // observer used this value to judge whether the connection is first server session
   const int64_t global_vars_version = client_info.get_global_vars_version();
+  param.is_saved_login_ = true;
   if (OB_FAIL(rewrite_common_login_req(client_info, param, global_vars_version, cluster_name,
-      cluster_id, server_sessid, proxy_sessid, server_scramble, proxy_scramble, client_addr))) {
-    LOG_WARN("fail to rewrite_common_login_req", K(param), K(ret));
+      cluster_id, server_sessid, proxy_sessid, server_scramble, proxy_scramble, client_addr, cs_id, connected_time))) {
+    LOG_WDIAG("fail to rewrite_common_login_req", K(param), K(ret));
   } else {
     LOG_DEBUG("succ to rewrite_saved_login_req", K(param));
   }
@@ -598,7 +596,9 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
                                                                const uint64_t proxy_sessid,
                                                                const ObString &server_scramble,
                                                                const ObString &proxy_scramble,
-                                                               const ObAddr &client_addr)
+                                                               const ObAddr &client_addr,
+                                                               const uint32_t cs_id,
+                                                               const int64_t connected_time)
 {
   int ret = OB_SUCCESS;
   uint64_t cap = OBPROXY_DEFAULT_CAPABILITY_FLAG;
@@ -624,34 +624,57 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
              | OB_CAP_PROXY_SESSION_VAR_SYNC);
   }
 
+  if (!param.use_ob_protocol_v2_compress_) {
+    cap &= ~OB_CAP_OB_PROTOCOL_V2_COMPRESS;
+  }
+
+  if (param.cs_id_version_ == CLIENT_SESSION_ID_V2) {
+    cap |= OB_CAP_ENABLE_CLIENT_SESSION_ID_V2;
+  } else {
+    cap &= ~(OB_CAP_ENABLE_CLIENT_SESSION_ID_V2);
+  }
+
+  // if client - obproxy use MySQL protocol
+  // then support load data local infile command
+  if (!client_info.is_client_support_ob20_protocol() &&
+      !client_info.is_client_support_compressed_protocol()) {
+    cap |= OB_CAP_LOCAL_FILES;
+  }
+
   param.cluster_name_ = cluster_name;
   const bool need_write_proxy_sramble = !proxy_scramble.empty()
       && !client_info.get_login_req().get_hsr_result().response_.get_auth_response().empty();
 
   if (OB_FAIL(param.write_conn_id_buf(server_sessid))) {
-    LOG_WARN("fail to write connection id", K(server_sessid), K(ret));
+    LOG_WDIAG("fail to write connection id", K(server_sessid), K(ret));
   } else if (OB_FAIL(param.write_proxy_version_buf())) {
-    LOG_WARN("fail to write proxy version", K(ret));
+    LOG_WDIAG("fail to write proxy version", K(ret));
   } else if (OB_FAIL(param.write_proxy_conn_id_buf(proxy_sessid))) {
-    LOG_WARN("fail to write proxy conn id", K(proxy_sessid), K(ret));
+    LOG_WDIAG("fail to write proxy conn id", K(proxy_sessid), K(ret));
   } else if (OB_FAIL(param.write_global_vars_version_buf(global_vars_version))) {
-    LOG_WARN("fail to write global vars version_", K(global_vars_version), K(ret));
+    LOG_WDIAG("fail to write global vars version_", K(global_vars_version), K(ret));
   } else if (OB_FAIL(param.write_capability_buf(cap))) {
-    LOG_WARN("fail to write capability flag", K(cap), K(ret));
+    LOG_WDIAG("fail to write capability flag", K(cap), K(ret));
   } else if (need_write_proxy_sramble && OB_FAIL(param.write_proxy_scramble(proxy_scramble, server_scramble))) {
-    LOG_WARN("fail to write proxy scramble", K(ret));
+    LOG_WDIAG("fail to write proxy scramble", K(ret));
   } else if (OB_FAIL(param.write_client_addr_buf(client_addr))) {
-    LOG_WARN("fail to write client_addr", K(client_addr), K(ret));
+    LOG_WDIAG("fail to write client_addr", K(client_addr), K(ret));
   } else if (OB_FAIL(param.write_cluster_id_buf(cluster_id))) {
-    LOG_WARN("fail to write cluster id", K(cluster_id), K(ret));
+    LOG_WDIAG("fail to write cluster id", K(cluster_id), K(ret));
+  } else if (OB_FAIL(param.write_client_port_buf(client_addr.get_port()))) {
+    LOG_WDIAG("fail to write client port", "port", client_addr.get_port(), K(ret));
+  } else if (OB_FAIL(param.write_cs_id_buf(cs_id))) {
+    LOG_WDIAG("fail to write client session id", K(cs_id), K(ret));
+  } else if (OB_FAIL(param.write_connected_time_buf(connected_time))) {
+    LOG_WDIAG("fail to write connected time", K(connected_time), K(ret));
   } else if (OB_FAIL(ObProxySessionInfoHandler::rewrite_login_req(client_info, param))) {
-    LOG_WARN("fail to rewrite_login_req", K(param), K(ret));
+    LOG_WDIAG("fail to rewrite_login_req", K(param), K(ret));
   } else if (OB_FAIL(ObProxySessionInfoHandler::rewrite_ssl_req(client_info))) {
-    LOG_WARN("fail to rewrite_login_req", K(ret));
+    LOG_WDIAG("fail to rewrite_login_req", K(ret));
   } else {
     LOG_DEBUG("proxy rewrite common login req, key:__proxy_capability_flag", K(cap));
   }
-  
+
   return ret;
 }
 
@@ -685,6 +708,8 @@ inline ObProxySysVarType ObProxySessionInfoHandler::get_sys_var_type(
     type_ret = OBPROXY_VAR_STATEMENT_TRACE_ID_FLAG;
   } else if (ObSessionFieldMgr::is_read_consistency_variable(var_name)) {
     type_ret = OBPROXY_VAR_READ_CONSISTENCY_FLAG;
+  } else if (ObSessionFieldMgr::is_weak_read_replica_hit_variable(var_name)) {
+    type_ret = OBPROXY_VAR_WEAK_READ_HIT_REPLICA_FLAG;
   } else {
     // do noting
   }
@@ -704,9 +729,9 @@ inline int ObProxySessionInfoHandler::handle_global_variables_version_var(
   if (is_auth_request) {
     int64_t version = 0;
     if (OB_FAIL(get_int_value(value, version))) {
-      LOG_WARN("fail to get int64_t value from string", K(value), K(ret));
+      LOG_WDIAG("fail to get int64_t value from string", K(value), K(ret));
     } else if (client_info.get_global_vars_version() > 0) {
-      LOG_WARN("global vars version has been assigned, ignore it",
+      LOG_WDIAG("global vars version has been assigned, ignore it",
                K(client_info.get_global_vars_version()),
                K(value));
     } else {
@@ -729,9 +754,9 @@ int ObProxySessionInfoHandler::handle_capability_flag_var(ObClientSessionInfo &c
   int ret = OB_SUCCESS;
   need_save = true;
   int64_t orig_server_cap = 0;
-  
+
   if (OB_FAIL(get_int_value(value, orig_server_cap))) {
-    LOG_WARN("fail to get int from obstring", K(value), K(ret));
+    LOG_WDIAG("fail to get int from obstring", K(value), K(ret));
   } else {
     uint64_t orig_client_cap = client_info.get_client_ob_capability();
     uint64_t client_cap = orig_client_cap & OBPROXY_DEFAULT_CAPABILITY_FLAG;
@@ -746,8 +771,9 @@ int ObProxySessionInfoHandler::handle_capability_flag_var(ObClientSessionInfo &c
     LOG_INFO("succ to set ob_capability_flag in negotiation",
              K(client_cap), K(server_cap), K(orig_client_cap), K(orig_server_cap),
              "client_support_ob_v2", client_info.is_client_support_ob20_protocol(),
-             "server_support_checksum", server_info.is_checksum_supported(), 
+             "server_support_checksum", server_info.is_checksum_supported(),
              "server_support_ob_v2", server_info.is_ob_protocol_v2_supported(),
+             "server_support_ob_v2_compress", server_info.is_server_ob20_compress_supported(),
              K(is_auth_request));
   }
   return ret;
@@ -766,11 +792,11 @@ int ObProxySessionInfoHandler::handle_enable_transmission_checksum_flag_var(
   need_save = true;
   int64_t enable_transmission_checksum = 0;
   if (OB_FAIL(get_int_value(value, enable_transmission_checksum))) {
-    LOG_WARN("fail to get int from obstring", K(value), K(ret));
+    LOG_WDIAG("fail to get int from obstring", K(value), K(ret));
   } else {
     ObProxyChecksumSwitch old_switch = server_info.get_checksum_switch();
     server_info.set_checksum_switch(1 == enable_transmission_checksum);
-    LOG_INFO("succ to set checksum_switch", K(enable_transmission_checksum), K(old_switch), K(is_auth_request));
+    LOG_DEBUG("succ to set checksum_switch", K(enable_transmission_checksum), K(old_switch), K(is_auth_request));
   }
   return ret;
 }
@@ -799,7 +825,7 @@ int ObProxySessionInfoHandler::handle_read_consistency_var(
   int64_t read_consistency = 0;
   if (!is_auth_request) {
     if (OB_FAIL(get_int_value(str_kv.value_, read_consistency))) {
-      LOG_WARN("fail to get int64_t value from string", K(str_kv), K(ret));
+      LOG_WDIAG("fail to get int64_t value from string", K(str_kv), K(ret));
     } else {
       const ObConsistencyLevel level = static_cast<ObConsistencyLevel>(read_consistency);
       //value: "", "FROZEN", "WEAK", "STRONG"
@@ -837,10 +863,10 @@ inline int ObProxySessionInfoHandler::handle_user_privilege_var(
     } else {
       // update user_privilege in first login succ
       if (OB_FAIL(get_int_value(value, user_priv_set))) {
-        LOG_WARN("fail to get int from string", "string value", value, K(ret));
+        LOG_WDIAG("fail to get int from string", "string value", value, K(ret));
       } else if (OB_UNLIKELY(!ObProxySessionPrivInfo::is_user_priv_set_available(user_priv_set))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("user_priv_set should not be -1", "string value", value,
+        LOG_WDIAG("user_priv_set should not be -1", "string value", value,
                  K(user_priv_set), K(ret));
       } else {
         client_info.set_user_priv_set(user_priv_set);
@@ -923,7 +949,7 @@ inline int ObProxySessionInfoHandler::handle_safe_snapshot_var(
   int ret = OB_SUCCESS;
   int64_t safe_read_snapshot = 0;
   if (OB_FAIL(get_int_value(value, safe_read_snapshot))) {
-    LOG_WARN("fail to get int64_t value from string", K(value), K(ret));
+    LOG_WDIAG("fail to get int64_t value from string", K(value), K(ret));
   } else {
     client_info.set_safe_read_snapshot(safe_read_snapshot);
   }
@@ -941,7 +967,7 @@ inline int ObProxySessionInfoHandler::handle_route_policy_var(
   int ret = OB_SUCCESS;
   int64_t route_policy = 0;
   if (OB_FAIL(get_int_value(str_kv.value_, route_policy))) {
-    LOG_WARN("fail to get int64_t value from string", K(str_kv), K(ret));
+    LOG_WDIAG("fail to get int64_t value from string", K(str_kv), K(ret));
   } else {
     client_info.set_route_policy(route_policy);
     ret = handle_common_var(client_info, str_kv, is_auth_request, resp_result, need_save);
@@ -962,18 +988,18 @@ inline int ObProxySessionInfoHandler::handle_common_var(
   if (is_auth_request) {
     bool is_equal = false;
     if (client_info.is_sharding_user() && get_global_proxy_config().is_pool_mode) {
-      LOG_WARN("sharding_user with pool should not enter here");
+      LOG_WDIAG("sharding_user with pool should not enter here");
     } else if (!client_info.is_sharding_user() && get_global_proxy_config().is_pool_mode) {
     } else if (OB_FAIL(client_info.is_equal_with_snapshot(str_kv.key_, str_kv.value_, is_equal))) {
       // maybe observer has upgraded
       if (OB_UNLIKELY(OB_ERR_SYS_VARIABLE_UNKNOWN == ret)) {
         resp_result.has_new_sys_var_ = true;
-        LOG_WARN("unknown system variable, maybe observer has upgrade", K(str_kv), K(ret));
+        LOG_WDIAG("unknown system variable, maybe observer has upgrade", K(str_kv), K(ret));
         ret = OB_SUCCESS;
         // do not save the new variable;
         need_save = false;
       } else {
-        LOG_WARN("fail to judge equal with snapshot", K(ret));
+        LOG_WDIAG("fail to judge equal with snapshot", K(ret));
       }
     } else {
       // do not save var if it is equal to snapshot
@@ -1049,6 +1075,10 @@ inline int ObProxySessionInfoHandler::handle_sys_var(ObClientSessionInfo &client
       ret = handle_read_consistency_var(client_info, str_kv, is_auth_request, resp_result, need_save);
       break;
 
+    case OBPROXY_VAR_WEAK_READ_HIT_REPLICA_FLAG:
+      ret = handle_weak_read_replica_hit_var(str_kv.value_, resp_result, need_save);
+      break;
+
     case OBPROXY_VAR_OTHERS:
     default:
       ret = handle_common_var(client_info, str_kv, is_auth_request,
@@ -1057,7 +1087,7 @@ inline int ObProxySessionInfoHandler::handle_sys_var(ObClientSessionInfo &client
   }
 
   if (OB_FAIL(ret)) {
-    LOG_WARN("fail to process sys var", K(type), K(ret));
+    LOG_WDIAG("fail to process sys var", K(type), K(ret));
   } else {
     LOG_DEBUG("succ to update sys variables", "key", str_kv.key_, "value", str_kv.value_, K(need_save), K(is_save_to_common_sys));
     if (need_save) {
@@ -1071,10 +1101,10 @@ inline int ObProxySessionInfoHandler::handle_sys_var(ObClientSessionInfo &client
       if (OB_FAIL(ret)) {
         if (OB_ERR_SYS_VARIABLE_UNKNOWN == ret) { // maybe observer has upgraded
           resp_result.has_new_sys_var_ = true;
-          LOG_WARN("unknown system variable, maybe observer has upgrade", K(str_kv), K(ret));
+          LOG_WDIAG("unknown system variable, maybe observer has upgrade", K(str_kv), K(ret));
           ret = OB_SUCCESS;
         } else {
-          LOG_WARN("fail to update sys variable", K(str_kv), K(ret));
+          LOG_WDIAG("fail to update sys variable", K(str_kv), K(ret));
         }
       }
 
@@ -1118,10 +1148,20 @@ inline int ObProxySessionInfoHandler::handle_necessary_sys_var(ObClientSessionIn
   }
 
   if (OB_FAIL(ret)) {
-    LOG_WARN("fail to process sys var", K(str_kv), K(type), K(ret));
+    LOG_WDIAG("fail to process sys var", K(str_kv), K(type), K(ret));
   } else {
     LOG_DEBUG("succ to process sys var", K(str_kv));
   }
+  return ret;
+}
+
+inline int ObProxySessionInfoHandler::handle_weak_read_replica_hit_var(const ObString &value,
+                                                                       ObRespAnalyzeResult &resp_result,
+                                                                       bool &need_save)
+{
+  int ret = OB_SUCCESS;
+  need_save = false;
+  resp_result.weak_read_hit_replica_ = get_weak_read_hit_replica_enum(value);
   return ret;
 }
 
@@ -1149,9 +1189,9 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
     if (!db_name.empty()) {
       bool is_string_to_lower_case = client_info.is_oracle_mode() ? false : client_info.need_use_lower_case_names();
       if (OB_FAIL(client_info.set_database_name(db_name))) {
-        LOG_WARN("fail to set changed database name", K(db_name), K(ret));
+        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
       } else if (OB_FAIL(server_info.set_database_name(db_name, is_string_to_lower_case))) {
-        LOG_WARN("fail to set changed database name", K(db_name), K(ret));
+        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
       }
     } else {
       resp_result.is_server_db_reset_ = true;
@@ -1167,13 +1207,13 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
       if (need_handle_sysvar) {
         if (OB_FAIL(handle_sys_var(client_info, server_info, sys_var.at(i),
                                    is_auth_request, resp_result, is_save_to_common_sys))) {
-          LOG_WARN("fail to handle sys var", K(sys_var.at(i)), K(is_auth_request), K(ret));
+          LOG_WDIAG("fail to handle sys var", K(sys_var.at(i)), K(is_auth_request), K(ret));
         }
       } else {
         // some necessary sys var like cap, must be handled properly
         if (OB_FAIL(handle_necessary_sys_var(client_info, server_info, sys_var.at(i),
                                              is_auth_request, resp_result))) {
-          LOG_WARN("fail to nessary handle sys var", K(sys_var.at(i)), K(is_auth_request), K(ret));
+          LOG_WDIAG("fail to nessary handle sys var", K(sys_var.at(i)), K(is_auth_request), K(ret));
         }
       }
     }
@@ -1186,7 +1226,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
       const ObStringKV &str_kv = user_var.at(i);
       LOG_DEBUG("user variable will be updated", K(str_kv));
       if (OB_FAIL(client_info.replace_user_variable(str_kv.key_, str_kv.value_))) {
-        LOG_WARN("fail to replace user variable", K(str_kv), K(ret));
+        LOG_WDIAG("fail to replace user variable", K(str_kv), K(ret));
       } else {
         if (PROXY_IDC_NAME_USER_SESSION_VAR == str_kv.key_) {
           const ObString value = trim_quote(str_kv.value_);
@@ -1219,7 +1259,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
       // 2 means WEAK for ob_read_consistency
       ObString weak("2");
       if (OB_FAIL(client_info.update_sys_variable(ob_read_consistency, weak))) {
-        LOG_WARN("replace user variables failed", K(ret));
+        LOG_WDIAG("replace user variables failed", K(ret));
       } else {
         client_info.set_read_consistency_set_flag(true);
       }
@@ -1230,7 +1270,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
       // 1 means true for tx_read_only
       ObString tx_read_only_true("1");
       if (OB_FAIL(client_info.update_sys_variable(tx_read_only, tx_read_only_true))) {
-        LOG_WARN("replace user variables failed", K(ret));
+        LOG_WDIAG("replace user variables failed", K(ret));
       }
     }
   }
@@ -1298,10 +1338,10 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
     if (server_info.is_oceanbase_server()) {
       is_changed = client_info.is_sys_hot_version_changed();
       if (OB_FAIL(server_info.field_mgr_.replace_all_hot_sys_vars(client_info.field_mgr_))) {
-        LOG_WARN("fail to replace_all_hot_sys_vars", K(ret));
+        LOG_WDIAG("fail to replace_all_hot_sys_vars", K(ret));
       } else if (is_changed) {
         if (OB_FAIL(client_info.field_mgr_.calc_hot_sys_var_hash(client_val_hash.hot_sys_var_hash_))) {
-          LOG_WARN("fail to calc_hot_sys_var_hash for client", K(ret));
+          LOG_WDIAG("fail to calc_hot_sys_var_hash for client", K(ret));
         } else {
           client_info.hash_version_.hot_sys_var_version_ = c_hot_version;
         }
@@ -1314,7 +1354,7 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
         is_changed = client_info.is_sys_cold_version_changed();
         if (is_changed) {
           if (OB_FAIL(client_info.field_mgr_.calc_cold_sys_var_hash(client_val_hash.cold_sys_var_hash_))) {
-            LOG_WARN("fail to calc_cold_sys_var_hash", K(ret));
+            LOG_WDIAG("fail to calc_cold_sys_var_hash", K(ret));
           } else {
             client_info.hash_version_.sys_var_version_ = c_sys_version;
           }
@@ -1327,10 +1367,10 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
     } else {
       is_changed = client_info.is_mysql_hot_sys_version_changed();
       if (OB_FAIL(server_info.field_mgr_.replace_all_mysql_hot_sys_vars(client_info.field_mgr_))) {
-        LOG_WARN("fail to replace_all_mysql_hot_sys_vars", K(ret));
+        LOG_WDIAG("fail to replace_all_mysql_hot_sys_vars", K(ret));
       } else if (is_changed) {
         if (OB_FAIL(client_info.field_mgr_.calc_mysql_hot_sys_var_hash(client_val_hash.mysql_hot_sys_var_hash_))) {
-          LOG_WARN("fail to calc_mysql_hot_sys_var_hash for client", K(ret));
+          LOG_WDIAG("fail to calc_mysql_hot_sys_var_hash for client", K(ret));
         } else {
           client_info.hash_version_.mysql_hot_sys_var_version_  = c_mysql_hot_sys_version;
         }
@@ -1343,7 +1383,7 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
         is_changed = client_info.is_mysql_cold_sys_version_changed();
         if (is_changed) {
           if (OB_FAIL(client_info.field_mgr_.calc_mysql_cold_sys_var_hash(client_val_hash.mysql_cold_sys_var_hash_))) {
-            LOG_WARN("fail to calc_mysql_cold_sys_var_hash", K(ret));
+            LOG_WDIAG("fail to calc_mysql_cold_sys_var_hash", K(ret));
           } else {
             client_info.hash_version_.mysql_sys_var_version_ = c_mysql_sys_version;
           }
@@ -1358,11 +1398,11 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
       is_changed = client_info.is_common_hot_sys_version_changed();
       if (OB_FAIL(server_info.field_mgr_.replace_all_common_hot_sys_vars(client_info.field_mgr_,
         server_info.is_oceanbase_server()))) {
-        LOG_WARN("fail to replace_all_common_hot_sys_vars", K(ret));
+        LOG_WDIAG("fail to replace_all_common_hot_sys_vars", K(ret));
       } else if (is_changed){
         if (OB_FAIL(client_info.field_mgr_.calc_common_hot_sys_var_hash(
           client_val_hash.common_hot_sys_var_hash_))) {
-          LOG_WARN("fail to calc_common_hot_sys_var_hash for client", K(ret));
+          LOG_WDIAG("fail to calc_common_hot_sys_var_hash for client", K(ret));
         } else {
           client_info.hash_version_.common_hot_sys_var_version_ = c_common_hot_sys_version;
         }
@@ -1377,7 +1417,7 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
       if (is_changed) {
         if (OB_FAIL(client_info.field_mgr_.calc_common_cold_sys_var_hash(
           client_val_hash.common_cold_sys_var_hash_))) {
-          LOG_WARN("fail to calc_common_cold_sys_var_hash", K(ret));
+          LOG_WDIAG("fail to calc_common_cold_sys_var_hash", K(ret));
         } else {
           client_info.hash_version_.common_sys_var_version_ = c_common_sys_version;
         }
@@ -1391,7 +1431,7 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
       is_changed = client_info.is_user_var_version_changed();
       if (is_changed) {
         if (OB_FAIL(client_info.field_mgr_.calc_user_var_hash(client_val_hash.user_var_hash_))) {
-          LOG_WARN("fail to replace_all_user_vars", K(ret));
+          LOG_WDIAG("fail to replace_all_user_vars", K(ret));
         } else {
           client_info.hash_version_.user_var_version_ = c_user_version;
         }
@@ -1415,9 +1455,9 @@ int ObProxySessionInfoHandler::save_changed_sess_info(ObClientSessionInfo& clien
     extra_info.reset_sess_info_iterate_idx();
     for (uint32_t i = 0; OB_SUCC(ret) && i < extra_info.get_sess_info_count(); i++) {
       if (OB_FAIL(extra_info.get_next_sess_info(sess_info))) {
-        LOG_WARN("fail to update sess sync info", K(ret));
+        LOG_WDIAG("fail to update sess sync info", K(ret));
       } else if (OB_FAIL(client_info.update_sess_sync_info(sess_info, is_error_packet, server_info, trace_log))) {
-        LOG_WARN("fail to update sess sync info", K(ret), K(extra_info));
+        LOG_WDIAG("fail to update sess sync info", K(ret), K(extra_info));
       }
     }
   }
@@ -1426,11 +1466,11 @@ int ObProxySessionInfoHandler::save_changed_sess_info(ObClientSessionInfo& clien
   if (OB_SUCC(ret)) {
     if (OB_LIKELY(server_info.is_server_dup_sess_info_sync_supported())) {
       if (OB_FAIL(client_info.update_server_sess_info_version(server_info, is_error_packet))) {
-        LOG_WARN("fail to update server sess info version", K(ret));
+        LOG_WDIAG("fail to update server sess info version", K(ret));
       }
     } else {
       if (OB_FAIL(client_info.update_server_sess_info_version_not_dup_sync(server_info, is_error_packet))) {
-        LOG_WARN("fail to update server sess info version", K(ret));
+        LOG_WDIAG("fail to update server sess info version", K(ret));
       }
     }
   }

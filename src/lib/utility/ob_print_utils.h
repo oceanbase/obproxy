@@ -99,7 +99,7 @@ const char *to_cstring(const T &obj)
   if (NULL != buffer_obj) {
     buffer = buffer_obj->buffers[i++ % BUFFER_NUM];
     if (OB_ISNULL(buffer)) {
-      LIB_LOG(ERROR, "buffer is NULL");
+      LIB_LOG(EDIAG, "buffer is NULL");
     } else {
       pos = to_string(obj, buffer, BUFFER_SIZE -1);
       if (pos >= 0 && pos < BUFFER_SIZE) {
@@ -126,7 +126,7 @@ const char *to_cstring(const T &obj, const bool verbose)
   if (NULL != buffer_obj) {
     buffer = buffer_obj->buffers[i++ % BUFFER_NUM];
     if (OB_ISNULL(buffer)) {
-      LIB_LOG(ERROR, "buffer is NULL");
+      LIB_LOG(EDIAG, "buffer is NULL");
     } else {
       if (NULL == &obj) {
         snprintf(buffer, BUFFER_SIZE, "NULL");

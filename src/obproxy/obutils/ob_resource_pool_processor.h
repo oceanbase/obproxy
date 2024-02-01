@@ -85,11 +85,16 @@ class ObIDCListFetchCont : public ObAsyncCommonTask
 {
 public:
   ObIDCListFetchCont(ObClusterResource *cr, event::ObProxyMutex *m,
+                     ObConnectionDiagnosisTrace *connection_diagnosis_trace,
                      event::ObContinuation *cb_cont = NULL,
                      event::ObEThread *submit_thread = NULL,
                      const bool fetch_result = false)
     : ObAsyncCommonTask(m, "idc_list_fetch_task", cb_cont, submit_thread),
-      fetch_result_(fetch_result), cr_(cr) { }
+      fetch_result_(fetch_result), cr_(cr), connection_diagnosis_trace_(connection_diagnosis_trace) {
+        if (connection_diagnosis_trace_ != NULL) {
+          connection_diagnosis_trace_->inc_ref();
+        }
+      }
   virtual ~ObIDCListFetchCont() {}
 
   virtual void destroy();
@@ -105,7 +110,7 @@ public:
 private:
   bool fetch_result_;
   ObClusterResource *cr_;
-
+  ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
   DISALLOW_COPY_AND_ASSIGN(ObIDCListFetchCont);
 };
 
@@ -157,7 +162,7 @@ struct ObClusterInfoKey
     int ret = common::OB_SUCCESS;
     if (OB_LIKELY(this != &other)) {
       if (OB_FAIL(cluster_name_.assign(other.cluster_name_))) {
-        _PROXY_LOG(WARN, "cluster_name assign error, ret = [%d]", ret);
+        _PROXY_LOG(WDIAG, "cluster_name assign error, ret = [%d]", ret);
       } else {
         cluster_id_ = other.cluster_id_;
       }

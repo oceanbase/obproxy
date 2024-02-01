@@ -92,7 +92,7 @@ int ObServerConfig::read_config()
       key.set_name(it->first.str());
       if (OB_ISNULL(it->second)) {
         ret = OB_ERR_UNEXPECTED;
-        OB_LOG(ERROR, "config item is null", "name", it->first.str(), K(ret));
+        OB_LOG(EDIAG, "config item is null", "name", it->first.str(), K(ret));
       } else {
         key.set_version(it->second->version());
         int temp_ret = system_config_->read_config(key, *(it->second));
@@ -112,10 +112,10 @@ int ObServerConfig::check_all() const
   for (; OB_SUCC(ret) && it != container_.end(); ++it) {
     if (OB_ISNULL(it->second)) {
       ret = OB_ERR_UNEXPECTED;
-      OB_LOG(ERROR, "config item is null", "name", it->first.str(), K(ret));
+      OB_LOG(EDIAG, "config item is null", "name", it->first.str(), K(ret));
     } else if (!it->second->check()) {
       int temp_ret = OB_INVALID_CONFIG;
-      OB_LOG(WARN, "Configure setting invalid",
+      OB_LOG(WDIAG, "Configure setting invalid",
              "name", it->first.str(), "value", it->second->str(), K(temp_ret));
     } else {
       // do nothing
@@ -130,7 +130,7 @@ int ObServerConfig::strict_check_special() const
   if (OB_SUCC(ret)) {
     if (!cluster_id.check()) {
       ret = OB_INVALID_CONFIG;
-      SHARE_LOG(WARN, "invalid cluster id", K(ret), K(cluster_id.str()));
+      SHARE_LOG(WDIAG, "invalid cluster id", K(ret), K(cluster_id.str()));
     }
   }
   return ret;
@@ -142,7 +142,7 @@ void ObServerConfig::print() const
   ObConfigContainer::const_iterator it = container_.begin();
   for (; it != container_.end(); ++it) {
     if (OB_ISNULL(it->second)) {
-      OB_LOG(WARN, "config item is null", "name", it->first.str());
+      OB_LOG(WDIAG, "config item is null", "name", it->first.str());
     } else {
       _OB_LOG(INFO, "| %-36s = %s", it->first.str(), it->second->str());
     }

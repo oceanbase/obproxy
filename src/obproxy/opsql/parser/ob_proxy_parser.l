@@ -325,13 +325,6 @@ non_newline             [^\n\r]
 sql_comment             ("--"{space}+{non_newline}*)|(#{non_newline}*)
 whitespace              ({space}+|{sql_comment})
 c_cmt_begin             \/\*
-select_hint_begin       (select{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\*\+({space}*hint{space}+)?))
-update_hint_begin       (update{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\*\+({space}*hint{space}+)?))
-delete_hint_begin       (delete{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\*\+({space}*hint{space}+)?))
-insert_hint_begin       (insert{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\*\+({space}*hint{space}+)?))
-replace_hint_begin      (replace{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\*\+({space}*hint{space}+)?))
-merge_hint_begin        (merge{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\*\+({space}*hint{space}+)?))
-
 c_cmt_end               \*+\/
 
 tx_read_only            (@@session{space}*\.{space}*(tx|transaction)_read_only|@@(tx|transaction)_read_only)
@@ -434,6 +427,10 @@ flush_binary_logs (flush{space}+binary{space}+logs)
 
 stop_ddl_task             (stop{space}+ddl{space}+task)
 retry_ddl_task            (retry{space}+ddl{space}+task)
+
+sq_filename ({sqbegin}{sqcontent}+{sqend})
+dq_filename ({dqbegin}{dqcontent}+{dqend})
+
 %%
 
  /* basic dml stmt: */
@@ -443,6 +440,7 @@ INSERT           { SET_DML_STMT(OBPROXY_T_INSERT); return INSERT; }
 UPDATE           { SET_DML_STMT(OBPROXY_T_UPDATE); return UPDATE; }
 REPLACE          { SET_DML_STMT(OBPROXY_T_REPLACE); return REPLACE; }
 MERGE            { SET_DML_STMT(OBPROXY_T_MERGE); return MERGE; }
+
 SHOW             { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW; }
 XA               { RETURN_NON_RESERVED_KEYWORD(XA); }
  /* if begin is for starting transaction, will set has_anonymous_block = false in yacc */
@@ -473,6 +471,7 @@ FROM             { return FROM; }
 UNIQUE           { return UNIQUE; }
 {stop_ddl_task}  { return STOP_DDL_TASK; }
 {retry_ddl_task} { return RETRY_DDL_TASK; }
+TABLEGROUP       { return TABLEGROUP; }
 
  /* ps stmt */
 USING            { return USING; }
@@ -521,6 +520,12 @@ INTO             { RETURN_IGNORED_WORD(); }
 LOW_PRIORITY     { RETURN_IGNORED_WORD(); }
 DELAYED          { RETURN_IGNORED_WORD(); }
 HIGH_PRIORITY    { RETURN_IGNORED_WORD(); }
+LOAD             { return LOAD; }
+DATA             { RETURN_NON_RESERVED_KEYWORD(DATA); }
+LOCAL            { RETURN_NON_RESERVED_KEYWORD(LOCAL); }
+INFILE           { return INFILE; }
+{sq_filename}    { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_SINGLE); }
+{dq_filename}    { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_DOUBLE); }
 
  /* no reserved keyword , don't forget to add these keyword in .y */
  /*refer: https://dev.mysql.com/doc/refman/5.6/en/keywords.html*/
@@ -538,7 +543,6 @@ SNAPSHOT         { RETURN_NON_RESERVED_KEYWORD(SNAPSHOT); }
 
 HELP             { RETURN_NON_RESERVED_KEYWORD(HELP); }
 
-
  /*set names*/
 {set_names}         { SET_BASIC_STMT(OBPROXY_T_SET_NAMES); return SET_NAMES; }
  /*set charset*/
@@ -553,6 +557,7 @@ HELP             { RETURN_NON_RESERVED_KEYWORD(HELP); }
 
  /*internal cmd*/
 {explain_route} { SET_HAS_EXPLAIN_ROUTE(); return EXPLAIN_ROUTE; }
+
  /*show net*/
 {show_proxynet}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_NET); return SHOW_PROXYNET; }
 THREAD           { RETURN_NON_RESERVED_KEYWORD(THREAD); }
@@ -690,39 +695,6 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 {multi_byte_right_parenthesis} { RETURN_WITH_CALL_CHECK(')'); }
 {whitespace}        { }
 
- /* hint option */
-{select_hint_begin} {
-  PUSH_STATE(in_expr);
-  PUSH_STATE(hint);
-  SET_BASIC_STMT(OBPROXY_T_SELECT);
-  return SELECT_HINT_BEGIN;
-}
-{update_hint_begin} {
-  PUSH_STATE(hint);
-  SET_BASIC_STMT(OBPROXY_T_UPDATE);
-  return UPDATE_HINT_BEGIN;
-}
-{delete_hint_begin} {
-  PUSH_STATE(in_expr);
-  PUSH_STATE(hint);
-  SET_BASIC_STMT(OBPROXY_T_DELETE);
-  return DELETE_HINT_BEGIN;
-}
-{insert_hint_begin} {
-  PUSH_STATE(hint);
-  SET_BASIC_STMT(OBPROXY_T_INSERT);
-  return INSERT_HINT_BEGIN;
-}
-{replace_hint_begin} {
-  PUSH_STATE(hint);
-  SET_BASIC_STMT(OBPROXY_T_REPLACE);
-  return REPLACE_HINT_BEGIN;
-}
-{merge_hint_begin} {
-  PUSH_STATE(hint);
-  SET_BASIC_STMT(OBPROXY_T_MERGE);
-  return MERGE_HINT_BEGIN;
-}
 
 {show_master_status} { SET_BINLOG_RELATED(); }
 {show_binary_logs} { SET_BINLOG_RELATED(); }
@@ -788,9 +760,15 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <hint>STRONG              { return STRONG; }
 <hint>FROZEN              { return FROZEN; }
 <hint>INDEX               { return INDEX; }
+<hint>TRACE_LOG           { return TRACE_LOG; }
 <hint>{leftbracket}|{rightbracket}  { return yytext[0]; }
 <hint>{identifer}         { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
-<hint>{c_cmt_end}         { POP_STATE(); return HINT_END; }
+<hint>{c_cmt_end} {
+  POP_STATE(); // hint
+  POP_STATE(); // in_comment_expr
+  POP_STATE(); // in_c_comment
+  return COMMENT_END;
+}
 <hint>.                   {}
 
  /* comment */
@@ -798,50 +776,17 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   PUSH_STATE(in_c_comment);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
-    if (OBPROXY_T_INVALID == p->cur_stmt_type_) {
-      if (NULL == p->comment_begin_) {
-        p->comment_begin_ = yytext;
-      }
-      PUSH_STATE(in_comment_expr);
-      return COMMENT_BEGIN;
+    if (NULL == p->comment_begin_) {
+      p->comment_begin_ = yytext;
     }
+    PUSH_STATE(in_comment_expr);
+    return COMMENT_BEGIN;
   }
 }
 
 <in_c_comment>{c_cmt_end} { POP_STATE(); }
 <in_c_comment>[\n]        {}
 <in_c_comment>.           {}
-
-<in_comment_expr>{c_cmt_end} {
-  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
-  if (OB_NOTNULL(p)) {
-    p->comment_end_ = yytext + 2;
-  }
-  POP_STATE();
-  POP_STATE();
-  return COMMENT_END;
-}
-
-<in_comment_expr>.           { PUSH_STATE(in_old_comment_expr); }
-<in_comment_expr>{space}*"table" {
-  PUSH_STATE(in_old_comment_expr);
-  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
-  if (OB_NOTNULL(p)) {
-    p->simple_route_info_.table_start_ptr_ = yytext;
-    return ROUTE_TABLE;
-  }
-}
-
-<in_comment_expr>{space}*"part_key" {
-  PUSH_STATE(in_old_comment_expr);
-  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
-  if (OB_NOTNULL(p)) {
-    if (OBPROXY_T_INVALID == p->cur_stmt_type_) {
-      p->simple_route_info_.part_key_start_ptr_ = yytext;
-      return ROUTE_PART_KEY;
-    }
-  }
-}
 
 <in_old_comment_expr>"table" {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -877,7 +822,41 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 }
 <in_old_comment_expr>. {}
 
+
+<in_comment_expr>{c_cmt_end} {
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p)) {
+    p->comment_end_ = yytext + 2;
+  }
+  POP_STATE();
+  POP_STATE();
+  return COMMENT_END;
+}
+
+<in_comment_expr>[^\+].           { PUSH_STATE(in_old_comment_expr); }
+<in_comment_expr>{space}*"table" {
+  PUSH_STATE(in_old_comment_expr);
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p)) {
+    p->simple_route_info_.table_start_ptr_ = yytext;
+    return ROUTE_TABLE;
+  }
+}
+
+<in_comment_expr>{space}*"part_key" {
+  PUSH_STATE(in_old_comment_expr);
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p)) {
+    if (OBPROXY_T_INVALID == p->cur_stmt_type_) {
+      p->simple_route_info_.part_key_start_ptr_ = yytext;
+      return ROUTE_PART_KEY;
+    }
+  }
+}
 <in_comment_expr>"ODP:"                      { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(ODP_COMMENT); }
+<in_comment_expr>"+DBP:"                     { PUSH_STATE(in_dbp_comment_expr); RETURN_SHARD_COMMENT(DBP_COMMENT); }
+<in_comment_expr>\+{space}*(hint{space}+)?   { PUSH_STATE(hint); return HINT_BEGIN; }
+
 <in_comment_expr>{space}*"group_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(GROUP_ID); }
 <in_comment_expr>{space}*"table_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_ID); }
 <in_comment_expr>{space}*"table_name"        { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_NAME); }
@@ -900,6 +879,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_odp_comment_expr>"trace_id"          { return TRACE_ID; }
 <in_odp_comment_expr>"rpc_id"            { return RPC_ID; }
 <in_odp_comment_expr>"target_db_server"  { return TARGET_DB_SERVER; }
+<in_odp_comment_expr>"trace_log"         { return TRACE_LOG; }
 <in_odp_comment_expr>{sqbegin}           { ENTER_QUOTE_STATE(comment_sq); }
 <in_odp_comment_expr>{comma}|{multi_byte_comma}  { return ','; }
 <in_odp_comment_expr>{odp_comment_identifer} { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
@@ -966,7 +946,6 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   }
 }
 
-<in_comment_expr>"+DBP:"                    { PUSH_STATE(in_dbp_comment_expr); RETURN_SHARD_COMMENT(DBP_COMMENT); }
 <in_dbp_comment_expr>"$ROUTE"            { return ROUTE_TAG; }
 <in_dbp_comment_expr>"$SYS"              { return SYS_TAG; }
 <in_dbp_comment_expr>"SCAN_ALL"          { return SCAN_ALL; }
@@ -1213,6 +1192,17 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <bt_in_expr><<EOF>>     { return ERROR; }
 
  /* some useful keyword */
+<in_expr>{c_cmt_begin} {
+  PUSH_STATE(in_c_comment);
+  ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
+  if (OB_NOTNULL(p)) {
+      if (NULL == p->comment_begin_) {
+        p->comment_begin_ = yytext;
+      }
+      PUSH_STATE(in_comment_expr);
+      return COMMENT_BEGIN;
+  }
+}
 <in_expr>"FROM"{whitespace}+"DUAL"     { RETURN_IGNORED_WORD_FOR_DUAL(); }
 <in_expr>"FROM"                        { POP_STATE(); PUSH_STATE(INITIAL); return FROM; }
 <in_expr>{leftbracket}|{multi_byte_left_parenthesis}                 { PUSH_STATE(in_subquery); return '('; }

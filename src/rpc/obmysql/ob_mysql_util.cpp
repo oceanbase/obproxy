@@ -47,11 +47,11 @@ int ObMySQLUtil::store_length(char *buf, int64_t len, uint64_t length, int64_t &
   int ret = OB_SUCCESS;
   if (len < 0 || pos < 0 || len <= pos) {
     ret = OB_SIZE_OVERFLOW;
-    LOG_WARN("Store length fail, buffer over flow!",
+    LOG_WDIAG("Store length fail, buffer over flow!",
         K(len), K(pos), K(length), K(ret));
   } else if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input buf", K(ret), K(buf));
+    LOG_WDIAG("invalid input buf", K(ret), K(buf));
   } else {
     int64_t remain = len - pos;
     if (OB_SUCC(ret)) {
@@ -87,7 +87,7 @@ int ObMySQLUtil::store_length(char *buf, int64_t len, uint64_t length, int64_t &
         ret = store_null(buf, len, pos);
       } else {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WARN("Store length fail, buffer over flow!",
+        LOG_WDIAG("Store length fail, buffer over flow!",
             K(len), K(pos), K(length), K(ret));
       }
     }
@@ -103,7 +103,7 @@ int ObMySQLUtil::get_length(const char *&pos, uint64_t &length)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(pos)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input buf", K(pos), K(ret));
+    LOG_WDIAG("invalid input buf", K(pos), K(ret));
   } else {
     get_uint1(pos, sentinel);
     if (sentinel < 251) {
@@ -132,7 +132,7 @@ int ObMySQLUtil::get_length(const char *&pos, uint64_t &length, uint64_t &pos_in
   int ret = OB_SUCCESS;
   const char *tmp_pos = pos;
   if (OB_FAIL(get_length(pos, length))) {
-    LOG_WARN("fail to get length", K(ret));
+    LOG_WDIAG("fail to get length", K(ret));
   } else {
     pos_inc_len = pos - tmp_pos;
   }
@@ -172,10 +172,10 @@ int ObMySQLUtil::store_str_v(char *buf, int64_t len, const char *str,
 
   if (OB_ISNULL(buf)) { // str could be null
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(buf), K(ret));
+    LOG_WDIAG("invalid input args", K(buf), K(ret));
   } else {
     if (OB_FAIL(store_length(buf, len, length, pos))) {
-      LOG_WARN("Store length fail!",
+      LOG_WDIAG("Store length fail!",
           K(len), K(pos), K(length), K(ret));
     } else if (len >= pos && length <= static_cast<uint64_t>(len - pos)) {
       if ((0 == length ) || (length > 0 && NULL != str)) {
@@ -183,12 +183,12 @@ int ObMySQLUtil::store_str_v(char *buf, int64_t len, const char *str,
         pos += length;
       } else {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid args", K(str), K(length));
+        LOG_WDIAG("invalid args", K(str), K(length));
       }
     } else {
       pos = pos_bk;        // roll back
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("Store string fail, buffer over flow!", K(len), K(pos), K(length), K(ret));
+      LOG_WDIAG("Store string fail, buffer over flow!", K(len), K(pos), K(length), K(ret));
     }
   }
   return ret;
@@ -215,7 +215,7 @@ int ObMySQLUtil::store_str_vnzt(char *buf, int64_t len, const char *str, int64_t
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(buf));
+    LOG_WDIAG("invalid input args", K(buf));
   } else {
     if (length >= 0) {
       if (len > 0 && pos >= 0 && len >= pos && len - pos >= length) {
@@ -224,15 +224,15 @@ int ObMySQLUtil::store_str_vnzt(char *buf, int64_t len, const char *str, int64_t
           pos += length;
         } else {
           ret = OB_INVALID_ARGUMENT;
-          LOG_WARN("invalid args", K(str), K(length));
+          LOG_WDIAG("invalid args", K(str), K(length));
         }
       } else {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WARN("Store string fail, buffer over flow!", K(len), K(pos), K(length), K(ret));
+        LOG_WDIAG("Store string fail, buffer over flow!", K(len), K(pos), K(length), K(ret));
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid input length", K(ret), K(length));
+      LOG_WDIAG("invalid input length", K(ret), K(length));
     }
   }
   return ret;
@@ -245,7 +245,7 @@ int ObMySQLUtil::store_str_vzt(char *buf, int64_t len, const char *str,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf))  {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(ret), K(buf));
+    LOG_WDIAG("invalid input args", K(ret), K(buf));
   } else {
     if (len > 0 && pos >= 0 && len > pos && static_cast<uint64_t>(len - pos) > length) {
       if ((0 == length) || (length > 0 && NULL != str)) {
@@ -254,11 +254,11 @@ int ObMySQLUtil::store_str_vzt(char *buf, int64_t len, const char *str,
         buf[pos++] = '\0';
       } else {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid args", K(str), K(length));
+        LOG_WDIAG("invalid args", K(str), K(length));
       }
     } else {
       ret = OB_SIZE_OVERFLOW;
-      LOG_WARN("Store string fail, buffer over flow!", K(len), K(pos), K(length), K(ret));
+      LOG_WDIAG("Store string fail, buffer over flow!", K(len), K(pos), K(length), K(ret));
     }
   }
   return ret;
@@ -278,7 +278,7 @@ int ObMySQLUtil::store_obstr_nzt(char *buf, int64_t len, ObString str, int64_t &
 void ObMySQLUtil::prepend_zeros(char *buf, int64_t org_char_size, int64_t offset) {
   // memmove(buf + offset, buf, org_char_size);
   if (OB_ISNULL(buf)) {
-    LOG_WARN("invalid buf input", K(buf));
+    LOG_WDIAG("invalid buf input", K(buf));
   } else {
     char *src_last = buf + org_char_size;
     char *dst_last = src_last + offset;
@@ -300,7 +300,7 @@ int ObMySQLUtil::int_cell_str(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input buf", K(buf));
+    LOG_WDIAG("invalid input buf", K(buf));
   } else {
     uint64_t length = 0;
     // OB_MYSQL_TYPE_LONGLONG format
@@ -334,7 +334,7 @@ int ObMySQLUtil::int_cell_str(
           ret = ObMySQLUtil::store_int8(buf, len, val, pos);
         }
       } else {
-        LOG_ERROR("size over flow", K(ret), K(length), K(len), K(pos), K(zflength));
+        LOG_EDIAG("size over flow", K(ret), K(length), K(len), K(pos), K(zflength));
       }
     }
   }
@@ -347,7 +347,7 @@ int ObMySQLUtil::null_cell_str(char *buf, const int64_t len, MYSQL_PROTOCOL_TYPE
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input buf", K(ret), K(buf));
+    LOG_WDIAG("invalid input buf", K(ret), K(buf));
   } else {
     if (len - pos <= 0) {
       ret = OB_SIZE_OVERFLOW;
@@ -369,7 +369,7 @@ int ObMySQLUtil::number_cell_str(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid buf input", K(buf), K(ret));
+    LOG_WDIAG("invalid buf input", K(buf), K(ret));
   } else {
     /* skip 1 byte to store length */
     int64_t length = 0;
@@ -399,38 +399,38 @@ int ObMySQLUtil::datetime_cell_str(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(ret), K(buf));
+    LOG_WDIAG("invalid input args", K(ret), K(buf));
   } else {
     if (type == BINARY) {
       ObTime ob_time;
       uint8_t timelen = 0;
       if (OB_FAIL(ObTimeConverter::datetime_to_ob_time(val, tz_info, ob_time))) {
-        LOG_WARN("convert usec ", K(ret));
+        LOG_WDIAG("convert usec ", K(ret));
       } else {
         timelen = 11;
         if (OB_FAIL(ObMySQLUtil::store_int1(buf, len, timelen, pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int2(buf, len, static_cast<int16_t>(ob_time.parts_[DT_YEAR]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int1(buf, len, static_cast<int8_t>(ob_time.parts_[DT_MON]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int1(buf, len, static_cast<int8_t>(ob_time.parts_[DT_MDAY]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int1(buf, len, static_cast<int8_t>(ob_time.parts_[DT_HOUR]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int1(buf, len, static_cast<int8_t>(ob_time.parts_[DT_MIN]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int1(buf, len, static_cast<int8_t>(ob_time.parts_[DT_SEC]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int4(buf, len, static_cast<int32_t>(ob_time.parts_[DT_USEC]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         }
       }
     } else {
@@ -440,7 +440,7 @@ int ObMySQLUtil::datetime_cell_str(
         ret = OB_SIZE_OVERFLOW;
       } else {
         if (OB_FAIL(ObTimeConverter::datetime_to_str(val, tz_info, scale, buf, len, pos))) {
-          LOG_WARN("failed to convert ob time to string", K(ret));
+          LOG_WDIAG("failed to convert ob time to string", K(ret));
           pos = pos_begin + 1;
         } else {
           // store length as beginning
@@ -460,29 +460,29 @@ int ObMySQLUtil::date_cell_str(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(ret), K(buf));
+    LOG_WDIAG("invalid input args", K(ret), K(buf));
   } else {
     if (type == BINARY) {
       ObTime ob_time;
       uint8_t timelen = 0;
       if (OB_FAIL(ObTimeConverter::date_to_ob_time(val, ob_time))) {
-        LOG_WARN("convert day to date failed", K(ret));
+        LOG_WDIAG("convert day to date failed", K(ret));
       } else if (0 == ob_time.parts_[DT_YEAR] && 0 == ob_time.parts_[DT_MON] && 0 == ob_time.parts_[DT_MDAY]) {
         timelen = 0;
         ret = ObMySQLUtil::store_int1(buf, len, timelen, pos);
       } else {
         timelen = 4;
         if (OB_FAIL(ObMySQLUtil::store_int1(buf, len, timelen, pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int2(buf, len, static_cast<int16_t>(ob_time.parts_[DT_YEAR]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int1(buf, len, static_cast<int8_t>(ob_time.parts_[DT_MON]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         } else if (OB_FAIL(
             ObMySQLUtil::store_int1(buf, len, static_cast<int8_t>(ob_time.parts_[DT_MDAY]), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         }
       }
     } else {
@@ -492,7 +492,7 @@ int ObMySQLUtil::date_cell_str(
         ret = OB_SIZE_OVERFLOW;
       } else {
         if (OB_FAIL(ObTimeConverter::date_to_str(val, buf, len, pos))) {
-          LOG_WARN("failed to convert ob time to string", K(ret));
+          LOG_WDIAG("failed to convert ob time to string", K(ret));
           pos = pos_begin + 1;
         } else {
           // store length as beginning
@@ -512,13 +512,13 @@ int ObMySQLUtil::time_cell_str(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(ret), K(buf));
+    LOG_WDIAG("invalid input args", K(ret), K(buf));
   } else {
     if (type == BINARY) {
       ObTime ob_time;
       uint8_t timelen = 0;
       if (OB_FAIL(ObTimeConverter::time_to_ob_time(val, ob_time))) {
-        LOG_WARN("convert usec to timestamp failed", K(ret));
+        LOG_WDIAG("convert usec to timestamp failed", K(ret));
       } else {
         timelen = 8;
         if (OB_FAIL(ObMySQLUtil::store_int1(buf, len, timelen, pos))) {
@@ -532,7 +532,7 @@ int ObMySQLUtil::time_cell_str(
             OB_FAIL(ObMySQLUtil::store_int4(buf, len, static_cast<int32_t>(ob_time.parts_[DT_USEC]), pos))) {
         }
         if (OB_FAIL(ret)) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(timelen), K(pos), K(ret));
         }
       }
     } else {
@@ -542,7 +542,7 @@ int ObMySQLUtil::time_cell_str(
         ret = OB_SIZE_OVERFLOW;
       } else {
         if (OB_FAIL(ObTimeConverter::time_to_str(val, scale, buf, len, pos))) {
-          LOG_WARN("failed to convert ob time to string", K(ret));
+          LOG_WDIAG("failed to convert ob time to string", K(ret));
           pos = pos_begin + 1;
         } else {
           // store length as beginning
@@ -562,19 +562,19 @@ int ObMySQLUtil::year_cell_str(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(ret), K(buf));
+    LOG_WDIAG("invalid input args", K(ret), K(buf));
   } else {
     if (type == BINARY) {
       int64_t year = 0;
       uint8_t yearlen = 0;
       if (OB_FAIL(ObTimeConverter::year_to_int(val, year))) {
-        LOG_WARN("failed to convert year to integer", K(ret));
+        LOG_WDIAG("failed to convert year to integer", K(ret));
       } else {
         yearlen = 2;
         if (OB_FAIL(ObMySQLUtil::store_int1(buf, len, yearlen, pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(pos), K(ret));
         } else if (OB_FAIL(ObMySQLUtil::store_int2(buf, len, static_cast<int16_t>(year), pos))) {
-          LOG_WARN("failed to store int", K(buf), K(len), K(pos), K(ret));
+          LOG_WDIAG("failed to store int", K(buf), K(len), K(pos), K(ret));
         }
       }
     } else {
@@ -584,7 +584,7 @@ int ObMySQLUtil::year_cell_str(
         ret = OB_SIZE_OVERFLOW;
       } else {
         if (OB_FAIL(ObTimeConverter::year_to_str(val, buf, len, pos))) {
-          LOG_WARN("failed to convert year to string", K(ret));
+          LOG_WDIAG("failed to convert year to string", K(ret));
           pos = pos_begin + 1;
         } else {
           // store length as beginning
@@ -603,26 +603,26 @@ int ObMySQLUtil::varchar_cell_str(char *buf, const int64_t len, const ObString &
 
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(ret), K(buf));
+    LOG_WDIAG("invalid input args", K(ret), K(buf));
   } else {
     int64_t length = val.length();
 
     if (length < len - pos) {
       int64_t pos_bk = pos;
       if (OB_FAIL(ObMySQLUtil::store_length(buf, len, length, pos))) {
-        LOG_WARN("store length fail", K(ret));
+        LOG_WDIAG("store length fail", K(ret));
       } else {
         if (length <= len - pos) {
           MEMCPY(buf + pos, val.ptr(), length);
           pos += length;
         } else {
-          LOG_WARN("store string fail", K(ret));
+          LOG_WDIAG("store string fail", K(ret));
           pos = pos_bk;
           ret = OB_SIZE_OVERFLOW;
         }
       }
     } else {
-      LOG_WARN("store varchar cell fail", K(length), K(len), K(pos));
+      LOG_WDIAG("store varchar cell fail", K(length), K(len), K(pos));
       ret = OB_SIZE_OVERFLOW;
     }
   }
@@ -642,7 +642,7 @@ int ObMySQLUtil::float_cell_str(char *buf, const int64_t len, float val,
 
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input args", K(ret), K(buf));
+    LOG_WDIAG("invalid input args", K(ret), K(buf));
   } else {
     if (BINARY == type) {
       if (len - pos > FLT_SIZE) {
@@ -673,7 +673,7 @@ int ObMySQLUtil::float_cell_str(char *buf, const int64_t len, float val,
           pos += length;
         } else {
           ret = OB_INVALID_ARGUMENT;
-          LOG_ERROR("invalid length", K(length)); //OB_ASSERT(length < 251);
+          LOG_EDIAG("invalid length", K(length)); //OB_ASSERT(length < 251);
         }
       }
     }
@@ -693,7 +693,7 @@ int ObMySQLUtil::double_cell_str(char *buf, const int64_t len, double val,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input", K(buf));
+    LOG_WDIAG("invalid input", K(buf));
   } else {
     if (BINARY == type) {
       if (len - pos > DBL_SIZE) {
@@ -736,7 +736,7 @@ int ObMySQLUtil::double_cell_str(char *buf, const int64_t len, double val,
           }
         } else {
           ret = OB_INVALID_ARGUMENT;
-          LOG_ERROR("invalid length", K(length));
+          LOG_EDIAG("invalid length", K(length));
         }
       }
     }

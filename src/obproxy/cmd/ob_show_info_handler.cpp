@@ -140,7 +140,7 @@ int ObShowInfoHandler::dump_body()
     const int64_t buf_len = OB_MALLOC_NORMAL_BLOCK_SIZE;
     char *buf = reinterpret_cast<char *>(ob_malloc(buf_len, ObModIds::OB_PROXY_PRINTF));
     if (OB_ISNULL(buf)) {
-      LOG_ERROR("fail to malloc memory", K(buf_len));
+      LOG_EDIAG("fail to malloc memory", K(buf_len));
     } else {
       switch (sub_type_) {
         case OBPROXY_T_SUB_INFO_BINARY: {
@@ -214,7 +214,7 @@ int ObShowInfoHandler::dump_idc_body()
   char *common_buf = NULL;
   if (OB_ISNULL(common_buf = reinterpret_cast<char *>(ob_malloc(buf_len, ObModIds::OB_PROXY_PRINTF)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to malloc memory", K(buf_len), K(ret));
+    LOG_EDIAG("fail to malloc memory", K(buf_len), K(ret));
   } else if (OB_FAIL(get_global_resource_pool_processor().acquire_all_cluster_resource(cr_array))) {
     WARN_ICMD("fail to acquire all cluster resource from resource_pool", K(ret));
   } else {

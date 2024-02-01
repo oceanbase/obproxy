@@ -30,6 +30,7 @@
 
 #define USING_LOG_PREFIX PROXY
 
+#include "lib/ob_errno.h"
 #include "omt/ob_proxy_config_table_processor.h"
 #include "obutils/ob_config_processor.h"
 #include "obutils/ob_proxy_config.h"
@@ -47,9 +48,10 @@ static const char *config_name_array[] = {"proxy_route_policy", "proxy_idc_name"
                                           "target_db_server", "observer_sys_password",
                                           "observer_sys_password1", "obproxy_force_parallel_query_dop",
                                           "read_stale_retry_interval", "ob_max_read_stale_time",
-                                          "ssl_attributes", "init_sql"};
+                                          "ssl_attributes", "init_sql", "proxy_primary_zone_name", "binlog_service_ip",
+                                          "compression_algorithm"};
 
-static const char *EXECUTE_SQL = 
+static const char *EXECUTE_SQL =
     "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
     "'%.*s', %ld, %ld, '%.*s', '%.*s', '%s', '%s', '%.*s')";
 
@@ -69,7 +71,7 @@ ObProxyConfigItem* ObProxyConfigItem::clone()
 {
   ObProxyConfigItem *ret = NULL;
   if (OB_ISNULL(ret = op_alloc(ObProxyConfigItem))) {
-    LOG_WARN("op_alloc ObProxyConfigItem failed");
+    LOG_WDIAG("op_alloc ObProxyConfigItem failed");
   } else {
     ret->vip_addr_ = vip_addr_;
     ret->tenant_name_ = tenant_name_;
@@ -114,8 +116,7 @@ int64_t ObProxyConfigItem::to_string(char *buf, const int64_t buf_len) const
 uint64_t ObProxyConfigItem::get_hash() const
 {
   uint64_t hash = 0;
-  void *data = (void*)(&vip_addr_);
-  hash = murmurhash(data, sizeof(ObVipAddr), 0);
+  hash = vip_addr_.hash(0);
   hash = tenant_name_.hash(hash);
   hash = cluster_name_.hash(hash);
   hash = murmurhash(config_item_.name(), static_cast<int32_t>(strlen(config_item_.name())), hash);
@@ -127,23 +128,23 @@ int ObProxyConfigTableProcessor::execute(void *arg)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(NULL == arg)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("arg is null unexpected", K(ret));
+    LOG_WDIAG("arg is null unexpected", K(ret));
   } else {
     ObCloudFnParams *params = reinterpret_cast<ObCloudFnParams*>(arg);
     if (NULL == params->fields_) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fields is null unexpected", K(ret));
+      LOG_WDIAG("fields is null unexpected", K(ret));
     } else if (params->stmt_type_ == OBPROXY_T_REPLACE) {
       if (OB_FAIL(get_global_proxy_config_table_processor().set_proxy_config(params->fields_, true))) {
-        LOG_WARN("set proxy config failed", K(ret));
+        LOG_WDIAG("set proxy config failed", K(ret));
       }
     } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
       if (OB_FAIL(get_global_proxy_config_table_processor().delete_proxy_config(params->fields_, true))) {
-        LOG_WARN("delete proxy config failed", K(ret));
+        LOG_WDIAG("delete proxy config failed", K(ret));
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected stmt type", K(params->stmt_type_), K(ret));
+      LOG_WDIAG("unexpected stmt type", K(params->stmt_type_), K(ret));
     }
   }
 
@@ -158,18 +159,18 @@ int ObProxyConfigTableProcessor::commit(void *arg, bool is_success)
     ObCloudFnParams *params = reinterpret_cast<ObCloudFnParams*>(arg);
     if (NULL == params->fields_) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fields is null unexpected", K(ret));
+      LOG_WDIAG("fields is null unexpected", K(ret));
     } else if (params->stmt_type_ == OBPROXY_T_REPLACE) {
       if (OB_FAIL(get_global_proxy_config_table_processor().set_proxy_config(params->fields_, false))) {
-        LOG_WARN("set proxy config failed", K(ret));
+        LOG_WDIAG("set proxy config failed", K(ret));
       }
     } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
       if (OB_FAIL(get_global_proxy_config_table_processor().delete_proxy_config(params->fields_, false))) {
-        LOG_WARN("delete proxy config failed", K(ret));
+        LOG_WDIAG("delete proxy config failed", K(ret));
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected stmt type", K(params->stmt_type_), K(ret));
+      LOG_WDIAG("unexpected stmt type", K(params->stmt_type_), K(ret));
     }
     if (OB_FAIL(ret)) {
       ret = OB_SUCCESS;
@@ -178,7 +179,7 @@ int ObProxyConfigTableProcessor::commit(void *arg, bool is_success)
     }
   } else {
     get_global_proxy_config_table_processor().set_need_rebuild_config_map(true);
-    LOG_WARN("proxy config commit failed", K(is_success));
+    LOG_WDIAG("proxy config commit failed", K(is_success));
   }
 
   get_global_proxy_config_table_processor().clear_execute_sql();
@@ -212,7 +213,7 @@ int ObProxyConfigTableProcessor::init()
   handler.commit_func_ = &ObProxyConfigTableProcessor::commit;
   handler.before_commit_func_ = &ObProxyConfigTableProcessor::before_commit;
   if (OB_FAIL(get_global_config_processor().register_callback("proxy_config", handler))) {
-    LOG_WARN("register proxy config table callback failed", K(ret));
+    LOG_WDIAG("register proxy config table callback failed", K(ret));
   }
 
    return ret;
@@ -248,9 +249,9 @@ int ObProxyConfigTableProcessor::backup_hashmap_with_lock()
     ObProxyConfigItem *item = static_cast<ObProxyConfigItem*>(&(*it))->clone();
     if (NULL == item) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("clone ObProxyConfigItem failed", K(ret));
+      LOG_WDIAG("clone ObProxyConfigItem failed", K(ret));
     } else if (OB_FAIL(backup_map.unique_set(item))) {
-      LOG_WARN("backup map set refactored failed", K(ret));
+      LOG_WDIAG("backup map set refactored failed", K(ret));
     }
   }
 
@@ -268,12 +269,12 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
   DRWLock::WRLockGuard guard(proxy_config_lock_);
   if (OB_ISNULL(arg)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
   } else if (need_rebuild_config_map_ && OB_FAIL(backup_hashmap_with_lock())) {
-    LOG_WARN("backup hashmap failed", K(ret));
+    LOG_WDIAG("backup hashmap failed", K(ret));
   } else if (OB_ISNULL(item = op_alloc(ObProxyConfigItem))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("op alloc ObProxyConfigItem failed", K(ret));
+    LOG_WDIAG("op alloc ObProxyConfigItem failed", K(ret));
   } else {
     ObString vip;
     int64_t vport = 0;
@@ -285,7 +286,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
       if (0 == sql_field.column_name_.config_string_.case_compare("vip")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           vip = sql_field.column_value_.config_string_;
         }
@@ -296,7 +297,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
           vport = sql_field.column_int_value_;
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid value type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("invalid value type", K(sql_field.value_type_), K(ret));
         }
       } else if (0 == sql_field.column_name_.config_string_.case_compare("vid")) {
         if (TOKEN_STR_VAL == sql_field.value_type_) {
@@ -305,33 +306,33 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
           vid = sql_field.column_int_value_;
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid value type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("invalid value type", K(sql_field.value_type_), K(ret));
         }
       } else if (0 == sql_field.column_name_.config_string_.case_compare("config_level")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           item->config_level_.assign(sql_field.column_value_.config_string_.ptr());
         }
       } else if (0 == sql_field.column_name_.config_string_.case_compare("tenant_name")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           item->tenant_name_.assign(sql_field.column_value_.config_string_.ptr());
         }
       } else if (0 == sql_field.column_name_.config_string_.case_compare("cluster_name")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           item->cluster_name_.assign(sql_field.column_value_.config_string_.ptr());
         }
       } else if (0 == sql_field.column_name_.config_string_.case_compare("name")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           ObString &name = sql_field.column_value_.config_string_;
           item->config_item_.set_name(name.ptr());
@@ -339,13 +340,13 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
       } else if (0 == sql_field.column_name_.config_string_.case_compare("value")) {
         if (TOKEN_STR_VAL != sql_field.value_type_) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpeted type", K(sql_field.value_type_), K(ret));
+          LOG_WDIAG("unexpeted type", K(sql_field.value_type_), K(ret));
         } else {
           item->config_item_.set_value(sql_field.column_value_.config_string_);
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected column name", K(sql_field.column_name_.config_string_));
+        LOG_WDIAG("unexpected column name", K(sql_field.column_name_.config_string_));
       }
     }
 
@@ -354,7 +355,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
       if (0 != strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())
           && !is_config_in_service(item->config_item_.name())) {
         ret = OB_NOT_SUPPORTED;
-        LOG_WARN("multi level config not supported", KPC(item), K(ret));
+        LOG_WDIAG("multi level config not supported", KPC(item), K(ret));
       } else {
         int64_t index = is_backup ? (index_ + 1) % 2 : index_;
         ProxyConfigHashMap &config_map = proxy_config_map_array_[index];
@@ -364,6 +365,28 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
         if (NULL != tmp_item) {
           tmp_item->destroy();
           tmp_item = NULL;
+        }
+
+        if (0 == strcasecmp("compression_algorithm", item->config_item_.name())
+            && NULL != item->config_item_.str()
+            && '\0' != *item->config_item_.str()) {
+          ObString val(item->config_item_.str());
+          val = val.trim();
+          // only support 'zlib:0~9' or empty
+          ObString algo_str = val.split_on(':').trim();
+          ObString level_str = val.trim();
+          int64_t level = 0;
+          if (0 != algo_str.case_compare("zlib")) {
+            ret = OB_NOT_SUPPORTED;
+          } else if (0 == level_str.case_compare("0")) {
+            // valid value '0'
+          } else if (0 == (level = atoi(level_str.ptr()))) {
+            // fail to convert
+            ret = OB_NOT_SUPPORTED;
+          } else if (level < 0 || level > 9) {
+            // out of range
+            ret = OB_NOT_SUPPORTED;
+          }
         }
 
         if (0 == strcasecmp("init_sql", item->config_item_.name())
@@ -377,7 +400,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
           memset(buf, 0, sizeof(buf));
           MEMCPY(buf, item->config_item_.str(), strlen(item->config_item_.str()));
           if (OB_FAIL(ObProxySqlParser::split_multiple_stmt(buf, sql_array))) {
-            LOG_WARN("fail to split multiple stmt", K(ret));
+            LOG_WDIAG("fail to split multiple stmt", K(ret));
           } else {
             for (int64_t i = 0; OB_SUCC(ret) && i < sql_array.count(); i++) {
               char tmp_buf[OB_MAX_CONFIG_VALUE_LEN + EXTRA_NUM];
@@ -386,7 +409,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
               ObString parse_sql(sql_array.at(i).length() + EXTRA_NUM, tmp_buf);
               ObProxyParser obproxy_parser(allocator, NORMAL_PARSE_MODE);
               if (OB_FAIL(obproxy_parser.obparse(parse_sql, parse_result))) {
-                LOG_WARN("fail to parse sql", K(buf), K(parse_sql), K(ret));
+                LOG_WDIAG("fail to parse sql", K(buf), K(parse_sql), K(ret));
               } else if (OB_ISNULL(parse_result.result_tree_)
                   || OB_ISNULL(parse_result.result_tree_->children_)
                   || OB_ISNULL(parse_result.result_tree_->children_[0])
@@ -395,7 +418,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
                   || (T_VARIABLE_SET != parse_result.result_tree_->children_[0]->type_
                       && T_ALTER_SYSTEM_SET_PARAMETER != parse_result.result_tree_->children_[0]->type_)) {
                 ret = OB_NOT_SUPPORTED;
-                LOG_WARN("init sql is not expected", K(ret));
+                LOG_WDIAG("init sql is not expected", K(ret));
               }
             }
           }
@@ -412,7 +435,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
             ObString tmp_value_string;
             ObString passwd_string(ENC_STRING_BUF_LEN, passwd_staged1_buf);
             if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage1(item->config_item_.str(), passwd_string))) {
-              LOG_WARN("encrypt_passwd_to_stage1 failed", K(ret));
+              LOG_WDIAG("encrypt_passwd_to_stage1 failed", K(ret));
             } else {
               MEMCPY(value_str, passwd_staged1_buf + 1, 40);
               value_str[40] = '\0';
@@ -420,18 +443,18 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
               item->config_item_.set_value(tmp_value_string);
               char sql[1024];
               int64_t len = static_cast<int64_t>(snprintf(sql, 1024, EXECUTE_SQL, vip.length(), vip.ptr(), vid, vport,
-                                                item->cluster_name_.size(), item->cluster_name_.ptr(), 
+                                                item->cluster_name_.size(), item->cluster_name_.ptr(),
                                                 item->tenant_name_.size(), item->tenant_name_.ptr(),
                                                 item->config_item_.name(), item->config_item_.str(),
                                                 item->config_level_.size(), item->config_level_.ptr()));
               if (OB_UNLIKELY(len <= 0 || len >= 1024)) {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("get execute sql failed", K(len), K(ret));
+                LOG_WDIAG("get execute sql failed", K(len), K(ret));
               } else {
                 ObProxyVariantString buf_string;
                 buf_string.set_value(sql);
                 if (OB_FAIL(execute_sql_array_.push_back(buf_string))) {
-                  LOG_WARN("execute_sql_array push back failed", K(ret));
+                  LOG_WDIAG("execute_sql_array push back failed", K(ret));
                 }
               }
             }
@@ -444,15 +467,54 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
             && NULL != item->config_item_.str()
             && '\0' != *item->config_item_.str()
             && OB_FAIL(ObProxyConfigTableProcessor::parse_ssl_attributes(item->config_item_, ssl_attributes))) {
-          LOG_WARN("parse ssl attributes failed", KPC(item), K(ret));
+          LOG_WDIAG("parse ssl attributes failed", KPC(item), K(ret));
+        }
+        // 检查配置设置时的主键信息和 level 是否匹配
+        if (OB_SUCC(ret)) {
+          if (0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())) {
+            if (!vip.empty() || 0 != vport || -1 != vid || !item->cluster_name_.is_empty() || !item->tenant_name_.is_empty()) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
+            }
+          } else if (0 == strcasecmp("LEVEL_CLUSTER", item->config_level_.ptr())) {
+            if (!vip.empty() || 0 != vport || -1 != vid || !item->tenant_name_.is_empty()) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
+            }
+          } else if (0 == strcasecmp("LEVEL_TENANT", item->config_level_.ptr())) {
+            if (!vip.empty() || 0 != vport || -1 != vid) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
+            }
+          }
+        }
+
+        // 检查配置设置时的主键信息和 level 是否匹配
+        if (OB_SUCC(ret)) {
+          if (0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())) {
+            if (!vip.empty() || 0 != vport || -1 != vid || !item->cluster_name_.is_empty() || !item->tenant_name_.is_empty()) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
+            }
+          } else if (0 == strcasecmp("LEVEL_CLUSTER", item->config_level_.ptr())) {
+            if (!vip.empty() || 0 != vport || -1 != vid || !item->tenant_name_.is_empty()) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
+            }
+          } else if (0 == strcasecmp("LEVEL_TENANT", item->config_level_.ptr())) {
+            if (!vip.empty() || 0 != vport || -1 != vid) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
+            }
+          }
         }
 
         if (OB_SUCC(ret)) {
           if (!is_backup && need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr()) &&
               OB_FAIL(alter_proxy_config(item->config_item_.name(), item->config_item_.str()))) {
-            LOG_WARN("alter proxyconfig failed", K(ret));
+            LOG_WDIAG("alter proxyconfig failed", K(ret));
           } else if (OB_FAIL(config_map.unique_set(item))) {
-            LOG_WARN("backup map unique_set failed", K(ret));
+            LOG_WDIAG("backup map unique_set failed", K(ret));
           }
         }
       }
@@ -475,9 +537,9 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_ba
   DRWLock::WRLockGuard guard(proxy_config_lock_);
   if (OB_ISNULL(arg)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
   } else if (need_rebuild_config_map_ && OB_FAIL(backup_hashmap_with_lock())) {
-    LOG_WARN("backup hashmap failed", K(ret));
+    LOG_WDIAG("backup hashmap failed", K(ret));
   } else {
     SqlFieldResult *fields = static_cast<SqlFieldResult*>(arg);
     int64_t index = is_backup ? (index_ + 1) % 2 : index_;
@@ -490,13 +552,24 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_ba
       for (int i = 0; OB_SUCC(ret) && need_delete && i < fields->field_num_; i++) {
         SqlField* sql_field = fields->fields_.at(i);
         if (0 == sql_field->column_name_.config_string_.case_compare("vip")) {
-          char ip_buf[256];
-          item.vip_addr_.addr_.ip_to_string(ip_buf, 256);
-          if (TOKEN_STR_VAL != sql_field->value_type_) {
-            ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
-          } else if (0 != strcasecmp(ip_buf, sql_field->column_value_.config_string_.ptr())) {
-            need_delete = false;
+          if (ObVipAddr::VTOA_VIP_ADDR == item.vip_addr_.vip_addr_type_) {
+            char ip_buf[256];
+            item.vip_addr_.addr_.ip_to_string(ip_buf, 256);
+            if (TOKEN_STR_VAL != sql_field->value_type_) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("unexpeted type", K(sql_field->value_type_), K(ret));
+            } else if (0 != strcasecmp(ip_buf, sql_field->column_value_.config_string_.ptr())) {
+              need_delete = false;
+            }
+          } else if (ObVipAddr::VPC_VIP_ADDR == item.vip_addr_.vip_addr_type_) {
+            ObString vpc;
+            vpc.assign_ptr(item.vip_addr_.vpc_info_.ptr(), static_cast<int32_t>(item.vip_addr_.vpc_info_.len()));
+            if (TOKEN_STR_VAL != sql_field->value_type_) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("unexpeted type", K(sql_field->value_type_), K(ret));
+            } else if (vpc != sql_field->column_value_.config_string_) {
+              need_delete = false;
+            }
           }
         } else if (0 == sql_field->column_name_.config_string_.case_compare("vport")) {
           int64_t vport = 0;
@@ -506,7 +579,7 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_ba
             vport = sql_field->column_int_value_;
           } else {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid value type", K(ret));
+            LOG_WDIAG("invalid value type", K(ret));
           }
           if (OB_SUCC(ret)) {
             if (vport != item.vip_addr_.addr_.port_) {
@@ -521,7 +594,7 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_ba
             vid = sql_field->column_int_value_;
           } else {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid value type", K(ret));
+            LOG_WDIAG("invalid value type", K(ret));
           }
           if (OB_SUCC(ret)) {
             if (vid != item.vip_addr_.vid_) {
@@ -531,41 +604,41 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_ba
         } else if (0 == sql_field->column_name_.config_string_.case_compare("config_level")) {
           if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+            LOG_WDIAG("unexpeted type", K(sql_field->value_type_), K(ret));
           } else if (0 != strcasecmp(item.config_level_.ptr(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
         } else if (0 == sql_field->column_name_.config_string_.case_compare("tenant_name")) {
           if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+            LOG_WDIAG("unexpeted type", K(sql_field->value_type_), K(ret));
           } else if (0 != strcasecmp(item.tenant_name_.ptr(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
         } else if (0 == sql_field->column_name_.config_string_.case_compare("cluster_name")) {
           if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+            LOG_WDIAG("unexpeted type", K(sql_field->value_type_), K(ret));
           } else if (0 != strcasecmp(item.cluster_name_.ptr(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
         } else if (0 == sql_field->column_name_.config_string_.case_compare("name")) {
           if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+            LOG_WDIAG("unexpeted type", K(sql_field->value_type_), K(ret));
           } else if (0 != strcasecmp(item.config_item_.name(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
         } else if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
           if (TOKEN_STR_VAL != sql_field->value_type_) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpeted type", K(sql_field->value_type_), K(ret));
+            LOG_WDIAG("unexpeted type", K(sql_field->value_type_), K(ret));
           } else if (0 != strcasecmp(item.config_item_.str(), sql_field->column_value_.config_string_.ptr())) {
             need_delete = false;
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected column name", K(sql_field->column_name_));
+          LOG_WDIAG("unexpected column name", K(sql_field->column_name_));
         }
       }
 
@@ -573,7 +646,7 @@ int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_ba
         const char *config_level_str = item.config_level_.ptr();
         if (0 == strcasecmp("LEVEL_GLOBAL", config_level_str)) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("delete global config unsupported", K(ret));
+          LOG_WDIAG("delete global config unsupported", K(ret));
         } else {
           config_map.remove(&item);
           item.destroy();
@@ -600,16 +673,16 @@ int ObProxyConfigTableProcessor::get_config_item(const obutils::ObVipAddr &addr,
   key.vip_addr_ = addr;
   key.config_item_.set_name(name.ptr());
   if (OB_FAIL(key.cluster_name_.assign(cluster_name))) {
-    LOG_WARN("assign cluster_name failed", K(ret));
+    LOG_WDIAG("assign cluster_name failed", K(ret));
   } else if (OB_FAIL(key.tenant_name_.assign(tenant_name))) {
-    LOG_WARN("assign tenant name failed", K(ret));
+    LOG_WDIAG("assign tenant name failed", K(ret));
   } else if (OB_FAIL(current_map.get_refactored(key, proxy_config_item))) {
     if (OB_HASH_NOT_EXIST != ret) {
-      LOG_WARN("get config item failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      LOG_WDIAG("get config item failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
     }
   } else if (OB_ISNULL(proxy_config_item)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("proxy config item is null unexpected", K(ret));
+    LOG_WDIAG("proxy config item is null unexpected", K(ret));
   } else {
     item = *proxy_config_item;
   }
@@ -628,18 +701,18 @@ int ObProxyConfigTableProcessor::alter_proxy_config(const common::ObString &key_
   ObString tmp_value_string = value_string;
   if (OB_UNLIKELY(key_string.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(key_string), K(value_string), K(ret));
+    LOG_WDIAG("invalid argument", K(key_string), K(value_string), K(ret));
   } else {
     if (OB_ISNULL(reload_config = get_global_internal_cmd_processor().get_reload_config())) {
     ret = OB_ERR_NULL_VALUE;
-    LOG_WARN("fail to get reload config", K(ret));
+    LOG_WDIAG("fail to get reload config", K(ret));
     } else if (OB_ISNULL(old_value = static_cast<char *>(op_fixed_mem_alloc(OB_MAX_CONFIG_VALUE_LEN)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem for old_value", "size", OB_MAX_CONFIG_VALUE_LEN, K(ret));
+      LOG_WDIAG("fail to alloc mem for old_value", "size", OB_MAX_CONFIG_VALUE_LEN, K(ret));
     } else if (OB_FAIL(get_global_proxy_config().get_old_config_value(key_string, old_value, OB_MAX_CONFIG_VALUE_LEN))) {
-      LOG_WARN("fail to get old config value", K(key_string), K(ret));
+      LOG_WDIAG("fail to get old config value", K(key_string), K(ret));
     } else if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, tmp_value_string))) {
-      LOG_WARN("fail to update config", K(key_string), K(tmp_value_string), K(ret));
+      LOG_WDIAG("fail to update config", K(key_string), K(tmp_value_string), K(ret));
     } else {
       has_update_config = true;
       LOG_DEBUG("succ to update config", K(key_string), K(value_string), K(old_value));
@@ -647,9 +720,9 @@ int ObProxyConfigTableProcessor::alter_proxy_config(const common::ObString &key_
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(get_global_proxy_config().check_proxy_serviceable())) {
-        LOG_WARN("fail to check proxy serviceable", K(ret));
+        LOG_WDIAG("fail to check proxy serviceable", K(ret));
       } else if (OB_FAIL(get_global_proxy_config().dump_config_to_local())) {
-        LOG_WARN("fail to dump_config_to_local", K(ret));
+        LOG_WDIAG("fail to dump_config_to_local", K(ret));
       } else {
         has_dump_config = true;
       }
@@ -668,14 +741,14 @@ int ObProxyConfigTableProcessor::alter_proxy_config(const common::ObString &key_
       if (has_update_config) {
         if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = get_global_proxy_config().update_config_item(
             key_string, ObString::make_string(old_value))))) {
-          LOG_WARN("fail to back to old config", K(key_string), K(old_value), K(tmp_ret));
+          LOG_WDIAG("fail to back to old config", K(key_string), K(old_value), K(tmp_ret));
         } else {
           LOG_DEBUG("succ to back to old config", K(key_string), K(old_value));
         }
       }
       if (has_dump_config && OB_LIKELY(OB_SUCCESS == tmp_ret)) {
         if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = get_global_proxy_config().dump_config_to_local()))) {
-          LOG_WARN("fail to dump old config", K(tmp_ret));
+          LOG_WDIAG("fail to dump old config", K(tmp_ret));
         } else {
           LOG_DEBUG("succ to dump old config");
         }
@@ -705,14 +778,14 @@ int ObProxyConfigTableProcessor::commit_execute_sql(sqlite3 *db)
   if (execute_sql_array_.count() > 0) {
     if (OB_UNLIKELY(NULL == db)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("sqlite db is null unexpected", K(ret));
+      LOG_WDIAG("sqlite db is null unexpected", K(ret));
     }
     for (int64_t i = 0; OB_SUCC(ret) && i < execute_sql_array_.count(); i++) {
       char *err_msg = NULL;
       ObString sql = execute_sql_array_.at(i).config_string_;
       if (SQLITE_OK != sqlite3_exec(db, sql.ptr(), NULL, 0, &err_msg)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("exec failed", K(ret), "err_msg", err_msg);
+        LOG_WDIAG("exec failed", K(ret), "err_msg", err_msg);
       }
 
       if (NULL != err_msg) {
@@ -736,23 +809,43 @@ int ObProxyConfigTableProcessor::parse_ssl_attributes(const ObConfigItem &config
   json::Value *json_value = NULL;
   ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
   if (OB_FAIL(parser.init(&json_allocator))) {
-    LOG_WARN("json parser init failed", K(ret));
+    LOG_WDIAG("json parser init failed", K(ret));
   } else if (OB_FAIL(parser.parse(config_item.str(), strlen(config_item.str()), json_value))) {
-    LOG_WARN("json parse failed", K(ret));
+    LOG_WDIAG("json parse failed", K(ret));
   } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, json::JT_OBJECT))) {
-    LOG_WARN("check config info type failed", K(ret));
+    LOG_WDIAG("check config info type failed", K(ret));
   } else {
     DLIST_FOREACH(p, json_value->get_object()) {
       if (0 == p->name_.case_compare("using_ssl")) {
         if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-          LOG_WARN("check config info type failed, using_ssl need string type", K(p->value_), K(ret));
+          LOG_WDIAG("check config info type failed, using_ssl need string type", K(p->value_), K(ret));
         } else if (0 == p->value_->get_string().case_compare("ENABLE_FORCE")) {
           ssl_attributes.force_using_ssl_ = true;
         } else if (0 == p->value_->get_string().case_compare("DISABLE_FORCE")) {
           ssl_attributes.force_using_ssl_ = false;
         } else {
           ret = OB_NOT_SUPPORTED;
-          LOG_WARN("unsupport using_ssl config", K(p->value_->get_string()), K(ret));
+          LOG_WDIAG("unsupport using_ssl config", K(p->value_->get_string()), K(ret));
+        }
+      } else if (0 == p->name_.case_compare("min_tls_version")) {
+        long options = SSL_OP_NO_SSLv2 | SSL_OP_NO_SSLv3;
+        if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
+          LOG_WDIAG("check config info type failed, min_tls_version need string type", K(p->value_), K(ret));
+        } else if (0 == p->value_->get_string().case_compare("NONE")) {
+        } else if (0 == p->value_->get_string().case_compare("TLSV1")) {
+        } else if (0 == p->value_->get_string().case_compare("TLSV1.1")) {
+          options |= SSL_OP_NO_TLSv1;
+        } else if (0 == p->value_->get_string().case_compare("TLSV1.2")) {
+          options |= (SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1);
+        } else if (0 == p->value_->get_string().case_compare("TLSV1.3")) {
+          options |= (SSL_OP_NO_TLSv1 | SSL_OP_NO_TLSv1_1 | SSL_OP_NO_TLSv1_2);
+        } else {
+          ret = OB_NOT_SUPPORTED;
+          LOG_WDIAG("unsupport tls version", K(p->value_->get_string()), K(ret));
+        }
+
+        if (OB_SUCC(ret)) {
+          ssl_attributes.options_ = options;
         }
       }
     }

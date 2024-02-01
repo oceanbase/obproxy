@@ -65,6 +65,7 @@ opsql_func_expr_resolver_sources:=\
 obproxy/opsql/func_expr_resolver/ob_func_expr_resolver.h\
 obproxy/opsql/func_expr_resolver/ob_func_expr_resolver.cpp\
 obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_factory.h\
+obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_factory.cpp\
 obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_type.h\
 obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr.cpp\
 obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr.h

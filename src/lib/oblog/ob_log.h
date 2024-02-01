@@ -48,6 +48,7 @@
 #include "lib/oblog/ob_log_print_kv.h"
 #include "lib/oblog/ob_log_module.h"
 #include "lib/oblog/ob_async_log_struct.h"
+#include "lib/utility/ob_macro_utils.h"
 
 #define OB_LOG_MAX_PAR_MOD_SIZE 16
 #define OB_LOG_MAX_SUB_MOD_SIZE 16
@@ -215,6 +216,8 @@ public:
     LOG_ERROR = 0,
     LOG_USER_ERROR,
     LOG_WARN,
+    LOG_EDIAG,
+    LOG_WDIAG,
     LOG_INFO,
     LOG_TRACE,
     LOG_DEBUG,
@@ -441,10 +444,19 @@ public:
   DEFINE_LOG_PRINT_KV(20);
 
   //@brief Check whether the level to print.
-  inline bool need_to_print(const int32_t level) {return (level <= get_log_level());}
-  inline bool need_to_print_monitor(const int32_t level) {return (level <= get_monitor_log_level());}
+  OB_INLINE bool need_to_print(const int32_t level)
+  {
+    return (level <= get_syslog_level() && left_syslog_io_bandwidth_ > 0);
+  }
+  OB_INLINE bool need_to_print_monitor(const int32_t level)
+  {
+    return (level <= get_monitor_log_level() && left_syslog_io_bandwidth_ > 0);
+  }
   //@brief Check whether the xflush level to print.
-  inline bool need_to_print_xflush(const int32_t level) {return (level <= get_xflush_log_level());}
+  OB_INLINE bool need_to_print_xflush(const int32_t level)
+  {
+    return (level <= get_xflush_log_level() && left_syslog_io_bandwidth_ > 0);
+  }
   //@brief Check whether the level of the par-module to print.
   bool need_to_print(const uint64_t par_mod_id, const int32_t level);
   //@brief Check whether the level of the sub-module to print.
@@ -461,6 +473,10 @@ public:
                      const char *filename,
                      const bool flag = false,
                      const bool open_wf = false);
+
+  void set_enable_wf(const ObLogFDType type,
+                     const bool open_wf,
+                     const bool enable_wf);
 
   int reopen_monitor_log();
 
@@ -479,6 +495,12 @@ public:
 
   //@brief Set the max log-file size. The unit is byte. Default value and max value are 1GB.
   void set_max_file_size(int64_t max_file_size);
+
+  void set_syslog_io_bandwidth_limit(const int64_t value)
+  {
+    syslog_io_bandwidth_limit_ = value;
+    left_syslog_io_bandwidth_ = value;
+  }
 
   //@brief Get current time.
   static inline struct timeval get_cur_tv();
@@ -504,6 +526,7 @@ public:
   {set_log_level(static_cast<int8_t>(level), version);}
   void set_log_level(const int8_t level, int64_t version = 0);
   int set_mod_log_levels(const char* level_str, int64_t version = 0);
+  int set_syslog_level(const char *level_str);
   int set_monitor_log_level(const char* level_str);
   int set_xflush_log_level(const char* level_str);
   int get_log_level_from_str(const char* level_str, int8_t &level);
@@ -514,8 +537,11 @@ public:
   inline int32_t get_level() const {return id_level_map_.get_level();}
   //@brief current log level, with session log level considered.
   inline int32_t get_log_level() const;
-  inline int32_t get_monitor_log_level() const { return static_cast<int32_t>(monitor_level_); }
-  inline int32_t get_xflush_log_level() const { return static_cast<int32_t>(xflush_level_); }
+
+  OB_INLINE int32_t get_syslog_level() const { return static_cast<int32_t>(syslog_level_); }
+  OB_INLINE int32_t get_monitor_log_level() const { return static_cast<int32_t>(monitor_level_); }
+  OB_INLINE int32_t get_xflush_log_level() const { return static_cast<int32_t>(xflush_level_); }
+  OB_INLINE int32_t get_left_syslog_io_bandwidth() const { return static_cast<int32_t>(left_syslog_io_bandwidth_); }
   inline const char *get_level_str() const { return errstr_[id_level_map_.get_level()]; }
   int get_level_str(const int8_t level_id, const char *&level_str) const;
 
@@ -610,6 +636,16 @@ private:
   void do_async_flush_to_file(ObLogItem **log_item, const int64_t count);
   void do_async_flush_log();
 
+  void async_set_log_header(const ObLogFDType type,
+                           ObLogItem &item,
+                           const timeval &tv,
+                           const char *mod_name,
+                           const int32_t level,
+                           const char *file,
+                           const int32_t line,
+                           const char *function,
+                           const uint64_t dropped_log_count);
+
   int async_log_data_header(const ObLogFDType type,
                             ObLogItem &item,
                             const timeval &tv,
@@ -617,7 +653,11 @@ private:
                             const int32_t level,
                             const char *file,
                             const int32_t line,
-                            const char *function);
+                            const char *function,
+                            const uint64_t trace_id_0,
+                            const uint64_t trace_id_1,
+                            const uint64_t dropped_log_count,
+                            const int64_t tid);
 
   int try_upgrade_log_item(ObLogItem *&log_item, bool &upgrade_result);
 
@@ -652,6 +692,7 @@ private:
   //log level
   ObLogNameIdMap name_id_map_;
   ObLogIdLevelMap id_level_map_;//level of log-file
+  int8_t syslog_level_;
   int8_t monitor_level_;
   int8_t xflush_level_;
   int8_t wf_level_;//level of warning log-file
@@ -674,6 +715,11 @@ private:
   pthread_t async_tid_;//async thread thread id
 
   LoggerCallbackHandler callback_handler_;
+  int64_t syslog_io_bandwidth_limit_;
+  int64_t left_syslog_io_bandwidth_;
+  int64_t start_bandwidth_time_;
+  int64_t syslog_start_out_of_limit_;
+  int64_t syslog_out_of_limit_cnt_;
 };
 
 class ObLoggerTraceMode
@@ -806,13 +852,13 @@ inline void ObLogger::log_user_message_info(
 
 inline bool ObLogger::need_to_print(const uint64_t par_mod_id, const int32_t level)
 {
-  return (level <= get_log_level(par_mod_id));
+  return (level <= get_log_level(par_mod_id) && syslog_io_bandwidth_limit_ > 0);
 }
 
 inline bool ObLogger::need_to_print(const uint64_t par_mod_id, const uint64_t sub_mod_id,
                                     const int32_t level)
 {
-  return (level <= get_log_level(par_mod_id, sub_mod_id));
+  return (level <= get_log_level(par_mod_id, sub_mod_id) && syslog_io_bandwidth_limit_ > 0);
 }
 
 inline int32_t ObLogger::get_log_level() const

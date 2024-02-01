@@ -263,7 +263,7 @@ int ObMysqlContJobList<T>::init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(pending_list_.init("job pending list",
                                         reinterpret_cast<int64_t>(&(reinterpret_cast<T*>(0))->link_)))) {
-    PROXY_LOG(WARN, "fail to init pending_list", K(ret));
+    PROXY_LOG(WDIAG, "fail to init pending_list", K(ret));
   }
   return ret;
 }
@@ -271,11 +271,11 @@ template <typename T>
 void ObMysqlContJobList<T>::push(T* elem)
 {
   if (OB_ISNULL(elem)) {
-    PROXY_LOG(WARN, "elem should not null");
+    PROXY_LOG(WDIAG, "elem should not null");
     return;
   }
   if (list_count_ >= oceanbase::obproxy::obutils::get_global_proxy_config().max_pending_num) {
-    PROXY_LOG(WARN, "list is full, drop it");
+    PROXY_LOG(WDIAG, "list is full, drop it");
     op_free(elem);
   }
   pending_list_.push(elem);

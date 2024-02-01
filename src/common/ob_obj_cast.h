@@ -41,6 +41,17 @@ namespace common
                                                     // do range check.
 #define CM_NO_CAST_INT_UINT           (1ULL << 3)   // no cast between int and uint, otherwise
                                                     // do cast between int and uint.
+#define CM_CONST_TO_DECIMAL_INT_UP    (1ULL << 17)
+#define CM_CONST_TO_DECIMAL_INT_DOWN  (1ULL << 18)
+#define CM_CONST_TO_DECIMAL_INT_EQ    (1ULL << 19)
+#define CM_BY_TRANSFORMER             (1ULL << 20)
+// string->integer(int/uint)时默认进行round(round to nearest)，
+// 如果设置该标记，则会进行trunc(round to zero)
+// ceil(round to +inf)以及floor(round to -inf)暂时没有支持
+#define CM_STRING_INTEGER_TRUNC       (1ULL << 57)
+#define CM_COLUMN_CONVERT             (1ULL << 58)
+#define CM_ENABLE_BLOB_CAST           (1ULL << 59)
+#define CM_EXPLICIT_CAST              (1ULL << 60)
 #define CM_ORACLE_MODE (1ULL << 61)
 
 #define CM_INSERT_UPDATE_SCOPE        (1ULL << 62)  // affect calculate values() function. return the insert values
@@ -61,6 +72,13 @@ typedef uint64_t ObCastMode;
 #define CM_UNSET_NO_CAST_INT_UINT(mode)       (~CM_NO_CAST_INT_UINT & (mode))
 #define CM_IS_INTERNAL_CALL(mode)             (CM_INTERNAL_CALL & (mode))
 #define CM_IS_EXTERNAL_CALL(mode)             (!CM_IS_INTERNAL_CALL(mode))
+#define CM_IS_CONST_TO_DECIMAL_INT(mode)                                                           \
+  ((((mode)&CM_CONST_TO_DECIMAL_INT_UP) != 0) || (((mode)&CM_CONST_TO_DECIMAL_INT_DOWN) != 0)      \
+   || (((mode)&CM_CONST_TO_DECIMAL_INT_EQ) != 0))
+
+#define CM_IS_COLUMN_CONVERT(mode)            ((CM_COLUMN_CONVERT & (mode)) != 0)
+#define CM_IS_EXPLICIT_CAST(mode)             ((CM_EXPLICIT_CAST & (mode)) != 0)
+#define CM_IS_IMPLICIT_CAST(mode)             (!CM_IS_EXPLICIT_CAST(mode))
 
 struct ObObjCastParams
 {
@@ -76,7 +94,8 @@ struct ObObjCastParams
       dest_collation_(CS_TYPE_INVALID),
       expect_obj_collation_(CS_TYPE_INVALID),
       res_accuracy_(NULL),
-      dtc_params_()
+      dtc_params_(),
+      format_number_with_limit_(true)
   {
     set_compatible_cast_mode();
   }
@@ -93,7 +112,8 @@ struct ObObjCastParams
       dest_collation_(dest_collation),
       expect_obj_collation_(dest_collation),
       res_accuracy_(res_accuracy),
-      dtc_params_()
+      dtc_params_(),
+      format_number_with_limit_(true)
   {
     set_compatible_cast_mode();
     if (NULL != dtc_params) {
@@ -113,7 +133,8 @@ struct ObObjCastParams
       dest_collation_(dest_collation),
       expect_obj_collation_(dest_collation),
       res_accuracy_(res_accuracy),
-      dtc_params_()
+      dtc_params_(),
+      format_number_with_limit_(true)
   {
     set_compatible_cast_mode();
     if (NULL != dtc_params) {
@@ -144,7 +165,7 @@ struct ObObjCastParams
   }
 
   TO_STRING_KV(K(cur_time_), KP(cast_mode_), K(warning_), K(dest_collation_),
-               K(expect_obj_collation_), K(res_accuracy_));
+               K(expect_obj_collation_), K(res_accuracy_), K(format_number_with_limit_));
   
   IAllocator *allocator_;
   ObIAllocator *allocator_v2_;
@@ -156,6 +177,7 @@ struct ObObjCastParams
   ObCollationType expect_obj_collation_;  // for each column obj
   ObAccuracy *res_accuracy_;
   ObDataTypeCastParams dtc_params_;
+  bool format_number_with_limit_;
 };
 
 
@@ -379,7 +401,7 @@ int ObObjCaster<Source, AllocatorTmpl>::expr_obj_cast(const ObObjTypeClass orig_
              ob_is_invalid_obj_type(expect_type) ||
              expect_tc != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid argument(s)",
+    COMMON_LOG(WDIAG, "invalid argument(s)",
                K(ret), K(orig_tc), K(expect_tc), K(expect_type));
   } else {
     char varchar_buf[OB_CAST_TO_VARCHAR_MAX_LENGTH];
@@ -396,11 +418,11 @@ int ObObjCaster<Source, AllocatorTmpl>::expr_obj_cast(const ObObjTypeClass orig_
     int warning = OB_SUCCESS;
     extern ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC];
     if (OB_FAIL(OB_OBJ_CAST[orig_tc][expect_tc](expect_type, params, in, to, warning))) {
-      COMMON_LOG(WARN, "failed to type cast obj",
+      COMMON_LOG(WDIAG, "failed to type cast obj",
                  K(ret), K(in), K(orig_tc), K(expect_tc));
     } else if (OB_SUCCESS != warning) {
       ret = warning;
-      COMMON_LOG(WARN, "failed to cast obj to expect type",
+      COMMON_LOG(WDIAG, "failed to cast obj to expect type",
                  K(ret), K(in), K(expect_type));
     }
     out = to;
@@ -410,7 +432,7 @@ int ObObjCaster<Source, AllocatorTmpl>::expr_obj_cast(const ObObjTypeClass orig_
       out.set_collation_type(in.get_collation_type()); //set same collation type
     } else if (ObStringTC == expect_tc) {
       if (REACH_TIME_INTERVAL(10 * 1000 * 1000)) {
-        BACKTRACE(WARN, true, "invalid collation type: %s", to_cstring(in));
+        BACKTRACE(WDIAG, true, "invalid collation type: %s", to_cstring(in));
       }
       out.set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
     }

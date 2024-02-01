@@ -47,8 +47,8 @@ int ObURowIDData::compare(const ObURowIDData &other) const
       ObObj pk_val2;
       if (OB_FAIL(get_pk_value(type1, this_pos, pk_val1))
           || OB_FAIL(other.get_pk_value(type2, that_pos, pk_val2))) {
-        COMMON_LOG(ERROR, "failed to get pk value", K(ret));
-        right_to_die_or_duty_to_live();
+        // will return default compare_ret = 0
+        COMMON_LOG(EDIAG, "failed to get pk value", K(ret));
       } else {
         compare_ret = pk_val1.compare(pk_val2);
       }
@@ -300,11 +300,11 @@ inline int ObURowIDData::get_pk_value(ObObjType obj_type, int64_t &pos, ObObj &p
   const uint8_t version = get_version();
   if (OB_UNLIKELY(PK_ROWID_VERSION != version && NO_PK_ROWID_VERSION != version)) {
     ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid rowid version", K(ret), K(version));
+    COMMON_LOG(WDIAG, "invalid rowid version", K(ret), K(version));
   } else if (OB_UNLIKELY(obj_type >= ObMaxType)
       || OB_UNLIKELY(NULL == inner_get_funcs_[obj_type])) {
     ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid type or get null for get pk function", K(ret), K(obj_type));
+    COMMON_LOG(WDIAG, "invalid type or get null for get pk function", K(ret), K(obj_type));
   } else {
     ret = inner_get_funcs_[obj_type](rowid_content_, rowid_len_, pos, pk_val);
   }
@@ -359,7 +359,7 @@ int ObURowIDData::get_base64_str(char *buf, const int64_t buf_len, int64_t &pos)
   int ret = OB_SUCCESS;
   if (pos + 1 > buf_len) {
     ret = OB_BUF_NOT_ENOUGH;
-    COMMON_LOG(WARN, "buffer not enough", K(ret));
+    COMMON_LOG(WDIAG, "buffer not enough", K(ret));
   } else {
     buf[pos++] = '*';
     ret = ObBase64Encoder::encode(rowid_content_, get_buf_len(), buf, buf_len, pos);
@@ -374,15 +374,15 @@ int ObURowIDData::decode_base64_str(const char *input, const int64_t input_len,
   if (OB_ISNULL(input) || OB_ISNULL(output) ||
       OB_UNLIKELY(input_len < 1 || output_len < 0 || pos < 0 || pos >= output_len)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid argument", K(ret));
+    COMMON_LOG(WDIAG, "invalid argument", K(ret));
   } else {
     if (input[0] == '*') {
       if (OB_FAIL(ObBase64Encoder::decode(input + 1, input_len - 1, output, output_len, pos))) {
-        COMMON_LOG(WARN, "failed to decode base64 str", K(ret));
+        COMMON_LOG(WDIAG, "failed to decode base64 str", K(ret));
       }
     } else {
       if (OB_FAIL(ObBase64Encoder::decode(input, input_len, output, output_len, pos))) {
-        COMMON_LOG(WARN, "failed to decode base64 str", K(ret));
+        COMMON_LOG(WDIAG, "failed to decode base64 str", K(ret));
       }
     }
   }
@@ -400,10 +400,10 @@ int ObURowIDData::decode2urowid(const char* input, const int64_t input_len,
   int64_t base64_input_len = 0;
   if (OB_UNLIKELY(OB_NOT_NULL(urowid_data.rowid_content_))) {
     ret = OB_INIT_TWICE;
-    COMMON_LOG(WARN, "init twice", K(ret));
+    COMMON_LOG(WDIAG, "init twice", K(ret));
   } else if (OB_UNLIKELY(OB_ISNULL(input) || input_len < 1)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid argument", K(ret), K(input), K(input_len));
+    COMMON_LOG(WDIAG, "invalid argument", K(ret), K(input), K(input_len));
   } else {
     if (input[0] == '*') {
       input += 1;
@@ -416,12 +416,12 @@ int ObURowIDData::decode2urowid(const char* input, const int64_t input_len,
   } else if (OB_FALSE_IT(decoded_buf_len = ObBase64Encoder::needed_decoded_length(base64_input_len))) {
   } else if (OB_UNLIKELY(decoded_buf_len <= 0 || decoded_buf_len % 3 != 0)) {
     ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid base64 str for rowid", K(ret), K(decoded_buf_len));
+    COMMON_LOG(WDIAG, "invalid base64 str for rowid", K(ret), K(decoded_buf_len));
   } else if (OB_ISNULL(decoded_buf = (uint8_t *)allocator.alloc(decoded_buf_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "failed to allocate memory", K(ret), K(decoded_buf_len));
+    COMMON_LOG(WDIAG, "failed to allocate memory", K(ret), K(decoded_buf_len));
   } else if (OB_FAIL(ObBase64Encoder::decode(input, base64_input_len, decoded_buf, decoded_buf_len, pos))) {
-    COMMON_LOG(WARN, "failed to decode base64_str to urowid", K(ret));
+    COMMON_LOG(WDIAG, "failed to decode base64_str to urowid", K(ret));
     ret = OB_INVALID_ROWID;
   } else {
     urowid_data.rowid_content_ = decoded_buf;
@@ -475,7 +475,7 @@ bool ObURowIDData::is_valid_urowid() const
       ObObjType obj_type = get_pk_type(pos);
       if (OB_UNLIKELY(ob_is_invalid_obj_type(obj_type))) {
         is_valid = false;
-        COMMON_LOG(WARN, "invalid obj type", K(obj_type));
+        COMMON_LOG(WDIAG, "invalid obj type", K(obj_type));
       } else if (OB_FAIL(get_pk_value(obj_type, pos, obj))) {
         is_valid = false;
       } else {
@@ -484,7 +484,7 @@ bool ObURowIDData::is_valid_urowid() const
     }
   } else {
     is_valid = false;
-    COMMON_LOG(WARN, "unexpected urowid version", K(version));
+    COMMON_LOG(WDIAG, "unexpected urowid version", K(version));
   }
   return is_valid;
 }
@@ -799,10 +799,10 @@ int ObURowIDData::set_rowid_content(const ObIArray<ObObj> &pk_vals,
   uint8_t *rowid_buf = NULL;
   if (OB_ISNULL(rowid_buf = (uint8_t *)allocator.alloc(rowid_buf_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "failed to allocate memory", K(ret));
+    COMMON_LOG(WDIAG, "failed to allocate memory", K(ret));
   } else if (OB_UNLIKELY(!is_valid_version(version))) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid rowid version", K(ret), K(version));
+    COMMON_LOG(WDIAG, "invalid rowid version", K(ret), K(version));
   } else {
     int64_t pos = 0;
     rowid_buf[pos++] = 0; // guess dba is not used for now
@@ -811,7 +811,7 @@ int ObURowIDData::set_rowid_content(const ObIArray<ObObj> &pk_vals,
       set_pk_val_func func_ptr = inner_set_funcs_[pk_vals.at(i).get_type()];
       OB_ASSERT(NULL != func_ptr);
       if (OB_FAIL(func_ptr(pk_vals.at(i), rowid_buf, rowid_buf_len, pos))) {
-        COMMON_LOG(WARN, "failed to set pk value", K(ret));
+        COMMON_LOG(WDIAG, "failed to set pk value", K(ret));
       }
     } // for end
     if (OB_SUCC(ret)) {
@@ -829,7 +829,7 @@ int ObURowIDData::parse_heap_organized_table_rowid(uint64_t &tablet_id, uint64_t
   int ret = OB_SUCCESS;
   if (rowid_len_ != HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid rowid buf size", K(ret));
+    COMMON_LOG(WDIAG, "invalid rowid buf size", K(ret));
   } else {
     int pos = 0;
     tablet_id = static_cast<uint64_t>(rowid_content_[pos++] & 0x1F) << HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS;
@@ -853,7 +853,7 @@ int ObURowIDData::parse_ext_heap_organized_table_rowid(uint64_t &tablet_id, uint
   int ret = OB_SUCCESS;
   if (rowid_len_ != EXT_HEAP_ORGANIZED_TABLE_ROWID_CONTENT_BUF_SIZE) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid rowid buf size", K(ret));
+    COMMON_LOG(WDIAG, "invalid rowid buf size", K(ret));
   } else {
     int pos = 0;
     tablet_id = static_cast<uint64_t>(rowid_content_[pos++] & 0x1F) << EXT_HEAP_TABLE_ROWID_NON_EMBEDED_TABLET_ID_BITS;
@@ -876,10 +876,10 @@ int ObURowIDData::get_pk_vals(ObIArray<ObObj> &pk_vals)
   int64_t pos = 0;
   if (OB_UNLIKELY(!is_valid_urowid())) {
     ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid rowid", K(ret));
+    COMMON_LOG(WDIAG, "invalid rowid", K(ret));
   } else if (is_physical_rowid()) {
     if (OB_FAIL(get_rowkey_for_heap_organized_table(pk_vals))) {
-      COMMON_LOG(WARN, "failed to get rowkey for heap organized_table", K(ret));
+      COMMON_LOG(WDIAG, "failed to get rowkey for heap organized_table", K(ret));
     } else {
       /* do nothing */
     }
@@ -891,9 +891,9 @@ int ObURowIDData::get_pk_vals(ObIArray<ObObj> &pk_vals)
         ObObj tmp_obj;
         if (OB_LIKELY(is_valid_obj_type(type))) {
           if (OB_FAIL(get_pk_value(type, pos, tmp_obj))) {
-            COMMON_LOG(WARN, "failed to get pk value", K(ret));
+            COMMON_LOG(WDIAG, "failed to get pk value", K(ret));
           } else if (OB_FAIL(pk_vals.push_back(tmp_obj))) {
-            COMMON_LOG(WARN, "failed to push back element", K(ret));
+            COMMON_LOG(WDIAG, "failed to push back element", K(ret));
           }
         } else {
           ret = OB_INVALID_ROWID;
@@ -915,22 +915,22 @@ int ObURowIDData::get_rowkey_for_heap_organized_table(ObIArray<ObObj> &rowkey)
   uint64_t auto_inc = 0;
   if (HEAP_TABLE_ROWID_VERSION == version) {
     if (OB_FAIL(parse_heap_organized_table_rowid(tablet_id, auto_inc))) {
-      COMMON_LOG(WARN, "failed to parse rowid", K(ret));
+      COMMON_LOG(WDIAG, "failed to parse rowid", K(ret));
     }
   } else if (EXT_HEAP_TABLE_ROWID_VERSION == version) {
     if (OB_FAIL(parse_ext_heap_organized_table_rowid(tablet_id, auto_inc))) {
-      COMMON_LOG(WARN, "failed to parse rowid", K(ret));
+      COMMON_LOG(WDIAG, "failed to parse rowid", K(ret));
     }
   } else {
     ret = OB_INVALID_ROWID;
-    COMMON_LOG(WARN, "invalid rowid", K(ret));
+    COMMON_LOG(WDIAG, "invalid rowid", K(ret));
   }
   
   if (OB_SUCC(ret)) {
     ObObj tmp_obj;
     tmp_obj.set_uint64(auto_inc);
     if (OB_FAIL(rowkey.push_back(tmp_obj))) {
-      COMMON_LOG(WARN, "failed to push back element", K(ret));
+      COMMON_LOG(WDIAG, "failed to push back element", K(ret));
     }
   }
   return ret;
@@ -950,7 +950,7 @@ int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxy
       uint64_t tablet_id = 0;
       uint64_t auto_inc = 0;
       if (OB_FAIL(parse_heap_organized_table_rowid(tablet_id, auto_inc))) {
-        COMMON_LOG(WARN, "fail to parse heap organized table rowid", K(ret));
+        COMMON_LOG(WDIAG, "fail to parse heap organized table rowid", K(ret));
       } else {
         partition_id = static_cast<int64_t>(tablet_id);
         COMMON_LOG(DEBUG, "succ to get tablet id from ob4.0", K(partition_id));
@@ -962,7 +962,7 @@ int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxy
       uint64_t tablet_id = 0;
       uint64_t auto_inc = 0;
       if (OB_FAIL(parse_ext_heap_organized_table_rowid(tablet_id, auto_inc))) {
-        COMMON_LOG(WARN, "fail to parse ext heap organized table rowid", K(ret));
+        COMMON_LOG(WDIAG, "fail to parse ext heap organized table rowid", K(ret));
       } else {
         partition_id = static_cast<int64_t>(tablet_id);
         COMMON_LOG(DEBUG, "succ to get tablet id from ob4.0 extended", K(partition_id));
@@ -973,13 +973,13 @@ int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxy
     case PK_ROWID_VERSION: {
       // ob2.x 3.x
       if (OB_FAIL(get_obobj_from_decoded(part_info, resolve_result, allocator))) {
-        COMMON_LOG(WARN, "fail to get obobj from decoded", K(ret));
+        COMMON_LOG(WDIAG, "fail to get obobj from decoded", K(ret));
       }
       break;
     }
     default : {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "unexpected version for rowid", K(version));
+      COMMON_LOG(WDIAG, "unexpected version for rowid", K(version));
     }
   }
   
@@ -995,58 +995,70 @@ int ObURowIDData::get_obobj_from_decoded(obproxy::proxy::ObProxyPartInfo &part_i
 
   ObArray<ObObj> pk_vals;
   if (OB_FAIL(get_pk_vals(pk_vals))) {
-    COMMON_LOG(WARN, "fail to get pk vals", K(ret));
+    COMMON_LOG(WDIAG, "fail to get pk vals", K(ret));
   } else {
     ObProxyPartKeyInfo &key_info = part_info.get_part_key_info();
 
     for (int64_t i = 0; OB_SUCC(ret) && i < key_info.key_num_; ++i) {
       ObProxyPartKey &part_key = key_info.part_keys_[i];
-      if (PART_KEY_LEVEL_ONE == part_key.level_ && !resolve_result.ranges_[0].start_key_.is_valid()) {
-        if (OB_FAIL(resolve_result.ranges_[0].build_row_key(part_info.get_part_columns().count(), allocator))) {
-          COMMON_LOG(WARN, "fail to build row key", K(ret));
-        }
-      } else if (PART_KEY_LEVEL_TWO == part_key.level_ && !resolve_result.ranges_[1].start_key_.is_valid()) {
-        if (OB_FAIL(resolve_result.ranges_[1].build_row_key(part_info.get_sub_part_columns().count(), allocator))) {
-          COMMON_LOG(WARN, "fail to build row key", K(ret));
-        }
-      }
-
-      if (part_key.idx_in_rowid_ >= 0
-          && part_key.idx_in_rowid_ < pk_vals.count()) {
-        ObObj &obj = pk_vals.at(part_key.idx_in_rowid_);
-        ObObjType type = obj.get_type();
-        if (ObCharType == type || ObNCharType == type) {
-          int32_t val_len = obj.get_val_len();
-          const char* obj_str = obj.get_string_ptr();
-          while (val_len > 1) {
-            if (OB_PADDING_CHAR == *(obj_str + val_len - 1)) {
-              --val_len;
-            } else {
-              break;
-            }
-          }
-          obj.set_string(type, obj.get_string_ptr(), val_len);
-        }
-
-        if (part_key.level_ == 0 || part_key.level_ > 2) {
-          ret = OB_ERR_UNEXPECTED;
-          COMMON_LOG(WARN, "part key level unexpected", K(part_key.level_));
-        } else {
-          int level = static_cast<int>(part_key.level_ - 1);
-          ObObj *target_start = const_cast<ObObj*>(resolve_result.ranges_[level].start_key_.get_obj_ptr())
-                                + part_key.idx_in_part_columns_;
-          ObObj *target_end = const_cast<ObObj*>(resolve_result.ranges_[level].end_key_.get_obj_ptr())
-                              + part_key.idx_in_part_columns_;
-          // no need to deep copy
-          *target_start = obj;
-          *target_end = obj;
-          resolve_result.ranges_[level].border_flag_.set_inclusive_start();
-          resolve_result.ranges_[level].border_flag_.set_inclusive_end();
-          COMMON_LOG(DEBUG, "succ to get val from rowid", K(obj), K(level), K(part_key.idx_in_part_columns_));
-        }
+      if (part_key.generated_col_idx_ >= 0) {
+        // src column of generated key, do nothing
       } else {
-        ret = OB_ERR_UNEXPECTED;
-        COMMON_LOG(WARN, "calc partition id using rowid failed", K(part_key.idx_in_rowid_), K(pk_vals.count()));
+        if (PART_KEY_LEVEL_ONE == part_key.level_ && !resolve_result.ranges_[0].start_key_.is_valid()) {
+          if (OB_FAIL(resolve_result.ranges_[0].build_row_key(part_info.get_part_columns().count(), allocator))) {
+            COMMON_LOG(WDIAG, "fail to build row key", K(ret));
+          }
+        } else if (PART_KEY_LEVEL_TWO == part_key.level_ && !resolve_result.ranges_[1].start_key_.is_valid()) {
+          if (OB_FAIL(resolve_result.ranges_[1].build_row_key(part_info.get_sub_part_columns().count(), allocator))) {
+            COMMON_LOG(WDIAG, "fail to build row key", K(ret));
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          if (part_key.idx_in_rowid_ >= 0
+             && part_key.idx_in_rowid_ < pk_vals.count()) {
+            ObObj &obj = pk_vals.at(part_key.idx_in_rowid_);
+            ObObjType type = obj.get_type();
+            if (ObCharType == type || ObNCharType == type) {
+              int32_t val_len = obj.get_val_len();
+              const char* obj_str = obj.get_string_ptr();
+              while (val_len > 1) {
+                if (OB_PADDING_CHAR == *(obj_str + val_len - 1)) {
+                  --val_len;
+                } else {
+                  break;
+                }
+              }
+              obj.set_string(type, obj.get_string_ptr(), val_len);
+            }
+
+            if (part_key.level_ == 0 || part_key.level_ > 2) {
+              ret = OB_ERR_UNEXPECTED;
+              COMMON_LOG(WDIAG, "part key level unexpected", K(part_key.level_), K(ret));
+            } else {
+              int level = static_cast<int>(part_key.level_ - 1);
+              ObObj *target_start = const_cast<ObObj*>(resolve_result.ranges_[level].start_key_.get_obj_ptr())
+                                    + part_key.idx_in_part_columns_;
+              ObObj *target_end = const_cast<ObObj*>(resolve_result.ranges_[level].end_key_.get_obj_ptr())
+                                  + part_key.idx_in_part_columns_;
+              if (OB_ISNULL(target_start) || OB_ISNULL(target_end)) {
+                ret = OB_ERR_UNEXPECTED;
+                COMMON_LOG(WDIAG, "fail to get val from rowid, resolve result may be empty", K(level),
+                          "idx_in_part_columns", part_key.idx_in_part_columns_, K(ret));
+              } else {
+                // no need to deep copy
+                *target_start = obj;
+                *target_end = obj;
+                resolve_result.ranges_[level].border_flag_.set_inclusive_start();
+                resolve_result.ranges_[level].border_flag_.set_inclusive_end();
+                COMMON_LOG(DEBUG, "succ to get val from rowid", K(obj), K(level), K(part_key.idx_in_part_columns_), K(ret));
+              }
+            }
+          } else {
+            ret = OB_ERR_UNEXPECTED;
+            COMMON_LOG(WDIAG, "calc partition id using rowid failed", K(part_key.idx_in_rowid_), K(pk_vals.count()), K(ret));
+          }
+        }
       }
     } // for
   } // else
@@ -1129,7 +1141,7 @@ OB_DEF_SERIALIZE(ObURowIDData)
   if (OB_FAIL(ret)) { // do nothing
   } else if (pos + rowid_buf_len > buf_len) {
     ret = OB_BUF_NOT_ENOUGH;
-    COMMON_LOG(WARN, "not enough buffer", K(ret), K(rowid_buf_len), K(buf_len), K(pos));
+    COMMON_LOG(WDIAG, "not enough buffer", K(ret), K(rowid_buf_len), K(buf_len), K(pos));
   } else {
     MEMCPY(buf + pos, rowid_content_, rowid_buf_len);
     pos += rowid_buf_len;
@@ -1146,7 +1158,7 @@ OB_DEF_DESERIALIZE(ObURowIDData)
     // do nothing
   } else if (pos + rowid_buf_len > data_len) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "dirty buffer", K(ret), K(pos), K(rowid_buf_len), K(data_len));
+    COMMON_LOG(WDIAG, "dirty buffer", K(ret), K(pos), K(rowid_buf_len), K(data_len));
   } else {
     rowid_len_ = rowid_buf_len;
     rowid_content_ = (uint8_t *)buf + pos;

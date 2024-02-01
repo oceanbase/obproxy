@@ -566,6 +566,7 @@ struct ObSqlParseResult
   bool is_show_table_status_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_TABLE_STATUS == cmd_sub_type_; }
   bool is_show_elastic_id_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_ELASTIC_ID == cmd_sub_type_; }
   bool is_show_topology_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_TOPOLOGY == cmd_sub_type_; }
+  bool is_show_create_table_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_CREATE_TABLE == cmd_sub_type_; }
   bool is_show_db_version_stmt() const { return OBPROXY_T_SHOW == stmt_type_ && OBPROXY_T_SUB_SHOW_DB_VERSION == cmd_sub_type_; }
   bool is_desc_table_stmt() const { return OBPROXY_T_DESC == stmt_type_ && OBPROXY_T_SUB_DESC_TABLE == cmd_sub_type_; }
   bool is_desc_stmt() const { return OBPROXY_T_DESC == stmt_type_; }
@@ -629,10 +630,14 @@ struct ObSqlParseResult
   bool is_internal_cmd() const;
   bool is_kill_query_cmd() const;
   bool is_kill_session_cmd() const;
+  bool is_kill_connection_cmd() const;
+  bool is_show_processlist_cmd() const;
   bool is_ping_proxy_cmd() const { return OBPROXY_T_PING_PROXY == stmt_type_; }
   bool is_internal_error_cmd() const { return OBPROXY_T_ERR_INVALID != cmd_err_type_; }
   bool is_mysql_compatible_cmd() const;
   bool is_need_resp_ok_cmd() const;
+  bool is_load_data_stmt() const { return OBPROXY_T_LOAD_DATA_INFILE == stmt_type_ ||
+                                          OBPROXY_T_LOAD_DATA_LOCAL_INFILE == stmt_type_; }
 
   bool is_shard_special_cmd() const;
 
@@ -646,6 +651,7 @@ struct ObSqlParseResult
   bool has_shard_comment() const { return has_shard_comment_; }
   bool has_anonymous_block() const { return has_anonymous_block_; }
   bool has_for_update() const { return has_for_update_; }
+  bool has_trace_log_hint() const { return has_trace_log_hint_; }
   bool has_connection_id() const { return has_connection_id_;}
   bool has_sys_context() const { return has_sys_context_; }
   bool is_binlog_related() const { return is_binlog_related_; }
@@ -734,6 +740,7 @@ struct ObSqlParseResult
   int64_t get_batch_insert_values_count() { return batch_insert_values_count_; }
   void set_batch_insert_values_count(int64_t count) { batch_insert_values_count_ = count; }
   DbMeshRouteInfo& get_dbmesh_route_info() { return dbmesh_route_info_; }
+  bool has_dbmesh_hint() {return has_dbmesh_hint_;};
   DbpRouteInfo& get_dbp_route_info() { return dbp_route_info_; }
   bool is_use_dbp_hint() {return use_dbp_hint_;}
   ObProxySetInfo& get_set_info() { return set_info_; }
@@ -756,6 +763,7 @@ struct ObSqlParseResult
       has_simple_route_info_ = other.has_simple_route_info_;
       has_anonymous_block_ = other.has_anonymous_block_;
       has_for_update_ = other.has_for_update_;
+      has_trace_log_hint_ = other.has_trace_log_hint_;
       has_connection_id_ = other.has_connection_id_;
       has_sys_context_ = other.has_sys_context_;
       is_xa_start_stmt_ = other.is_xa_start_stmt_;
@@ -789,7 +797,7 @@ struct ObSqlParseResult
       }
       if (NULL != other.text_ps_buf_ && other.text_ps_buf_len_ > 0) {
         if (OB_ISNULL(text_ps_buf_ = static_cast<char *>(allocator_.alloc(other.text_ps_buf_len_)))) {
-          PROXY_LOG(WARN, "fail to alloc mem", K(other.text_ps_buf_len_));
+          PROXY_LOG(WDIAG, "fail to alloc mem", K(other.text_ps_buf_len_));
         } else {
           MEMCPY(text_ps_buf_, other.text_ps_buf_, other.text_ps_buf_len_);
           text_ps_buf_len_ = other.text_ps_buf_len_;
@@ -815,7 +823,7 @@ struct ObSqlParseResult
           target_db_server_ = NULL;
         }
       } else if (OB_ISNULL(target_db_server_) && OB_ISNULL(target_db_server_ = op_alloc(ObTargetDbServer))) {
-        PROXY_LOG(WARN, "fail to alloc memory for target db server");
+        PROXY_LOG(WDIAG, "fail to alloc memory for target db server");
       } else {
         *target_db_server_ = *other.target_db_server_;
       }
@@ -869,7 +877,7 @@ struct ObSqlParseResult
         target_db_server_ = NULL;
       }
     } else if (OB_ISNULL(target_db_server_) && OB_ISNULL(target_db_server_ = op_alloc(ObTargetDbServer))) {
-      PROXY_LOG(WARN, "fail to alloc memory target db server");
+      PROXY_LOG(WDIAG, "fail to alloc memory target db server");
     } else {
       *target_db_server_ = *other.target_db_server_;
     }
@@ -891,6 +899,7 @@ private:
   bool is_dual_request_;
   bool has_anonymous_block_;
   bool has_for_update_;
+  bool has_trace_log_hint_;
   bool is_xa_start_stmt_;
   ObProxyBasicStmtType stmt_type_;
   int64_t hint_query_timeout_;
@@ -935,6 +944,7 @@ private:
   SqlFieldResult fileds_result_;
   int64_t batch_insert_values_count_;
   DbMeshRouteInfo dbmesh_route_info_;
+  bool has_dbmesh_hint_;
   ObProxySetInfo set_info_;
   DbpRouteInfo dbp_route_info_;
   bool use_dbp_hint_;
@@ -1010,6 +1020,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   is_dual_request_ = false;
   has_anonymous_block_ = false;
   has_for_update_ = false;
+  has_trace_log_hint_ = false;
   is_xa_start_stmt_ = false;
   stmt_type_ = OBPROXY_T_INVALID;
   cmd_sub_type_ = OBPROXY_T_SUB_INVALID;
@@ -1058,6 +1069,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   fileds_result_.reset();
   batch_insert_values_count_ = 0; // numbers of values like insert into xx(x1,x2) values(..), (..), (..);
   dbmesh_route_info_.reset();
+  has_dbmesh_hint_ = false;
   set_info_.reset();
   allocator_.reset();
   table_name_quote_ = OBPROXY_QUOTE_T_INVALID;
@@ -1094,13 +1106,7 @@ inline bool ObSqlParseResult::is_not_supported() const
 inline bool ObSqlParseResult::is_dml_stmt() const
 {
   // explain stmt can contains db/table name
-  return (is_select_stmt()
-          || is_insert_stmt()
-          || is_update_stmt()
-          || is_replace_stmt()
-          || is_delete_stmt()
-          || is_merge_stmt()
-          || is_multi_stmt());
+  return (is_select_stmt() || is_multi_stmt() || is_write_stmt());
 }
 
 inline bool ObSqlParseResult::is_text_ps_inner_dml_stmt() const
@@ -1155,7 +1161,8 @@ inline bool ObSqlParseResult::is_write_stmt() const
           || is_update_stmt()
           || is_replace_stmt()
           || is_delete_stmt()
-          || is_merge_stmt());
+          || is_merge_stmt()
+          || is_load_data_stmt());
 }
 
 inline bool ObSqlParseResult::is_internal_request() const
@@ -1191,6 +1198,16 @@ inline bool ObSqlParseResult::is_kill_query_cmd() const
 inline bool ObSqlParseResult::is_kill_session_cmd() const
 {
   return OBPROXY_T_ICMD_KILL_SESSION == stmt_type_;
+}
+
+inline bool ObSqlParseResult::is_kill_connection_cmd() const
+{
+  return OBPROXY_T_ICMD_KILL_MYSQL == stmt_type_ && OBPROXY_T_SUB_KILL_CONNECTION == cmd_sub_type_;
+}
+
+inline bool ObSqlParseResult::is_show_processlist_cmd() const
+{
+  return OBPROXY_T_ICMD_SHOW_PROCESSLIST == stmt_type_ && OBPROXY_T_SUB_SESSION_LIST == cmd_sub_type_;
 }
 
 inline bool ObSqlParseResult::is_mysql_compatible_cmd() const

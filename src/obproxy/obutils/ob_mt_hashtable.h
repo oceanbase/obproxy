@@ -89,13 +89,13 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(size <= 0)) {
       ret = common::OB_INVALID_ARGUMENT;
-      PROXY_LOG(WARN, "invalid bucket_size", K(size), K(ret));
+      PROXY_LOG(WDIAG, "invalid bucket_size", K(size), K(ret));
     } else if (NULL == buckets_) {
       bucket_num_ = size;
       buckets_ = static_cast<HashTableEntry **>(op_fixed_mem_alloc(bucket_num_ * sizeof(HashTableEntry *)));
       if (OB_ISNULL(buckets_)) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_LOG(ERROR, "failed to allocate memory for hash table bucket", K(ret));
+        PROXY_LOG(EDIAG, "failed to allocate memory for hash table bucket", K(ret));
       } else {
         memset(buckets_, 0, bucket_num_ * sizeof(HashTableEntry *));
       }
@@ -193,7 +193,7 @@ public:
       static_cast<HashTableEntry **>(op_fixed_mem_alloc(new_bucket_num * sizeof(HashTableEntry *)));
     if (OB_ISNULL(new_buckets)) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_LOG(ERROR, "fail to alloc memory for HashTableEntry", K(ret));
+      PROXY_LOG(EDIAG, "fail to alloc memory for HashTableEntry", K(ret));
     } else {
       memset(new_buckets, 0, new_bucket_num * sizeof(HashTableEntry *));
 
@@ -267,7 +267,7 @@ inline Value ObIMTHashTable<Key, Value>::insert_entry(const uint64_t hash, const
         gc();
         if (cur_size_ / bucket_num_ > MT_HASHTABLE_MAX_CHAIN_AVG_LEN) {
           if (OB_UNLIKELY(common::OB_SUCCESS != resize(bucket_num_ * 2))) {
-            PROXY_LOG(WARN, "fail to resize buckets");
+            PROXY_LOG(WDIAG, "fail to resize buckets");
           }
         }
       }
@@ -412,17 +412,17 @@ public:
     int ret = common::OB_SUCCESS;
     if (OB_UNLIKELY(is_inited_)) {
       ret = common::OB_INIT_TWICE;
-      PROXY_LOG(WARN, "init twice", K(ret));
+      PROXY_LOG(WDIAG, "init twice", K(ret));
     } else {
       for (int64_t i = 0; OB_SUCC(ret) && i < MT_HASHTABLE_PARTITIONS; ++i) {
         if (OB_ISNULL(locks_[i] = event::new_proxy_mutex(lock_stats))) {
           ret = common::OB_ALLOCATE_MEMORY_FAILED;
-          PROXY_LOG(ERROR, "fail to alloc mem for proxymutex", K(ret));
+          PROXY_LOG(EDIAG, "fail to alloc mem for proxymutex", K(ret));
         } else if (OB_ISNULL(hash_tables_[i] = op_alloc_args(IMTHashTable, gc_func, pre_gc_func))) {
           ret = common::OB_ALLOCATE_MEMORY_FAILED;
-          PROXY_LOG(ERROR, "fail to alloc mem for hash table", K(ret));
+          PROXY_LOG(EDIAG, "fail to alloc mem for hash table", K(ret));
         } else if (OB_FAIL(hash_tables_[i]->init(size))) {
-          PROXY_LOG(WARN, "failed to init hash table", K(ret));
+          PROXY_LOG(WDIAG, "failed to init hash table", K(ret));
         }
       }
       if (OB_SUCC(ret)) {

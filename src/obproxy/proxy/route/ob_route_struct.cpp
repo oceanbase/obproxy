@@ -106,7 +106,7 @@ int ObProxyPartitionLocation::set_replicas(const common::ObIArray<ObProxyReplica
       destory();
       if (OB_ISNULL(replicas_ = static_cast<ObProxyReplicaLocation *>(op_fixed_mem_alloc(alloc_size)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem", K(alloc_size), K(ret));
+        LOG_WDIAG("fail to alloc mem", K(alloc_size), K(ret));
       } else {
         MEMCPY(replicas_, &(replicas.at(0)), alloc_size);
         replica_count_ = replicas.count();
@@ -128,7 +128,7 @@ ObProxyPartitionLocation &ObProxyPartitionLocation::operator=(const ObProxyParti
       } else {
         destory();
         if (OB_ISNULL(replicas_ = static_cast<ObProxyReplicaLocation *>(op_fixed_mem_alloc(alloc_size)))) {
-          LOG_WARN("fail to alloc mem", K(alloc_size));
+          LOG_WDIAG("fail to alloc mem", K(alloc_size));
         } else {
           MEMCPY(replicas_, other.replicas_ , alloc_size);
           replica_count_ = other.replica_count();
@@ -263,10 +263,10 @@ int ObTableEntryName::deep_copy(const ObTableEntryName &name,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf_start) || (buf_len < name.get_total_str_len())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(buf_start), K(buf_len), K(ret));
+    LOG_WDIAG("invalid input value", KP(buf_start), K(buf_len), K(ret));
   } else if (OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("this table entry name is not valid", K(name), K(ret));
+    LOG_WDIAG("this table entry name is not valid", K(name), K(ret));
   } else {
     int64_t total_len = name.get_total_str_len();
     int64_t pos = 0;
@@ -297,7 +297,7 @@ int ObTableEntryName::deep_copy(const ObTableEntryName &name,
 
     if (OB_UNLIKELY(pos != total_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to deep copy", K(pos), K(total_len), K(*this), K(ret));
+      LOG_WDIAG("fail to deep copy", K(pos), K(total_len), K(*this), K(ret));
     } else {
       LOG_DEBUG("succ deep copy ObTableEntryName", K(name), K(*this), K(total_len));
     }

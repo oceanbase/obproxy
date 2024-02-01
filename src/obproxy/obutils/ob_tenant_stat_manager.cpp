@@ -47,10 +47,10 @@ int ObTenantStatManager::create_item(const ObString &logic_tenant_name,
   if (OB_FAIL(item_map_.create(key, item))) {
     if (OB_LIKELY(OB_ENTRY_EXIST == ret)) {
       if (OB_FAIL(get_item(key, item))) {
-        LOG_WARN("fail to get_item, it should not happen", K(key), K(ret));
+        LOG_WDIAG("fail to get_item, it should not happen", K(key), K(ret));
       } else if (OB_ISNULL(item)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("item is NULL, it should not happen", K(key), K(ret));
+        LOG_WDIAG("item is NULL, it should not happen", K(key), K(ret));
       } else {
         LOG_INFO("other one create tenant stat item",
                  K(logic_tenant_name), K(logic_database_name),
@@ -58,11 +58,11 @@ int ObTenantStatManager::create_item(const ObString &logic_tenant_name,
                  K(stmt_type), K(error_code));
       }
     } else {
-      LOG_WARN("fail to create item", K(key), K(ret));
+      LOG_WDIAG("fail to create item", K(key), K(ret));
     }
   } else if (OB_ISNULL(item)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("item is NULL, it should not happen", K(key), K(ret));
+    LOG_WDIAG("item is NULL, it should not happen", K(key), K(ret));
   } else {
     item->set_key(logic_tenant_name, logic_database_name, cluster_name,
                   tenant_name, database_name, database_type, stmt_type, error_code);
@@ -91,17 +91,17 @@ int ObTenantStatManager::get_or_create_item(const ObString &logic_tenant_name,
                                 database_type, stmt_type, error_code,
                                 item))) {
           ATOMIC_AAF(&item_num_, -1);
-          LOG_WARN("fail to create tenant stat item", K(logic_tenant_name), K(logic_database_name),
+          LOG_WDIAG("fail to create tenant stat item", K(logic_tenant_name), K(logic_database_name),
                    K(cluster_name), K(tenant_name), K(database_name),
                    K(database_type), K(stmt_type), K(error_code), K(key), K(ret));
         }
       } else {
         ATOMIC_AAF(&item_num_, -1);
         ret = OB_EXCEED_MEM_LIMIT;
-        LOG_WARN("stat num reach limit, will discard", K_(item_num));
+        LOG_WDIAG("stat num reach limit, will discard", K_(item_num));
       }
     } else {
-      LOG_WARN("fail to get tenant stat item", K(logic_tenant_name), K(logic_database_name),
+      LOG_WDIAG("fail to get tenant stat item", K(logic_tenant_name), K(logic_database_name),
                K(cluster_name), K(tenant_name), K(database_name),
                K(database_type), K(stmt_type), K(error_code), K(key), K(ret));
     }
@@ -123,7 +123,7 @@ bool ObTenantStatManager::CheckActiveStats::operator() (
   bool need_clean = false;
   if (OB_ISNULL(item)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("item is NULL", K(item), K(ret));
+    LOG_WDIAG("item is NULL", K(item), K(ret));
   } else {
     const int64_t MAX_BUF_LEN = 1024;
     char buf[MAX_BUF_LEN];
@@ -178,7 +178,7 @@ int ObTenantStatManager::start_tenant_stat_dump_task()
             ObTenantStatManager::do_tenant_stat_dump,
             ObTenantStatManager::update_tenant_stat_dump_interval, false, event::ET_TASK))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start tenant_stat_dump_task task", K(ret));
+      LOG_WDIAG("fail to create and start tenant_stat_dump_task task", K(ret));
     }
   }
   return ret;
@@ -188,7 +188,7 @@ int ObTenantStatManager::set_stat_table_sync_interval()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObAsyncCommonTask::update_task_interval(tenant_stat_dump_cont_))) {
-    LOG_WARN("fail to set tenant_stat_dump interval", K(ret));
+    LOG_WDIAG("fail to set tenant_stat_dump interval", K(ret));
   }
 
   return ret;

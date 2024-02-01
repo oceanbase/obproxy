@@ -37,9 +37,9 @@ int ObGrpcClient::alloc(ObGrpcClient *&grpc_client)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(grpc_client = op_alloc(ObGrpcClient))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for grpc client", K(ret));
+    LOG_WDIAG("fail to alloc memory for grpc client", K(ret));
   } else if (OB_FAIL(grpc_client->init_stream())) {
-    LOG_WARN("fail to init stream", K(ret));
+    LOG_WDIAG("fail to init stream", K(ret));
   }
   return ret;
 }
@@ -53,7 +53,7 @@ int ObGrpcClient::check_and_reconnect()
     LOG_INFO("grpc channel is not avail, will reconnect", "state", get_channel_state(state));
     finish_rpc();
     if (OB_FAIL(init_stream())) {
-      LOG_WARN("fail to init stream", K(ret));
+      LOG_WDIAG("fail to init stream", K(ret));
     }
   }
   return ret;
@@ -64,7 +64,7 @@ int ObGrpcClient::init_stream()
   int ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else {
     ObProxyConfig &proxy_config = get_global_proxy_config();
     {
@@ -72,13 +72,13 @@ int ObGrpcClient::init_stream()
       int64_t str_len = static_cast<int64_t>(strlen(proxy_config.dataplane_host));
       if (OB_UNLIKELY(str_len) <= 0 || OB_UNLIKELY(str_len >= OB_MAX_HOST_NAME_LENGTH)) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid dataplane host", K(ret));
+        LOG_WDIAG("invalid dataplane host", K(ret));
       } else {
         memcpy(dataplane_host_, proxy_config.dataplane_host, str_len);
         str_len = static_cast<int64_t>(strlen(proxy_config.sidecar_node_id));
         if (OB_UNLIKELY(str_len) <= 0 || OB_UNLIKELY(str_len >= (OBPROXY_MAX_NODE_ID_LENGTH - OB_MAX_TIMESTAMP_LENGTH))) {
           ret = OB_INVALID_ARGUMENT;
-          LOG_WARN("invalid node_id", K(ret));
+          LOG_WDIAG("invalid node_id", K(ret));
         } else {
           int64_t pos = 0;
           memcpy(node_id_, proxy_config.sidecar_node_id, str_len);
@@ -99,7 +99,7 @@ int ObGrpcClient::init_stream()
       }
       if (nullptr == (context_ = new (std::nothrow) ClientContext())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc memory for client context", K(ret));
+        LOG_EDIAG("fail to alloc memory for client context", K(ret));
       } else {
         int64_t grpc_timeout_ms = obutils::get_global_proxy_config().grpc_timeout / 1000; // default 30 min
         std::chrono::system_clock::time_point deadline = std::chrono::system_clock::now() + std::chrono::milliseconds(grpc_timeout_ms);
@@ -126,9 +126,9 @@ bool ObGrpcClient::sync_write(DiscoveryRequest &request)
   bool status = false;
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_and_reconnect())) {
-    LOG_WARN("fail to check grpc state", K(ret));
+    LOG_WDIAG("fail to check grpc state", K(ret));
   } else if (OB_FAIL(fill_request_node(request))) {
-    LOG_WARN("fail to fill request node info", K(ret));
+    LOG_WDIAG("fail to fill request node info", K(ret));
   } else {
     status = stream_->Write(request);
   }
@@ -136,7 +136,7 @@ bool ObGrpcClient::sync_write(DiscoveryRequest &request)
     LOG_INFO("the stream has been closed, will rebuild the grpc client stream");
     finish_rpc();
     if (OB_FAIL(init_stream())) {
-      LOG_WARN("fail to init stream", K(ret));
+      LOG_WDIAG("fail to init stream", K(ret));
     }
   }
   return status;
@@ -149,7 +149,7 @@ int ObGrpcClient::fill_request_node(DiscoveryRequest &request)
   core::Node *node = request.mutable_node();
   if (OB_ISNULL(node) || OB_ISNULL(node_id_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("can not get node from DiscoveryRequest or node id is null", K(ret));
+    LOG_WDIAG("can not get node from DiscoveryRequest or node id is null", K(ret));
   } else {
     node->set_id(node_id_);
     LOG_INFO("success to set node id to request", "node_id_", node_id_);
@@ -165,17 +165,17 @@ int ObGrpcClient::fill_request_node(DiscoveryRequest &request)
       MEMSET(json, 0, sizeof(json));
 
       if (OB_FAIL(getip_from_nodeid(ipstr, MAX_IP_ADDR_LENGTH))) {
-        LOG_WARN("can not get ip from node id", K(ret));
+        LOG_WDIAG("can not get ip from node id", K(ret));
       } else if (OB_UNLIKELY(strlen(ipstr) == 0)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("ipstr can not be empty", K(ret));
+        LOG_WDIAG("ipstr can not be empty", K(ret));
       } else if (OB_FAIL(fill_labels_values(ipstr, labels))) {
-        LOG_WARN("can not fill labels values", K(ret));
+        LOG_WDIAG("can not fill labels values", K(ret));
       } else if (OB_FAIL(to_json(labels, json, MAX_REQUEST_LABELS_LENGTH))) {
-        LOG_WARN("fail to make json for pilot grpc request", K(ret));
+        LOG_WDIAG("fail to make json for pilot grpc request", K(ret));
       } else if (OB_UNLIKELY(strlen(json) == 0)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("json can not be empty", K(ret));
+        LOG_WDIAG("json can not be empty", K(ret));
       } else {
         ::google::protobuf::Struct *meta = node->mutable_metadata();
         ::google::protobuf::Map<::std::string, ::google::protobuf::Value> *fields = meta->mutable_fields();
@@ -198,13 +198,13 @@ int ObGrpcClient::getip_from_nodeid(char *ipstr, int64_t length)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(node_id_) || OB_ISNULL(ipstr) || OB_UNLIKELY(length == 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invaild node id or ip string", KP(node_id_), KP(ipstr), K(length), K(ret));
+    LOG_WDIAG("invaild node id or ip string", KP(node_id_), KP(ipstr), K(length), K(ret));
   } else {
     ObString ip = ObString::make_string(node_id_);
     ip = ip.after('~');
     if (OB_UNLIKELY(ip.empty())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("can not find first ~ in node id", "node_id", node_id_, K(ret));
+      LOG_WDIAG("can not find first ~ in node id", "node_id", node_id_, K(ret));
     }
 
     const char *trailing;
@@ -212,7 +212,7 @@ int ObGrpcClient::getip_from_nodeid(char *ipstr, int64_t length)
       trailing = ip.find('~');
       if (OB_ISNULL(trailing)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("can not find second ~ in node id", "node_id", node_id_, K(ret));
+        LOG_WDIAG("can not find second ~ in node id", "node_id", node_id_, K(ret));
       }
     }
 
@@ -220,14 +220,14 @@ int ObGrpcClient::getip_from_nodeid(char *ipstr, int64_t length)
       ip.clip(trailing);
       if (OB_UNLIKELY(ip.empty())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("can not find ip in node id", "node_id", node_id_, K(ret));
+        LOG_WDIAG("can not find ip in node id", "node_id", node_id_, K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       if (OB_UNLIKELY(length < ip.length())) {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WARN("IP string in node id is longer than MAX_IP_ADDR_LENGTH", K(length), K(ip.length()), K(ret));
+        LOG_WDIAG("IP string in node id is longer than MAX_IP_ADDR_LENGTH", K(length), K(ip.length()), K(ret));
       } else {
         memcpy(ipstr, ip.ptr(), ip.length());
         ipstr[ip.length()] = '\0';
@@ -243,29 +243,29 @@ int ObGrpcClient::fill_labels_values(const char *ipstr, ObIArray<obmysql::ObStri
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ipstr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invaild arg in ObGrpcClient::fill_labels_values func", KP(ipstr), K(ret));
+    LOG_WDIAG("invaild arg in ObGrpcClient::fill_labels_values func", KP(ipstr), K(ret));
   // need by alipay main site
   } else if (OB_FAIL(build_label("odp-version", build_version(), labels))) {
-    LOG_WARN("can not set odp-version to labels", K(ret));
+    LOG_WDIAG("can not set odp-version to labels", K(ret));
   } else if (OB_FAIL(build_label("cloudmesh.workload/ip", ipstr, labels))) {
-    LOG_WARN("can not set ip to labels", K(ret));
+    LOG_WDIAG("can not set ip to labels", K(ret));
   } else if (OB_FAIL(build_label("sigma.ali/app-name", get_global_proxy_config().app_name.str(), labels))) {
-    LOG_WARN("can not set app-name to labels", K(ret));
+    LOG_WDIAG("can not set app-name to labels", K(ret));
   } else if (OB_FAIL(build_label("cloudmesh.workload.type", "odp", labels))) {
-    LOG_WARN("can not set type to labels", K(ret));
+    LOG_WDIAG("can not set type to labels", K(ret));
   } else if (OB_FAIL(build_label("cloudmesh.cluster/env", get_global_proxy_config().workspace_name.str(), labels))) {
-    LOG_WARN("can not set env to labels", K(ret));
+    LOG_WDIAG("can not set env to labels", K(ret));
   } else if (OB_FAIL(build_label("VMMODE", "true", labels))) {
-    LOG_WARN("can not set VMMODE to labels", K(ret));
+    LOG_WDIAG("can not set VMMODE to labels", K(ret));
   // need by E-Commerce Bank
   } else if (OB_FAIL(build_label("app.kubernetes.io/name", get_global_proxy_config().app_name.str(), labels))) {
-    LOG_WARN("can not set app.kubernetes.io/name to labels", K(ret));
+    LOG_WDIAG("can not set app.kubernetes.io/name to labels", K(ret));
   } else if (OB_FAIL(build_label("cafe.sofastack.io/tenant", get_global_proxy_config().env_tenant_name.str(), labels))) {
-    LOG_WARN("can not set cafe.sofastack.io/tenant to labels", K(ret));
+    LOG_WDIAG("can not set cafe.sofastack.io/tenant to labels", K(ret));
   } else if (OB_FAIL(build_label("cafe.sofastack.io/workspace", get_global_proxy_config().workspace_name.str(), labels))) {
-    LOG_WARN("can not set cafe.sofastack.io/workspace to labels", K(ret));
+    LOG_WDIAG("can not set cafe.sofastack.io/workspace to labels", K(ret));
   } else if (OB_FAIL(build_label("scheduling.sigma.ali/pod-group-namespace", get_global_proxy_config().pod_namespace.str(), labels))) {
-    LOG_WARN("can not set scheduling.sigma.ali/pod-group-namespace to labels", K(ret));
+    LOG_WDIAG("can not set scheduling.sigma.ali/pod-group-namespace to labels", K(ret));
   }
 
   return ret;
@@ -276,14 +276,14 @@ int ObGrpcClient::build_label(const ObString& key, const ObString& value, ObIArr
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(key.empty()) || OB_UNLIKELY(value.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invaild arg in ObGrpcClient::build_label func", K(key), K(value), K(ret));
+    LOG_WDIAG("invaild arg in ObGrpcClient::build_label func", K(key), K(value), K(ret));
   } else {
     ObStringKV kv;
     kv.key_ = key;
     kv.value_ = value;
 
     if (OB_FAIL(labels.push_back(kv))) {
-      LOG_WARN("can not set kv to labels", K(ret));
+      LOG_WDIAG("can not set kv to labels", K(ret));
     }
   }
 
@@ -295,7 +295,7 @@ int ObGrpcClient::to_json(ObIArray<obmysql::ObStringKV>& labels, char *json, int
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(labels.empty()) || OB_ISNULL(json) || OB_UNLIKELY(length <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invaild arg in ObGrpcClient::to_json func", KP(json), K(length), K(ret));
+    LOG_WDIAG("invaild arg in ObGrpcClient::to_json func", KP(json), K(length), K(ret));
   } else {
     int64_t pos = 0;
     json[pos] = '{';
@@ -306,7 +306,7 @@ int ObGrpcClient::to_json(ObIArray<obmysql::ObStringKV>& labels, char *json, int
       ObStringKV& kv = labels.at(i);
 
       if (OB_FAIL(databuff_printf(json, length, pos, "\"%.*s\":\"%.*s\",", kv.key_.length(), kv.key_.ptr(), kv.value_.length(), kv.value_.ptr()))) {
-        LOG_WARN("json string length is not enough", K(length), K(pos), K(ret));
+        LOG_WDIAG("json string length is not enough", K(length), K(pos), K(ret));
       }
     }
 
@@ -328,7 +328,7 @@ bool ObGrpcClient::sync_read(DiscoveryResponse &response)
     LOG_INFO("the stream has been closed, will rebuild the grpc client stream");
     finish_rpc();
     if (OB_FAIL(init_stream())) {
-      LOG_WARN("fail to init stream", K(ret));
+      LOG_WDIAG("fail to init stream", K(ret));
     }
   }
   return status;
@@ -338,7 +338,7 @@ void ObGrpcClient::finish_rpc()
 {
   Status status = stream_->Finish();
   if (!status.ok()) {
-    LOG_WARN("rpc failed", "error code:", status.error_code(),
+    LOG_WDIAG("rpc failed", "error code:", status.error_code(),
              ", error message:", status.error_message().c_str());
   } else {
     LOG_DEBUG("finish stream");

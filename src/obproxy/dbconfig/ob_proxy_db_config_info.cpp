@@ -131,6 +131,7 @@ static const char *RULE_TB_SUFFIX_PADDING           = "tbSuffixPadding";
 static const char *RULE_TB_RULES                    = "tbRules";
 static const char *RULE_DB_RULES                    = "dbRules";
 static const char *RULE_ES_RULES                    = "elasticRules";
+static const char *RULE_CREATE_TABLE_SQL            = "sqlText";
 
 // ObShardRouter
 static const char *ROUTER_RULES                     = "routers";
@@ -228,7 +229,7 @@ int ObDbConfigChild::alloc_child_info(
   }
   if (OB_ISNULL(child_info)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObDbConfig", "type", get_type_task_name(type), K(name), K(ret));
+    LOG_WDIAG("fail to alloc memory for ObDbConfig", "type", get_type_task_name(type), K(name), K(ret));
   } else {
     child_info->inc_ref();
     child_info->db_info_key_.assign(db_info_key);
@@ -294,7 +295,7 @@ int ObDbConfigChild::to_json_str(common::ObSqlString &buf) const
        OB_SUCC(ret) && iter != tmp_map.end(); ++iter) {
     if (OB_FAIL(buf.append_fmt("\"%s\":\"%s\"", iter->first.c_str(),
                                iter->second.c_str()))) {
-      LOG_WARN("fail to append config", K(ret));
+      LOG_WDIAG("fail to append config", K(ret));
     } else if (i < tmp_map.size() - 1) {
       ret = buf.append(",");
     }
@@ -315,7 +316,7 @@ int ObDbConfigChild::parse_from_json(const Value &json_value)
       if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == CONFIG_VALUES) {
         config_value = it->value_;
@@ -338,7 +339,7 @@ int ObDbConfigChild::get_file_name(char *buf, const int64_t buf_len) const
   int64_t len = snprintf(buf, buf_len, "%s.%s.json", get_type_task_name(type_), name_.ptr());
   if (OB_UNLIKELY(len <=0) || OB_UNLIKELY(len > buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get file name for child config", KPC(this), K(ret));
+    LOG_WDIAG("fail to get file name for child config", KPC(this), K(ret));
   }
   return ret;
 }
@@ -353,25 +354,25 @@ int ObDbConfigChild::init(const std::string &meta, const ObDataBaseKey &key, con
   size_t tail_pos = std::string::npos;
   size_t head_pos = std::string::npos;
   if (OB_FAIL(db_info_key_.assign(key))) {
-    LOG_WARN("fail to copy db info key", K(key));
+    LOG_WDIAG("fail to copy db info key", K(key));
   } else if (OB_UNLIKELY(std::string::npos == (tail_pos = meta.rfind(".")))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid config", "meta", meta.c_str(), K(ret));
+    LOG_WDIAG("invalid config", "meta", meta.c_str(), K(ret));
   } else {
     version_.set_value(meta.length() - tail_pos - 1, meta.c_str() + tail_pos + 1);
     if (with_db_info_key) {
       if (OB_UNLIKELY(std::string::npos == (head_pos = meta.find(".")))) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid config", "meta", meta.c_str(), K(ret));
+        LOG_WDIAG("invalid config", "meta", meta.c_str(), K(ret));
       } else if (OB_UNLIKELY(std::string::npos == (head_pos = meta.find(".", head_pos + 1)))) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid config", "meta", meta.c_str(), K(ret));
+        LOG_WDIAG("invalid config", "meta", meta.c_str(), K(ret));
       } else if (TYPE_DATABASE != type_ && OB_UNLIKELY(std::string::npos == (head_pos = meta.find(".", head_pos + 1)))) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid config", "meta", meta.c_str(), K(ret));
+        LOG_WDIAG("invalid config", "meta", meta.c_str(), K(ret));
       } else if (OB_UNLIKELY(head_pos >= tail_pos)) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid config", "meta", meta.c_str(), K(ret));
+        LOG_WDIAG("invalid config", "meta", meta.c_str(), K(ret));
       } else {
         name_.set_value(tail_pos - head_pos - 1, meta.c_str() + head_pos + 1);
       }
@@ -403,7 +404,7 @@ int ObShardUserPrivInfo::to_json_str(common::ObSqlString &buf) const
                              AUTH_UPDATE_PRIV, has_update_priv() ? AUTH_HAS_PRIV : AUTH_NO_PRIV,
                              AUTH_SELECT_PRIV, has_select_priv() ? AUTH_HAS_PRIV : AUTH_NO_PRIV,
                              AUTH_INDEX_PRIV, has_index_priv() ? AUTH_HAS_PRIV : AUTH_NO_PRIV))) {
-    LOG_WARN("fail to append json str for ObShardUserPrivInfo", KPC(this), K(ret));
+    LOG_WDIAG("fail to append json str for ObShardUserPrivInfo", KPC(this), K(ret));
   }
   return ret;
 }
@@ -447,7 +448,7 @@ int ObShardUserPrivInfo::set_password(const char *password, int64_t len)
   char pwd_buf[OB_MAX_PASSWORD_LENGTH];
   memset(pwd_buf, 0, sizeof(pwd_buf));
   if (OB_FAIL(ObBlowFish::decode(password, len, pwd_buf, OB_MAX_PASSWORD_LENGTH))) {
-    LOG_WARN("fail to decode encrypted password", K(password), K(len), K(ret));
+    LOG_WDIAG("fail to decode encrypted password", K(password), K(len), K(ret));
   } else {
     ObString password_str(static_cast<int32_t>(strlen(pwd_buf)), pwd_buf);
     char stage2_buf[SCRAMBLE_LENGTH * 2 + 1];
@@ -457,7 +458,7 @@ int ObShardUserPrivInfo::set_password(const char *password, int64_t len)
     pwd_stage2.assign_ptr(stage2_buf, SCRAMBLE_LENGTH * 2 + 1);
     pwd_stage2_hex.assign_ptr(stage2_hex_buf, SCRAMBLE_LENGTH);
     if (OB_FAIL(ObEncryptedHelper::encrypt_passwd_to_stage2(password_str, pwd_stage2))) {
-      LOG_WARN("fail to encrypt passwd to stage2", K(ret));
+      LOG_WDIAG("fail to encrypt passwd to stage2", K(ret));
     } else {
       ++pwd_stage2; // trim the first const character '*'
       ObEncryptedHelper::displayable_to_hex(pwd_stage2, pwd_stage2_hex);
@@ -550,7 +551,7 @@ int ObDataBaseAuth::assign(const ObDbConfigChild &child_info)
       up_info.reset();
       up_info.assign(other.up_array_.at(i));
       if (OB_FAIL(up_array_.push_back(up_info))) {
-        LOG_WARN("fail to put ObShardUserPrivInfo", K(up_info), K(ret));
+        LOG_WDIAG("fail to put ObShardUserPrivInfo", K(up_info), K(ret));
       }
     }
   }
@@ -562,12 +563,12 @@ int ObDataBaseAuth::to_json_str(common::ObSqlString &buf) const
   int ret = OB_SUCCESS;
   if (OB_FAIL(buf.append_fmt("{\"%s\":\"%s\", \"%s\":[",
               CONFIG_VERSION, version_.ptr(), AUTH_USERS))) {
-    LOG_WARN("fail to append database auth to json", KPC(this), K(ret));
+    LOG_WDIAG("fail to append database auth to json", KPC(this), K(ret));
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < up_array_.count(); ++i) {
     const ObShardUserPrivInfo &up_info = up_array_.at(i);
     if (OB_FAIL(up_info.to_json_str(buf))) {
-      LOG_WARN("fail to get json str for shard user auth info", K(up_info), K(ret));
+      LOG_WDIAG("fail to get json str for shard user auth info", K(up_info), K(ret));
     } else if (i < up_array_.count() - 1) {
       ret = buf.append(",");
     }
@@ -587,7 +588,7 @@ int ObDataBaseAuth::parse_from_json(const json::Value &json_value)
       if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == AUTH_USERS) {
         db_users = it->value_;
@@ -599,9 +600,9 @@ int ObDataBaseAuth::parse_from_json(const json::Value &json_value)
     DLIST_FOREACH(it, db_users->get_array()) {
       up_info.reset();
       if (OB_FAIL(up_info.parse_from_json(*it))) {
-        LOG_WARN("fail to parse ObShardUserPrivInfo", K(up_info), K(ret));
+        LOG_WDIAG("fail to parse ObShardUserPrivInfo", K(up_info), K(ret));
       } else if (OB_FAIL(up_array_.push_back(up_info))) {
-        LOG_WARN("fail to put ObShardUserPrivInfo", K(up_info), K(ret));
+        LOG_WDIAG("fail to put ObShardUserPrivInfo", K(up_info), K(ret));
       }
     } // end loop db_users
   } // end JT_ARRAY
@@ -674,7 +675,7 @@ int ObDataBaseProp::to_json_str(common::ObSqlString &buf) const
                              CONFIG_VERSION, version_.ptr(),
                              DB_PROP_NAME, prop_name_.ptr(),
                              DB_PROP_RULE, prop_rule_.ptr()))) {
-    LOG_WARN("fail to append json str for ObDataBaseProp", KPC(this), K(ret));
+    LOG_WDIAG("fail to append json str for ObDataBaseProp", KPC(this), K(ret));
   }
   return ret;
 }
@@ -688,7 +689,7 @@ int ObDataBaseProp::parse_from_json(const json::Value &json_value)
       if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == DB_PROP_NAME) {
         prop_name_.set_value(it->value_->get_string());
@@ -701,9 +702,9 @@ int ObDataBaseProp::parse_from_json(const json::Value &json_value)
   if (OB_SUCC(ret)) {
     if (OB_UNLIKELY(prop_name_.empty()) || OB_ISNULL(prop_value)) {
       ret = OB_INVALID_CONFIG;
-      LOG_WARN("invalid database prop config", K(prop_name_), K(ret));
+      LOG_WDIAG("invalid database prop config", K(prop_name_), K(ret));
     } else if (OB_FAIL(parse_db_prop_rule(*prop_value))) {
-      LOG_WARN("fail to parse database prop value", K(prop_name_), K(ret));
+      LOG_WDIAG("fail to parse database prop value", K(prop_name_), K(ret));
     }
   }
   return ret;
@@ -731,7 +732,7 @@ int ObDataBaseProp::parse_db_prop_rule(Value &prop_value)
         DLIST_FOREACH(it, rule_value->get_object()) {
           int64_t eid = OBPROXY_MAX_DBMESH_ID;
           if (OB_FAIL(get_int_value(it->name_, eid))) {
-            LOG_WARN("fail to get int value for eid value", K(it->name_), K(ret));
+            LOG_WDIAG("fail to get int value for eid value", K(it->name_), K(ret));
           } else {
             std::string status(it->value_->get_string().ptr(), static_cast<size_t>(it->value_->get_string().length()));
             rule_map_.insert(std::pair<std::string, int64_t>(status, eid));
@@ -756,7 +757,7 @@ int ObDataBaseProp::set_db_prop_type(const ObString &prop_type)
     prop_type_ = PROP_TYPE_WHITELIST;
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid database prop type", K(prop_type), K(ret));
+    LOG_WDIAG("invalid database prop type", K(prop_type), K(ret));
   }
   return ret;
 }
@@ -831,13 +832,13 @@ int ObDataBaseVar::init_test_load_table_map(std::map<std::string, std::string> &
 
     /* init testloadTableMap to JSON parser, failed when error format */
     if (OB_FAIL(parser.init(&allocator))) {
-      LOG_WARN("json parser init failed", K(ret));
+      LOG_WDIAG("json parser init failed", K(ret));
     } else if (OB_FAIL(parser.parse(value.ptr(), value.length(), json_root))) {
       ret = OB_ERR_FORMAT_FOR_TESTLOAD_TABLE_MAP;
-      LOG_WARN("parse json failed", K(ret), K(value));
+      LOG_WDIAG("parse json failed", K(ret), K(value));
     } else if (NULL == json_root) {
       ret = OB_ERR_FORMAT_FOR_TESTLOAD_TABLE_MAP;
-      LOG_WARN("no root value", K(ret), K(value));
+      LOG_WDIAG("no root value", K(ret), K(value));
     } else {
       char buf[OB_MAX_TABLE_NAME_LENGTH];
       test_load_table_map.clear();
@@ -845,7 +846,7 @@ int ObDataBaseVar::init_test_load_table_map(std::map<std::string, std::string> &
         config_value = it1->value_;
         if (OB_MAX_TABLE_NAME_LENGTH <= it1->name_.length()) {
           ret = OB_ERR_FORMAT_FOR_TESTLOAD_TABLE_MAP;
-          LOG_WARN("test load map error for size", K(OB_ERR_FORMAT_FOR_TESTLOAD_TABLE_MAP), K(it1->name_.length()));
+          LOG_WDIAG("test load map error for size", K(OB_ERR_FORMAT_FOR_TESTLOAD_TABLE_MAP), K(it1->name_.length()));
         } else {
           //change TABLE_NAME to upper
           memcpy(buf, it1->name_.ptr(), it1->name_.length());
@@ -857,7 +858,7 @@ int ObDataBaseVar::init_test_load_table_map(std::map<std::string, std::string> &
             LOG_DEBUG("get value ", K(it1->name_), K(config_value->get_string()));
           } else {
             ret = OB_ERR_FORMAT_FOR_TESTLOAD_TABLE_MAP;
-            LOG_WARN("init test load map unexpected", K(ret), K(config_value));
+            LOG_WDIAG("init test load map unexpected", K(ret), K(config_value));
           }
         }
       }
@@ -902,7 +903,7 @@ int ObElasticInfo::to_json_str(ObSqlString &buf) const
   int ret = OB_SUCCESS;
   if (OB_FAIL(buf.append_fmt("%ld:%s:r%ldw%ld",
                              eid_, shard_name_.ptr(), read_weight_, write_weight_))) {
-    LOG_WARN("fail to append json str for ObElasticInfo", K(ret), KPC(this));
+    LOG_WDIAG("fail to append json str for ObElasticInfo", K(ret), KPC(this));
   }
   return ret;
 }
@@ -932,7 +933,7 @@ int ObGroupCluster::assign(const ObGroupCluster &other)
     for (int64_t i = 0; OB_SUCC(ret) && i < other.es_array_.count(); ++i) {
       es_info.assign(other.es_array_.at(i));
       if (OB_FAIL(es_array_.push_back(es_info))) {
-        LOG_WARN("fail to push back es_info", K(es_info), K(ret));
+        LOG_WDIAG("fail to push back es_info", K(es_info), K(ret));
       }
     }
   }
@@ -959,7 +960,7 @@ int ObGroupCluster::get_random_elastic_id(int64_t &eid) const
   eid = OBPROXY_MAX_DBMESH_ID;
   const ObElasticInfo *es_info = NULL;
   if (OB_ISNULL(es_info = get_random_es_info())) {
-    LOG_WARN("fail to get random es info", KPC(this), K(ret));
+    LOG_WDIAG("fail to get random es info", KPC(this), K(ret));
   } else {
     eid = es_info->eid_;
   }
@@ -1067,12 +1068,12 @@ int ObGroupCluster::to_json_str(ObSqlString &buf) const
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(buf.append_fmt("\"%s\":\"", gc_name_.ptr()))) {
-    LOG_WARN("fail to append GroupCluster", K(ret), KPC(this));
+    LOG_WDIAG("fail to append GroupCluster", K(ret), KPC(this));
   }
   for (int64_t i = 0; OB_SUCC(ret) && i < es_array_.count(); ++i) {
     const ObElasticInfo &es_info = es_array_.at(i);
     if (OB_FAIL(es_info.to_json_str(buf))) {
-      LOG_WARN("fail to get json str for ObElasticInfo", K(ret), K(es_info));
+      LOG_WDIAG("fail to get json str for ObElasticInfo", K(ret), K(es_info));
     } else if (i < es_array_.count() - 1) {
       ret = buf.append(",");
     }
@@ -1129,11 +1130,11 @@ int ObShardTpo::assign(const ObDbConfigChild &child_info)
     for (GCHashMap::iterator it = map.begin(); OB_SUCC(ret) && it != map.end(); ++it) {
       if (OB_ISNULL(gc_info = op_alloc(ObGroupCluster))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for ObGroupCluster", K(ret), K_(db_info_key));
+        LOG_WDIAG("fail to alloc memory for ObGroupCluster", K(ret), K_(db_info_key));
       } else if (OB_FAIL(gc_info->assign(*it))) {
-        LOG_WARN("fail to copy group cluster info", K(ret), K_(db_info_key));
+        LOG_WDIAG("fail to copy group cluster info", K(ret), K_(db_info_key));
       } else if (OB_FAIL(gc_map_.unique_set(gc_info))) {
-        LOG_WARN("fail to unique_set gc_info", KPC(gc_info), K(ret));
+        LOG_WDIAG("fail to unique_set gc_info", KPC(gc_info), K(ret));
       }
       if (OB_FAIL(ret) && NULL != gc_info) {
         op_free(gc_info);
@@ -1153,7 +1154,7 @@ int ObShardTpo::get_group_cluster(const ObString &gc_name, ObGroupCluster *&gc_i
   return ret;
 }
 
-int ObShardTpo::get_group_cluster_by_index(const int64_t &group_index, 
+int ObShardTpo::get_group_cluster_by_index(const int64_t &group_index,
                                            ObGroupCluster *&gc_info)
 {
   int ret = OB_SUCCESS;
@@ -1172,13 +1173,13 @@ int ObShardTpo::get_group_cluster_by_index(const int64_t &group_index,
     while ((index >= 0) && ((group_name[index] > '9') || (group_name[index] < '0'))) {
       --index;
     }
-    for (; (index >= 0) 
+    for (; (index >= 0)
             && (group_name[index] <= '9')
             && (group_name[index] >= '0'); --index) {
       store_index += base * (group_name[index] - '0');
       base *= 10;
     }
-    
+
     if (store_index == group_index) {
       gc_info = tmp_gc_info;
       break;
@@ -1198,13 +1199,13 @@ int ObShardTpo::to_json_str(common::ObSqlString &buf) const
               SHARDS_TPO_ARCH, arch_.ptr(),
               SHARDS_TPO_SPEC, specification_.ptr(),
               SHARDS_TPO_GROUPS))) {
-    LOG_WARN("fail append shard connector to json str", K(ret), KPC(this));
+    LOG_WDIAG("fail append shard connector to json str", K(ret), KPC(this));
   } else {
     GCHashMap &map = const_cast<GCHashMap &>(gc_map_);
     int64_t i = 0;
     for (GCHashMap::iterator it = map.begin(); OB_SUCC(ret) && it != map.end(); ++it) {
       if (OB_FAIL(it->to_json_str(buf))) {
-        LOG_WARN("fail to get json str for ObGroupCluster", K(ret), K(*it));
+        LOG_WDIAG("fail to get json str for ObGroupCluster", K(ret), K(*it));
       } else if (i < map.count() - 1) {
         ret = buf.append(",");
       }
@@ -1228,7 +1229,7 @@ int ObShardTpo::parse_from_json(const json::Value &json_value)
       } else if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == SHARDS_TPO_ARCH) {
         arch_.set_value(it->value_->get_string());
@@ -1247,12 +1248,12 @@ int ObShardTpo::parse_from_json(const json::Value &json_value)
     DLIST_FOREACH(it, cluster_config->get_object()) {
       if (OB_ISNULL(gc_info = op_alloc(ObGroupCluster))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for ObGroupCluster", K(ret));
+        LOG_WDIAG("fail to alloc memory for ObGroupCluster", K(ret));
       } else {
         group_name.assign(it->name_.ptr(), static_cast<size_t>(it->name_.length()));
         group_value.assign(it->value_->get_string().ptr(), static_cast<size_t>(it->value_->get_string().length()));
         if (OB_FAIL(ObProxyPbUtils::parse_group_cluster(group_name, group_value, *gc_info))) {
-          LOG_WARN("fail to parse group cluster", "group_name", group_name.c_str(),
+          LOG_WDIAG("fail to parse group cluster", "group_name", group_name.c_str(),
                    "group_value", group_value.c_str(), K(ret));
         }
       }
@@ -1311,12 +1312,12 @@ int ObDbConfigLogicDb::get_shard_rule(ObShardRule *&shard_rule, const ObString &
   ObString upper_table_name(table_name.length(), table_name_str);
 
   if (OB_FAIL(get_shard_router(upper_table_name, shard_router))) {
-    LOG_WARN("fail to get shard router", K_(sr_array), K(upper_table_name), K(ret));
+    LOG_WDIAG("fail to get shard router", K_(sr_array), K(upper_table_name), K(ret));
   } else if (OB_FAIL(shard_router->get_shard_rule(upper_table_name, shard_rule))) {
-    LOG_WARN("fail to get logic tb info", KPC(shard_router), K(upper_table_name), K(ret));
+    LOG_WDIAG("fail to get logic tb info", KPC(shard_router), K(upper_table_name), K(ret));
   } else if (OB_ISNULL(shard_rule)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("logic tb info is null", K(ret));
+    LOG_WDIAG("logic tb info is null", K(ret));
   }
 
   if (NULL != shard_router) {
@@ -1340,7 +1341,7 @@ int ObDbConfigLogicDb::get_shard_tpo(ObShardTpo *&shard_tpo)
   if (!is_server_zone_exist || OB_FAIL(ret)) {
     if (is_strict_spec_mode_ && shard_tpo_count > 1) {
       ret = OB_ERR_NO_ZONE_SHARD_TPO;
-      LOG_WARN("strict mode and has zone shard tpo, but local zone shard tpo does not exist",
+      LOG_WDIAG("strict mode and has zone shard tpo, but local zone shard tpo does not exist",
                "local_zone", zone, K_(db_info_key), K(shard_tpo_count), K_(is_strict_spec_mode), K(ret));
     } else {
       // three case to use default zone:
@@ -1350,7 +1351,7 @@ int ObDbConfigLogicDb::get_shard_tpo(ObShardTpo *&shard_tpo)
       use_zone_tpo = false;
       if (OB_FAIL(get_shard_tpo_by_zone(shard_tpo, use_zone_tpo))) {
         ret = OB_ERR_NO_DEFAULT_SHARD_TPO;
-        LOG_WARN("fail to get default shard tpo", K(ret));
+        LOG_WDIAG("fail to get default shard tpo", K(ret));
       }
     }
   }
@@ -1428,11 +1429,11 @@ int ObShardRule::assign(const ObShardRule &other)
     tb_tail_.assign(other.tb_tail_);
     db_tail_.assign(other.db_tail_);
     if (OB_FAIL(assign_rule_list(other.tb_rules_, tb_rules_))) {
-      LOG_WARN("fail to copy tb rules", K(ret));
+      LOG_WDIAG("fail to copy tb rules", K(ret));
     } else if (OB_FAIL(assign_rule_list(other.db_rules_, db_rules_))) {
-      LOG_WARN("fail to copy db rules", K(ret));
+      LOG_WDIAG("fail to copy db rules", K(ret));
     } else if (OB_FAIL(assign_rule_list(other.es_rules_, es_rules_))) {
-      LOG_WARN("fail to copy es rules", K(ret));
+      LOG_WDIAG("fail to copy es rules", K(ret));
     }
   }
   return ret;
@@ -1448,12 +1449,12 @@ int ObShardRule::assign_rule_list(const ObProxyShardRuleList &src_rule_list,
     const ObProxyShardRuleInfo &rule_info = src_rule_list.at(i);
     if (OB_FAIL(ObProxyPbUtils::force_parse_groovy(rule_info.shard_rule_str_.config_string_,
                 new_rule_info, allocator_))) {
-      LOG_WARN("fail to parse shard rule str", K(rule_info), K(ret));
+      LOG_WDIAG("fail to parse shard rule str", K(rule_info), K(ret));
     } else if (!new_rule_info.is_valid()) {
       // do nothing
-      LOG_WARN("rule str is not support", K(rule_info.shard_rule_str_));
+      LOG_WDIAG("rule str is not support", K(rule_info.shard_rule_str_));
     } else if (OB_FAIL(target_rule_list.push_back(new_rule_info))) {
-      LOG_WARN("fail to push back rule info", K(new_rule_info), K(ret));
+      LOG_WDIAG("fail to push back rule info", K(new_rule_info), K(ret));
     }
   }
   return ret;
@@ -1462,11 +1463,12 @@ int ObShardRule::assign_rule_list(const ObProxyShardRuleList &src_rule_list,
 int ObShardRule::to_json_str(ObSqlString &buf) const
 {
   int ret = OB_SUCCESS;
-  ret = buf.append_fmt("{\"%s\":\"%s\", \"%s\":%s, \"%s\": {\
+  ret = buf.append_fmt("{\"%s\":\"%s\", \"%s\":%s, \"%s\":\"%s\", \"%s\": {\
                        \"%s\": {\"%s\":\"%s\",\
                        \"%s\":\"%s\", \"%s\":\"%s\", \"%s\": [",
                        RULE_TB_NAME, table_name_.ptr(),
                        ROUTER_SEQUENCE, is_sequence_ ? "true" : "false",
+                       RULE_CREATE_TABLE_SQL, create_table_sql_.ptr(),
                        RULE_ROUTER,RULE_RULES,
                        RULE_TB_NAME_PATTERN, tb_name_pattern_.ptr(),
                        RULE_DB_NAME_PATTERN, db_name_pattern_.ptr(),
@@ -1476,7 +1478,7 @@ int ObShardRule::to_json_str(ObSqlString &buf) const
   for (int64_t i = 0; OB_SUCC(ret) && i < tb_rules_.count(); ++i) {
     const ObProxyShardRuleInfo &rule_info = tb_rules_.at(i);
     if (OB_FAIL(buf.append_fmt("\"%.*s\"", rule_info.shard_rule_str_.length(), rule_info.shard_rule_str_.ptr()))) {
-      LOG_WARN("fail to append shard tb rule", K(ret));
+      LOG_WDIAG("fail to append shard tb rule", K(ret));
     } else if (i < tb_rules_.count() - 1) {
       ret = buf.append(",");
     }
@@ -1487,7 +1489,7 @@ int ObShardRule::to_json_str(ObSqlString &buf) const
   for (int64_t i = 0; OB_SUCC(ret) && i < db_rules_.count(); ++i) {
     const ObProxyShardRuleInfo &rule_info = db_rules_.at(i);
     if (OB_FAIL(buf.append_fmt("\"%.*s\"", rule_info.shard_rule_str_.length(), rule_info.shard_rule_str_.ptr()))) {
-      LOG_WARN("fail to append shard db rule", K(ret));
+      LOG_WDIAG("fail to append shard db rule", K(ret));
     } else if (i < db_rules_.count() - 1) {
       ret = buf.append(",");
     }
@@ -1498,7 +1500,7 @@ int ObShardRule::to_json_str(ObSqlString &buf) const
   for (int64_t i = 0; OB_SUCC(ret) && i < es_rules_.count(); ++i) {
     const ObProxyShardRuleInfo &rule_info = es_rules_.at(i);
     if (OB_FAIL(buf.append_fmt("\"%.*s\"", rule_info.shard_rule_str_.length(), rule_info.shard_rule_str_.ptr()))) {
-      LOG_WARN("fail to append shard es rule", K(ret));
+      LOG_WDIAG("fail to append shard es rule", K(ret));
     } else if (i < es_rules_.count() - 1) {
       ret = buf.append(",");
     }
@@ -1518,6 +1520,7 @@ int ObShardRule::parse_from_json(const json::Value &json_value)
   Value *tb_rules_config = NULL;
   Value *db_rules_config = NULL;
   Value *es_rules_config = NULL;
+  Value *create_table_config = NULL;
   if (JT_OBJECT == json_value.get_type()) {
     DLIST_FOREACH(it, json_value.get_object()) {
       if (it->name_ == RULE_TB_NAME) {
@@ -1527,9 +1530,25 @@ int ObShardRule::parse_from_json(const json::Value &json_value)
         is_sequence_ = JT_TRUE == it->value_->get_type();
       } else if (it->name_ == RULE_ROUTER) {
         router_config = it->value_;
+      } else if (it->name_ == RULE_CREATE_TABLE_SQL) {
+        create_table_config = it->value_;
       }
     }
   }
+
+  if (OB_SUCC(ret) && NULL != create_table_config) {
+    const ObString& sqlText = create_table_config->get_string();
+    ObString::obstr_size_t sql_len = sqlText.length();
+    char* tmp_ptr = NULL;
+    //only warn if alloc memory failed
+    if (OB_ISNULL(tmp_ptr = (char*)allocator_.alloc((int64_t)sql_len))) {
+      LOG_WDIAG("fail to alloc memory for create table sql", K(sql_len));
+    } else {
+      MEMCPY(tmp_ptr, sqlText.ptr(), sql_len);
+      create_table_sql_.assign_ptr(tmp_ptr, sql_len);
+    }
+  }
+
   if (OB_SUCC(ret) && NULL != router_config) {
     if (JT_OBJECT == router_config->get_type()) {
       DLIST_FOREACH(it, router_config->get_object()) {
@@ -1549,13 +1568,13 @@ int ObShardRule::parse_from_json(const json::Value &json_value)
           tb_name_pattern_.set_value(it->value_->get_string());
           rule_pattern.assign(tb_name_pattern_.ptr(), static_cast<size_t>(tb_name_pattern_.length()));
           if (OB_FAIL(ObProxyPbUtils::parse_rule_pattern(rule_pattern, tb_prefix_, tb_size_, tb_suffix_len_, tb_tail_))) {
-            LOG_WARN("fail to parse tb name pattern", K_(tb_name_pattern), K(ret));
+            LOG_WDIAG("fail to parse tb name pattern", K_(tb_name_pattern), K(ret));
           }
         } else if (it->name_ == RULE_DB_NAME_PATTERN) {
           db_name_pattern_.set_value(it->value_->get_string());
           rule_pattern.assign(db_name_pattern_.ptr(), static_cast<size_t>(db_name_pattern_.length()));
           if (OB_FAIL(ObProxyPbUtils::parse_rule_pattern(rule_pattern, db_prefix_, db_size_, db_suffix_len_, db_tail_))) {
-            LOG_WARN("fail to parse db name pattern", K_(db_name_pattern), K(ret));
+            LOG_WDIAG("fail to parse db name pattern", K_(db_name_pattern), K(ret));
           }
         } else if (it->name_ == RULE_TB_RULES) {
           tb_rules_config = it->value_;
@@ -1570,11 +1589,11 @@ int ObShardRule::parse_from_json(const json::Value &json_value)
 
   if (OB_SUCC(ret)) {
     if (NULL != tb_rules_config && OB_FAIL(ObProxyPbUtils::do_parse_json_rules(tb_rules_config, tb_rules_, allocator_))) {
-      LOG_WARN("fail to parse tb rule list", K(ret));
+      LOG_WDIAG("fail to parse tb rule list", K(ret));
     } else if (NULL != db_rules_config && OB_FAIL(ObProxyPbUtils::do_parse_json_rules(db_rules_config, db_rules_, allocator_))) {
-      LOG_WARN("fail to parse db rule list", K(ret));
+      LOG_WDIAG("fail to parse db rule list", K(ret));
     } else if (NULL != es_rules_config && OB_FAIL(ObProxyPbUtils::do_parse_json_rules(es_rules_config, es_rules_, allocator_))) {
-      LOG_WARN("fail to parse elastic rule list", K(ret));
+      LOG_WDIAG("fail to parse elastic rule list", K(ret));
     }
   }
 
@@ -1595,7 +1614,7 @@ int ObShardRule::get_index_by_real_name(const ObString &name, const ObString &na
   // skip prefix and _
   const ObString name_suffix(index_len, name.ptr() + name_prefix.length() + 1);
   if (OB_FAIL(get_int_value(name_suffix, index))) {
-    LOG_WARN("fail to get int value for name suffix", K(name), K(name_prefix), K(name_suffix), K(ret));
+    LOG_WDIAG("fail to get int value for name suffix", K(name), K(name_prefix), K(name_suffix), K(ret));
   }
 
   return ret;
@@ -1609,7 +1628,7 @@ int ObShardRule::get_real_name_by_index(const int64_t size, const int64_t suffix
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(size > 1 && index >= size)) {
     ret = OB_EXPR_CALC_ERROR;
-    LOG_WARN("shard index is larger than shard count", K(size), K(index), K(name_prefix), K(ret));
+    LOG_WDIAG("shard index is larger than shard count", K(size), K(index), K(name_prefix), K(ret));
   } else {
     snprintf(buf, buf_len, "%.*s", name_prefix.length(), name_prefix.ptr());
     if (size > 1 && suffix_len > 0) {
@@ -1679,30 +1698,30 @@ int ObShardRule::get_physic_index(const SqlFieldResult &sql_result,
       ObProxyExprCalcItem calc_item(const_cast<SqlFieldResult*>(&sql_result));
       if (OB_ISNULL(proxy_expr)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("proxy expr is null unexpected", K(ret));
+        LOG_WDIAG("proxy expr is null unexpected", K(ret));
       } else if (OB_FAIL(proxy_expr->calc(expr_ctx, calc_item, result_array)) || result_array.empty()) {
         if (OB_EXPR_COLUMN_NOT_EXIST == ret) {
           ret = OB_SUCCESS;
           continue;
         } else {
-          LOG_WARN("calc proxy expr failed", K(ret));
+          LOG_WDIAG("calc proxy expr failed", K(ret));
         }
       } else {
         for(int64_t j = 0; OB_SUCC(ret) && j < result_array.count(); j++) {
           ObObj& result_obj = result_array.at(j);
           ObObj tmp_obj;
-          if (OB_FAIL(ObProxyFuncExpr::get_int_obj(result_obj, tmp_obj, allocator))) {
-            LOG_WARN("get int obj failed", K(result_obj), K(ret));
+          if (OB_FAIL(ObProxyFuncExpr::get_int_obj_with_default_charset(result_obj, tmp_obj, allocator))) {
+            LOG_WDIAG("get int obj failed", K(result_obj), K(ret));
           } else if (OB_FAIL(tmp_obj.get_int(tmp_index_for_one_obj))) {
-            LOG_WARN("get int failed", K(ret));
+            LOG_WDIAG("get int failed", K(ret));
           } else if (tmp_index_for_one_obj < 0 || tmp_index_for_one_obj >= physic_size) {
               ret = OB_EXPR_CALC_ERROR;
-              LOG_WARN("invalid index", K(tmp_index_for_one_obj), K(physic_size), K(ret));
+              LOG_WDIAG("invalid index", K(tmp_index_for_one_obj), K(physic_size), K(ret));
           } else if (OBPROXY_MAX_DBMESH_ID == tmp_index) {
             tmp_index = tmp_index_for_one_obj;
           } else if (tmp_index != tmp_index_for_one_obj) {
             ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-            LOG_WARN("different physic index for one sharding key is not supported", K(tmp_index), K(last_index), K(ret));
+            LOG_WDIAG("different physic index for one sharding key is not supported", K(tmp_index), K(last_index), K(ret));
           } else {
             //nothing
           }
@@ -1713,7 +1732,7 @@ int ObShardRule::get_physic_index(const SqlFieldResult &sql_result,
         if (OBPROXY_MAX_DBMESH_ID != last_index) {
           if (tmp_index != last_index) {
             ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-            LOG_WARN("different physic index is not supported", K(tmp_index), K(last_index), K(ret));
+            LOG_WDIAG("different physic index is not supported", K(tmp_index), K(last_index), K(ret));
           }
         } else {
           last_index = tmp_index;
@@ -1731,7 +1750,7 @@ int ObShardRule::get_physic_index(const SqlFieldResult &sql_result,
     } else if (ret == OB_INVALID_ARGUMENT
                   || ret == OB_INVALID_DATA
                   || ret == OB_EXPR_CALC_ERROR) {
-       LOG_WARN("error to get physic index use rules", K(ret), "rule_index", i);
+       LOG_WDIAG("error to get physic index use rules", K(ret), "rule_index", i);
        ret = OB_ERR_GET_PHYSIC_INDEX_BY_RULE;
     }
   }
@@ -1759,7 +1778,7 @@ int ObShardRule::get_physic_index_array(const SqlFieldResult &sql_result,
   if (OB_SUCC(ret)) {
     if (OB_FAIL(index_set.create(BUCKET_SIZE, ObModIds::OB_PROXY_SHARDING_CONFIG,
                                  ObModIds::OB_PROXY_SHARDING_CONFIG))) {
-      LOG_WARN("fail to create index hashset", K(ret));
+      LOG_WDIAG("fail to create index hashset", K(ret));
     }
   }
 
@@ -1774,11 +1793,11 @@ int ObShardRule::get_physic_index_array(const SqlFieldResult &sql_result,
     ObProxyExprCalcItem calc_item(const_cast<SqlFieldResult*>(&sql_result));
     if (OB_ISNULL(proxy_expr)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("proxy expr is null unexpected", K(ret));
+      LOG_WDIAG("proxy expr is null unexpected", K(ret));
     } else if (OB_FAIL(proxy_expr->calc(expr_ctx, calc_item, result_obj_array))) {
       // Ignore the return value and scan the table directly
       if (OB_EXPR_COLUMN_NOT_EXIST != ret) {
-        LOG_WARN("calc proxy expr failed", K(ret));
+        LOG_WDIAG("calc proxy expr failed", K(ret));
       }
       ret = OB_SUCCESS;
       continue;
@@ -1790,15 +1809,15 @@ int ObShardRule::get_physic_index_array(const SqlFieldResult &sql_result,
       for (int64_t i = 0; OB_SUCC(ret) && i < result_obj_array.count(); i++) {
         ObObj tmp_obj;
         int64_t tmp_index;
-        if (OB_FAIL(ObProxyFuncExpr::get_int_obj(result_obj_array.at(i), tmp_obj, allocator))) {
-          LOG_WARN("get int obj failed", K(ret), K(result_obj_array.at(i)));
+        if (OB_FAIL(ObProxyFuncExpr::get_int_obj_with_default_charset(result_obj_array.at(i), tmp_obj, allocator))) {
+          LOG_WDIAG("get int obj failed", K(ret), K(result_obj_array.at(i)));
         } else if (OB_FAIL(tmp_obj.get_int(tmp_index))) {
-          LOG_WARN("get int failed", K(ret));
+          LOG_WDIAG("get int failed", K(ret));
         } else if (tmp_index < 0 || tmp_index >= physic_size) {
           ret = OB_EXPR_CALC_ERROR;
-          LOG_WARN("invalid index", K(tmp_index), K(physic_size), K(ret));
+          LOG_WDIAG("invalid index", K(tmp_index), K(physic_size), K(ret));
         } else if (OB_FAIL(index_set.set_refactored(tmp_index))) {
-          LOG_WARN("fail to add index to hash set", K(tmp_index), K(ret));
+          LOG_WDIAG("fail to add index to hash set", K(tmp_index), K(ret));
         }
       }
 
@@ -1806,7 +1825,7 @@ int ObShardRule::get_physic_index_array(const SqlFieldResult &sql_result,
       ObHashSet<int64_t>::iterator end = index_set.end();
       for (; OB_SUCC(ret) && iter != end; iter++) {
         if (OB_FAIL(sort_index_array.push_back(iter->first))) {
-          LOG_WARN("push back index failed", "index", iter->first, K(ret));
+          LOG_WDIAG("push back index failed", "index", iter->first, K(ret));
         }
       }
 
@@ -1819,19 +1838,19 @@ int ObShardRule::get_physic_index_array(const SqlFieldResult &sql_result,
         if (!last_index_array.empty()) {
           if (last_index_array.count() != sort_index_array.count()) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("count not equal", "last count", last_index_array.count(),
+            LOG_WDIAG("count not equal", "last count", last_index_array.count(),
                      "sort count", sort_index_array.count(), K(ret));
           }
           for (int64_t i = 0; OB_SUCC(ret) && i < last_index_array.count(); i++) {
             if (last_index_array.at(i) != sort_index_array.at(i)) {
               ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-              LOG_WARN("different physcic index is not supported", K(i), "last index", last_index_array.at(i),
+              LOG_WDIAG("different physcic index is not supported", K(i), "last index", last_index_array.at(i),
                        "sort index", sort_index_array.at(i), K(ret));
             }
           }
         } else if (rules.count() > 1) {
           if (OB_FAIL(last_index_array.assign(sort_index_array))) {
-            LOG_WARN("fail assign to last index array", K(sort_index_array), K(ret));
+            LOG_WDIAG("fail assign to last index array", K(sort_index_array), K(ret));
           }
         }
       }
@@ -1840,7 +1859,7 @@ int ObShardRule::get_physic_index_array(const SqlFieldResult &sql_result,
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(index_array.assign(sort_index_array))) {
-      LOG_WARN("fail assgin to index array", K(sort_index_array), K(ret));
+      LOG_WDIAG("fail assgin to index array", K(sort_index_array), K(ret));
     }
   }
 
@@ -1919,11 +1938,11 @@ int ObShardRouter::assign(const ObDbConfigChild &child_info)
     for (MarkedRuleHashMap::iterator it = map.begin(); OB_SUCC(ret) && it != map.end(); ++it) {
       if (OB_ISNULL(rule_info = op_alloc(ObShardRule))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for ObShardRule", K(ret), K_(db_info_key));
+        LOG_WDIAG("fail to alloc memory for ObShardRule", K(ret), K_(db_info_key));
       } else if (OB_FAIL(rule_info->assign(*it))) {
-        LOG_WARN("fail to copy rule_info", K(*it), K_(db_info_key), K(ret));
+        LOG_WDIAG("fail to copy rule_info", K(*it), K_(db_info_key), K(ret));
       } else if (OB_FAIL(mr_map_.unique_set(rule_info))) {
-        LOG_WARN("fail to unique_set rule_info", KPC(rule_info), K_(db_info_key), K(ret));
+        LOG_WDIAG("fail to unique_set rule_info", KPC(rule_info), K_(db_info_key), K(ret));
       }
       if (OB_FAIL(ret) && NULL != rule_info) {
         op_free(rule_info);
@@ -1943,7 +1962,7 @@ int ObShardRouter::to_json_str(common::ObSqlString &buf) const
   int64_t i = 0;
   for (MarkedRuleHashMap::iterator it = map.begin(); OB_SUCC(ret) && it != map.end(); ++it) {
     if (OB_FAIL(it->to_json_str(buf))) {
-      LOG_WARN("fail to get json str for shard table rule", K(ret), K(*it));
+      LOG_WDIAG("fail to get json str for shard table rule", K(ret), K(*it));
     } else if (i < map.count() - 1) {
       ret = buf.append(",");
     }
@@ -1964,7 +1983,7 @@ int ObShardRouter::parse_from_json(const json::Value &json_value)
       if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == ROUTER_RULES) {
         rules_config = it->value_;
@@ -1977,9 +1996,9 @@ int ObShardRouter::parse_from_json(const json::Value &json_value)
       if (JT_OBJECT == it->get_type()) {
         if (OB_ISNULL(rule_info = op_alloc(ObShardRule))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc memory for ObShardRule", K(ret));
+          LOG_WDIAG("fail to alloc memory for ObShardRule", K(ret));
         } else if (OB_FAIL(rule_info->parse_from_json(*it))) {
-          LOG_WARN("fail to parse ObShardRule", K(ret), KPC(rule_info));
+          LOG_WDIAG("fail to parse ObShardRule", K(ret), KPC(rule_info));
         } else {
           if (rule_info->is_sequence_) {
             seq_table_name_.set_value(rule_info->table_name_);
@@ -2042,7 +2061,7 @@ int ObDbConfigLogicDb::get_shard_router(const ObString &tb_name, ObShardRouter *
     LOG_DEBUG("shard router does not exist", K(ret), K(tb_name));
   } else if (OB_ISNULL(shard_router) || !shard_router->is_avail()) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("shard router is not avail", K(ret), K(tb_name));
+    LOG_WDIAG("shard router is not avail", K(ret), K(tb_name));
     shard_router = NULL;
   } else {
     shard_router->inc_ref();
@@ -2059,10 +2078,10 @@ int ObDbConfigLogicDb::get_first_group_shard_connector(ObShardConnector *&shard_
   ObGroupCluster *gc_info = NULL;
 
   if (OB_FAIL(get_shard_tpo(shard_tpo))) {
-    LOG_WARN("fail to get shard tpo info", K(ret));
+    LOG_WDIAG("fail to get shard tpo info", K(ret));
   } else if (OB_ISNULL(shard_tpo)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard tpo info is null", K(ret));
+    LOG_WDIAG("shard tpo info is null", K(ret));
   } else if (is_single_shard_db_table()) {
     ObShardTpo::GCHashMap::iterator it = (const_cast<ObShardTpo::GCHashMap &>(shard_tpo->gc_map_)).begin();
     gc_info = &(*it);
@@ -2071,7 +2090,7 @@ int ObDbConfigLogicDb::get_first_group_shard_connector(ObShardConnector *&shard_
       LOG_DEBUG("group does not exist", K(ret));
     } else if (OB_ISNULL(gc_info)) {
       ret = OB_NOT_SUPPORTED;
-      LOG_WARN("group cluster info is null", K(ret));
+      LOG_WDIAG("group cluster info is null", K(ret));
     }
   }
 
@@ -2081,13 +2100,13 @@ int ObDbConfigLogicDb::get_first_group_shard_connector(ObShardConnector *&shard_
     ObString shard_name;
     if (-1 == es_id || OBPROXY_MAX_DBMESH_ID == es_id) {
       if (OB_FAIL(gc_info->get_elastic_id_by_weight(es_id, is_read_stmt))) {
-        LOG_WARN("fail to get eid by read weight", KPC(gc_info));
+        LOG_WDIAG("fail to get eid by read weight", KPC(gc_info));
       } else {
         LOG_DEBUG("succ to get eid by weight", K(es_id));
       }
     } else if (OB_UNLIKELY(es_id >= es_size)) {
       ret = OB_EXPR_CALC_ERROR;
-      LOG_WARN("es index is larger than elastic array", K(es_id), K(es_size), K(ret));
+      LOG_WDIAG("es index is larger than elastic array", K(es_id), K(es_size), K(ret));
     }
   }
 
@@ -2096,11 +2115,11 @@ int ObDbConfigLogicDb::get_first_group_shard_connector(ObShardConnector *&shard_
     if (FALSE_IT(shard_name = gc_info->get_shard_name_by_eid(es_id))) {
     } else if (TESTLOAD_NON != testload_type) {
       if (OB_FAIL(get_testload_shard_connector(shard_name, testload_prefix_.config_string_, shard_conn))) {
-        LOG_WARN("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
+        LOG_WDIAG("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
                  K(shard_name), "testload_prefix", testload_prefix_, K(ret));
       }
     } else if (OB_FAIL(get_shard_connector(shard_name, shard_conn))) {
-      LOG_WARN("shard connector does not exist", K(shard_name), K(ret));
+      LOG_WDIAG("shard connector does not exist", K(shard_name), K(ret));
     }
   }
 
@@ -2166,7 +2185,7 @@ int ObShardDist::to_json_str(common::ObSqlString &buf) const
   if (OB_FAIL(buf.append_fmt("{\"%s\":\"%s\", \"%s\":[",
                        CONFIG_VERSION, version_.ptr(),
                        SHARD_DISTS))) {
-    LOG_WARN("fail append shard dist to json str", K(ret), KPC(this));
+    LOG_WDIAG("fail append shard dist to json str", K(ret), KPC(this));
   }
   int64_t i = 0;
   MarkedDistHashMap& tmp_map = const_cast<MarkedDistHashMap &>(md_map_);
@@ -2175,14 +2194,14 @@ int ObShardDist::to_json_str(common::ObSqlString &buf) const
     if (OB_FAIL(buf.append_fmt("{\"%s\":\"%.*s\", \"%s\":\"%.*s\"}",
       SHARD_DISTS_DIST, mark_dist.dist_.config_string_.length(), mark_dist.dist_.config_string_.ptr(),
       SHARD_DISTS_MARK, mark_dist.shard_name_.config_string_.length(), mark_dist.shard_name_.config_string_.ptr()))) {
-      LOG_WARN("fail append shard dist to json str", K(ret), KPC(this));
+      LOG_WDIAG("fail append shard dist to json str", K(ret), KPC(this));
     } else if (i < tmp_map.count() - 1) {
       ret = buf.append(",");
     }
     ++i;
   }
   if (OB_SUCC(ret) && OB_FAIL(buf.append("]}"))) {
-    LOG_WARN("fail append shard dist to json str", K(ret), KPC(this));
+    LOG_WDIAG("fail append shard dist to json str", K(ret), KPC(this));
   }
   return ret;
 }
@@ -2195,7 +2214,7 @@ int ObShardDist::parse_from_json(const json::Value &json_value)
       if (it->name_.case_compare(CONFIG_VERSION) == 0) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_.case_compare(SHARD_DISTS) == 0) {
         dist_config = it->value_;
@@ -2215,31 +2234,31 @@ int ObShardDist::parse_from_json(const json::Value &json_value)
                 shard_name.set_value(it2->value_->get_string());
               }
             } else {
-              LOG_WARN("invalid type", K(it2->value_->get_type()));
+              LOG_WDIAG("invalid type", K(it2->value_->get_type()));
             }
           }
           if (!shard_name.empty() && !dist.empty()) {
             if (OB_ISNULL(mark_dist = op_alloc(ObMarkedDist))) {
               ret = OB_ALLOCATE_MEMORY_FAILED;
-              LOG_WARN("fail to alloc memory for ObMarkedDist", K(shard_name), K(dist), K(ret));
+              LOG_WDIAG("fail to alloc memory for ObMarkedDist", K(shard_name), K(dist), K(ret));
             } else {
               mark_dist->shard_name_.set_value(shard_name.config_string_);
               mark_dist->dist_.set_value(dist.config_string_);
               if (OB_FAIL(md_map_.unique_set(mark_dist))) {
                 mark_dist->destroy();
                 mark_dist = NULL;
-                LOG_WARN("add to map failed", K(ret));
+                LOG_WDIAG("add to map failed", K(ret));
               }
             }
           } else {
-            LOG_WARN("invalid shard_name or dist", K(shard_name), K(dist));
+            LOG_WDIAG("invalid shard_name or dist", K(shard_name), K(dist));
           }
         } else {
-          LOG_WARN("unexpected json type", K(it->get_type()));
+          LOG_WDIAG("unexpected json type", K(it->get_type()));
         }
       }
     } else {
-      LOG_WARN("unexpected dist_config", K(dist_config));
+      LOG_WDIAG("unexpected dist_config", K(dist_config));
     }
   }
   if (OB_SUCC(ret)) {
@@ -2259,11 +2278,11 @@ int ObShardDist::assign(const ObDbConfigChild &child_info)
     for (MarkedDistHashMap::iterator it = map.begin(); OB_SUCC(ret) && it != map.end(); ++it) {
       if (OB_ISNULL(dist_info = op_alloc(ObMarkedDist))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc memory for ObMarkedDist", K(ret), K_(db_info_key));
+        LOG_WDIAG("fail to alloc memory for ObMarkedDist", K(ret), K_(db_info_key));
       } else if (OB_FAIL(dist_info->assign(*it))) {
-        LOG_WARN("fail to copy shard dist", K(*it), K_(db_info_key), K(ret));
+        LOG_WDIAG("fail to copy shard dist", K(*it), K_(db_info_key), K(ret));
       } else if (OB_FAIL(md_map_.unique_set(dist_info))) {
-        LOG_WARN("fail to unique_set dist_info", KPC(dist_info), K_(db_info_key), K(ret));
+        LOG_WDIAG("fail to unique_set dist_info", KPC(dist_info), K_(db_info_key), K(ret));
       }
       if (OB_FAIL(ret) && NULL != dist_info) {
         op_free(dist_info);
@@ -2340,7 +2359,7 @@ int ObShardConnector::to_json_str(ObSqlString &buf) const
               SHARDS_ENC_TYPE, get_enc_type_str(enc_type_),
               SHARDS_USERNAME, full_username_.ptr(),
               SHARDS_PASSWORD, is_enc_beyond_trust() ? "" : org_password_.ptr()))) {
-    LOG_WARN("fail append shard connector to json str", K(ret), KPC(this));
+    LOG_WDIAG("fail append shard connector to json str", K(ret), KPC(this));
   }
   return ret;
 }
@@ -2358,7 +2377,7 @@ int ObShardConnector::parse_from_json(const json::Value &json_value)
       if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == SHARDS_NAME) {
         shard_name_.set_value(it->value_->get_string());
@@ -2391,7 +2410,7 @@ int ObShardConnector::parse_from_json(const json::Value &json_value)
     char pwd_buf[OB_MAX_PASSWORD_LENGTH];
     memset(pwd_buf, 0, sizeof(pwd_buf));
     if (OB_FAIL(ObBlowFish::decode(org_password_.ptr(), org_password_.length(), pwd_buf, OB_MAX_PASSWORD_LENGTH))) {
-      LOG_WARN("fail to decode encrypted password", K_(org_password), K(ret));
+      LOG_WDIAG("fail to decode encrypted password", K_(org_password), K(ret));
       ret = OB_SUCCESS; // ignore ret
     } else {
       password_.set_value(strlen(pwd_buf), pwd_buf);
@@ -2405,7 +2424,7 @@ int ObShardConnector::get_dec_password(char *buf, int64_t buf_len)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf) || OB_UNLIKELY(buf_len <= password_.length())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid buf", K(buf), K(buf_len), K(password_.length()), K(ret));
+    LOG_WDIAG("invalid buf", K(buf), K(buf_len), K(password_.length()), K(ret));
   } else {
     memcpy(buf, password_.ptr(), password_.length());
     buf[password_.length()] = '\0';
@@ -2436,7 +2455,7 @@ int ObShardConnector::set_shard_type(const ObString &shard_type)
     server_type_ = DB_OB_ORACLE;
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid shard_type", K(shard_type), K(ret));
+    LOG_WDIAG("invalid shard_type", K(shard_type), K(ret));
   }
 
   return ret;
@@ -2461,7 +2480,7 @@ int ObDbConfigLogicDb::get_testload_shard_connector(const ObString &shard_name,
     LOG_DEBUG("fail to get testload shard connector, we can still try reuse normal db",
              "connector", real_shard_name, K(ret));
     if (OB_FAIL(get_shard_connector(shard_name, shard_conn))) {
-      LOG_WARN("fail to get shard connecor", K(shard_name), K(ret));
+      LOG_WDIAG("fail to get shard connecor", K(shard_name), K(ret));
     }
   } else {
     LOG_DEBUG("succ to get testload shard connector", KPC(shard_conn));
@@ -2555,7 +2574,7 @@ int ObShardProp::to_json_str(ObSqlString &buf) const
        OB_SUCC(ret) && iter != tmp_map.end(); ++iter) {
     if (OB_FAIL(buf.append_fmt("\"%s\":\"%s\"", iter->first.c_str(),
                                iter->second.c_str()))) {
-      LOG_WARN("fail to append config", K(ret));
+      LOG_WDIAG("fail to append config", K(ret));
     } else if (i < tmp_map.size() - 1) {
       ret = buf.append(",");
     }
@@ -2569,7 +2588,7 @@ int ObShardProp::to_json_str(ObSqlString &buf) const
        OB_SUCC(ret) && iter != tmp_obj_map.end(); ++iter) {
       if (OB_FAIL(buf.append_fmt("\"%s\":%s", iter->first.c_str(),
                                  iter->second.c_str()))) {
-        LOG_WARN("fail to append config", K(ret));
+        LOG_WDIAG("fail to append config", K(ret));
       } else if (i < tmp_obj_map.size() - 1) {
         ret = buf.append(",");
       }
@@ -2591,7 +2610,7 @@ int ObShardProp::parse_from_json(const json::Value &json_value)
       if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
+          LOG_WDIAG("config version is mismatched", K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == SHARDS_NAME) {
         shard_name_.set_value(it->value_->get_string());
@@ -2603,7 +2622,7 @@ int ObShardProp::parse_from_json(const json::Value &json_value)
       DLIST_FOREACH(it, config_value->get_object()) {
         std::string name_str(it->name_.ptr(), static_cast<size_t>(it->name_.length()));
         if (OB_FAIL(do_handle_json_value(it->value_, name_str))) {
-          LOG_WARN("fail to handle json value", K(ret));
+          LOG_WDIAG("fail to handle json value", K(ret));
         }
       }
     }
@@ -2624,7 +2643,7 @@ int ObShardProp::set_conn_props_from_conf()
   ConnectionProperties* conn_prop_by_other = NULL;
   ObString zone(get_global_proxy_config().server_zone);
   if (zone.empty()) {
-    LOG_WARN("fail to get server_zone from env");
+    LOG_WDIAG("fail to get server_zone from env");
   } else if (conn_prop_map_.size() > 0) {
     if (!current_zone_.empty()) {
       // current_zone format is "RZ41,RZ35"
@@ -2704,14 +2723,14 @@ int ObShardProp::set_prop_values_from_conf()
   int64_t blocking_timeout = 0;
   ObString tmp_str = get_variable_value(SHARDS_IDLE_TIMEOUT);
   if (!tmp_str.empty() && OB_FAIL(get_int_value(tmp_str, idle_timeout))) {
-    LOG_WARN("fail to get idle_timeout", K(tmp_str), K(ret));
+    LOG_WDIAG("fail to get idle_timeout", K(tmp_str), K(ret));
   } else {
     idle_timeout_ms_ = idle_timeout * 60 * 1000;
   }
   if (OB_SUCC(ret)) {
     tmp_str = get_variable_value(SHARDS_BLOCKING_TIMEOUT);
     if (!tmp_str.empty() && OB_FAIL(get_int_value(tmp_str, blocking_timeout))) {
-      LOG_WARN("fail to get blocking_timeout", K(tmp_str), K(ret));
+      LOG_WDIAG("fail to get blocking_timeout", K(tmp_str), K(ret));
     } else {
       blocking_timeout_ms_ = blocking_timeout;
     }
@@ -2738,7 +2757,7 @@ int ObShardProp::set_prop_values_from_conf()
         int64_t connect_timeout = 0;
         ObString tmp_value(iter2->second.length(), iter2->second.c_str());
         if (OB_FAIL(get_int_value(tmp_value, connect_timeout))) {
-          LOG_WARN("fail to get connect_timeout", K(tmp_value), K(ret));
+          LOG_WDIAG("fail to get connect_timeout", K(tmp_value), K(ret));
           ret = OB_INVALID_ARGUMENT;
         } else {
           connect_timeout_ = connect_timeout;
@@ -2747,7 +2766,7 @@ int ObShardProp::set_prop_values_from_conf()
         int64_t socket_timeout = 0;
         ObString tmp_value(iter2->second.length(), iter2->second.c_str());
         if (OB_FAIL(get_int_value(tmp_value, socket_timeout))) {
-          LOG_WARN("fail to get socket_timeout", K(tmp_value), K(ret));
+          LOG_WDIAG("fail to get socket_timeout", K(tmp_value), K(ret));
           ret = OB_INVALID_ARGUMENT;
         } else {
           socket_timeout_ = socket_timeout;
@@ -2779,9 +2798,9 @@ int ObShardProp::do_handle_connection_prop(const json::Value& json_root, std::st
         has_min = true;
       }
     } else if (NULL != config_value) {
-      LOG_WARN("unexpected type", K(config_value->get_type()));
+      LOG_WDIAG("unexpected type", K(config_value->get_type()));
     } else {
-      LOG_WARN("unexpected null config_value");
+      LOG_WDIAG("unexpected null config_value");
     }
   }
   if (has_min && has_max) {
@@ -2796,7 +2815,7 @@ int ObShardProp::do_handle_json_value(const json::Value *json_root, const std::s
   int ret = OB_SUCCESS;
   if (OB_ISNULL(json_root)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("json_root is null");
+    LOG_WDIAG("json_root is null");
   } else if (JT_STRING == json_root->get_type()) {
     std::string value_str(json_root->get_string().ptr(), static_cast<size_t>(json_root->get_string().length()));
     kv_map_.insert(std::pair<std::string, std::string>(key, value_str));
@@ -2816,13 +2835,13 @@ int ObShardProp::do_handle_json_value(const json::Value *json_root, const std::s
       } else if (NULL != config_value && JT_OBJECT == config_value->get_type()) {
         if (tmp_key.case_compare(SHARDS_ZONE_PROPERTIES) == 0) {
           if (OB_FAIL(do_handle_connection_prop(*config_value, inner_key))) {
-            LOG_WARN("handle zone prop failed", K(ret));
+            LOG_WDIAG("handle zone prop failed", K(ret));
           }
         } else {
           LOG_DEBUG("no need handle prop", K(it1->name_));
         }
       } else {
-        LOG_WARN("null value");
+        LOG_WDIAG("null value");
       }
     }
     kv_kv_map_.insert(std::pair<std::string, std::map<std::string, std::string> >(key, tmp_map));
@@ -2837,14 +2856,14 @@ int ObShardProp::do_handle_json_value(const json::Value *json_root, const std::s
         tmp_vec.push_back(inner_val);
         LOG_INFO("get value ", K(config_value->get_string()));
       } else if (NULL != config_value) {
-        LOG_WARN("type not supported", K(config_value->get_type()));
+        LOG_WDIAG("type not supported", K(config_value->get_type()));
       } else {
-        LOG_WARN("null value");
+        LOG_WDIAG("null value");
       }
     }
     kv_vec_map_.insert(std::pair<std::string, std::vector<std::string> >(key, tmp_vec));
   } else {
-    LOG_WARN("type not supported", K(json_root->get_type()));
+    LOG_WDIAG("type not supported", K(json_root->get_type()));
   }
   return ret;
 }
@@ -2884,7 +2903,7 @@ int ObDbConfigLogicTenant::get_file_name(char *buf, const int64_t buf_len) const
   int64_t len = snprintf(buf, buf_len, "%s.json", get_type_task_name(type_));
   if (OB_UNLIKELY(len <=0) || OB_UNLIKELY(len > buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get file name for tenant config", KPC(this), K(ret));
+    LOG_WDIAG("fail to get file name for tenant config", KPC(this), K(ret));
   }
   return ret;
 }
@@ -2902,7 +2921,7 @@ int ObDbConfigLogicTenant::to_json_str(ObSqlString &buf) const
     if (OB_FAIL(buf.append_fmt("{\"%s\":\"%s\", \"%s\":\"%s\"}",
                                LOGIC_DB_NAME, it->db_name_.ptr(),
                                CONFIG_VERSION, it->version_.ptr()))) {
-      LOG_WARN("fail to get json str for db version", K(ret), K(*it));
+      LOG_WDIAG("fail to get json str for db version", K(ret), K(*it));
     } else if (i < map.count() - 1) {
       ret = buf.append(",");
     }
@@ -2927,7 +2946,7 @@ int ObDbConfigLogicTenant::parse_from_json(const Value &json_value)
       if (it->name_ == TENANT_NAME) {
         if (0 != tenant_name_.config_string_.case_compare(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("tenant name is mismatched", K(tenant_name_),
+          LOG_WDIAG("tenant name is mismatched", K(tenant_name_),
                    K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == CONFIG_VERSION) {
@@ -2941,7 +2960,7 @@ int ObDbConfigLogicTenant::parse_from_json(const Value &json_value)
     if (OB_ISNULL(cur_tenant_info = dbconfig_cache.get_exist_tenant(tenant_name_.config_string_))) {
       CWLockGuard guard(dbconfig_cache.rwlock_);
       if (OB_FAIL(dbconfig_cache.lt_map_.unique_set(this))) {
-        LOG_WARN("fail to add new tenant", K(tenant_name_), K(version_), K(ret));
+        LOG_WDIAG("fail to add new tenant", K(tenant_name_), K(version_), K(ret));
       } else {
         inc_ref();
         is_new_tenant_version = true;
@@ -2953,7 +2972,7 @@ int ObDbConfigLogicTenant::parse_from_json(const Value &json_value)
   }
   if (OB_SUCC(ret) && is_new_tenant_version && NULL != db_array) {
     if (OB_FAIL(load_local_db(*db_array))) {
-      LOG_WARN("fail to load local db config", K(tenant_name_), K(version_), K(ret));
+      LOG_WDIAG("fail to load local db config", K(tenant_name_), K(version_), K(ret));
       if (is_new_tenant) {
         ObDbConfigLogicTenant *tmp_tenant = NULL;
         CWLockGuard guard(dbconfig_cache.rwlock_);
@@ -3001,7 +3020,7 @@ int ObDbConfigLogicTenant::load_local_db(const Value &json_value)
       int tmp_ret = OB_SUCCESS;
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = new_db_names.create(BUCKET_SIZE, ObModIds::OB_PROXY_SHARDING_CONFIG,
                                                                    ObModIds::OB_PROXY_SHARDING_CONFIG)))) {
-        LOG_WARN("hash set init failed", K(tmp_ret));
+        LOG_WDIAG("hash set init failed", K(tmp_ret));
         is_need_delete_db = false;
       } else {
         is_need_delete_db = true;
@@ -3036,7 +3055,7 @@ int ObDbConfigLogicTenant::load_local_db(const Value &json_value)
           int tmp_ret = OB_SUCCESS;
           if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = new_db_names.set_refactored(db_name)))) {
             if (OB_UNLIKELY(OB_HASH_EXIST != tmp_ret)) {
-              LOG_WARN("fail to add db name", K(db_name), K(tmp_ret));
+              LOG_WDIAG("fail to add db name", K(db_name), K(tmp_ret));
               is_need_delete_db = false;
             }
           }
@@ -3049,7 +3068,7 @@ int ObDbConfigLogicTenant::load_local_db(const Value &json_value)
         bool is_from_local = true;
         if (OB_FAIL(ObDbConfigChild::alloc_child_info(db_info_key, TYPE_DATABASE, db_name,
                                                       db_version, reinterpret_cast<ObDbConfigChild *&>(new_db_info)))) {
-          LOG_WARN("fail to alloc  ObDbConfigLogicDb", K(db_name), K(db_version), K(ret));
+          LOG_WDIAG("fail to alloc  ObDbConfigLogicDb", K(db_name), K(db_version), K(ret));
         } else {
           new_db_info->set_db_name(db_name);
           if (is_new_db) {
@@ -3058,12 +3077,12 @@ int ObDbConfigLogicTenant::load_local_db(const Value &json_value)
             new_db_info->set_updating_state();
           }
           if (OB_FAIL(ObProxyPbUtils::parse_local_child_config(*new_db_info))) {
-            LOG_WARN("fail to load local db config", K(db_name), K(db_version), K(ret));
+            LOG_WDIAG("fail to load local db config", K(db_name), K(db_version), K(ret));
           } else if (OB_FAIL(get_global_dbconfig_cache().handle_new_db_info(*new_db_info, is_from_local))) {
             // monitor local config file, allow some logic db success, some logic db fail
             // if some logic db failed, will not load to memory and go on to pasre next logic db
             const bool start_mode = !get_global_db_config_processor().is_config_inited();
-            LOG_WARN("fail to handle new db info", K(start_mode), K(db_name), K(db_version), K(ret));
+            LOG_WDIAG("fail to handle new db info", K(start_mode), K(db_name), K(db_version), K(ret));
             if (!start_mode) {
               ret = OB_SUCCESS;
             }
@@ -3084,7 +3103,7 @@ int ObDbConfigLogicTenant::load_local_db(const Value &json_value)
       ObDbConfigLogicTenant *cur_tenant_info = NULL;
       if (OB_ISNULL(cur_tenant_info = dbconfig_cache.get_exist_tenant(tenant_name))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("logic tenant does not exist", K(tenant_name), K(ret));
+        LOG_WDIAG("logic tenant does not exist", K(tenant_name), K(ret));
       } else {
         obsys::CWLockGuard guard(dbconfig_cache.rwlock_);
         ObDbConfigLogicTenant::LDHashMap &ld_map = const_cast<ObDbConfigLogicTenant::LDHashMap &>(cur_tenant_info->ld_map_);
@@ -3131,7 +3150,7 @@ int ObDbConfigLogicTenant::acquire_random_logic_db(ObDbConfigLogicDb *&db_info)
     }
     if (begin == end) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("it arrived the end, it should not happened", K(idx), K(i), K(ret));
+      LOG_WDIAG("it arrived the end, it should not happened", K(idx), K(i), K(ret));
     } else {
       db_info = &(*begin);
       db_info->inc_ref();
@@ -3161,7 +3180,7 @@ int ObDbConfigLogicTenant::acquire_random_logic_db_with_auth(
   }
   if (!found) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("fail to get random logic db", K(username), K(host), K(ret));
+    LOG_WDIAG("fail to get random logic db", K(username), K(host), K(ret));
   } else if (NULL != db_info) {
     db_info->inc_ref();
   }
@@ -3210,7 +3229,7 @@ int ObDbConfigLogicDb::get_file_name(char *buf, const int64_t buf_len) const
   int64_t len = snprintf(buf, buf_len, "%s.json", get_type_task_name(type_));
   if (OB_UNLIKELY(len <=0) || OB_UNLIKELY(len > buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to get file name for database config", KPC(this), K(ret));
+    LOG_WDIAG("fail to get file name for database config", KPC(this), K(ret));
   }
   return ret;
 }
@@ -3234,7 +3253,7 @@ int ObDbConfigLogicDb::update_conn_prop_with_shard_dist()
       }
     }
     if (OB_FAIL(shard_prop.set_conn_props_from_conf())) {
-      LOG_WARN("fail to set_conn_props_from_conf", K(shard_prop));
+      LOG_WDIAG("fail to set_conn_props_from_conf", K(shard_prop));
     } else {
       LOG_INFO("succ set values from conf", K(shard_prop));
     }
@@ -3254,23 +3273,23 @@ int ObDbConfigLogicDb::to_json_str(ObSqlString &buf) const
                        LOGIC_DB_TYPE, db_type_.ptr());
   if (OB_SUCC(ret)) {
     if (OB_FAIL(child_reference_to_json(da_array_, TYPE_DATABASE_AUTH, buf))) {
-      LOG_WARN("fail to convert database auth reference to json");
+      LOG_WDIAG("fail to convert database auth reference to json");
     } else if (OB_FAIL(child_reference_to_json(dv_array_, TYPE_DATABASE_VAR, buf))) {
-      LOG_WARN("fail to convert database variable reference to json");
+      LOG_WDIAG("fail to convert database variable reference to json");
     } else if (OB_FAIL(child_reference_to_json(dp_array_, TYPE_DATABASE_PROP, buf))) {
-      LOG_WARN("fail to convert database prop reference to json");
+      LOG_WDIAG("fail to convert database prop reference to json");
     } else if (OB_FAIL(child_reference_to_json(st_array_, TYPE_SHARDS_TPO, buf, NULL, is_strict_spec_mode_))) {
-      LOG_WARN("fail to convert shards topology to json");
+      LOG_WDIAG("fail to convert shards topology to json");
     } else if (OB_FAIL(child_reference_to_json(sr_array_, TYPE_SHARDS_ROUTER, buf))) {
-      LOG_WARN("fail to convert shards router reference to json");
+      LOG_WDIAG("fail to convert shards router reference to json");
     } else if (OB_FAIL(child_reference_to_json(sd_array_, TYPE_SHARDS_DIST, buf))) {
-      LOG_WARN("fail to convert shards distribute reference to json");
+      LOG_WDIAG("fail to convert shards distribute reference to json");
     } else if (OB_FAIL(child_reference_to_json(sc_array_, TYPE_SHARDS_CONNECTOR, buf, testload_prefix_.ptr()))) {
-      LOG_WARN("fail to convert shards connector reference to json");
+      LOG_WDIAG("fail to convert shards connector reference to json");
     } else if (OB_FAIL(child_reference_to_json(sp_array_, TYPE_SHARDS_PROP, buf))) {
-      LOG_WARN("fail to convert shards prop reference to json");
+      LOG_WDIAG("fail to convert shards prop reference to json");
     } else if (OB_FAIL(buf.append_fmt("\"tenant_name\":\"%s\"}", db_info_key_.tenant_name_.ptr()))) {
-      LOG_WARN("fail to append tenant name", K(db_info_key_.tenant_name_), K(ret));
+      LOG_WDIAG("fail to append tenant name", K(db_info_key_.tenant_name_), K(ret));
     }
   }
   return ret;
@@ -3301,7 +3320,7 @@ int ObDbConfigLogicDb::child_reference_to_json(const ObDbConfigChildArrayInfo<T>
       if (it->name_.config_string_.prefix_match(testload_prefix)
           && testload_prefix.length() > 0) {
       } else if (OB_FAIL(buf.append_fmt("\"%s.%s\",", it->name_.ptr(), it->version_.ptr()))) {
-        LOG_WARN("fail to append child reference",
+        LOG_WDIAG("fail to append child reference",
                  "name", it->name_.ptr(),
                  "version", it->version_.ptr(), K(ret));
       }
@@ -3325,13 +3344,13 @@ int ObDbConfigLogicDb::child_reference_to_json(const ObDbConfigChildArrayInfo<T>
         && testload_prefix.length() > 0) {
       if (OB_FAIL(buf.append_fmt(", \"%s\":\"%s\", \"%s\":[",
                                  TESTLOAD_PREFIX, testload_prefix.ptr(), TESTLOAD_REF_VALUE))) {
-        LOG_WARN("fail to append testload_prefix", K(testload_prefix), K(ret));
+        LOG_WDIAG("fail to append testload_prefix", K(testload_prefix), K(ret));
       } else {
         it = map.begin();
         for (; OB_SUCC(ret) && it != map.end(); ++it) {
           if (!it->name_.config_string_.prefix_match(testload_prefix)) {
           } else if (OB_FAIL(buf.append_fmt("\"%s.%s\",", it->name_.ptr(), it->version_.ptr()))) {
-            LOG_WARN("fail to append child reference",
+            LOG_WDIAG("fail to append child reference",
                      "name", it->name_.ptr(),
                      "version", it->version_.ptr(), K(ret));
           }
@@ -3370,7 +3389,7 @@ int ObDbConfigLogicDb::parse_from_json(const Value &json_value)
       if (it->name_ == CONFIG_VERSION) {
         if (is_version_changed(it->value_->get_string())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("db version is different between Database.json and  Tenant.json",
+          LOG_WDIAG("db version is different between Database.json and  Tenant.json",
                    K(version_), K(it->value_->get_string()), K(ret));
         }
       } else if (it->name_ == LOGIC_DB_NAME) {
@@ -3458,12 +3477,12 @@ int ObDbConfigLogicDb::load_child_config(
 
   if (OB_SUCC(ret) && NULL != cr_ref) {
     if (OB_FAIL(load_child_array(*cr_ref, cr_array, type))) {
-      LOG_WARN("fail to load child config", "type", get_type_task_name(type), K(ret));
+      LOG_WDIAG("fail to load child config", "type", get_type_task_name(type), K(ret));
     }
   }
   if (OB_SUCC(ret) && NULL != testload_ref) {
     if (OB_FAIL(load_child_array(*testload_ref, cr_array, type))) {
-      LOG_WARN("fail to load testload child config", "type", get_type_task_name(type), K(ret));
+      LOG_WDIAG("fail to load testload child config", "type", get_type_task_name(type), K(ret));
     }
   }
   return ret;
@@ -3506,7 +3525,7 @@ int ObDbConfigLogicDb::load_child_array(
         }
         if (OB_ISNULL(start_pos) || OB_ISNULL(last_sep_pos))  {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid reference", K(reference), K(ret));
+          LOG_WDIAG("invalid reference", K(reference), K(ret));
         } else {
           cr_name.assign_ptr(start_pos, static_cast<ObString::obstr_size_t>(last_sep_pos - start_pos));
           cr_version = reference;
@@ -3514,11 +3533,11 @@ int ObDbConfigLogicDb::load_child_array(
       }
       if (OB_SUCC(ret) && (OB_UNLIKELY(cr_name.empty()) || OB_UNLIKELY(cr_version.empty()))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid reference", K(reference), K(ret));
+        LOG_WDIAG("invalid reference", K(reference), K(ret));
       }
       if (OB_SUCC(ret)) {
         if (OB_FAIL(ObDbConfigChild::alloc_child_info(db_info_key_, type, cr_name, cr_version, new_child_info))) {
-          LOG_WARN("fail to alloc child info", "type", get_type_task_name(type), K(cr_name), K(cr_version), K(ret));
+          LOG_WDIAG("fail to alloc child info", "type", get_type_task_name(type), K(cr_name), K(cr_version), K(ret));
         }
       }
       if (OB_SUCC(ret)) {
@@ -3530,7 +3549,7 @@ int ObDbConfigLogicDb::load_child_array(
         }
         if (is_new_child_version) {
           if (OB_FAIL(ObProxyPbUtils::parse_local_child_config(*new_child_info))) {
-            LOG_WARN("fail to load local child info", K(db_info_key_), K(cr_name), K(cr_version), K(ret));
+            LOG_WDIAG("fail to load local child info", K(db_info_key_), K(cr_name), K(cr_version), K(ret));
           } else if (TYPE_SHARDS_CONNECTOR == type) {
             ObShardConnector *shard_conn = reinterpret_cast<ObShardConnector *>(new_child_info);
             if (shard_conn->is_enc_beyond_trust()) {
@@ -3538,12 +3557,12 @@ int ObDbConfigLogicDb::load_child_array(
             }
           }
         } else if (OB_FAIL(new_child_info->assign(*child_info))) {
-          LOG_WARN("fail to copy child info", K(db_info_key_), K(cr_name), K(cr_version), K(ret));
+          LOG_WDIAG("fail to copy child info", K(db_info_key_), K(cr_name), K(cr_version), K(ret));
         }
         if (OB_SUCC(ret)) {
           new_child_info->set_avail_state();
           if (OB_FAIL(cr_array.ccr_map_.unique_set(reinterpret_cast<T *>(new_child_info)))) {
-            LOG_WARN("fail to add child info into cr array", K(db_info_key_), K(cr_name), K(cr_version), K(ret));
+            LOG_WDIAG("fail to add child info into cr array", K(db_info_key_), K(cr_name), K(cr_version), K(ret));
           }
         }
       }
@@ -3575,14 +3594,14 @@ int ObDbConfigLogicDb::acquire_random_shard_connector(ObShardConnector *&shard_c
   ObShardTpo *shard_tpo = NULL;
 
   if (OB_FAIL(get_shard_tpo(shard_tpo))) {
-    LOG_WARN("fail to get shard tpo info", K(ret));
+    LOG_WDIAG("fail to get shard tpo info", K(ret));
   } else if (OB_ISNULL(shard_tpo)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard tpo info is null", K(ret));
+    LOG_WDIAG("shard tpo info is null", K(ret));
   } else if (FALSE_IT(max_idx = shard_tpo->gc_map_.count() - 1)) {
     //nerver here
   } else if (OB_FAIL(ObRandomNumUtils::get_random_num(0, max_idx, idx))) {
-    LOG_WARN("fail to get random num", K(idx), K(max_idx), K_(sc_array), K(ret));
+    LOG_WDIAG("fail to get random num", K(idx), K(max_idx), K_(sc_array), K(ret));
   } else {
     ObShardTpo::GCHashMap::iterator begin = shard_tpo->gc_map_.begin();
     ObShardTpo::GCHashMap::iterator end = shard_tpo->gc_map_.end();
@@ -3593,17 +3612,17 @@ int ObDbConfigLogicDb::acquire_random_shard_connector(ObShardConnector *&shard_c
     }
     if (begin == end) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("it arrived the end, it should not happened", K(idx), K(i), K(ret));
+      LOG_WDIAG("it arrived the end, it should not happened", K(idx), K(i), K(ret));
     } else {
       int64_t eid = 0;
       ObString shard_name;
       ObGroupCluster *gc_info = &(*begin);
       if (OB_FAIL(gc_info->get_elastic_id_by_read_weight(eid))) {
-        LOG_WARN("fail to get eid by read weight", KPC(gc_info));
+        LOG_WDIAG("fail to get eid by read weight", KPC(gc_info));
       } else if (FALSE_IT(shard_name = gc_info->get_shard_name_by_eid(eid))) {
         //nerver here
       } else if (OB_FAIL(get_shard_connector(shard_name, shard_conn))) {
-        LOG_WARN("shard connector does not exist", K(shard_name), K(ret));
+        LOG_WDIAG("shard connector does not exist", K(shard_name), K(ret));
       } else {
         gc_name = gc_info->gc_name_.config_string_;
         LOG_INFO("succ to get random shard connector", KPC(shard_conn));
@@ -3625,10 +3644,10 @@ bool ObDbConfigLogicDb::is_single_shard_db_table()
   ObShardTpo *shard_tpo = NULL;
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_shard_tpo(shard_tpo))) {
-    LOG_WARN("fail to get shard tpo info", K(ret));
+    LOG_WDIAG("fail to get shard tpo info", K(ret));
   } else if (OB_ISNULL(shard_tpo)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard tpo info is null", K(ret));
+    LOG_WDIAG("shard tpo info is null", K(ret));
   } else if (shard_tpo->gc_map_.count() == 1) {
     bret = is_shard_rule_empty();
   }
@@ -3648,7 +3667,7 @@ bool ObDbConfigLogicDb::enable_remote_connection()
     LOG_DEBUG("database var info not exist", K(ret));
   } else if (OB_ISNULL(db_var)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("database variable info is null", K(ret));
+    LOG_WDIAG("database variable info is null", K(ret));
   } else {
     bret = db_var->enable_remote_connection();
   }
@@ -3667,9 +3686,9 @@ int ObDbConfigLogicDb::init_test_load_table_map()
     LOG_DEBUG("database var info not exist", K(ret));
   } else if (OB_ISNULL(db_var)) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("database variable info is null", K(ret));
+    LOG_WDIAG("database variable info is null", K(ret));
   } else if (OB_FAIL(db_var->init_test_load_table_map(test_load_table_map_))) {
-    LOG_WARN("database variable of testloadTableMap is unexpected", K(ret));
+    LOG_WDIAG("database variable of testloadTableMap is unexpected", K(ret));
   }
   if (NULL != db_var) {
     db_var->dec_ref();
@@ -3689,13 +3708,13 @@ int ObDbConfigLogicDb::check_and_get_testload_table(std::string origin_name, std
   if (test_load_table_map_.size() == 0) {
     obsys::CWLockGuard guard(dbconfig_cache.rwlock_);
     if (test_load_table_map_.size() == 0 && OB_FAIL(init_test_load_table_map())) {
-      LOG_WARN("init testload table map error", K(ret), K(db_name_));
+      LOG_WDIAG("init testload table map error", K(ret), K(db_name_));
     }
   }
 
   if (OB_MAX_TABLE_NAME_LENGTH <= origin_name.length()) {
     ret = OB_ERR_UNEXPECTED; //not to be here
-    LOG_WARN("size need to check is big than OB_MAX_TABLE_NAME_LENGTH", K(origin_name.length()),
+    LOG_WDIAG("size need to check is big than OB_MAX_TABLE_NAME_LENGTH", K(origin_name.length()),
       K(OB_MAX_TABLE_NAME_LENGTH));
   }
 
@@ -3733,7 +3752,7 @@ int ObDbConfigLogicDb::get_sequence_param(ObSequenceParam& param)
     LOG_DEBUG("database var info not exist", K(ret));
   } else if (OB_ISNULL(db_var)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("database variable info is null", K(ret));
+    LOG_WDIAG("database variable info is null", K(ret));
   } else {
     ObString tmp_str;
     int64_t tmp_value;
@@ -3783,7 +3802,7 @@ int ObDbConfigLogicDb::get_real_info(const common::ObString &table_name,
                                       real_database_name, db_name_len, real_table_name,
                                       tb_name_len, group_index, tb_index, es_index,
                                       hint_table, testload_type, is_read_stmt))) {
-      LOG_WARN("fail to get single table info", K(table_name), K(ret));
+      LOG_WDIAG("fail to get single table info", K(table_name), K(ret));
     }
   } else {
     SqlFieldResult &sql_result = parse_result.get_sql_filed_result();
@@ -3792,7 +3811,7 @@ int ObDbConfigLogicDb::get_real_info(const common::ObString &table_name,
                                      real_table_name, tb_name_len,
                                      group_index, tb_index, es_index,
                                      hint_table, testload_type, is_read_stmt))) {
-      LOG_WARN("fail to get shard table info", K(table_name), K(ret));
+      LOG_WDIAG("fail to get shard table info", K(table_name), K(ret));
     }
   }
 
@@ -3810,14 +3829,14 @@ int ObDbConfigLogicDb::get_real_table_name(const ObString &table_name, SqlFieldR
   if (!hint_table.empty()) {
     snprintf(real_table_name, tb_name_len, "%.*s", static_cast<int>(hint_table.length()), hint_table.ptr());
   } else if (OB_FAIL(get_shard_rule(logic_tb_info, table_name))) {
-    LOG_WARN("fail to get shard rule", K(table_name), K(ret));
+    LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
   } else if (OB_FAIL(ObShardRule::get_physic_index(sql_result, logic_tb_info->tb_rules_,
                                                    logic_tb_info->tb_size_, testload_type, tb_index))) {
-    LOG_WARN("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
+    LOG_WDIAG("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
   } else if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->tb_size_, logic_tb_info->tb_suffix_len_,
                                                            tb_index, logic_tb_info->tb_prefix_.config_string_,
                                                            logic_tb_info->tb_tail_.config_string_, real_table_name, tb_name_len))) {
-    LOG_WARN("fail to get real table name", K(tb_index), KPC(logic_tb_info), K(ret));
+    LOG_WDIAG("fail to get real table name", K(tb_index), KPC(logic_tb_info), K(ret));
   } else if (TESTLOAD_NON != testload_type) {
     snprintf(real_table_name + strlen(real_table_name), tb_name_len - strlen(real_table_name), "_T");
   }
@@ -3842,28 +3861,28 @@ int ObDbConfigLogicDb::get_shard_table_info(const ObString &table_name,
   ObGroupCluster *gc_info = NULL;
 
   if (OB_FAIL(get_shard_tpo(shard_tpo))) {
-    LOG_WARN("fail to get shard tpo info", K(ret));
+    LOG_WDIAG("fail to get shard tpo info", K(ret));
   } else if (OB_ISNULL(shard_tpo)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard tpo info is null", K(ret));
+    LOG_WDIAG("shard tpo info is null", K(ret));
   } else if (OB_FAIL(get_shard_rule(logic_tb_info, table_name))) {
-    LOG_WARN("fail to get shard rule", K(table_name), K(ret));
+    LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
   // get group_id
   } else if (OB_FAIL(ObShardRule::get_physic_index(sql_result, logic_tb_info->db_rules_,
                                                    logic_tb_info->db_size_, testload_type, group_index))) {
-    LOG_WARN("fail to get physic db index", K(table_name), KPC(logic_tb_info), K(ret));
+    LOG_WDIAG("fail to get physic db index", K(table_name), KPC(logic_tb_info), K(ret));
   // reuse real_database_name to store group name instead of using a new buffer
   // real_database_name will be set after shard connector is chosen
   // get group_name
   } else  if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->db_size_, logic_tb_info->db_suffix_len_, group_index,
                                                             logic_tb_info->db_prefix_.config_string_,
                                                             logic_tb_info->db_tail_.config_string_, real_database_name, db_name_len))) {
-    LOG_WARN("fail to get real group name", K(group_index), KPC(logic_tb_info), K(ret));
+    LOG_WDIAG("fail to get real group name", K(group_index), KPC(logic_tb_info), K(ret));
   } else if (OB_FAIL(shard_tpo->get_group_cluster(ObString::make_string(real_database_name), gc_info))) {
     LOG_DEBUG("group does not exist", "phy_db_name", real_database_name, K(ret));
   } else if (OB_ISNULL(gc_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("group cluster info is null", "phy_db_name", real_database_name, K(ret));
+    LOG_WDIAG("group cluster info is null", "phy_db_name", real_database_name, K(ret));
   } else {
     // calculate es_id
     int64_t es_size = gc_info->get_es_size();
@@ -3876,27 +3895,27 @@ int ObDbConfigLogicDb::get_shard_table_info(const ObString &table_name,
         //In multiple statements, the read request can use the effective es id of the previous statement
         es_index = last_es_index;
       } else if (OB_FAIL(gc_info->get_elastic_id_by_weight(es_index, is_read_stmt))) {
-        LOG_WARN("fail to get eid by read weight", KPC(gc_info));
+        LOG_WDIAG("fail to get eid by read weight", KPC(gc_info));
       } else {
         LOG_DEBUG("succ to get eid by weight", K(es_index));
       }
     } else if (OB_FAIL(ObShardRule::get_physic_index(sql_result, logic_tb_info->es_rules_, es_size,
                     testload_type, es_index, is_elastic_index))) {
-            LOG_WARN("fail to calculate elastic index", K(table_name), KPC(logic_tb_info), K(ret));
+            LOG_WDIAG("fail to calculate elastic index", K(table_name), KPC(logic_tb_info), K(ret));
     } else if (OB_UNLIKELY(es_index >= es_size)) {
       ret = OB_EXPR_CALC_ERROR;
-      LOG_WARN("es index is larger than elastic array", K(es_index), K(es_size), K(ret));
+      LOG_WDIAG("es index is larger than elastic array", K(es_index), K(es_size), K(ret));
     }
 
     if (OB_SUCC(ret)) {
       shard_name = gc_info->get_shard_name_by_eid(es_index);
       if (TESTLOAD_NON != testload_type) {
         if (OB_FAIL(get_testload_shard_connector(shard_name, testload_prefix_.config_string_, shard_conn))) {
-          LOG_WARN("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
+          LOG_WDIAG("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
                    K(shard_name), K(testload_prefix_), K(ret));
         }
       } else if (OB_FAIL(get_shard_connector(shard_name, shard_conn))) {
-        LOG_WARN("shard connector does not exist", K(shard_name), K(ret));
+        LOG_WDIAG("shard connector does not exist", K(shard_name), K(ret));
       }
       // get physical schema name
       if (OB_SUCC(ret) && NULL != shard_conn) {
@@ -3911,11 +3930,11 @@ int ObDbConfigLogicDb::get_shard_table_info(const ObString &table_name,
       } else {
         if (OB_FAIL(ObShardRule::get_physic_index(sql_result, logic_tb_info->tb_rules_,
                         logic_tb_info->tb_size_, testload_type, tb_index))) {
-          LOG_WARN("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
+          LOG_WDIAG("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
         } else if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->tb_size_, logic_tb_info->tb_suffix_len_,
                       tb_index, logic_tb_info->tb_prefix_.config_string_,
                       logic_tb_info->tb_tail_.config_string_, real_table_name, tb_name_len))) {
-          LOG_WARN("fail to get real table name", K(tb_index), KPC(logic_tb_info), K(ret));
+          LOG_WDIAG("fail to get real table name", K(tb_index), KPC(logic_tb_info), K(ret));
         }
 
         if (OB_SUCC(ret) && TESTLOAD_NON != testload_type) {
@@ -3941,7 +3960,7 @@ int ObDbConfigLogicDb::get_single_real_table_info(const common::ObString &table_
   int ret = OB_SUCCESS;
   if (OB_ISNULL(real_database_name) || OB_ISNULL(real_table_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("error argument to init real db and table info", K(ret));
+    LOG_WDIAG("error argument to init real db and table info", K(ret));
   } else {
     if (!hint_table.empty()) {
       snprintf(real_table_name, tb_name_len, "%.*s", hint_table.length(), hint_table.ptr());
@@ -3968,13 +3987,13 @@ int ObDbConfigLogicDb::get_single_table_info(const ObString &table_name,
   group_id = 0;
   table_id = 0;
   if (OB_FAIL(get_shard_tpo(shard_tpo))) {
-    LOG_WARN("fail to get shard tpo info", K(ret));
+    LOG_WDIAG("fail to get shard tpo info", K(ret));
   } else if (OB_ISNULL(shard_tpo)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard tpo info is null", K(ret));
+    LOG_WDIAG("shard tpo info is null", K(ret));
   } else if (OB_UNLIKELY(shard_tpo->gc_map_.count() != 1)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("shard tpo has more than 1 group", K(shard_tpo), K(ret));
+    LOG_WDIAG("shard tpo has more than 1 group", K(shard_tpo), K(ret));
   } else {
     ObShardTpo::GCHashMap::iterator it = (const_cast<ObShardTpo::GCHashMap &>(shard_tpo->gc_map_)).begin();
     const ObGroupCluster &gc_info = *it;
@@ -3986,27 +4005,27 @@ int ObDbConfigLogicDb::get_single_table_info(const ObString &table_name,
         //In multiple statements, the read request can use the effective es id of the previous statement
         es_id = last_es_id;
       } if (OB_FAIL(gc_info.get_elastic_id_by_weight(es_id, is_read_stmt))) {
-        LOG_WARN("fail to get random eid", K(gc_info));
+        LOG_WDIAG("fail to get random eid", K(gc_info));
       }
     } else if (OB_UNLIKELY(es_id >= es_size)) {
       ret = OB_EXPR_CALC_ERROR;
-      LOG_WARN("es index is larger than elastic array", K(es_id), K(es_size), K(ret));
+      LOG_WDIAG("es index is larger than elastic array", K(es_id), K(es_size), K(ret));
     }
     if (OB_SUCC(ret)) {
       ObString shard_name = gc_info.get_shard_name_by_eid(es_id);
       if (TESTLOAD_NON != testload_type) {
         if (OB_FAIL(get_testload_shard_connector(shard_name, testload_prefix_.config_string_, shard_conn))) {
-          LOG_WARN("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
+          LOG_WDIAG("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
                    K(shard_name), K(testload_prefix_), K(ret));
         }
       } else if (OB_FAIL(get_shard_connector(shard_name, shard_conn))) {
-        LOG_WARN("shard connector does not exist", K(shard_name), K(ret));
+        LOG_WDIAG("shard connector does not exist", K(shard_name), K(ret));
       }
       if (OB_SUCC(ret) && NULL != shard_conn && OB_FAIL(get_single_real_table_info(table_name, *shard_conn,
                                                                      real_database_name, db_name_len,
                                                                      real_table_name, tb_name_len,
                                                                      hint_table))) {
-        LOG_WARN("fail to get real table info", K(table_name), K(ret));
+        LOG_WDIAG("fail to get real table info", K(table_name), K(ret));
       }
     }
   }
@@ -4057,7 +4076,7 @@ const ObString ObDbConfigLogicDb::get_sequence_table_name_from_variables()
     LOG_DEBUG("database var info not exist", K(ret));
   } else if (OB_ISNULL(db_var)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("database variable info is null", K(ret));
+    LOG_WDIAG("database variable info is null", K(ret));
   } else {
     ret_str = db_var->get_variable_value(SEQUENCE_TABLE);
   }
@@ -4075,7 +4094,7 @@ int ObDbConfigCache::get_all_logic_tenant(ObIArray<common::ObString> &all_tenant
   LTHashMap &map = const_cast<LTHashMap &>(lt_map_);
   for (LTHashMap::iterator it = map.begin(); OB_SUCC(ret) && it != map.end(); ++it) {
     if (OB_FAIL(all_tenant.push_back(it->tenant_name_.config_string_))) {
-      LOG_WARN("fail to push back tenant name", K(it->tenant_name_), K(ret));
+      LOG_WDIAG("fail to push back tenant name", K(it->tenant_name_), K(ret));
     }
   }
   return ret;
@@ -4089,10 +4108,10 @@ int ObDbConfigLogicDb::get_shard_prop(const common::ObString& shard_name,
   ObDbConfigCache &dbconfig_cache = get_global_dbconfig_cache();
   obsys::CRLockGuard guard(dbconfig_cache.rwlock_);
   if (OB_FAIL(sp_array_.ccr_map_.get_refactored(shard_name, tmp_shard_prop))) {
-    LOG_WARN("fail to get shard prop", K(shard_name), K(ret));
+    LOG_WDIAG("fail to get shard prop", K(shard_name), K(ret));
   } else if (OB_ISNULL(tmp_shard_prop)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard prop is null", K(shard_name));
+    LOG_WDIAG("shard prop is null", K(shard_name));
   } else {
     shard_prop = tmp_shard_prop;
     shard_prop->inc_ref();
@@ -4133,9 +4152,9 @@ int ObDbConfigLogicDb::get_disaster_eid(const common::ObString &disaster_status,
     LOG_DEBUG("self adjust prop is not exist", K(ret));
   } else if (OB_ISNULL(db_prop)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("self adjust prop is null", K(ret));
+    LOG_WDIAG("self adjust prop is null", K(ret));
   } else if (OB_FAIL(db_prop->get_disaster_eid(disaster_status, eid))) {
-    LOG_WARN("fail to get disaster eid", K(disaster_status), KPC(db_prop), K(ret));
+    LOG_WDIAG("fail to get disaster eid", K(disaster_status), KPC(db_prop), K(ret));
   }
   if (NULL != db_prop) {
     db_prop->dec_ref();
@@ -4149,7 +4168,7 @@ int ObDbConfigLogicDb::init_connector_password_for_bt()
   int ret = OB_SUCCESS;
   if (need_update_bt_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("not support beyond trust password", K(ret));
+    LOG_EDIAG("not support beyond trust password", K(ret));
   }
   return ret;
 }
@@ -4188,7 +4207,7 @@ ObDbConfigChild *ObDbConfigCache::get_child_info(const ObDataBaseKey &key,
         db_info->sp_array_.ccr_map_.get_refactored(name, reinterpret_cast<ObShardProp *&>(child_info));
         break;
       default:
-        LOG_WARN("invalid type", K(type));
+        LOG_WDIAG("invalid type", K(type));
         break;
     } // end switch
   }
@@ -4242,10 +4261,10 @@ int ObDbConfigCache::load_local_dbconfig()
   DIR *dbconfig_dir = NULL;
   if (OB_ISNULL(layout_dbconfig_dir)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dbconfig layout is null", K(ret));
+    LOG_WDIAG("dbconfig layout is null", K(ret));
   } else if (OB_ISNULL(dbconfig_dir = opendir(layout_dbconfig_dir))) {
     ret = OB_IO_ERROR;
-    LOG_WARN("fail to open dir", K(layout_dbconfig_dir), KERRMSGS, K(ret));
+    LOG_WDIAG("fail to open dir", K(layout_dbconfig_dir), KERRMSGS, K(ret));
   }
   event::ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
   while (OB_SUCC(ret) && NULL != (ent = readdir(dbconfig_dir))) {
@@ -4259,10 +4278,10 @@ int ObDbConfigCache::load_local_dbconfig()
       char *full_path = NULL;
       allocator.reuse();
       if (OB_FAIL(ObLayout::merge_file_path(layout_dbconfig_dir, ent->d_name, allocator, full_path))) {
-        LOG_WARN("fail to merge file", K(layout_dbconfig_dir), "name", ent->d_name, K(ret));
+        LOG_WDIAG("fail to merge file", K(layout_dbconfig_dir), "name", ent->d_name, K(ret));
       } else if (0 != (stat(full_path, &st))) {
         ret = OB_IO_ERROR;
-        LOG_WARN("fail to stat dir", K(full_path), KERRMSGS, K(ret));
+        LOG_WDIAG("fail to stat dir", K(full_path), KERRMSGS, K(ret));
       } else if (S_ISDIR(st.st_mode)) {
         is_need_load = true;
       }
@@ -4270,14 +4289,14 @@ int ObDbConfigCache::load_local_dbconfig()
 
     if (OB_SUCC(ret) && is_need_load) {
       if (OB_FAIL(load_logic_tenant_config(ObString::make_string(ent->d_name)))) {
-        LOG_WARN("fail to load tenant config", "tenant_dir", ent->d_name, K(ret));
+        LOG_WDIAG("fail to load tenant config", "tenant_dir", ent->d_name, K(ret));
       }
     }
   }
   int tmp_ret = OB_SUCCESS;
   if (OB_LIKELY(NULL != dbconfig_dir) && OB_UNLIKELY(0 != closedir(dbconfig_dir))) {
     tmp_ret = OB_IO_ERROR;
-    LOG_WARN("fail to close dir", "dir", layout_dbconfig_dir, KERRMSGS, K(tmp_ret));
+    LOG_WDIAG("fail to close dir", "dir", layout_dbconfig_dir, KERRMSGS, K(tmp_ret));
   }
   return ret;
 }
@@ -4289,14 +4308,14 @@ int ObDbConfigCache::load_logic_tenant_config(const ObString &tenant_name)
   ObDbConfigLogicTenant *tenant_info = NULL;
   if (OB_ISNULL(tenant_info = op_alloc(ObDbConfigLogicTenant))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObDbConfigLogicTenant", K(tenant_name), K(ret));
+    LOG_WDIAG("fail to alloc memory for ObDbConfigLogicTenant", K(tenant_name), K(ret));
   } else {
     tenant_info->inc_ref();
     tenant_info->tenant_name_.set_value(tenant_name);
     tenant_info->name_.set_value(tenant_name);
     tenant_info->db_info_key_.tenant_name_.set_value(tenant_name);
     if (OB_FAIL(ObProxyPbUtils::parse_local_child_config(*tenant_info))) {
-      LOG_WARN("fail to parse local tenant config", K(tenant_name), K(ret));
+      LOG_WDIAG("fail to parse local tenant config", K(tenant_name), K(ret));
     }
   }
 
@@ -4316,9 +4335,9 @@ int ObDbConfigCache::get_shard_prop(const ObString &tenant_name,
   ObDbConfigLogicDb *db_info = NULL;
   if (OB_ISNULL(db_info = get_exist_db_info(tenant_name, db_name))) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("logic db does not exist", K(tenant_name), K(db_name), K(shard_name), K(ret));
+    LOG_WDIAG("logic db does not exist", K(tenant_name), K(db_name), K(shard_name), K(ret));
   } else if (OB_FAIL(db_info->get_shard_prop(shard_name, shard_prop))) {
-    LOG_WARN("fail to get shard prop", K(tenant_name), K(db_name), K(shard_name), K(ret));
+    LOG_WDIAG("fail to get shard prop", K(tenant_name), K(db_name), K(shard_name), K(ret));
   }
   if (NULL != db_info) {
     db_info->dec_ref();
@@ -4424,9 +4443,9 @@ int ObDbConfigCache::handle_new_db_info(ObDbConfigLogicDb &db_info, bool is_from
   // 2. update db info
   if (need_update_bt) {
     if (OB_FAIL(get_global_db_config_processor().handle_bt_sdk())) {
-      LOG_WARN("fail to handle bt sdk", K(db_info.db_info_key_),  K(ret));
+      LOG_WDIAG("fail to handle bt sdk", K(db_info.db_info_key_),  K(ret));
     } else if (OB_FAIL(db_info.init_connector_password_for_bt())) {
-      LOG_WARN("fail to get connector password for bt", K(ret));
+      LOG_WDIAG("fail to get connector password for bt", K(ret));
     } else {
       db_info.set_need_update_bt(false);
     }
@@ -4434,10 +4453,10 @@ int ObDbConfigCache::handle_new_db_info(ObDbConfigLogicDb &db_info, bool is_from
   if (OB_FAIL(ret)) {
     // do nothing
   } else if (OB_FAIL(db_info.update_conn_prop_with_shard_dist())) {
-    LOG_WARN("fail to update conn prop with shard dist", K(tenant_name), K(db_name));
+    LOG_WDIAG("fail to update conn prop with shard dist", K(tenant_name), K(db_name));
   } else if (OB_ISNULL(tenant_info = get_exist_tenant(tenant_name))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("logic tenant does not exist", K(tenant_name), K(ret));
+    LOG_WDIAG("logic tenant does not exist", K(tenant_name), K(ret));
   } else {
     // directly add into ld map
     db_info.set_avail_state();
@@ -4449,7 +4468,7 @@ int ObDbConfigCache::handle_new_db_info(ObDbConfigLogicDb &db_info, bool is_from
       cur_db_info = NULL;
     }
     if (OB_FAIL(tenant_info->ld_map_.unique_set(&db_info))) {
-      LOG_WARN("fail to add new db info", K(db_name), K(tenant_name), K(ret));
+      LOG_WDIAG("fail to add new db info", K(db_name), K(tenant_name), K(ret));
     } else {
       db_info.inc_ref();
       if (!is_from_local) {
@@ -4478,17 +4497,17 @@ int ObDbConfigLogicDb::get_es_index_by_gc(ObGroupCluster *gc_info, ObShardRule *
     ObSEArray<int64_t, 4> es_index_array;
     if (-1 == es_index || (OBPROXY_MAX_DBMESH_ID == es_index && shard_rule->es_rules_.empty())) {
       if (OB_FAIL(gc_info->get_elastic_id_by_weight(es_index, is_read_stmt))) {
-        LOG_WARN("fail to get eid by read weight", K(is_read_stmt), KPC(gc_info));
+        LOG_WDIAG("fail to get eid by read weight", K(is_read_stmt), KPC(gc_info));
       } else {
         LOG_DEBUG("succ to get eid by weight", K(es_index));
       }
     } else if (sql_result.field_num_ > 0
                && OB_FAIL(ObShardRule::get_physic_index_array(sql_result, shard_rule->es_rules_, es_size,
                                                               testload_type, es_index_array, true))) {
-      LOG_WARN("fail to calculate elastic index", KPC(shard_rule), K(ret));
+      LOG_WDIAG("fail to calculate elastic index", KPC(shard_rule), K(ret));
     } else if (es_index_array.empty()) {
       if (OB_FAIL(gc_info->get_elastic_id_by_weight(es_index, is_read_stmt))) {
-        LOG_WARN("fail to get eid by read weight", K(is_read_stmt), KPC(gc_info));
+        LOG_WDIAG("fail to get eid by read weight", K(is_read_stmt), KPC(gc_info));
       } else {
         LOG_DEBUG("succ to get eid by weight", K(es_index));
       }
@@ -4496,13 +4515,13 @@ int ObDbConfigLogicDb::get_es_index_by_gc(ObGroupCluster *gc_info, ObShardRule *
       es_index = es_index_array.at(0);
       if (es_index >= es_size) {
         ret = OB_EXPR_CALC_ERROR;
-        LOG_WARN("es index is larger than elastic array", K(es_index), K(es_size), K(ret));
+        LOG_WDIAG("es index is larger than elastic array", K(es_index), K(es_size), K(ret));
       }
 
       for (int64_t j = 1; OB_SUCC(ret) && j < es_index_array.count(); j++) {
         if (es_index != es_index_array.at(j)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("get too many es index", K(es_index), K(j), K(es_index_array.at(j)), K(ret));
+          LOG_WDIAG("get too many es index", K(es_index), K(j), K(es_index_array.at(j)), K(ret));
         }
       }
     }
@@ -4528,21 +4547,21 @@ int ObDbConfigLogicDb::get_db_and_table_index(ObShardRule *shard_rule,
         && OB_FAIL(ObShardRule::get_physic_index_array(sql_result, shard_rule->db_rules_,
                                                        shard_rule->db_size_, testload_type,
                                                        group_index_array))) {
-      LOG_WARN("fail to get physic db index", KPC(shard_rule), K(ret));
+      LOG_WDIAG("fail to get physic db index", KPC(shard_rule), K(ret));
     }
 
     // if do not get sharding info, scall all table
     if (OB_SUCC(ret) && group_index_array.empty()) {
       for (int64_t i = 0; OB_SUCC(ret) && i < shard_rule->db_size_; i++) {
         if (OB_FAIL(group_index_array.push_back(i))) {
-          LOG_WARN("push back group index failed", K(i), K(ret));
+          LOG_WDIAG("push back group index failed", K(i), K(ret));
         }
       }
     }
 
     for (int64_t i = 0; OB_SUCC(ret) && i < group_index_array.count(); i++) {
       if (OB_FAIL(table_index_array.push_back(group_index_array.at(i)))) {
-        LOG_WARN("push back group index failed", "group index", group_index_array.at(i), K(ret));
+        LOG_WDIAG("push back group index failed", "group index", group_index_array.at(i), K(ret));
       }
     }
   } else {
@@ -4554,21 +4573,21 @@ int ObDbConfigLogicDb::get_db_and_table_index(ObShardRule *shard_rule,
         && OB_FAIL(ObShardRule::get_physic_index_array(sql_result, shard_rule->tb_rules_,
                                                        shard_rule->tb_size_, testload_type,
                                                        table_index_array))) {
-      LOG_WARN("fail to get physic tb index", KPC(shard_rule), K(ret));
+      LOG_WDIAG("fail to get physic tb index", KPC(shard_rule), K(ret));
     }
 
     // if do not get sharding info, scall all table
     if (OB_SUCC(ret) && table_index_array.empty()) {
       for (int64_t i = 0; OB_SUCC(ret) && i < shard_rule->tb_size_; i++) {
         if (OB_FAIL(table_index_array.push_back(i))) {
-          LOG_WARN("table index array push back failed", K(i), K(ret));
+          LOG_WDIAG("table index array push back failed", K(i), K(ret));
         }
       }
     }
 
     for (int64_t i = 0; OB_SUCC(ret) && i < table_index_array.count(); i++) {
       if (OB_FAIL(group_index_array.push_back(table_index_array.at(i) / route_hint))) {
-        LOG_WARN("push back group index failed", "table index", table_index_array.at(i),
+        LOG_WDIAG("push back group index failed", "table index", table_index_array.at(i),
                  K(route_hint), K(ret));
       }
     }
@@ -4591,7 +4610,7 @@ int ObDbConfigLogicDb::get_shard_prop_by_connector(ObIArray<ObShardConnector*> &
     }
 
     if (OB_FAIL(shard_prop_array.push_back(shard_prop))) {
-      LOG_WARN("push back shard prop failed", KP(shard_prop), K(ret));
+      LOG_WDIAG("push back shard prop failed", KP(shard_prop), K(ret));
     }
   }
 
@@ -4612,10 +4631,10 @@ int ObDbConfigLogicDb::get_shard_connector_by_index(ObShardRule *shard_rule,
   ObShardTpo *shard_tpo = NULL;
 
   if (OB_FAIL(get_shard_tpo(shard_tpo))) {
-    LOG_WARN("fail to get shard tpo info", K(ret));
+    LOG_WDIAG("fail to get shard tpo info", K(ret));
   } else if (OB_ISNULL(shard_tpo)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("shard tpo info is null", K(ret));
+    LOG_WDIAG("shard tpo info is null", K(ret));
   }
 
   // acquire shard_connector
@@ -4628,15 +4647,15 @@ int ObDbConfigLogicDb::get_shard_connector_by_index(ObShardRule *shard_rule,
                                                    shard_rule->db_prefix_.config_string_,
                                                    shard_rule->db_tail_.config_string_,
                                                    group_name, OB_MAX_DATABASE_NAME_LENGTH))) {
-      LOG_WARN("fail to get real group name", K(group_index), KPC(shard_rule), K(ret));
+      LOG_WDIAG("fail to get real group name", K(group_index), KPC(shard_rule), K(ret));
     } else if (OB_FAIL(shard_tpo->get_group_cluster(ObString::make_string(static_cast<char*>(group_name)), gc_info))) {
-      LOG_WARN("group does not exist", K(group_name), K(ret));
+      LOG_WDIAG("group does not exist", K(group_name), K(ret));
     } else if (OB_ISNULL(gc_info)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("group cluster info is null", K(ret));
+      LOG_WDIAG("group cluster info is null", K(ret));
     } else if (-1 == es_index || OBPROXY_MAX_DBMESH_ID == es_index) {
       if (OB_FAIL(get_es_index_by_gc(gc_info, shard_rule, testload_type, is_read_stmt, sql_result, es_index))) {
-        LOG_WARN("fail to get es index", K(gc_info), K(shard_rule), K(testload_type), K(is_read_stmt), K(ret));
+        LOG_WDIAG("fail to get es index", K(gc_info), K(shard_rule), K(testload_type), K(is_read_stmt), K(ret));
       }
     }
 
@@ -4645,12 +4664,12 @@ int ObDbConfigLogicDb::get_shard_connector_by_index(ObShardRule *shard_rule,
       ObShardConnector *shard_conn = NULL;
       if (TESTLOAD_NON != testload_type) {
         if (OB_FAIL(get_testload_shard_connector(shard_name, testload_prefix_.config_string_, shard_conn))) {
-          LOG_WARN("testload shard connector not exist", K(ret), K(shard_name), K(testload_prefix_));
+          LOG_WDIAG("testload shard connector not exist", K(ret), K(shard_name), K(testload_prefix_));
         }
       } else if (OB_FAIL(get_shard_connector(shard_name, shard_conn))) {
-        LOG_WARN("shard connector does not exist", K(shard_name), K(ret));
+        LOG_WDIAG("shard connector does not exist", K(shard_name), K(ret));
       } else if (NULL != shard_conn && OB_FAIL(shard_connector_array.push_back(shard_conn))) {
-        LOG_WARN("push back shard conn failed", K(shard_conn), K(ret));
+        LOG_WDIAG("push back shard conn failed", K(shard_conn), K(ret));
       }
     }
   } // end group_index_array
@@ -4679,7 +4698,7 @@ int ObDbConfigLogicDb::get_table_name_by_index(ObSqlParseResult &parse_result,
   ObHashMapWrapper<ObString, ObString> table_name_map_wrapper;
   if (OB_FAIL(table_name_map_wrapper.init(OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM,
                                           ObModIds::OB_HASH_ALIAS_TABLE_MAP))) {
-    LOG_WARN("fail to init table name map", K(ret));
+    LOG_WDIAG("fail to init table name map", K(ret));
   }
 
   for (int64_t i = 0; OB_SUCC(ret) && i < table_index_array.count(); i++) {
@@ -4693,10 +4712,10 @@ int ObDbConfigLogicDb::get_table_name_by_index(ObSqlParseResult &parse_result,
       ObProxyExprTable *table_expr = NULL;
       if (OB_ISNULL(expr)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("expr is null, unexpected", K(ret));
+        LOG_WDIAG("expr is null, unexpected", K(ret));
       } else if (OB_ISNULL(table_expr = dynamic_cast<ObProxyExprTable*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to cast to table expr", K(expr), K(ret));
+        LOG_WDIAG("fail to cast to table expr", K(expr), K(ret));
       } else {
         ObString &sql_table_name = table_expr->get_table_name();
         ObString hint_table;
@@ -4704,17 +4723,17 @@ int ObDbConfigLogicDb::get_table_name_by_index(ObSqlParseResult &parse_result,
         if (OB_FAIL(get_real_table_name(sql_table_name, sql_result,
                                         real_table_name, OB_MAX_TABLE_NAME_LENGTH,
                                         tb_index, hint_table, testload_type))) {
-          LOG_WARN("fail to get real table name", K(sql_table_name), K(tb_index), K(testload_type), K(ret));
+          LOG_WDIAG("fail to get real table name", K(sql_table_name), K(tb_index), K(testload_type), K(ret));
         } else if (OB_FAIL(ObProxyShardUtils::add_table_name_to_map(allocator, table_name_map_wrapper.get_hash_map(),
                                                                     sql_table_name, real_table_name))) {
-          LOG_WARN("fail to add table name to map", K(sql_table_name), K(real_table_name), K(ret));
+          LOG_WDIAG("fail to add table name to map", K(sql_table_name), K(real_table_name), K(ret));
         }
       }
     }
 
     if (OB_SUCC(ret)) {
       if (OB_FAIL(table_name_map_array.push_back(table_name_map_wrapper))) {
-        LOG_WARN("fail to push back table name map", K(ret));
+        LOG_WDIAG("fail to push back table name map", K(ret));
       }
     }
   }
@@ -4739,18 +4758,18 @@ int ObDbConfigLogicDb::get_sharding_select_info(const common::ObString &table_na
   ObSEArray<int64_t, 4> table_index_array;
 
   if (OB_FAIL(get_shard_rule(shard_rule, table_name))) {
-    LOG_WARN("fail to get shard rule", K(table_name), K(ret));
+    LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
   } else if (OB_FAIL(get_db_and_table_index(shard_rule, parse_result, testload_type,
                                             group_index_array, table_index_array))) {
-    LOG_WARN("fail to get db and table index", KPC(shard_rule), K(testload_type), K(ret));
+    LOG_WDIAG("fail to get db and table index", KPC(shard_rule), K(testload_type), K(ret));
   } else if (OB_FAIL(get_shard_connector_by_index(shard_rule, parse_result, testload_type, is_read_stmt,
                                                   es_index, group_index_array, shard_connector_array))) {
-    LOG_WARN("fail to get shard connector", KPC(shard_rule), K(testload_type), K(is_read_stmt), K(es_index), K(ret));
+    LOG_WDIAG("fail to get shard connector", KPC(shard_rule), K(testload_type), K(is_read_stmt), K(es_index), K(ret));
   } else if (OB_FAIL(get_shard_prop_by_connector(shard_connector_array, shard_prop_array))) {
-    LOG_WARN("fail to get shard prop", K(ret));
+    LOG_WDIAG("fail to get shard prop", K(ret));
   } else if (OB_FAIL(get_table_name_by_index(parse_result, testload_type,
                                              allocator, table_index_array, table_name_map_array))) {
-    LOG_WARN("fail to get real table name", KPC(shard_rule), K(testload_type), K(ret));
+    LOG_WDIAG("fail to get real table name", KPC(shard_rule), K(testload_type), K(ret));
   }
 
   return ret;

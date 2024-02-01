@@ -26,6 +26,7 @@
 #include "obutils/ob_config_server_processor.h"
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
 #include "prometheus/ob_route_prometheus.h"
+#include "proxy/route/ob_route_diagnosis.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -87,6 +88,20 @@ void ObTableRouteParam::reset()
   tenant_version_ = 0;
   current_idc_name_.reset();
   is_need_force_flush_ = false;
+  binlog_service_ip_.reset();
+  set_route_diagnosis(NULL);
+}
+
+void ObTableRouteParam::set_route_diagnosis(ObRouteDiagnosis *route_diagnosis)
+{
+  if (OB_NOT_NULL(route_diagnosis_)) {
+    route_diagnosis_->dec_ref();
+    route_diagnosis_ = NULL;
+  }
+  if (OB_NOT_NULL(route_diagnosis)) {
+    route_diagnosis_ = route_diagnosis;
+    route_diagnosis_->inc_ref();
+  }
 }
 
 int64_t ObTableRouteParam::to_string(char *buf, const int64_t buf_len) const
@@ -112,7 +127,7 @@ ObTableEntryCont::ObTableEntryCont()
     : ObAsyncCommonTask(NULL, "table_entry_build_task"), magic_(OB_TABLE_ENTRY_CONT_MAGIC_ALIVE),
       table_param_(),
       name_buf_(NULL), name_buf_len_(0), te_op_(LOOKUP_MIN_OP), state_(LOOKUP_TABLE_ENTRY_STATE),
-      newest_table_entry_(NULL), table_entry_(NULL), table_cache_(NULL), need_notify_(true)
+      newest_table_entry_(NULL), table_entry_(NULL), table_cache_(NULL), need_notify_(true), mysql_client_(NULL)
 {
   SET_HANDLER(&ObTableEntryCont::main_handler);
 }
@@ -123,14 +138,15 @@ int ObTableEntryCont::init(ObTableCache &table_cache, ObTableRouteParam &table_p
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!table_param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(table_param), K(ret));
+    LOG_WDIAG("invalid input value", K(table_param), K(ret));
   } else if (OB_FAIL(deep_copy_table_param(table_param))) {
-    LOG_WARN("fail to deep copy route param", K(ret));
+    LOG_WDIAG("fail to deep copy route param", K(ret));
   } else {
     table_cache_ = &table_cache;
     action_.set_continuation(table_param.cont_);
     mutex_ = table_param.cont_->mutex_;
     submit_thread_ = table_param.cont_->mutex_->thread_holding_;
+    binlog_service_ip_ = table_param.binlog_service_ip_;
     if (NULL != table_entry) {
       table_entry->inc_ref();
       if (false == table_param_.is_need_force_flush_) {
@@ -155,11 +171,11 @@ void ObTableEntryCont::kill_this()
   }
   int ret = OB_SUCCESS;
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
 
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
 
   if (NULL != table_entry_) {
@@ -170,6 +186,11 @@ void ObTableEntryCont::kill_this()
   if (NULL != newest_table_entry_) {
     newest_table_entry_->dec_ref();
     newest_table_entry_ = NULL;
+  }
+
+  if (NULL != mysql_client_) {
+    mysql_client_->kill_this();
+    mysql_client_ = NULL;
   }
 
   table_cache_ = NULL;
@@ -245,7 +266,7 @@ const char *ObTableEntryCont::get_state_name(const ObTableEntryLookupState state
       break;
     default:
       name = "Unknown State";
-      LOG_WARN("Unknown State", K(state));
+      LOG_WDIAG("Unknown State", K(state));
       break;
   }
   return name;
@@ -259,23 +280,23 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
             "event", get_event_name(event), K(data));
   if (OB_UNLIKELY(OB_TABLE_ENTRY_CONT_MAGIC_ALIVE != magic_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this table entry cont is dead", K_(magic), K(ret));
+    LOG_EDIAG("this table entry cont is dead", K_(magic), K(ret));
   } else if (OB_UNLIKELY(this_ethread() != mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this_ethread must be equal with thread_holding", "this_ethread",
+    LOG_EDIAG("this_ethread must be equal with thread_holding", "this_ethread",
               this_ethread(), "thread_holding", mutex_->thread_holding_, K(ret));
   } else {
     pending_action_ = NULL;
     switch (event) {
       case TABLE_ENTRY_LOOKUP_CACHE_EVENT: {
         if (OB_FAIL(lookup_entry_in_cache())) {
-          LOG_WARN("fail to lookup enty in cache", K(ret));
+          LOG_WDIAG("fail to lookup enty in cache", K(ret));
         }
         break;
       }
       case TABLE_ENTRY_LOOKUP_REMOTE_EVENT: {
         if (OB_FAIL(lookup_entry_remote())) {
-          LOG_WARN("fail to lookup entry remote", K(ret));
+          LOG_WDIAG("fail to lookup entry remote", K(ret));
         }
         break;
       }
@@ -287,15 +308,15 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
       __attribute__ ((fallthrough));
       case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
         if (OB_FAIL(handle_client_resp(data))) {
-          LOG_WARN("fail to handle client resp", K(ret));
+          LOG_WDIAG("fail to handle client resp", K(ret));
         } else if (OB_FAIL(handle_lookup_remote())) {
-          LOG_WARN("fail to handle lookup remote done", K(ret));
+          LOG_WDIAG("fail to handle lookup remote done", K(ret));
         }
         // if failed, treat as lookup done and  will inform out
         if (LOOKUP_DONE_STATE == state_ || OB_FAIL(ret)) {
           ret = OB_SUCCESS;
           if (OB_FAIL(handle_lookup_remote_done())) {
-            LOG_ERROR("fail to handle lookup remote done", K(ret));
+            LOG_EDIAG("fail to handle lookup remote done", K(ret));
           }
         }
 
@@ -304,11 +325,11 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
       case TABLE_ENTRY_CHAIN_NOTIFY_CALLER_EVENT: {
         bool is_replaced = false;
         if (OB_FAIL(replace_building_state_entry(is_replaced))) {
-          LOG_WARN("fail to replace buding state entry", K(ret));
+          LOG_WDIAG("fail to replace buding state entry", K(ret));
         } else {
           if (is_replaced) {
             if (OB_FAIL(handle_chain_notify_caller())) {
-              LOG_WARN("fail to chain notify caller", K(ret));
+              LOG_WDIAG("fail to chain notify caller", K(ret));
             }
           }
         }
@@ -316,13 +337,13 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
       }
       case TABLE_ENTRY_NOTIFY_CALLER_EVENT: {
         if (OB_FAIL(notify_caller())) {
-          LOG_WARN("fail to notify caller", K(ret));
+          LOG_WDIAG("fail to notify caller", K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknow event", K(event), K(data), K(ret));
+        LOG_WDIAG("unknow event", K(event), K(data), K(ret));
         break;
       }
     }
@@ -342,7 +363,7 @@ inline int ObTableEntryCont::deep_copy_table_param(ObTableRouteParam &param)
   if (&table_param_ != &param) {
     if (!param.is_valid()) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid input value", K(param), K(ret));
+      LOG_WDIAG("invalid input value", K(param), K(ret));
     } else {
       table_param_.cont_ = param.cont_;
       table_param_.force_renew_ = param.force_renew_;
@@ -354,6 +375,7 @@ inline int ObTableEntryCont::deep_copy_table_param(ObTableRouteParam &param)
       table_param_.is_partition_table_route_supported_ = param.is_partition_table_route_supported_;
       table_param_.is_oracle_mode_ = param.is_oracle_mode_;
       table_param_.is_need_force_flush_ = param.is_need_force_flush_;
+      table_param_.set_route_diagnosis(param.route_diagnosis_);
       if (!param.current_idc_name_.empty()) {
         MEMCPY(table_param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
         table_param_.current_idc_name_.assign_ptr(table_param_.current_idc_name_buf_, param.current_idc_name_.length());
@@ -371,9 +393,9 @@ inline int ObTableEntryCont::deep_copy_table_param(ObTableRouteParam &param)
       name_buf_ = static_cast<char *>(op_fixed_mem_alloc(name_buf_len_));
       if (OB_ISNULL(name_buf_)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem", K_(name_buf_len), K(ret));
+        LOG_WDIAG("fail to alloc mem", K_(name_buf_len), K(ret));
       } else if (OB_FAIL(table_param_.name_.deep_copy(param.name_, name_buf_, name_buf_len_))) {
-        LOG_WARN("fail to deep copy table entry name", K(ret));
+        LOG_WDIAG("fail to deep copy table entry name", K(ret));
       }
 
       if (OB_FAIL(ret) && (NULL != name_buf_)) {
@@ -409,11 +431,11 @@ inline int ObTableEntryCont::set_next_state()
       if (OB_ISNULL(newest_table_entry_)) {
         next_state = LOOKUP_DONE_STATE;
         ret = OB_ERR_NULL_VALUE;
-        LOG_WARN("newest_table_entry is null, maybe client_vc disconnect or timeout", K(ret));
+        LOG_WDIAG("newest_table_entry is null, maybe client_vc disconnect or timeout", K(ret));
       } else if (OB_ISNULL(newest_table_entry_->get_part_info())) {
         next_state = LOOKUP_DONE_STATE;
         ret = OB_ERR_NULL_VALUE;
-        LOG_WARN("part info is null, maybe client_vc disconnect or timeout", K(ret));
+        LOG_WDIAG("part info is null, maybe client_vc disconnect or timeout", K(ret));
       } else if (newest_table_entry_->get_part_info()->has_unknown_part_key()) {
         next_state = LOOKUP_DONE_STATE;
       } else if (newest_table_entry_->get_part_info()->has_first_part()) {
@@ -427,11 +449,11 @@ inline int ObTableEntryCont::set_next_state()
       if (OB_ISNULL(newest_table_entry_)) {
         next_state = LOOKUP_DONE_STATE;
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("newest_table_entry should not be null here", K(ret));
+        LOG_WDIAG("newest_table_entry should not be null here", K(ret));
       } else if (OB_ISNULL(newest_table_entry_->get_part_info())) {
         next_state = LOOKUP_DONE_STATE;
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("part info should not be null here", K(ret));
+        LOG_WDIAG("part info should not be null here", K(ret));
       } else if (newest_table_entry_->get_part_info()->has_sub_part()) {
         next_state = LOOKUP_SUB_PART_STATE;
       } else {
@@ -446,7 +468,7 @@ inline int ObTableEntryCont::set_next_state()
     case LOOKUP_DONE_STATE:
     default:
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected state", K_(state), K(ret));
+      LOG_WDIAG("unexpected state", K_(state), K(ret));
       break;
   }
 
@@ -460,12 +482,14 @@ inline int ObTableEntryCont::set_next_state()
 inline int ObTableEntryCont::handle_client_resp(void *data)
 {
   int ret = OB_SUCCESS;
+  int64_t error_code = 0;
+  int tmp_ret = OB_SUCCESS;
   if (NULL != data) {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
     ObResultSetFetcher *rs_fetcher = NULL;
     if (resp->is_resultset_resp()) {
       if (OB_FAIL(resp->get_resultset_fetcher(rs_fetcher))) {
-        LOG_WARN("fail to get resultset fetcher", K(ret));
+        LOG_WDIAG("fail to get resultset fetcher", K(ret));
       } else if (OB_ISNULL(rs_fetcher)) {
         ret = OB_ERR_UNEXPECTED;
       } else {
@@ -488,13 +512,13 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
           case LOOKUP_DONE_STATE:
           default:
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("unexpect state", K_(state), K(ret));
+            LOG_WDIAG("unexpect state", K_(state), K(ret));
             break;
         }
       }
     } else {
-      const int64_t error_code = resp->get_err_code();
-      LOG_WARN("fail to get table entry from remote", "name", table_param_.name_, K(error_code));
+      error_code = resp->get_err_code();
+      LOG_WDIAG("fail to get table entry from remote", "name", table_param_.name_, K(error_code));
       PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_REMOTE_FAIL);
       ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, TBALE_ENTRY, false, false);
     }
@@ -505,7 +529,19 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
     PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, TBALE_ENTRY, false, false);
     ret = OB_ERR_UNEXPECTED; // use to free newest_table_entry_
-    LOG_WARN("fail to get table entry from remote", "name", table_param_.name_, K(ret));
+    LOG_WDIAG("fail to get table entry from remote", "name", table_param_.name_, K(ret));
+  }
+  if (ret != OB_SUCCESS || error_code != OB_SUCCESS) {
+    tmp_ret = ret;
+    if (!table_param_.name_.is_all_dummy_table()) {
+      ROUTE_DIAGNOSIS(table_param_.route_diagnosis_,
+                      FETCH_TABLE_RELATED_DATA,
+                      fetch_table_related_data,
+                      ret,
+                      error_code,
+                      state_,
+                      newest_table_entry_);
+    }
   }
 
   if (OB_FAIL(ret) && NULL != newest_table_entry_) {
@@ -517,7 +553,20 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
 
   ret = OB_SUCCESS;
   if (OB_FAIL(set_next_state())) {
-    LOG_WARN("fail to set next state", "state", get_state_name(state_));
+    LOG_WDIAG("fail to set next state", "state", get_state_name(state_));
+  }
+  if (OB_SUCCESS == tmp_ret &&
+      OB_SUCCESS == error_code && 
+      ObTableEntryLookupState::LOOKUP_DONE_STATE == state_) {
+    if (!table_param_.name_.is_all_dummy_table()) {
+      ROUTE_DIAGNOSIS(table_param_.route_diagnosis_,
+                      FETCH_TABLE_RELATED_DATA,
+                      fetch_table_related_data,
+                      ret,
+                      error_code,
+                      state_,
+                      newest_table_entry_);
+    }
   }
   return ret;
 }
@@ -529,14 +578,14 @@ inline int ObTableEntryCont::handle_table_entry_resp(ObResultSetFetcher &rs_fetc
                                                        table_param_.cr_version_,
                                                        table_param_.cr_id_,
                                                        newest_table_entry_))) {
-    LOG_WARN("fail to alloc and init table entry", "name", table_param_.name_, K(ret));
+    LOG_WDIAG("fail to alloc and init table entry", "name", table_param_.name_, K(ret));
   } else if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("table entry should not be NULL", K_(newest_table_entry), K(ret));
+    LOG_WDIAG("table entry should not be NULL", K_(newest_table_entry), K(ret));
   } else if (OB_FAIL(ObRouteUtils::fetch_table_entry(rs_fetcher,
                                                      *newest_table_entry_,
                                                      table_param_.cluster_version_))) {
-    LOG_WARN("fail to fetch one table entry info", K(ret));
+    LOG_WDIAG("fail to fetch one table entry info", K(ret));
   } else {
     newest_table_entry_->set_tenant_version(table_param_.tenant_version_);
   }
@@ -547,13 +596,13 @@ int ObTableEntryCont::handle_binlog_entry_resp(ObResultSetFetcher &rs_fetcher)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(table_param_.name_, 0, 0, newest_table_entry_))) {
-    LOG_WARN("fail to alloc and init table entry", "name", table_param_.name_, K(ret));
+    LOG_WDIAG("fail to alloc and init table entry", "name", table_param_.name_, K(ret));
   } else if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("table entry should not be NULL", K_(newest_table_entry), K(ret));
+    LOG_WDIAG("table entry should not be NULL", K_(newest_table_entry), K(ret));
   } else if (OB_FAIL(ObRouteUtils::fetch_binlog_entry(rs_fetcher,
                                                       *newest_table_entry_))) {
-    LOG_WARN("fail to fetch binlog entry info", K(ret));
+    LOG_WDIAG("fail to fetch binlog entry info", K(ret));
   }
 
   return ret;
@@ -565,18 +614,18 @@ inline int ObTableEntryCont::handle_part_info_resp(ObResultSetFetcher &rs_fetche
   ObProxyPartInfo *part_info = NULL;
   if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("entry should not be null here", K(ret));
+    LOG_WDIAG("entry should not be null here", K(ret));
   } else if (OB_FAIL(newest_table_entry_->alloc_part_info())) {
-    LOG_WARN("fail to alloc part info", K_(newest_table_entry), K(ret));
+    LOG_WDIAG("fail to alloc part info", K_(newest_table_entry), K(ret));
   } else if (OB_ISNULL(part_info = newest_table_entry_->get_part_info())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("part info should not be null here", K(ret));
+    LOG_WDIAG("part info should not be null here", K(ret));
   } else if (FALSE_IT(part_info->set_oracle_mode(table_param_.is_oracle_mode_))) {
     // do nothing
   } else if (OB_FAIL(ObRouteUtils::fetch_part_info(rs_fetcher, *part_info, table_param_.cluster_version_))) {
     PROCESSOR_INCREMENT_DYN_STAT(GET_PART_INFO_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
-    LOG_WARN("fail to fetch part info", K(ret));
+    LOG_WDIAG("fail to fetch part info", K(ret));
   } else {
     PROCESSOR_INCREMENT_DYN_STAT(GET_PART_INFO_FROM_REMOTE_SUCC);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, true);
@@ -590,14 +639,14 @@ inline int ObTableEntryCont::handle_first_part_resp(ObResultSetFetcher &rs_fetch
   ObProxyPartInfo *part_info = NULL;
   if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("entry should not be null here", K(ret));
+    LOG_WDIAG("entry should not be null here", K(ret));
   } else if (OB_ISNULL(part_info = newest_table_entry_->get_part_info())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("part info should not be null here", K(ret));
+    LOG_WDIAG("part info should not be null here", K(ret));
   } else if (OB_FAIL(ObRouteUtils::fetch_first_part(rs_fetcher, *part_info, table_param_.cluster_version_))) {
     PROCESSOR_INCREMENT_DYN_STAT(GET_FIRST_PART_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
-    LOG_WARN("fail to fetch part info", K(ret));
+    LOG_WDIAG("fail to fetch part info", K(ret));
   } else {
     PROCESSOR_INCREMENT_DYN_STAT(GET_FIRST_PART_FROM_REMOTE_SUCC);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, true);
@@ -611,14 +660,14 @@ inline int ObTableEntryCont::handle_sub_part_resp(ObResultSetFetcher &rs_fetcher
   ObProxyPartInfo *part_info = NULL;
   if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("entry should not be null here", K(ret));
+    LOG_WDIAG("entry should not be null here", K(ret));
   } else if (OB_ISNULL(part_info = newest_table_entry_->get_part_info())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("part info should not be null here", K(ret));
+    LOG_WDIAG("part info should not be null here", K(ret));
   } else if (OB_FAIL(ObRouteUtils::fetch_sub_part(rs_fetcher, *part_info, table_param_.cluster_version_))) {
     PROCESSOR_INCREMENT_DYN_STAT(GET_SUB_PART_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
-    LOG_WARN("fail to fetch part info", K(ret));
+    LOG_WDIAG("fail to fetch part info", K(ret));
   } else {
     PROCESSOR_INCREMENT_DYN_STAT(GET_SUB_PART_FROM_REMOTE_SUCC);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, true);
@@ -650,7 +699,7 @@ inline int ObTableEntryCont::handle_lookup_remote()
     case LOOKUP_TABLE_ENTRY_STATE:
     default:
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpect state", K_(state), K(ret));
+      LOG_WDIAG("unexpect state", K_(state), K(ret));
       break;
   }
 
@@ -695,26 +744,26 @@ inline int ObTableEntryCont::handle_lookup_remote_done()
     case LOOKUP_REMOTE_DIRECT_OP: {
       bool is_add_succ = false;
       if (OB_FAIL(add_to_global_cache(is_add_succ))) {
-        LOG_WARN("fail to add to global cache", K(ret));
+        LOG_WDIAG("fail to add to global cache", K(ret));
       } else if (notify_caller()) {
-        LOG_WARN("fail to notify caller", K(ret));
+        LOG_WDIAG("fail to notify caller", K(ret));
       }
       break;
     }
     case LOOKUP_REMOTE_FOR_UPDATE_OP: {
       if (OB_FAIL(handle_lookup_remote_for_update())) {
-        LOG_WARN("fail to handle lookup remote fro update", K(ret));
+        LOG_WDIAG("fail to handle lookup remote fro update", K(ret));
       }
       break;
     }
     case LOOKUP_REMOTE_WITH_BUILDING_ENTRY_OP: {
       bool is_replaced = false;
       if (OB_FAIL(replace_building_state_entry(is_replaced))) {
-        LOG_WARN("fail to replace buding state entry", K(ret));
+        LOG_WDIAG("fail to replace buding state entry", K(ret));
       } else {
         if (is_replaced) {
           if (OB_FAIL(handle_chain_notify_caller())) {
-            LOG_WARN("fail to chain notify caller", K(ret));
+            LOG_WDIAG("fail to chain notify caller", K(ret));
           }
         }
       }
@@ -722,7 +771,7 @@ inline int ObTableEntryCont::handle_lookup_remote_done()
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected op", K_(te_op), K(ret));
+      LOG_WDIAG("unexpected op", K_(te_op), K(ret));
     }
   }
   return ret;
@@ -736,7 +785,7 @@ inline int ObTableEntryCont::add_to_global_cache(bool &add_succ)
   if (OB_LIKELY(NULL != entry) && OB_LIKELY(entry->is_valid())) {
     entry->inc_ref(); // Attention!! before add to table cache, must inc_ref
     if (OB_FAIL(table_cache_->add_table_entry(*entry, false))) {
-      LOG_WARN("fail to add table entry", KPC(entry), K(ret));
+      LOG_WDIAG("fail to add table entry", KPC(entry), K(ret));
       entry->dec_ref(); // paired the ref count above
     } else {
       add_succ = true;
@@ -750,7 +799,7 @@ inline int ObTableEntryCont::handle_lookup_remote_for_update()
   int ret = OB_SUCCESS;
   bool is_add_succ = false;
   if (OB_FAIL(add_to_global_cache(is_add_succ))) {
-    LOG_WARN("fail to add to global cache", K(ret));
+    LOG_WDIAG("fail to add to global cache", K(ret));
     ret = OB_SUCCESS; // ignore ret;
   }
 
@@ -790,7 +839,7 @@ inline int ObTableEntryCont::handle_lookup_remote_for_update()
   }
 
   if (OB_FAIL(notify_caller())) {
-    LOG_WARN("fail to notify caller", K(ret));
+    LOG_WDIAG("fail to notify caller", K(ret));
   }
   return ret;
 }
@@ -805,28 +854,28 @@ inline int ObTableEntryCont::replace_building_state_entry(bool &is_replaced)
   MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread()); // release lock as soon as possible
   if (lock_bucket.is_locked()) {
     if (OB_FAIL(table_cache_->run_todo_list(table_cache_->part_num(hash)))) {
-      LOG_WARN("fail to run todo list", K(ret));
+      LOG_WDIAG("fail to run todo list", K(ret));
     } else if (OB_ISNULL(table_entry_)) { // building state table entry
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("table entry can not be NULL", K(ret));
+      LOG_WDIAG("table entry can not be NULL", K(ret));
     } else {
       is_replaced = true;
       bool is_add_succ = false;
       if (OB_FAIL(add_to_global_cache(is_add_succ))) {
-        LOG_WARN("fail to add to global cache", K(ret));
+        LOG_WDIAG("fail to add to global cache", K(ret));
         ret = OB_SUCCESS;
       }
       if (!is_add_succ) {
         // if fail to add, should remove the building state table entry
         if (OB_FAIL(table_cache_->remove_table_entry(key))) {
-          LOG_WARN("fail to remote table entry", K(key), K(ret));
+          LOG_WDIAG("fail to remote table entry", K(key), K(ret));
         }
       }
     }
   } else { // reschedule
     if (OB_FAIL(schedule_in(this, SCHEDULE_TABLE_ENTRY_LOOKUP_INTERVAL,
                             TABLE_ENTRY_CHAIN_NOTIFY_CALLER_EVENT))) {
-      LOG_WARN("fail to schedule in", K(ret));
+      LOG_WDIAG("fail to schedule in", K(ret));
     }
   }
   return ret;
@@ -846,7 +895,7 @@ inline int ObTableEntryCont::handle_chain_notify_caller()
     ++pending_count;
     ObEThread *submit_thread = cur_te_cont->submit_thread_;
     if (OB_ISNULL(submit_thread)) {
-      LOG_ERROR("submit thread can not be NULL", K(cur_te_cont));
+      LOG_EDIAG("submit thread can not be NULL", K(cur_te_cont));
     } else {
       if (NULL != newest_table_entry_) {
         newest_table_entry_->inc_ref();
@@ -868,7 +917,7 @@ inline int ObTableEntryCont::handle_chain_notify_caller()
       }
       if (need_schedule) {
         if (OB_ISNULL(submit_thread->schedule_imm(cur_te_cont, TABLE_ENTRY_NOTIFY_CALLER_EVENT))) {
-          LOG_ERROR("fail to schedule imm", K(cur_te_cont));
+          LOG_EDIAG("fail to schedule imm", K(cur_te_cont));
           if (NULL != cur_te_cont->newest_table_entry_) {
             cur_te_cont->newest_table_entry_->dec_ref();
             cur_te_cont->newest_table_entry_ = NULL;
@@ -886,7 +935,7 @@ inline int ObTableEntryCont::handle_chain_notify_caller()
     // no need inc newest_table_entry's ref
     LOG_DEBUG("will notify self caller directly", K(ret));
     if (OB_FAIL(notify_caller())) {
-      LOG_WARN("fail to call notify caller", K(ret));
+      LOG_WDIAG("fail to call notify caller", K(ret));
       ret = OB_SUCCESS; // ignore ret
     }
   }
@@ -908,29 +957,48 @@ inline int ObTableEntryCont::lookup_entry_remote()
   if (table_param_.name_.table_name_ == OB_ALL_BINLOG_DUMMY_TNAME) {
     if (OB_FAIL(ObRouteUtils::get_binlog_entry_sql(sql, OB_SHORT_SQL_LENGTH,
           table_param_.name_.cluster_name_, table_param_.name_.tenant_name_))) {
-      LOG_WARN("fail to get binlog entry sql", K(ret));
+      LOG_WDIAG("fail to get binlog entry sql", K(ret));
     } else {
       state_ = LOOKUP_BINLOG_ENTRY_STATE;
       ObMysqlRequestParam request_param(sql);
       ObAddr addr;
-      if (OB_FAIL(addr.parse_from_cstring(get_global_proxy_config().binlog_service_ip.str()))) {
-        LOG_WARN("parse from cstring failed", K(ret));
+      if (OB_FAIL(addr.parse_from_cstring(binlog_service_ip_.ptr()))) {
+        LOG_WDIAG("parse from cstring failed", K_(binlog_service_ip), K(ret));
       } else {
-        request_param.set_target_addr(addr);
-        request_param.ob_client_flags_.client_flags_.OB_CLIENT_SKIP_AUTOCOMMIT = 1;
-        if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-            LOG_WARN("fail to aysnc read", K(sql), K(addr), K(ret));
+        if (OB_ISNULL(mysql_client_)) {
+          mysql_client_ = op_alloc(ObMysqlClient);
+          if (OB_ISNULL(mysql_client_)) {
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_WDIAG("fail to allocate ObMysqlClient", K(ret));
+          } else if (OB_FAIL(mysql_client_->init_binlog_client(table_param_.name_.cluster_name_,
+                                                               table_param_.name_.tenant_name_))) {
+            LOG_WDIAG("fail to init binlog client", K_(table_param), K(ret));
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          request_param.set_target_addr(addr);
+          request_param.set_mysql_client(mysql_client_);
+          request_param.set_client_vc_type(ObMysqlRequestParam::CLIENT_VC_TYPE_BINLOG);
+          request_param.ob_client_flags_.client_flags_.OB_CLIENT_SKIP_AUTOCOMMIT = 1;
+          if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
+            LOG_WDIAG("fail to aysnc read", K(sql), K(addr), K(ret));
+          }
+        }
+        if (OB_FAIL(ret) && NULL != mysql_client_) {
+          mysql_client_->kill_this();
+          mysql_client_ = NULL;
         }
       }
     }
   } else {
     if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, table_param_.name_,
                                                   table_param_.is_need_force_flush_, table_param_.cluster_version_))) {
-      LOG_WARN("fail to get table entry sql", K(sql), K(ret));
+      LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
     } else {
       const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
       if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-        LOG_WARN("fail to nonblock read", K(sql), K_(table_param), K(ret));
+        LOG_WDIAG("fail to nonblock read", K(sql), K_(table_param), K(ret));
       }
     }
   }
@@ -938,7 +1006,7 @@ inline int ObTableEntryCont::lookup_entry_remote()
   if (OB_FAIL(ret)) {
     ret = OB_SUCCESS;
     if (OB_FAIL(schedule_imm(this, TABLE_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT))) {
-      LOG_WARN("fail to schedule in", K(ret));
+      LOG_WDIAG("fail to schedule in", K(ret));
     }
   }
   return ret;
@@ -953,16 +1021,16 @@ inline int ObTableEntryCont::lookup_part_info_remote()
   sql[0] = '\0';
   if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("table entry should not be null", K(ret));
+    LOG_WDIAG("table entry should not be null", K(ret));
   } else if (OB_FAIL(ObRouteUtils::get_part_info_sql(sql, OB_SHORT_SQL_LENGTH,
                                                           newest_table_entry_->get_table_id(),
                                                           table_param_.name_,
                                                           table_param_.cluster_version_))) {
-    LOG_WARN("fail to get table entry sql", K(sql), K(ret));
+    LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
     if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-      LOG_WARN("fail to nonblock read", K(sql), K_(table_param), K(ret));
+      LOG_WDIAG("fail to nonblock read", K(sql), K_(table_param), K(ret));
     }
   }
   return ret;
@@ -977,18 +1045,18 @@ inline int ObTableEntryCont::lookup_first_part_remote()
   sql[0] = '\0';
   if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("table entry should not be null", K(ret));
+    LOG_WDIAG("table entry should not be null", K(ret));
   } else if (OB_FAIL(ObRouteUtils::get_first_part_sql(sql, OB_SHORT_SQL_LENGTH,
                                                       newest_table_entry_->get_table_id(),
                                                       (newest_table_entry_->get_part_info()->get_first_part_option().is_hash_part(table_param_.cluster_version_)
                                                        || newest_table_entry_->get_part_info()->get_first_part_option().is_key_part(table_param_.cluster_version_)),
                                                       table_param_.name_,
                                                       table_param_.cluster_version_))) {
-    LOG_WARN("fail to get table entry sql", K(sql), K(ret));
+    LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
     if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-      LOG_WARN("fail to nonblock read", K(sql), K_(table_param), K(ret));
+      LOG_WDIAG("fail to nonblock read", K(sql), K_(table_param), K(ret));
     }
   }
   return ret;
@@ -1003,17 +1071,17 @@ inline int ObTableEntryCont::lookup_sub_part_remote()
   sql[0] = '\0';
   if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("table entry should not be null", K(ret));
+    LOG_WDIAG("table entry should not be null", K(ret));
   } else if (OB_FAIL(ObRouteUtils::get_sub_part_sql(sql, OB_SHORT_SQL_LENGTH,
                                                     newest_table_entry_->get_table_id(),
                                                     newest_table_entry_->get_part_info()->is_template_table(),
                                                     table_param_.name_,
                                                     table_param_.cluster_version_))) {
-    LOG_WARN("fail to get table entry sql", K(sql), K(ret));
+    LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
   } else {
     const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
     if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-      LOG_WARN("fail to nonblock read", K(sql), K_(table_param), K(ret));
+      LOG_WDIAG("fail to nonblock read", K(sql), K_(table_param), K(ret));
     }
   }
   return ret;
@@ -1027,13 +1095,13 @@ inline int ObTableEntryCont::lookup_entry_in_cache()
   ObTableEntry *entry = NULL;
   if (OB_FAIL(ObTableProcessor::get_table_entry_from_global_cache(
                   table_param_, *table_cache_, this, action, entry, op))) {
-    LOG_WARN("fail to get table entry in global cache", K(ret));
+    LOG_WDIAG("fail to get table entry in global cache", K(ret));
   } else {
     switch (op) {
       case LOOKUP_PUSH_INTO_PENDING_LIST_OP: {
         if (NULL != action) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("action must be NULL here", K(action), K(ret));
+          LOG_WDIAG("action must be NULL here", K(action), K(ret));
         } else {
           table_entry_ = entry;
           entry = NULL;
@@ -1043,7 +1111,7 @@ inline int ObTableEntryCont::lookup_entry_in_cache()
       case LOOKUP_GLOBAL_CACHE_HIT_OP: {
         if (OB_ISNULL(entry)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("table entry must not be NULL here", K(entry), K(ret));
+          LOG_WDIAG("table entry must not be NULL here", K(entry), K(ret));
         } else {
           PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_GLOBAL_CACHE_HIT);
           ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, TBALE_ENTRY, true, true);
@@ -1051,7 +1119,7 @@ inline int ObTableEntryCont::lookup_entry_in_cache()
           newest_table_entry_ = entry;
           entry = NULL;
           if (OB_FAIL(notify_caller())) {
-            LOG_WARN("fail to notify caller", K(ret));
+            LOG_WDIAG("fail to notify caller", K(ret));
           }
         }
         break;
@@ -1059,7 +1127,7 @@ inline int ObTableEntryCont::lookup_entry_in_cache()
       case RETRY_LOOKUP_GLOBAL_CACHE_OP: { // fail to lock, reschedule
         if (OB_FAIL(schedule_in(this, SCHEDULE_TABLE_ENTRY_LOOKUP_INTERVAL,
                                 TABLE_ENTRY_LOOKUP_CACHE_EVENT))) {
-          LOG_WARN("fail to schedule in", K(ret));
+          LOG_WDIAG("fail to schedule in", K(ret));
         }
         break;
       }
@@ -1077,13 +1145,13 @@ inline int ObTableEntryCont::lookup_entry_in_cache()
         table_entry_ = entry;
         entry = NULL;
         if (OB_FAIL(lookup_entry_remote())) {
-          LOG_WARN("fail to lookup entry remote", K(ret));
+          LOG_WDIAG("fail to lookup entry remote", K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown op", K(op), K(ret));
+        LOG_WDIAG("unknown op", K(op), K(ret));
         break;
       }
     }
@@ -1097,15 +1165,15 @@ inline int ObTableEntryCont::schedule_in(ObContinuation *cont, const ObHRTime at
   int ret = OB_SUCCESS;
   if (OB_ISNULL(cont)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid cont", K(cont), K(ret));
+    LOG_WDIAG("invalid cont", K(cont), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action_ must be NULL here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action_ must be NULL here", K_(pending_action), K(ret));
   } else {
     pending_action_ = submit_thread_->schedule_in(cont, atimeout_in, event);
     if (OB_ISNULL(pending_action_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule imm", K_(pending_action), K(event), K(ret));
+      LOG_WDIAG("fail to schedule imm", K_(pending_action), K(event), K(ret));
     }
   }
   return ret;
@@ -1116,15 +1184,15 @@ inline int ObTableEntryCont::schedule_imm(ObContinuation *cont, const int event)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(cont)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid cont", K(cont), K(ret));
+    LOG_WDIAG("invalid cont", K(cont), K(ret));
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action_ must be NULL here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action_ must be NULL here", K_(pending_action), K(ret));
   } else {
     pending_action_ = submit_thread_->schedule_imm(cont, event);
     if (OB_ISNULL(pending_action_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule imm", K_(pending_action), K(event), K(ret));
+      LOG_WDIAG("fail to schedule imm", K_(pending_action), K(event), K(ret));
     }
   }
   return ret;
@@ -1146,7 +1214,7 @@ inline int ObTableEntryCont::notify_caller()
   if ((NULL != entry) && (entry->is_avail_state())) {
     ObTableRefHashMap &table_map = self_ethread().get_table_map();
     if (OB_FAIL(table_map.set(entry))) {
-      LOG_WARN("fail to set table map", KPC(entry), K(ret));
+      LOG_WDIAG("fail to set table map", KPC(entry), K(ret));
       ret = OB_SUCCESS; // ignore ret
     }
   }

@@ -16,7 +16,7 @@
 #include "proxy/mysqllib/ob_mysql_resp_analyzer.h"
 #include "proxy/mysqllib/ob_mysql_response.h"
 #include "proxy/mysqllib/ob_proxy_parser_utils.h"
-#include "proxy/mysqllib/ob_i_mysql_respone_analyzer.h"
+#include "proxy/mysqllib/ob_i_mysql_response_analyzer.h"
 
 namespace oceanbase
 {
@@ -36,9 +36,9 @@ class ObMysqlTransactionAnalyzer : public ObIMysqlRespAnalyzer
 {
 public:
   ObMysqlTransactionAnalyzer();
-  ~ObMysqlTransactionAnalyzer() {};
+  ~ObMysqlTransactionAnalyzer();
 
-  void reset();
+  virtual void reset();
   void destroy() { reset(); }
   // analyse trans data, and determine whether the trans and resp is completed
   //
@@ -94,7 +94,6 @@ private:
   bool is_in_resp_;
   bool is_resultset_resp_;
   bool is_current_in_trans_;
-
   ObRespResult result_;
   ObMysqlRespAnalyzer analyzer_;
 };

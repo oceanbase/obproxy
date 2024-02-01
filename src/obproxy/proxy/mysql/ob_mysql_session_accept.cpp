@@ -30,7 +30,7 @@ int ObMysqlSessionAccept::accept(ObNetVConnection *netvc, ObMIOBuffer *iobuf, Ob
   int ret = OB_SUCCESS;
   if (OB_ISNULL(netvc)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_NET_LOG(WARN, "invalid argument", K(netvc), K(ret));
+    PROXY_NET_LOG(WDIAG, "invalid argument", K(netvc), K(ret));
   } else {
     const sockaddr &client_ip = netvc->get_remote_addr();
     PROXY_NET_LOG(INFO, "[ObMysqlSessionAccept:main_event] accepted connection",
@@ -39,10 +39,10 @@ int ObMysqlSessionAccept::accept(ObNetVConnection *netvc, ObMIOBuffer *iobuf, Ob
     ObMysqlClientSession *new_session = op_reclaim_alloc(ObMysqlClientSession);
     if (OB_ISNULL(new_session)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_NET_LOG(ERROR, "failed to allocate memory for ObMysqlClientSession", K(ret));
+      PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObMysqlClientSession", K(ret));
     } else {
       if (OB_FAIL(new_session->new_connection(netvc, iobuf, reader))) {
-        PROXY_NET_LOG(ERROR, "fail to new_connection", K(ret));
+        PROXY_NET_LOG(EDIAG, "fail to new_connection", K(ret));
       }
     }
   }
@@ -59,15 +59,15 @@ int ObMysqlSessionAccept::main_event(int event, void *data)
     }
     case NET_EVENT_ACCEPT_FAILED: {
       ret = static_cast<int>(reinterpret_cast<uintptr_t>(data));
-      PROXY_NET_LOG(ERROR, "ObNetAccept fail to do listen", K(event), K(ret));
+      PROXY_NET_LOG(EDIAG, "ObNetAccept fail to do listen", K(event), K(ret));
       break;
     }
     case NET_EVENT_ACCEPT: {
       if (OB_ISNULL(data)) {
         ret = OB_INVALID_ARGUMENT;
-        PROXY_NET_LOG(ERROR, "invalid argument", K(data), K(event), K(ret));
+        PROXY_NET_LOG(EDIAG, "invalid argument", K(data), K(event), K(ret));
       } else if (OB_FAIL(accept(static_cast<ObNetVConnection*>(data), NULL, NULL))) {
-        PROXY_NET_LOG(ERROR, "fail to accept", K(ret));
+        PROXY_NET_LOG(EDIAG, "fail to accept", K(ret));
       }
       break;
     }
@@ -81,15 +81,15 @@ int ObMysqlSessionAccept::main_event(int event, void *data)
         // and also in 2.6 the errno for this case has
         // changed from EPROTO to ECONNABORTED.
 
-        PROXY_NET_LOG(ERROR, "client hang, accept failed", K(data));
+        PROXY_NET_LOG(EDIAG, "client hang, accept failed", K(data));
       }
       ret = static_cast<int>(reinterpret_cast<uintptr_t>(data));
-      PROXY_NET_LOG(ERROR, "Mysql accept received fatal error", K(event), K(ret));
+      PROXY_NET_LOG(EDIAG, "Mysql accept received fatal error", K(event), K(ret));
       break;
     }
     default: {
       ret = OB_ERROR;
-      PROXY_NET_LOG(ERROR, "error, never run here!", K(event), K(ret));
+      PROXY_NET_LOG(EDIAG, "error, never run here!", K(event), K(ret));
       break;
     }
   }

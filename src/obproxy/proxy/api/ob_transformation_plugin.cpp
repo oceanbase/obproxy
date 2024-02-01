@@ -230,9 +230,9 @@ int ObTransformationPlugin::handle_transform_read(ObContInternal *contp)
       if (to_read > 0) {
         // Now call the client to tell them about data
         if (OB_FAIL(consume(write_vio->get_reader()))) {
-          PROXY_API_LOG(WARN, "fail to consume", K(to_read), K(ret));
+          PROXY_API_LOG(WDIAG, "fail to consume", K(to_read), K(ret));
           if (OB_ISNULL(vio_cont)) {
-            PROXY_API_LOG(ERROR, "invalid vio cont", K(ret));
+            PROXY_API_LOG(EDIAG, "invalid vio cont", K(ret));
           } else {
             // tell conumser something error
             vio_cont->handle_event(OB_EVENT_ERROR, write_vio);
@@ -241,7 +241,7 @@ int ObTransformationPlugin::handle_transform_read(ObContInternal *contp)
           // Tell the read buffer that we have read the data and are no
           // longer interested in it.
           if (OB_FAIL(write_vio->get_reader()->consume(to_read))) {
-            PROXY_API_LOG(WARN, "fail to consume ", K(to_read), K(ret));
+            PROXY_API_LOG(WDIAG, "fail to consume ", K(to_read), K(ret));
           }
 
           // Modify the read VIO to reflect how much data we've completed.

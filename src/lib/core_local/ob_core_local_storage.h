@@ -74,7 +74,7 @@ int ObCoreLocalStorage<T>::init(int64_t array_len/* = INT64_MAX*/)
   core_num_ = get_cpu_num();
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LIB_LOG(WARN, "init twice", K(ret));
+    LIB_LOG(WDIAG, "init twice", K(ret));
   } else if (OB_UNLIKELY(array_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
     LIB_LOG(WARN , "invalid argument", K(array_len));
@@ -86,7 +86,7 @@ int ObCoreLocalStorage<T>::init(int64_t array_len/* = INT64_MAX*/)
   if (OB_SUCC(ret)) {
     if (NULL == (val_array_ = ob_malloc(ITEM_SIZE * array_len_,
                                         ObModIds::OB_CORE_LOCAL_STORAGE))) {
-      LIB_LOG(ERROR, "ob_malloc failed", K(ITEM_SIZE * array_len_));
+      LIB_LOG(EDIAG, "ob_malloc failed", K(ITEM_SIZE * array_len_));
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       for (int64_t i = 0; i < array_len_; i++) {
@@ -122,7 +122,7 @@ int ObCoreLocalStorage<T>::get_value(T& val) const
   int64_t array_idx = get_array_idx();
   if (OB_FAIL(check_inited())) {
   } else if (NULL == val_array_ || array_idx < 0 || array_idx >= array_len_) {
-    LIB_LOG(ERROR, "get_value failed", K_(val_array), K(array_idx), K_(array_len));
+    LIB_LOG(EDIAG, "get_value failed", K_(val_array), K(array_idx), K_(array_len));
     ret = OB_ERR_UNEXPECTED;
   } else {
      val = VAL_ARRAY_AT(T, array_idx);
@@ -137,7 +137,7 @@ int ObCoreLocalStorage<T>::set_value(const T & val)
   int64_t array_idx = get_array_idx();
   if (OB_FAIL(check_inited())) {
   } else if (NULL == val_array_ || array_idx < 0 || array_idx >= array_len_) {
-    LIB_LOG(ERROR, "set_value failed", K_(val_array), K(array_idx), K_(array_len));
+    LIB_LOG(EDIAG, "set_value failed", K_(val_array), K(array_idx), K_(array_len));
     ret = OB_ERR_UNEXPECTED;
   } else {
     VAL_ARRAY_AT(T, array_idx) = val;
@@ -151,7 +151,7 @@ int ObCoreLocalStorage<T>::set_value(int64_t index, const T &val)
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_inited())) {
   } else if (NULL == val_array_ || index < 0 || index >= array_len_) {
-    LIB_LOG(ERROR, "set value failed", K_(val_array), K(index), K_(array_len));
+    LIB_LOG(EDIAG, "set value failed", K_(val_array), K(index), K_(array_len));
     ret = OB_ERR_UNEXPECTED;
   } else {
     VAL_ARRAY_AT(T, index) = val;
@@ -172,7 +172,7 @@ int ObCoreLocalStorage<T>::check_inited() const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LIB_LOG(WARN, "ObCoreLocalStorage has not been initialized", K(ret));
+    LIB_LOG(WDIAG, "ObCoreLocalStorage has not been initialized", K(ret));
   }
   return ret;
 }
@@ -183,7 +183,7 @@ int ObCoreLocalPtr::cas_value(const void * & old_val, const void * & new_val)
   int64_t array_idx = get_array_idx();
   if (OB_FAIL(check_inited())) {
   } else if (NULL == val_array_ || array_idx < 0 || array_idx >= array_len_) {
-    LIB_LOG(ERROR, "cas_value failed", K_(val_array), K(array_idx), K_(array_len));
+    LIB_LOG(EDIAG, "cas_value failed", K_(val_array), K(array_idx), K_(array_len));
     ret = OB_ERR_UNEXPECTED;
   } else if (!__sync_bool_compare_and_swap(&VAL_ARRAY_AT(void *, array_idx), old_val, new_val)) {
     ret = OB_EAGAIN;

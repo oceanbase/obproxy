@@ -51,7 +51,7 @@ int ObBlockingTaskProcessor::start(const int64_t blocking_threads, const int64_t
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(g_event_processor.spawn_event_threads(blocking_threads, "ET_BLOCKING", stacksize, ET_BLOCKING))) {
-    LOG_WARN("fail to spawn event threads for ET_BLOCKING", K(ret));
+    LOG_WDIAG("fail to spawn event threads for ET_BLOCKING", K(ret));
   }
   return ret;
 }

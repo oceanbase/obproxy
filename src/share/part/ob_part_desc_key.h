@@ -40,14 +40,19 @@ public:
   void set_part_array(int64_t *part_array) { part_array_ = part_array; }
 
   ObIArray<ObObjType> &get_obj_types() { return obj_types_; }
+  int set_obj_types(int64_t pos, const ObObjType obj_type);
   ObIArray<ObCollationType> &get_cs_types() { return cs_types_; }
+  int set_cs_types(int64_t pos, const ObCollationType cs_type);
 
   VIRTUAL_TO_STRING_KV("part_type", "key",
                        K_(part_num),
                        K_(part_space),
                        K_(first_part_id),
                        K_(part_level),
-                       K_(part_func_type));
+                       "part_func_type", share::schema::get_partition_func_type_str(part_func_type_),
+                       K_(obj_types),
+                       K_(cs_types));
+  virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const;
 private:
   int calc_value_for_mysql(const ObObj *objs, int64_t objs_cnt, int64_t &result, ObPartDescCtx &ctx);
   uint64_t calc_hash_value_with_seed(const ObObj &obj, const int64_t cluster_version, int64_t seed);

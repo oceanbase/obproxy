@@ -92,7 +92,7 @@ int ObDbConfigChildCont::init_task()
       const google::rpc::Status &status = response.error_detail();
       if (0 != status.code()) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("rpc failed",  K(need_reschedule),
+        LOG_WDIAG("rpc failed",  K(need_reschedule),
                  ", error code:", status.code(), ", error message:", status.message().c_str(),
                  "type", get_type_task_name(type_), K(ret));
       } else if (type_url.compare(get_type_url(type_)) == 0) {
@@ -102,12 +102,12 @@ int ObDbConfigChildCont::init_task()
         for (int i = 0; OB_SUCC(ret) && i < response.resources_size(); ++i) {
           const Any& res = response.resources(i);
           if (OB_FAIL(parse_child_resource(res))) {
-            LOG_WARN("fail to parse child resource", "resource type", get_type_task_name(type_), K(ret));
+            LOG_WDIAG("fail to parse child resource", "resource type", get_type_task_name(type_), K(ret));
           }
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("type url and target url is mismatched", "type_url", type_url.c_str(), "target url", get_type_url(type_), K(ret));
+        LOG_WDIAG("type url and target url is mismatched", "type_url", type_url.c_str(), "target url", get_type_url(type_), K(ret));
       }
       if (OB_SUCC(ret)) {
         fetch_succ = true;
@@ -128,14 +128,14 @@ int ObDbConfigChildCont::init_task()
   }
   if (!fetch_succ && fetch_faliure_count_ >= MAX_FETCH_RETRY_TIMES) {
     need_reschedule = false;
-    LOG_WARN("fail to fetch child config more than 3 times, no need to fetch",
+    LOG_WDIAG("fail to fetch child config more than 3 times, no need to fetch",
              "type", get_type_task_name(type_), K(need_reschedule), K(fetch_succ), K_(fetch_faliure_count));
   }
   if (need_reschedule) {
     // reschedule
     if (OB_ISNULL(self_ethread().schedule_in(this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), EVENT_IMMEDIATE))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to reschedule fetch child cr task", "type", get_type_task_name(type_), K(ret));
+      LOG_WDIAG("fail to reschedule fetch child cr task", "type", get_type_task_name(type_), K(ret));
     } else {
       ret = OB_SUCCESS;
       LOG_DEBUG("succ to reschedule fetch child cr task", "type", get_type_task_name(type_), K(ret));
@@ -181,7 +181,7 @@ int ObDbConfigChildCont::parse_child_resource(const Any &resource)
       break;
     default:
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("invalid type", K(type_));
+      LOG_WDIAG("invalid type", K(type_));
       break;
   }
   return ret;
@@ -193,10 +193,10 @@ int ObDbConfigChildCont::parse_database_auth(const Any &res)
   ObDataBaseAuth *child_info = NULL;
   if (OB_UNLIKELY(!res.Is<DatabaseAuthorities>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not DatabaseAuthorities", K(ret));
+    LOG_WDIAG("resource type is not DatabaseAuthorities", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObDataBaseAuth))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObDataBaseAuth", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObDataBaseAuth", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     DatabaseAuthorities message;
@@ -204,7 +204,7 @@ int ObDbConfigChildCont::parse_database_auth(const Any &res)
     const MetaData& meta = message.metadata();
     const std::string &name = meta.name();
     if (OB_FAIL(child_info->init(name, db_info_key_))) {
-      LOG_WARN("fail to init ObDataBaseAuth", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObDataBaseAuth", "name", name.c_str(), K(ret));
     } else {
       const Map<std::string, std::string >& kv_map = message.variables();
       for (auto it = kv_map.cbegin(); it != kv_map.cend(); ++it) {
@@ -225,9 +225,9 @@ int ObDbConfigChildCont::parse_database_auth(const Any &res)
         up_info.set_user_priv(db_user.select_priv().c_str(), db_user.select_priv().length(), OB_PRIV_SELECT_SHIFT);
         up_info.set_user_priv(db_user.index_priv().c_str(), db_user.index_priv().length(), OB_PRIV_INDEX_SHIFT);
         if (OB_FAIL(up_info.set_password(db_user.password().c_str(), db_user.password().length()))) {
-          LOG_WARN("fail to set auth password", "user", db_user.user().c_str(),K(ret));
+          LOG_WDIAG("fail to set auth password", "user", db_user.user().c_str(),K(ret));
         } else if (OB_FAIL(child_info->up_array_.push_back(up_info))) {
-          LOG_WARN("fail to put ObShardUserPrivInfo", K(up_info), K(ret));
+          LOG_WDIAG("fail to put ObShardUserPrivInfo", K(up_info), K(ret));
         }
       } // end for users
       if (OB_SUCC(ret)) {
@@ -236,7 +236,7 @@ int ObDbConfigChildCont::parse_database_auth(const Any &res)
         if (NULL != old_child_info) {
           if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid child info, building child info version is not equal with new child info",
+            LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                      KPC(old_child_info), KPC(child_info), K(ret));
           }
           old_child_info->set_deleting_state();
@@ -267,10 +267,10 @@ int ObDbConfigChildCont::parse_database_var(const Any &res)
   ObDataBaseVar *child_info = NULL;
   if (OB_UNLIKELY(!res.Is<DatabaseVariables>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not DatabaseVariables", K(ret));
+    LOG_WDIAG("resource type is not DatabaseVariables", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObDataBaseVar))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObDataBaseVar", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObDataBaseVar", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     DatabaseVariables message;
@@ -278,7 +278,7 @@ int ObDbConfigChildCont::parse_database_var(const Any &res)
     const MetaData& meta = message.metadata();
     const std::string &name = meta.name();
     if (OB_FAIL(child_info->init(name, db_info_key_))) {
-      LOG_WARN("fail to init ObDataBaseVar", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObDataBaseVar", "name", name.c_str(), K(ret));
     } else {
       const Map<std::string, std::string >& kv_map = message.variables();
       for (auto it = kv_map.cbegin(); it != kv_map.cend(); ++it) {
@@ -288,7 +288,7 @@ int ObDbConfigChildCont::parse_database_var(const Any &res)
       if (NULL != old_child_info) {
         if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid child info, building child info version is not equal with new child info",
+          LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                    KPC(old_child_info), KPC(child_info), K(ret));
         }
         old_child_info->set_deleting_state();
@@ -317,10 +317,10 @@ int ObDbConfigChildCont::parse_database_prop(const Any &res)
   ObDataBaseProp *child_info = NULL;
   if (OB_UNLIKELY(!res.Is<DatabaseProperties>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not DatabaseProperties", K(ret));
+    LOG_WDIAG("resource type is not DatabaseProperties", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObDataBaseProp))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObDataBaseProp", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObDataBaseProp", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     DatabaseProperties message;
@@ -328,7 +328,7 @@ int ObDbConfigChildCont::parse_database_prop(const Any &res)
     const MetaData& meta = message.metadata();
     const std::string &name = meta.name();
     if (OB_FAIL(child_info->init(name, db_info_key_))) {
-      LOG_WARN("fail to init ObDataBaseProp", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObDataBaseProp", "name", name.c_str(), K(ret));
     } else {
       const std::string &prop_rule = message.properties_rule();
       const std::string &prop_name = message.properties_name();
@@ -336,7 +336,7 @@ int ObDbConfigChildCont::parse_database_prop(const Any &res)
       child_info->prop_rule_.set_value(prop_rule.length(), prop_rule.c_str());
       const Map<std::string, std::string >& kv_map = message.variables();
       if (OB_FAIL(ObProxyPbUtils::parse_database_prop_rule(prop_rule, *child_info))) {
-        LOG_WARN("fail to parse database prop rule", "prop name", prop_name.c_str(),
+        LOG_WDIAG("fail to parse database prop rule", "prop name", prop_name.c_str(),
                  "prop rule", prop_rule.c_str(), K(ret));
       } else {
         for (auto it = kv_map.cbegin(); it != kv_map.cend(); ++it) {
@@ -346,7 +346,7 @@ int ObDbConfigChildCont::parse_database_prop(const Any &res)
         if (NULL != old_child_info) {
           if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid child info, building child info version is not equal with new child info",
+            LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                      KPC(old_child_info), KPC(child_info), K(ret));
           }
           old_child_info->set_deleting_state();
@@ -376,10 +376,10 @@ int ObDbConfigChildCont::parse_shard_tpo(const Any &res)
   ObShardTpo *child_info = NULL;
   if (OB_UNLIKELY(!res.Is<ShardsTopology>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not ShardsTopology", K(ret));
+    LOG_WDIAG("resource type is not ShardsTopology", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObShardTpo))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObShardTpo", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObShardTpo", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     ShardsTopology message;
@@ -388,7 +388,7 @@ int ObDbConfigChildCont::parse_shard_tpo(const Any &res)
     const std::string &name = meta.name();
     bool with_db_info_key = false;
     if (OB_FAIL(child_info->init(name, db_info_key_, with_db_info_key))) {
-      LOG_WARN("fail to init ObShardTpo", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObShardTpo", "name", name.c_str(), K(ret));
     } else {
       const std::string &tpo_name = message.topology_name();
       const std::string &arch = message.architecture();
@@ -407,9 +407,9 @@ int ObDbConfigChildCont::parse_shard_tpo(const Any &res)
         gc_info = NULL;
         if (OB_ISNULL(gc_info = op_alloc(ObGroupCluster))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc memory for ObGroupCluster", K(ret), K_(db_info_key));
+          LOG_WDIAG("fail to alloc memory for ObGroupCluster", K(ret), K_(db_info_key));
         } else if (OB_FAIL(ObProxyPbUtils::parse_group_cluster(it->first, it->second, *gc_info))) {
-          LOG_WARN("fail to parse gc info", K(ret));
+          LOG_WDIAG("fail to parse gc info", K(ret));
         } else {
           gc_info->calc_total_read_weight();
           child_info->gc_map_.unique_set(gc_info);
@@ -424,7 +424,7 @@ int ObDbConfigChildCont::parse_shard_tpo(const Any &res)
         if (NULL != old_child_info) {
           if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid child info, building child info version is not equal with new child info",
+            LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                      KPC(old_child_info), KPC(child_info), K(ret));
           }
           old_child_info->set_deleting_state();
@@ -454,10 +454,10 @@ int ObDbConfigChildCont::parse_shard_router(const Any &res)
   ObShardRouter *child_info = NULL;
   if (OB_UNLIKELY(!res.Is<ShardsRouter>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not ShardsRouter", K(ret));
+    LOG_WDIAG("resource type is not ShardsRouter", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObShardRouter))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObShardRouter", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObShardRouter", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     ShardsRouter message;
@@ -465,7 +465,7 @@ int ObDbConfigChildCont::parse_shard_router(const Any &res)
     const MetaData& meta = message.metadata();
     const std::string &name = meta.name();
     if (OB_FAIL(child_info->init(name, db_info_key_))) {
-      LOG_WARN("fail to init ObShardRouter", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObShardRouter", "name", name.c_str(), K(ret));
     } else {
       const Map<std::string, std::string >& kv_map = message.variables();
       for (auto it = kv_map.cbegin(); it != kv_map.cend(); ++it) {
@@ -480,9 +480,9 @@ int ObDbConfigChildCont::parse_shard_router(const Any &res)
         const Router &router = marked_router.router();
         if (OB_ISNULL(rule_info = op_alloc(ObShardRule))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc memory for ObShardRule", K(ret), K_(db_info_key));
+          LOG_WDIAG("fail to alloc memory for ObShardRule", K(ret), K_(db_info_key));
         } else if (OB_FAIL(rule_info->init(table_name))) {
-          LOG_WARN("fail to init rule info", "table_name", table_name.c_str(), K(ret));
+          LOG_WDIAG("fail to init rule info", "table_name", table_name.c_str(), K(ret));
         } else {
           if (marked_router.sequence()) {
             child_info->set_sequence_table(table_name);
@@ -492,7 +492,7 @@ int ObDbConfigChildCont::parse_shard_router(const Any &res)
           const Map<std::string, std::string >& rule_map = router.rules();
           for (auto it = rule_map.cbegin(); OB_SUCC(ret) && it != rule_map.cend(); ++it) {
             if (OB_FAIL(ObProxyPbUtils::parse_shard_rule(it->first, it->second, *rule_info))) {
-              LOG_WARN("fail to parse rule info", "rule_name", it->first.c_str(),
+              LOG_WDIAG("fail to parse rule info", "rule_name", it->first.c_str(),
                        "rule_value", it->second.c_str());
             }
           } // end for rule map
@@ -512,7 +512,7 @@ int ObDbConfigChildCont::parse_shard_router(const Any &res)
         if (NULL != old_child_info) {
           if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid child info, building child info version is not equal with new child info",
+            LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                      KPC(old_child_info), KPC(child_info), K(ret));
           }
           old_child_info->set_deleting_state();
@@ -542,10 +542,10 @@ int ObDbConfigChildCont::parse_shard_dist(const Any &res)
   ObShardDist *child_info = NULL;
   if (OB_UNLIKELY(!res.Is<ShardsDistribute>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not ShardsDistribute", K(ret));
+    LOG_WDIAG("resource type is not ShardsDistribute", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObShardDist))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObShardDist", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObShardDist", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     ShardsDistribute message;
@@ -554,7 +554,7 @@ int ObDbConfigChildCont::parse_shard_dist(const Any &res)
     const std::string &name = meta.name();
     bool with_db_info_key = false;
     if (OB_FAIL(child_info->init(name, db_info_key_, with_db_info_key))) {
-      LOG_WARN("fail to init ObShardDist", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObShardDist", "name", name.c_str(), K(ret));
     } else {
       const Map<std::string, std::string >& kv_map = message.variables();
       for (auto it = kv_map.cbegin(); it != kv_map.cend(); ++it) {
@@ -566,9 +566,9 @@ int ObDbConfigChildCont::parse_shard_dist(const Any &res)
         const MarkedDistribution &marked_dist = message.distributions(i);
         if (OB_ISNULL(dist_info = op_alloc(ObMarkedDist))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc memory for ObMarkedDist", K(ret), K_(db_info_key));
+          LOG_WDIAG("fail to alloc memory for ObMarkedDist", K(ret), K_(db_info_key));
         } else if (OB_FAIL(dist_info->init(marked_dist.mark(), marked_dist.distribution()))) {
-          LOG_WARN("fail to init marked dist info", "dist name", name.c_str(), K(ret));
+          LOG_WDIAG("fail to init marked dist info", "dist name", name.c_str(), K(ret));
         } else {
           child_info->md_map_.unique_set(dist_info);
         }
@@ -582,7 +582,7 @@ int ObDbConfigChildCont::parse_shard_dist(const Any &res)
         if (NULL != old_child_info) {
           if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid child info, building child info version is not equal with new child info",
+            LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                      KPC(old_child_info), KPC(child_info), K(ret));
           }
           old_child_info->set_deleting_state();
@@ -612,10 +612,10 @@ int ObDbConfigChildCont::parse_shard_connector(const Any &res)
   ObShardConnector *child_info = NULL;
   if (OB_UNLIKELY(!res.Is<ShardsConnector>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not ShardsConnector", K(ret));
+    LOG_WDIAG("resource type is not ShardsConnector", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObShardConnector))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObShardConnector", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObShardConnector", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     ShardsConnector message;
@@ -627,11 +627,11 @@ int ObDbConfigChildCont::parse_shard_connector(const Any &res)
     const std::string &shard_url = message.shards_connector();
     bool with_db_info_key = false;
     if (OB_FAIL(child_info->init(name, db_info_key_, with_db_info_key))) {
-      LOG_WARN("fail to init ObShardConnector", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObShardConnector", "name", name.c_str(), K(ret));
     } else if (OB_FAIL(child_info->set_shard_type(shard_type))) {
-      LOG_WARN("fail to set shard type", "shard_type", shard_type.c_str(), K(ret));
+      LOG_WDIAG("fail to set shard type", "shard_type", shard_type.c_str(), K(ret));
     } else if (OB_FAIL(ObProxyPbUtils::parse_shard_url(shard_url, *child_info))) {
-      LOG_WARN("fail parse shard url", "shard_url", shard_url.c_str(), K(ret));
+      LOG_WDIAG("fail parse shard url", "shard_url", shard_url.c_str(), K(ret));
     } else {
       child_info->shard_name_.set_value(shard_name.length(), shard_name.c_str());
       const Map<std::string, std::string >& kv_map = message.variables();
@@ -654,7 +654,7 @@ int ObDbConfigChildCont::parse_shard_connector(const Any &res)
       if (child_info->is_enc_beyond_trust()) {
         db_info_->set_need_update_bt();
       } else if (OB_FAIL(ObBlowFish::decode(child_info->org_password_.ptr(), child_info->org_password_.length(), pwd_buf, OB_MAX_PASSWORD_LENGTH))) {
-        LOG_WARN("fail to decode encrypted password", K_(child_info->org_password), K(ret));
+        LOG_WDIAG("fail to decode encrypted password", K_(child_info->org_password), K(ret));
       } else {
         child_info->password_.set_value(strlen(pwd_buf), pwd_buf);
       }
@@ -664,7 +664,7 @@ int ObDbConfigChildCont::parse_shard_connector(const Any &res)
         if (NULL != old_child_info) {
           if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("invalid child info, building child info version is not equal with new child info",
+            LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                      KPC(old_child_info), KPC(child_info), K(ret));
           }
           old_child_info->set_deleting_state();
@@ -694,10 +694,10 @@ int ObDbConfigChildCont::parse_shard_prop(const Any &res)
   ObShardProp*child_info = NULL;
   if (OB_UNLIKELY(!res.Is<ShardsProperties>())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("resource type is not ShardsProperties", K(ret));
+    LOG_WDIAG("resource type is not ShardsProperties", K(ret));
   } else if (OB_ISNULL(child_info = op_alloc(ObShardProp))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc memory for ObShardProp", K(ret), K_(db_info_key));
+    LOG_WDIAG("fail to alloc memory for ObShardProp", K(ret), K_(db_info_key));
   } else {
     child_info->inc_ref();
     ShardsProperties message;
@@ -706,7 +706,7 @@ int ObDbConfigChildCont::parse_shard_prop(const Any &res)
     const std::string &name = meta.name();
     const std::string &shard_name = message.shards_name();
     if (OB_FAIL(child_info->init(name, db_info_key_))) {
-      LOG_WARN("fail to init ObShardProp", "name", name.c_str(), K(ret));
+      LOG_WDIAG("fail to init ObShardProp", "name", name.c_str(), K(ret));
     } else {
       child_info->shard_name_.set_value(shard_name.length(), shard_name.c_str());
       const Map<std::string, std::string >& kv_map = message.variables();
@@ -720,9 +720,9 @@ int ObDbConfigChildCont::parse_shard_prop(const Any &res)
           Parser parser;
           json::Value *json_root = NULL;
           if (OB_FAIL(parser.init(&allocator))) {
-            LOG_WARN("json parser init failed", K(ret));
+            LOG_WDIAG("json parser init failed", K(ret));
           } else if (OB_FAIL(parser.parse(tmp_str.ptr(), tmp_str.length(), json_root))) {
-            LOG_WARN("parse json failed", K(tmp_str), K(ret));
+            LOG_WDIAG("parse json failed", K(tmp_str), K(ret));
           } else if (OB_ISNULL(json_root)) {
             ret = OB_ERR_UNEXPECTED;
           } else if (OB_FAIL(child_info->do_handle_json_value(json_root, it->first))){
@@ -737,7 +737,7 @@ int ObDbConfigChildCont::parse_shard_prop(const Any &res)
       if (NULL != old_child_info) {
         if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid child info, building child info version is not equal with new child info",
+          LOG_WDIAG("invalid child info, building child info version is not equal with new child info",
                    KPC(old_child_info), KPC(child_info), K(ret));
         }
         old_child_info->set_deleting_state();

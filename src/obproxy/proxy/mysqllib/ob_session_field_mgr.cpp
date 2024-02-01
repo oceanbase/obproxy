@@ -51,7 +51,7 @@ inline int ObDefaultSysVarSet::load_sysvar_int(const ObString &var_name,
     type.set_type(ObIntType);
     value.set_int(var_value);
     if (OB_FAIL(load_system_variable(var_name, type, value, flags))) {
-      LOG_WARN("fail to load default system variable", K(var_name), K(var_value), K(ret));
+      LOG_WDIAG("fail to load default system variable", K(var_name), K(var_value), K(ret));
     } else if (print_info_log) {
       LOG_INFO("load default system variable", K(var_name), K(var_value));
     }
@@ -83,9 +83,9 @@ int ObSessionVField::move_strings(ObFieldStrHeap &new_heap)
     // do nothing
   } else if (OB_UNLIKELY(type_ < OB_V_FIELD_EMPTY || type_ >= OB_V_FIELD_MAX)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid type", K(type_), K(ret));
+    LOG_WDIAG("invalid type", K(type_), K(ret));
   } else if (OB_FAIL(ObFieldHeapUtils::str_heap_move_str(new_heap, value_, value_len_))) {
-    LOG_WARN("failed to move str", K(value_), K(value_len_), K(ret));
+    LOG_WDIAG("failed to move str", K(value_), K(value_len_), K(ret));
   } else {}
   return ret;
 }
@@ -116,11 +116,11 @@ int ObSessionKVField::move_strings(ObFieldStrHeap &new_heap)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(type_ <= OB_KV_FIELD_EMPTY || type_ >= OB_KV_FIELD_MAX)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid type", K(type_), K(ret));
+    LOG_WDIAG("invalid type", K(type_), K(ret));
   } else if (OB_FAIL(ObFieldHeapUtils::str_heap_move_str(new_heap, name_, name_len_))) {
-    LOG_WARN("failed to move name str", K(name_), K(name_len_), K(ret));
+    LOG_WDIAG("failed to move name str", K(name_), K(name_len_), K(ret));
   } else if (OB_FAIL(ObFieldHeapUtils::str_heap_move_str(new_heap, value_, value_len_))) {
-    LOG_WARN("failed to move value str", K(value_), K(value_len_), K(ret));
+    LOG_WDIAG("failed to move value str", K(value_), K(value_len_), K(ret));
   } else {}
   return ret;
 }
@@ -154,9 +154,9 @@ int ObSessionBaseField::move_strings(ObFieldStrHeap &new_heap)
   int ret = OB_SUCCESS;
   if (OB_FIELD_USED == stat_) {
     if (OB_FAIL(ObFieldHeapUtils::str_heap_move_str(new_heap, name_, name_len_))) {
-      LOG_WARN("failed to move name str", K(name_), K(name_len_), K(ret));
+      LOG_WDIAG("failed to move name str", K(name_), K(name_len_), K(ret));
     } else if (OB_FAIL(ObFieldHeapUtils::str_heap_move_obj(new_heap, value_))) {
-      LOG_WARN("failed to move value obj", K(value_), K(ret));
+      LOG_WDIAG("failed to move value obj", K(value_), K(ret));
     } else {}
   }
   return ret;
@@ -204,20 +204,20 @@ int ObSessionBaseField::format_util(ObSqlString &sql, bool is_sys_field) const
                                                        OB_MAX_SESSION_VAR_LENGTH;
         if (OB_ISNULL(pbuf = static_cast<char *>(
                 ob_malloc(buf_length, ObModIds::OB_PROXY_SESSION)))) {
-          LOG_WARN("malloc failed", K(*this), K(ret));
+          LOG_WDIAG("malloc failed", K(*this), K(ret));
           ret = OB_ALLOCATE_MEMORY_FAILED;
         } else if (OB_FAIL((value_.*print_func)(pbuf, buf_length, pos, NULL))) {
-          LOG_WARN("fail to print sql literal", K(is_sys_field), K(buf_length), K(*this), K(ret));
+          LOG_WDIAG("fail to print sql literal", K(is_sys_field), K(buf_length), K(*this), K(ret));
         } else {}
       } else {
-        LOG_WARN("fail to print sql literal", K(is_sys_field), K(*this), K(ret));
+        LOG_WDIAG("fail to print sql literal", K(is_sys_field), K(*this), K(ret));
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(sql.append_fmt(" %s%.*s = %.*s,",
                                  is_sys_field ? "@@" : "@",
                                  name_len_, name_, static_cast<int>(pos), pbuf))) {
-        LOG_WARN("fail to format field", K(*this), K(ret));
+        LOG_WDIAG("fail to format field", K(*this), K(ret));
       } else {}
     }
     // free memory if need
@@ -289,13 +289,13 @@ int ObFieldBaseMgr::init()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_FAIL(ObFieldHeapUtils::new_field_heap(ObFieldHeap::FIELD_HEAP_DEFAULT_SIZE,
                                                       field_heap_))) {
-    LOG_WARN("fail to init heap", K(ret));
+    LOG_WDIAG("fail to init heap", K(ret));
   } else {
     if (OB_FAIL(alloc_block(sys_first_block_))) {
-      LOG_WARN("fail to allocate Block", K(ret));
+      LOG_WDIAG("fail to allocate Block", K(ret));
       field_heap_->destroy();
       field_heap_ = NULL;
     } else {
@@ -328,7 +328,7 @@ int ObFieldBaseMgr::get_sys_first_block(const ObSysVarFieldBlock *&block_out)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     block_out = sys_first_block_;
   }
@@ -342,10 +342,10 @@ int ObFieldBaseMgr::duplicate_field(const char *name, uint16_t name_len, const O
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(field_heap_->duplicate_str_and_obj(name, name_len, field.name_, field.name_len_,
                                                         src_obj, field.value_))) {
-    LOG_WARN("fail to duplicate_str", K(name), K(name_len), K(src_obj), K(field), K(ret));
+    LOG_WDIAG("fail to duplicate_str", K(name), K(name_len), K(src_obj), K(field), K(ret));
   }
   return ret;
 }
@@ -355,7 +355,7 @@ ObSessionFieldMgr::ObSessionFieldMgr() : user_block_list_tail_(NULL), user_first
                                          str_block_list_tail_(NULL), str_first_block_(NULL),
                                          common_sys_block_list_tail_(NULL), common_sys_first_block_(NULL),
                                          mysql_sys_block_list_tail_(NULL), mysql_sys_first_block_(NULL),
-                                         default_sys_var_set_(NULL), allow_var_not_found_(false)
+                                         default_sys_var_set_(NULL), allow_var_not_found_(true)
 {}
 
 int ObSessionFieldMgr::init()
@@ -363,21 +363,21 @@ int ObSessionFieldMgr::init()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_FAIL(ObFieldBaseMgr::init())) {
-    LOG_WARN("fail to init base class", K(ret));
+    LOG_WDIAG("fail to init base class", K(ret));
   } else if (OB_FAIL(alloc_block(user_first_block_))) {
     ObFieldBaseMgr::destroy();
-    LOG_WARN("fail to allocate user block", K(ret));
+    LOG_WDIAG("fail to allocate user block", K(ret));
   } else if (OB_FAIL(alloc_block(str_first_block_))) {
     ObFieldBaseMgr::destroy();
-    LOG_WARN("fail to allocate str block", K(ret));
+    LOG_WDIAG("fail to allocate str block", K(ret));
   } else if (OB_FAIL(alloc_block(common_sys_first_block_))) {
     ObFieldBaseMgr::destroy();
-    LOG_WARN("fail to allocate str block", K(ret));
+    LOG_WDIAG("fail to allocate str block", K(ret));
   } else if (OB_FAIL(alloc_block(mysql_sys_first_block_))) {
     ObFieldBaseMgr::destroy();
-    LOG_WARN("fail to allocate str block", K(ret));
+    LOG_WDIAG("fail to allocate str block", K(ret));
   } else {
     user_block_list_tail_ = user_first_block_;
     str_block_list_tail_ = str_first_block_;
@@ -489,9 +489,9 @@ int ObSessionFieldMgr::set_cluster_name(const ObString &cluster_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_CLUSTER_NAME, cluster_name))) {
-    LOG_WARN("fail to set cluster_name", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to set cluster_name", K(cluster_name), K(ret));
   }
   return ret;
 }
@@ -501,9 +501,9 @@ int ObSessionFieldMgr::set_tenant_name(const ObString &tenant_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_TENANT_NAME, tenant_name))) {
-    LOG_WARN("fail to set tenant_name", K(tenant_name), K(ret));
+    LOG_WDIAG("fail to set tenant_name", K(tenant_name), K(ret));
   }
   return ret;
 }
@@ -513,9 +513,9 @@ int ObSessionFieldMgr::set_vip_addr_name(const ObString &vip_addr_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_VIP_ADDR_NAME, vip_addr_name))) {
-    LOG_WARN("fail to set vip addr name", K(vip_addr_name), K(ret));
+    LOG_WDIAG("fail to set vip addr name", K(vip_addr_name), K(ret));
   }
   return ret;
 }
@@ -525,9 +525,9 @@ int ObSessionFieldMgr::set_user_name(const ObString &user_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_USER_NAME, user_name))) {
-    LOG_WARN("fail to set user name", K(user_name), K(ret));
+    LOG_WDIAG("fail to set user name", K(user_name), K(ret));
   }
   return ret;
 }
@@ -537,12 +537,12 @@ int ObSessionFieldMgr::set_logic_tenant_name(const ObString &logic_tenant_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_UNLIKELY(logic_tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("logic_tenant_name is empty", K(ret));
+    LOG_WDIAG("logic_tenant_name is empty", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_LOGIC_TENANT_NAME, logic_tenant_name))) {
-    LOG_WARN("fail to set logic tenant name", K(logic_tenant_name), K(ret));
+    LOG_WDIAG("fail to set logic tenant name", K(logic_tenant_name), K(ret));
   } else {
     LOG_DEBUG("succ to set logic tenant name", K(logic_tenant_name), K(ret));
   }
@@ -554,12 +554,12 @@ int ObSessionFieldMgr::set_logic_database_name(const ObString &logic_database_na
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_UNLIKELY(logic_database_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("logic_database_name is empty", K(ret));
+    LOG_WDIAG("logic_database_name is empty", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_LOGIC_DATABASE_NAME, logic_database_name))) {
-    LOG_WARN("fail to set logic database name", K(logic_database_name), K(ret));
+    LOG_WDIAG("fail to set logic database name", K(logic_database_name), K(ret));
   } else {
     LOG_DEBUG("succ to set logic database name", K(logic_database_name), K(ret));
   }
@@ -571,12 +571,12 @@ int ObSessionFieldMgr::set_database_name(const ObString &database_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_UNLIKELY(database_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("database_name is empty", K(ret));
+    LOG_WDIAG("database_name is empty", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_DATABASE_NAME, database_name))) {
-    LOG_WARN("fail to set database name", K(database_name), K(ret));
+    LOG_WDIAG("fail to set database name", K(database_name), K(ret));
   } else {
     LOG_DEBUG("succ to set database name", K(database_name), K(ret));
   }
@@ -588,9 +588,9 @@ int ObSessionFieldMgr::set_ldg_logical_cluster_name(const ObString &cluster_name
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_LDG_LOGICAL_CLUSTER_NAME, cluster_name))) {
-    LOG_WARN("fail to set tenant_name", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to set tenant_name", K(cluster_name), K(ret));
   }
   return ret;
 }
@@ -600,9 +600,9 @@ int ObSessionFieldMgr::set_ldg_logical_tenant_name(const ObString &tenant_name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(replace_str_field(OB_V_FIELD_LDG_LOGICAL_TENANT_NAME, tenant_name))) {
-    LOG_WARN("fail to set tenant_name", K(tenant_name), K(ret));
+    LOG_WDIAG("fail to set tenant_name", K(tenant_name), K(ret));
   }
   return ret;
 }
@@ -612,9 +612,13 @@ int ObSessionFieldMgr::get_cluster_name(ObString &cluster_name) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_CLUSTER_NAME, cluster_name))) {
-    LOG_WARN("fail to get cluster name", K(ret));
+    if (OB_LIKELY(OB_ENTRY_NOT_EXIST == ret)) {
+      LOG_DEBUG("cluster name not exists", K(ret));
+    } else {
+      LOG_WDIAG("fail to get cluster name", K(ret));
+    }
   }
   return ret;
 }
@@ -624,9 +628,13 @@ int ObSessionFieldMgr::get_tenant_name(ObString &tenant_name) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_TENANT_NAME, tenant_name))) {
-    LOG_WARN("fail to get tenant name", K(ret));
+    if (OB_LIKELY(OB_ENTRY_NOT_EXIST == ret)) {
+      LOG_DEBUG("tenant name not exists", K(ret));
+    } else {
+      LOG_WDIAG("fail to get tenant name", K(ret));
+    }
   }
   return ret;
 }
@@ -636,7 +644,7 @@ int ObSessionFieldMgr::get_vip_addr_name(ObString &vip_addr_name) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_VIP_ADDR_NAME, vip_addr_name))) {
     LOG_DEBUG("fail to get vip addr name", K(ret));
   }
@@ -648,9 +656,13 @@ int ObSessionFieldMgr::get_user_name(ObString &user_name) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_USER_NAME, user_name))) {
-    LOG_WARN("fail to get user name", K(ret));
+    if (OB_LIKELY(OB_ENTRY_NOT_EXIST == ret)) {
+      LOG_DEBUG("user name not exists", K(ret));
+    } else {
+      LOG_WDIAG("fail to get user name", K(ret));
+    }
   }
   return ret;
 }
@@ -670,9 +682,9 @@ int ObSessionFieldMgr::get_ldg_logical_cluster_name(ObString &cluster_name) cons
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_LDG_LOGICAL_CLUSTER_NAME, cluster_name))) {
-    LOG_WARN("fail to get cluster name", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get cluster name", K(cluster_name), K(ret));
   }
   return ret;
 }
@@ -682,9 +694,9 @@ int ObSessionFieldMgr::get_ldg_logical_tenant_name(ObString &tenant_name) const
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_str_field_value(OB_V_FIELD_LDG_LOGICAL_TENANT_NAME, tenant_name))) {
-    LOG_WARN("fail to get cluster name", K(tenant_name), K(ret));
+    LOG_WDIAG("fail to get cluster name", K(tenant_name), K(ret));
   }
   return ret;
 }
@@ -700,16 +712,16 @@ int ObSessionFieldMgr::insert_common_sys_variable(const ObString &name, const Ob
 {
   int ret = OB_SUCCESS;
   if (NULL != var_set && OB_FAIL(var_set->get_sys_variable(name, field))) {
-    LOG_WARN("fail to get sys var from global set", K(name), K(ret));
+    LOG_WDIAG("fail to get sys var from global set", K(name), K(ret));
   } else {
     ObSysVarFieldBlock *block_out = NULL;
     ObSessionSysField *new_field = NULL;
     bool is_reused = false;
     if (OB_FAIL(alloc_field(common_sys_first_block_, common_sys_block_list_tail_, block_out, new_field, is_reused))) {
-      LOG_WARN("fail to alloc sys var field", K(ret));
+      LOG_WDIAG("fail to alloc sys var field", K(ret));
     } else if (OB_ISNULL(block_out) || OB_ISNULL(new_field)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected null pointer", K(ret));
+      LOG_WDIAG("unexpected null pointer", K(ret));
     } else {
       if (NULL != field) {
         new_field->scope_ = field->scope_;
@@ -733,12 +745,12 @@ int ObSessionFieldMgr::insert_common_sys_variable(const ObString &name, const Ob
       ObFieldObjCaster caster;
       const ObObj *res_cell = NULL;
       if (OB_FAIL(caster.obj_cast(value, *new_field, res_cell))) {
-        LOG_WARN("fail to cast obj", K(value), K(*new_field), K(ret));
+        LOG_WDIAG("fail to cast obj", K(value), K(*new_field), K(ret));
       } else if (OB_ISNULL(res_cell)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("res_cell is null , which is unexpected", K(ret));
+        LOG_WDIAG("res_cell is null , which is unexpected", K(ret));
       } else if (OB_FAIL(duplicate_field(name.ptr(), len, *res_cell, *new_field))) {
-        LOG_WARN("fail to duplicate_field", K(name), K(value), K(ret));
+        LOG_WDIAG("fail to duplicate_field", K(name), K(value), K(ret));
       } else {
         new_field->stat_ = OB_FIELD_USED;
         field = new_field;
@@ -759,14 +771,14 @@ int ObSessionFieldMgr::update_common_sys_variable(const ObObj &value, ObSessionS
   const ObObj *res_cell = NULL;
   if (OB_ISNULL(field)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else if (OB_FAIL(caster.obj_cast(value, *field, res_cell))) {
-    LOG_WARN("fail to cast obj", K(value), K(*field), K(ret));
+    LOG_WDIAG("fail to cast obj", K(value), K(*field), K(ret));
   } else if (OB_ISNULL(res_cell)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("res_cell is null , which is unexpected", K(ret));
+    LOG_WDIAG("res_cell is null , which is unexpected", K(ret));
   } else if (OB_FAIL(update_field_value(*res_cell, field->value_))) {
-    LOG_WARN("fail to update field value", K(*res_cell), K(field->value_), K(ret));
+    LOG_WDIAG("fail to update field value", K(*res_cell), K(field->value_), K(ret));
   }
 
   return ret;
@@ -779,21 +791,21 @@ int ObSessionFieldMgr::update_common_sys_variable(const ObString &name, const Ob
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_common_sys_variable(name, field))) {
     if (OB_ENTRY_NOT_EXIST == ret && is_need_insert) {
       if (is_oceanbase && OB_ISNULL(default_sys_var_set_)) {
         ret = OB_INNER_STAT_ERROR;
-        LOG_WARN("sys var set has not been added", K(ret));
+        LOG_WDIAG("sys var set has not been added", K(ret));
       } else {
         if (OB_FAIL(insert_common_sys_variable(name, value, field,
                                                is_oceanbase ? default_sys_var_set_ : NULL)))  {
-          LOG_WARN("fail to insert common sys var", K(name), K(value), K(ret));
+          LOG_WDIAG("fail to insert common sys var", K(name), K(value), K(ret));
         }
       }
     }
   } else if (OB_FAIL(update_common_sys_variable(value, field))) {
-    LOG_WARN("fail to update common sys variable", K(name), K(value), K(ret));
+    LOG_WDIAG("fail to update common sys variable", K(name), K(value), K(ret));
   }
 
   return ret;
@@ -811,7 +823,7 @@ int ObSessionFieldMgr::insert_common_sys_variable(const ObString &name, const Ob
   ObSessionSysField *field = NULL;
   if (is_oceanbase && OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K(ret));
+    LOG_WDIAG("sys var set has not been added", K(ret));
   } else {
     insert_common_sys_variable(name, value, field, is_oceanbase ? default_sys_var_set_ : NULL);
   }
@@ -827,10 +839,10 @@ int ObSessionFieldMgr::insert_mysql_system_variable(const ObString &name, const 
   bool is_reused = false;
   uint16_t len = static_cast<uint16_t>(name.length());
   if (OB_FAIL(alloc_field(mysql_sys_first_block_, mysql_sys_block_list_tail_, block_out, new_field, is_reused))) {
-    LOG_WARN("fail to alloc user var field", K(name), K(ret));
+    LOG_WDIAG("fail to alloc user var field", K(name), K(ret));
   } else if (OB_ISNULL(new_field) || OB_ISNULL(block_out)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else {
     new_field->scope_ = ObSysVarFlag::GLOBAL_SCOPE | ObSysVarFlag::SESSION_SCOPE;
     new_field->type_ = ObVarcharType;
@@ -841,7 +853,7 @@ int ObSessionFieldMgr::insert_mysql_system_variable(const ObString &name, const 
     }
 
     if (OB_FAIL(duplicate_field(name.ptr(), len, value, *new_field))) {
-      LOG_WARN("fail to duplicate_field", K(name), K(value), K(ret));
+      LOG_WDIAG("fail to duplicate_field", K(name), K(value), K(ret));
     } else {
       new_field->stat_ = OB_FIELD_USED;
       field = new_field;
@@ -858,15 +870,15 @@ int ObSessionFieldMgr::update_mysql_system_variable(const ObString &name, const 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_mysql_sys_variable(name, field))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
       if (OB_FAIL(insert_mysql_system_variable(name, value, field))) {
-        LOG_WARN("fail to insert mysql system variable", K(name), K(value), K(ret));
+        LOG_WDIAG("fail to insert mysql system variable", K(name), K(value), K(ret));
       }
     }
   } else if (OB_FAIL(update_field_value(value, field->value_))) {
-    LOG_WARN("fail to update field value", K(name), K(value), K(ret));
+    LOG_WDIAG("fail to update field value", K(name), K(value), K(ret));
   }
   return ret;
 }
@@ -876,23 +888,23 @@ int ObSessionFieldMgr::update_system_variable(const ObString &name, const ObObj 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K_(default_sys_var_set), K(ret));
+    LOG_WDIAG("sys var set has not been added", K_(default_sys_var_set), K(ret));
   } else {
     ObSysVarFieldBlock *block_out = NULL;
     bool is_reused = false;
     if (OB_ENTRY_NOT_EXIST == (ret = get_sys_variable_local(name, field))) {
       if (OB_FAIL(default_sys_var_set_->get_sys_variable(name, field))) {
-        LOG_WARN("fail to get sys var from global set", K(name), K(ret));
+        LOG_WDIAG("fail to get sys var from global set", K(name), K(ret));
       } else {
         ObSessionSysField *new_field = NULL;
         if (OB_FAIL(alloc_field(sys_first_block_, sys_block_list_tail_, block_out, new_field, is_reused))) {
-          LOG_WARN("fail to alloc sys var field", K(ret));
+          LOG_WDIAG("fail to alloc sys var field", K(ret));
         } else if (OB_ISNULL(block_out) || OB_ISNULL(new_field)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected null pointer", K(ret));
+          LOG_WDIAG("unexpected null pointer", K(ret));
         } else {
           new_field->scope_ = field->scope_;
           new_field->type_ = field->type_;
@@ -902,12 +914,12 @@ int ObSessionFieldMgr::update_system_variable(const ObString &name, const ObObj 
           ObFieldObjCaster caster;
           const ObObj *res_cell = NULL;
           if (OB_FAIL(caster.obj_cast(value, *new_field, res_cell))) {
-            LOG_WARN("fail to cast obj", K(value), K(*new_field), K(ret));
+            LOG_WDIAG("fail to cast obj", K(value), K(*new_field), K(ret));
           } else if (OB_ISNULL(res_cell)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("res_call is null , which is unexpected", K(ret));
+            LOG_WDIAG("res_call is null , which is unexpected", K(ret));
           } else if (OB_FAIL(duplicate_field(name.ptr(), len, *res_cell, *new_field))) {
-            LOG_WARN("fail to duplicate_field", K(name), K(value), K(ret));
+            LOG_WDIAG("fail to duplicate_field", K(name), K(value), K(ret));
           } else {
             new_field->stat_ = OB_FIELD_USED;
             field = new_field;
@@ -922,17 +934,17 @@ int ObSessionFieldMgr::update_system_variable(const ObString &name, const ObObj 
       const ObObj *res_cell = NULL;
       if (OB_ISNULL(field)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected null pointer", K(ret));
+        LOG_WDIAG("unexpected null pointer", K(ret));
       } else if (OB_FAIL(caster.obj_cast(value, *field, res_cell))) {
-        LOG_WARN("fail to cast obj", K(value), K(*field), K(ret));
+        LOG_WDIAG("fail to cast obj", K(value), K(*field), K(ret));
       } else if (OB_ISNULL(res_cell)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("res_call is null , which is unexpected", K(ret));
+        LOG_WDIAG("res_call is null , which is unexpected", K(ret));
       } else if (OB_FAIL(update_field_value(*res_cell, field->value_))) {
-        LOG_WARN("fail to update field value", K(*res_cell), K(field->value_), K(ret));
+        LOG_WDIAG("fail to update field value", K(*res_cell), K(field->value_), K(ret));
       }
     } else if (OB_FAIL(ret)) {
-      LOG_WARN("fail to get sys var from local set", K(name), K(ret));
+      LOG_WDIAG("fail to get sys var from local set", K(name), K(ret));
     }
   }
   return ret;
@@ -944,20 +956,20 @@ int ObSessionFieldMgr::get_sys_variable(const ObString &name, ObSessionSysField 
   value = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K_(default_sys_var_set), K(ret));
+    LOG_WDIAG("sys var set has not been added", K_(default_sys_var_set), K(ret));
   } else if (OB_ENTRY_NOT_EXIST == (ret = get_sys_variable_local(name, value))) {
     if (OB_FAIL(default_sys_var_set_->get_sys_variable(name, value, allow_var_not_found_))) {
       if (allow_var_not_found_) {
         LOG_DEBUG("fail to get sys variable from default sys var set", K(name), K(ret));
       } else {
-        LOG_WARN("fail to get sys variable from default sys var set", K(name), K(ret));
+        LOG_WDIAG("fail to get sys variable from default sys var set", K(name), K(ret));
       }
     }
   } else if (OB_FAIL(ret)) {
-    LOG_WARN("fail to get sys variable from local var set", K(name), K(ret));
+    LOG_WDIAG("fail to get sys variable from local var set", K(name), K(ret));
   } else {
     // get variable from local
   }
@@ -970,16 +982,16 @@ int ObSessionFieldMgr::get_sys_variable_value(const ObString &name, ObObj &value
   ObSessionSysField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_sys_variable(name, field))) {
     if (allow_var_not_found_) {
       LOG_DEBUG("fail to get sys variable", K(name), K(ret));
     } else {
-      LOG_WARN("fail to get sys variable", K(name), K(ret));
+      LOG_WDIAG("fail to get sys variable", K(name), K(ret));
     }
   } else if (OB_ISNULL(field)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else {
     value = field->value_;
   }
@@ -1000,10 +1012,10 @@ int ObSessionFieldMgr::get_sys_variable_value(const char *name, ObObj &value) co
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_ISNULL(name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid var name :NULL", K(ret));
+    LOG_WDIAG("invalid var name :NULL", K(ret));
   } else {
     ret = get_sys_variable_value(ObString::make_string(name), value);
   }
@@ -1016,14 +1028,14 @@ int ObSessionFieldMgr::sys_variable_exists(const ObString &name, bool &is_exist)
   is_exist = false;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K_(default_sys_var_set), K(ret));
+    LOG_WDIAG("sys var set has not been added", K_(default_sys_var_set), K(ret));
   } else {
     if (false == (is_exist = sys_variable_exists_local(name))) {
       if (OB_FAIL(default_sys_var_set_->sys_variable_exists(name, is_exist))) {
-        LOG_WARN("fail to check whether var is exist in global sys var set", K(name), K(ret));
+        LOG_WDIAG("fail to check whether var is exist in global sys var set", K(name), K(ret));
       }
     }
   }
@@ -1039,18 +1051,18 @@ int ObSessionFieldMgr::is_equal_with_snapshot(const ObString &sys_var_name,
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(is_inited_), K(ret));
+    LOG_WDIAG("not inited", K(is_inited_), K(ret));
   } else if (OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K_(default_sys_var_set), K(ret));
+    LOG_WDIAG("sys var set has not been added", K_(default_sys_var_set), K(ret));
   } else if (OB_UNLIKELY(sys_var_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(sys_var_name), K(ret));
+    LOG_WDIAG("invalid input value", K(sys_var_name), K(ret));
   } else if (OB_FAIL(default_sys_var_set_->get_sys_variable(sys_var_name, field))) {
-    LOG_WARN("fail to get sys var from global set", K(sys_var_name), K(ret));
+    LOG_WDIAG("fail to get sys var from global set", K(sys_var_name), K(ret));
   } else if (OB_ISNULL(field)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else {
     ObObj &default_obj = field->value_;
 
@@ -1063,10 +1075,10 @@ int ObSessionFieldMgr::is_equal_with_snapshot(const ObString &sys_var_name,
       const ObObj *res_cell = NULL;
 
       if (OB_FAIL(caster.obj_cast(value, *field, res_cell))) {
-        LOG_WARN("fail to cast obj", K(value), K(field), K(ret));
+        LOG_WDIAG("fail to cast obj", K(value), K(field), K(ret));
       } else if (OB_ISNULL(res_cell)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("res_call is null , which is unexpected", K(ret));
+        LOG_WDIAG("res_call is null , which is unexpected", K(ret));
       } else if (0 == res_cell->compare(default_obj, CS_TYPE_UTF8MB4_GENERAL_CI)) {
         //FIXME consider the character set no need to reset session variable
         is_equal = true;
@@ -1084,12 +1096,12 @@ int ObSessionFieldMgr::get_sys_variable_type(const ObString &name, ObObjType &ty
   ObSessionSysField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_sys_variable(name, field))) {
-    LOG_WARN("fail to get sys variable", K(name), K(ret));
+    LOG_WDIAG("fail to get sys variable", K(name), K(ret));
   } else if (OB_ISNULL(field)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else {
     type = field->type_;
   }
@@ -1104,7 +1116,7 @@ int ObSessionFieldMgr::replace_variable_common(const ObString &name, const ObObj
   bool succ_get = false;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObSessionUserField *field = NULL;
     ObSessionSysField *sys_field = NULL;
@@ -1112,7 +1124,7 @@ int ObSessionFieldMgr::replace_variable_common(const ObString &name, const ObObj
       case OB_SESSION_USER_VAR:
         if (OB_ENTRY_NOT_EXIST == (ret = get_user_variable(name, field))) {
           if (OB_FAIL(insert_user_variable(name, value))) {
-            LOG_WARN("fail to insert user variable", K(name), K(value), K(ret));
+            LOG_WDIAG("fail to insert user variable", K(name), K(value), K(ret));
           }
         } else if (OB_SUCC(ret)) {
           succ_get = true;
@@ -1121,7 +1133,7 @@ int ObSessionFieldMgr::replace_variable_common(const ObString &name, const ObObj
       case OB_SESSION_COMMON_SYS_VAR:
         if (OB_ENTRY_NOT_EXIST == (ret = get_common_sys_variable(name, sys_field))) {
           if (OB_FAIL(insert_common_sys_variable(name, value, is_oceanbase))) {
-            LOG_WARN("fail to insert user variable", K(name), K(value), K(ret));
+            LOG_WDIAG("fail to insert user variable", K(name), K(value), K(ret));
           }
         } else if (OB_SUCC(ret)) {
           field = sys_field;
@@ -1131,7 +1143,7 @@ int ObSessionFieldMgr::replace_variable_common(const ObString &name, const ObObj
       case OB_SESSION_MYSQL_SYS_VAR:
         if (OB_ENTRY_NOT_EXIST == (ret = get_mysql_sys_variable(name, sys_field))) {
           if (OB_FAIL(insert_mysql_system_variable(name, value))) {
-            LOG_WARN("fail to insert user variable", K(name), K(value), K(ret));
+            LOG_WDIAG("fail to insert user variable", K(name), K(value), K(ret));
           }
         } else if (OB_SUCC(ret)) {
           field = sys_field;
@@ -1139,7 +1151,7 @@ int ObSessionFieldMgr::replace_variable_common(const ObString &name, const ObObj
         }
         break;
       default:
-        LOG_WARN("invalid type", K(var_type));
+        LOG_WDIAG("invalid type", K(var_type));
         ret = OB_INVALID_ARGUMENT;
     }
 
@@ -1147,15 +1159,15 @@ int ObSessionFieldMgr::replace_variable_common(const ObString &name, const ObObj
       if (succ_get) {
         if (OB_ISNULL(field)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("unexpected null pointer", K(ret));
+          LOG_WDIAG("unexpected null pointer", K(ret));
         } else if (OB_FAIL(update_field_value(value, field->value_))) {
-          LOG_WARN("fail to update field value", K(name), K(value), K(ret));
+          LOG_WDIAG("fail to update field value", K(name), K(value), K(ret));
         } else {
           LOG_DEBUG("replace succ", K(name), K(value), K(var_type));
         }
       }
     } else {
-      LOG_WARN("fail to get variable", K(name), K(var_type), K(is_oceanbase), K(ret));
+      LOG_WDIAG("fail to get variable", K(name), K(var_type), K(is_oceanbase), K(ret));
     }
   }
   return ret;
@@ -1181,7 +1193,7 @@ int ObSessionFieldMgr::remove_variable_common(const common::ObString &name, ObSe
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObSessionUserField *field_ptr = NULL;
     ObSessionSysField *sys_field_ptr = NULL;
@@ -1198,12 +1210,12 @@ int ObSessionFieldMgr::remove_variable_common(const common::ObString &name, ObSe
         ret = get_common_sys_variable(name, sys_field_ptr, sys_block);
         break;
       default:
-        LOG_WARN("invalid type", K(name), K(var_type));
+        LOG_WDIAG("invalid type", K(name), K(var_type));
         ret = OB_INVALID_ARGUMENT;
     }
 
     if (OB_ENTRY_NOT_EXIST == ret) {
-      LOG_WARN("variable is not exist", K(name), K(var_type), K(ret));
+      LOG_WDIAG("variable is not exist", K(name), K(var_type), K(ret));
     } else if (OB_SUCC(ret) && NULL != field_ptr) {
       if (OB_SESSION_USER_VAR == var_type) {
         field_heap_->free_obj(field_ptr->value_);
@@ -1217,7 +1229,7 @@ int ObSessionFieldMgr::remove_variable_common(const common::ObString &name, ObSe
         sys_block->inc_removed_count();
       }
     } else {
-      LOG_WARN("fail to get_variable", K(name), K(var_type), K(ret));
+      LOG_WDIAG("fail to get_variable", K(name), K(var_type), K(ret));
     }
   }
   return ret;
@@ -1243,13 +1255,13 @@ int ObSessionFieldMgr::get_user_variable(const ObString &name, ObSessionUserFiel
   int ret = OB_ENTRY_NOT_EXIST;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObUserVarFieldBlock *block = NULL;
     if (OB_ENTRY_NOT_EXIST == (ret = get_user_variable(name, value, block))) {
       LOG_INFO("user variable not exist", K(name), K(ret));
     } else if (OB_FAIL(ret)) {
-      LOG_WARN("fail to get user variable", K(name), K(ret));
+      LOG_WDIAG("fail to get user variable", K(name), K(ret));
     }
   }
   return ret;
@@ -1262,7 +1274,7 @@ int ObSessionFieldMgr::get_variable_value_common(const ObString &name, ObObj &va
   ObSessionSysField *sys_field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     switch(var_type) {
       case OB_SESSION_USER_VAR:
@@ -1278,18 +1290,18 @@ int ObSessionFieldMgr::get_variable_value_common(const ObString &name, ObObj &va
         break;
       default:
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid type", K(name), K(var_type));
+        LOG_WDIAG("invalid type", K(name), K(var_type));
     }
 
     if (OB_FAIL(ret)) {
       if (OB_ENTRY_NOT_EXIST == ret) {
         LOG_DEBUG("fail to get variable", K(name), K(var_type), K(ret));
       } else {
-        LOG_WARN("fail to get variable", K(name), K(var_type), K(ret));
+        LOG_WDIAG("fail to get variable", K(name), K(var_type), K(ret));
       }
     } else if (OB_ISNULL(field)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected null pointer", K(ret));
+      LOG_WDIAG("unexpected null pointer", K(ret));
     } else {
       value = field->value_;
     }
@@ -1317,7 +1329,7 @@ int ObSessionFieldMgr::user_variable_exists(const ObString &name, bool &is_exist
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     is_exist = false;
     const ObUserVarFieldBlock *block = user_first_block_;
@@ -1346,12 +1358,12 @@ int ObSessionFieldMgr::format_all_var(ObSqlString &sql) const
   ObHashSet<ObString, NoPthreadDefendMode> local_var_set;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("session field not inited", K(ret));
+    LOG_WDIAG("session field not inited", K(ret));
   } else if (OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K_(default_sys_var_set), K(ret));
+    LOG_WDIAG("sys var set has not been added", K_(default_sys_var_set), K(ret));
   } else if (OB_FAIL(local_var_set.create(BUCKET_SIZE))) {
-    LOG_WARN("hash table init failed", K(ret));
+    LOG_WDIAG("hash table init failed", K(ret));
   } else {
     // 0. set common system session variable (hot,cold)
     const ObSysVarFieldBlock *block = common_sys_first_block_;
@@ -1362,11 +1374,11 @@ int ObSessionFieldMgr::format_all_var(ObSqlString &sql) const
         field = const_cast<ObSessionSysField *>(block->field_slots_ + i);
         if (OB_FIELD_USED == field->stat_) {
           if (OB_FAIL(field->format(sql))) {
-            LOG_WARN("construct sql failed", K(ret));
+            LOG_WDIAG("construct sql failed", K(ret));
           } else {
             var_name.assign(const_cast<char *>(field->name_), field->name_len_);
             if (OB_FAIL(local_var_set.set_refactored(var_name))) {
-              LOG_WARN("local_var_set set failed", K(ret));
+              LOG_WDIAG("local_var_set set failed", K(ret));
             }
           }
         }
@@ -1387,12 +1399,12 @@ int ObSessionFieldMgr::format_all_var(ObSqlString &sql) const
             // do nothing
           } else if (OB_HASH_NOT_EXIST != hash_ret) {
             ret = hash_ret;
-            LOG_WARN("local_var_set set failed", K(ret));
+            LOG_WDIAG("local_var_set set failed", K(ret));
           } else {
             if (OB_FAIL(field->format(sql))) {
-              LOG_WARN("construct sql failed", K(ret));
+              LOG_WDIAG("construct sql failed", K(ret));
             } else if (OB_FAIL(local_var_set.set_refactored(var_name))) {
-              LOG_WARN("local_var_set set failed", K(ret));
+              LOG_WDIAG("local_var_set set failed", K(ret));
             }
           }
         }
@@ -1403,7 +1415,7 @@ int ObSessionFieldMgr::format_all_var(ObSqlString &sql) const
     if (OB_FAIL(ret)) {
       // do nothing
     } else if (OB_FAIL(default_sys_var_set_->get_sys_first_block(block))) {
-      LOG_WARN("global sys var set not inited", K(ret));
+      LOG_WDIAG("global sys var set not inited", K(ret));
     } else {
       field = NULL;
       ObString var_name;
@@ -1417,9 +1429,9 @@ int ObSessionFieldMgr::format_all_var(ObSqlString &sql) const
               // do nothing
             } else if (OB_HASH_NOT_EXIST != hash_ret) {
               ret = hash_ret;
-              LOG_WARN("local_var_set set failed", K(ret));
+              LOG_WDIAG("local_var_set set failed", K(ret));
             } else if (OB_FAIL(field->format(sql))) {
-              LOG_WARN("construct sql failed", K(ret));
+              LOG_WDIAG("construct sql failed", K(ret));
             } else {
               // do nothing
             }
@@ -1430,7 +1442,7 @@ int ObSessionFieldMgr::format_all_var(ObSqlString &sql) const
     // 3. set user-defined session
     if (OB_FAIL(ret)) {
     } else if (OB_FAIL(format_user_var(sql))) {
-      LOG_WARN("construct user var failed", K(ret));
+      LOG_WDIAG("construct user var failed", K(ret));
     } else {
       // do nothing
     }
@@ -1475,14 +1487,14 @@ int ObSessionFieldMgr::format_last_insert_id(ObSqlString &sql) const
   ObSessionSysField *field;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_sys_variable(ObString::make_string(OB_SV_LAST_INSERT_ID), field))) {
-    LOG_WARN("get last_insert_id field error", K(ret));
+    LOG_WDIAG("get last_insert_id field error", K(ret));
   } else if (OB_ISNULL(field)) {
     ret = OB_ERR_NULL_VALUE;
-    LOG_WARN("unexpect null value in get_sys_variable", K(ret));
+    LOG_WDIAG("unexpect null value in get_sys_variable", K(ret));
   } else if (OB_FAIL(field->format_util(sql, true))) {
-    LOG_WARN("fail to construct last_insert_id", K(ret));
+    LOG_WDIAG("fail to construct last_insert_id", K(ret));
   } else {}
   return ret;
 }
@@ -1501,7 +1513,7 @@ int ObSessionFieldMgr::get_user_variable(const ObString &name, ObSessionUserFiel
   ObSessionUserField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObString var_name;
     for (; OB_SUCC(ret) && !is_exist && NULL != block; block = block->next_) {
@@ -1536,7 +1548,7 @@ int ObSessionFieldMgr::get_common_sys_variable(const ObString &name, ObSessionSy
   ObSessionSysField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObString var_name;
     for (; OB_SUCC(ret) && !is_exist && NULL != block; block = block->next_) {
@@ -1571,7 +1583,7 @@ int ObSessionFieldMgr::get_mysql_sys_variable(const ObString &name, ObSessionSys
   ObSessionSysField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObString var_name;
     for (; OB_SUCC(ret) && !is_exist && NULL != block; block = block->next_) {
@@ -1605,12 +1617,12 @@ int ObSessionFieldMgr::insert_user_variable(const ObString &name, const ObObj &v
   bool is_reused = false;
   uint16_t len = static_cast<uint16_t>(name.length());
   if (OB_FAIL(alloc_field(user_first_block_, user_block_list_tail_, block_out, new_field, is_reused))) {
-    LOG_WARN("fail to alloc user var field", K(name), K(ret));
+    LOG_WDIAG("fail to alloc user var field", K(name), K(ret));
   } else if (OB_ISNULL(new_field) || OB_ISNULL(block_out)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else if (OB_FAIL(duplicate_field(name.ptr(), len, value, *new_field))) {
-    LOG_WARN("fail to duplicate_field", K(name), K(value), K(ret));
+    LOG_WDIAG("fail to duplicate_field", K(name), K(value), K(ret));
   } else {
     new_field->stat_ = OB_FIELD_USED;
     if (is_reused) {
@@ -1626,13 +1638,13 @@ int ObSessionFieldMgr::update_field_value(const ObObj &src_obj, ObObj &dest_obj)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (dest_obj.get_deep_copy_size() >= src_obj.get_deep_copy_size()) {
     int64_t pos = 0;
     void *buf = const_cast<void *>(dest_obj.get_data_ptr());
     if (OB_FAIL(dest_obj.deep_copy(src_obj, static_cast<char *>(buf),
                                    dest_obj.get_deep_copy_size(), pos))) {
-      LOG_WARN("fail to deep copy", K(src_obj), K(dest_obj), K(ret));
+      LOG_WDIAG("fail to deep copy", K(src_obj), K(dest_obj), K(ret));
     } else {
       const int64_t free_len = dest_obj.get_deep_copy_size() - src_obj.get_deep_copy_size();
       field_heap_->free_string(static_cast<char *>(buf) + src_obj.get_deep_copy_size(), free_len);
@@ -1654,7 +1666,7 @@ int ObSessionFieldMgr::remove_str_field(const ObVFieldType type)
   ObSessionVField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   }
 
   for (; OB_SUCC(ret) && NULL != block; block = block->next_) {
@@ -1678,7 +1690,7 @@ int ObSessionFieldMgr::remove_str_field(const ObVFieldType type)
       block->inc_removed_count();
     } else {
       ret = OB_ENTRY_NOT_EXIST;
-      LOG_WARN("fail to get str field", "str_field_type", type, K(ret));
+      LOG_WDIAG("fail to get str field", "str_field_type", type, K(ret));
     }
   }
 
@@ -1690,10 +1702,10 @@ int ObSessionFieldMgr::replace_str_field(const ObVFieldType type, const ObString
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_UNLIKELY(value.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("value is empty", K(type), K(value), K(ret));
+    LOG_WDIAG("value is empty", K(type), K(value), K(ret));
   } else {
     const ObStrFieldBlock *block = str_first_block_;
     ObSessionVField *field = NULL;
@@ -1721,7 +1733,7 @@ int ObSessionFieldMgr::replace_str_field(const ObVFieldType type, const ObString
         field_heap_->free_string(field->value_ + value.length(), old_len - new_len);
       } else {
         if (OB_FAIL(field_heap_->duplicate_str(value.ptr(), new_len, field->value_, field->value_len_))) {
-          LOG_WARN("fail to duplicate_str", K(type), K(value), K(field), K(ret));
+          LOG_WDIAG("fail to duplicate_str", K(type), K(value), K(field), K(ret));
         } else {
           field_heap_->free_string(old_value, static_cast<int64_t>(old_len));
         }
@@ -1729,7 +1741,7 @@ int ObSessionFieldMgr::replace_str_field(const ObVFieldType type, const ObString
     } else {
       //insert this field
       if (OB_FAIL(insert_str_field(type, value))) {
-        LOG_WARN("fail to insert_str_field", K(value), K(field), K(ret));
+        LOG_WDIAG("fail to insert_str_field", K(value), K(field), K(ret));
       }
     }
   }
@@ -1744,16 +1756,16 @@ int ObSessionFieldMgr::insert_str_field(const ObVFieldType type, const ObString 
   bool is_reused = false;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(alloc_field(str_first_block_, str_block_list_tail_, block_out, new_field,
                                  is_reused))) {
-    LOG_WARN("fail to alloc v field", K(ret));
+    LOG_WDIAG("fail to alloc v field", K(ret));
   } else if (OB_ISNULL(new_field) || OB_ISNULL(block_out)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else if (OB_FAIL(field_heap_->duplicate_str(value.ptr(), static_cast<uint16_t>(value.length()),
                                                 new_field->value_, new_field->value_len_))) {
-    LOG_WARN("fail to duplicate str", K(ret));
+    LOG_WDIAG("fail to duplicate str", K(ret));
   } else {
     new_field->type_ = type;
     if (is_reused) {
@@ -1770,7 +1782,7 @@ int ObSessionFieldMgr::get_str_field_value(const ObVFieldType type, ObString &va
   const ObStrFieldBlock *block = str_first_block_;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     for (; OB_SUCC(ret) && !is_exist && NULL != block; block = block->next_) {
       for (int64_t i = 0;
@@ -1814,9 +1826,9 @@ int ObSessionFieldMgr::get_changed_sys_var_names(ObIArray<ObString> &names)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_var_names_common(sys_first_block_, names))) {
-    LOG_WARN("fail to get changed sys var_names", K(ret));
+    LOG_WDIAG("fail to get changed sys var_names", K(ret));
   }
   return ret;
 }
@@ -1827,14 +1839,14 @@ int ObSessionFieldMgr::get_all_sys_var_names(ObIArray<ObString> &names)
   const ObSysVarFieldBlock *block = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K_(default_sys_var_set), K(ret));
+    LOG_WDIAG("sys var set has not been added", K_(default_sys_var_set), K(ret));
   } else if (OB_FAIL(default_sys_var_set_->get_sys_first_block(block))) {
-    LOG_WARN("global sys var set not inited", K(ret));
+    LOG_WDIAG("global sys var set not inited", K(ret));
   } else if (OB_FAIL(get_var_names_common(block, names))) {
-    LOG_WARN("fail to get all sys var_names", K(ret));
+    LOG_WDIAG("fail to get all sys var_names", K(ret));
   }
   return ret;
 }
@@ -1844,9 +1856,9 @@ int ObSessionFieldMgr::get_all_common_sys_var_names(ObIArray<ObString> &names)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_var_names_common(common_sys_first_block_, names))) {
-    LOG_WARN("fail to get all sys var_names", K(ret));
+    LOG_WDIAG("fail to get all sys var_names", K(ret));
   }
   return ret;
 }
@@ -1856,9 +1868,9 @@ int ObSessionFieldMgr::get_all_mysql_sys_var_names(ObIArray<ObString> &names)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_var_names_common(mysql_sys_first_block_, names))) {
-    LOG_WARN("fail to get all sys var_names", K(ret));
+    LOG_WDIAG("fail to get all sys var_names", K(ret));
   }
   return ret;
 }
@@ -1868,9 +1880,9 @@ int ObSessionFieldMgr::get_all_user_var_names(ObIArray<ObString> &names)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_var_names_common(user_first_block_, names))) {
-    LOG_WARN("fail to get all user var_names", K(ret));
+    LOG_WDIAG("fail to get all user var_names", K(ret));
   }
   return ret;
 }
@@ -1881,9 +1893,9 @@ int ObSessionFieldMgr::get_all_changed_sys_vars(ObIArray<ObSessionSysField> &fie
   ObSessionSysField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_vars_common(sys_first_block_, fields, field))) {
-    LOG_WARN("fail to get all changed sys vars", K(ret));
+    LOG_WDIAG("fail to get all changed sys vars", K(ret));
   }
   return ret;
 }
@@ -1899,12 +1911,12 @@ int ObSessionFieldMgr::get_all_sys_vars(ObIArray<ObSessionSysField> &fields)
   ObHashSet<ObString, NoPthreadDefendMode> local_var_set;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("session field not inited", K(ret));
+    LOG_WDIAG("session field not inited", K(ret));
   } else if (OB_ISNULL(default_sys_var_set_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("sys var set has not been added", K_(default_sys_var_set), K(ret));
+    LOG_WDIAG("sys var set has not been added", K_(default_sys_var_set), K(ret));
   } else if (OB_FAIL(local_var_set.create(BUCKET_SIZE))) {
-    LOG_WARN("hash table init failed", K(ret));
+    LOG_WDIAG("hash table init failed", K(ret));
   } else {
     // 1. get changed sys vars
     block = sys_first_block_;
@@ -1914,9 +1926,9 @@ int ObSessionFieldMgr::get_all_sys_vars(ObIArray<ObSessionSysField> &fields)
         if (OB_FIELD_USED == field->stat_) {
           var_name.assign(const_cast<char *>(field->name_), field->name_len_);
           if (OB_FAIL(fields.push_back(*field))) {
-            LOG_WARN("fail to push back var_name", K(var_name), K(ret));
+            LOG_WDIAG("fail to push back var_name", K(var_name), K(ret));
           } else if (OB_FAIL(local_var_set.set_refactored(var_name))) {
-            LOG_WARN("local_var_set set failed", K(ret));
+            LOG_WDIAG("local_var_set set failed", K(ret));
           } else {
             // do nothing
           }
@@ -1929,7 +1941,7 @@ int ObSessionFieldMgr::get_all_sys_vars(ObIArray<ObSessionSysField> &fields)
   if (OB_FAIL(ret)) {
     // do nothing
   } else if (OB_FAIL(default_sys_var_set_->get_sys_first_block(block))) {
-    LOG_WARN("global sys var set not inited", K(ret));
+    LOG_WDIAG("global sys var set not inited", K(ret));
   } else {
     field = NULL;
     for (; OB_SUCC(ret) && NULL != block; block = block->next_) {
@@ -1942,9 +1954,9 @@ int ObSessionFieldMgr::get_all_sys_vars(ObIArray<ObSessionSysField> &fields)
             // do nothing
           } else if (OB_HASH_NOT_EXIST != hash_ret) {
             ret = hash_ret;
-            LOG_WARN("local_var_set set failed", K(ret));
+            LOG_WDIAG("local_var_set set failed", K(ret));
           } else if (OB_FAIL(fields.push_back(*field))) {
-            LOG_WARN("fail to push back var_name", K(var_name), K(ret));
+            LOG_WDIAG("fail to push back var_name", K(var_name), K(ret));
           }
         }
       }
@@ -1960,9 +1972,9 @@ int ObSessionFieldMgr::get_all_user_vars(ObIArray<ObSessionBaseField> &fields)
   ObSessionBaseField *field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_FAIL(get_vars_common(user_first_block_, fields, field))) {
-    LOG_WARN("fail to get all user vars", K(ret));
+    LOG_WDIAG("fail to get all user vars", K(ret));
   }
   return ret;
 }
@@ -1976,7 +1988,7 @@ int ObSessionFieldMgr::get_sys_variable_from_block(const ObString &name, ObSessi
   ObString var_name;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     for (; OB_SUCC(ret) && !is_exist && NULL != block; block = block->next_) {
       for (int64_t i = 0; OB_SUCC(ret) && !is_exist && i < block->free_idx_; ++i) {
@@ -2067,7 +2079,7 @@ int ObSessionFieldMgr::remove_all_user_vars()
   int ret = OB_SUCCESS;
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(get_all_user_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
   } else {
     int64_t count = names.count();
     for (int i = 0; i < count; i++) {
@@ -2082,7 +2094,7 @@ int ObSessionFieldMgr::remove_all_mysql_sys_vars()
   int ret = OB_SUCCESS;
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(get_all_mysql_sys_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
   } else {
     int64_t count = names.count();
     for (int i = 0; i < count; i++) {
@@ -2097,7 +2109,7 @@ int ObSessionFieldMgr::remove_all_common_sys_vars()
   int ret = OB_SUCCESS;
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(get_all_common_sys_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
   } else {
     int64_t count = names.count();
     for (int i = 0; i < count; i++) {
@@ -2117,7 +2129,7 @@ int ObSessionFieldMgr::get_sys_variable(const common::ObString &name, ObSessionS
   ObString var_name;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     for (; OB_SUCC(ret) && !is_exist && NULL != block; block = block->next_) {
       for (int64_t i = 0; OB_SUCC(ret) && !is_exist && i < block->free_idx_; ++i) {
@@ -2147,7 +2159,7 @@ int ObSessionFieldMgr::remove_sys_variable(const common::ObString &name)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else {
     ObSessionSysField *field_ptr = NULL;
     ObSysVarFieldBlock *block = NULL;
@@ -2159,7 +2171,7 @@ int ObSessionFieldMgr::remove_sys_variable(const common::ObString &name)
       field_ptr->reset();
       block->inc_removed_count();
     } else {
-      LOG_WARN("fail to get_user_variable", K(name), K(ret));
+      LOG_WDIAG("fail to get_user_variable", K(name), K(ret));
     }
   }
   return ret;
@@ -2171,7 +2183,7 @@ int ObSessionFieldMgr::remove_all_sys_vars()
   int ret = OB_SUCCESS;
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(get_changed_sys_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
   } else {
     int64_t count = names.count();
     for (int i = 0; i < count; i++) {
@@ -2198,7 +2210,7 @@ int ObSessionFieldMgr::replace_last_insert_id_var(ObSessionFieldMgr& field_manag
   if (OB_FAIL(ret)) {
 
   } else if (OB_FAIL(update_system_variable(var_name, obj, field))){
-    LOG_WARN("fail to update_system_variable", K(obj), K(ret));
+    LOG_WDIAG("fail to update_system_variable", K(obj), K(ret));
   } else {
     LOG_DEBUG("succ update_system_variable", K(var_name), K(obj), K(ret));
   }
@@ -2211,7 +2223,7 @@ int ObSessionFieldMgr::replace_all_sys_vars(ObSessionFieldMgr& field_manager, Ne
   // remove_all_sys_vars();
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(field_manager.get_changed_sys_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
     return false;
   }
   // hot_var_name if not changed should be set as default
@@ -2234,16 +2246,16 @@ int ObSessionFieldMgr::replace_all_sys_vars(ObSessionFieldMgr& field_manager, Ne
     if (need_func != NULL && !need_func(names.at(i))) {
       // not need skip it
     } else if (OB_FAIL(field_manager.get_sys_variable_value(names.at(i), obj))) {
-      LOG_WARN("fail to get sys obj", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to get sys obj", K(names.at(i)), K(i), K(ret));
     } else if (OB_SUCC(get_common_sys_variable(names.at(i), field))) {
       // if common have update common and sys
       if (OB_FAIL(update_common_sys_variable(obj, field))) {
-        LOG_WARN("fail to update common sys", K(names.at(i)), K(ret));
+        LOG_WDIAG("fail to update common sys", K(names.at(i)), K(ret));
       } else if (OB_FAIL(update_system_variable(names.at(i), obj, field))) {
-        LOG_WARN("fail to update_system_variable", K(names.at(i)), K(i), K(ret));
+        LOG_WDIAG("fail to update_system_variable", K(names.at(i)), K(i), K(ret));
       }
     } else if (OB_FAIL(update_system_variable(names.at(i), obj, field))) {
-      LOG_WARN("fail to update_system_variable", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to update_system_variable", K(names.at(i)), K(i), K(ret));
     } else {
       // LOG_DEBUG("succ replace", K(names.at(i)), K(i), K(obj));
     }
@@ -2257,7 +2269,7 @@ int ObSessionFieldMgr::replace_all_user_vars(ObSessionFieldMgr& field_manager)
   // remove_all_user_vars();
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(field_manager.get_all_user_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
     return false;
   }
   int64_t count = names.count();
@@ -2265,9 +2277,9 @@ int ObSessionFieldMgr::replace_all_user_vars(ObSessionFieldMgr& field_manager)
   for (int64_t i = 0; i < count; ++i) {
     obj.reset();
     if (OB_FAIL(field_manager.get_user_variable_value(names.at(i), obj))) {
-      LOG_WARN("fail to get user obj", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to get user obj", K(names.at(i)), K(i), K(ret));
     } else if (OB_FAIL(replace_user_variable(names.at(i), obj))){
-      LOG_WARN("fail to replace_user_variable", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to replace_user_variable", K(names.at(i)), K(i), K(ret));
     } else {
       // LOG_DEBUG("succ replace", K(names.at(i)), K(i));
     }
@@ -2281,7 +2293,7 @@ int ObSessionFieldMgr::replace_all_common_sys_vars(ObSessionFieldMgr& field_mana
   // remove_all_common_sys_vars();
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(field_manager.get_all_common_sys_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
   }
   int64_t count = names.count();
   common::ObObj obj;
@@ -2290,9 +2302,9 @@ int ObSessionFieldMgr::replace_all_common_sys_vars(ObSessionFieldMgr& field_mana
     if (need_func != NULL && !need_func(names.at(i))) {
       // not need skip
     } else if (OB_FAIL(field_manager.get_common_sys_variable_value(names.at(i), obj))) {
-      LOG_WARN("fail to get common sys obj", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to get common sys obj", K(names.at(i)), K(i), K(ret));
     } else if (OB_FAIL(replace_common_sys_variable(names.at(i), obj, is_oceanbase))){
-      LOG_WARN("fail to replace_common_sys_variable", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to replace_common_sys_variable", K(names.at(i)), K(i), K(ret));
     } else {
       // LOG_DEBUG("succ replace", K(names.at(i)), K(i), K(obj));
     }
@@ -2306,7 +2318,7 @@ int ObSessionFieldMgr::replace_all_mysql_sys_vars(ObSessionFieldMgr& field_manag
   // remove_all_mysql_sys_vars();
   common::ObSEArray<common::ObString, 32> names;
   if (OB_FAIL(field_manager.get_all_mysql_sys_var_names(names))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
   }
   ObSessionSysField *field = NULL;
   int64_t count = names.count();
@@ -2317,16 +2329,16 @@ int ObSessionFieldMgr::replace_all_mysql_sys_vars(ObSessionFieldMgr& field_manag
     if (need_func != NULL && need_func(names.at(i))) {
       // not need ,skip it
     } else if (OB_FAIL(field_manager.get_mysql_sys_variable_value(names.at(i), obj))) {
-      LOG_WARN("fail to get mysql sys obj", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to get mysql sys obj", K(names.at(i)), K(i), K(ret));
     } else if (OB_SUCC(get_common_sys_variable(names.at(i), field))) {
       // if common have update common and sys
       if (OB_FAIL(update_common_sys_variable(obj, field))) {
-        LOG_WARN("fail to update common sys", K(names.at(i)), K(ret));
+        LOG_WDIAG("fail to update common sys", K(names.at(i)), K(ret));
       } else if (OB_FAIL(update_mysql_system_variable(names.at(i), obj, field))) {
-        LOG_WARN("fail to update_system_variable", K(names.at(i)), K(i), K(ret));
+        LOG_WDIAG("fail to update_system_variable", K(names.at(i)), K(i), K(ret));
       }
     } else if (OB_FAIL(update_mysql_system_variable(names.at(i), obj, field))){
-      LOG_WARN("fail to replace_mysql_sys_variable", K(names.at(i)), K(i), K(ret));
+      LOG_WDIAG("fail to replace_mysql_sys_variable", K(names.at(i)), K(i), K(ret));
     } else {
       // LOG_DEBUG("succ replace", K(names.at(i)), K(i));
     }
@@ -2423,25 +2435,25 @@ bool ObSessionFieldMgr::is_same_hot_sys_vars_common(const ObSessionFieldMgr& fie
       break;
     case OB_SESSION_MYSQL_SYS_VAR:
       if (OB_FAIL(get_all_mysql_sys_var_names(names1))) {
-        LOG_WARN("fail get all var name for source", K(ret));
+        LOG_WDIAG("fail get all var name for source", K(ret));
         bret = false;
       } else if (OB_FAIL(manager_ptr->get_all_mysql_sys_var_names(names2))) {
-        LOG_WARN("fail get all var name for dest", K(ret));
+        LOG_WDIAG("fail get all var name for dest", K(ret));
         bret = false;
       }
       break;
     case OB_SESSION_COMMON_SYS_VAR:
       if (OB_FAIL(get_all_common_sys_var_names(names1))) {
-        LOG_WARN("fail get all var name for source", K(ret));
+        LOG_WDIAG("fail get all var name for source", K(ret));
         bret = false;
       } else if (OB_FAIL(manager_ptr->get_all_common_sys_var_names(names2))) {
-        LOG_WARN("fail get all var name for dest", K(ret));
+        LOG_WDIAG("fail get all var name for dest", K(ret));
         bret = false;
       }
       break;
     default:
       bret = false;
-      LOG_WARN("invalid type", K(var_type));
+      LOG_WDIAG("invalid type", K(var_type));
   }
   if (bret) {
     for (int i = 0; i < names1.count(); i++) {
@@ -2472,33 +2484,33 @@ bool ObSessionFieldMgr::is_same_cold_sys_vars_common(const ObSessionFieldMgr& fi
   switch(var_type) {
     case OB_SESSION_SYS_VAR:
       if (OB_FAIL(get_changed_sys_var_names(names1))) {
-        LOG_WARN("fail get all var name for source", K(ret));
+        LOG_WDIAG("fail get all var name for source", K(ret));
         bret = false;
       } else if (OB_FAIL(manager_ptr->get_changed_sys_var_names(names2))) {
-        LOG_WARN("fail get all var name for dest", K(ret));
+        LOG_WDIAG("fail get all var name for dest", K(ret));
         bret = false;
       }
       break;
     case OB_SESSION_COMMON_SYS_VAR:
       if (OB_FAIL(get_all_common_sys_var_names(names1))) {
-        LOG_WARN("fail get all var name for source", K(ret));
+        LOG_WDIAG("fail get all var name for source", K(ret));
         bret = false;
       } else if (OB_FAIL(manager_ptr->get_all_common_sys_var_names(names2))) {
-        LOG_WARN("fail get all var name for dest", K(ret));
+        LOG_WDIAG("fail get all var name for dest", K(ret));
         bret = false;
       }
       break;
     case OB_SESSION_MYSQL_SYS_VAR:
       if (OB_FAIL(get_all_mysql_sys_var_names(names1))) {
-        LOG_WARN("fail get all var name for source", K(ret));
+        LOG_WDIAG("fail get all var name for source", K(ret));
         bret = false;
       } else if (OB_FAIL(manager_ptr->get_all_mysql_sys_var_names(names2))) {
-        LOG_WARN("fail get all var name for dest", K(ret));
+        LOG_WDIAG("fail get all var name for dest", K(ret));
         bret = false;
       }
       break;
     default:
-      LOG_WARN("invalid type", K(var_type));
+      LOG_WDIAG("invalid type", K(var_type));
       bret = false;
   }
   if (bret) {
@@ -2610,7 +2622,7 @@ bool ObSessionFieldMgr::is_same_vars_in_array(common::ObIArray<common::ObString>
       }
       break;
     default:
-      LOG_WARN("invalid type", K(type));
+      LOG_WDIAG("invalid type", K(type));
       bret = false;
     }
     if (found1 == found2) {
@@ -2644,12 +2656,12 @@ bool ObSessionFieldMgr::is_same_user_vars(const ObSessionFieldMgr& field_manager
   common::ObSEArray<common::ObString, 32> names1;
   common::ObSEArray<common::ObString, 32> names2;
   if (OB_FAIL(get_all_user_var_names(names1))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
     return false;
   }
   ObSessionFieldMgr* manager_ptr = const_cast<ObSessionFieldMgr*>(&field_manager);
   if (OB_FAIL(manager_ptr->get_all_user_var_names(names2))) {
-    LOG_WARN("fail get all var name for source", K(ret));
+    LOG_WDIAG("fail get all var name for source", K(ret));
     return false;
   }
   int64_t count1 = names1.count();
@@ -2686,7 +2698,7 @@ int ObDefaultSysVarSet::init()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObFieldBaseMgr::init())) {
-    LOG_WARN("fail to init base class", K(ret));
+    LOG_WDIAG("fail to init base class", K(ret));
   } else {
     var_name_map_.init();
     is_inited_ = true;
@@ -2705,17 +2717,17 @@ int ObDefaultSysVarSet::get_sys_variable(const ObString &var, ObSessionSysField 
   ObSessionSysField *local_field = NULL;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("DefalutSysVarSet is not inited", K(var), K(ret));
+    LOG_WDIAG("DefalutSysVarSet is not inited", K(var), K(ret));
   } else if (OB_FAIL(var_name_map_.get_refactored(var, local_field))) {
     ret = OB_ERR_SYS_VARIABLE_UNKNOWN;
     if (allow_var_not_found) {
       LOG_DEBUG("unknown sys variable", K(var), K(ret));
     } else {
-      LOG_WARN("unknown sys variable", K(var), K(ret));
+      LOG_WDIAG("unknown sys variable", K(var), K(ret));
     }
   } else if (OB_ISNULL(local_field)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("got field should not be NULL", K(local_field), K(ret));
+    LOG_WDIAG("got field should not be NULL", K(local_field), K(ret));
   } else {
     value = local_field;
   }
@@ -2745,33 +2757,33 @@ int ObDefaultSysVarSet::load_default_system_variable()
   const int64_t both_scope = ObSysVarFlag::GLOBAL_SCOPE | ObSysVarFlag::SESSION_SCOPE | ObSysVarFlag::READONLY;
   bool print_info_log = true;
   if (OB_FAIL(load_sysvar_int(ObString::make_string("autocommit"), 1, ObSysVarFlag::GLOBAL_SCOPE | ObSysVarFlag::SESSION_SCOPE, print_info_log))) {
-    LOG_WARN("fail to load default sysvar autocommit", K(ret));
+    LOG_WDIAG("fail to load default sysvar autocommit", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_AUTO_INCREMENT_INCREMENT), 1, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar auto_increment_increment", K(ret));
+    LOG_WDIAG("fail to load default sysvar auto_increment_increment", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_AUTO_INCREMENT_OFFSET), 1, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar auto_increment_offset", K(ret));
+    LOG_WDIAG("fail to load default sysvar auto_increment_offset", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_LAST_INSERT_ID), 0, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar last_insert_id", K(ret));
+    LOG_WDIAG("fail to load default sysvar last_insert_id", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_INTERACTIVE_TIMEOUT), 0, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar interactive_timeout", K(ret));
+    LOG_WDIAG("fail to load default sysvar interactive_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_QUERY_TIMEOUT), 10000000, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar ob_query_timeout", K(ret));
+    LOG_WDIAG("fail to load default sysvar ob_query_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_TRX_TIMEOUT), 100000000, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar ob_trx_timeout", K(ret));
+    LOG_WDIAG("fail to load default sysvar ob_trx_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_NET_READ_TIMEOUT), 30, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar net_read_timeout", K(ret));
+    LOG_WDIAG("fail to load default sysvar net_read_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_NET_WRITE_TIMEOUT), 60, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar net_write_timeout", K(ret));
+    LOG_WDIAG("fail to load default sysvar net_write_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_WAIT_TIMEOUT), 28800, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar wait_timeout", K(ret));
+    LOG_WDIAG("fail to load default sysvar wait_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_LOWER_CASE_TABLE_NAMES), 2, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar lower_case_table_names", K(ret));
+    LOG_WDIAG("fail to load default sysvar lower_case_table_names", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_TX_READ_ONLY), 0, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar tx_read_only", K(ret));
+    LOG_WDIAG("fail to load default sysvar tx_read_only", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_READ_CONSISTENCY), 3, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar ob_read_consistency", K(ret));
+    LOG_WDIAG("fail to load default sysvar ob_read_consistency", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_COLLATION_CONNECTION), 45, both_scope, print_info_log))) {
-    LOG_WARN("fail to load default sysvar collation_connection", K(ret));
+    LOG_WDIAG("fail to load default sysvar collation_connection", K(ret));
   }
   return ret;
 }
@@ -2786,18 +2798,18 @@ int ObDefaultSysVarSet::load_system_variable(const ObString &name, const ObObj &
   bool is_reused = false;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not inited", K(ret));
+    LOG_WDIAG("not inited", K(ret));
   } else if (OB_UNLIKELY(name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("variable name is empty", K(name), K(ret));
+    LOG_WDIAG("variable name is empty", K(name), K(ret));
   } else if (OB_UNLIKELY(sys_variable_exists_local(name))) {
     ret = OB_ERR_ALREADY_EXISTS;
-    LOG_WARN("variable already exists", K(name), K(ret));
+    LOG_WDIAG("variable already exists", K(name), K(ret));
   } else if (OB_FAIL(alloc_field(sys_first_block_, sys_block_list_tail_, block_out, new_field, is_reused))) {
-    LOG_WARN("fail to alloc sys var field", K(ret));
+    LOG_WDIAG("fail to alloc sys var field", K(ret));
   } else if (OB_ISNULL(new_field) || OB_ISNULL(block_out)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null pointer", K(ret));
+    LOG_WDIAG("unexpected null pointer", K(ret));
   } else {
     new_field->type_ = type.get_type();
     new_field->scope_ = flags;
@@ -2814,15 +2826,15 @@ int ObDefaultSysVarSet::load_system_variable(const ObString &name, const ObObj &
     const ObObj *res_cell = NULL;
     ObArenaAllocator calc_buf(ObModIds::OB_PROXY_DEFAULT_SYS_VARIABLE);
     if (OB_FAIL(caster.obj_cast(value, *new_field, res_cell))) {
-      LOG_WARN("fail to cast obj", K(value), K(*new_field), K(ret));
+      LOG_WDIAG("fail to cast obj", K(value), K(*new_field), K(ret));
     } else if (OB_ISNULL(res_cell)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("res_call is null, which is unexpected", K(ret));
+      LOG_WDIAG("res_call is null, which is unexpected", K(ret));
     } else if (OB_FAIL(duplicate_field(name.ptr(), len, *res_cell, *new_field))) {
-      LOG_WARN("fail to duplicate field", K(value), K(type), K(ret));
+      LOG_WDIAG("fail to duplicate field", K(value), K(type), K(ret));
     } else {
       if (OB_FAIL(var_name_map_.set_refactored(name, new_field))) {
-        LOG_WARN("fail to set var_name_map", K(name), K(type), K(value), K(flags), K(ret));
+        LOG_WDIAG("fail to set var_name_map", K(name), K(type), K(value), K(flags), K(ret));
       } else {
         new_field->stat_ = OB_FIELD_USED;
         if (is_reused) {
@@ -2849,7 +2861,7 @@ int ObDefaultSysVarSet::load_system_variable_snapshot(proxy::ObMysqlResultHandle
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K(ret));
+    LOG_WDIAG("not init", K(ret));
   } else {
     ObArenaAllocator allocator;
     char name_buf[OB_MAX_COLUMN_NAME_LENGTH + 1] = "";
@@ -2871,7 +2883,7 @@ int ObDefaultSysVarSet::load_system_variable_snapshot(proxy::ObMysqlResultHandle
         ObString name(name_len, name_buf);
         ObString value(value_len, value_buf);
         if (OB_FAIL(load_system_variable(name, vtype, value, flag))) {
-          LOG_ERROR("load sys var failed", K(ret), K(name), K(vtype), K(value), K(flag));
+          LOG_EDIAG("load sys var failed", K(ret), K(name), K(vtype), K(value), K(flag));
         } else {
           max_modified_time = (max_modified_time < tmp_modified_time ? tmp_modified_time : max_modified_time);
           LOG_DEBUG("load sys var success", K(ret), K(name), K(vtype), K(value), K(flag), K(value_len),
@@ -2889,7 +2901,7 @@ int ObDefaultSysVarSet::load_system_variable_snapshot(proxy::ObMysqlResultHandle
       last_modified_time_ = max_modified_time;
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("get result failed", K(ret));
+      LOG_WDIAG("get result failed", K(ret));
     }
   }
 

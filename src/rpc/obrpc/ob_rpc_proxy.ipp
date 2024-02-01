@@ -62,36 +62,36 @@ int SSHandle<pcode>::get_more(typename ObRpcProxy::ObRpc<pcode>::Response &resul
 
   if (OB_ISNULL(transport_)) {
     ret = OB_NOT_INIT;
-    RPC_OBRPC_LOG(WARN, "transport_ is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "transport_ is NULL", K(ret));
   } else if (OB_FAIL(transport_->create_request(
       req, dst_, PAYLOAD_SIZE, proxy_.timeout()))) {
-    RPC_OBRPC_LOG(WARN, "create request fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "create request fail", K(ret));
   } else if (NULL == req.pkt() || NULL == req.buf()) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    RPC_OBRPC_LOG(WARN, "request packet is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "request packet is NULL", K(ret));
   } else if (OB_FAIL(proxy_.init_pkt(req.pkt(), pcode, opts_))) {
-    RPC_OBRPC_LOG(WARN, "Init packet error", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "Init packet error", K(ret));
   } else {
     req.pkt()->set_stream_next();
     req.pkt()->set_session_id(sessid_);
 
     if (OB_FAIL(transport_->send(req, r))) {
-      RPC_OBRPC_LOG(WARN, "send request fail", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "send request fail", K(ret));
     } else if (OB_ISNULL(r.pkt()->get_cdata())) {
       ret = OB_ERR_UNEXPECTED;
-      RPC_OBRPC_LOG(WARN, "cdata should not be NULL", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "cdata should not be NULL", K(ret));
     } else {
       int64_t       pos = 0;
       const char   *buf = r.pkt()->get_cdata();
       const int64_t len = r.pkt()->get_clen();
 
       if (OB_FAIL(rcode_.deserialize(buf, len, pos))) {
-        RPC_OBRPC_LOG(WARN, "deserialize result code fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "deserialize result code fail", K(ret));
       } else if (rcode_.rcode_ != common::OB_SUCCESS) {
         ret = rcode_.rcode_;
-        RPC_OBRPC_LOG(WARN, "execute rpc fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "execute rpc fail", K(ret));
       } else if (OB_FAIL(common::serialization::decode(buf, len, pos, result))) {
-        RPC_OBRPC_LOG(WARN, "deserialize result fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "deserialize result fail", K(ret));
       } else {
         has_more_ = r.pkt()->is_stream_next();
       }
@@ -115,34 +115,34 @@ int SSHandle<pcode>::abort()
 
   if (OB_ISNULL(transport_)) {
     ret = OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(ERROR, "transport_ should not be NULL", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "transport_ should not be NULL", K(ret));
   } else if (OB_FAIL(transport_->create_request(
       req, dst_, PAYLOAD_SIZE, proxy_.timeout()))) {
-    RPC_OBRPC_LOG(WARN, "create request fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "create request fail", K(ret));
   } else if (NULL == req.pkt() || NULL == req.buf()) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    RPC_OBRPC_LOG(WARN, "request packet is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "request packet is NULL", K(ret));
   } else if (OB_FAIL(proxy_.init_pkt(req.pkt(), pcode, opts_))) {
-    RPC_OBRPC_LOG(WARN, "Fail to init packet", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "Fail to init packet", K(ret));
   } else {
     req.pkt()->set_stream_last();
     req.pkt()->set_session_id(sessid_);
 
     if (OB_FAIL(transport_->send(req, r))) {
-      RPC_OBRPC_LOG(WARN, "send request fail", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "send request fail", K(ret));
     } else if (OB_ISNULL(r.pkt()->get_cdata())) {
       ret = OB_ERR_UNEXPECTED;
-      RPC_OBRPC_LOG(WARN, "cdata should not be NULL", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "cdata should not be NULL", K(ret));
     } else {
       int64_t       pos = 0;
       const char   *buf = r.pkt()->get_cdata();
       const int64_t len = r.pkt()->get_clen();
 
       if (OB_FAIL(rcode_.deserialize(buf, len, pos))) {
-        RPC_OBRPC_LOG(WARN, "deserialize result code fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "deserialize result code fail", K(ret));
       } else if (rcode_.rcode_ != common::OB_SUCCESS) {
         ret = rcode_.rcode_;
-        RPC_OBRPC_LOG(WARN, "execute rpc fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "execute rpc fail", K(ret));
       } else {
         //do nothing
       }
@@ -168,7 +168,7 @@ int ObRpcProxy::AsyncCB<pcode>::decode(void *pkt)
 
   if (OB_ISNULL(pkt)) {
     ret = OB_INVALID_ARGUMENT;
-    RPC_OBRPC_LOG(WARN, "pkt should not be NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "pkt should not be NULL", K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -178,13 +178,13 @@ int ObRpcProxy::AsyncCB<pcode>::decode(void *pkt)
     int64_t       pos   = 0;
 
     if (OB_FAIL(rpkt->verify_checksum())) {
-      RPC_OBRPC_LOG(ERROR, "verify checksum fail", K(*rpkt), K(ret));
+      RPC_OBRPC_LOG(EDIAG, "verify checksum fail", K(*rpkt), K(ret));
     } else if (OB_FAIL(rcode_.deserialize(buf, len, pos))) {
-      RPC_OBRPC_LOG(WARN, "decode result code fail", K(*rpkt), K(ret));
+      RPC_OBRPC_LOG(WDIAG, "decode result code fail", K(*rpkt), K(ret));
     } else if (rcode_.rcode_ != common::OB_SUCCESS) {
-      // RPC_OBRPC_LOG(WARN, "execute rpc fail", K_(rcode));
+      // RPC_OBRPC_LOG(WDIAG, "execute rpc fail", K_(rcode));
     } else if (OB_FAIL(result_.deserialize(buf, len, pos))) {
-      RPC_OBRPC_LOG(WARN, "decode packet fail", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "decode packet fail", K(ret));
     } else {
       //do nothing
     }
@@ -206,10 +206,10 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, const Input &args,
 
   if (!init_) {
     ret = common::OB_NOT_INIT;
-    RPC_OBRPC_LOG(WARN, "Rpc proxy not inited", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "Rpc proxy not inited", K(ret));
   } else if (!active_) {
     ret = common::OB_INACTIVE_RPC_PROXY;
-    RPC_OBRPC_LOG(WARN, "Rpc proxy inactive", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "Rpc proxy inactive", K(ret));
   } else {
     //do nothing
   }
@@ -222,44 +222,44 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, const Input &args,
   if (OB_FAIL(ret)) {
   } else if (payload > OB_MAX_RPC_PACKET_LENGTH) {
     ret = common::OB_RPC_PACKET_TOO_LONG;
-    RPC_OBRPC_LOG(WARN, "obrpc packet payload execced its limit",
+    RPC_OBRPC_LOG(WDIAG, "obrpc packet payload execced its limit",
             K(payload), "limit", OB_MAX_RPC_PACKET_LENGTH,
             K(ret));
   } else if (OB_ISNULL(transport_)) {
     ret = OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(WARN, "transport_ should not be NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "transport_ should not be NULL", K(ret));
   } else if (OB_FAIL(transport_->create_request(
                      req, dst_, payload, timeout_))) {
-    RPC_OBRPC_LOG(WARN, "create request fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "create request fail", K(ret));
   } else if (NULL == req.pkt() || NULL == req.buf()) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    RPC_OBRPC_LOG(WARN, "request packet is NULL", K(req), K(ret));
+    RPC_OBRPC_LOG(WDIAG, "request packet is NULL", K(req), K(ret));
   } else if (OB_FAIL(common::serialization::encode(
                      req.buf(), payload, pos, args))) {
-    RPC_OBRPC_LOG(WARN, "serialize argument fail", K(pos), K(payload), K(ret));
+    RPC_OBRPC_LOG(WDIAG, "serialize argument fail", K(pos), K(payload), K(ret));
   } else if (OB_FAIL(common::serialization::encode(
       req.buf(), payload, pos, GDS.rpc_spread_actions()))) {
-    RPC_OBRPC_LOG(WARN, "serialize debug sync actions fail", K(pos), K(payload), K(ret));
+    RPC_OBRPC_LOG(WDIAG, "serialize debug sync actions fail", K(pos), K(payload), K(ret));
   } else if (OB_FAIL(init_pkt(req.pkt(), pcode, opts))) {
-    RPC_OBRPC_LOG(WARN, "Init packet error", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "Init packet error", K(ret));
   } else {
     ObReqTransport::Result<ObRpcPacket> r;
     if (OB_FAIL(send_request(req, r))) {
-      RPC_OBRPC_LOG(WARN, "send rpc request fail fail", K(pcode));
+      RPC_OBRPC_LOG(WDIAG, "send rpc request fail fail", K(pcode));
     } else {
       const char *buf = r.pkt()->get_cdata();
       int64_t     len = r.pkt()->get_clen();
       int64_t     pos = 0;
 
       if (OB_FAIL(rcode_.deserialize(buf, len, pos))) {
-        RPC_OBRPC_LOG(WARN, "deserialize result code fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "deserialize result code fail", K(ret));
       } else {
         int wb_ret = common::OB_SUCCESS;
         if (rcode_.rcode_ != common::OB_SUCCESS) {
           ret = rcode_.rcode_;
-          RPC_OBRPC_LOG(WARN, "execute rpc fail", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "execute rpc fail", K(ret));
         } else if (OB_FAIL(common::serialization::decode(buf, len, pos, result))) {
-          RPC_OBRPC_LOG(WARN, "deserialize result fail", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "deserialize result fail", K(ret));
         } else {
           ret = rcode_.rcode_;
         }
@@ -273,7 +273,7 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, const Input &args,
           handle->proxy_     = *this;
         }
         if (common::OB_SUCCESS != (wb_ret = log_user_error_and_warn(rcode_))) {
-          RPC_OBRPC_LOG(WARN, "fail to log user error and warn", K(ret), K(wb_ret), K((rcode_)));
+          RPC_OBRPC_LOG(WDIAG, "fail to log user error and warn", K(ret), K(wb_ret), K((rcode_)));
         }
       }
     }
@@ -317,31 +317,31 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, const Input &args,
   if (OB_FAIL(ret)) {
   } else if (payload > OB_MAX_RPC_PACKET_LENGTH) {
     ret = common::OB_RPC_PACKET_TOO_LONG;
-    RPC_OBRPC_LOG(WARN, "obrpc packet payload execced its limit",
+    RPC_OBRPC_LOG(WDIAG, "obrpc packet payload execced its limit",
                   K(ret), K(payload), "limit", OB_MAX_RPC_PACKET_LENGTH);
   } else if (OB_FAIL(transport_->create_request(req, dst_, payload, timeout_))) {
-    RPC_OBRPC_LOG(WARN, "create request fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "create request fail", K(ret));
   } else if (NULL == req.pkt()) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    RPC_OBRPC_LOG(WARN, "request packet is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "request packet is NULL", K(ret));
   } else if (OB_FAIL(args.serialize(req.buf(), payload, pos))) {
-    RPC_OBRPC_LOG(WARN, "serialize argument fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "serialize argument fail", K(ret));
   } else if (OB_FAIL(common::serialization::encode(
       req.buf(), payload, pos, GDS.rpc_spread_actions()))) {
-    RPC_OBRPC_LOG(WARN, "serialize debug sync actions fail", K(ret), K(pos), K(payload));
+    RPC_OBRPC_LOG(WDIAG, "serialize debug sync actions fail", K(ret), K(pos), K(payload));
   } else if (OB_FAIL(init_pkt(req.pkt(), pcode, opts))) {
-    RPC_OBRPC_LOG(WARN, "Init packet error", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "Init packet error", K(ret));
   } else {
     ObReqTransport::Result<ObRpcPacket> r;
     if (OB_FAIL(send_request(req, r))) {
-      RPC_OBRPC_LOG(WARN, "send rpc request fail fail", K(ret), K(pcode));
+      RPC_OBRPC_LOG(WDIAG, "send rpc request fail fail", K(ret), K(pcode));
     } else {
       const char *buf = r.pkt()->get_cdata();
       int64_t     len = r.pkt()->get_clen();
       int64_t     pos = 0;
 
       if (OB_FAIL(rcode_.deserialize(buf, len, pos))) {
-        RPC_OBRPC_LOG(WARN, "deserialize result code fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "deserialize result code fail", K(ret));
       } else {
         int wb_ret = common::OB_SUCCESS;
         ret = rcode_.rcode_;
@@ -354,7 +354,7 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, const Input &args,
           handle->proxy_     = *this;
         }
         if (common::OB_SUCCESS != (wb_ret = log_user_error_and_warn(rcode_))) {
-          RPC_OBRPC_LOG(WARN, "fail to log user error and warn", K(ret), K(wb_ret), K((rcode_)));
+          RPC_OBRPC_LOG(WDIAG, "fail to log user error and warn", K(ret), K(wb_ret), K((rcode_)));
         }
       }
     }
@@ -397,16 +397,16 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, Output &result,
   if (OB_FAIL(ret)) {
   } else if (OB_FAIL(transport_->create_request(
                         req, dst_, PAYLOAD_SIZE, timeout_))) {
-    RPC_OBRPC_LOG(WARN, "create request fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "create request fail", K(ret));
   } else if (NULL == req.pkt()) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    RPC_OBRPC_LOG(WARN, "request packet is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "request packet is NULL", K(ret));
   } else if (OB_FAIL(init_pkt(req.pkt(), pcode, opts))) {
-    RPC_OBRPC_LOG(WARN, "Init packet error", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "Init packet error", K(ret));
   } else {
     ObReqTransport::Result<ObRpcPacket> r;
     if (OB_FAIL(send_request(req, r))) {
-      RPC_OBRPC_LOG(WARN, "send rpc request fail fail", K(pcode));
+      RPC_OBRPC_LOG(WDIAG, "send rpc request fail fail", K(pcode));
     } else {
       rpc::RpcStatPiece piece;
       piece.size_ = 0;
@@ -418,14 +418,14 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, Output &result,
       int64_t pos     = 0;
 
       if (OB_FAIL(rcode_.deserialize(buf, len, pos))) {
-        RPC_OBRPC_LOG(WARN, "deserialize result code fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "deserialize result code fail", K(ret));
       } else {
         int wb_ret = common::OB_SUCCESS;
         if (rcode_.rcode_ != common::OB_SUCCESS) {
           ret = rcode_.rcode_;
-          RPC_OBRPC_LOG(WARN, "execute rpc fail", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "execute rpc fail", K(ret));
         } else if (OB_FAIL(common::serialization::decode(buf, len, pos, result))) {
-          RPC_OBRPC_LOG(WARN, "deserialize result fail", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "deserialize result fail", K(ret));
         } else {
           ret = rcode_.rcode_;
         }
@@ -439,7 +439,7 @@ int ObRpcProxy::rpc_call(ObRpcPacketCode pcode, Output &result,
           handle->proxy_     = *this;
         }
         if (common::OB_SUCCESS != (wb_ret = log_user_error_and_warn(rcode_))) {
-          RPC_OBRPC_LOG(WARN, "fail to log user error and warn", K(ret), K(wb_ret), K((rcode_)));
+          RPC_OBRPC_LOG(WDIAG, "fail to log user error and warn", K(ret), K(wb_ret), K((rcode_)));
         }
       }
     }
@@ -471,10 +471,10 @@ int ObRpcProxy::rpc_post(const typename ObRpc<pcode>::Request &args,
 
   if (!init_) {
     ret = common::OB_NOT_INIT;
-    RPC_OBRPC_LOG(ERROR, "rpc not inited", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "rpc not inited", K(ret));
   } else if (!active_) {
     ret = common::OB_INACTIVE_RPC_PROXY;
-    RPC_OBRPC_LOG(ERROR, "rpc is inactive", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "rpc is inactive", K(ret));
   }
 
   ObReqTransport::Request<ObRpcPacket> req;
@@ -485,30 +485,30 @@ int ObRpcProxy::rpc_post(const typename ObRpc<pcode>::Request &args,
   if (OB_FAIL(ret)) {
   } else if (payload > OB_MAX_RPC_PACKET_LENGTH) {
     ret = common::OB_RPC_PACKET_TOO_LONG;
-    RPC_OBRPC_LOG(WARN, "obrpc packet payload execced its limit",
+    RPC_OBRPC_LOG(WDIAG, "obrpc packet payload execced its limit",
                   K(ret), K(payload), "limit", OB_MAX_RPC_PACKET_LENGTH);
   } else if (OB_ISNULL(transport_)) {
     ret = OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(ERROR, "transport_ should not be NULL", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "transport_ should not be NULL", K(ret));
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(transport_->create_request(
                        req, dst_, payload, timeout_, cb))) {
-      RPC_OBRPC_LOG(WARN, "create request fail", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "create request fail", K(ret));
     } else if (NULL == req.pkt()) {
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      RPC_OBRPC_LOG(WARN, "request packet is NULL", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "request packet is NULL", K(ret));
     }
     timeguard.click();
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(args.serialize(req.buf(), payload, pos))) {
-      RPC_OBRPC_LOG(WARN, "serialize argument fail", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "serialize argument fail", K(ret));
     } else if (OB_FAIL(common::serialization::encode(
         req.buf(), payload, pos, GDS.rpc_spread_actions()))) {
-      RPC_OBRPC_LOG(WARN, "serialize debug sync actions fail", K(pos), K(payload), K(ret));
+      RPC_OBRPC_LOG(WDIAG, "serialize debug sync actions fail", K(pos), K(payload), K(ret));
     }
     timeguard.click();
   }
@@ -525,14 +525,14 @@ int ObRpcProxy::rpc_post(const typename ObRpc<pcode>::Request &args,
     }
     req.set_async();
     if (OB_FAIL(init_pkt(req.pkt(), pcode, opts))) {
-      RPC_OBRPC_LOG(WARN, "Init packet error", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "Init packet error", K(ret));
     }
     timeguard.click();
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(transport_->post(req))) {
-      RPC_OBRPC_LOG(WARN, "post packet fail", K(req), K(ret));
+      RPC_OBRPC_LOG(WDIAG, "post packet fail", K(req), K(ret));
       req.destroy();
     } else {
       //do nothing

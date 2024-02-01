@@ -32,7 +32,7 @@ int ObProxyCachedPackets::get_ok_packet(ObProxyOKPacket *&ok_packet, ObCachedOKT
     if (OB_ISNULL(ok_pkts[type])) {
       if (OB_ISNULL((ok_pkts[type] = new (std::nothrow) ObProxyOKPacket()))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc ok_packet", K(ret));
+        LOG_WDIAG("fail to alloc ok_packet", K(ret));
       } else {
         ok_packet = ok_pkts[type];
       }
@@ -41,7 +41,7 @@ int ObProxyCachedPackets::get_ok_packet(ObProxyOKPacket *&ok_packet, ObCachedOKT
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to alloc ok_packet", K(ret));
+    LOG_WDIAG("fail to alloc ok_packet", K(ret));
   }
 
   return ret;

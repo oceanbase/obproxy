@@ -22,7 +22,7 @@ char *ObRequest::easy_alloc(int64_t size) const
 {
   void *buf = NULL;
   if (NULL == ez_req_ || NULL == ez_req_->ms) {
-    RPC_LOG(ERROR, "ez_req_ is not corret");
+    RPC_LOG(EDIAG, "ez_req_ is not corret");
   } else {
   /* this function is defined for c driver client compile */
     UNUSED(size);

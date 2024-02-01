@@ -78,6 +78,18 @@ void ObRouteParam::set_cluster_resource(obutils::ObClusterResource *cr)
   }
 }
 
+void ObRouteParam::set_route_diagnosis(ObRouteDiagnosis *route_diagnosis)
+{
+  if (OB_NOT_NULL(route_diagnosis_)) {
+    route_diagnosis_->dec_ref();
+    route_diagnosis_ = NULL;
+  }
+  if (OB_NOT_NULL(route_diagnosis)) {
+    route_diagnosis_ = route_diagnosis;
+    route_diagnosis_->inc_ref();
+  }
+}
+
 ObMysqlRoute::ObMysqlRoute()
   : ObContinuation(), magic_(OB_CONT_MAGIC_ALIVE), param_(), name_buf_(NULL),
     name_buf_len_(0), submit_thread_(NULL), action_(), pending_action_(NULL),
@@ -97,7 +109,7 @@ int ObMysqlRoute::main_handler(int event, void *data)
 {
   int event_ret = EVENT_CONT;
   if (OB_UNLIKELY(OB_CONT_MAGIC_ALIVE != magic_ || reentrancy_count_ < 0)) {
-    LOG_ERROR("invalid route magic or reentrancy_count", K_(magic), K_(reentrancy_count));
+    LOG_EDIAG("invalid route magic or reentrancy_count", K_(magic), K_(reentrancy_count));
   }
   ++reentrancy_count_;
 
@@ -111,7 +123,7 @@ int ObMysqlRoute::main_handler(int event, void *data)
     set_state_and_call_next(ROUTE_ACTION_TIMEOUT);
   } else {
     if (OB_ISNULL(default_handler_)) {
-      LOG_ERROR("invalid internal state, default handler is NULL",
+      LOG_EDIAG("invalid internal state, default handler is NULL",
                 "next action", get_action_str(next_action_), K(event),
                 K(data), K_(reentrancy_count));
     } else {
@@ -125,7 +137,7 @@ int ObMysqlRoute::main_handler(int event, void *data)
   } else {
     --reentrancy_count_;
     if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-      LOG_ERROR("invalid reentrancy_count", K_(reentrancy_count));
+      LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count));
     }
   }
 
@@ -135,7 +147,7 @@ int ObMysqlRoute::main_handler(int event, void *data)
 inline void ObMysqlRoute::kill_this()
 {
   if (OB_UNLIKELY(1 != reentrancy_count_)) {
-    LOG_ERROR("invalid internal state, reentrancy_count should be 1",
+    LOG_EDIAG("invalid internal state, reentrancy_count should be 1",
               K_(reentrancy_count));
   }
 
@@ -151,11 +163,11 @@ inline void ObMysqlRoute::kill_this()
 
   int ret = OB_SUCCESS;
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
 
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
 
   if (NULL != table_entry_) {
@@ -202,7 +214,7 @@ inline void ObMysqlRoute::setup_routine_entry_lookup()
   LOG_DEBUG("ObMysqlRoute::setup_routine_entry_lookup");
   ObRoutineParam routine_param;
   if (OB_FAIL(ObRouteUtils::convert_route_param_to_routine_param(param_, routine_param))) {
-    LOG_WARN("fail to convert", K_(param), K(ret));
+    LOG_WDIAG("fail to convert", K_(param), K(ret));
   } else {
     routine_param.cont_ = this;
     ret = ObRoutineProcessor::get_routine_entry(routine_param, pending_action_);
@@ -216,7 +228,7 @@ inline void ObMysqlRoute::setup_routine_entry_lookup()
       // wait callback
     }
   } else {
-    LOG_WARN("fail to get routine entry", K(routine_param), K(ret));
+    LOG_WDIAG("fail to get routine entry", K(routine_param), K(ret));
     is_table_entry_lookup_succ_ = false;
     set_state_and_call_next(ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE);
   }
@@ -231,7 +243,7 @@ int ObMysqlRoute::state_routine_entry_lookup(int event, void *data)
   if (OB_UNLIKELY(ROUTINE_ENTRY_LOOKUP_CACHE_DONE != event) || OB_ISNULL(data)) {
     is_routine_entry_lookup_succ_ = false;
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected event type, it should not happen", K(event), K(data), K(ret));
+    LOG_EDIAG("unexpected event type, it should not happen", K(event), K(data), K(ret));
   } else {
     ObRoutineResult *result = reinterpret_cast<ObRoutineResult *>(data);
     // hand over the ref
@@ -256,12 +268,12 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
   int ret = OB_SUCCESS;
   if (!is_routine_entry_lookup_succ_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("[ObMysqlRoute::handle_routine_entry_lookup_done] fail to lookup routine entry",
+    LOG_WDIAG("[ObMysqlRoute::handle_routine_entry_lookup_done] fail to lookup routine entry",
              "routine name", param_.name_, K(ret));
     if (OB_NOT_NULL(param_.route_diagnosis_)) {
       ROUTE_DIAGNOSIS(param_.route_diagnosis_,
-                      ROUTINE_ENTRY_LOOKUP,
-                      routine_entry_lookup,
+                      ROUTINE_ENTRY_LOOKUP_DONE,
+                      routine_entry_lookup_done,
                       ret,
                       ObString(),
                       false,
@@ -273,8 +285,8 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
     if (NULL != routine_entry_
         && !routine_entry_->get_route_sql().empty()) {
       ROUTE_DIAGNOSIS(param_.route_diagnosis_,
-                      ROUTINE_ENTRY_LOOKUP,
-                      routine_entry_lookup,
+                      ROUTINE_ENTRY_LOOKUP_DONE,
+                      routine_entry_lookup_done,
                       ret,
                       routine_entry_->get_route_sql(),
                       is_routine_entry_from_remote_,
@@ -285,8 +297,8 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
       LOG_DEBUG("can not find avai route sql, use default route",
                "routine name", param_.name_, K(ret));
       ROUTE_DIAGNOSIS(param_.route_diagnosis_,
-                      ROUTINE_ENTRY_LOOKUP,
-                      routine_entry_lookup,
+                      ROUTINE_ENTRY_LOOKUP_DONE,
+                      routine_entry_lookup_done,
                       ret,
                       share::OB_ALL_DUMMY_TNAME,
                       is_routine_entry_from_remote_,
@@ -321,9 +333,9 @@ inline void ObMysqlRoute::rewrite_route_names(const common::ObString &db_name, c
   int ret = OB_SUCCESS;
   if (OB_ISNULL(name_buf)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K_(name_buf_len), K(ret));
+    LOG_WDIAG("fail to alloc mem", K_(name_buf_len), K(ret));
   } else if (OB_FAIL(param_.name_.deep_copy(param_.name_, name_buf, name_buf_len))) {
-    LOG_WARN("fail to deep copy table entry name", K(ret));
+    LOG_WDIAG("fail to deep copy table entry name", K(ret));
   } else {
     op_fixed_mem_free(name_buf_, name_buf_len_);
     name_buf_ = name_buf;
@@ -338,10 +350,10 @@ inline void ObMysqlRoute::setup_route_sql_parse()
   if (NULL != routine_entry_ && !routine_entry_->get_route_sql().empty()) {
     ObArenaAllocator *allocator = NULL;
     if (OB_FAIL(ObProxySqlParser::get_parse_allocator(allocator))) {
-      LOG_WARN("fail to get parse allocator", K(ret));
+      LOG_WDIAG("fail to get parse allocator", K(ret));
     } else if (OB_ISNULL(allocator)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("allocator is null", K(ret));
+      LOG_WDIAG("allocator is null", K(ret));
     } else {
       ObProxyParser obproxy_parser(*allocator, NORMAL_PARSE_MODE);
       ObProxyParseResult obproxy_parse_result;
@@ -384,7 +396,7 @@ inline void ObMysqlRoute::setup_route_sql_parse()
     set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("this routine entry is available, should not arrive here", KPC_(routine_entry), K(ret));
+    LOG_WDIAG("this routine entry is available, should not arrive here", KPC_(routine_entry), K(ret));
   }
 
   if (OB_FAIL(ret)) {
@@ -405,7 +417,7 @@ inline void ObMysqlRoute::handle_route_sql_parse_done()
   int ret = OB_SUCCESS;
   if (!is_route_sql_parse_succ_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("[ObMysqlRoute::handle_route_sql_parse_done] fail to parse route sql", K(ret));
+    LOG_WDIAG("[ObMysqlRoute::handle_route_sql_parse_done] fail to parse route sql", K(ret));
   } else {
     set_state_and_call_next(ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START);
   }
@@ -425,7 +437,7 @@ inline void ObMysqlRoute::setup_table_entry_lookup()
   ObTableRouteParam table_param;
   ObAction *table_entry_action_handle = NULL;
   if (OB_FAIL(ObRouteUtils::convert_route_param_to_table_param(param_, table_param))) {
-    LOG_WARN("fail to convert", K_(param), K(ret));
+    LOG_WDIAG("fail to convert", K_(param), K(ret));
   } else {
     table_param.cont_ = this;
     ret = table_processor.get_table_entry(table_param, table_entry_action_handle);
@@ -439,7 +451,7 @@ inline void ObMysqlRoute::setup_table_entry_lookup()
       pending_action_ = table_entry_action_handle;
     }
   } else {
-    LOG_WARN("fail to get table entry", K(table_param), K(ret));
+    LOG_WDIAG("fail to get table entry", K(table_param), K(ret));
     is_table_entry_lookup_succ_ = false;
     set_state_and_call_next(ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE);
   }
@@ -454,7 +466,7 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
   if (OB_UNLIKELY(TABLE_ENTRY_EVENT_LOOKUP_DONE != event) || OB_ISNULL(data)) {
     is_table_entry_lookup_succ_ = false;
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected event type, it should not happen", K(event), K(data), K(ret));
+    LOG_EDIAG("unexpected event type, it should not happen", K(event), K(data), K(ret));
   } else {
     ObRouteResult *result = reinterpret_cast<ObRouteResult *>(data);
     // hand over the ref count
@@ -485,36 +497,18 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
 inline void ObMysqlRoute::handle_table_entry_lookup_done()
 {
   int ret = OB_SUCCESS;
-  if (OB_NOT_NULL(table_entry_)) {
+  if (!param_.name_.is_all_dummy_table()) {
     ROUTE_DIAGNOSIS(param_.route_diagnosis_,
-                    TABLE_ENTRY_LOOKUP,
-                    table_entry_lookup,
+                    TABLE_ENTRY_LOOKUP_DONE,
+                    table_entry_lookup_done,
                     ret,
-                    table_entry_->get_table_name(),
-                    table_entry_->get_table_id(),
-                    table_entry_->get_part_num(),
-                    table_entry_->get_table_type(),
-                    table_entry_->get_entry_state(),
+                    table_entry_,
                     is_table_entry_from_remote_,
-                    table_entry_->has_dup_replica(),
                     is_table_entry_lookup_succ_)
-  } else {
-    ROUTE_DIAGNOSIS(param_.route_diagnosis_,
-                    TABLE_ENTRY_LOOKUP,
-                    table_entry_lookup,
-                    ret,
-                    param_.name_.table_name_,
-                    0,
-                    0,
-                    share::schema::MAX_TABLE_TYPE,
-                    ObRouteEntry::DELETED,
-                    false,
-                    false,
-                    false)
   }
   if (!is_table_entry_lookup_succ_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("[ObMysqlRoute::handle_table_entry_lookup_done] fail to lookup table entry",
+    LOG_WDIAG("[ObMysqlRoute::handle_table_entry_lookup_done] fail to lookup table entry",
              "table entry name", param_.name_, K(ret));
   } else {
     // table entry lookup succ
@@ -536,7 +530,7 @@ inline int ObMysqlRoute::check_and_rebuild_call_params()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(param_.client_request_) || OB_ISNULL(param_.client_info_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("client_request_ or client_info_ should not be null", K(param_), K(ret));
+    LOG_WDIAG("client_request_ or client_info_ should not be null", K(param_), K(ret));
   } else if (OB_UNLIKELY(!param_.client_request_->get_parse_result().call_info_.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_INFO("call_info is invaild, we'd better ignore accurate route", "call_info",
@@ -604,12 +598,12 @@ inline void ObMysqlRoute::setup_partition_id_calc()
     } else if (OB_ISNULL(param_.client_request_)
                || OB_ISNULL(param_.client_info_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("client request  and client_info_ should not be null here", K(ret));
+        LOG_WDIAG("client request  and client_info_ should not be null here", K(ret));
     } else if (OB_FAIL(ObProxySqlParser::get_parse_allocator(allocator))) {
-      LOG_WARN("fail to get parse allocator", K(ret));
+      LOG_WDIAG("fail to get parse allocator", K(ret));
     } else if (OB_ISNULL(allocator)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("allocator is null", K(ret));
+      LOG_WDIAG("allocator is null", K(ret));
     } else if (param_.need_pl_route_ && NULL != routine_entry_) {
       int tmp_ret = OB_SUCCESS;
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = check_and_rebuild_call_params()))) {
@@ -625,12 +619,12 @@ inline void ObMysqlRoute::setup_partition_id_calc()
       if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == param_.client_request_->get_packet_meta().cmd_
           || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == param_.client_request_->get_packet_meta().cmd_) {
         if (OB_FAIL(param_.client_info_->get_ps_sql(user_sql))) {
-          LOG_WARN("fail to get ps sql", K(ret));
+          LOG_WDIAG("fail to get ps sql", K(ret));
           ret = OB_SUCCESS;
         }
       } else if (result->is_text_ps_execute_stmt()) {
         if (OB_FAIL(param_.client_info_->get_text_ps_sql(user_sql))) {
-          LOG_WARN("fail to get text ps sql", K(ret));
+          LOG_WDIAG("fail to get text ps sql", K(ret));
           ret = OB_SUCCESS;
         }
       } else {
@@ -641,6 +635,7 @@ inline void ObMysqlRoute::setup_partition_id_calc()
     if (OB_SUCC(ret) && !user_sql.empty()) {
       //parse sql
       ObProxyExprCalculator expr_calculator;
+      expr_calculator.set_route_diagnosis(param_.route_diagnosis_);
       int tmp_ret = OB_SUCCESS;
       if (OB_SUCCESS != (tmp_ret = expr_calculator.calculate_partition_id(*allocator,
                                                                           user_sql,
@@ -649,9 +644,8 @@ inline void ObMysqlRoute::setup_partition_id_calc()
                                                                           *param_.client_info_,
                                                                           *param_.route_,
                                                                           *part_info,
-                                                                          part_id_,
-                                                                          param_.route_diagnosis_))) {
-        LOG_INFO("fail to calculate partition id, just use tenant server", K(tmp_ret));
+                                                                           part_id_))) {
+        LOG_DEBUG("fail to calculate partition id, just use tenant server", K(tmp_ret));
       } else {
         LOG_DEBUG("succ to calculate partition id", K(part_id_));
       }
@@ -664,7 +658,7 @@ inline void ObMysqlRoute::setup_partition_id_calc()
     set_state_and_call_next(ROUTE_ACTION_PARTITION_ID_CALC_DONE);
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("this table entry is non-partition table", KPC_(table_entry), K(ret));
+    LOG_WDIAG("this table entry is non-partition table", KPC_(table_entry), K(ret));
   }
 
   if (OB_FAIL(ret)) {
@@ -684,7 +678,7 @@ inline void ObMysqlRoute::handle_partition_id_calc_done()
   int ret = OB_SUCCESS;
   if (!is_part_id_calc_succ_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("[ObMysqlRoute::handle_partition_id_calc_done] fail to calc partition id", K(ret));
+    LOG_WDIAG("[ObMysqlRoute::handle_partition_id_calc_done] fail to calc partition id", K(ret));
   } else {
     // we will come here in these cases:
     // 1. the function of expr we do not support
@@ -748,7 +742,7 @@ int ObMysqlRoute::state_partition_entry_lookup(int event, void *data)
   if (OB_UNLIKELY(PARTITION_ENTRY_LOOKUP_CACHE_DONE != event) || OB_ISNULL(data)) {
     is_part_entry_lookup_succ_ = false;
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected event type, it should not happen", K(event), K(data), K(ret));
+    LOG_EDIAG("unexpected event type, it should not happen", K(event), K(data), K(ret));
   } else {
     ObPartitionResult *result = reinterpret_cast<ObPartitionResult *>(data);
     // hand over the ref
@@ -783,22 +777,20 @@ inline void ObMysqlRoute::handle_partition_entry_lookup_done()
   int ret = OB_SUCCESS;
   if (OB_NOT_NULL(part_entry_)) {
     ROUTE_DIAGNOSIS(param_.route_diagnosis_,
-                    PARTITION_ENTRY_LOOKUP,
-                    partition_entry_lookup,
+                    PARTITION_ENTRY_LOOKUP_DONE,
+                    partition_entry_lookup_done,
                     ret,
-                    part_id_,
                     is_part_entry_from_remote_,
                     is_part_entry_lookup_succ_,
                     part_entry_->has_dup_replica(),
                     part_entry_->get_entry_state(),
-                    OB_NOT_NULL(part_entry_->get_pl().get_leader())? 
+                    OB_NOT_NULL(part_entry_->get_pl().get_leader())?
                       *part_entry_->get_pl().get_leader() : ObProxyReplicaLocation())
   } else {
     ROUTE_DIAGNOSIS(param_.route_diagnosis_,
-                    PARTITION_ENTRY_LOOKUP,
-                    partition_entry_lookup,
+                    PARTITION_ENTRY_LOOKUP_DONE,
+                    partition_entry_lookup_done,
                     ret,
-                    part_id_,
                     is_part_entry_from_remote_,
                     is_part_entry_lookup_succ_,
                     false,
@@ -807,7 +799,7 @@ inline void ObMysqlRoute::handle_partition_entry_lookup_done()
   }
   if (!is_part_entry_lookup_succ_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("[ObMysqlRoute::handle_partition_entry_lookup_done] fail to lookup part entry", K(ret));
+    LOG_WDIAG("[ObMysqlRoute::handle_partition_entry_lookup_done] fail to lookup part entry", K(ret));
   } else {
     set_state_and_call_next(ROUTE_ACTION_NOTIFY_OUT);
   }
@@ -824,16 +816,16 @@ inline void ObMysqlRoute::notify_caller()
     ObContinuation *cont = action_.continuation_;
     if (NULL != cont) {
       if (OB_FAIL(cancel_timeout_action())) {
-        LOG_WARN("fail to cancel active timeout", K(ret));
+        LOG_WDIAG("fail to cancel active timeout", K(ret));
       } else {
         if (!action_.cancelled_) {
           if (NULL != param_.result_.table_entry_) {
-            LOG_ERROR("table entry must be NULL here", KPC_(param_.result_.table_entry));
+            LOG_EDIAG("table entry must be NULL here", KPC_(param_.result_.table_entry));
             param_.result_.table_entry_->dec_ref();
             param_.result_.table_entry_ = NULL;
           }
           if (NULL != param_.result_.part_entry_) {
-            LOG_ERROR("part entry must be NULL here", KPC_(param_.result_.part_entry));
+            LOG_EDIAG("part entry must be NULL here", KPC_(param_.result_.part_entry));
             param_.result_.part_entry_->dec_ref();
             param_.result_.part_entry_ = NULL;
           }
@@ -866,7 +858,7 @@ inline void ObMysqlRoute::notify_caller()
     MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_notify_caller);
     if (OB_ISNULL(pending_action_ = submit_thread_->schedule_imm(this))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_ERROR("fail to schedule imm", K(ret));
+      LOG_EDIAG("fail to schedule imm", K(ret));
     }
   }
 }
@@ -886,11 +878,11 @@ inline void ObMysqlRoute::setup_error_route()
   LOG_INFO("ObMysqlRoute::setup_error_route");
   int ret = OB_SUCCESS;
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
 
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
   notify_caller();
 }
@@ -965,7 +957,7 @@ inline void ObMysqlRoute::call_next_action()
       break;
     }
     default: {
-      LOG_ERROR("unknown route next action", K_(next_action));
+      LOG_EDIAG("unknown route next action", K_(next_action));
       setup_error_route();
       break;
     }
@@ -977,9 +969,9 @@ inline int ObMysqlRoute::init(ObRouteParam &route_param)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!route_param.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(route_param), K(ret));
+    LOG_WDIAG("invalid input value", K(route_param), K(ret));
   } else if (OB_FAIL(deep_copy_route_param(route_param))) {
-    LOG_WARN("fail to shallow copy route param", K(ret));
+    LOG_WDIAG("fail to shallow copy route param", K(ret));
   } else {
     action_.set_continuation(route_param.cont_);
     mutex_ = route_param.cont_->mutex_;
@@ -995,7 +987,7 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
   if (OB_LIKELY(&param_ != &param)) {
     if (!param.is_valid()) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid input value", K(param), K(ret));
+      LOG_WDIAG("invalid input value", K(param), K(ret));
     } else {
       param_.cont_ = param.cont_;
       param_.force_renew_ = param.force_renew_;
@@ -1009,7 +1001,8 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       param_.is_oracle_mode_ = param.is_oracle_mode_;
       param_.is_need_force_flush_ = param.is_need_force_flush_;
       param_.cluster_version_ = param.cluster_version_;
-      param_.route_diagnosis_ = param.route_diagnosis_;
+      param_.set_route_diagnosis(param.route_diagnosis_);
+      param_.binlog_service_ip_ = param.binlog_service_ip_;
       if (!param.current_idc_name_.empty()) {
         MEMCPY(param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
         param_.current_idc_name_.assign_ptr(param_.current_idc_name_buf_, param.current_idc_name_.length());
@@ -1030,9 +1023,9 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       name_buf_ = static_cast<char *>(op_fixed_mem_alloc(name_buf_len_));
       if (OB_ISNULL(name_buf_)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc mem", K_(name_buf_len), K(ret));
+        LOG_WDIAG("fail to alloc mem", K_(name_buf_len), K(ret));
       } else if (OB_FAIL(param_.name_.deep_copy(param.name_, name_buf_, name_buf_len_))) {
-        LOG_WARN("fail to deep copy table entry name", K(ret));
+        LOG_WDIAG("fail to deep copy table entry name", K(ret));
       }
 
       if (OB_FAIL(ret) && (NULL != name_buf_)) {
@@ -1056,12 +1049,12 @@ int ObMysqlRoute::get_route_entry(ObRouteParam &route_param,
   action = NULL;
   if (OB_UNLIKELY(!route_param.is_valid() || NULL == cr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(route_param), K(cr), K(ret));
+    LOG_WDIAG("invalid input value", K(route_param), K(cr), K(ret));
   } else if (OB_ISNULL(mysql_route = allocate_route())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocate mysql route", K(mysql_route), K(ret));
+    LOG_WDIAG("fail to allocate mysql route", K(mysql_route), K(ret));
   } else if (OB_FAIL(mysql_route->init(route_param))) {
-    LOG_WARN("fail to init mysql route", K(ret));
+    LOG_WDIAG("fail to init mysql route", K(ret));
   } else {
     int event_ret = mysql_route->handle_event(EVENT_IMMEDIATE, NULL);
     // fast path, thread cache hit, mysql route was freed;
@@ -1072,7 +1065,7 @@ int ObMysqlRoute::get_route_entry(ObRouteParam &route_param,
       // slow path
       mysql_route->set_cluster_resource(cr);
       if (OB_FAIL(mysql_route->schedule_timeout_action())) {
-        LOG_WARN("fail to schedule timeout action", K(ret));
+        LOG_WDIAG("fail to schedule timeout action", K(ret));
         // will handle error inner schedule_timeout_action
         ret = OB_SUCCESS;
       } else {
@@ -1108,10 +1101,10 @@ inline int ObMysqlRoute::schedule_timeout_action()
   int64_t timeout_ns = HRTIME_USECONDS(param_.timeout_us_);
   if (OB_UNLIKELY(NULL != timeout_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("timeout_action must be NULL here", K_(timeout_action), K(ret));
+    LOG_WDIAG("timeout_action must be NULL here", K_(timeout_action), K(ret));
   } else if (OB_ISNULL(timeout_action_ = self_ethread().schedule_in(this, timeout_ns))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to schedule timeout", K(timeout_action_), K(ret));
+    LOG_EDIAG("fail to schedule timeout", K(timeout_action_), K(ret));
   }
 
   if (OB_FAIL(ret)) {
@@ -1125,7 +1118,7 @@ inline int ObMysqlRoute::cancel_pending_action()
   int ret = common::OB_SUCCESS;
   if (NULL != pending_action_) {
     if (OB_FAIL(pending_action_->cancel())) {
-      PROXY_LOG(WARN, "fail to cancel pending action", K_(pending_action), K(ret));
+      PROXY_LOG(WDIAG, "fail to cancel pending action", K_(pending_action), K(ret));
     } else {
       pending_action_ = NULL;
     }
@@ -1138,7 +1131,7 @@ inline int ObMysqlRoute::cancel_timeout_action()
   int ret = common::OB_SUCCESS;
   if (NULL != timeout_action_) {
     if (OB_FAIL(timeout_action_->cancel())) {
-      PROXY_LOG(WARN, "fail to cancel timeout action", K_(timeout_action), K(ret));
+      PROXY_LOG(WDIAG, "fail to cancel timeout action", K_(timeout_action), K(ret));
     } else {
       timeout_action_ = NULL;
     }

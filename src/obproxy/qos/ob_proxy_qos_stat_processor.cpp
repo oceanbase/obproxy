@@ -42,7 +42,7 @@ int ObProxyQosStatProcessor::get_or_create_node(ObProxyQosStatNodeMiddle *parent
       bool is_new = false;
       if (ATOMIC_AAF(&qos_stat_num_, 1) <= get_global_proxy_config().qos_stat_item_limit) {
         if (OB_FAIL(parent_node->create_node(child_key, child_node, node_type, is_new))) {
-          PROXY_LOG(WARN, "fail to create node", K(child_key), K(ret));
+          PROXY_LOG(WDIAG, "fail to create node", K(child_key), K(ret));
         }
 
         if (OB_FAIL(ret) || !is_new) {
@@ -54,10 +54,10 @@ int ObProxyQosStatProcessor::get_or_create_node(ObProxyQosStatNodeMiddle *parent
         ATOMIC_AAF(&qos_stat_num_, -1);
         need_expire_qos_stat_ = true;
         ret = OB_EXCEED_MEM_LIMIT;
-        LOG_WARN("qos stat num reach limit, will discard and expire metric", KPC(parent_node), K(child_key), K_(qos_stat_num));
+        LOG_WDIAG("qos stat num reach limit, will discard and expire metric", KPC(parent_node), K(child_key), K_(qos_stat_num));
       }
     } else {
-      PROXY_LOG(WARN, "fail to get node", K(child_key), K(ret));
+      PROXY_LOG(WDIAG, "fail to get node", K(child_key), K(ret));
     }
   }
 
@@ -73,12 +73,12 @@ int ObProxyQosStatProcessor::store_stat_and_next(ObProxyQosStatNodeMiddle *paren
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(parent_node->store_stat(cost))) {
-    LOG_WARN("fail to store value", KP(parent_node), K(child_key), K(cost), K(ret));
+    LOG_WDIAG("fail to store value", KP(parent_node), K(child_key), K(cost), K(ret));
   } else if (OB_FAIL(get_or_create_node(parent_node, child_key, type, child_node))) {
     if (OB_EXCEED_MEM_LIMIT == ret) {
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("fail to get or create node", KP(parent_node), K(child_key), K(type), K(ret));
+      LOG_WDIAG("fail to get or create node", KP(parent_node), K(child_key), K(type), K(ret));
     }
   }
 
@@ -98,23 +98,23 @@ int ObProxyQosStatProcessor::store_stat(const ObString &cluster_name, const ObSt
     ret = OB_INVALID_ARGUMENT;
     LOG_DEBUG("invalid argument", K(cluster_name), K(tenant_name), K(database_name), K(user_name), K(ret));
   } else if (OB_FAIL(get_or_create_node(&root_node_, cluster_name, QOS_NODE_TYPE_MIDDLE, node))) {
-    LOG_WARN("fail to get or create node", K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get or create node", K(cluster_name), K(ret));
   } else if (OB_NOT_NULL(node) && OB_FAIL(store_stat_and_next(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), tenant_name, QOS_NODE_TYPE_MIDDLE, node, cost))) {
-    LOG_WARN("fail to store value", KP(node), K(tenant_name), K(ret));
+    LOG_WDIAG("fail to store value", KP(node), K(tenant_name), K(ret));
   } else if (OB_NOT_NULL(node) && OB_FAIL(store_stat_and_next(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), database_name, QOS_NODE_TYPE_MIDDLE, node, cost))) {
-    LOG_WARN("fail to store value", KP(node), K(database_name), K(ret));
+    LOG_WDIAG("fail to store value", KP(node), K(database_name), K(ret));
   } else if (OB_NOT_NULL(node) && OB_FAIL(store_stat_and_next(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), user_name, QOS_NODE_TYPE_MIDDLE, node, cost))) {
-    LOG_WARN("fail to store value", KP(node), K(user_name), K(ret));
+    LOG_WDIAG("fail to store value", KP(node), K(user_name), K(ret));
   } else if (OB_NOT_NULL(node)) {
     if (table_name.empty()) {
       if (OB_FAIL(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node)->store_stat(cost))) {
-        LOG_WARN("fail to store stat", KP(node), K(ret));
+        LOG_WDIAG("fail to store stat", KP(node), K(ret));
       }
     } else {
       if (OB_FAIL(store_stat_and_next(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), table_name, QOS_NODE_TYPE_LEAF, node, cost))) {
-        LOG_WARN("fail to store value", KP(node), K(table_name), K(ret));
+        LOG_WDIAG("fail to store value", KP(node), K(table_name), K(ret));
       } else if (OB_NOT_NULL(node) && OB_FAIL(reinterpret_cast<ObProxyQosStatNodeLeaf*>(node)->store_stat(cost))) {
-        LOG_WARN("fail to store stat", KP(node), K(ret));
+        LOG_WDIAG("fail to store stat", KP(node), K(ret));
       }
     }
   }
@@ -138,7 +138,7 @@ int ObProxyQosStatProcessor::get_child_node(ObProxyQosStatNodeRoot *parent_node,
       if (ret == OB_HASH_NOT_EXIST) {
         ret = OB_SUCCESS;
       } else {
-        LOG_WARN("fail to get node", KP(parent_node), K(key), K(ret));
+        LOG_WDIAG("fail to get node", KP(parent_node), K(key), K(ret));
       }
     } else {
       is_child_node_exist = true;
@@ -159,14 +159,14 @@ int ObProxyQosStatProcessor::get_target_node(ObProxyQosStatNode *&target_node, c
   ObProxyQosStatNode *child_node = NULL;
 
   if (OB_FAIL(get_child_node(&root_node_, cluster_name, child_node, is_child_node_exist))) {
-    LOG_WARN("fail to get node", KP(node), K(cluster_name), K(ret));
+    LOG_WDIAG("fail to get node", KP(node), K(cluster_name), K(ret));
   }
 
   if (OB_SUCC(ret) && is_child_node_exist) {
     // root_node_ no need dec ref
     node = child_node;
     if (OB_FAIL(get_child_node(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), tenant_name, child_node, is_child_node_exist))) {
-      LOG_WARN("fail to get node", KP(node), K(tenant_name), K(ret));
+      LOG_WDIAG("fail to get node", KP(node), K(tenant_name), K(ret));
     }
   }
 
@@ -174,7 +174,7 @@ int ObProxyQosStatProcessor::get_target_node(ObProxyQosStatNode *&target_node, c
     node->dec_ref();
     node = child_node;
     if (OB_FAIL(get_child_node(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), database_name, child_node, is_child_node_exist))) {
-      LOG_WARN("fail to get node", KP(node), K(database_name), K(ret));
+      LOG_WDIAG("fail to get node", KP(node), K(database_name), K(ret));
     }
   }
 
@@ -182,7 +182,7 @@ int ObProxyQosStatProcessor::get_target_node(ObProxyQosStatNode *&target_node, c
     node->dec_ref();
     node = child_node;
     if (OB_FAIL(get_child_node(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), user_name, child_node, is_child_node_exist))) {
-      LOG_WARN("fail to get node", KP(node), K(user_name), K(ret));
+      LOG_WDIAG("fail to get node", KP(node), K(user_name), K(ret));
     }
   }
 
@@ -190,7 +190,7 @@ int ObProxyQosStatProcessor::get_target_node(ObProxyQosStatNode *&target_node, c
     node->dec_ref();
     node = child_node;
     if (OB_FAIL(get_child_node(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), table_name, child_node, is_child_node_exist))) {
-      LOG_WARN("fail to get node", KP(node), K(user_name), K(ret));
+      LOG_WDIAG("fail to get node", KP(node), K(user_name), K(ret));
     }
   }
 
@@ -215,13 +215,13 @@ int ObProxyQosStatProcessor::calc_qps_and_rt(const ObString &cluster_name, const
   ObProxyQosStatNode *node = NULL;
 
   if (OB_FAIL(get_target_node(node, cluster_name, tenant_name, database_name, user_name))) {
-    LOG_WARN("get target node failed", K(ret), K(cluster_name), K(tenant_name), K(database_name), K(user_name));
+    LOG_WDIAG("get target node failed", K(ret), K(cluster_name), K(tenant_name), K(database_name), K(user_name));
   }
 
   if (OB_SUCC(ret) && node != NULL) {
     if (limit_rt > 0) {
       if (OB_FAIL(node->calc_rt(limit_rt, is_rt_reach))) {
-        LOG_WARN("fail to calc rt", KPC(node), K(limit_rt), K(ret));
+        LOG_WDIAG("fail to calc rt", KPC(node), K(limit_rt), K(ret));
       }
     } else {
       is_rt_reach = true;
@@ -230,7 +230,7 @@ int ObProxyQosStatProcessor::calc_qps_and_rt(const ObString &cluster_name, const
     if (OB_SUCC(ret) && is_rt_reach) {
       if (limit_qps > 0) {
         if (OB_FAIL(node->calc_qps(limit_qps, is_qps_reach))) {
-          LOG_WARN("fail to calc qps", KPC(node), K(limit_qps), K(ret));
+          LOG_WDIAG("fail to calc qps", KPC(node), K(limit_qps), K(ret));
         }
       } else {
         is_qps_reach = true;
@@ -258,13 +258,13 @@ int ObProxyQosStatProcessor::calc_cost(const ObString &cluster_name, const ObStr
 
   if (OB_FAIL(get_target_node(node, cluster_name, tenant_name, database_name, user_name,
                               ObProxyQosStatProcessor::TESTLOAD_TABLE_NAME))) {
-    LOG_WARN("get target node failed", K(ret), K(cluster_name), K(tenant_name),
+    LOG_WDIAG("get target node failed", K(ret), K(cluster_name), K(tenant_name),
         K(database_name), K(user_name), K(ObProxyQosStatProcessor::TESTLOAD_TABLE_NAME));
   }
 
   if (OB_SUCC(ret) && node != NULL) {
     if (OB_FAIL(node->calc_cost(cost, time_window))) {
-      LOG_WARN("fail to calc rt", KPC(node), K(cost), K(time_window), K(ret));
+      LOG_WDIAG("fail to calc rt", KPC(node), K(cost), K(time_window), K(ret));
     }
   }
 
@@ -316,7 +316,7 @@ int ObProxyQosStatProcessor::recursive_do_clean(ObProxyQosStatNodeRoot *node, in
       //   if not leaf node, Recursive check the child node
       if (QOS_NODE_TYPE_LEAF != iter->get_node_type()) {
         if (OB_FAIL(recursive_do_clean(reinterpret_cast<ObProxyQosStatNodeRoot*>(&(*iter)), max_idle_period))) {
-          LOG_WARN("fail to recursive clean", K(ret));
+          LOG_WDIAG("fail to recursive clean", K(ret));
         }
       }
       ++iter;
@@ -337,7 +337,7 @@ int ObProxyQosStatProcessor::do_qos_stat_clean()
 
   if (g_ob_qos_stat_processor.get_need_expire_qos_stat()
       && OB_FAIL(g_ob_qos_stat_processor.recursive_do_clean(&g_ob_qos_stat_processor.get_root_node(), max_idle_period))) {
-    LOG_WARN("fail to do recursive clean", K(ret));
+    LOG_WDIAG("fail to do recursive clean", K(ret));
   } else {
     ObAsyncCommonTask *cont = g_ob_qos_stat_processor.get_qos_stat_clean_cont();
     int64_t interval_us = 0;
@@ -366,7 +366,7 @@ int ObProxyQosStatProcessor::start_qos_stat_clean_task()
 
   if (OB_UNLIKELY(NULL != qos_stat_clean_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("qos_stat_clean_cont should be null here", K_(qos_stat_clean_cont), K(ret));
+    LOG_WDIAG("qos_stat_clean_cont should be null here", K_(qos_stat_clean_cont), K(ret));
   } else {
     int64_t interval_us = ObProxyMonitorUtils::get_next_schedule_time(get_global_proxy_config().qos_stat_clean_interval);
     // avoid getting too close to the current, skip to next time
@@ -379,7 +379,7 @@ int ObProxyQosStatProcessor::start_qos_stat_clean_task()
                     ObProxyQosStatProcessor::do_qos_stat_clean,
                     ObProxyQosStatProcessor::update_qos_stat_clean_interval, false, event::ET_TASK))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to create and start qos_stat_clean task", K(ret));
+        LOG_WDIAG("fail to create and start qos_stat_clean task", K(ret));
       }
     }
   }

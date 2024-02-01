@@ -247,7 +247,7 @@ int ObShowCongestionHandler::dump_item(const ObCongestionEntry *entry, const ObS
   size_t strftime_len = 0;
 
   if (OB_FAIL(ops_ip_nptop(entry->server_ip_, server_ip, sizeof(server_ip)))) {
-    PROXY_NET_LOG(WARN, "fail to ops_ip_nptop", K(entry->server_ip_), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to ops_ip_nptop", K(entry->server_ip_), K(ret));
   }
 
   ObNewRow row;

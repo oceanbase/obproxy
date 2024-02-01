@@ -56,7 +56,7 @@ int ObSSLConfigTableProcessor::execute(void *arg)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(NULL == arg)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("arg is null unexpected", K(ret));
+    LOG_WDIAG("arg is null unexpected", K(ret));
   } else {
     ObCloudFnParams *params = reinterpret_cast<ObCloudFnParams*>(arg);
     ObString tenant_name = params->tenant_name_;
@@ -65,11 +65,11 @@ int ObSSLConfigTableProcessor::execute(void *arg)
     ObString value;
     if (NULL == params->fields_) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fields is null unexpected", K(ret));
+      LOG_WDIAG("fields is null unexpected", K(ret));
     } else if (cluster_name.empty() || cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH
               || tenant_name.empty() || tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("execute failed, tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
+      LOG_WDIAG("execute failed, tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
     } else {
       for (int64_t i = 0; i < params->fields_->field_num_; i++) {
         SqlField *sql_field = params->fields_->fields_.at(i);
@@ -82,18 +82,18 @@ int ObSSLConfigTableProcessor::execute(void *arg)
 
       if (params->stmt_type_ == OBPROXY_T_REPLACE) {
         if (OB_FAIL(get_global_ssl_config_table_processor().set_ssl_config(cluster_name, tenant_name, name, value))) {
-          LOG_WARN("set ssl config failed", K(ret), K(cluster_name), K(tenant_name), K(name), K(value));
+          LOG_WDIAG("set ssl config failed", K(ret), K(cluster_name), K(tenant_name), K(name), K(value));
         }
       } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
         if (!name.empty() || !value.empty()) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("delete failed, name or value is not null", K(ret), K(name), K(value));
+          LOG_WDIAG("delete failed, name or value is not null", K(ret), K(name), K(value));
         } else if (OB_FAIL(get_global_ssl_config_table_processor().delete_ssl_config(cluster_name, tenant_name))) {
-          LOG_WARN("delete ssl config failed", K(ret), K(cluster_name), K(tenant_name));
+          LOG_WDIAG("delete ssl config failed", K(ret), K(cluster_name), K(tenant_name));
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected stmt type", K(ret), K(params->stmt_type_));
+        LOG_WDIAG("unexpected stmt type", K(ret), K(params->stmt_type_));
       }
     }
   }
@@ -111,7 +111,7 @@ int ObSSLConfigTableProcessor::commit(void* arg, bool is_success)
       get_global_ssl_config_table_processor().print_config();
     }
   } else {
-    LOG_WARN("ssl config commit failed");
+    LOG_WDIAG("ssl config commit failed");
   }
 
   return OB_SUCCESS;
@@ -130,11 +130,11 @@ int ObSSLConfigTableProcessor::init()
   handler.execute_func_ = &ObSSLConfigTableProcessor::execute;
   handler.commit_func_ = &ObSSLConfigTableProcessor::commit;
   if (OB_FAIL(ssl_config_map_array_[0].create(32, ObModIds::OB_PROXY_SSL_RELATED))) {
-    LOG_WARN("create hash map failed", K(ret));
+    LOG_WDIAG("create hash map failed", K(ret));
   } else if (OB_FAIL(ssl_config_map_array_[1].create(32, ObModIds::OB_PROXY_SSL_RELATED))) {
-    LOG_WARN("create hash map failed", K(ret));
+    LOG_WDIAG("create hash map failed", K(ret));
   } else if (OB_FAIL(get_global_config_processor().register_callback("ssl_config", handler))) {
-    LOG_WARN("register ssl config table callback failed", K(ret));
+    LOG_WDIAG("register ssl config table callback failed", K(ret));
   }
 
   return ret;
@@ -149,22 +149,22 @@ int ObSSLConfigTableProcessor::set_ssl_config(const ObString &cluster_name,
   DRWLock::WRLockGuard guard(ssl_config_lock_);
   if (OB_UNLIKELY(cluster_name.empty() || tenant_name.empty() || name.empty() || value.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("set ssl config failed, invalid argument", K(cluster_name), K(tenant_name), K(name), K(value), K(ret));
+    LOG_WDIAG("set ssl config failed, invalid argument", K(cluster_name), K(tenant_name), K(name), K(value), K(ret));
   } else if (OB_FAIL(backup_hash_map())) {
-    LOG_WARN("backup hash map failed", K(ret));
+    LOG_WDIAG("backup hash map failed", K(ret));
   } else {
     ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
     SSLConfigInfo ssl_config_info;
     ssl_config_info.reset();
     if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
-      LOG_WARN("paster tenant and cluser name failed", K(ret), K(tenant_name), K(cluster_name));
+      LOG_WDIAG("paster tenant and cluser name failed", K(ret), K(tenant_name), K(cluster_name));
     } else {
       SSLConfigHashMap &backup_map = ssl_config_map_array_[(index_ + 1) % 2];
       if (OB_FAIL(backup_map.get_refactored(key_string, ssl_config_info))) {
         if (OB_HASH_NOT_EXIST == ret) {
           ret = OB_SUCCESS;
         } else {
-          LOG_WARN("map get refactored failed", K(ret));
+          LOG_WDIAG("map get refactored failed", K(ret));
         }
       }
 
@@ -174,11 +174,11 @@ int ObSSLConfigTableProcessor::set_ssl_config(const ObString &cluster_name,
           json::Value *json_value = NULL;
           ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
           if (OB_FAIL(parser.init(&json_allocator))) {
-            LOG_WARN("json parser init failed", K(ret));
+            LOG_WDIAG("json parser init failed", K(ret));
           } else if (OB_FAIL(parser.parse(value.ptr(), value.length(), json_value))) {
-            LOG_WARN("json parse failed", K(ret), K(value));
+            LOG_WDIAG("json parse failed", K(ret), K(value));
           } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(json_value, json::JT_OBJECT))) {
-            LOG_WARN("check config info type failed", K(ret));
+            LOG_WDIAG("check config info type failed", K(ret));
           } else {
             ssl_config_info.is_key_info_valid_ = false;
             ObProxyVariantString source_type;
@@ -188,25 +188,25 @@ int ObSSLConfigTableProcessor::set_ssl_config(const ObString &cluster_name,
             DLIST_FOREACH(p, json_value->get_object()) {
               if (0 == p->name_.case_compare("sourceType")) {
                 if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-                  LOG_WARN("check config info type failed", K(ret));
+                  LOG_WDIAG("check config info type failed", K(ret));
                 } else {
                   source_type.set_value(p->value_->get_string());
                 }
               } else if (0 == p->name_.case_compare("CA")) {
                 if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-                  LOG_WARN("check config info type failed", K(ret));
+                  LOG_WDIAG("check config info type failed", K(ret));
                 } else {
                   ca_info.set_value(p->value_->get_string());
                 }
               } else if (0 == p->name_.case_compare("publicKey")) {
                 if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-                  LOG_WARN("check config info type failed", K(ret));
+                  LOG_WDIAG("check config info type failed", K(ret));
                 } else {
                   public_key.set_value(p->value_->get_string());
                 }
               } else if (0 == p->name_.case_compare("privateKey")) {
                 if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
-                  LOG_WARN("check config info type failed", K(ret));
+                  LOG_WDIAG("check config info type failed", K(ret));
                 } else {
                   private_key.set_value(p->value_->get_string());
                 }
@@ -216,7 +216,7 @@ int ObSSLConfigTableProcessor::set_ssl_config(const ObString &cluster_name,
             if (OB_SUCC(ret)) {
               if (OB_FAIL(g_ssl_processor.update_key(cluster_name, tenant_name, source_type,
                                                      ca_info, public_key, private_key))) {
-                LOG_WARN("update key failed", K(cluster_name), K(tenant_name), K(source_type),
+                LOG_WDIAG("update key failed", K(cluster_name), K(tenant_name), K(source_type),
                                K(ca_info), K(public_key), K(private_key), K(ret));
               } else {
                 ssl_config_info.is_key_info_valid_ = true;
@@ -225,14 +225,14 @@ int ObSSLConfigTableProcessor::set_ssl_config(const ObString &cluster_name,
           }
         } else {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("invalid name for ssl config", K(name), K(ret));
+          LOG_WDIAG("invalid name for ssl config", K(name), K(ret));
         }
       }
 
       if (OB_FAIL(ret)) {
         // do nothing
       } else if (OB_FAIL(backup_map.set_refactored(key_string, ssl_config_info, 1))) {
-        LOG_WARN("set refactored failed", K(ret));
+        LOG_WDIAG("set refactored failed", K(ret));
       }
     }
   }
@@ -246,18 +246,18 @@ int ObSSLConfigTableProcessor::delete_ssl_config(ObString &cluster_name, ObStrin
   DRWLock::WRLockGuard guard(ssl_config_lock_);
   if (cluster_name.empty() || tenant_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("cluster name or tenant name empty unexpected", K(ret));
+    LOG_WDIAG("cluster name or tenant name empty unexpected", K(ret));
   } else if (OB_FAIL(backup_hash_map())) {
-    LOG_WARN("backup hash map failed", K(ret));
+    LOG_WDIAG("backup hash map failed", K(ret));
   } else {
     LOG_DEBUG("delete ssl config", K(cluster_name), K(tenant_name));
     ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
     if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
-      LOG_WARN("paste tenant and cluster name failed", K(ret), K(tenant_name), K(cluster_name));
+      LOG_WDIAG("paste tenant and cluster name failed", K(ret), K(tenant_name), K(cluster_name));
     } else {
       SSLConfigHashMap &backup_map = ssl_config_map_array_[(index_ + 1) % 2];
       if (OB_FAIL(backup_map.erase_refactored(key_string))) {
-        LOG_WARN("addr hash map erase failed", K(ret));
+        LOG_WDIAG("addr hash map erase failed", K(ret));
       } else {
         delete_info_ = key_string;
       }
@@ -288,12 +288,12 @@ int ObSSLConfigTableProcessor::backup_hash_map()
   SSLConfigHashMap &backup_map = ssl_config_map_array_[backup_index];
   SSLConfigHashMap &current_map = ssl_config_map_array_[index_];
   if (OB_FAIL(backup_map.reuse())) {
-    LOG_WARN("backup map failed", K(ret));
+    LOG_WDIAG("backup map failed", K(ret));
   } else {
     SSLConfigHashMap::iterator iter = current_map.begin();
     for(; OB_SUCC(ret) && iter != current_map.end(); ++iter) {
       if (OB_FAIL(backup_map.set_refactored(iter->first, iter->second))) {
-        LOG_WARN("backup map set refactored failed", K(ret));
+        LOG_WDIAG("backup map set refactored failed", K(ret));
       }
     }
   }
@@ -331,10 +331,10 @@ bool ObSSLConfigTableProcessor::is_ssl_key_info_valid(const common::ObString &cl
   // Get tenant configuration
   if (OB_SUCC(ret)) {
     if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
-      LOG_WARN("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
+      LOG_WDIAG("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
     } else if (OB_FAIL(current_map.get_refactored(key_string, ssl_config_info))) {
       if (OB_HASH_NOT_EXIST != ret) {
-        LOG_WARN("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
+        LOG_WDIAG("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
       }
     } else {
       LOG_DEBUG("get ssl config from tenant succ", K(ssl_config_info));
@@ -343,10 +343,10 @@ bool ObSSLConfigTableProcessor::is_ssl_key_info_valid(const common::ObString &cl
   // Get the cluster configuration
   if (OB_HASH_NOT_EXIST == ret) {
     if (OB_FAIL(paste_tenant_and_cluster_name("*", cluster_name, key_string))) {
-      LOG_WARN("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
+      LOG_WDIAG("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
     } else if (OB_FAIL(current_map.get_refactored(key_string, ssl_config_info))) {
       if (OB_HASH_NOT_EXIST != ret) {
-        LOG_WARN("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
+        LOG_WDIAG("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
       }
     } else {
       LOG_DEBUG("get ssl config from cluster succ", K(ssl_config_info));
@@ -355,10 +355,10 @@ bool ObSSLConfigTableProcessor::is_ssl_key_info_valid(const common::ObString &cl
   // Get global configuration
   if (OB_HASH_NOT_EXIST == ret) {
     if (OB_FAIL(paste_tenant_and_cluster_name("*", "*", key_string))) {
-      LOG_WARN("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
+      LOG_WDIAG("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
     } else if (OB_FAIL(current_map.get_refactored(key_string, ssl_config_info))) {
       if (OB_HASH_NOT_EXIST != ret) {
-        LOG_WARN("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
+        LOG_WDIAG("ssl ctx map get refactored failed", K(ret), K(cluster_name), K(tenant_name));
       }
     } else {
       LOG_DEBUG("get ssl config from global succ", K(ssl_config_info));

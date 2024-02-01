@@ -44,7 +44,7 @@ int ObSqlTableEntry::alloc_and_init_sql_table_entry(const ObSqlTableEntryKey &ke
   if (OB_UNLIKELY(!key.is_valid()) || OB_UNLIKELY(NULL != entry)
       || OB_UNLIKELY(table_name.length() > OB_MAX_TABLE_NAME_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(key), K(entry), K(table_name), K(ret));
+    LOG_WDIAG("invalid argument", K(key), K(entry), K(table_name), K(ret));
   } else {
     int64_t name_size = key.cluster_name_.length()
                         + key.tenant_name_.length() + key.database_name_.length()
@@ -54,12 +54,12 @@ int ObSqlTableEntry::alloc_and_init_sql_table_entry(const ObSqlTableEntryKey &ke
     char *buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size));
     if (OB_ISNULL(buf)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(alloc_size), K(ret));
+      LOG_WDIAG("fail to alloc mem", K(alloc_size), K(ret));
     } else {
       LOG_DEBUG("alloc entry succ", K(alloc_size), K(obj_size), K(name_size), K(key), K(table_name));
       entry = new (buf) ObSqlTableEntry();
       if (OB_FAIL(entry->init(buf + obj_size, name_size))) {
-        LOG_WARN("fail to init entry", K(alloc_size), K(ret));
+        LOG_WDIAG("fail to init entry", K(alloc_size), K(ret));
       } else {
         entry->copy_key_and_name(key, table_name);
         entry->set_create_time();
@@ -80,7 +80,7 @@ int ObSqlTableEntry::init(char *buf_start, const int64_t buf_len)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(buf_len <= 0) || OB_ISNULL(buf_start)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf_len), K(buf_start), K(ret));
+    LOG_WDIAG("invalid input value", K(buf_len), K(buf_start), K(ret));
   } else {
     create_time_us_ = hrtime_to_usec(event::get_hrtime());
     buf_len_ = buf_len;

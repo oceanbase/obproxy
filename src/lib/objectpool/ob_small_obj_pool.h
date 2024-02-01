@@ -103,16 +103,16 @@ int ObSmallObjPool<T>::init(const int64_t fixed_count,
   int ret = OB_SUCCESS;
   int64_t obj_size = sizeof(ObjItem);
   if (OB_UNLIKELY(inited_)) {
-    LIB_LOG(ERROR, "small obj pool has been initialized");
+    LIB_LOG(EDIAG, "small obj pool has been initialized");
     ret = OB_INIT_TWICE;
   } else if (OB_UNLIKELY(fixed_count <= 0)) {
-    LIB_LOG(ERROR, "invalid argument", K(fixed_count));
+    LIB_LOG(EDIAG, "invalid argument", K(fixed_count));
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_FAIL(allocator_.init(obj_size, mod_id, tenant_id, block_size))) {
-    LIB_LOG(ERROR, "init small allocator fail", K(ret), K(obj_size), K(mod_id),
+    LIB_LOG(EDIAG, "init small allocator fail", K(ret), K(obj_size), K(mod_id),
         K(tenant_id), K(block_size));
   } else if (OB_FAIL(free_list_.init(fixed_count))) {
-    LIB_LOG(ERROR, "init free list fail", K(fixed_count));
+    LIB_LOG(EDIAG, "init free list fail", K(fixed_count));
   } else {
     fixed_count_ = fixed_count;
     free_count_ = 0;
@@ -158,11 +158,11 @@ int ObSmallObjPool<T>::alloc(T *&obj)
   ObjItem *obj_item = NULL;
 
   if (OB_UNLIKELY(! inited_)) {
-    LIB_LOG(ERROR, "small obj pool has not been initialized");
+    LIB_LOG(EDIAG, "small obj pool has not been initialized");
     ret = OB_NOT_INIT;
   } else if (OB_SUCC(free_list_.pop(obj_item))) {
     if (OB_ISNULL(obj_item)) {
-      LIB_LOG(ERROR, "pop obj item from free_list fail", K(ret), K(obj_item));
+      LIB_LOG(EDIAG, "pop obj item from free_list fail", K(ret), K(obj_item));
       ret = OB_ERR_UNEXPECTED;
     } else {
       obj = &obj_item->obj_;
@@ -170,12 +170,12 @@ int ObSmallObjPool<T>::alloc(T *&obj)
     }
   } else if (OB_ENTRY_NOT_EXIST == ret) {
     if (OB_FAIL(alloc_obj_(obj))) {
-      LIB_LOG(ERROR, "alloc_obj fail", K(ret));
+      LIB_LOG(EDIAG, "alloc_obj fail", K(ret));
     } else {
       // succ
     }
   } else { // OB_SUCCESS != ret && OB_ENTRY_NOT_EXIST != ret
-    LIB_LOG(ERROR, "pop object from free list fail", K(ret), K_(free_count), K_(alloc_count));
+    LIB_LOG(EDIAG, "pop object from free list fail", K(ret), K_(free_count), K_(alloc_count));
   }
 
   return ret;
@@ -186,17 +186,17 @@ int ObSmallObjPool<T>::free(T* obj)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(! inited_)) {
-    LIB_LOG(ERROR, "small obj pool has not been initialized");
+    LIB_LOG(EDIAG, "small obj pool has not been initialized");
     ret = OB_NOT_INIT;
   } else if (OB_ISNULL(obj)) {
-    LIB_LOG(ERROR, "invalid argument", K(obj));
+    LIB_LOG(EDIAG, "invalid argument", K(obj));
     ret = OB_INVALID_ARGUMENT;
   } else {
     ObjItem *obj_item = CONTAINER_OF(obj, ObjItem, obj_);
 
     if (ObjItem::SRC_FIXED == obj_item->src_type_) {
       if (OB_FAIL(free_list_.push(obj_item))) {
-        LIB_LOG(ERROR, "push obj into free list fail", K(ret), KP(obj_item));
+        LIB_LOG(EDIAG, "push obj into free list fail", K(ret), KP(obj_item));
       } else {
         (void)ATOMIC_AAF(&free_count_, 1);
       }
@@ -206,7 +206,7 @@ int ObSmallObjPool<T>::free(T* obj)
       obj_item = NULL;
       (void)ATOMIC_AAF(&alloc_count_, -1);
     } else {
-      LIB_LOG(ERROR, "invalid object", K(obj), K(obj_item), "src_type", obj_item->src_type_);
+      LIB_LOG(EDIAG, "invalid object", K(obj), K(obj_item), "src_type", obj_item->src_type_);
       ret = OB_INVALID_DATA;
     }
   }
@@ -224,7 +224,7 @@ int ObSmallObjPool<T>::alloc_obj_(T *&obj)
   obj = NULL;
 
   if (OB_ISNULL(ptr)) {
-    LIB_LOG(ERROR, "allocate memory fail", K_(allocator));
+    LIB_LOG(EDIAG, "allocate memory fail", K_(allocator));
     ret = OB_ALLOCATE_MEMORY_FAILED;
   } else {
     obj_item = new(ptr) ObjItem();

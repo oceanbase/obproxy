@@ -229,14 +229,14 @@ int ObExtMsQueue<KeyType>::MsQueueItem::init(const KeyType &key, const int64_t q
     ret = OB_INIT_TWICE;
   } else if (! key.is_valid() || queue_count <= 0 || queue_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid args", K(ret), "key_valid", key.is_valid(), K(queue_count), K(queue_len));
+    LIB_LOG(EDIAG, "invalid args", K(ret), "key_valid", key.is_valid(), K(queue_count), K(queue_len));
   } else if (OB_FAIL(queue_.init(queue_count, queue_len, &allocator_))) {
-    LIB_LOG(ERROR, "init ms queue fail", K(ret), K(queue_count), K(queue_len));
+    LIB_LOG(EDIAG, "init ms queue fail", K(ret), K(queue_count), K(queue_len));
   } else {
     flags_ = static_cast<int8_t*>(allocator_.alloc(queue_count * sizeof(int8_t)));
 
     if (NULL == flags_) {
-      LIB_LOG(ERROR, "allocate memory for flags array fail", K(queue_count));
+      LIB_LOG(EDIAG, "allocate memory for flags array fail", K(queue_count));
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       // Initialize Flags to IDLE
@@ -251,7 +251,7 @@ int ObExtMsQueue<KeyType>::MsQueueItem::init(const KeyType &key, const int64_t q
     task_ctx_array_ = static_cast<TaskCtx*>(allocator_.alloc(tctx_size));
 
     if (NULL == task_ctx_array_) {
-      LIB_LOG(ERROR, "allocate memory for TaskCtx array fail", "size", tctx_size);
+      LIB_LOG(EDIAG, "allocate memory for TaskCtx array fail", "size", tctx_size);
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {
       for (int64_t index = 0; index < queue_count; index++) {
@@ -390,12 +390,12 @@ int ObExtMsQueue<KeyType>::init(const int64_t max_cached_ms_queue_item_count,
     ret = OB_INIT_TWICE;
   } else if (queue_count_of_ms_queue <= 0 || queue_len_of_ms_queue <= 0 || max_cached_ms_queue_item_count <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid args", K(ret), K(queue_count_of_ms_queue), K(queue_len_of_ms_queue),
+    LIB_LOG(EDIAG, "invalid args", K(ret), K(queue_count_of_ms_queue), K(queue_len_of_ms_queue),
             K(max_cached_ms_queue_item_count));
   } else if (OB_FAIL(ms_queue_pool_.init(max_cached_ms_queue_item_count, mod_id))) {
-    LIB_LOG(ERROR, "init ms_queue pool fail", K(ret), K(max_cached_ms_queue_item_count));
+    LIB_LOG(EDIAG, "init ms_queue pool fail", K(ret), K(max_cached_ms_queue_item_count));
   } else if (OB_FAIL(ms_queue_map_.init(mod_id))) {
-    LIB_LOG(ERROR, "init ms_queue map fail", K(ret));
+    LIB_LOG(EDIAG, "init ms_queue map fail", K(ret));
   } else {
     queue_len_of_ms_queue_ = queue_len_of_ms_queue;
     queue_count_of_ms_queue_ = queue_count_of_ms_queue;
@@ -428,21 +428,21 @@ int ObExtMsQueue<KeyType>::add_ms_queue(const KeyType &key)
     ret = OB_NOT_INIT;
   } else if (! key.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid args", K(ret), "key_valid", key.is_valid());
+    LIB_LOG(EDIAG, "invalid args", K(ret), "key_valid", key.is_valid());
   } else if (OB_SUCCESS == (ret = ms_queue_map_.get(key, queue))) {
     ret = OB_ENTRY_EXIST;
   } else if (OB_ENTRY_NOT_EXIST != ret) {
-    LIB_LOG(ERROR, "get from ms_queue_map fail", K(ret), K(key));
+    LIB_LOG(EDIAG, "get from ms_queue_map fail", K(ret), K(key));
   } else {  // OB_ENTRY_NOT_EXIST == ret
     queue = NULL;
     if (OB_FAIL(ms_queue_pool_.alloc(queue))) {
-      LIB_LOG(ERROR, "alloc MsQueueItem fail");
+      LIB_LOG(EDIAG, "alloc MsQueueItem fail");
     } else if (OB_FAIL(queue->init(key, queue_count_of_ms_queue_, queue_len_of_ms_queue_))) {
-      LIB_LOG(ERROR, "init MsQueueItem fail", K(ret), K(key),
+      LIB_LOG(EDIAG, "init MsQueueItem fail", K(ret), K(key),
           K(queue_count_of_ms_queue_), K(queue_len_of_ms_queue_));
     } else if (OB_FAIL(ms_queue_map_.insert(key, queue))) {
       // TODO: If you want to support concurrent inserts, handle insert conflicts here
-      LIB_LOG(ERROR, "insert queue into ms_queue_map fail", K(ret), K(key));
+      LIB_LOG(EDIAG, "insert queue into ms_queue_map fail", K(ret), K(key));
     } else {
       int64_t ms_queue_count = ATOMIC_AAF(&ms_queue_item_count_, 1);
 
@@ -470,13 +470,13 @@ int ObExtMsQueue<KeyType>::terminate_ms_queue(const KeyType &key, const int64_t 
     ret = OB_NOT_INIT;
   } else if (! key.is_valid() || end_seq < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid args", K(ret), "key_valid", key.is_valid(), K(end_seq));
+    LIB_LOG(EDIAG, "invalid args", K(ret), "key_valid", key.is_valid(), K(end_seq));
   } else if (OB_FAIL(ms_queue_map_.get(key, queue))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
-      LIB_LOG(ERROR, "entry does not exist", K(key), K(ret));
+      LIB_LOG(EDIAG, "entry does not exist", K(key), K(ret));
     }
     else {
-      LIB_LOG(ERROR, "get MsQueue fail", K(ret), K(key));
+      LIB_LOG(EDIAG, "get MsQueue fail", K(ret), K(key));
     }
   } else if (NULL == queue) {
     ret = OB_ERR_UNEXPECTED;
@@ -495,7 +495,7 @@ int ObExtMsQueue<KeyType>::terminate_ms_queue(const KeyType &key, const int64_t 
         if (OB_TIMEOUT == ret) {
           MSQ_STAT(INFO, "terminate_push_timeout", KP(queue), K(queue_index), K(end_seq), K(key));
         } else {
-          LIB_LOG(ERROR, "push end_task fail", K(ret), K(key), K(queue_index), K(end_seq), KP(queue));
+          LIB_LOG(EDIAG, "push end_task fail", K(ret), K(key), K(queue_index), K(end_seq), KP(queue));
         }
       } else {
         ATOMIC_INC(&(queue->next_to_terminate_queue_index_));
@@ -506,7 +506,7 @@ int ObExtMsQueue<KeyType>::terminate_ms_queue(const KeyType &key, const int64_t 
       MSQ_STAT(INFO, "terminate_end_batch", KP(queue), K(end_seq), K(key));
 
       if (OB_FAIL(end_batch(key, end_seq, queue_count_of_ms_queue_))) {
-        LIB_LOG(ERROR, "end_batch end_seq fail", K(ret), K(queue), "queue", *queue, K(end_seq), K(key));
+        LIB_LOG(EDIAG, "end_batch end_seq fail", K(ret), K(queue), "queue", *queue, K(end_seq), K(key));
       }
     }
   }
@@ -527,19 +527,19 @@ int ObExtMsQueue<KeyType>::push(const KeyType &key,
     ret = OB_NOT_INIT;
   } else if (! key.is_valid() || NULL == task || seq < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid args", K(ret), "key_valid", key.is_valid(), K(task), K(seq));
+    LIB_LOG(EDIAG, "invalid args", K(ret), "key_valid", key.is_valid(), K(task), K(seq));
   } else if (OB_FAIL(ms_queue_map_.get(key, queue))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
-      LIB_LOG(ERROR, "entry does not exist", K(key), K(ret));
+      LIB_LOG(EDIAG, "entry does not exist", K(key), K(ret));
     } else {
-      LIB_LOG(ERROR, "get MsQueue fail", K(ret), K(key));
+      LIB_LOG(EDIAG, "get MsQueue fail", K(ret), K(key));
     }
   } else if (NULL == queue) {
     ret = OB_ERR_UNEXPECTED;
     LIB_LOG(INFO, "invalid queue", K(queue));
   } else if (OB_FAIL(queue->push(task, seq, hash, timeout))) {
     if (OB_TIMEOUT != ret) {
-      LIB_LOG(ERROR, "push task into MsQueue fail", K(ret), K(key), KP(queue), K(task), K(seq), K(hash));
+      LIB_LOG(EDIAG, "push task into MsQueue fail", K(ret), K(key), KP(queue), K(task), K(seq), K(hash));
     }
   } else {
     MSQ_STAT(DEBUG, "push_task", KP(queue), K(seq), K(hash), K(task), K(key));
@@ -557,18 +557,18 @@ int ObExtMsQueue<KeyType>::end_batch(const KeyType &key, const int64_t seq, cons
     ret = OB_NOT_INIT;
   } else if (! key.is_valid() || seq < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid args", K(ret), "key_valid", key.is_valid(), K(seq), K(count));
+    LIB_LOG(EDIAG, "invalid args", K(ret), "key_valid", key.is_valid(), K(seq), K(count));
   } else if (OB_FAIL(ms_queue_map_.get(key, queue))) {
     if (OB_ENTRY_NOT_EXIST == ret) {
-      LIB_LOG(ERROR, "entry does not exist", K(key), K(ret));
+      LIB_LOG(EDIAG, "entry does not exist", K(key), K(ret));
     } else {
-      LIB_LOG(ERROR, "get MsQueue fail", K(ret), K(key));
+      LIB_LOG(EDIAG, "get MsQueue fail", K(ret), K(key));
     }
   } else if (NULL == queue) {
     ret = OB_ERR_UNEXPECTED;
     LIB_LOG(INFO, "invalid queue", K(queue));
   } else if (OB_FAIL(queue->end_batch(seq, count))) {
-    LIB_LOG(ERROR, "end_batch fail", K(ret), K(key), KP(queue), K(seq), K(count));
+    LIB_LOG(EDIAG, "end_batch fail", K(ret), K(key), KP(queue), K(seq), K(count));
   } else {
     MSQ_STAT(DEBUG, "end_batch", KP(queue), K(seq), K(count), K(key));
 
@@ -604,7 +604,7 @@ int ObExtMsQueue<KeyType>::push_msg_task_(TaskCtx *ctx)
     ret = OB_ERR_UNEXPECTED;
   }
   else if (OB_FAIL(task_ctx_queue_.push(ctx))) {
-    LIB_LOG(ERROR, "push task ctx into msg queue fail", K(ret), "task_ctx", *ctx);
+    LIB_LOG(EDIAG, "push task ctx into msg queue fail", K(ret), "task_ctx", *ctx);
   } else {
     // succ
     task_ctx_queue_cond_.signal();
@@ -622,7 +622,7 @@ int ObExtMsQueue<KeyType>::get(Task *&task, void *&ctx, const int64_t timeout)
     ret = OB_NOT_INIT;
   } else if (NULL != task_ctx && ! task_ctx->is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid argument", K(task_ctx), "task_ctx", *task_ctx);
+    LIB_LOG(EDIAG, "invalid argument", K(task_ctx), "task_ctx", *task_ctx);
   } else {
     int64_t end_time = ObTimeUtility::current_time() + timeout;
     int64_t left_time = timeout;
@@ -631,7 +631,7 @@ int ObExtMsQueue<KeyType>::get(Task *&task, void *&ctx, const int64_t timeout)
       // If there is no task context, get a context from the queue
       if (NULL == task_ctx && OB_FAIL(get_task_ctx_(task_ctx, left_time))) {
         if (OB_TIMEOUT != ret) {
-          LIB_LOG(ERROR, "get_task_ctx_ fail", K(ret));
+          LIB_LOG(EDIAG, "get_task_ctx_ fail", K(ret));
         }
         break;
       // Take tasks from the queue
@@ -652,7 +652,7 @@ int ObExtMsQueue<KeyType>::get(Task *&task, void *&ctx, const int64_t timeout)
     ctx = NULL;
     if (OB_SUCC(ret)) {
       if (NULL == task || NULL == task_ctx || ! task_ctx->is_valid()) {
-        LIB_LOG(ERROR, "unexpected error: task or task_ctx is invalid",
+        LIB_LOG(EDIAG, "unexpected error: task or task_ctx is invalid",
             K(task), K(task_ctx), "task_ctx", NULL == task_ctx ? "NULL" : to_cstring(*task_ctx));
         ret = OB_ERR_UNEXPECTED;
       } else {
@@ -758,7 +758,7 @@ int ObExtMsQueue<KeyType>::get_task_(Task *&task, TaskCtx *ctx)
     if (OB_SUCCESS == ret && &end_task_ == task) {
       // If a termination task is encountered, terminate the Queue
       if (OB_FAIL(handle_end_task_(ctx))) {
-        LIB_LOG(ERROR, "handle_end_task_ fail", K(ret), K(ctx));
+        LIB_LOG(EDIAG, "handle_end_task_ fail", K(ret), K(ctx));
       } else {
         task = NULL;
         ctx = NULL;
@@ -780,14 +780,14 @@ int ObExtMsQueue<KeyType>::get_task_(Task *&task, TaskCtx *ctx)
                  K(old_flag), "key", ctx->ms_queue_item_->key_);
 
         if (OB_FAIL(push_msg_task_(ctx))) {
-          LIB_LOG(ERROR, "push_msg_task_ fail", K(ret), K(ctx));
+          LIB_LOG(EDIAG, "push_msg_task_ fail", K(ret), K(ctx));
         } else {
           // Always return to retry
           ret = OB_EAGAIN;
         }
       }
     } else if (OB_FAIL(ret)) {
-      LIB_LOG(ERROR, "get task from MsQueue fail", K(ret));
+      LIB_LOG(EDIAG, "get task from MsQueue fail", K(ret));
     }
   }
 

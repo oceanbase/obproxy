@@ -41,7 +41,7 @@ int ObDbConfigFetchCont::alloc_fetch_cont(ObDbConfigFetchCont *&cont, ObContinua
   ObEThread *cb_thread = &self_ethread();
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for mutex", K(ret));
+    LOG_EDIAG("fail to alloc memory for mutex", K(ret));
   } else {
     switch (type) {
       case TYPE_TENANT:
@@ -62,12 +62,12 @@ int ObDbConfigFetchCont::alloc_fetch_cont(ObDbConfigFetchCont *&cont, ObContinua
         break;
       default:
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown type", K(type));
+        LOG_WDIAG("unknown type", K(type));
     }
   }
   if (OB_ISNULL(cont)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for ObDbConfigFetchCont", K(ret));
+    LOG_EDIAG("fail to alloc memory for ObDbConfigFetchCont", K(ret));
     if (OB_LIKELY(NULL != mutex)) {
       mutex->free();
       mutex = NULL;

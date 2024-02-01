@@ -147,7 +147,7 @@ int ObVipReadStaleInfo::acquire_feedback_record(const net::ObIpEndpoint &server_
       stale_feedback = NULL;
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("fail to get read stale feedback", K(replica), K(ret));
+      LOG_WDIAG("fail to get read stale feedback", K(replica), K(ret));
     }
   } else {
     is_stale = stale_feedback->is_read_stale_feedback_valid(read_stale_retry_interval_);
@@ -169,10 +169,10 @@ int ObVipReadStaleInfo::create_or_update_feedback_record(const net::ObIpEndpoint
     if (OB_HASH_NOT_EXIST == ret) {
       ret = OB_SUCCESS;
       if (OB_FAIL(create_feedback_record(server_addr, table_id, partition_id, feedback_time))) {
-        LOG_WARN("fail to create feedback record", K(ret));
+        LOG_WDIAG("fail to create feedback record", K(ret));
       }
     } else {
-      LOG_WARN("fail to record read stale feedback", K(server_addr), K(table_id), K(partition_id), K(feedback_time));
+      LOG_WDIAG("fail to record read stale feedback", K(server_addr), K(table_id), K(partition_id), K(feedback_time));
     }
   } else {
     feedback->feedback_time_ = feedback_time;
@@ -194,14 +194,14 @@ int ObVipReadStaleInfo::create_feedback_record(const net::ObIpEndpoint &server_a
     if (OB_HASH_NOT_EXIST == ret) {
       ret = OB_SUCCESS;
       if (OB_FAIL(ObReadStaleProcessor::alloc_read_stale_feedback(server_addr, table_id, partition_id, feedback_time, feedback))) {
-        LOG_WARN("fail to alloc mem for read stale feedback", K(ret));
+        LOG_WDIAG("fail to alloc mem for read stale feedback", K(ret));
       } else if (OB_FAIL(read_stale_feedback_map_.unique_set(feedback))) {
         feedback->destroy();
         feedback = NULL;
-        LOG_WARN("fail to record read stale feedback", K(ret));
+        LOG_WDIAG("fail to record read stale feedback", K(ret));
       }
     } else {
-      LOG_WARN("fail to record read stale feedback", K(server_addr), K(table_id), K(partition_id), K(feedback_time));
+      LOG_WDIAG("fail to record read stale feedback", K(server_addr), K(table_id), K(partition_id), K(feedback_time));
     }
   } else {
     feedback->feedback_time_ = feedback_time;
@@ -270,14 +270,14 @@ int ObReadStaleProcessor::create_or_update_vip_feedback_record(const ObReadStale
       if (ret == OB_HASH_NOT_EXIST) {
         ret = OB_SUCCESS;
         if (OB_FAIL(create_vip_feedback_record(param, now))) {
-          LOG_WARN("fail to acqure or create vip read stale info", K(ret));
+          LOG_WDIAG("fail to acqure or create vip read stale info", K(ret));
         }
       } else {
-        LOG_WARN("fail to get vip read stale record", K(param.vip_addr_), K(param.tenant_name_), K(param.cluster_name_), K(ret));
+        LOG_WDIAG("fail to get vip read stale record", K(param.vip_addr_), K(param.tenant_name_), K(param.cluster_name_), K(ret));
       }
     } else {
       if (OB_FAIL(vip_stale_info->create_or_update_feedback_record(param.server_addr_, param.table_id_, param.partition_id_, now))) {
-        LOG_WARN("fail to create feedback record", K(param.server_addr_), K(param.table_id_), K(param.partition_id_), K(ret));
+        LOG_WDIAG("fail to create feedback record", K(param.server_addr_), K(param.table_id_), K(param.partition_id_), K(ret));
       }
       lock_.rdunlock();
     }
@@ -296,20 +296,20 @@ int ObReadStaleProcessor::create_vip_feedback_record(const ObReadStaleParam &par
       ret = OB_SUCCESS;
       if (OB_FAIL(alloc_vip_stale_info(param.vip_addr_, param.tenant_name_, param.cluster_name_, param.retry_interval_, vip_info))) {
         vip_info = NULL;
-        LOG_WARN("fail to alloc mem for vip read stale info", K(key), K(ret));
+        LOG_WDIAG("fail to alloc mem for vip read stale info", K(key), K(ret));
       } else if (OB_FAIL(vip_read_stale_map_.unique_set(vip_info))) {
         vip_info->destroy();
         vip_info = NULL;
-        LOG_WARN("fail to record vip read stale info", K(key), K(ret));
+        LOG_WDIAG("fail to record vip read stale info", K(key), K(ret));
       }
     } else {
       vip_info = NULL;
-      LOG_WARN("fail to get vip read stale info", K(key), K(ret));
+      LOG_WDIAG("fail to get vip read stale info", K(key), K(ret));
     }
   }
   if (OB_SUCC(ret)) {
     if (vip_info->create_or_update_feedback_record(param.server_addr_, param.table_id_, param.partition_id_, now)) {
-      LOG_WARN("fail to create feedback record", K(param.server_addr_), K(param.table_id_), K(param.partition_id_), K(ret));
+      LOG_WDIAG("fail to create feedback record", K(param.server_addr_), K(param.table_id_), K(param.partition_id_), K(ret));
     }
   }
   return ret;
@@ -329,11 +329,11 @@ int ObReadStaleProcessor::check_read_stale_state(const ObReadStaleParam &param, 
         ret = OB_SUCCESS;
         // vip stale info not exist, no stale
       } else {
-        LOG_WARN("fail to get vip read stale info", K(param.vip_addr_), K(param.tenant_name_), K(param.cluster_name_), K(ret));
+        LOG_WDIAG("fail to get vip read stale info", K(param.vip_addr_), K(param.tenant_name_), K(param.cluster_name_), K(ret));
       }
     } else if (OB_FALSE_IT(vip_stale_info->read_stale_retry_interval_ = param.retry_interval_)) {
     } else if (OB_FAIL(vip_stale_info->acquire_feedback_record(param.server_addr_, param.table_id_, param.partition_id_, is_stale, feedback))) {
-      LOG_WARN("fail to get vip read stale info", K(param.server_addr_), K(param.table_id_), K(param.partition_id_), K(ret));
+      LOG_WDIAG("fail to get vip read stale info", K(param.server_addr_), K(param.table_id_), K(param.partition_id_), K(ret));
     }
   } else {
     is_stale = false;
@@ -354,7 +354,7 @@ int ObReadStaleProcessor::alloc_vip_stale_info(const ObVipAddr &vip,
   stale_info = NULL;
   if (OB_ISNULL(ptr = static_cast<char *>(get_read_stale_allocator().alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(WARN, "fail to alloc mem for ob vip read stale info", K(ret));
+    PROXY_SM_LOG(WDIAG, "fail to alloc mem for ob vip read stale info", K(ret));
   } else {
     stale_info = new (ptr) ObVipReadStaleInfo();
     pos += sizeof(ObVipReadStaleInfo);
@@ -380,7 +380,7 @@ int ObReadStaleProcessor::alloc_read_stale_feedback(const net::ObIpEndpoint &ser
   feedback = NULL;
   if (OB_ISNULL(ptr = get_read_stale_allocator().alloc(sizeof(ObReadStaleFeedback)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(WARN, "fail to alloc mem for ob read stale feedback", K(ret));
+    PROXY_SM_LOG(WDIAG, "fail to alloc mem for ob read stale feedback", K(ret));
   } else {
     feedback = new (ptr) ObReadStaleFeedback();
     feedback->replica_.server_addr_ = server_addr;
@@ -404,7 +404,7 @@ int ObReadStaleProcessor::acquire_vip_feedback_record(const ObVipAddr &vip,
     if (ret == OB_HASH_NOT_EXIST) {
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("fail to get vip read stale feedback map", K(vip), K(tenant_name), K(cluster_name), K(ret));
+      LOG_WDIAG("fail to get vip read stale feedback map", K(vip), K(tenant_name), K(cluster_name), K(ret));
     }
   }
   return ret;
@@ -447,7 +447,7 @@ int ObReadStaleProcessor::start_read_stale_feedback_clean_task()
   get_read_stale_allocator().set_mod_id(ObModIds::OB_PROXY_READ_STALE_MAP);
   if (OB_UNLIKELY(NULL != feedback_clean_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("read stale feedback clean cont has been scheduled", K(ret));
+    LOG_WDIAG("read stale feedback clean cont has been scheduled", K(ret));
   } else {
     int64_t interval = ObRandomNumUtils::get_random_half_to_full(get_global_proxy_config().cache_cleaner_clean_interval);
     if (OB_ISNULL(feedback_clean_cont_ = ObAsyncCommonTask::create_and_start_repeat_task(interval,
@@ -455,7 +455,7 @@ int ObReadStaleProcessor::start_read_stale_feedback_clean_task()
                                                             ObReadStaleProcessor::do_repeat_task,
                                                             ObReadStaleProcessor::update_interval))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start read stale feedback clean task", K(ret));
+      LOG_WDIAG("fail to create and start read stale feedback clean task", K(ret));
     } else {
       LOG_INFO("succ to start read stale feedback clean task", K(interval));
     }

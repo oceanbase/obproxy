@@ -101,7 +101,7 @@ int ObCommonAddr::assign(const common::ObString& ip_str, const common::ObString&
   int ret = OB_SUCCESS;
   int64_t port = 0;
   if (OB_FAIL(get_int_value(port_str, port))) {
-    LOG_WARN("get_int_value failed", K(ret), K(port_str));
+    LOG_WDIAG("get_int_value failed", K(ret), K(port_str));
   } else {
     ret = assign(ip_str, static_cast<int32_t>(port), is_physical);
   }
@@ -114,7 +114,7 @@ int ObCommonAddr::assign(const common::ObString& ip_str, const int32_t port, boo
   if (is_physical) {
     sockaddr sa;
     if (OB_FAIL(ObMysqlSessionUtils::get_sockaddr_by_ip_port(ip_str, port, true, sa))) {
-      LOG_WARN("get_sockaddr_by_ip_port failed", K(ret));
+      LOG_WDIAG("get_sockaddr_by_ip_port failed", K(ret));
     } else {
       ip_endpoint_.assign(sa);
     }
@@ -131,7 +131,7 @@ int ObCommonAddr::get_sockaddr(sockaddr& sa)
   if (is_physical_) {
     sa = ip_endpoint_.sa_;
   } else if (OB_FAIL(ObMysqlSessionUtils::get_sockaddr_by_ip_port(addr_.config_string_, port_, false, sa))) {
-    LOG_WARN("get_sockaddr_by_ip_port failed", K(ret));
+    LOG_WDIAG("get_sockaddr_by_ip_port failed", K(ret));
   }
   return ret;
 }
@@ -207,11 +207,11 @@ int ObMysqlSchemaServerAddrInfo::add_server_addr_if_not_exist(const ObCommonAddr
     if (OB_FAIL(server_addr_map_.get_refactored(addr, addr_info))) {
       if (OB_ISNULL(addr_info = op_alloc(ObServerAddrInfo))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate ObServerAddrInfo", K(schema_key_.dbkey_), K(addr));
+        LOG_EDIAG("fail to allocate ObServerAddrInfo", K(schema_key_.dbkey_), K(addr));
       } else {
         addr_info->addr_ = addr;
         if (OB_FAIL(server_addr_map_.unique_set(addr_info))) {
-          LOG_WARN("add to map failed", K(addr), K(ret));
+          LOG_WDIAG("add to map failed", K(addr), K(ret));
           ret = OB_ERR_UNEXPECTED;
           op_free(addr_info);
           addr_info = NULL;
@@ -234,10 +234,10 @@ int ObMysqlSchemaServerAddrInfo::incr_fail_count(const ObCommonAddr& addr)
   ObServerAddrInfo* addr_info = NULL;
   DRWLock::WRLockGuard guard(rwlock_);
   if (OB_FAIL(server_addr_map_.get_refactored(addr, addr_info))) {
-    LOG_WARN("not in map", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("not in map", K(schema_key_.dbkey_), K(addr));
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_ISNULL(addr_info)) {
-    LOG_WARN("addr_info can not be null here", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("addr_info can not be null here", K(schema_key_.dbkey_), K(addr));
     ret = OB_ERR_UNEXPECTED;
   } else {
     addr_info->incr_fail_count();
@@ -252,10 +252,10 @@ void ObMysqlSchemaServerAddrInfo::reset_fail_count(const ObCommonAddr& addr)
   ObServerAddrInfo* addr_info = NULL;
   DRWLock::WRLockGuard guard(rwlock_);
   if (OB_FAIL(server_addr_map_.get_refactored(addr, addr_info))) {
-    LOG_WARN("not in map", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("not in map", K(schema_key_.dbkey_), K(addr));
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_ISNULL(addr_info)) {
-    LOG_WARN("addr_info can not be null here", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("addr_info can not be null here", K(schema_key_.dbkey_), K(addr));
     ret = OB_ERR_UNEXPECTED;
   } else {
     addr_info->reset_fail_count();
@@ -269,10 +269,10 @@ int32_t ObMysqlSchemaServerAddrInfo::get_fail_count(const ObCommonAddr& addr)
   ObServerAddrInfo* addr_info = NULL;
   DRWLock::RDLockGuard guard(rwlock_); // maybe not need lock but use for safe
   if (OB_FAIL(server_addr_map_.get_refactored(addr, addr_info))) {
-    LOG_WARN("not in map", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("not in map", K(schema_key_.dbkey_), K(addr));
     ret = OB_ERR_UNEXPECTED;
   } else if (OB_ISNULL(addr_info)) {
-    LOG_WARN("addr_info can not be null here", K(schema_key_.dbkey_), K(addr));
+    LOG_WDIAG("addr_info can not be null here", K(schema_key_.dbkey_), K(addr));
     ret = OB_ERR_UNEXPECTED;
   } else {
     fail_count = addr_info->get_fail_count();
@@ -404,7 +404,7 @@ int ObMysqlSessionUtils::make_session_dbkey(ObProxySchemaKey& schema_key, char* 
   int ret = OB_SUCCESS;
   ObShardConnector* shard_conn = schema_key.shard_conn_;
   if (OB_ISNULL(shard_conn)) {
-      LOG_WARN("shard_conn is null");
+      LOG_WDIAG("shard_conn is null");
       ret = OB_ERR_UNEXPECTED;
   } else if (TYPE_SHARD_CONNECTOR == schema_key.connector_type_) {
     common::ObString& logic_database_name = schema_key.logic_database_name_.config_string_;
@@ -421,7 +421,7 @@ int ObMysqlSessionUtils::make_session_dbkey(ObProxySchemaKey& schema_key, char* 
     make_full_username(dbkey_buf, buf_len, user_name, tenant_name, cluster_name);
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("type is invalid", K(schema_key.connector_type_));
+    LOG_WDIAG("type is invalid", K(schema_key.connector_type_));
   }
   return ret;
 }
@@ -460,7 +460,7 @@ int ObMysqlSessionUtils::init_schema_key_value(ObProxySchemaKey& schema_key,
     LOG_DEBUG("get_connector from map succ", K(full_user_name));
   } else if (OB_ISNULL(shard_conn = op_alloc(ObShardConnector))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("alloc ObSingleConnector failed");
+    LOG_WDIAG("alloc ObSingleConnector failed");
   } else {
     shard_conn->set_shard_name(full_user_name);
     shard_conn->set_full_username(full_user_name);
@@ -490,7 +490,7 @@ int ObMysqlSessionUtils::init_schema_key_value(ObProxySchemaKey& schema_key,
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(shard_conn)) {
-    LOG_WARN("shard_conn is null");
+    LOG_WDIAG("shard_conn is null");
     ret = OB_ERR_UNEXPECTED;
   } else {
     schema_key.set_shard_connector(shard_conn, TYPE_SHARD_CONNECTOR);
@@ -529,7 +529,7 @@ int ObMysqlSessionUtils::init_schema_key_with_client_session(ObProxySchemaKey& s
   if (is_sharding_user) {
     dbconfig::ObShardConnector * shard_conn = session_info.get_shard_connector(); 
     if (OB_FAIL(init_schema_key_value(schema_key, logic_tenant_name, logic_database_name, shard_conn))) {
-      LOG_WARN("init_schema_key_value failed", K(ret));
+      LOG_WDIAG("init_schema_key_value failed", K(ret));
     }
   } else {
     ObString& user_name = session_info.get_login_req().get_hsr_result().user_name_;
@@ -572,7 +572,7 @@ int ObMysqlSessionUtils::get_sockaddr_by_ip_port(const common::ObString& ip_str,
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(ObProxyPbUtils::get_physic_ip(ip_str, is_physical, addr))) {
-    LOG_WARN("get_physic_ip failed", K(ret));
+    LOG_WDIAG("get_physic_ip failed", K(ret));
   } else {
     ops_ip_port_cast(addr) = (htons)(static_cast<uint16_t>(port));
   }
@@ -595,7 +595,7 @@ int GlobalSingleConnectorMap::add_connector_if_not_exists(dbconfig::ObShardConne
     LOG_DEBUG("already exist");
     ret = OB_SUCCESS;
   } else if (OB_FAIL(ret)) {
-    LOG_WARN("add_connector_if_not_exists failed", K(ret));
+    LOG_WDIAG("add_connector_if_not_exists failed", K(ret));
   }
   return ret;
 }

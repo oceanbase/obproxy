@@ -39,7 +39,7 @@ namespace proxy
 {
 class ObMysqlAuthRequest;
 class ObClientSessionInfo;
-
+enum ObClientSessionIDVersion : uint32_t;
 static const int64_t OB_MAX_UINT64_BUF_LEN = 22; // string length of max uint64_t(2**64 - 1)
 
 struct ObHandshakeResponseParam
@@ -61,6 +61,9 @@ public:
                            const common::ObString &server_scramble);
   int write_client_addr_buf(const common::ObAddr &addr);
   int write_cluster_id_buf(const int64_t cluster_id);
+  int write_client_port_buf(const uint32_t port);
+  int write_cs_id_buf(const uint32_t port);
+  int write_connected_time_buf(const int64_t connected_time);
 
   static const int64_t OB_MAX_UINT32_BUF_LEN = 11; // string length of max uint32_t(2**32 - 1)
   static const int64_t OB_MAX_VERSION_BUF_LEN = 22; // string length of (xxx.xxx.xxx.xxx.xxx)
@@ -68,9 +71,11 @@ public:
   bool is_saved_login_;
   bool use_compress_;
   bool use_ob_protocol_v2_;
+  bool use_ob_protocol_v2_compress_;
   int64_t cluster_id_;
   bool use_ssl_;
   bool enable_client_ip_checkout_;
+  ObClientSessionIDVersion cs_id_version_;
   common::ObString cluster_name_;
   common::ObString proxy_scramble_;
 
@@ -82,6 +87,9 @@ public:
   char proxy_scramble_buf_[obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE];
   char client_ip_buf_[MAX_IP_ADDR_LENGTH];
   char cluster_id_buf_[OB_MAX_UINT64_BUF_LEN];
+  char client_port_buf_[OB_MAX_UINT32_BUF_LEN];
+  char cs_id_buf_[OB_MAX_UINT32_BUF_LEN];
+  char connected_time_buf_[OB_MAX_UINT64_BUF_LEN];
 
 private:
    DISALLOW_COPY_AND_ASSIGN(ObHandshakeResponseParam);

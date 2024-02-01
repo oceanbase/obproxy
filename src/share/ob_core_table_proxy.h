@@ -32,7 +32,7 @@ namespace share
 //   for read:
 //     ObCoreTableProxy core_kv("__all_table", sql_proxy);
 //     if (OB_FAIL(core_kv.load())) {
-//       LOG_WARN(...);
+//       LOG_WDIAG(...);
 //     } else {
 //       while (OB_SUCCESS == ret && (OB_ITER_END != (ret = core_kv.next()))) {
 //         core_kv.get_cur_row().get_int("table_id", table_id);
@@ -42,14 +42,14 @@ namespace share
 //       if (OB_ITER_END == ret) {
 //         ret = OB_SUCCESS;
 //       } else if (OB_FAIL(ret)) {
-//         LOG_WARN(...);
+//         LOG_WDIAG(...);
 //       }
 //     }
 //
 //   for update:
 //     ObCoreTableProxy core_kv("__all_root_table", sql_proxy);
 //     if (OB_FAIL(core_kv.load_for_update())) {
-//       LOG_WARN(...);
+//       LOG_WDIAG(...);
 //     } else {
 //       ...
 //       read

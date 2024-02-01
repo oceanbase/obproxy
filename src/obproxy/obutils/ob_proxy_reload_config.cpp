@@ -29,10 +29,10 @@ int ObProxyReloadConfig::operator()(ObProxyConfig &config)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(reloader_)) {
      ret = OB_NOT_INIT;
-     LOG_WARN("ObPrxyReloadConfig is not inited", K_(reloader), K(ret));
+     LOG_WDIAG("ObPrxyReloadConfig is not inited", K_(reloader), K(ret));
   } else {
     if (OB_FAIL(reloader_->do_reload_config(config))) {
-      LOG_WARN("fail to reload config", K(ret));
+      LOG_WDIAG("fail to reload config", K(ret));
     }
     config.print();
   }

@@ -126,23 +126,6 @@ int ob_init_memory_pool(int64_t block_size)
   return OB_SUCCESS;
 }
 
-ObMemLeakChecker &get_mem_leak_checker()
-{
-  static ObMemLeakChecker omlc;
-  return omlc;
-}
-
-void set_mem_leak_checker_mod_id(int64_t mod_id)
-{
-  get_mem_leak_checker().set_mod_id(mod_id);
-}
-
-void reset_mem_leak_checker_mod_id(int64_t mod_id)
-{
-  get_mem_leak_checker().set_mod_id(mod_id);
-  get_mem_leak_checker().reset();
-}
-
 const ObModSet &get_global_mod_set()
 {
   static ObModSet set;

@@ -57,14 +57,14 @@ public:
        ret_(OB_SUCCESS)
   {
     if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.rdlock(index_)))) {
-      COMMON_LOG(WARN, "Fail to read lock bucket, ", K_(index), K_(ret));
+      COMMON_LOG(WDIAG, "Fail to read lock bucket, ", K_(index), K_(ret));
     }
   };
   ~ObBucketRLockGuard()
   {
     if (OB_LIKELY(OB_SUCCESS == ret_)) {
       if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.unlock(index_)))) {
-        COMMON_LOG(WARN, "Fail to unlock bucket, ", K_(ret));
+        COMMON_LOG(WDIAG, "Fail to unlock bucket, ", K_(ret));
       }
     }
   };
@@ -86,14 +86,14 @@ public:
        ret_(OB_SUCCESS)
   {
     if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.wrlock(index_)))) {
-      COMMON_LOG(WARN, "Fail to write lock bucket, ", K_(index), K_(ret));
+      COMMON_LOG(WDIAG, "Fail to write lock bucket, ", K_(index), K_(ret));
     }
   };
   ~ObBucketWLockGuard()
   {
     if (OB_LIKELY(OB_SUCCESS == ret_)) {
       if (OB_UNLIKELY(OB_SUCCESS != (ret_ = lock_.unlock(index_)))) {
-        COMMON_LOG(WARN, "Fail to unlock bucket, ", K_(index), K_(ret));
+        COMMON_LOG(WDIAG, "Fail to unlock bucket, ", K_(index), K_(ret));
       }
     }
   };

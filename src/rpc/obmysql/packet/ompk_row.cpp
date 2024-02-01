@@ -28,7 +28,7 @@ int OMPKRow::decode()
   //OB_ASSERT(NULL != cdata_);
   if (NULL == cdata_) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("null input", K(ret));
+    LOG_EDIAG("null input", K(ret));
   }
 
   return ret;

@@ -181,14 +181,14 @@ int ObEThread::init()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(event_queue_external_.init())) {
-    LOG_ERROR("fail to init event_queue_external_", K(ret));
+    LOG_EDIAG("fail to init event_queue_external_", K(ret));
   } else if (OB_ISNULL(mutex_ = new_proxy_mutex(ETHREAD_LOCK))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to allocator memory for ObProxyMutex", K(ret));
+    LOG_EDIAG("fail to allocator memory for ObProxyMutex", K(ret));
   } else if (OB_ISNULL(warn_log_buf_ =
       reinterpret_cast<char *>(ob_malloc(OB_PROXY_WARN_LOG_BUF_LENGTH, ObModIds::OB_PROXY_WARN_LOG_BUF)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for warn log buf", K(ret));
+    LOG_EDIAG("fail to alloc memory for warn log buf", K(ret));
   } else {
     mutex_ptr_ = mutex_;
 
@@ -206,16 +206,16 @@ int ObEThread::init()
     if (DEDICATED == tt_) {
       if (OB_ISNULL(pending_event_)) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid parameters, pending_event_ must be specified", K(tt_), K(ret));
+        LOG_WDIAG("invalid parameters, pending_event_ must be specified", K(tt_), K(ret));
       }
 
     } else if (REGULAR == tt_) {
       if (OB_UNLIKELY(NO_ETHREAD_ID == id_)) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("invalid parameters", K(tt_), K(id_), K(ret));
+        LOG_WDIAG("invalid parameters", K(tt_), K(id_), K(ret));
       } else if (OB_ISNULL(ethreads_to_be_signalled_ = new(std::nothrow) ObEThread *[MAX_EVENT_THREADS])) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for ethreads_to_be_signalled_", K(ret));
+        LOG_EDIAG("fail to allocate memory for ethreads_to_be_signalled_", K(ret));
       } else {
         memset((char *)ethreads_to_be_signalled_, 0, MAX_EVENT_THREADS * sizeof(ObEThread *));
 #if OB_HAVE_EVENTFD
@@ -225,19 +225,19 @@ int ObEThread::init()
             evfd_ = eventfd(0, 0);
             if (OB_UNLIKELY(evfd_ < 0)) {
               ret = OB_ERR_SYS;
-              LOG_ERROR("fail to create eventfd", K(evfd_), KERRMSGS, K(ret));
+              LOG_EDIAG("fail to create eventfd", K(evfd_), KERRMSGS, K(ret));
             } else if (OB_UNLIKELY(fcntl(evfd_, F_SETFD, FD_CLOEXEC) < 0)) {
               ret = OB_ERR_SYS;
-              LOG_ERROR("fail to set event fd FD_CLOEXEC", KERRMSGS, K(ret));
+              LOG_EDIAG("fail to set event fd FD_CLOEXEC", KERRMSGS, K(ret));
             } else if (OB_UNLIKELY(fcntl(evfd_, F_SETFL, O_NONBLOCK) < 0)) {
               ret = OB_ERR_SYS;
-              LOG_ERROR("fail to set event fd O_NONBLOCK", KERRMSGS, K(ret));
+              LOG_EDIAG("fail to set event fd O_NONBLOCK", KERRMSGS, K(ret));
             } else {
               //do nothing
             }
           } else {
             ret = OB_ERR_SYS;
-            LOG_ERROR("fail to create eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)", K(evfd_), KERRMSGS, K(ret));
+            LOG_EDIAG("fail to create eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC)", K(evfd_), KERRMSGS, K(ret));
           }
         } else {
           //do nothing
@@ -245,19 +245,19 @@ int ObEThread::init()
 #else
         if (OB_UNLIKELY(pipe(evpipe_) < 0)) {
           ret = OB_ERR_SYS;
-          LOG_ERROR("fail to create pipe", KERRMSGS, K(ret));
+          LOG_EDIAG("fail to create pipe", KERRMSGS, K(ret));
         } else if (OB_UNLIKELY(fcntl(evpipe_[0], F_SETFD, FD_CLOEXEC) < 0)) {
           ret = OB_ERR_SYS;
-          LOG_ERROR("fail to set evpipe_[0] FD_CLOEXEC", KERRMSGS, K(ret));
+          LOG_EDIAG("fail to set evpipe_[0] FD_CLOEXEC", KERRMSGS, K(ret));
         } else if (OB_UNLIKELY(fcntl(evpipe_[0], F_SETFL, O_NONBLOCK) < 0)) {
           ret = OB_ERR_SYS;
-          LOG_ERROR("fail to set evpipe_[0] O_NONBLOCK", KERRMSGS, K(ret));
+          LOG_EDIAG("fail to set evpipe_[0] O_NONBLOCK", KERRMSGS, K(ret));
         } else if (OB_UNLIKELY(fcntl(evpipe_[1], F_SETFD, FD_CLOEXEC) < 0)) {
           ret = OB_ERR_SYS;
-          LOG_ERROR("fail to set evpipe_[1] FD_CLOEXEC", KERRMSGS, K(ret));
+          LOG_EDIAG("fail to set evpipe_[1] FD_CLOEXEC", KERRMSGS, K(ret));
         } else if (OB_UNLIKELY(fcntl(evpipe_[1], F_SETFL, O_NONBLOCK) < 0)) {
           ret = OB_ERR_SYS;
-          LOG_ERROR("fail to set evpipe_[1] O_NONBLOCK", KERRMSGS, K(ret));
+          LOG_EDIAG("fail to set evpipe_[1] O_NONBLOCK", KERRMSGS, K(ret));
         } else {
           //do nothing
         }
@@ -273,7 +273,7 @@ int ObEThread::init()
 inline void ObEThread::process_event(ObEvent *e, const int calling_code)
 {
   if (OB_UNLIKELY(e->in_the_prot_queue_) || OB_UNLIKELY(e->in_the_priority_queue_)) {
-    LOG_WARN("event should not in queue here", K(*e));
+    LOG_WDIAG("event should not in queue here", K(*e));
   } else {
     MUTEX_TRY_LOCK(lock, e->mutex_, this);
     if (!lock.is_locked()) {
@@ -296,9 +296,9 @@ inline void ObEThread::process_event(ObEvent *e, const int calling_code)
         e->continuation_->handle_event(calling_code, e);
 
         if (OB_UNLIKELY(e->in_the_priority_queue_)) {
-          LOG_WARN("event should not in in_the_priority_queue here", K(*e));
+          LOG_WDIAG("event should not in in_the_priority_queue here", K(*e));
         } else if (OB_UNLIKELY(c_temp != e->continuation_)) {
-          LOG_WARN("c_temp should equal e->continuation_", K(*e));
+          LOG_WDIAG("c_temp should equal e->continuation_", K(*e));
         } else {/*do nothing*/}
         MUTEX_RELEASE(lock);
 
@@ -331,7 +331,7 @@ inline void ObEThread::dequeue_local_event(Que(ObEvent, link_) &negative_queue)
     } else if (0 == e->timeout_at_) { // IMMEDIATE
       // give priority to immediate events
       if (OB_UNLIKELY(0 != e->period_)) {
-        LOG_WARN("period should be zero when in event_queue_external_", K(*e));
+        LOG_WDIAG("period should be zero when in event_queue_external_", K(*e));
       }
       process_event(e, e->callback_event_);
     } else if (e->timeout_at_ > 0) { // INTERVAL
@@ -391,7 +391,7 @@ void ObEThread::execute()
               free_event(*e);
             } else {
               if (OB_UNLIKELY(e->timeout_at_ <= 0)) {
-                LOG_WARN("timeout_at_ should bigger then zero when in event_queue_", K(*e));
+                LOG_WDIAG("timeout_at_ should bigger then zero when in event_queue_", K(*e));
               }
               done_one = true;
               process_event(e, e->callback_event_);
@@ -409,7 +409,7 @@ void ObEThread::execute()
           // If there are no external events available, don't do a cond_timedwait.
           if (!event_queue_external_.atomic_list_.empty()) {
             if (OB_UNLIKELY(OB_SUCCESS != event_queue_external_.dequeue_timed(next_time, false))) {
-              LOG_WARN("fail to dequeue time in event_queue_external_");
+              LOG_WDIAG("fail to dequeue time in event_queue_external_");
             }
           }
           //3.1 execute all the available external events that have already been dequeued
@@ -436,7 +436,7 @@ void ObEThread::execute()
           }
           if (!event_queue_external_.atomic_list_.empty()) {
             if (OB_UNLIKELY(OB_SUCCESS != event_queue_external_.dequeue_timed(next_time, false))) {
-              LOG_WARN("fail to dequeue time in event_queue_external_");
+              LOG_WDIAG("fail to dequeue time in event_queue_external_");
             }
           }
 
@@ -456,14 +456,14 @@ void ObEThread::execute()
 
           if (is_need_thread_pool_event_ && NULL != thread_pool_event_queue_) {
             if (OB_UNLIKELY(OB_SUCCESS != thread_pool_event_queue_->dequeue_timed(next_time, e))) {
-              LOG_WARN("fail to dequeue time in event_queue_external_");
+              LOG_WDIAG("fail to dequeue time in event_queue_external_");
             } else if (NULL != e) {
               is_need_thread_pool_event_ = false;
               e->ethread_ = this;
               process_event(e, e->callback_event_);
             }
           } else if (OB_UNLIKELY(OB_SUCCESS != event_queue_external_.dequeue_timed(next_time, true))) {
-            LOG_WARN("fail to dequeue time in event_queue_external_");
+            LOG_WDIAG("fail to dequeue time in event_queue_external_");
           }
         }
       }
@@ -481,7 +481,7 @@ void ObEThread::execute()
     }
 
     default: {
-      LOG_ERROR("it should not arrive here", K(tt_));
+      LOG_EDIAG("it should not arrive here", K(tt_));
       break;
     }
   } // End switch

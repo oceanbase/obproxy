@@ -112,7 +112,7 @@ inline int64_t ObTimeUtility::current_time()
 {
   struct timeval t;
   if (gettimeofday(&t, NULL) < 0) {
-    LIB_LOG(ERROR, "get time of day failed");
+    LIB_LOG(EDIAG, "get time of day failed");
   }
   return (static_cast<int64_t>(t.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>(t.tv_usec));
 }

@@ -37,14 +37,14 @@ int ObAsyncCommonTask::main_handler(int event, void *data)
     case EVENT_INTERVAL: {
       timeout_action_ = NULL;
       if (OB_FAIL(handle_timeout())) {
-        LOG_WARN("fail to handle timeout");
+        LOG_WDIAG("fail to handle timeout");
       }
       break;
     }
     case EVENT_IMMEDIATE: {
       pending_action_ = NULL;
       if (OB_FAIL(cancel_timeout_action())) {
-        LOG_WARN("fail to cancel_timeout_action", K(ret));
+        LOG_WDIAG("fail to cancel_timeout_action", K(ret));
       } else if (OB_FAIL(handle_event_start())) {
         LOG_INFO("fail to handle event start", K(ret));
       }
@@ -54,30 +54,30 @@ int ObAsyncCommonTask::main_handler(int event, void *data)
     case EVENT_COMPLETE: {
       pending_action_ = NULL;
       if (OB_FAIL(cancel_timeout_action())) {
-        LOG_WARN("fail to cancel_timeout_action", K(ret));
+        LOG_WDIAG("fail to cancel_timeout_action", K(ret));
       } else if (OB_FAIL(handle_event_complete(data))) {
-        LOG_WARN("fail to handle event complete", K(ret));
+        LOG_WDIAG("fail to handle event complete", K(ret));
       }
       break;
     }
     case EVENT_INFORM_OUT: {
       pending_action_ = NULL;
       if (OB_FAIL(cancel_timeout_action())) {
-        LOG_WARN("fail to cancel_timeout_action", K(ret));
+        LOG_WDIAG("fail to cancel_timeout_action", K(ret));
       } else if (OB_FAIL(handle_event_inform_out())) {
-        LOG_WARN("fail to handle inform out event", K(ret));
+        LOG_WDIAG("fail to handle inform out event", K(ret));
       }
       break;
     }
     case ASYNC_PROCESS_START_REPEAT_TASK_EVENT: {
       if (OB_FAIL(schedule_repeat_task())) {
-        LOG_WARN("fail to schedule repeat task", K(ret));
+        LOG_WDIAG("fail to schedule repeat task", K(ret));
       }
       break;
     }
     case ASYNC_PROCESS_DO_REPEAT_TASK_EVENT: {
       if (OB_FAIL(handle_repeat_task())) {
-        LOG_WARN("fail to handle repeat task", K(ret));
+        LOG_WDIAG("fail to handle repeat task", K(ret));
       }
       break;
     }
@@ -85,11 +85,11 @@ int ObAsyncCommonTask::main_handler(int event, void *data)
       if (OB_ISNULL(update_interval_func_)) {
         // no need to update interval
       } else if (OB_FAIL(cancel_pending_action())) {
-        LOG_WARN("fail to cancel pending action", K(ret));
+        LOG_WDIAG("fail to cancel pending action", K(ret));
       } else if (FALSE_IT(update_interval_func_())) {
         // impossible
       } else if (OB_FAIL(schedule_repeat_task())) {
-        LOG_WARN("fail to schedule repeat task", K(ret));
+        LOG_WDIAG("fail to schedule repeat task", K(ret));
       }
       break;
     }
@@ -99,14 +99,14 @@ int ObAsyncCommonTask::main_handler(int event, void *data)
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("error state, nerver run here", K(event), K(ret));
+      LOG_WDIAG("error state, nerver run here", K(event), K(ret));
       break;
     }
   }
 
   if (!terminate_ && need_callback_) {
     if (OB_FAIL(handle_callback())) {
-      LOG_WARN("fail to handle callback", K(ret));
+      LOG_WDIAG("fail to handle callback", K(ret));
     }
   }
 
@@ -147,7 +147,7 @@ int ObAsyncCommonTask::handle_event_complete(void *data)
   }
 
   if (OB_FAIL(finish_task(data))) {
-    LOG_WARN("fail to do finish task", "task_name", task_name_,K(ret));
+    LOG_WDIAG("fail to do finish task", "task_name", task_name_,K(ret));
   }
 
   return ret;
@@ -175,11 +175,11 @@ int ObAsyncCommonTask::handle_callback()
   } else if (&self_ethread() == submit_thread_) {
     // the same thread, inform out directly
     if (OB_FAIL(handle_event_inform_out())) {
-      LOG_WARN("fail to handle inform out event", K(ret));
+      LOG_WDIAG("fail to handle inform out event", K(ret));
     }
   } else if (OB_ISNULL(submit_thread_->schedule_imm(this, EVENT_INFORM_OUT))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule back to main handler, will destroy itself", K(ret));
+    LOG_WDIAG("fail to schedule back to main handler, will destroy itself", K(ret));
   }
   if (OB_FAIL(ret)) {
     terminate_ = true;
@@ -195,11 +195,11 @@ int ObAsyncCommonTask::handle_event_inform_out()
 
   if (&self_ethread() != submit_thread_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this thread must be equal with submit_thread",
+    LOG_EDIAG("this thread must be equal with submit_thread",
               "this ethread", &self_ethread(), K_(submit_thread), K(ret));
   } else if (OB_ISNULL(cb_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cb_cont can not be null here", K_(cb_cont), K(ret));
+    LOG_WDIAG("cb_cont can not be null here", K_(cb_cont), K(ret));
   } else {
     // 1. should acquire action_.mutex_
     //   1.1. if mutex == action_.mutex_, also can lock success
@@ -215,7 +215,7 @@ int ObAsyncCommonTask::handle_event_inform_out()
       }
     } else if (OB_ISNULL(submit_thread_->schedule_imm(this, EVENT_INFORM_OUT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to do schedule imm", K_(submit_thread), K(ret));
+      LOG_WDIAG("fail to do schedule imm", K_(submit_thread), K(ret));
     } else {
       terminate_ = false;
     }
@@ -229,10 +229,10 @@ void ObAsyncCommonTask::destroy()
   int ret = OB_SUCCESS;
   LOG_DEBUG("async task will be destroyed", KPC(this));
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
   cb_cont_ = NULL;
   submit_thread_ = NULL;
@@ -257,19 +257,19 @@ inline int ObAsyncCommonTask::schedule_repeat_task()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending_action should be null here", K_(pending_action), K(ret));
+    LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_LIKELY(!is_stop_)) {
     if (OB_LIKELY(interval_us_ > 0)) {
       if (is_repeat_) {
         if (OB_ISNULL(pending_action_ = self_ethread().schedule_every(this,
                       HRTIME_USECONDS(interval_us_), ASYNC_PROCESS_DO_REPEAT_TASK_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to schedule repeat task", KPC(this), K(ret));
+          LOG_WDIAG("fail to schedule repeat task", KPC(this), K(ret));
         }
       } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(this,
                     HRTIME_USECONDS(interval_us_), ASYNC_PROCESS_DO_REPEAT_TASK_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to schedule repeat task", KPC(this), K(ret));
+        LOG_WDIAG("fail to schedule repeat task", KPC(this), K(ret));
       }
     }
   }
@@ -281,7 +281,7 @@ inline int ObAsyncCommonTask::handle_repeat_task()
   int ret = OB_SUCCESS;
   const int64_t start_time = ::oceanbase::common::ObTimeUtility::current_time();
   if (OB_LIKELY(NULL != process_func_) && OB_FAIL(process_func_())) {
-    LOG_WARN("fail to do repeat task", KPC(this), K(ret));
+    LOG_WDIAG("fail to do repeat task", KPC(this), K(ret));
   }
 
   check_stop_repeat_task();
@@ -289,12 +289,12 @@ inline int ObAsyncCommonTask::handle_repeat_task()
   if (!is_repeat_) {
     pending_action_ = NULL;
     if (OB_FAIL(schedule_repeat_task())) {
-      LOG_WARN("fail to schedule repeat task", KPC(this), K(ret));
+      LOG_WDIAG("fail to schedule repeat task", KPC(this), K(ret));
     }
   }
   const int64_t end_time = ::oceanbase::common::ObTimeUtility::current_time();
   if (end_time - start_time > 1000 * 1000) {
-    LOG_WARN("repeat task cost too much time", "task name", task_name_,
+    LOG_WDIAG("repeat task cost too much time", "task name", task_name_,
              K(start_time), K(end_time), KPC(this),
              "cost time(us)", end_time - start_time);
   }
@@ -310,7 +310,7 @@ inline void ObAsyncCommonTask::check_stop_repeat_task()
     is_stop_ = true;; // for schedule_in task
     int ret = OB_SUCCESS;
     if (OB_FAIL(cancel_pending_action())) { // for schedule_every task
-      LOG_WARN("fail to cancel pending action", K(ret));
+      LOG_WDIAG("fail to cancel pending action", K(ret));
     }
   }
 }

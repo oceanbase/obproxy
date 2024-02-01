@@ -26,7 +26,7 @@ int64_t ExpStat::to_string(char *buf, const int64_t len) const
   int64_t value[TSI_HP_COUNTER_ELEMENTS_SIZE];
   if (OB_UNLIKELY(NULL == buf) || OB_UNLIKELY(len <= 0)) {
     tmp_ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid argument", K(tmp_ret), KP(buf), K(len));
+    LIB_LOG(EDIAG, "invalid argument", K(tmp_ret), KP(buf), K(len));
   } else {
     ExpStatItem item;
     for (int64_t i = 0; i < TSI_HP_COUNTER_ELEMENTS_SIZE; i++) {

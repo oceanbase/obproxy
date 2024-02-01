@@ -29,7 +29,7 @@ int ObFuncExprResolver::resolve(const ObProxyParamNode *node, ObProxyExpr *&expr
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(recursive_resolve_proxy_expr(node, expr))) {
-    LOG_WARN("resursive resolve proxy expr failed", K(ret));
+    LOG_WDIAG("resursive resolve proxy expr failed", K(ret));
   }
 
   return ret;
@@ -41,7 +41,7 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
 
   if (OB_ISNULL(node)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
   } else {
     expr = NULL;
     switch (node->type_) {
@@ -49,18 +49,23 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
       {
         ObProxyExprConst *str_expr = NULL;
         if(OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_CONST, str_expr))) {
-          LOG_WARN("create proxy expr failed", K(ret));
+          LOG_WDIAG("create proxy expr failed", K(ret));
         } else if (0 == node->str_value_.str_len_) {
           ObObj &obj = str_expr->get_object();
           obj.set_varchar(NULL, 0);
           obj.set_collation_type(CS_TYPE_UTF8MB4_GENERAL_CI);
+          expr = str_expr;
+        } else if (OB_ISNULL(node->str_value_.str_)) {
+          // handle the case where input is null, for example isnull(null) = 1
+          ObObj &obj = str_expr->get_object();
+          obj.set_null();
           expr = str_expr;
         } else {
           ObIAllocator &allocator = *ctx_.allocator_;
           char *buf = NULL;
           if (OB_ISNULL(buf = static_cast<char*>(allocator.alloc(node->str_value_.str_len_)))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("alloc failed", K(node->str_value_.str_len_), K(ret));
+            LOG_WDIAG("alloc failed", K(node->str_value_.str_len_), K(ret));
           } else {
             MEMCPY(buf, node->str_value_.str_, node->str_value_.str_len_);
             ObObj &obj = str_expr->get_object();
@@ -75,7 +80,7 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
       {
         ObProxyExprConst *int_expr = NULL;
         if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_CONST, int_expr))) {
-          LOG_WARN("create proxy expr failed", K(ret));
+          LOG_WDIAG("create proxy expr failed", K(ret));
         } else {
           ObObj &obj = int_expr->get_object();
           obj.set_int(node->int_value_);
@@ -87,13 +92,13 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
       {
         ObProxyExprColumn *column_expr = NULL;
         if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_COLUMN, column_expr))) {
-          LOG_WARN("create proxy expr failed", K(ret));
+          LOG_WDIAG("create proxy expr failed", K(ret));
         } else {
           ObIAllocator &allocator = *ctx_.allocator_;
           char *buf = NULL;
           if (OB_ISNULL(buf = static_cast<char*>(allocator.alloc(node->col_name_.str_len_)))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("alloc failed", K(node->col_name_.str_len_), K(ret));
+            LOG_WDIAG("alloc failed", K(node->col_name_.str_len_), K(ret));
           } else {
             MEMCPY(buf, node->col_name_.str_, node->col_name_.str_len_);
             column_expr->set_column_name(buf, node->col_name_.str_len_);
@@ -107,7 +112,7 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
         ObFuncExprNode *func_expr_node = node->func_expr_node_;
         ObProxyFuncExpr *func_expr = NULL;
         if (OB_FAIL(create_func_expr_by_type(func_expr_node, func_expr))) {
-          LOG_WARN("create func expr by type failed", K(ret));
+          LOG_WDIAG("create func expr by type failed", K(ret));
         } else if (OB_ISNULL(func_expr_node->child_)) {
           // do nothing 
         } else {
@@ -117,9 +122,9 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
           for (int64_t i = 0; OB_SUCC(ret) && i < child->child_num_; i++) {
             ObProxyExpr *proxy_expr = NULL;
             if (OB_FAIL(recursive_resolve_proxy_expr(tmp_param_node, proxy_expr))) {
-              LOG_WARN("recursive resolve proxy failed", K(ret));
+              LOG_WDIAG("recursive resolve proxy failed", K(ret));
             } else if (OB_FAIL(func_expr->add_param_expr(proxy_expr))) {
-              LOG_WARN("add parma expr failed", K(ret));
+              LOG_WDIAG("add parma expr failed", K(ret));
             } else {
               tmp_param_node = tmp_param_node->next_;
             }
@@ -133,7 +138,7 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
       break;
       default:
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected type", K(node->type_), K(ret));
+      LOG_WDIAG("unexpected type", K(node->type_), K(ret));
     }
   }
 
@@ -144,179 +149,38 @@ int ObFuncExprResolver::create_func_expr_by_type(const ObFuncExprNode *func_expr
                                                  ObProxyFuncExpr *&func_expr)
 {
   int ret = OB_SUCCESS;
+  ObString func_name;
+  ObProxyExprType type = OB_PROXY_EXPR_TYPE_NONE;
   if (OB_ISNULL(func_expr_node)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(ret));
-  } else {
-    switch(func_expr_node->func_type_) {
-      case OB_PROXY_EXPR_TYPE_FUNC_CONCAT:
-      {
-        ObProxyExprConcat *concat_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_CONCAT, concat_expr))) {
-          LOG_WARN("create proxy concat expr failed", K(ret));
-        } else {
-          func_expr = concat_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_SUBSTR:
-      {
-        ObProxyExprSubStr *substr_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_SUBSTR, substr_expr))) {
-          LOG_WARN("create proxy substr expr failed", K(ret));
-        } else {
-          func_expr = substr_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_HASH:
-      {
-        ObProxyExprHash *hash_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_HASH, hash_expr))) {
-          LOG_WARN("create proxy hash expr failed", K(ret));
-        } else {
-          func_expr = hash_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_TOINT:
-      {
-        ObProxyExprToInt *toint_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TOINT, toint_expr))) {
-          LOG_WARN("create proxy toint expr failed", K(ret));
-        } else {
-          func_expr = toint_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_DIV:
-      {
-        ObProxyExprDiv *div_expr = NULL;
-        if OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_DIV, div_expr)) {
-          LOG_WARN("create proxy div expr failed", K(ret));
-        } else {
-          func_expr = div_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_ADD:
-      {
-        ObProxyExprAdd *add_expr = NULL;
-        if OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_ADD, add_expr)) {
-          LOG_WARN("create proxy add expr failed", K(ret));
-        } else {
-          func_expr = add_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_SUB:
-      {
-        ObProxyExprSub *sub_expr = NULL;
-        if OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_SUB, sub_expr)) {
-          LOG_WARN("create proxy sub expr failed", K(ret));
-        } else {
-          func_expr = sub_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_MUL:
-      {
-        ObProxyExprMul *mul_expr = NULL;
-        if OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_MUL, mul_expr)) {
-          LOG_WARN("create proxy mul expr failed", K(ret));
-        } else {
-          func_expr = mul_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD:
-      {
-        ObProxyExprTestLoad *testload_expr = NULL;
-        if OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD, testload_expr)) {
-          LOG_WARN("create proxy testload expr failed", K(ret));
-        } else {
-          func_expr = testload_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_SPLIT:
-      {
-        ObProxyExprSplit *split_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_SPLIT, split_expr))) {
-          LOG_WARN("create proxy split expr failed", K(ret));
-        } else {
-          func_expr = split_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_TO_DATE:
-      {
-        ObProxyExprToTimeHandler *todate_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, todate_expr))) {
-          LOG_WARN("create proxy to_date failed", K(ret));
-        } else {
-          todate_expr->set_target_type(ObDateTimeType);
-          func_expr = todate_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP:
-      {
-        ObProxyExprToTimeHandler *totimestamp_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, totimestamp_expr))) {
-          LOG_WARN("create proxy to_timestamp failed", K(ret));
-        } else {
-          totimestamp_expr->set_target_type(ObTimestampNanoType);
-          func_expr = totimestamp_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_NVL:
-      {
-        ObProxyExprNvl *nvl_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_NVL, nvl_expr))) {
-          LOG_WARN("create proxy nvl failed", K(ret));
-        } else {
-          func_expr = nvl_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR:
-      {
-        ObProxyExprToChar *tochar_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR, tochar_expr))) {
-          LOG_WARN("create proxy to_char failed", K(ret));
-        } else {
-          func_expr = tochar_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_SYSDATE:
-      {
-        ObProxyExprSysdate *sysdate_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_SYSDATE, sysdate_expr))) {
-          LOG_WARN("create proxy sysdate failed", K(ret));
-        } else {
-          func_expr = sysdate_expr;
-        }
-      }
-      break;
-      case OB_PROXY_EXPR_TYPE_FUNC_MOD:
-      {
-        ObProxyExprMod *mod_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_MOD, mod_expr))) {
-          LOG_WARN("create proxy mod failed", K(ret));
-        } else {
-          func_expr = mod_expr;
-        }
-      }
-      break;
-      default:
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected type", K(func_expr_node->func_type_), K(ret));
+    LOG_WDIAG("invalid argument", K(ret));
+  } else if (OB_ISNULL(func_expr_node->func_name_.str_) || func_expr_node->func_name_.str_len_ <= 0) {
+    ret = OB_INVALID_ARGUMENT;
+  } else if (FALSE_IT(func_name = ObString(func_expr_node->func_name_.str_len_, func_expr_node->func_name_.str_))) {
+  } else if (OB_FAIL(ObProxyExprFactory::get_type_by_name(func_name, type))) {
+    LOG_WDIAG("fail to get func type by name", K(func_name), K(type), K(ret));
+  } else if (type == OB_PROXY_EXPR_TYPE_NONE) {
+    LOG_INFO("unsupported function", K(func_name));
+    ret = OB_ERR_FUNCTION_UNKNOWN;
+  } else if (OB_PROXY_EXPR_TYPE_FUNC_TO_DATE == type) {
+    ObProxyExprToTimeHandler *todate_expr = NULL;
+    if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, todate_expr))) {
+      LOG_WDIAG("create proxy to_date failed", K(ret));
+    } else {
+      todate_expr->set_target_type(ObDateTimeType);
+      func_expr = todate_expr;
     }
+  } else if (OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP == type) {
+    ObProxyExprToTimeHandler *totimestamp_expr = NULL;
+    if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, totimestamp_expr))) {
+      LOG_WDIAG("create proxy to_timestamp failed", K(ret));
+    } else {
+      totimestamp_expr->set_target_type(ObTimestampNanoType);
+      func_expr = totimestamp_expr;
+    }
+  } else if (OB_FAIL(ctx_.expr_factory_->create_func_expr(type, func_expr))) {
+    LOG_WDIAG("create func expr failed", K(ret));
   }
-
   return ret;
 }
 

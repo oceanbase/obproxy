@@ -102,12 +102,12 @@ int ObDbConfigDbCont::finish_task(void *data)
   need_callback_ = false;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("fetch result is null", K(ret));
+    LOG_WDIAG("fetch result is null", K(ret));
   } else {
     ObDbConfigFetchContResult result = *(static_cast<ObDbConfigFetchContResult *>(data));
     if (OB_UNLIKELY(result.cont_index_ < 0) || OB_UNLIKELY(result.cont_index_ >= TYPE_MAX)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected cont result", K_(result.cont_index), K(ret));
+      LOG_WDIAG("unexpected cont result", K_(result.cont_index), K(ret));
     } else {
       child_action_array_[result.cont_index_] = NULL;
       result_.fetch_result_ = result.fetch_result_;
@@ -117,7 +117,7 @@ int ObDbConfigDbCont::finish_task(void *data)
                "child cont result", result.fetch_result_);
       if (!result_.fetch_result_) {
         ret = OB_INVALID_CONFIG;
-        LOG_WARN("fetch child config failed", K_(db_info_key), K(ret));
+        LOG_WDIAG("fetch child config failed", K_(db_info_key), K(ret));
       }
     }
   }
@@ -153,10 +153,10 @@ int ObDbConfigDbCont::parse_child_reference(const T& ref,
   bool need_fetch_resource = false;
   bool is_new_version = false;
   if (OB_FAIL(ObDbConfigFetchCont::alloc_fetch_cont(reinterpret_cast<ObDbConfigFetchCont *&>(cont), this, type, type))) {
-    LOG_WARN("fail to alloc fetch task", "task_name", get_type_task_name(type), K(ret));
+    LOG_WDIAG("fail to alloc fetch task", "task_name", get_type_task_name(type), K(ret));
   } else if (OB_ISNULL(cont)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("cont is null", K(ret));
+    LOG_WDIAG("cont is null", K(ret));
   } else {
     cont->set_db_info_key(db_info_key_);
     cont->set_db_info(db_info_);
@@ -176,7 +176,7 @@ int ObDbConfigDbCont::parse_child_reference(const T& ref,
       meta = parent.length() > 0 ? parent + "." + reference
                                  : reference;
       if (OB_FAIL(handle_child_ref(type, reference, cr_array, is_new_version))) {
-        LOG_WARN("fail to handle child ref", K_(db_info_key), K(ret));
+        LOG_WDIAG("fail to handle child ref", K_(db_info_key), K(ret));
       } else if (is_new_version) {
         need_fetch_resource = true;
         resource_name = parent.length() > 0 ? parent + "." + reference + "." + dds_namespace
@@ -203,7 +203,7 @@ int ObDbConfigDbCont::parse_child_reference(const T& ref,
           meta = parent.length() > 0 ? parent + "." + reference
                                      : reference;
           if (OB_FAIL(handle_child_ref(type, reference, cr_array, is_new_version))) {
-            LOG_WARN("fail to handle child ref", K_(db_info_key), K(ret));
+            LOG_WDIAG("fail to handle child ref", K_(db_info_key), K(ret));
           } else if (is_new_version) {
             need_fetch_resource = true;
             resource_name = parent.length() > 0 ? parent + "." + reference + "." + dds_namespace
@@ -218,7 +218,7 @@ int ObDbConfigDbCont::parse_child_reference(const T& ref,
   if (OB_SUCC(ret) && need_fetch_resource) {
     if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_GRPC))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule fetch crd cont", K(ret));
+      LOG_WDIAG("fail to schedule fetch crd cont", K(ret));
     } else {
       action = &cont->get_action();
       ++target_count_;
@@ -251,7 +251,7 @@ int ObDbConfigDbCont::handle_child_ref(const ObDDSCrdType type,
   size_t pos = std::string::npos;
   if (OB_UNLIKELY(std::string::npos == (pos = reference.rfind(".")))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid child reference", "reference string", reference.c_str());
+    LOG_WDIAG("invalid child reference", "reference string", reference.c_str());
   } else {
     name.assign_ptr(reference.c_str(), static_cast<ObString::obstr_size_t>(pos));
     version.assign_ptr(reference.c_str() + pos + 1, static_cast<ObString::obstr_size_t>(reference.length() - pos - 1));
@@ -264,13 +264,13 @@ int ObDbConfigDbCont::handle_child_ref(const ObDDSCrdType type,
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ObDbConfigChild::alloc_child_info(db_info_key_, type, name, version, new_child_info))) {
-      LOG_WARN("fail to alloc child info", "type", get_type_task_name(type), K(name), K(version), K(ret));
+      LOG_WDIAG("fail to alloc child info", "type", get_type_task_name(type), K(name), K(version), K(ret));
     }
   }
   if (OB_SUCC(ret)) {
     if (!is_new_child_version) {
       if (OB_FAIL(new_child_info->assign(*child_info))) {
-        LOG_WARN("fail to copy child info", K(db_info_key_), K(name), K(version), K(ret));
+        LOG_WDIAG("fail to copy child info", K(db_info_key_), K(name), K(version), K(ret));
       } else {
         new_child_info->set_avail_state();
       }
@@ -278,7 +278,7 @@ int ObDbConfigDbCont::handle_child_ref(const ObDDSCrdType type,
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(cr_array.ccr_map_.unique_set(reinterpret_cast<L *>(new_child_info)))) {
-      LOG_WARN("fail to add child info into cr array", K(db_info_key_), K(name), K(version), K(ret));
+      LOG_WDIAG("fail to add child info into cr array", K(db_info_key_), K(name), K(version), K(ret));
     }
   }
   if (NULL != child_info) {

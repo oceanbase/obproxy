@@ -25,6 +25,8 @@ namespace obproxy
 {
 volatile int g_proxy_fatal_errcode = OB_SUCCESS;
 
+volatile int g_proxy_connection_errcode = OB_SUCCESS;
+
 ObHotUpgraderInfo g_hot_upgrade_info;
 
 void ObHotUpgraderInfo::reset()
@@ -168,7 +170,7 @@ int ObHotUpgraderInfo::get_hu_cmd(const ObString &cmd_str, ObHotUpgradeCmd &cmd)
     cmd = HUC_UPGRADE_BIN;
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unrecognized cmd", K(cmd_str), K(ret));
+    LOG_WDIAG("unrecognized cmd", K(cmd_str), K(ret));
   }
   return ret;
 }
@@ -190,7 +192,7 @@ int ObHotUpgraderInfo::get_hu_sub_status(const ObString &sub_status_str, ObHotUp
     sub_status = HU_STATUS_EXITED;
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unrecognized cmd", K(sub_status_str), K(ret));
+    LOG_WDIAG("unrecognized cmd", K(sub_status_str), K(ret));
   }
   return ret;
 }
@@ -225,7 +227,7 @@ int ObHotUpgraderInfo::get_rc_status(const ObString &status_str, ObReloadConfigS
     status = RCS_RELOAD_FAIL;
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unrecognized reload config status", K(status_str), K(ret));
+    LOG_WDIAG("unrecognized reload config status", K(status_str), K(ret));
   }
   return ret;
 }
@@ -263,7 +265,7 @@ int ObHotUpgraderInfo::get_bu_status(const ObString &status_string, ObBatchUpgra
     status = BUS_UPGRADE_BIN;
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unrecognized batch upgrade status", K(status_string), K(ret));
+    LOG_WDIAG("unrecognized batch upgrade status", K(status_string), K(ret));
   }
   return ret;
 }
@@ -346,13 +348,13 @@ int ObHotUpgraderInfo::fill_inherited_info(const bool is_server_service_mode, co
     //if use server service mode, proxy_id and upgrade_version_ must be specified
     if ((OB_LIKELY(is_inherited_) && OB_UNLIKELY(upgrade_version < 0))) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("upgrade_version should be specified in server service mode", K(upgrade_version), K(ret));
+      LOG_WDIAG("upgrade_version should be specified in server service mode", K(upgrade_version), K(ret));
     } else if (NULL == inherited_argv_[1]) {
       upgrade_version_ = ((upgrade_version > 0) ? upgrade_version : 0);
       int64_t length = snprintf(upgrade_version_buf_, sizeof(upgrade_version_buf_), "-u%ld", upgrade_version_ + 1);
       if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int64_t>(sizeof(upgrade_version_buf_)))) {
         ret = OB_BUF_NOT_ENOUGH;
-        LOG_WARN("buf not enought", K(length), K(upgrade_version_buf_), K(ret));
+        LOG_WDIAG("buf not enought", K(length), K(upgrade_version_buf_), K(ret));
       } else {
         inherited_argv_[1] = upgrade_version_buf_;
         inherited_argv_[2] = NULL;
@@ -373,7 +375,7 @@ void ObHotUpgraderInfo::disable_net_accept()
     if (DEDICATE_THREAD_ACCEPT == g_event_processor.all_dedicate_threads_[i]->get_dedicate_type()) {
       tid = g_event_processor.all_dedicate_threads_[i]->tid_;
       if (OB_FAIL(thread_kill(tid, 43))) {
-        LOG_WARN("fail to do thread_kill", K(tid), K(ret));
+        LOG_WDIAG("fail to do thread_kill", K(tid), K(ret));
       }
     }
     ret = OB_SUCCESS;//ignore error

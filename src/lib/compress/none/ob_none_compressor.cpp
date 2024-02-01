@@ -57,7 +57,7 @@ int ObNoneCompressor::get_max_overflow_size(const int64_t src_data_size,
   int ret = OB_SUCCESS;
   if (src_data_size < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid argument, ", K(ret), K(src_data_size));
+    LIB_LOG(WDIAG, "invalid argument, ", K(ret), K(src_data_size));
   } else {
     max_overflow_size = 0;
   }

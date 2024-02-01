@@ -58,7 +58,7 @@ int ObLatchWaitQueue::wait(
       || OB_UNLIKELY(NULL == lock_func_ignore)
       || OB_UNLIKELY(abs_timeout_us <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(proc), K(uid), K(abs_timeout_us), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(proc), K(uid), K(abs_timeout_us), K(ret));
   } else {
     ObLatch &latch = *proc.addr_;
     uint64_t pos = reinterpret_cast<uint64_t>((&latch)) % LATCH_MAP_BUCKET_CNT;
@@ -70,7 +70,7 @@ int ObLatchWaitQueue::wait(
     //check if need wait
     if (OB_FAIL(try_lock(bucket, proc, latch_id, uid, lock_func))) {
       if (OB_EAGAIN != ret) {
-        COMMON_LOG(ERROR, "Fail to try lock, ", K(ret));
+        COMMON_LOG(EDIAG, "Fail to try lock, ", K(ret));
       }
     }
 
@@ -102,7 +102,7 @@ int ObLatchWaitQueue::wait(
           if (OB_EAGAIN == ret) {
             if (OB_FAIL(try_lock(bucket, proc, latch_id, uid, lock_func_ignore))) {
               if (OB_EAGAIN != ret) {
-                COMMON_LOG(ERROR, "Fail to try lock, ", K(ret));
+                COMMON_LOG(EDIAG, "Fail to try lock, ", K(ret));
               }
             }
           }
@@ -121,7 +121,7 @@ int ObLatchWaitQueue::wait(
         if (OB_ISNULL(bucket.wait_list_.remove(&proc))) {
           //should not happen
           tmp_ret = OB_ERR_UNEXPECTED;
-          COMMON_LOG(ERROR, "Fail to remove proc, ", K(tmp_ret));
+          COMMON_LOG(EDIAG, "Fail to remove proc, ", K(tmp_ret));
         } else {
           //if there is not any wait proc, clear the wait mask
           bool has_wait = false;
@@ -167,7 +167,7 @@ int ObLatchWaitQueue::wake_up(ObLatch &latch, const bool only_rd_wait)
         if (OB_ISNULL(bucket.wait_list_.remove(iter))) {
           //should not happen
           ret = OB_ERR_UNEXPECTED;
-          COMMON_LOG(ERROR, "Fail to remove iter from wait list, ", K(ret));
+          COMMON_LOG(EDIAG, "Fail to remove iter from wait list, ", K(ret));
         } else {
           pwait = &iter->wait_;
           //the proc.wait_ must be set to 0 at last, once the 0 is set, the *iter may be not valid any more
@@ -242,7 +242,7 @@ int ObLatchWaitQueue::try_lock(
       || OB_UNLIKELY(latch_id >= ObLatchIds::LATCH_END)
       || OB_UNLIKELY(NULL == lock_func)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(proc), K(uid), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(proc), K(uid), K(ret));
   } else {
     uint32_t lock = 0;
     bool conflict = false;
@@ -271,12 +271,12 @@ int ObLatchWaitQueue::try_lock(
           && ObLatchWaitMode::READ_WAIT == proc.mode_) {
         if (!bucket.wait_list_.add_first(&proc)) {
           ret = OB_ERR_UNEXPECTED;
-          COMMON_LOG(ERROR, "Fail to add proc to wait list, ", K(ret));
+          COMMON_LOG(EDIAG, "Fail to add proc to wait list, ", K(ret));
         }
       } else {
         if (!bucket.wait_list_.add_last(&proc)) {
           ret = OB_ERR_UNEXPECTED;
-          COMMON_LOG(ERROR, "Fail to add proc to wait list, ", K(ret));
+          COMMON_LOG(EDIAG, "Fail to add proc to wait list, ", K(ret));
         }
       }
 
@@ -312,7 +312,7 @@ int ObLatch::try_rdlock(const uint32_t latch_id)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(latch_id >= ObLatchIds::LATCH_END)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument", K(latch_id), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument", K(latch_id), K(ret));
   } else {
     ret = OB_EAGAIN;
     uint64_t i = 0;
@@ -358,7 +358,7 @@ int ObLatch::try_wrlock(const uint32_t latch_id, const uint32_t *puid)
       || OB_UNLIKELY(0 == uid)
       || OB_UNLIKELY(uid >= WRITE_MASK)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument", K(latch_id), K(uid), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument", K(latch_id), K(uid), K(ret));
   } else {
     if (!ATOMIC_BCAS(&lock_, 0, (WRITE_MASK | uid))) {
       ret = OB_EAGAIN;
@@ -388,7 +388,7 @@ int ObLatch::rdlock(
   if (OB_UNLIKELY(latch_id >= ObLatchIds::LATCH_END)
       || OB_UNLIKELY(abs_timeout_us <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(latch_id), K(abs_timeout_us), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(latch_id), K(abs_timeout_us), K(ret));
   } else if (OB_FAIL(low_lock(
       latch_id,
       abs_timeout_us,
@@ -397,7 +397,7 @@ int ObLatch::rdlock(
       ObLatchPolicy::LATCH_FIFO == OB_LATCHES[latch_id].policy_ ? &ObLatch::low_try_rdlock : &ObLatch::low_try_rdlock_ignore,
       &ObLatch::low_try_rdlock_ignore))) {
     if (OB_TIMEOUT != ret) {
-      COMMON_LOG(WARN, "Fail to low lock, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to low lock, ", K(ret));
     }
   }
   return ret;
@@ -416,7 +416,7 @@ int ObLatch::wrlock(
       || OB_UNLIKELY(0 == uid)
       || OB_UNLIKELY(uid >= WRITE_MASK)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", K(latch_id), K(abs_timeout_us), K(uid), K(lbt()), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", K(latch_id), K(abs_timeout_us), K(uid), K(lbt()), K(ret));
   } else if (OB_FAIL(low_lock(
       latch_id,
       abs_timeout_us,
@@ -425,7 +425,7 @@ int ObLatch::wrlock(
       &ObLatch::low_try_wrlock,
       &ObLatch::low_try_wrlock_ignore))) {
     if (OB_TIMEOUT != ret) {
-      COMMON_LOG(WARN, "Fail to low lock, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to low lock, ", K(ret));
     }
   }
   return ret;
@@ -436,7 +436,7 @@ int ObLatch::wr2rdlock(const uint32_t *puid)
   int ret = OB_SUCCESS;
   if (!is_wrlocked_by(puid)) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "The latch is not write locked, ", K(ret));
+    COMMON_LOG(WDIAG, "The latch is not write locked, ", K(ret));
   } else {
     uint32_t lock = lock_;
     while (!ATOMIC_BCAS(&lock_, lock, (lock & WAIT_MASK) + 1)) {
@@ -449,7 +449,7 @@ int ObLatch::wr2rdlock(const uint32_t *puid)
     }
     bool only_rd_wait = true;
     if (OB_FAIL(ObLatchWaitQueue::get_instance().wake_up(*this, only_rd_wait))) {
-      COMMON_LOG(ERROR, "Fail to wake up latch wait queue, ", K(this), K(ret));
+      COMMON_LOG(EDIAG, "Fail to wake up latch wait queue, ", K(this), K(ret));
     }
   }
   return ret;
@@ -465,7 +465,7 @@ int ObLatch::unlock(const uint32_t *puid)
     uint32_t wid = (lock & ~(WAIT_MASK | WRITE_MASK));
     if (NULL != puid && uid != wid) {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(ERROR, "The latch is not write locked by the uid, ", K(uid), K(wid), K(lbt()), K(ret));
+      COMMON_LOG(EDIAG, "The latch is not write locked by the uid, ", K(uid), K(wid), K(lbt()), K(ret));
     } else {
       lock = __sync_and_and_fetch(&lock_, WAIT_MASK);
     }
@@ -473,11 +473,11 @@ int ObLatch::unlock(const uint32_t *puid)
     lock = ATOMIC_AAF(&lock_, -1);
   } else {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(ERROR, "invalid lock,", K(lock), K(ret));
+    COMMON_LOG(EDIAG, "invalid lock,", K(lock), K(ret));
   }
   if (OB_SUCCESS == ret && WAIT_MASK == lock) {
     if (OB_FAIL(ObLatchWaitQueue::get_instance().wake_up(*this))) {
-      COMMON_LOG(ERROR, "Fail to wake up latch wait queue, ", K(this), K(ret));
+      COMMON_LOG(EDIAG, "Fail to wake up latch wait queue, ", K(this), K(ret));
     }
   }
   return ret;
@@ -508,7 +508,7 @@ int ObLatch::low_lock(
       || OB_UNLIKELY(NULL == lock_func)
       || OB_UNLIKELY(NULL == lock_func_ignore)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument", K(latch_id), K(uid), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument", K(latch_id), K(uid), K(ret));
   } else {
     while (OB_SUCC(ret)) {
       //spin
@@ -552,7 +552,7 @@ int ObLatch::low_lock(
             lock_func_ignore,
             abs_timeout_us))) {
           if (OB_TIMEOUT != ret) {
-            COMMON_LOG(WARN, "Fail to wait the latch, ", K(ret));
+            COMMON_LOG(WDIAG, "Fail to wait the latch, ", K(ret));
           }
         } else {
           break;

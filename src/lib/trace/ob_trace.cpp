@@ -251,9 +251,9 @@ int UUID::serialize(char* buf, const int64_t buf_len, int64_t& pos) const
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(common::serialization::encode_i64(buf, buf_len, pos, high_))) {
-    // LOG_WARN("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else if (OB_FAIL(common::serialization::encode_i64(buf, buf_len, pos, low_))) {
-    // LOG_WARN("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
   }
   return ret;
 }
@@ -262,9 +262,9 @@ int UUID::deserialize(const char* buf, const int64_t buf_len, int64_t& pos)
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(common::serialization::decode_i64(buf, buf_len, pos, reinterpret_cast<int64_t*>(&high_)))) {
-    // LOG_WARN("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else if (OB_FAIL(common::serialization::decode_i64(buf, buf_len, pos, reinterpret_cast<int64_t*>(&low_)))) {
-    // LOG_WARN("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
   }
   return ret;
 }
@@ -427,7 +427,7 @@ int ObTrace::record_each_span_buf_for_show_trace(const char *buf,
     int64_t dst_buf_len = calc_total_span_buf_len(len, span);
     if (OB_UNLIKELY(dst_buf_len <= 0)) {
       ret = common::OB_INVALID_ARGUMENT;
-      _LIB_LOG(WARN, "invalid total buf len:%ld", dst_buf_len);
+      _LIB_LOG(WDIAG, "invalid total buf len:%ld", dst_buf_len);
     } else {
       common::ObSEArray<common::ObString, 10> *array = (common::ObSEArray<common::ObString, 10> *)json_span_array_;
       char *dst_buf = NULL;
@@ -435,7 +435,7 @@ int ObTrace::record_each_span_buf_for_show_trace(const char *buf,
       // alloc buf
       if (OB_ISNULL(dst_buf = (char *)ob_malloc(dst_buf_len, common::ObModIds::OB_PROXY_SHOW_TRACE_JSON))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        _LIB_LOG(ERROR, "alloc mem failed: %ld", dst_buf_len);
+        _LIB_LOG(EDIAG, "alloc mem failed: %ld", dst_buf_len);
       } else {
         // fill buf
         IGNORE_RETURN snprintf(dst_buf, dst_buf_len, TRACE_PATTERN "%s}",
@@ -451,7 +451,7 @@ int ObTrace::record_each_span_buf_for_show_trace(const char *buf,
         // record
         ObString span_json(dst_buf_len, dst_buf);
         if (OB_FAIL(array->push_back(span_json))) {
-          _LIB_LOG(ERROR, "fail to push back json span array:%d", ret);
+          _LIB_LOG(EDIAG, "fail to push back json span array:%d", ret);
         } else {
           // debug log
           _LIB_LOG(DEBUG, "push each span to json span array:[%s], dst buf len:%ld", dst_buf, dst_buf_len);
@@ -592,7 +592,7 @@ void ObTrace::reset_span()
 {
   #ifndef NDEBUG
   if (!check_magic()) {
-    LIB_LOG(ERROR, "trace buffer was not inited");
+    LIB_LOG(EDIAG, "trace buffer was not inited");
   }
   #endif
   // remove all end span
@@ -618,11 +618,11 @@ int ObTrace::serialize(char* buf, const int64_t buf_len, int64_t& pos) const
   INIT_SPAN(span);
   auto& span_id = span == NULL ? root_span_id_ : span->span_id_;
   if (OB_FAIL(trace_id_.serialize(buf, buf_len, pos))) {
-    // LOG_WARN("serialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("serialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else if (OB_FAIL(span_id.serialize(buf, buf_len, pos))) {
-    // LOG_WARN("serialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("serialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else if (OB_FAIL(common::serialization::encode_i8(buf, buf_len, pos, policy_))) {
-    // LOG_WARN("serialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("serialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else {
     // do nothing
   }
@@ -633,11 +633,11 @@ int ObTrace::deserialize(const char* buf, const int64_t buf_len, int64_t& pos)
 {
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(trace_id_.deserialize(buf, buf_len, pos))) {
-    // LOG_WARN("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else if (OB_FAIL(root_span_id_.deserialize(buf, buf_len, pos))) {
-    // LOG_WARN("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else if (OB_FAIL(common::serialization::decode_i8(buf, buf_len, pos, reinterpret_cast<int8_t*>(&policy_)))) {
-    // LOG_WARN("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
+    // LOG_WDIAG("deserialize failed", K(ret), K(buf), K(buf_len), K(pos));
   } else {
     // do nothing
   }
@@ -649,7 +649,7 @@ void ObTrace::check_leak_span()
   ObSpanCtx* span = current_span_.get_first();
   while (current_span_.get_header() != span) {
     if (0 == span->end_ts_) {
-      LIB_LOG(ERROR, "there were leak span");
+      LIB_LOG(EDIAG, "there were leak span");
       dump_span();
       break;
     }
@@ -661,7 +661,7 @@ void ObTrace::reset()
 {
   #ifndef NDEBUG
   if (!check_magic()) {
-    LIB_LOG(ERROR, "trace buffer was not inited");
+    LIB_LOG(EDIAG, "trace buffer was not inited");
   }
   #endif
   offset_ = buffer_size_ / 2;
@@ -687,7 +687,7 @@ void ObTrace::dump_span()
     }
     span = span->get_next();
   }
-  _LIB_LOG(ERROR, "%s", buf);
+  _LIB_LOG(EDIAG, "%s", buf);
 }
 
 }

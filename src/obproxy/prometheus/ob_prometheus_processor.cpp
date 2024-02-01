@@ -46,16 +46,16 @@ int ObPrometheusProcessor::start_prometheus()
   for (int64_t i = 0; OB_SUCC(ret) && i < net_thread_count; i++) {
     if (OB_ISNULL(ethreads[i]->thread_prometheus_ = new(std::nothrow) ObThreadPrometheus())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new ObThreadPrometheus", K(i), K(ret));
+      LOG_WDIAG("fail to new ObThreadPrometheus", K(i), K(ret));
     } else if (OB_FAIL(ethreads[i]->thread_prometheus_->init(ethreads[i]))) {
-      LOG_WARN("fail to init thread prometheus", K(i), K(ret));
+      LOG_WDIAG("fail to init thread prometheus", K(i), K(ret));
     }
   }
 
   if (OB_FAIL(ret)) {
     // do nothing
   } else if (OB_FAIL(start_prometheus_task())) {
-    LOG_WARN("start prometheus failed", K(ret));
+    LOG_WDIAG("start prometheus failed", K(ret));
   }
 
   return ret;
@@ -67,9 +67,9 @@ int ObPrometheusProcessor::start_one_prometheus(int64_t index)
   ObEThread **ethreads = g_event_processor.event_thread_[ET_NET];
   if (OB_ISNULL(ethreads[index]->thread_prometheus_ = new(std::nothrow) ObThreadPrometheus())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to new ObThreadPrometheus", K(index), K(ret));
+    LOG_WDIAG("fail to new ObThreadPrometheus", K(index), K(ret));
   } else if (OB_FAIL(ethreads[index]->thread_prometheus_->init(ethreads[index]))) {
-    LOG_WARN("fail to init thread prometheus", K(index), K(ret));
+    LOG_WDIAG("fail to init thread prometheus", K(index), K(ret));
   }
   return ret;
 }
@@ -79,10 +79,10 @@ int ObPrometheusProcessor::start_prometheus_task()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K(ret));
+    LOG_WDIAG("not init", K(ret));
   } else if (OB_UNLIKELY(NULL != prometheus_sync_cont_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("prometheus_sync_cont should be null here", K_(prometheus_sync_cont), K(ret));
+    LOG_WDIAG("prometheus_sync_cont should be null here", K_(prometheus_sync_cont), K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -93,7 +93,7 @@ int ObPrometheusProcessor::start_prometheus_task()
                   ObPrometheusProcessor::prometheus_sync_task,
                   ObPrometheusProcessor::update_prometheus_sync_interval, false, event::ET_TASK))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to create and start prometheus_sync_task task", K(ret));
+      LOG_WDIAG("fail to create and start prometheus_sync_task task", K(ret));
     } else {
       LOG_INFO("succ to start prometheus sync task", K(interval_us));
     }
@@ -106,7 +106,7 @@ int ObPrometheusProcessor::prometheus_sync_task()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(g_ob_prometheus_processor.do_prometheus_sync_task())) {
-    LOG_WARN("fail to do prometheus sync task", K(ret));
+    LOG_WDIAG("fail to do prometheus sync task", K(ret));
   } else {
     ObAsyncCommonTask *cont = g_ob_prometheus_processor.get_prometheus_sync_cont();
     if (OB_LIKELY(cont)) {
@@ -161,7 +161,7 @@ int ObPrometheusProcessor::get_or_create_exporter_metric(ObPrometheusFamilyHashT
     if (OB_SUCC(ret)) {
       metric_iter->set_exporter_metric(exporter_metric);
     } else {
-      LOG_WARN("fail to get or create exporter metric", "metric_type", family_iter->get_metric_type(), K(ret));
+      LOG_WDIAG("fail to get or create exporter metric", "metric_type", family_iter->get_metric_type(), K(ret));
     }
   }
 
@@ -174,7 +174,7 @@ int ObPrometheusProcessor::sync_to_exporter(ObPrometheusFamilyHashTable::iterato
   int ret = OB_SUCCESS;
   void *exporter_metric = NULL;
   if (OB_FAIL(get_or_create_exporter_metric(family_iter, metric_iter, exporter_metric))) {
-    LOG_WARN("fail to get or create exporter metric", K(ret));
+    LOG_WDIAG("fail to get or create exporter metric", K(ret));
   } else  {
     switch (family_iter->get_metric_type()) {
       case PROMETHEUS_TYPE_COUNTER:
@@ -211,7 +211,7 @@ int ObPrometheusProcessor::sync_to_exporter(ObPrometheusFamilyHashTable::iterato
     }
 
     if (OB_FAIL(ret)) {
-      LOG_WARN("fail to sync to exporter", "metric_type", family_iter->get_metric_type());
+      LOG_WDIAG("fail to sync to exporter", "metric_type", family_iter->get_metric_type());
     }
   }
 
@@ -246,11 +246,11 @@ int ObPrometheusProcessor::do_prometheus_sync_task()
         if (OB_FAIL(ObProxyPrometheusConvert::remove_metric(family_iter->get_exporter_family(),
                                                             tmp_iter->get_exporter_metric(),
                                                             family_iter->get_metric_type()))) {
-          LOG_WARN("fail to remove exporter metric", K(ret));
+          LOG_WDIAG("fail to remove exporter metric", K(ret));
         } else {
           tmp_iter->set_exporter_metric(NULL);
           if (OB_FAIL(family_iter->remove_metric(tmp_iter.value_))) {
-            LOG_WARN("fail to remove metric", K(ret));
+            LOG_WDIAG("fail to remove metric", K(ret));
           } else {
             ATOMIC_AAF(&metric_num_, -1);
             need_expire_metric_ = false;
@@ -277,12 +277,12 @@ int ObPrometheusProcessor::handle_counter(const char *name_ptr, const char *help
 
   if (OB_FAIL(get_or_create_family(name_ptr, help_ptr, PROMETHEUS_TYPE_COUNTER,
                                    default_constant_labels_, family))) {
-    LOG_WARN("fail to get or create family", K(name_ptr), K(ret));
+    LOG_WDIAG("fail to get or create family", K(name_ptr), K(ret));
   } else if (OB_FAIL(get_or_create_metric(family, label_array, args, counter))) {
     if (OB_EXCEED_MEM_LIMIT == ret) {
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("fail to get or create metric", K(label_array), K(ret));
+      LOG_WDIAG("fail to get or create metric", K(label_array), K(ret));
     }
   } else {
     counter->atomic_add(value);
@@ -305,12 +305,12 @@ int ObPrometheusProcessor::handle_gauge(const char *name_ptr, const char *help_p
 
   if (OB_FAIL(get_or_create_family(name_ptr, help_ptr, PROMETHEUS_TYPE_GAUGE,
                                    default_constant_labels_, family))) {
-    LOG_WARN("fail to get or create family", K(name_ptr), K(ret));
+    LOG_WDIAG("fail to get or create family", K(name_ptr), K(ret));
   } else if (OB_FAIL(get_or_create_metric(family, label_array, args, gauge, allow_delete))) {
     if (OB_EXCEED_MEM_LIMIT == ret) {
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("fail to get or create metric", K(label_array), K(ret));
+      LOG_WDIAG("fail to get or create metric", K(label_array), K(ret));
     }
   } else {
     gauge->atomic_add(value);
@@ -332,12 +332,12 @@ int ObPrometheusProcessor::handle_histogram(const char *name_ptr, const char *he
 
   if (OB_FAIL(get_or_create_family(name_ptr, help_ptr, PROMETHEUS_TYPE_HISTOGRAM,
                                    default_constant_labels_, family))) {
-    LOG_WARN("fail to get or create family", K(name_ptr), K(ret));
+    LOG_WDIAG("fail to get or create family", K(name_ptr), K(ret));
   } else if (OB_FAIL(get_or_create_metric(family, label_array, buckets, histogram))) {
     if (OB_EXCEED_MEM_LIMIT == ret) {
       ret = OB_SUCCESS;
     } else {
-      LOG_WARN("fail to get or create metric", K(label_array), K(ret));
+      LOG_WDIAG("fail to get or create metric", K(label_array), K(ret));
     }
   } else {
     histogram->atomic_add(value);
@@ -372,7 +372,7 @@ int ObPrometheusProcessor::get_or_create_metric(ObPrometheusFamily *family,
       bool is_new = false;
       if (ATOMIC_AAF(&metric_num_, 1) <= get_global_proxy_config().monitor_item_limit) {
         if (OB_FAIL(family->create_metric(key, args, metric, is_new, allow_delete))) {
-          LOG_WARN("create or get gobal metric failed", K(key), K(ret));
+          LOG_WDIAG("create or get gobal metric failed", K(key), K(ret));
         }
 
         if (OB_FAIL(ret) || !is_new) {
@@ -384,10 +384,10 @@ int ObPrometheusProcessor::get_or_create_metric(ObPrometheusFamily *family,
         ATOMIC_AAF(&metric_num_, -1);
         need_expire_metric_ = true;
         ret = OB_EXCEED_MEM_LIMIT;
-        LOG_WARN("metric num reach limit, will discard and expire metric", K_(metric_num));
+        LOG_WDIAG("metric num reach limit, will discard and expire metric", K_(metric_num));
       }
     } else {
-      LOG_WARN("get global metric from buildhash failed", K(key), K(ret));
+      LOG_WDIAG("get global metric from buildhash failed", K(key), K(ret));
     }
   }
 
@@ -420,14 +420,14 @@ int ObPrometheusProcessor::create_family(const ObString &name, const ObString &h
     if (OB_HASH_NOT_EXIST == ret) {
       void *exporter_family = NULL;
       if (OB_FAIL(ObProxyPrometheusConvert::get_or_create_exporter_family(name, help, label_array, metric_type, exporter_family))) {
-        LOG_WARN("fail to get or create exporter family", K(name), K(metric_type), K(ret));
+        LOG_WDIAG("fail to get or create exporter family", K(name), K(metric_type), K(ret));
       } else if (OB_ISNULL(family = op_alloc_args(ObPrometheusFamily, name, help, metric_type, exporter_family))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to allocate memory", K(ret));
+        LOG_WDIAG("fail to allocate memory", K(ret));
       } else {
         family->inc_ref();
         if (OB_FAIL(family_hash_.unique_set(family))) {
-          LOG_WARN("fail to set family into hashmap", KPC(family), K(ret));
+          LOG_WDIAG("fail to set family into hashmap", KPC(family), K(ret));
         }
       }
 
@@ -456,10 +456,10 @@ int ObPrometheusProcessor::get_or_create_family(const ObString &name, const ObSt
   if (OB_FAIL(get_family(name, family))) {
     if (OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(create_family(name, help, metric_type, label_array, family))) {
-        LOG_WARN("fail to create family", K(name), K(ret));
+        LOG_WDIAG("fail to create family", K(name), K(ret));
       }
     } else {
-      LOG_WARN("fail to get family", K(name), K(ret));
+      LOG_WDIAG("fail to get family", K(name), K(ret));
     }
   }
 
@@ -483,14 +483,14 @@ int ObPrometheusProcessor::init()
 
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(local_addr))) {
-    LOG_WARN("fail to get proxy local addr", K(local_addr), K(ret));
+    LOG_WDIAG("fail to get proxy local addr", K(local_addr), K(ret));
   } else if (OB_UNLIKELY(!local_addr.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to covert ip to string", K(local_addr), K(ret));
+    LOG_WDIAG("fail to covert ip to string", K(local_addr), K(ret));
   } else if (OB_FAIL(init_prometheus(static_cast<int32_t>(get_global_proxy_config().prometheus_listen_port.get())))) {
-    LOG_WARN("fail to init prometheus", "prometheus_listen_port", get_global_proxy_config().prometheus_listen_port.get(), K(ret));
+    LOG_WDIAG("fail to init prometheus", "prometheus_listen_port", get_global_proxy_config().prometheus_listen_port.get(), K(ret));
   } else  {
     uint64_t offset = 0;
     const char *package = PACKAGE_STRING;
@@ -522,7 +522,7 @@ ObPrometheusProcessor::~ObPrometheusProcessor()
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(ObAsyncCommonTask::destroy_repeat_task(prometheus_sync_cont_))) {
-    LOG_WARN("fail to destroy prometheus syc task", K(ret));
+    LOG_WDIAG("fail to destroy prometheus syc task", K(ret));
   } else {
     prometheus_sync_cont_ = NULL;
   }

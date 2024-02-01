@@ -87,6 +87,11 @@ function do_config()
       ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-so
       echo -e "\033[31m ===build so version=== \033[0m"
       ;;
+    xerrsim)
+     # configure for error injection
+     ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-errsim=yes ${MINIDUMP_OPTION} ${ELX_OPTION}
+  echo -e "\033[31m ===build errsim version=== \033[0m"
+       ;;
     *)
       # configure for release
       ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release

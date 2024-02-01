@@ -33,10 +33,10 @@ public:
     int ret = OB_SUCCESS;
     if (limit <= MIN_QUEUE_SIZE || NULL == allocator) {
       ret = OB_INVALID_ARGUMENT;
-      LIB_LOG(ERROR, "invalid args", K(limit), K(allocator));
+      LIB_LOG(EDIAG, "invalid args", K(limit), K(allocator));
     } else if (NULL == (items_ = static_cast<int64_t*>(allocator->alloc(sizeof(int64_t) * limit)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LIB_LOG(ERROR, "alloc memory for items failed", "size", sizeof(int64_t) * limit);
+      LIB_LOG(EDIAG, "alloc memory for items failed", "size", sizeof(int64_t) * limit);
     }
 
     for (int64_t i = 0; OB_SUCCESS == ret && i < limit; i++) {
@@ -71,11 +71,11 @@ public:
   {
     bool bret = false;
     if (NULL == items_) {
-      LIB_LOG(ERROR, "invalid item", K(items_));
+      LIB_LOG(EDIAG, "invalid item", K(items_));
     } else if (id < 0) {
-      LIB_LOG(ERROR, "invalid id", K(id));
+      LIB_LOG(EDIAG, "invalid id", K(id));
     } else if (0 == len_) {
-      LIB_LOG(ERROR, "invalid len", K(len_));
+      LIB_LOG(EDIAG, "invalid len", K(len_));
     } else {
       bret = items_[id % len_] >= id + READY;
     }

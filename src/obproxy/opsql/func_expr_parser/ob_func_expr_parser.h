@@ -84,7 +84,7 @@ inline int ObFuncExprParser::parse(const common::ObString &sql_string,
   int ret = common::OB_SUCCESS;
   if (common::OB_SUCCESS != init_result(parse_result, sql_string.ptr())) {
     ret = common::OB_ERR_PARSER_INIT;
-    PROXY_LOG(WARN, "fail to initialized parser", KERRMSGS, K(ret));
+    PROXY_LOG(WDIAG, "fail to initialized parser", KERRMSGS, K(ret));
   } else if (common::OB_SUCCESS != ob_func_expr_parse_sql(&parse_result,
                                                           sql_string.ptr(),
                                                           static_cast<size_t>(sql_string.length()))) {

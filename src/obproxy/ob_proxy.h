@@ -87,8 +87,9 @@ public:
 
   // start proxy, this function is blocked after invoking
   // until the prxy itself stops it.
-  int start();
+  int start(ObAppVersionInfo &app_info);
   int init_meta_client_proxy(const bool is_raw_init);
+  void print_start_info(int ret, ObAppVersionInfo &app_info);
 
 private:
   virtual int do_reload_config(obutils::ObProxyConfig &config);

@@ -32,13 +32,13 @@ int main(int argc, char *argv[])
 
   // turn warn log on so that there's a obproxy.log.wf file which records
   // all WARN and ERROR logs in log directory.
-  ObWarningBuffer::set_warn_log_on(true);
+  // ObWarningBuffer::set_warn_log_on(true);
   // DISABLE_DIA(); disable di_cache stat
 
   ObProxyMain *proxy_main = ObProxyMain::get_instance();
   if (OB_ISNULL(proxy_main)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to start obproxy", K(proxy_main), K(ret));
+    LOG_EDIAG("fail to start obproxy", K(proxy_main), K(ret));
   } else if (OB_FAIL(proxy_main->start(argc, argv))) {
     if(OB_UNLIKELY(OB_NOT_RUNNING == ret)) {
       // if use ./obproxy -h or ./obproxy -V

@@ -53,7 +53,7 @@ int ObRecordHeader::check_header_checksum() const
   format_i64(data_checksum_, checksum);
   if (0 != checksum) {
     ret = OB_CHECKSUM_ERROR;
-    COMMON_LOG(WARN, "record check checksum failed.", K(*this), K(ret));
+    COMMON_LOG(WDIAG, "record check checksum failed.", K(*this), K(ret));
   }
 
   return ret;
@@ -70,22 +70,22 @@ int ObRecordHeader::check_payload_checksum(const char *buf, const int64_t len) c
    */
   if (NULL == buf || len < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(len), K(ret));
   } else if (0 == len && (0 != data_zlength_ || 0 != data_length_ || 0 != data_checksum_)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(buf), K(len),
                K_(data_zlength), K_(data_length),
                K_(data_checksum), K(ret));
   } else if ((data_zlength_ != len)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "data length is not correct.",
+    COMMON_LOG(WDIAG, "data length is not correct.",
                K_(data_zlength), K(len), K(ret));
   } else {
     int64_t crc_check_sum = ob_crc64(buf, len);
     if (crc_check_sum != data_checksum_) {
       ret = OB_CHECKSUM_ERROR;
-      COMMON_LOG(WARN, "checksum error.",
+      COMMON_LOG(WDIAG, "checksum error.",
                  K(crc_check_sum), K_(data_checksum), K(ret));
     }
   }
@@ -102,23 +102,23 @@ int ObRecordHeader::check_record(const char *buf, const int64_t len, const int16
 
   if (NULL == buf || len < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(len), K(ret));
   } else if (OB_FAIL(record_header.deserialize(buf, len, pos))) {
-    COMMON_LOG(WARN, "deserialize record header failed.",
+    COMMON_LOG(WDIAG, "deserialize record header failed.",
                KP(buf), K(len), K(pos), K(ret));
   } else if (OB_FAIL(record_header.magic_ != magic)) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "record header magic is not match",
+    COMMON_LOG(WDIAG, "record header magic is not match",
                K(record_header), K(magic), K(ret));
   } else if (OB_FAIL(record_header.data_zlength_ != len - pos)) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "record header length is not match",
+    COMMON_LOG(WDIAG, "record header length is not match",
                K(record_header), "data length", (len - pos), K(ret));
   } else if (OB_FAIL(record_header.check_header_checksum())) {
-    COMMON_LOG(WARN, "check header checksum failed.",
+    COMMON_LOG(WDIAG, "check header checksum failed.",
                K(record_header), "data length", (len - pos), K(ret));
   } else if (OB_FAIL(record_header.check_payload_checksum(buf + pos, len - pos))) {
-    COMMON_LOG(WARN, "check data checksum failed.",
+    COMMON_LOG(WDIAG, "check data checksum failed.",
                K(record_header), "data length", (len - pos), K(ret));
   }
 
@@ -133,21 +133,21 @@ int ObRecordHeader::check_record(const ObRecordHeader &record_header,
   int ret = OB_SUCCESS;
   if (NULL == payload_buf || payload_len < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(payload_buf), K(payload_len), K(ret));
   } else if (OB_FAIL(record_header.magic_ != magic)) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "record header magic is not match",
+    COMMON_LOG(WDIAG, "record header magic is not match",
                K(record_header), K(magic), K(ret));
   } else if (OB_FAIL(record_header.data_zlength_ != payload_len)) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "record header length is not match",
+    COMMON_LOG(WDIAG, "record header length is not match",
                K(record_header), K(payload_len), K(ret));
   } else if (OB_FAIL(record_header.check_header_checksum())) {
-    COMMON_LOG(WARN, "check header checksum failed.",
+    COMMON_LOG(WDIAG, "check header checksum failed.",
                K(record_header), K(payload_len), K(ret));
   } else if (OB_FAIL(record_header.check_payload_checksum(payload_buf, payload_len))) {
-    COMMON_LOG(WARN, "check data checksum failed.",
+    COMMON_LOG(WDIAG, "check data checksum failed.",
                K(record_header), K(payload_len), K(ret));
   }
 
@@ -163,33 +163,33 @@ int ObRecordHeader::check_record(const char *ptr, const int64_t size,
 
   if (NULL == ptr || size < OB_RECORD_HEADER_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.",
+    COMMON_LOG(WDIAG, "invalid arguments.",
                KP(ptr), K(size), K(ret));
   } else if (OB_FAIL(header.deserialize(ptr, size, payload_pos))) {
-    COMMON_LOG(WARN, "deserialize header failed ",
+    COMMON_LOG(WDIAG, "deserialize header failed ",
                KP(ptr), K(size), K(payload_pos), K(ret));
   } else if (header.header_length_ != payload_pos) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "header length is not match.",
+    COMMON_LOG(WDIAG, "header length is not match.",
                K(header), K(payload_pos), K(ret));
   } else if (NULL == (payload_ptr = ptr + payload_pos)
              || (payload_size = (size - payload_pos)) <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "payload buffer size over flow",
+    COMMON_LOG(WDIAG, "payload buffer size over flow",
                K(header), K(payload_pos), K(payload_size), K(ret));
   } else if (OB_FAIL(header.magic_ != magic)) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "record header magic is not match",
+    COMMON_LOG(WDIAG, "record header magic is not match",
                K(header), K(magic), K(ret));
   } else if (OB_FAIL(header.data_zlength_ != payload_size)) {
     ret = OB_INVALID_DATA;
-    COMMON_LOG(WARN, "record header length is not match",
+    COMMON_LOG(WDIAG, "record header length is not match",
                K(header), K(payload_size), K(ret));
   }  else if (OB_FAIL(header.check_header_checksum())) {
-    COMMON_LOG(WARN, "check header checksum failed.",
+    COMMON_LOG(WDIAG, "check header checksum failed.",
                K(header), K(payload_size), K(ret));
   } else if (OB_FAIL(header.check_payload_checksum(payload_ptr, payload_size))) {
-    COMMON_LOG(WARN, "check payload checksum failed.",
+    COMMON_LOG(WDIAG, "check payload checksum failed.",
                K(header), K(payload_size), K(ret));
   }
 
@@ -207,16 +207,16 @@ int ObRecordHeader::get_record_header(const char *ptr,
 
   if (NULL == ptr || size < OB_RECORD_HEADER_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(ptr), K(size), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(ptr), K(size), K(ret));
   } else if (OB_FAIL(header.deserialize(ptr, size, payload_pos))) {
-    COMMON_LOG(WARN, "deserialize header failed ",
+    COMMON_LOG(WDIAG, "deserialize header failed ",
                KP(ptr), K(size), K(payload_pos), K(ret));
   } else {
     payload_ptr = ptr + payload_pos;
     payload_size = size - payload_pos;
     if (header.header_length_ != payload_pos) {
       ret = OB_INVALID_DATA;
-      COMMON_LOG(WARN, "record header length is not match",
+      COMMON_LOG(WDIAG, "record header length is not match",
                  K(header), K(payload_size), K(ret));
     }
   }
@@ -230,23 +230,23 @@ DEFINE_SERIALIZE(ObRecordHeader)
 
   if ((NULL == buf) || (buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(buf_len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(buf_len), K(ret));
   } else if (OB_FAIL(serialization::encode_i16(buf, buf_len, pos, magic_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(magic), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(magic), K(ret));
   } else if (OB_FAIL(serialization::encode_i16(buf, buf_len, pos, header_length_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(header_length), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(header_length), K(ret));
   } else if (OB_FAIL(serialization::encode_i16(buf, buf_len, pos, version_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(version), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(version), K(ret));
   } else if (OB_FAIL(serialization::encode_i16(buf, buf_len, pos, header_checksum_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(header_checksum), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(header_checksum), K(ret));
   } else if (OB_FAIL(serialization::encode_i64(buf, buf_len, pos, timestamp_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(timestamp), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(timestamp), K(ret));
   } else if (OB_FAIL(serialization::encode_i32(buf, buf_len, pos, data_length_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(data_length), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(data_length), K(ret));
   } else if (OB_FAIL(serialization::encode_i32(buf, buf_len, pos, data_zlength_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(data_zlength), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(data_zlength), K(ret));
   } else if (OB_FAIL(serialization::encode_i64(buf, buf_len, pos, data_checksum_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(data_checksum), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(data_checksum), K(ret));
   }
 
   return ret;
@@ -258,23 +258,23 @@ DEFINE_DESERIALIZE(ObRecordHeader)
 
   if ((NULL == buf) || (data_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid arguments.", KP(buf), K(data_len), K(ret));
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(data_len), K(ret));
   } else if (OB_FAIL(serialization::decode_i16(buf, data_len, pos, &magic_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(magic), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(magic), K(ret));
   } else if (OB_FAIL(serialization::decode_i16(buf, data_len, pos, &header_length_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(header_length), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(header_length), K(ret));
   }  else if (OB_FAIL(serialization::decode_i16(buf, data_len, pos, &version_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(version), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(version), K(ret));
   } else if (OB_FAIL(serialization::decode_i16(buf, data_len, pos, &header_checksum_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(header_checksum), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(header_checksum), K(ret));
   } else if (OB_FAIL(serialization::decode_i64(buf, data_len, pos, &timestamp_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(timestamp), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(timestamp), K(ret));
   } else if (OB_FAIL(serialization::decode_i32(buf, data_len, pos, &data_length_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(data_length), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(data_length), K(ret));
   } else if (OB_FAIL(serialization::decode_i32(buf, data_len, pos, &data_zlength_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(data_zlength), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(data_zlength), K(ret));
   } else if (OB_FAIL(serialization::decode_i64(buf, data_len, pos, &data_checksum_))) {
-    COMMON_LOG(WARN, "encode data failed..", KP(buf), K_(data_checksum), K(ret));
+    COMMON_LOG(WDIAG, "encode data failed..", KP(buf), K_(data_checksum), K(ret));
   }
 
   return ret;

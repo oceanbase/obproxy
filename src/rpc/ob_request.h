@@ -105,7 +105,7 @@ void ObRequest::set_request(easy_request_t *r)
 void ObRequest::set_request_rtcode(int8_t rt) const
 {
   if (OB_ISNULL(ez_req_)) {
-    RPC_LOG(ERROR, "invalid argument", K(ez_req_));
+    RPC_LOG(EDIAG, "invalid argument", K(ez_req_));
   } else {
     ez_req_->retcode = rt;
   }
@@ -136,7 +136,7 @@ ObAddr ObRequest::get_peer() const
   ObAddr addr;
   if (OB_ISNULL(ez_req_) || OB_ISNULL(ez_req_->ms)
       || OB_ISNULL(ez_req_->ms->c)) {
-    RPC_LOG(ERROR, "invalid argument", K(ez_req_));
+    RPC_LOG(EDIAG, "invalid argument", K(ez_req_));
   } else {
     easy_addr_t &ez = ez_req_->ms->c->addr;
     addr.set_ipv4_addr(ntohl(ez.u.addr), (ntohs)(ez.port));
@@ -160,7 +160,7 @@ void ObRequest::set_session(void *session)
       || OB_ISNULL(ez_req_)
       || OB_ISNULL(ez_req_->ms)
       || OB_ISNULL(ez_req_->ms->c)) {
-    RPC_LOG(ERROR, "invalid argument", K(ez_req_));
+    RPC_LOG(EDIAG, "invalid argument", K(ez_req_));
   } else {
     ez_req_->ms->c->user_data = session;
   }
@@ -172,7 +172,7 @@ void *ObRequest::get_session() const
   if (OB_ISNULL(ez_req_)
       || OB_ISNULL(ez_req_->ms)
       || OB_ISNULL(ez_req_->ms->c)) {
-    RPC_LOG(ERROR, "invalid argument", K(ez_req_));
+    RPC_LOG(EDIAG, "invalid argument", K(ez_req_));
   } else {
     session = ez_req_->ms->c->user_data;
   }
@@ -191,7 +191,7 @@ int64_t ObRequest::get_send_timestamp() const
 void ObRequest::disconnect() const
 {
   if (OB_ISNULL(ez_req_) || OB_ISNULL(ez_req_->ms)) {
-    RPC_LOG(ERROR, "invalid argument", K(ez_req_));
+    RPC_LOG(EDIAG, "invalid argument", K(ez_req_));
   } else {
     easy_connection_destroy_dispatch(ez_req_->ms->c);
   }

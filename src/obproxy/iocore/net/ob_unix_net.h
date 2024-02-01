@@ -151,7 +151,7 @@ inline int accept_error_seriousness(int res)
 #if defined(ENOSR) && !defined(freebsd)
     case OB_SYS_ENOSR:
 #endif
-      PROXY_NET_LOG(WARN, "throttling misconfigured: set too high", K(res));
+      PROXY_NET_LOG(WDIAG, "throttling misconfigured: set too high", K(res));
       ret = 0;
       break;
 
@@ -165,7 +165,7 @@ inline int accept_error_seriousness(int res)
       break;
 
     case OB_SYS_EINTR:
-      PROXY_NET_LOG(WARN, "should be handled at a lower level", K(res));
+      PROXY_NET_LOG(WDIAG, "should be handled at a lower level", K(res));
       ret = 0;
       break;
 
@@ -189,10 +189,10 @@ inline void check_transient_accept_error(const int res)
   if (0 == last_transient_accept_error
       || t - last_transient_accept_error > TRANSIENT_ACCEPT_ERROR_MESSAGE_EVERY) {
     last_transient_accept_error = t;
-    PROXY_NET_LOG(WARN, "accept thread received transient error", K(res));
+    PROXY_NET_LOG(WDIAG, "accept thread received transient error", K(res));
 #if defined(linux)
     if (OB_SYS_ENOBUFS == res || OB_SYS_ENFILE == res) {
-      PROXY_NET_LOG(WARN, "consider a memory upgrade", K(res));
+      PROXY_NET_LOG(WDIAG, "consider a memory upgrade", K(res));
     }
 #endif
   }

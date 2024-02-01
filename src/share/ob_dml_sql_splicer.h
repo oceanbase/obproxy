@@ -228,7 +228,7 @@ int ObDMLSqlSplicer::append_value(const T &obj, bool &is_null, common::FalseType
   int64_t pos = 0;
   if (0 > (pos = obj.to_string(buf, MAX_TO_STRING_BUF_SIZE)) || pos >= MAX_TO_STRING_BUF_SIZE) {
     ret = common::OB_BUF_NOT_ENOUGH;
-    SHARE_LOG(WARN, "obj to_string failed", K(pos), K(ret));
+    SHARE_LOG(WDIAG, "obj to_string failed", K(pos), K(ret));
   } else {
     if (0 == pos) {
       is_null = true;
@@ -236,7 +236,7 @@ int ObDMLSqlSplicer::append_value(const T &obj, bool &is_null, common::FalseType
       is_null = false;
       if (OB_FAIL(values_.append_fmt(mode_ == NAKED_VALUE_MODE ? "%.*s" : "'%.*s'",
           static_cast<int32_t>(pos), buf))) {
-        SHARE_LOG(WARN, "append value failed", K(pos), K(ret));
+        SHARE_LOG(WDIAG, "append value failed", K(pos), K(ret));
       }
     }
   }
@@ -263,9 +263,9 @@ int ObDMLSqlSplicer::add_column(const char *col_name, const T &value)
   int ret = common::OB_SUCCESS;
   if (NULL == col_name) {
     ret = common::OB_INVALID_ARGUMENT;
-    SHARE_LOG(WARN, "invalid column name", K(ret), KP(col_name));
+    SHARE_LOG(WDIAG, "invalid column name", K(ret), KP(col_name));
   } else if (OB_FAIL(add_column(is_pk, col_name, value))) {
-    SHARE_LOG(WARN, "add column failed", K(ret), K(is_pk), K(col_name), K(value));
+    SHARE_LOG(WDIAG, "add column failed", K(ret), K(is_pk), K(col_name), K(value));
   }
   return ret;
 }
@@ -277,9 +277,9 @@ int ObDMLSqlSplicer::add_pk_column(const char *col_name, const T &value)
   int ret = common::OB_SUCCESS;
   if (NULL == col_name) {
     ret = common::OB_INVALID_ARGUMENT;
-    SHARE_LOG(WARN, "invalid column name", K(ret), KP(col_name));
+    SHARE_LOG(WDIAG, "invalid column name", K(ret), KP(col_name));
   } else if (OB_FAIL(add_column(is_pk, col_name, value))) {
-    SHARE_LOG(WARN, "add column failed", K(ret), K(is_pk), K(col_name), K(value));
+    SHARE_LOG(WDIAG, "add column failed", K(ret), K(is_pk), K(col_name), K(value));
   }
   return ret;
 }
@@ -292,11 +292,11 @@ int ObDMLSqlSplicer::add_column(
   int ret = common::OB_SUCCESS;
   if (NULL == col_name) {
     ret = common::OB_INVALID_ARGUMENT;
-    SHARE_LOG(WARN, "invalid column name", K(ret), KP(col_name));
+    SHARE_LOG(WDIAG, "invalid column name", K(ret), KP(col_name));
   } else if (OB_FAIL(append_value(value, is_null))) {
-    SHARE_LOG(WARN, "append value failed", K(ret), K(value));
+    SHARE_LOG(WDIAG, "append value failed", K(ret), K(value));
   } else if (OB_FAIL(add_column(is_primary_key, is_null, col_name))) {
-    SHARE_LOG(WARN, "add column failed", K(ret));
+    SHARE_LOG(WDIAG, "add column failed", K(ret));
   }
   return ret;
 }

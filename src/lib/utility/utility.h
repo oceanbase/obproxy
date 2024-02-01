@@ -23,6 +23,7 @@
 #include "easy_io_struct.h"
 #include "lib/allocator/ob_allocator.h"
 #include "lib/utility/ob_print_utils.h"
+#include "lib/utility/ob_backtrace.h"
 #include "lib/oblog/ob_trace_log.h"
 #include "lib/container/ob_iarray.h"
 
@@ -62,9 +63,6 @@ class ObVersionRange;
 class ObNewRange;
 class ObSqlString;
 
-const int64_t LBT_BUFFER_LENGTH = 1024;
-char *parray(char *buf, int64_t len, int64_t *array, int size);
-char *lbt();
 void hex_dump(const void *data, const int32_t size,
               const bool char_type = true, const int32_t log_level = OB_LOG_LEVEL_DEBUG);
 int32_t parse_string_to_int_array(const char *line,
@@ -365,7 +363,7 @@ struct CountReporter
     if (0 == (count % report_mod_)) {
       SeqLockGuard lock_guard(seq_lock_);
       int64_t cur_ts = ::oceanbase::common::ObTimeUtility::current_time();
-      _OB_LOG(ERROR, "%s=%ld:%ld:%ld\n", id_, count,
+      _OB_LOG(EDIAG, "%s=%ld:%ld:%ld\n", id_, count,
                 1000000 * (count - last_report_count_) / (cur_ts - last_report_time_),
                 (total_cost_time - last_cost_time_)/report_mod_);
       last_report_count_ = count;
@@ -483,7 +481,7 @@ public:
   {
     int tmp_ret = pthread_key_create(&key_, NULL);
     if (0 != tmp_ret) {
-      _OB_LOG(ERROR, "pthread_key_create fail ret=%d", tmp_ret);
+      _OB_LOG(EDIAG, "pthread_key_create fail ret=%d", tmp_ret);
     }
   };
   ~ObTSIArray()
@@ -498,7 +496,7 @@ public:
       thread_node = &array_[__sync_fetch_and_add(&thread_num_, 1) % N_THREAD];
       int tmp_ret = pthread_setspecific(key_, (void *)thread_node);
       if (0 != tmp_ret) {
-        _OB_LOG(ERROR, "pthread_setspecific fail ret=%d", tmp_ret);
+        _OB_LOG(EDIAG, "pthread_setspecific fail ret=%d", tmp_ret);
       }
     }
     return (T &)(thread_node->v);
@@ -581,15 +579,15 @@ int load_file_to_string(const char *path, Allocator &allocator, ObString &str)
   if (NULL == path || strlen(path) == 0) {
     rc = OB_INVALID_ARGUMENT;
   } else if ((fd = ::open(path, O_RDONLY)) < 0) {
-    _OB_LOG(WARN, "open file %s failed, errno %d", path, errno);
+    _OB_LOG(WDIAG, "open file %s failed, errno %d", path, errno);
     rc = OB_ERROR;
   } else if (0 != ::fstat(fd, &st)) {
-    _OB_LOG(WARN, "fstat %s failed, errno %d", path, errno);
+    _OB_LOG(WDIAG, "fstat %s failed, errno %d", path, errno);
     rc = OB_ERROR;
   } else if (NULL == (buf = allocator.alloc(st.st_size + 1))) {
     rc = OB_ALLOCATE_MEMORY_FAILED;
   } else if ((size = static_cast<int64_t>(::read(fd, buf, st.st_size))) < 0) {
-    _OB_LOG(WARN, "read %s failed, errno %d", path, errno);
+    _OB_LOG(WDIAG, "read %s failed, errno %d", path, errno);
     rc = OB_ERROR;
   } else {
     buf[size] = '\0';
@@ -598,7 +596,7 @@ int load_file_to_string(const char *path, Allocator &allocator, ObString &str)
   if (fd >= 0) {
     int tmp_ret = close(fd);
     if (tmp_ret < 0) {
-      _OB_LOG(WARN, "close %s failed, errno %d", path, errno);
+      _OB_LOG(WDIAG, "close %s failed, errno %d", path, errno);
       rc = (OB_SUCCESS == rc) ? tmp_ret : rc;
     }
   }
@@ -619,7 +617,7 @@ inline int ob_cstrcopy(char *dest, int64_t dest_buflen, const char* src, int64_t
 {
   int ret = OB_SUCCESS;
   if (dest_buflen <= src_len) {
-    COMMON_LOG(WARN, "buffer not enough", K(dest_buflen), K(src_len));
+    COMMON_LOG(WDIAG, "buffer not enough", K(dest_buflen), K(src_len));
     ret = OB_BUF_NOT_ENOUGH;
   } else {
     MEMCPY(dest, src, src_len);
@@ -674,7 +672,7 @@ int add_var_to_array_no_dup(ObIArray<T> &array, const T &var)
   if (has_exist_in_array(array, var)) {
     //do nothing
   } else if (OB_FAIL(array.push_back(var))) {
-    LIB_LOG(WARN, "Add var to array error", K(ret));
+    LIB_LOG(WDIAG, "Add var to array error", K(ret));
   }
   return ret;
 }
@@ -686,13 +684,13 @@ int add_var_to_array_no_dup(T *array, const int64_t size, int64_t &num, const T 
   int ret = OB_SUCCESS;
   if (num > size) {
     ret = OB_SIZE_OVERFLOW;
-    LIB_LOG(WARN, "Num >= size", K(ret));
+    LIB_LOG(WDIAG, "Num >= size", K(ret));
   } else {
     if (has_exist_in_array(array, num, var)) {
       //do nothing
     } else if (num >= size) {
       ret = OB_SIZE_OVERFLOW;
-      LIB_LOG(WARN, "Size is not enough", K(ret));
+      LIB_LOG(WDIAG, "Size is not enough", K(ret));
     } else {
       array[num++] = var;
     }
@@ -721,12 +719,12 @@ public:
     int ret = common::OB_SUCCESS;
     if (NULL != ptr_) {
       ret = common::OB_INIT_TWICE;
-      LIB_LOG(WARN, "already inited", K(ret));
+      LIB_LOG(WDIAG, "already inited", K(ret));
     } else {
       T *mem = static_cast<T *>(allocator_.alloc(sizeof(T) * N));
       if (NULL == mem) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        LIB_LOG(WARN, "alloc memory failed", K(ret), "size", sizeof(T) * N);
+        LIB_LOG(WDIAG, "alloc memory failed", K(ret), "size", sizeof(T) * N);
       } else {
         for (int64_t i = 0; i < N; i++) {
           new (&mem[i]) T();
@@ -769,7 +767,7 @@ public:
   ~ObTimeGuard()
   {
     if (get_diff() >= warn_threshold_) {
-      LIB_LOG(WARN, "time guard use too much time", "this", *this);
+      LIB_LOG(WDIAG, "time guard use too much time", "this", *this);
     }
   }
   int64_t get_diff() const { return common::ObTimeUtility::current_time() - start_ts_; }
@@ -793,12 +791,12 @@ private:
 // In obproxy we can't Hang thread
 inline void right_to_die_or_duty_to_live()
 {
-  BACKTRACE(ERROR, true, "Trying so hard to die");
+  BACKTRACE(EDIAG, true, "Trying so hard to die");
   abort();
   // while(1) {
   //   sleep(120);
   // }
-  // _OB_LOG(ERROR, "Trying very hard to live");
+  // _OB_LOG(EDIAG, "Trying very hard to live");
 }
 
 class ObBandwidthThrottle

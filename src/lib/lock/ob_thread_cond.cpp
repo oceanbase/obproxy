@@ -39,17 +39,17 @@ int ObThreadCond::init(const int32_t event_no)
   int tmp_ret = 0;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    COMMON_LOG(WARN, "The thread cond has been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The thread cond has been inited, ", K(ret));
   } else if (!mutex_inited_ &&
       OB_UNLIKELY(0 != (tmp_ret = pthread_mutex_init(&mutex_, NULL)))) {
     ret = OB_ERR_SYS;
-    COMMON_LOG(WARN, "Fail to init pthread mutex, ", K(tmp_ret), K(ret));
+    COMMON_LOG(WDIAG, "Fail to init pthread mutex, ", K(tmp_ret), K(ret));
   } else {
     mutex_inited_ = true;
     if (!cond_inited_ &&
         OB_UNLIKELY(0 != (tmp_ret = pthread_cond_init(&cond_, NULL)))) {
       ret = OB_ERR_SYS;
-      COMMON_LOG(WARN, "Fail to init pthread cond, ", K(tmp_ret), K(ret));
+      COMMON_LOG(WDIAG, "Fail to init pthread cond, ", K(tmp_ret), K(ret));
     } else {
       event_no_ = event_no;
       cond_inited_ = true;
@@ -68,7 +68,7 @@ void ObThreadCond::destroy()
   int ret = 0;
   if (cond_inited_) {
     if (OB_UNLIKELY(0 != (ret = pthread_cond_destroy(&cond_)))) {
-      COMMON_LOG(WARN, "Fail to destroy pthread cond, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to destroy pthread cond, ", K(ret));
     } else {
       cond_inited_ = false;
     }
@@ -76,7 +76,7 @@ void ObThreadCond::destroy()
 
   if (mutex_inited_) {
     if (OB_UNLIKELY(0 != (ret = pthread_mutex_destroy(&mutex_)))) {
-      COMMON_LOG(WARN, "Fail to destroy pthread mutex, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to destroy pthread mutex, ", K(ret));
     } else {
       mutex_inited_ = false;
     }
@@ -91,10 +91,10 @@ int ObThreadCond::lock()
   int tmp_ret = 0;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The thread cond has not been inited, ", K(ret), K(lbt()));
+    COMMON_LOG(WDIAG, "The thread cond has not been inited, ", K(ret), K(lbt()));
   } else if (OB_UNLIKELY(0 != (tmp_ret = pthread_mutex_lock(&mutex_)))) {
     ret = OB_ERR_SYS;
-    COMMON_LOG(WARN, "Fail to lock pthread mutex, ", K(tmp_ret), K(ret));
+    COMMON_LOG(WDIAG, "Fail to lock pthread mutex, ", K(tmp_ret), K(ret));
   }
   return ret;
 }
@@ -105,10 +105,10 @@ int ObThreadCond::unlock()
   int tmp_ret = 0;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The thread cond has not been inited, ", K(ret), K(lbt()));
+    COMMON_LOG(WDIAG, "The thread cond has not been inited, ", K(ret), K(lbt()));
   } else if (OB_UNLIKELY(0 != (tmp_ret = pthread_mutex_unlock(&mutex_)))) {
     ret = OB_ERR_SYS;
-    COMMON_LOG(WARN, "Fail to unlock pthread mutex, ", K(tmp_ret), K(ret));
+    COMMON_LOG(WDIAG, "Fail to unlock pthread mutex, ", K(tmp_ret), K(ret));
   }
   return ret;
 }
@@ -119,20 +119,20 @@ int ObThreadCond::wait(const uint64_t milliseconds)
   int tmp_ret = 0;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The thread cond has not been inited, ", K(ret), K(lbt()));
+    COMMON_LOG(WDIAG, "The thread cond has not been inited, ", K(ret), K(lbt()));
   } else {
     ObWaitEventGuard guard(event_no_, milliseconds, reinterpret_cast<int64_t>(this));
     if (0 == milliseconds) {
       if (OB_UNLIKELY(0 != (tmp_ret = pthread_cond_wait(&cond_, &mutex_)))) {
         ret = OB_ERR_SYS;
-        COMMON_LOG(WARN, "Fail to cond wait, ", K(tmp_ret), K(ret));
+        COMMON_LOG(WDIAG, "Fail to cond wait, ", K(tmp_ret), K(ret));
       }
     } else {
       struct timeval curtime;
       struct timespec abstime;
       if (OB_UNLIKELY(0 != (tmp_ret = gettimeofday(&curtime, NULL)))) {
         ret = OB_ERR_SYS;
-        COMMON_LOG(WARN, "Fail to get time, ", K(tmp_ret), K(ret));
+        COMMON_LOG(WDIAG, "Fail to get time, ", K(tmp_ret), K(ret));
       } else {
         uint64_t us = (static_cast<int64_t>(curtime.tv_sec) *
                       static_cast<int64_t>(1000000) +
@@ -145,7 +145,7 @@ int ObThreadCond::wait(const uint64_t milliseconds)
         if (OB_UNLIKELY(0 != (tmp_ret = pthread_cond_timedwait(&cond_, &mutex_, &abstime)))) {
           if (ETIMEDOUT != tmp_ret) {
             ret = OB_ERR_SYS;
-            COMMON_LOG(WARN, "Fail to timd cond wait, ", K(milliseconds), K(tmp_ret), K(ret));
+            COMMON_LOG(WDIAG, "Fail to timd cond wait, ", K(milliseconds), K(tmp_ret), K(ret));
           } else {
             ret = OB_TIMEOUT;
           }
@@ -163,10 +163,10 @@ int ObThreadCond::signal()
   int tmp_ret = 0;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The thread cond has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The thread cond has not been inited, ", K(ret));
   } else if (OB_UNLIKELY(0 != (tmp_ret = pthread_cond_signal(&cond_)))) {
     ret = OB_ERR_SYS;
-    COMMON_LOG(WARN, "Fail to signal thread cond, ", K(tmp_ret), K(ret));
+    COMMON_LOG(WDIAG, "Fail to signal thread cond, ", K(tmp_ret), K(ret));
   }
   return ret;
 }
@@ -177,10 +177,10 @@ int ObThreadCond::broadcast()
   int tmp_ret = 0;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The thread cond has not been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The thread cond has not been inited, ", K(ret));
   } else if (OB_UNLIKELY(0 != (tmp_ret = pthread_cond_broadcast(&cond_)))) {
     ret = OB_ERR_SYS;
-    COMMON_LOG(WARN, "Fail to broadcast thread cond, ", K(tmp_ret), K(ret));
+    COMMON_LOG(WDIAG, "Fail to broadcast thread cond, ", K(tmp_ret), K(ret));
   }
   return ret;
 }

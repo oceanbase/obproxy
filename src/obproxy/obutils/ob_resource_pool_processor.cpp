@@ -107,16 +107,16 @@ int ObClusterDeleteCont::alloc(const ObString &cluster_name, const int64_t clust
   cont = NULL;
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to allocate mem for mutex", K(ret));
+    LOG_EDIAG("fail to allocate mem for mutex", K(ret));
   } else if (OB_ISNULL(cont = new(std::nothrow) ObClusterDeleteCont(mutex))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to allocate mem for ObClusterDeleteCont", K(ret));
+    LOG_EDIAG("fail to allocate mem for ObClusterDeleteCont", K(ret));
     if (OB_LIKELY(NULL != mutex)) {
       mutex->free();
       mutex = NULL;
     }
   } else if (OB_FAIL(cont->set_cluster_info(cluster_name, cluster_id))) {
-    LOG_WARN("fail to set cluster name", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to set cluster name", K(cluster_name), K(cluster_id), K(ret));
   }
   if (OB_FAIL(ret) && OB_LIKELY(NULL != cont)) {
     cont->destroy();
@@ -131,7 +131,7 @@ int ObClusterDeleteCont::set_cluster_info(const ObString &cluster_name, const in
   if (OB_UNLIKELY(cluster_name.length() > OB_MAX_USER_NAME_LENGTH_STORE)
       || OB_UNLIKELY(cluster_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(ret));
   } else {
     MEMCPY(cluster_name_str_, cluster_name.ptr(), cluster_name.length());
     cluster_name_.assign_ptr(cluster_name_str_, cluster_name.length());
@@ -147,11 +147,11 @@ int ObClusterDeleteCont::main_handler(int event, void *data)
     int ret = OB_SUCCESS;
     if (cluster_name_ == OB_META_DB_CLUSTER_NAME) {
       if (OB_FAIL(get_global_resource_pool_processor().rebuild_metadb())) {
-        LOG_WARN("fail to rebuild metadb", K(ret));
+        LOG_WDIAG("fail to rebuild metadb", K(ret));
       }
     } else {
       if (OB_FAIL(get_global_resource_pool_processor().delete_cluster_resource(cluster_name_, cluster_id_))) {
-        LOG_WARN("fail to delete cluster resource", K_(cluster_name), K_(cluster_id), K(ret));
+        LOG_WDIAG("fail to delete cluster resource", K_(cluster_name), K_(cluster_id), K(ret));
       }
     }
   }
@@ -185,8 +185,11 @@ int ObRslistFetchCont::init_task()
     ObSEArray<ObAddr, 5> rs_list;
     if (OB_FAIL(cs_processor.get_newest_cluster_rs_list(cr_->get_cluster_name(),
                                                         cr_->get_cluster_id(), rs_list, need_update_dummy_entry_))) {
-      COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, "", OB_PROXY_FETCH_RSLIST_FAIL, "fetch root server list from ocp failed");
-      LOG_WARN("fail to get cluster rslist", K_(cr_->cluster_info_key), K(ret));
+      COLLECT_LOGIN_DIAGNOSIS(
+          connection_diagnosis_trace_, OB_LOGIN_DISCONNECT_TRACE, "",
+          OB_PROXY_FETCH_RSLIST_FAIL,
+          "fail to fetch rootserver list from config server");
+      LOG_WDIAG("fail to get cluster rslist", K_(cr_->cluster_info_key), K(ret));
     } else {
       fetch_result_ = true;
     }
@@ -196,8 +199,11 @@ int ObRslistFetchCont::init_task()
     // If rstlist is started, do not modify the rslist_hash value
     bool need_save_rslist_hash = get_global_proxy_config().with_config_server_;
     if (OB_FAIL(cs_processor.swap_origin_web_rslist_and_build_sys(cr_->get_cluster_name(), cr_->get_cluster_id(), need_save_rslist_hash))) {
-      COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, "", OB_PROXY_FETCH_RSLIST_FAIL, "fetch root server list from local failed");
-      LOG_WARN("fail to swap origin web rslist", K_(cr_->cluster_info_key), K(ret));
+      COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+                              OB_LOGIN_DISCONNECT_TRACE, "",
+                              OB_PROXY_FETCH_RSLIST_FAIL,
+                              "fail to fetch rootserver list from local");
+      LOG_WDIAG("fail to swap origin web rslist", K_(cr_->cluster_info_key), K(ret));
     } else {
       fetch_result_ = true;
     }
@@ -217,6 +223,10 @@ void ObIDCListFetchCont::destroy()
     // inc_ref() in add_async_task()
     cr_->dec_ref();
     cr_ = NULL;
+  }
+  if (NULL != connection_diagnosis_trace_) {
+    connection_diagnosis_trace_->dec_ref();
+    connection_diagnosis_trace_ = NULL;
   }
   ObAsyncCommonTask::destroy();
 }
@@ -283,10 +293,10 @@ int ObCheckVersionCont::init_task()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(cr_->mysql_proxy_.async_read(this, CHECK_VERSION_SQL, pending_action_))) {
-    LOG_WARN("fail to async read", K(ret));
+    LOG_WDIAG("fail to async read", K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending action can not be NULL", K_(pending_action), K(ret));
   }
 
   return ret;
@@ -296,13 +306,32 @@ int ObCheckVersionCont::finish_task(void *data)
 {
   int ret = OB_SUCCESS;
   const ObString &cluster_name = cr_->cluster_info_key_.cluster_name_.config_string_;
+  #ifdef ERRSIM
+  if (OB_FAIL(OB_E(EventTable::EN_CHECK_CLUSTER_VERSION_FAIL) OB_SUCCESS)) {
+    data = NULL;
+  }
+  #endif
   if (OB_ISNULL(data)) {
-    COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, CHECK_VERSION_SQL, OB_PROXY_INTERNAL_REQUEST_FAIL);
+    COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+                            OB_LOGIN_DISCONNECT_TRACE, CHECK_VERSION_SQL,
+                            OB_PROXY_INTERNAL_REQUEST_FAIL,
+                            "fail to check observer version, empty result");
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("data is null, fail to check clsuter version", K(cluster_name), K(ret));
+    LOG_WDIAG("data is null, fail to check clsuter version", K(cluster_name), K(ret));
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
     ObMysqlResultHandler handler;
+    if (resp != NULL && resp->is_error_resp()) {
+      COLLECT_LOGIN_DIAGNOSIS(
+          connection_diagnosis_trace_, OB_LOGIN_DISCONNECT_TRACE,
+          CHECK_VERSION_SQL, resp->get_err_code(),
+          resp->get_err_code() == ER_ACCESS_DENIED_ERROR
+              ? "fail to check observer version, proxyro@sys access denied, "
+                "error resp { code:%d, msg:%.*s }"
+              : "fail to check observer version, proxyro@sys error resp { "
+                "code:%d, msg:%.*s }",
+          resp->get_err_code(), resp->get_err_msg().length(), resp->get_err_msg().ptr());
+    }
     handler.set_resp(resp);
     if (OB_FAIL(handler.next())) {
       check_result_ = true;
@@ -320,7 +349,7 @@ int ObCheckVersionCont::finish_task(void *data)
       if (OB_SUCC(ret)) {
         if (OB_UNLIKELY(OB_ITER_END != handler.next())) { // check if this is only one
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to get cluster version, there is more than one record", K(ret));
+          LOG_WDIAG("fail to get cluster version, there is more than one record", K(ret));
         } else {
           check_result_ = true;
         }
@@ -386,12 +415,12 @@ int ObClusterInfoCheckCont::init_task()
   int64_t len = snprintf(sql_, OB_SHORT_SQL_LENGTH, CHEK_CLUSTER_INFO_SQL, OBPROXY_V_DATABASE_TNAME);
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(ret));
   } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql_, pending_action_))) {
-    LOG_WARN("fail to async read", K(ret));
+    LOG_WDIAG("fail to async read", K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending action can not be NULL", K_(pending_action), K(ret));
   }
 
   return ret;
@@ -403,10 +432,21 @@ int ObClusterInfoCheckCont::finish_task(void *data)
   const ObString &cluster_name = cr_->cluster_info_key_.cluster_name_.config_string_;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
-    COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, sql_, OB_PROXY_INTERNAL_REQUEST_FAIL);
-    LOG_WARN("data is null, fail to check clsuter role", K(cluster_name), K(ret));
+    COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+                            OB_LOGIN_DISCONNECT_TRACE, sql_,
+                            OB_PROXY_INTERNAL_REQUEST_FAIL,
+                            "fail to check cluster info, empty result");
+    LOG_WDIAG("data is null, fail to check clsuter role", K(cluster_name), K(ret));
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
+    if (resp != NULL && resp->is_error_resp()) {
+      COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+                              OB_LOGIN_DISCONNECT_TRACE, sql_,
+                              resp->get_err_code(),
+                              "fail to check cluster info, proxyro@sys error "
+                              "resp { code:%d, msg:%.*s}",
+                              resp->get_err_code(), resp->get_err_msg().length(), resp->get_err_msg().ptr());
+    }
     ObMysqlResultHandler handler;
     handler.set_resp(resp);
     if (OB_FAIL(handler.next())) {
@@ -419,7 +459,7 @@ int ObClusterInfoCheckCont::finish_task(void *data)
         check_result_ = true;
         ret = OB_SUCCESS;
       } else {
-        LOG_WARN("fail to get resultset for cluster role", K(data), K(ret));
+        LOG_WDIAG("fail to get resultset for cluster role", K(data), K(ret));
       }
     } else {
       ObString cluster_role;
@@ -430,14 +470,14 @@ int ObClusterInfoCheckCont::finish_task(void *data)
       if (OB_SUCC(ret)) {
         if (OB_UNLIKELY(OB_ITER_END != handler.next())) { // check if this is only one
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to get cluster role, there is more than one record", K(ret));
+          LOG_WDIAG("fail to get cluster role, there is more than one record", K(ret));
         } else if (OB_DEFAULT_CLUSTER_ID == cluster_id_
             && get_global_proxy_config().with_config_server_
             && get_global_proxy_config().enable_standby) {
           if (OB_UNLIKELY(0 != cluster_role.case_compare(PRIMARY_ROLE))
                     || OB_UNLIKELY(0 != cluster_status.case_compare(ROLE_VALID))) {
             ret = OB_OBCONFIG_APPNAME_MISMATCH;
-            LOG_WARN("fail to check cluster role", "expected cluster role", PRIMARY_ROLE,
+            LOG_WDIAG("fail to check cluster role", "expected cluster role", PRIMARY_ROLE,
                     "remote cluster role", cluster_role,
                     "expected cluster status", ROLE_VALID,
                     "remote cluster status", cluster_status, K(ret));
@@ -450,8 +490,12 @@ int ObClusterInfoCheckCont::finish_task(void *data)
 
       }
     }
+    if (OB_FAIL(ret)) {
+      COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+      OB_LOGIN_DISCONNECT_TRACE, sql_, OB_PROXY_INTERNAL_ERROR,
+      "fail to check cluster role");
+    }
   }
-
   return ret;
 }
 
@@ -520,12 +564,12 @@ int ObServerStateInfoInitCont::init_task()
   }
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(len), K(ret));
+    LOG_WDIAG("fail to fill sql", K(len), K(ret));
   } else if (OB_FAIL(cr_->mysql_proxy_.async_read(this, sql_, pending_action_))) {
-    LOG_WARN("fail to async read", K(ret));
+    LOG_WDIAG("fail to async read", K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("pending action can not be NULL", K_(pending_action), K(ret));
+    LOG_WDIAG("pending action can not be NULL", K_(pending_action), K(ret));
   }
 
   return ret;
@@ -537,12 +581,23 @@ int ObServerStateInfoInitCont::finish_task(void *data)
   ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    COLLECT_CONNECTION_DIAGNOSIS(connection_diagnosis_trace_, login, OB_LOGIN_DISCONNECT_TRACE, sql_, OB_PROXY_INTERNAL_REQUEST_FAIL);
-    LOG_WARN("invalid data", K(data), K(ret));
+    COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+                            OB_LOGIN_DISCONNECT_TRACE, sql_,
+                            OB_PROXY_INTERNAL_REQUEST_FAIL,
+                            "fail to init server state, empty result");
+    LOG_WDIAG("invalid data", K(data), K(ret));
   } else {
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
     ObMysqlResultHandler result_handler;
     result_handler.set_resp(resp);
+    if (resp != NULL && resp->is_error_resp()) {
+      COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+                              OB_LOGIN_DISCONNECT_TRACE, sql_,
+                              resp->get_err_code(),
+                              "fail to init server state, proxyro@sys error "
+                              "resp { code:%d, msg:%.*s}",
+                              resp->get_err_code(), resp->get_err_msg().length(), resp->get_err_msg().ptr());
+    }
     ObServerStateSimpleInfo ss_info;
     ObString zone_status;
     ObString zone_name;
@@ -605,15 +660,15 @@ int ObServerStateInfoInitCont::finish_task(void *data)
           if (!is_cluster_alias) {
             if (cr_->get_cluster_name() != cluster_name) {
               ret = OB_OBCONFIG_APPNAME_MISMATCH;
-              LOG_WARN("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
+              LOG_WDIAG("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
                   "remote cluster name", cluster_name, K(ret));
             }
           } else {
             if (OB_FAIL(cs_processor.get_real_cluster_name(real_cluster_name, cr_->get_cluster_name()))) {
-              LOG_WARN("fail to get main cluster name", "cluster_name", cr_->get_cluster_name(), "cluster_id", cr_->get_cluster_id());
+              LOG_WDIAG("fail to get main cluster name", "cluster_name", cr_->get_cluster_name(), "cluster_id", cr_->get_cluster_id());
             } else if (real_cluster_name != cluster_name) {
               ret = OB_OBCONFIG_APPNAME_MISMATCH;
-              LOG_WARN("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
+              LOG_WDIAG("fail to check cluster name", "local cluster name", cr_->get_cluster_name(),
                   "remote cluster name", cluster_name, K(ret));
             }
           }
@@ -657,15 +712,15 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       if (OB_SUCC(ret)) {
         //accound to ObServerStateInfo::is_treat_as_force_congested()
         if (OB_FAIL(ObServerStatus::str2display_status(display_status_str, server_status))) {
-          LOG_WARN("display string to status failed", K(ret), K(display_status_str));
+          LOG_WDIAG("display string to status failed", K(ret), K(display_status_str));
         } else if (OB_FAIL(ss_info.set_addr(ip_str, port))) {
-          LOG_WARN("fail to add addr", K(ip_str), K(port), K(ret));
+          LOG_WDIAG("fail to add addr", K(ip_str), K(port), K(ret));
         } else if (OB_FAIL(ss_info.set_zone_name(zone_name))) {
-          LOG_WARN("fail to set zone name", K(zone_name), K(ret));
+          LOG_WDIAG("fail to set zone name", K(zone_name), K(ret));
         } else if (OB_FAIL(ss_info.set_region_name(region_name))) {
-          LOG_WARN("fail to set region name", K(region_name), K(ret));
+          LOG_WDIAG("fail to set region name", K(region_name), K(ret));
         } else if (OB_FAIL(ss_info.set_idc_name(idc_name))) {
-          LOG_WARN("fail to set idc name", K(idc_name), K(ret));
+          LOG_WDIAG("fail to set idc name", K(idc_name), K(ret));
         } else {
           //According to ObServerStateInfo::is_treat_as_force_congested()
           const bool is_server_dead_congested = ((start_service_time <= 0 && ObServerStatus::OB_SERVER_ACTIVE != server_status)
@@ -676,7 +731,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
         }
 
         if (FAILEDx(ss_infos_.push_back(ss_info))) {
-          LOG_WARN("fail to push back server_info", K(ss_info), K(ret));
+          LOG_WDIAG("fail to push back server_info", K(ss_info), K(ret));
         } else {
           LOG_DEBUG("succ to push back server_info", K(ss_info));
         }
@@ -687,20 +742,20 @@ int ObServerStateInfoInitCont::finish_task(void *data)
         zone_state.zone_type_ = ss_info.zone_type_;
         zone_state.zone_status_ = ObZoneStatus::get_status(zone_status);
         if (OB_FAIL(zone_state.set_zone_name(zone_name))) {
-          LOG_WARN("fail to set zone name", K(zone_name), K(ret));
+          LOG_WDIAG("fail to set zone name", K(zone_name), K(ret));
         } else if (OB_FAIL(zone_state.set_region_name(region_name))) {
-          LOG_WARN("fail to set region name", K(region_name), K(ret));
+          LOG_WDIAG("fail to set region name", K(region_name), K(ret));
         } else if (OB_FAIL(zone_state.set_idc_name(idc_name))) {
-          LOG_WARN("fail to set idc name", K(region_name), K(ret));
+          LOG_WDIAG("fail to set idc name", K(region_name), K(ret));
         } else if (OB_FAIL(zones_state.push_back(zone_state))) {
-          LOG_WARN("fail to push back zone_info", K(zone_state), K(ret));
+          LOG_WDIAG("fail to push back zone_info", K(zone_state), K(ret));
         } else {
           server_state.start_service_time_ = start_service_time;
           server_state.stop_time_ = stop_time;
           server_state.server_status_ = server_status;
 
           if (OB_FAIL(server_state.add_addr(ip_str, port))) {
-            LOG_WARN("fail to add addr", K(ip_str), K(port), K(ret));
+            LOG_WDIAG("fail to add addr", K(ip_str), K(port), K(ret));
             //if svr_ip or svr_port in __all_virtual_proxy_server_stat is wrong,
             //we can skip over this server_state.
             ret = OB_SUCCESS;
@@ -712,9 +767,9 @@ int ObServerStateInfoInitCont::finish_task(void *data)
             continue;
           } else {
             if (OB_FAIL(servers_state.push_back(server_state))) {
-              LOG_WARN("fail to push back server_state", K(server_state), K(ret));
+              LOG_WDIAG("fail to push back server_state", K(server_state), K(ret));
             } else if (OB_FAIL(zone_names.push_back(zone_name))) {
-              LOG_WARN("fail to push back zone_name", K(ret), K(zone_name));
+              LOG_WDIAG("fail to push back zone_name", K(ret), K(zone_name));
             } else {
               LOG_DEBUG("succ to push back server_state and zone_name", K(ret), K(server_state), K(zone_name));
             }
@@ -738,7 +793,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       if (OB_ISNULL(each_servers_state.zone_state_ =
             ObServerStateRefreshUtils::get_zone_info_ptr(zones_state, each_zone_name))) {
         ret = OB_INVALID_ARGUMENT;
-        LOG_WARN("unexpected situation, the corresponding zone_state has been searched before.",
+        LOG_WDIAG("unexpected situation, the corresponding zone_state has been searched before.",
                  K(ret), K(each_zone_name), K(zones_state));
       } else {
         if (each_servers_state.zone_state_->is_readonly_zone()) {
@@ -752,7 +807,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
     }
 
     if (OB_FAIL(ret)) {
-      LOG_WARN("fail to get server state info", K(ret));
+      LOG_WDIAG("fail to get server state info", K(ret));
     } else {
       LocationList server_list; //save the ordered servers
       const uint64_t new_ss_version = cr_->server_state_version_ + 1;
@@ -765,7 +820,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
       ATOMIC_AAF(&(cr_->server_state_version_), 1);
 
       if (OB_FAIL(ObServerStateRefreshUtils::order_servers_state(servers_state, server_list))) {
-        LOG_WARN("fail to order servers state", K(ret));
+        LOG_WDIAG("fail to order servers state", K(ret));
       // add to table location
       } else if (OB_LIKELY(!server_list.empty())) {
         LOG_DEBUG("succ to get server list", K(server_list), "server_count", servers_state.count());
@@ -773,17 +828,17 @@ int ObServerStateInfoInitCont::finish_task(void *data)
         ObTableCache &table_cache = get_global_table_cache();
         const bool is_rslist = false;
         if (OB_FAIL(ObRouteUtils::build_sys_dummy_entry(cr_->get_cluster_name(), cr_->get_cluster_id(), server_list, is_rslist, entry))) {
-          LOG_WARN("fail to build sys dummy entry", K(server_list), "cluster_name", cr_->get_cluster_name(),
+          LOG_WDIAG("fail to build sys dummy entry", K(server_list), "cluster_name", cr_->get_cluster_name(),
               "cluster_id", cr_->get_cluster_id(), K(ret));
         } else if (OB_ISNULL(entry) || OB_UNLIKELY(!entry->is_valid())) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("entry can not be NULL here", K(entry), K(ret));
+          LOG_WDIAG("entry can not be NULL here", K(entry), K(ret));
         } else {
           ObTableEntry *tmp_entry = NULL;
           tmp_entry = entry;
           tmp_entry->inc_ref();//just for print
           if (OB_FAIL(ObTableCache::add_table_entry(table_cache, *entry))) {
-            LOG_WARN("fail to add table entry", K(*entry), K(ret));
+            LOG_WDIAG("fail to add table entry", K(*entry), K(ret));
           } else {
             obsys::CWLockGuard guard(cr_->dummy_entry_rwlock_);
             if (NULL != cr_->dummy_entry_) {
@@ -812,6 +867,11 @@ int ObServerStateInfoInitCont::finish_task(void *data)
                  "server_state_version_", cr_->server_state_version_,
                  K_(ss_infos), K(zones_state), K(servers_state));
       }
+    }
+    if (OB_FAIL(ret)) {
+      COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+      OB_LOGIN_DISCONNECT_TRACE, sql_, OB_PROXY_INTERNAL_ERROR,
+      "fail to init server state");
     }
   }
 
@@ -925,15 +985,15 @@ int ObClusterResourceCreateCont::create_cluster_resource(const ObString &cluster
   int ret = OB_SUCCESS;
   action = NULL;
   if (OB_FAIL(set_cluster_info(cluster_name, cluster_id))) {
-    LOG_WARN("fail to set cluster name", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to set cluster name", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_UNLIKELY(submit_thread_ != this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this thread must be equal with submit_thread",
+    LOG_EDIAG("this thread must be equal with submit_thread",
               "this ethread", this_ethread(), K_(submit_thread),
               K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_ISNULL(self_ethread().schedule_imm(this, CLUSTER_RESOURCE_CREATE_EVENT))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("fail to schedule imm", K(ret));
+    LOG_EDIAG("fail to schedule imm", K(ret));
   } else {
     action = &get_action();
   }
@@ -946,13 +1006,13 @@ int ObClusterResourceCreateCont::schedule_timeout()
   int64_t timeout_us = get_global_proxy_config().short_async_task_timeout; // us
   if (OB_ISNULL(submit_thread_) || OB_UNLIKELY(timeout_us <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("submit thread can not be NULL", K_(submit_thread), K(timeout_us), K(ret));
+    LOG_WDIAG("submit thread can not be NULL", K_(submit_thread), K(timeout_us), K(ret));
   } else if (OB_UNLIKELY(NULL != timeout_action_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("timeout action must be NULL", K_(timeout_action), K(ret));
+    LOG_WDIAG("timeout action must be NULL", K_(timeout_action), K(ret));
   } else if (OB_ISNULL(timeout_action_ = submit_thread_->schedule_in(this, HRTIME_USECONDS(timeout_us)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule timeout", K_(timeout_action), K(ret));
+    LOG_WDIAG("fail to schedule timeout", K_(timeout_action), K(ret));
   }
   return ret;
 }
@@ -962,13 +1022,13 @@ int ObClusterResourceCreateCont::handle_timeout()
   int ret = OB_SUCCESS;
   LOG_INFO("handle timeout", K_(created_cr), K_(is_rslist_from_local));
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   } else if (NULL != created_cr_) {
     if (is_rslist_from_local_) {
       ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
       int64_t new_failure_count = 0;
       if (OB_FAIL(cs_processor.inc_and_get_create_failure_count(cluster_name_, cluster_id_, new_failure_count))) {
-        LOG_WARN("fail to inc_and_get_create_failure_count", K(ret));
+        LOG_WDIAG("fail to inc_and_get_create_failure_count", K(ret));
       } else {
         LOG_INFO("timeout to create cluster with local rslist",
                  K_(cluster_name), K_(cluster_id), K_(init_status), K(new_failure_count));
@@ -977,7 +1037,7 @@ int ObClusterResourceCreateCont::handle_timeout()
 
     // we only handle timeout for the cont which is not in the pending list
     if (OB_FAIL(handle_async_task_fail())) {
-      LOG_WARN("fail to handle async task fail", K(ret));
+      LOG_WDIAG("fail to handle async task fail", K(ret));
     }
   }
   return ret;
@@ -990,10 +1050,10 @@ int ObClusterResourceCreateCont::add_async_task()
   ObProxyMutex *mutex = NULL;
   if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_INNER_STAT_ERROR;
-    LOG_WARN("pending action must be NULL here", K(ret));
+    LOG_WDIAG("pending action must be NULL here", K(ret));
   } else if (OB_ISNULL(created_cr_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("created_cr_ can not be null", K_(created_cr), K(ret));
+    LOG_WDIAG("created_cr_ can not be null", K_(created_cr), K(ret));
   } else {
     switch (init_status_) {
       case INIT_RS:
@@ -1002,7 +1062,7 @@ int ObClusterResourceCreateCont::add_async_task()
         is_rslist_from_local_ = false;
         if (OB_ISNULL(mutex = new_proxy_mutex())) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("alloc memory for proxy mutex error", K(ret));
+          LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
         } else {
           created_cr_->inc_ref();
           bool need_update_dummy_entry = true;
@@ -1032,10 +1092,10 @@ int ObClusterResourceCreateCont::add_async_task()
         // fetch idc will block creation, so use a new mutex instead of cb_cont's mutex
         if (OB_ISNULL(mutex = new_proxy_mutex())) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("alloc memory for proxy mutex error", K(ret));
+          LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
         } else {
           created_cr_->inc_ref();
-          async_cont = new(std::nothrow) ObIDCListFetchCont(created_cr_, mutex,
+          async_cont = new(std::nothrow) ObIDCListFetchCont(created_cr_, mutex, connection_diagnosis_trace_,
                                                             this, &self_ethread(), true);
         }
         break;
@@ -1046,13 +1106,13 @@ int ObClusterResourceCreateCont::add_async_task()
         break;
       default:
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown build state", K_(init_status), K(ret));
+        LOG_WDIAG("unknown build state", K_(init_status), K(ret));
         break;
     }
     if (OB_SUCC(ret)) {
       if (OB_ISNULL(async_cont)) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to alloc mem for async task continuation", K_(init_status), K(ret));
+        LOG_EDIAG("fail to alloc mem for async task continuation", K_(init_status), K(ret));
         if (NULL != mutex) {
           mutex->free();
           mutex = NULL;
@@ -1060,13 +1120,13 @@ int ObClusterResourceCreateCont::add_async_task()
         created_cr_->dec_ref();
       } else if (!self_ethread().is_event_thread_type(ET_CALL)) {
         ret = OB_INNER_STAT_ERROR;
-        LOG_ERROR("schedule cluster build cont must be in work thread", K(&self_ethread()), K(ret));
+        LOG_EDIAG("schedule cluster build cont must be in work thread", K(&self_ethread()), K(ret));
       } else {
         if (INIT_RS == init_status_) {
           (void)ATOMIC_FAA(&created_cr_->fetch_rslist_task_count_, 1);
           if (OB_ISNULL(g_event_processor.schedule_imm(async_cont, ET_TASK))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("fail to schedule fetch rslist task", K(ret));
+            LOG_EDIAG("fail to schedule fetch rslist task", K(ret));
             (void)ATOMIC_FAA(&created_cr_->fetch_rslist_task_count_, -1);
           } else {
             created_cr_->last_rslist_refresh_time_ns_ = get_hrtime();
@@ -1076,7 +1136,7 @@ int ObClusterResourceCreateCont::add_async_task()
           (void)ATOMIC_FAA(&created_cr_->fetch_idc_list_task_count_, 1);
           if (OB_ISNULL(g_event_processor.schedule_imm(async_cont, ET_TASK))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_ERROR("fail to schedule fetch idc list task", K(ret));
+            LOG_EDIAG("fail to schedule fetch idc list task", K(ret));
             (void)ATOMIC_FAA(&created_cr_->fetch_idc_list_task_count_, -1);
           } else {
             created_cr_->last_idc_list_refresh_time_ns_ = get_hrtime();
@@ -1108,7 +1168,7 @@ int ObClusterResourceCreateCont::set_cluster_info(const ObString &cluster_name, 
   if (OB_UNLIKELY(cluster_name.empty())
       || OB_UNLIKELY(cluster_name.length() > OB_MAX_USER_NAME_LENGTH_STORE)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(ret));
   } else {
     MEMCPY(cluster_name_str_, cluster_name.ptr(), cluster_name.length());
     cluster_name_.assign_ptr(cluster_name_str_, cluster_name.length());
@@ -1141,7 +1201,7 @@ int ObClusterResourceCreateCont::do_create_cluster_resource()
         cr->pending_list_.push(this);
         is_add_to_list = true;
       } else {
-        LOG_WARN("invalid cluster resource", KPC(cr), KPC_(callback_cr));
+        LOG_WDIAG("invalid cluster resource", KPC(cr), KPC_(callback_cr));
       }
     }
   }
@@ -1149,7 +1209,7 @@ int ObClusterResourceCreateCont::do_create_cluster_resource()
   if (is_cr_exist) {
     if (!is_add_to_list) {
       if (OB_FAIL(handle_inform_out_event())) {
-        LOG_ERROR("fail to schedule infom out cont", K(ret));
+        LOG_EDIAG("fail to schedule infom out cont", K(ret));
       }
     }
   } else { // cr is not exist, create and build
@@ -1165,10 +1225,10 @@ int ObClusterResourceCreateCont::do_create_cluster_resource()
       if (OB_SUCC(ret)) {
         // do nothing
       } else if (OB_FAIL(handle_chain_inform_cont())) {
-        LOG_ERROR("fail to handle chain inform", K(ret));
+        LOG_EDIAG("fail to handle chain inform", K(ret));
       }
     } else if (OB_FAIL(handle_add_pending_list())) {
-      LOG_ERROR("fail to handle add cont pending list", K(ret));
+      LOG_EDIAG("fail to handle add cont pending list", K(ret));
     }
   }
 
@@ -1184,42 +1244,42 @@ int ObClusterResourceCreateCont::main_handler(int event, void *data)
 
   if (OB_UNLIKELY(CR_CONT_MAGIC_ALIVE != magic_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("cluster resource cont is dead", K_(magic), K(ret));
+    LOG_EDIAG("cluster resource cont is dead", K_(magic), K(ret));
   } else {
     switch (event) {
       case CLUSTER_RESOURCE_CREATE_EVENT: {
         pending_action_ = NULL;
         if (OB_FAIL(schedule_timeout())) {
-          LOG_WARN("fail to schedule timeout action", K(ret));
+          LOG_WDIAG("fail to schedule timeout action", K(ret));
         } else if (OB_FAIL(do_create_cluster_resource())) {
-          LOG_WARN("fail to do create custer resource", K(ret));
+          LOG_WDIAG("fail to do create custer resource", K(ret));
         }
         break;
       }
       case CLUSTER_RESOURCE_INFORM_OUT_EVENT: {
         pending_action_ = NULL;
         if (OB_FAIL(handle_inform_out_event())) {
-          LOG_WARN("fail to handle inform out event", K(ret));
+          LOG_WDIAG("fail to handle inform out event", K(ret));
         }
         break;
       }
       case EVENT_INTERVAL: {
         timeout_action_ = NULL;
         if (OB_FAIL(handle_timeout())) {
-          LOG_WARN("fail to handle timeout event", K(ret));
+          LOG_WDIAG("fail to handle timeout event", K(ret));
         }
         break;
       }
       case ASYNC_PROCESS_DONE_EVENT: {
         pending_action_ = NULL;
         if (OB_FAIL(handle_async_task_complete(data))) {
-          LOG_WARN("fail to handle async task complete", K_(init_status), K(ret));
+          LOG_WDIAG("fail to handle async task complete", K_(init_status), K(ret));
         }
         break;
       }
       default: {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected event", K(event), K(ret));
+        LOG_WDIAG("unexpected event", K(event), K(ret));
         break;
       }
     }
@@ -1239,7 +1299,7 @@ int ObClusterResourceCreateCont::handle_async_task_complete(void *data)
   bool result = false;
   if (OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid data", K(data), K(ret));
+    LOG_WDIAG("invalid data", K(data), K(ret));
   } else {
     result = *(static_cast<bool *>(data));
     if (result) {
@@ -1264,14 +1324,14 @@ int ObClusterResourceCreateCont::handle_async_task_complete(void *data)
         init_status_ = INIT_SERVER_STATE_PROCESSOR;
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected build status", K_(init_status), K(ret));
+        LOG_WDIAG("unexpected build status", K_(init_status), K(ret));
       }
       if (OB_SUCC(ret)) {
         if (OB_FAIL(build())) {
-          LOG_WARN("fail to build async task", K_(init_status), K(ret));
+          LOG_WDIAG("fail to build async task", K_(init_status), K(ret));
         } else if (INIT_SERVER_STATE_PROCESSOR == init_status_) {
           if (OB_FAIL(handle_async_task_succ())) {
-            LOG_WARN("fail to handle async task succ");
+            LOG_WDIAG("fail to handle async task succ");
           }
         }
       }
@@ -1286,28 +1346,31 @@ int ObClusterResourceCreateCont::handle_async_task_complete(void *data)
       result = true;
       init_status_ = INIT_RS;
       if (OB_FAIL(add_async_task())) {
-        LOG_WARN("fail to add rslist fetch task", K_(cluster_name), K(ret));
+        LOG_WDIAG("fail to add rslist fetch task", K_(cluster_name), K(ret));
         init_status_ = old_status;
       }
-    } else if (CHECK_CLUSTER_INFO == init_status_) {
-      // 2. master cluster role is not primary, try to loop all sub cluster rs list
+    } else if (CHECK_VERSION == init_status_
+               || CHECK_CLUSTER_INFO == init_status_) {
+      // 2.for CHECK_VERSION, the primary cluster maybe random one because it's multi-primary or no-primary
+      //   for CHECK_CLUSTER_INFO master cluster role is not primary
+      //   need loop all sub cluster rs list until get a valid primary cluster
       result = true;
       const bool is_rslist = false;
       ObSEArray<ObAddr, 5> rs_list;
       ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
       if (OB_FAIL(cs_processor.get_next_master_cluster_rslist(cluster_name_, rs_list))) {
-        LOG_WARN("fail to get next master cluster rslist", K_(cluster_name));
+        LOG_WDIAG("fail to get next master cluster rslist", K_(cluster_name));
       } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list, is_rslist))) {
-        LOG_WARN("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
+        LOG_WDIAG("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
       } else if (OB_FAIL(add_async_task())) {
-        LOG_WARN("fail to add check cluster name task", K_(cluster_name), K(ret));
+        LOG_WDIAG("fail to add check cluster name task", K_(cluster_name), K(ret));
       }
     }
   }
 
   if (OB_FAIL(ret) || OB_UNLIKELY(!result)) {
     if (OB_FAIL(handle_async_task_fail())) {
-      LOG_WARN("fail to handle async task", K(ret));
+      LOG_WDIAG("fail to handle async task", K(ret));
     }
   }
   return ret;
@@ -1318,7 +1381,7 @@ int ObClusterResourceCreateCont::handle_async_task_succ()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(created_cr_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("created_cr_ can not be null here", K(ret));
+    LOG_WDIAG("created_cr_ can not be null here", K(ret));
   } else {
     CWLockGuard guard(rp_processor_.cr_map_rwlock_); // write lock need
     created_cr_->set_avail_state();
@@ -1326,7 +1389,7 @@ int ObClusterResourceCreateCont::handle_async_task_succ()
   }
 
   if (OB_FAIL(handle_chain_inform_cont())) {
-    LOG_ERROR("fail to handle chain inform", K(ret));
+    LOG_EDIAG("fail to handle chain inform", K(ret));
   }
   return ret;
 }
@@ -1336,7 +1399,7 @@ int ObClusterResourceCreateCont::handle_async_task_fail()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(created_cr_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("created_cr_ can not be null here", K(ret));
+    LOG_WDIAG("created_cr_ can not be null here", K(ret));
   } else {
     ObClusterInfoKey cluster_info_key(cluster_name_, cluster_id_);
     CWLockGuard guard(rp_processor_.cr_map_rwlock_); // write lock need
@@ -1345,12 +1408,12 @@ int ObClusterResourceCreateCont::handle_async_task_fail()
     // do not dec_ref, handle_chain_inform_cont
     if (created_cr_ != tmp_cr) {
       // ignore ret
-      LOG_ERROR("removed cluster resource must be equal with created cluster resource", K(tmp_cr), K_(created_cr));
+      LOG_EDIAG("removed cluster resource must be equal with created cluster resource", K(tmp_cr), K_(created_cr));
     }
   }
 
   if (OB_FAIL(handle_chain_inform_cont())) {
-    LOG_WARN("fail to handle chain inform cont", K(ret));
+    LOG_WDIAG("fail to handle chain inform cont", K(ret));
   }
   return ret;
 }
@@ -1369,7 +1432,7 @@ int ObClusterResourceCreateCont::handle_chain_inform_cont()
 
       if (created_cr_->is_avail()
           && OB_FAIL(created_cr_->rebuild_mysql_client_pool(created_cr_))) {
-        LOG_WARN("fail to create mysql client pool after cluster resource is created", K(ret));
+        LOG_WDIAG("fail to create mysql client pool after cluster resource is created", K(ret));
       }
     }
 
@@ -1382,7 +1445,7 @@ int ObClusterResourceCreateCont::handle_chain_inform_cont()
       ++pending_list_count;
       submit_thread = cr_cont->submit_thread_;
       if (OB_ISNULL(submit_thread)) {
-        LOG_ERROR("submit thread can not be NULL", K(cr_cont));
+        LOG_EDIAG("submit thread can not be NULL", K(cr_cont));
       } else {
         if (created_cr_->is_avail()) {
           created_cr_->inc_ref();
@@ -1394,7 +1457,7 @@ int ObClusterResourceCreateCont::handle_chain_inform_cont()
           cr_cont->callback_cr_ = NULL;
         }
         if (OB_ISNULL(submit_thread->schedule_imm(cr_cont, CLUSTER_RESOURCE_INFORM_OUT_EVENT))) {
-          LOG_ERROR("fail to schedule imm", K(cr_cont));
+          LOG_EDIAG("fail to schedule imm", K(cr_cont));
           if (NULL != cr_cont->callback_cr_) {
             cr_cont->callback_cr_->dec_ref();
             cr_cont->callback_cr_ = NULL;
@@ -1418,7 +1481,7 @@ int ObClusterResourceCreateCont::handle_chain_inform_cont()
     created_cr_ = NULL;
   } else {
     // never reach here
-    LOG_ERROR("created cluster resource is unexist, unexpected state", K_(created_cr), K_(cluster_name));
+    LOG_EDIAG("created cluster resource is unexist, unexpected state", K_(created_cr), K_(cluster_name));
   }
 
   return ret;
@@ -1445,14 +1508,14 @@ int ObClusterResourceCreateCont::handle_add_pending_list()
         callback_cr_ = cr;
       } else {
         callback_cr_ = NULL;
-        LOG_ERROR("invalid cluster state", K(*cr));
+        LOG_EDIAG("invalid cluster state", K(*cr));
       }
     }
   }
 
   if (inform_out) {
     if (OB_FAIL(handle_inform_out_event())) {
-      LOG_WARN("fail to handle inform out event", K(ret));
+      LOG_WDIAG("fail to handle inform out event", K(ret));
     }
   }
 
@@ -1463,10 +1526,10 @@ void ObClusterResourceCreateCont::destroy()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(cancel_pending_action())) {
-    LOG_WARN("fail to cancel pending action", K(ret));
+    LOG_WDIAG("fail to cancel pending action", K(ret));
   }
   if (OB_FAIL(cancel_timeout_action())) {
-    LOG_WARN("fail to cancel timeout action", K(ret));
+    LOG_WDIAG("fail to cancel timeout action", K(ret));
   }
   if (OB_NOT_NULL(connection_diagnosis_trace_)) {
     // inc_ref in constructor
@@ -1488,14 +1551,14 @@ int ObClusterResourceCreateCont::handle_inform_out_event()
   int ret = OB_SUCCESS;
   if (this_ethread() != submit_thread_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("this thread must be equal with submit_thread",
+    LOG_EDIAG("this thread must be equal with submit_thread",
               "this ethread", this_ethread(), K_(submit_thread),
               K_(cluster_name), K_(cluster_id), K(ret));
   } else {
     if (!action_.cancelled_) {
       if (OB_ISNULL(cb_cont_)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("cb_cont can not be NULL", K_(cb_cont), K(ret));
+        LOG_WDIAG("cb_cont can not be NULL", K_(cb_cont), K(ret));
         if (NULL != callback_cr_) {
           callback_cr_->dec_ref();
           callback_cr_ = NULL;
@@ -1528,7 +1591,7 @@ int ObClusterResourceCreateCont::check_real_meta_cluster()
       && cluster_name_ == OB_META_DB_CLUSTER_NAME
       && !cs_processor.is_real_meta_cluster_exist()) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WARN("real meta cluster is not exist", K(ret));
+    LOG_WDIAG("real meta cluster is not exist", K(ret));
   }
   return ret;
 }
@@ -1538,12 +1601,12 @@ int ObClusterResourceCreateCont::build()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(created_cr_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("created cr can not be null here", K(ret));
+    LOG_WDIAG("created cr can not be null here", K(ret));
   }
 
   if (OB_SUCC(ret) && INIT_BORN == init_status_) {
     if (OB_FAIL(created_cr_->init_local_config(rp_processor_.config_))) {
-      LOG_WARN("fail to build local", K(ret));
+      LOG_WDIAG("fail to build local", K(ret));
     } else {
       init_status_ = INIT_RS;
     }
@@ -1552,7 +1615,7 @@ int ObClusterResourceCreateCont::build()
   if (OB_SUCC(ret) && INIT_RS == init_status_) {
     if (get_global_proxy_config().enable_get_rslist_remote) {
       if (OB_FAIL(add_async_task())) {
-        LOG_WARN("fail to add async task", K_(init_status), K(ret));
+        LOG_WDIAG("fail to add async task", K_(init_status), K(ret));
       }
     } else {
       const bool is_rslist = false;
@@ -1562,29 +1625,29 @@ int ObClusterResourceCreateCont::build()
       if (OB_FAIL(check_real_meta_cluster())) {
         // if fail to check real meta cluster, try to get newest cluster rslist from config server
         if (OB_FAIL(add_async_task())) {
-          LOG_WARN("fail to add async fetch rslist task", K_(cluster_name), K_(cluster_id), K(ret));
+          LOG_WDIAG("fail to add async fetch rslist task", K_(cluster_name), K_(cluster_id), K(ret));
         }
       } else if (OB_FAIL(cs_processor.get_cluster_rs_list(cluster_name_, cluster_id_, rs_list))) {
         // if fail to get local cluster rslist, try to get newest cluster rslist from config server
         if (is_rslist_from_local_) {
           if (OB_FAIL(add_async_task())) {
-            LOG_WARN("fail to add async fetch rslist task", K_(cluster_name), K_(cluster_id), K(ret));
+            LOG_WDIAG("fail to add async fetch rslist task", K_(cluster_name), K_(cluster_id), K(ret));
           }
         } else {
-          LOG_WARN("had already fetch rslist, no need try again", K_(cluster_name), K_(cluster_id), K(ret));
+          LOG_WDIAG("had already fetch rslist, no need try again", K_(cluster_name), K_(cluster_id), K(ret));
         }
       } else if (OB_FAIL(cs_processor.get_create_failure_count(cluster_name_, cluster_id_, new_failure_count))) {
-        LOG_WARN("fail to get_create_failure_count", K_(cluster_name), K_(cluster_id), K(ret));
+        LOG_WDIAG("fail to get_create_failure_count", K_(cluster_name), K_(cluster_id), K(ret));
       } else {
         if (is_rslist_from_local_
             && new_failure_count >= ObProxyClusterInfo::RESET_RS_LIST_FAILURE_COUNT) {
           LOG_INFO("local rslist is unavailable many times, need get newest one",
                    K_(cluster_name), K_(cluster_id), K(new_failure_count), K(rs_list));
           if (OB_FAIL(add_async_task())) {
-            LOG_WARN("fail to add async fetch rslist task", K_(cluster_name), K_(cluster_id), K(ret));
+            LOG_WDIAG("fail to add async fetch rslist task", K_(cluster_name), K_(cluster_id), K(ret));
           }
         } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list, is_rslist))) {
-          LOG_WARN("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
+          LOG_WDIAG("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
         } else {
           init_status_ = CHECK_VERSION;
           LOG_DEBUG("try next status",
@@ -1594,44 +1657,44 @@ int ObClusterResourceCreateCont::build()
     }
   }
 
-  if (OB_SUCC(ret) && CHECK_CLUSTER_INFO == init_status_) {
+  if (OB_SUCC(ret) && CHECK_VERSION == init_status_) {
     if (OB_DEFAULT_CLUSTER_ID == cluster_id_
         && get_global_proxy_config().with_config_server_
         && get_global_proxy_config().enable_standby) {
       int64_t cluster_id = OB_DEFAULT_CLUSTER_ID;
       ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
-      if (OB_FAIL(cs_processor.get_master_cluster_id(cluster_name_, cluster_id)
-          || OB_DEFAULT_CLUSTER_ID == cluster_id)) {
+      if (OB_FAIL(cs_processor.get_master_cluster_id(cluster_name_, cluster_id))
+          || OB_DEFAULT_CLUSTER_ID == cluster_id) {
         // mayby no master on config server, here try a cluster rs list by random
         const bool is_rslist = false;
         ObSEArray<ObAddr, 5> rs_list;
         if (OB_FAIL(cs_processor.get_next_master_cluster_rslist(cluster_name_, rs_list))) {
-          LOG_WARN("fail to get next master cluster rslist", K_(cluster_name));
+          LOG_WDIAG("fail to get next master cluster rslist", K_(cluster_name));
         } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list, is_rslist))) {
-          LOG_WARN("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
+          LOG_WDIAG("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
         }
       }
     }
 
     if (OB_SUCC(ret) && OB_FAIL(add_async_task())) {
-      LOG_WARN("fail to add async task", K_(init_status), K(ret));
+      LOG_WDIAG("fail to add async task", K_(init_status), K(ret));
     }
   }
 
   if (OB_SUCC(ret)
-      && (CHECK_VERSION == init_status_
+      && (CHECK_CLUSTER_INFO == init_status_
           || INIT_SYSVAR == init_status_
           || INIT_SS_INFO == init_status_
           || INIT_IDC_LIST == init_status_)) {
     if (OB_FAIL(add_async_task())) {
-      LOG_WARN("fail to add async task", K_(init_status), K(ret));
+      LOG_WDIAG("fail to add async task", K_(init_status), K(ret));
     }
   }
 
   if (OB_SUCC(ret) && INIT_SERVER_STATE_PROCESSOR == init_status_) {
     // init server state processor
     if (OB_FAIL(created_cr_->init_server_state_processor(rp_processor_.config_))) {
-      LOG_WARN("fail to init server state refresh processor", K(ret));
+      LOG_WDIAG("fail to init server state refresh processor", K(ret));
     } else {
       LOG_DEBUG("finish build cluster resource", K_(cluster_name), K_(cluster_id), K(ret));
     }
@@ -1647,17 +1710,17 @@ int ObClusterResource::init(const common::ObString &cluster_name, int64_t cluste
   int ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (cluster_name.empty() || version < 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(version), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(version), K(ret));
   } else if (OB_FAIL(set_cluster_info(cluster_name, cluster_id))) {
-    LOG_WARN("fail to set cluster name", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to set cluster name", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_FAIL(pending_list_.init("cr init pending list",
           reinterpret_cast<int64_t>(&(reinterpret_cast<ObClusterResourceCreateCont *> (0))->link_)))) {
-    LOG_WARN("fail to init pending list", K(ret));
+    LOG_WDIAG("fail to init pending list", K(ret));
   } else if (OB_FAIL(alive_addr_set_.create(4))) {
-    LOG_WARN("alive_addr_set create failed", K(ret));
+    LOG_WDIAG("alive_addr_set create failed", K(ret));
   } else {
     is_inited_ = true;
     version_ = version;
@@ -1696,7 +1759,7 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
   ObVipAddr addr;
   if (OB_FAIL(get_global_config_processor().get_proxy_config(
           addr, cluster_name, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD, item))) {
-    LOG_WARN("get observer_sys_password config failed", K(cluster_name), K(ret));
+    LOG_WDIAG("get observer_sys_password config failed", K(cluster_name), K(ret));
   } else {
     MEMCPY(password, item.str(), strlen(item.str()));
   }
@@ -1704,7 +1767,7 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
   if (OB_SUCC(ret)) {
     if (OB_FAIL(get_global_config_processor().get_proxy_config(
             addr, cluster_name, "", ObProxyTableInfo::OBSERVER_SYS_PASSWORD1, item))) {
-      LOG_WARN("get observer_sys_password1 config failed", K(cluster_name), K(ret));
+      LOG_WDIAG("get observer_sys_password1 config failed", K(cluster_name), K(ret));
     } else {
       MEMCPY(password1, item.str(), strlen(item.str()));
     }
@@ -1714,30 +1777,30 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
   if (OB_FAIL(ret)) {
     // do nothing
   } else if (OB_FAIL(mysql_proxy_.init(timeout_ms, user_name, password, database, cluster_name, password1))) {
-    LOG_WARN("fail to init mysql proxy", K(ret));
+    LOG_WDIAG("fail to init mysql proxy", K(ret));
   } else if (OB_FAIL(rebuild_mysql_client_pool(
              get_global_resource_pool_processor().get_default_cluster_resource()))) {
-    LOG_WARN("fail t create mysql client pool for init cluster resource", K(ret));
+    LOG_WDIAG("fail t create mysql client pool for init cluster resource", K(ret));
   }
 
   // init sys var set processor
   if (OB_SUCC(ret)) {
     if (OB_FAIL(sys_var_set_processor_.init())) {
-      LOG_WARN("fail to init sys var set processor", K(ret));
+      LOG_WDIAG("fail to init sys var set processor", K(ret));
     } else if (OB_FAIL(sys_var_set_processor_.renew_sys_var_set(get_global_resource_pool_processor().get_default_sysvar_set()))) {
-      LOG_WARN("fail to renew sys var set", K(ret));
+      LOG_WDIAG("fail to renew sys var set", K(ret));
     }
   }
 
   // init congestion manager
   if (OB_SUCC(ret)) {
     if (OB_FAIL(congestion_manager_.init())) {
-      LOG_WARN("failed to init congestion manager", K(ret));
+      LOG_WDIAG("failed to init congestion manager", K(ret));
     } else {
       ObCongestionControlConfig *control_config = NULL;
       if (OB_ISNULL(control_config = op_alloc(ObCongestionControlConfig))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("failed to allocate memory for congestion control config", K(ret));
+        LOG_EDIAG("failed to allocate memory for congestion control config", K(ret));
       } else {
         control_config->fail_window_sec_ = usec_to_sec(config.congestion_fail_window_us_);
         control_config->conn_failure_threshold_ = config.congestion_failure_threshold_;
@@ -1746,7 +1809,7 @@ int ObClusterResource::init_local_config(const ObResourcePoolConfig &config)
         control_config->retry_interval_sec_ = usec_to_sec(config.congestion_retry_interval_us_);
         control_config->inc_ref();
         if (OB_FAIL(congestion_manager_.update_congestion_config(control_config, true))) {
-          LOG_WARN("failed to update congestion config", K(ret));
+          LOG_WDIAG("failed to update congestion config", K(ret));
         }
         control_config->dec_ref();
         control_config = NULL;
@@ -1765,25 +1828,25 @@ int ObClusterResource::init_server_state_processor(const ObResourcePoolConfig &c
   bool is_metadb = (0 == cluster_info_key_.cluster_name_.get_string().case_compare(OB_META_DB_CLUSTER_NAME));
   if (OB_FAIL(cs_processor.get_rs_list_hash(cluster_info_key_.cluster_name_.config_string_,
                                             cluster_info_key_.cluster_id_, last_rs_list_hash))) {
-    LOG_WARN("fail to get_last_rs_list_hash", K_(cluster_info_key), K(ret));
+    LOG_WDIAG("fail to get_last_rs_list_hash", K_(cluster_info_key), K(ret));
   } else if (OB_ISNULL(ss_refresh_cont_ = op_alloc(ObServerStateRefreshCont))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc ObServerStateRefreshCont", K(ret));
+    LOG_WDIAG("fail to alloc ObServerStateRefreshCont", K(ret));
   } else if (!is_metadb && OB_FAIL(ss_refresh_cont_->init(this, config.server_state_refresh_interval_, last_rs_list_hash))) {
-    LOG_WARN("fail to init server state processor", K_(cluster_info_key), K(ret));
+    LOG_WDIAG("fail to init server state processor", K_(cluster_info_key), K(ret));
   } else if (is_metadb && OB_FAIL(ss_refresh_cont_->init(this, config.metadb_server_state_refresh_interval_, last_rs_list_hash))) {
-    LOG_WARN("fail to init metadb server state processor", K_(cluster_info_key), K(ret));
+    LOG_WDIAG("fail to init metadb server state processor", K_(cluster_info_key), K(ret));
   } else if (!is_metadb && OB_ISNULL(detect_server_state_cont_ = op_alloc(ObDetectServerStateCont))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc ObDetectServerStateCont", K(ret));
+    LOG_WDIAG("fail to alloc ObDetectServerStateCont", K(ret));
   } else if (!is_metadb && OB_FAIL(detect_server_state_cont_->init(this, config.server_detect_refresh_interval_))) {
-    LOG_WARN("fail to init detect server state cont", K_(config.server_detect_refresh_interval), K(ret));
+    LOG_WDIAG("fail to init detect server state cont", K_(config.server_detect_refresh_interval), K(ret));
   } else {
     bool imm = true;
     if (OB_FAIL(ss_refresh_cont_->schedule_refresh_server_state(imm))) {
-      LOG_WARN("fail to start schedule refresh server state", K(ret));
+      LOG_WDIAG("fail to start schedule refresh server state", K(ret));
     } else if (!is_metadb && OB_FAIL(detect_server_state_cont_->schedule_detect_server_state())) {
-      LOG_WARN("fail to start schedule detect server state", K(ret));
+      LOG_WDIAG("fail to start schedule detect server state", K(ret));
     }
   }
 
@@ -1855,7 +1918,7 @@ int ObClusterResource::rebuild_mysql_client_pool(ObClusterResource *cr)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(cr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cr), K(ret));
+    LOG_WDIAG("invalid input value", K(cr), K(ret));
   } else {
     const ObString user_name(ObProxyTableInfo::READ_ONLY_USERNAME);
     const ObString database(ObProxyTableInfo::READ_ONLY_DATABASE);
@@ -1864,7 +1927,7 @@ int ObClusterResource::rebuild_mysql_client_pool(ObClusterResource *cr)
     const bool is_meta_mysql_client = (get_global_resource_pool_processor().get_default_cluster_resource() == cr);
     if (OB_FAIL(mysql_proxy_.rebuild_client_pool(cr, is_meta_mysql_client, get_cluster_name(), get_cluster_id(), user_name,
                 password, database, password1))) {
-      LOG_WARN("fail to create mysql client pool", K(ret));
+      LOG_WDIAG("fail to create mysql client pool", K(ret));
     }
   }
   return ret;
@@ -1876,7 +1939,7 @@ int ObClusterResource::set_cluster_info(const ObString &cluster_name, const int6
   if (OB_UNLIKELY(cluster_name.empty())
       || OB_UNLIKELY(cluster_name.length() > OB_MAX_USER_NAME_LENGTH_STORE)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(ret));
   } else {
     cluster_info_key_.set_cluster_name(cluster_name);
     cluster_info_key_.set_cluster_id(cluster_id);
@@ -1890,9 +1953,9 @@ void ObClusterResource::destroy()
     LOG_INFO("ObClusterResource will destroy, and wait to be free", KPC(this));
     int ret = OB_SUCCESS;
     if (OB_FAIL(stop_refresh_server_state())) {
-      LOG_WARN("fail to stop refresh server state", K(ret));
+      LOG_WDIAG("fail to stop refresh server state", K(ret));
     } else if (OB_FAIL(stop_detect_server_state())) {
-      LOG_WARN("fail to stop detect server state", K(ret));
+      LOG_WDIAG("fail to stop detect server state", K(ret));
     }
     destroy_location_tenant_info();
 
@@ -1930,7 +1993,7 @@ int ObClusterResource::stop_refresh_server_state()
   if (NULL != ss_refresh_cont_) {
     if (OB_ISNULL(g_event_processor.schedule_imm(ss_refresh_cont_, ET_CALL, DESTROY_SERVER_STATE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(ss_refresh_cont), K(ret));
+      LOG_WDIAG("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(ss_refresh_cont), K(ret));
     }
     ss_refresh_cont_ = NULL;
   }
@@ -1943,7 +2006,7 @@ int ObClusterResource::stop_detect_server_state()
   if (NULL != detect_server_state_cont_) {
     if (OB_ISNULL(g_event_processor.schedule_imm(detect_server_state_cont_, ET_CALL, DESTROY_SERVER_STATE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(detect_server_state_cont), K(ret));
+      LOG_WDIAG("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(detect_server_state_cont), K(ret));
     }
     LOG_DEBUG("stop detect server state", KPC(this));
     detect_server_state_cont_ = NULL;
@@ -1961,7 +2024,7 @@ int ObClusterResource::update_sys_ldg_info(ObSysLdgInfo *sys_ldg_info)
     tmp_info = NULL;
   }
   if (OB_SUCC(ret) && OB_FAIL(sys_ldg_info_map_.unique_set(sys_ldg_info))) {
-    LOG_WARN("sys ldg info map add info failed", K(ret));
+    LOG_WDIAG("sys ldg info map add info failed", K(ret));
   }
   return ret;
 }
@@ -2017,12 +2080,12 @@ int ObClusterResource::update_location_tenant_info(ObSEArray<ObString, 4> &tenan
       if (tenant_name.length() >= OB_MAX_TENANT_NAME_LENGTH
           || primary_zone.length() >= MAX_ZONE_LIST_LENGTH) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("tenant name or primary zone string oversize", K(ret), K(tenant_name), K(primary_zone));
+        LOG_WDIAG("tenant name or primary zone string oversize", K(ret), K(tenant_name), K(primary_zone));
       } else {
         ObLocationTenantInfo *info = NULL;
         if (OB_ISNULL(info = op_alloc(ObLocationTenantInfo))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("update location tenant info alloc memory failed", K(ret));
+          LOG_WDIAG("update location tenant info alloc memory failed", K(ret));
         } else {
           info->inc_ref();
           MEMCPY(info->tenant_name_str_, tenant_name.ptr(), tenant_name.length());
@@ -2031,9 +2094,9 @@ int ObClusterResource::update_location_tenant_info(ObSEArray<ObString, 4> &tenan
 
           // cut origin primary zone string to priority array & weight array
           if (OB_FAIL(info->resolve_location_tenant_info_primary_zone(primary_zone))) {
-            LOG_ERROR("fail to resolve location tenant info primary zone", K(ret), K(primary_zone), K(tenant_name));
+            LOG_EDIAG("fail to resolve location tenant info primary zone", K(ret), K(primary_zone), K(tenant_name));
           } else if (OB_FAIL(location_tenant_info_map_.unique_set(info))) {
-            LOG_ERROR("fail to add location tenant info, already exist, never happen",
+            LOG_EDIAG("fail to add location tenant info, already exist, never happen",
                       K(tenant_name), K_(cluster_info_key));
           } else {
             LOG_DEBUG("succ to add tenant location info to map", KPC(info));
@@ -2070,13 +2133,13 @@ bool ObClusterResource::check_tenant_valid(const common::ObString &tenant_name,
   ObSysLdgInfo *tmp_ldg_info = NULL;
   DRWLock::RDLockGuard lock(sys_ldg_info_lock_);
   if (OB_FAIL(sys_ldg_info_map_.get_refactored(key, tmp_ldg_info))) {
-    LOG_WARN("get sys ldg info failed", K(ret), K(key));
+    LOG_WDIAG("get sys ldg info failed", K(ret), K(key));
   } else if (OB_ISNULL(tmp_ldg_info)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("tmp ldg info is null", K(ret), K(key));
+    LOG_WDIAG("tmp ldg info is null", K(ret), K(key));
   } else {
     if (tmp_ldg_info->ldg_role_ != "LDG PRIMARY") {
-      LOG_WARN("ldg role is not primary", KPC(tmp_ldg_info));
+      LOG_WDIAG("ldg role is not primary", KPC(tmp_ldg_info));
     } else {
       bret = true;
     }
@@ -2095,7 +2158,7 @@ uint64_t ObClusterResource::get_location_tenant_version(const ObString &tenant_n
       if (OB_LIKELY(ret == OB_HASH_NOT_EXIST)) {
         LOG_DEBUG("get tenant version failed", K(tenant_name));
       } else {
-        LOG_WARN("get tenant version failed, please check", K(ret), K(tenant_name));
+        LOG_WDIAG("get tenant version failed, please check", K(ret), K(tenant_name));
       }
     } else if (NULL != info) {
       version = info->version_;
@@ -2120,7 +2183,7 @@ int ObClusterResource::get_location_tenant_info(const ObString &tenant_name, ObL
       LOG_DEBUG("find location tenant info from map", K(info));
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error, get null ptr from map", K(tenant_name));
+      LOG_WDIAG("unexpected error, get null ptr from map", K(tenant_name));
     }
   }
 
@@ -2149,10 +2212,10 @@ int ObLocationTenantInfo::resolve_location_tenant_info_primary_zone(ObString &pr
     // resolve to zone priority array
     // resolve to zone weight priority array
     if (OB_FAIL(split_weight_group(primary_zone_, primary_zone_prio_array_, primary_zone_prio_weight_array_))) {
-      LOG_WARN("fail to resolve primary zone", K(ret), K(primary_zone_));
+      LOG_WDIAG("fail to resolve primary zone", K(ret), K(primary_zone_));
     } else if (primary_zone_prio_array_.count() != primary_zone_prio_weight_array_.count()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected array count check", K(tenant_name_), K(version_), K(primary_zone_prio_array_.count()),
+      LOG_WDIAG("unexpected array count check", K(tenant_name_), K(version_), K(primary_zone_prio_array_.count()),
                                                K(primary_zone_prio_weight_array_.count()));
     } else {
       LOG_DEBUG("succ to resolve primary zone", KPC(this));
@@ -2168,10 +2231,10 @@ ObResourceDeleteActor *ObResourceDeleteActor::alloc(ObClusterResource *cr)
   ObResourceDeleteActor *actor = NULL;
   if (OB_ISNULL(cr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cr), K(ret));
+    LOG_WDIAG("invalid input value", K(cr), K(ret));
   } else if (OB_ISNULL(actor = op_alloc(ObResourceDeleteActor))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc ObResourceDeleteActor", K(ret));
+    LOG_EDIAG("fail to alloc ObResourceDeleteActor", K(ret));
   } else {
     cr->inc_ref();
     actor->cr_ = cr;
@@ -2240,25 +2303,25 @@ int ObResourcePoolProcessor::init(ObProxyConfig &config, proxy::ObMysqlProxy &me
   int64_t default_cr_version = acquire_cluster_resource_version();
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_ISNULL(default_sysvar_set_ = new (std::nothrow) ObDefaultSysVarSet())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for default sysvar set", K(ret));
+    LOG_EDIAG("fail to alloc mem for default sysvar set", K(ret));
   } else if (OB_FAIL(default_sysvar_set_->init())) {
-    LOG_WARN("fail to init default sysvar set", K(ret));
+    LOG_WDIAG("fail to init default sysvar set", K(ret));
   } else if (OB_FAIL(default_sysvar_set_->load_default_system_variable())) {
-    LOG_WARN("fail to load default system variable", K(ret));
+    LOG_WDIAG("fail to load default system variable", K(ret));
   } else if (OB_ISNULL(default_cr_ = op_alloc(ObClusterResource))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc mem for default cluster resource", K(ret));
+    LOG_EDIAG("fail to alloc mem for default cluster resource", K(ret));
   } else if (OB_FAIL(default_cr_->init(ObString::make_string(OB_PROXY_DEFAULT_CLUSTER_NAME), OB_DEFAULT_CLUSTER_ID, default_cr_version))) {
-    LOG_WARN("fail to init default cluster resource", K(ret));
+    LOG_WDIAG("fail to init default cluster resource", K(ret));
   } else if (FALSE_IT(config_.update(config))) {
     // impossible
   } else if (OB_FAIL(default_cr_->init_local_config(config_))) {
-    LOG_WARN("fail to build local default cluster resource", K(ret));
+    LOG_WDIAG("fail to build local default cluster resource", K(ret));
   } else if (OB_FAIL(ip_set_.create(8))) {
-    LOG_WARN("ip_set create failed", K(ret));
+    LOG_WDIAG("ip_set create failed", K(ret));
   } else {
     default_cr_->inc_ref();
     default_sysvar_set_->inc_ref();
@@ -2324,7 +2387,7 @@ ObClusterResource *ObResourcePoolProcessor::acquire_cluster_resource(const ObStr
       LOG_INFO("can not find cluster resource, maybe it has not been created yet", K(cluster_info_key), K(ret));
     } else if (OB_ISNULL(cr)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("cluster resource get from cr_map is null", K(cr), K(ret));
+      LOG_WDIAG("cluster resource get from cr_map is null", K(cr), K(ret));
     } else {
       cr->inc_ref();
     }
@@ -2381,7 +2444,7 @@ int ObResourcePoolProcessor::get_cluster_resource(
   action = NULL;
   if (OB_ISNULL(process_resource_pool) || OB_UNLIKELY(cluster_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(ret));
   } else if (OB_MYSQL_ROUTING_MODE == ObProxyConfig::get_routing_mode(get_global_proxy_config().server_routing_mode)) {
     default_cr_->inc_ref();
     cr = default_cr_;
@@ -2389,15 +2452,25 @@ int ObResourcePoolProcessor::get_cluster_resource(
     cr = acquire_avail_cluster_resource(cluster_name, cluster_id);
   }
 
+  #ifdef ERRSIM
+  if (OB_SUCC(ret) && OB_FAIL(OB_E(EventTable::EN_FORCE_SETUP_CLUSTER_RESOURCE_FORCE) OB_SUCCESS)) {
+    ret = OB_SUCCESS;
+    if (cr != NULL) {
+      cr->dec_ref();
+      cr = NULL;
+    }
+  }
+  #endif
+
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(cr)) {
       LOG_INFO("fail to acuqire avail cluster resource in local, will schedule task to"
                " create and init new cluster resource" , K(cluster_name), K(cluster_id));
       if (OB_FAIL(init_cluster_resource_cont(cont, cluster_name, cluster_id, diagnosis_trace, action))) {
-        LOG_WARN("fail to schedule cluster resource", K(&cont), K(cluster_name), K(cluster_id), K(ret));
+        LOG_WDIAG("fail to schedule cluster resource", K(&cont), K(cluster_name), K(cluster_id), K(ret));
       } else if (NULL == action) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("action must not be NULL", K(action), K(ret));
+        LOG_WDIAG("action must not be NULL", K(action), K(ret));
       }
     } else { // found in local
       LOG_DEBUG("succ to get avail cluster resource in local", KPC(cr));
@@ -2418,19 +2491,19 @@ int ObResourcePoolProcessor::init_cluster_resource_cont(
   ObClusterResourceCreateCont *cr_cont = NULL;
   if (OB_UNLIKELY(cluster_name.empty()) || OB_ISNULL(cont.mutex_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(&cont), K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input value", K(&cont), K(cluster_name), K(ret));
   } else if (OB_UNLIKELY(&self_ethread() != cont.mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("current thread is not equal with thread which holds sm mutex", K(ret));
+    LOG_WDIAG("current thread is not equal with thread which holds sm mutex", K(ret));
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
-    LOG_WARN("proxy need exit now", K(ret));
+    LOG_WDIAG("proxy need exit now", K(ret));
   } else if (OB_ISNULL(cr_cont = op_alloc_args(
           ObClusterResourceCreateCont, *this, &cont, diagnosis_trace, &self_ethread()))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc ObClusterResourceCreateCont", K(ret));
+    LOG_EDIAG("fail to alloc ObClusterResourceCreateCont", K(ret));
   } else if (OB_FAIL(cr_cont->create_cluster_resource(cluster_name, cluster_id, action))) {
-    LOG_WARN("fail to create cluster resource", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to create cluster resource", K(cluster_name), K(cluster_id), K(ret));
   }
 
   if (OB_FAIL(ret) && (NULL != cr_cont)) {
@@ -2451,10 +2524,10 @@ int ObResourcePoolProcessor::create_cluster_resource(
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(cluster_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(ret));
   } else {
     ObClusterResource *cr = NULL;
     ObClusterResource *new_cr = NULL;
@@ -2467,14 +2540,14 @@ int ObResourcePoolProcessor::create_cluster_resource(
         LOG_INFO("will create new cluster resource", K(cluster_name), K(cluster_id), K(cr_version));
         if (OB_ISNULL(new_cr = op_alloc(ObClusterResource))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc mem for cluster resource", K(new_cr), K(ret));
+          LOG_WDIAG("fail to alloc mem for cluster resource", K(new_cr), K(ret));
         } else {
           new_cr->inc_ref();
           if (OB_FAIL(new_cr->init(cluster_name, cluster_id, cr_version))) {
-            LOG_WARN("fail to init cluster resource", K(cluster_name), K(cluster_id), K(cr_version), K(ret));
+            LOG_WDIAG("fail to init cluster resource", K(cluster_name), K(cluster_id), K(cr_version), K(ret));
           } else {
             if (OB_FAIL(cr_map_.unique_set(new_cr))) {
-              LOG_ERROR("fail to add cluster resource, already exist, never happen",
+              LOG_EDIAG("fail to add cluster resource, already exist, never happen",
                         K(cluster_name), K(cluster_id), K(ret));
             } else {
               // begin to init, and it will dec_ref in handle_chain_inform_cont();
@@ -2504,13 +2577,13 @@ int ObResourcePoolProcessor::create_cluster_resource(
         // if build failed :
         // 1. set init failed state
         // 2. remove the cr from cr_map
-        LOG_WARN("fail to begin build cluster resource", K(cluster_name), K(cluster_id), K(ret));
+        LOG_WDIAG("fail to begin build cluster resource", K(cluster_name), K(cluster_id), K(ret));
         CWLockGuard guard(cr_map_rwlock_); // write lock need
         cr->set_init_failed_state();
         // do not dec ref, leave it to handle_chain_inform_cont
         ObClusterResource *tmp_cr = cr_map_.remove(cluster_info_key);
         if (cr != tmp_cr) {
-          LOG_ERROR("removed cluster resource must be equal with created cluster resource",
+          LOG_EDIAG("removed cluster resource must be equal with created cluster resource",
                     KPC(cr), KPC(tmp_cr), K(ret));
         }
       }
@@ -2525,7 +2598,7 @@ int ObResourcePoolProcessor::update_config_param()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("resource pool processor is not inited", K_(is_inited), K(ret));
+    LOG_WDIAG("resource pool processor is not inited", K_(is_inited), K(ret));
   } else if (!config_.update(get_global_proxy_config())) {
     LOG_INFO("no need to update config param", K_(config), K(ret));
   } else {
@@ -2536,7 +2609,7 @@ int ObResourcePoolProcessor::update_config_param()
     ObCongestionControlConfig *control_config = NULL;
     if (OB_ISNULL(control_config = op_alloc(ObCongestionControlConfig))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("failed to allocate memory for congestion control config");
+      LOG_EDIAG("failed to allocate memory for congestion control config");
     } else {
       control_config->fail_window_sec_ = usec_to_sec(config_.congestion_fail_window_us_);
       control_config->conn_failure_threshold_ = config_.congestion_failure_threshold_;
@@ -2551,21 +2624,21 @@ int ObResourcePoolProcessor::update_config_param()
         if (cr_iter->is_avail()) {
           bool is_metadb = (0 == cr_iter->cluster_info_key_.cluster_name_.get_string().case_compare(OB_META_DB_CLUSTER_NAME));
           if (OB_FAIL(cr_iter->congestion_manager_.update_congestion_config(control_config))) {
-            LOG_WARN("fail to update congestion config", K(cr_iter->cluster_info_key_), K(ret));
+            LOG_WDIAG("fail to update congestion config", K(cr_iter->cluster_info_key_), K(ret));
           } else if ((NULL != cr_iter->ss_refresh_cont_)
             && !is_metadb
             && OB_FAIL(cr_iter->ss_refresh_cont_->set_server_state_refresh_interval(server_state_refresh_interval))) {
-            LOG_WARN("fail to update server state refresh task interval", K(cr_iter->cluster_info_key_), K(ret));
+            LOG_WDIAG("fail to update server state refresh task interval", K(cr_iter->cluster_info_key_), K(ret));
           } else if ((NULL != cr_iter->ss_refresh_cont_)
             && is_metadb
             && OB_FAIL(cr_iter->ss_refresh_cont_->set_server_state_refresh_interval(metadb_server_state_refresh_interval))) {
-            LOG_WARN("fail to update metadb state refresh task interval", K(cr_iter->cluster_info_key_), K(ret));
+            LOG_WDIAG("fail to update metadb state refresh task interval", K(cr_iter->cluster_info_key_), K(ret));
           } else if (OB_FAIL(cr_iter->mysql_proxy_.set_timeout_ms(mysql_client_timeout_ms))) {
-            LOG_WARN("fail to update mysql proxy timeout", K(mysql_client_timeout_ms), K(ret));
+            LOG_WDIAG("fail to update mysql proxy timeout", K(mysql_client_timeout_ms), K(ret));
           } else if ((NULL != cr_iter->ss_refresh_cont_)
             && !is_metadb
             && OB_FAIL(cr_iter->detect_server_state_cont_->set_detect_server_state_interval(detect_server_state_refresh_interval))) {
-            LOG_WARN("fail to set detect server state interval", K(ret));
+            LOG_WDIAG("fail to set detect server state interval", K(ret));
           }
         }
       } // end for
@@ -2586,7 +2659,7 @@ int ObResourcePoolProcessor::acquire_all_avail_cluster_resource(ObIArray<ObClust
     for (ObCRHashMap::iterator cr_iter = cr_map_.begin(); (cr_iter != last) && (OB_SUCC(ret)); ++cr_iter) {
       if (cr_iter->is_avail()) {
         if (OB_FAIL(cr_array.push_back(cr_iter.value_))) {
-          LOG_WARN("fail to push back", K(ret));
+          LOG_WDIAG("fail to push back", K(ret));
         } else {
           cr_iter->inc_ref();
         }
@@ -2613,7 +2686,7 @@ int ObResourcePoolProcessor::acquire_all_cluster_resource(common::ObIArray<ObClu
     ObCRHashMap::iterator last = cr_map_.end();
     for (ObCRHashMap::iterator cr_iter = cr_map_.begin(); (cr_iter != last) && (OB_SUCC(ret)); ++cr_iter) {
       if (OB_FAIL(cr_array.push_back(cr_iter.value_))) {
-        LOG_WARN("fail to push back", K(ret));
+        LOG_WDIAG("fail to push back", K(ret));
       } else {
         cr_iter->inc_ref();
       }
@@ -2641,7 +2714,7 @@ int ObResourcePoolProcessor::get_recently_accessed_cluster_info(char *info_buf,
 
   if (OB_ISNULL(info_buf) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(info_buf), K(buf_len), K(ret));
+    LOG_WDIAG("invalid input value", K(info_buf), K(buf_len), K(ret));
   } else {
     int64_t name_length = 0;
     int64_t pos = 0;
@@ -2655,7 +2728,7 @@ int ObResourcePoolProcessor::get_recently_accessed_cluster_info(char *info_buf,
         name_length = cr_iter->get_cluster_name().length();
         if ((pos + MARK_LENGTH + name_length) >= buf_len) {
           ret = OB_SIZE_OVERFLOW;
-          LOG_WARN("info buf is not enough to hold these cluster name", K(COMMA_STR), "cluster_name", cr_iter->get_cluster_name(),
+          LOG_WDIAG("info buf is not enough to hold these cluster name", K(COMMA_STR), "cluster_name", cr_iter->get_cluster_name(),
                    K(pos), K(name_length), K(MARK_LENGTH), K(buf_len), K(ret));
         } else {
           if (0 != count) {// if not the first name, we need append ','
@@ -2682,7 +2755,7 @@ int ObResourcePoolProcessor::set_first_cluster_name(const ObString &cluster_name
   if (OB_UNLIKELY(cluster_name.empty())
       || OB_UNLIKELY(cluster_name.length() > OB_MAX_USER_NAME_LENGTH_STORE)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(cluster_name), K(ret));
+    LOG_WDIAG("invalid argument", K(cluster_name), K(ret));
   } else {
     int64_t len = cluster_name.length();
     MEMCPY(first_cluster_name_, cluster_name.ptr(), len);
@@ -2709,10 +2782,10 @@ int ObResourcePoolProcessor::delete_cluster_resource(const ObString &cluster_nam
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(cluster_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("clsuter name can not be empty", K(cluster_name), K(ret));
+    LOG_WDIAG("clsuter name can not be empty", K(cluster_name), K(ret));
   } else if (cluster_name == ObString::make_string(OB_PROXY_DEFAULT_CLUSTER_NAME)) {
     ret = OB_OP_NOT_ALLOW;
-    LOG_WARN("default cluster resource can not be deleted", K(cluster_name), K(ret));
+    LOG_WDIAG("default cluster resource can not be deleted", K(cluster_name), K(ret));
   } else {
     ObClusterInfoKey cluster_info_key(cluster_name, cluster_id);
     ObClusterResource *cr = NULL;
@@ -2721,13 +2794,13 @@ int ObResourcePoolProcessor::delete_cluster_resource(const ObString &cluster_nam
       cr = cr_map_.remove(cluster_info_key);
       if (NULL == cr) {
         ret = OB_ENTRY_NOT_EXIST;
-        LOG_WARN("the cluster resource does not exist, can not delete", K(cluster_info_key), K(ret));
+        LOG_WDIAG("the cluster resource does not exist, can not delete", K(cluster_info_key), K(ret));
       } else if (OB_UNLIKELY(!cr->is_avail())) {
         ret = OB_OP_NOT_ALLOW;
-        LOG_WARN("only avail cluster resource can be deleted, will set it back to map", KPC(cr), K(cr), K(ret));
+        LOG_WDIAG("only avail cluster resource can be deleted, will set it back to map", KPC(cr), K(cr), K(ret));
         int tmp_ret = OB_SUCCESS;
         if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = cr_map_.unique_set(cr)))) {
-          LOG_ERROR("fail to set cr back into map, memory will leak", KPC(cr), K(cr), K(tmp_ret));
+          LOG_EDIAG("fail to set cr back into map, memory will leak", KPC(cr), K(cr), K(tmp_ret));
           cr = NULL;
           ret = tmp_ret;
         } else {
@@ -2743,9 +2816,9 @@ int ObResourcePoolProcessor::delete_cluster_resource(const ObString &cluster_nam
       RESOURCE_POOL_DECREMENT_DYN_STAT(CURRENT_CLUSTER_RESOURCE_COUNT);
       RESOURCE_POOL_INCREMENT_DYN_STAT(DELETE_CLUSTER_RESOURCE_COUNT);
       if (OB_FAIL(cr->stop_refresh_server_state())) {
-        LOG_WARN("fail to stop refresh server state", K(ret));
+        LOG_WDIAG("fail to stop refresh server state", K(ret));
       } else if (OB_FAIL(cr->stop_detect_server_state())) {
-        LOG_WARN("fail to stop detect server state", K(ret));
+        LOG_WDIAG("fail to stop detect server state", K(ret));
       } else {
         // push to every work thread
         int64_t thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
@@ -2756,14 +2829,14 @@ int ObResourcePoolProcessor::delete_cluster_resource(const ObString &cluster_nam
         for (int64_t i = 0; (i < thread_count) && OB_SUCC(ret); ++i) {
           if (OB_ISNULL(ethread = threads[i]) || OB_ISNULL(cleaner = threads[i]->cache_cleaner_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("ethread and cache cleaner can not be NULL", K(ethread), K(cleaner), K(ret));
+            LOG_WDIAG("ethread and cache cleaner can not be NULL", K(ethread), K(cleaner), K(ret));
           } else if (OB_ISNULL(actor = ObResourceDeleteActor::alloc(cr))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_ERROR("fail to alloc ObResourceDeleteActor", K(ret));
+            LOG_EDIAG("fail to alloc ObResourceDeleteActor", K(ret));
           } else if (OB_FAIL(cleaner->push_deleting_cr(actor))) {
-            LOG_WARN("fail to push delete cr delete actor", K(actor), K(ret));
+            LOG_WDIAG("fail to push delete cr delete actor", K(actor), K(ret));
           } else if (OB_FAIL(cleaner->trigger())) { // trigger cleaner to wrok
-            LOG_WARN("fail to trigger", K(ret));
+            LOG_WDIAG("fail to trigger", K(ret));
           }
         }
       }
@@ -2791,7 +2864,7 @@ int ObResourcePoolProcessor::expire_cluster_resource()
       LOG_INFO("cluster resource has been idle for long time, will be deleted",
                "expire_time(us)", expired_time_us, KPC(cr), K(cr));
       if (OB_FAIL(delete_cluster_resource(cr->cluster_info_key_.cluster_name_.config_string_, cr->cluster_info_key_.cluster_id_))) {
-        LOG_WARN("fail to delete cluster resource", K(cr), KPC(cr), K(ret));
+        LOG_WDIAG("fail to delete cluster resource", K(cr), KPC(cr), K(ret));
       } else {
         --max_expired_count;
       }
@@ -2812,7 +2885,7 @@ int ObResourcePoolProcessor::expire_cluster_resource()
     if (NULL != cr) {
       LOG_INFO("expire_cluster_resource, this cluster resourec will be deleted", KPC(cr), K(cr));
       if (OB_FAIL(delete_cluster_resource(cr->cluster_info_key_.cluster_name_.config_string_, cr->cluster_info_key_.cluster_id_))) {
-        LOG_WARN("fail to delete cluster resource", K(cr), KPC(cr), K(ret));
+        LOG_WDIAG("fail to delete cluster resource", K(cr), KPC(cr), K(ret));
         ret = OB_SUCCESS; // continue;
       }
       cr->dec_ref();
@@ -2848,7 +2921,7 @@ int ObResourcePoolProcessor::rebuild_metadb(const bool ignore_cluster_not_exist/
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(delete_cluster_resource(ObString::make_string(OB_META_DB_CLUSTER_NAME)))) {
-    LOG_WARN("fail to delete metadb", K(ret));
+    LOG_WDIAG("fail to delete metadb", K(ret));
   }
 
   const bool enable_build_metadb = (NULL == meta_client_proxy_ || meta_client_proxy_->is_inited());
@@ -2857,7 +2930,7 @@ int ObResourcePoolProcessor::rebuild_metadb(const bool ignore_cluster_not_exist/
       meta_client_proxy_->destroy_client_pool();
     }
     if (OB_FAIL(ObMetadbCreateCont::create_metadb(meta_client_proxy_))) {
-      LOG_WARN("fail to create metadb", K(ret));
+      LOG_WDIAG("fail to create metadb", K(ret));
     }
   }
   return ret;
@@ -2868,10 +2941,10 @@ int ObResourcePoolProcessor::add_cluster_delete_task(const ObString &cluster_nam
   int ret = OB_SUCCESS;
   ObClusterDeleteCont *cont = NULL;
   if (OB_FAIL(ObClusterDeleteCont::alloc(cluster_name, cluster_id, cont))) {
-    LOG_WARN("fail to alloc ObClusterDeleteCont", K(cluster_name), K(cluster_id), K(ret));
+    LOG_WDIAG("fail to alloc ObClusterDeleteCont", K(cluster_name), K(cluster_id), K(ret));
   } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to schedule metadb rebuild task", K(ret));
+    LOG_WDIAG("fail to schedule metadb rebuild task", K(ret));
   }
   if (OB_FAIL(ret) && OB_LIKELY(NULL != cont)) {
     cont->destroy();

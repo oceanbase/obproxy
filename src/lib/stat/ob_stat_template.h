@@ -110,7 +110,7 @@ int ObStatArray<T, N>::add(const ObStatArray &other)
   max_item_idx_ = std::max(max_item_idx_, other.max_item_idx_);
   for (i = min_item_idx_; i <= max_item_idx_ && OB_SUCCESS == ret; ++i) {
     if (OB_FAIL(items_[i].add(other.items_[i]))) {
-      COMMON_LOG(WARN, "Fail to add other, ", K(ret));
+      COMMON_LOG(WDIAG, "Fail to add other, ", K(ret));
     }
   }
   return ret;
@@ -137,7 +137,7 @@ int ObStatArray<T, N>::get_iter(Iterator &iter)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(iter.init(items_, min_item_idx_, max_item_idx_))) {
-    COMMON_LOG(WARN, "init stat array iter failed, ", K(ret));
+    COMMON_LOG(WDIAG, "init stat array iter failed, ", K(ret));
   }
   return ret;
 }
@@ -168,7 +168,7 @@ int ObStatArrayIter<T, N>::init(T *item, const int64_t curr_idx, int64_t max_ite
   int ret = OB_SUCCESS;
   if (NULL == item || curr_idx < 0 || max_item_idx < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(item), K(curr_idx), K(max_item_idx), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(item), K(curr_idx), K(max_item_idx), K(ret));
   } else {
     items_ = item;
     curr_idx_ = curr_idx;
@@ -183,7 +183,7 @@ int ObStatArrayIter<T, N>::get_next(const T *&item)
   int ret = OB_SUCCESS;
   if (NULL == items_) {
     ret = OB_NOT_INIT;
-    COMMON_LOG(WARN, "The iter has no been inited, ", K(ret));
+    COMMON_LOG(WDIAG, "The iter has no been inited, ", K(ret));
   } else {
     while (curr_idx_ <= max_item_idx_ && !items_[curr_idx_].is_valid()) {
       ++curr_idx_;
@@ -260,7 +260,7 @@ int ObStatHistory<T, N>::get_iter(Iterator &iter)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(iter.init(items_, (curr_pos_ - 1 + N) % N, item_cnt_))) {
-    COMMON_LOG(WARN, "init stat history iter failed, ", K(ret));
+    COMMON_LOG(WDIAG, "init stat history iter failed, ", K(ret));
   }
   return ret;
 }
@@ -271,7 +271,7 @@ int ObStatHistory<T, N>::get_last(T *&item)
   int ret = OB_SUCCESS;
   if (0 == item_cnt_) {
     ret = OB_ITEM_NOT_SETTED;
-    COMMON_LOG(WARN, "The item has no been setted, ", K(ret));
+    COMMON_LOG(WDIAG, "The item has no been setted, ", K(ret));
   } else {
     item = &items_[(curr_pos_ - 1 + N) % N];
   }
@@ -305,7 +305,7 @@ int ObStatHistoryIter<T, N>::init(T *items, const int64_t start_pos, int64_t ite
   int ret = OB_SUCCESS;
   if (NULL == items || start_pos < 0 || item_cnt < 0) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "Invalid argument, ", KP(items), K(start_pos), K(item_cnt), K(ret));
+    COMMON_LOG(WDIAG, "Invalid argument, ", KP(items), K(start_pos), K(item_cnt), K(ret));
   } else {
     items_ = items;
     start_pos_ = start_pos;

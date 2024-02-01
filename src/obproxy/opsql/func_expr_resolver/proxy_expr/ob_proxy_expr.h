@@ -27,13 +27,37 @@ namespace obproxy
 namespace opsql
 {
 
+static const int MAX_REPLACE_COUNT = 256;
+
+#define LOCATE_PARAM_RESULT(param_array, param_result, index)             \
+  do {                                                                    \
+    for (int64_t j = 0; OB_SUCC(ret) && j < param_array.count(); j++) {   \
+      ObObj tmp_obj;                                                      \
+      common::ObSEArray<common::ObObj, 4> param_item;                     \
+      if (OB_FAIL(param_array.at(j, param_item))) {                       \
+        LOG_WDIAG("fail to get param array", K(ret));                     \
+      } else if (param_item.count() == 1) {                               \
+        if (OB_FAIL(param_item.at(0, tmp_obj))) {                         \
+          LOG_WDIAG("fail to get param", K(ret));                         \
+        }                                                                 \
+      } else {                                                            \
+        if (OB_FAIL(param_item.at(index, tmp_obj))) {                     \
+          LOG_WDIAG("fail to get param", K(ret));                         \
+        }                                                                 \
+      }                                                                   \
+      if (OB_SUCC(ret) && OB_FAIL(param_result.push_back(tmp_obj))) {     \
+        LOG_WDIAG("push back obj failed", K(ret), K(i), K(j));            \
+      }                                                                   \
+    }                                                                     \
+  } while (0)
+
 class ObProxyExprCtx
 {
 public:
   explicit ObProxyExprCtx(const int64_t physical_size, dbconfig::ObTestLoadType type,
                           bool is_elastic_index, common::ObIAllocator *allocator)
       : sharding_physical_size_(physical_size), test_load_type_(type), is_elastic_index_(is_elastic_index),
-        allocator_(allocator), scale_(-1), is_oracle_mode(false) {}
+        allocator_(allocator), scale_(-1), client_session_info_(NULL), is_oracle_mode(false) {}
   explicit ObProxyExprCtx(const int64_t physical_size,
                           dbconfig::ObTestLoadType type, bool is_elastic_index,
                           common::ObIAllocator *allocator,
@@ -86,7 +110,7 @@ struct ObProxyExprCalcItem {
 class ObProxyExpr
 {
 public:
-  explicit ObProxyExpr() : type_(OB_PROXY_EXPR_TYPE_NONE), index_(-1), accuracy_(-1), has_agg_(0),
+  explicit ObProxyExpr() : type_(OB_PROXY_EXPR_TYPE_NONE), index_(-1), accuracy_(), has_agg_(0),
                            is_func_expr_(0), reserved_(0), alias_name_() {}
 
   ~ObProxyExpr() {}
@@ -279,8 +303,12 @@ public:
   void set_param_array(common::ObSEArray<ObProxyExpr*, 4>& param_array) { param_array_ = param_array; }
 
 public:
-  static int get_int_obj(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator);
-  static int get_varchar_obj(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator);
+  static int get_int_obj_with_default_charset(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator);
+  static int get_int_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &ctx);
+  static int get_varchar_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &ctx);
+  // convert datetime to oracle timestamp
+  static int get_time_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &ctx, const ObObjType &type);
+  static ObCollationType get_collation(const ObProxyExprCtx &ctx);
   int check_varchar_empty(const common::ObObj& result);
 
 protected:
@@ -480,6 +508,178 @@ public:
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
            common::ObIArray<common::ObObj> &result_obj_array);
 };
+
+class ObProxyExprIsnull : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprIsnull() {}
+  ~ObProxyExprIsnull() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprCeil : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprCeil() {}
+  ~ObProxyExprCeil() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprFloor : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprFloor() {}
+  ~ObProxyExprFloor() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprRound : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprRound() {}
+  ~ObProxyExprRound() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprTruncate : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprTruncate() {}
+  ~ObProxyExprTruncate() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprAbs : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprAbs() {}
+  ~ObProxyExprAbs() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprSystimestamp : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprSystimestamp() {}
+  ~ObProxyExprSystimestamp() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprCurrentdate : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprCurrentdate() {}
+  ~ObProxyExprCurrentdate() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprCurrenttime : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprCurrenttime() {}
+  ~ObProxyExprCurrenttime() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprCurrenttimestamp : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprCurrenttimestamp() {}
+  ~ObProxyExprCurrenttimestamp() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprLtrim : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprLtrim() {}
+  ~ObProxyExprLtrim() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprRtrim : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprRtrim() {}
+  ~ObProxyExprRtrim() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprTrim : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprTrim() {}
+  ~ObProxyExprTrim() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprReplace : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprReplace() {}
+  ~ObProxyExprReplace() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprLength : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprLength() {}
+  ~ObProxyExprLength() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprLower : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprLower() {}
+  ~ObProxyExprLower() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprUpper : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprUpper() {}
+  ~ObProxyExprUpper() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprToNumber : public ObProxyFuncExpr
+{
+  public:
+    explicit ObProxyExprToNumber() {}
+    ~ObProxyExprToNumber() {}
+    int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
+class ObProxyExprNULL : public ObProxyFuncExpr
+{
+  public:
+    explicit ObProxyExprNULL() {}
+    ~ObProxyExprNULL() {}
+    int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
 
 } // end opsql
 } // end obproxy

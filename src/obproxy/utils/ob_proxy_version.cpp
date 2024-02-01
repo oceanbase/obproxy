@@ -44,15 +44,15 @@ int ObAppVersionInfo::setup(const char *pkg_name, const char *app_name, const ch
 
   if (OB_ISNULL(pkg_name) || OB_ISNULL(app_name) || OB_ISNULL(app_version)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_ERROR("invalid argument", K(pkg_name), K(app_name), K(app_version), K(ret));
+    LOG_EDIAG("invalid argument", K(pkg_name), K(app_name), K(app_version), K(ret));
   } else {
     // now construct the version information
     if (OB_FAIL(databuff_printf(pkg_str_, sizeof(pkg_str_), pkg_pos, "%s", pkg_name))) {
-      LOG_WARN("failed format pakage string", K(ret));
+      LOG_WDIAG("failed format pakage string", K(ret));
     } else if (OB_FAIL(databuff_printf(app_str_, sizeof(app_str_), app_pos, "%s", app_name))) {
-      LOG_WARN("failed format app string", K(ret));
+      LOG_WDIAG("failed format app string", K(ret));
     } else if (OB_FAIL(databuff_printf(version_str_, sizeof(version_str_), version_pos, "%s", app_version))) {
-      LOG_WARN("failed format version string", K(ret));
+      LOG_WDIAG("failed format version string", K(ret));
     }
 
     // the manager doesn't like empty strings, so prevent them
@@ -79,7 +79,7 @@ int ObAppVersionInfo::setup(const char *pkg_name, const char *app_name, const ch
 
       if (OB_FAIL(databuff_printf(full_version_info_str_, sizeof(full_version_info_str_),
                                   full_version_pos, "%s-%s-%s", app_str_, pkg_str_, version_str_))) {
-        LOG_WARN("failed format full version info string", K(ret));
+        LOG_WDIAG("failed format full version info string", K(ret));
       } else {
         defined_ = true;
       }

@@ -29,6 +29,7 @@ public:
 
   // parse sql
   int do_obproxy_parser(const common::ObString &query_str, ObFuncExprParseResult &result);
+  int do_obproxy_resolve(const common::ObString &query_str, ObFuncExprParseResult &result);
 
   void print_stat();
 
@@ -42,7 +43,7 @@ public:
   // parse time during this run
   int64_t parse_time_;
   int64_t resolve_time_;
-
+  bool is_oracle_mode_;
   const char *result_file_name_;
   FILE *result_file_;
   common::ObArenaAllocator allocator_;

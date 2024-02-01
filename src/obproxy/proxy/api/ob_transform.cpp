@@ -168,13 +168,13 @@ int ObTransformTerminus::handle_event(int event, void *edata)
             int ret = OB_SUCCESS;
             ret = read_vio_.get_writer()->write(write_vio_.get_reader(), towrite, written_len);
             if (OB_FAIL(ret) || towrite != written_len) {
-              PROXY_TRANSFORM_LOG(WARN, "fail to write iobuffer from reader",
+              PROXY_TRANSFORM_LOG(WDIAG, "fail to write iobuffer from reader",
                                   K(towrite), K(written_len), K(ret));
             }
             read_vio_.ndone_ += towrite;
 
             if (OB_FAIL(write_vio_.get_reader()->consume(towrite))) {
-              PROXY_TRANSFORM_LOG(WARN, "fail to consume ", K(towrite), K(ret));
+              PROXY_TRANSFORM_LOG(WDIAG, "fail to consume ", K(towrite), K(ret));
             }
 
             write_vio_.ndone_ += towrite;
@@ -530,7 +530,7 @@ int ObTransformControl::handle_event(int event, void *edata)
       break;
 
     default:
-      PROXY_TRANSFORM_LOG(ERROR, "not reached");
+      PROXY_TRANSFORM_LOG(EDIAG, "not reached");
       break;
   }
 
@@ -624,12 +624,12 @@ int ObNullTransform::handle_event(int event, void *edata)
                             "writing %ld bytes to output", towrite);
             ret = output_buf_->write(write_vio_.get_reader(), towrite, written_len);
             if (OB_FAIL(ret) || towrite != written_len) {
-              PROXY_TRANSFORM_LOG(WARN, "fail to write iobuffer from reader",
+              PROXY_TRANSFORM_LOG(WDIAG, "fail to write iobuffer from reader",
                                   K(towrite), K(written_len), K(ret));
             }
 
             if (OB_FAIL(write_vio_.get_reader()->consume(towrite))) {
-              PROXY_TRANSFORM_LOG(WARN, "fail to consume ", K(towrite), K(ret));
+              PROXY_TRANSFORM_LOG(WDIAG, "fail to consume ", K(towrite), K(ret));
             }
             write_vio_.ndone_ += towrite;
           }

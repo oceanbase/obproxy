@@ -62,11 +62,11 @@ int ObProxyDMLStmt::init()
   int ret = OB_SUCCESS;
   if (is_inited_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("init twice", K(ret));
+    LOG_WDIAG("init twice", K(ret));
   } else if (OB_FAIL(table_exprs_map_.create(BUCKET_SIZE, ObModIds::OB_HASH_BUCKET_PROXY_MAP))) {
-    LOG_WARN("fail to init table expr map", K(ret));
+    LOG_WDIAG("fail to init table expr map", K(ret));
   } else if (OB_FAIL(alias_table_map_.create(BUCKET_SIZE, ObModIds::OB_HASH_BUCKET_PROXY_MAP))) {
-    LOG_WARN("fail to init alias table set", K(ret));
+    LOG_WDIAG("fail to init alias table set", K(ret));
   } else {
     is_inited_ = true;
   }
@@ -117,10 +117,10 @@ int ObProxyDMLStmt::get_expr_by_type(ObProxyExpr* &expr, ObProxyExprType type)
 #define ALLOC_PROXY_EXPR_BY_TYPE(ExprClass) \
     if (OB_ISNULL(buf = (char*)(allocator_.alloc(sizeof(ExprClass))))) { \
       ret = OB_ALLOCATE_MEMORY_FAILED; \
-      LOG_WARN("fail to alloc mem", K(ret)); \
+      LOG_WDIAG("fail to alloc mem", K(ret)); \
     } else if (OB_ISNULL(expr = new (buf)ExprClass())) { \
       ret = OB_ALLOCATE_MEMORY_FAILED; \
-      LOG_WARN("fail to new expr", K(ret)); \
+      LOG_WDIAG("fail to new expr", K(ret)); \
     } else { \
       expr->set_expr_type(type);\
     }
@@ -196,20 +196,20 @@ int ObProxyDMLStmt::handle_from_list(ParseNode* node)
         case T_ORG:
         case T_ALIAS:
           if (OB_FAIL(handle_table_node_to_expr(tmp_node))) {
-            LOG_WARN("fail to handle table node to expr", K(sql_string_), K(ret));
+            LOG_WDIAG("fail to handle table node to expr", K(sql_string_), K(ret));
           }
           break;
         case T_OP_EQ:
         case T_OP_IN:
           if (OB_FAIL(handle_column_and_value(tmp_node))) {
-            LOG_WARN("fail to handle where node", K(sql_string_), K(ret));
+            LOG_WDIAG("fail to handle where node", K(sql_string_), K(ret));
           }
           break;
         case T_COLUMN_REF: {
           ObProxyExprTable* expr_table = NULL;
           ObProxyExpr* expr = NULL;
           if (OB_FAIL(column_ref_to_expr(tmp_node, expr, expr_table))) {
-            LOG_WARN("fail to column ref to expr", K(ret));
+            LOG_WDIAG("fail to column ref to expr", K(ret));
           }
           if (OB_NOT_NULL(expr)) {
             expr->~ObProxyExpr();
@@ -218,7 +218,7 @@ int ObProxyDMLStmt::handle_from_list(ParseNode* node)
         }
         default:
           if (OB_FAIL(handle_from_list(tmp_node))) {
-            LOG_WARN("fail to handle from list", K(sql_string_), K(ret));
+            LOG_WDIAG("fail to handle from list", K(sql_string_), K(ret));
           }
           break;
       }
@@ -241,7 +241,7 @@ int ObProxyDMLStmt::handle_table_node_to_expr(ParseNode* node)
       switch(tmp_node->type_) {
         case T_RELATION_FACTOR:
           if (OB_FAIL(get_table_and_db_expr(tmp_node, expr_table))) {
-            LOG_WARN("fail to get table expr", K(ret));
+            LOG_WDIAG("fail to get table expr", K(ret));
           }
           break;
         case T_IDENT:
@@ -249,20 +249,20 @@ int ObProxyDMLStmt::handle_table_node_to_expr(ParseNode* node)
             // skip alias
           } else if (OB_ISNULL(expr_table)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to get expr table", K(ret));
+            LOG_WDIAG("fail to get expr table", K(ret));
           } else if (OB_UNLIKELY(NULL == tmp_node->str_value_ || 0 >= tmp_node->str_len_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("alias token meet some wrong", "str len", tmp_node->str_len_, K(ret));
+            LOG_WDIAG("alias token meet some wrong", "str len", tmp_node->str_len_, K(ret));
           } else {
             ObString alias_table(static_cast<int32_t>(tmp_node->str_len_), tmp_node->str_value_);
             if (OB_FAIL(alias_table_map_.set_refactored(alias_table, expr_table))) {
-              LOG_WARN("fail to add alias table set", K(alias_table), K(ret));
+              LOG_WDIAG("fail to add alias table set", K(alias_table), K(ret));
             }
           }
           break;
         case T_SELECT:
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
-            LOG_WARN("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
+            LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           } else {
             is_sub_query = true;
           }
@@ -286,22 +286,22 @@ int ObProxyDMLStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &ex
   ObProxyExpr* expr = NULL;
   if (OB_ISNULL(node)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("unexpected null", K(ret));
+    LOG_WDIAG("unexpected null", K(ret));
   } else if (OB_T_RELATION_FACTOR_NUM_CHILD /* 2 */ != node->num_child_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("T_RELATION_FACTOR children node is not 2", K(node->num_child_), K(ret));
+    LOG_WDIAG("T_RELATION_FACTOR children node is not 2", K(node->num_child_), K(ret));
   } else if (FALSE_IT(db_node = node->children_[0])) {
   } else if (NULL != db_node
              && OB_UNLIKELY(T_IDENT != db_node->type_ || NULL == db_node->str_value_ || 0 >= db_node->str_len_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("T_RELATION_FACTOR unexpected table entry", "node type", db_node->type_,
+    LOG_WDIAG("T_RELATION_FACTOR unexpected table entry", "node type", db_node->type_,
              "str len", db_node->str_len_, K(ret));
   } else if (OB_ISNULL(table_node = node->children_[1])) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null", K(ret));
+    LOG_WDIAG("unexpected null", K(ret));
   } else if (OB_UNLIKELY(T_IDENT != table_node->type_ || NULL == table_node->str_value_ || 0 >= table_node->str_len_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("T_RELATION_FACTOR unexpected table entry", "node type", table_node->type_,
+    LOG_WDIAG("T_RELATION_FACTOR unexpected table entry", "node type", table_node->type_,
              "str len", table_node->str_len_, K(ret));
   } else {
     ObString table_name(static_cast<int32_t>(table_node->str_len_), table_node->str_value_);
@@ -311,10 +311,10 @@ int ObProxyDMLStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &ex
         if(table_name_.empty())
           table_name_ = table_name; // set 'table_name_' be the first table name in SQL, and convert to UPPER CASE
         if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_TABLE))) {
-          LOG_WARN("get_expr_by_type failed", K(ret));
+          LOG_WDIAG("get_expr_by_type failed", K(ret));
         } else if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("dynamic_cast failed", K(ret));
+          LOG_WDIAG("dynamic_cast failed", K(ret));
         } else {
           if (NULL != db_node) {
             ObString database_name(static_cast<int32_t>(db_node->str_len_), db_node->str_value_);
@@ -324,16 +324,16 @@ int ObProxyDMLStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &ex
           expr_table->set_table_name(table_node->str_value_, static_cast<int32_t>(table_node->str_len_));
 
           if (OB_FAIL(table_exprs_map_.set_refactored(table_name, expr_table))) { /* same table keep last one. */
-            LOG_WARN("fail to add table expr", K(table_name), K(ret));
+            LOG_WDIAG("fail to add table expr", K(table_name), K(ret));
           }
         }
       } else {
-        LOG_WARN("fail to get table expr", K(table_name), K(ret));
+        LOG_WDIAG("fail to get table expr", K(table_name), K(ret));
       }
     } else {
       if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("dynamic_cast failed", K(ret));
+        LOG_WDIAG("dynamic_cast failed", K(ret));
       } else if (NULL != db_node && expr_table->get_database_name().empty()) {
         ObString database_name(static_cast<int32_t>(db_node->str_len_), db_node->str_value_);
         string_to_upper_case(database_name.ptr(), database_name.length()); // change all to upper to store
@@ -351,7 +351,7 @@ int ObProxyDMLStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &ex
     expr_table_pos.set_table_pos(table_node->token_off_);
     expr_table_pos.set_table_expr(expr_table);
     if (OB_FAIL(table_pos_array_.push_back(expr_table_pos))) {
-      LOG_WARN("fail to push expr table pos", K(ret));
+      LOG_WDIAG("fail to push expr table pos", K(ret));
     }
   }
 
@@ -368,25 +368,25 @@ int ObProxyDMLStmt::handle_table_and_db_node(ParseNode* node, ObProxyExprTable* 
     // do nothing
   } else if (OB_UNLIKELY(T_IDENT != table_node->type_ || NULL == table_node->str_value_ || 0 >= table_node->str_len_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected table node", "node type", table_node->type_, "str len", table_node->str_len_, K(ret));
+    LOG_WDIAG("unexpected table node", "node type", table_node->type_, "str len", table_node->str_len_, K(ret));
   } else if (NULL != db_node
              && OB_UNLIKELY(T_IDENT != db_node->type_ || NULL == db_node->str_value_ || 0 >= db_node->str_len_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected db node", "node type", db_node->type_, "str len", db_node->str_len_, K(ret));
+    LOG_WDIAG("unexpected db node", "node type", db_node->type_, "str len", db_node->str_len_, K(ret));
   } else {
     ObProxyExpr* expr = NULL;
     ObString table_name = ObString::make_string(table_node->str_value_);
     if (OB_SUCCESS == alias_table_map_.get_refactored(table_name, expr)) {
       if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("dynamic_cast failed", K(ret));
+        LOG_WDIAG("dynamic_cast failed", K(ret));
       }
     } else {
       string_to_upper_case(table_name.ptr(), table_name.length()); // change all to upper to store
       if (OB_SUCCESS == table_exprs_map_.get_refactored(table_name, expr)) {
         if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("dynamic_cast failed", K(ret));
+          LOG_WDIAG("dynamic_cast failed", K(ret));
         } else {
           // Only the real table name needs to be rewritten, not the alias
           ObProxyExprTablePos expr_table_pos;
@@ -396,7 +396,7 @@ int ObProxyDMLStmt::handle_table_and_db_node(ParseNode* node, ObProxyExprTable* 
           expr_table_pos.set_table_pos(table_node->token_off_);
           expr_table_pos.set_table_expr(expr_table);
           if (OB_FAIL(table_pos_array_.push_back(expr_table_pos))) {
-            LOG_WARN("fail to push expr table pos", K(ret));
+            LOG_WDIAG("fail to push expr table pos", K(ret));
           }
         }
       }
@@ -418,7 +418,7 @@ int ObProxyDMLStmt::handle_table_references(ParseNode *node)
         case T_ORG:
         case T_ALIAS:
           if (OB_FAIL(handle_table_node_to_expr(tmp_node))) {
-            LOG_WARN("fail to handle table node to expr", K(sql_string_), K(ret));
+            LOG_WDIAG("fail to handle table node to expr", K(sql_string_), K(ret));
           }
           break;
         //sql: delete tbl_name1,tbl_name2 ...
@@ -440,7 +440,7 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
   ParseNode* tmp_node = NULL;
   if (OB_ISNULL(field_results_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null");
+    LOG_WDIAG("unexpected null");
   } else {
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       tmp_node = node->children_[i];
@@ -451,14 +451,14 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
           case T_OP_EQ:
           case T_OP_IN:
             if (OB_FAIL(handle_column_and_value(tmp_node))) {
-              LOG_WARN("fail to handle where node", K(sql_string_), K(ret));
+              LOG_WDIAG("fail to handle where node", K(sql_string_), K(ret));
             }
             break;
           case T_COLUMN_REF: {
             ObProxyExprTable* expr_table = NULL;
             ObProxyExpr* expr = NULL;
             if (OB_FAIL(column_ref_to_expr(tmp_node, expr, expr_table))) {
-              LOG_WARN("fail to column ref to expr", K(ret));
+              LOG_WDIAG("fail to column ref to expr", K(ret));
             }
             if (OB_NOT_NULL(expr)) {
               expr->~ObProxyExpr();
@@ -468,13 +468,13 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
           case T_CASE:
             t_case_level_++;
             if (OB_FAIL(handle_where_clause(tmp_node))) {
-              LOG_WARN("handle_where_nodes failed", K(sql_string_), K(ret));
+              LOG_WDIAG("handle_where_nodes failed", K(sql_string_), K(ret));
             }
             t_case_level_--;
             break;
           default:
             if (OB_FAIL(handle_where_clause(tmp_node))) {
-              LOG_WARN("handle_where_nodes failed", K(sql_string_), K(ret));
+              LOG_WDIAG("handle_where_nodes failed", K(sql_string_), K(ret));
             }
             break;
         }
@@ -505,7 +505,7 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
     is_skip_field = true;
   }
   if (OB_ISNULL(field_results_)) {
-    LOG_WARN("unexpected null");
+    LOG_WDIAG("unexpected null");
     ret = OB_ERR_UNEXPECTED;
   } else {
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
@@ -518,10 +518,10 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
             ObProxyExprColumn* expr_column = NULL;
             ObProxyExprTable* expr_table = NULL;
             if (OB_FAIL(column_ref_to_expr(tmp_node, expr, expr_table))) {
-              LOG_WARN("fal to get column expr", K(ret));
+              LOG_WDIAG("fal to get column expr", K(ret));
             } else if (OB_ISNULL(expr_column = dynamic_cast<ObProxyExprColumn*>(expr))) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("dynamic_cast failed", K(ret));
+              LOG_WDIAG("dynamic_cast failed", K(ret));
             } else if (have_column) {
                 // where t1.c1 = t2.c2
                 is_skip_field = true;
@@ -555,7 +555,7 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
             break;
           case T_EXPR_LIST:
             if (OB_FAIL(handle_expr_list_node_in_column_value(tmp_node, sql_field))) {
-              LOG_WARN("handle_expr_list_node_in_column_value failed", K(ret), K(i), K(sql_string_));
+              LOG_WDIAG("handle_expr_list_node_in_column_value failed", K(ret), K(i), K(sql_string_));
             }
             break;
           default:
@@ -578,25 +578,25 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
         for (int i = 0; OB_SUCC(ret) && i < sql_field.column_values_.count(); i++) {
           SqlColumnValue tmp_column_value = sql_field.column_values_[i];
           if (OB_FAIL(field_results_->fields_.at(duplicate_column_idx)->column_values_.push_back(tmp_column_value))) {
-            LOG_WARN("push_back failed", K(ret), K(sql_string_));
+            LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
           }
         }
       } else {
         SqlField *tmp_field = NULL;
         if (OB_FAIL(SqlField::alloc_sql_field(tmp_field))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to allocate memory for sqlfield", K(ret));
+          LOG_WDIAG("fail to allocate memory for sqlfield", K(ret));
         } else {
           *tmp_field = sql_field;
           if (OB_FAIL(field_results_->fields_.push_back(tmp_field))) {
             tmp_field->reset();
             tmp_field = NULL;
-            LOG_WARN("push_back failed", K(ret), K(sql_string_));
+            LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
           } else {
             ++field_results_->field_num_;
             LOG_DEBUG("add sql_field", KPC(tmp_field), K(field_results_->field_num_));
           }
-        } 
+        }
       }
     }
   }
@@ -611,7 +611,7 @@ int ObProxyDMLStmt::handle_varchar_node_in_column_value(ParseNode* node, SqlFiel
   int i = 0;
   if (OB_ISNULL(node)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null", K(ret));
+    LOG_WDIAG("unexpected null", K(ret));
   } else if (node->num_child_ == 0) {
     //there is implicit type conversion: const char* -> ObString
     sql_field.column_value_.set_value(node->str_value_);
@@ -630,7 +630,7 @@ int ObProxyDMLStmt::handle_varchar_node_in_column_value(ParseNode* node, SqlFiel
     }
     if (tmp_varchar_node == NULL) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("shoule not null here", K(ret), K(node->str_value_), K(sql_string_));
+      LOG_WDIAG("shoule not null here", K(ret), K(node->str_value_), K(sql_string_));
     } else {
       //there is implicit type conversion: const char* -> ObString
       sql_field.column_value_.set_value(tmp_varchar_node->str_value_);
@@ -638,7 +638,7 @@ int ObProxyDMLStmt::handle_varchar_node_in_column_value(ParseNode* node, SqlFiel
       column_value.value_type_ = TOKEN_STR_VAL;
       column_value.column_value_.set_value(tmp_varchar_node->str_value_);
       if (OB_FAIL(sql_field.column_values_.push_back(column_value))) {
-        LOG_WARN("fail to push column_value", K(ret));
+        LOG_WDIAG("fail to push column_value", K(ret));
       }
 
       bool need_save = false;
@@ -658,7 +658,7 @@ int ObProxyDMLStmt::handle_varchar_node_in_column_value(ParseNode* node, SqlFiel
         db_table_pos.set_name(tmp_varchar_node->str_value_);
         db_table_pos.set_type(type);
         if (OB_FAIL(db_table_pos_array_.push_back(db_table_pos))) {
-          LOG_WARN("fail to push expr table pos", K(ret));
+          LOG_WDIAG("fail to push expr table pos", K(ret));
         }
       }
     }
@@ -685,7 +685,7 @@ int ObProxyDMLStmt::handle_expr_list_node_in_column_value(ParseNode* node, SqlFi
           column_value.value_type_ = TOKEN_STR_VAL;
           column_value.column_value_.set_value(tmp_node->str_value_);
           if (OB_FAIL(sql_field.column_values_.push_back(column_value))) {
-            LOG_WARN("push_back failed", K(i), K(sql_string_), K(ret));
+            LOG_WDIAG("push_back failed", K(i), K(sql_string_), K(ret));
           }
           break;
       }
@@ -705,7 +705,7 @@ int ObProxyDMLStmt::handle_assign_list(ParseNode *node)
       switch (tmp_node->type_) {
         case T_ASSIGN_ITEM:
           if (OB_FAIL(handle_column_and_value(tmp_node))) {
-            LOG_WARN("handle op and failed", K(ret));
+            LOG_WDIAG("handle op and failed", K(ret));
           }
           break;
         default:
@@ -726,20 +726,20 @@ int ObProxyDMLStmt::handle_column_ref_in_list(ParseNode *node)
   ObProxyExprTable* expr_table = NULL;
   ObString column_name;
   if (OB_FAIL(column_ref_to_expr(node, expr, expr_table))) {
-    LOG_WARN("fal to get column expr", K(ret));
+    LOG_WDIAG("fal to get column expr", K(ret));
   } else if (OB_ISNULL(expr_column = dynamic_cast<ObProxyExprColumn*>(expr))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dynamic_cast failed", K(ret));
+    LOG_WDIAG("dynamic_cast failed", K(ret));
   } else if ((NULL != expr_table)
               && (0 != expr_table->get_table_name().case_compare(table_name_))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("table name is wrong in assign list", K(ret));
+    LOG_WDIAG("table name is wrong in assign list", K(ret));
   } else {
     column_name = expr_column->get_column_name();
   }
   if(OB_SUCC(ret)) {
     if (OB_FAIL(column_name_array_.push_back(column_name))) {
-      LOG_WARN("column name push back failed", K(ret));
+      LOG_WDIAG("column name push back failed", K(ret));
     }
   }
   return ret;
@@ -751,9 +751,9 @@ int ObProxyDMLStmt::column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObPr
 
   if (OB_T_COLUMN_REF_NUM_CHILD /* 3 */ != node->num_child_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("T_COLUMN_REF children node is not 3", "child num", node->num_child_, K(ret));
+    LOG_WDIAG("T_COLUMN_REF children node is not 3", "child num", node->num_child_, K(ret));
   } else if (OB_FAIL(handle_table_and_db_node(node, expr_table))) {
-    LOG_WARN("fail to handle table and db node", K(ret));
+    LOG_WDIAG("fail to handle table and db node", K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -761,7 +761,7 @@ int ObProxyDMLStmt::column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObPr
     ParseNode* column_node = node->children_[2];
     if (OB_ISNULL(column_node)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("T_COLUMN_REF unexpected column entry", K(ret));
+      LOG_WDIAG("T_COLUMN_REF unexpected column entry", K(ret));
     } else if (T_IDENT != column_node->type_ && T_STAR != column_node->type_) {
       // now column_ref child should be T_IDENT
       has_unsupport_expr_type_ = true;
@@ -769,10 +769,10 @@ int ObProxyDMLStmt::column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObPr
     } else if (T_IDENT == column_node->type_) {
       ObProxyExprColumn* expr_column = NULL;
       if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_COLUMN))) {
-        LOG_WARN("get_expr_by_type failed", K(ret), K(sql_string_));
+        LOG_WDIAG("get_expr_by_type failed", K(ret), K(sql_string_));
       } else if (OB_ISNULL(expr_column = dynamic_cast<ObProxyExprColumn*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("dynamic_cast failed", K(ret));
+        LOG_WDIAG("dynamic_cast failed", K(ret));
       } else {
         expr_column->set_column_name(column_node->str_value_, static_cast<int32_t>(column_node->str_len_));
         if (OB_NOT_NULL(table_node)) {
@@ -785,10 +785,10 @@ int ObProxyDMLStmt::column_ref_to_expr(ParseNode* node, ObProxyExpr* &expr, ObPr
     } else if (T_STAR == column_node->type_) {
       ObProxyExprStar* expr_star = NULL;
       if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_STAR))) {
-        LOG_WARN("get_expr_by_type failed", K(ret), K(sql_string_));
+        LOG_WDIAG("get_expr_by_type failed", K(ret), K(sql_string_));
       } else if (OB_ISNULL(expr_star = dynamic_cast<ObProxyExprStar*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("dynamic_cast failed", K(ret));
+        LOG_WDIAG("dynamic_cast failed", K(ret));
       } else {
         if (OB_NOT_NULL(table_node)) {
           expr_star->set_table_name(table_node->str_value_, static_cast<int32_t>(table_node->str_len_));
@@ -812,9 +812,32 @@ int ObProxyDMLStmt::limit_to_sql_string(common::ObSqlString& sql_string)
   int ret = OB_SUCCESS;
   if (limit_size_ > 0) {
     if (OB_FAIL(sql_string.append_fmt(" LIMIT %d, %d", limit_offset_, limit_size_))) {
-      LOG_WARN("fail to append", K(ret));
+      LOG_WDIAG("fail to append", K(ret));
     }
   }
+  return ret;
+}
+
+int ObProxyDMLStmt::handle_explain_node(const ParseResult &parse_result, ParseNode*& node)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_ISNULL(parse_result.result_tree_) || OB_ISNULL(parse_result.result_tree_->children_[0])) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("parse result info is null unexpected", K(ret));
+  } else {
+    node = parse_result.result_tree_->children_[0];
+    if (OB_UNLIKELY(node->type_ == T_EXPLAIN)) {
+      if ((node->num_child_ >= 2) && OB_NOT_NULL(node->children_[1])) {
+        node = node->children_[1];
+        LOG_DEBUG("succ to parse explain stmt", K(node->type_), K(ret));
+      } else {
+        ret = OB_ERR_PARSER_SYNTAX;
+        LOG_WDIAG("fail to parse explain stmt", K(node->type_), K(ret));
+      }
+    }
+  }
+
   return ret;
 }
 
@@ -878,7 +901,7 @@ int ObProxyDMLStmt::do_handle_parse_result(ParseNode* node)
           break;
         case T_SELECT:
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
-            LOG_WARN("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
+            LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           }
           break;
         case T_QEURY_EXPRESSION_LIST: //distinct not support now
@@ -899,7 +922,7 @@ int ObProxyDMLStmt::handle_comment_list(const ParseResult &parse_result)
     TokenPosInfo& token_info = parse_result.comment_list_[i];
     ObString comment(token_info.token_len_, sql_string_.ptr() + token_info.token_off_);
     if (OB_FAIL(comments_.push_back(comment))) {
-      LOG_WARN("push_back failed", K(ret), K(comment), K(sql_string_));
+      LOG_WDIAG("push_back failed", K(ret), K(comment), K(sql_string_));
     } else {
       LOG_DEBUG("push_back succ", K(comment));
     }
@@ -912,7 +935,7 @@ int ObProxyDMLStmt::comments_to_sql_string(common::ObSqlString& sql_string)
   int ret = OB_SUCCESS;
   for (int i = 0; OB_SUCC(ret) && i < comments_.count(); i++) {
     if (OB_FAIL(sql_string.append(comments_.at(i)))) {
-      LOG_WARN("fail to append", K(ret), K(i), K(comments_.at(i)), K(sql_string_));
+      LOG_WDIAG("fail to append", K(ret), K(i), K(comments_.at(i)), K(sql_string_));
     }
   }
   return ret;
@@ -929,15 +952,15 @@ int ObProxyDMLStmt::select_exprs_to_sql_string(common::ObSqlString& sql_string)
   int ret = OB_SUCCESS;
   if (select_exprs_.count() < 1) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid select_exprs_ count", K(select_exprs_.count()), K(sql_string_));
+    LOG_WDIAG("invalid select_exprs_ count", K(select_exprs_.count()), K(sql_string_));
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && i < select_exprs_.count(); i++) {
       if (OB_FAIL(select_exprs_.at(i)->to_sql_string(sql_string))) {
-        LOG_WARN("to sql_string failed", K(i), K(ret), K(sql_string_));
+        LOG_WDIAG("to sql_string failed", K(i), K(ret), K(sql_string_));
       } else if (i >= select_exprs_.count() - 1) {
         // no need add , do nothing
       } else if (OB_FAIL(sql_string.append(", "))) {
-        LOG_WARN("fail to append", K(i), K(ret), K(sql_string_));
+        LOG_WDIAG("fail to append", K(i), K(ret), K(sql_string_));
       }
     }
   }
@@ -957,20 +980,20 @@ int ObProxyDMLStmt::group_by_exprs_to_sql_string(common::ObSqlString& sql_string
   if (group_by_exprs_.count() <= 0) {
     // do nothing
   } else if (OB_FAIL(sql_string.append(" GROUP BY "))) {
-    LOG_WARN("fail to append", K(ret), K(sql_string_));
+    LOG_WDIAG("fail to append", K(ret), K(sql_string_));
   } else {
     for (int i = 0; OB_SUCC(ret) && i < group_by_exprs_.count(); i++) {
       if (OB_FAIL(group_by_exprs_.at(i)->to_sql_string(sql_string))) {
-        LOG_WARN("to sql_string failed", K(i), K(ret), K(sql_string_));
+        LOG_WDIAG("to sql_string failed", K(i), K(ret), K(sql_string_));
       } else if (i >= group_by_exprs_.count() - 1) {
         // no need add , do nothing
       } else if (OB_FAIL(sql_string.append(", "))) {
-        LOG_WARN("append failed", K(i), K(ret), K(sql_string_));
+        LOG_WDIAG("append failed", K(i), K(ret), K(sql_string_));
       }
     }
     if (OB_SUCC(ret) && has_rollup_) {
       if (OB_FAIL(sql_string.append(" WITH ROLLUP"))) {
-        LOG_WARN("append failed", K(ret), K(sql_string_));
+        LOG_WDIAG("append failed", K(ret), K(sql_string_));
       }
     }
   }
@@ -983,15 +1006,15 @@ int ObProxyDMLStmt::order_by_exprs_to_sql_string(common::ObSqlString& sql_string
   if (order_by_exprs_.count() <= 0) {
     // do nothing
   } else if (OB_FAIL(sql_string.append(" ORDER BY "))) {
-    LOG_WARN("fail to append", K(ret), K(sql_string_));
+    LOG_WDIAG("fail to append", K(ret), K(sql_string_));
   } else {
     for (int i = 0; OB_SUCC(ret) && i < order_by_exprs_.count(); i++) {
       if (OB_FAIL(order_by_exprs_.at(i)->to_sql_string(sql_string))) {
-        LOG_WARN("to sql_string failed", K(i), K(ret), K(sql_string_));
+        LOG_WDIAG("to sql_string failed", K(i), K(ret), K(sql_string_));
       } else if (i >= order_by_exprs_.count() - 1) {
         // no need add , do nothing
       } else if (OB_FAIL(sql_string.append(", "))) {
-        LOG_WARN("append failed", K(i), K(ret), K(sql_string_));
+        LOG_WDIAG("append failed", K(i), K(ret), K(sql_string_));
       }
     }
   }
@@ -1003,23 +1026,23 @@ int ObProxyDMLStmt::to_sql_string(common::ObSqlString& sql_string)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(comments_to_sql_string(sql_string))) {
-    LOG_WARN("comments_to_sql_string failed", K(ret), K(sql_string_));
+    LOG_WDIAG("comments_to_sql_string failed", K(ret), K(sql_string_));
   } else if (OB_FAIL(sql_string.append("SELECT "))) {
-    LOG_WARN("fail to append", K(ret), K(sql_string_));
+    LOG_WDIAG("fail to append", K(ret), K(sql_string_));
   } else if (OB_FAIL(hint_exprs_to_sql_string(sql_string))) {
-    LOG_WARN("hint_exprs_to_sql_string failed", K(ret), K(sql_string_));
+    LOG_WDIAG("hint_exprs_to_sql_string failed", K(ret), K(sql_string_));
   } else if (OB_FAIL(select_exprs_to_sql_string(sql_string))) {
-    LOG_WARN("select_exprs_to_sql_string failed", K(ret), K(sql_string_));
+    LOG_WDIAG("select_exprs_to_sql_string failed", K(ret), K(sql_string_));
   } else if (OB_FAIL(table_exprs_to_sql_string(sql_string))) {
-    LOG_WARN("table_exprs_to_sql_string failed", K(ret), K(sql_string_));
+    LOG_WDIAG("table_exprs_to_sql_string failed", K(ret), K(sql_string_));
   } else if (OB_FAIL(condition_exprs_to_sql_string(sql_string))) {
-    LOG_WARN("condition_exprs_to_sql_string faield", K(ret), K(sql_string_));
+    LOG_WDIAG("condition_exprs_to_sql_string faield", K(ret), K(sql_string_));
   } else if (OB_FAIL(group_by_exprs_to_sql_string(sql_string))) {
-    LOG_WARN("group_by_exprs_to_sql_string failed", K(ret), K(sql_string_));
+    LOG_WDIAG("group_by_exprs_to_sql_string failed", K(ret), K(sql_string_));
   } else if (OB_FAIL(order_by_exprs_to_sql_string(sql_string))) {
-    LOG_WARN("order_by_exprs_to_sql_string failed", K(ret), K(sql_string_));
+    LOG_WDIAG("order_by_exprs_to_sql_string failed", K(ret), K(sql_string_));
   } else if (OB_FAIL(limit_to_sql_string(sql_string))) {
-    LOG_WARN("limit_to_sql_string", K(ret), K(sql_string_));
+    LOG_WDIAG("limit_to_sql_string", K(ret), K(sql_string_));
   } else {
     LOG_DEBUG("sql_string is", K(sql_string));
   }
@@ -1042,7 +1065,7 @@ int ObProxyDMLStmt::handle_union_clause(ParseNode* node)
           has_unsupport_expr_type = false;
           break;
         default:
-          LOG_WARN("unsupport type", "node_type", get_type_name(tmp_node->type_), K(ret));
+          LOG_WDIAG("unsupport type", "node_type", get_type_name(tmp_node->type_), K(ret));
           break;
       }
     }
@@ -1068,7 +1091,7 @@ int ObProxyDMLStmt::handle_hint_clause(ParseNode* node)
       switch(tmp_node->type_) {
         case T_RELATION_FACTOR:
           if (OB_FAIL(handle_table_and_db_in_hint(tmp_node))) {
-            LOG_WARN("fail to handle table and db in hint", K(ret));
+            LOG_WDIAG("fail to handle table and db in hint", K(ret));
           }
           break;
         default:
@@ -1095,14 +1118,14 @@ int ObProxyDMLStmt::handle_limit_clause(ParseNode* node)
       switch(tmp_node->type_) {
         case T_INT:
           if(OB_FAIL(get_int_value(tmp_node->str_value_, tmp_val))) {
-            LOG_WARN("get_int_value failed", K(ret), K(tmp_node->str_value_), K(sql_string_));
+            LOG_WDIAG("get_int_value failed", K(ret), K(tmp_node->str_value_), K(sql_string_));
           } else {
             limit_offset_ = static_cast<int>(tmp_val);
           }
           break;
         case T_LIMIT_INT:
           if(OB_FAIL(get_int_value(tmp_node->str_value_, tmp_val))) {
-            LOG_WARN("get_int_value failed", K(ret), K(tmp_node->str_value_), K(sql_string_));
+            LOG_WDIAG("get_int_value failed", K(ret), K(tmp_node->str_value_), K(sql_string_));
           } else {
             limit_size_ = static_cast<int>(tmp_val);
           }
@@ -1130,9 +1153,9 @@ int ObProxyDMLStmt::handle_project_list(ParseNode* node)
       switch(tmp_node->type_) {
         case T_PROJECT_STRING:
           if (OB_FAIL(project_string_to_expr(tmp_node, expr))) {
-            LOG_WARN("project_string_to_expr failed", K(sql_string_), K(ret));
+            LOG_WDIAG("project_string_to_expr failed", K(sql_string_), K(ret));
           } else if (OB_FAIL(select_exprs_.push_back(expr))) {
-            LOG_WARN("push to array failed", K(sql_string_), K(ret));
+            LOG_WDIAG("push to array failed", K(sql_string_), K(ret));
           }
           break;
         default:
@@ -1154,18 +1177,18 @@ int ObProxyDMLStmt::get_const_expr(ParseNode* node, ObProxyExpr* &expr)
   ObProxyExprConst* expr_const = NULL;
   if (OB_ISNULL(node)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("unexpected null", K(sql_string_), K(ret));
+    LOG_WDIAG("unexpected null", K(sql_string_), K(ret));
   } else if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_CONST))) {
-    LOG_WARN("get_expr_by_type failed", K(ret), K(sql_string_));
+    LOG_WDIAG("get_expr_by_type failed", K(ret), K(sql_string_));
   } else if (OB_ISNULL(expr_const = dynamic_cast<ObProxyExprConst*>(expr))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dynamic_cast failed", K(ret));
+    LOG_WDIAG("dynamic_cast failed", K(ret));
   } else {
     ObObj obj;
     if (node->type_ == T_INT) {
       int64_t value = 0;
       if (OB_FAIL(get_int_value(node->str_value_, value, 10))) {
-        LOG_WARN("fail to int value", K(ret), K(node->str_value_), K(sql_string_));
+        LOG_WDIAG("fail to int value", K(ret), K(node->str_value_), K(sql_string_));
       } else {
         obj.set_int(value);
         expr_const->set_object(obj);
@@ -1187,12 +1210,12 @@ int ObProxyDMLStmt::get_sharding_const_expr(ParseNode* node, ObProxyExpr* &expr)
   ObProxyExprShardingConst* expr_const = NULL;
   if (OB_ISNULL(node)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("unexpected null", K(sql_string_), K(ret));
+    LOG_WDIAG("unexpected null", K(sql_string_), K(ret));
   } else if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_SHARDING_CONST))) {
-    LOG_WARN("get_expr_by_type failed", K(ret), K(sql_string_));
+    LOG_WDIAG("get_expr_by_type failed", K(ret), K(sql_string_));
   } else if (OB_ISNULL(expr_const = dynamic_cast<ObProxyExprShardingConst*>(expr))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dynamic_cast failed", K(ret));
+    LOG_WDIAG("dynamic_cast failed", K(ret));
   } else {
     expr_const->set_expr_name(node->str_value_, static_cast<int32_t>(node->str_len_));
   }
@@ -1207,9 +1230,9 @@ int ObProxyDMLStmt::handle_table_and_db_in_hint(ParseNode* node)
 
   if (OB_T_RELATION_FACTOR_NUM_CHILD /* 2 */ != node->num_child_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("children node is not 2", "child num", node->num_child_, K(ret));
+    LOG_WDIAG("children node is not 2", "child num", node->num_child_, K(ret));
   } else if (OB_FAIL(handle_table_and_db_node(node, expr_table))) {
-    LOG_WARN("fail to handle table and db node", K(ret));
+    LOG_WDIAG("fail to handle table and db node", K(ret));
   }
 
   return ret;
@@ -1230,17 +1253,17 @@ int ObProxyDMLStmt::alias_node_to_expr(ParseNode* node, ObProxyExpr* &expr, Pars
         case T_IDENT:
           if (OB_ISNULL(expr)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to get expr table", K(ret));
+            LOG_WDIAG("fail to get expr table", K(ret));
           } else if (OB_UNLIKELY(NULL == tmp_node->str_value_ || 0 >= tmp_node->str_len_)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("alias token meet some wrong", "str len", tmp_node->str_len_, K(ret));
+            LOG_WDIAG("alias token meet some wrong", "str len", tmp_node->str_len_, K(ret));
           } else {
             expr->set_alias_name(tmp_node->str_value_, static_cast<int32_t>(tmp_node->str_len_));
           }
           break;
         default:
           if (OB_FAIL(string_node_to_expr(tmp_node, expr, string_node))) {
-            LOG_WARN("string_node_to_expr failed", K(i), K(ret));
+            LOG_WDIAG("string_node_to_expr failed", K(i), K(ret));
           }
       }
     }
@@ -1256,10 +1279,10 @@ int ObProxyDMLStmt::func_node_to_expr(ParseNode* node, ObProxyExpr* &expr)
   ObProxyFuncExpr* func_expr = NULL;
   ObProxyExprType expr_type = get_expr_type_by_node_type(node->type_);
   if (OB_FAIL(get_expr_by_type(expr, expr_type))) {
-    LOG_WARN("get_expr_by_type failed", K(ret));
+    LOG_WDIAG("get_expr_by_type failed", K(ret));
   } else if (OB_ISNULL(func_expr = dynamic_cast<ObProxyFuncExpr*>(expr))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("dynamic_cast failed", K(ret));
+    LOG_WDIAG("dynamic_cast failed", K(ret));
   } else {
     switch(node->type_) {
       case T_FUN_SUM:
@@ -1282,12 +1305,12 @@ int ObProxyDMLStmt::func_node_to_expr(ParseNode* node, ObProxyExpr* &expr)
     } else if (tmp_node->type_ == T_ALL) {
       // There are T_ALL nodes under the COUNT function, do not need to be processed, do nothing
     } else if (OB_FAIL(string_node_to_expr(tmp_node, tmp_expr))){
-      LOG_WARN("string_node_to_expr failed", K(ret));
+      LOG_WDIAG("string_node_to_expr failed", K(ret));
     } else if (NULL == tmp_expr) {
       // Argument in func is of unsupported type
-      LOG_WARN("tmp_expr is empty", "type", tmp_node->type_, K(ret));
+      LOG_WDIAG("tmp_expr is empty", "type", tmp_node->type_, K(ret));
     } else if (OB_FAIL(func_expr->add_param_expr(tmp_expr))) {
-      LOG_WARN("add_param_expr failed", K(ret), K(sql_string_));
+      LOG_WDIAG("add_param_expr failed", K(ret), K(sql_string_));
     } else {
       if (tmp_expr->has_agg_) {
         func_expr->has_agg_ = 1;
@@ -1307,7 +1330,7 @@ int ObProxyDMLStmt::check_node_has_agg(ParseNode* node)
   ParseNode* tmp_node = NULL;
   if (OB_ISNULL(node)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected null", K(sql_string_));
+    LOG_WDIAG("unexpected null", K(sql_string_));
   }
   for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
     tmp_node = node->children_[i];
@@ -1325,7 +1348,7 @@ int ObProxyDMLStmt::check_node_has_agg(ParseNode* node)
           break;
         default:
           if (OB_FAIL(check_node_has_agg(tmp_node))) {
-            LOG_WARN("check_node_has_agg failed", K(ret));
+            LOG_WDIAG("check_node_has_agg failed", K(ret));
           }
           break;
       }
@@ -1338,13 +1361,13 @@ int ObProxyDMLStmt::func_sys_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(check_node_has_agg(node))) {
-    LOG_WARN("check_node_has_agg failed", K(ret));
+    LOG_WDIAG("check_node_has_agg failed", K(ret));
   } else if (string_node == NULL) {
     if (OB_FAIL(get_sharding_const_expr(node, expr))) {
-      LOG_WARN("get_sharding_const_expr faield", K(ret));
+      LOG_WDIAG("get_sharding_const_expr faield", K(ret));
     }
   } else if (OB_FAIL(get_sharding_const_expr(string_node, expr))) {
-    LOG_WARN("get_sharding_const_expr faield", K(ret));
+    LOG_WDIAG("get_sharding_const_expr faield", K(ret));
   }
   return ret;
 }
@@ -1356,13 +1379,13 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
   switch(node->type_) {
     case T_STAR:
       if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_STAR))) {
-        LOG_WARN("get_expr_by_type failed", K(ret), K(sql_string_));
+        LOG_WDIAG("get_expr_by_type failed", K(ret), K(sql_string_));
       }
       break;
     case T_COLUMN_REF: {
       ObProxyExprTable* expr_table = NULL;
       if (OB_FAIL(column_ref_to_expr(node, expr, expr_table))) {
-        LOG_WARN("fail to column ref to expr", K(ret));
+        LOG_WDIAG("fail to column ref to expr", K(ret));
       }
       break;
     }
@@ -1370,25 +1393,25 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
       break;
     case T_ALIAS:
       if (OB_FAIL(alias_node_to_expr(node, expr, string_node))) {
-        LOG_WARN("fail to alias node to expr", K(ret));
+        LOG_WDIAG("fail to alias node to expr", K(ret));
       }
       break;
     case T_FUN_SYS: // not support fun sys, as string_node
       if (OB_FAIL(func_sys_node_to_expr(node, expr, string_node))) {
-        LOG_WARN("fail to func sys node to expr", K(ret));
+        LOG_WDIAG("fail to func sys node to expr", K(ret));
       }
       break;
     case T_IDENT:
     case T_INT:
       if (OB_FAIL(get_const_expr(node, expr))) {
-        LOG_WARN("fail to get sharding const expr", K(ret));
+        LOG_WDIAG("fail to get sharding const expr", K(ret));
       }
       break;
     case T_VARCHAR:
       //varchar has varchar child, if child is 0 not have child
       if (node->num_child_ == 0) {
         if (OB_FAIL(get_const_expr(node, expr))) {
-          LOG_WARN("fail to get sharding const expr succ", K(ret));
+          LOG_WDIAG("fail to get sharding const expr succ", K(ret));
         }
       } else {
         for (i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
@@ -1396,9 +1419,9 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
             //do nothing
           } else if (expr != NULL) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("expr should null", K(ret), K(i), K(node->str_value_), K(sql_string_));
+            LOG_WDIAG("expr should null", K(ret), K(i), K(node->str_value_), K(sql_string_));
           } else  if (OB_FAIL(get_const_expr(node->children_[i], expr))) {
-            LOG_WARN("fail to get sharding const expr succ", K(ret));
+            LOG_WDIAG("fail to get sharding const expr succ", K(ret));
           }
         }
       }
@@ -1413,19 +1436,19 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
     case T_FUN_MIN:
     case T_FUN_AVG:
       if (OB_FAIL(func_node_to_expr(node, expr))) {
-        LOG_WARN("fail to add func node expr succ", K(ret));
+        LOG_WDIAG("fail to add func node expr succ", K(ret));
       }
       break;
     default:
       //Does not support type detection whether there is agg,
       //if not, use the string of string_node to construct transparent transmission
       if (OB_FAIL(check_node_has_agg(node))) {
-        LOG_WARN("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_));
+        LOG_WDIAG("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_));
       } else if (string_node == NULL) {
         has_unsupport_expr_type_ = true;
         LOG_DEBUG("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_), K(sql_string_));
       } else if (OB_FAIL(get_sharding_const_expr(string_node, expr))) {
-        LOG_WARN("get_sharding_const_expr failed", K(ret));
+        LOG_WDIAG("get_sharding_const_expr failed", K(ret));
       }
   }
   return ret;
@@ -1440,9 +1463,9 @@ int ObProxyDMLStmt::project_string_to_expr(ParseNode* node, ObProxyExpr* &expr)
       // do nothing
     } else if (expr != NULL) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("expr not null", K(node->str_value_), K(node->num_child_), K(sql_string_), K(ret));
+      LOG_WDIAG("expr not null", K(node->str_value_), K(node->num_child_), K(sql_string_), K(ret));
     } else if (OB_FAIL(string_node_to_expr(tmp_node, expr, node))) {
-      LOG_WARN("string_node_to_expr failed", K(sql_string_), K(ret));
+      LOG_WDIAG("string_node_to_expr failed", K(sql_string_), K(ret));
     }
   }
   return ret;
@@ -1469,12 +1492,12 @@ int ObProxyDMLStmt::handle_sort_key_node(ParseNode* node, ObProxyExpr* &expr, co
         break;
       default:
         if (OB_FAIL(string_node_to_expr(tmp_node, tmp_expr, tmp_node))) {
-          LOG_WARN("string_node_to_expr failed", K(ret), K(sql_string_));
+          LOG_WDIAG("string_node_to_expr failed", K(ret), K(sql_string_));
         } else if (T_INT == tmp_node->type_) {
           ObProxyExprConst* expr_const = NULL;
           if (OB_ISNULL(expr_const = dynamic_cast<ObProxyExprConst*>(tmp_expr))) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("dynamic_cast failed", K(ret));
+            LOG_WDIAG("dynamic_cast failed", K(ret));
           } else {
             int64_t index = expr_const->get_object().get_int();
             if (index > 0) {
@@ -1495,10 +1518,10 @@ int ObProxyDMLStmt::handle_sort_key_node(ParseNode* node, ObProxyExpr* &expr, co
     }
       // do nothing
     if (OB_FAIL(get_expr_by_type(expr, expr_type))) {
-      LOG_WARN("get_expr_by_type", K(expr_type), K(sql_string_), K(ret));
+      LOG_WDIAG("get_expr_by_type", K(expr_type), K(sql_string_), K(ret));
     } else if (OB_ISNULL(group_item_expr = dynamic_cast<ObProxyGroupItem*>(expr))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("dynamic_cast to ObProxyGroupItem failed", K(ret));
+      LOG_WDIAG("dynamic_cast to ObProxyGroupItem failed", K(ret));
     } else {
       if (tmp_expr->has_agg_) {
         group_item_expr->has_agg_ = 1;
@@ -1508,7 +1531,7 @@ int ObProxyDMLStmt::handle_sort_key_node(ParseNode* node, ObProxyExpr* &expr, co
         ObProxyOrderItem* order_item_expr = NULL;
         if (OB_ISNULL(order_item_expr = dynamic_cast<ObProxyOrderItem*>(expr))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("dynamic_cast to ObProxyOrderItem failed", K(ret));
+          LOG_WDIAG("dynamic_cast to ObProxyOrderItem failed", K(ret));
         } else {
           order_item_expr->order_direction_ = order_direction;
         }
@@ -1533,23 +1556,23 @@ int ObProxyDMLStmt::handle_sort_list_node(ParseNode* node, const SortListType& s
       switch(tmp_node->type_) {
         case T_SORT_KEY:
           if (OB_FAIL(handle_sort_key_node(tmp_node, expr, sort_list_type))) {
-            LOG_WARN("handle_sort_key_node", K(sql_string_), K(ret));
+            LOG_WDIAG("handle_sort_key_node", K(sql_string_), K(ret));
           } else {
             switch(sort_list_type) {
               case SORT_LIST_IN_GROUP_BY:
                 if (OB_ISNULL(group_item_expr = dynamic_cast<ObProxyGroupItem*>(expr))) {
                   ret = OB_ERR_UNEXPECTED;
-                  LOG_WARN("dynamic_cast to ObProxyGroupItem failed", K(ret));
+                  LOG_WDIAG("dynamic_cast to ObProxyGroupItem failed", K(ret));
                 } else if (OB_FAIL(group_by_exprs_.push_back(group_item_expr))) {
-                  LOG_WARN("push_back failed", K(sql_string_), K(ret));
+                  LOG_WDIAG("push_back failed", K(sql_string_), K(ret));
                 }
                 break;
               case SORT_LSIT_IN_ORDER_BY:
                 if (OB_ISNULL(order_item_expr = dynamic_cast<ObProxyOrderItem*>(expr))) {
                   ret = OB_ERR_UNEXPECTED;
-                  LOG_WARN("dynamic_cast to ObProxyOrderItem failed", K(ret));
+                  LOG_WDIAG("dynamic_cast to ObProxyOrderItem failed", K(ret));
                 } else if (OB_FAIL(order_by_exprs_.push_back(order_item_expr))) {
-                  LOG_WARN("push_back failed", K(sql_string_), K(ret));
+                  LOG_WDIAG("push_back failed", K(sql_string_), K(ret));
                 }
                 break;
               default:
@@ -1585,7 +1608,7 @@ int ObProxyDMLStmt::handle_with_rollup_in_groupby(ParseNode* node)
         break;
       case T_SORT_LIST:
         if (OB_FAIL(handle_sort_list_node(tmp_node, SORT_LIST_IN_GROUP_BY))) {
-          LOG_WARN("handle_sort_list_node failed", K(ret), K(sql_string_));
+          LOG_WDIAG("handle_sort_list_node failed", K(ret), K(sql_string_));
         }
         break;
       default:
@@ -1609,7 +1632,7 @@ int ObProxyDMLStmt::handle_groupby_clause(ParseNode* node)
       has_unsupport_expr_type_ = true;
       LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_with_rollup_in_groupby(tmp_node))) {
-      LOG_WARN("handle_with_rollup_in_groupby failed", K(ret), K(i), K(sql_string_));
+      LOG_WDIAG("handle_with_rollup_in_groupby failed", K(ret), K(i), K(sql_string_));
     }
   }
 
@@ -1628,7 +1651,7 @@ int ObProxyDMLStmt::handle_orderby_clause(ParseNode* node)
       has_unsupport_expr_type_ = true;
       LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_sort_list_node(tmp_node, SORT_LSIT_IN_ORDER_BY))) {
-      LOG_WARN("handle_sort_list_node", K(ret), K(i), K(sql_string_));
+      LOG_WDIAG("handle_sort_list_node", K(ret), K(i), K(sql_string_));
     }
   }
 
@@ -1638,12 +1661,14 @@ int ObProxyDMLStmt::handle_orderby_clause(ParseNode* node)
 int ObProxySelectStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
-  ParseNode* node = parse_result.result_tree_->children_[0];
 
-  if (OB_FAIL(do_handle_parse_result(node))) {
-    LOG_WARN("fail to do handle parse result", K(sql_string_), "node_type", get_type_name(node->type_), K(ret));
+  ParseNode* node = NULL;
+  if (OB_FAIL(handle_explain_node(parse_result, node))) {
+    LOG_WDIAG("fail to handle explain node", K(ret));
+  } else if (OB_FAIL(do_handle_parse_result(node))) {
+    LOG_WDIAG("fail to do handle parse result", K(sql_string_), "node_type", get_type_name(node->type_), K(ret));
   } else if (OB_FAIL(handle_comment_list(parse_result))) {
-    LOG_WARN("handle_comment_list failed", K(ret), K(sql_string_));
+    LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
   }
 
   return ret;
@@ -1652,11 +1677,11 @@ int ObProxySelectStmt::handle_parse_result(const ParseResult &parse_result)
 int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(parse_result.result_tree_) || OB_ISNULL(parse_result.result_tree_->children_[0])) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("result info is null unexpected", K(ret));
+
+  ParseNode* node = NULL;
+  if (OB_FAIL(handle_explain_node(parse_result, node))) {
+    LOG_WDIAG("fail to handle explain node", K(ret));
   } else {
-    ParseNode* node = parse_result.result_tree_->children_[0];
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode* tmp_node = node->children_[i];
       if (NULL == tmp_node) {
@@ -1671,7 +1696,7 @@ int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
             break;
           case T_SINGLE_TABLE_INSERT:
             if (OB_FAIL(handle_single_table_insert(tmp_node))) {
-              LOG_WARN("handle single table insert failed", K(ret));
+              LOG_WDIAG("handle single table insert failed", K(ret));
             }
             break;
           case T_INSERT:
@@ -1688,7 +1713,7 @@ int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
 
   if(OB_SUCC(ret)) {
     if (OB_FAIL(handle_comment_list(parse_result))) {
-      LOG_WARN("handle_comment_list failed", K(ret), K(sql_string_));
+      LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
     }
   }
   return ret;
@@ -1705,23 +1730,23 @@ int ObProxyInsertStmt::handle_single_table_insert(ParseNode *node)
       switch (tmp_node->type_) {
         case T_INSERT_INTO_CLAUSE:
           if (OB_FAIL(handle_insert_into(tmp_node))) {
-            LOG_WARN("fail to handle insert into", K(ret));
+            LOG_WDIAG("fail to handle insert into", K(ret));
           }
           break;
         case T_VALUE_LIST:
           if (OB_FAIL(handle_value_list(tmp_node))) {
-            LOG_WARN("fail to handle value list", K(ret));
+            LOG_WDIAG("fail to handle value list", K(ret));
           }
           break;
         case T_ASSIGN_LIST:
           if (OB_FAIL(handle_assign_list(tmp_node))) {
-            LOG_WARN("fail to handle assign list", K(ret));
+            LOG_WDIAG("fail to handle assign list", K(ret));
           }
           break;
         case T_SELECT:
           has_unsupport_expr_type_for_config_ = true;
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
-            LOG_WARN("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
+            LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           }
           break;
         default:
@@ -1745,12 +1770,12 @@ int ObProxyInsertStmt::handle_insert_into(ParseNode *node)
       switch (tmp_node->type_) {
         case T_ORG:
           if (OB_FAIL(handle_table_node_to_expr(tmp_node))) {
-            LOG_WARN("handle org failed", K(ret));
+            LOG_WDIAG("handle org failed", K(ret));
           }
           break;
         case T_COLUMN_LIST:
           if (OB_FAIL(handle_column_list(tmp_node))) {
-            LOG_WARN("handle column list failed", K(ret));
+            LOG_WDIAG("handle column list failed", K(ret));
           }
           break;
         default:
@@ -1776,7 +1801,7 @@ int ObProxyInsertStmt::handle_value_list(ParseNode *node)
       switch (tmp_node->type_) {
         case T_VALUE_VECTOR:
           if (OB_FAIL(handle_value_vector(tmp_node))) {
-            LOG_WARN("handle value vector failed", K(ret));
+            LOG_WDIAG("handle value vector failed", K(ret));
           }
           break;
         default:
@@ -1801,7 +1826,7 @@ int ObProxyInsertStmt::handle_column_list(ParseNode *node)
       switch (tmp_node->type_) {
         case T_COLUMN_REF:
           if (OB_FAIL(handle_column_ref_in_list(tmp_node))) {
-            LOG_WARN("handle column ref failed", K(ret));
+            LOG_WDIAG("handle column ref failed", K(ret));
           }
           break;
         default:
@@ -1818,10 +1843,10 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(column_name_array_.empty())) {
     ret = OB_EXPR_CALC_ERROR;
-    LOG_WARN("need column name in value vector", K(ret));
+    LOG_WDIAG("need column name in value vector", K(ret));
   } else  if (OB_UNLIKELY(node->num_child_ != column_name_array_.count())){
     ret = OB_ERR_PARSER_SYNTAX;
-    LOG_WARN("the num of column name do not match value vector", K(ret));
+    LOG_WDIAG("the num of column name do not match value vector", K(ret));
   } else {
     bool is_skip_field = false;
     SqlColumnValue column_value;
@@ -1833,7 +1858,7 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
         // do nothing
       } else if (OB_FAIL(SqlField::alloc_sql_field(sql_field))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to allocate memory for sqlfield", K(ret));
+        LOG_WDIAG("fail to allocate memory for sqlfield", K(ret));
       } else {
         need_free_sql_field = true;
         is_skip_field = false;
@@ -1862,7 +1887,7 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
                 sql_field->column_int_value_ = -1 * (child_node->value_);
               } else {
                 ret = OB_ERR_UNEXPECTED;
-                LOG_WARN("unknown node type", K_(child_node->type), K(ret));
+                LOG_WDIAG("unknown node type", K_(child_node->type), K(ret));
               }
               break;
             }
@@ -1885,11 +1910,11 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
             for (int i = 0; OB_SUCC(ret) && i < sql_field->column_values_.count(); i++) {
               SqlColumnValue tmp_column_value = sql_field->column_values_[i];
               if (OB_FAIL(field_results_->fields_.at(duplicate_column_idx)->column_values_.push_back(tmp_column_value))) {
-                LOG_WARN("push_back failed", K(ret), K(sql_string_));
+                LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
               }
             }
           } else if (OB_FAIL(field_results_->fields_.push_back(sql_field))) {
-            LOG_WARN("push_back failed", K(ret), K(sql_string_));
+            LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
           } else {
             need_free_sql_field = false;
             ++field_results_->field_num_;
@@ -1910,16 +1935,16 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
 int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(parse_result.result_tree_) || OB_ISNULL(parse_result.result_tree_->children_[0])) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("parse result info is null unexpected", K(ret));
+
+  ParseNode* node = NULL;
+  if (OB_FAIL(handle_explain_node(parse_result, node))) {
+    LOG_WDIAG("fail to handle explain node", K(ret));
   } else {
-    ParseNode* node = parse_result.result_tree_->children_[0];
     if (node->type_ == T_DELETE) {
       stmt_type_ = OBPROXY_T_DELETE;
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unknown node type", K(node->type_), K(ret));
+      LOG_WDIAG("unknown node type", K(node->type_), K(ret));
     }
 
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
@@ -1930,7 +1955,7 @@ int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
         switch (tmp_node->type_) {
           case T_DELETE_TABLE_NODE:
             if (OB_FAIL(handle_delete_table_node(tmp_node))) {
-              LOG_WARN("handle delete table node failed", K(ret));
+              LOG_WDIAG("handle delete table node failed", K(ret));
             }
             break;
           case T_HINT_OPTION_LIST:
@@ -1938,7 +1963,7 @@ int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
             break;
           case T_WHERE_CLAUSE:
             if (OB_FAIL(handle_where_clause(tmp_node))) {
-              LOG_WARN("handle where clause failed", K(ret));
+              LOG_WDIAG("handle where clause failed", K(ret));
             }
             break;
           default:
@@ -1964,7 +1989,7 @@ int ObProxyDeleteStmt::handle_delete_table_node(ParseNode *node)
       switch (tmp_node->type_) {
         case T_TABLE_REFERENCES:
           if (OB_FAIL(handle_table_references(tmp_node))) {
-            LOG_WARN("handle table references failed", K(ret));
+            LOG_WDIAG("handle table references failed", K(ret));
           }
           break;
         default:
@@ -1979,12 +2004,11 @@ int ObProxyDeleteStmt::handle_delete_table_node(ParseNode *node)
 int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(parse_result.result_tree_) || OB_ISNULL(parse_result.result_tree_->children_[0])) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("parse result info is null unexpected", K(ret));
-  } else {
-    ParseNode* node = parse_result.result_tree_->children_[0];
 
+  ParseNode* node = NULL;
+  if (OB_FAIL(handle_explain_node(parse_result, node))) {
+    LOG_WDIAG("fail to handle explain node", K(ret));
+  } else {
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode* tmp_node = node->children_[i];
       if (NULL == tmp_node) {
@@ -1993,7 +2017,7 @@ int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
         switch (tmp_node->type_) {
           case T_TABLE_REFERENCES:
             if (OB_FAIL(handle_table_references(tmp_node))) {
-              LOG_WARN("handle where clause failed", K(ret));
+              LOG_WDIAG("handle where clause failed", K(ret));
             }
             break;
           case T_HINT_OPTION_LIST:
@@ -2001,12 +2025,12 @@ int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
             break;
           case T_ASSIGN_LIST:
             if (OB_FAIL(handle_assign_list(tmp_node))) {
-              LOG_WARN("handle where clause failed", K(ret));
+              LOG_WDIAG("handle where clause failed", K(ret));
             }
             break;
           case T_WHERE_CLAUSE:
             if (OB_FAIL(handle_where_clause(tmp_node))) {
-              LOG_WARN("handle where clause failed", K(ret));
+              LOG_WDIAG("handle where clause failed", K(ret));
             }
             break;
           default:

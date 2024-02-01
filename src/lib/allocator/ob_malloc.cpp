@@ -29,14 +29,14 @@ int oceanbase::common::ObMemBuf::ensure_space(const int64_t size, const int64_t 
   int64_t buf_len = size > buf_size_ ? size : buf_size_;
 
   if (size <= 0 || (NULL != buf_ptr_ && buf_size_ <= 0)) {
-    _OB_LOG(WARN, "invalid param, size=%ld, buf_ptr_=%p, "
+    _OB_LOG(WDIAG, "invalid param, size=%ld, buf_ptr_=%p, "
               "buf_size_=%ld",
               size, buf_ptr_, buf_size_);
     ret = OB_ERROR;
   } else if (NULL == buf_ptr_ || (NULL != buf_ptr_ && size > buf_size_)) {
     new_buf = static_cast<char *>(ob_malloc(buf_len, mod_id));
     if (NULL == new_buf) {
-      _OB_LOG(ERROR, "Problem allocate memory for buffer");
+      _OB_LOG(EDIAG, "Problem allocate memory for buffer");
       ret = OB_ERROR;
     } else {
       if (NULL != buf_ptr_) {
@@ -65,7 +65,7 @@ void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t 
     }
     int64_t padding = align_ptr - ptr;
     if (!(padding <= alignment && padding > 0)) {
-      _OB_LOG(ERROR, "invalid padding(padding=%ld, alignment=%ld", padding, alignment);
+      _OB_LOG(EDIAG, "invalid padding(padding=%ld, alignment=%ld", padding, alignment);
     }
     uint8_t *sign_ptr = reinterpret_cast<uint8_t *>(align_ptr - 1);
     int64_t *header_ptr = reinterpret_cast<int64_t *>(align_ptr - 1 - sizeof(int64_t));
@@ -76,7 +76,7 @@ void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t 
       *header_ptr = padding;
     }
   } else {
-    _OB_LOG(WARN, "ob_tc_malloc allocate memory failed, alignment[%ld], nbyte[%ld], mod[%ld].",
+    _OB_LOG(WDIAG, "ob_tc_malloc allocate memory failed, alignment[%ld], nbyte[%ld], mod[%ld].",
             alignment, nbyte, mod_id);
   }
   return align_ptr;
@@ -95,7 +95,7 @@ void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t 
     }
     int64_t padding = align_ptr - ptr;
     if (!(padding <= alignment && padding > 0)) {
-      _OB_LOG(ERROR, "invalid padding(padding=%ld, alignment=%ld", padding, alignment);
+      _OB_LOG(EDIAG, "invalid padding(padding=%ld, alignment=%ld", padding, alignment);
     }
     uint8_t *sign_ptr = reinterpret_cast<uint8_t *>(align_ptr - 1);
     int64_t *header_ptr = reinterpret_cast<int64_t *>(align_ptr - 1 - sizeof(int64_t));
@@ -106,7 +106,7 @@ void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t 
       *header_ptr = padding;
     }
   } else {
-    _OB_LOG(WARN, "ob_tc_malloc allocate memory failed, alignment[%ld], nbyte[%ld], tenant_id[%lu], mod[%ld].",
+    _OB_LOG(WDIAG, "ob_tc_malloc allocate memory failed, alignment[%ld], nbyte[%ld], tenant_id[%lu], mod[%ld].",
             alignment, nbyte, attr.tenant_id_, attr.mod_id_);
   }
   return align_ptr;
@@ -115,7 +115,7 @@ void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t 
 void oceanbase::common::ob_free_align(void *ptr)
 {
   if (NULL == ptr) {
-    _OB_LOG(WARN, "cannot free NULL pointer.");
+    _OB_LOG(WDIAG, "cannot free NULL pointer.");
   } else {
     uint8_t *sign_ptr = reinterpret_cast<uint8_t *>(static_cast<char *>(ptr) - 1);
     int64_t *header_ptr = reinterpret_cast<int64_t *>(static_cast<char *>(ptr) - 1 - sizeof(int64_t));

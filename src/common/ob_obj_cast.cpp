@@ -13,17 +13,43 @@
 #define USING_LOG_PREFIX COMMON
 
 #include "common/ob_obj_cast.h"
+#include "common/ob_datum_cast.h"
 #include <math.h>
 #include "lib/charset/ob_dtoa.h"
+#include "lib/utility/ob_fast_convert.h"
+#include "lib/wide_integer/ob_wide_integer.h"
+#include "lib/wide_integer/ob_wide_integer_str_funcs.h"
 
+#define NEED_SCALE_DECIMAL_INT(in_obj, in_scale, res_acc)                                          \
+    ObDatumCast::need_scale_decimalint(                                                            \
+    in_scale, (in_obj).get_int_bytes(), (res_acc).get_scale(),                                     \
+    wide::ObDecimalIntConstValue::get_int_bytes_by_precision((res_acc).get_precision()))
 
+#define DO_SCALE_DECIMAL_INT(in_obj, in_scale, out_obj)                                            \
+  do {                                                                                             \
+    ObDecimalIntBuilder tmp_dec;                                                                   \
+    ObObj tmp_obj;                                                                                 \
+    ObAccuracy res_acc = *params.res_accuracy_;                                                    \
+    char *buf = nullptr;                                                                           \
+    int64_t pos = 0;                                                                               \
+    if (OB_FAIL(ObDatumCast::common_scale_decimalint(                                         \
+          (in_obj).get_decimal_int(), (in_obj).get_int_bytes(), in_scale,                          \
+          res_acc.get_scale(), res_acc.get_precision(), params.cast_mode_, tmp_dec))) {            \
+      LOG_WDIAG("common scale decimal int failed", K(ret));                                         \
+    } else if (OB_ISNULL(buf = (char *)params.alloc(tmp_dec.get_int_bytes()))) {                   \
+      ret = OB_ALLOCATE_MEMORY_FAILED;                                                             \
+      LOG_WDIAG("failed to allocate memory", K(ret));                                               \
+    } else {                                                                                       \
+      tmp_obj.set_decimal_int(tmp_dec.get_int_bytes(), params.res_accuracy_->get_scale(),          \
+                              const_cast<ObDecimalInt *>(tmp_dec.get_decimal_int()));              \
+      ret = (out_obj).deep_copy(tmp_obj, buf, tmp_obj.get_deep_copy_size(), pos);                  \
+    }                                                                                              \
+  } while (0)
 namespace oceanbase
 {
 namespace common
 {
-
-static const int64_t MAX_FLOAT_PRINT_SIZE = 64;
-static const int64_t MAX_DOUBLE_PRINT_SIZE = 64;
+static const int64_t MAX_DOUBLE_STRICT_PRINT_SIZE = 512;
 
 static int identity(const ObObjType expect_type,
                     ObObjCastParams &params,
@@ -47,7 +73,7 @@ static int not_support(const ObObjType expect_type,
                        const ObCastMode cast_mode)
 {
   UNUSED(params);
-  LOG_WARN("not supported obj type convert" , K(expect_type), K(in), K(out), K(cast_mode));
+  LOG_WDIAG("not supported obj type convert" , K(expect_type), K(in), K(out), K(cast_mode));
   return OB_NOT_SUPPORTED;
 }
 
@@ -58,7 +84,7 @@ static int not_expected(const ObObjType expect_type,
                         const ObCastMode cast_mode)
 {
   UNUSED(params);
-  LOG_WARN("not expected obj type convert", K(expect_type), K(in), K(out), K(cast_mode));
+  LOG_WDIAG("not expected obj type convert", K(expect_type), K(in), K(out), K(cast_mode));
   return OB_ERR_UNEXPECTED;
 }
 
@@ -80,7 +106,7 @@ static int print_varchar(ObString &str, const char *format, ...)
   if (OB_ISNULL(str.ptr()) ||
       OB_UNLIKELY(str.size() <= 0)) {
     ret = OB_BUF_NOT_ENOUGH;
-    LOG_WARN("output buffer for varchar not enough",
+    LOG_WDIAG("output buffer for varchar not enough",
         K(ret), K(str.ptr()), K(str.size()));
   } else {
     va_list args;
@@ -89,10 +115,10 @@ static int print_varchar(ObString &str, const char *format, ...)
     va_end(args);
     if (OB_UNLIKELY(length < 0)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("failed to snprintf string", K(ret), K(length));
+      LOG_WDIAG("failed to snprintf string", K(ret), K(length));
     } else if (OB_UNLIKELY(length >= str.size())) {
       ret = OB_BUF_NOT_ENOUGH;
-      LOG_WARN("output buffer for varchar not enough", K(str.size()), K(length));
+      LOG_WDIAG("output buffer for varchar not enough", K(str.size()), K(length));
     } else {
       // need not care the result, we have judged the length above.
       str.set_length(length);
@@ -169,7 +195,7 @@ static int check_convert_str_err(const char *str,
   // 1. only one of str and endptr is null, it is invalid input.
   if ((OB_ISNULL(str) || OB_ISNULL(endptr)) && str != endptr) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("null pointer(s)", K(ret), K(str), K(endptr));
+    LOG_WDIAG("null pointer(s)", K(ret), K(str), K(endptr));
   } else
   // 2. str == endptr include NULL == NULL.
   if (OB_UNLIKELY(str == endptr) || OB_UNLIKELY(EDOM == err)) {
@@ -208,7 +234,7 @@ static int convert_string_collation(const ObString &in,
     uint32_t result_len = 0;
     if (OB_ISNULL(buf = static_cast<char*>(params.alloc(buf_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("alloc memory failed", K(ret));
+      LOG_EDIAG("alloc memory failed", K(ret));
     } else if (OB_FAIL(ObCharset::charset_convert(in_collation,
                                                   in.ptr(),
                                                   in.length(),
@@ -216,7 +242,7 @@ static int convert_string_collation(const ObString &in,
                                                   buf,
                                                   buf_len,
                                                   result_len))) {
-      LOG_WARN("charset convert failed", K(ret));
+      LOG_WDIAG("charset convert failed", K(ret));
     } else {
       out.assign_ptr(buf, result_len);
     }
@@ -500,11 +526,11 @@ int ObHexUtils::unhex(const ObString &text, ObCastCtx &cast_ctx, ObObj &result)
   int32_t alloc_length = (0 == tmp_length ? 1 : tmp_length);
   if (OB_ISNULL(cast_ctx.allocator_v2_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("allocator in cast ctx is NULL", K(ret), K(text));
+    LOG_WDIAG("allocator in cast ctx is NULL", K(ret), K(text));
   } else if (OB_ISNULL(buf = static_cast<char *>(cast_ctx.allocator_v2_->alloc(alloc_length)))) {
     result.set_null();
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory failed", K(alloc_length), K(ret));
+    LOG_EDIAG("alloc memory failed", K(alloc_length), K(ret));
   } else {
     int32_t i = 0;
     char c1 = 0;
@@ -527,7 +553,7 @@ int ObHexUtils::unhex(const ObString &text, ObCastCtx &cast_ctx, ObObj &result)
         c2 = text[++i];
       } else {
         ret = OB_ERR_INVALID_HEX_NUMBER;
-        LOG_WARN("invalid hex number", K(ret), K(c1), K(c2), K(text));
+        LOG_WDIAG("invalid hex number", K(ret), K(c1), K(c2), K(text));
       }
     }
 
@@ -547,11 +573,11 @@ int ObHexUtils::hex(const ObString &text, ObCastCtx &cast_ctx, ObObj &result)
   const int32_t alloc_length = text.empty() ? 1 : text.length() * 2;
   if (OB_ISNULL(cast_ctx.allocator_v2_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("allocator in cast ctx is NULL", K(ret), K(text));
+    LOG_WDIAG("allocator in cast ctx is NULL", K(ret), K(text));
   } else if (OB_ISNULL(buf = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_length)))) {
     result.set_null();
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory failed", K(ret), K(alloc_length));
+    LOG_EDIAG("alloc memory failed", K(ret), K(alloc_length));
   } else {
     static const char* HEXCHARS = "0123456789ABCDEF";
     int32_t pos = 0;
@@ -574,16 +600,16 @@ int ObHexUtils::hex_for_mysql(const uint64_t uint_val, common::ObCastCtx &cast_c
   const int32_t MAX_INT64_LEN = 20;
   if (OB_ISNULL(cast_ctx.allocator_v2_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("allocator in cast ctx is NULL", K(ret), K(uint_val));
+    LOG_WDIAG("allocator in cast ctx is NULL", K(ret), K(uint_val));
   } else if (OB_ISNULL(buf = static_cast<char*>(cast_ctx.allocator_v2_->alloc(MAX_INT64_LEN)))) {
     result.set_null();
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory failed", K(ret));
+    LOG_EDIAG("alloc memory failed", K(ret));
   } else {
     int pos = snprintf(buf, MAX_INT64_LEN, "%lX", uint_val);
     if (OB_UNLIKELY(pos <= 0) || OB_UNLIKELY(pos >= MAX_INT64_LEN)) {
       ret = OB_SIZE_OVERFLOW;
-      LOG_ERROR("size is overflow", K(ret), K(uint_val));
+      LOG_EDIAG("size is overflow", K(ret), K(uint_val));
     } else {
       ObString str_result(pos, buf);
       result.set_varchar(str_result);
@@ -618,18 +644,18 @@ int ObHexUtils::rawtohex(const ObObj &text, ObCastCtx &cast_ctx, ObObj &result)
         int64_t int_value = text.get_int();
         number::ObNumber nmb;
         if (OB_FAIL(nmb.from(int_value, cast_ctx))) {
-          LOG_WARN("fail to int_number", K(ret), K(int_value), "type", text.get_type());
+          LOG_WDIAG("fail to int_number", K(ret), K(int_value), "type", text.get_type());
         } else {
           num_obj.set_number(ObNumberType, nmb);
           int32_t alloc_len =
               static_cast<int32_t>(sizeof(num_obj.get_number_desc()) + num_obj.get_number_byte_length());
           if (OB_ISNULL(cast_ctx.allocator_v2_)) {
             ret = OB_INVALID_ARGUMENT;
-            LOG_WARN("allocator in cast ctx is NULL", K(ret));
+            LOG_WDIAG("allocator in cast ctx is NULL", K(ret));
           } else if (OB_ISNULL(splice_num_str = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_len)))) {
             result.set_null();
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_ERROR("alloc memory failed", K(ret), K(alloc_len));
+            LOG_EDIAG("alloc memory failed", K(ret), K(alloc_len));
           } else {
             MEMCPY(splice_num_str, &(num_obj.get_number_desc()), sizeof(num_obj.get_number_desc()));
             MEMCPY(splice_num_str + sizeof(num_obj.get_number_desc()),
@@ -646,11 +672,11 @@ int ObHexUtils::rawtohex(const ObObj &text, ObCastCtx &cast_ctx, ObObj &result)
         int32_t alloc_len = static_cast<int32_t>(sizeof(text.get_number_desc()) + text.get_number_byte_length());
         if (OB_ISNULL(cast_ctx.allocator_v2_)) {
           ret = OB_INVALID_ARGUMENT;
-          LOG_WARN("allocator in cast ctx is NULL", K(ret));
+          LOG_WDIAG("allocator in cast ctx is NULL", K(ret));
         } else if (OB_ISNULL(splice_num_str = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_len)))) {
           result.set_null();
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_ERROR("alloc memory failed", K(ret), K(alloc_len));
+          LOG_EDIAG("alloc memory failed", K(ret), K(alloc_len));
         } else {
           MEMCPY(splice_num_str, &(text.get_number_desc()), sizeof(text.get_number_desc()));
           MEMCPY(splice_num_str + sizeof(text.get_number_desc()), text.get_data_ptr(), text.get_number_byte_length());
@@ -683,12 +709,12 @@ int ObHexUtils::rawtohex(const ObObj &text, ObCastCtx &cast_ctx, ObObj &result)
       }
       default: {
         ret = OB_ERR_INVALID_HEX_NUMBER;
-        LOG_WARN("invalid hex number", K(ret), K(text), "type", text.get_type());
+        LOG_WDIAG("invalid hex number", K(ret), K(text), "type", text.get_type());
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(hex(str, cast_ctx, result))) {
-        LOG_WARN("fail to convert to hex", K(ret), K(str));
+        LOG_WDIAG("fail to convert to hex", K(ret), K(str));
       } else {
         result.set_default_collation_type();
         LOG_DEBUG("succ to rawtohex", "type", text.get_type(), K(text), K(result), K(lbt()));
@@ -707,14 +733,14 @@ int ObHexUtils::hextoraw(const ObObj &text, ObCastCtx &cast_ctx, ObObj &result)
   } else if (text.is_numeric_type()) {
     number::ObNumber nmb_val;
     if (OB_FAIL(get_uint(text, cast_ctx, nmb_val))) {
-      LOG_WARN("fail to get uint64", K(ret), K(text));
+      LOG_WDIAG("fail to get uint64", K(ret), K(text));
     } else if (OB_FAIL(uint_to_raw(nmb_val, cast_ctx, result))) {
-      LOG_WARN("fail to convert to hex", K(ret), K(nmb_val));
+      LOG_WDIAG("fail to convert to hex", K(ret), K(nmb_val));
     }
   } else if (text.is_raw()) {
     // fast path
     if (OB_FAIL(copy_raw(text, cast_ctx, result))) {
-      LOG_WARN("fail to convert to hex", K(ret), K(text));
+      LOG_WDIAG("fail to convert to hex", K(ret), K(text));
     }
   } else if (text.is_character_type() || text.is_varbinary_or_binary()) {
     ObString utf8_string;
@@ -723,15 +749,15 @@ int ObHexUtils::hextoraw(const ObObj &text, ObCastCtx &cast_ctx, ObObj &result)
                                          utf8_string,
                                          ObCharset::get_system_collation(),
                                          cast_ctx))) {
-      LOG_WARN("convert_string_collation", K(ret));
+      LOG_WDIAG("convert_string_collation", K(ret));
     } else if (OB_FAIL(unhex(utf8_string, cast_ctx, result))) {
-      LOG_WARN("fail to convert to hex", K(ret), K(text));
+      LOG_WDIAG("fail to convert to hex", K(ret), K(text));
     } else {
       result.set_raw(result.get_raw());
     }
   } else {
     ret = OB_ERR_INVALID_HEX_NUMBER;
-    LOG_WARN("invalid hex number", K(ret), K(text));
+    LOG_WDIAG("invalid hex number", K(ret), K(text));
   }
   
   return ret;
@@ -742,23 +768,23 @@ int ObHexUtils::get_uint(const ObObj &obj, ObCastCtx &cast_ctx, number::ObNumber
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!ob_is_accurate_numeric_type(obj.get_type()))) {
     ret = OB_ERR_INVALID_HEX_NUMBER;
-    LOG_WARN("invalid hex number", K(ret), K(obj));
+    LOG_WDIAG("invalid hex number", K(ret), K(obj));
   } else if (obj.is_number() || obj.is_unumber()) {
     const number::ObNumber& value = obj.get_number();
     if (OB_FAIL(out.from(value, cast_ctx))) {
-      LOG_WARN("deep copy failed", K(ret), K(obj));
+      LOG_WDIAG("deep copy failed", K(ret), K(obj));
     } else if (OB_UNLIKELY(!out.is_integer()) || OB_UNLIKELY(out.is_negative())) {
       ret = OB_ERR_INVALID_HEX_NUMBER;
-      LOG_WARN("invalid hex number", K(ret), K(out));
+      LOG_WDIAG("invalid hex number", K(ret), K(out));
     } else if (OB_FAIL(out.round(0))) {
-      LOG_WARN("round failed", K(ret), K(out));
+      LOG_WDIAG("round failed", K(ret), K(out));
     }
   } else {
     if (OB_UNLIKELY(obj.get_int() < 0)) {
       ret = OB_ERR_INVALID_HEX_NUMBER;
-      LOG_WARN("invalid hex number", K(ret), K(obj));
+      LOG_WDIAG("invalid hex number", K(ret), K(obj));
     } else if (OB_FAIL(out.from(obj.get_int(), cast_ctx))) {
-      LOG_WARN("deep copy failed", K(ret), K(obj));
+      LOG_WDIAG("deep copy failed", K(ret), K(obj));
     }
   }
   return ret;
@@ -772,14 +798,14 @@ int ObHexUtils::uint_to_raw(const number::ObNumber &uint_num, ObCastCtx &cast_ct
   int64_t uint_pos = 0;
   ObString uint_str;
   if (OB_FAIL(uint_num.format(uint_buf, number::ObNumber::MAX_TOTAL_SCALE, uint_pos, 0))) {
-    LOG_WARN("fail to format ", K(ret), K(uint_num));
+    LOG_WDIAG("fail to format ", K(ret), K(uint_num));
   } else if (uint_pos > oracle_max_avail_len) {
     ret = OB_ERR_INVALID_HEX_NUMBER;
-    LOG_WARN("invalid hex number", K(ret), K(uint_pos), K(oracle_max_avail_len), K(uint_num));
+    LOG_WDIAG("invalid hex number", K(ret), K(uint_pos), K(oracle_max_avail_len), K(uint_num));
   } else {
     uint_str.assign_ptr(uint_buf, static_cast<int32_t>(uint_pos));
     if (OB_FAIL(unhex(uint_str, cast_ctx, result))) {
-      LOG_WARN("fail to str_to_raw", K(ret), K(result));
+      LOG_WDIAG("fail to str_to_raw", K(ret), K(result));
     } else {
       result.set_raw(result.get_raw());
     }
@@ -795,11 +821,11 @@ int ObHexUtils::copy_raw(const common::ObObj &obj, common::ObCastCtx &cast_ctx, 
   const int32_t alloc_length = value.empty() ? 1 : value.length();
   if (OB_ISNULL(cast_ctx.allocator_v2_)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("allocator in cast ctx is NULL", K(ret));
+    LOG_WDIAG("allocator in cast ctx is NULL", K(ret));
   } else if (OB_ISNULL(buf = static_cast<char*>(cast_ctx.allocator_v2_->alloc(alloc_length)))) {
     result.set_null();
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("alloc memory failed", K(ret), K(alloc_length));
+    LOG_EDIAG("alloc memory failed", K(ret), K(alloc_length));
   } else {
     MEMCPY(buf, value.ptr(), value.length());
     result.set_raw(buf, value.length());
@@ -816,11 +842,11 @@ static int check_convert_string(const ObObjType expect_type,
   if (lib::is_oracle_mode() && ob_is_blob(expect_type, params.expect_obj_collation_) && !in.is_blob() && !in.is_raw()) {
     if (in.is_varchar_or_char()) {
       if (OB_FAIL(ObHexUtils::hextoraw(in, params, out))) {
-        LOG_WARN("fail to hextoraw for blob", K(ret), K(in));
+        LOG_WDIAG("fail to hextoraw for blob", K(ret), K(in));
       }
     } else {
       ret = OB_NOT_SUPPORTED;
-      LOG_ERROR("Invalid use of blob type", K(ret), K(in), K(expect_type));
+      LOG_EDIAG("Invalid use of blob type", K(ret), K(in), K(expect_type));
     }
   } else {
     out = in;
@@ -851,7 +877,7 @@ static int int_int(const ObObjType expect_type, ObObjCastParams &params, const O
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     int64_t value = in.get_int();
@@ -873,7 +899,7 @@ static int int_uint(const ObObjType expect_type, ObObjCastParams &params, const 
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (CM_SKIP_CAST_INT_UINT(cast_mode)) {
     out = in;
@@ -898,7 +924,7 @@ static int int_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     float value = static_cast<float>(in.get_int());
@@ -918,7 +944,7 @@ static int int_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     double value = static_cast<double>(in.get_int());
@@ -939,7 +965,7 @@ static int int_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     int64_t value = in.get_int();
@@ -962,7 +988,7 @@ static int int_datetime(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
@@ -985,7 +1011,7 @@ static int int_date(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObDateTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     int32_t value = 0;
@@ -1005,7 +1031,7 @@ static int int_time(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     int64_t value = 0;
@@ -1025,7 +1051,7 @@ static int int_year(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObIntTC != in.get_type_class()
                   || ObYearTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     uint8_t value = 0;
@@ -1047,7 +1073,7 @@ static int int_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH];
@@ -1066,6 +1092,38 @@ static int int_string(const ObObjType expect_type, ObObjCastParams &params,
   return ret;
 }
 
+static int int_decimalint(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                          ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObPrecision res_precision = -1;
+  UNUSED(res_precision);
+  UNUSED(cast_mode);
+  int64_t value = in.get_int();
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  ObPrecision in_prec = static_cast<int16_t>(ob_fast_digits10(value < 0 ? -value : value));
+  if (OB_UNLIKELY(ObIntTC != ob_obj_type_class(in.get_type())
+                  || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null res accuracy", K(ret), K(params.res_accuracy_));
+  } else if (OB_FAIL(wide::from_integer(value, params, decint, int_bytes, in_prec))) {
+    LOG_WDIAG("failed to cast int to decimal int", K(ret));
+  } else {
+    ObObj tmp_val;
+    tmp_val.set_decimal_int(int_bytes, DEFAULT_SCALE_FOR_INTEGER, decint);
+    if (NEED_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), *params.res_accuracy_)) {
+      DO_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), out);
+    } else {
+      out.set_decimal_int(int_bytes, DEFAULT_SCALE_FOR_INTEGER, decint);
+    }
+  }
+  return ret;
+}
+
 ////////////////////////////////////////////////////////////////
 // UInt -> XXX
 
@@ -1077,7 +1135,7 @@ static int uint_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (CM_IS_EXTERNAL_CALL(cast_mode) && CM_SKIP_CAST_INT_UINT(cast_mode)) {
     out = in;
@@ -1103,7 +1161,7 @@ static int uint_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     uint64_t value = in.get_uint64();
@@ -1124,7 +1182,7 @@ static int uint_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     out.set_float(expect_type, static_cast<float>(in.get_uint64()));
@@ -1141,7 +1199,7 @@ static int uint_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     out.set_double(expect_type, static_cast<double>(in.get_uint64()));
@@ -1160,7 +1218,7 @@ static int uint_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(nmb.from(in.get_uint64(), params))) {
   } else {
@@ -1180,7 +1238,7 @@ static int uint_datetime(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(uint_int(ObIntType, params, in, int64, CM_UNSET_NO_CAST_INT_UINT(cast_mode)))) {
   } else if (OB_FAIL(int_datetime(expect_type, params, int64, out, cast_mode))) {
@@ -1197,7 +1255,7 @@ static int uint_date(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObDateTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(uint_int(ObIntType, params, in, int64, CM_UNSET_NO_CAST_INT_UINT(cast_mode)))) {
   } else if (OB_FAIL(int_date(expect_type, params, int64, out, cast_mode))) {
@@ -1214,7 +1272,7 @@ static int uint_time(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(uint_int(ObIntType, params, in, int64, CM_UNSET_NO_CAST_INT_UINT(cast_mode)))) {
   } else if (OB_FAIL(int_time(expect_type, params, int64, out, cast_mode))) {
@@ -1231,7 +1289,7 @@ static int uint_year(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObUIntTC != in.get_type_class()
                   || ObYearTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(uint_int(ObIntType, params, in, int64, CM_UNSET_NO_CAST_INT_UINT(cast_mode)))) {
   } else if (OB_FAIL(int_year(expect_type, params, int64, out, cast_mode))) {
@@ -1252,7 +1310,7 @@ static int uint_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(print_varchar(str, "%lu", in.get_uint64()))) {
   } else {
@@ -1263,6 +1321,38 @@ static int uint_string(const ObObjType expect_type, ObObjCastParams &params,
   }
   UNUSED(cast_mode);
   SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_STRING, DEFAULT_SCALE_FOR_STRING, res_length);
+  return ret;
+}
+
+static int uint_decimalint(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObPrecision res_precision = -1;
+  UNUSED(res_precision);
+  UNUSED(cast_mode);
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  uint64_t value = in.get_uint64();
+  ObPrecision in_prec = static_cast<int16_t>(ob_fast_digits10(value));
+  if (OB_UNLIKELY(ObUIntTC != ob_obj_type_class(in.get_type())
+                  || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null result accuracy", K(ret));
+  } else if (OB_FAIL(wide::from_integer(value, params, decint, int_bytes, in_prec))) {
+    LOG_WDIAG("cast uint64 to decimal int failed", K(ret), K(in.get_uint64()));
+  } else {
+    ObObj tmp_val;
+    tmp_val.set_decimal_int(int_bytes, DEFAULT_SCALE_FOR_INTEGER, decint);
+    if (NEED_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), *params.res_accuracy_)) {
+      DO_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), out);
+    } else {
+      out = tmp_val;
+    }
+  }
   return ret;
 }
 
@@ -1287,7 +1377,7 @@ static int float_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     if (in.get_float() < 0) {
@@ -1318,7 +1408,7 @@ static int float_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     if (in.get_float() < 0) {
@@ -1349,7 +1439,7 @@ static int float_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (ObUFloatType == expect_type && CAST_FAIL(numeric_negative_check(value))) {
   } else {
@@ -1367,7 +1457,7 @@ static int float_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (ObUDoubleType == expect_type && CAST_FAIL(numeric_negative_check(value))) {
   } else {
@@ -1387,7 +1477,7 @@ static int float_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (ObUNumberType == expect_type && CAST_FAIL(numeric_negative_check(value))) {
   } else {
@@ -1414,7 +1504,7 @@ static int float_datetime(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(float_double(ObDoubleType, params, in, dbl, cast_mode))) {
   } else if (OB_FAIL(double_datetime(expect_type, params, dbl, out, cast_mode))) {
@@ -1433,7 +1523,7 @@ static int float_date(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObDateTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(float_double(ObDoubleType, params, in, dbl, cast_mode))) {
   } else if (OB_FAIL(double_date(expect_type, params, dbl, out, cast_mode))) {
@@ -1452,7 +1542,7 @@ static int float_time(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObFloatTC != in.get_type_class()
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(float_double(ObDoubleType, params, in, dbl, cast_mode))) {
   } else if (OB_FAIL(double_time(expect_type, params, dbl, out, cast_mode))) {
@@ -1474,7 +1564,7 @@ static int float_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     if (0 <= scale) {
@@ -1493,6 +1583,49 @@ static int float_string(const ObObjType expect_type, ObObjCastParams &params,
   return ret;
 }
 
+static int float_decimalint(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                            ObObj &out, const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  char buf[MAX_DOUBLE_STRICT_PRINT_SIZE] = {0};
+  int64_t length = 0;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  ObScale scale = 0;
+  ObPrecision precision = 0;
+  if (OB_UNLIKELY(ObFloatTC != ob_obj_type_class(in.get_type())
+                  || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null res accuracy", K(ret));
+  } else if (lib::is_oracle_mode()) {
+    length = ob_gcvt_opt(in.get_float(), OB_GCVT_ARG_FLOAT, sizeof(buf) - 1, buf, NULL, TRUE);
+  } else {
+    length = ob_gcvt(in.get_float(), OB_GCVT_ARG_DOUBLE, sizeof(buf) - 1, buf, NULL);
+  }
+  if (OB_SUCC(ret)) {
+    if (OB_ISNULL(params.allocator_v2_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("invalid null allocator", K(ret));
+    } else if (OB_FAIL(wide::from_string(buf, length, *params.allocator_v2_, scale, precision,
+                                         int_bytes, decint))) {
+      LOG_WDIAG("failed to parse decimal int", K(ret));
+    } else {
+      ObObj tmp_val;
+      tmp_val.set_decimal_int(int_bytes, scale, decint);
+      if (NEED_SCALE_DECIMAL_INT(tmp_val, scale, *params.res_accuracy_)) {
+        DO_SCALE_DECIMAL_INT(tmp_val, scale, out);
+      } else {
+        out = tmp_val;
+      }
+    }
+  }
+  return ret;
+}
+
 ////////////////////////////////////////////////////////////////
 // Double -> XXX
 
@@ -1505,7 +1638,7 @@ static int double_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     if (in.get_double() < 0) {
@@ -1536,7 +1669,7 @@ static int double_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     if (in.get_double() < 0) {
@@ -1567,7 +1700,7 @@ static int double_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (!lib::is_oracle_mode() && CAST_FAIL(real_range_check(expect_type, in.get_double(), value))) {
   } else {
@@ -1585,7 +1718,7 @@ static int double_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (ObUDoubleType == expect_type && CAST_FAIL(numeric_negative_check(value))) {
   } else {
@@ -1605,7 +1738,7 @@ static int double_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (ObUNumberType == expect_type && CAST_FAIL(numeric_negative_check(value))) {
   } else {
@@ -1634,7 +1767,7 @@ static int double_datetime(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     int64_t value = 0;
@@ -1662,7 +1795,7 @@ static int double_date(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObDateTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(double_int(ObIntType, params, in, int64, cast_mode))) {
   } else if (OB_FAIL(int_date(expect_type, params, int64, out, cast_mode))) {
@@ -1681,7 +1814,7 @@ static int double_time(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDoubleTC != in.get_type_class()
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     int64_t value = 0;
@@ -1707,7 +1840,7 @@ static int double_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH];
@@ -1730,7 +1863,45 @@ static int double_string(const ObObjType expect_type, ObObjCastParams &params,
   return ret;
 }
 
-
+static int double_decimalint(const ObObjType expected_type, ObObjCastParams &params,
+                             const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  char buf[MAX_DOUBLE_STRICT_PRINT_SIZE] = {0};
+  int64_t length = 0;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  ObScale scale = 0;
+  ObPrecision precision = 0;
+  if (OB_UNLIKELY(ObDoubleTC != ob_obj_type_class(in.get_type())
+                  || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null res accuracy", K(ret));
+  } else if (OB_ISNULL(params.allocator_v2_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null allocator", K(ret));
+  } else {
+    length = ob_gcvt_opt(in.get_double(), OB_GCVT_ARG_DOUBLE, sizeof(buf) - 1, buf, NULL,
+                         lib::is_oracle_mode());
+    if (OB_FAIL(wide::from_string(buf, length, *params.allocator_v2_, scale, precision, int_bytes,
+                                  decint))) {
+      LOG_WDIAG("parse decimal int failed", K(ret));
+    } else {
+      ObObj tmp_val;
+      tmp_val.set_decimal_int(int_bytes, scale, decint);
+      if (NEED_SCALE_DECIMAL_INT(tmp_val, scale, *params.res_accuracy_)) {
+        DO_SCALE_DECIMAL_INT(tmp_val, scale, out);
+      } else {
+        out = tmp_val;
+      }
+    }
+  }
+  return ret;
+}
 ////////////////////////////////////////////////////////////////
 // Number -> XXX
 
@@ -1744,14 +1915,14 @@ static int number_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     number::ObNumber nmb = in.get_number();
     const char *value = nmb.format();
     if (OB_ISNULL(value)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("null pointer",
+      LOG_WDIAG("null pointer",
                K(ret), K(value));
     } else {
       ObObj from;
@@ -1776,14 +1947,14 @@ static int number_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     number::ObNumber nmb = in.get_number();
     const char *value = nmb.format();
     if (OB_ISNULL(value)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("null pointer",
+      LOG_WDIAG("null pointer",
                K(ret), K(value));
     } else {
       ObObj from;
@@ -1807,13 +1978,13 @@ static int number_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const char *value = in.get_number().format();
     if (OB_ISNULL(value)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("null pointer",
+      LOG_WDIAG("null pointer",
           K(ret), K(value));
     } else {
       ObObj from;
@@ -1834,13 +2005,13 @@ static int number_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const char *value = in.get_number().format();
     if (OB_ISNULL(value)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("null pointer",
+      LOG_WDIAG("null pointer",
           K(ret), K(value));
     } else {
       ObObj from;
@@ -1859,7 +2030,7 @@ static int number_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     number::ObNumber nmb = in.get_number();
@@ -1885,7 +2056,7 @@ static int number_datetime(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
@@ -1897,7 +2068,7 @@ static int number_datetime(const ObObjType expect_type, ObObjCastParams &params,
     } else if ((ObTimestampType == expect_type && in.get_number().is_decimal())) {
       CAST_FAIL(OB_INVALID_DATE_FORMAT);
     } else if (!in.get_number().is_int_parts_valid_int64(int_part,dec_part)) {
-      LOG_WARN("failed to convert number to int");
+      LOG_WDIAG("failed to convert number to int");
     } else if (CAST_FAIL(ObTimeConverter::int_to_datetime(int_part, dec_part, tz_info, value))) {
     } else {
       SET_RES_DATETIME(out);
@@ -1916,13 +2087,13 @@ static int number_date(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObDateTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const char *value = in.get_number().format();
     if (OB_ISNULL(value)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("null pointer",
+      LOG_WDIAG("null pointer",
           K(ret), K(value));
     } else {
       ObObj from;
@@ -1943,13 +2114,13 @@ static int number_time(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const char *value = in.get_number().format();
     if (OB_ISNULL(value)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("null pointer",
+      LOG_WDIAG("null pointer",
           K(ret), K(value));
     } else {
       ObObj from;
@@ -1970,13 +2141,13 @@ static int number_year(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
                   || ObYearTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const char *value = in.get_number().format();
     if (OB_ISNULL(value)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("null pointer",
+      LOG_WDIAG("null pointer",
           K(ret), K(value));
     } else {
       ObObj from;
@@ -2000,7 +2171,7 @@ static int number_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_SUCC(in.get_number().format(buf, sizeof(buf), len, in.get_scale()))) {
     ret = copy_string(params, expect_type, buf, len, out);
@@ -2013,6 +2184,34 @@ static int number_string(const ObObjType expect_type, ObObjCastParams &params,
   return ret;
 }
 
+static int number_decimalint(const ObObjType expected_type, ObObjCastParams &params,
+                             const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  number::ObNumber nmb = in.get_number();
+  ObScale in_scale = static_cast<int16_t>(nmb.get_scale());
+  if (OB_UNLIKELY(ObNumberTC != in.get_type_class() || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null res accuracy", K(ret));
+  } else if (OB_FAIL(wide::from_number(nmb, params, in_scale, decint, int_bytes))) {
+    LOG_WDIAG("failed to cast number to decimal int", K(ret));
+  } else {
+    ObObj tmp_val;
+    tmp_val.set_decimal_int(int_bytes, in_scale, decint);
+    if (NEED_SCALE_DECIMAL_INT(tmp_val, in_scale, *params.res_accuracy_)) {
+      DO_SCALE_DECIMAL_INT(tmp_val, in_scale, out);
+    } else {
+      out = tmp_val;
+    }
+  }
+  return ret;
+}
 ////////////////////////////////////////////////////////////
 // Datetime -> XXX
 
@@ -2024,7 +2223,7 @@ static int datetime_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2048,7 +2247,7 @@ static int datetime_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2074,7 +2273,7 @@ static int datetime_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2098,7 +2297,7 @@ static int datetime_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2122,7 +2321,7 @@ static int datetime_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2131,9 +2330,9 @@ static int datetime_number(const ObObjType expect_type, ObObjCastParams &params,
     int64_t len = 0;
     number::ObNumber value;
     if (OB_FAIL(ObTimeConverter::datetime_to_str(in.get_datetime(), tz_info, in.get_scale(), buf, sizeof(buf), len, false))) {
-      LOG_WARN("failed to convert datetime to string", K(ret));
+      LOG_WDIAG("failed to convert datetime to string", K(ret));
     } else if (CAST_FAIL(value.from(buf, len, params, &res_precision, &res_scale))) {
-      LOG_WARN("failed to convert string to number", K(ret));
+      LOG_WDIAG("failed to convert string to number", K(ret));
     } else {
       out.set_number(expect_type, value);
     }
@@ -2149,7 +2348,7 @@ static int datetime_datetime(const ObObjType expect_type, ObObjCastParams &param
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     int64_t value = in.get_datetime();
@@ -2176,7 +2375,7 @@ static int datetime_date(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObDateTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2198,7 +2397,7 @@ static int datetime_time(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2220,7 +2419,7 @@ static int datetime_year(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()
                   || ObYearTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2244,7 +2443,7 @@ static int datetime_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
@@ -2253,7 +2452,7 @@ static int datetime_string(const ObObjType expect_type, ObObjCastParams &params,
     int64_t len = 0;
     if (OB_FAIL(ObTimeConverter::datetime_to_str(in.get_datetime(), tz_info, in.get_scale(),
                                                  buf, sizeof(buf), len))) {
-      LOG_WARN("failed to convert datetime to string", K(ret));
+      LOG_WDIAG("failed to convert datetime to string", K(ret));
     } else {
       out.set_type(expect_type);
       ret = copy_string(params, expect_type, buf, len, out);
@@ -2279,13 +2478,13 @@ static int datetime_otimestamp(const ObObjType expect_type,
   if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class()) 
       || OB_UNLIKELY(ObOTimestampTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expect_type));
   } else {
     int64_t dt_value = 0;
     if (ObTimestampType == in.get_type()) {
       int64_t utc_value = in.get_timestamp();
       if (OB_FAIL(ObTimeConverter::timestamp_to_datetime(utc_value, params.dtc_params_.tz_info_, dt_value))) {
-        LOG_WARN("fail to convert timestamp to datetime", K(ret));
+        LOG_WDIAG("fail to convert timestamp to datetime", K(ret));
       }
     } else {
       dt_value = in.get_datetime();
@@ -2295,7 +2494,7 @@ static int datetime_otimestamp(const ObObjType expect_type,
       ObOTimestampData value;
       ObTimeConverter::datetime_to_odate(dt_value, odate_value);
       if (OB_FAIL(ObTimeConverter::odate_to_otimestamp(odate_value, params.dtc_params_.tz_info_, expect_type, value))) {
-        LOG_WARN("fail to odate to otimestamp", K(ret), K(in), K(expect_type));
+        LOG_WDIAG("fail to odate to otimestamp", K(ret), K(in), K(expect_type));
       } else {
         SET_RES_OTIMESTAMP(out);
       }
@@ -2306,6 +2505,44 @@ static int datetime_otimestamp(const ObObjType expect_type,
   return ret;
 }
 
+static int datetime_decimalint(const ObObjType expected_type, ObObjCastParams &params,
+                               const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObScale scale = 0;
+  ObPrecision precision = 0;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  if (OB_UNLIKELY(ObDateTimeTC != in.get_type_class() || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.allocator_v2_) || OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null params", K(ret), K(params.allocator_v2_), K(params.res_accuracy_));
+  } else {
+    const ObTimeZoneInfo *tz_info =
+      (ObTimestampType == in.get_type()) ? params.dtc_params_.tz_info_ : NULL;
+    ObString nls_format;
+    char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+    int64_t len = 0;
+    if (OB_FAIL(ObTimeConverter::datetime_to_str(in.get_datetime(), tz_info,
+                                                 in.get_scale(), buf, sizeof(buf), len, false))) {
+      LOG_WDIAG("failed to convert datetime to string", K(ret));
+    } else if (CAST_FAIL(wide::from_string(buf, len, *params.allocator_v2_, scale, precision,
+                                           int_bytes, decint))) {
+      LOG_WDIAG("failed to parse decimal int", K(ret));
+    } else {
+      ObObj tmp_val;
+      tmp_val.set_decimal_int(int_bytes, scale, decint);
+      if (NEED_SCALE_DECIMAL_INT(tmp_val, scale, *params.res_accuracy_)) {
+        DO_SCALE_DECIMAL_INT(tmp_val, scale, out);
+      } else {
+        out = tmp_val;
+      }
+    }
+  }
+  return ret;
+}
 
 ////////////////////////////////////////////////////////////
 // Date -> XXX
@@ -2319,7 +2556,7 @@ static int date_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::date_to_int(in.get_date(), value))) {
   } else if (expect_type < ObInt32Type && CAST_FAIL(int_range_check(expect_type, value, value))) {
@@ -2341,7 +2578,7 @@ static int date_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::date_to_int(in.get_date(), int64))) {
   } else {
@@ -2364,7 +2601,7 @@ static int date_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::date_to_int(in.get_date(), value))) {
   } else {
@@ -2383,7 +2620,7 @@ static int date_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::date_to_int(in.get_date(), value))) {
   } else {
@@ -2402,7 +2639,7 @@ static int date_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(date_int(ObIntType, params, in, obj_int, cast_mode))) {
   } else if (OB_FAIL(int_number(expect_type, params, obj_int, out, cast_mode))) {
@@ -2418,7 +2655,7 @@ static int date_datetime(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObTimeZoneInfo *tz_info = (ObTimestampType == expect_type) ? params.dtc_params_.tz_info_ : NULL;
@@ -2440,7 +2677,7 @@ static int date_time(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     out.set_time(ObTimeConverter::ZERO_TIME);
@@ -2458,7 +2695,7 @@ static int date_year(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObDateTC != in.get_type_class()
                   || ObYearTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (CAST_FAIL(ObTimeConverter::date_to_year(in.get_date(), value))) {
   } else {
@@ -2481,7 +2718,7 @@ static int date_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::date_to_str(in.get_date(), buf, sizeof(buf), len))) {
   } else {
@@ -2493,6 +2730,37 @@ static int date_string(const ObObjType expect_type, ObObjCastParams &params,
   }
   SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_STRING, DEFAULT_SCALE_FOR_STRING, res_length);
   UNUSED(cast_mode);
+  return ret;
+}
+
+static int date_decimalint(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObObj obj_int;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  ObPrecision res_precision = -1;
+  UNUSED(res_precision);
+  if (OB_UNLIKELY(ObDateTC != in.get_type_class() || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null res accuracy", K(ret));
+  } else if (OB_FAIL(date_int(ObIntType, params, in, obj_int, cast_mode))) {
+    LOG_WDIAG("failed to cast date to int", K(ret));
+  } else if (OB_FAIL(wide::from_integer(obj_int.get_int(), params, decint, int_bytes))) {
+    LOG_WDIAG("failed to cast int to decimal int", K(ret));
+  } else {
+    ObObj tmp_val;
+    tmp_val.set_decimal_int(int_bytes, DEFAULT_SCALE_FOR_INTEGER, decint);
+    if (NEED_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), *params.res_accuracy_)) {
+      DO_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), out);
+    } else {
+      out = tmp_val;
+    }
+  }
   return ret;
 }
 
@@ -2508,7 +2776,7 @@ static int time_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObTimeTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::time_to_int(in.get_time(), value))) {
   } else if (expect_type < ObInt32Type && CAST_FAIL(int_range_check(expect_type, value, value))) {
@@ -2530,7 +2798,7 @@ static int time_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObTimeTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::time_to_int(in.get_time(), int64))) {
   } else {
@@ -2553,7 +2821,7 @@ static int time_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObTimeTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::time_to_double(in.get_time(), value))) {
   } else if (ObUFloatType == expect_type && CAST_FAIL(numeric_negative_check(value))) {
@@ -2574,7 +2842,7 @@ static int time_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObTimeTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::time_to_double(in.get_time(), value))) {
   } else if (ObUDoubleType == expect_type && CAST_FAIL(numeric_negative_check(value))) {
@@ -2599,7 +2867,7 @@ static int time_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObTimeTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::time_to_str(in.get_time(), in.get_scale(), buf, sizeof(buf), len, false))) {
   } else if (CAST_FAIL(value.from(buf, len, params, &res_precision, &res_scale))) {
@@ -2619,7 +2887,7 @@ static int time_datetime(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObTimeTC != in.get_type_class()
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::time_to_datetime(in.get_time(), params.cur_time_, tz_info, value, expect_type))) {
   } else {
@@ -2642,7 +2910,7 @@ static int time_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::time_to_str(in.get_time(), in.get_scale(), buf, sizeof(buf), len))) {
   } else {
@@ -2657,6 +2925,40 @@ static int time_string(const ObObjType expect_type, ObObjCastParams &params,
   return ret;
 }
 
+static int time_decimalint(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+  int64_t len = 0;
+  ObPrecision res_precision = -1;
+  ObScale res_scale = -1;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  if (OB_UNLIKELY(ObTimeTC != in.get_type_class() || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expected_type));
+  } else if (OB_ISNULL(params.allocator_v2_) || OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null params", K(ret), K(params.allocator_v2_), K(params.res_accuracy_));
+  } else if (OB_FAIL(ObTimeConverter::time_to_str(in.get_time(), in.get_scale(), buf, sizeof(buf),
+                                                  len, false))) {
+    LOG_WDIAG("cast time to string failed", K(ret));
+  } else if (OB_FAIL(wide::from_string(buf, len, *params.allocator_v2_, res_scale, res_precision,
+                                       int_bytes, decint))) {
+    LOG_WDIAG("cast string to decimal int failed", K(ret));
+  } else {
+    ObObj tmp_val;
+    tmp_val.set_decimal_int(int_bytes, res_scale, decint);
+    if (NEED_SCALE_DECIMAL_INT(tmp_val, res_scale, *params.res_accuracy_)) {
+      DO_SCALE_DECIMAL_INT(tmp_val, res_scale, out);
+    } else {
+      out = tmp_val;
+    }
+  }
+  return ret;
+}
 ////////////////////////////////////////////////////////////
 // Year -> XXX
 
@@ -2669,7 +2971,7 @@ static int year_int(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObYearTC != in.get_type_class()
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::year_to_int(in.get_year(), value))) {
   } else if (expect_type < ObSmallIntType && CAST_FAIL(int_range_check(expect_type, value, value))) {
@@ -2691,7 +2993,7 @@ static int year_uint(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObYearTC != in.get_type_class()
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::year_to_int(in.get_year(), int64))) {
   } else {
@@ -2714,7 +3016,7 @@ static int year_float(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObYearTC != in.get_type_class()
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::year_to_int(in.get_year(), value))) {
   } else {
@@ -2733,7 +3035,7 @@ static int year_double(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObYearTC != in.get_type_class()
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::year_to_int(in.get_year(), value))) {
   } else {
@@ -2752,7 +3054,7 @@ static int year_number(const ObObjType expect_type, ObObjCastParams &params,
   if (OB_UNLIKELY(ObYearTC != in.get_type_class()
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(year_int(ObIntType, params, in, obj_int, cast_mode))) {
   } else if (OB_FAIL(int_number(expect_type, params, obj_int, out, cast_mode))) {
@@ -2774,7 +3076,7 @@ static int year_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::year_to_str(in.get_year(), buf, sizeof(buf), len))) {
   } else {
@@ -2786,6 +3088,37 @@ static int year_string(const ObObjType expect_type, ObObjCastParams &params,
   }
   SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_STRING, DEFAULT_SCALE_FOR_STRING, res_length);
   UNUSED(cast_mode);
+  return ret;
+}
+
+static int year_decimalint(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObObj obj_int;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  ObPrecision res_precision = -1;
+  UNUSED(res_precision);
+  if (OB_UNLIKELY(ObYearTC != in.get_type_class() || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null res accuracy", K(ret), K(params.res_accuracy_));
+  } else if (OB_FAIL(year_int(ObIntType, params, in, obj_int, cast_mode))) {
+    LOG_WDIAG("cast year to int failed", K(ret));
+  } else if (OB_FAIL(wide::from_integer(obj_int.get_int(), params, decint, int_bytes))) {
+    LOG_WDIAG("cast int to decimal int failed", K(ret));
+  } else {
+    ObObj tmp_val;
+    tmp_val.set_decimal_int(int_bytes, DEFAULT_SCALE_FOR_INTEGER, decint);
+    if (NEED_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), *params.res_accuracy_)) {
+      DO_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), out);
+    } else {
+      out = tmp_val;
+    }
+  }
   return ret;
 }
 
@@ -2814,7 +3147,7 @@ static int string_int(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObString &str = in.get_string();
@@ -2854,7 +3187,7 @@ static int string_uint(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObUIntTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else {
     const ObString &str = in.get_string();
@@ -2895,7 +3228,7 @@ static int string_float(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObFloatTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(string_double(ObDoubleType, params, in, dbl, cast_mode))) {
   } else if (OB_FAIL(double_float(expect_type, params, dbl, out, cast_mode))) {
@@ -2912,7 +3245,7 @@ static int string_double(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObDoubleTC != ob_obj_type_class(expect_type))) {
      ret = OB_ERR_UNEXPECTED;
-     LOG_ERROR("invalid input type",
+     LOG_EDIAG("invalid input type",
          K(ret), K(in), K(expect_type));
   } else {
     double value = 0.0;
@@ -2952,7 +3285,7 @@ static int string_number(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObNumberTC != ob_obj_type_class(expect_type))) {
      ret = OB_ERR_UNEXPECTED;
-     LOG_ERROR("invalid input type",
+     LOG_EDIAG("invalid input type",
          K(ret), K(in), K(expect_type));
   } else {
     const ObString &str = in.get_string();
@@ -2963,7 +3296,7 @@ static int string_number(const ObObjType expect_type, ObObjCastParams &params,
       value.set_zero();
       ret = OB_ERR_TRUNCATED_WRONG_VALUE_FOR_FIELD;
     } else {
-      ret = value.from(str.ptr(), str.length(), params, &res_precision, &res_scale);
+      ret = value.from_sci_opt(str.ptr(), str.length(), params, &res_precision, &res_scale);
     }
 
     if (CAST_FAIL(ret)) {
@@ -2987,14 +3320,14 @@ static int string_datetime(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type",
+    LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
   } else if (lib::is_oracle_mode() && in.is_blob()) {
     ret = OB_NOT_SUPPORTED;
-    LOG_ERROR("invalid use of blob type", K(ret), K(in), K(expect_type));
+    LOG_EDIAG("invalid use of blob type", K(ret), K(in), K(expect_type));
     LOG_USER_ERROR(OB_NOT_SUPPORTED, "Cast to blob type");
   } else if (OB_FAIL(convert_string_collation(in.get_string(), in.get_collation_type(), utf8_string, ObCharset::get_system_collation(), params))) {
-    LOG_WARN("convert_string_collation", K(ret));
+    LOG_WDIAG("convert_string_collation", K(ret));
   } else {
     int64_t value = 0;
     ObTimeConvertCtx cvrt_ctx(params.dtc_params_.tz_info_, ObTimestampType == expect_type);
@@ -3021,7 +3354,7 @@ static int string_date(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObDateTC != ob_obj_type_class(expect_type))) {
      ret = OB_ERR_UNEXPECTED;
-     LOG_ERROR("invalid input type",
+     LOG_EDIAG("invalid input type",
          K(ret), K(in), K(expect_type));
   } else if (CAST_FAIL(ObTimeConverter::str_to_date(in.get_string(), value))) {
   } else {
@@ -3041,7 +3374,7 @@ static int string_time(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObTimeTC != ob_obj_type_class(expect_type))) {
      ret = OB_ERR_UNEXPECTED;
-     LOG_ERROR("invalid input type",
+     LOG_EDIAG("invalid input type",
          K(ret), K(in), K(expect_type));
   } else if (CAST_FAIL(ObTimeConverter::str_to_time(in.get_string(), value, &res_scale))) {
   } else {
@@ -3060,7 +3393,7 @@ static int string_year(const ObObjType expect_type, ObObjCastParams &params,
                   && ObTextTC != in.get_type_class())
                   || ObYearTC != ob_obj_type_class(expect_type))) {
      ret = OB_ERR_UNEXPECTED;
-     LOG_ERROR("invalid input type",
+     LOG_EDIAG("invalid input type",
          K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(string_int(ObIntType, params, in, int64, CM_SET_WARN_ON_FAIL(cast_mode)))) {
   } else if (CAST_FAIL(int_year(ObYearType, params, int64, out, cast_mode))) {
@@ -3080,7 +3413,7 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
                   || (ObStringTC != ob_obj_type_class(expect_type)
                   && ObTextTC != ob_obj_type_class(expect_type)))) {
      ret = OB_ERR_UNEXPECTED;
-     LOG_ERROR("invalid input type",
+     LOG_EDIAG("invalid input type",
          K(ret), K(in), K(expect_type));
   } else {
     ObString str;
@@ -3100,7 +3433,7 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
       uint32_t result_len = 0;
       if (OB_UNLIKELY(NULL == (buf = static_cast<char*>(params.alloc(buf_len))))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("alloc memory failed", K(ret));
+        LOG_EDIAG("alloc memory failed", K(ret));
       } else {
         // in mysql mode, incomplete multi byte will be trimed
         ret = ObCharset::charset_convert(in.get_collation_type(),
@@ -3130,7 +3463,7 @@ static int string_string(const ObObjType expect_type, ObObjCastParams &params,
           }
           if (str_offset < str.length()) {
             ret = OB_SIZE_OVERFLOW;
-            LOG_WARN("size overflow", K(ret), K(str));
+            LOG_WDIAG("size overflow", K(ret), K(str));
           } else {
             // The log is printed here to remind that there are characters that fail to convert and are replaced by '?'
             LOG_DEBUG("charset convert failed", K(ret), K(in.get_collation_type()), K(params.dest_collation_));
@@ -3187,17 +3520,17 @@ static int string_otimestamp(const ObObjType expect_type,
   if (OB_UNLIKELY(ObStringTC != in.get_type_class() && ObTextTC != in.get_type_class())
       || OB_UNLIKELY(ObOTimestampTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expect_type));
   } else if (lib::is_oracle_mode() && in.is_blob()) {
     ret = OB_NOT_SUPPORTED;
-    LOG_ERROR("invalid use of blob type", K(ret), K(in), K(expect_type));
+    LOG_EDIAG("invalid use of blob type", K(ret), K(in), K(expect_type));
     LOG_USER_ERROR(OB_NOT_SUPPORTED, "Cast to blob type");
   } else if (OB_FAIL(convert_string_collation(in.get_string(),
                                               in.get_collation_type(),
                                               utf8_string,
                                               ObCharset::get_system_collation(),
                                               params))) {
-    LOG_WARN("convert_string_collation", K(ret));
+    LOG_WDIAG("convert_string_collation", K(ret));
   } else {
     ObOTimestampData value;
     ObTimeConvertCtx cvrt_ctx(params.dtc_params_.tz_info_, true);
@@ -3209,6 +3542,67 @@ static int string_otimestamp(const ObObjType expect_type,
   }
 
   SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_TEMPORAL, res_scale, DEFAULT_LENGTH_FOR_TEMPORAL);
+  return ret;
+}
+
+static int string_decimalint(const ObObjType expected_type, ObObjCastParams &params,
+                             const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObDecimalInt *decint = nullptr;
+  int32_t int_bytes = 0;
+  ObScale in_scale = NUMBER_SCALE_UNKNOWN_YET;
+  ObPrecision in_precision = PRECISION_UNKNOWN_YET;
+  ObString utf8_string;
+  if (OB_UNLIKELY((ObStringTC != in.get_type_class() && ObTextTC != in.get_type_class()
+                   && ObGeometryTC != in.get_type_class())
+                  || ObDecimalIntType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.allocator_v2_) || OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null params", K(ret), K(params.allocator_v2_), K(params.res_accuracy_));
+  } else if (lib::is_oracle_mode() && in.is_blob()) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_EDIAG("invalid use of blob type", K(ret), K(in.get_type()), K(expected_type));
+    LOG_USER_ERROR(OB_NOT_SUPPORTED, "Cast to blob type");
+  } else if (ObHexStringType == in.get_type()) {
+    uint64_t hex_v = hex_to_uint64(in.get_string());
+    if (OB_FAIL(wide::from_integer(hex_v, params, decint, int_bytes))) {
+      LOG_WDIAG("cast integer to decimal int failed", K(ret));
+    } else {
+      ObObj tmp_val;
+      tmp_val.set_decimal_int(int_bytes, DEFAULT_SCALE_FOR_INTEGER, decint);
+      if (NEED_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), *params.res_accuracy_)) {
+        DO_SCALE_DECIMAL_INT(tmp_val, tmp_val.get_scale(), out);
+      } else {
+        out = tmp_val;
+      }
+    }
+  } else if (OB_UNLIKELY(0 == in.get_string().length())) {
+    ret = OB_ERR_TRUNCATED_WRONG_VALUE_FOR_FIELD;
+    out.set_decimal_int(0, 0, nullptr); // zero value
+  } else if (OB_FAIL(convert_string_collation(in.get_string(), in.get_collation_type(), utf8_string,
+                                              ObCharset::get_system_collation(), params))) {
+    LOG_WDIAG("convert_string_collation failed", K(ret));
+  } else if (OB_FAIL(wide::from_string(utf8_string.ptr(), utf8_string.length(),
+                                       *params.allocator_v2_, in_scale, in_precision, int_bytes,
+                                       decint))) {
+    LOG_WDIAG("parse decimal int failed", K(ret));
+  } else {
+    ObObj tmp_val;
+    tmp_val.set_decimal_int(int_bytes, in_scale, decint);
+    LOG_DEBUG("before scale cast", K(tmp_val), K(in_scale), K(in_precision));
+    if (NEED_SCALE_DECIMAL_INT(tmp_val, in_scale, *params.res_accuracy_)) {
+      DO_SCALE_DECIMAL_INT(tmp_val, in_scale, out);
+    } else {
+      out = tmp_val;
+    }
+    LOG_DEBUG("after scale cast", K(out), "out_scale", params.res_accuracy_->get_scale(), "out_precision", params.res_accuracy_->get_precision());
+  }
+  if (CAST_FAIL(ret)) {
+    LOG_WDIAG("string_decimalint failed", K(ret), K(in), K(expected_type), K(cast_mode));
+  }
   return ret;
 }
 
@@ -3228,12 +3622,12 @@ static int otimestamp_datetime(const ObObjType expect_type,
   if (OB_UNLIKELY(ObOTimestampTC != in.get_type_class())
       || OB_UNLIKELY(ObDateTimeTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expect_type));
   } else if (OB_FAIL(ObTimeConverter::otimestamp_to_odate(in.get_type(),
                                                           in.get_otimestamp_value(),
                                                           params.dtc_params_.tz_info_,
                                                           usec))) {
-    LOG_WARN("fail to timestamp_tz_to_timestamp", K(ret), K(in), K(expect_type));
+    LOG_WDIAG("fail to timestamp_tz_to_timestamp", K(ret), K(in), K(expect_type));
   } else {
     ObTimeConverter::trunc_datetime(OB_MAX_DATE_PRECISION, usec);
     out.set_datetime(expect_type, usec);
@@ -3257,7 +3651,7 @@ static int otimestamp_string(const ObObjType expect_type,
   if (OB_UNLIKELY(ObOTimestampTC != in.get_type_class())
       || OB_UNLIKELY(ObStringTC != ob_obj_type_class(expect_type) && ObTextTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expect_type));
   } else {
     char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
     int64_t len = 0;
@@ -3268,7 +3662,7 @@ static int otimestamp_string(const ObObjType expect_type,
                                                    buf,
                                                    OB_CAST_TO_VARCHAR_MAX_LENGTH,
                                                    len))) {
-      LOG_WARN("failed to convert otimestamp to string", K(ret));
+      LOG_WDIAG("failed to convert otimestamp to string", K(ret));
     } else {
       ObString tmp_str;
       ObObj tmp_out;
@@ -3277,11 +3671,11 @@ static int otimestamp_string(const ObObjType expect_type,
                                            tmp_str,
                                            params.dest_collation_,
                                            params))) {
-        LOG_WARN("fail to convert string collation", K(ret));
+        LOG_WDIAG("fail to convert string collation", K(ret));
       } else if (OB_FAIL(check_convert_string(expect_type, params, tmp_str, tmp_out))) {
-        LOG_WARN("fail to check_convert_string", K(ret), K(in), K(expect_type));
+        LOG_WDIAG("fail to check_convert_string", K(ret), K(in), K(expect_type));
       } else if (OB_FAIL(copy_string(params, expect_type, tmp_out.get_string(), out))) {
-        LOG_WARN("failed to copy_string", K(ret), K(expect_type), K(len));
+        LOG_WDIAG("failed to copy_string", K(ret), K(expect_type), K(len));
       } else {
         out.set_type(expect_type);
         res_length = static_cast<ObLength>(out.get_string_len());
@@ -3306,13 +3700,13 @@ static int otimestamp_otimestamp(const ObObjType expect_type,
   if (OB_UNLIKELY(ObOTimestampTC != in.get_type_class())
       || OB_UNLIKELY(ObOTimestampTC != ob_obj_type_class(expect_type))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("invalid input type", K(ret), K(in), K(expect_type));
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expect_type));
   } else if (ObTimestampNanoType == in.get_type()) {
     if (OB_FAIL(ObTimeConverter::odate_to_otimestamp(in.get_otimestamp_value().time_us_,
                                                      params.dtc_params_.tz_info_,
                                                      expect_type,
                                                      value))) {
-      LOG_WARN("fail to odate_to_otimestamp", K(ret), K(expect_type));
+      LOG_WDIAG("fail to odate_to_otimestamp", K(ret), K(expect_type));
     } else {
       value.time_ctx_.tail_nsec_ = in.get_otimestamp_value().time_ctx_.tail_nsec_;
     }
@@ -3321,7 +3715,7 @@ static int otimestamp_otimestamp(const ObObjType expect_type,
                                                      in.get_otimestamp_value(),
                                                      params.dtc_params_.tz_info_,
                                                      *(int64_t*)&value.time_us_))) {
-      LOG_WARN("fail to otimestamp_to_odate", K(ret), K(expect_type));
+      LOG_WDIAG("fail to otimestamp_to_odate", K(ret), K(expect_type));
     } else {
       value.time_ctx_.tail_nsec_ = in.get_otimestamp_value().time_ctx_.tail_nsec_;
     }
@@ -3331,7 +3725,7 @@ static int otimestamp_otimestamp(const ObObjType expect_type,
                                                           params.dtc_params_.tz_info_,
                                                           expect_type,
                                                           value))) {
-      LOG_WARN("fail to otimestamp_to_otimestamp", K(ret), K(expect_type));
+      LOG_WDIAG("fail to otimestamp_to_otimestamp", K(ret), K(expect_type));
     }
   }
 
@@ -3343,6 +3737,297 @@ static int otimestamp_otimestamp(const ObObjType expect_type,
   return ret;
 }
 
+// ================
+// decimalint -> xxx
+//
+// decimalint -> double
+static int decimalint_double(const ObObjType expected_type, ObObjCastParams &params,
+                             const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type())
+      || OB_UNLIKELY(ObDoubleType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expected_type));
+  } else {
+    char buffer[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+    int64_t pos = 0;
+    if (OB_FAIL(wide::to_string(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), buffer,
+                                sizeof(buffer), pos))) {
+      LOG_WDIAG("to_string failed", K(ret));
+    } else {
+      ObObj from;
+      from.set_varchar(buffer, static_cast<ObString::obstr_size_t>(pos));
+      ret = string_double(expected_type, params, from, out, cast_mode);
+    }
+  }
+  if (OB_SUCC(ret)) {
+    SET_RES_ACCURACY(PRECISION_UNKNOWN_YET, SCALE_UNKNOWN_YET, LENGTH_UNKNOWN_YET);
+  }
+  return ret;
+}
+
+static int decimalint_float(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                            ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()) || OB_UNLIKELY(ObFloatType != expected_type)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expected_type));
+  } else {
+    char buffer[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+    int64_t pos = 0;
+    if (OB_FAIL(wide::to_string(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), buffer,
+                                sizeof(buffer), pos))) {
+      LOG_WDIAG("to_string failed", K(ret));
+    } else {
+      ObObj from;
+      from.set_varchar(buffer, static_cast<ObString::obstr_size_t>(pos));
+      ret = string_float(expected_type, params, from, out, cast_mode);
+    }
+  }
+  if (OB_SUCC(ret)) {
+    SET_RES_ACCURACY(PRECISION_UNKNOWN_YET, SCALE_UNKNOWN_YET, LENGTH_UNKNOWN_YET);
+  }
+  return ret;
+}
+
+static int decimalint_number(const ObObjType expected_type, ObObjCastParams &params,
+                             const ObObj &in, ObObj &out, ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()) || OB_UNLIKELY(ObNumberTC != ob_obj_type_class(expected_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expected_type));
+  } else {
+    number::ObNumber value;
+    if (OB_FAIL(wide::to_number(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), params,
+                                value))) {
+      LOG_WDIAG("cast decimalint to number failed", K(ret));
+    } else if (ObUNumberType == expected_type && CAST_FAIL(numeric_negative_check(value))) {
+    } else {
+      out.set_number(expected_type, value);
+    }
+  }
+  if (OB_SUCC(ret)) {
+    // TODO: get precision from wide integer
+    SET_RES_ACCURACY(PRECISION_UNKNOWN_YET, in.get_scale(), LENGTH_UNKNOWN_YET);
+  }
+  return ret;
+}
+
+static int decimalint_int(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                          ObObj &out, ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObPrecision res_precision = -1;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()) || OB_UNLIKELY(ObIntTC != ob_obj_type_class(expected_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expected_type));
+  } else {
+    char buffer[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+    int64_t pos = 0;
+    if (OB_FAIL(wide::to_string(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), buffer,
+                                sizeof(buffer), pos))) {
+      LOG_WDIAG("to_string failed", K(ret));
+    } else {
+      ObObj from;
+      from.set_varchar(buffer, static_cast<ObString::obstr_size_t>(pos));
+      ret = string_int(expected_type, params, from, out, cast_mode);
+    }
+  }
+  if (OB_SUCC(ret)) {
+    res_precision = get_precision_for_integer(out.get_int());
+  }
+  SET_RES_ACCURACY(res_precision, DEFAULT_SCALE_FOR_INTEGER, DEFAULT_LENGTH_FOR_NUMERIC);
+  return ret;
+}
+
+static int decimalint_uint(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  ObPrecision res_precision = -1;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()) || OB_UNLIKELY(ObUIntTC != ob_obj_type_class(expected_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid input type", K(ret), K(in), K(expected_type));
+  } else {
+    char buffer[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+    int64_t pos = 0;
+    if (OB_FAIL(wide::to_string(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), buffer,
+                                sizeof(buffer), pos))) {
+      LOG_WDIAG("to_string failed", K(ret));
+    } else {
+      ObObj from;
+      from.set_varchar(buffer, static_cast<ObString::obstr_size_t>(pos));
+      ret = string_uint(expected_type, params, from, out, cast_mode);
+    }
+  }
+  if (OB_SUCC(ret)) {
+    res_precision = get_precision_for_integer(out.get_uint64());
+  }
+  SET_RES_ACCURACY(res_precision, DEFAULT_SCALE_FOR_INTEGER, DEFAULT_LENGTH_FOR_NUMERIC);
+  return ret;
+}
+
+static int decimalint_decimalint(const ObObjType expected_type, ObObjCastParams &params,
+                                 const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  char *buf = nullptr;
+  int64_t pos = 0;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()) || OB_UNLIKELY(expected_type != ObDecimalIntType)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_ISNULL(params.res_accuracy_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid null result accuracy", K(ret), K(params.res_accuracy_));
+  } else if (NEED_SCALE_DECIMAL_INT(in, in.get_scale(), *params.res_accuracy_)) {
+    DO_SCALE_DECIMAL_INT(in, in.get_scale(), out);
+  } else if (OB_ISNULL(buf = (char *)params.alloc(in.get_deep_copy_size()))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("failed to allocate memory", K(ret));
+  } else {
+    ret = out.deep_copy(in, buf, in.get_deep_copy_size(), pos);
+  }
+  return ret;
+}
+
+static int decimalint_string(const ObObjType expected_type, ObObjCastParams &params,
+                             const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  UNUSED(cast_mode);
+  int ret = OB_SUCCESS;
+  char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+  int64_t length = 0;
+  ObLength res_length = -1;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()
+                  || (ObStringTC != ob_obj_type_class(expected_type)
+                      && ObTextTC != ob_obj_type_class(expected_type)))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (lib::is_oracle_mode() && ob_is_blob(expected_type, params.dest_collation_)) {
+    ret = OB_ERR_INVALID_TYPE_FOR_OP;
+    LOG_WDIAG("cast number to blob not allowed", K(ret));
+  } else {
+    bool need_to_sci = false;
+    if (lib::is_oracle_mode() && params.format_number_with_limit_) {
+      need_to_sci = true;
+    }
+    if (OB_FAIL(wide::to_string(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), buf,
+                                sizeof(buf), length, need_to_sci))) {
+      LOG_WDIAG("failed to cast decimalint to string", K(ret));
+    }
+  }
+  if (OB_SUCC(ret)) {
+    ObString tmp_str;
+    ObObj tmp_out;
+    if (OB_FAIL(convert_string_collation(ObString(length, buf), ObCharset::get_system_collation(),
+                                         tmp_str, params.dest_collation_, params))) {
+      LOG_WDIAG("failed to convert string collation", K(ret));
+    } else if (OB_FAIL(check_convert_string(expected_type, params, tmp_str, tmp_out))) {
+      LOG_WDIAG("failed to check_convert_string", K(ret), K(in), K(expected_type));
+    } else if (OB_FAIL(copy_string(params, expected_type, tmp_out.get_string(), out))) {
+      LOG_WDIAG("failed to copy_string", K(ret));
+    } else {
+      res_length = static_cast<ObLength>(out.get_string_len());
+      out.set_collation_type(params.dest_collation_);
+    }
+  }
+  SET_RES_ACCURACY_STRING(expected_type, DEFAULT_PRECISION_FOR_STRING, res_length);
+  return ret;
+}
+
+static int decimalint_datetime(const ObObjType expected_type, ObObjCastParams &params,
+                               const ObObj &in, ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  number::ObNumber tmp_nmb;
+  ObObj tmp_obj;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()
+                  || ObDateTimeTC != ob_obj_type_class(expected_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_FAIL(wide::to_number(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(),
+                                     params, tmp_nmb))) {
+    LOG_WDIAG("failed to cast decimalint to number", K(ret));
+  } else {
+    tmp_obj.set_number(tmp_nmb);
+    ret = number_datetime(expected_type, params, tmp_obj, out, cast_mode);
+  }
+  return ret;
+}
+
+static int decimalint_date(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  number::ObNumber tmp_nmb;
+  ObObj tmp_obj;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()
+                  || ObDateTC != ob_obj_type_class(expected_type))) {
+    ret = OB_ERROR;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_FAIL(wide::to_number(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(),
+                                     params, tmp_nmb))) {
+    LOG_WDIAG("cast decimal int to number failed", K(ret));
+  } else {
+    tmp_obj.set_number(tmp_nmb);
+    ret = number_date(expected_type, params, tmp_obj, out, cast_mode);
+  }
+  return ret;
+}
+
+static int decimalint_time(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+  int64_t length = 0;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()
+                  || ObTimeTC != ob_obj_type_class(expected_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (OB_FAIL(wide::to_string(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), buf,
+                                     sizeof(buf), length))) {
+    LOG_WDIAG("cast decimal int to string failed", K(ret));
+  } else {
+    ObObj from;
+    from.set_varchar(buf, static_cast<ObString::obstr_size_t>(length));
+    ret = string_time(expected_type, params, from, out, cast_mode);
+  }
+  return ret;
+}
+
+static int decimalint_year(const ObObjType expected_type, ObObjCastParams &params, const ObObj &in,
+                           ObObj &out, const ObCastMode cast_mode)
+{
+  int ret = OB_SUCCESS;
+  char buf[OB_CAST_TO_VARCHAR_MAX_LENGTH] = {0};
+  int64_t length = 0;
+  if (OB_UNLIKELY(ObDecimalIntType != in.get_type()
+                  || ObYearTC != ob_obj_type_class(expected_type))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid types", K(ret), K(in.get_type()), K(expected_type));
+  } else if (wide::is_negative(in.get_decimal_int(), in.get_int_bytes())) {
+    uint8_t value = 0;
+    if (CAST_FAIL(ObTimeConverter::int_to_year(INT_MIN, value))) {
+    } else {
+      SET_RES_YEAR(out);
+    }
+  } else if (OB_FAIL(wide::to_string(in.get_decimal_int(), in.get_int_bytes(), in.get_scale(), buf,
+                                     sizeof(buf), length))) {
+    LOG_WDIAG("failed to cast decimal to string", K(ret));
+  } else {
+    ObObj from;
+    from.set_varchar(buf, static_cast<ObString::obstr_size_t>(length));
+    ret = string_year(expected_type, params, from, out, cast_mode);
+  }
+  SET_RES_ACCURACY(DEFAULT_PRECISION_FOR_TEMPORAL, DEFAULT_SCALE_FOR_YEAR,
+                   DEFAULT_LENGTH_FOR_TEMPORAL);
+  return ret;
+}
 
 ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
 {
@@ -3370,6 +4055,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    identity,           /*json*/
+    identity,           /*geometry*/
+    not_expected,       /*udt, mysql mode does not have udt*/
+    identity,           /*decimalint*/
   },
   {
     /*int -> XXX*/
@@ -3395,6 +4084,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    int_decimalint,     /*decimal int*/
   },
   {
     /*uint -> XXX*/
@@ -3420,6 +4113,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,           /*udt*/
+    uint_decimalint,    /*decimalint*/
   },
   {
     /*float -> XXX*/
@@ -3445,6 +4142,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,           /*udt*/
+    float_decimalint,   /*decimalint*/
   },
   {
     /*double -> XXX*/
@@ -3470,6 +4171,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    double_decimalint,  /*decimalint*/
   },
   {
     /*number -> XXX*/
@@ -3495,6 +4200,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    number_decimalint,  /*decimalint*/
   },
   {
     /*datetime -> XXX*/
@@ -3520,6 +4229,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,         /*interval*/
     not_expected,         /*rowid*/
     not_support,          /*lob*/
+    not_support,          /*json*/
+    not_support,          /*geometry*/
+    not_expected,         /*udt*/
+    datetime_decimalint,  /*decimalint*/
   },
   {
     /*date -> XXX*/
@@ -3545,6 +4258,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    date_decimalint,    /*decimalint*/
   },
   {
     /*time -> XXX*/
@@ -3570,6 +4287,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    time_decimalint,    /*decimalint*/
   },
   {
     /*year -> XXX*/
@@ -3595,6 +4316,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    year_decimalint,    /*decimalint*/
   },
   {
     /*string -> XXX*/
@@ -3620,6 +4345,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    string_decimalint,  /*decimalint*/
   },
   {
     /*extend -> XXX*/
@@ -3645,6 +4374,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_support,        /*udt*/
+    not_support,        /*decimalint*/
   },
   {
     /*unknown -> XXX*/
@@ -3670,6 +4403,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    unknown_other,      /*decimalint*/
   },
   {
     /*text -> XXX*/
@@ -3695,6 +4432,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    string_decimalint,    /*decimalint*/
   },
   {
     /*bit -> XXX*/
@@ -3720,6 +4461,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*lob*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    not_support,        /*decimalint*/
   },
   {
     /*enumset -> XXX*/
@@ -3745,6 +4490,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_expected,       /*lob*/
+    not_expected,       /*json*/
+    not_expected,       /*geometry*/
+    not_expected,       /*udt*/
+    not_support,        /*decimalint*/
   },
   {
     /*enumset_inner -> XXX*/
@@ -3770,6 +4519,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_expected,       /*interval*/
     not_expected,       /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    not_support,        /*decimalint*/
   },
   {
     /*otimestamp -> XXX*/
@@ -3795,6 +4548,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_support,            /*interval*/
     not_support,            /*rowid*/
     not_support,            /*lob*/
+    not_expected,           /*json*/
+    not_expected,           /*geometry*/
+    not_expected,           /*udt*/
+    not_expected,           /*decimalint*/
   },
   {
     /*raw -> XXX*/
@@ -3820,6 +4577,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_support,        /*interval*/
     not_support,        /*rowid*/
     not_support,        /*lob*/
+    not_expected,       /*json*/
+    not_expected,       /*geometry*/
+    not_expected,       /*udt*/
+    not_expected,       /*decimalint*/
   },
   {
     /*interval -> XXX*/
@@ -3845,6 +4606,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_support,        /*interval*/
     not_support,        /*rowid*/
     not_support,        /*lob*/
+    not_expected,       /*json*/
+    not_expected,       /*geometry*/
+    not_expected,       /*udt*/
+    not_expected,       /*decimalint*/
   },
   {
     /*rowid -> XXX*/
@@ -3870,6 +4635,10 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_support,        /*interval*/
     not_support,        /*rowid*/
     not_support,        /*lob*/
+    not_expected,       /*json*/
+    not_expected,       /*geometry*/
+    not_expected,       /*udt*/
+    not_expected,       /*decimalint*/
   },
   {
     /*lob -> XXX*/
@@ -3895,7 +4664,127 @@ ObObjCastFunc OB_OBJ_CAST[ObMaxTC][ObMaxTC] =
     not_support,        /*interval*/
     not_support,        /*rowid*/
     not_support,        /*lob*/
+    not_support,        /*json*/
+    not_support,        /*geometry*/
+    not_expected,       /*udt*/
+    not_support,        /*decimalint*/
   },
+  {
+    /*json -> XXX*/
+    not_support,/*null*/
+    not_support,/*int*/
+    not_support,/*uint*/
+    not_support,/*float*/
+    not_support,/*double*/
+    not_support,/*number*/
+    not_support,/*datetime*/
+    not_support,/*date*/
+    not_support,/*time*/
+    not_support,/*year*/
+    not_support,/*string*/
+    not_support,/*extend*/
+    not_support,/*unknown*/
+    not_support,/*text*/
+    not_support,/*bit*/
+    not_expected,/*enumset*/
+    not_expected,/*enumset_inner*/
+    not_support,/*otimestamp*/
+    not_expected,/*raw*/
+    not_expected,/*interval*/
+    not_expected,/*rowid*/
+    not_support,/*lob*/
+    not_support,/*json*/
+    not_support,/*geometry*/
+    not_expected,/*udt*/
+    not_support,/*decimalint*/
+  },
+  {
+    /*geometry -> XXX*/
+    not_support,/*null*/
+    not_support,/*int*/
+    not_support,/*uint*/
+    not_support,/*float*/
+    not_support,/*double*/
+    not_support,/*number*/
+    not_support,/*datetime*/
+    not_support,/*date*/
+    not_support,/*time*/
+    not_support,/*year*/
+    not_support,/*string*/
+    not_support,/*extend*/
+    not_support,/*unknown*/
+    not_support,/*text*/
+    not_support,/*bit*/
+    not_expected,/*enumset*/
+    not_expected,/*enumset_inner*/
+    not_support,/*otimestamp*/
+    not_expected,/*raw*/
+    not_expected,/*interval*/
+    not_expected,/*rowid*/
+    not_expected,/*lob*/
+    not_support,/*json*/
+    not_support,/*geometry*/
+    not_expected,/*udt*/
+    not_support,/*decimalint*/
+  },
+  {
+    /*udt -> XXX*/
+    not_expected,/*null*/
+    not_expected,/*int*/
+    not_expected,/*uint*/
+    not_expected,/*float*/
+    not_expected,/*double*/
+    not_expected,/*number*/
+    not_expected,/*datetime*/
+    not_expected,/*date*/
+    not_expected,/*time*/
+    not_expected,/*year*/
+    not_expected,/*string*/
+    not_expected,/*extend*/
+    not_expected,/*unknown*/
+    not_expected,/*text*/
+    not_expected,/*bit*/
+    not_expected,/*enumset*/
+    not_expected,/*enumset_inner*/
+    not_expected,/*otimestamp*/
+    not_expected,/*raw*/
+    not_expected,/*interval*/
+    not_expected,/*rowid*/
+    not_expected,/*lob*/
+    not_expected,/*json*/
+    not_expected,/*geometry*/
+    not_expected,/*udt*/
+    not_expected,/*decimal int */
+  },
+  {
+    /*decimalint-> XXX*/
+    not_support,/*null*/
+    decimalint_int,/*int*/
+    decimalint_uint,/*uint*/
+    decimalint_float,/*float*/
+    decimalint_double,/*double*/
+    decimalint_number,/*number*/
+    decimalint_datetime,/*datetime*/
+    decimalint_date,/*date*/
+    decimalint_time,/*time*/
+    decimalint_year,/*year*/
+    decimalint_string,/*string*/
+    not_support,/*extend*/
+    not_support,/*unknown*/
+    decimalint_string,/*text*/
+    not_support,/*bit*/
+    not_expected,/*enumset*/
+    not_expected,/*enumset_inner*/
+    not_support,/*otimestamp*/
+    not_expected,/*raw*/
+    not_expected,/*interval*/
+    not_expected,/*rowid*/
+    not_support,/*lob*/
+    not_support,/*json*/
+    not_support,/*geometry*/
+    not_expected, /*udt*/
+    decimalint_decimalint,/*decimalint*/
+  }
 };
 
 ////////////////////////////////////////////////////////////////
@@ -3905,7 +4794,7 @@ bool cast_supported(const ObObjTypeClass orig_tc,
   bool bret = false;
   if (OB_UNLIKELY(ob_is_invalid_obj_tc(orig_tc) ||
                   ob_is_invalid_obj_tc(expect_tc))) {
-    LOG_WARN("invalid cast type", K(orig_tc), K(expect_tc));
+    LOG_WDIAG("invalid cast type", K(orig_tc), K(expect_tc));
   } else {
     bret = (OB_OBJ_CAST[orig_tc][expect_tc] != not_support);
   }
@@ -3949,7 +4838,7 @@ int number_range_check(ObObjCastParams &params, const ObAccuracy &accuracy,
                                           number::ObNumber::MAX_PRECISION);
   if (OB_ISNULL(params.allocator_v2_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid allocator",
+    LOG_WDIAG("invalid allocator",
         K(ret), K(params.allocator_v2_), K(obj));
   } else {
     int &cast_ret = CM_IS_ERROR_ON_FAIL(cast_mode) ? ret : params.warning_;
@@ -3995,7 +4884,7 @@ int number_range_check(ObObjCastParams &params, const ObAccuracy &accuracy,
       res_obj = &buf_obj;
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid arguments",
+      LOG_WDIAG("invalid arguments",
           K(ret), K(precision), K(scale));
     }
   }
@@ -4035,7 +4924,7 @@ int otimestamp_scale_check(ObObjCastParams &params, const ObAccuracy &accuracy, 
 
   if (OB_UNLIKELY(scale > MAX_SCALE_FOR_ORACLE_TEMPORAL)) {
     ret = OB_ERR_TOO_BIG_PRECISION;
-    LOG_WARN("fail to scale check", K(ret), K(MAX_SCALE_FOR_ORACLE_TEMPORAL));
+    LOG_WDIAG("fail to scale check", K(ret), K(MAX_SCALE_FOR_ORACLE_TEMPORAL));
   } else if (0 <= scale && scale < MAX_SCALE_FOR_ORACLE_TEMPORAL) {
     ObOTimestampData ot_data = ObTimeConverter::round_otimestamp(scale, obj.get_otimestamp_value());
     if (ObTimeConverter::is_valid_otimestamp(ot_data.time_us_, static_cast<int32_t>(ot_data.time_ctx_.tail_nsec_))) {
@@ -4043,7 +4932,7 @@ int otimestamp_scale_check(ObObjCastParams &params, const ObAccuracy &accuracy, 
       buf_obj.set_scale(scale);
     } else {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("invalid otimestamp, set it null", K(ret), K(ot_data), K(scale));
+      LOG_WDIAG("invalid otimestamp, set it null", K(ret), K(ot_data), K(scale));
       buf_obj.set_null();
     }
     res_obj = &buf_obj;
@@ -4089,7 +4978,7 @@ int string_length_check(ObObjCastParams &params, const ObAccuracy &accuracy, con
     res_obj = &buf_obj;
     if (OB_UNLIKELY(0 == max_len_char && str_len_byte > 0)) {
       cast_ret = OB_ERR_DATA_TOO_LONG;
-      OB_LOG(WARN, "char type length is too long", K(obj), K(max_len_char), K(str_len_char));
+      OB_LOG(WDIAG, "char type length is too long", K(obj), K(max_len_char), K(str_len_char));
     }
   } else {
     int32_t trunc_len_byte = -1;
@@ -4098,7 +4987,7 @@ int string_length_check(ObObjCastParams &params, const ObAccuracy &accuracy, con
       // str_len_char > max_len_char means an error or warning, no matter tail ' ' or '\0'.
       if (OB_UNLIKELY(str_len_char > max_len_char)) {
         cast_ret = OB_ERR_DATA_TOO_LONG;
-        LOG_WARN("binary type length is too long", K(obj), K(max_len_char), K(str_len_char));
+        LOG_WDIAG("binary type length is too long", K(obj), K(max_len_char), K(str_len_char));
       }
     } else {
       // trunc_len_char > max_len_char means an error or warning, without tail ' ', otherwise
@@ -4107,10 +4996,10 @@ int string_length_check(ObObjCastParams &params, const ObAccuracy &accuracy, con
       trunc_len_char = static_cast<int32_t>(ObCharset::strlen_char(cs_type, str, trunc_len_byte));
       if (OB_UNLIKELY(trunc_len_char > max_len_char)) {
         cast_ret = OB_ERR_DATA_TOO_LONG;
-        LOG_WARN("char type length is too long", K(obj), K(max_len_char), K(trunc_len_char));
+        LOG_WDIAG("char type length is too long", K(obj), K(max_len_char), K(trunc_len_char));
       } else if (OB_UNLIKELY(str_len_char > max_len_char)) {
         params.warning_ = OB_ERR_DATA_TOO_LONG;
-        LOG_WARN("char type length is too long", K(obj), K(max_len_char), K(str_len_char));
+        LOG_WDIAG("char type length is too long", K(obj), K(max_len_char), K(str_len_char));
       }
     }
     if (OB_SUCC(ret)) {
@@ -4155,7 +5044,7 @@ int obj_collation_check(const bool is_strict_mode, const ObCollationType cs_type
                                            str.ptr(),
                                            str.length(),
                                            well_formed_len))) {
-      LOG_WARN("invalid string for charset",
+      LOG_WDIAG("invalid string for charset",
                 K(ret), K(cs_type), K(str), K(well_formed_len));
       if (is_strict_mode) {
         ret = OB_ERR_INCORRECT_STRING_VALUE;
@@ -4165,7 +5054,7 @@ int obj_collation_check(const bool is_strict_mode, const ObCollationType cs_type
         obj.set_collation_type(cs_type);
         str.assign_ptr(str.ptr(), static_cast<ObString::obstr_size_t>(well_formed_len));
         obj.set_string(obj.get_type(), str.ptr(), str.length());
-        LOG_WARN("invalid string for charset",
+        LOG_WDIAG("invalid string for charset",
                   K(ret), K(cs_type), K(str), K(well_formed_len), K(str.length()));
       }
     } else {
@@ -4307,7 +5196,7 @@ int ObObjCasterV2::to_type(const ObObjType expect_type,
   if (OB_UNLIKELY(expect_type == in_obj.get_type() || ObNullType == in_obj.get_type())) {
     res_obj = &in_obj;
   } else if (OB_FAIL(to_type(expect_type, CS_TYPE_INVALID, cast_ctx, in_obj, buf_obj))) {
-    LOG_WARN("failed to cast obj", K(ret), K(in_obj), K(expect_type), K(cast_ctx.cast_mode_));
+    LOG_DEBUG("failed to cast obj", K(ret), K(in_obj), K(expect_type), K(cast_ctx.cast_mode_));
   } else {
     res_obj = &buf_obj;
   }
@@ -4339,11 +5228,10 @@ int ObObjCasterV2::to_type(const ObObjType expect_type,
   }
   if (OB_UNLIKELY(ob_is_invalid_obj_tc(in_tc) || ob_is_invalid_obj_tc(out_tc))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected type", K(ret), K(in_obj), K(expect_type));
+    LOG_DEBUG("unexpected type", K(ret), K(in_obj), K(expect_type));
   } else if (OB_FAIL(OB_OBJ_CAST[in_tc][out_tc](expect_type, cast_ctx, in_obj, out_obj, cast_ctx.cast_mode_))) {
-    LOG_WARN("failed to cast obj", K(ret), K(in_obj), K(in_tc), K(out_tc), K(expect_type), K(cast_ctx.cast_mode_));
+    LOG_DEBUG("failed to cast obj", K(ret), K(in_obj), K(in_tc), K(out_tc), K(expect_type), K(cast_ctx.cast_mode_));
   }
-
   if (OB_SUCC(ret)) {
     if (ObStringTC == out_tc || ObTextTC == out_tc || ObLobTC == out_tc) {
       if (ObStringTC == in_tc || ObTextTC == in_tc || ObLobTC == out_tc) {
@@ -4355,7 +5243,7 @@ int ObObjCasterV2::to_type(const ObObjType expect_type,
         out_obj.set_collation_type(expect_cs_type);
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected collation type", K(ret), K(in_obj), K(out_obj), K(expect_cs_type), K(common::lbt()));
+        LOG_WDIAG("unexpected collation type", K(ret), K(in_obj), K(out_obj), K(expect_cs_type), K(common::lbt()));
       }
     }
   }
@@ -4376,7 +5264,7 @@ int ObObjCasterV2::is_cast_monotonic(ObObjType t1, ObObjType t2, bool &is_monoto
   ObObjTypeClass tc2 = ob_obj_type_class(t2);
   if (OB_UNLIKELY(ob_is_invalid_obj_tc(tc1) || ob_is_invalid_obj_tc(tc2))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected type", K(ret), K(t1), K(t2), K(tc1), K(tc2));
+    LOG_WDIAG("unexpected type", K(ret), K(t1), K(t2), K(tc1), K(tc2));
   } else {
     is_monotonic = CAST_MONOTONIC[tc1][tc2];
   }
@@ -4398,7 +5286,7 @@ int ObObjCasterV2::is_order_consistent(const ObObjMeta &from,
   ObObjTypeClass tc2 = to.get_type_class();
   if (OB_UNLIKELY(ob_is_invalid_obj_tc(tc1) || ob_is_invalid_obj_tc(tc2))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected obj type class", K(ret), K(from), K(to));
+    LOG_WDIAG("unexpected obj type class", K(ret), K(from), K(to));
   } else if (from.is_string_type() && to.is_string_type()) {
     ObCollationType res_cs_type = CS_TYPE_INVALID;
     ObCollationLevel res_cs_level = CS_LEVEL_INVALID;
@@ -4410,7 +5298,7 @@ int ObObjCasterV2::is_order_consistent(const ObObjMeta &from,
                                                to_cs_type,
                                                res_cs_level,
                                                res_cs_type))) {
-      LOG_WARN("fail to aggregate collation", K(ret), K(from), K(to));
+      LOG_WDIAG("fail to aggregate collation", K(ret), K(from), K(to));
     } else {
       int64_t idx_from = get_idx_of_collate(from_cs_type);
       int64_t idx_to = get_idx_of_collate(to_cs_type);
@@ -4420,7 +5308,7 @@ int ObObjCasterV2::is_order_consistent(const ObObjMeta &from,
         ||idx_to >= ObCharset::VALID_COLLATION_TYPES
         ||idx_res >= ObCharset::VALID_COLLATION_TYPES)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected collation type", K(ret), K(from), K(to));
+        LOG_WDIAG("unexpected collation type", K(ret), K(from), K(to));
       } else {
         result = ORDER_CONSISTENT_WITH_BOTH_STRING[idx_from][idx_to][idx_res];
       }
@@ -4446,7 +5334,7 @@ int ObObjCasterV2::is_injection(const ObObjMeta &from,
   ObObjTypeClass tc2 = to.get_type_class();
   if (OB_UNLIKELY(ob_is_invalid_obj_tc(tc1) || ob_is_invalid_obj_tc(tc2))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("unexpected obj type class", K(ret), K(from), K(to));
+    LOG_WDIAG("unexpected obj type class", K(ret), K(from), K(to));
   } else if (from.is_string_type() && to.is_string_type()) {
     ObCollationType res_cs_type = CS_TYPE_INVALID;
     ObCollationLevel res_cs_level = CS_LEVEL_INVALID;
@@ -4458,7 +5346,7 @@ int ObObjCasterV2::is_injection(const ObObjMeta &from,
                                                to_cs_type,
                                                res_cs_level,
                                                res_cs_type))) {
-      LOG_WARN("fail to aggregate collation", K(ret), K(from), K(to));
+      LOG_WDIAG("fail to aggregate collation", K(ret), K(from), K(to));
     } else {
       int64_t idx_from = get_idx_of_collate(from_cs_type);
       int64_t idx_to = get_idx_of_collate(to_cs_type);
@@ -4468,7 +5356,7 @@ int ObObjCasterV2::is_injection(const ObObjMeta &from,
         ||idx_to >= ObCharset::VALID_COLLATION_TYPES
         ||idx_res >= ObCharset::VALID_COLLATION_TYPES)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unexpected collation type", K(ret), K(from), K(to));
+        LOG_WDIAG("unexpected collation type", K(ret), K(from), K(to));
       } else {
         result = INJECTION_WITH_BOTH_STRING[idx_from][idx_to][idx_res];
       }

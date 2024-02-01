@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.2.1.0],
+            [4.2.3.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.2.1.0"
+    obapi_version="4.2.3.0"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC
@@ -286,6 +286,20 @@
     esac],
     [dlink_observer=false])
     AM_CONDITIONAL([DLINK_OBSERVER], [test x$dlink_observer = xtrue])
+
+    AC_ARG_WITH([errsim],
+      AS_HELP_STRING([--with-errsim],
+        [whether use error inject (default is NO)]),
+        [
+          if test "$withval" = "yes"; then
+              enable_errsim=yes
+              AM_CXXFLAGS="${AM_CXXFLAGS} -DERRSIM"
+          fi
+        ],
+        [
+        enable_errsim=no
+        ]
+    )
 
     dnl build_version.mk related:
     dnl see whether git is installed

@@ -23,6 +23,7 @@
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
 #include "omt/ob_conn_table_processor.h"
 #include "omt/ob_white_list_table_processor.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -72,7 +73,8 @@ ObMysqlClientSession::ObMysqlClientSession()
       is_first_dml_sql_got_(false), is_proxy_enable_trans_internal_routing_(false), compressed_seq_(0),
       cluster_resource_(NULL), dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(), dummy_entry_valid_time_ns_(0), server_state_version_(0),
-      inner_request_param_(NULL), is_request_transferring_(false), tcp_init_cwnd_set_(false), half_close_(false),
+      inner_request_param_(NULL), is_request_transferring_(false), timeout_event_(OB_TIMEOUT_UNKNOWN_EVENT),
+      timeout_record_(0), tcp_init_cwnd_set_(false), half_close_(false),
       conn_decrease_(false), conn_prometheus_decrease_(false), vip_connection_decrease_(false),
       magic_(MYSQL_CS_MAGIC_DEAD), create_thread_(NULL), is_local_connection_(false),
       client_vc_(NULL), in_list_stat_(LIST_INIT), current_tid_(-1),
@@ -80,7 +82,7 @@ ObMysqlClientSession::ObMysqlClientSession()
       trans_coordinator_ss_addr_(), read_buffer_(NULL),
       buffer_reader_(NULL), mysql_sm_(NULL), read_state_(MCS_INIT), ka_vio_(NULL),
       server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
-      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false), timeout_event_(OB_TIMEOUT_UNKNOWN_EVENT), timeout_(0)
+      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false), cs_id_version_(CLIENT_SESSION_ID_V1), connected_time_(0)
 {
   SET_HANDLER(&ObMysqlClientSession::main_handler);
   bool enable_session_pool = get_global_proxy_config().is_pool_mode
@@ -96,7 +98,7 @@ void ObMysqlClientSession::destroy()
   if (OB_UNLIKELY(NULL != client_vc_)
       || OB_UNLIKELY(NULL != bound_ss_)
       || OB_ISNULL(read_buffer_)) {
-    PROXY_CS_LOG(WARN, "invalid client session", K(client_vc_), K(bound_ss_), K(read_buffer_));
+    PROXY_CS_LOG(WDIAG, "invalid client session", K(client_vc_), K(bound_ss_), K(read_buffer_));
   }
   is_local_connection_ = false;
 
@@ -170,6 +172,7 @@ void ObMysqlClientSession::destroy()
   ObProxyClientSession::cleanup();
   create_thread_ = NULL;
   using_ldg_ = false;
+  cs_id_version_ = CLIENT_SESSION_ID_V1;
   op_reclaim_free(this);
 }
 
@@ -197,9 +200,9 @@ int ObMysqlClientSession::ssn_hook_append(ObMysqlHookID id, ObContInternal *cont
   int ret = OB_SUCCESS;
   if (OB_ISNULL(cont)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "invalid argument", K(cont), K(ret));
+    PROXY_CS_LOG(WDIAG, "invalid argument", K(cont), K(ret));
   } else if (OB_FAIL(ObProxyClientSession::ssn_hook_append(id, cont))) {
-    PROXY_CS_LOG(WARN, "fail to append ssh hook", K(id), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to append ssh hook", K(id), K(ret));
   } else if (NULL != mysql_sm_) {
     mysql_sm_->hooks_set_ = true;
   }
@@ -211,9 +214,9 @@ int ObMysqlClientSession::ssn_hook_prepend(ObMysqlHookID id, ObContInternal *con
   int ret = OB_SUCCESS;
   if (OB_ISNULL(cont)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "invalid argument", K(cont), K(ret));
+    PROXY_CS_LOG(WDIAG, "invalid argument", K(cont), K(ret));
   } else if (OB_FAIL(ObProxyClientSession::ssn_hook_prepend(id, cont))) {
-    PROXY_CS_LOG(WARN, "fail to prepend ssn hook", K(id), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to prepend ssn hook", K(id), K(ret));
   } else if (NULL != mysql_sm_) {
     mysql_sm_->hooks_set_ = true;
   }
@@ -225,7 +228,7 @@ int ObMysqlClientSession::new_transaction(const bool is_new_conn/* = false*/)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(NULL != mysql_sm_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WARN, "sm should be null when start a new transaction", K(mysql_sm_), K(ret));
+    PROXY_CS_LOG(WDIAG, "sm should be null when start a new transaction", K(mysql_sm_), K(ret));
   } else {
     // Defensive programming, make sure nothing persists across
     // connection re-use
@@ -234,9 +237,9 @@ int ObMysqlClientSession::new_transaction(const bool is_new_conn/* = false*/)
     read_state_ = MCS_ACTIVE_READER;
     if (OB_ISNULL(mysql_sm_ = ObMysqlSM::allocate())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_CS_LOG(ERROR, "fail to alloc memory for sm", K(ret));
+      PROXY_CS_LOG(EDIAG, "fail to alloc memory for sm", K(ret));
     } else if (OB_FAIL(mysql_sm_->init())) {
-      PROXY_CS_LOG(WARN, "fail to init sm", K_(cs_id), K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to init sm", K_(cs_id), K(ret));
     } else {
       PROXY_CS_LOG(INFO, "Starting new transaction using sm", K_(cs_id),
                    K(get_transact_count()), "sm_id", mysql_sm_->sm_id_);
@@ -245,13 +248,13 @@ int ObMysqlClientSession::new_transaction(const bool is_new_conn/* = false*/)
       if (OB_FAIL(mysql_sm_->attach_client_session(*this, *buffer_reader_, is_new_conn))) {
         // if fail to attach client session, mysql sm will handle the failure itself, so we just print a warning log and
         // need not to return error ret to the caller
-        PROXY_CS_LOG(WARN, "fail to attach client session", K_(cs_id), K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to attach client session", K_(cs_id), K(ret));
         ret = OB_SUCCESS;
       }
     }
   }
   if (OB_FAIL(ret)) {
-    PROXY_CS_LOG(WARN, "fail to start new transaction, will close client session", K_(cs_id), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to start new transaction, will close client session", K_(cs_id), K(ret));
     do_io_close();
   }
   return ret;
@@ -284,9 +287,10 @@ int ObMysqlClientSession::new_connection(
     ObNetVConnection *new_vc, ObMIOBuffer *iobuf, ObIOBufferReader *reader)
 {
   int ret = OB_SUCCESS;
+
   if (OB_ISNULL(new_vc) || OB_UNLIKELY(NULL != client_vc_)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "invalid client connection", K(new_vc), K(client_vc_), K(ret));
+    PROXY_CS_LOG(WDIAG, "invalid client connection", K(new_vc), K(client_vc_), K(ret));
   } else {
     create_thread_ = this_ethread();
     client_vc_ = new_vc;
@@ -294,6 +298,8 @@ int ObMysqlClientSession::new_connection(
     mutex_ = new_vc->mutex_;
     session_manager_.set_mutex(mutex_);
     session_manager_new_.set_mutex(mutex_);
+    set_cs_id_version(static_cast<ObClientSessionIDVersion>(get_global_proxy_config().client_session_id_version.get_value()));
+    set_connected_time(ObTimeUtility::current_time());
     MUTEX_TRY_LOCK(lock, mutex_, this_ethread());
     if (OB_LIKELY(lock.is_locked())) {
       current_tid_ = GETTID();
@@ -322,7 +328,7 @@ int ObMysqlClientSession::new_connection(
       if (OB_SUCCESS == mutex_acquire(&g_debug_cs_list_mutex)) {
         g_debug_cs_list.push(this);
         if (OB_SUCCESS != mutex_release(&g_debug_cs_list_mutex)) {
-          PROXY_CS_LOG(ERROR, "fail to release mutex", K_(cs_id));
+          PROXY_CS_LOG(EDIAG, "fail to release mutex", K_(cs_id));
         }
       }
 #endif
@@ -331,7 +337,7 @@ int ObMysqlClientSession::new_connection(
         read_buffer_ = iobuf;
       } else if (OB_ISNULL(read_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_CS_LOG(ERROR, "fail to alloc memory for read_buffer", K(ret));
+        PROXY_CS_LOG(EDIAG, "fail to alloc memory for read_buffer", K(ret));
       }
 
       if (OB_SUCC(ret)) {
@@ -339,7 +345,7 @@ int ObMysqlClientSession::new_connection(
           buffer_reader_ = reader;
         } else if (OB_ISNULL(buffer_reader_ = read_buffer_->alloc_reader())) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_CS_LOG(ERROR, "fail to alloc buffer reader", K(ret));
+          PROXY_CS_LOG(EDIAG, "fail to alloc buffer reader", K(ret));
         }
       }
 
@@ -354,26 +360,27 @@ int ObMysqlClientSession::new_connection(
         // start listen event on client vc
         if (OB_ISNULL(ka_vio_ = client_vc_->do_io_read(this, INT64_MAX, read_buffer_))) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_CS_LOG(WARN, "fail to start listen event on client vc, ka_vio is null", K(ret));
-        } else if (OB_FAIL(acquire_client_session_id())) {
-          PROXY_CS_LOG(WARN, "fail to acquire client session_id", K_(cs_id), K(ret));
+          PROXY_CS_LOG(WDIAG, "fail to start listen event on client vc, ka_vio is null", K(ret));
         } else if (OB_FAIL(add_to_list())) {
-          PROXY_CS_LOG(WARN, "fail to add cs to list", K_(cs_id), K(ret));
+          PROXY_CS_LOG(WDIAG, "fail to add cs to list", K_(cs_id), K(ret));
         } else if (OB_FAIL(session_info_.init())) {
-          PROXY_CS_LOG(WARN, "fail to init session_info", K_(cs_id), K(ret));
+          PROXY_CS_LOG(WDIAG, "fail to init session_info", K_(cs_id), K(ret));
         } else if (OB_FAIL(get_vip_addr())) {
-          PROXY_CS_LOG(WARN, "get vip addr failed", K(ret));
+          PROXY_CS_LOG(WDIAG, "get vip addr failed", K(ret));
         } else {
           const ObAddr &client_addr = get_real_client_addr();
           session_info_.set_client_host(client_addr);
           set_local_connection();
           PROXY_CS_LOG(INFO, "client session born", K_(cs_id), K_(proxy_sessid), K_(is_local_connection), K_(client_vc),
-                       "client_fd", client_vc_->get_conn_fd(), K(client_addr));
+                       "client_fd", client_vc_->get_conn_fd(), K(client_addr), "is_proxy_client", is_proxy_mysql_client_);
 
           // 1. first convert vip to tenant info, if needed.
+          // 这里需要注意，在阿里云上这里可以获取成功，但 aws 走了
+          // ppv2接口所以预期获取失败，处理主要为了兼容 SSL 的能力集合，
+          // aws 和阿里云行为有差异
           if (is_need_convert_vip_to_tname()) {
             if (OB_FAIL(fetch_tenant_by_vip())) {
-              PROXY_CS_LOG(WARN, "fail to fetch tenant by vip", K(ret));
+              PROXY_CS_LOG(WDIAG, "fail to fetch tenant by vip", K(ret));
               ret = OB_SUCCESS;
             } else if (is_vip_lookup_success()) {
               ObString user_name;
@@ -395,12 +402,11 @@ int ObMysqlClientSession::new_connection(
       } // end if (OB_SUCC(ret))
     } else {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_CS_LOG(WARN, "fail to try lock thread mutex, will close connection", K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to try lock thread mutex, will close connection", K(ret));
     }
   }
-
   if (OB_FAIL(ret)) {
-    PROXY_CS_LOG(WARN, "fail to do new connection, do_io_close itself", K_(cs_id), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to do new connection, do_io_close itself", K_(cs_id), K(ret));
     do_io_close();
   }
   return ret;
@@ -415,19 +421,19 @@ int ObMysqlClientSession::fetch_tenant_by_vip()
   bool found = false;
   if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
     addr, "", "", "proxy_tenant_name", tenant_item, "LEVEL_VIP", found))) {
-    PROXY_CS_LOG(WARN, "get proxy tenant name config failed", K(addr), K(ret));
-  } 
+    PROXY_CS_LOG(WDIAG, "get proxy tenant name config failed", K(addr), K(ret));
+  }
 
   if (OB_SUCC(ret) && found) {
     if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
       addr, "", "", "rootservice_cluster_name", cluster_item, "LEVEL_VIP", found))) {
-      PROXY_CS_LOG(WARN, "get cluster name config failed", K(addr), K(ret));
+      PROXY_CS_LOG(WDIAG, "get cluster name config failed", K(addr), K(ret));
     }
   }
 
   if (OB_SUCC(ret) && found) {
     if (OB_FAIL(ct_info_.vip_tenant_.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
-      PROXY_CS_LOG(WARN, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
+      PROXY_CS_LOG(WDIAG, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
     } else {
       session_info_.set_vip_addr_name(addr.addr_);
       ct_info_.lookup_success_ = true;
@@ -459,13 +465,38 @@ void ObMysqlClientSession::handle_new_connection()
   {
     MUTEX_LOCK(lock, lmutex, &ethread);
     if (OB_FAIL(do_api_callout(OB_MYSQL_SSN_START_HOOK))) {
-      PROXY_CS_LOG(WARN, "fail to start hook, will close client session", K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to start hook, will close client session", K(ret));
     }
   }
   if (OB_FAIL(ret)) {
     do_io_close();
   }
 }
+
+
+int ObMysqlClientSession::acquire_client_session_id(const ObClientSessionIDVersion version)
+{
+  int ret = OB_SUCCESS;
+  switch (version)
+  {
+  case CLIENT_SESSION_ID_V1:
+    if (OB_FAIL(acquire_client_session_id_v1())) {
+      PROXY_CS_LOG(WDIAG, "fail to acquire normal client session id", K(ret));
+    }
+    break;
+  case CLIENT_SESSION_ID_V2:
+    if (OB_FAIL(acquire_client_session_id_v2())) {
+      PROXY_CS_LOG(WDIAG, "fail to acquire unique client session id", K(ret));
+    }
+    break;
+  default:
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(WDIAG, "unexpected client session version", K(ret), K(version));
+    break;
+  }
+  return ret;
+}
+
 
 //if proxy use client service mode, conn_id is equal to cs_id
 //otherwise, conn_id extract from observer's handshake packet
@@ -479,19 +510,23 @@ void ObMysqlClientSession::handle_new_connection()
 //connection id extract from observer's handshake packet
 //|----1----|-----15-----|----16-----|
 //|    1    |  SERVER_ID | LOCAL_SEQ |
-int ObMysqlClientSession::acquire_client_session_id()
+// original client session id , depends on 8bit proxy_id, only sync with client
+int ObMysqlClientSession::acquire_client_session_id_v1()
 {
   static __thread uint32_t next_cs_id = 0;
   static __thread uint32_t thread_init_cs_id = 0;
   static __thread uint32_t max_local_seq = 0;
 
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(0 == next_cs_id) && OB_FAIL(get_thread_init_cs_id(thread_init_cs_id, max_local_seq))) {
-    PROXY_CS_LOG(WARN, "fail to  is get thread init cs id", K(next_cs_id), K(ret));
+  if (OB_UNLIKELY(0 == next_cs_id) && OB_FAIL(get_thread_init_cs_id(CLIENT_SESSION_ID_V1, thread_init_cs_id, max_local_seq))) {
+    PROXY_CS_LOG(WDIAG, "fail to  is get thread init cs id", K(next_cs_id), K(ret));
   }
 
   if (OB_SUCC(ret)) {
     uint32_t cs_id = ++next_cs_id;
+    if ((cs_id & max_local_seq) == 0) {
+      cs_id ++;
+    }
     cs_id &= max_local_seq;         // set local seq
     cs_id |= thread_init_cs_id;     // set full cs id
 
@@ -500,28 +535,40 @@ int ObMysqlClientSession::acquire_client_session_id()
   return ret;
 }
 
-//connection id from obproxy
-//|----1----|-----8-----|------1------|----------22-----------|
-//|  MARKS  |  PROXY_ID | UPGRADE_VER |---1~N-----|----22-N---|
-//|    0    |   1~255   |     0/1     | THREAD_ID | LOCAL_SEQ |
-//|-------------thread init cs id-----------------|
+// connection id from obproxy, allocated from thread
+//|----1----|-----13------|------1------|----------17-----------|
+//|  FLAG   |   PROXY_ID  | UPGRADE_VER |---1~N-----|----17-N---|
+//|    0    |    0-8191   |     0/1     | THREAD_ID | LOCAL_SEQ |
+//|---------------------thread init cs id-----------------------|
 //
-int ObMysqlClientSession::get_thread_init_cs_id(uint32_t &thread_init_cs_id,
+// global unique client session id in multi obproxy, depends on 13bits proxy_id, sync with client and observer
+int ObMysqlClientSession::acquire_client_session_id_v2()
+{
+  static __thread uint32_t next_cs_id = 0;
+  static __thread uint32_t thread_init_cs_id = 0;
+  static __thread uint32_t max_local_seq = 0;
+  static __thread uint32_t proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
+
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(0 == next_cs_id) || proxy_id != static_cast<uint32_t>(get_global_proxy_config().proxy_id)) {
+    proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
+    get_thread_init_cs_id(CLIENT_SESSION_ID_V2, thread_init_cs_id, max_local_seq);
+  }
+
+  uint32_t cs_id = ++next_cs_id;
+  if ((cs_id & max_local_seq) == 0) {
+    cs_id ++;
+  }
+  cs_id &= max_local_seq;
+  cs_id |= thread_init_cs_id;
+  cs_id_ = cs_id;
+  return ret;
+}
+
+int ObMysqlClientSession::get_thread_init_cs_id(const ObClientSessionIDVersion version, uint32_t &thread_init_cs_id,
     uint32_t &max_local_seq, const int64_t thread_id/*-1*/)
 {
   int ret = OB_SUCCESS;
-  const uint32_t proxy_head_bits      = 9;//MARKS + PROXY_ID
-  const uint32_t upgrade_ver_bits     = 1;
-  const uint32_t thread_id_bits       = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
-  const uint32_t local_seq_bits       = 32 - proxy_head_bits - upgrade_ver_bits - thread_id_bits;
-
-  const uint32_t proxy_id_offset      = 32 - proxy_head_bits;
-  const uint32_t upgrade_ver_offset   = 32 - proxy_head_bits - upgrade_ver_bits;
-  const uint32_t thread_id_offset     = local_seq_bits;
-
-  const uint32_t proxy_id      = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
-  const uint32_t upgrade_ver   = static_cast<uint32_t>(0x1 & get_global_hot_upgrade_info().upgrade_version_); //only use the tail bits
-
   uint32_t tmp_thread_id = 0;
   if (thread_id < 0 || thread_id >= g_event_processor.thread_count_for_type_[ET_CALL]) {// use curr ethread
     ObEThread &ethread = self_ethread();
@@ -529,55 +576,148 @@ int ObMysqlClientSession::get_thread_init_cs_id(uint32_t &thread_init_cs_id,
   } else {// use assigned ethread
     tmp_thread_id = static_cast<uint32_t>(thread_id);
   }
-  max_local_seq = 0;
-  thread_init_cs_id = 0;
+  const uint32_t upgrade_ver  = static_cast<uint32_t>(0x1 & get_global_hot_upgrade_info().upgrade_version_); //only use the tail bits
+  const uint32_t proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
 
-  if (OB_SUCC(ret)) {
-    thread_init_cs_id |= (proxy_id << proxy_id_offset);        // set proxy id
-    thread_init_cs_id |= (upgrade_ver << upgrade_ver_offset);  // set upgrade version
-    thread_init_cs_id |= (tmp_thread_id << thread_id_offset);  // set thread id
-    max_local_seq      = (1 << local_seq_bits) - 1;
+  switch (version)
+  {
+  case CLIENT_SESSION_ID_V1:
+  {
+    const uint32_t proxy_head_bits      = 9;//MARKS + PROXY_ID
+    const uint32_t upgrade_ver_bits     = 1;
+    const uint32_t thread_id_bits       = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
+    const uint32_t local_seq_bits       = 32 - proxy_head_bits - upgrade_ver_bits - thread_id_bits;
+
+    const uint32_t proxy_id_offset      = 32 - proxy_head_bits;
+    const uint32_t upgrade_ver_offset   = 32 - proxy_head_bits - upgrade_ver_bits;
+    const uint32_t thread_id_offset     = local_seq_bits;
+
+    const uint32_t upgrade_ver   = static_cast<uint32_t>(0x1 & get_global_hot_upgrade_info().upgrade_version_); //only use the tail bits
+
+    max_local_seq = 0;
+    thread_init_cs_id = 0;
+
+    if (OB_SUCC(ret)) {
+      thread_init_cs_id |= (proxy_id << proxy_id_offset);        // set proxy id
+      thread_init_cs_id |= (upgrade_ver << upgrade_ver_offset);  // set upgrade version
+      thread_init_cs_id |= (tmp_thread_id << thread_id_offset);  // set thread id
+      max_local_seq      = (1 << local_seq_bits) - 1;
+    }
+    break;
   }
+  case CLIENT_SESSION_ID_V2:
+  {
+    // calc bits
+    const uint32_t flag_bits = 1;
+    const uint32_t proxy_id_bits =  13;
+    const uint32_t upgrade_ver_bits = 1;
+    const uint32_t thread_id_bits = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
+    const uint32_t seq_id_bits = 32 - flag_bits - proxy_id_bits - upgrade_ver_bits - thread_id_bits;
+
+    // calc offset
+    const uint32_t flag_offset = 32 - flag_bits;
+    const uint32_t proxy_id_offset = flag_offset - proxy_id_bits;
+    const uint32_t upgrade_ver_offset = proxy_id_offset - upgrade_ver_bits;
+    const uint32_t thread_id_offset = upgrade_ver_offset - thread_id_bits;
+
+    // set flag/proxy_id/upgrade_ver/thread_id_offset for cs_id
+
+    thread_init_cs_id = 0;
+    max_local_seq = 0;
+
+    thread_init_cs_id |= (proxy_id << proxy_id_offset);
+    thread_init_cs_id |= (upgrade_ver << upgrade_ver_offset);
+    thread_init_cs_id |= (tmp_thread_id << thread_id_offset);
+    max_local_seq = (1 << seq_id_bits) - 1;
+    break;
+  }
+  default:
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(WDIAG, "unexpected client session version", K(ret), K(version));
+    break;
+  }
+
   return ret;
 }
 
 int ObMysqlClientSession::add_to_list()
 {
   int ret = OB_SUCCESS;
-  if (is_proxy_mysql_client_) {
+  ObMysqlClientSessionMap &cs_map = get_client_session_map(*mutex_->thread_holding_);
+  ObClientSessionIDList &cs_id_list = get_client_session_id_list(*mutex_->thread_holding_);
+  const int64_t MAX_TRY_TIMES = 1000;
+  if (OB_FAIL(acquire_client_session_id(cs_id_version_))) {
+    PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
+  } else if (is_proxy_mysql_client_) {
     //if it is is proxy mysql client, we do follow things:
     //1. do not add to list
-    //2. set cs_id proxy_mark to 1
+    //2. set cs_id top flag to 1
     //3. use observer session id in handshake as conn id
     //4. do not saved login for inner client vc
-    cs_id_ |= 0x80000000;// set top bit to 1
-    PROXY_CS_LOG(INFO, "proxy mysql client session born", K_(cs_id));
+    if (cs_id_version_ == CLIENT_SESSION_ID_V1) {
+      // CLIENT_SESSION_ID_V1, set top flag to avoid duplicate cs_id
+      cs_id_ |= 0x80000000;// set top bit to 1
+    } else if (cs_id_version_ == CLIENT_SESSION_ID_V2) {
+      // CLIENT_SESSION_ID_V2, record cs id to avoid duplicate cs_id
+      bool is_exist = false;
+      for (int64_t i = 0; OB_SUCC(ret) && i < MAX_TRY_TIMES; ++i) {
+        if (OB_FAIL(cs_id_list.is_cs_id_exist(cs_id_, is_exist))) {
+          PROXY_CS_LOG(WDIAG, "fail to check if cs_id exist", K(cs_id_), K(ret));
+          break;
+        } else if (!is_exist) {
+          if (OB_FAIL(cs_id_list.record_cs_id(cs_id_))) {
+            PROXY_CS_LOG(WDIAG, "fail to record cs id for proxy mysql client", K(ret));
+          }
+          break;
+        } else if (OB_FAIL(acquire_client_session_id(cs_id_version_))) {
+          PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K(ret));
+          break;
+        }
+      }
+      if (OB_SUCC(ret) && is_exist) {
+        ret = OB_SESSION_ENTRY_EXIST;
+        PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
+        cs_id_ = 0;
+      }
+    }
   } else if (OB_UNLIKELY(LIST_ADDED == in_list_stat_)) {
     ret = OB_ENTRY_EXIST;
-    PROXY_CS_LOG(WARN, "cs had already in the list, it should not happened", K_(cs_id), K(ret));
+    PROXY_CS_LOG(WDIAG, "cs had already in the list, it should not happened", K_(cs_id), K(ret));
   } else if (OB_ISNULL(mutex_->thread_holding_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WARN, "mutex_->thread_holding_ is null, it should not happened", K_(cs_id), K(ret));
+    PROXY_CS_LOG(WDIAG, "mutex_->thread_holding_ is null, it should not happened", K_(cs_id), K(ret));
   } else {
-    const int64_t MAX_TRY_TIMES = 1000;
-    ObMysqlClientSessionMap &cs_map = get_client_session_map(*mutex_->thread_holding_);
     for (int64_t i = 0; OB_SUCC(ret) && LIST_ADDED != in_list_stat_ && i < MAX_TRY_TIMES; ++i) {
-      if (OB_FAIL(cs_map.set(*this))) {
-        if (OB_LIKELY(OB_HASH_EXIST == ret)) {
-          PROXY_CS_LOG(INFO, "repeat cs id, retry to acquire another one", K_(cs_id), K(client_vc_), K(ret));
-          if (OB_FAIL(acquire_client_session_id())) {
-            PROXY_CS_LOG(WARN, "fail to acquire client session_id", K_(cs_id), K(client_vc_), K(ret));
+      int tmp_ret = OB_SUCCESS;
+      bool is_exist = false;
+      if (OB_FAIL(cs_id_list.is_cs_id_exist(cs_id_, is_exist))) {
+        PROXY_CS_LOG(WDIAG, "fail to check if cs_id exist", K_(cs_id), K(ret));
+      } else if (!is_exist) {
+        if (OB_SUCCESS != (tmp_ret = cs_map.set(*this))) {
+          if (OB_LIKELY(OB_HASH_EXIST == tmp_ret)) {
+            PROXY_CS_LOG(INFO, "repeat cs id, retry to acquire another one", K_(cs_id), K(client_vc_), K(ret));
+            if (OB_FAIL(acquire_client_session_id(cs_id_version_))) {
+              PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
+            }
+          } else {
+            ret = tmp_ret;
+            PROXY_CS_LOG(WDIAG, "fail to set cs into cs_map", K_(cs_id), K(client_vc_), K(ret));
           }
         } else {
-          PROXY_CS_LOG(WARN, "fail to set cs into cs_map", K_(cs_id), K(client_vc_), K(ret));
+          if (OB_FAIL(cs_id_list.record_cs_id(cs_id_))) {
+            PROXY_CS_LOG(WDIAG, "fail to record cs_id and thread_id map", K_(cs_id), "thread_id", self_ethread().id_, K(ret));
+          } else {
+            in_list_stat_ = LIST_ADDED;
+          }
         }
-      } else {
-        in_list_stat_ = LIST_ADDED;
+      } else if (OB_FAIL(acquire_client_session_id(cs_id_version_))) {
+        PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
       }
     }
     if (OB_SUCC(ret) && LIST_ADDED != in_list_stat_) {
       ret = OB_SESSION_ENTRY_EXIST;
-      PROXY_CS_LOG(WARN, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
+      PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
+      cs_id_ = 0;
     }
   }
   return ret;
@@ -637,7 +777,7 @@ void ObMysqlClientSession::set_tcp_init_cwnd()
 
   if (0 != desired_tcp_init_cwnd) {
     if (0 != client_vc_->set_tcp_init_cwnd(desired_tcp_init_cwnd)) {
-      PROXY_CS_LOG(WARN, "set_tcp_init_cwnd failed", K(desired_tcp_init_cwnd));
+      PROXY_CS_LOG(WDIAG, "set_tcp_init_cwnd failed", K(desired_tcp_init_cwnd));
     }
   }
 }
@@ -655,6 +795,11 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
   if (MCS_CLOSED != read_state_) {
     if (NULL != mysql_sm_) {
       mysql_sm_->set_detect_server_info(mysql_sm_->trans_state_.server_info_.addr_, -1, 0);
+      if (mysql_sm_->connection_diagnosis_trace_ != NULL
+          && ObConnectionDiagnosisTrace::is_enable_diagnosis_log(get_global_proxy_config().connection_diagnosis_option)) {
+        // in case of client session killed before sm killed, build basic connection diagnosis_info here
+        mysql_sm_->build_basic_connection_diagnosis_info();
+      }
     }
     if (MCS_ACTIVE_READER == read_state_) {
       if (LIST_ADDED == in_list_stat_ || is_proxy_mysql_client_) {
@@ -696,14 +841,14 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
 
       if (OB_ISNULL(ka_vio_ = client_vc_->do_io_read(this, INT64_MAX, read_buffer_))) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WARN, "ka_vio_ is null", K(ret));
+        PROXY_CS_LOG(WDIAG, "ka_vio_ is null", K(ret));
       }
 
       // Drain any data read.
       // If the buffer is full and the client writes again, we will not receive a
       // READ_READY event.
       if (OB_FAIL(buffer_reader_->consume(buffer_reader_->read_avail()))) {
-        PROXY_CS_LOG(WARN, "fail to consume ", K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to consume ", K(ret));
       }
     }
 
@@ -724,15 +869,21 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
         CLIENT_SESSION_SET_DEFAULT_HANDLER(&ObMysqlClientSession::handle_other_event);
         if (OB_ISNULL(create_thread_->schedule_imm(this, CLIENT_SESSION_ERASE_FROM_MAP_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_CS_LOG(WARN, "fail to schedule switch thread", K_(cs_id), K(ret));
+          PROXY_CS_LOG(WDIAG, "fail to schedule switch thread", K_(cs_id), K(ret));
         }
       } else {
         ObMysqlClientSessionMap &cs_map = get_client_session_map(*mutex_->thread_holding_);
         if (OB_FAIL(cs_map.erase(cs_id_))) {
-          PROXY_CS_LOG(WARN, "current client session is not in table, no need to erase", K_(cs_id), K(ret));
+          PROXY_CS_LOG(WDIAG, "current client session is not in table, no need to erase", K_(cs_id), K(ret));
+        } else {
+          in_list_stat_ = LIST_REMOVED;
         }
-        in_list_stat_ = LIST_REMOVED;
       }
+    }
+
+    ObClientSessionIDList &cs_id_list = get_client_session_id_list(*mutex_->thread_holding_);
+    if (OB_FAIL(cs_id_list.erase_cs_id(cs_id_))) {
+      PROXY_CS_LOG(WDIAG, "fail to record cs_id and thread_id map", K_(cs_id), "thread_id", self_ethread().id_, K(ret));
     }
 
     // in 2 situations we will delete cluster (cluster rslist and resource)
@@ -742,7 +893,7 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
     // if we only delete resource, loacl cluster rslist still exist, so we must delete both of them
     if (OB_UNLIKELY(need_delete_cluster_)) {
       if (OB_FAIL(handle_delete_cluster())) {
-        PROXY_CS_LOG(WARN, "fail to handle delete cluster", K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to handle delete cluster", K(ret));
       }
       need_delete_cluster_ = false;
     }
@@ -752,7 +903,7 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
         ) {
       read_state_ = MCS_CLOSED;
       if (OB_FAIL(do_api_callout(OB_MYSQL_SSN_CLOSE_HOOK))) {
-        PROXY_CS_LOG(WARN, "fail to close hook, destroy itself", K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to close hook, destroy itself", K(ret));
         destroy();
       }
     }
@@ -768,7 +919,7 @@ int ObMysqlClientSession::handle_other_event(int event, void *data)
       break;
     }
     default:
-      PROXY_CS_LOG(WARN, "unknown event", K(event));
+      PROXY_CS_LOG(WDIAG, "unknown event", K(event));
       break;
   }
 
@@ -787,7 +938,7 @@ inline int ObMysqlClientSession::handle_delete_cluster()
   //1. delete cluster rslist in json
   ObConfigServerProcessor &csp = get_global_config_server_processor();
   if (OB_FAIL(csp.delete_rslist(name, cr_id))) {
-    PROXY_CS_LOG(WARN, "fail to delete cluster rslist", K(name), K(cr_id), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to delete cluster rslist", K(name), K(cr_id), K(ret));
   }
 
   //2. delete cluster resource in resource_pool
@@ -795,11 +946,11 @@ inline int ObMysqlClientSession::handle_delete_cluster()
   if (name == OB_META_DB_CLUSTER_NAME) {
     const bool ignore_cluster_not_exist = true;
     if (OB_FAIL(rpp.rebuild_metadb(ignore_cluster_not_exist))) {
-      PROXY_CS_LOG(WARN, "fail to rebuild metadb cluster resource", K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to rebuild metadb cluster resource", K(ret));
     }
   } else {
     if (OB_FAIL(rpp.delete_cluster_resource(name, cr_id))) {
-      PROXY_CS_LOG(WARN, "fail to delete cluster resource", K(name), K(cr_id), K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to delete cluster resource", K(name), K(cr_id), K(ret));
     }
   }
   return ret;
@@ -829,7 +980,7 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
       case VC_EVENT_READ_COMPLETE:
       default:
         // These events are bogus
-        PROXY_CS_LOG(WARN, "invalid event", K(event));
+        PROXY_CS_LOG(WDIAG, "invalid event", K(event));
         break;
     }
   }
@@ -847,20 +998,20 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
         // handle half closed
         if (MCS_HALF_CLOSED == read_state_) {
           if (OB_FAIL(buffer_reader_->consume(buffer_reader_->read_avail()))) {
-            PROXY_CS_LOG(WARN, "fail to consume ", K(ret));
+            PROXY_CS_LOG(WDIAG, "fail to consume ", K(ret));
           }
         } else {
           // only after obproxy has sent handshake packet to client, client will send data to obproxy;
           // so in that case, client session must has been inited completed.
           // New transaction, need to spawn of new sm to process request
           if (OB_FAIL(new_transaction())) {
-            PROXY_CS_LOG(WARN, "fail to start new transaction", K(ret));
+            PROXY_CS_LOG(WDIAG, "fail to start new transaction", K(ret));
           }
         }
         break;
       }
       case VC_EVENT_EOS: {
-        PROXY_CS_LOG(WARN, "client session received VC_EVENT_EOS event",
+        PROXY_CS_LOG(WDIAG, "client session received VC_EVENT_EOS event",
                      K_(cs_id), K_(read_state));
         if (MCS_HALF_CLOSED == read_state_) {
           half_close_ = false;
@@ -870,7 +1021,7 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
           // transaction, otherwise the client gave up
           if (buffer_reader_->read_avail() > 0) {
             if (OB_FAIL(new_transaction())) {
-              PROXY_CS_LOG(WARN, "fail to start new transaction", K(ret));
+              PROXY_CS_LOG(WDIAG, "fail to start new transaction", K(ret));
             }
           } else {
             do_io_close();
@@ -891,11 +1042,11 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
           ObIpEndpoint client_ip;
           if (NULL != client_vc_) {
             if (OB_UNLIKELY(!ops_ip_copy(client_ip, client_vc_->get_remote_addr()))) {
-              PROXY_CS_LOG(WARN, "fail to ops_ip_copy client_ip", K(client_vc_));
+              PROXY_CS_LOG(WDIAG, "fail to ops_ip_copy client_ip", K(client_vc_));
             }
           }
 
-          PROXY_CS_LOG(WARN, "client connection is idle over wait_timeout, now we will close it.",
+          PROXY_CS_LOG(WDIAG, "client connection is idle over wait_timeout, now we will close it.",
                        "wait_timeout(s)", hrtime_to_sec(session_info_.get_wait_timeout()),
                        K_(cs_id),
                        K(client_ip),
@@ -908,7 +1059,7 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
       case VC_EVENT_READ_COMPLETE:
       default:
         // These events are bogus
-      PROXY_CS_LOG(WARN, "invalid event", K(event));
+      PROXY_CS_LOG(WDIAG, "invalid event", K(event));
       break;
     }
   }
@@ -934,7 +1085,7 @@ int ObMysqlClientSession::swap_mutex(void *data)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(data)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "mutex data cannot be null here", K(ret));
+    PROXY_CS_LOG(WDIAG, "mutex data cannot be null here", K(ret));
   } else if (mutex_ != data) {
     ObProxyMutex *mutex = reinterpret_cast<ObProxyMutex *>(data);
     // swap client session mutex
@@ -947,7 +1098,7 @@ int ObMysqlClientSession::swap_mutex(void *data)
     }
 
     if (NULL != mysql_sm_ && OB_FAIL(mysql_sm_->swap_mutex(mutex))) {
-      PROXY_CS_LOG(WARN, "failed to swap mysql sm mutex", K(ret));
+      PROXY_CS_LOG(WDIAG, "failed to swap mysql sm mutex", K(ret));
     }
 
     if (OB_SUCC(ret)) {
@@ -962,7 +1113,7 @@ int ObMysqlClientSession::swap_mutex(void *data)
         session_manager_new_.set_mutex(mutex);
       } else {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WARN, "server session pool is not empty", K(ret));
+        PROXY_CS_LOG(WDIAG, "server session pool is not empty", K(ret));
       }
     }
   }
@@ -982,7 +1133,7 @@ int ObMysqlClientSession::attach_server_session(ObMysqlServerSession *session)
         || OB_UNLIKELY(0 != session->get_reader()->read_avail())
         || OB_UNLIKELY(session->get_netvc() == client_vc_)) {
       ret = OB_INVALID_ARGUMENT;
-      PROXY_CS_LOG(WARN, "invalid server session", K(bound_ss_), K(session), K(cur_ss_),
+      PROXY_CS_LOG(WDIAG, "invalid server session", K(bound_ss_), K(session), K(cur_ss_),
                    K(session->get_reader()->read_avail()), K(session->get_netvc()), K(client_vc_));
     } else {
       session->state_ = MSS_KA_CLIENT_SLAVE;
@@ -1004,6 +1155,12 @@ int ObMysqlClientSession::attach_server_session(ObMysqlServerSession *session)
         // Transfer control of the write side as well
         session->do_io_write(this, 0, NULL);
         session->set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_SERVER_WAIT_TIMEOUT);
+        #ifdef ERRSIM
+        int tmp_ret = OB_SUCCESS;
+        if ((tmp_ret = OB_E(EventTable::EN_SERVER_TRX_TIMEOUT) OB_SUCCESS) != OB_SUCCESS) {
+          set_inactivity_timeout(1, obutils::OB_SERVER_TRX_TIMEOUT);
+        }
+        #endif
       }
     }
   } else {
@@ -1029,7 +1186,7 @@ int ObMysqlClientSession::main_handler(int event, void *data)
     } else if (CLIENT_VC_SWAP_MUTEX_EVENT == event) { // from proxy client vc
       int ret = OB_SUCCESS;
       if (OB_FAIL(swap_mutex(data))) {
-        PROXY_CS_LOG(WARN, "fail to swap mutex", KP(data), K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to swap mutex", KP(data), K(ret));
       }
     } else if (is_proxy_mysql_client_ && CLIENT_VC_DISCONNECT_LAST_USED_SS_EVENT == event) {
       close_last_used_ss();
@@ -1037,7 +1194,7 @@ int ObMysqlClientSession::main_handler(int event, void *data)
       event_ret = (this->*cs_default_handler_)(event, data); // others
     }
   } else {
-    PROXY_CS_LOG(WARN, "unexpected magic, expected MYSQL_CS_MAGIC_ALIVE", K(magic_));
+    PROXY_CS_LOG(WDIAG, "unexpected magic, expected MYSQL_CS_MAGIC_ALIVE", K(magic_));
   }
 
   return event_ret;
@@ -1057,9 +1214,10 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
 
     // Make sure that the state machine is returning correct buffer reader
     if (OB_UNLIKELY(r != buffer_reader_)) {
-      PROXY_CS_LOG(WARN, "buffer reader mismatch, will close client session",
+      PROXY_CS_LOG(WDIAG, "buffer reader mismatch, will close client session",
                    K(r), K(buffer_reader_));
       close_cs = true;
+      COLLECT_INTERNAL_DIAGNOSIS(mysql_sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE, OB_PROXY_INTERNAL_ERROR, "buffer reader mismatch, will disconnect");
     } else if (OB_UNLIKELY(!get_global_hot_upgrade_info().need_conn_accept_) && OB_UNLIKELY(need_close())) {
       close_cs = true;
       PROXY_CS_LOG(INFO, "receive exit cmd, obproxy will exit, now close client session",
@@ -1072,6 +1230,7 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
           PROXY_CS_LOG(INFO, "the cluster resource is deleting, client session will close",
                        KPC_(cluster_resource), K_(cluster_resource), K_(is_proxy_mysql_client));
         }
+        COLLECT_INTERNAL_DIAGNOSIS(mysql_sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE, OB_PROXY_CLUSTER_RESOURCE_EXPIRED, "cluster resource is deleting, will disconnect");
         close_cs = true;
       }
     }
@@ -1092,7 +1251,7 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
           && OB_LIKELY(NULL != cluster_resource_)
           && get_global_resource_pool_processor().get_default_cluster_resource() != cluster_resource_
           && OB_FAIL(session_info_.revalidate_sys_var_set(cluster_resource_->sys_var_set_processor_))) {
-        PROXY_CS_LOG(WARN, "fail to check sys variable", K_(cs_id), K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to check sys variable", K_(cs_id), K(ret));
       }
     }
   }
@@ -1124,7 +1283,7 @@ int ObMysqlClientSession::release(ObIOBufferReader *r)
       if (buffer_reader_->read_avail() > 0) {
         PROXY_CS_LOG(DEBUG, "data already in buffer, starting new transaction", K_(cs_id));
         if (OB_FAIL(new_transaction())) {
-          PROXY_CS_LOG(WARN, "fail to start new transaction", K(ret));
+          PROXY_CS_LOG(WDIAG, "fail to start new transaction", K(ret));
         }
       } else {
         read_state_ = MCS_KEEP_ALIVE;
@@ -1150,7 +1309,7 @@ int ObMysqlClientSession::init_session_pool_info()
   } else if (!session_info_.is_sharding_user() && schema_key_.init_) {
     PROXY_CS_LOG(DEBUG, "no sharding already init", K(schema_key_));
   } else if (OB_FAIL(ObMysqlSessionUtils::init_schema_key_with_client_session(schema_key_, this))) {
-    PROXY_CS_LOG(WARN, "init_schema_key_with_client_session failed", K(ret));
+    PROXY_CS_LOG(WDIAG, "init_schema_key_with_client_session failed", K(ret));
   }
   return ret;
 }
@@ -1164,11 +1323,11 @@ int ObMysqlClientSession::acquire_svr_session_in_session_pool(const sockaddr &ad
   if (shard_conn != NULL && common::DB_MYSQL == shard_conn->server_type_ && !shard_conn->is_physic_ip_) {
     if (OB_FAIL(common_addr.assign(shard_conn->physic_addr_.config_string_,
       shard_conn->physic_port_.config_string_, shard_conn->is_physic_ip_))) {
-      PROXY_CS_LOG(WARN,"assign addr faield", K(shard_conn->physic_addr_.config_string_),
+      PROXY_CS_LOG(WDIAG,"assign addr faield", K(shard_conn->physic_addr_.config_string_),
         K(shard_conn->physic_port_.config_string_), K(ret));
     }
   } else if (OB_FAIL(common_addr.assign(addr))) {
-    PROXY_CS_LOG(WARN, "assign addr failed", K(ret));
+    PROXY_CS_LOG(WDIAG, "assign addr failed", K(ret));
   }
   if (OB_SUCC(ret) && OB_SUCC(get_global_session_manager().acquire_server_session(
     schema_key_,
@@ -1216,7 +1375,7 @@ int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, const bool n
 
   if (is_session_pool_client()) {
     if (OB_FAIL(init_session_pool_info())) {
-      PROXY_CS_LOG(WARN, "init_session_pool_info failed", K(ret));
+      PROXY_CS_LOG(WDIAG, "init_session_pool_info failed", K(ret));
     }
   }
 
@@ -1313,7 +1472,7 @@ inline void ObMysqlClientSession::update_session_stats()
   int ret = OB_SUCCESS;
   if (OB_ISNULL(mysql_sm_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WARN, "mysql sm is null", K(ret));
+    PROXY_CS_LOG(WDIAG, "mysql sm is null", K(ret));
   } else if (mysql_sm_->trans_state_.mysql_config_params_->enable_report_session_stats_) {
     mysql_sm_->update_session_stats(session_stats_.stats_, SESSION_STAT_COUNT);
     session_stats_.modified_time_ = get_hrtime();
@@ -1333,10 +1492,10 @@ inline void ObMysqlClientSession::update_session_stats()
                                cluster_name.length(), cluster_name.ptr());
       if (OB_UNLIKELY(w_len <= 0) || OB_UNLIKELY(w_len >= OB_PROXY_MAX_CLUSTER_NAME_LENGTH + 1)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WARN, "copy cluster name string error", K(ret));
+        PROXY_CS_LOG(WDIAG, "copy cluster name string error", K(ret));
       } else if (OB_FAIL(g_stat_processor.report_session_stats(cluster_name_str, get_proxy_sessid(),
           session_stats_.stats_, session_stats_.is_first_register_, g_mysql_stat_name, SESSION_STAT_COUNT))) {
-        PROXY_CS_LOG(WARN, "fail to init report_session_stats", K_(cs_id), K(ret));
+        PROXY_CS_LOG(WDIAG, "fail to init report_session_stats", K_(cs_id), K(ret));
       } else {
         session_stats_.is_first_register_ = false;
         session_stats_.reported_time_ = get_hrtime();
@@ -1359,10 +1518,10 @@ int64_t ObMysqlClientSession::get_session_timeout(const char *timeout_name, ObHR
     ObMysqlConfigParams *params = NULL;
     if (OB_ISNULL(mysql_sm_)) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_CS_LOG(WARN, "mysql_sm_ is null", K(ret));
+      PROXY_CS_LOG(WDIAG, "mysql_sm_ is null", K(ret));
     } else if (OB_ISNULL(params = mysql_sm_->trans_state_.mysql_config_params_)) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_CS_LOG(WARN, "trans_state_.mysql_config_params_ is null", K(ret));
+      PROXY_CS_LOG(WDIAG, "trans_state_.mysql_config_params_ is null", K(ret));
     } else {
       timeout = HRTIME_NSECONDS(params->default_inactivity_timeout_);
       PROXY_CS_LOG(DEBUG, "use default timeout, unit is ns", K(timeout_name), K(session_timeout), K(timeout));
@@ -1435,7 +1594,7 @@ bool ObMysqlClientSession::is_authorised_proxysys(const ObProxyLoginUserType typ
       && !ops_is_ip_loopback(client_vc_->get_remote_addr())) {
     char src_ip[INET6_ADDRSTRLEN];
     ops_ip_ntop(client_vc_->get_remote_addr(), src_ip, sizeof(src_ip));
-    PROXY_CS_LOG(WARN, "xx@proxysys ip is not private", "ip", src_ip, K(ret));
+    PROXY_CS_LOG(WDIAG, "xx@proxysys ip is not private", "ip", src_ip, K(ret));
 
   //2. check password
   } else {
@@ -1448,7 +1607,7 @@ bool ObMysqlClientSession::is_authorised_proxysys(const ObProxyLoginUserType typ
     if (USER_TYPE_PROXYSYS == type && 0 == login_passwd.length()) {
       if (0 != strlen(get_global_proxy_config().obproxy_sys_password.str())) {
         ret = OB_PASSWORD_WRONG;
-        PROXY_CS_LOG(WARN, "root@proxysys check failed", K(ret));
+        PROXY_CS_LOG(WDIAG, "root@proxysys check failed", K(ret));
       } else {
         bret = true;
       }
@@ -1463,15 +1622,15 @@ bool ObMysqlClientSession::is_authorised_proxysys(const ObProxyLoginUserType typ
       char stored_stage2_hex[SCRAMBLE_LENGTH] = {0};
       int64_t copy_len = 0;
       if (OB_FAIL(ObEncryptedHelper::encrypt_stage1_to_stage2_hex(stored_stage1, stored_stage2_hex, SCRAMBLE_LENGTH, copy_len))) {
-        PROXY_CS_LOG(WARN, "failed to encrypt_stage1_to_stage2_hex",  K(ret));
+        PROXY_CS_LOG(WDIAG, "failed to encrypt_stage1_to_stage2_hex",  K(ret));
       } else {
         ObString stored_stage2_hex_str(copy_len, stored_stage2_hex);
         if (OB_FAIL(ObEncryptedHelper::check_login(login_passwd, scramble_string, stored_stage2_hex_str, bret))) {
-          PROXY_CS_LOG(WARN, "failed to check proxysys login",  K(ret));
+          PROXY_CS_LOG(WDIAG, "failed to check proxysys login",  K(ret));
         } else {
           if (!bret) {
             ret = OB_PASSWORD_WRONG;
-            PROXY_CS_LOG(WARN, "password error", K(ret));
+            PROXY_CS_LOG(WDIAG, "password error", K(ret));
           }
         }
       }
@@ -1585,15 +1744,15 @@ int ObMysqlClientSession::check_update_ldc()
 
   if (OB_ISNULL(cluster_resource)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "cluster_resource is not avail", K(ret));
+    PROXY_CS_LOG(WDIAG, "cluster_resource is not avail", K(ret));
   } else if (OB_ISNULL(dummy_entry_) || OB_UNLIKELY(!dummy_entry_->is_tenant_servers_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "dummy_entry_ is not avail", KPC(dummy_entry_), K(ret));
+    PROXY_CS_LOG(WDIAG, "dummy_entry_ is not avail", KPC(dummy_entry_), K(ret));
   } else if (OB_ISNULL(mysql_sm_) || OB_ISNULL(mysql_sm_->trans_state_.mysql_config_params_)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WARN, "mysql_sm_ is not avail",  K(ret));
+    PROXY_CS_LOG(WDIAG, "mysql_sm_ is not avail",  K(ret));
   } else if (OB_FAIL(ObLDCLocation::get_thread_allocator(allocator))) {
-    PROXY_CS_LOG(WARN, "fail to get_thread_allocator", K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to get_thread_allocator", K(ret));
   } else {
     bool is_base_servers_added = cluster_resource->is_base_servers_added();
     ObString new_idc_name = get_current_idc_name();
@@ -1635,7 +1794,7 @@ int ObMysqlClientSession::check_update_ldc()
           } else {
             need_ignore = true;
           }
-          PROXY_CS_LOG(WARN, "fail to tryrdlock server_state_lock, ignore this update",
+          PROXY_CS_LOG(WDIAG, "fail to tryrdlock server_state_lock, ignore this update",
                        K(err_no),
                        "old_idc_name", dummy_ldc_.get_idc_name(),
                        K(new_idc_name),
@@ -1646,7 +1805,7 @@ int ObMysqlClientSession::check_update_ldc()
                        K(is_base_servers_added), K(need_ignore), K(dummy_ldc_));
         } else {
           if (OB_FAIL(simple_servers_info.assign(server_state_info))) {
-            PROXY_CS_LOG(WARN, "fail to assign servers_info_", K(ret));
+            PROXY_CS_LOG(WDIAG, "fail to assign servers_info_", K(ret));
           } else {
             server_state_version_ = new_ss_version;
           }
@@ -1660,16 +1819,16 @@ int ObMysqlClientSession::check_update_ldc()
           if (OB_EMPTY_RESULT == ret) {
             if (dummy_entry_->is_entry_from_rslist()) {
               set_need_delete_cluster();
-              PROXY_CS_LOG(WARN, "tenant server from rslist is not match the server list, "
+              PROXY_CS_LOG(WDIAG, "tenant server from rslist is not match the server list, "
                            "need delete this cluster", KPC_(dummy_entry), K(ret));
             } else {
               //sys dummy entry can not set dirty
               if (!dummy_entry_->is_sys_dummy_entry() && dummy_entry_->cas_set_dirty_state()) {
-                PROXY_CS_LOG(WARN, "tenant server is invalid, set it dirty", KPC_(dummy_entry), K(ret));
+                PROXY_CS_LOG(WDIAG, "tenant server is invalid, set it dirty", KPC_(dummy_entry), K(ret));
               }
             }
           } else {
-            PROXY_CS_LOG(WARN, "fail to assign dummy_ldc", K(ret));
+            PROXY_CS_LOG(WDIAG, "fail to assign dummy_ldc", K(ret));
           }
         }
       }
@@ -1709,7 +1868,7 @@ int ObMysqlClientSessionMap::set(ObMysqlClientSession &cs)
   if (OB_SUCC(id_map_.unique_set(&cs))) {
     PROXY_CS_LOG(DEBUG, "succ to set client session", K(cs.get_cs_id()));
   } else {
-    PROXY_CS_LOG(WARN, "fail to set client session", K(cs.get_cs_id()), KP(this), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to set client session", K(cs.get_cs_id()), KP(this), K(ret));
   }
   return ret;
 }
@@ -1731,7 +1890,7 @@ int ObMysqlClientSessionMap::erase(const uint32_t &id)
   if (OB_SUCC(id_map_.erase_refactored(id))) {
     ret = OB_SUCCESS;
   } else {
-    PROXY_CS_LOG(WARN, "fail to erase client session", K(id), KP(this), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to erase client session", K(id), KP(this), K(ret));
   }
   return ret;
 }
@@ -1742,7 +1901,7 @@ int init_cs_map_for_thread()
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_cs_map_for_one_thread(i))) {
-      PROXY_NET_LOG(WARN, "fail to new ObInactivityCop", K(i), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to new ObMysqlClientSessionMap", K(i), K(ret));
     }
   }
   return ret;
@@ -1753,7 +1912,20 @@ int init_cs_map_for_one_thread(int64_t index)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->cs_map_ = new (std::nothrow) ObMysqlClientSessionMap())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(WARN, "fail to new ObInactivityCop", K(index), K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to new ObMysqlClientSessionMap", K(index), K(ret));
+  }
+  return ret;
+}
+
+int init_cs_id_list_for_thread()
+{
+  int ret = OB_SUCCESS;
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
+    if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][i]->cs_id_list_ = new (std::nothrow) ObClientSessionIDList())) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_NET_LOG(WDIAG, "fail to new ObClientSessionIDList", K(i), K(ret));
+    }
   }
   return ret;
 }
@@ -1765,7 +1937,7 @@ int init_random_seed_for_thread()
   ObMysqlRandom *init_seed = new (std::nothrow) ObMysqlRandom();
   if (OB_ISNULL(init_seed)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(WARN, "fail to new ObMysqlRandom", K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to new ObMysqlRandom", K(ret));
   } else {
     const uint64_t current_time = static_cast<uint64_t>(get_hrtime_internal());
     init_seed->init(current_time, current_time / 2);
@@ -1778,7 +1950,7 @@ int init_random_seed_for_thread()
     for (int64_t i = 0; i < count && OB_SUCC(ret); ++i) {
       if (OB_ISNULL(tmp_random = new (std::nothrow) ObMysqlRandom())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_NET_LOG(WARN, "fail to new ObMysqlRandom", K(i), K(ret));
+        PROXY_NET_LOG(WDIAG, "fail to new ObMysqlRandom", K(i), K(ret));
       } else {
         const uint64_t tmp = init_seed->get_uint64();
         tmp_random->init(tmp + reinterpret_cast<uint64_t>(tmp_random),
@@ -1801,7 +1973,7 @@ int init_random_seed_for_one_thread(int64_t index)
   ObMysqlRandom *init_seed = new (std::nothrow) ObMysqlRandom();
   if (OB_ISNULL(init_seed)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_NET_LOG(WARN, "fail to new ObMysqlRandom", K(ret));
+    PROXY_NET_LOG(WDIAG, "fail to new ObMysqlRandom", K(ret));
   } else {
     const uint64_t current_time = static_cast<uint64_t>(get_hrtime_internal());
     init_seed->init(current_time, current_time / 2);
@@ -1812,7 +1984,7 @@ int init_random_seed_for_one_thread(int64_t index)
     ObMysqlRandom *tmp_random = NULL;
     if (OB_ISNULL(tmp_random = new (std::nothrow) ObMysqlRandom())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_NET_LOG(WARN, "fail to new ObMysqlRandom", K(index), K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to new ObMysqlRandom", K(index), K(ret));
     } else {
       const uint64_t tmp = init_seed->get_uint64();
       tmp_random->init(tmp + reinterpret_cast<uint64_t>(tmp_random),
@@ -1834,9 +2006,11 @@ inline bool is_proxy_conn_id_avail(const uint64_t conn_id)
   uint32_t thread_init_cs_id = 0;
   uint32_t max_local_seq = 0;
   if (OB_FAIL(ObMysqlClientSession::get_thread_init_cs_id(
-      thread_init_cs_id, max_local_seq, g_event_processor.thread_count_for_type_[ET_CALL] - 1))) {
+          static_cast<ObClientSessionIDVersion>(get_global_proxy_config().client_session_id_version.get_value()),
+          thread_init_cs_id, max_local_seq,
+          g_event_processor.thread_count_for_type_[ET_CALL] - 1))) {
     bret = false;
-    PROXY_CS_LOG(WARN, "fail to  is get thread init cs id", K(bret), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to  is get thread init cs id", K(bret), K(ret));
   } else {
     bret = conn_id <= (thread_init_cs_id | max_local_seq);
   }
@@ -1853,6 +2027,19 @@ inline bool is_server_conn_id_avail(const uint64_t conn_id)
 int extract_thread_id(const uint32_t cs_id, int64_t &thread_id)
 {
   int ret = OB_SUCCESS;
+  if (OB_SUCCESS != extract_thread_id_v2(cs_id, thread_id)) {
+    PROXY_CS_LOG(INFO, "extract thread id from v2 cs_id failed, maybe the cs_id generated from v1", K(cs_id));
+    thread_id = -1;
+    if (OB_FAIL(extract_thread_id_v1(cs_id, thread_id))) {
+      PROXY_CS_LOG(WDIAG, "fail to extract thread_id", K(cs_id));
+    }
+  }
+  return ret;
+}
+
+int extract_thread_id_v1(const uint32_t cs_id, int64_t &thread_id)
+{
+  int ret = OB_SUCCESS;
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
 
   const uint32_t proxy_heads_bits   = 10; //proxy mark + proxy id + upgrade version
@@ -1864,18 +2051,56 @@ int extract_thread_id(const uint32_t cs_id, int64_t &thread_id)
   thread_id = -1;
   if (cs_upgrade_ver != target_upgrade_ver) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WARN, "error upgrade version, it maybe other proxy conn id", K(cs_upgrade_ver),
+    PROXY_CS_LOG(WDIAG, "error upgrade version, it maybe other proxy conn id", K(cs_upgrade_ver),
              K(target_upgrade_ver), "upgrade_version", info.upgrade_version_, K(ret));
   } else {
     const uint32_t thread_id_tmp = ((cs_id << proxy_heads_bits) >> (32 - thread_id_bits));
     if (thread_id_tmp >= static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL])) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_CS_LOG(WARN, "error thread id, it should not happened", K(thread_id_tmp), K(ret));
+      PROXY_CS_LOG(WDIAG, "error thread id, it should not happened", K(thread_id_tmp), K(ret));
     } else {
       thread_id = static_cast<int64_t>(thread_id_tmp);
     }
   }
   return ret;
+}
+
+int extract_thread_id_v2(const uint32_t cs_id, int64_t &thread_id)
+{
+  int ret = OB_SUCCESS;
+  const uint32_t proxy_head_bits = 15; //proxy mark + proxy id(13) + upgrade version
+  const uint32_t thread_id_bits  = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
+  // don't need to check upgrade version for unique cs id
+
+  thread_id = -1;
+  const uint32_t thread_id_tmp = ((cs_id << proxy_head_bits) >> (32 - thread_id_bits));
+  if (thread_id_tmp >= static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL])) {
+    // two case:
+    // 1. the cs_id generated with CLIENT_SESSION_ID_V1
+    // 2. the cs_id is incorrect
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(INFO, "error thread id, it should not happened", K(cs_id), K(thread_id_tmp), K(ret));
+  } else {
+    // check if cs_id exist
+    bool is_cs_id_exist = false;
+    if (OB_FAIL(g_event_processor.event_thread_[ET_NET][thread_id_tmp]->cs_id_list_->is_cs_id_exist(cs_id, is_cs_id_exist))) {
+      PROXY_CS_LOG(WDIAG, "fail to check unique cs_id if exist", K(ret), K(cs_id));
+    } else if (is_cs_id_exist) {
+      thread_id = static_cast<int64_t>(thread_id_tmp);
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+    }
+    return ret;
+  }
+
+  return ret;
+}
+
+void extract_proxy_id_v2(const uint32_t cs_id, int64_t &proxy_id)
+{
+  const uint32_t proxy_flag_bits = 1;
+  const uint32_t proxy_id_bits = 13;
+  proxy_id = ((cs_id << proxy_flag_bits) >> (32-proxy_id_bits));
 }
 
 bool is_conn_id_avail(const int64_t conn_id, bool &is_proxy_conn_id)
@@ -1894,6 +2119,127 @@ bool is_conn_id_avail(const int64_t conn_id, bool &is_proxy_conn_id)
     }
   }
   return bret;
+}
+
+void ObMysqlClientSession::record_sess_killed(uint32_t cs_id) {
+  if (mysql_sm_ != NULL) {
+    if (cs_id == cs_id_) {
+      COLLECT_INTERNAL_DIAGNOSIS(
+          mysql_sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE,
+          OB_ERR_QUERY_INTERRUPTED,
+          "connection was killed by user self, cs_id: %d", cs_id);
+    } else {
+      COLLECT_INTERNAL_DIAGNOSIS(
+          mysql_sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE,
+          OB_ERR_QUERY_INTERRUPTED, "connection was killed by user session %d", cs_id);
+    }
+  }
+}
+
+int ObMysqlClientSession::fill_tenant_info_with_ppv2(proxy_protocol_v2::ProxyProtocolV2 &v2)
+{
+  int ret = OB_SUCCESS;
+  ct_info_.reset();
+  ObVipAddr &addr = ct_info_.vip_tenant_.vip_addr_;
+
+  struct sockaddr_storage ss = v2.src_addr_.get_sockaddr();
+  client_vc_->set_real_client_addr(ss);
+  if (v2.vpc_info_.empty()) {
+    addr.set(ops_ip_sa_cast(v2.dst_addr_.get_sockaddr()), 0);
+  } else {
+    ObString tmp_str(static_cast<int32_t>(v2.vpc_info_.len()), v2.vpc_info_.ptr());
+    addr.set(tmp_str);
+  }
+
+  if (OB_FAIL(fetch_tenant_by_vip())) {
+    PROXY_CS_LOG(WDIAG, "fail to fetch tenant by vip", K(v2), K(ret));
+  }
+
+  return ret;
+}
+
+int ObMysqlClientSession::get_vip_info()
+{
+  int ret = OB_SUCCESS;
+  // temporary trace for diagnosis new_connection;
+  const ObAddr &client_addr = get_real_client_addr();
+  if (is_need_convert_vip_to_tname()) {
+    if (OB_FAIL(fetch_tenant_by_vip())) {
+      PROXY_CS_LOG(WDIAG, "fail to fetch tenant by vip", K(ret));
+      ret = OB_SUCCESS;
+    } else if (is_vip_lookup_success()) {
+      ObString user_name;
+      if (!get_global_white_list_table_processor().can_ip_pass(
+            ct_info_.vip_tenant_.cluster_name_, ct_info_.vip_tenant_.tenant_name_,
+            user_name, client_vc_->get_real_client_addr())) {
+        ret = OB_ERR_CAN_NOT_PASS_WHITELIST;
+        if (mysql_sm_ != NULL) {
+          COLLECT_LOGIN_DIAGNOSIS(
+              mysql_sm_->connection_diagnosis_trace_, OB_LOGIN_DISCONNECT_TRACE, "",
+              OB_ERR_CAN_NOT_PASS_WHITELIST,
+              "virtual ip user %.*s@%.*s#%.*s can not pass whitelist",
+              user_name.length(), user_name.ptr(), ct_info_.vip_tenant_.tenant_name_.length(),
+              ct_info_.vip_tenant_.tenant_name_.ptr(), ct_info_.vip_tenant_.cluster_name_.length(),
+              ct_info_.vip_tenant_.cluster_name_.ptr());
+        }
+        PROXY_CS_LOG(DEBUG, "can not pass white_list", K(ct_info_.vip_tenant_.cluster_name_),
+            K(ct_info_.vip_tenant_.tenant_name_), K(client_addr), K(ret));
+      }
+    }
+  }
+
+  return ret;
+}
+
+// overwrite exist value directly
+// we should lock it, because using_cs_id_set_ may operated by other threads
+// in kill proxysession or show proxysession
+int ObClientSessionIDList::record_cs_id(const uint32_t cs_id)
+{
+  int ret = OB_SUCCESS;
+  DRWLock::WRLockGuard guard(lock_);
+  if (OB_FAIL(using_cs_id_set_.set_refactored(cs_id))) {
+    PROXY_LOG(WDIAG, "fail to record unique cs_id and thread_id", K(cs_id));
+  }
+  return ret;
+}
+
+// we should lock it because using_cs_id_set_ may operated by other threads
+// in kill proxysession or show proxysession
+int ObClientSessionIDList::is_cs_id_exist(const uint32_t cs_id, bool &is_exist)
+{
+  int ret = OB_SUCCESS;
+  DRWLock::RDLockGuard guard(lock_);
+  if (OB_FAIL(using_cs_id_set_.exist_refactored(cs_id))) {
+    if (ret == OB_HASH_EXIST) {
+      ret = OB_SUCCESS;
+      is_exist = true;
+    } else if (ret == OB_HASH_NOT_EXIST) {
+      ret = OB_SUCCESS;
+      is_exist = false;
+    } else {
+      PROXY_LOG(WDIAG, "fail to check if cs_id exist", K(cs_id), K(ret));
+    }
+  } else {
+    is_exist = false;
+  }
+  return ret;
+}
+
+// we should lock it, because using_cs_id_set_ may operated by other threads
+// in kill proxysession or show proxysession
+int ObClientSessionIDList::erase_cs_id(const uint32_t cs_id)
+{
+  int ret = OB_SUCCESS;
+  DRWLock::WRLockGuard guard(lock_);
+  if (OB_FAIL(using_cs_id_set_.erase_refactored(cs_id))) {
+    if (ret == OB_HASH_NOT_EXIST) {
+      ret = OB_SUCCESS;
+    } else {
+      PROXY_LOG(WDIAG, "fail to erase cs_id record", K(cs_id), K(ret));
+    }
+  }
+  return ret;
 }
 
 } // end of namespace proxy

@@ -90,7 +90,7 @@ inline int ObFastZlibStreamCompressor::add_compress_data(const char *src_buf, co
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(src_buf) || len <= 0 || len >= UINT16_MAX) {
     ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WARN, "invalid input value", KP(src_buf), K(len), K(ret));
+    PROXY_LOG(WDIAG, "invalid input value", KP(src_buf), K(len), K(ret));
   } else {
     compress_init();
     type_ = COMPRESS_TYPE;

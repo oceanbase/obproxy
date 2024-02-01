@@ -25,7 +25,7 @@ const char *role2str(ObRole role)
 {
   const char *role_str = NULL;
   if (role < INVALID_ROLE || role > FOLLOWER) {
-    LOG_ERROR("fatal error, unknown role", K(role));
+    LOG_EDIAG("fatal error, unknown role", K(role));
   } else {
     role_str = role_strs[role];
   }
@@ -36,7 +36,7 @@ ObRole str2role(const char *role_str)
 {
   ObRole role = INVALID_ROLE;
   if (NULL == role_str) {
-    LOG_ERROR("empty role_str", KP(role_str));
+    LOG_EDIAG("empty role_str", KP(role_str));
   } else {
     for (int64_t i = 0; i <= FOLLOWER; ++i) {
       if (0 == strncasecmp(role_strs[i], role_str, strlen(role_strs[i]))) {

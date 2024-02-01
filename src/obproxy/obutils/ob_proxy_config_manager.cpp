@@ -50,7 +50,7 @@ int ObProxyConfigManager::init(ObMysqlProxy &mysql_proxy,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("already inited", K(ret));
+    LOG_WDIAG("already inited", K(ret));
   } else {
     mysql_proxy_ = &mysql_proxy;
     reload_config_func_ = &reload_config;
@@ -82,11 +82,11 @@ int ObProxyConfigManager::reload_proxy_config()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(proxy_config_.check_all())) {
-    LOG_WARN("fail to check proxy config, can't reload", K(ret));
+    LOG_WDIAG("fail to check proxy config, can't reload", K(ret));
   } else if (OB_FAIL(proxy_config_.check_proxy_serviceable())) {
-    LOG_WARN("fail to check proxy string_item config, can't reload", K(ret));
+    LOG_WDIAG("fail to check proxy string_item config, can't reload", K(ret));
   } else if (OB_FAIL((*reload_config_func_)(proxy_config_))) {
-    LOG_WARN("fail to reload config", K(ret));
+    LOG_WDIAG("fail to reload config", K(ret));
   }
   return ret;
 }
@@ -98,10 +98,10 @@ int ObProxyConfigManager::update_proxy_config(const int64_t new_config_version)
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("proxy config manager not inited", K_(is_inited), K(ret));
+    LOG_WDIAG("proxy config manager not inited", K_(is_inited), K(ret));
   } else if (OB_ISNULL(mysql_proxy_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_ERROR("unexpected error happened, mysql_proxy_ must not be NULL", K(ret));
+    LOG_EDIAG("unexpected error happened, mysql_proxy_ must not be NULL", K(ret));
   } else {
     ObMysqlResultHandler result_handler;
     char sql[OB_SHORT_SQL_LENGTH];
@@ -113,11 +113,11 @@ int ObProxyConfigManager::update_proxy_config(const int64_t new_config_version)
                         INT64_MAX);
     if (OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH) || OB_UNLIKELY(len <= 0)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(len), K(OB_SHORT_SQL_LENGTH), K(ret));
+      LOG_WDIAG("fail to fill sql", K(len), K(OB_SHORT_SQL_LENGTH), K(ret));
     } else if (OB_FAIL(mysql_proxy_->read(sql, result_handler))) {
-      LOG_WARN("fail to get proxy config", K(sql), K(ret));
+      LOG_WDIAG("fail to get proxy config", K(sql), K(ret));
     } else if (OB_FAIL(update_local_config(new_config_version, result_handler))) {
-      LOG_WARN("fail to update config", K(sql), K(ret));
+      LOG_WDIAG("fail to update config", K(sql), K(ret));
     } else { }
   }
   LOG_TRACE("update proxy config finished", "cost time(us)", ObTimeUtility::current_time() - now);
@@ -139,14 +139,14 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
   //1. backup old config
   if (OB_ISNULL(orig_buf = static_cast<char *>(ob_malloc(OB_PROXY_CONFIG_BUFFER_SIZE, mem_attr)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("ob tc malloc memory for buf fail", K(ret));
+    LOG_WDIAG("ob tc malloc memory for buf fail", K(ret));
   } else {
     obsys::CRLockGuard guard(proxy_config_.rwlock_);
     if (OB_FAIL(proxy_config_.serialize(orig_buf, OB_PROXY_CONFIG_BUFFER_SIZE, write_pos))) {
-      LOG_WARN("fail to serialize proxy config", K(ret));
+      LOG_WDIAG("fail to serialize proxy config", K(ret));
     } else if (OB_UNLIKELY(write_pos > OB_PROXY_CONFIG_BUFFER_SIZE)) {
       ret = OB_SERIALIZE_ERROR;
-      LOG_WARN("fail to serialize old config", K(write_pos), K(OB_PROXY_CONFIG_BUFFER_SIZE), K(ret));
+      LOG_WDIAG("fail to serialize old config", K(write_pos), K(OB_PROXY_CONFIG_BUFFER_SIZE), K(ret));
     } else {
       has_serialized = true;
       LOG_DEBUG("succ to serialize old config", K(write_pos), K(OB_PROXY_CONFIG_BUFFER_SIZE));
@@ -160,11 +160,11 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
       proxy_config_.current_local_config_version = new_config_version;
     }
     if (OB_FAIL(proxy_config_.fill_proxy_config(result_handler ))) {
-      LOG_WARN("fail to fill proxy config", K(ret));
+      LOG_WDIAG("fail to fill proxy config", K(ret));
     } else if (OB_FAIL(proxy_config_.check_proxy_serviceable())) {
-      LOG_WARN("fail to check proxy string_item config", K(ret));
+      LOG_WDIAG("fail to check proxy string_item config", K(ret));
     } else if (OB_FAIL(proxy_config_.dump_config_to_local())) {
-      LOG_WARN("fail to dump config to local", K(ret));
+      LOG_WDIAG("fail to dump config to local", K(ret));
     } else {
       has_dump_config = true;
       LOG_DEBUG("succ to dump config to local");
@@ -174,7 +174,7 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
   //3. reload config to memory
   if (OB_SUCC(ret)) {
     if (OB_FAIL((*reload_config_func_)(proxy_config_))) {
-      LOG_WARN("fail to reload config", K(ret));
+      LOG_WDIAG("fail to reload config", K(ret));
     } else {
       LOG_DEBUG("succ to update local config");
     }
@@ -186,22 +186,22 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
     if (has_serialized) {
       obsys::CWLockGuard guard(proxy_config_.rwlock_);
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = (proxy_config_.deserialize(orig_buf, write_pos, read_pos))))) {
-        LOG_WARN("fail to deserialize old config", K(write_pos), K(read_pos), K(tmp_ret));
+        LOG_WDIAG("fail to deserialize old config", K(write_pos), K(read_pos), K(tmp_ret));
       } else if (OB_UNLIKELY(write_pos != read_pos)) {
         tmp_ret = OB_DESERIALIZE_ERROR;
-        LOG_WARN("deserialize proxy config failed", K(write_pos), K(read_pos), K(tmp_ret));
+        LOG_WDIAG("deserialize proxy config failed", K(write_pos), K(read_pos), K(tmp_ret));
       } else {
         LOG_DEBUG("succ to deserialize old config", K(write_pos), K(read_pos));
       }
     }
     if (has_dump_config && OB_LIKELY(OB_SUCCESS == tmp_ret)) {
       if(OB_UNLIKELY(OB_SUCCESS != (tmp_ret = (*reload_config_func_)(proxy_config_)))) {
-        LOG_WARN("fail to reload old config", K(tmp_ret));
+        LOG_WDIAG("fail to reload old config", K(tmp_ret));
       } else {
         LOG_DEBUG("succ to reload old config");
       }
       if(OB_UNLIKELY(OB_SUCCESS != (tmp_ret = proxy_config_.dump_config_to_local()))) {
-        LOG_WARN("fail to dump old config to local", K(tmp_ret));
+        LOG_WDIAG("fail to dump old config to local", K(tmp_ret));
       } else {
         LOG_DEBUG("succ to dump old config to local");
       }

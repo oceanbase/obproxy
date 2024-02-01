@@ -99,7 +99,7 @@ int ObInternalCmdProcessor::execute_cmd(ObContinuation *cont, ObInternalCmdInfo 
     WARN_ICMD("invalid cmd type", K(type), K(ret));
   } else if (NULL == sm) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("sm is null unexpected", K(ret));
+    LOG_WDIAG("sm is null unexpected", K(ret));
   } else {
     ObProxyMysqlRequest &client_request = sm->trans_state_.trans_info_.client_request_;
     table_name = client_request.get_parse_result().get_table_name();

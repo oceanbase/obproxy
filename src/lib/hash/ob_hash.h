@@ -216,7 +216,7 @@ public:
     {
       int ret = 0;
       if (OB_ISNULL(that)) {
-        COMMON_LOG(ERROR, "node compare error, null node", K(lbt()));
+        COMMON_LOG(EDIAG, "node compare error, null node", K(lbt()));
       } else if (this->hash_ > that->hash_) {
         ret = 1;
       } else if (this->hash_ < that->hash_) {
@@ -369,7 +369,7 @@ public:
     void print_list(FILE *fp)
     {
       if (OB_UNLIKELY(NULL == fp)) {
-        COMMON_LOG(ERROR, "print list error, fp is null", K(lbt()));
+        COMMON_LOG(EDIAG, "print list error, fp is null", K(lbt()));
       } else {
         Node *head = get_head();
         fprintf(fp, "Hash: ");
@@ -390,7 +390,7 @@ public:
       } else if (0 != (ret = get_from_list(pre, target.set(key), ret_node))) {
       } else {
         if (OB_ISNULL(ret_node)) {
-          COMMON_LOG(ERROR, "get null node", KP(ret_node), K(lbt()));
+          COMMON_LOG(EDIAG, "get null node", KP(ret_node), K(lbt()));
           ret = -EINVAL;
         } else {
           val = ret_node->val_;
@@ -427,7 +427,7 @@ public:
         ret = -ENOENT;
       } else if (0 == (ret = del_from_list(pre, target.set(key), ret_node))) {
         if (OB_ISNULL(ret_node)) {
-          COMMON_LOG(ERROR, "get null node", KP(ret_node), K(lbt()));
+          COMMON_LOG(EDIAG, "get null node", KP(ret_node), K(lbt()));
           ret = -EINVAL;
         } else {
           ret_node->set_deleted();
@@ -539,7 +539,7 @@ public:
       int ret = 0;
       if (OB_ISNULL(node)) {
         ret = -EINVAL;
-        COMMON_LOG(ERROR, "del bucket error, node is null", K(ret), K(lbt()));
+        COMMON_LOG(EDIAG, "del bucket error, node is null", K(ret), K(lbt()));
       } else {
         Node *pre = NULL;
         uint64_t spk = node->get_spk();
@@ -617,7 +617,7 @@ public:
       bool is_deleted = false;
       if (OB_ISNULL(start) || OB_ISNULL(target)) {
         err = -EINVAL;
-        COMMON_LOG(ERROR, "search in list error, start is null", K(err), K(lbt()));
+        COMMON_LOG(EDIAG, "search in list error, start is null", K(err), K(lbt()));
       } else {
         pre = start;
         next = NULL;
@@ -638,7 +638,7 @@ public:
       Node *next = NULL;
       if (OB_ISNULL(target)) {
         err = -EINVAL;
-        COMMON_LOG(ERROR, "get from list error, target is null", K(err), K(lbt()));
+        COMMON_LOG(EDIAG, "get from list error, target is null", K(err), K(lbt()));
       } else if (0 != (err = search_in_list(start, target, pre, next))) {
       } else if (NULL == next || 0 != target->compare(next)) {
         err = -ENOENT;
@@ -654,13 +654,13 @@ public:
       Node *next = NULL;
       if (OB_ISNULL(target)) {
         err = -EINVAL;
-        COMMON_LOG(ERROR, "get from list error, target is null", K(err), K(lbt()));
+        COMMON_LOG(EDIAG, "get from list error, target is null", K(err), K(lbt()));
       } else if (0 != (err = search_in_list(start, target, pre, next))) {
       } else if (NULL != next && 0 == target->compare(next)) {
         err = -EEXIST;
       } else if (OB_ISNULL(pre)) {
         err = -EINVAL;
-        COMMON_LOG(ERROR, "pre is null", K(err), K(lbt()));
+        COMMON_LOG(EDIAG, "pre is null", K(err), K(lbt()));
       } else if (!pre->cas_next(target->next_ = next, target)) {
         err = -EAGAIN;
       }
@@ -673,7 +673,7 @@ public:
       Node *next = NULL;
       if (OB_ISNULL(target)) {
         err = -EINVAL;
-        COMMON_LOG(ERROR, "get from list error, target is null", K(err), K(lbt()));
+        COMMON_LOG(EDIAG, "get from list error, target is null", K(err), K(lbt()));
       } else if (0 != (err = search_in_list(start, target, pre, next))) {
       } else if (NULL == next || 0 != target->compare(next)) {
         err = -ENOENT;
@@ -681,7 +681,7 @@ public:
         err = -EAGAIN;
       } else if (OB_ISNULL(pre)) {
         err = -EINVAL;
-        COMMON_LOG(ERROR, "pre is null", K(err), K(lbt()));
+        COMMON_LOG(EDIAG, "pre is null", K(err), K(lbt()));
       } else if (!pre->cas_next(next, next->get_next())) {
         err = -EAGAIN;
         next->clear_delete_mark();
@@ -709,7 +709,7 @@ public:
   {
     //fprintf(fp, "%s\n", repr(root));
     if (OB_ISNULL(root.root_)) {
-      COMMON_LOG(ERROR, "hash root is null", K(lbt()));
+      COMMON_LOG(EDIAG, "hash root is null", K(lbt()));
     } else {
       root.root_->print(fp);
     }

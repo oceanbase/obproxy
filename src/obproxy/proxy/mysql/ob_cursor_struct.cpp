@@ -48,7 +48,7 @@ int ObCursorIdAddr::alloc_cursor_id_addr(uint32_t cursor_id, const struct sockad
   int64_t alloc_size = sizeof(ObCursorIdAddr);
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for cursor id entry", K(alloc_size), K(ret));
+    LOG_WDIAG("fail to alloc mem for cursor id entry", K(alloc_size), K(ret));
   } else {
     cursor_id_addr = new (buf) ObCursorIdAddr(cursor_id, addr);
   }
@@ -69,7 +69,7 @@ int ObCursorIdPair::alloc_cursor_id_pair(uint32_t client_cursor_id, uint32_t ser
   int64_t alloc_size = sizeof(ObCursorIdPair);
   if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem for cursor id pair", K(alloc_size), K(ret));
+    LOG_WDIAG("fail to alloc mem for cursor id pair", K(alloc_size), K(ret));
   } else {
     cursor_id_pair = new (buf) ObCursorIdPair(client_cursor_id, server_cursor_id);
   }

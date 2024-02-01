@@ -45,6 +45,7 @@ class ObServerSessionInfo;
 class ObRespAnalyzeResult;
 class ObMysqlAuthRequest;
 struct ObHandshakeResponseParam;
+enum ObClientSessionIDVersion : uint32_t;
 
 // this is the enum of the vars we care about in save changed session info
 enum ObProxySysVarType
@@ -60,7 +61,16 @@ enum ObProxySysVarType
   OBPROXY_VAR_ENABLE_TRANSMISSION_CHECKSUM_FLAG,
   OBPROXY_VAR_STATEMENT_TRACE_ID_FLAG,
   OBPROXY_VAR_READ_CONSISTENCY_FLAG,
+  OBPROXY_VAR_WEAK_READ_HIT_REPLICA_FLAG,
   OBPROXY_VAR_OTHERS
+};
+
+enum ObWeakReadHitReplica {
+  ALL_FOLLOWER_REPLICA = 0,  // hit a all follower replica, won't return _ob_proxy_weakread_feedback
+  INVALID_REPLICA,           // hit a replica without follower and leader
+  ALL_LEADER_REPLICA,        // hit all leader replica,
+  PART_HIT_REPLICA,          // hit part leader or part follower replica
+  MAX_REPLICA
 };
 
 class ObProxySessionInfoHandler
@@ -117,7 +127,8 @@ public:
 
   static int rewrite_ssl_req(ObClientSessionInfo &client_info);
 
-  static int rewrite_first_login_req(ObClientSessionInfo &client_info,
+  static int rewrite_first_login_req(ObHandshakeResponseParam &param,
+                                     ObClientSessionInfo &client_info,
                                      const common::ObString &cluster_name,
                                      const int64_t cluster_id,
                                      const uint32_t server_sessid,
@@ -125,11 +136,10 @@ public:
                                      const common::ObString &server_scramble,
                                      const common::ObString &proxy_scramble,
                                      const common::ObAddr &client_addr,
-                                     const bool use_compress,
-                                     const bool use_ob_protocol_v2,
-                                     const bool use_ssl,
-                                     const bool enable_client_ip_checkout);
-  static int rewrite_saved_login_req(ObClientSessionInfo &client_info,
+                                     const uint32_t cs_id,
+                                     const int64_t connected_time);
+  static int rewrite_saved_login_req(ObHandshakeResponseParam &param,
+                                     ObClientSessionInfo &client_info, 
                                      const common::ObString &cluster_name,
                                      const int64_t cluster_id,
                                      const uint32_t server_sessid,
@@ -137,11 +147,9 @@ public:
                                      const common::ObString &server_scramble,
                                      const common::ObString &proxy_scramble,
                                      const common::ObAddr &client_addr,
-                                     const bool use_compress,
-                                     const bool use_ob_protocol_v2,
-                                     const bool use_ssl,
-                                     const bool enable_client_ip_checkout);
-  static int rewrite_common_login_req(ObClientSessionInfo &client_info,
+                                     const uint32_t cs_id,
+                                     const int64_t connected_time);
+  static int rewrite_common_login_req(ObClientSessionInfo &client_info, 
                                       ObHandshakeResponseParam &param,
                                       const int64_t global_vars_version,
                                       const common::ObString &cluster_name,
@@ -150,7 +158,9 @@ public:
                                       const uint64_t proxy_sessid,
                                       const common::ObString &server_scramble,
                                       const common::ObString &proxy_scramble,
-                                      const common::ObAddr &client_addr);
+                                      const common::ObAddr &client_addr,
+                                      const uint32_t cs_id,
+                                      const int64_t connected_time);
   
   static int rewrite_change_user_login_req(ObClientSessionInfo &client_info,
                                            const common::ObString& username,
@@ -245,6 +255,10 @@ private:
                                       const obmysql::ObStringKV &str_kv,
                                       const bool is_auth_request,
                                       ObRespAnalyzeResult &resp_result);
+
+  static int handle_weak_read_replica_hit_var(const common::ObString &value,
+                                              ObRespAnalyzeResult &resp_result,
+                                              bool &need_save);
 };
 
 } // end of namespace proxy

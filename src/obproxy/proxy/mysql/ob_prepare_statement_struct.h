@@ -45,9 +45,9 @@ public:
   static const int BUCKET_SIZE = 8;
   static const int NODE_NUM = 8;
 
-  ObPsIdAddrs() : ps_id_(0), addrs_() {
+  ObPsIdAddrs() : ps_id_(0), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) {
   }
-  ObPsIdAddrs(uint32_t ps_id) : ps_id_(ps_id), addrs_() {
+  ObPsIdAddrs(uint32_t ps_id) : ps_id_(ps_id), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) {
   }
   ~ObPsIdAddrs() {};
 
@@ -108,6 +108,7 @@ public:
   virtual void destroy();
 
 public:
+  static bool alloc_new_entry_disabled_;
   common::ObString base_ps_sql_;
   LINK(ObBasePsEntry, base_ps_entry_link_);
 
@@ -227,15 +228,19 @@ int ObPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
   int64_t sql_len = ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
 
   alloc_size += sizeof(T) + sql_len;
-  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+  if (OB_UNLIKELY(ObBasePsEntry::alloc_new_entry_disabled_)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(WARN, "fail to alloc mem for ps entry", K(alloc_size), K(ret));
+    PROXY_SM_LOG(WDIAG, "fail to alloc mem for ps entry, disabled",
+                 K(alloc_size), K_(alloc_new_entry_disabled), K(ret));
+  } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_SM_LOG(WDIAG, "fail to alloc mem for ps entry", K(alloc_size), K(ret));
   } else {
     entry = new (buf) T();
     if (OB_FAIL(entry->init(buf + obj_size, alloc_size - obj_size))) {
-      PROXY_SM_LOG(WARN, "fail to init ps entry", K(ret));
+      PROXY_SM_LOG(WDIAG, "fail to init ps entry", K(ret));
     } else if (OB_FAIL(entry->set_sql(ps_sql))) {
-      PROXY_SM_LOG(WARN, "fail to set ps sql", K(ret));
+      PROXY_SM_LOG(WDIAG, "fail to set ps sql", K(ret));
     } else {
       entry->set_base_ps_parse_result(parse_result);
     }
@@ -307,7 +312,7 @@ public:
   uint32_t server_ps_id_;
   LINK(ObPsIdPair, ps_id_pair_link_);
 };
-  
+
 class ObTextPsEntry : public ObBasePsEntry
 {
 public:
@@ -340,14 +345,18 @@ int ObTextPsEntry::alloc_and_init_ps_entry(const ObString &text_ps_sql,
   int64_t sql_len = text_ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
 
   alloc_size = obj_size + sql_len;
-  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+  if (OB_UNLIKELY(ObBasePsEntry::alloc_new_entry_disabled_)) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(WARN, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
+    PROXY_SM_LOG(WDIAG, "fail to alloc mem for text ps entry, disabled",
+                 K(alloc_size), K_(alloc_new_entry_disabled), K(ret));
+  } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_SM_LOG(WDIAG, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
   } else {
     entry = new (buf) T();
     if (OB_FAIL(entry->init(buf + obj_size, alloc_size - obj_size, text_ps_sql))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_SM_LOG(WARN, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
+      PROXY_SM_LOG(WDIAG, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
     } else {
       entry->set_base_ps_parse_result(parse_result);
     }
@@ -493,9 +502,9 @@ int ObBasePsEntryThreadCache::create_ps_entry(const common::ObString &sql,
   if (OB_FAIL(ps_entry_thread_map_.get_refactored(sql, tmp_ps_entry))) {
     if (OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(T::alloc_and_init_ps_entry(sql, parse_result, ps_entry))) {
-        PROXY_SM_LOG(WARN, "fail to alloc and init ps entry", K(ret));
+        PROXY_SM_LOG(WDIAG, "fail to alloc and init ps entry", K(ret));
       } else if (OB_FAIL(ps_entry_thread_map_.unique_set(ps_entry))) {
-        PROXY_SM_LOG(WARN, "fail to add ps entry to cache", K(ret));
+        PROXY_SM_LOG(WDIAG, "fail to add ps entry to cache", K(ret));
         if (OB_LIKELY(NULL != ps_entry)) {
           ps_entry->destroy();
           ps_entry = NULL;
@@ -523,12 +532,12 @@ int ObBasePsEntryThreadCache::acquire_or_create_ps_entry(const ObString &sql,
   if (OB_FAIL(acquire_ps_entry(sql, ps_entry))) {
     if (OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(create_ps_entry(sql, parse_result, ps_entry))) {
-        PROXY_SM_LOG(WARN, "fail to create ps entry", K(sql), K(ret));
+        PROXY_SM_LOG(WDIAG, "fail to create ps entry", K(sql), K(ret));
       } else {
         PROXY_SM_LOG(DEBUG, "succ to create ps entry", K(sql), KPC(ps_entry));
       }
     } else {
-      PROXY_SM_LOG(WARN, "fail to get ps entry", K(sql), K(ret));
+      PROXY_SM_LOG(WDIAG, "fail to get ps entry", K(sql), K(ret));
     }
   }
   return ret;
@@ -542,7 +551,7 @@ public:
   void destroy();
 
 public:
-  static const int64_t HASH_BUCKET_SIZE = 64;  
+  static const int64_t HASH_BUCKET_SIZE = 64;
   struct ObBasePsEntryHashing
   {
     typedef const common::ObString &Key;
@@ -606,9 +615,9 @@ int ObBasePsEntryGlobalCache::create_ps_entry(const common::ObString &sql,
   if (OB_FAIL(ps_entry_global_map_.get_refactored(sql, tmp_ps_entry))) {
     if (OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(T::alloc_and_init_ps_entry(sql, parse_result, ps_entry))) {
-        PROXY_SM_LOG(WARN, "fail to alloc and init ps entry", K(ret));
+        PROXY_SM_LOG(WDIAG, "fail to alloc and init ps entry", K(ret));
       } else if (OB_FAIL(ps_entry_global_map_.unique_set(ps_entry))) {
-        PROXY_SM_LOG(WARN, "fail to add ps entry to cache", K(ret));
+        PROXY_SM_LOG(WDIAG, "fail to add ps entry to cache", K(ret));
         if (OB_LIKELY(NULL != ps_entry)) {
           ps_entry->destroy();
           ps_entry = NULL;
@@ -633,12 +642,12 @@ int ObBasePsEntryGlobalCache::acquire_or_create_ps_entry(const ObString &sql,
   if (OB_FAIL(acquire_ps_entry(sql, ps_entry))) {
     if (OB_HASH_NOT_EXIST == ret) {
       if (OB_FAIL(create_ps_entry(sql, parse_result, ps_entry))) {
-        PROXY_SM_LOG(WARN, "fail to create ps entry", K(sql), K(ret));
+        PROXY_SM_LOG(WDIAG, "fail to create ps entry", K(sql), K(ret));
       } else {
         PROXY_SM_LOG(DEBUG, "succ to create ps entry", K(sql), KPC(ps_entry));
       }
     } else {
-      PROXY_SM_LOG(WARN, "fail to get ps entry", K(sql), K(ret));
+      PROXY_SM_LOG(WDIAG, "fail to get ps entry", K(sql), K(ret));
     }
   }
   return ret;

@@ -85,7 +85,7 @@ int ObLayout::merge_file_path(const char *root, const char *file, common::ObIAll
 
   if (OB_ISNULL(root) || OB_ISNULL(file)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", "root", P(root), "file", P(file), K(ret));
+    LOG_WDIAG("invalid argument", "root", P(root), "file", P(file), K(ret));
   } else {
     int64_t root_len = STRLEN(root);
     int64_t file_len = STRLEN(file);
@@ -95,7 +95,7 @@ int ObLayout::merge_file_path(const char *root, const char *file, common::ObIAll
     char *path = NULL;
     if (OB_ISNULL(path = static_cast<char *>(allocator.alloc(need_len)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc memeory", K(need_len), K(ret));
+      LOG_WDIAG("fail to alloc memeory", K(need_len), K(ret));
     } else if ('/' == file[0]) {
       //do nothing if file is rooted ,just return file
       path[0] = '/';
@@ -120,7 +120,7 @@ int ObLayout::merge_file_path(const char *root, const char *file, common::ObIAll
         //  handle ../
         if (1 == path_len && '/' == path[0]) {
           ret = OB_INVALID_ARGUMENT;
-          LOG_WARN("invalid argument", K(root), K(file), K(ret));
+          LOG_WDIAG("invalid argument", K(root), K(file), K(ret));
         } else if (path_len >= 3 && 0 == MEMCMP(path + path_len - 3, "../", 3)) {
           if ('\0' != *next) {
             ++seg_len;
@@ -181,11 +181,11 @@ int ObLayout::init_dir_prefix(const char *cwd)
   int ret = OB_SUCCESS;
   if (RUN_MODE_PROXY == g_run_mode) {
     if (OB_FAIL(init_dir_prefix_proxy_mode(cwd))) {
-      LOG_WARN("init dir prefix proxy mode failed", K(ret));
+      LOG_WDIAG("init dir prefix proxy mode failed", K(ret));
     }
   } else if (RUN_MODE_CLIENT == g_run_mode) {
     if (OB_FAIL(init_dir_prefix_client_mode())) {
-      LOG_WARN("init_dir_prefix_client_mode", K(ret));
+      LOG_WDIAG("init_dir_prefix_client_mode", K(ret));
     }
   }
 
@@ -340,9 +340,9 @@ int ObLayout::handle_client_dirs()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(construct_client_obproxy_dirs())) {
-    LOG_WARN("construct_client_obproxy_dirs failed", K(ret));
+    LOG_WDIAG("construct_client_obproxy_dirs failed", K(ret));
   } else if (OB_FAIL(remove_unix_domain())) {
-    LOG_WARN("remove unix domain failed", K(ret));
+    LOG_WDIAG("remove unix domain failed", K(ret));
   }
 
   return ret;

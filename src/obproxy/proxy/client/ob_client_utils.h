@@ -46,28 +46,35 @@ union ObClientFlags
 class ObMysqlRequestParam
 {
 public:
+  enum ClientVCType {
+    CLIENT_VC_TYPE_NORMAL,
+    CLIENT_VC_TYPE_DETECT,
+    CLIENT_VC_TYPE_BINLOG,
+    CLIENT_VC_TYPE_MAX,
+  };
+public:
   ObMysqlRequestParam() : sql_(), is_deep_copy_(false), is_user_idc_name_set_(false),
                           need_print_trace_stat_(false), current_idc_name_(),
                           target_addr_(), ob_client_flags_(0), mysql_client_(NULL),
-                          is_detect_client_(false) {};
+                          client_vc_type_(CLIENT_VC_TYPE_NORMAL) {};
   explicit ObMysqlRequestParam(const char *sql)
     : sql_(sql), is_deep_copy_(false), is_user_idc_name_set_(false),
       need_print_trace_stat_(false), current_idc_name_(), target_addr_(),
-      ob_client_flags_(0), mysql_client_(NULL), is_detect_client_(false) {};
+      ob_client_flags_(0), mysql_client_(NULL), client_vc_type_(CLIENT_VC_TYPE_NORMAL) {};
   ObMysqlRequestParam(const char *sql, const ObString &idc_name)
     : sql_(sql), is_deep_copy_(false), is_user_idc_name_set_(true),
       need_print_trace_stat_(true), current_idc_name_(idc_name), target_addr_(),
-      ob_client_flags_(0), mysql_client_(NULL), is_detect_client_(false) {};
+      ob_client_flags_(0), mysql_client_(NULL), client_vc_type_(CLIENT_VC_TYPE_NORMAL) {};
   void reset();
   void reset_sql();
   void set_target_addr(const common::ObAddr addr) { target_addr_ = addr; }
   void set_mysql_client(ObMysqlClient *mysql_client) { mysql_client_ = mysql_client; }
-  void set_is_detect_client(const bool is_detect_client) { is_detect_client_ = is_detect_client; }
+  void set_client_vc_type(const ClientVCType client_vc_type) { client_vc_type_ = client_vc_type; }
   bool is_valid() const { return !sql_.empty(); }
   int deep_copy(const ObMysqlRequestParam &other);
   int deep_copy_sql(const common::ObString &sql);
   TO_STRING_KV(K_(sql), K_(is_deep_copy), K_(current_idc_name), K_(is_user_idc_name_set),
-               K_(need_print_trace_stat), K_(target_addr), K(ob_client_flags_.flags_), K_(is_detect_client));
+               K_(need_print_trace_stat), K_(target_addr), K(ob_client_flags_.flags_), K_(client_vc_type));
 
   common::ObString sql_;
   bool is_deep_copy_;
@@ -80,7 +87,7 @@ public:
   // bit 1: whether set autocommit
   ObClientFlags ob_client_flags_;
   ObMysqlClient* mysql_client_;
-  bool is_detect_client_;
+  ClientVCType client_vc_type_;
 };
 
 class ObClientMysqlResp
@@ -127,7 +134,7 @@ inline void ObClientMysqlResp::consume_resp_buf()
   if (NULL != response_reader_) {
     int ret = common::OB_SUCCESS;
     if (OB_FAIL(response_reader_->consume(response_reader_->read_avail()))) {
-      PROXY_LOG(WARN, "fail to consume ", K(ret));
+      PROXY_LOG(WDIAG, "fail to consume ", K(ret));
     }
   }
 }

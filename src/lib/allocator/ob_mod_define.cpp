@@ -72,7 +72,7 @@ static int print_mod(char *buf, int64_t size, int64_t &pos, const char *name, co
   if (0 == mod.hold_) {
   } else if ((count = mod.format_string(buf + pos, size - pos, name)) <= 0) {
     ret = OB_BUF_NOT_ENOUGH;
-    _OB_LOG(ERROR, "buf not enough, size=%ld, pos=%ld", size, pos);
+    _OB_LOG(EDIAG, "buf not enough, size=%ld, pos=%ld", size, pos);
   } else {
     pos += count;
   }

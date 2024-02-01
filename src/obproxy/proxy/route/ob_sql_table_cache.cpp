@@ -40,12 +40,12 @@ int ObSqlTableCache::init(const int64_t bucket_size)
   int64_t sub_bucket_size = bucket_size / MT_HASHTABLE_PARTITIONS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("sql_table_cache init twice", K(ret));
+    LOG_WDIAG("sql_table_cache init twice", K(ret));
   } else if (OB_UNLIKELY(bucket_size <= 0 || sub_bucket_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
+    LOG_WDIAG("invalid input value", K(bucket_size), K(sub_bucket_size), K(ret));
   } else if (OB_FAIL(SqlTableEntryHashMap::init(sub_bucket_size, SQL_TABLE_ENTRY_MAP_LOCK, gc_sql_table_entry))) {
-    LOG_WARN("fail to init hash table of sql table cache", K(sub_bucket_size), K(ret));
+    LOG_WDIAG("fail to init hash table of sql table cache", K(sub_bucket_size), K(ret));
   } else {
     is_inited_ = true;
   }
@@ -77,7 +77,7 @@ int ObSqlTableCache::get_table_name(const ObSqlTableEntryKey &key, char *buf, co
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)
       || OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(buf), K(len), K(key), K(ret));
+    LOG_WDIAG("invalid argument", K(buf), K(len), K(key), K(ret));
   } else {
     ObSqlTableEntry *entry;
     get_sql_table_entry_from_thread_cache(key, entry);
@@ -92,7 +92,7 @@ int ObSqlTableCache::get_table_name(const ObSqlTableEntryKey &key, char *buf, co
         // add into thread cache, will add inc_ref
         ObSqlTableRefHashMap &sql_table_map = self_ethread().get_sql_table_map();
         if (OB_FAIL(sql_table_map.set(entry))) {
-          LOG_WARN("fail to set thread sql table map", KPC(entry), K(ret));
+          LOG_WDIAG("fail to set thread sql table map", KPC(entry), K(ret));
           ret = OB_SUCCESS; // ignore ret
         }
       } else {
@@ -101,14 +101,14 @@ int ObSqlTableCache::get_table_name(const ObSqlTableEntryKey &key, char *buf, co
     }
     if (OB_ISNULL(entry)) {
       ret = OB_ENTRY_NOT_EXIST;
-      LOG_WARN("ObSqlTableEntry does not exist", K(key), K(ret));
+      LOG_WDIAG("ObSqlTableEntry does not exist", K(key), K(ret));
     } else {
       // no need read lock
       entry->renew_last_access_time_us();
       const ObString &table_name = entry->get_table_name();
       if (OB_UNLIKELY(len <= table_name.length())) {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WARN("buf len is not enough for table name", K(table_name), K(len), K(ret));
+        LOG_WDIAG("buf len is not enough for table name", K(table_name), K(len), K(ret));
       } else {
         MEMCPY(buf, table_name.ptr(), table_name.length());
         buf[table_name.length()] = '\0';
@@ -127,9 +127,9 @@ int ObSqlTableCache::add_sql_table_entry(ObSqlTableEntry *entry)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(entry)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("entry is null", K(ret));
+    LOG_WDIAG("entry is null", K(ret));
   } else if (OB_FAIL(update_sql_table_entry(*entry))) {
-    LOG_WARN("fail to add sql table entry", KPC(entry), K(ret));
+    LOG_WDIAG("fail to add sql table entry", KPC(entry), K(ret));
   }
   return ret;
 }
@@ -179,7 +179,7 @@ int ObSqlTableCache::update_sql_table_entry(ObSqlTableEntry &entry)
     ObSqlTableRefHashMap &sql_table_map = self_ethread().get_sql_table_map();
     ObSqlTableEntry *pentry = &entry;
     if (OB_FAIL(sql_table_map.set(pentry))) {
-      LOG_WARN("fail to set thread sql table map", K(entry), K(ret));
+      LOG_WDIAG("fail to set thread sql table map", K(entry), K(ret));
       ret = OB_SUCCESS; // ignore ret
     }
   }
@@ -196,11 +196,11 @@ int ObSqlTableCache::update_table_name(const ObSqlTableEntryKey &key, const ObSt
   int ret = OB_SUCCESS;
   ObSqlTableEntry *entry = NULL;
   if (OB_FAIL(ObSqlTableEntry::alloc_and_init_sql_table_entry(key, table_name, entry))) {
-    LOG_WARN("fail to alloc sql table entry", K(key), K(table_name), K(ret));
+    LOG_WDIAG("fail to alloc sql table entry", K(key), K(table_name), K(ret));
   } else if (FALSE_IT(entry->set_table_from_reroute())) {
     // never come here
   } else if (OB_FAIL(update_sql_table_entry(*entry))) {
-    LOG_WARN("fail to update sql table entry", K(key), K(table_name), K(ret));
+    LOG_WDIAG("fail to update sql table entry", K(key), K(table_name), K(ret));
   }
   if (OB_SUCC(ret)) {
     LOG_INFO("succ to update table name", K(key), K(table_name));
@@ -234,10 +234,10 @@ int ObSqlTableCache::remove_sql_table_entry(const ObSqlTableEntryKey &key)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(key), K(ret));
+    LOG_WDIAG("invalid input value", K(key), K(ret));
   } else {
     uint64_t hash = key.hash();
     ObSqlTableEntry *entry = NULL;
@@ -260,7 +260,7 @@ int init_sql_table_map_for_thread()
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_sql_table_map_for_one_thread(i))) {
-      LOG_WARN("fail to init sql_table_map", K(i), K(ret));
+      LOG_WDIAG("fail to init sql_table_map", K(i), K(ret));
     }
   }
   return ret;
@@ -272,16 +272,16 @@ int init_sql_table_map_for_one_thread(int64_t index)
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_NET_LOG(ERROR, "fail to get ET_NET thread", K(ret));
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else {
     if (OB_ISNULL(ethreads[index]->sql_table_map_ = new (std::nothrow) ObSqlTableRefHashMap(ObModIds::OB_PROXY_SQL_TABLE_ENTRY_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to new ObSqlTableRefHashMap", K(index), K(ethreads[index]), K(ret));
+      LOG_WDIAG("fail to new ObSqlTableRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->sql_table_map_->init())) {
-      LOG_WARN("fail to init sql_table_map", K(ret));
+      LOG_WDIAG("fail to init sql_table_map", K(ret));
     }
   }
   return ret;
@@ -296,7 +296,7 @@ int ObSqlTableRefHashMap::clean_hash_map()
       if ((*it)->is_deleted_state()) {
         LOG_INFO("this sql table entry will erase from tc map", KPC(*it));
         if (OB_FAIL(erase(it, i))) {
-          LOG_WARN("fail to erase table entry", K(i), K(ret));
+          LOG_WDIAG("fail to erase table entry", K(i), K(ret));
         }
       }
     }

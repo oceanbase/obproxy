@@ -68,17 +68,17 @@ const char *to_json_cstring(const T &obj1)
       = GET_TSI_MULT(__typeof__(*buffer_obj), common::TSI_COMMON_TO_CSTRING_BUFFER_OBJ_3);
   if (OB_ISNULL(buffer_obj)) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
-    LIB_LOG(WARN, "buffer obj is NULL", K(ret));
+    LIB_LOG(WDIAG, "buffer obj is NULL", K(ret));
   } else {
     char *buf = buffer_obj->buffers[0];
     ObStdJsonConvertor convertor;
     int64_t out_len = 0;
     if (OB_FAIL(convertor.init(str_ret, buf, BUFFER_SIZE))) {
-      LIB_LOG(WARN, "fail to init convertor", K(ret));
+      LIB_LOG(WDIAG, "fail to init convertor", K(ret));
     } else {
       convertor.disable_backslash_escape();
       if (OB_FAIL(convertor.convert(out_len))) {
-        LIB_LOG(WARN, "fail to do convert", K(ret));
+        LIB_LOG(WDIAG, "fail to do convert", K(ret));
       } else {
         str_ret = buf;
       }
@@ -90,9 +90,9 @@ const char *to_json_cstring(const T &obj1)
     Parser json_parser;
     Value *root = NULL;
     if (OB_FAIL(json_parser.init(&allocator))) {
-      LIB_LOG(WARN, "fail to init json parser", K(ret));
+      LIB_LOG(WDIAG, "fail to init json parser", K(ret));
     } else if (OB_FAIL(json_parser.parse(str_ret, strlen(str_ret), root))) {
-      LIB_LOG(WARN, "fail to parse json", K(ret));
+      LIB_LOG(WDIAG, "fail to parse json", K(ret));
     } else {
       Tidy tidy(root);
       str_ret = ::oceanbase::common::to_cstring<Tidy>(tidy);

@@ -25,6 +25,7 @@
 #include "lib/hash/ob_hashutils.h"
 #include "lib/ob_proxy_worker.h"
 #include "lib/rowid/ob_urowid.h"
+#include "lib/wide_integer/ob_wide_integer.h"
 
 namespace oceanbase
 {
@@ -133,6 +134,13 @@ public:
     set_collation_level(CS_LEVEL_INVALID);
     set_collation_type(CS_TYPE_BINARY);
   }
+  OB_INLINE void set_decimal_int() { type_ = static_cast<uint8_t>(ObDecimalIntType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
+  OB_INLINE void set_decimal_int(ObScale scale)
+  {
+    set_decimal_int();
+    scale_ = static_cast<int8_t>(scale);
+  }
+
   OB_INLINE void set_otimestamp_type(const ObObjType type)
   {
     type_ = static_cast<uint8_t>(type);
@@ -207,6 +215,7 @@ public:
     return (static_cast<uint8_t>(ObUTinyIntType) <= type_
          && static_cast<uint8_t>(ObUInt64Type)   >= type_);
   }
+  OB_INLINE bool is_decimal_int() const { return type_ == static_cast<uint8_t>(ObDecimalIntType); }
 
   OB_INLINE void set_collation_level(ObCollationLevel cs_level) { cs_level_ = cs_level; }
   OB_INLINE void set_collation_type(ObCollationType cs_type) { cs_type_ = cs_type; }
@@ -275,7 +284,7 @@ union ObObjValue
   int32_t date_;
   int64_t time_;
   uint8_t year_;
-
+  ObDecimalInt *decimal_int_;
   int64_t ext_;
   int64_t unknown_;
 };
@@ -310,7 +319,7 @@ public:
   void set_type(const ObObjType &type)
   {
     if (OB_UNLIKELY(ObNullType > type || ObMaxType < type)) {
-      COMMON_LOG(ERROR, "invalid type", K(type));
+      COMMON_LOG(EDIAG, "invalid type", K(type));
       meta_.set_type(ObUnknownType);
     } else {
       meta_.set_type(type);
@@ -463,6 +472,9 @@ public:
   inline int get_unumber(number::ObNumber &num) const;
   inline int get_number_float(number::ObNumber &num) const;
 
+  inline const ObDecimalInt *get_decimal_int() const;
+  inline void set_decimal_int(int32_t int_bytes, ObScale scale, ObDecimalInt *decimal_int);
+  inline int32_t get_int_bytes() const;
   inline int get_datetime(int64_t &value) const;
   inline int get_timestamp(int64_t &value) const;
   inline int get_date(int32_t &value) const;
@@ -603,6 +615,7 @@ public:
   OB_INLINE bool is_timestamp_nano() const { return meta_.is_timestamp_nano(); }
   OB_INLINE bool is_varbinary_or_binary() const { return meta_.is_varbinary_or_binary(); }
 
+  inline bool is_decimal_int() const { return meta_.is_decimal_int(); }
   inline bool is_min_value() const;
   inline bool is_max_value() const;
   inline bool is_nop_value() const;
@@ -724,9 +737,7 @@ struct ObjHashCalculator
 
 inline ObObj::ObObj()
 {
-  meta_.set_null();
-  meta_.set_collation_type(CS_TYPE_INVALID);
-  meta_.set_collation_level(CS_LEVEL_INVALID);
+  reset();
 }
 
 inline ObObj::ObObj(bool val)
@@ -754,6 +765,8 @@ inline void ObObj::reset()
   meta_.set_null();
   meta_.set_collation_type(CS_TYPE_INVALID);
   meta_.set_collation_level(CS_LEVEL_INVALID);
+  val_len_ = 0;
+  v_.int64_ = 0;
 }
 
 inline ObObj ObObj::make_min_obj()
@@ -1468,6 +1481,22 @@ inline int ObObj::get_number_float(number::ObNumber &num) const
     ret = OB_SUCCESS;
   }
   return ret;
+}
+
+inline const ObDecimalInt *ObObj::get_decimal_int() const
+{
+  return v_.decimal_int_;
+}
+
+inline void ObObj::set_decimal_int(int32_t int_bytes, ObScale scale, ObDecimalInt *decimal_int)
+{
+  meta_.set_decimal_int(scale);
+  val_len_ = int_bytes;
+  v_.decimal_int_ = decimal_int;
+}
+
+inline int32_t ObObj::get_int_bytes() const {
+  return val_len_;
 }
 
 inline int ObObj::get_datetime(int64_t &v) const

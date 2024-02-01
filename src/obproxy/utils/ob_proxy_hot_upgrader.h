@@ -24,6 +24,8 @@ namespace obproxy
 #define OBPROXY_INHERITED_IPV6_FD "OBPROXY_INHERITED_IPV6_FD"
 extern volatile int g_proxy_fatal_errcode;
 
+extern volatile int g_proxy_connection_errcode;
+
 enum ObReloadConfigStatus
 {
   RCS_NONE = 0,

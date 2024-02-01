@@ -43,7 +43,7 @@ public:
   virtual int assign(const ObIArray &other) = 0;
   virtual int prepare_allocate(int64_t capacity) = 0;
   virtual T *alloc_place_holder()
-  { OB_LOG(WARN, "Not supported"); return NULL; }
+  { OB_LOG(WDIAG, "Not supported"); return NULL; }
 
   //virtual bool empty() { return 0 == count(); }
   virtual bool empty() const { return 0 == count(); }

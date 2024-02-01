@@ -39,7 +39,7 @@ int ObAddr::convert_ipv4_addr(const char *ip)
     if (rt != 1) { // wrong ip or error
       in.s_addr = 0;
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("convert ipv4 addr failed", K(ip));
+      LOG_WDIAG("convert ipv4 addr failed", K(ip));
     } else {
       ip_.v4_ = ntohl(in.s_addr);
     }
@@ -57,7 +57,7 @@ int ObAddr::convert_ipv6_addr(const char *ip)
     if (ret != 1) {
       memset(&in6, 0, sizeof(in6));
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("convert ipv6 addr failed", K(ip));
+      LOG_WDIAG("convert ipv6 addr failed", K(ip));
     } else {
       ret = OB_SUCCESS;
       // Stored here in big-endian format
@@ -296,7 +296,7 @@ bool ObAddr::operator <(const ObAddr &rv) const
 {
   int64_t ipcmp = 0;
   if (version_ != rv.version_) {
-    LOG_ERROR("comparision between different IP versions hasn't supported!");
+    LOG_EDIAG("comparision between different IP versions hasn't supported!");
   } else if (IPV4 == version_) {
     ipcmp = static_cast<int64_t>(ip_.v4_) - static_cast<int64_t>(rv.ip_.v4_);
   } else if (IPV6 == version_) {

@@ -272,7 +272,7 @@ inline bool mutex_trylock(
   bool bret = true;
   if (OB_ISNULL(t) || OB_UNLIKELY(reinterpret_cast<ObThread *>(t) != this_thread()) || OB_ISNULL(m)) {
     bret = false;
-    PROXY_EVENT_LOG(WARN, "argument is error", K(t), K(m));
+    PROXY_EVENT_LOG(WDIAG, "argument is error", K(t), K(m));
   } else {
     if (m->thread_holding_ != t) {
       if (OB_UNLIKELY(!lib::mutex_try_acquire(&m->the_mutex_))) {
@@ -324,7 +324,7 @@ inline bool mutex_trylock_spin(
   bool bret = true;
   if (OB_ISNULL(t) || OB_ISNULL(m)) {
     bret = false;
-    PROXY_EVENT_LOG(WARN, "argument is error", K(t), K(m));
+    PROXY_EVENT_LOG(WDIAG, "argument is error", K(t), K(m));
   } else {
     if (m->thread_holding_ != t) {
       do {
@@ -379,12 +379,12 @@ inline bool mutex_lock(
   bool bret = true;
   if (OB_ISNULL(t) || OB_ISNULL(m)) {
     bret = false;
-    PROXY_EVENT_LOG(WARN, "argument is error", K(t), K(m));
+    PROXY_EVENT_LOG(WDIAG, "argument is error", K(t), K(m));
   } else {
     if (m->thread_holding_ != t) {
       if (OB_UNLIKELY(common::OB_SUCCESS != lib::mutex_acquire(&m->the_mutex_))) {
         bret = false;
-        PROXY_EVENT_LOG(ERROR, "fail to acquire mutex");
+        PROXY_EVENT_LOG(EDIAG, "fail to acquire mutex");
       } else {
         m->thread_holding_ = t;
 #ifdef OB_HAS_EVENT_DEBUG
@@ -415,7 +415,7 @@ inline bool mutex_lock(
 inline void mutex_unlock(ObProxyMutex *m, ObEThread *t)
 {
   if (OB_ISNULL(t) || OB_ISNULL(m)) {
-    PROXY_EVENT_LOG(WARN, "argument is error", K(t), K(m));
+    PROXY_EVENT_LOG(WDIAG, "argument is error", K(t), K(m));
   } else {
     if (OB_LIKELY(m->thread_holding_count_ > 0) && OB_LIKELY(t == m->thread_holding_)) {
       --(m->thread_holding_count_);
@@ -434,7 +434,7 @@ inline void mutex_unlock(ObProxyMutex *m, ObEThread *t)
 #endif //OB_HAS_EVENT_DEBUG
         m->thread_holding_ = NULL;
         if (OB_UNLIKELY(common::OB_SUCCESS != lib::mutex_release(&m->the_mutex_))) {
-          PROXY_EVENT_LOG(ERROR, "fail to release mutex");
+          PROXY_EVENT_LOG(EDIAG, "fail to release mutex");
         }
       }
     }
@@ -541,7 +541,7 @@ public:
       lock_acquired_ = false;
     } else {
       // generate a warning because it shouldn't be done.
-      PROXY_EVENT_LOG(WARN, "it had not acquired lock");
+      PROXY_EVENT_LOG(WDIAG, "it had not acquired lock");
     }
   }
 
@@ -566,9 +566,9 @@ inline ObProxyMutex *new_proxy_mutex(ObLockStats lock_stat = COMMON_LOCK)
 {
   ObProxyMutex *ret = NULL;
   if (OB_ISNULL(ret = op_reclaim_alloc(ObProxyMutex))) {
-    PROXY_EVENT_LOG(ERROR, "fail to alloc memory for ObProxyMutex");
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc memory for ObProxyMutex");
   } else if (OB_UNLIKELY(common::OB_SUCCESS != ret->init())) {
-    PROXY_EVENT_LOG(WARN, "fail to init proxy mutex");
+    PROXY_EVENT_LOG(WDIAG, "fail to init proxy mutex");
   } else {
     ret->lockstat_ = lock_stat;
   }

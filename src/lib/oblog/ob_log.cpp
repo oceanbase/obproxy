@@ -47,8 +47,6 @@ const int64_t ObLogger::MAX_LOG_ITEM_COUNT[MAX_LOG_ITEM_TYPE] = {
   4 * 1024,
   128,
   4 * 1024,
-  1 * 512,
-  16,
 };
 
 static int64_t last_check_file_ts = 0;//last file sample timestamps
@@ -103,7 +101,7 @@ int ObLogIdLevelMap::set_level(const uint64_t par_mod_id, const int8_t level)
     }
   } else {
     ret = OB_LOG_INVALID_MOD_ID;
-    LOG_WARN("Invalid mod id", K(ret), K(par_mod_id));
+    LOG_WDIAG("Invalid mod id", K(ret), K(par_mod_id));
   }
   return ret;
 }
@@ -117,7 +115,7 @@ int ObLogIdLevelMap::set_level(const uint64_t par_mod_id, const uint64_t sub_mod
     log_level_[par_mod_id][sub_mod_id + 1] = level;
   } else {
     ret = OB_LOG_INVALID_MOD_ID;
-    LOG_WARN("Invalid mod id", K(ret), K(par_mod_id), K(sub_mod_id));
+    LOG_WDIAG("Invalid mod id", K(ret), K(par_mod_id), K(sub_mod_id));
   }
   return ret;
 }
@@ -136,7 +134,7 @@ int ObLogNameIdMap::register_mod(const uint64_t mod_id, const char *mod_name)
   int ret = OB_SUCCESS;
   if (mod_id >= MAX_PAR_MOD_SIZE || NULL == mod_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Invalid mod id and name", K(ret), K(mod_id), K(mod_name));
+    LOG_WDIAG("Invalid mod id and name", K(ret), K(mod_id), K(mod_name));
   } else {
     name_id_map_[mod_id][0] = mod_name;
   }
@@ -150,7 +148,7 @@ int ObLogNameIdMap::register_mod(const uint64_t mod_id,
   int ret = OB_SUCCESS;
   if (mod_id >= MAX_PAR_MOD_SIZE || sub_mod_id >= MAX_SUB_MOD_SIZE || NULL == sub_mod_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Invalid mod id or name", K(ret), K(mod_id), K(sub_mod_id), K(sub_mod_name));
+    LOG_WDIAG("Invalid mod id or name", K(ret), K(mod_id), K(sub_mod_id), K(sub_mod_name));
   } else {
     name_id_map_[mod_id][sub_mod_id + 1] = sub_mod_name;
   }
@@ -168,12 +166,12 @@ int ObLogNameIdMap::get_mod_id(const char *mod_name,
 
   if (NULL == mod_name || NULL == sub_mod_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Invalid argument", K(ret), K(mod_name), K(sub_mod_name));
+    LOG_WDIAG("Invalid argument", K(ret), K(mod_name), K(sub_mod_name));
   } else if (OB_FAIL(get_mod_id(mod_name, par_mod_id))) {
-    LOG_WARN("Failed to get mod id", K(ret), K(mod_name));
+    LOG_WDIAG("Failed to get mod id", K(ret), K(mod_name));
   } else if (OB_UNLIKELY(par_mod_id >= MAX_PAR_MOD_SIZE)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("Get invalid par mod id", K(ret));
+    LOG_WDIAG("Get invalid par mod id", K(ret));
   } else {
     //find sub_mod_id
     bool find_mod = false;
@@ -190,7 +188,7 @@ int ObLogNameIdMap::get_mod_id(const char *mod_name,
 
     if (!find_mod) {
       ret = OB_LOG_MODULE_UNKNOWN;
-      LOG_WARN("Failed to find sub_mod", K(ret), K(mod_name), K(sub_mod_name));
+      LOG_WDIAG("Failed to find sub_mod", K(ret), K(mod_name), K(sub_mod_name));
     }
   }
   return ret;
@@ -203,7 +201,7 @@ int ObLogNameIdMap::get_mod_id(const char *mod_name, uint64_t &par_mod_id) const
 
   if (NULL == mod_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Invalid argument", K(ret), K(mod_name));
+    LOG_WDIAG("Invalid argument", K(ret), K(mod_name));
   } else {
     bool find_mod = false;
     for (uint64_t idx = 0; OB_SUCC(ret) && !find_mod && idx < MAX_PAR_MOD_SIZE; ++idx) {
@@ -218,7 +216,7 @@ int ObLogNameIdMap::get_mod_id(const char *mod_name, uint64_t &par_mod_id) const
     }
     if (!find_mod) {
       ret = OB_LOG_MODULE_UNKNOWN;
-      LOG_WARN("Failed to find sub_mod", K(ret), K(mod_name));
+      LOG_WDIAG("Failed to find sub_mod", K(ret), K(mod_name));
     }
   }
   return ret;
@@ -230,7 +228,7 @@ int ObLogNameIdMap::get_par_mod_name(const uint64_t par_mod_id, const char *&mod
   mod_name = NULL;
   if (par_mod_id >= MAX_PAR_MOD_SIZE) {
     ret = OB_LOG_INVALID_MOD_ID;
-    LOG_WARN("Invalid par mod id", K(ret), K(par_mod_id));
+    LOG_WDIAG("Invalid par mod id", K(ret), K(par_mod_id));
   } else {
     mod_name = name_id_map_[par_mod_id][0];
   }
@@ -244,7 +242,7 @@ int ObLogNameIdMap::get_sub_mod_name(const uint64_t par_mod_id, const uint64_t s
   mod_name = NULL;
   if (par_mod_id >= MAX_PAR_MOD_SIZE || sub_mod_id >= MAX_SUB_MOD_SIZE) {
     ret = OB_LOG_INVALID_MOD_ID;
-    LOG_WARN("Invalid mod id", K(ret), K(par_mod_id), K(sub_mod_id));
+    LOG_WDIAG("Invalid mod id", K(ret), K(par_mod_id), K(sub_mod_id));
   } else {
     mod_name = name_id_map_[par_mod_id][sub_mod_id + 1];
   }
@@ -342,14 +340,15 @@ ObLogger::LogBufferMgr *ObLogger::get_buffer_mgr()
   return log_buf_mgr;
 }
 
-const char *const ObLogger::errstr_[] = {"ERROR", "USER_ERR", "WARN", "INFO", "TRACE", "DEBUG"};
+const char *const ObLogger::errstr_[] = {"ERROR", "USER_ERR", "WARN", "INFO", "EDIAG", "WDIAG", "TRACE", "DEBUG"};
 ObLogger::ObLogger()
 : log_file_(), max_file_size_(0), name_id_map_(), id_level_map_(),
-  monitor_level_(OB_LOG_LEVEL_WARN), xflush_level_(OB_LOG_LEVEL_WARN), wf_level_(OB_LOG_LEVEL_WARN), level_version_(0),
-  disable_thread_log_level_(true), force_check_(false), redirect_flag_(false),
+  syslog_level_(OB_LOG_LEVEL_WDIAG), monitor_level_(OB_LOG_LEVEL_WARN), xflush_level_(OB_LOG_LEVEL_WARN),
+  wf_level_(OB_LOG_LEVEL_WARN), level_version_(0), disable_thread_log_level_(true), force_check_(false), redirect_flag_(false),
   can_print_(true), stop_flush_(false), enable_async_log_(true), stop_append_log_(false),
   async_log_queue_(NULL), last_async_flush_count_per_sec_(0), async_tid_(0),
-  callback_handler_(NULL)
+  callback_handler_(NULL), syslog_io_bandwidth_limit_(INT64_MAX), left_syslog_io_bandwidth_(INT64_MAX),
+  start_bandwidth_time_(0), syslog_start_out_of_limit_(0), syslog_out_of_limit_cnt_(0)
 {
   id_level_map_.set_level(OB_LOG_LEVEL_ERROR);
 
@@ -492,6 +491,18 @@ void ObLogger::set_file_name(const ObLogFDType type,
   }
 }
 
+void ObLogger::set_enable_wf(const ObLogFDType type,
+                             const bool open_wf,
+                             const bool enable_wf)
+{
+  if (OB_UNLIKELY(type >= MAX_FD_FILE)) {
+    LOG_STDERR("invalid argument type =%d", type);
+  } else {
+    log_file_[type].open_wf_flag_ = open_wf;
+    log_file_[type].enable_wf_flag_ = enable_wf;
+  }
+}
+
 int ObLogger::reopen_monitor_log()
 {
   int ret = OB_SUCCESS;
@@ -606,7 +617,7 @@ bool ObLogger::check_and_set_level_version(int64_t version)
 void ObLogger::log_tail(const int32_t level, LogBuffer &log_buffer)
 {
   if (OB_LIKELY(log_buffer.pos_ >= 0)) {
-    if (OB_UNLIKELY(OB_LOG_LEVEL_ERROR == level)) {
+    if (OB_UNLIKELY(OB_LOG_LEVEL_EDIAG == level)) {
       const char *bt = oceanbase::common::lbt();
       (void)logdata_printf(log_buffer.buffer_, MAX_LOG_SIZE, log_buffer.pos_,
                            " BACKTRACE:%s", bt);
@@ -814,7 +825,7 @@ void ObLogger::log_data(const ObLogFDType type,
       vec[2].iov_len = sizeof(NEWLINE);
 
       if (OB_LIKELY(data_len > 0)) {
-        if (OB_UNLIKELY(OB_LOG_LEVEL_ERROR == level) && FD_DEFAULT_FILE == type) {
+        if (OB_UNLIKELY(OB_LOG_LEVEL_EDIAG == level) && FD_DEFAULT_FILE == type) {
           // print backtrace for error message
           iovcnt = 5;
           vec[3].iov_base = oceanbase::common::lbt();
@@ -1080,7 +1091,7 @@ int ObLogger::parse_check(const char *str,
     if (strchr(buffer, ':') == NULL) {
       int8_t level_int = 0;
       if (OB_FAIL(level_str2int(buffer, level_int))) {
-        OB_LOG(WARN, "failed to get level_int", K(buffer), K(str), K(str_length), K(ret));
+        OB_LOG(WDIAG, "failed to get level_int", K(buffer), K(str), K(str_length), K(ret));
       } else {
         if (NULL != list) {
           ModSetting mod_set(ModSetting::NON_SUBMOD_ID, ModSetting::NON_SUBMOD_ID, level_int);
@@ -1116,14 +1127,14 @@ int ObLogger::parse_check(const char *str,
         if (OB_SUCC(ret)) {
           ModSetting mod_set;
           if (OB_FAIL(get_mod_set(par_mod, sub_mod, level, mod_set))) {
-            LOG_WARN("Get mod set error", K(ret));
+            LOG_WDIAG("Get mod set error", K(ret));
             if (NULL != list) {
               list->reset();
             }
           } else {
             if (NULL != list) {
               if (OB_FAIL(list->push_back(mod_set))) {
-                LOG_WARN("Failed to add mod set to list", K(ret));
+                LOG_WDIAG("Failed to add mod set to list", K(ret));
               }
             }
             int64_t valid_length_tmp = p_start - buffer;
@@ -1174,9 +1185,9 @@ int ObLogger::parse_set(const char *str,
   int ret = OB_SUCCESS;
   ObList<ModSetting> mod_setting_list;
   if (OB_FAIL(parse_check(str, str_length, valid_length, &mod_setting_list))) {
-    LOG_WARN("Failed to parse check log level", K(ret));
+    LOG_WDIAG("Failed to parse check log level", K(ret));
   } else if (OB_FAIL(setting_list_processing(id_level_map, &mod_setting_list))) {
-    LOG_WARN("Failed to process setting list", K(ret));
+    LOG_WDIAG("Failed to process setting list", K(ret));
   } else {
     //do nothing
   }
@@ -1189,24 +1200,24 @@ int ObLogger::setting_list_processing(ObLogIdLevelMap &id_level_map, void *mod_s
   ModSetting mod_set;
   if (OB_ISNULL(mod_setting_list)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Mod setting list should not be NULL", K(ret));
+    LOG_WDIAG("Mod setting list should not be NULL", K(ret));
   } else {
     ObList<ModSetting> *list = static_cast<ObList<ModSetting> *>(mod_setting_list);
     for (; OB_SUCC(ret) && list->size() > 0;) {
       if (OB_FAIL(list->pop_front(mod_set))) {
-        LOG_WARN("Failed to pop mod set", K(ret));
+        LOG_WDIAG("Failed to pop mod set", K(ret));
       } else {
         if (ModSetting::NON_SUBMOD_ID == mod_set.par_mod_id_) {
           id_level_map.set_level(mod_set.level_);
         } else if (ModSetting::NON_SUBMOD_ID == mod_set.sub_mod_id_) {
           if (OB_FAIL(id_level_map.set_level(mod_set.par_mod_id_, mod_set.level_))) {
-            LOG_WARN("Failed to set log level", K(ret));
+            LOG_WDIAG("Failed to set log level", K(ret));
           }
         } else {
           if (OB_FAIL(id_level_map.set_level(mod_set.par_mod_id_,
                                              mod_set.sub_mod_id_,
                                              mod_set.level_))) {
-            LOG_WARN("Failed to set log level", K(ret));
+            LOG_WDIAG("Failed to set log level", K(ret));
           }
         }
       }
@@ -1220,20 +1231,20 @@ int ObLogger::get_mod_set(const char *par_mod, const char *sub_mod, const char *
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(level_str2int(level, mod_set.level_))) {
-    LOG_WARN("Failed to convert level", K(ret));
+    LOG_WDIAG("Failed to convert level", K(ret));
   } else {
     if (0 == STRCASECMP(par_mod, "ALL") &&  0 == STRCASECMP(sub_mod, "*")) {
       mod_set.par_mod_id_ = ModSetting::NON_SUBMOD_ID;
     } else if (0 == STRCASECMP(sub_mod, "*")) {
       if (OB_FAIL(name_id_map_.get_mod_id(par_mod, mod_set.par_mod_id_))) {
-        LOG_WARN("Failed to get mod id", K(ret), K(par_mod));
+        LOG_WDIAG("Failed to get mod id", K(ret), K(par_mod));
       } else {
         mod_set.sub_mod_id_ = ModSetting::NON_SUBMOD_ID;
       }
     } else {
       if (OB_FAIL(name_id_map_.get_mod_id(par_mod, sub_mod, mod_set.par_mod_id_,
                                           mod_set.sub_mod_id_))) {
-        LOG_WARN("Failed to get mod id", K(ret), K(par_mod), K(sub_mod));
+        LOG_WDIAG("Failed to get mod id", K(ret), K(par_mod), K(sub_mod));
       }
     }
   }
@@ -1246,7 +1257,7 @@ int ObLogger::get_level_str(const int8_t level_id, const char *&level_str) const
   level_str = NULL;
   if (level_id < 0 || level_id >= static_cast<int8_t>(sizeof(errstr_) / sizeof(char *))) {
     ret = OB_LOG_INVALID_MOD_ID;
-    LOG_WARN("Invalid level", K(ret), K(level_id));
+    LOG_WDIAG("Invalid level", K(ret), K(level_id));
   } else {
     level_str = errstr_[level_id];
   }
@@ -1258,7 +1269,7 @@ int ObLogger::level_str2int(const char *level_name, int8_t &level_int)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(level_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("Invalid argument", K(ret), K(level_name));
+    LOG_WDIAG("Invalid argument", K(ret), K(level_name));
   } else {
     bool find_level = false;
     int8_t level_num = static_cast<int8_t>(sizeof(errstr_) / sizeof(char *));
@@ -1270,7 +1281,7 @@ int ObLogger::level_str2int(const char *level_name, int8_t &level_int)
     }//end of for
     if (!find_level) {
       ret = OB_LOG_LEVEL_INVALID;
-      LOG_WARN("Invalid log level", K(ret));
+      LOG_WDIAG("Invalid log level", K(ret));
     }
   }
   return ret;
@@ -1290,10 +1301,22 @@ void ObLogger::insert_warning_buffer(const UserMsgLevel user_msg_level, const in
         wb->append_note(data, errcode);
       }
     } else {
-      // OB_LOG(WARN, "wb is NULL", K(errcode));
-      // BACKTRACE(ERROR, 1, "wb");
+      // OB_LOG(WDIAG, "wb is NULL", K(errcode));
+      // BACKTRACE(EDIAG, 1, "wb");
     }
   }
+}
+
+int ObLogger::set_syslog_level(const char *level_str)
+{
+  int ret = OB_SUCCESS;
+  int8_t level_int = 0;
+  if (OB_FAIL(get_log_level_from_str(level_str, level_int))) {
+  } else {
+    syslog_level_ = level_int;
+  }
+
+  return ret;
 }
 
 int ObLogger::set_monitor_log_level(const char *level_str)
@@ -1329,7 +1352,7 @@ int ObLogger::get_log_level_from_str(const char *level_str, int8_t &level_int)
     const int64_t str_length = static_cast<int64_t>(strlen(level_str));
     str_copy_trim(buffer, OB_MAX_CONFIG_VALUE_LEN, level_str, str_length);
     if (OB_FAIL(level_str2int(buffer, level_int))) {
-      OB_LOG(WARN, "failed to get level_int", K(buffer), K(level_str), K(str_length), K(ret));
+      OB_LOG(WDIAG, "failed to get level_int", K(buffer), K(level_str), K(str_length), K(ret));
     }
   }
   return ret;
@@ -1393,15 +1416,13 @@ int ObLogger::init_async_log_thread(const int64_t stacksize)
       if (OB_FAIL(async_log_queue_->init(all_item_count))) {
         LOG_STDERR("init async_log_queue_ error. ret=%d\n", ret);
       } else {
-       if (0 == last_unix_sec_) {
-          //init
-          struct timeval tv;
-          (void)gettimeofday(&tv, NULL);
-          struct tm tm_result;
-          localtime_r(&tv.tv_sec, &tm_result);
-          last_unix_sec_ = tv.tv_sec;
-          last_localtime_ = tm_result;
-        }
+        //init
+        struct timeval tv;
+        (void)gettimeofday(&tv, NULL);
+        struct tm tm_result;
+        localtime_r(&tv.tv_sec, &tm_result);
+        last_unix_sec_ = tv.tv_sec;
+        last_localtime_ = tm_result;
       }
     }
   }
@@ -1485,8 +1506,36 @@ void ObLogger::do_async_flush_log()
   memset((void*) process_items, 0, sizeof(process_items));
 
   while (!stop_flush_ && NULL != async_log_queue_) {
+    int64_t curr_ts = ObTimeUtility::current_time();
+    // 限流是以 1s 为单位
+    if (0 == start_bandwidth_time_ || (curr_ts - start_bandwidth_time_ >= 1 * 1000 * 1000)) {
+      start_bandwidth_time_ = curr_ts;
+      if (left_syslog_io_bandwidth_ <= 0) {
+        syslog_out_of_limit_cnt_++;
+      }
+      left_syslog_io_bandwidth_ = syslog_io_bandwidth_limit_;
+    }
+
+    // 5s 内，如果触发了 1 次限流就打印 WARN 日志
+    if (0 == syslog_start_out_of_limit_ || (curr_ts - syslog_start_out_of_limit_ >= 5 * 1000 * 1000)) {
+      if (syslog_out_of_limit_cnt_ >= 1) {
+        MPRINT("WARN !!! REACH SYSLOG RATE LIMIT");
+      }
+      syslog_start_out_of_limit_ = curr_ts;
+      syslog_out_of_limit_cnt_ = 0;
+    }
+
+    // 对于 WARN 和 ERROR 日志不进行限流
     if (OB_SUCC(async_log_queue_->pop(item, pop_timeout_us)) && OB_NOT_NULL(item)) {
       process_items[process_item_cnt++] = reinterpret_cast<ObLogItem *>(item);
+      if (OB_NOT_NULL(item)) {
+        ObLogItem *log_item = reinterpret_cast<ObLogItem *>(item);
+        if (LOG_ITEM_FOR_WARN_ERROR == log_item->get_item_type()) {
+          left_syslog_io_bandwidth_ -= log_item->get_data_len();
+        } else if (left_syslog_io_bandwidth_ <= 0) {
+          process_item_cnt--;
+        }
+      }
       item = NULL;
       item_cnt++;
 
@@ -1494,9 +1543,17 @@ void ObLogger::do_async_flush_log()
         item_cnt = GROUP_COMMIT_MAX_ITEM_COUNT;
       }
 
-      for (int i = 1; OB_SUCC(ret) && i < item_cnt; i++) {
+      for (int i = 1; OB_SUCC(ret) && left_syslog_io_bandwidth_ > 0 && i < item_cnt; i++) {
         if (OB_SUCC(async_log_queue_->pop(item)) && OB_NOT_NULL(item)) {
           process_items[process_item_cnt++] = reinterpret_cast<ObLogItem *>(item);
+          if (OB_NOT_NULL(item)) {
+            ObLogItem *log_item = reinterpret_cast<ObLogItem *>(item);
+            if (LOG_ITEM_FOR_WARN_ERROR == log_item->get_item_type()) {
+              left_syslog_io_bandwidth_ -= log_item->get_data_len();
+            } else if (left_syslog_io_bandwidth_ <= 0) {
+              process_item_cnt--;
+            }
+          }
           item = NULL;
         }
       }
@@ -1505,7 +1562,6 @@ void ObLogger::do_async_flush_log()
 
       async_flush_log_count += process_item_cnt;
       if (process_items[process_item_cnt - 1]->get_timestamp() > (last_async_flush_ts + FLUSH_SAMPLE_TIME)) {
-        int64_t curr_ts = ObTimeUtility::current_time();
         if (curr_ts != last_async_flush_ts) {
           last_async_flush_count_per_sec_ = static_cast<int64_t>((double)(async_flush_log_count * 1000000) / (double)(curr_ts - last_async_flush_ts));
           last_async_flush_ts = curr_ts;
@@ -1526,6 +1582,7 @@ void ObLogger::do_async_flush_log()
 
 void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
 {
+  int ret = OB_SUCCESS;
   if (OB_NOT_NULL(log_item)
       && OB_LIKELY(count > 0)
       && OB_LIKELY(count <= GROUP_COMMIT_MAX_ITEM_COUNT)
@@ -1546,10 +1603,10 @@ void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
         }
       }
 
-      struct iovec vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT];
+      struct iovec vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT * 2];
       int iovcnt[MAX_FD_FILE] = {0};
       int large_iovcnt[MAX_FD_FILE] = {0};
-      struct iovec wf_vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT];
+      struct iovec wf_vec[MAX_FD_FILE][GROUP_COMMIT_MAX_ITEM_COUNT * 2];
       int wf_iovcnt[MAX_FD_FILE] = {0};
 
       memset(vec, 0, sizeof(vec));
@@ -1560,14 +1617,31 @@ void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
         if (OB_ISNULL(log_item[i])) {
           LOG_STDERR("log_item is null, it should not happened, i=%ld, count=%ld\n", i, count);
         } else if (OB_LIKELY(log_item[i]->get_data_len() > 0) && OB_LIKELY(MAX_FD_FILE != log_item[i]->get_fd_type())) {
+          const ObLogItem::ObLogItemHeader &header = log_item[i]->get_log_header();
+          timeval tv;
+          tv.tv_sec = header.timestamp_ / 1000000;
+          tv.tv_usec = header.timestamp_ % 1000000;
+          if (OB_FAIL(async_log_data_header(header.fd_type_, *log_item[i], tv,
+                                            header.mod_name_, header.log_level_, header.file_name_,
+                                            header.line_, header.function_name_, header.trace_id_0_,
+                                            header.trace_id_1_, header.dropped_log_count_, header.tid_))) {
+            break;
+          }
+
           fd_type = log_item[i]->get_fd_type();
           vec[fd_type][iovcnt[fd_type]].iov_base = log_item[i]->get_buf();
-          vec[fd_type][iovcnt[fd_type]].iov_len = static_cast<size_t>(log_item[i]->get_data_len());
+          vec[fd_type][iovcnt[fd_type]].iov_len = static_cast<size_t>(log_item[i]->get_header_len());
+          iovcnt[fd_type] += 1;
+          vec[fd_type][iovcnt[fd_type]].iov_base = log_item[i]->get_buf() + MAX_LOG_HEAD_SIZE;
+          vec[fd_type][iovcnt[fd_type]].iov_len = static_cast<size_t>(log_item[i]->get_data_len() - MAX_LOG_HEAD_SIZE);
           iovcnt[fd_type] += 1;
 
           if ((log_file_[fd_type].enable_wf_flag_ && log_file_[fd_type].open_wf_flag_ && log_item[i]->get_log_level() <= wf_level_)) {
             wf_vec[fd_type][wf_iovcnt[fd_type]].iov_base = log_item[i]->get_buf();
-            wf_vec[fd_type][wf_iovcnt[fd_type]].iov_len = static_cast<size_t>(log_item[i]->get_data_len());
+            wf_vec[fd_type][wf_iovcnt[fd_type]].iov_len = static_cast<size_t>(log_item[i]->get_header_len());
+            wf_iovcnt[fd_type] += 1;
+            wf_vec[fd_type][wf_iovcnt[fd_type]].iov_base = log_item[i]->get_buf() + MAX_LOG_HEAD_SIZE;
+            wf_vec[fd_type][wf_iovcnt[fd_type]].iov_len = static_cast<size_t>(log_item[i]->get_data_len() - MAX_LOG_HEAD_SIZE);
             wf_iovcnt[fd_type] += 1;
           }
 
@@ -1582,7 +1656,7 @@ void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
       for (int32_t i = 0; i < static_cast<int32_t>(MAX_FD_FILE); i++) {
         size = 0;
         if (iovcnt[i] > 0 && log_file_[i].fd_ > 0) {
-          size = ::writev(log_file_[i].fd_, vec[i], iovcnt[i]);
+          size = ::writev(log_file_[i].fd_, vec[i], iovcnt[i]) * 2;
         }
 
         if (size > 0) {
@@ -1613,6 +1687,24 @@ void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
   }
 }
 
+void ObLogger::async_set_log_header(const ObLogFDType type,
+                                    ObLogItem &item,
+                                    const timeval &tv,
+                                    const char *mod_name,
+                                    const int32_t level,
+                                    const char *file,
+                                    const int32_t line,
+                                    const char* function,
+                                    const uint64_t dropped_log_count)
+{
+  const uint64_t *trace_id = ObCurTraceId::get();
+  uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
+  uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
+  item.set_header(tv, level, type, trace_id_0, trace_id_1, mod_name, file, line, function, dropped_log_count, GETTID());
+  item.set_data_len(MAX_LOG_HEAD_SIZE);
+  item.set_header_len(MAX_LOG_HEAD_SIZE);
+}
+
 int ObLogger::async_log_data_header(const ObLogFDType type,
                                     ObLogItem &item,
                                     const timeval &tv,
@@ -1620,77 +1712,69 @@ int ObLogger::async_log_data_header(const ObLogFDType type,
                                     const int32_t level,
                                     const char *file,
                                     const int32_t line,
-                                    const char *function)
+                                    const char *function,
+                                    const uint64_t trace_id_0,
+                                    const uint64_t trace_id_1,
+                                    const uint64_t dropped_log_count,
+                                    const int64_t tid)
 {
   int ret = OB_SUCCESS;
   struct tm tm;
   ob_fast_localtime(last_unix_sec_, last_localtime_, static_cast<time_t>(tv.tv_sec), &tm);
 
-  item.set_timestamp(tv);
-  item.set_log_level(level);
-  item.set_fd_type(type);
-  const uint64_t *trace_id = ObCurTraceId::get();
-  uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
-  uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
-
   char *data_buf = item.get_buf();
   int64_t pos = 0;
   if (FD_DIAGNOSIS_FILE == type) {
-    ret = logdata_printf(data_buf, item.get_buf_size(), pos,
+    ret = logdata_printf(data_buf, MAX_LOG_HEAD_SIZE, pos,
                          "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
                          "[%ld][" TRACE_ID_FORMAT "] ",
                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
-                         tm.tm_sec, tv.tv_usec, GETTID(), trace_id_0, trace_id_1);
+                         tm.tm_sec, tv.tv_usec, tid, trace_id_0, trace_id_1);
   } else if (FD_XFLUSH_FILE == item.get_fd_type()) {
-    ret = logdata_printf(data_buf, item.get_buf_size(), pos, "%04d-%02d-%02d %02d:%02d:%02d.%06ld [%s] ",
+    ret = logdata_printf(data_buf, MAX_LOG_HEAD_SIZE, pos, "%04d-%02d-%02d %02d:%02d:%02d.%06ld [%s] ",
                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                          tm.tm_sec, tv.tv_usec, errstr_[level]);
   } else if (FD_CONFIG_FILE == type) { // header for config file
-    (void)logdata_printf(data_buf, item.get_buf_size(), pos, "###"); //just print '###'
+    (void)logdata_printf(data_buf, MAX_LOG_HEAD_SIZE, pos, "###"); //just print '###'
   } else if (is_monitor_file(type)) {
-    ret = logdata_printf(data_buf, item.get_buf_size(), pos, "%04d-%02d-%02d %02d:%02d:%02d.%06ld,",
+    ret = logdata_printf(data_buf, MAX_LOG_HEAD_SIZE, pos, "%04d-%02d-%02d %02d:%02d:%02d.%06ld,",
                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                          tm.tm_sec, tv.tv_usec);
   } else if (item.is_trace_file()) {
     const char *base_file_name = (NULL != file ? strrchr(file, '/') : NULL);
-    ret = logdata_printf(data_buf, item.get_buf_size(), pos,
+    ret = logdata_printf(data_buf, MAX_LOG_HEAD_SIZE, pos,
                          "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
                          "%s (%s:%d) [%ld][" TRACE_ID_FORMAT "] ",
                          tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec, tv.tv_usec,
-                         function, base_file_name, line, GETTID(), trace_id_0, trace_id_1);
+                         function, base_file_name, line, tid, trace_id_0, trace_id_1);
   } else {
     //only print base filename.
     const char *base_file_name = (NULL != file ? strrchr(file, '/') : NULL);
     base_file_name = (NULL != base_file_name) ? base_file_name + 1 : file;
-    const uint64_t *trace_id = ObCurTraceId::get();
-    uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
-    uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
-    const uint64_t dropped_log_count = curr_logging_seq_ - last_logging_seq_ - 1;
     //[lt=%ld] last log cost time us
     //[dc=%lu] async dropped log count
     if (level < OB_LOG_LEVEL_INFO) {
-      ret = logdata_printf(data_buf, item.get_buf_size(), pos,
+      ret = logdata_printf(data_buf, MAX_LOG_HEAD_SIZE, pos,
                            "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
                            "%-5s %s%s (%s:%d) [%ld][" TRACE_ID_FORMAT "] [lt=%ld] [dc=%lu] ",
                            tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                            tm.tm_sec, tv.tv_usec, errstr_[level], mod_name, function,
-                           base_file_name, line, GETTID(), trace_id_0, trace_id_1,
+                           base_file_name, line, tid, trace_id_0, trace_id_1,
                            +last_logging_cost_time_us_,
                            dropped_log_count);
     } else {
-      ret = logdata_printf(data_buf, item.get_buf_size(), pos,
+      ret = logdata_printf(data_buf, MAX_LOG_HEAD_SIZE, pos,
                            "[%04d-%02d-%02d %02d:%02d:%02d.%06ld] "
                            "%-5s %s%s:%d [%ld][" TRACE_ID_FORMAT "] [lt=%ld] [dc=%lu] ",
                            tm.tm_year + 1900, tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min,
                            tm.tm_sec, tv.tv_usec, errstr_[level], mod_name, base_file_name,
-                           line, GETTID(), trace_id_0, trace_id_1,
+                           line, tid, trace_id_0, trace_id_1,
                            +last_logging_cost_time_us_,
                            dropped_log_count);
     }
   }
   if (OB_SUCC(ret) || OB_UNLIKELY(OB_SIZE_OVERFLOW == ret)) {
     ret = OB_SUCCESS;
-    item.set_data_len(pos);
     item.set_header_len(pos);
   }
   return ret;
@@ -1725,12 +1809,13 @@ int ObLogger::try_upgrade_log_item(ObLogItem *&log_item, bool &upgrade_result)
 void ObLogger::get_pop_limit(const int32_t level, int64_t &timeout_us)
 {
   switch (level) {
-    case OB_LOG_LEVEL_ERROR: {
+    // ERROR/WARN 是关键信息，等待保证尽量能够输出
+    case OB_LOG_LEVEL_ERROR:
+    case OB_LOG_LEVEL_WARN: {
+
       timeout_us = 10;//10us
       break;
     }
-    // if INFO/WARN Level, no wait
-    case OB_LOG_LEVEL_WARN:
     default: {
       timeout_us = 0;//0us
       break;
@@ -1738,7 +1823,6 @@ void ObLogger::get_pop_limit(const int32_t level, int64_t &timeout_us)
     }
   }
 }
-
 
 int ObLogger::async_log_data_body(ObLogItem &log_item, const char *info_string, const int64_t string_len)
 {
@@ -1759,7 +1843,7 @@ int ObLogger::check_error_log(ObLogItem &log_item)
 {
   static const char* const BACKTRACE_END = " BACKTRACE:";
   int ret = OB_SUCCESS;
-  if (OB_LIKELY(OB_LOG_LEVEL_ERROR == log_item.get_log_level()) && !log_item.is_trace_file()) {
+  if (OB_LIKELY(OB_LOG_LEVEL_EDIAG == log_item.get_log_level()) && !log_item.is_trace_file()) {
     int64_t pos = (log_item.get_data_len() > 0 ? log_item.get_data_len() - 1 : 0);
     char *buf = log_item.get_buf();
     const int64_t buf_size = log_item.get_buf_size();
@@ -1810,11 +1894,12 @@ int ObLogger::async_log_message_kv(const ObLogFDType type,
     ++curr_logging_seq_;
     const int64_t logging_time_us_begin = static_cast<int64_t>(tv.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>(tv.tv_usec);
     ObLogItem *log_item = NULL;
+    uint64_t dropped_log_count = curr_logging_seq_ - last_logging_seq_ - 1;
     //1. fill log buffer
     if (OB_FAIL(pop_from_free_queue(level, log_item, string_len))) {
       LOG_STDERR("pop_from_free_queue error, ret=%d\n", ret);
-    } else if (OB_FAIL(async_log_data_header(type, *log_item, tv, mod_name, level, location.file_, location.line_, location.function_))) {
-      LOG_STDERR("async_log_data_header error ret = %d\n", ret);
+    } else if (FALSE_IT(async_set_log_header(type, *log_item, tv, mod_name, level, location.file_, location.line_, location.function_, dropped_log_count))) {
+      LOG_STDERR("async_set_log_header error ret = %d\n", ret);
     } else if (OB_FAIL(async_log_data_body(*log_item, info_string, string_len))) {
       LOG_STDERR("async_log_data_body error ret = %d\n", ret);
     } else if (OB_FAIL(check_error_log(*log_item))) {
@@ -1830,7 +1915,6 @@ int ObLogger::async_log_message_kv(const ObLogFDType type,
 
     //3. stat
     if (OB_FAIL(ret)) {
-      inc_dropped_log_count(level);
       push_to_free_queue(log_item);
       log_item = NULL;
     }
@@ -1842,7 +1926,9 @@ int ObLogger::async_log_message_kv(const ObLogFDType type,
 ObLogItemType ObLogger::calc_log_item_type(const int32_t level, const int64_t data_len /*0*/) const
 {
   ObLogItemType ret_type = LOG_ITEM_TINY;
-  if (data_len <= LOG_ITEM_SIZE[LOG_ITEM_TINY]) {
+  if (OB_LOG_LEVEL_WARN == level || OB_LOG_LEVEL_ERROR == level) {
+    ret_type = LOG_ITEM_FOR_WARN_ERROR;
+  } else if (data_len <= LOG_ITEM_SIZE[LOG_ITEM_TINY]) {
     //default
   } else if (data_len <= LOG_ITEM_SIZE[LOG_ITEM_NORMAL]) {
     ret_type = LOG_ITEM_NORMAL;
@@ -1850,9 +1936,6 @@ ObLogItemType ObLogger::calc_log_item_type(const int32_t level, const int64_t da
     ret_type = LOG_ITEM_LARGE;
   }
 
-  if (OB_LOG_LEVEL_WARN == level || OB_LOG_LEVEL_ERROR == level) {
-    ret_type = static_cast<ObLogItemType>(ret_type + (LOG_ITEM_TINY_FOR_WARN_ERR - LOG_ITEM_TINY));
-  }
   return ret_type;
 }
 
@@ -1992,11 +2075,12 @@ void ObLogger::async_log_message(const ObLogFDType type,
     const int64_t logging_time_us_begin = static_cast<int64_t>(tv.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>(tv.tv_usec);
     ++curr_logging_seq_;
     ObLogItem *log_item = NULL;
+    uint64_t dropped_log_count = curr_logging_seq_ - last_logging_seq_ - 1;
     //1. fill log buffer
     if (OB_FAIL(pop_from_free_queue(level, log_item))) {
       LOG_STDERR("pop_from_free_queue error, ret=%d\n", ret);
-    } else if (OB_FAIL(async_log_data_header(type, *log_item, tv, mod_name, level, file, line, function))) {
-      LOG_STDERR("async_log_data_header error ret = %d\n", ret);
+    } else if (FALSE_IT(async_set_log_header(type, *log_item, tv, mod_name, level, file, line, function, dropped_log_count))) {
+      LOG_STDERR("async_set_log_header error ret = %d\n", ret);
     } else {
       ASYNC_LOG_DATA_BODY((*log_item));
     }
@@ -2039,7 +2123,6 @@ void ObLogger::async_log_message(const ObLogFDType type,
 
     //5. stat
     if (OB_FAIL(ret)) {
-      inc_dropped_log_count(level);
       push_to_free_queue(log_item);
       log_item = NULL;
     }

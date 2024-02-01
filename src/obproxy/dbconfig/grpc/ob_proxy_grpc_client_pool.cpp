@@ -31,18 +31,18 @@ int ObGrpcClientPool::init(int64_t client_count, bool &is_client_avail)
   is_client_avail = false;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (OB_FAIL(free_gc_list_.init("grpc_client_list",
              reinterpret_cast<int64_t>(&(reinterpret_cast<ObGrpcClient *>(0))->link_)))) {
-    LOG_WARN("fail to init gc_list", K(ret));
+    LOG_WDIAG("fail to init gc_list", K(ret));
   } else {
     ObGrpcClient *grpc_client = NULL;
     for (int64_t i = 0; OB_SUCC(ret) && i < client_count; ++i) {
       if (OB_FAIL(ObGrpcClient::alloc(grpc_client))) {
-        LOG_WARN("fail to alloc grpc client", K(ret));
+        LOG_WDIAG("fail to alloc grpc client", K(ret));
       } else if (OB_ISNULL(grpc_client)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("grpc_client is null", K(ret));
+        LOG_WDIAG("grpc_client is null", K(ret));
       } else {
         if (grpc_client->is_avail()) {
           is_client_avail = true;

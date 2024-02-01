@@ -16,6 +16,7 @@
 #include "iocore/eventsystem/ob_vconnection.h"
 #include "proxy/mysqllib/ob_mysql_transaction_analyzer.h"
 #include "proxy/mysqllib/ob_mysql_request_analyzer.h"
+#include "proxy/mysqllib/ob_protocol_diagnosis.h"
 
 namespace oceanbase
 {
@@ -57,14 +58,13 @@ enum ObMysqlPacketType
 struct ObPacketAnalyzer
 {
   ObPacketAnalyzer();
-  ~ObPacketAnalyzer() {}
+  ~ObPacketAnalyzer();
 
   // Returns true if complete, false otherwise
-  int process_content(bool &cmd_complete, bool &trans_complete, uint8_t &request_pkt_seq);
+  int process_content(bool &cmd_complete, bool &trans_complete, uint8_t &request_pkt_seq, obmysql::ObMySQLCmd cmd);
 
   int process_response_content(bool &cmd_complete, bool &trans_complete);
-  int process_request_content(bool &cmd_complete, bool &trans_complete, uint8_t &request_pkt_seq);
-
+  int process_request_content(bool &cmd_complete, bool &trans_complete, uint8_t &request_pkt_seq, obmysql::ObMySQLCmd cmd);
   ObMysqlTunnelProducer *producer_;
 
   ObMysqlRequestAnalyzer *request_analyzer_;
@@ -76,6 +76,10 @@ struct ObPacketAnalyzer
   ObMysqlPacketType packet_type_;
   int last_server_event_;
   int64_t skip_bytes_;
+  ObProtocolDiagnosis *protocol_diagnosis_;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObPacketAnalyzer);
 };
 
 struct ObMysqlTunnelConsumer
@@ -144,7 +148,9 @@ struct ObMysqlTunnelProducer
   // @see unthrottle
   void set_throttle_src(ObMysqlTunnelProducer *srcp); //Source producer of flow.
 
-  int set_request_packet_analyzer(ObMysqlPacketType packet_type, ObMysqlRequestAnalyzer *analyzer);
+  int set_request_packet_analyzer(ObMysqlPacketType packet_type,
+                                  ObMysqlRequestAnalyzer *analyzer,
+                                  ObProtocolDiagnosis *protocol_diagnosis);
 
   int set_response_packet_analyzer(const int64_t skip_bytes,
                                    ObMysqlPacketType packet_type,
@@ -415,7 +421,8 @@ inline void ObMysqlTunnelProducer::update_state_if_not_set(int new_handler_state
 
 inline int ObMysqlTunnelProducer::set_request_packet_analyzer(
     ObMysqlPacketType packet_type,
-    ObMysqlRequestAnalyzer *analyzer)
+    ObMysqlRequestAnalyzer *analyzer,
+    ObProtocolDiagnosis *protocol_diagnosis)
 {
   int ret = common::OB_SUCCESS;
   packet_analyzer_.producer_ = this;
@@ -424,7 +431,7 @@ inline int ObMysqlTunnelProducer::set_request_packet_analyzer(
   packet_analyzer_.resp_analyzer_ = NULL;
   packet_analyzer_.server_response_ = NULL;
   packet_analyzer_.request_analyzer_ = analyzer;
-
+  INC_SHARED_REF(packet_analyzer_.protocol_diagnosis_, protocol_diagnosis);
   if (NULL != analyzer && NULL != buffer_start_) {
     // request also need analyzer
     packet_analyzer_.packet_reader_ = buffer_start_->clone();
@@ -523,7 +530,7 @@ inline void ObMysqlTunnel::deallocate_buffers()
   for (int64_t i = 0; i < MAX_PRODUCERS; ++i) {
     if (NULL != producers_[i].read_buffer_) {
       if (OB_ISNULL(producers_[i].vc_)) {
-        PROXY_TUNNEL_LOG(ERROR, "deallocate_buffers, producer with NULL vc",
+        PROXY_TUNNEL_LOG(EDIAG, "deallocate_buffers, producer with NULL vc",
                          K(i), "producer", &producers_[i]);
       }
       producers_[i].reset();
@@ -539,18 +546,18 @@ inline void ObMysqlTunnel::deallocate_buffers()
 inline void ObMysqlTunnel::reset()
 {
   if (OB_UNLIKELY(active_)) {
-    PROXY_TUNNEL_LOG(WARN, "reset active tunnel", K(this), K_(active));
+    PROXY_TUNNEL_LOG(WDIAG, "reset active tunnel", K(this), K_(active));
   }
 #ifdef DEBUG
   for (int i = 0; i < MAX_PRODUCERS; ++i) {
     if (producers_[i].alive_) {
-      PROXY_TUNNEL_LOG(WARN, "reset alive producer",
+      PROXY_TUNNEL_LOG(WDIAG, "reset alive producer",
                        K(i), "producer", &producers_[i], "alive", producers_[i].alive_);
     }
   }
   for (int j = 0; j < MAX_CONSUMERS; ++j) {
     if (consumers_[j].alive_) {
-      PROXY_TUNNEL_LOG(WARN, "reset alive consumer",
+      PROXY_TUNNEL_LOG(WDIAG, "reset alive consumer",
                        K(i), "consumer", &consumers_[i], "alive", consumers_[i].alive_);
     }
   }
@@ -569,7 +576,7 @@ inline void ObMysqlTunnel::kill_tunnel()
       chain_abort_all(producers_[i]);
     }
     if (OB_UNLIKELY(producers_[i].alive_)) {
-      PROXY_TUNNEL_LOG(WARN, "killed tunnel with alive producer",
+      PROXY_TUNNEL_LOG(WDIAG, "killed tunnel with alive producer",
                K(i), "producer", &producers_[i], "alive", producers_[i].alive_);
     }
   }

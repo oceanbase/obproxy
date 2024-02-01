@@ -31,7 +31,7 @@ public:
   {
     int ret = OB_SUCCESS;
     if (OB_SUCCESS != (ret = destroy())) {
-      LIB_LOG(ERROR, "err destroy multi fixed queue", K(ret));
+      LIB_LOG(EDIAG, "err destroy multi fixed queue", K(ret));
     }
   }
 
@@ -66,7 +66,7 @@ int ObMultiFixedQueue<MAX_QUEUE_NUM>::init(const int64_t queue_size, const int64
   } else if (0 >= queue_size || 0 >= queue_num || queue_num > MAX_QUEUE_NUM) {
     ret = OB_INVALID_ARGUMENT;
   } else if (OB_SUCCESS != (ret = init_queue_(queue_num, queue_size))) {
-    LIB_LOG(ERROR, "err init queue", K(ret));
+    LIB_LOG(EDIAG, "err init queue", K(ret));
   } else {
     inited_ = true;
   }
@@ -94,13 +94,13 @@ int ObMultiFixedQueue<MAX_QUEUE_NUM>::init_queue_(const int64_t queue_num, const
   int ret = OB_SUCCESS;
   if (!(0 < queue_num && MAX_QUEUE_NUM >= queue_num && 0 < queue_size)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(ERROR, "invalid arguments", K(ret), K(queue_num), K(queue_size));
+    LIB_LOG(EDIAG, "invalid arguments", K(ret), K(queue_num), K(queue_size));
   } else {
     queue_num_ = queue_num;
   }
   for (int64_t index = 0; OB_SUCC(ret) && index < queue_num; index++) {
     if (OB_SUCCESS != (ret = queue_[index].init(queue_size))) {
-      LIB_LOG(ERROR, "err init queue", K(ret));
+      LIB_LOG(EDIAG, "err init queue", K(ret));
     }
   }
 

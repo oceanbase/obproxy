@@ -50,16 +50,16 @@ int ObRpcProcessor<T>::deserialize()
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(rpc_pkt_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(ERROR, "rpc_pkt_ should not be NULL", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "rpc_pkt_ should not be NULL", K(ret));
   } else {
     const int64_t len = rpc_pkt_->get_clen();
     const char *ez_buf = rpc_pkt_->get_cdata();
     int64_t pos = 0;
     if (OB_ISNULL(ez_buf)) {
       ret = common::OB_ERR_UNEXPECTED;
-      RPC_OBRPC_LOG(WARN, "ez buf should not be NULL", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "ez buf should not be NULL", K(ret));
     } else if (OB_FAIL(rpc_pkt_->verify_checksum())) {
-      RPC_OBRPC_LOG(ERROR, "verify packet checksum fail", K(*rpc_pkt_), K(ret));
+      RPC_OBRPC_LOG(EDIAG, "verify packet checksum fail", K(*rpc_pkt_), K(ret));
     } else {
       //do nothing
     }
@@ -70,19 +70,19 @@ int ObRpcProcessor<T>::deserialize()
             common::ob_malloc(len, common::ObModIds::OB_RPC_PROCESSOR));
         if (!new_buf) {
           ret = common::OB_ALLOCATE_MEMORY_FAILED;
-          RPC_OBRPC_LOG(WARN, "Allocate memory error", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "Allocate memory error", K(ret));
         } else {
           MEMCPY(new_buf, ez_buf, len);
         }
         if (OB_FAIL(ret)) {
         } else if (OB_FAIL(common::serialization::decode(new_buf, len, pos, arg_))) {
           int pcode = PCODE;
-          RPC_OBRPC_LOG(WARN, "decode argument fail", K(pcode), K(ret));
+          RPC_OBRPC_LOG(WDIAG, "decode argument fail", K(pcode), K(ret));
           common::ob_free(new_buf);
         } else {
           if (len > pos) {
             if (OB_FAIL(GDS.rpc_spread_actions().deserialize(new_buf, len, pos))) {
-              RPC_OBRPC_LOG(WARN, "decode debug sync actions fail", K(ret));
+              RPC_OBRPC_LOG(WDIAG, "decode debug sync actions fail", K(ret));
               common::ob_free(new_buf);
             }
           }
@@ -95,11 +95,11 @@ int ObRpcProcessor<T>::deserialize()
         if (OB_SUCC(ret)) {
           if (len > pos) {
             if (OB_FAIL(GDS.rpc_spread_actions().deserialize(ez_buf, len, pos))) {
-              RPC_OBRPC_LOG(WARN, "decode debug sync actions fail", K(ret));
+              RPC_OBRPC_LOG(WDIAG, "decode debug sync actions fail", K(ret));
             }
           }
         } else {
-          RPC_OBRPC_LOG(WARN, "Decode error", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "Decode error", K(ret));
         }
       }
     }
@@ -114,11 +114,11 @@ int ObRpcProcessor<T>::serialize()
   int ret = common::OB_SUCCESS;
   if (OB_ISNULL(using_buffer_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(ERROR, "using_buffer_ should not be NULL", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "using_buffer_ should not be NULL", K(ret));
   } else if (OB_FAIL(common::serialization::encode(
         using_buffer_->get_data(), using_buffer_->get_capacity(),
         using_buffer_->get_position(), result_))) {
-    RPC_OBRPC_LOG(WARN, "encode data error", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "encode data error", K(ret));
   } else {
     //do nothing
   }
@@ -133,13 +133,13 @@ int ObRpcProcessor<T>::do_response(const Response &rsp)
     RPC_OBRPC_LOG(DEBUG, "stream rpc end before");
   } else if (OB_ISNULL(req_)) {
     ret = common::OB_ERR_NULL_VALUE;
-    RPC_OBRPC_LOG(WARN, "req is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "req is NULL", K(ret));
   } else if (OB_ISNULL(req_->get_request())) {
     ret = common::OB_ERR_NULL_VALUE;
-    RPC_OBRPC_LOG(WARN, "req is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "req is NULL", K(ret));
   } else if (OB_ISNULL(rpc_pkt_)) {
     ret = common::OB_ERR_NULL_VALUE;
-    RPC_OBRPC_LOG(WARN, "rpc pkt is NULL", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "rpc pkt is NULL", K(ret));
   } else {
     // TODO: make force_destroy_second as a configure item
     // static const int64_t RESPONSE_RESERVED_US = 20 * 1000 * 1000;
@@ -147,7 +147,7 @@ int ObRpcProcessor<T>::do_response(const Response &rsp)
     // todo: get 'force destroy second' from eio?
     // if (rts > 0 && eio_->force_destroy_second > 0
     //     && ::oceanbase::common::ObTimeUtility::current_time() - rts + RESPONSE_RESERVED_US > eio_->force_destroy_second * 1000000) {
-    //   _OB_LOG(ERROR, "pkt process too long time: pkt_receive_ts=%ld, pkt_code=%d", rts, pcode);
+    //   _OB_LOG(EDIAG, "pkt process too long time: pkt_receive_ts=%ld, pkt_code=%d", rts, pcode);
     // }
     //copy packet into req buffer
     ObRpcPacketCode pcode = rpc_pkt_->get_pcode();
@@ -181,7 +181,7 @@ int ObRpcProcessor<T>::part_response(const int retcode, bool is_last)
   int ret = common::OB_SUCCESS;
   if (req_has_wokenup_ || OB_ISNULL(req_)) {
     ret = common::OB_INVALID_ARGUMENT;
-    RPC_OBRPC_LOG(WARN, "invalid req, maybe stream rpc timeout", K(ret), K(retcode),
+    RPC_OBRPC_LOG(WDIAG, "invalid req, maybe stream rpc timeout", K(ret), K(retcode),
         K(is_last), K(req_has_wokenup_), KP_(req));
   } else {
     ObRpcResultCode rcode;
@@ -199,7 +199,7 @@ int ObRpcProcessor<T>::part_response(const int retcode, bool is_last)
         const common::ObWarningBuffer::WarningItem *item = wb->get_warning_item(idx);
         if (item != NULL) {
           if (OB_FAIL(rcode.warnings_.push_back(*item))) {
-            RPC_OBRPC_LOG(WARN, "Failed to add warning", K(ret));
+            RPC_OBRPC_LOG(WDIAG, "Failed to add warning", K(ret));
           }
         } else {
           not_null = false;
@@ -215,7 +215,7 @@ int ObRpcProcessor<T>::part_response(const int retcode, bool is_last)
       //do nothing
     } else if (content_size > common::OB_MAX_PACKET_LENGTH) {
       ret = common::OB_RPC_PACKET_TOO_LONG;
-      RPC_OBRPC_LOG(WARN, "response content size bigger than OB_MAX_PACKET_LENGTH", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "response content size bigger than OB_MAX_PACKET_LENGTH", K(ret));
     } else {
       //allocate memory from easy
       //[ ObRpcPacket ... ObDatabuffer ... serilized content ...]
@@ -223,13 +223,13 @@ int ObRpcProcessor<T>::part_response(const int retcode, bool is_last)
       buf = static_cast<char*>(easy_alloc(size));
       if (NULL == buf) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
-        RPC_OBRPC_LOG(WARN, "allocate rpc data buffer fail", K(ret), K(size));
+        RPC_OBRPC_LOG(WDIAG, "allocate rpc data buffer fail", K(ret), K(size));
       } else {
         using_buffer_ = new (buf + sizeof(ObRpcPacket)) common::ObDataBuffer();
         if (!(using_buffer_->set_data(buf + sizeof(ObRpcPacket) + sizeof (*using_buffer_),
             content_size))) {
           ret = common::OB_INVALID_ARGUMENT;
-          RPC_OBRPC_LOG(WARN, "invalid parameters", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "invalid parameters", K(ret));
         }
       }
     }
@@ -238,16 +238,16 @@ int ObRpcProcessor<T>::part_response(const int retcode, bool is_last)
       //do nothing
     } else if (OB_ISNULL(using_buffer_)) {
       ret = common::OB_ERR_UNEXPECTED;
-      RPC_OBRPC_LOG(ERROR, "using_buffer_ is NULL", K(ret));
+      RPC_OBRPC_LOG(EDIAG, "using_buffer_ is NULL", K(ret));
     } else if (OB_FAIL(rcode.serialize(using_buffer_->get_data(),
         using_buffer_->get_capacity(),
         using_buffer_->get_position()))) {
-      RPC_OBRPC_LOG(WARN, "serialize result code fail", K(ret));
+      RPC_OBRPC_LOG(WDIAG, "serialize result code fail", K(ret));
     } else {
       // also send result if process successfully.
       if (common::OB_SUCCESS == retcode) {
         if (OB_FAIL(serialize())) {
-          RPC_OBRPC_LOG(WARN, "serialize result fail", K(ret));
+          RPC_OBRPC_LOG(WDIAG, "serialize result fail", K(ret));
         }
       }
     }
@@ -258,7 +258,7 @@ int ObRpcProcessor<T>::part_response(const int retcode, bool is_last)
       Response rsp(sessid, is_stream_, is_last, pkt);
       pkt->set_content(using_buffer_->get_data(), using_buffer_->get_position());
       if (OB_FAIL(do_response(rsp))) {
-        RPC_OBRPC_LOG(WARN, "response data fail", K(ret));
+        RPC_OBRPC_LOG(WDIAG, "response data fail", K(ret));
       }
     }
 
@@ -276,26 +276,26 @@ int ObRpcProcessor<T>::flush(int64_t wait_timeout)
 
   if (OB_ISNULL(sc_)) {
     ret = common::OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(ERROR, "sc is NULL", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "sc is NULL", K(ret));
   } else if (OB_ISNULL(rpc_pkt_) || is_stream_end_) {
     ret = common::OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(WARN, "request is NULL, maybe wait timeout",
+    RPC_OBRPC_LOG(WDIAG, "request is NULL, maybe wait timeout",
         K(ret), K(rpc_pkt_), K(is_stream_end_));
   } else if (rpc_pkt_ && rpc_pkt_->is_stream_last()) {
     ret = common::OB_ITER_END;
-    RPC_OBRPC_LOG(WARN, "stream is end", K(ret), K(*rpc_pkt_));
+    RPC_OBRPC_LOG(WDIAG, "stream is end", K(ret), K(*rpc_pkt_));
   } else if (OB_FAIL(sc_->prepare())) {
-    RPC_OBRPC_LOG(WARN, "prepare stream session fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "prepare stream session fail", K(ret));
   } else if (OB_FAIL(part_response(common::OB_SUCCESS, false))) {
-    RPC_OBRPC_LOG(WARN, "response part result to peer fail", K(ret));
+    RPC_OBRPC_LOG(WDIAG, "response part result to peer fail", K(ret));
   } else if (OB_FAIL(sc_->wait(req, wait_timeout))) {
     req_ = NULL; //wait fail, invalid req_
     reuse();
     is_stream_end_ = true;
-    RPC_OBRPC_LOG(WARN, "wait next packet fail, set req_ to null", K(ret), K(wait_timeout));
+    RPC_OBRPC_LOG(WDIAG, "wait next packet fail, set req_ to null", K(ret), K(wait_timeout));
   } else if (OB_ISNULL(req)) {
     ret = common::OB_ERR_UNEXPECTED;
-    RPC_OBRPC_LOG(ERROR, "Req should not be NULL", K(ret));
+    RPC_OBRPC_LOG(EDIAG, "Req should not be NULL", K(ret));
   } else {
     reuse();
     set_ob_request(*req);
@@ -303,7 +303,7 @@ int ObRpcProcessor<T>::flush(int64_t wait_timeout)
       wakeup_request();
       is_stream_end_ = true;
       ret = common::OB_ERR_UNEXPECTED;
-      RPC_OBRPC_LOG(ERROR, "rpc packet is NULL in stream", K(ret));
+      RPC_OBRPC_LOG(EDIAG, "rpc packet is NULL in stream", K(ret));
     } else if (rpc_pkt_->is_stream_last()) {
       ret = common::OB_ITER_END;
     } else {
@@ -323,7 +323,7 @@ void ObRpcProcessor<T>::cleanup()
     if (preserved_buf_) {
       common::ob_free(preserved_buf_);
     } else {
-      RPC_OBRPC_LOG(WARN, "preserved buffer is NULL, maybe alloc fail");
+      RPC_OBRPC_LOG(WDIAG, "preserved buffer is NULL, maybe alloc fail");
     }
   }
 

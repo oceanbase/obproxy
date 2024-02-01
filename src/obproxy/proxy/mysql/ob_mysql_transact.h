@@ -1,5 +1,5 @@
 /**
- * 
+ *
  * Copyright (c) 2021 OceanBase
  * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
  * You can use this software according to the terms and conditions of the Mulan PubL v2.
@@ -32,6 +32,8 @@
 #include "proxy/mysqllib/ob_proxy_ob20_request.h"
 #include "lib/oblog/ob_simple_trace.h"
 #include "obutils/ob_read_stale_processor.h"
+#include "proxy/mysqllib/ob_mysql_compress_analyzer.h"
+
 namespace oceanbase
 {
 namespace obproxy
@@ -48,30 +50,23 @@ s.next_action_ = n; \
 s.transact_return_point = r; \
 int64_t stack_start = event::self_ethread().stack_start_; \
 _PROXY_TXN_LOG(DEBUG, "sm_id=%u, stack_size=%ld, next_action=%s, return=%s", \
-               s.sm_->sm_id_, stack_start - reinterpret_cast<int64_t>(&stack_start), #n, #r); \
+               s.sm_->sm_id_, stack_start - reinterpret_cast<int64_t>(&stack_start), #n, #r);
 
-#define TRANSACT_RETURN_WITH_MSG(n, r)                                              \
-if (s.sm_ != NULL) {                                                                \
-  int32_t error_code = 0;                                                               \
-  ObString error_msg;                                                               \
-  bool is_error_resp = false;                                                       \
-  s.sm_->get_monitor_error_info(error_code, error_msg, is_error_resp);              \
-  COLLECT_CONNECTION_DIAGNOSIS(s.sm_->connection_diagnosis_trace_,                  \
-                          obproxy_internal,                                         \
-                          obutils::OB_PROXY_INTERNAL_TRACE,                         \
-                          s.trans_info_.get_print_sql(),                            \
-                          s.trans_info_.sql_cmd_,                                   \
-                          s.trans_info_.client_request_.get_packet_meta().cmd_,     \
-                          error_code,                                               \
-                          error_msg);                                               \
-}                                                                                   \
-TRANSACT_RETURN(n, r);                                                              \
+#define TRANSACT_RETURN_WITH_MSG(n, r)                                       \
+  if (s.sm_ != NULL) {                                                       \
+    int32_t error_code = 0;                                                  \
+    COLLECT_INTERNAL_DIAGNOSIS(s.sm_->connection_diagnosis_trace_,           \
+                               obutils::OB_PROXY_INTERNAL_TRACE, error_code, \
+                               r);                                           \
+  }                                                                          \
+  TRANSACT_RETURN(n, r);
 
 class ObMysqlSM;
 class ObMysqlClientSession;
 class ObClientSessionInfo;
 class ObServerSessionInfo;
 class ObSqlauditRecordQueue;
+class ObDiagnosisRoutePolicy;
 
 enum
 {
@@ -88,7 +83,7 @@ public:
     MAYBE_ABORTED,
     ABORTED
   };
-  enum ObPLLookupState 
+  enum ObPLLookupState
   {
     NEED_PL_LOOKUP = 0,
     USE_LAST_SERVER_SESSION,
@@ -176,6 +171,7 @@ enum ObServerRespErrorType
 
     TRANS_FREE_ROUTE_NOT_SUPPORTED_ERROR,
     SEND_INIT_SQL_ERROR,
+    CLIENT_SESSION_KILLED_ERROR,
     // attention!! add error type between MIN_RESP_ERROR and MAX_RESP_ERROR
     MAX_RESP_ERROR
   };
@@ -222,6 +218,13 @@ enum ObServerRespErrorType
   enum ObAttachDummyEntryType
   {
     NO_TABLE_ENTRY_FOUND_ATTACH_TYPE = 0,
+  };
+
+  // handle client connection while internal error occurred
+  enum ObProxyInternalErrorOp
+  {
+    PROXY_INTERNAL_ERROR_TRANSFER_WITH_DIAGNOSIS = 0,      // try to build extra error packet to client and disconnect if proxy in abnormal state
+    PROXY_INTERNAL_ERROR_TRANSFER_DISCONNECT,              // transfer internal buffer to client and disconnect if proxy in abnormal state
   };
 
   struct ObStatRecord
@@ -308,7 +311,7 @@ enum ObServerRespErrorType
     SERVER_SEND_REQUEST,
     SERVER_SEND_PREPARE,
     SERVER_SEND_SSL_REQUEST,
-    SERVER_SEND_TEXT_PS_PREPARE 
+    SERVER_SEND_TEXT_PS_PREPARE
   };
 
   struct ObCurrentInfo
@@ -531,7 +534,8 @@ enum ObServerRespErrorType
           trace_log_(),
           is_proxy_protocol_v2_request_(true),
           use_cmnt_target_db_server_(false),
-          use_conf_target_db_server_(false)
+          use_conf_target_db_server_(false),
+          internal_error_op_for_diagnosis_ (PROXY_INTERNAL_ERROR_TRANSFER_WITH_DIAGNOSIS)
     {
       memset(user_args_, 0, sizeof(user_args_));
     }
@@ -544,7 +548,7 @@ enum ObServerRespErrorType
       int ret = common::OB_SUCCESS;
       if (OB_ISNULL(sm)) {
         ret = common::OB_INVALID_ARGUMENT;
-        PROXY_TXN_LOG(WARN, "invalid argument", K(sm), K(ret));
+        PROXY_TXN_LOG(WDIAG, "invalid argument", K(sm), K(ret));
       } else {
         sm_ = sm;
         pl_lookup_state_ = NEED_PL_LOOKUP;
@@ -621,16 +625,16 @@ enum ObServerRespErrorType
       if (OB_UNLIKELY(NULL == internal_buffer_)) {
         if (OB_ISNULL(internal_buffer_ = event::new_empty_miobuffer(buffer_block_size))) {
           ret = common::OB_ALLOCATE_MEMORY_FAILED;
-          PROXY_TXN_LOG(ERROR, "failed to new miobuffer", K(ret));
+          PROXY_TXN_LOG(EDIAG, "failed to new miobuffer", K(ret));
         } else if (OB_ISNULL(internal_reader_ = internal_buffer_->alloc_reader())) {
           free_internal_buffer();
           ret = common::OB_INNER_STAT_ERROR;
-          PROXY_TXN_LOG(WARN, "failed to allocate reader", K(ret));
+          PROXY_TXN_LOG(WDIAG, "failed to allocate reader", K(ret));
         }
       } else if (OB_ISNULL(internal_reader_)) {
         free_internal_buffer();
         ret = common::OB_INNER_STAT_ERROR;
-        PROXY_TXN_LOG(WARN, "internal reader should not be NULL",
+        PROXY_TXN_LOG(WDIAG, "internal reader should not be NULL",
                       K_(internal_buffer), K_(internal_reader), K(ret));
       } else if (NULL != cache_block_) {
         internal_buffer_->append_block_internal(cache_block_);
@@ -657,7 +661,7 @@ enum ObServerRespErrorType
         internal_buffer_->writer_ = NULL;
         internal_reader_ = internal_buffer_->alloc_reader();
         if (OB_ISNULL(internal_reader_)) {
-          PROXY_TXN_LOG(WARN, "failed to allocate reader");
+          PROXY_TXN_LOG(WDIAG, "failed to allocate reader");
         }
       }
     }
@@ -674,15 +678,21 @@ enum ObServerRespErrorType
 
     void reset()
     {
+      // do not reset trans_info_.server_response_
+      // because it will maybe be used in processing the next request
       update_transaction_stats();
       reset_internal_buffer();
       trans_info_.request_content_length_ = MYSQL_UNDEFINED_CL; // disable tunnel client request
       send_reqeust_direct_ = false;
       is_rerouted_ = false;
       reroute_info_.reset();
+      mysql_errmsg_ = NULL;
+      inner_errcode_ = 0;
+      inner_errmsg_ = NULL;
       use_cmnt_target_db_server_ = false;
       use_conf_target_db_server_ = false;
       pl_lookup_state_ = NEED_PL_LOOKUP;
+      internal_error_op_for_diagnosis_ = PROXY_INTERNAL_ERROR_TRANSFER_WITH_DIAGNOSIS;
       if (CMD_COMPLETE == current_.state_) {
         if (!is_hold_start_trans_ && !is_hold_xa_start_) {
           is_trans_first_request_ = false;
@@ -697,15 +707,11 @@ enum ObServerRespErrorType
         is_trans_first_request_ = true;
         is_auth_request_ = false;
         reset_congestion_entry();
-        mysql_errmsg_ = NULL;
-        inner_errcode_ = 0;
-        inner_errmsg_ = NULL;
 
         if (NULL != sqlaudit_record_queue_) {
           sqlaudit_record_queue_->refcount_dec();
           sqlaudit_record_queue_ = NULL;
         }
-        is_proxy_protocol_v2_request_ = false;
 
         server_info_.reset();
         pre_server_info_.reset();
@@ -756,7 +762,7 @@ enum ObServerRespErrorType
         sqlaudit_record_queue_->refcount_dec();
         sqlaudit_record_queue_ = NULL;
       }
-      is_proxy_protocol_v2_request_ = false;
+      is_proxy_protocol_v2_request_ = true;
       arena_.reset();
     }
 
@@ -764,7 +770,7 @@ enum ObServerRespErrorType
     common::ObConsistencyLevel get_trans_consistency_level(ObClientSessionInfo &cs_info);
     common::ObConsistencyLevel get_read_write_consistency_level(ObClientSessionInfo &session_info);
     bool is_request_readonly_zone_support(ObClientSessionInfo &cs_info);
-    ObRoutePolicyEnum get_route_policy(ObMysqlClientSession &cs, const bool need_use_dup_replica);
+    ObRoutePolicyEnum get_route_policy(ObMysqlClientSession &cs, const bool need_use_dup_replica, ObDiagnosisRoutePolicy *diagnosis_route_policy);
     void get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePolicyEnum& ret_policy);
     bool is_need_pl_lookup() { return pl_lookup_state_ == NEED_PL_LOOKUP; }
 
@@ -776,14 +782,14 @@ enum ObServerRespErrorType
     ObMysqlConfigParams *mysql_config_params_;
     ObConnectionAttributes client_info_;
     ObConnectionAttributes server_info_;
-    // fail-fast probe use
+    // 快速失败探测使用
     ObConnectionAttributes pre_server_info_;
 
     ObCurrentInfo current_;
     ObTransactInfo trans_info_;
 
     bool is_rerouted_;
-    // determin if do pl lookup 
+    // determin if do pl lookup
     ObPLLookupState pl_lookup_state_;
     bool is_auth_request_;
     bool is_trans_first_request_;
@@ -839,7 +845,7 @@ enum ObServerRespErrorType
     // whether to use target db server from sql comment or multi level config
     bool use_cmnt_target_db_server_;
     bool use_conf_target_db_server_;
-
+    ObProxyInternalErrorOp internal_error_op_for_diagnosis_;
   private:
     DISALLOW_COPY_AND_ASSIGN(ObTransState);
   }; // End of State struct.
@@ -894,7 +900,7 @@ enum ObServerRespErrorType
   static void handle_response_from_server(ObTransState &s);
   static void handle_oceanbase_retry_server_connection(ObTransState &s);
   static void handle_retry_server_connection(ObTransState &s);
-  static ObSSRetryStatus retry_server_connection_not_open(ObTransState &s);
+  static ObSSRetryStatus retry_server_connection_not_open(ObTransState &s, int32_t &retry_type);
   static void handle_retry_last_time(ObTransState &s);
   static int attach_cached_dummy_entry(ObTransState &s, const ObAttachDummyEntryType type);
   static void handle_server_connection_break(ObTransState &s);
@@ -970,7 +976,7 @@ enum ObServerRespErrorType
   static int handle_reset_connection_request_succ(ObTransState &s);
   static int clear_session_related_source(ObTransState &s);
   static int handle_ps_reset_succ(ObTransState &s, bool &is_user_request);
-
+  static int encode_error_message(ObTransState &s, int err_code = 0);
   static int build_error_packet(ObTransState &s, ObMysqlClientSession *client_session);
 
   static void handle_new_config_acquired(ObTransState &s);
@@ -1012,6 +1018,7 @@ enum ObServerRespErrorType
   static bool is_addr_logonly(const net::ObIpEndpoint &addr, const ObTenantServer *ts);
   static void build_read_stale_param(const ObTransState &s, obutils::ObReadStaleParam &param);
   static void set_route_leader_replica(ObTransState &s, const ObProxyReplicaLocation *&replica);
+  static bool need_use_tunnel(ObTransState &s);
 };
 
 inline bool ObMysqlTransact::is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s)
@@ -1100,7 +1107,7 @@ inline void ObMysqlTransact::update_stat(
     // code bloat of inlining it everywhere so
     // it's a function call
     if (OB_FAIL(add_new_stat_block(s))) {
-      PROXY_TXN_LOG(WARN, "failed to add new stat block", K(ret));
+      PROXY_TXN_LOG(WDIAG, "failed to add new stat block", K(ret));
     }
   }
 
@@ -1139,66 +1146,6 @@ inline void ObMysqlTransact::ObPartitionLookupInfo::reset()
   cached_dummy_entry_renew_state_ = NO_NEED_RENEW;
   te_name_.reset();
   is_need_force_flush_ = false;
-}
-
-inline void ObMysqlTransact::update_sql_cmd(ObTransState &s)
-{
-  switch (s.current_.send_action_) {
-    case SERVER_SEND_HANDSHAKE:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_HANDSHAKE;
-      break;
-
-    case SERVER_SEND_SSL_REQUEST:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_LOGIN;
-      break;
-
-    case SERVER_SEND_LOGIN:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_LOGIN;
-      break;
-
-    case SERVER_SEND_SAVED_LOGIN:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_LOGIN;
-      break;
-
-    case SERVER_SEND_USE_DATABASE:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_INIT_DB;
-      break;
-
-    case SERVER_SEND_ALL_SESSION_VARS:
-    case SERVER_SEND_SESSION_VARS:
-    case SERVER_SEND_SESSION_USER_VARS:
-    case SERVER_SEND_START_TRANS:
-    case SERVER_SEND_TEXT_PS_PREPARE:
-    case SERVER_SEND_INIT_SQL:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_QUERY;
-      break;
-    
-    case SERVER_SEND_XA_START:
-      PROXY_TXN_LOG(DEBUG, "[ObMysqlTransact::update_sql_cmd] set s.trans_info_.sql_cmd OB_MYSQL_COM_STMT_PREPARE_EXECUTE for sync xa start");
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE;
-      break;
-
-    case SERVER_SEND_PREPARE:
-      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_STMT_PREPARE;
-      break;
-
-    case SERVER_SEND_REQUEST:
-      if (OB_UNLIKELY(s.is_auth_request_)) {
-        s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_LOGIN;
-      } else {
-        s.trans_info_.sql_cmd_ = s.trans_info_.client_request_.get_packet_meta().cmd_;
-      }
-      break;
-
-    case SERVER_SEND_NONE:
-    default:
-      PROXY_TXN_LOG(ERROR, "Unknown server send next action", K(s.current_.send_action_));
-      break;
-  }
-
-  PROXY_TXN_LOG(DEBUG, "[ObMysqlTransact::update_sql_cmd]",
-                "send_action", ObMysqlTransact::get_send_action_name(s.current_.send_action_),
-                "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_));
 }
 
 inline common::ObString ObMysqlTransact::get_retry_status_string(const ObSSRetryStatus status)

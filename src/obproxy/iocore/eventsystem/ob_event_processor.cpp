@@ -50,7 +50,7 @@ int ObEventProcessor::init_thread(ObEThread *&t)
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(t->init())) {
-    LOG_WARN("fail to init event", K(ret));
+    LOG_WDIAG("fail to init event", K(ret));
     delete t;
     t = NULL;
   }
@@ -70,16 +70,16 @@ int ObEventProcessor::spawn_event_threads(
 
   if (OB_UNLIKELY((event_thread_count_ + thread_count) > MAX_EVENT_THREADS) || OB_UNLIKELY(thread_count <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(thread_count), K(event_thread_count_), K(MAX_EVENT_THREADS), K(ret));
+    LOG_WDIAG("invalid parameters", K(thread_count), K(event_thread_count_), K(MAX_EVENT_THREADS), K(ret));
   } else if (OB_UNLIKELY(thread_group_count_ >= MAX_EVENT_TYPES)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(thread_group_count_), K(MAX_EVENT_TYPES), K(ret));
+    LOG_WDIAG("invalid parameters", K(thread_group_count_), K(MAX_EVENT_TYPES), K(ret));
   } else if (OB_ISNULL(et_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters, et_name is null", K(ret));
+    LOG_WDIAG("invalid parameters, et_name is null", K(ret));
   } else if (OB_UNLIKELY(stacksize < 0)) {//when equal to 0, use the default thread size 8M;
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(stacksize), K(ret));
+    LOG_WDIAG("invalid parameters", K(stacksize), K(ret));
   } else {
     new_thread_group_id = (ObEventThreadType)thread_group_count_;
     net_thread_count = thread_count_for_type_[ET_CALL];
@@ -88,9 +88,9 @@ int ObEventProcessor::spawn_event_threads(
     for (int64_t i = 0; i < thread_count && OB_SUCC(ret); ++i) {
       if (OB_ISNULL(t = new(std::nothrow) ObEThread(REGULAR, MAX_THREADS_IN_EACH_TYPE + event_thread_count_ - net_thread_count + i))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocator memory for REGULAR ObEThread", K(i), K(thread_count), K(ret));
+        LOG_EDIAG("fail to allocator memory for REGULAR ObEThread", K(i), K(thread_count), K(ret));
       } else if (OB_FAIL(init_thread(t))) {
-        LOG_WARN("fail to init thread", K(i), K(ret));
+        LOG_WDIAG("fail to init thread", K(i), K(ret));
       } else {
         all_event_threads_[event_thread_count_ + i] = t;
         event_thread_[new_thread_group_id][i] = t;
@@ -105,9 +105,9 @@ int ObEventProcessor::spawn_event_threads(
         length = snprintf(thr_name, sizeof(thr_name), "[%s %ld]", et_name, i);
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int32_t>(sizeof(thr_name)))) {
           ret = OB_SIZE_OVERFLOW;
-          LOG_WARN("fail format thread name", K(length), K(ret));
+          LOG_WDIAG("fail format thread name", K(length), K(ret));
         } else if (OB_FAIL(event_thread_[new_thread_group_id][i]->start(thr_name, stacksize))) {
-          LOG_WARN("fail to start event thread", K(new_thread_group_id), K(i), K(thread_count), K(ret));
+          LOG_WDIAG("fail to start event thread", K(new_thread_group_id), K(i), K(thread_count), K(ret));
         } else {/*do nothing*/}
       }
       ++thread_group_count_;
@@ -131,22 +131,22 @@ int ObEventProcessor::spawn_net_threads(const int64_t thread_count,
 
   if (OB_UNLIKELY((event_thread_count_ + thread_count) > MAX_EVENT_THREADS) || OB_UNLIKELY(thread_count <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(thread_count), K(event_thread_count_), K(MAX_EVENT_THREADS), K(ret));
+    LOG_WDIAG("invalid parameters", K(thread_count), K(event_thread_count_), K(MAX_EVENT_THREADS), K(ret));
   } else if (OB_ISNULL(et_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters, et_name is null", K(ret));
+    LOG_WDIAG("invalid parameters, et_name is null", K(ret));
   } else if (OB_UNLIKELY(stacksize < 0)) {//when equal to 0, use the default thread size 8M;
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(stacksize), K(ret));
+    LOG_WDIAG("invalid parameters", K(stacksize), K(ret));
   } else {
     ObEThread *t = NULL;
     int64_t net_thread_count = thread_count_for_type_[ET_CALL];
     for (int64_t i = 0; i < thread_count && OB_SUCC(ret); ++i) {
       if (OB_ISNULL(t = new(std::nothrow) ObEThread(REGULAR, net_thread_count + i))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_ERROR("fail to allocate memory for REGULAR ObEThread", K(i), K(thread_count), K(ret));
+        LOG_EDIAG("fail to allocate memory for REGULAR ObEThread", K(i), K(thread_count), K(ret));
       } else if (OB_FAIL(init_thread(t))) {
-        LOG_WARN("fail to init thread", K(i), K(ret));
+        LOG_WDIAG("fail to init thread", K(i), K(ret));
       } else {
         all_event_threads_[event_thread_count_ + i] = t;
         event_thread_[ET_CALL][net_thread_count + i] = t;
@@ -160,9 +160,9 @@ int ObEventProcessor::spawn_net_threads(const int64_t thread_count,
         length = snprintf(thr_name, sizeof(thr_name), "[%s %ld]", et_name, thread_count_for_type_[ET_CALL] + i);
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int32_t>(sizeof(thr_name)))) {
           ret = OB_SIZE_OVERFLOW;
-          LOG_WARN("fail to format thread name", K(length), K(ret));
+          LOG_WDIAG("fail to format thread name", K(length), K(ret));
         } else if (OB_FAIL(event_thread_[ET_CALL][net_thread_count + i]->start(thr_name, stacksize))) {
-          LOG_WARN("fail to start event thread", K(ET_CALL), K(i), K(thread_count), K(ret));
+          LOG_WDIAG("fail to start event thread", K(ET_CALL), K(i), K(thread_count), K(ret));
         } else {/*do nothing*/}
       }
       thread_count_for_type_[ET_CALL] += thread_count;
@@ -185,9 +185,9 @@ inline int ObEventProcessor::init_one_event_thread(const int64_t index)
 
   if (OB_ISNULL(t = new(std::nothrow) ObEThread(REGULAR, index))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to allocator memory for REGULAR ObEThread", K(index), K(ret));
+    LOG_WDIAG("fail to allocator memory for REGULAR ObEThread", K(index), K(ret));
   } else if (OB_FAIL(t->init())) {
-    LOG_WARN("fail to init ObEThread", K(index), K(ret));
+    LOG_WDIAG("fail to init ObEThread", K(index), K(ret));
     delete t;
     t = NULL;
   } else {
@@ -219,7 +219,7 @@ int64_t ObEventProcessor::get_cpu_count()
 
   cpu_num = std::min(cpu_num, MAX_THREADS_IN_EACH_TYPE);
   if (OB_UNLIKELY(cpu_num <= 0)) {
-    LOG_WARN("fail to get cpu num", K(cpu_num), K(cpu_conf_num), K(cpu_onln_num), K(MAX_THREADS_IN_EACH_TYPE));
+    LOG_WDIAG("fail to get cpu num", K(cpu_num), K(cpu_conf_num), K(cpu_onln_num), K(MAX_THREADS_IN_EACH_TYPE));
   } else {
     LOG_INFO("get cpu num succeed", K(cpu_num), K(cpu_conf_num), K(cpu_onln_num), K(MAX_THREADS_IN_EACH_TYPE));
   }
@@ -237,13 +237,13 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
 
   if (OB_UNLIKELY(started_)) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("start event processor twice", K(ret));
+    LOG_WDIAG("start event processor twice", K(ret));
   } else if (OB_UNLIKELY(net_thread_count <= 0) || OB_UNLIKELY(net_thread_count > MAX_EVENT_THREADS)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(net_thread_count), K(ret));
+    LOG_WDIAG("invalid parameters", K(net_thread_count), K(ret));
   } else if (OB_UNLIKELY(stacksize < 0)) {//when equal to 0, use the default thread size 8M;
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(stacksize), K(ret));
+    LOG_WDIAG("invalid parameters", K(stacksize), K(ret));
   } else {
     if (!automatic_match_work_thread
         || OB_UNLIKELY((cpu_num = get_cpu_count()) <= 0)
@@ -260,7 +260,7 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
 
     for (int64_t i = 0; i < cpu_num && OB_SUCC(ret); ++i) {
       if (OB_FAIL(init_one_event_thread(i))) {
-        LOG_WARN("fail to init ObEThread", K(i), K(cpu_num), K(ret));
+        LOG_WDIAG("fail to init ObEThread", K(i), K(cpu_num), K(ret));
       }
     }
 
@@ -272,9 +272,9 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
       if (enable_cpu_topology) {
         if (OB_ISNULL(cpu_topology = new (std::nothrow) ObCpuTopology())) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          PROXY_NET_LOG(WARN, "fail to new ObCpuTopology", K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to new ObCpuTopology", K(ret));
         } else if (OB_FAIL(cpu_topology->init())) {
-          PROXY_NET_LOG(WARN, "fail to init cpu_topology", K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to init cpu_topology", K(ret));
         } else {
           core_number = cpu_topology->get_core_number();
           cpu_number = cpu_topology->get_cpu_number();
@@ -305,27 +305,27 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
         int32_t length = snprintf(thr_name, sizeof(thr_name), "[ET_NET %ld]", i);
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int32_t>(sizeof(thr_name)))) {
           ret = OB_SIZE_OVERFLOW;
-          LOG_WARN("fail format thread name", K(length), K(ret));
+          LOG_WDIAG("fail format thread name", K(length), K(ret));
         } else if ((0 != i || RUN_MODE_CLIENT == g_run_mode) && OB_FAIL(all_event_threads_[i]->start(thr_name, stacksize))) {
-          LOG_WARN("fail to start event thread", K(thr_name), K(ret));
+          LOG_WDIAG("fail to start event thread", K(thr_name), K(ret));
         } else {
           if (bind_cpu) {
             core_id = i % core_number;
             if (OB_ISNULL(core_info = cpu_topology->get_core_info(core_id))) {
               ret = OB_ENTRY_NOT_EXIST;
-              LOG_WARN("fail to get core_info", K(core_info), K(core_id), K(ret));
+              LOG_WDIAG("fail to get core_info", K(core_info), K(core_id), K(ret));
             } else if (OB_UNLIKELY(core_info->cpu_number_ <= 0)) {
               ret = OB_ERR_UNEXPECTED;
-              LOG_WARN("fail to get core_info", K(core_info->cpu_number_), K(core_id), K(ret));
+              LOG_WDIAG("fail to get core_info", K(core_info->cpu_number_), K(core_id), K(ret));
             } else {
               cpu_id =  (i / core_number) % (core_info->cpu_number_);
               if (0 == i) {
                 if (OB_FAIL(cpu_topology->bind_cpu(core_info->cpues_[cpu_id], pthread_self()))) {
-                  LOG_WARN("fail to bind_cpu", K(core_id), K(cpu_id), "thread_id", pthread_self());
+                  LOG_WDIAG("fail to bind_cpu", K(core_id), K(cpu_id), "thread_id", pthread_self());
                 }
               } else {
                 if (OB_FAIL(cpu_topology->bind_cpu(core_info->cpues_[cpu_id], all_event_threads_[i]->tid_))) {
-                  LOG_WARN("fail to bind_cpu", K(core_id), K(cpu_id), "thread_id", all_event_threads_[i]->tid_);
+                  LOG_WDIAG("fail to bind_cpu", K(core_id), K(cpu_id), "thread_id", all_event_threads_[i]->tid_);
                 }
               }
             }
@@ -360,27 +360,27 @@ ObEvent *ObEventProcessor::spawn_thread(
   ObEvent *event = NULL;
   if (OB_ISNULL(cont)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters, ObContinuation is NULL", K(ret));
+    LOG_WDIAG("invalid parameters, ObContinuation is NULL", K(ret));
   } else if (OB_ISNULL(thr_name)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters, et_name is null", K(ret));
+    LOG_WDIAG("invalid parameters, et_name is null", K(ret));
   } else if (OB_UNLIKELY(stacksize < 0)) {//when equal to 0, use the default thread size 8M;
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(stacksize), K(ret));
+    LOG_WDIAG("invalid parameters", K(stacksize), K(ret));
   } else if (OB_UNLIKELY(dedicate_thread_count_ >= MAX_EVENT_THREADS)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid parameters", K(dedicate_thread_count_), K(ret));
+    LOG_WDIAG("invalid parameters", K(dedicate_thread_count_), K(ret));
   } else {
     if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to allocate memory for event", K(ret));
+      LOG_EDIAG("fail to allocate memory for event", K(ret));
     } else if (OB_FAIL(event->init(*cont, 0, 0))) {
-      LOG_WARN("fail init ObEvent", K(*event), K(ret));
+      LOG_WDIAG("fail init ObEvent", K(*event), K(ret));
     } else if (OB_ISNULL(all_dedicate_threads_[dedicate_thread_count_] = new(std::nothrow) ObEThread(DEDICATED, event))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_ERROR("fail to allocate memory for ethread, DEDICATED");
+      LOG_EDIAG("fail to allocate memory for ethread, DEDICATED");
     } else if (OB_FAIL(all_dedicate_threads_[dedicate_thread_count_]->init())) {
-      LOG_ERROR("fail to init ObEThread, DEDICATED");
+      LOG_EDIAG("fail to init ObEThread, DEDICATED");
       delete all_dedicate_threads_[dedicate_thread_count_];
       all_dedicate_threads_[dedicate_thread_count_] = NULL;
     } else {
@@ -390,7 +390,7 @@ ObEvent *ObEventProcessor::spawn_thread(
       event->continuation_->mutex_ = all_dedicate_threads_[dedicate_thread_count_]->mutex_;
       event->mutex_ = event->continuation_->mutex_;
       if (OB_FAIL(all_dedicate_threads_[dedicate_thread_count_]->start(thr_name, stacksize))) {
-        LOG_WARN("fail to start event thread, DEDICATED", K(dedicate_thread_count_), K(ret));
+        LOG_WDIAG("fail to start event thread, DEDICATED", K(dedicate_thread_count_), K(ret));
       }
       ++dedicate_thread_count_;
     }

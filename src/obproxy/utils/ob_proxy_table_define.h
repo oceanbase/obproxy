@@ -77,6 +77,7 @@ public:
   static const char *TEST_MODE_DATABASE;
 
   static const char *DETECT_USERNAME_USER;
+  static const char *BINLOG_USERNAME_USER;
 };
 
 } // end of namespace obproxy

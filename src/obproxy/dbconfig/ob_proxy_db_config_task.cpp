@@ -43,10 +43,10 @@ int ObWatchParentCont::alloc_watch_parent_cont(ObWatchParentCont *&cont, const O
   cont = NULL;
   if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for mutex", K(ret));
+    LOG_EDIAG("fail to alloc memory for mutex", K(ret));
   } else if (OB_ISNULL(cont = new(std::nothrow) ObWatchParentCont(mutex, type))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_ERROR("fail to alloc memory for ObWatchParentCont", K(ret));
+    LOG_EDIAG("fail to alloc memory for ObWatchParentCont", K(ret));
     if (OB_LIKELY(NULL != mutex)) {
       mutex->free();
       mutex = NULL;
@@ -78,7 +78,7 @@ int ObWatchParentCont::init_task()
                  "version", response.version_info().c_str(),
                  "resource size", response.resources_size());
         if (OB_FAIL(get_global_db_config_processor().sync_fetch_tenant_config(response))) {
-          LOG_WARN("fail to fetch tenant config", K(ret));
+          LOG_WDIAG("fail to fetch tenant config", K(ret));
         }
       } // end while
     } // end write

@@ -42,6 +42,7 @@ public:
   virtual void handle_input_complete();
 
 private:
+  bool is_analyze_compressed_ob20;
   uint8_t req_seq_;
   uint32_t request_id_;
   uint32_t server_sessid_;
@@ -82,7 +83,7 @@ public:
         transaction.add_plugin(plugin);
         PROXY_API_LOG(DEBUG, "add ObMysqlResponseCompressTransformPlugin", K(plugin));
       } else {
-        PROXY_API_LOG(ERROR, "fail to allocate memory for ObMysqlResponseCompressTransformPlugin");
+        PROXY_API_LOG(EDIAG, "fail to allocate memory for ObMysqlResponseCompressTransformPlugin");
       }
     } else {
       PROXY_API_LOG(DEBUG, "no need setup ObMysqlResponseCompressTransformPlugin");

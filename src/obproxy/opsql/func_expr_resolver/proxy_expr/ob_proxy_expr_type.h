@@ -13,6 +13,7 @@
 #ifndef OB_FUNC_EXPR_PROXY_EXPR_TYPE_H
 #define OB_FUNC_EXPR_PROXY_EXPR_TYPE_H
 
+#define EXPR_NUM (OB_PROXY_EXPR_TYPE_MAX + 1)
 typedef enum ObProxyExprType
 {
   OB_PROXY_EXPR_TYPE_NONE = 0,
@@ -44,9 +45,27 @@ typedef enum ObProxyExprType
   OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR,
   OB_PROXY_EXPR_TYPE_FUNC_SYSDATE,
   OB_PROXY_EXPR_TYPE_FUNC_MOD,
-
+  OB_PROXY_EXPR_TYPE_FUNC_ISNULL,
+  OB_PROXY_EXPR_TYPE_FUNC_CEIL,
+  OB_PROXY_EXPR_TYPE_FUNC_FLOOR,
+  OB_PROXY_EXPR_TYPE_FUNC_ROUND,
+  OB_PROXY_EXPR_TYPE_FUNC_TRUNCATE,
+  OB_PROXY_EXPR_TYPE_FUNC_ABS,
+  OB_PROXY_EXPR_TYPE_FUNC_SYSTIMESTAMP,
+  OB_PROXY_EXPR_TYPE_FUNC_CURRENT_DATE,
+  OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIME,
+  OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIMESTAMP,
+  OB_PROXY_EXPR_TYPE_FUNC_LTRIM,
+  OB_PROXY_EXPR_TYPE_FUNC_RTRIM,
+  OB_PROXY_EXPR_TYPE_FUNC_TRIM,
+  OB_PROXY_EXPR_TYPE_FUNC_REPLACE,
+  OB_PROXY_EXPR_TYPE_FUNC_LENGTH,
+  OB_PROXY_EXPR_TYPE_FUNC_LOWER,
+  OB_PROXY_EXPR_TYPE_FUNC_UPPER,
+  OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER,
+  OB_PROXY_EXPR_TYPE_FUNC_NULL,
   OB_PROXY_EXPR_TYPE_MAX,
-}ObProxyExprType;
+} ObProxyExprType;
 
 const char* get_expr_type_name(int expr_type)
 {
@@ -136,8 +155,65 @@ const char* get_expr_type_name(int expr_type)
     case OB_PROXY_EXPR_TYPE_FUNC_MOD:
       type_name = "OB_PROXY_EXPR_TYPE_FUNC_MOD";
       break;
+    case OB_PROXY_EXPR_TYPE_FUNC_ISNULL:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_ISNULL";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_FLOOR:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_FLOOR";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_CEIL:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_CEIL";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_ROUND:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_ROUND";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TRUNCATE:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TRUNCATE";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_ABS:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_ABS";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_SYSTIMESTAMP:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_SYSTIMESTAMP";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_CURRENT_DATE:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_CURRENT_DATE";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIME:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIME";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIMESTAMP:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIMESTAMP";
+      break;
+          case OB_PROXY_EXPR_TYPE_FUNC_LTRIM:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_LTRIM";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_RTRIM:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_RTRIM";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TRIM:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TRIM";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_REPLACE:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_REPLACE";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_LENGTH:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_LENGTH";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_LOWER:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_LOWER";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_UPPER:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_UPPER";
+      break;
     case OB_PROXY_EXPR_TYPE_MAX:
       type_name = "OB_PROXY_EXPR_TYPE_MAX";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_NULL:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_NULL";
       break;
     default:
       break;

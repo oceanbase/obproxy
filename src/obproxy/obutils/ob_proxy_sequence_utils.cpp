@@ -70,7 +70,7 @@ int ObProxySequenceUtils::get_sequence_entry_sql(char*sql_buf, const int64_t buf
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(seq_name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(seq_name), K(ret));
   } else {
     int64_t len = 0;
     if (tnt_id.empty()) {
@@ -90,7 +90,7 @@ int ObProxySequenceUtils::get_sequence_entry_sql(char*sql_buf, const int64_t buf
     }
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
   return ret;
@@ -110,7 +110,7 @@ int ObProxySequenceUtils::insert_sequence_entry_sql(char*sql_buf, const int64_t 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(seq_name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(seq_name), K(ret));
   } else {
     int64_t len = 0;
     if (tnt_id.empty()){
@@ -138,7 +138,7 @@ int ObProxySequenceUtils::insert_sequence_entry_sql(char*sql_buf, const int64_t 
     }
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
   return ret;
@@ -155,7 +155,7 @@ int ObProxySequenceUtils::update_sequence_entry_sql(char*sql_buf,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(seq_name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(seq_name), K(ret));
   } else {
     int64_t len = 0;
     if (tnt_id.empty()) {
@@ -180,7 +180,7 @@ int ObProxySequenceUtils::update_sequence_entry_sql(char*sql_buf,
     
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
   return ret;

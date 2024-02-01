@@ -50,16 +50,16 @@ int ObResultSetFetcher::init(ObIOBufferReader *reader)
   int ret = OB_SUCCESS;
   if ((NULL == reader) || (reader->read_avail() <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(reader), K(ret));
+    LOG_WDIAG("invalid input value", K(reader), K(ret));
   } else if (is_inited_) {
     ret = OB_INIT_TWICE;
-    LOG_WARN("init twice", K_(is_inited), K(ret));
+    LOG_WDIAG("init twice", K_(is_inited), K(ret));
   } else if (FALSE_IT(reader_ = reader)) {
     // impossible
   } else if (OB_FAIL(read_field_count())) {
-    LOG_WARN("fail to read field count", K(ret));
+    LOG_WDIAG("fail to read field count", K(ret));
   } else if (OB_FAIL(read_fields())) {
-    LOG_WARN("fail to read fields", K(ret));
+    LOG_WDIAG("fail to read fields", K(ret));
   } else {
     // alloc row
     row_.column_count_ = field_count_;
@@ -67,7 +67,7 @@ int ObResultSetFetcher::init(ObIOBufferReader *reader)
     char *buf = static_cast<char *>(allocator_.alloc(buf_len));
     if (NULL == buf) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc mem", K(buf_len), K(ret));
+      LOG_WDIAG("fail to alloc mem", K(buf_len), K(ret));
     } else {
       row_.columns_ = new (buf) ObString[field_count_];
       row_.objs_ = new (buf + sizeof(ObString) * field_count_) ObObj[field_count_];
@@ -84,9 +84,9 @@ int ObResultSetFetcher::next()
   ObString body;
   if (!is_inited_) {
     ret = OB_NOT_INIT;
-    LOG_WARN("not init", K_(is_inited), K(ret));
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else if (OB_FAIL(read_one_packet(body))) {
-    LOG_WARN("fail to read one packet", K(ret));
+    LOG_WDIAG("fail to read one packet", K(ret));
   } else if (is_eof_packet(body)) {
     // the second eof pakcet in ResultSet, data read complete
     ret = OB_ITER_END;
@@ -94,7 +94,7 @@ int ObResultSetFetcher::next()
     uint16_t mysql_err_code = 0;
     bool is_error_pkt = false;
     if (OB_FAIL(judge_error_packet(body, is_error_pkt, mysql_err_code))) {
-      LOG_WARN("fail to judge error packet", K(ret));
+      LOG_WDIAG("fail to judge error packet", K(ret));
     } else {
       if (is_error_pkt) {
         // the error packet in ResultSet, data read complete
@@ -102,7 +102,7 @@ int ObResultSetFetcher::next()
         ret = mysql_err_code;
       } else {
         if (OB_FAIL(fill_row_data(body))) {
-          LOG_WARN("fail to fill row data", K(ret));
+          LOG_WDIAG("fail to fill row data", K(ret));
         }
       }
     }
@@ -116,11 +116,11 @@ int ObResultSetFetcher::get_int(const char *col_name, int64_t &int_val) const
   int64_t col_idx = -1;
   if (NULL == col_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid col_name", K(col_name), K(ret));
+    LOG_WDIAG("invalid col_name", K(col_name), K(ret));
   } else if (OB_FAIL(get_col_idx(col_name, col_idx))) {
-    LOG_WARN("fail to get col idx", K(col_name), K(ret));
+    LOG_WDIAG("fail to get col idx", K(col_name), K(ret));
   } else if (OB_FAIL(get_int(col_idx, int_val))) {
-    LOG_WARN("fail to get int", K(col_name), K(col_idx), K(ret));
+    LOG_WDIAG("fail to get int", K(col_name), K(col_idx), K(ret));
   }
   return ret;
 }
@@ -131,11 +131,11 @@ int ObResultSetFetcher::get_uint(const char *col_name, uint64_t &int_val) const
   int64_t col_idx = -1;
   if (NULL == col_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid col_name", K(col_name), K(ret));
+    LOG_WDIAG("invalid col_name", K(col_name), K(ret));
   } else if (OB_FAIL(get_col_idx(col_name, col_idx))) {
-    LOG_WARN("fail to get col idx", K(col_name), K(ret));
+    LOG_WDIAG("fail to get col idx", K(col_name), K(ret));
   } else if (OB_FAIL(get_uint(col_idx, int_val))) {
-    LOG_WARN("fail to get uint", K(col_name), K(col_idx), K(ret));
+    LOG_WDIAG("fail to get uint", K(col_name), K(col_idx), K(ret));
   }
   return ret;
 }
@@ -146,11 +146,11 @@ int ObResultSetFetcher::get_bool(const char *col_name, bool &bool_val) const
   int64_t col_idx = -1;
   if (NULL == col_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid col_name", K(col_name), K(ret));
+    LOG_WDIAG("invalid col_name", K(col_name), K(ret));
   } else if (OB_FAIL(get_col_idx(col_name, col_idx))) {
-    LOG_WARN("fail to get col idx", K(col_name), K(ret));
+    LOG_WDIAG("fail to get col idx", K(col_name), K(ret));
   } else if (OB_FAIL(get_bool(col_idx, bool_val))) {
-    LOG_WARN("fail to get bool", K(col_name), K(col_idx), K(ret));
+    LOG_WDIAG("fail to get bool", K(col_name), K(col_idx), K(ret));
   }
   return ret;
 }
@@ -161,11 +161,11 @@ int ObResultSetFetcher::get_double(const char *col_name, double &double_val) con
   int64_t col_idx = -1;
   if (NULL == col_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid col_name", K(col_name), K(ret));
+    LOG_WDIAG("invalid col_name", K(col_name), K(ret));
   } else if (OB_FAIL(get_col_idx(col_name, col_idx))) {
-    LOG_WARN("fail to get col idx", K(col_name), K(ret));
+    LOG_WDIAG("fail to get col idx", K(col_name), K(ret));
   } else if (OB_FAIL(get_double(col_idx, double_val))) {
-    LOG_WARN("fail to get double", K(col_name), K(col_idx), K(ret));
+    LOG_WDIAG("fail to get double", K(col_name), K(col_idx), K(ret));
   }
   return ret;
 }
@@ -176,11 +176,11 @@ int ObResultSetFetcher::get_varchar(const char *col_name, common::ObString &varc
   int64_t col_idx = -1;
   if (NULL == col_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid col_name", K(col_name), K(ret));
+    LOG_WDIAG("invalid col_name", K(col_name), K(ret));
   } else if (OB_FAIL(get_col_idx(col_name, col_idx))) {
-    LOG_WARN("fail to get col idx", K(col_name), K(ret));
+    LOG_WDIAG("fail to get col idx", K(col_name), K(ret));
   } else if (OB_FAIL(get_varchar(col_idx, varchar_val))) {
-    LOG_WARN("fail to get varchar", K(col_name), K(col_idx), K(ret));
+    LOG_WDIAG("fail to get varchar", K(col_name), K(col_idx), K(ret));
   }
   return ret;
 }
@@ -190,17 +190,17 @@ int ObResultSetFetcher::get_col_idx(const char *col_name, int64_t &idx) const
   int ret = OB_SUCCESS;
   if (NULL == col_name) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid col_name", K(col_name), K(ret));
+    LOG_WDIAG("invalid col_name", K(col_name), K(ret));
   } else {
     ObString col_name_str = ObString::make_string(col_name);
     ObMysqlField *field = NULL;
     ret = column_map_->get_refactored(col_name_str, field);
     if (OB_HASH_NOT_EXIST == ret) {
-      LOG_WARN("fail to get column", K(col_name_str), K(ret));
+      LOG_WDIAG("fail to get column", K(col_name_str), K(ret));
       ret = OB_ERR_COLUMN_NOT_FOUND;
     } else if (NULL == field) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("mysql field can not be null", K(field), K(ret));
+      LOG_WDIAG("mysql field can not be null", K(field), K(ret));
     } else {
       idx = field->pos_;
       ret = OB_SUCCESS;
@@ -215,11 +215,11 @@ int ObResultSetFetcher::get_bool(const int64_t col_idx, bool &bool_val) const
   // some type convertion work
   ObString varchar_val;
   if (OB_FAIL(get_varchar(col_idx, varchar_val))) {
-    LOG_WARN("fail to get value", K(col_idx), K(ret));
+    LOG_WDIAG("fail to get value", K(col_idx), K(ret));
   } else {
     if (1 != varchar_val.length()) {
       ret = OB_INVALID_DATA;
-      LOG_WARN("invalid bool value", K(varchar_val), K(ret));
+      LOG_WDIAG("invalid bool value", K(varchar_val), K(ret));
     } else {
       if (0 == STRNCMP("0", varchar_val.ptr(), 1)) {
         bool_val = false;
@@ -227,7 +227,7 @@ int ObResultSetFetcher::get_bool(const int64_t col_idx, bool &bool_val) const
         bool_val = true;
       } else {
         ret = OB_INVALID_DATA;
-        LOG_WARN("invalid bool value", K(varchar_val), K(ret));
+        LOG_WDIAG("invalid bool value", K(varchar_val), K(ret));
       }
     }
   }
@@ -240,10 +240,10 @@ int ObResultSetFetcher::get_int(const int64_t col_idx, int64_t &int_val) const
   // some type convertion work
   ObString varchar_val;
   if (OB_FAIL(get_varchar(col_idx, varchar_val))) {
-    LOG_WARN("fail to get value", K(col_idx), K(ret));
+    LOG_WDIAG("fail to get value", K(col_idx), K(ret));
   } else if (varchar_val.empty()) {
     ret = OB_INVALID_DATA;
-    LOG_WARN("invalid empty value", K(varchar_val), K(ret));
+    LOG_WDIAG("invalid empty value", K(varchar_val), K(ret));
   } else {
     int64_t ret_val = 0;
     char int_buf[MAX_UINT64_STORE_LEN + 1];
@@ -257,7 +257,7 @@ int ObResultSetFetcher::get_int(const int64_t col_idx, int64_t &int_val) const
       int_val = ret_val;
     } else {
       ret = OB_INVALID_DATA;
-      LOG_WARN("invalid int value", K(int_val), K(ret));
+      LOG_WDIAG("invalid int value", K(int_val), K(ret));
     }
   }
   return ret;
@@ -269,10 +269,10 @@ int ObResultSetFetcher::get_uint(const int64_t col_idx, uint64_t &int_val) const
   // some type convertion work
   ObString varchar_val;
   if (OB_FAIL(get_varchar(col_idx, varchar_val))) {
-    LOG_WARN("fail to get value", K(col_idx), K(ret));
+    LOG_WDIAG("fail to get value", K(col_idx), K(ret));
   } else if (varchar_val.empty()) {
     ret = OB_INVALID_DATA;
-    LOG_WARN("invalid empty value", K(varchar_val), K(ret));
+    LOG_WDIAG("invalid empty value", K(varchar_val), K(ret));
   } else {
     uint64_t ret_val = 0;
     char int_buf[MAX_UINT64_STORE_LEN + 1];
@@ -286,7 +286,7 @@ int ObResultSetFetcher::get_uint(const int64_t col_idx, uint64_t &int_val) const
       int_val = ret_val;
     } else {
       ret = OB_INVALID_DATA;
-      LOG_WARN("invalid uint value", K(int_val), K(ret));
+      LOG_WDIAG("invalid uint value", K(int_val), K(ret));
     }
   }
   return ret;
@@ -298,10 +298,10 @@ int ObResultSetFetcher::get_double(const int64_t col_idx, double &double_val) co
   // some type convertion work
   ObString varchar_val;
   if (OB_FAIL(get_varchar(col_idx, varchar_val))) {
-    LOG_WARN("fail to get value", K(col_idx), K(ret));
+    LOG_WDIAG("fail to get value", K(col_idx), K(ret));
   } else if (varchar_val.empty()) {
     ret = OB_INVALID_DATA;
-    LOG_WARN("invalid empty value", K(varchar_val), K(ret));
+    LOG_WDIAG("invalid empty value", K(varchar_val), K(ret));
   } else {
     double ret_val = 0.0;
     char int_buf[MAX_UINT64_STORE_LEN + 1];
@@ -315,7 +315,7 @@ int ObResultSetFetcher::get_double(const int64_t col_idx, double &double_val) co
       double_val = ret_val;
     } else {
       ret = OB_INVALID_DATA;
-      LOG_WARN("invalid dobule value", K(double_val), K(varchar_val), K(ret));
+      LOG_WDIAG("invalid dobule value", K(double_val), K(varchar_val), K(ret));
     }
   }
   return ret;
@@ -326,10 +326,10 @@ int ObResultSetFetcher::get_varchar(const int64_t col_idx, common::ObString &var
   int ret = OB_SUCCESS;
   if (col_idx < 0 || col_idx >= field_count_) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid index", K(col_idx), K_(field_count), K(ret));
+    LOG_WDIAG("invalid index", K(col_idx), K_(field_count), K(ret));
   } else if (!row_.is_valid()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to check cur row", K(ret));
+    LOG_WDIAG("fail to check cur row", K(ret));
   } else {
     varchar_val = row_.columns_[col_idx];
   }
@@ -342,10 +342,10 @@ int ObResultSetFetcher::get_obj(const int64_t col_idx, common::ObObj &obj) const
   int ret = OB_SUCCESS;
   if (col_idx < 0 || col_idx >= field_count_) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid index", K(col_idx), K_(field_count), K(ret));
+    LOG_WDIAG("invalid index", K(col_idx), K_(field_count), K(ret));
   } else if (!row_.is_valid()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to check cur row", K(ret));
+    LOG_WDIAG("fail to check cur row", K(ret));
   } else {
     obj = row_.objs_[col_idx];
   }
@@ -358,7 +358,7 @@ int ObResultSetFetcher::fill_row_data(ObString &body)
   int ret = OB_SUCCESS;
   if (body.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(body), K(ret));
+    LOG_WDIAG("invalid input value", K(body), K(ret));
   } else {
     row_.reset_row_content();
     const char *pos = body.ptr();
@@ -367,7 +367,7 @@ int ObResultSetFetcher::fill_row_data(ObString &body)
     for (int64_t i = 0; (i < field_count_) && (OB_SUCC(ret)); ++i) {
       len = 0;
       if (OB_FAIL(ObMySQLUtil::get_length(pos, len))) {
-        LOG_WARN("fill to get length", KP(pos), K(ret));
+        LOG_WDIAG("fill to get length", KP(pos), K(ret));
       } else if (ObMySQLUtil::NULL_ == len) { // NULL or empty
         row_.columns_[i].reset();
         row_.objs_[i].set_null();
@@ -383,7 +383,7 @@ int ObResultSetFetcher::fill_row_data(ObString &body)
 
     if (pos != end) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("pos must be equal end", KP(pos), KP(end), K(body), K(ret));
+      LOG_WDIAG("pos must be equal end", KP(pos), KP(end), K(body), K(ret));
     }
   }
 
@@ -395,16 +395,16 @@ int ObResultSetFetcher::read_field_count()
   int ret = OB_SUCCESS;
   ObString body;
   if (OB_FAIL(read_one_packet(body))) {
-    LOG_WARN("fail to read body", K(ret));
+    LOG_WDIAG("fail to read body", K(ret));
   } else {
     if (is_ok_packet(body)) {
       ret = OB_INVALID_DATA;
-      LOG_WARN("the first packet of ResultSet can not be OK Packet", K(ret));
+      LOG_WDIAG("the first packet of ResultSet can not be OK Packet", K(ret));
     } else {
       bool is_error_pkt = false;
       uint16_t mysql_error_code = 0;
       if (OB_FAIL(judge_error_packet(body, is_error_pkt, mysql_error_code))) {
-        LOG_WARN("fail to judge error packet", K(ret));
+        LOG_WDIAG("fail to judge error packet", K(ret));
       } else {
         if (is_error_pkt) {
           // the fist packet in Reusltset is error pakcet, data read complete
@@ -417,10 +417,10 @@ int ObResultSetFetcher::read_field_count()
       const char *pos = body.ptr();
       uint64_t field_count = 0;
       if (OB_FAIL(ObMySQLUtil::get_length(pos,  field_count))) {
-        LOG_WARN("fail to get len encode number", K(ret));
+        LOG_WDIAG("fail to get len encode number", K(ret));
       } else if (field_count <= 0) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("invalid field count", K_(field_count), K(ret));
+        LOG_WDIAG("invalid field count", K_(field_count), K(ret));
       } else {
         field_count_ = static_cast<int64_t>(field_count);
         // alloc ObMysqlField array;
@@ -428,7 +428,7 @@ int ObResultSetFetcher::read_field_count()
         char *buf = static_cast<char *>(allocator_.alloc(buf_len));
         if (NULL == buf) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc memory", K(buf_len), K(ret));
+          LOG_WDIAG("fail to alloc memory", K(buf_len), K(ret));
         } else {
           // it will be free when page_arena_ destruct
           field_ = new (buf) ObMysqlField[field_count_];
@@ -440,7 +440,7 @@ int ObResultSetFetcher::read_field_count()
           buf = static_cast<char *>(allocator_.alloc(buf_len));
           if (NULL == buf) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WARN("fail to alloc memory", K(buf_len), K(ret));
+            LOG_WDIAG("fail to alloc memory", K(buf_len), K(ret));
           } else {
             // it will be free when page_arena_ destruct
             column_map_ = new (buf) ObColumnMap(buf_len);
@@ -459,24 +459,24 @@ int ObResultSetFetcher::read_fields()
   for (int64_t i = 0; (i < field_count_) && (OB_SUCC(ret)); ++i) {
     ObString body;
     if (OB_FAIL(read_one_packet(body))) {
-      LOG_WARN("fail to read one packet", K(i), K(ret));
+      LOG_WDIAG("fail to read one packet", K(i), K(ret));
     } else if (is_eof_packet(body)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("the packet must be not EOF packet", K(body), K(ret));
+      LOG_WDIAG("the packet must be not EOF packet", K(body), K(ret));
     } else if (OB_FAIL(fill_field(body, &field_[i]))) {
-      LOG_WARN("fail to fill field", K(body), K(ret));
+      LOG_WDIAG("fail to fill field", K(body), K(ret));
     } else if (OB_FAIL(add_field(i))) {
-      LOG_WARN("fail to add field", K(i), K(body), K(ret));
+      LOG_WDIAG("fail to add field", K(i), K(body), K(ret));
     }
   }
 
   if (OB_SUCC(ret)) {
     ObString body;
     if (OB_FAIL(read_one_packet(body))) {
-      LOG_WARN("fail to read one packet", K(ret));
+      LOG_WDIAG("fail to read one packet", K(ret));
     } else if (!is_eof_packet(body)) { // the first EOF Packet in Resultset
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("the packet must be EOF packet", K(body), K(ret));
+      LOG_WDIAG("the packet must be EOF packet", K(body), K(ret));
     }
   }
 
@@ -488,26 +488,26 @@ int ObResultSetFetcher::fill_field(ObString &body, ObMysqlField *field)
   int ret = OB_SUCCESS;
   if (body.empty() || NULL == field) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(body), K(field), K(ret));
+    LOG_WDIAG("invalid input value", K(body), K(field), K(ret));
   } else {
     const char *pos = body.ptr();
     char *end = body.ptr() + body.length();
     if (OB_FAIL(assign_string(field->catalog_, pos))) {
-      LOG_WARN("fail to assign_string(catalog)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(catalog)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field->db_, pos))) {
-      LOG_WARN("fail to assign_string(db)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(db)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field->table_, pos))) {
-      LOG_WARN("fail to assign_string(table)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(table)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field->org_table_, pos))) {
-      LOG_WARN("fail to assign_string(org_table)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(org_table)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field->name_, pos))) {
-      LOG_WARN("fail to assign_string(name)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(name)", KP(pos), K(ret));
     } else if (OB_FAIL(assign_string(field->org_name_, pos))) {
-      LOG_WARN("fail to assign_string(org_name)", KP(pos), K(ret));
+      LOG_WDIAG("fail to assign_string(org_name)", KP(pos), K(ret));
     } else {
       uint64_t len = 0;
       if (OB_FAIL(ObMySQLUtil::get_length(pos, len))) {
-        LOG_WARN("fail to get length", KP(pos), K(ret));
+        LOG_WDIAG("fail to get length", KP(pos), K(ret));
       } else {
         uint16_t value = 0;
         ObMySQLUtil::get_uint2(pos, value);
@@ -534,7 +534,7 @@ int ObResultSetFetcher::fill_field(ObString &body, ObMysqlField *field)
     if (OB_SUCC(ret)) {
       if (pos > end) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("pos must be <= end", KP(pos), KP(end), K(body), K(ret));
+        LOG_WDIAG("pos must be <= end", KP(pos), KP(end), K(body), K(ret));
       }
     }
   }
@@ -548,9 +548,9 @@ int ObResultSetFetcher::assign_string(ObString &str, const char *&pos)
   int ret = OB_SUCCESS;
   if (NULL == pos) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", KP(pos), K(ret));
+    LOG_WDIAG("invalid input value", KP(pos), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::get_length(pos, len))) {
-    LOG_WARN("fail to get length", K(ret));
+    LOG_WDIAG("fail to get length", K(ret));
   } else {
     str.assign_ptr(pos, static_cast<uint32_t>(len));
     pos += len;
@@ -564,21 +564,21 @@ int ObResultSetFetcher::add_field(const int64_t idx)
   int ret = OB_SUCCESS;
   if (idx < 0 || idx >= field_count_) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(idx), K(ret));
+    LOG_WDIAG("invalid input value", K(idx), K(ret));
   } else {
     if (field_[idx].name_.empty()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected field", "field", field_[idx], K(ret));
+      LOG_WDIAG("unexpected field", "field", field_[idx], K(ret));
     } else {
       field_[idx].pos_ = idx;
       ret = column_map_->set_refactored(field_[idx].name_, &field_[idx]); // do not overwrite
       if (OB_SUCCESS == ret) {
       } else if (OB_HASH_EXIST == ret) {
-        LOG_WARN("resultset has the same two column names, covert it to OB_SUCCESS",
+        LOG_DEBUG("resultset has the same two column names, covert it to OB_SUCCESS",
                  "name", field_[idx].name_, K(idx));
         ret = OB_SUCCESS;
       } else {
-        LOG_WARN("fail to set name to hashtable", "name", field_[idx].name_, K(idx), K(ret));
+        LOG_WDIAG("fail to set name to hashtable", "name", field_[idx].name_, K(idx), K(ret));
       }
     }
   }
@@ -618,16 +618,16 @@ int ObResultSetFetcher::judge_error_packet(
   is_err_pkt = false;
   if (packet_body.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("packet_body can not be empty", K(ret));
+    LOG_WDIAG("packet_body can not be empty", K(ret));
   } else {
     int64_t type = static_cast<uint8_t>(packet_body.ptr()[0]);
     if (MYSQL_ERR_PACKET_TYPE == type) {
       OMPKError error;
       error.set_content(packet_body.ptr(), packet_body.length());
       if (OB_FAIL(error.decode())) {
-        LOG_WARN("fail to decode error packet", K(ret));
+        LOG_WDIAG("fail to decode error packet", K(ret));
       } else {
-        LOG_WARN("get error packet in ResultSet", K(error));
+        LOG_WDIAG("get error packet in ResultSet", K(error));
         mysql_error_code = error.get_err_code();
       }
       is_err_pkt = true;
@@ -643,9 +643,9 @@ int ObResultSetFetcher::read_one_packet(ObString &packet_body)
   int64_t packet_body_len = 0;
   ObString body;
   if (OB_FAIL(read_header(packet_body_len))) {
-    LOG_WARN("fail to read header", K(ret));
+    LOG_WDIAG("fail to read header", K(ret));
   } else if (OB_FAIL(read_body(packet_body_len, body))) {
-    LOG_WARN("fail to read body", K(packet_body_len), K(ret));
+    LOG_WDIAG("fail to read body", K(packet_body_len), K(ret));
   } else {
     packet_body = body;
   }
@@ -658,7 +658,7 @@ int ObResultSetFetcher::read_header(int64_t &packet_body_len)
   int ret = OB_SUCCESS;
   ObString header;
   if (OB_FAIL(do_read(MYSQL_NET_HEADER_LENGTH, header))) {
-    LOG_WARN("fail to do read", K(ret));
+    LOG_WDIAG("fail to do read", K(ret));
   } else {
     uint32_t pkt_body_len = 0;
     const char *pos = header.ptr();
@@ -675,9 +675,9 @@ int ObResultSetFetcher::read_body(const int64_t packet_body_len, ObString &packe
   ObString body;
   if (packet_body_len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(packet_body_len), K(ret));
+    LOG_WDIAG("invalid input value", K(packet_body_len), K(ret));
   } else if (OB_FAIL(do_read(packet_body_len, body))) {
-    LOG_WARN("fail to do read", K(packet_body_len), K(ret));
+    LOG_WDIAG("fail to do read", K(packet_body_len), K(ret));
   } else {
     packet_body = body;
   }
@@ -689,7 +689,7 @@ int ObResultSetFetcher::do_read(const int64_t len, common::ObString &data)
   int ret = OB_SUCCESS;
   if (len <= 0) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid argument", K(len), K(ret));
+    LOG_WDIAG("invalid argument", K(len), K(ret));
   } else {
     data.reset();
     // get first io block
@@ -712,7 +712,7 @@ int ObResultSetFetcher::do_read(const int64_t len, common::ObString &data)
       block_data_avail = cur_block_->read_avail() - cur_offset_;
       if (block_data_avail < 0) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("block_data_avail must not < 0", K(block_data_avail), K(ret));
+        LOG_WDIAG("block_data_avail must not < 0", K(block_data_avail), K(ret));
       } else if (0 == block_data_avail) {
         // nothing, continue ...
       } else {
@@ -733,7 +733,7 @@ int ObResultSetFetcher::do_read(const int64_t len, common::ObString &data)
           if (NULL == alloc_buf) {
             if (NULL == (alloc_buf = static_cast<char *>(allocator_.alloc(to_read)))) {
               ret = OB_ALLOCATE_MEMORY_FAILED;
-              LOG_WARN("fail to alloc mem", "alloc size", to_read, K(ret));
+              LOG_WDIAG("fail to alloc mem", "alloc size", to_read, K(ret));
             } else {
               LOG_DEBUG("cross multi IObufferBlocks, alloc new buf", "alloc size", to_read);
               data_start = alloc_buf;
@@ -757,7 +757,7 @@ int ObResultSetFetcher::do_read(const int64_t len, common::ObString &data)
         cur_block_ = cur_block_->next_;
       } else if (remain < 0) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("unknown error", K(remain), K(ret));
+        LOG_WDIAG("unknown error", K(remain), K(ret));
       } else if (remain > 0) {
         // nothing, continue
       }
@@ -768,7 +768,7 @@ int ObResultSetFetcher::do_read(const int64_t len, common::ObString &data)
         data.assign_ptr(data_start, static_cast<ObString::obstr_size_t>(len));
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("read error unexpected", K(to_read), KP(data_start), K(ret));
+        LOG_WDIAG("read error unexpected", K(to_read), KP(data_start), K(ret));
       }
     }
   }
@@ -781,7 +781,7 @@ int ObResultSetFetcher::print_info() const
   int ret = OB_SUCCESS;
   if (!row_.is_valid()) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to check cur row or length");
+    LOG_WDIAG("fail to check cur row or length");
   } else {
     for (int64_t i = 0; i < row_.column_count_; ++i) {
       _LOG_INFO("cell_idx: %ld, cell_name: %.*s, cell_value:%.*s", i,

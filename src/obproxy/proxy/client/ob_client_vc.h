@@ -155,6 +155,7 @@ public:
            ClientPoolOption* client_pool_option = NULL);
 
   int init_detect_client(obutils::ObClusterResource *cr);
+  int init_binlog_client(const common::ObString cluster_name, const common::ObString tenant_name);
 
   // must be used under the mutex_'s lock
   bool is_avail() const { return !in_use_; }

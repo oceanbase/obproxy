@@ -29,6 +29,7 @@
 #include "opsql/func_expr_parser/ob_func_expr_parser_utils.h"
 #include "obutils/ob_proxy_sql_parser.h"
 #include "utils/ob_proxy_utils.h"
+#include "opsql/func_expr_resolver/ob_func_expr_resolver.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
@@ -155,7 +156,7 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
   } else {
     int64_t len = 0;
     char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
@@ -183,7 +184,7 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
 
@@ -199,7 +200,7 @@ int ObRouteUtils::get_part_info_sql(char *sql_buf,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
   } else {
     int64_t len = 0;
     if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
@@ -219,7 +220,7 @@ int ObRouteUtils::get_part_info_sql(char *sql_buf,
     }
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
 
@@ -238,7 +239,7 @@ int ObRouteUtils::get_first_part_sql(char *sql_buf,
   int64_t len = 0;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
   } else if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
     len = snprintf(sql_buf, buf_len, is_hash_part ? PROXY_HASH_FIRST_PART_SQL : PROXY_FIRST_PART_SQL,
         OB_ALL_VIRTUAL_PROXY_PARTITION_TNAME,
@@ -256,7 +257,7 @@ int ObRouteUtils::get_first_part_sql(char *sql_buf,
   }
   if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+    LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
   }
 
   return ret;
@@ -274,7 +275,7 @@ int ObRouteUtils::get_sub_part_sql(char *sql_buf,
   int64_t len = 0;
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0) || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(name), K(ret));
   } else {
     // assume all sub_part are same for each fisrt part
     // templete part id is -1
@@ -303,7 +304,7 @@ int ObRouteUtils::get_sub_part_sql(char *sql_buf,
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
 
@@ -320,7 +321,7 @@ int ObRouteUtils::get_binlog_entry_sql(char *sql_buf,
       || OB_UNLIKELY(cluster_name.empty())
       || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(cluster_name), K(tenant_name), K(ret));
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(cluster_name), K(tenant_name), K(ret));
   } else {
     int64_t len = 0;
     len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_BINLOG_ADDR_SQL,
@@ -329,7 +330,7 @@ int ObRouteUtils::get_binlog_entry_sql(char *sql_buf,
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill binlog sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill binlog sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
 
@@ -433,22 +434,22 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
         if (is_fake_ip_port(ip_str, port)) {
           use_fake_addrs = true;
         } else {
-          LOG_WARN("invalid ip, port in fetching table entry, just skip it,"
+          LOG_WDIAG("invalid ip, port in fetching table entry, just skip it,"
                    " do not return err", K(ip_str), K(port), K(ret));
         }
         ret = OB_SUCCESS;
       } else if (OB_UNLIKELY(LEADER != prl.role_) && OB_UNLIKELY(FOLLOWER != prl.role_)) {
-        LOG_WARN("invalid role in fetching table entry, just skip it,"
+        LOG_WDIAG("invalid role in fetching table entry, just skip it,"
                  " do not return err", "role", prl.role_);
         ret = OB_SUCCESS;
       } else if (OB_FAIL(prl.set_replica_type(replica_type))) {
-        LOG_WARN("invalid replica_type in fetching table entry, just skip it,"
+        LOG_WDIAG("invalid replica_type in fetching table entry, just skip it,"
                  " do not return err", "replica_type", replica_type);
         ret = OB_SUCCESS;
       } else if (FALSE_IT(prl.set_dup_replica_type(dup_replica_type))) {
         // can not happen
       } else if (OB_FAIL(server_list.push_back(prl))) {
-        LOG_WARN("fail to add server", K(prl), K(ret));
+        LOG_WDIAG("fail to add server", K(prl), K(ret));
       } else {
         if (prl.is_dup_replica() && !has_dup_replica) {
           has_dup_replica = true;
@@ -465,14 +466,14 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
     if (!server_list.empty()) {
       if (OB_ISNULL(pts = op_alloc(ObTenantServer))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to allocate memory for ObTenantServer", K(ret));
+        LOG_WDIAG("fail to allocate memory for ObTenantServer", K(ret));
       } else if (OB_FAIL(pts->init(server_list))) {
-        LOG_WARN("fail to init tenant servers", KPC(pts), K(server_list), K(ret));
+        LOG_WDIAG("fail to init tenant servers", KPC(pts), K(server_list), K(ret));
       } else if (OB_UNLIKELY(!pts->is_valid())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("pts should not unavailable", KPC(pts), K(ret));
+        LOG_WDIAG("pts should not unavailable", KPC(pts), K(ret));
       } else if (OB_FAIL(entry.set_tenant_servers(pts))) {
-        LOG_WARN("fail to set tenant servers", KPC(pts), K(ret));
+        LOG_WDIAG("fail to set tenant servers", KPC(pts), K(ret));
       } else {
         //must set it NULL as we had move pointer's value
         pts = NULL;
@@ -491,12 +492,12 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
     if (!server_list.empty() || use_fake_addrs) {
       if (OB_ISNULL(ppl = op_alloc(ObProxyPartitionLocation))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to allocate memory for ObProxyPartitionLocation", K(ret));
+        LOG_WDIAG("fail to allocate memory for ObProxyPartitionLocation", K(ret));
       } else if (OB_FAIL(ppl->set_replicas(server_list))) {
-        LOG_WARN("fail to set replicas", K(server_list), K(ret));
+        LOG_WDIAG("fail to set replicas", K(server_list), K(ret));
       } else if (!server_list.empty() && OB_UNLIKELY(!ppl->is_valid())) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("ppl should not unavailable", KPC(ppl), K(ret));
+        LOG_WDIAG("ppl should not unavailable", KPC(ppl), K(ret));
       } else {
         const bool is_empty_entry_allowed = (use_fake_addrs && server_list.empty());
         entry.set_allow_empty_entry(is_empty_entry_allowed);
@@ -510,7 +511,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
         }
         if (entry.is_non_partition_table() && ppl->is_valid()) {
           if (OB_FAIL(entry.set_first_partition_location(ppl))) {
-            LOG_WARN("fail to set first partition location", K(ret));
+            LOG_WDIAG("fail to set first partition location", K(ret));
           } else {
             ppl = NULL; // set to NULL, if succ
           }
@@ -553,12 +554,12 @@ int ObRouteUtils::split_part_expr(ObString expr, ObIArray<ObString> &arr)
       tmp.assign_ptr(tmp.ptr(), tmp.length() - 1);
     }
     if (OB_FAIL(arr.push_back(tmp))) {
-      LOG_WARN("fail to push back", K(tmp), K(ret));
+      LOG_WDIAG("fail to push back", K(tmp), K(ret));
     } else {
       LOG_DEBUG("succ to push back", K(tmp));
     }
   }
-  return ret; 
+  return ret;
 }
 
 
@@ -578,7 +579,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
   for (int64_t i = 0; i < part_key_num && OB_SUCC(ret); ++i) {
     // get first row
     if (OB_FAIL(rs_fetcher.next())) {
-      LOG_WARN("fail to fetch part info", K(ret));
+      LOG_WDIAG("fail to fetch part info", K(ret));
     } else {
       // get basic info ONLY for the first line
       if (0 == i) {
@@ -586,7 +587,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "template_num", template_num, int64_t);
         if (template_num != 0 && template_num != 1) {
           ret = OB_INVALID_ARGUMENT_FOR_EXTRACT;
-          LOG_WARN("part level is invalid", K(template_num), K(ret));
+          LOG_WDIAG("part level is invalid", K(template_num), K(ret));
         } else {
           part_info.set_template_table(1 == template_num);
         }
@@ -595,7 +596,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_level", part_level, ObPartitionLevel);
         if (part_level < PARTITION_LEVEL_ONE || part_level > PARTITION_LEVEL_TWO) {
           ret = OB_INVALID_ARGUMENT_FOR_EXTRACT;
-          LOG_WARN("part level is invalid", K(part_level), K(ret));
+          LOG_WDIAG("part level is invalid", K(part_level), K(ret));
         } else {
           part_info.set_part_level(part_level);
         }
@@ -613,7 +614,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
           LOG_DEBUG("part expression is empty");
         } else if (OB_ISNULL(buf = static_cast<char *>(part_info.get_allocator().alloc(part_expr.length())))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to allc part key name", K(buf), K(part_expr.length()), K(ret));
+          LOG_WDIAG("fail to allc part key name", K(buf), K(part_expr.length()), K(ret));
         } else {
           memcpy(buf, part_expr.ptr(), part_expr.length());
           part_expr.assign_ptr(buf, part_expr.length());
@@ -625,7 +626,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
           LOG_DEBUG("sub part expression is empty");
         } else if (OB_ISNULL(buf = static_cast<char *>(part_info.get_allocator().alloc(sub_part_expr.length())))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to allc part key name", K(buf), K(sub_part_expr.length()), K(ret));
+          LOG_WDIAG("fail to allc part key name", K(buf), K(sub_part_expr.length()), K(ret));
         } else {
           memcpy(buf, sub_part_expr.ptr(), sub_part_expr.length());
           sub_part_expr.assign_ptr(buf, sub_part_expr.length());
@@ -633,14 +634,18 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         // split part expression
         if (part_info.get_part_level() >= PARTITION_LEVEL_ONE
             && OB_FAIL(split_part_expr(part_expr, part_info.get_part_columns()))) {
-          LOG_WARN("fail to split part expr", K(ret));
+          LOG_WDIAG("fail to split part expr", K(ret));
         } else if (part_info.get_part_level() == PARTITION_LEVEL_TWO
-                   && OB_FAIL(split_part_expr(sub_part_expr, part_info.get_sub_part_columns())) ) {  
-          LOG_WARN("fail to split sub part expr", K(ret));
+                   && OB_FAIL(split_part_expr(sub_part_expr, part_info.get_sub_part_columns())) ) {
+          LOG_WDIAG("fail to split sub part expr", K(ret));
         }
 
         if (OB_FAIL(fetch_part_option(rs_fetcher, part_info))) {
-          LOG_WARN("fail to get part option", K(ret));
+          LOG_WDIAG("fail to get part option", K(ret));
+        } else {
+          if (part_expr.empty()) {
+            part_info.set_primary_key_as_part_expr(true);
+          }
         }
       } else {
         // do nothing here
@@ -649,13 +654,13 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
       // get part key info for EACH line
       if (OB_SUCC(ret)) {
         if (OB_FAIL(fetch_part_key(rs_fetcher, part_info, cluster_version))) {
-          LOG_WARN("fail to get part key", K(ret));
+          LOG_WDIAG("fail to get part key", K(ret));
         }
       } // end of if (OB_SUCC(ret))
     } // end of else
   } // end of for
   if (OB_SUCC(ret)) {
-    // handle generated key,  map the key for generated key calculation to real key 
+    // handle generated key,  map the key for generated key calculation to real key
     for (int64_t i = 0; i < part_info.get_part_key_info().key_num_; ++i) {
       if (part_info.get_part_key_info().part_keys_[i].generated_col_idx_ >= 0) {
         for (int64_t j = 0; j < part_info.get_part_key_info().key_num_; ++j) {
@@ -685,14 +690,15 @@ void ObRouteUtils::set_part_key_accuracy(ObProxyPartKey *part_key, ObObjType par
   if (ob_is_otimestamp_type(part_key_type)) {
     if (scale < MIN_SCALE_FOR_TEMPORAL || scale > MAX_SCALE_FOR_ORACLE_TEMPORAL) {
       part_key->accuracy_.scale_ = DEFAULT_SCALE_FOR_ORACLE_TIMESTAMP;
-      LOG_WARN("invalid scale for timestamp in oracle, set to default:6", K(scale));
+      LOG_WDIAG("invalid scale for timestamp in oracle, set to default:6", K(scale));
     } else {
       part_key->accuracy_.scale_ = static_cast<int16_t>(scale); // timestamp only need scale
       LOG_DEBUG("succ to set timestamp scale of accuracy", K(scale));
     }
   } else if (ob_is_number_tc(part_key_type)
       || ob_is_datetime_tc(part_key_type)
-      || ob_is_time_tc(part_key_type)) {
+      || ob_is_time_tc(part_key_type)
+      || ob_is_decimal_int_type(part_key_type)) {
     part_key->accuracy_.precision_ = precision;
     part_key->accuracy_.scale_ = scale;
     part_key->accuracy_.valid_ = 1;
@@ -731,7 +737,7 @@ void ObRouteUtils::parse_part_key_accuracy(ObProxyPartKey *part_key,
     char *buf = NULL;
     if (OB_ISNULL(buf = static_cast<char *>(allocator->alloc(part_key_accuracy.length() + 1)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc buf", K(ret), K(part_key_accuracy.length()));
+      LOG_WDIAG("fail to alloc buf", K(ret), K(part_key_accuracy.length()));
     } else {
       memcpy(buf, part_key_accuracy.ptr(), part_key_accuracy.length());
       buf[part_key_accuracy.length()] = '\0';
@@ -747,14 +753,14 @@ void ObRouteUtils::parse_part_key_accuracy(ObProxyPartKey *part_key,
       int i;
       for (i = 0; OB_SUCC(ret) && token != NULL && i < 3; ++i) {
         if (OB_FAIL(get_int_value(ObString::make_string(token), nums[i]))) {
-          LOG_WARN("fail to get int value from each token", K(ret), K(token));
+          LOG_WDIAG("fail to get int value from each token", K(ret), K(token));
         }
         token = strtok_r(NULL, delim, &saveptr);
       }
 
       // succ to parse the triple
       if (i != 3 || OB_FAIL(ret)) {
-        LOG_WARN("invalid token or get failed from rs observer", K(i), K(ret));
+        LOG_WDIAG("invalid token or get failed from rs observer", K(i), K(ret));
       } else {
         int32_t length = static_cast<int32_t>(nums[0]);
         int16_t precision = static_cast<int16_t>(nums[1]);
@@ -780,7 +786,7 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
 
   // only process OBPROXY_MAX_PART_KEY_NUM part key
   if (OBPROXY_MAX_PART_KEY_NUM <= part_info.get_part_key_info().key_num_) {
-    LOG_WARN("proxy does not support to fetch more part key", K(OBPROXY_MAX_PART_KEY_NUM));
+    LOG_WDIAG("proxy does not support to fetch more part key", K(OBPROXY_MAX_PART_KEY_NUM));
   } else {
     ObProxyPartKeyInfo &part_key_info = part_info.get_part_key_info();
     ObIAllocator &allocator = part_info.get_allocator();
@@ -827,8 +833,23 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
       PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_precision", part_key_precision, int64_t);
       PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_scale", part_key_scale, int64_t);
     }
+    // primary key as part key expr only for first part in mysql mode
+    if (OB_SUCC(ret)) {
+      if (part_info.is_primary_key_as_part_expr() && PARTITION_LEVEL_ONE == part_key_level) {
+        char *buf = NULL;
+        if (OB_ISNULL(buf = static_cast<char *>(part_info.get_allocator().alloc(part_key_name.length())))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WDIAG("fail to alloc part key name for primary key expr", K(buf), "size", part_key_name.length(), K(ret));
+        } else if (FALSE_IT(MEMCPY(buf, part_key_name.ptr(), part_key_name.length()))) {
+        } else if (OB_FAIL(part_info.get_part_columns().push_back(ObString(part_key_name.length(), buf)))) {
+          LOG_WDIAG("fail to push back primary key columns", K(part_key_name), K(ret));
+        } else {
+          LOG_DEBUG("succ to push back primary key columns", K(part_key_name));
+        }
+      }
+    }
 
-    if (OB_SUCC(ret)){
+    if (OB_SUCC(ret)) {
       PROXY_EXTRACT_STRBUF_FIELD_MYSQL_UNLIMIT_LENGTH(rs_fetcher, "part_key_default_value", part_key_default_value, default_val_len, allocator);
       if (OB_ERR_COLUMN_NOT_FOUND == ret) {
         LOG_DEBUG("part key default value not exist, continue", K(ret));
@@ -853,13 +874,13 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
       part_key->level_ = PART_KEY_LEVEL_TWO;
     } else {
       ret = OB_INVALID_ARGUMENT_FOR_EXTRACT;
-      LOG_WARN("part key level is invalid", K(part_key_level), K(ret));
+      LOG_WDIAG("part key level is invalid", K(part_key_level), K(ret));
     }
 
     char *buf = NULL;
     if (OB_ISNULL(buf = static_cast<char *>(allocator.alloc(part_key_name.length())))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allc part key name", K(buf), K(part_key_name.length()), K(ret));
+      LOG_WDIAG("fail to allc part key name", K(buf), K(part_key_name.length()), K(ret));
     } else {
       memcpy(buf, part_key_name.ptr(), part_key_name.length());
     }
@@ -906,18 +927,18 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
         int64_t generated_key_idx = part_key_info.key_num_;
         ++part_key_info.key_num_;
         if (OB_FAIL(add_generated_part_key(part_key_extra, generated_key_idx, part_info))) {
-          LOG_WARN("fail to add generated key", K(part_key_extra), K(ret));
+          LOG_WDIAG("fail to add generated key", K(part_key_extra), K(ret));
         }
         const char *sep_pos = NULL;
         ObString tmp_str;
         while (NULL != (sep_pos = (constraint_part_key.find(PART_KEY_EXTRA_SEPARATOR)))) {
           tmp_str = constraint_part_key.split_on(sep_pos);
           if (OB_FAIL(add_generated_part_key(tmp_str, generated_key_idx, part_info))) {
-            LOG_WARN("fail to add generated key", K(tmp_str), K(ret));
+            LOG_WDIAG("fail to add generated key", K(tmp_str), K(ret));
           }
         }
         if (OB_FAIL(add_generated_part_key(constraint_part_key, generated_key_idx, part_info))) {
-          LOG_WARN("fail to add generated key", K(constraint_part_key), K(ret));
+          LOG_WDIAG("fail to add generated key", K(constraint_part_key), K(ret));
         }
       } else {
         part_key->is_generated_ = false;
@@ -941,25 +962,36 @@ int ObRouteUtils::add_generated_part_key(const ObString &part_key_extra,
     ObFuncExprParseResult result;
     ObFuncExprParser parser(allocator, GENERATE_FUNC_PARSE_MODE);
     ObFuncExprNode *func_expr_node = NULL;
+    ObString func_name;
+    ObProxyExprType type = OB_PROXY_EXPR_TYPE_NONE;
     ObProxyParamNodeList *child = NULL;
     if (OB_UNLIKELY(part_key_info.key_num_ >= OBPROXY_MAX_PART_KEY_NUM)) {
       LOG_INFO("part key num is larger than OBPROXY_MAX_PART_KEY_NUM, we do not support",
                K_(part_key_info.key_num), K(OBPROXY_MAX_PART_KEY_NUM));
     } else if (OB_FAIL(parser.parse(part_key_extra, result))) {
-      LOG_WARN("fail to parse generated function expr", K(ret), K(part_key_extra));
+      LOG_WDIAG("fail to parse generated function expr", K(ret), K(part_key_extra));
     } else if (OB_ISNULL(result.param_node_)
                || PARAM_FUNC != result.param_node_->type_
                || OB_ISNULL(func_expr_node = result.param_node_->func_expr_node_)
                || OB_ISNULL(child = func_expr_node->child_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("generated function must be a func", "param node", reinterpret_cast<const void*>(result.param_node_),
+      LOG_WDIAG("generated function must be a func", "param node", reinterpret_cast<const void*>(result.param_node_),
                "type", result.param_node_->type_, KP(func_expr_node), KP(child), K(ret));
     } else if (OB_UNLIKELY(child->child_num_ > OBPROXY_MAX_PARAM_NUM)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("generated function param num is unexpectedlly larger than 3",
+      LOG_WDIAG("generated function param num is unexpectedlly larger than 3",
                "child num", child->child_num_, K(OBPROXY_MAX_PARAM_NUM), K(ret));
+    } else if (OB_ISNULL(func_expr_node->func_name_.str_) || func_expr_node->func_name_.str_len_ <= 0) {
+      LOG_WDIAG("empty generated function name");
+      ret = OB_INVALID_ARGUMENT;
+    } else if (FALSE_IT(func_name = ObString(func_expr_node->func_name_.str_len_, func_expr_node->func_name_.str_))) {
+    } else if (OB_FAIL(ObProxyExprFactory::get_type_by_name(func_name, type))) {
+      LOG_WDIAG("fail to get func type by name", K(func_name), K(type), K(ret));
+    } else if (type == OB_PROXY_EXPR_TYPE_NONE) {
+      LOG_DEBUG("unsupported function", K(func_name));
+      ret = OB_ERR_FUNCTION_UNKNOWN;
     } else {
-      part_key_info.part_keys_[part_key_info.key_num_].func_type_ = func_expr_node->func_type_;
+      part_key_info.part_keys_[part_key_info.key_num_].func_type_ = type;
       part_key_info.part_keys_[part_key_info.key_num_].param_num_ = child->child_num_;
       part_key_info.part_keys_[part_key_info.key_num_].generated_col_idx_ = generated_key_idx;
       memset(part_key_info.part_keys_[part_key_info.key_num_].params_, 0, OBPROXY_MAX_PARAM_NUM);
@@ -967,7 +999,7 @@ int ObRouteUtils::add_generated_part_key(const ObString &part_key_extra,
       for (int64_t i = 0; i < child->child_num_ && OB_SUCC(ret); ++i) {
         if (OB_ISNULL(child_param_node)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("generated function param is null", K(ret));
+          LOG_WDIAG("generated function param is null", K(ret));
         } else {
           part_key_info.part_keys_[part_key_info.key_num_].params_[i] = child_param_node;
           if (PARAM_COLUMN == child_param_node->type_) {
@@ -1000,7 +1032,7 @@ inline int ObRouteUtils::fetch_part_option(ObResultSetFetcher &rs_fetcher,
   //"all_part_num" in __all_virtual_proxy_partition_info
   PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "all_part_num", all_sub_part_num, int64_t);
   part_info.get_part_mgr().set_all_sub_part_num(all_sub_part_num);
-  
+
   // get first part
   PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_num", first_part_opt.part_num_, int64_t);
   PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_type", first_part_opt.part_func_type_,
@@ -1029,7 +1061,7 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
                                                           part_info.get_part_key_info(),
                                                           rs_fetcher,
                                                           cluster_version))) {
-      LOG_WARN("fail to build range part", K(ret));
+      LOG_WDIAG("fail to build range part", K(ret));
     }
   } else if (part_info.get_first_part_option().is_list_part(cluster_version)) {
     if (OB_FAIL(part_info.get_part_mgr().build_list_part(share::schema::PARTITION_LEVEL_ONE,
@@ -1040,7 +1072,7 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
                                                          part_info.get_part_key_info(),
                                                          rs_fetcher,
                                                          cluster_version))) {
-      LOG_WARN("fail to build list part", K(ret));
+      LOG_WDIAG("fail to build list part", K(ret));
     }
   } else if (part_info.get_first_part_option().is_hash_part(cluster_version)) {
     if (OB_FAIL(part_info.get_part_mgr().build_hash_part(part_info.is_oracle_mode(),
@@ -1053,7 +1085,7 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
                                                          part_info.get_part_key_info(),
                                                          &rs_fetcher,
                                                          cluster_version))) {
-      LOG_WARN("fail to build hash part", K(ret));
+      LOG_WDIAG("fail to build hash part", K(ret));
     }
   } else if (part_info.get_first_part_option().is_key_part(cluster_version)) {
     if (OB_FAIL(part_info.get_part_mgr().build_key_part(share::schema::PARTITION_LEVEL_ONE,
@@ -1065,11 +1097,11 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
                                                         part_info.get_part_key_info(),
                                                         &rs_fetcher,
                                                         cluster_version))) {
-      LOG_WARN("fail to build key part", K(ret));
+      LOG_WDIAG("fail to build key part", K(ret));
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("not support part type", "part_type", part_info.get_first_part_option().part_func_type_,
+    LOG_WDIAG("not support part type", "part_type", part_info.get_first_part_option().part_func_type_,
              K(ret));
   }
   return ret;
@@ -1088,7 +1120,7 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                             part_info.get_part_key_info(),
                                                             rs_fetcher,
                                                             cluster_version))) {
-        LOG_WARN("fail to build range part", K(ret));
+        LOG_WDIAG("fail to build range part", K(ret));
       }
     } else {
       if (OB_FAIL(part_info.get_part_mgr().build_sub_range_part_with_non_template(part_info.get_sub_part_option().part_func_type_,
@@ -1096,7 +1128,7 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                                                   part_info.get_part_key_info(),
                                                                                   rs_fetcher,
                                                                                   cluster_version))) {
-        LOG_WARN("fail to build range part", K(ret));
+        LOG_WDIAG("fail to build range part", K(ret));
       }
     }
   } else if (part_info.get_sub_part_option().is_list_part(cluster_version)) {
@@ -1109,7 +1141,7 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                            part_info.get_part_key_info(),
                                                            rs_fetcher,
                                                            cluster_version))) {
-        LOG_WARN("fail to build list part", K(ret));
+        LOG_WDIAG("fail to build list part", K(ret));
       }
     } else {
       if (OB_FAIL(part_info.get_part_mgr().build_sub_list_part_with_non_template(part_info.get_sub_part_option().part_func_type_,
@@ -1117,7 +1149,7 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                                                  part_info.get_part_key_info(),
                                                                                  rs_fetcher,
                                                                                  cluster_version))) {
-        LOG_WARN("fail to build range part", K(ret));
+        LOG_WDIAG("fail to build range part", K(ret));
       }
     }
   } else if (part_info.get_sub_part_option().is_hash_part(cluster_version)) {
@@ -1132,7 +1164,7 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                            part_info.get_part_key_info(),
                                                            &rs_fetcher,
                                                            cluster_version))) {
-        LOG_WARN("fail to build hash part", K(ret));
+        LOG_WDIAG("fail to build hash part", K(ret));
       }
     } else {
       if (OB_FAIL(part_info.get_part_mgr().build_sub_hash_part_with_non_template(part_info.is_oracle_mode(),
@@ -1142,7 +1174,7 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                                                  part_info.get_part_key_info(),
                                                                                  rs_fetcher,
                                                                                  cluster_version))) {
-        LOG_WARN("fail to build range part", K(ret));
+        LOG_WDIAG("fail to build range part", K(ret));
       }
     }
   } else if (part_info.get_sub_part_option().is_key_part(cluster_version)) {
@@ -1156,7 +1188,7 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                           part_info.get_part_key_info(),
                                                           &rs_fetcher,
                                                           cluster_version))) {
-        LOG_WARN("fail to build key part", K(ret));
+        LOG_WDIAG("fail to build key part", K(ret));
       }
     } else {
       if (OB_FAIL(part_info.get_part_mgr().build_sub_key_part_with_non_template(part_info.get_sub_part_option().part_func_type_,
@@ -1165,12 +1197,12 @@ int ObRouteUtils::fetch_sub_part(ObResultSetFetcher &rs_fetcher, ObProxyPartInfo
                                                                                 part_info.get_part_key_info(),
                                                                                 rs_fetcher,
                                                                                 cluster_version))) {
-        LOG_WARN("fail to build range part", K(ret));
+        LOG_WDIAG("fail to build range part", K(ret));
       }
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("not support part type", "part_type", part_info.get_sub_part_option().part_func_type_,
+    LOG_WDIAG("not support part type", "part_type", part_info.get_sub_part_option().part_func_type_,
              K(ret));
   }
   return ret;
@@ -1187,7 +1219,7 @@ int ObRouteUtils::build_sys_dummy_entry(
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(rs_list.empty())
       || OB_UNLIKELY(cluster_id < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(cluster_name), K(cluster_id), K(rs_list), K(ret));
+    LOG_WDIAG("invalid input value", K(cluster_name), K(cluster_id), K(rs_list), K(ret));
   } else {
     ObString tenant_name(OB_SYS_TENANT_NAME);
     ObString database_name(OB_SYS_DATABASE_NAME);
@@ -1202,17 +1234,17 @@ int ObRouteUtils::build_sys_dummy_entry(
     const int64_t belonged_cr_version = 0;
 
     if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(name, belonged_cr_version, cluster_id, entry))) {
-      LOG_WARN("fail to alloc and init table entry", K(name), K(cluster_id), K(ret));
+      LOG_WDIAG("fail to alloc and init table entry", K(name), K(cluster_id), K(ret));
     } else if (OB_ISNULL(tenant_servers = op_alloc(ObTenantServer))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate memory for ObProxyTenantServers", K(ret));
+      LOG_WDIAG("fail to allocate memory for ObProxyTenantServers", K(ret));
     } else if (OB_FAIL(tenant_servers->init(rs_list))) {
-      LOG_WARN("fail to init tenant servers", K(rs_list), K(ret));
+      LOG_WDIAG("fail to init tenant servers", K(rs_list), K(ret));
     } else if (OB_UNLIKELY(!tenant_servers->is_valid())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("tenant_server should not unavailable", KPC(tenant_servers), K(ret));
+      LOG_WDIAG("tenant_server should not unavailable", KPC(tenant_servers), K(ret));
     } else if (OB_FAIL(entry->set_tenant_servers(tenant_servers))) {
-      LOG_WARN("fail to set tenant servers", K(tenant_servers), K(ret));
+      LOG_WDIAG("fail to set tenant servers", K(tenant_servers), K(ret));
     } else {
       if (is_rslist) {
         entry->set_entry_from_rslist();
@@ -1248,16 +1280,16 @@ int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_
   ObTableEntry *entry = NULL;
   ObTableCache &table_cache = get_global_table_cache();
   if (OB_FAIL(build_sys_dummy_entry(cluster_name, cluster_id, locaiton_list, is_rslist, entry))) {
-    LOG_WARN("fail to build sys dummy entry", K(cluster_name), K(cluster_id), K(locaiton_list), K(ret));
+    LOG_WDIAG("fail to build sys dummy entry", K(cluster_name), K(cluster_id), K(locaiton_list), K(ret));
   } else if (OB_ISNULL(entry) || OB_UNLIKELY(!entry->is_valid())) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("entry can not be NULL here", KPC(entry), K(ret));
+    LOG_WDIAG("entry can not be NULL here", KPC(entry), K(ret));
   } else {
     entry->inc_ref();
     ObTableEntry *tmp_entry = entry;
     bool direct_add = (NULL == this_ethread()) ? true : false;
     if (OB_FAIL(table_cache.add_table_entry(*tmp_entry, direct_add))) {
-      LOG_WARN("fail to add table entry", KPC(tmp_entry), K(ret));
+      LOG_WDIAG("fail to add table entry", KPC(tmp_entry), K(ret));
     } else {
       LOG_INFO("update sys tenant __all_dummy succ", K(cluster_name), KPC(tmp_entry));
     }
@@ -1282,13 +1314,13 @@ int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(cluster_name.empty() || addr_list.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input vlue", K(addr_list), K(cluster_name), K(ret));
+    LOG_WDIAG("invalid input vlue", K(addr_list), K(cluster_name), K(ret));
   } else {
     LocationList location_list;
     if (OB_FAIL(convert_addrs_to_locations(addr_list, location_list))) {
-      LOG_WARN("fail to convert_addrs_to_locations", K(ret));
+      LOG_WDIAG("fail to convert_addrs_to_locations", K(ret));
     } else if (OB_FAIL(build_and_add_sys_dummy_entry(cluster_name, cluster_id, location_list, is_rslist))) {
-      LOG_WARN("fail to build_and_add_sys_dummy_entry", K(cluster_name), K(cluster_id), K(location_list), K(ret));
+      LOG_WDIAG("fail to build_and_add_sys_dummy_entry", K(cluster_name), K(cluster_id), K(location_list), K(ret));
     }
   }
 
@@ -1302,7 +1334,7 @@ int ObRouteUtils::convert_addrs_to_locations(const ObIArray<ObAddr> &addr_list,
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(addr_list.empty())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input vlue", K(addr_list), K(ret));
+    LOG_WDIAG("invalid input vlue", K(addr_list), K(ret));
   } else {
     ObProxyReplicaLocation prl;
     for (int64_t i = 0; (i < addr_list.count()) && OB_SUCC(ret); ++i) {
@@ -1310,7 +1342,7 @@ int ObRouteUtils::convert_addrs_to_locations(const ObIArray<ObAddr> &addr_list,
       prl.server_ = addr_list.at(i);
       prl.role_ = FOLLOWER;
       if (OB_FAIL(location_list.push_back(prl))) {
-        LOG_WARN("fail to push back replica location", K(prl), K(ret));
+        LOG_WDIAG("fail to push back replica location", K(prl), K(ret));
       }
     }
   }
@@ -1325,7 +1357,7 @@ int ObRouteUtils::convert_route_param_to_table_param(
   int ret = OB_SUCCESS;
   if (!route_param.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid route param", K(route_param), K(ret));
+    LOG_WDIAG("invalid route param", K(route_param), K(ret));
   } else {
     table_param.name_.shallow_copy(route_param.name_);
     table_param.current_idc_name_ = route_param.current_idc_name_;//shallow copy
@@ -1338,6 +1370,8 @@ int ObRouteUtils::convert_route_param_to_table_param(
     table_param.is_partition_table_route_supported_ = route_param.is_partition_table_route_supported_;
     table_param.is_oracle_mode_ = route_param.is_oracle_mode_;
     table_param.is_need_force_flush_ = route_param.is_need_force_flush_;
+    table_param.set_route_diagnosis(route_param.route_diagnosis_);
+    table_param.binlog_service_ip_ = route_param.binlog_service_ip_;
   }
 
   return ret;
@@ -1350,7 +1384,7 @@ int ObRouteUtils::convert_route_param_to_routine_param(
   int ret = OB_SUCCESS;
   if (!route_param.is_valid()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid route param", K(route_param), K(ret));
+    LOG_WDIAG("invalid route param", K(route_param), K(ret));
   } else {
     routine_param.name_.shallow_copy(route_param.name_);
     routine_param.current_idc_name_ = route_param.current_idc_name_;//shallow copy
@@ -1373,7 +1407,7 @@ int ObRouteUtils::get_partition_entry_sql(char *sql_buf, const int64_t buf_len,
   if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)
       || OB_UNLIKELY(!name.is_valid()) || common::OB_INVALID_ID == partition_id) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len),
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len),
              K(name), K(partition_id), K(ret));
   } else {
     int64_t len = 0;
@@ -1391,7 +1425,7 @@ int ObRouteUtils::get_partition_entry_sql(char *sql_buf, const int64_t buf_len,
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
 
@@ -1476,11 +1510,11 @@ int ObRouteUtils::fetch_one_partition_entry_info(
       prl.reset();
       prl.role_ = static_cast<ObRole>(role);
       if (OB_FAIL(prl.add_addr(ip_str, port))) {
-        LOG_WARN("invalid ip, port in fetching table entry, just skip it,"
+        LOG_WDIAG("invalid ip, port in fetching table entry, just skip it,"
                  " do not return err", K(ip_str), K(port), K(ret));
         ret = OB_SUCCESS;
       } else if (OB_UNLIKELY(LEADER != prl.role_) && OB_UNLIKELY(FOLLOWER != prl.role_)) {
-        LOG_WARN("invalid role in fetching table entry, just skip it,"
+        LOG_WDIAG("invalid role in fetching table entry, just skip it,"
                  " do not return err", "role", prl.role_);
         ret = OB_SUCCESS;
       } else if (OB_FAIL(prl.set_replica_type(replica_type))) {
@@ -1490,7 +1524,7 @@ int ObRouteUtils::fetch_one_partition_entry_info(
       } else if (FALSE_IT(prl.set_dup_replica_type(dup_replica_type))) {
         // can not happen
       } else if (OB_FAIL(replicas.push_back(prl))) {
-        LOG_WARN("fail to add replica location", K(replicas), K(prl), K(ret));
+        LOG_WDIAG("fail to add replica location", K(replicas), K(prl), K(ret));
       } else {
         if (prl.is_dup_replica() && !has_dup_replica) {
           has_dup_replica = true;
@@ -1517,14 +1551,14 @@ int ObRouteUtils::fetch_one_partition_entry_info(
     } else if (table_entry.get_schema_version() > 0
                && schema_version > 0
                && table_entry.get_schema_version() != schema_version) {
-      LOG_WARN("schema version has changed, the table entry is expired",
+      LOG_WDIAG("schema version has changed, the table entry is expired",
                K(table_entry), K(schema_version));
       if (table_entry.cas_compare_and_swap_state(ObTableEntry::AVAIL, ObTableEntry::DIRTY)) {
         LOG_INFO("mark this table entry dirty succ", K(table_entry));
       }
     } else if (OB_FAIL(ObPartitionEntry::alloc_and_init_partition_entry(table_id, partition_id,
             table_entry.get_cr_version(), table_entry.get_cr_id(), replicas, part_entry))) {
-      LOG_WARN("fail to alloc and init partition entry", K(ret));
+      LOG_WDIAG("fail to alloc and init partition entry", K(ret));
     } else {
       part_entry->set_schema_version(schema_version); // do not forget
       if (has_dup_replica) {
@@ -1547,7 +1581,7 @@ int ObRouteUtils::get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
       || OB_UNLIKELY(buf_len <= 0)
       || OB_UNLIKELY(!name.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", LITERAL_K(sql_buf), K(buf_len),
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len),
              K(name), K(ret));
   } else {
     int64_t len = 0;
@@ -1582,7 +1616,7 @@ int ObRouteUtils::get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
     }
   }
 
@@ -1626,7 +1660,7 @@ int ObRouteUtils::fetch_one_routine_entry_info(
   if (OB_SUCC(ret) && common::OB_INVALID_ID != routine_id) {
     if (OB_FAIL(ObRoutineEntry::alloc_and_init_routine_entry(name, cr_version, cr_id,
         route_sql, tmp_entry))) {
-      LOG_WARN("fail to alloc and init partition entry", K(ret));
+      LOG_WDIAG("fail to alloc and init partition entry", K(ret));
     } else {
       tmp_entry->set_is_package_database(name.package_name_ == database_name);
       tmp_entry->set_schema_version(schema_version);
@@ -1667,9 +1701,9 @@ int ObRouteUtils::fetch_binlog_entry(ObResultSetFetcher &rs_fetcher,
 
     if (OB_SUCC(ret) && binlog_service_ok) {
       if (OB_FAIL(prl.add_addr(ip, port))) {
-        LOG_WARN("invalid ip or port in fetching binlog entry", K(ret));
+        LOG_WDIAG("invalid ip or port in fetching binlog entry", K(ret));
       } else if (server_list.push_back(prl)) {
-        LOG_WARN("fail to add server", K(prl), K(ret));
+        LOG_WDIAG("fail to add server", K(prl), K(ret));
       }
     }
   }
@@ -1681,16 +1715,16 @@ int ObRouteUtils::fetch_binlog_entry(ObResultSetFetcher &rs_fetcher,
   if (OB_SUCC(ret) && !server_list.empty()) {
     if (OB_ISNULL(ppl = op_alloc(ObProxyPartitionLocation))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to allocate memory for ObProxyPartitionLocation", K(ret));
+      LOG_WDIAG("fail to allocate memory for ObProxyPartitionLocation", K(ret));
     } else if (OB_FAIL(ppl->set_replicas(server_list))) {
-      LOG_WARN("fail to set replicas", K(server_list), K(ret));
+      LOG_WDIAG("fail to set replicas", K(server_list), K(ret));
     } else if (!server_list.empty() && OB_UNLIKELY(!ppl->is_valid())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("ppl should not unavailabe", KPC(ppl), K(ret));
+      LOG_WDIAG("ppl should not unavailabe", KPC(ppl), K(ret));
     } else {
       if (ppl->is_valid()) {
         if (OB_FAIL(entry.set_first_partition_location(ppl))) {
-          LOG_WARN("fail to set first partition location", K(ret));
+          LOG_WDIAG("fail to set first partition location", K(ret));
         } else {
           ppl = NULL;
         }

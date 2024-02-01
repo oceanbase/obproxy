@@ -111,7 +111,7 @@ inline int ObExprParser::parse(const common::ObString &sql_string,
   int ret = common::OB_SUCCESS;
   if (common::OB_SUCCESS != init_result(parse_result, sql_string.ptr())) {
     ret = common::OB_ERR_PARSER_INIT;
-    PROXY_LOG(WARN, "failed to initialized parser", KERRMSGS, K(ret));
+    PROXY_LOG(WDIAG, "failed to initialized parser", KERRMSGS, K(ret));
   } else {
     switch (connection_collation) {
       //case 28/*CS_TYPE_GBK_CHINESE_CI*/:
@@ -130,7 +130,7 @@ inline int ObExprParser::parse(const common::ObString &sql_string,
                                                         sql_string.ptr(),
                                                         static_cast<size_t>(sql_string.length()))) {
           ret = common::OB_ERR_PARSE_SQL;
-          PROXY_LOG(WARN, "failed to parser gbk sql", KERRMSGS, K(connection_collation), K(ret));
+          PROXY_LOG(WDIAG, "failed to parser gbk sql", KERRMSGS, K(connection_collation), K(ret));
         }
         break;
       case 45/*CS_TYPE_UTF8MB4_GENERAL_CI*/:
@@ -140,7 +140,7 @@ inline int ObExprParser::parse(const common::ObString &sql_string,
                                                          sql_string.ptr(),
                                                          static_cast<size_t>(sql_string.length()))) {
           ret = common::OB_ERR_PARSE_SQL;
-          PROXY_LOG(WARN, "failed to parser utf8 sql", KERRMSGS, K(connection_collation), K(ret));
+          PROXY_LOG(WDIAG, "failed to parser utf8 sql", KERRMSGS, K(connection_collation), K(ret));
         }
         break;
     }
@@ -188,7 +188,7 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
       replace_sql_len = expr_sql.length();
       if (OB_ISNULL(replace_sql_str = static_cast<char *>(op_fixed_mem_alloc(replace_sql_len)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_LOG(WARN, "fail to alloc mem", "alloc_size", replace_sql_len, K(ret));
+        PROXY_LOG(WDIAG, "fail to alloc mem", "alloc_size", replace_sql_len, K(ret));
       } else {
         // PREPARE ps_stmt FROM 'select * from test9 where ID = \\'001\\''; remove escape symbols
         for (i = 0; i < expr_sql.length() - 1; ++i) {
@@ -207,7 +207,7 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
           }
           index -= 1;
         }
-        PROXY_LOG(DEBUG, "parse length", K(index), K(replace_sql_len), K(replace_sql_str)); 
+        PROXY_LOG(DEBUG, "parse length", K(index), K(replace_sql_len), K(replace_sql_str));
         expr_sql.assign_ptr(replace_sql_str, index);
       }
     }

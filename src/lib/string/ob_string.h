@@ -90,7 +90,7 @@ public:
     int ret = OB_SUCCESS;
     if (len > buf.get_remain()) {
       ret = OB_BUF_NOT_ENOUGH;
-      LIB_LOG(WARN, "buffer not enough", K(ret), K(len), "remain", buf.get_remain());
+      LIB_LOG(WDIAG, "buffer not enough", K(ret), K(len), "remain", buf.get_remain());
     } else {
       assign_buffer(buf.get_cur_pos(), static_cast<obstr_size_t>(len));
       if (len > 0) {
@@ -99,7 +99,7 @@ public:
           buf.get_position() += writed_length;
         } else {
           ret = OB_ERROR;
-          LIB_LOG(WARN, "write string failed", K(ret), K(writed_length), K(len));
+          LIB_LOG(WDIAG, "write string failed", K(ret), K(writed_length), K(len));
         }
       }
       if (OB_SUCC(ret) && add_separator) {
@@ -109,7 +109,7 @@ public:
           buf.get_position() ++;
         } else {
           ret = OB_BUF_NOT_ENOUGH;
-          LIB_LOG(WARN, "buffer not enough", K(ret), "remain", buf.get_remain());
+          LIB_LOG(WDIAG, "buffer not enough", K(ret), "remain", buf.get_remain());
         }
       }
     }
@@ -141,7 +141,7 @@ public:
     int ret = OB_SUCCESS;
     if (rv.length() > buf.get_remain()) {
       ret = OB_BUF_NOT_ENOUGH;
-      LIB_LOG(WARN, "buffer not enough", K(ret), "need", rv.length(), "remain", buf.get_remain());
+      LIB_LOG(WDIAG, "buffer not enough", K(ret), "need", rv.length(), "remain", buf.get_remain());
     } else {
       assign_buffer(buf.get_data() + buf.get_position(), static_cast<obstr_size_t>(buf.get_remain()));
       const obstr_size_t writed_length = write(rv.ptr(), rv.length());
@@ -149,7 +149,7 @@ public:
         buf.get_position() += writed_length;
       } else {
         ret = OB_ERROR;
-        LIB_LOG(WARN, "write string failed", K(ret), K(writed_length), "size", rv.length());
+        LIB_LOG(WDIAG, "write string failed", K(ret), K(writed_length), "size", rv.length());
       }
     }
     return ret;
@@ -636,10 +636,10 @@ DEFINE_SERIALIZE(ObString)
   //Null ObString is allowed
   if (OB_ISNULL(buf) || OB_UNLIKELY(serialize_size > buf_len - pos)) {
     ret = OB_SIZE_OVERFLOW;
-    LIB_LOG(WARN, "size overflow", K(ret),
+    LIB_LOG(WDIAG, "size overflow", K(ret),
         KP(buf), K(serialize_size), "remain", buf_len - pos);
   } else if (OB_FAIL(serialization::encode_vstr(buf, buf_len, pos, ptr_, data_length_))) {
-    LIB_LOG(WARN, "string serialize failed", K(ret));
+    LIB_LOG(WDIAG, "string serialize failed", K(ret));
   }
   return ret;
 }
@@ -651,24 +651,24 @@ DEFINE_DESERIALIZE(ObString)
   const int64_t MINIMAL_NEEDED_SIZE = 2; //at least need two bytes
   if (OB_ISNULL(buf) || OB_UNLIKELY((data_len - pos) < MINIMAL_NEEDED_SIZE)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid argument", K(ret), KP(buf), "remain", data_len - pos);
+    LIB_LOG(WDIAG, "invalid argument", K(ret), KP(buf), "remain", data_len - pos);
   } else {
     if (0 == buffer_size_) {
       ptr_ = const_cast<char *>(serialization::decode_vstr(buf, data_len, pos, &len));
       if (OB_ISNULL(ptr_)) {
         ret = OB_ERROR;
-        LIB_LOG(WARN, "decode NULL string", K(ret));
+        LIB_LOG(WDIAG, "decode NULL string", K(ret));
       }
     } else {
       //copy to ptr_
       const int64_t str_len = serialization::decoded_length_vstr(buf, data_len, pos);
       if (str_len < 0 || buffer_size_ < str_len || (data_len - pos) < str_len) {
         ret = OB_BUF_NOT_ENOUGH;
-        LIB_LOG(WARN, "string buffer not enough",
+        LIB_LOG(WDIAG, "string buffer not enough",
             K(ret), K_(buffer_size), K(str_len), "remain", data_len - pos);
       } else if (NULL == serialization::decode_vstr(buf, data_len, pos, ptr_, buffer_size_, &len)) {
         ret = OB_ERROR;
-        LIB_LOG(WARN, "decode string failed", K(ret));
+        LIB_LOG(WDIAG, "decode string failed", K(ret));
       }
     }
     if (OB_SUCC(ret)) {
@@ -699,7 +699,7 @@ int ob_write_string(AllocatorT &allocator, const ObString &src, ObString &dst)
     dst.assign(NULL, 0);
   } else if (NULL == (ptr = allocator.alloc(src_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LIB_LOG(WARN, "allocate memory failed", K(ret), "size", src_len);
+    LIB_LOG(WDIAG, "allocate memory failed", K(ret), "size", src_len);
   } else {
     MEMCPY(ptr, src.ptr(), src_len);
     dst.assign_ptr(reinterpret_cast<char *>(ptr), src_len);
@@ -720,7 +720,7 @@ int ob_simple_low_to_up(AllocatorT &allocator, const ObString &src, ObString &ds
     dst.assign(NULL, 0);
   } else if (NULL == (ptr = allocator.alloc(src_len))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LIB_LOG(WARN, "allocate memory failed", K(ret), "size", src_len);
+    LIB_LOG(WDIAG, "allocate memory failed", K(ret), "size", src_len);
   } else {
     dst_ptr = static_cast<char *>(ptr);
     for(ObString::obstr_size_t i = 0; i < src_len; ++i) {
@@ -748,10 +748,10 @@ int ob_sub_str(AllocatorT &allocator, const ObString &src, int32_t start_index, 
     dst.assign(NULL, 0);
   } else if(start_index < 0 || start_index >= src_len) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid argument", K(ret), K(start_index), K(src_len));
+    LIB_LOG(WDIAG, "invalid argument", K(ret), K(start_index), K(src_len));
   } else if (NULL == (ptr = allocator.alloc(src_len - start_index))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LIB_LOG(WARN, "allocate memory failed", K(ret), "size", src_len - start_index);
+    LIB_LOG(WDIAG, "allocate memory failed", K(ret), "size", src_len - start_index);
   } else{
     dst_ptr = static_cast<char *>(ptr);
     MEMCPY(dst_ptr, src.ptr() + start_index, src_len - start_index);
@@ -772,10 +772,10 @@ int ob_sub_str(AllocatorT &allocator, const ObString &src, int32_t start_index, 
     dst.assign(NULL, 0);
   } else if(start_index < 0 || end_index >= src_len || start_index > end_index) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid argument", K(ret), K(start_index), K(end_index), K(src_len));
+    LIB_LOG(WDIAG, "invalid argument", K(ret), K(start_index), K(end_index), K(src_len));
   } else if (NULL == (ptr = allocator.alloc(end_index - start_index + 1))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LIB_LOG(WARN, "allocate memory failed", K(ret), "size", end_index - start_index + 1);
+    LIB_LOG(WDIAG, "allocate memory failed", K(ret), "size", end_index - start_index + 1);
   } else{
     dst_ptr = static_cast<char *>(ptr);
     MEMCPY(dst_ptr, src.ptr() + start_index, end_index - start_index + 1);

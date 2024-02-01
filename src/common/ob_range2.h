@@ -91,7 +91,7 @@ public:
     int ret = OB_SUCCESS;
     if (OB_INVALID_ID == table_id || !rowkey.is_valid()) {
       ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(WARN, "invalid arguments.", K(table_id), K(rowkey), K(ret));
+      COMMON_LOG(WDIAG, "invalid arguments.", K(table_id), K(rowkey), K(ret));
     } else {
       table_id_ = table_id;
       start_key_ = rowkey;
@@ -107,26 +107,26 @@ public:
     int ret = OB_SUCCESS;
     if (columns_num < 0 || columns_num > OBPROXY_MAX_PART_LEVEL) {
       ret = OB_INVALID_ARGUMENT;
-      COMMON_LOG(WARN, "invalid", K(columns_num));
+      COMMON_LOG(WDIAG, "invalid", K(columns_num));
     } else {
       void *start_objs_buf = NULL;
       void *end_objs_buf = NULL;
       if (OB_ISNULL((start_objs_buf = allocator.alloc(sizeof(ObObj) * columns_num))) && columns_num != 0) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        COMMON_LOG(WARN, "fail to alloc new obj", K(ret), K(columns_num));
+        COMMON_LOG(WDIAG, "fail to alloc new obj", K(ret), K(columns_num));
       } else if (OB_ISNULL(end_objs_buf = allocator.alloc(sizeof(ObObj) * columns_num)) && columns_num !=0) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        COMMON_LOG(WARN, "fail to alloc new obj", K(ret), K(columns_num));
+        COMMON_LOG(WDIAG, "fail to alloc new obj", K(ret), K(columns_num));
       } else {
         for (int i = 0; OB_SUCC(ret) && i < columns_num; i++) {
           ObObj *start = NULL;
           ObObj *end = NULL;
           if (OB_ISNULL(start = new (reinterpret_cast<ObObj*>(start_objs_buf) + i) ObObj())) {
             ret = OB_ERR_UNEXPECTED;
-            COMMON_LOG(WARN, "failed to do placement new", K(start_objs_buf), K(ret));
+            COMMON_LOG(WDIAG, "failed to do placement new", K(start_objs_buf), K(ret));
           } else if (OB_ISNULL(end = new (reinterpret_cast<ObObj*>(end_objs_buf) + i) ObObj())) {
             ret = OB_ERR_UNEXPECTED;
-            COMMON_LOG(WARN, "failed to do placement new", K(end_objs_buf), K(ret));
+            COMMON_LOG(WDIAG, "failed to do placement new", K(end_objs_buf), K(ret));
           } else {
             start->set_min_value();
             end->set_max_value();
@@ -224,7 +224,7 @@ public:
   inline bool is_close_range() const
   {
     if (start_key_.length() <= 0 || end_key_.length() <= 0) {
-      COMMON_LOG(ERROR, "invalid range keys", K_(start_key),
+      COMMON_LOG(EDIAG, "invalid range keys", K_(start_key),
                 K_(end_key));
     }
     return !((start_key_.length() > 0 && start_key_.ptr()[0].is_min_value()) ||
@@ -291,10 +291,10 @@ int ObNewRange::deserialize(Allocator &allocator, const char *buf, const int64_t
   copy_range.start_key_.assign(array, OB_MAX_ROWKEY_COLUMN_NUMBER);
   copy_range.end_key_.assign(array + OB_MAX_ROWKEY_COLUMN_NUMBER, OB_MAX_ROWKEY_COLUMN_NUMBER);
   if (OB_FAIL(copy_range.deserialize(buf, data_len, pos))) {
-    COMMON_LOG(WARN, "deserialize range to shallow copy object failed.",
+    COMMON_LOG(WDIAG, "deserialize range to shallow copy object failed.",
                KP(buf), K(data_len), K(pos), K(ret));
   } else if (OB_FAIL(deep_copy_range(allocator, copy_range, *this))) {
-    COMMON_LOG(WARN, "deep_copy_range failed.",
+    COMMON_LOG(WDIAG, "deep_copy_range failed.",
                KP(buf), K(data_len), K(pos), K(copy_range), K(ret));
   }
 
@@ -306,9 +306,9 @@ inline int deep_copy_range(Allocator &allocator, const ObNewRange &src, ObNewRan
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(src.start_key_.deep_copy(dst.start_key_, allocator))) {
-    COMMON_LOG(WARN, "deep copy start key failed.", K(src.start_key_), K(ret));
+    COMMON_LOG(WDIAG, "deep copy start key failed.", K(src.start_key_), K(ret));
   } else if (OB_FAIL(src.end_key_.deep_copy(dst.end_key_, allocator))) {
-    COMMON_LOG(WARN, "deep copy end key failed.", K(src.end_key_), K(ret));
+    COMMON_LOG(WDIAG, "deep copy end key failed.", K(src.end_key_), K(ret));
   } else {
     dst.table_id_ = src.table_id_;
     dst.border_flag_ = src.border_flag_;
@@ -323,13 +323,13 @@ inline int deep_copy_range(Allocator &allocator, const ObNewRange &src, ObNewRan
   void *ptr = NULL;
   if (NULL == (ptr = allocator.alloc(sizeof(ObNewRange)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "allocate new range failed", K(ret));
+    COMMON_LOG(WDIAG, "allocate new range failed", K(ret));
   } else {
     dst = new(ptr) ObNewRange();
     if (OB_FAIL(src.start_key_.deep_copy(dst->start_key_, allocator))) {
-      COMMON_LOG(WARN, "deep copy start key failed.", K(src.start_key_), K(ret));
+      COMMON_LOG(WDIAG, "deep copy start key failed.", K(src.start_key_), K(ret));
     } else if (OB_FAIL(src.end_key_.deep_copy(dst->end_key_, allocator))) {
-      COMMON_LOG(WARN, "deep copy end key failed.", K(src.end_key_), K(ret));
+      COMMON_LOG(WDIAG, "deep copy end key failed.", K(src.end_key_), K(ret));
     } else {
       dst->table_id_ = src.table_id_;
       dst->border_flag_ = src.border_flag_;

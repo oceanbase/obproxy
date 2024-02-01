@@ -106,6 +106,7 @@ const char *ObProxyTableInfo::TEST_MODE_PASSWORD                            = ""
 const char *ObProxyTableInfo::TEST_MODE_DATABASE                            = "oceanbase";
 
 const char *ObProxyTableInfo::DETECT_USERNAME_USER                          = "detect_user";
+const char *ObProxyTableInfo::BINLOG_USERNAME_USER   = "binlog_user";
 
 const ObString ObProxyTableInfo::PROXY_ALL_PROXY_HEADER                     = ObString::make_string("all_proxy");
 const ObString ObProxyTableInfo::PROXY_CONFIG_VERSION_NAME                  = ObString::make_string(".config_version");
@@ -132,7 +133,7 @@ int ObProxyTableInfo::get_create_proxy_table_sql(char *buf, const int64_t len)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid input value", K(buf), K(len), K(ret));
   } else {
     int64_t w_len = snprintf(buf, len, CREATE_PROXY_TABLE_SQL,
                              PROXY_INFO_TABLE_NAME,
@@ -152,7 +153,7 @@ int ObProxyTableInfo::get_create_proxy_table_sql(char *buf, const int64_t len)
                              );
     if (OB_UNLIKELY(w_len >= len) || OB_UNLIKELY(w_len <= 0)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to fill create sql", K(PROXY_INFO_TABLE_NAME),
+      LOG_WDIAG("fail to fill create sql", K(PROXY_INFO_TABLE_NAME),
                K(buf), K(len), K(w_len), K(ret));
     }
   }
@@ -165,7 +166,7 @@ int ObProxyTableInfo::get_create_proxy_config_table_sql(char *buf, const int64_t
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid input value", K(buf), K(len), K(ret));
   } else {
     // as the ObConfigItem use OB_MAX_CONFIG_NAME_LEN and sprintf,
     // we have to set length = OB_MAX_CONFIG_NAME_LEN - 1 ;
@@ -179,7 +180,7 @@ int ObProxyTableInfo::get_create_proxy_config_table_sql(char *buf, const int64_t
                              );
     if (OB_UNLIKELY(w_len >= len) || OB_UNLIKELY(w_len <= 0)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to fill create sql", K(CREATE_PROXY_CONFIG_TABLE_SQL),
+      LOG_WDIAG("fail to fill create sql", K(CREATE_PROXY_CONFIG_TABLE_SQL),
                K(buf), K(len), K(w_len), K(ret));
     }
   }
@@ -192,7 +193,7 @@ int ObProxyTableInfo::get_create_proxy_stat_table_sql(char *buf, const int64_t l
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid input value", K(buf), K(len), K(ret));
   } else {
     int64_t w_len = snprintf(buf, len, CREATE_PROXY_STAT_TABLE_SQL,
                              PROXY_STAT_TABLE_NAME ,        // table name
@@ -203,7 +204,7 @@ int ObProxyTableInfo::get_create_proxy_stat_table_sql(char *buf, const int64_t l
                              );
     if (OB_UNLIKELY(w_len >= len) || OB_UNLIKELY(w_len <= 0)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to fill create sql", K(PROXY_STAT_TABLE_NAME),
+      LOG_WDIAG("fail to fill create sql", K(PROXY_STAT_TABLE_NAME),
                K(buf), K(len), K(w_len), K(ret));
     }
   }
@@ -216,7 +217,7 @@ int ObProxyTableInfo::get_create_proxy_kv_table_sql(char *buf, const int64_t len
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid input value", K(buf), K(len), K(ret));
   } else {
     int64_t w_len = snprintf(buf, len, CREATE_PROXY_KV_TABLE_SQL,
                              PROXY_KV_TABLE_NAME,           // table name
@@ -226,7 +227,7 @@ int ObProxyTableInfo::get_create_proxy_kv_table_sql(char *buf, const int64_t len
                              );
     if (OB_UNLIKELY(w_len >= len) || OB_UNLIKELY(w_len <= 0)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to fill create sql", K(CREATE_PROXY_KV_TABLE_SQL),
+      LOG_WDIAG("fail to fill create sql", K(CREATE_PROXY_KV_TABLE_SQL),
                K(buf), K(len), K(w_len), K(ret));
     }
   }
@@ -239,7 +240,7 @@ int ObProxyTableInfo::get_create_proxy_vip_tenant_table_sql(char *buf, const int
   int ret = OB_SUCCESS;
   if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(buf), K(len), K(ret));
+    LOG_WDIAG("invalid input value", K(buf), K(len), K(ret));
   } else {
     int64_t w_len = snprintf(buf, len, CREATE_PROXY_VIP_TENANT_TABLE_SQL,
                              PROXY_VIP_TENANT_TABLE_NAME,           // table name
@@ -250,7 +251,7 @@ int ObProxyTableInfo::get_create_proxy_vip_tenant_table_sql(char *buf, const int
                              );
     if (OB_UNLIKELY(w_len >= len) || OB_UNLIKELY(w_len <= 0)) {
       ret = OB_INVALID_ARGUMENT;
-      LOG_WARN("fail to fill create sql", K(CREATE_PROXY_VIP_TENANT_TABLE_SQL),
+      LOG_WDIAG("fail to fill create sql", K(CREATE_PROXY_VIP_TENANT_TABLE_SQL),
                K(buf), K(len), K(w_len), K(ret));
     }
   }

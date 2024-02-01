@@ -23,22 +23,77 @@ namespace obproxy
 namespace obutils
 {
 
+ObVipAddr::ObVipAddr(const ObVipAddr& vip_addr)
+{
+  addr_ = vip_addr.addr_;
+  vid_ = vip_addr.vid_;
+  vip_addr_type_ = vip_addr.vip_addr_type_;
+  vpc_info_.reset();
+  if (vip_addr.vpc_info_.len() > 0) {
+    vpc_info_.init(vip_addr.vpc_info_.len());
+    vpc_info_.write(vip_addr.vpc_info_.ptr(), vip_addr.vpc_info_.len());
+  }
+}
+
+ObVipAddr& ObVipAddr::operator =(const ObVipAddr& vip_addr)
+{
+  if (this != &vip_addr) {
+    addr_ = vip_addr.addr_;
+    vid_ = vip_addr.vid_;
+    vip_addr_type_ = vip_addr.vip_addr_type_;
+    vpc_info_.reset();
+    if (vip_addr.vpc_info_.len() > 0) {
+      vpc_info_.init(vip_addr.vpc_info_.len());
+      vpc_info_.write(vip_addr.vpc_info_.ptr(), vip_addr.vpc_info_.len());
+    }
+  }
+
+  return *this;
+}
+
+bool ObVipAddr::is_valid() const
+{
+  bool bret = false;
+  if (VTOA_VIP_ADDR == vip_addr_type_ && addr_.is_valid() && vid_ >= 0) {
+    bret = true;
+  } else if (VPC_VIP_ADDR == vip_addr_type_ && !vpc_info_.empty()) {
+    bret = true;
+  }
+
+  return bret;
+}
+
 void ObVipAddr::set(const char* ip, const int32_t port, const int64_t vid)
 {
-  if (NULL == ip || 0 == strcasecmp(ip, "") || port <= 0) {
+  int ret = OB_SUCCESS;
+  if (NULL == ip || 0 == strcasecmp(ip, "") || port < 0) {
     addr_.reset();
+  } else if (-1 == vid) {
+    addr_.reset();
+    if (vpc_info_.is_inited()) {
+      vpc_info_.reset();
+    }
+    if (OB_FAIL(vpc_info_.init(strlen(ip)))) {
+      LOG_WDIAG("vpc info init failed", K(ret));
+    } else if (OB_FAIL(vpc_info_.write(ip, strlen(ip)))) {
+      LOG_WDIAG("vpc info write failed", K(ret));
+    } else {
+      vip_addr_type_ = VPC_VIP_ADDR;
+    }
   } else if (OB_UNLIKELY(!addr_.set_ip_addr(ip, port))) {
-    LOG_WARN("fail to set_ip_addr", K(ip), K(port), K(addr_));
+    LOG_WDIAG("fail to set_ip_addr", K(ip), K(port), K(addr_));
     addr_.reset();
   } else {
+    vip_addr_type_ = VTOA_VIP_ADDR;
     vid_ = vid;
   }
 }
 
 void ObVipAddr::set_ipv4(int32_t ip, const int32_t port, const int64_t vid)
 {
+  vpc_info_.reset();
   if (OB_UNLIKELY(!addr_.set_ipv4_addr(ip, port))) {
-    LOG_WARN("fail to set_ipv4_addr", K(ip), K(port), K(addr_));
+    LOG_WDIAG("fail to set_ipv4_addr", K(ip), K(port), K(addr_));
     addr_.reset();
   } else {
     vid_ = vid;
@@ -47,8 +102,21 @@ void ObVipAddr::set_ipv4(int32_t ip, const int32_t port, const int64_t vid)
 
 void ObVipAddr::set(const struct sockaddr &addr, const int64_t vid)
 {
+  vpc_info_.reset();
+  vip_addr_type_ = VTOA_VIP_ADDR;
   addr_.set_sockaddr(addr);
   vid_ = vid;
+}
+
+void ObVipAddr::set(const ObString vpc_info)
+{
+  vpc_info_.reset();
+  addr_.reset();
+  if (vpc_info.length() > 0) {
+    vpc_info_.init(vpc_info.length());
+    vpc_info_.write(vpc_info.ptr(), vpc_info.length());
+    vip_addr_type_ = VPC_VIP_ADDR;
+  }
 }
 
 int ObVipTenant::set_tenant_cluster(const ObString &tenant_name, const ObString &cluster_name)
@@ -57,7 +125,7 @@ int ObVipTenant::set_tenant_cluster(const ObString &tenant_name, const ObString 
   if (tenant_name.empty() || tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH
       || cluster_name.empty() || cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("name invalid", K(tenant_name), K(tenant_name), K(ret));
+    LOG_WDIAG("name invalid", K(tenant_name), K(tenant_name), K(ret));
   } else {
     MEMCPY(tenant_name_str_, tenant_name.ptr(), tenant_name.length());
     tenant_name_.assign_ptr(tenant_name_str_, tenant_name.length());
@@ -73,7 +141,7 @@ int ObVipTenant::set_request_target_type(const int64_t request_target_type)
   if (OB_UNLIKELY(request_target_type > static_cast<int64_t>(RequestFollower)
       || request_target_type < static_cast<int64_t>(InvalidRequestType))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid request target type", K(request_target_type));
+    LOG_WDIAG("invalid request target type", K(request_target_type));
   } else {
     request_target_type_ = static_cast<ObVipTenantRequestType>(request_target_type);
   }
@@ -87,7 +155,7 @@ int ObVipTenant::set_rw_type(const int64_t rw_type)
   if (OB_UNLIKELY(rw_type > static_cast<int64_t>(ReadWrite)
       || rw_type < static_cast<int64_t>(InvalidRWType))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("invalid rw type", K(rw_type));
+    LOG_WDIAG("invalid rw type", K(rw_type));
   } else {
     rw_type_ = static_cast<ObVipTenantRWType>(rw_type);
   }
@@ -101,7 +169,7 @@ int ObVipTenant::set(const ObVipAddr &vip_addr, const common::ObString &tenant_n
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(set_tenant_cluster(tenant_name, cluster_name))) {
-    LOG_WARN("fail to set tenant cluster name", K(tenant_name), K(tenant_name), K(ret));
+    LOG_WDIAG("fail to set tenant cluster name", K(tenant_name), K(tenant_name), K(ret));
   } else {
     vip_addr_ = vip_addr;
     request_target_type_ = request_target_type;
@@ -143,21 +211,21 @@ int ObVipTenantCache::get(const ObVipAddr &vip_addr, ObVipTenant &vt)
   ObVipTenant *tmp_vt = NULL;
   if (OB_UNLIKELY(!vip_addr.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_INFO("invalid input value", K(vip_addr), K(ret));
+    LOG_DEBUG("invalid input value", K(vip_addr), K(ret));
   } else {
     CRLockGuard guard(rwlock_);
     if (OB_ISNULL(vt_cache_map_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("vt_cache_map_ should not be null", K(ret));
+      LOG_WDIAG("vt_cache_map_ should not be null", K(ret));
     } else if (OB_SUCCESS != vt_cache_map_->get_refactored(vip_addr, tmp_vt)) {
       ret = OB_ENTRY_NOT_EXIST;
-      LOG_WARN("tenant is not in vip_tenant_cache", K(ret));
+      LOG_WDIAG("tenant is not in vip_tenant_cache", K(ret));
     } else if (OB_ISNULL(tmp_vt)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("vt get from vt_cache_map is null", K(ret));
+      LOG_WDIAG("vt get from vt_cache_map is null", K(ret));
     } else if (OB_FAIL(vt.set(tmp_vt->vip_addr_, tmp_vt->tenant_name_,
         tmp_vt->cluster_name_, tmp_vt->request_target_type_, tmp_vt->rw_type_))) {
-      LOG_WARN("fail to set tenant cluster for ObVipTenant", K(*tmp_vt), K(ret));
+      LOG_WDIAG("fail to set tenant cluster for ObVipTenant", K(*tmp_vt), K(ret));
     } else {
       LOG_DEBUG("tenant hit in vip_tenant_cache", K(vip_addr), K(*tmp_vt));
     }
@@ -171,12 +239,12 @@ int ObVipTenantCache::set(ObVipTenant &vt)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!vt.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("invalid input value", K(vt), K(ret));
+    LOG_WDIAG("invalid input value", K(vt), K(ret));
   } else {
     CWLockGuard guard(rwlock_);
     if (OB_ISNULL(vt_cache_map_)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("vt_cache_map_ should not be null", K(ret));
+      LOG_WDIAG("vt_cache_map_ should not be null", K(ret));
     } else {
       ret = vt_cache_map_->unique_set(&vt);
       if (OB_LIKELY(OB_SUCCESS == ret)) {
@@ -185,7 +253,7 @@ int ObVipTenantCache::set(ObVipTenant &vt)
         LOG_DEBUG("vip_tenant alreay exist in the cache map");
         ret = OB_SUCCESS;
       } else {
-        LOG_WARN("fail to insert vip_tenant into vt_cache_map", K(ret));
+        LOG_WDIAG("fail to insert vip_tenant into vt_cache_map", K(ret));
       }
     }
   }
@@ -198,7 +266,7 @@ int ObVipTenantCache::update_cache_map()
   CWLockGuard guard(rwlock_);
   if (OB_ISNULL(vt_cache_map_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("vt_cache_map_ should not be null", K(ret));
+    LOG_WDIAG("vt_cache_map_ should not be null", K(ret));
   } else {
     clear_cache_map(*vt_cache_map_);
     if (&vt_cache_map_array_[0] != vt_cache_map_) {

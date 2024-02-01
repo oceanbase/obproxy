@@ -108,7 +108,7 @@ ObConnection::~ObConnection()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(close()) && (NO_FD != fd_)) {
-    PROXY_SOCK_LOG(WARN, "fail to close", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to close", K(fd_), K(ret));
   }
 }
 
@@ -154,29 +154,29 @@ int ObConnection::open(const ObNetVCOptions &opt)
   local_addr.set_to_any_addr(family);
 
   if (OB_FAIL(ObSocketManager::socket(family, sock_type_, 0, fd_))) {
-    PROXY_SOCK_LOG(WARN, "fail to create socket", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to create socket", K(fd_), K(ret));
   } else {
     ObCleaner<ObConnection> cleanup(this, &ObConnection::cleanup);
 
     if (OB_FAIL(ObSocketManager::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR,
                                             reinterpret_cast<const void *>(&SOCKOPT_ON),
                                             sizeof(SOCKOPT_ON)))) {
-      PROXY_SOCK_LOG(WARN, "fail to set socket opt enable_reuseaddr", K(fd_), K(local_addr), K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to set socket opt enable_reuseaddr", K(fd_), K(local_addr), K(ret));
     } else if (!opt.f_blocking_connect_ && OB_FAIL(ObSocketManager::nonblocking(fd_))) {
-      PROXY_SOCK_LOG(WARN, "fail to set socket nonblocking", K(fd_), K(local_addr), K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to set socket nonblocking", K(fd_), K(local_addr), K(ret));
     } else if (OB_FAIL(ObSocketManager::fcntl(fd_, F_SETFD, FD_CLOEXEC, res))) {
-      PROXY_SOCK_LOG(WARN, "fail to set socket FD_CLOEXEC", K(fd_), K(local_addr), K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to set socket FD_CLOEXEC", K(fd_), K(local_addr), K(ret));
     } else if (OB_FAIL(ObSocketManager::set_sndbuf_and_rcvbuf_size(fd_,
         opt.socket_send_bufsize_,
         opt.socket_recv_bufsize_,
         SNDBUF_AND_RCVBUF_PREC))){
-      PROXY_SOCK_LOG(WARN, "fail to set_sndbuf_and_rcvbuf_size", K(fd_),
+      PROXY_SOCK_LOG(WDIAG, "fail to set_sndbuf_and_rcvbuf_size", K(fd_),
                            K(opt.socket_send_bufsize_),
                            K(opt.socket_recv_bufsize_),
                            K(local_addr),
                            K(ret));
     } else if(OB_FAIL(apply_options(opt))) {
-      PROXY_SOCK_LOG(WARN, "fail to apply options", K(local_addr), K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to apply options", K(local_addr), K(ret));
     } else {
       cleanup.reset();
       is_bound_ = true;
@@ -192,10 +192,10 @@ int ObConnection::connect(const sockaddr &target, const ObNetVCOptions &opt)
              || OB_UNLIKELY(!is_bound_)
              || OB_UNLIKELY(is_connected_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_SOCK_LOG(WARN, "invalid member variable",
+    PROXY_SOCK_LOG(WDIAG, "invalid member variable",
                    K(fd_), K(is_bound_), K(is_connected_), K(ret));
   } else if (OB_FAIL(set_remote(target))){
-    PROXY_SOCK_LOG(WARN, "fail to set remote", K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set remote", K(ret));
   } else {
     ObCleaner<ObConnection> cleanup(this, &ObConnection::cleanup);
 
@@ -209,18 +209,18 @@ int ObConnection::connect(const sockaddr &target, const ObNetVCOptions &opt)
           && (OB_SYS_EINPROGRESS == ret || OB_SYS_EWOULDBLOCK == ret)) {
         ret = OB_SUCCESS;
       } else {
-        PROXY_SOCK_LOG(WARN, "fail to connect", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to connect", K(fd_), K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       if (opt.f_blocking_connect_ && !opt.f_blocking_) {
         if (OB_FAIL(ObSocketManager::nonblocking(fd_))) {
-          PROXY_SOCK_LOG(WARN, "fail to set nonblocking", K(ret));
+          PROXY_SOCK_LOG(WDIAG, "fail to set nonblocking", K(ret));
         }
       } else if (!opt.f_blocking_connect_ && opt.f_blocking_) {
         if (OB_FAIL(ObSocketManager::blocking(fd_))) {
-          PROXY_SOCK_LOG(WARN, "fail to set blocking", K(ret));
+          PROXY_SOCK_LOG(WDIAG, "fail to set blocking", K(ret));
         }
       }
     }
@@ -255,7 +255,7 @@ int ObConnection::apply_options(const ObNetVCOptions &opt)
     if (opt.sockopt_flags_ & ObNetVCOptions::SOCK_OPT_NO_DELAY) {
       if (OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY,
           reinterpret_cast<const void *>(&SOCKOPT_ON), sizeof(SOCKOPT_ON)))) {
-        PROXY_SOCK_LOG(WARN, "fail to set socket opt TCP_NODELAY", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to set socket opt TCP_NODELAY", K(fd_), K(ret));
       }
     }
 
@@ -266,27 +266,27 @@ int ObConnection::apply_options(const ObNetVCOptions &opt)
 #endif
       if (OB_FAIL(ObSocketManager::setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE,
           reinterpret_cast<const void *>(&SOCKOPT_ON), sizeof(SOCKOPT_ON)))) {
-        PROXY_SOCK_LOG(WARN, "fail to set socket opt SO_KEEPALIVE", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to set socket opt SO_KEEPALIVE", K(fd_), K(ret));
       }
       if (OB_SUCC(ret) && opt.tcp_keepidle_s_ > 0) {
         if (OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_TCP, TCP_KEEPIDLE, &opt.tcp_keepidle_s_, sizeof(opt.tcp_keepidle_s_)))) {
-          PROXY_SOCK_LOG(WARN, "fail to set socket opt TCP_KEEPIDLE", K(fd_), K(opt.tcp_keepidle_s_), K(ret));
+          PROXY_SOCK_LOG(WDIAG, "fail to set socket opt TCP_KEEPIDLE", K(fd_), K(opt.tcp_keepidle_s_), K(ret));
         }
       }
       if (OB_SUCC(ret) && opt.tcp_keepintvl_s_ > 0) {
         if (OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_TCP, TCP_KEEPINTVL, &opt.tcp_keepintvl_s_, sizeof(opt.tcp_keepintvl_s_)))) {
-          PROXY_SOCK_LOG(WARN, "fail to set socket opt TCP_KEEPINTVL", K(fd_), K(opt.tcp_keepintvl_s_), K(ret));
+          PROXY_SOCK_LOG(WDIAG, "fail to set socket opt TCP_KEEPINTVL", K(fd_), K(opt.tcp_keepintvl_s_), K(ret));
         }
       }
       if (OB_SUCC(ret) && opt.tcp_keepcnt_ > 0) {
         if (OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_TCP, TCP_KEEPCNT, &opt.tcp_keepcnt_, sizeof(opt.tcp_keepcnt_)))) {
-          PROXY_SOCK_LOG(WARN, "fail to set socket opt TCP_KEEPCNT", K(fd_), K(opt.tcp_keepcnt_), K(ret));
+          PROXY_SOCK_LOG(WDIAG, "fail to set socket opt TCP_KEEPCNT", K(fd_), K(opt.tcp_keepcnt_), K(ret));
         }
       }
       if (OB_SUCC(ret) && opt.tcp_user_timeout_s_ > 0) {
         int32_t user_timeout_ms = 1000 * opt.tcp_user_timeout_s_;
         if (OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_TCP, TCP_USER_TIMEOUT, &user_timeout_ms, sizeof(user_timeout_ms)))) {
-          PROXY_SOCK_LOG(WARN, "fail to set socket opt TCP_USER_TIMEOUT", K(fd_), K(user_timeout_ms), K(ret));
+          PROXY_SOCK_LOG(WDIAG, "fail to set socket opt TCP_USER_TIMEOUT", K(fd_), K(user_timeout_ms), K(ret));
           // ignore TCP_USER_TIMEOUT, depends on linux kernel
           ret = OB_SUCCESS;
         }
@@ -303,7 +303,7 @@ int ObConnection::apply_options(const ObNetVCOptions &opt)
       l.l_linger = 0;
       if (OB_FAIL(ObSocketManager::setsockopt(fd_, SOL_SOCKET, SO_LINGER,
           reinterpret_cast<const void *>(&l), sizeof(l)))) {
-        PROXY_SOCK_LOG(WARN, "fail to set socket opt SO_LINGER", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to set socket opt SO_LINGER", K(fd_), K(ret));
       }
     }
   }
@@ -311,7 +311,7 @@ int ObConnection::apply_options(const ObNetVCOptions &opt)
 #if OB_HAS_SO_MARK
   if (OB_SUCC(ret) && OB_FAIL(ObSocketManager::setsockopt(fd_, SOL_SOCKET, SO_MARK,
       reinterpret_cast<const void *>(&opt.packet_mark_), sizeof(uint32_t)))) {
-    PROXY_SOCK_LOG(WARN, "fail to set socket opt SO_MARK", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set socket opt SO_MARK", K(fd_), K(ret));
   }
 #endif
 
@@ -321,12 +321,12 @@ int ObConnection::apply_options(const ObNetVCOptions &opt)
     if (addr_.is_ip4()) {
       if (OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_IP, IP_TOS,
           reinterpret_cast<const void *>(&tos), sizeof(uint32_t)))) {
-        PROXY_SOCK_LOG(WARN, "fail to set socket opt IP_TOS", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to set socket opt IP_TOS", K(fd_), K(ret));
       }
     } else if (addr_.is_ip6()) {
       if (OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_IPV6, IPV6_TCLASS,
           reinterpret_cast<const void *>(&tos), sizeof(uint32_t)))) {
-        PROXY_SOCK_LOG(WARN, "fail to set socket opt IPV6_TCLASS", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to set socket opt IPV6_TCLASS", K(fd_), K(ret));
       }
     }
   }
@@ -339,7 +339,7 @@ int ObConnection::set_remote(const sockaddr &remote_addr)
   int ret = OB_SUCCESS;
   if (!ops_ip_copy(addr_, remote_addr)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_SOCK_LOG(WARN, "copy the address from src to dst", K(ret));
+    PROXY_SOCK_LOG(WDIAG, "copy the address from src to dst", K(ret));
   }
   return ret;
 }
@@ -348,7 +348,7 @@ void ObConnection::cleanup()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(close())) {
-    PROXY_SOCK_LOG(WARN, "fail to close", K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to close", K(ret));
   }
 }
 
@@ -358,20 +358,20 @@ int ObServerConnection::accept(ObConnection *c, bool need_return_eintr /* false 
   int res = -1;
   if (OB_ISNULL(c)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_SOCK_LOG(WARN, "invalid argument conn", K(c), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "invalid argument conn", K(c), K(ret));
   } else {
     int64_t sz = sizeof(c->addr_.sa_);
     if (OB_FAIL(ObSocketManager::accept(fd_, &c->addr_.sa_, &sz, c->fd_, need_return_eintr))) {
       if (OB_SYS_EAGAIN != ret && (!need_return_eintr || OB_SYS_EINTR != ret)) {
-        PROXY_SOCK_LOG(WARN, "fail to accept", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to accept", K(fd_), K(ret));
       }
     } else {
-      PROXY_SOCK_LOG(INFO, "connection accepted", "client", c->addr_, "server", addr_, "accepted_fd", c->fd_, "listen_fd", fd_);
+      PROXY_SOCK_LOG(DEBUG, "connection accepted", "client", c->addr_, "server", addr_, "accepted_fd", c->fd_, "listen_fd", fd_);
 
       if (OB_FAIL(ObSocketManager::nonblocking(c->fd_))) {
-        PROXY_SOCK_LOG(WARN, "fail to set nonblocking", K(c->fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to set nonblocking", K(c->fd_), K(ret));
       } else if (OB_FAIL(ObSocketManager::fcntl(c->fd_, F_SETFD, FD_CLOEXEC, res))) {
-        PROXY_SOCK_LOG(WARN, "fail to set FD_CLOEXEC", K(c->fd_), K(ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to set FD_CLOEXEC", K(c->fd_), K(ret));
       } else {
         c->sock_type_ = SOCK_STREAM;
       }
@@ -379,7 +379,7 @@ int ObServerConnection::accept(ObConnection *c, bool need_return_eintr /* false 
     if (OB_FAIL(ret)) {
       int close_ret = OB_SUCCESS;
       if (NO_FD != c->fd_ && OB_UNLIKELY(OB_SUCCESS != (close_ret = c->close()))) {
-        PROXY_SOCK_LOG(WARN, "fail to close ObConnection", K(c->fd_), K(close_ret));
+        PROXY_SOCK_LOG(WDIAG, "fail to close ObConnection", K(c->fd_), K(close_ret));
       }
     }
   }
@@ -394,11 +394,11 @@ int ObServerConnection::setup_fd_for_listen(
   int ret = OB_SUCCESS;
   if (RUN_MODE_PROXY == g_run_mode) {
     if (OB_FAIL(setup_fd_for_listen_proxy_mode(non_blocking, recv_bufsize, send_bufsize))) {
-      PROXY_SOCK_LOG(WARN, "setup_fd_for_listen_proxy_mode failed", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "setup_fd_for_listen_proxy_mode failed", K(ret));
     }
   } else if (RUN_MODE_CLIENT == g_run_mode) {
     if (OB_FAIL(setup_fd_for_listen_client_mode(non_blocking, recv_bufsize, send_bufsize))) {
-      PROXY_SOCK_LOG(WARN, "setup_fd_for_listen_client_mode failed", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "setup_fd_for_listen_client_mode failed", K(ret));
     }
   }
 
@@ -415,14 +415,14 @@ int ObServerConnection::setup_fd_for_listen_client_mode(
   int ret = OB_SUCCESS;
 
   if (non_blocking && OB_FAIL(ObSocketManager::nonblocking(fd_))) {
-    PROXY_SOCK_LOG(WARN, "fail to set fd nonblocking", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set fd nonblocking", K(fd_), K(ret));
   }
 
   if (OB_FAIL(ret)) {
     // make coverity happy
     int tmp_ret = ret;
     if (OB_FAIL(close())) {
-      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to close server connection", K(ret));
     }
     ret = tmp_ret;
   }
@@ -439,14 +439,14 @@ int ObServerConnection::setup_fd_for_listen_proxy_mode(
 
   if (OB_FAIL(ObSocketManager::set_sndbuf_and_rcvbuf_size(fd_,
       send_bufsize, recv_bufsize, SNDBUF_AND_RCVBUF_PREC))) {
-    PROXY_SOCK_LOG(WARN, "fail to set_sndbuf_and_rcvbuf_size",
+    PROXY_SOCK_LOG(WDIAG, "fail to set_sndbuf_and_rcvbuf_size",
                    K(send_bufsize), K(recv_bufsize), K(ret));
   }
 
 #ifdef SET_CLOSE_ON_EXEC_LISTEN
   int res = -1;
   if (OB_SUCC(ret) && OB_FAIL(ObSocketManager::fcntl(fd_, F_SETFD, FD_CLOEXEC, res))) {
-    PROXY_SOCK_LOG(WARN, "fail to set fd FD_CLOEXEC", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set fd FD_CLOEXEC", K(fd_), K(ret));
   }
 #endif
 
@@ -456,25 +456,25 @@ int ObServerConnection::setup_fd_for_listen_proxy_mode(
   l.l_linger = 0;
   if (OB_SUCC(ret) && OB_FAIL(ObSocketManager::setsockopt(fd_, SOL_SOCKET, SO_LINGER,
       reinterpret_cast<const void *>(&l), sizeof(l)))) {
-    PROXY_SOCK_LOG(WARN, "fail to set sockopt SO_LINGER", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set sockopt SO_LINGER", K(fd_), K(ret));
   }
 #endif
 
   if (OB_SUCC(ret) && ops_is_ip6(addr_)
       && OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_IPV6, IPV6_V6ONLY,
       reinterpret_cast<const void *>(&SOCKOPT_ON), sizeof(SOCKOPT_ON)))) {
-    PROXY_SOCK_LOG(WARN, "fail to set sockopt IPV6_V6ONLY", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set sockopt IPV6_V6ONLY", K(fd_), K(ret));
   }
 
   if (OB_SUCC(ret) && OB_FAIL(ObSocketManager::setsockopt(fd_, SOL_SOCKET, SO_REUSEADDR,
       reinterpret_cast<const void *>(&SOCKOPT_ON), sizeof(SOCKOPT_ON)))) {
-    PROXY_SOCK_LOG(WARN, "fail to set sockopt SO_REUSEADDR", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set sockopt SO_REUSEADDR", K(fd_), K(ret));
   }
 
 #ifdef SET_TCP_NO_DELAY
   if (OB_SUCC(ret) && OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_TCP, TCP_NODELAY,
       reinterpret_cast<const void *>(&SOCKOPT_ON), sizeof(SOCKOPT_ON)))) {
-    PROXY_SOCK_LOG(WARN, "fail to set sockopt TCP_NODELAY", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set sockopt TCP_NODELAY", K(fd_), K(ret));
   }
 #endif
 
@@ -482,7 +482,7 @@ int ObServerConnection::setup_fd_for_listen_proxy_mode(
   // enables 2 hour inactivity probes, also may fix IRIX FIN_WAIT_2 leak
   if (OB_SUCC(ret) && OB_FAIL(ObSocketManager::setsockopt(fd_, SOL_SOCKET, SO_KEEPALIVE,
       reinterpret_cast<const void *>(&SOCKOPT_ON), sizeof(SOCKOPT_ON)))) {
-    PROXY_SOCK_LOG(WARN, "fail to set sockopt SO_KEEPALIVE", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set sockopt SO_KEEPALIVE", K(fd_), K(ret));
   }
 #endif
 
@@ -491,20 +491,20 @@ int ObServerConnection::setup_fd_for_listen_proxy_mode(
       && OB_FAIL(ObSocketManager::setsockopt(fd_, IPPROTO_TCP, TCP_MAXSEG,
       reinterpret_cast<const void *>(&ObNetProcessor::accept_mss_),
       sizeof(int32_t)))) {
-    PROXY_SOCK_LOG(WARN, "fail to set sockopt TCP_MAXSEG", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set sockopt TCP_MAXSEG", K(fd_), K(ret));
   }
 #endif
 
   if (OB_SUCC(ret) && non_blocking
       && OB_FAIL(ObSocketManager::nonblocking(fd_))) {
-    PROXY_SOCK_LOG(WARN, "fail to set fd nonblocking", K(fd_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to set fd nonblocking", K(fd_), K(ret));
   }
 
   if (OB_FAIL(ret)) {
     // make coverity happy
     int tmp_ret = ret;
     if (OB_FAIL(close())) {
-      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to close server connection", K(ret));
     }
     ret = tmp_ret;
   }
@@ -517,11 +517,11 @@ int ObServerConnection::listen(const bool non_blocking, const int32_t recv_bufsi
   int ret = OB_SUCCESS;
   if (RUN_MODE_PROXY == g_run_mode) {
     if (OB_FAIL(listen_proxy_mode(non_blocking, recv_bufsize, send_bufsize))) {
-      PROXY_SOCK_LOG(WARN, "listen proxy mode failed", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "listen proxy mode failed", K(ret));
     }
   } else if (RUN_MODE_CLIENT == g_run_mode) {
     if (OB_FAIL(listen_client_mode(non_blocking, recv_bufsize, send_bufsize))) {
-      PROXY_SOCK_LOG(WARN, "listen client mode failed", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "listen client mode failed", K(ret));
     }
   }
 
@@ -537,13 +537,13 @@ int ObServerConnection::listen_client_mode(const bool non_blocking, const int32_
   memset(addr->sun_path, 0, sizeof(addr->sun_path));
   strncpy(addr->sun_path, get_global_layout().get_unix_domain_path(), sizeof(addr->sun_path) - 1);
   if (OB_FAIL(ObSocketManager::socket(AF_UNIX, SOCK_STREAM, 0, fd_))) {
-    PROXY_SOCK_LOG(WARN, "fail to create socket", K(ret), KERRMSGS);
+    PROXY_SOCK_LOG(WDIAG, "fail to create socket", K(ret), KERRMSGS);
   } else if (OB_FAIL(setup_fd_for_listen_client_mode(non_blocking, recv_bufsize, send_bufsize))) {
-    PROXY_SOCK_LOG(WARN, "fail to setup_fd_for_listen", K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to setup_fd_for_listen", K(ret));
   } else if (OB_FAIL(ObSocketManager::bind(fd_, &addr_.sa_, sizeof(*addr)))) {
-    PROXY_SOCK_LOG(WARN, "fail to bind", K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to bind", K(ret));
   } else if (OB_FAIL(ObSocketManager::listen(fd_, LISTEN_BACKLOG))) {
-    PROXY_SOCK_LOG(WARN, "fail to listen", KERRMSGS, K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to listen", KERRMSGS, K(ret));
   } else {
     ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
     info.ipv4_fd_ = fd_;
@@ -553,7 +553,7 @@ int ObServerConnection::listen_client_mode(const bool non_blocking, const int32_
     // make coverity happy
     int tmp_ret = ret;
     if (OB_FAIL(close())) {
-      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to close server connection", K(ret));
     }
     ret = tmp_ret;
   }
@@ -573,19 +573,19 @@ int ObServerConnection::listen_proxy_mode(const bool non_blocking, const int32_t
   ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
 
   if (OB_FAIL(ObSocketManager::socket(addr_.sa_.sa_family, SOCK_STREAM, IPPROTO_TCP, fd_))) {
-    PROXY_SOCK_LOG(WARN, "fail to create socket", K(addr_), KERRMSGS, K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to create socket", K(addr_), KERRMSGS, K(ret));
   } else if (OB_FAIL(setup_fd_for_listen(non_blocking, recv_bufsize, send_bufsize))) {
-    PROXY_SOCK_LOG(WARN, "fail to setup_fd_for_listen", K(addr_), K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to setup_fd_for_listen", K(addr_), K(ret));
   } else if (OB_FAIL(ObSocketManager::bind(fd_, &addr_.sa_,
       static_cast<int64_t>(ops_ip_size(addr_.sa_))))) {
-    PROXY_SOCK_LOG(WARN, "fail to bind", K(addr_), KERRMSGS, K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to bind", K(addr_), KERRMSGS, K(ret));
   } else if (OB_FAIL(ObSocketManager::listen(fd_, LISTEN_BACKLOG))) {
-    PROXY_SOCK_LOG(WARN, "fail to listen", K(addr_), KERRMSGS, K(ret));
+    PROXY_SOCK_LOG(WDIAG, "fail to listen", K(addr_), KERRMSGS, K(ret));
   } else {
     // Original just did this on port == 0.
     int64_t namelen = sizeof(addr_);
     if (OB_FAIL(ObSocketManager::getsockname(fd_, &addr_.sa_, &namelen))) {
-      PROXY_SOCK_LOG(WARN, "failed to getsockname", K(addr_), KERRMSGS, K(ret));
+      PROXY_SOCK_LOG(WDIAG, "failed to getsockname", K(addr_), KERRMSGS, K(ret));
     } else if (addr_.is_ip4()) {
       info.ipv4_fd_ = fd_;
     } else if (addr_.is_ip6()) {
@@ -597,7 +597,7 @@ int ObServerConnection::listen_proxy_mode(const bool non_blocking, const int32_t
     // make coverity happy
     int tmp_ret = ret;
     if (OB_FAIL(close())) {
-      PROXY_SOCK_LOG(WARN, "fail to close server connection", K(ret));
+      PROXY_SOCK_LOG(WDIAG, "fail to close server connection", K(ret));
     }
     ret = tmp_ret;
   }

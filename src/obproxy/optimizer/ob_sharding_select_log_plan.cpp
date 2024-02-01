@@ -43,21 +43,21 @@ int create_operator_and_input(ObIAllocator *allocator, O *&op, I *&input)
   input = NULL;
   if (NULL == (ptr = allocator->alloc(sizeof(I)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("alloc input failed", K(ret));
+    LOG_WDIAG("alloc input failed", K(ret));
   } else {
     input = new (ptr) I();
   }
 
   if (OB_SUCC(ret) && (NULL == (ptr = allocator->alloc(sizeof(O))))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("alloc operator failed", K(ret));
+    LOG_WDIAG("alloc operator failed", K(ret));
   } else {
     op = new (ptr) O(input, *allocator);
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(op->init())) {
-      LOG_WARN("op init failed", K(ret));
+      LOG_WDIAG("op init failed", K(ret));
     }
   }
   return ret;
@@ -91,18 +91,19 @@ int ObShardingSelectLogPlan::generate_plan(ObIArray<dbconfig::ObShardConnector*>
   int ret = OB_SUCCESS;
   ObSqlString new_sql;
   bool is_same_group_and_order = false;
+  bool is_explain_request = client_request_.get_parse_result().has_explain();
   LOG_DEBUG("begin to generate plan");
 
   if (OB_FAIL(analyze_select_clause())) {
-    LOG_WARN("analyze select clause failed", K(ret));
+    LOG_WDIAG("analyze select clause failed", K(ret));
   } else if (OB_FAIL(analyze_group_by_clause())) {
-    LOG_WARN("analyze order by clause failed", K(ret));
+    LOG_WDIAG("analyze order by clause failed", K(ret));
   } else if (OB_FAIL(analyze_order_by_clause())) {
-    LOG_WARN("analyze group by clause failed", K(ret));
+    LOG_WDIAG("analyze group by clause failed", K(ret));
   } else if (OB_FAIL(append_derived_order_by(is_same_group_and_order))) {
-    LOG_WARN("fail to append derived order by", K(ret));
+    LOG_WDIAG("fail to append derived order by", K(ret));
   } else if (OB_FAIL(rewrite_sql(new_sql))) {
-    LOG_WARN("fail to rewrite sql", K(ret));
+    LOG_WDIAG("fail to rewrite sql", K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -110,11 +111,11 @@ int ObShardingSelectLogPlan::generate_plan(ObIArray<dbconfig::ObShardConnector*>
                                         shard_prop_array,
                                         table_name_map_array,
                                         new_sql))) {
-      LOG_WARN("fail to add table scan operator", K(ret));
-    } else if (OB_FAIL(add_agg_and_sort_operator(is_same_group_and_order))) {
-      LOG_WARN("fail to add agg operator", K(ret));
+      LOG_WDIAG("fail to add table scan operator", K(ret));
+    } else if (OB_FAIL(!is_explain_request && add_agg_and_sort_operator(is_same_group_and_order))) {
+      LOG_WDIAG("fail to add agg operator", K(ret));
     } else if (OB_FAIL(add_projection_operator())) {
-      LOG_WARN("fail to add projection operator", K(ret));
+      LOG_WDIAG("fail to add projection operator", K(ret));
     } else {
       print_plan_info();
     }
@@ -132,7 +133,7 @@ int ObShardingSelectLogPlan::do_handle_avg_expr(ObProxyExprAvg *agg_expr, T *&ex
   void *ptr = NULL;
   if (OB_ISNULL(ptr = allocator_->alloc(sizeof(T)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc sum expr buf", K(ret));
+    LOG_WDIAG("fail to alloc sum expr buf", K(ret));
   } else {
     expr = new (ptr) T();
     expr->set_expr_type(expr_type);
@@ -141,21 +142,21 @@ int ObShardingSelectLogPlan::do_handle_avg_expr(ObProxyExprAvg *agg_expr, T *&ex
     ObSqlString sql_string;
     char *buf = NULL;
     if (OB_FAIL(sql_string.append(op))) {
-      LOG_WARN("append failed", K(ret));
+      LOG_WDIAG("append failed", K(ret));
     } else if (OB_FAIL(sql_string.append("("))) {
-      LOG_WARN("append failed", K(ret));
+      LOG_WDIAG("append failed", K(ret));
     } else if (OB_FAIL(agg_expr->get_param_array().at(0)->to_column_string(sql_string))) {
-      LOG_WARN("to sql_string failed", K(ret));
+      LOG_WDIAG("to sql_string failed", K(ret));
     } else if (OB_FAIL(sql_string.append(")"))) {
-      LOG_WARN("append failed", K(ret));
+      LOG_WDIAG("append failed", K(ret));
     } else if (OB_ISNULL(buf = (char*)allocator_->alloc(sql_string.length()))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc sum expr buf", K(ret));
+      LOG_WDIAG("fail to alloc sum expr buf", K(ret));
     } else {
       MEMCPY(buf, sql_string.ptr(), sql_string.length());
       expr->set_expr_name(buf, sql_string.length());
       if (OB_FAIL(handle_derived(expr))) {
-        LOG_WARN("fail to handle derived", K(ret));
+        LOG_WDIAG("fail to handle derived", K(ret));
       }
     }
   }
@@ -170,9 +171,9 @@ int ObShardingSelectLogPlan::handle_avg_expr(ObProxyExprAvg *agg_expr)
   ObProxyExprSum *sum_expr = NULL;
   ObProxyExprCount *count_expr = NULL;
   if (OB_FAIL(do_handle_avg_expr(agg_expr, sum_expr, "SUM", OB_PROXY_EXPR_TYPE_FUNC_SUM))) {
-    LOG_WARN("fail to do handle avg expr", K(ret));
+    LOG_WDIAG("fail to do handle avg expr", K(ret));
   } else if (OB_FAIL(do_handle_avg_expr(agg_expr, count_expr, "COUNT", OB_PROXY_EXPR_TYPE_FUNC_COUNT))) {
-    LOG_WARN("fail to do handle avg expr", K(ret));
+    LOG_WDIAG("fail to do handle avg expr", K(ret));
   } else {
     agg_expr->set_sum_expr(sum_expr);
     agg_expr->set_count_expr(count_expr);
@@ -193,26 +194,26 @@ int ObShardingSelectLogPlan::handle_agg_expr(ObProxyExpr *expr, bool need_add_ca
         ObProxyExprAvg *avg_expr = NULL;
         if (OB_ISNULL(avg_expr = dynamic_cast<ObProxyExprAvg *>(expr))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+          LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
         } else if (OB_FAIL(handle_avg_expr(avg_expr))) {
-          LOG_WARN("handle avg expr failed", KPC(expr), K(ret));
+          LOG_WDIAG("handle avg expr failed", KPC(expr), K(ret));
         } else if (need_add_calc && OB_FAIL(calc_exprs_.push_back(avg_expr))) {
-          LOG_WARN("fail to push back to calc expr", KP(avg_expr), K(ret));
+          LOG_WDIAG("fail to push back to calc expr", KP(avg_expr), K(ret));
         }
       } else {
         // Other aggregate functions, put into the aggregate function array
         if (OB_FAIL(agg_exprs_.push_back(expr))) {
-          LOG_WARN("fail to add agg expr to array", K(ret));
+          LOG_WDIAG("fail to add agg expr to array", K(ret));
         }
       }
     } else if (!expr->is_func_expr()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("unexpected error", KPC(expr), K(ret));
+      LOG_WDIAG("unexpected error", KPC(expr), K(ret));
     } else {
       ObProxyFuncExpr *func_expr = NULL;
       if (OB_ISNULL(func_expr = dynamic_cast<ObProxyFuncExpr*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+        LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
       } else {
         ObSEArray<ObProxyExpr*, 4>& param_array = func_expr->get_param_array();
 
@@ -220,13 +221,13 @@ int ObShardingSelectLogPlan::handle_agg_expr(ObProxyExpr *expr, bool need_add_ca
         for (int64_t i = 0; OB_SUCC(ret) && i < param_array.count(); i++) {
           ObProxyExpr* param_expr = param_array.at(i);
           if (OB_FAIL(handle_derived(param_expr))) {
-            LOG_WARN("fail to handle derived", K(ret));
+            LOG_WDIAG("fail to handle derived", K(ret));
           }
         }
 
         if (OB_SUCC(ret) && need_add_calc) {
           if (OB_FAIL(calc_exprs_.push_back(expr))) {
-            LOG_WARN("fail to push back calc expr", KP(expr), K(ret));
+            LOG_WDIAG("fail to push back calc expr", KP(expr), K(ret));
           }
         }
       }
@@ -242,27 +243,27 @@ int ObShardingSelectLogPlan::add_derived_column(ObProxyExpr *expr)
   ObSqlString sql_string;
   char *buf = NULL;
   if (OB_FAIL(sql_string.append_fmt("%s_%ld", DERIVED_COLUMN, derived_column_count_++))) {
-    LOG_WARN("fail to append derived column name", K(ret));
+    LOG_WDIAG("fail to append derived column name", K(ret));
   } else if (OB_ISNULL(buf = static_cast<char*>(allocator_->alloc(sql_string.length())))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc alias name buf", "len", sql_string.length(), K(ret));
+    LOG_WDIAG("fail to alloc alias name buf", "len", sql_string.length(), K(ret));
   } else {
     MEMCPY(buf, sql_string.ptr(), sql_string.length());
     expr->set_alias_name(buf, sql_string.length());
     buf = NULL;
     sql_string.reuse();
     if (OB_FAIL(expr->to_sql_string(sql_string))) {
-      LOG_WARN("fail to get sql string", K(ret));
+      LOG_WDIAG("fail to get sql string", K(ret));
     } else if (OB_ISNULL(buf = static_cast<char*>(allocator_->alloc(sql_string.length())))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("fail to alloc sql string buf", K(ret));
+      LOG_WDIAG("fail to alloc sql string buf", K(ret));
     } else {
       MEMCPY(buf, sql_string.ptr(), sql_string.length());
       ObString derived_column(sql_string.length(), buf);
       if (OB_FAIL(derived_columns_.push_back(derived_column))) {
-        LOG_WARN("fail to add derived column", K(ret));
+        LOG_WDIAG("fail to add derived column", K(ret));
       } else if (OB_FAIL(derived_exprs_.push_back(expr))) {
-        LOG_WARN("fail to add derived expr", K(ret));
+        LOG_WDIAG("fail to add derived expr", K(ret));
       }
     }
   }
@@ -278,7 +279,7 @@ int ObShardingSelectLogPlan::do_column_need_derived_with_star(ObIArray<ObProxyEx
   ObProxyExprColumn* expr_column = dynamic_cast<ObProxyExprColumn*>(expr);
   if (OB_ISNULL(expr_column)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to dynamic cast", K(ret));
+    LOG_WDIAG("fail to dynamic cast", K(ret));
   }
 
   for (int64_t i = 0; OB_SUCC(ret) && bret && i < expr_array.count(); i++) {
@@ -289,7 +290,7 @@ int ObShardingSelectLogPlan::do_column_need_derived_with_star(ObIArray<ObProxyEx
       ObProxyExprStar* expr_star = dynamic_cast<ObProxyExprStar*>(tmp_expr);
       if (OB_ISNULL(expr_star)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to dynamic cast", K(ret));
+        LOG_WDIAG("fail to dynamic cast", K(ret));
       } else {
         ObString &tmp_table_name = expr_star->get_table_name();
         if (tmp_table_name.empty()) {
@@ -315,7 +316,7 @@ int ObShardingSelectLogPlan::do_column_need_derived_with_alias(ObIArray<ObProxyE
   ObProxyExprColumn* expr_column = dynamic_cast<ObProxyExprColumn*>(expr);
   if (OB_ISNULL(expr_column)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to dynamic cast", K(ret));
+    LOG_WDIAG("fail to dynamic cast", K(ret));
   }
 
   for (int64_t i = 0; OB_SUCC(ret) && bret && i < expr_array.count(); i++) {
@@ -341,7 +342,7 @@ int ObShardingSelectLogPlan::do_column_need_derived(ObIArray<ObProxyExpr*> &expr
   ObProxyExprColumn* expr_column = dynamic_cast<ObProxyExprColumn*>(expr);
   if (OB_ISNULL(expr_column)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("fail to dynamic cast", K(ret));
+    LOG_WDIAG("fail to dynamic cast", K(ret));
   }
 
   for (int64_t i = 0; OB_SUCC(ret) && bret && i < expr_array.count(); i++) {
@@ -354,7 +355,7 @@ int ObShardingSelectLogPlan::do_column_need_derived(ObIArray<ObProxyExpr*> &expr
       ObProxyExprColumn* tmp_expr_column = dynamic_cast<ObProxyExprColumn*>(tmp_expr);
       if (OB_ISNULL(tmp_expr_column)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to dynamic cast", K(ret));
+        LOG_WDIAG("fail to dynamic cast", K(ret));
       } else {
         ObString &tmp_column_name = tmp_expr_column->get_column_name();
         ObString &tmp_table_name = tmp_expr_column->get_table_name();
@@ -389,16 +390,16 @@ int ObShardingSelectLogPlan::do_other_need_derived_for_avg(ObProxyExpr *tmp_expr
 
   if (OB_PROXY_EXPR_TYPE_FUNC_AVG != tmp_expr_type) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WARN("avg expr match non avg expr", K(tmp_expr), K(expr), K(ret));
+    LOG_WDIAG("avg expr match non avg expr", K(tmp_expr), K(expr), K(ret));
   } else {
     ObProxyExprAvg *avg_expr = NULL;
     ObProxyExprAvg *tmp_avg_expr = NULL;
     if (OB_ISNULL(avg_expr = dynamic_cast<ObProxyExprAvg *>(expr))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+      LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
     } else if (OB_ISNULL(tmp_avg_expr = dynamic_cast<ObProxyExprAvg *>(tmp_expr))) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to dynamic cast", K(tmp_expr), K(ret));
+      LOG_WDIAG("fail to dynamic cast", K(tmp_expr), K(ret));
     } else {
       avg_expr->set_sum_expr(tmp_avg_expr->get_sum_expr());
       avg_expr->set_count_expr(tmp_avg_expr->get_count_expr());
@@ -422,7 +423,7 @@ int ObShardingSelectLogPlan::do_other_need_derived(ObProxyExpr *tmp_expr, ObProx
     expr->set_alias_name(tmp_alias_name);
     if (OB_PROXY_EXPR_TYPE_FUNC_AVG == expr_type) {
       if (OB_FAIL(do_other_need_derived_for_avg(tmp_expr, expr))) {
-        LOG_WARN("fail to do other need derived for avg", K(tmp_expr), K(expr), K(ret));
+        LOG_WDIAG("fail to do other need derived for avg", K(tmp_expr), K(expr), K(ret));
       }
     }
   } else if (OB_PROXY_EXPR_TYPE_SHARDING_CONST == tmp_expr_type || tmp_expr->is_func_expr()) {
@@ -432,7 +433,7 @@ int ObShardingSelectLogPlan::do_other_need_derived(ObProxyExpr *tmp_expr, ObProx
       expr->set_alias_name(tmp_alias_name);
       if (OB_PROXY_EXPR_TYPE_FUNC_AVG == expr_type) {
         if (OB_FAIL(do_other_need_derived_for_avg(tmp_expr, expr))) {
-          LOG_WARN("fail to do other need derived for avg", K(tmp_expr), K(expr), K(ret));
+          LOG_WDIAG("fail to do other need derived for avg", K(tmp_expr), K(expr), K(ret));
         }
       }
     }
@@ -451,26 +452,26 @@ int ObShardingSelectLogPlan::do_need_derived(ObIArray<ObProxyExpr*> &expr_array,
   if (OB_PROXY_EXPR_TYPE_COLUMN == expr_type) {
     if (column_first) {
       if (OB_FAIL(do_column_need_derived(expr_array, expr, bret))) {
-        LOG_WARN("fail to do column need derived", K(ret));
+        LOG_WDIAG("fail to do column need derived", K(ret));
       } else if (bret && OB_FAIL(do_column_need_derived_with_alias(expr_array, expr, bret))) {
-        LOG_WARN("fail to do column need derived with alias", K(ret));
+        LOG_WDIAG("fail to do column need derived with alias", K(ret));
       }
     } else {
       if (OB_FAIL(do_column_need_derived_with_alias(expr_array, expr, bret))) {
-        LOG_WARN("fail to do column need derived with alias", K(ret));
+        LOG_WDIAG("fail to do column need derived with alias", K(ret));
       } else if (bret && OB_FAIL(do_column_need_derived(expr_array, expr, bret))) {
-        LOG_WARN("fail to do column need derived", K(ret));
+        LOG_WDIAG("fail to do column need derived", K(ret));
       }
     }
 
     if (bret && OB_FAIL(do_column_need_derived_with_star(expr_array, expr, bret))) {
-      LOG_WARN("fail to do column need derived with star", K(ret));
+      LOG_WDIAG("fail to do column need derived with star", K(ret));
     }
   } else {
     for (int64_t i = 0; OB_SUCC(ret) && bret && i < expr_array.count(); i++) {
       ObProxyExpr *tmp_expr = expr_array.at(i);
       if (OB_FAIL(do_other_need_derived(tmp_expr, expr, bret))) {
-        LOG_WARN("fail to do other need derived", K(ret));
+        LOG_WDIAG("fail to do other need derived", K(ret));
       }
     }
   }
@@ -485,7 +486,7 @@ int ObShardingSelectLogPlan::handle_derived(ObProxyExpr *expr, bool column_first
 
   if (OB_ISNULL(expr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("expr is NULL", K(ret));
+    LOG_WDIAG("expr is NULL", K(ret));
   } else {
     ObProxyExprType expr_type = expr->get_expr_type();
 
@@ -495,14 +496,14 @@ int ObShardingSelectLogPlan::handle_derived(ObProxyExpr *expr, bool column_first
 
       // Priority is given to finding derived columns, all derived columns have aliases and can be uniquely located
       if (bret && do_need_derived(derived_exprs_, expr, column_first, bret)) {
-        LOG_WARN("fail to do need derived from select expr", K(ret));
+        LOG_WDIAG("fail to do need derived from select expr", K(ret));
       } else if (OB_FAIL(do_need_derived(select_expr_array, expr, column_first, bret))) {
-        LOG_WARN("fail to do need derived from select expr", K(ret));
+        LOG_WDIAG("fail to do need derived from select expr", K(ret));
       } else if (bret) {
         if (OB_FAIL(add_derived_column(expr))) {
-          LOG_WARN("fail to add derived column", K(ret));
+          LOG_WDIAG("fail to add derived column", K(ret));
         } else if (OB_FAIL(handle_agg_expr(expr))) {
-          LOG_WARN("fail to handle agg expr", K(ret));
+          LOG_WDIAG("fail to handle agg expr", K(ret));
         }
       }
     }
@@ -522,13 +523,13 @@ int ObShardingSelectLogPlan::do_handle_select_derived(ObProxyExpr *expr, bool &b
       ObProxyFuncExpr *func_expr = NULL;
       if (OB_ISNULL(func_expr = dynamic_cast<ObProxyFuncExpr*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+        LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
       } else {
         ObSEArray<ObProxyExpr*, 4>& param_array = func_expr->get_param_array();
         for (int64_t i = 0; OB_SUCC(ret) && !bret && i < param_array.count(); i++) {
           ObProxyExpr* param_expr = param_array.at(i);
           if (OB_FAIL(do_handle_select_derived(param_expr, bret))) {
-            LOG_WARN("fail to handle derived", K(ret));
+            LOG_WDIAG("fail to handle derived", K(ret));
           }
         }
       }
@@ -536,7 +537,7 @@ int ObShardingSelectLogPlan::do_handle_select_derived(ObProxyExpr *expr, bool &b
       ObProxyExprColumn* expr_column = dynamic_cast<ObProxyExprColumn*>(expr);
       if (OB_ISNULL(expr_column)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("fail to dynamic cast", K(expr), K(ret));
+        LOG_WDIAG("fail to dynamic cast", K(expr), K(ret));
       } else {
         if (!expr_column->get_table_name().empty()
             && expr_column->get_table_name() == expr_column->get_real_table_name()) {
@@ -556,13 +557,13 @@ int ObShardingSelectLogPlan::handle_select_derived(ObProxyExpr *expr)
 
   if (OB_ISNULL(expr)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WARN("expr is NULL", K(ret));
+    LOG_WDIAG("expr is NULL", K(ret));
   } else if (OB_FAIL(do_handle_select_derived(expr, bret, true))) {
-    LOG_WARN("fail to do handle select derived", K(ret));
+    LOG_WDIAG("fail to do handle select derived", K(ret));
   } else if (bret && OB_FAIL(add_derived_column(expr))) {
-    LOG_WARN("fail to add derived column", K(ret));
+    LOG_WDIAG("fail to add derived column", K(ret));
   } else if (OB_FAIL(handle_agg_expr(expr, true))) {
-    LOG_WARN("fail to handle agg expr", K(ret));
+    LOG_WDIAG("fail to handle agg expr", K(ret));
   }
 
   return ret;
@@ -580,12 +581,12 @@ int ObShardingSelectLogPlan::analyze_group_by_clause()
     ObProxyExpr *expr = NULL;
     if (OB_ISNULL(group_item)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to dynamic cast", "expr", group_by_exprs.at(i), K(ret));
+      LOG_WDIAG("fail to dynamic cast", "expr", group_by_exprs.at(i), K(ret));
     } else if (OB_ISNULL(expr = group_item->get_expr())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("group item expr is NULL", K(ret));
+      LOG_WDIAG("group item expr is NULL", K(ret));
     } else if (OB_FAIL(handle_derived(expr, true))) {
-      LOG_WARN("fail to handle derived", K(ret));
+      LOG_WDIAG("fail to handle derived", K(ret));
     }
   }
 
@@ -604,12 +605,12 @@ int ObShardingSelectLogPlan::analyze_order_by_clause()
     ObProxyExpr *expr = NULL;
     if (OB_ISNULL(order_item)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("fail to dynamic cast", "expr", order_by_exprs.at(i), K(ret));
+      LOG_WDIAG("fail to dynamic cast", "expr", order_by_exprs.at(i), K(ret));
     } else if (OB_ISNULL(expr = order_item->get_expr())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WARN("order item expr is NULL", K(ret));
+      LOG_WDIAG("order item expr is NULL", K(ret));
     } else if (OB_FAIL(handle_derived(expr))) {
-      LOG_WARN("fail to handle derived", K(ret));
+      LOG_WDIAG("fail to handle derived", K(ret));
     }
   }
 
@@ -625,7 +626,7 @@ int ObShardingSelectLogPlan::analyze_select_clause()
   for (int64_t i = 0; OB_SUCC(ret) && i < select_expr_array.count(); i++) {
     ObProxyExpr *select_expr = select_expr_array.at(i);
     if (OB_FAIL(handle_select_derived(select_expr))) {
-      LOG_WARN("fail to handle select derived", K(ret));
+      LOG_WDIAG("fail to handle select derived", K(ret));
     }
   }
 
@@ -647,7 +648,7 @@ int ObShardingSelectLogPlan::append_derived_order_by(bool &is_same_group_and_ord
       void *ptr = NULL;
       if (OB_ISNULL(ptr = allocator_->alloc(sizeof(ObProxyOrderItem)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WARN("fail to alloc order expr buf", K(ret));
+        LOG_WDIAG("fail to alloc order expr buf", K(ret));
       } else {
         ObProxyExpr *expr = group_expr->get_expr();
         ObSqlString sql_string;
@@ -656,18 +657,18 @@ int ObShardingSelectLogPlan::append_derived_order_by(bool &is_same_group_and_ord
         order_expr->set_expr_type(OB_PROXY_EXPR_TYPE_FUNC_ORDER);
         order_expr->set_expr(expr);
         if (OB_FAIL(order_expr->to_sql_string(sql_string))) {
-          LOG_WARN("fail to get sql string", K(ret));
+          LOG_WDIAG("fail to get sql string", K(ret));
         } else if (OB_ISNULL(buf = static_cast<char*>(allocator_->alloc(sql_string.length())))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WARN("fail to alloc sql string buf", K(ret));
+          LOG_WDIAG("fail to alloc sql string buf", K(ret));
         } else {
           MEMCPY(buf, sql_string.ptr(), sql_string.length());
           ObString derived_order(sql_string.length(), buf);
 
           if (OB_FAIL(order_by_exprs.push_back(order_expr))) {
-            LOG_WARN("fail to push back order expr", K(ret));
+            LOG_WDIAG("fail to push back order expr", K(ret));
           } else if (OB_FAIL(derived_orders_.push_back(derived_order))) {
-            LOG_WARN("fail to add derived order by", K(ret));
+            LOG_WDIAG("fail to add derived order by", K(ret));
           }
         }
       }
@@ -770,13 +771,13 @@ int ObShardingSelectLogPlan::add_agg_operator(bool need_set_limit)
   T *agg_operator = NULL;
   ObProxyAggInput *agg_input = NULL;
   if (OB_FAIL(create_operator_and_input(allocator_, agg_operator, agg_input))) {
-    LOG_WARN("create operator and input for agg failed", K(ret));
+    LOG_WDIAG("create operator and input for agg failed", K(ret));
   } else if (OB_FAIL(agg_input->set_group_by_exprs(group_by_exprs))) {
-    LOG_WARN("fail to set group exprs", K(ret));
+    LOG_WDIAG("fail to set group exprs", K(ret));
   } else if (OB_FAIL(agg_input->set_agg_exprs(agg_exprs_))) {
-    LOG_WARN("fail to set agg exprs", K(ret));
+    LOG_WDIAG("fail to set agg exprs", K(ret));
   } else if (OB_FAIL(agg_operator->set_child(0, plan_root_))) {
-    LOG_WARN("set child failed", K(ret));
+    LOG_WDIAG("set child failed", K(ret));
   } else {
     if (need_set_limit) {
       agg_input->set_limit_offset(dml_stmt->limit_offset_);
@@ -794,7 +795,7 @@ int ObShardingSelectLogPlan::add_stream_agg_operator(bool need_set_limit)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(add_agg_operator<ObProxyStreamAggOp>(need_set_limit))) {
-    LOG_WARN("fail to add stream agg", K(need_set_limit), K(ret));
+    LOG_WDIAG("fail to add stream agg", K(need_set_limit), K(ret));
   }
 
   return ret;
@@ -805,7 +806,7 @@ int ObShardingSelectLogPlan::add_mem_merge_agg_operator(bool need_set_limit)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(add_agg_operator<ObProxyMemMergeAggOp>(need_set_limit))) {
-    LOG_WARN("fail to add mem merge agg", K(ret));
+    LOG_WDIAG("fail to add mem merge agg", K(ret));
   }
 
   return ret;
@@ -822,11 +823,11 @@ int ObShardingSelectLogPlan::add_sort_operator(bool need_set_limit)
   T *sort_operator = NULL;
   ObProxySortInput *sort_input = NULL;
   if (OB_FAIL(create_operator_and_input(allocator_, sort_operator, sort_input))) {
-    LOG_WARN("create operator and input for agg failed", K(ret));
+    LOG_WDIAG("create operator and input for agg failed", K(ret));
   } else if (OB_FAIL(sort_input->set_order_by_exprs(order_by_exprs))) {
-    LOG_WARN("fail to set order exprs", K(ret));
+    LOG_WDIAG("fail to set order exprs", K(ret));
   } else if (OB_FAIL(sort_operator->set_child(0, plan_root_))) {
-    LOG_WARN("set child failed", K(ret));
+    LOG_WDIAG("set child failed", K(ret));
   } else {
     if (need_set_limit) {
       sort_input->set_limit_offset(dml_stmt->limit_offset_);
@@ -844,7 +845,7 @@ int ObShardingSelectLogPlan::add_stream_sort_operator(bool need_set_limit)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(add_sort_operator<ObProxyStreamSortOp>(need_set_limit))) {
-    LOG_WARN("fail to add mem merge agg", K(ret));
+    LOG_WDIAG("fail to add mem merge agg", K(ret));
   }
 
   return ret;
@@ -855,7 +856,7 @@ int ObShardingSelectLogPlan::add_mem_merge_sort_operator(bool need_set_limit)
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(add_sort_operator<ObProxyMemMergeSortOp>(need_set_limit))) {
-    LOG_WARN("fail to add mem merge agg", K(ret));
+    LOG_WDIAG("fail to add mem merge agg", K(ret));
   }
 
   return ret;
@@ -872,28 +873,28 @@ int ObShardingSelectLogPlan::add_agg_and_sort_operator(bool is_same_group_and_or
   if (!group_by_exprs.empty() || !agg_exprs_.empty()) {
     if (!is_same_group_and_order) {
       if (OB_FAIL(compare_group_and_order(is_same_group_and_order))) {
-        LOG_WARN("fail to compare group and order", K(is_same_group_and_order), K(ret));
+        LOG_WDIAG("fail to compare group and order", K(is_same_group_and_order), K(ret));
       }
     }
 
     if (OB_SUCC(ret)) {
       if (is_same_group_and_order) {
         if (OB_FAIL(add_stream_sort_operator(false))) {
-          LOG_WARN("fail to add stream sort operator", K(ret));
+          LOG_WDIAG("fail to add stream sort operator", K(ret));
         } else if (OB_FAIL(add_stream_agg_operator(true))) {
-          LOG_WARN("fail to add stream agg operator", K(ret));
+          LOG_WDIAG("fail to add stream agg operator", K(ret));
         }
       } else {
         if (OB_FAIL(add_mem_merge_agg_operator(false))) {
-          LOG_WARN("fail to add mem merge agg operator", K(ret));
+          LOG_WDIAG("fail to add mem merge agg operator", K(ret));
         } else if (OB_FAIL(add_mem_merge_sort_operator(true))) {
-          LOG_WARN("fail to add mem merge sort operator", K(ret));
+          LOG_WDIAG("fail to add mem merge sort operator", K(ret));
         }
       }
     }
   } else if (!order_by_exprs.empty()) {
     if (OB_FAIL(add_stream_sort_operator(true))) {
-      LOG_WARN("fail to add stream sort operator", K(ret));
+      LOG_WDIAG("fail to add stream sort operator", K(ret));
     }
   }
 
@@ -908,33 +909,34 @@ int ObShardingSelectLogPlan::add_table_scan_operator(ObIArray<dbconfig::ObShardC
   int ret = OB_SUCCESS;
   const uint32_t PARSE_EXTRA_CHAR_NUM = 2;
 
+  bool is_explain_request = client_request_.get_parse_result().has_explain();
   ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
   ObProxyTableScanOp *table_scan_op = NULL;
   ObProxyTableScanInput *table_scan_input = NULL;
   char *buf = NULL;
   if (OB_FAIL(create_operator_and_input(allocator_, table_scan_op, table_scan_input))) {
-    LOG_WARN("create operator and input failed", K(ret));
+    LOG_WDIAG("create operator and input failed", K(ret));
   } else if (OB_ISNULL(buf = static_cast<char*>(allocator_->alloc(new_sql.length() + PARSE_EXTRA_CHAR_NUM)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc column string buf", K(ret));
+    LOG_WDIAG("fail to alloc column string buf", K(ret));
   } else {
     MEMCPY(buf, new_sql.ptr(), new_sql.length());
     MEMSET(buf + new_sql.length(), '\0', PARSE_EXTRA_CHAR_NUM);
     ObString request_sql(new_sql.length(), buf);
     if (OB_FAIL(table_scan_input->set_db_key_names(shard_connector_array))) {
-      LOG_WARN("fail to set db key name", K(ret));
+      LOG_WDIAG("fail to set db key name", K(ret));
     } else if (OB_FAIL(table_scan_input->set_shard_props(shard_prop_array))) {
-      LOG_WARN("fail to set db key name", K(ret));
+      LOG_WDIAG("fail to set db key name", K(ret));
     } else if (OB_FAIL(table_scan_input->set_table_name_maps(table_name_map_array))) {
-      LOG_WARN("fail to set table name", K(ret));
-    } else if (OB_FAIL(table_scan_input->set_calc_exprs(calc_exprs_))) {
-      LOG_WARN("fail to set calc expr", K(ret));
-    } else if (OB_FAIL(table_scan_input->set_agg_exprs(agg_exprs_))) {
-      LOG_WARN("fail to set agg expr", K(ret));
-    } else if (OB_FAIL(table_scan_input->set_group_exprs(dml_stmt->group_by_exprs_))) {
-      LOG_WARN("fail to set group exprs", K(ret));
-    } else if (OB_FAIL(table_scan_input->set_order_exprs(dml_stmt->order_by_exprs_))) {
-      LOG_WARN("fail to set order exprs", K(ret));
+      LOG_WDIAG("fail to set table name", K(ret));
+    } else if (OB_FAIL(!is_explain_request && table_scan_input->set_calc_exprs(calc_exprs_))) {
+      LOG_WDIAG("fail to set calc expr", K(ret));
+    } else if (OB_FAIL(!is_explain_request && table_scan_input->set_agg_exprs(agg_exprs_))) {
+      LOG_WDIAG("fail to set agg expr", K(ret));
+    } else if (OB_FAIL(!is_explain_request && table_scan_input->set_group_exprs(dml_stmt->group_by_exprs_))) {
+      LOG_WDIAG("fail to set group exprs", K(ret));
+    } else if (OB_FAIL(!is_explain_request && table_scan_input->set_order_exprs(dml_stmt->order_by_exprs_))) {
+      LOG_WDIAG("fail to set order exprs", K(ret));
     } else {
       table_scan_input->set_request_sql(request_sql);
     }
@@ -949,12 +951,15 @@ int ObShardingSelectLogPlan::add_projection_operator()
 {
   int ret = OB_SUCCESS;
   ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
+  bool is_explain_request = client_request_.get_parse_result().has_explain();
 
   ObProxyProOp *op = NULL;
   ObProxyProInput *input = NULL;
 
   if (OB_FAIL(create_operator_and_input(allocator_, op, input))) {
-    LOG_WARN("create projection failed", K(ret));
+    LOG_WDIAG("create projection failed", K(ret));
+  } else if (OB_UNLIKELY(is_explain_request)) {
+    LOG_DEBUG("done set calc expr and limit for explain SQL", K(ret));
   } else {
     input->set_calc_exprs(calc_exprs_);
     input->set_derived_column_count(derived_column_count_);
@@ -963,8 +968,11 @@ int ObShardingSelectLogPlan::add_projection_operator()
       input->set_limit_size(dml_stmt->limit_size_);
       is_set_limit_ = true;
     }
+  }
+
+  if (OB_SUCC(ret)) {
     if (OB_FAIL(op->set_child(0, plan_root_))) {
-      LOG_WARN("set child failed", K(ret));
+      LOG_WDIAG("set child failed", K(ret));
     } else {
       plan_root_ = op;
     }
@@ -989,7 +997,7 @@ int ObShardingSelectLogPlan::compare_group_and_order(bool &is_same_group_and_ord
       ObProxyExpr *order_expr = order_by_exprs.at(i)->get_expr();
       if (OB_ISNULL(group_expr) || OB_ISNULL(order_expr)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WARN("group child or order child is NULL", KP(group_expr), KP(order_expr), K(ret));
+        LOG_WDIAG("group child or order child is NULL", KP(group_expr), KP(order_expr), K(ret));
       } else {
         ObProxyExprType group_expr_type = group_expr->get_expr_type();
         ObProxyExprType order_expr_type = order_expr->get_expr_type();
@@ -1000,7 +1008,7 @@ int ObShardingSelectLogPlan::compare_group_and_order(bool &is_same_group_and_ord
           ObProxyExprColumn* order_expr_column = dynamic_cast<ObProxyExprColumn*>(order_expr);
           if (OB_ISNULL(group_expr_column) || OB_ISNULL(order_expr_column)) {
             ret = OB_ERR_UNEXPECTED;
-            LOG_WARN("fail to dynamic cast", KP(group_expr), KP(order_expr), K(ret));
+            LOG_WDIAG("fail to dynamic cast", KP(group_expr), KP(order_expr), K(ret));
           } else {
             ObString &group_column_name = group_expr_column->get_column_name();
             ObString &group_alias_name = group_expr_column->get_alias_name();

@@ -140,11 +140,11 @@ int ObConcurrentHashMap<Key, Value>::init(const int mod_id, const uint64_t tenan
   int ret = OB_SUCCESS;
   if (!is_valid_tenant_id(tenant_id)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid argument", K(ret), K(mod_id), K(tenant_id));
+    COMMON_LOG(WDIAG, "invalid argument", K(ret), K(mod_id), K(tenant_id));
   } else if (OB_FAIL(hash_alloc_.init(mod_id, tenant_id))) {
-    COMMON_LOG(ERROR, "hash_alloc_ init error", K(ret), K(mod_id), K(tenant_id));
+    COMMON_LOG(EDIAG, "hash_alloc_ init error", K(ret), K(mod_id), K(tenant_id));
   } else if (OB_FAIL(array_alloc_.init(mod_id, tenant_id))) {
-    COMMON_LOG(ERROR, "array_alloc_ init error", K(ret), K(mod_id), K(tenant_id));
+    COMMON_LOG(EDIAG, "array_alloc_ init error", K(ret), K(mod_id), K(tenant_id));
   } else {
     // empty
   }
@@ -229,7 +229,7 @@ int ObConcurrentHashMap<Key, Value>::for_each(Function &fn)
     while (OB_SUCCESS == ret && OB_SUCCESS == (hash_ret = iter.next(k, v))) {
       if (!fn(k, v)) {
         ret = OB_EAGAIN;
-        COMMON_LOG(WARN, "for_each encounters error", K(k), K(v));
+        COMMON_LOG(WDIAG, "for_each encounters error", K(k), K(v));
       }
     }
     if (OB_SUCCESS == ret && -ENOENT != hash_ret) {
@@ -278,7 +278,7 @@ bool ObConcurrentHashMap<Key, Value>::RemoveIf<Function>::operator()(Key &key, V
     if (OB_SUCCESS != (tmp_ret = hash_.remove_refactored(key))) {
       // if remove failed, stop traversing.
       bool_ret = false;
-      COMMON_LOG(WARN, "hash remove error", K(tmp_ret), K(key), K(value));
+      COMMON_LOG(WDIAG, "hash remove error", K(tmp_ret), K(key), K(value));
     }
   }
   return bool_ret;

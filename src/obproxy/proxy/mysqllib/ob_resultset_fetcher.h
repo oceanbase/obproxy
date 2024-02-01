@@ -25,7 +25,7 @@
   if (OB_SUCCESS == ret) { \
     int64_t int_value = 0; \
     if (OB_FAIL((result).get_int(column_name, int_value))) { \
-      PROXY_LOG(WARN, "fail to int in row", K(column_name), K(ret)); \
+      PROXY_LOG(WDIAG, "fail to int in row", K(column_name), K(ret)); \
     } else { \
       field = static_cast<type>(int_value); \
     }\
@@ -34,14 +34,14 @@
 #define PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result, column_name, field) \
   if (OB_SUCCESS == ret) { \
     if (OB_FAIL((result).get_varchar(column_name, field))) { \
-      PROXY_LOG(WARN, "fail to get varchar in row", K(column_name), K(ret)); \
+      PROXY_LOG(WDIAG, "fail to get varchar in row", K(column_name), K(ret)); \
     } \
   }
 
 #define PROXY_EXTRACT_BOOL_FIELD_MYSQL(result, column_name, field) \
   if (OB_SUCCESS == ret) { \
     if (OB_FAIL((result).get_bool(column_name, field))) { \
-      PROXY_LOG(WARN, "fail to get bool in row", K(column_name), K(ret)); \
+      PROXY_LOG(WDIAG, "fail to get bool in row", K(column_name), K(ret)); \
     } \
   }
 
@@ -52,7 +52,7 @@
     if (OB_SUCCESS == (ret = (result).get_varchar(column_name, str_value))) { \
       if(str_value.length() >= max_length) { \
         ret = OB_SIZE_OVERFLOW; \
-        PROXY_LOG(WARN, "field max length is not enough:", \
+        PROXY_LOG(WDIAG, "field max length is not enough:", \
                  "max length", max_length, "str length", str_value.length()); \
       } else if (str_value.empty()) {\
         real_length = 0;             \
@@ -63,7 +63,7 @@
         field[str_value.length()] = '\0'; \
       } \
     } else { \
-      PROXY_LOG(WARN, "fail to extract strbuf field mysql", K(column_name), K(real_length), K(ret)); \
+      PROXY_LOG(WDIAG, "fail to extract strbuf field mysql", K(column_name), K(real_length), K(ret)); \
     } \
   }
 
@@ -77,14 +77,14 @@ if (OB_SUCCESS == ret) { \
       field = NULL; \
     } else if (OB_ISNULL(field = static_cast<char *>(allocator.alloc(str_value.length() + 1)))) { \
       ret = OB_ALLOCATE_MEMORY_FAILED; \
-      LOG_WARN("fail to allc part key name", K(field), K(str_value.length()), K(ret)); \
+      LOG_WDIAG("fail to allc part key name", K(field), K(str_value.length()), K(ret)); \
     } else { \
       MEMCPY(field, str_value.ptr(), str_value.length()); \
       real_length = str_value.length();                   \
       field[str_value.length()] = '\0'; \
     } \
   } else { \
-    PROXY_LOG(WARN, "fail to extract strbuf field mysql", K(column_name), K(real_length), K(ret)); \
+    PROXY_LOG(WDIAG, "fail to extract strbuf field mysql", K(column_name), K(real_length), K(ret)); \
   } \
 }
 

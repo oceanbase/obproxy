@@ -17,6 +17,8 @@
 
 #ifndef OCEABASE_COMMON_OB_LOG_PRINT_KV_H_
 #define OCEABASE_COMMON_OB_LOG_PRINT_KV_H_
+
+#include <stdarg.h>
 #include "lib/ob_errno.h"
 #include "lib/utility/ob_macro_utils.h"
 #include "lib/utility/ob_template_utils.h"
@@ -38,8 +40,10 @@ int logdata_printf(char *buf, const int64_t buf_len, int64_t &pos, const char *f
 __attribute__((format(printf, 4, 5)));
 int logdata_vprintf(char *buf, const int64_t buf_len, int64_t &pos, const char *fmt, va_list args);
 
-#define LOG_STDERR(...) do { if(oceanbase::obproxy::RUN_MODE_PROXY == oceanbase::obproxy::g_run_mode && isatty(STDERR_FILENO)) {fprintf(stderr, __VA_ARGS__); }} while(0)
-#define LOG_STDOUT(...) do {if(oceanbase::obproxy::RUN_MODE_PROXY == oceanbase::obproxy::g_run_mode && isatty(STDOUT_FILENO)) {fprintf(stdout, __VA_ARGS__); }} while(0)
+// LOG_STDERR 和 LOG_STDOUT 是日志模块本身调试使用的打印，如丢日志，如果日志量很大，丢日志很多，再打印会使性能
+// 更差，去除日志模块本身的打印
+#define LOG_STDERR(...) do {} while(0)
+#define LOG_STDOUT(...) do {} while(0)
 
 //print errmsg of errno.As strerror not thread-safe, need
 //to call ERRMSG, KERRMSG which use this class.
@@ -600,9 +604,9 @@ private:
       ObLogItem *log_item = NULL;                                                           \
       if (OB_FAIL(pop_from_free_queue(level, log_item))) {                                  \
         LOG_STDERR("pop_from_free_queue error, ret=%d\n", ret);                             \
-      } else if (OB_FAIL(async_log_data_header(type, *log_item, tv, mod_name, level, file, line, function))) {\
-        LOG_STDERR("async_log_data_header error ret = %d\n", ret);                          \
       } else {                                                                              \
+        const uint64_t dropped_log_count = curr_logging_seq_ - last_logging_seq_ - 1;       \
+        async_set_log_header(type, *log_item, tv, mod_name, level, file, line, function, dropped_log_count);   \
         int64_t MAX_LOG_SIZE = log_item->get_buf_size();                                    \
         int64_t pos = log_item->get_data_len();                                             \
         char *data = log_item->get_buf();                                                   \
@@ -662,7 +666,6 @@ private:
         }                                                                                     \
       }                                                                                       \
       if (OB_FAIL(ret)) {                                                                     \
-        inc_dropped_log_count(level);                                                         \
         push_to_free_queue(log_item);                                                         \
         log_item = NULL;                                                                      \
       }                                                                                       \

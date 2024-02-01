@@ -49,11 +49,11 @@ int ObPrometheusMetric::init(const ObPrometheusMetricHashKey &key, bool allow_de
   allow_delete_ = allow_delete;
   hash_ = key.hash_;
   if (OB_FAIL(ObProxyPrometheusUtils::calc_buf_size(key.labels_, buf_size))) {
-    LOG_WARN("fail to calc buf size", KPC(key.labels_));
+    LOG_WDIAG("fail to calc buf size", KPC(key.labels_));
   } else if (buf_size > 0) {
     if (OB_ISNULL(ptr = (unsigned char *)op_fixed_mem_alloc(buf_size))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WARN("allocate memory failed", "size", buf_size, K(ret));
+      LOG_WDIAG("allocate memory failed", "size", buf_size, K(ret));
     } else {
       buf_ = ptr;
       buf_len_ = buf_size;
@@ -62,7 +62,7 @@ int ObPrometheusMetric::init(const ObPrometheusMetricHashKey &key, bool allow_de
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ObProxyPrometheusUtils::copy_label_hash(key.labels_, labels_, buf_, buf_len_))) {
-      LOG_WARN("fail to copy label hash", K(ret));
+      LOG_WDIAG("fail to copy label hash", K(ret));
     }
   }
 
@@ -103,7 +103,7 @@ void ObPrometheusHistogram::atomic_add(const int64_t value)
 {
   int32_t bucket_index = static_cast<int32_t>(bucket_boundaries_.lower_bound(value) - bucket_boundaries_.begin());
   if (bucket_index >= bucket_counts_.size()) {
-    LOG_WARN("bucket index is invalid", K(value), K(bucket_index), "bucket_counts size", bucket_counts_.size());
+    LOG_WDIAG("bucket index is invalid", K(value), K(bucket_index), "bucket_counts size", bucket_counts_.size());
   } else {
     DRWLock::RDLockGuard lock(lock_);
     ATOMIC_AAF(&sum_, value);
@@ -137,7 +137,7 @@ int ObPrometheusFamily::remove_metric(ObPrometheusMetric *metric)
   ObPrometheusMetricHashKey key = ObPrometheusMetricHashing::key(metric);
   DRWLock::WRLockGuard lock(lock_);
   if (OB_FAIL(metrics_.erase_refactored(key))) {
-    LOG_WARN("remove remtric failed", K(ret));
+    LOG_WDIAG("remove remtric failed", K(ret));
   } else {
     metric->dec_ref();
     metric = NULL;
