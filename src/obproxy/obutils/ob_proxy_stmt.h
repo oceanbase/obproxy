@@ -129,13 +129,26 @@ public:
   }
   void set_table_name(const common::ObString& table_name) { table_name_ = table_name; }
   void set_field_results(SqlFieldResult* real_field_results_ptr) { field_results_ = real_field_results_ptr; }
+  void set_use_column_value_from_hint(bool use_column_value_from_hint) { use_column_value_from_hint_ = use_column_value_from_hint; }
 
+  void set_stmt_property(const common::ObString& sql_string,
+                         ObProxyBasicStmtType stmt_type,
+                         const common::ObString& table_name,
+                         SqlFieldResult* real_field_results_ptr,
+                         bool use_column_value_from_hint) {
+    set_sql_string(sql_string);
+    set_stmt_type(stmt_type);
+    set_table_name(table_name);
+    set_field_results(real_field_results_ptr);
+    set_use_column_value_from_hint(use_column_value_from_hint);
+  }
   //if 'table_name_' is not set, 'table_name_' means the first table name in SQL and is converted to UPPER CASE
   const common::ObString& get_table_name() const { return table_name_; }
   SqlFieldResult& get_dml_field_result() { return dml_field_results_; }
 
   bool has_unsupport_expr_type() const { return has_unsupport_expr_type_; }
   bool has_unsupport_expr_type_for_config() const { return has_unsupport_expr_type_for_config_; }
+  bool has_sub_select() const { return has_sub_select_; }
   ExprMap& get_table_exprs_map() { return table_exprs_map_; }
   TablePosArray& get_table_pos_array() { return table_pos_array_; }
   DbTablePosArray& get_db_table_pos_array() { return db_table_pos_array_; }
@@ -154,7 +167,7 @@ protected:
 
   //for where
   int handle_where_clause(ParseNode* node);
-  
+
   //for set
   int handle_assign_list(ParseNode *node);
 
@@ -178,18 +191,19 @@ public:
   //pointer to parseResult, default point to 'dml_field_results_'
   //if 'field_results_' is not set, ObProxyDMLStmt save the parseResult in 'dml_field_results_'
   //if 'field_results_' is set by caller, caller need save the parseResult
-  SqlFieldResult* field_results_; 
+  SqlFieldResult* field_results_;
   SqlFieldResult dml_field_results_;
 
   common::ObSEArray<common::ObString,4> comments_;
   // Store dml related information
-  common::ObSEArray<common::ObString, 4> column_name_array_;
   common::ObString table_name_;
-  
+
 protected:
   bool is_inited_;
   bool has_unsupport_expr_type_;
   bool has_unsupport_expr_type_for_config_;
+  bool has_sub_select_;
+  bool use_column_value_from_hint_;
   ExprMap table_exprs_map_;
   ExprMap alias_table_map_;
   common::ObSEArray<ObProxyExprTablePos, 4> table_pos_array_;

@@ -111,6 +111,8 @@ current_time      { RETURN_NONE_PARAM_FUNC(); }
 curtime           { RETURN_NONE_PARAM_FUNC(); }
 current_timestamp { RETURN_NONE_PARAM_FUNC(); }
 now               { RETURN_NONE_PARAM_FUNC(); }
+null              { return NULL_VAL; }
+
 
 {endtoken}  { return TOKEN_SPECIAL; }
 

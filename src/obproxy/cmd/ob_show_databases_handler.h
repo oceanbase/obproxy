@@ -28,11 +28,11 @@ namespace obutils
 {
 
 class ObSqlParseResult;
-class ObShowDatabasesHandler : public ObCmdHandler
+class ObShardingShowDatabasesHandler : public ObCmdHandler
 {
 public:
-  ObShowDatabasesHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
-  virtual ~ObShowDatabasesHandler() {}
+  ObShardingShowDatabasesHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
+  virtual ~ObShardingShowDatabasesHandler() {}
   int handle_show_databases(const ObString &logic_tenant_name, proxy::ObMysqlClientSession &client_session);
 
   static int show_databases_cmd_callback(event::ObMIOBuffer *buf, ObCmdInfo &info,
@@ -43,7 +43,7 @@ private:
   int dump_database_header();
   int dump_database(const ObString &logic_tenant_name, proxy::ObMysqlClientSession &client_session);
 
-  DISALLOW_COPY_AND_ASSIGN(ObShowDatabasesHandler);
+  DISALLOW_COPY_AND_ASSIGN(ObShardingShowDatabasesHandler);
 };
 } // end of namespace obutils
 } // end of namespace obproxy

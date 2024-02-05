@@ -260,14 +260,6 @@ do {                                                     \
   ++set_info.node_count_;\
 } while(0)
 
-#define SET_BASIC_STMT(stmt_type) \
-do {\
-  if (OBPROXY_T_INVALID == result->cur_stmt_type_\
-      || OBPROXY_T_BEGIN == result->cur_stmt_type_) {\
-    result->cur_stmt_type_ = stmt_type;\
-  }\
-} while (0);
-
 %}
 
 %union
@@ -293,7 +285,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token GRANT REVOKE ANALYZE PURGE COMMENT
 %token FROM DUAL
 %token PREPARE EXECUTE USING DEALLOCATE
-%token COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY QUERY_TIMEOUT READ_CONSISTENCY WEAK STRONG FROZEN PLACE_HOLDER
+%token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN LOAD_DATA_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY PLACE_HOLDER
 %token END_P ERROR
 %token WHEN
 %token TABLEGROUP /*OB 特有的保留关键字*/
@@ -304,12 +296,13 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> QUICK COUNT AS WHERE VALUES ORDER GROUP HAVING INTO UNION FOR
 %token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
 %token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR
-%token<str> LOAD DATA HINT_BEGIN LOCAL INFILE
+%token<str> LOAD DATA LOCAL INFILE
 %token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION
 %token<str> NUMBER_VAL
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
 %token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
-%token<num> INT_NUM
+%token<str> QUERY_TIMEOUT READ_CONSISTENCY WEAK STRONG FROZEN 
+%token<num> INT_NUM 
 %type<str> right_string_val tracer_right_string_val name_right_string_val
 %type<node> call_expr
 %type<shard_node> odp_comment comment_expr
@@ -901,45 +894,43 @@ right_string_val: NAME_OB
                 | NAME_STR
 
 select_with_opt_hint: SELECT
-                    | SELECT hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_SELECT); }
+                    | SELECT_HINT_BEGIN hint_list_with_end
 update_with_opt_hint: UPDATE
-                    | UPDATE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_UPDATE); }
+                    | UPDATE_HINT_BEGIN hint_list_with_end
 delete_with_opt_hint: DELETE
-                    | DELETE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_DELETE); }
-
+                    | DELETE_HINT_BEGIN hint_list_with_end
 insert_with_opt_hint: INSERT insert_all_when
-                    | INSERT hint_list_begin hint_list_with_end insert_all_when { SET_BASIC_STMT(OBPROXY_T_INSERT); }
+                    | INSERT_HINT_BEGIN hint_list_with_end insert_all_when
 
 insert_all_when:
                | ALL
                | ALL WHEN
 /* load data will use replace as keyword so we need to set cur_stmt_type_ here */
 replace_with_opt_hint: REPLACE
-                     | REPLACE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_REPLACE); }
+                     | REPLACE_HINT_BEGIN hint_list_with_end
 merge_with_opt_hint: MERGE
-                   | MERGE hint_list_begin hint_list_with_end { SET_BASIC_STMT(OBPROXY_T_MERGE); }
+                   | MERGE_HINT_BEGIN hint_list_with_end
 load_data_opt_hint: LOAD DATA
-                  | LOAD DATA hint_list_begin hint_list_with_end
+                  | LOAD_DATA_HINT_BEGIN hint_list_with_end
 
-hint_list_begin : COMMENT_BEGIN HINT_BEGIN
-hint_list_with_end: hint_list COMMENT_END
+hint_list_with_end: hint_list HINT_END
 hint_list: /* empty */
          | hint hint_list
 
-hint: QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
+hint: var_name {}
+    | var_name '(' INT_NUM ')' {}
+    | var_name '(' var_name ')' {}
+    | var_name '(' var_name var_name ')' {}
+    | var_name '(' var_name INT_NUM ')' {}
+    | QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
     | INT_NUM {}
     | READ_CONSISTENCY '(' opt_read_consistency ')'
-    | INDEX '(' NAME_OB NAME_OB ')'
+    | INDEX '(' var_name var_name ')'
     {
       add_hint_index(result->dbmesh_route_info_, $3);
       result->dbmesh_route_info_.index_count_++;
     }
     | TRACE_LOG { result->has_trace_log_hint_ = true; }
-    | NAME_OB {}
-    | NAME_OB '(' INT_NUM ')' {}
-    | NAME_OB '(' NAME_OB ')' {}
-    | NAME_OB '(' NAME_OB NAME_OB ')' {}
-    | NAME_OB '(' NAME_OB INT_NUM ')' {}
 
 opt_read_consistency: /* empty */ {}
                     | WEAK { SET_READ_CONSISTENCY(OBPROXY_READ_CONSISTENCY_WEAK); }
@@ -1255,6 +1246,9 @@ non_reserved_keyword: START
                     | LOCAL
                     | DATA
                     | STATUS
+                    | WEAK
+                    | STRONG
+                    | FROZEN
 
 var_name: NAME_OB
         | non_reserved_keyword

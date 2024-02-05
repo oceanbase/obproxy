@@ -136,6 +136,9 @@ const char* get_obproxy_token_type(const ObProxyTokenType type)
     case TOKEN_HEX_VAL:
       str_ret = "TOKEN_HEX_VAL";
       break;
+    case TOKEN_NULL:
+      str_ret = "TOKEN_NULL";
+      break;
     default:
       break;
   }

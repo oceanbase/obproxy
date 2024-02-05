@@ -21,11 +21,11 @@ namespace obproxy
 {
 namespace obutils
 {
-class ObShowTableStatusHandler : public ObCmdHandler
+class ObShardingShowTableStatusHandler : public ObCmdHandler
 {
 public:
-  ObShowTableStatusHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
-  virtual ~ObShowTableStatusHandler() {}
+  ObShardingShowTableStatusHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
+  virtual ~ObShardingShowTableStatusHandler() {}
   int handle_show_table_status(const ObString &logic_tenant_name, const ObString &logic_database_name,
                                ObString &logic_table_name);
 
@@ -37,7 +37,7 @@ private:
   int dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
                  ObString &logic_table_name);
 
-  DISALLOW_COPY_AND_ASSIGN(ObShowTableStatusHandler);
+  DISALLOW_COPY_AND_ASSIGN(ObShardingShowTableStatusHandler);
 };
 } // end of namespace obutils
 } // end of namespace obproxy

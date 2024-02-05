@@ -162,7 +162,6 @@ int ObProxyExprFactory::register_proxy_expr()
     REG_EXPR("UPPER", OB_PROXY_EXPR_TYPE_FUNC_UPPER, ObProxyExprUpper);
     REG_EXPR("UCASE", OB_PROXY_EXPR_TYPE_FUNC_UPPER, ObProxyExprUpper);
     REG_EXPR("TO_NUMBER", OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER, ObProxyExprToNumber);
-    REG_EXPR("NULL", OB_PROXY_EXPR_TYPE_FUNC_NULL, ObProxyExprNULL);
 
     // add new function above, this is the last
     // REG_EXPR("", OB_PROXY_EXPR_TYPE_MAX, );

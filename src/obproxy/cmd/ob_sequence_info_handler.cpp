@@ -331,7 +331,7 @@ int ObSequenceInfoHandler::process_sequence_info(void* data)
     snprintf(err_msg_, SEQUENCE_ERR_MSG_SIZE, "%.*s", tmp_seq_info->err_msg_.config_string_.length(),
              tmp_seq_info->err_msg_.config_string_.ptr());
   } else if (param_.need_value_ && !tmp_seq_info->is_valid()) {
-    LOG_INFO("is over need reschedule", K(*tmp_seq_info), K(retry_time_));
+    LOG_INFO("is over need reschedule", K(retry_time_));
     op_free(tmp_seq_info);
     tmp_seq_info = NULL;
     if (retry_time_ < get_global_proxy_config().sequence_fail_retry_count) {

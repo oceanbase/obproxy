@@ -187,6 +187,7 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
             && !client_request.is_proxysys_user()
             && !ctx.using_ldg_
             && OB_MYSQL_COM_STMT_SEND_LONG_DATA != sql_cmd
+            && OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != sql_cmd
             && OB_MYSQL_COM_CHANGE_USER != sql_cmd) {
           if (OB_FAIL(do_analyze_request(ctx, sql_cmd, auth_request, client_request, is_oracle_mode))) {
             status = ANALYZE_ERROR;

@@ -62,7 +62,7 @@ private:
   int dump_shard_topology_for_shard_db_non_shard_tb(ObString table_name, dbconfig::ObShardRule *shard_rule);
   int dump_shard_topology_for_shard_db_shard_tb(dbconfig::ObShardRule *shard_rule);
 
-  ObString get_shard_key_str(dbconfig::ObShardRule& shard_rule, char* const target_buf, const int target_buf_len);
+  ObString get_shard_key_str(dbconfig::ObShardRule& shard_rule);
   ObString get_shard_rule_str(dbconfig::ObShardRule& shard_rule);
 private:
   DISALLOW_COPY_AND_ASSIGN(ObShowTopologyHandler);

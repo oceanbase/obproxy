@@ -136,6 +136,18 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
         }
       }
       break;
+      case PARAM_NULL:
+      {
+        ObProxyExprConst *null_expr = NULL;
+        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_CONST, null_expr))) {
+          LOG_WDIAG("create proxy expr failed", K(ret));
+        } else {
+          ObObj &obj = null_expr->get_object();
+          obj.set_null();
+          expr = null_expr;
+        }
+        break;
+      }
       default:
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("unexpected type", K(node->type_), K(ret));

@@ -18,6 +18,9 @@
 #include "lib/oblog/ob_log.h"
 #include "lib/encrypt/ob_encrypted_helper.h"
 #include "rpc/obmysql/packet/ompk_handshake.h"
+#if HAVA_BEYONDTRUST
+#include "obutils/ob_beyond_trust_processor.h"
+#endif
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "utils/ob_proxy_blowfish.h"
 #include "sql/session/ob_system_variable_alias.h"
@@ -81,7 +84,7 @@ int ObProxyShardUtils::check_logic_database(ObMysqlTransact::ObTransState &trans
     LOG_WDIAG("Access denied for database from remote addr", K(db_name), K(ret));
   }
 
-  // switch logic database, random get one shard connector
+  //有的 SQL 不需要改写, 可以直接依赖上一次的 DBKey, 切换逻辑库以后, 也随机选一个, 避免使用到上一个逻辑库的
   if (OB_SUCC(ret)) {
     if (OB_FAIL(db_info->acquire_random_shard_connector(shard_conn))) {
       LOG_WDIAG("fail to get random shard connector", K(ret), KPC(db_info));
@@ -157,8 +160,8 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
   ObClientSessionInfo &session_info = client_session.get_session_info();
 
   if (!shard_conn->is_same_connection(prev_shard_conn)) {
-    // need use ObMysqlTransact::is_in_trans, not use is_sharding_in_trans
-    // because first SQL should not think as in trans
+    // 这里要用 ObMysqlTransact::is_in_trans, 比如 begin 后的第一条 SQL,
+    // is_sharding_in_trans 会认为在事务中, 但是这里需要认为不在事务中, 否则会认为是分布式
     if (OB_UNLIKELY(ObMysqlTransact::is_in_trans(trans_state))) {
       ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
       LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
@@ -188,7 +191,8 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
 
   if (OB_SUCC(ret)) {
     session_info.set_shard_connector(shard_conn);
-    // single schema table mode, need sync schema
+    // 虽然分库分表不会同步 database, 但是从分库分表到单库单表,
+    // 由于分库分表没同步, 当切换到单库单表时, 如果 dbkey 相同, 单库单表逻辑不设置 database, 会导致设置为错误的数据库
     session_info.set_database_name(shard_conn->database_name_.config_string_);
 
     if (DB_OB_MYSQL == shard_conn->server_type_ || DB_OB_ORACLE == shard_conn->server_type_) {
@@ -229,8 +233,20 @@ int ObProxyShardUtils::change_user_auth(ObMysqlClientSession &client_session,
   }
 
   if (shard_conn.is_enc_beyond_trust() && OB_UNLIKELY(password.empty())) {
+#if HAVA_BEYONDTRUST
+    const ObString &shard_name = shard_conn.shard_name_.config_string_;
+    ObBeyondTrustProcessor &bt_processor = get_global_beyond_trust_processor();
+    char pwd_buf[OB_MAX_PASSWORD_LENGTH];
+    memset(pwd_buf, 0, sizeof(pwd_buf));
+    if (OB_FAIL(bt_processor.get_connector_info(shard_name, pwd_buf, OB_MAX_PASSWORD_LENGTH, false))) {
+      LOG_WDIAG("fail to get connector info from beyond trust cache", K(shard_name), K(ret));
+    } else {
+      password.assign_ptr(pwd_buf, (ObString::obstr_size_t)strlen(pwd_buf));
+    }
+#else
     ret = OB_ERR_UNEXPECTED;
     LOG_EDIAG("not support beyond trust password", K(ret));
+#endif
   }
   if (OB_FAIL(ObProxySessionInfoHandler::rewrite_login_req_by_sharding(session_info, full_user_name,
               password, database, tenant_name, cluster_name))) {
@@ -240,7 +256,7 @@ int ObProxyShardUtils::change_user_auth(ObMysqlClientSession &client_session,
   return ret;
 }
 
-// caller will erase remove quoto, so here need add quoto
+//外部逻辑会去掉引号, 所以这里面要加上引号
 void ObProxyShardUtils::replace_oracle_table(ObSqlString &new_sql, const ObString &real_name,
                                              bool &hava_quoto, bool is_single_shard_db_table,
                                              bool is_database)
@@ -250,11 +266,13 @@ void ObProxyShardUtils::replace_oracle_table(ObSqlString &new_sql, const ObStrin
     new_sql.append(real_name);
     new_sql.append("\"", 1);
   } else {
+    // 如果有引号, 带上引号
     if (hava_quoto) {
       new_sql.append("\"", 1);
       new_sql.append(real_name);
       new_sql.append("\"", 1);
     } else {
+      // 如果没有引号
       if (is_single_shard_db_table) {
         new_sql.append(real_name);
       } else {
@@ -336,9 +354,9 @@ int ObProxyShardUtils::rewrite_shard_request_db(const char *sql_ptr, int64_t dat
 
   bool database_hava_quoto = false;
 
-  // replace database
+  // 替换 database
   if (database_pos > 0) {
-    // If there is database in SQL
+    // 如果 SQL 里有 database
     if (*(sql_ptr + database_pos - 1) == '`' || *(sql_ptr + database_pos - 1) == '"') {
       database_hava_quoto = true;
       database_pos -= 1;
@@ -357,7 +375,7 @@ int ObProxyShardUtils::rewrite_shard_request_db(const char *sql_ptr, int64_t dat
       new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
     }
   } else {
-    // If there is no database in SQL, single database and single table will not be added.
+    // 如果 SQL 里没有 database, 单库单表就不加了
     // add real database name before logic table name
     new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
     if (!is_single_shard_db_table && !real_database_name.empty()) {
@@ -390,6 +408,7 @@ int ObProxyShardUtils::rewrite_shard_request_table_no_db(const char *sql_ptr,
   }
 
   new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
+  // 替换表名
   if (is_oracle_mode) {
     replace_oracle_table(new_sql, real_table_name, table_have_quoto, is_single_shard_db_table, false);
   } else {
@@ -424,7 +443,7 @@ int ObProxyShardUtils::rewrite_shard_request_table(const char *sql_ptr,
                                        is_single_shard_db_table, new_sql, copy_pos))) {
     LOG_WDIAG("fail to rewrite db", K(ret));
   } else {
-    // replace table name
+    // 替换表名
     if (is_oracle_mode) {
       replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
     } else {
@@ -445,7 +464,7 @@ int ObProxyShardUtils::rewrite_shard_request_hint_table(const char *sql_ptr, int
 
   bool table_hava_quoto = false;
 
-  // replace index table name in hint
+  // 替换 hint 里的 index 表名
   if (index_table_pos > 0) {
     if (*(sql_ptr + index_table_pos - 1) == '`' || *(sql_ptr + index_table_pos - 1) == '"') {
       table_hava_quoto = true;
@@ -466,12 +485,16 @@ int ObProxyShardUtils::rewrite_shard_request_hint_table(const char *sql_ptr, int
   return ret;
 }
 
-// MySQL use single quoto to table, case-insensitive
-// Oracle use double quoto, case-sensitive, The default is uppercase
-//  if single schema table mode, table from SQL:
-//     if have quoto, add quoto
-//     if no quoto, not add quoto
-//  if sharding mode, table from config, both add quoto
+// Mysql 表名用单引号, Oracle 表名用双引号
+//  不区分大小写
+// Oracle 有大小写区分, 不带引号默认是大写的
+//  如果没有引号, Oralce 模式加上引号
+//     如果是单表, 表名来自 SQL, 不确定是大写还是小写
+//       如果有引号, 带上引号
+//       如果没引号, 不带引号
+//   如果是分库分表, 表名来自配置, 需要带上引号, 配置是啥就是啥
+//      如果有引号, 带上引号
+//      如果没引号, 带上引号
 int ObProxyShardUtils::rewrite_shard_request(ObClientSessionInfo &session_info,
                                              ObSqlParseResult &parse_result,
                                              const ObString &table_name, const ObString &database_name,
@@ -995,7 +1018,7 @@ int ObProxyShardUtils::handle_possible_probing_stmt(const ObString& sql,
             && OB_NOT_NULL(const_expr = dynamic_cast<ObProxyExprConst*>(select_expr_array.at(0)))
             && OB_UNLIKELY(const_expr->get_object().is_int())
             && OB_UNLIKELY(1 == const_expr->get_object().get_int())) {
-          return OB_ERR_UNEXPECTED;
+          return OB_ERR_UNEXPECTED; //断连接; OB_NOT_SUPPORTED:返回error包
         }
       }
     }
@@ -1046,7 +1069,8 @@ int ObProxyShardUtils::get_shard_hint(const ObString &table_name,
   if (OB_SUCC(ret) && !table_name.empty() && !logic_db_info.is_single_shard_db_table()) {
     ObShardRule *logic_tb_info = NULL;
     if (OB_FAIL(logic_db_info.get_shard_rule(logic_tb_info, table_name))) {
-      LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
+      ret = OB_SUCCESS;
+      LOG_DEBUG("no shard rule, maybe route by hint", K(table_name), K(ret));
     } else if (group_index != OBPROXY_MAX_DBMESH_ID && group_index >= logic_tb_info->db_size_) {
       ret = OB_NOT_SUPPORTED;
       LOG_WDIAG("sql with group hint and greater than db size",
@@ -1076,8 +1100,8 @@ int ObProxyShardUtils::get_shard_hint(ObDbConfigLogicDb &logic_db_info,
     es_index = parse_result.get_dbmesh_route_info().es_idx_;
     testload_type = get_testload_type(parse_result.get_dbmesh_route_info().testload_);
     const ObString &disaster_status = parse_result.get_dbmesh_route_info().disaster_status_;
-    // if disaster status exist and valid, use disaster_eid
-    // if failed, ignore
+    // 如果 disaster status 存在且有效，使用自适应容灾配置的eid 覆盖掉hint 中的es_index
+    // 如果失败了，忽略
     if (!disaster_status.empty() && OB_FAIL(logic_db_info.get_disaster_eid(disaster_status, es_index))) {
       LOG_DEBUG("fail to get disaster elastic id", K(disaster_status), K(ret));
       ret = OB_SUCCESS;
@@ -1090,15 +1114,31 @@ int ObProxyShardUtils::get_shard_hint(ObDbConfigLogicDb &logic_db_info,
       is_sticky_session = true;
     }
   }
+
+
+  // check unsupported hint combination
+  if (OB_SUCC(ret)) {
+    bool has_scan_all = dbp_route_info.scan_all_;
+    bool has_sticky_session = is_sticky_session;
+    bool has_group_id = odp_route_info.group_idx_ != OBPROXY_MAX_DBMESH_ID
+                        || dbp_route_info.has_group_info_;
+    bool has_sharding_key = dbp_route_info.has_shard_key_;
+    int hint_count = has_scan_all + has_sticky_session + has_group_id + has_sharding_key;
+    if (hint_count >= 2) {
+      ret = OB_PROXY_SHARD_HINT_NOT_SUPPORTED;
+      LOG_WDIAG("unsupported hint combination", K(has_scan_all), K(has_sticky_session),
+                K(has_group_id), K(has_sharding_key), K(ret));
+    }
+  }
+
   return ret;
 }
 
 bool ObProxyShardUtils::is_read_stmt(ObClientSessionInfo &session_info, ObMysqlTransact::ObTransState &trans_state,
                                      ObSqlParseResult& parse_result)
 {
-  // Write request using write weight
-  //   All requests within the transaction are considered to be write
-  // Read request using read weight
+  // 写请求走写权重, 事务内请求都认为是写
+  // 读请求走读权重
   return (!is_sharding_in_trans(session_info, trans_state)
           && (parse_result.is_show_stmt()
               || parse_result.is_desc_stmt()
@@ -1275,20 +1315,21 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
 }
 
 /*
- * if no table name
- *   use last shard connector
  *
- * if no hint
- *   Read and write separation based on weight
+ * 如果没有表名
+ *   不处理改写及计算路由的过程，使用上一个请求计算得来的请求，与handle_shard_request对齐普通请求
  *
- * if have hint
- *   it have table_id and 0, ignore. otherwise report an error
- *   if have group_id and 0, ignore. otherwise report an error
- *   if have testload or table name
- *     if sql do not have table name, report an error
- *     if sql have table name, rewrite sql
- *   if have es_id, route based on es_id. otherwise based on weight
- *   ignore other hint
+ * 如果没有 hint
+ *   权重读写分离
+ *
+ * 有 hint
+ *   如果有 table_id，如果为0, 则忽略。否则报错
+ *   如果有 group_id，如果为0，则忽略。否则报错
+ *   如果有 testload、或者指定表名
+ *     如果没有表名，报错
+ *     如果有表名，改写 SQL
+ *   如果有 es_id (eid 可能来自disaster_status)，根据 es_id 路由。否则根据权重读写分离
+ *   其他 hint 忽略
  */
 int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &client_session,
                                                       ObMysqlTransact::ObTransState &trans_state,
@@ -1321,9 +1362,9 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
               group_index, tb_index, es_index, hint_table, testload_type, is_sticky_session))) {
     LOG_WDIAG("fail to get shard hint", K(ret));
   } else {
-    // some case can skip rewrite check:
-    //   1. if sql have table name, can not skip
-    //   2. if sql have no table name
+    //  可以跳过改写检查的白名单sql
+    //    1.如果识别sql中有表名，不能跳过
+    //    2.SQL中没有识别到表名：
     //      2.1 SHOW_TABLES/SHOW_DATABASE
     //      2.2 SELECT LAST_INSERT_ID
     //      2.3 COMMIT
@@ -1334,15 +1375,15 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
                                                   || (parse_result.is_select_stmt() && parse_result.has_last_insert_id())
                                                   || parse_result.is_commit_stmt()
                                                   || parse_result.is_rollback_stmt());
-    // three case need rewrite sql:
-    //   1. sql have db
-    //   2. have testload flag
-    //   3. specify table in hint
+    // 有三种情况需要改写:
+    //   1. SQL 里有 DB
+    //   2. 有压测标志
+    //   3. hint 里指定了表名
     is_need_rewrite_sql = (!is_skip_rewrite_check) && (!parse_result.get_origin_database_name().empty()
                           || TESTLOAD_NON != testload_type
                           || !hint_table.empty());
 
-    // if need rewrite sql, but not find table name in sql, report an error
+    // 如果要改写 SQL, 但是 SQL 里没有找到表名, 就报错
     if ((OBPROXY_MAX_DBMESH_ID != tb_index && 0 != tb_index)
         || (OBPROXY_MAX_DBMESH_ID != group_index && 0 != group_index)
         || (is_need_rewrite_sql && table_name.empty())) {
@@ -1355,8 +1396,8 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
     char real_table_name[OB_MAX_TABLE_NAME_LENGTH];
     char real_database_name[OB_MAX_DATABASE_NAME_LENGTH];
 
-    // The write request takes the write weight, and the request in the transaction is considered to be write
-    // Read Request Walk Weight
+    // 写请求走写权重, 事务内请求都认为是写
+    // 读请求走读权重
     bool is_read_stmt = ObProxyShardUtils::is_read_stmt(session_info, trans_state, parse_result);
 
     if (OB_FAIL(logic_db_info.get_single_table_info(table_name, shard_conn,
@@ -1554,7 +1595,7 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlClientSession &client_session
                                       static_cast<common::ObCollationType>(client_session.get_session_info().get_collation_connection()),
                                       false/*drop_origin_db_table_name*/,
                                       true /*is sharding user*/))) {
-        LOG_WDIAG("fail to handle single shard request for single sql", K(ret), K(sql));
+        LOG_WDIAG("fail to handle shard request for single sql", K(ret), K(sql));
       } else {
         real_parse_result = &parse_result;
       }
@@ -1568,7 +1609,7 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlClientSession &client_session
           LOG_WDIAG("unsupport type in multi stmt", K(ret), K(sql));
         } else if (OB_FAIL(do_handle_shard_request(client_session, trans_state, logic_db_info, sql, new_sql, *real_parse_result,
                                                   es_index, group_index, last_es_index, is_scan_all))) {
-          LOG_WDIAG("fail to handle single shard request for single sql", K(ret), K(sql), K(new_sql));
+          LOG_WDIAG("fail to handle shard request for single sql", K(ret), K(sql), K(new_sql));
         } else if (OB_UNLIKELY((i > 0) && ((es_index != last_es_index) || (group_index != last_group_index)))) {
           ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
           LOG_WDIAG("different elastic index or group index for multi stmt is not supported", K(es_index), K(last_es_index), K(group_index),
@@ -1622,11 +1663,11 @@ int ObProxyShardUtils::do_handle_shard_request(ObMysqlClientSession &client_sess
   ObString table_name = parse_result.get_origin_table_name();
   if (OB_UNLIKELY(is_unsupport_type_in_multi_stmt(parse_result)
       || table_name.empty())) {
-    // Let it go for now, keep compatible
+    //暂时先放过, 保持兼容
     new_sql.append(sql);
   } else if (parse_result.is_show_stmt() || parse_result.is_desc_table_stmt()) {
     if (OB_FAIL(handle_other_request(client_session, trans_state, table_name, db_info,
-                                     sql, new_sql, parse_result, es_index, group_index))) {
+                                     sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
       LOG_WDIAG("fail to handle other request", K(ret), K(sql), K(new_sql), K(table_name));
     }
   } else if (parse_result.is_select_stmt()) {
@@ -1739,7 +1780,8 @@ int ObProxyShardUtils::handle_other_request(ObMysqlClientSession &client_session
                                             ObSqlString& new_sql,
                                             ObSqlParseResult &parse_result,
                                             int64_t& es_index,
-                                            int64_t& group_index)
+                                            int64_t& group_index,
+                                            const int64_t last_es_index)
 {
   int ret = OB_SUCCESS;
 
@@ -1750,7 +1792,7 @@ int ObProxyShardUtils::handle_other_request(ObMysqlClientSession &client_session
   if (OB_FAIL(handle_other_real_info(db_info, client_session, trans_state, table_name,
                                      real_database_name, OB_MAX_DATABASE_NAME_LENGTH,
                                      real_table_name, OB_MAX_TABLE_NAME_LENGTH,
-                                     parse_result, es_index, group_index))) {
+                                     parse_result, es_index, group_index, last_es_index))) {
     LOG_WDIAG("fail to handle other real info", K(ret), K(session_info), K(table_name));
   } else if (OB_FAIL(rewrite_shard_request(session_info, parse_result,
                                            table_name, db_info.db_name_.config_string_,
@@ -1910,19 +1952,19 @@ int ObProxyShardUtils::need_scan_all_by_index(const ObString &table_name,
   ObSEArray<int64_t, 4> index_array;
   if (OB_FAIL(db_info.get_shard_rule(logic_tb_info, table_name))) {
     LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
-    // It is possible to have no where condition, but only one database and one table
+    // 有可能不带 where 条件, 但是只有一个库一个表
   } else if (logic_tb_info->tb_size_ == 1 && logic_tb_info->db_size_ == 1) {
     is_scan_all = false;
   } else if (sql_result.field_num_ > 0) {
     if (logic_tb_info->tb_size_ == 1) {
-      // Sub-library without table and sub-library single table, calculated according to db rule
+      // 分库不分表 和 分库单表,  根据 db rule 计算
       if (OB_FAIL(ObShardRule::get_physic_index_array(sql_result, logic_tb_info->db_rules_,
                                                       logic_tb_info->db_size_,
                                                       TESTLOAD_NON, index_array))) {
         LOG_WDIAG("fail to get physic tb index", K(table_name), KPC(logic_tb_info), K(ret));
       }
     } else {
-      // Sub-library and sub-table, calculated according to tb rule
+      // 分库分表, 根据 tb rule 计算
       if (OB_FAIL(ObShardRule::get_physic_index_array(sql_result, logic_tb_info->tb_rules_,
                                                       logic_tb_info->tb_size_,
                                                       TESTLOAD_NON, index_array))) {
@@ -1995,7 +2037,7 @@ int ObProxyShardUtils::handle_sys_read_consitency_prop(ObDbConfigLogicDb &logic_
 
 int ObProxyShardUtils::init_shard_common_session(ObClientSessionInfo &session_info)
 {
-  //TODO: These configurations support adjustment
+  //todo: 这个默认值最好是可以来自一个控制台，可以设置，可以调整
   //int type
   std::map<std::string, int> int_session_map;
   int_session_map.insert(std::pair<std::string, int>("autocommit", 1));
@@ -2161,7 +2203,7 @@ int ObProxyShardUtils::handle_shard_auth(ObMysqlClientSession &client_session, c
         if (OB_SUCC(ret)) {
           session_info.set_shard_connector(shard_conn);
           if (client_session.is_session_pool_client()) {
-            //need save database name in connection pool mode
+            //连接池不会真正建联，需要保存下database_name
             const ObString& real_database_name = shard_conn->database_name_.config_string_;
             session_info.set_database_name(real_database_name);
             LOG_DEBUG("set database_name for pool", K(real_database_name));
@@ -2283,144 +2325,111 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
                                               char *real_database_name, int64_t db_name_len,
                                               char *real_table_name, int64_t tb_name_len,
                                               ObSqlParseResult &parse_result,
-                                              int64_t& es_id, int64_t& group_id)
+                                              int64_t& es_index, int64_t& group_index,
+                                              const int64_t last_es_index)
 {
   int ret = OB_SUCCESS;
 
-  ObShardTpo *shard_tpo = NULL;
-  ObGroupCluster *gc_info = NULL;
   ObShardConnector *shard_conn = NULL;
   ObClientSessionInfo &cs_info = client_session.get_session_info();
   ObShardConnector *prev_shard_conn = cs_info.get_shard_connector();
+  SqlFieldResult &sql_result = parse_result.get_sql_filed_result();
 
   ObShardRule *logic_tb_info = NULL;
 
-  group_id = OBPROXY_MAX_DBMESH_ID;
-  int64_t table_id = OBPROXY_MAX_DBMESH_ID;
-  es_id = OBPROXY_MAX_DBMESH_ID;
+  group_index = OBPROXY_MAX_DBMESH_ID;
+  int64_t tb_index = OBPROXY_MAX_DBMESH_ID;
+  es_index = OBPROXY_MAX_DBMESH_ID;
   ObTestLoadType testload_type = TESTLOAD_NON;
   ObString hint_table;
+  bool is_read_stmt = false;
+  bool need_rewrite_table_name = true;
+  bool is_not_saved_database = false;
 
   if (OB_ISNULL(prev_shard_conn)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("shard connector info is null", K(ret));
   } else if (OB_FAIL(get_shard_hint(table_name, cs_info, logic_db_info, parse_result,
-                                    group_id, table_id, es_id, hint_table, testload_type))) {
+                                    group_index, tb_index, es_index, hint_table, testload_type))) {
     LOG_WDIAG("fail to get shard hint", K(ret));
-  // get group_id
+  } else if (OBPROXY_MAX_DBMESH_ID != group_index
+             && OBPROXY_MAX_DBMESH_ID == tb_index) {
+    need_rewrite_table_name = false;
   } else if (OB_FAIL(logic_db_info.get_shard_rule(logic_tb_info, table_name))) {
     LOG_WDIAG("fail to get shard rule", K(table_name), K(ret));
   } else {
     int64_t last_group_id = cs_info.get_group_id();
     ObString saved_database_name;
     cs_info.get_logic_database_name(saved_database_name);
-    bool is_not_saved_database = saved_database_name != logic_db_info.db_name_.config_string_;
+    is_not_saved_database = saved_database_name != logic_db_info.db_name_.config_string_;
 
-    // If group_id is specified, check if it exceeds db_size and use it
-    if (group_id != OBPROXY_MAX_DBMESH_ID) {
-      if (group_id >= logic_tb_info->db_size_) {
-        ret = OB_NOT_SUPPORTED;
-        LOG_WDIAG("sql with group hint and greater than db size",
-                 "db_size", logic_tb_info->db_size_, K(group_id), K(ret));
-      }
-    // If no group_id is specified, and the database accessed by the current SQL is the session database, the last_group_id is used
-    } else if (!is_not_saved_database && last_group_id < logic_tb_info->db_size_) {
-      group_id = last_group_id;
-      es_id = cs_info.get_es_id();
+    // If no group_index is specified, and the database accessed by the current SQL is the session database, the last_group_id is used
+    if (!is_not_saved_database && last_group_id < logic_tb_info->db_size_) {
+      group_index = last_group_id;
+      es_index = cs_info.get_es_id();
     }
 
-    if (OB_SUCC(ret)) {
-      if (OB_FAIL(logic_db_info.get_shard_tpo(shard_tpo))) {
-        LOG_WDIAG("fail to get shard tpo info", K(ret));
-      } else if (OB_ISNULL(shard_tpo)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("shard tpo info is null", K(ret));
-      } else if (OB_FAIL(ObShardRule::get_physic_index_random(logic_tb_info->db_size_, group_id))) {
-        LOG_WDIAG("fail to get physic db index", "db_size", logic_tb_info->db_size_, K(group_id), K(ret));
-      // reuse real_database_name to store group name instead of using a new buffer
-      // real_database_name will be set after shard connector is chosen
-      } else  if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->db_size_, logic_tb_info->db_suffix_len_, group_id,
-                                                                logic_tb_info->db_prefix_.config_string_,
-                                                                logic_tb_info->db_tail_.config_string_,
-                                                                real_database_name, db_name_len))) {
-        LOG_WDIAG("fail to get real group name", K(group_id), KPC(logic_tb_info), K(ret));
-      } else if (OB_FAIL(shard_tpo->get_group_cluster(ObString::make_string(real_database_name), gc_info))) {
-        LOG_DEBUG("group does not exist", "phy_db_name", real_database_name, K(ret));
-      } else if (OB_ISNULL(gc_info)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("group cluster info is null", "phy_db_name", real_database_name, K(ret));
-      } else {
-        int64_t es_size = gc_info->get_es_size();
-        bool is_read_stmt = false;
-        ObString shard_name;
-        if (-1 == es_id || OBPROXY_MAX_DBMESH_ID == es_id) {
-          if (OB_FAIL(gc_info->get_elastic_id_by_weight(es_id, is_read_stmt))) {
-            LOG_WDIAG("fail to get eid by read weight", KPC(gc_info));
-          } else {
-            LOG_DEBUG("succ to get eid by weight", K(es_id));
-          }
-        } else if (OB_UNLIKELY(es_id >= es_size)) {
-          ret = OB_EXPR_CALC_ERROR;
-          LOG_WDIAG("es index is larger than elastic array", K(es_id), K(es_size), K(ret));
-        }
+    if (OBPROXY_MAX_DBMESH_ID == group_index
+        && OB_FAIL(ObShardRule::get_physic_index_random(logic_tb_info->db_size_, group_index))) {
+      LOG_WDIAG("fail to get physic db index", "db_size", logic_tb_info->db_size_, K(group_index), K(ret));
+    }
+  }
 
-        if (OB_SUCC(ret)) {
-          shard_name = gc_info->get_shard_name_by_eid(es_id);
-          if (TESTLOAD_NON != testload_type) {
-            if (OB_FAIL(logic_db_info.get_testload_shard_connector(shard_name, logic_db_info.testload_prefix_.config_string_, shard_conn))) {
-              LOG_WDIAG("testload shard connector not exist", "testload_type", get_testload_type_str(testload_type),
-                       K(shard_name), "testload_prefix", logic_db_info.testload_prefix_, K(ret));
-            }
-          } else if (OB_FAIL(logic_db_info.get_shard_connector(shard_name, shard_conn))) {
-            LOG_WDIAG("shard connector does not exist", K(shard_name), K(ret));
-          } else if (*prev_shard_conn != *shard_conn) {
-            if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-              LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
-            }
-          }
-        }
+  // 2.get shard_connector and real db_name
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (OB_FAIL(logic_db_info.get_shard_connector_by_index(shard_conn, es_index, last_es_index, group_index,
+             is_read_stmt, testload_type, NULL/* logic_tb_info */, sql_result))
+             || OB_ISNULL(shard_conn)) {
+    LOG_WDIAG("fail to get shard connector", K(table_name), KPC(logic_tb_info), K(ret));
+  } else {
+    snprintf(real_database_name, db_name_len, "%.*s", shard_conn->database_name_.length(), shard_conn->database_name_.ptr());
+    if (*prev_shard_conn != *shard_conn) {
+      if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
+        LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
       }
     }
+  }
 
-    if (OB_SUCC(ret)) {
-      snprintf(real_database_name, db_name_len, "%.*s", shard_conn->database_name_.length(), shard_conn->database_name_.ptr());
-
-      if (!hint_table.empty()) {
-        snprintf(real_table_name, tb_name_len, "%.*s", static_cast<int>(hint_table.length()), hint_table.ptr());
-      } else {
-        if (table_id == OBPROXY_MAX_DBMESH_ID) {
-          if (1 == logic_tb_info->tb_size_) {
-            table_id = group_id;
-          } else {
-            table_id = group_id * (logic_tb_info->tb_size_ / logic_tb_info->db_size_);
-          }
-        }
-        if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->tb_size_, logic_tb_info->tb_suffix_len_, table_id,
-                                                        logic_tb_info->tb_prefix_.config_string_,
-                                                        logic_tb_info->tb_tail_.config_string_, real_table_name, tb_name_len))) {
-          LOG_WDIAG("fail to get real table name", KPC(logic_tb_info), K(ret));
-        } else if (TESTLOAD_NON != testload_type) {
-          snprintf(real_table_name + strlen(real_table_name), tb_name_len - strlen(real_table_name), "_T");
+    // 3.get real table_name
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (!hint_table.empty()) {
+    snprintf(real_table_name, tb_name_len, "%.*s", static_cast<int>(hint_table.length()), hint_table.ptr());
+  } else {
+    if (!need_rewrite_table_name) {
+      snprintf(real_table_name, tb_name_len, "%.*s", static_cast<int>(table_name.length()), table_name.ptr());
+    } else {
+      if (tb_index == OBPROXY_MAX_DBMESH_ID) {
+        if (1 == logic_tb_info->tb_size_) {
+          tb_index = group_index;
+        } else {
+          tb_index = group_index * (logic_tb_info->tb_size_ / logic_tb_info->db_size_);
         }
       }
+      if (OB_FAIL(logic_tb_info->get_real_name_by_index(logic_tb_info->tb_size_, logic_tb_info->tb_suffix_len_,
+                        tb_index, logic_tb_info->tb_prefix_.config_string_,
+                        logic_tb_info->tb_tail_.config_string_, real_table_name, tb_name_len))) {
+        LOG_WDIAG("fail to get real table name", K(tb_index), KPC(logic_tb_info), K(ret));
+      }
+
     }
 
-    //If it is a logic library on the current session, this group_id can be reused next time
-    if (OB_SUCC(ret) && !is_not_saved_database) {
-      cs_info.set_group_id(group_id);
-      cs_info.set_table_id(table_id);
-      cs_info.set_es_id(es_id);
+    if (OB_SUCC(ret) && TESTLOAD_NON != testload_type) {
+      snprintf(real_table_name + strlen(real_table_name), tb_name_len - strlen(real_table_name), "_T");
     }
+  }
+
+  //如果是当前 session 上的逻辑库, 则下次可以复用这个 group_index
+  if (OB_SUCC(ret) && !is_not_saved_database) {
+    cs_info.set_group_id(group_index);
+    cs_info.set_table_id(tb_index);
+    cs_info.set_es_id(es_index);
   }
 
   if (NULL != shard_conn) {
     shard_conn->dec_ref();
     shard_conn = NULL;
-  }
-
-  if (NULL != shard_tpo) {
-    shard_tpo->dec_ref();
-    shard_tpo = NULL;
   }
 
   return ret;
@@ -2474,7 +2483,7 @@ int ObProxyShardUtils::handle_scan_all_real_info(ObDbConfigLogicDb &logic_db_inf
       LOG_DEBUG("order by expr", K(order_expr->order_direction_));
       ObProxyExpr::print_proxy_expr(order_expr);
     }
-    // Handling distributed selects
+    // 处理分布式select
     ObShardingSelectLogPlan* select_plan = NULL;
     void *ptr = NULL;
     if (OB_ISNULL(ptr = allocator->alloc(sizeof(ObShardingSelectLogPlan)))) {
@@ -2522,9 +2531,10 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
   char real_table_name[OB_MAX_TABLE_NAME_LENGTH];
   char real_database_name[OB_MAX_DATABASE_NAME_LENGTH];
 
-  // The write request walks the write weight, and requests within the transaction are considered to be write
-  // read request weight
+  // 写请求走写权重, 事务内请求都认为是写
+  // 读请求走读权重
   bool is_read_stmt = ObProxyShardUtils::is_read_stmt(session_info, trans_state, parse_result);
+  bool need_rewrite_table_name = true;
 
   if (OB_ISNULL(dml_stmt)) {
     ret = OB_ERR_UNEXPECTED;
@@ -2536,6 +2546,15 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
                                     group_index, tb_index, es_index,
                                     hint_table, testload_type))) {
     LOG_WDIAG("fail to get shard hint", K(ret));
+  } else if (OBPROXY_MAX_DBMESH_ID != group_index
+             && OBPROXY_MAX_DBMESH_ID == tb_index) {
+    // group id hint, just send direct
+    need_rewrite_table_name = false;
+  } else {
+    // no group id hint, check dml
+    if (OB_FAIL(check_dml_sql(table_name, logic_db_info, parse_result))) {
+      LOG_WDIAG("fail to check dml sql", K(ret));
+    }
   }
 
   if (OB_SUCC(ret)) {
@@ -2572,7 +2591,8 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
         ObString &sql_table_name = table_expr->get_table_name();
         if (OB_FAIL(logic_db_info.get_real_table_name(sql_table_name, sql_result,
                                                       real_table_name, OB_MAX_TABLE_NAME_LENGTH,
-                                                      tb_index, hint_table, testload_type))) {
+                                                      tb_index, hint_table, testload_type,
+                                                      need_rewrite_table_name))) {
           LOG_WDIAG("fail to get real table name", K(sql_table_name), K(tb_index),
                    K(hint_table), K(testload_type), K(ret));
         } else if (OB_FAIL(add_table_name_to_map(allocator, table_name_map, sql_table_name, real_table_name))) {
@@ -2596,7 +2616,7 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
     }
   }
 
-  //It is possible that there is a database in SQL. Only the logical library saved on the session can save the group_id and reuse it next time.
+  //有可能 SQL 里带 database, 只有是 session 上保存的逻辑库才能保存 group_id, 下次才能复用
   if (OB_SUCC(ret)) {
     ObString saved_database_name;
     session_info.get_logic_database_name(saved_database_name);
@@ -2612,6 +2632,125 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
     shard_conn->dec_ref();
     shard_conn = NULL;
   }
+  return ret;
+}
+// Filter unsupported dml sqls
+//
+// 1. insert/replace like 'insert into t1(C1, C2) values(1, 2), (null, null), (3, 4);'
+// @return the error code.
+int ObProxyShardUtils::check_dml_sql(const ObString &table_name,
+                                     ObDbConfigLogicDb &logic_db_info,
+                                     ObSqlParseResult &parse_result)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(parse_result.is_insert_stmt()
+                  || parse_result.is_replace_stmt())) {
+    ObShardRule *logic_tb_info = NULL;
+    ObProxyDMLStmt *dml_stmt = dynamic_cast<ObProxyDMLStmt*>(parse_result.get_proxy_stmt());
+    if (table_name.empty()
+        || parse_result.use_column_value_from_hint()
+        || OB_ISNULL(dml_stmt)
+        || dml_stmt->has_sub_select()) {
+      ret = OB_SUCCESS;
+      LOG_DEBUG("special insert stmt, no need check");
+    } else if (OB_FAIL(logic_db_info.get_shard_rule(logic_tb_info, table_name))) {
+      ret = OB_SUCCESS;
+      LOG_DEBUG("fail to get shard rule, maybe route by hint", K(table_name));
+    } else if (OB_UNLIKELY(parse_result.get_sql_filed_result().fields_.empty())) {
+      ret = OB_SUCCESS;
+      LOG_DEBUG("no sql fields find, check when calculate", "sql_field_result", parse_result.get_sql_filed_result());
+    } else {
+      bool need_check = true;
+      SqlFieldResult &sql_result = parse_result.get_sql_filed_result();
+      ObIArray<SqlField*>& sql_fields = sql_result.fields_;
+      const ObIArray<ObString>& shard_key_columns = logic_tb_info->shard_key_columns_;
+      int64_t column_num = sql_fields.count();
+      int64_t column_value_num = 0;
+      int64_t shard_key_num = shard_key_columns.count();
+      int64_t shard_key_column_num = 0;
+      // find shard key fields
+      ObSEArray<int64_t, 4> shard_key_fields_index;
+      for (int64_t i = 0; OB_SUCC(ret) && i < column_num; ++i) {
+        for (int64_t j = 0; OB_SUCC(ret) && j < shard_key_num; ++j) {
+          if (0 == shard_key_columns.at(j).case_compare(sql_fields.at(i)->column_name_.config_string_)) {
+            if (OB_FAIL(shard_key_fields_index.push_back(i))) {
+              LOG_WDIAG("fail to push back index", K(i), K(j), K(ret));
+            } else {
+              ++shard_key_column_num;
+            }
+            break;
+          }
+        }
+      }
+
+      // check shard key column value num
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (OB_UNLIKELY(shard_key_fields_index.empty())) {
+        need_check = false;
+        LOG_DEBUG("no shard key fields find, maybe single table", K(sql_fields), K(ret));
+      } else {
+        column_value_num = sql_fields.at(shard_key_fields_index[0])->column_values_.count();
+        for (int64_t i = 1; OB_SUCC(ret) && i < shard_key_column_num; ++i) {
+          if (OB_UNLIKELY(column_value_num
+                          != sql_fields.at(shard_key_fields_index[i])->column_values_.count())) {
+            ret = OB_NOT_SUPPORTED;
+            LOG_WDIAG("different shard key value num, unexpect insert stmt", K(sql_fields), K(column_value_num), K(ret));
+          }
+        }
+      }
+
+      // check all null row
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (!need_check) {
+        // nothing
+      } else {
+        for (int64_t j = 0; OB_SUCC(ret) && j < column_value_num; ++j) {
+          int64_t null_value_count = 0;
+          for (int64_t i = 0; OB_SUCC(ret) && i < shard_key_column_num; ++i) {
+            if (TOKEN_NULL == sql_fields.at(shard_key_fields_index[i])->column_values_[j].value_type_) {
+              ++null_value_count;
+            }
+          }
+
+          if (OB_UNLIKELY(shard_key_column_num == null_value_count)) {
+            ret = OB_NOT_SUPPORTED;
+            LOG_WDIAG("all shard keys are null in one row is not supported", K(shard_key_column_num),
+                      K(null_value_count), K(sql_fields), K(ret));
+          }
+        }
+      }
+
+      // filter null
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (!need_check) {
+        // nothing
+      } else {
+        for (int64_t i = 0; OB_SUCC(ret) && i < shard_key_column_num; ++i) {
+          int64_t index = shard_key_fields_index[i];
+          ObSEArray<SqlColumnValue, 3> tmp_column_values;
+          for (int64_t j = 0;  OB_SUCC(ret) && j < column_value_num; ++j) {
+            if (TOKEN_NULL != sql_fields.at(index)->column_values_[j].value_type_) {
+              if (OB_FAIL(tmp_column_values.push_back(sql_fields.at(index)->column_values_[j]))) {
+                LOG_WDIAG("fail to push back column value", K(i), K(j), "column value", sql_fields.at(index)->column_values_[j]);
+              }
+            }
+          }
+          if (OB_FAIL(sql_fields.at(index)->column_values_.assign(tmp_column_values))) {
+            LOG_WDIAG("fail to assign column values", K(ret));
+          }
+        }
+      }
+    }
+  } else {
+    // sql except insert/replace
+    // nothing
+    ret = OB_SUCCESS;
+  }
+
   return ret;
 }
 
@@ -2720,6 +2859,7 @@ int ObProxyShardUtils::build_error_packet(int err_code,
   switch (err_code) {
     case OB_ERR_WRONG_TYPE_COLUMN_VALUE_ERROR:
     case OB_NOT_SUPPORTED:
+    case OB_ERR_UNEXPECTED:
     case OB_INVALID_ARGUMENT_FOR_SUBSTR:
     case OB_ERR_NO_DB_SELECTED:
     case OB_ERR_NO_PRIVILEGE:

@@ -21,11 +21,11 @@ namespace obproxy
 {
 namespace obutils
 {
-class ObShowTablesHandler : public ObCmdHandler
+class ObShardingShowTablesHandler : public ObCmdHandler
 {
 public:
-  ObShowTablesHandler(event::ObMIOBuffer *buf, ObCmdInfo &info, ObProxyBasicStmtSubType sub_type);
-  virtual ~ObShowTablesHandler() {}
+  ObShardingShowTablesHandler(event::ObMIOBuffer *buf, ObCmdInfo &info, ObProxyBasicStmtSubType sub_type);
+  virtual ~ObShardingShowTablesHandler() {}
   int handle_show_tables(const ObString &logic_tenant_name, const ObString &logic_database_name,
                          ObString &logic_table_name);
 
@@ -41,7 +41,7 @@ private:
 private:
   ObProxyBasicStmtSubType sub_type_;
 
-  DISALLOW_COPY_AND_ASSIGN(ObShowTablesHandler);
+  DISALLOW_COPY_AND_ASSIGN(ObShardingShowTablesHandler);
 };
 } // end of namespace obutils
 } // end of namespace obproxy

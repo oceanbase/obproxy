@@ -29,6 +29,13 @@ namespace opsql
 
 static const int MAX_REPLACE_COUNT = 256;
 
+enum ExprStrCaseOperation
+{
+  NONE = 0,
+  STR_UPPER,
+  STR_LOWER 
+};
+
 #define LOCATE_PARAM_RESULT(param_array, param_result, index)             \
   do {                                                                    \
     for (int64_t j = 0; OB_SUCC(ret) && j < param_array.count(); j++) {   \
@@ -54,17 +61,25 @@ static const int MAX_REPLACE_COUNT = 256;
 class ObProxyExprCtx
 {
 public:
+  enum INT_CAST_MODE {
+    NORMAL_CAST_MODE = 0,
+    FLOOR_CAST_MODE,
+    CEIL_CAST_MODE
+  };
   explicit ObProxyExprCtx(const int64_t physical_size, dbconfig::ObTestLoadType type,
-                          bool is_elastic_index, common::ObIAllocator *allocator)
-      : sharding_physical_size_(physical_size), test_load_type_(type), is_elastic_index_(is_elastic_index),
-        allocator_(allocator), scale_(-1), client_session_info_(NULL), is_oracle_mode(false) {}
+                          bool is_elastic_index, common::ObIAllocator *allocator,
+                          INT_CAST_MODE int_cast_mode = NORMAL_CAST_MODE)
+      : is_elastic_index_(is_elastic_index), is_oracle_mode(false),
+        test_load_type_(type), int_cast_mode_(int_cast_mode),
+        sharding_physical_size_(physical_size), scale_(-1), allocator_(allocator), client_session_info_(NULL) {}
   explicit ObProxyExprCtx(const int64_t physical_size,
                           dbconfig::ObTestLoadType type, bool is_elastic_index,
                           common::ObIAllocator *allocator,
-                          proxy::ObClientSessionInfo *client_session_info)
-      : sharding_physical_size_(physical_size), test_load_type_(type),
-        is_elastic_index_(is_elastic_index), allocator_(allocator), scale_(-1),
-        client_session_info_(client_session_info), is_oracle_mode(false) {}
+                          proxy::ObClientSessionInfo *client_session_info,
+                          INT_CAST_MODE int_cast_mode = NORMAL_CAST_MODE)
+      : is_elastic_index_(is_elastic_index), is_oracle_mode(false),
+        test_load_type_(type), int_cast_mode_(int_cast_mode),
+        sharding_physical_size_(physical_size), scale_(-1), allocator_(allocator), client_session_info_(client_session_info) {}
   ~ObProxyExprCtx() {}
 
   void set_sharding_physical_size(const int64_t physical_size) { sharding_physical_size_ = physical_size; }
@@ -77,13 +92,15 @@ public:
   }
 
 public:
-  int64_t sharding_physical_size_;
-  dbconfig::ObTestLoadType test_load_type_;
   bool is_elastic_index_;
-  common::ObIAllocator *allocator_;
-  int64_t scale_;
-  proxy::ObClientSessionInfo *client_session_info_;
   bool is_oracle_mode;
+  dbconfig::ObTestLoadType test_load_type_;
+  INT_CAST_MODE int_cast_mode_;
+  int64_t sharding_physical_size_;
+  int64_t scale_;
+  common::ObIAllocator *allocator_;
+  proxy::ObClientSessionInfo *client_session_info_;
+
 };
 
 struct ObProxyExprCalcItem {
@@ -303,13 +320,16 @@ public:
   void set_param_array(common::ObSEArray<ObProxyExpr*, 4>& param_array) { param_array_ = param_array; }
 
 public:
-  static int get_int_obj_with_default_charset(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator);
-  static int get_int_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &ctx);
+  static int get_int_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &expr_ctx);
   static int get_varchar_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &ctx);
   // convert datetime to oracle timestamp
   static int get_time_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &ctx, const ObObjType &type);
   static ObCollationType get_collation(const ObProxyExprCtx &ctx);
   int check_varchar_empty(const common::ObObj& result);
+  static int get_case_multiply_num(const ExprStrCaseOperation operation, const ObCollationType cs_type, int32_t &multiply);
+  static int string_case_operate(const ExprStrCaseOperation operation, const ObProxyExprCtx &ctx,
+                                 const ObCollationType collation, char *src,
+                                 int64_t src_len, char *&dst, size_t &out_len);
 
 protected:
   common::ObSEArray<ObProxyExpr*, 4> param_array_;
@@ -670,16 +690,6 @@ class ObProxyExprToNumber : public ObProxyFuncExpr
     int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
            common::ObIArray<common::ObObj> &result_obj_array);
 };
-
-class ObProxyExprNULL : public ObProxyFuncExpr
-{
-  public:
-    explicit ObProxyExprNULL() {}
-    ~ObProxyExprNULL() {}
-    int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
-           common::ObIArray<common::ObObj> &result_obj_array);
-};
-
 
 } // end opsql
 } // end obproxy

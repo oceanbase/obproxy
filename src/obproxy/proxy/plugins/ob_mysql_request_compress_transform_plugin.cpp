@@ -79,7 +79,7 @@ int ObMysqlRequestCompressTransformPlugin::consume(event::ObIOBufferReader *read
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_UNLIKELY(obmysql::OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT == sm_->trans_state_.trans_info_.sql_cmd_)) {
+      if (OB_UNLIKELY(ObMysqlTransact::is_transfer_content_of_file(sm_->trans_state_))) {
         if (OB_FAIL(consume_content_of_file_compress_packet())) {
           PROXY_API_LOG(WDIAG, "fail to consume_content_of_file_compress_packet", K(ret));
         }

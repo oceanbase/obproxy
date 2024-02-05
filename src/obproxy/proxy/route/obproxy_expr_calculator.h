@@ -122,6 +122,7 @@ private:
                                        int64_t &partition_id,
                                        int32_t &state,
                                        int16_t &version);
+  int do_expr_parse_diagnosis(ObExprParseResult &expr_result);
   ObRouteDiagnosis *route_diagnosis_;
 };
 

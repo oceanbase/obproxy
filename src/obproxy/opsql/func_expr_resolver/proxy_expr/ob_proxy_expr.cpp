@@ -237,7 +237,8 @@ int ObProxyExprColumn::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem
     bool found = false;
     for (int64_t i = 0; OB_SUCC(ret) && i < calc_item.sql_result_->field_num_; i++) {
       SqlField* field = calc_item.sql_result_->fields_.at(i);
-      if (0 == field->column_name_.config_string_.case_compare(column_name_)) {
+      if (0 == field->column_name_.config_string_.case_compare(column_name_)
+          && (field->column_values_.count() > 0)) {
         found = true;
         common::ObSEArray<SqlColumnValue, 3> &column_values = field->column_values_;
         for (int64_t j = 0; OB_SUCC(ret) && j < column_values.count(); j++) {
@@ -375,32 +376,47 @@ int ObProxyFuncExpr::calc_param_expr(const ObProxyExprCtx &ctx,
   return ret;
 }
 
-int ObProxyFuncExpr::get_int_obj_with_default_charset(const common::ObObj &src, common::ObObj &dst, common::ObIAllocator &allocator)
-{
-  int ret = OB_SUCCESS;
-  if (!src.is_int()) {
-    ObCollationType collation = ObCharset::get_default_collation(ObCharset::get_default_charset());
-    ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, collation);
-    if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, collation, cast_ctx, src, dst))) {
-      LOG_WDIAG("cast obj to varchar obj fail", K(ret));
-    }
-  } else {
-    dst = src;
-  } 
-  return ret; 
-}
-
 int ObProxyFuncExpr::get_int_obj(const ObObj &src, ObObj &dst, const ObProxyExprCtx &ctx)
 {
   int ret = OB_SUCCESS;
+
   if (OB_ISNULL(ctx.allocator_)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(ret));
   } else if (!src.is_int()) {
     ObCollationType collation = get_collation(ctx);
     ObCastCtx cast_ctx(ctx.allocator_, NULL, CM_NULL_ON_WARN, collation);
-    if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, collation, cast_ctx, src, dst))) {
-      LOG_WDIAG("cast obj to varchar obj fail", K(ret));
+    ObProxyExprCtx::INT_CAST_MODE int_cast_mode = ctx.int_cast_mode_;
+    common::ObIAllocator &allocator = *ctx.allocator_;
+    if (OB_LIKELY(ObProxyExprCtx::NORMAL_CAST_MODE == int_cast_mode)) {
+      if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, collation, cast_ctx, src, dst))) {
+        LOG_WDIAG("cast obj to varchar obj fail", K(ret));
+      }
+    } else {
+      ObObj tmp_obj;
+      number::ObNumber res_nmb;
+      if (OB_FAIL(ObObjCasterV2::to_type(ObNumberType, cast_ctx, src, tmp_obj))) {
+        LOG_WDIAG("get number obj failed", K(src), K(tmp_obj), K(ret));   
+      } else if (OB_FAIL(res_nmb.from(tmp_obj.get_number(), allocator))) {
+        LOG_WDIAG("get number from obj_number failed", K(ret), K(tmp_obj));
+      } else if (ObProxyExprCtx::FLOOR_CAST_MODE == int_cast_mode) {
+        if (OB_FAIL(res_nmb.floor(0))) {
+          LOG_WDIAG("calc floor for number failed", K(ret), K(res_nmb));
+        }
+      } else {
+        // ObProxyExprCtx::CEIL_CAST_MODE == int_cast_mode
+        if (OB_FAIL(res_nmb.ceil(0))) {
+          LOG_WDIAG("calc floor for number failed", K(ret), K(res_nmb));
+        }
+      }
+
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (FALSE_IT(tmp_obj.set_number(res_nmb))) {
+        // impossible
+      } else if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, cast_ctx, tmp_obj, dst))) {
+        LOG_WDIAG("get number obj failed", K(tmp_obj), K(dst), K(ret));   
+      }
     }
   } else {
     dst = src;
@@ -425,6 +441,59 @@ int ObProxyFuncExpr::get_varchar_obj(const common::ObObj &src, common::ObObj &ds
     }
   } else if (src.is_varchar()) {
     dst = src;
+  }
+
+  return ret;
+}
+
+int ObProxyFuncExpr::get_case_multiply_num(const ExprStrCaseOperation operation, const ObCollationType cs_type, int32_t &multiply)
+{
+  int ret = OB_SUCCESS;
+  multiply = 0;
+  if (OB_UNLIKELY(!ObCharset::is_valid_collation(cs_type))) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_WDIAG("not support charset", K(cs_type), K(ret));
+  } else {
+    if (operation == STR_UPPER) {
+      multiply = ObCharset::get_charset(cs_type)->caseup_multiply;
+    } else if (operation == STR_LOWER) {
+      multiply = ObCharset::get_charset(cs_type)->casedn_multiply;
+    }
+  }
+  return ret;
+}
+
+int ObProxyFuncExpr::string_case_operate(const ExprStrCaseOperation operation,
+                                         const ObProxyExprCtx &ctx,
+                                         const ObCollationType collation,
+                                         char *src, int64_t src_len,
+                                         char *&dst, size_t &out_len) {
+  int ret = OB_SUCCESS;
+  int32_t multiply = 0;
+  dst = src;
+  out_len = 0;
+  int64_t buf_len = 0;
+  
+  if (src != NULL && src_len > 0 && operation != NONE) {
+    // converting the GB18030 character set to uppercase or lower may cause the string to become longer,
+    // and here we calculate the potentially needed string length
+    if (OB_FAIL(get_case_multiply_num(operation, collation, multiply))) {
+      LOG_WDIAG("fail to get collation multiply", K(ret), K(collation));
+    } else if (FALSE_IT(buf_len = multiply * src_len)) {
+    } else if (buf_len == 0) {
+      // do nothing, return src
+    } else if (OB_ISNULL(dst = static_cast<char*>(ctx.allocator_->alloc(buf_len)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to alloc mem for upper buf", K(ret));
+    } else {
+      MEMCPY(dst, src, static_cast<size_t>(src_len)); 
+      char *src_str = (multiply > 1) ? src : dst;
+      if (operation == STR_UPPER) {
+        out_len = ObCharset::caseup(collation, src_str, src_len, dst, buf_len);
+      } else if (operation == STR_LOWER) {
+        out_len = ObCharset::casedn(collation, src_str, src_len, dst, buf_len);
+      }
+    }
   }
 
   return ret;
@@ -856,6 +925,21 @@ int ObProxyExprDiv::calc(const ObProxyExprCtx &ctx,
           ObObj result_obj;
           if (obj1.is_null() || obj2.is_null()) {
             result_obj.set_null();
+          } else if (OB_UNLIKELY(ObProxyExprCtx::NORMAL_CAST_MODE != ctx.int_cast_mode_)) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else {
+              int64_t num1 = obj1.get_int();
+              int64_t num2 = obj2.get_int();
+              if (0 == num2) {
+                ret = OB_EXPR_CALC_ERROR;
+                LOG_WDIAG("div failed, num2 is 0", K(ret));
+              } else {
+                result_obj.set_int(num1 / num2);
+              }
+            }
           } else if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
             if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WDIAG("get double obj failed", K(obj1), K(obj2), K(ret));
@@ -958,6 +1042,16 @@ int ObProxyExprAdd::calc(const ObProxyExprCtx &ctx,
           ObObj result_obj;
           if (obj1.is_null() || obj2.is_null()) {
             result_obj.set_null();
+          } else if (OB_UNLIKELY(ObProxyExprCtx::NORMAL_CAST_MODE != ctx.int_cast_mode_)) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else {
+              int64_t num1 = obj1.get_int();
+              int64_t num2 = obj2.get_int();
+              result_obj.set_int(num1 + num2);
+            }
           } else if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
             if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WDIAG("get double obj failed", K(obj1), K(obj2), K(ret));
@@ -1049,6 +1143,16 @@ int ObProxyExprSub::calc(const ObProxyExprCtx &ctx,
           ObObj result_obj;
           if (obj1.is_null() || obj2.is_null()) {
             result_obj.set_null();
+          } else if (OB_UNLIKELY(ObProxyExprCtx::NORMAL_CAST_MODE != ctx.int_cast_mode_)) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else {
+              int64_t num1 = obj1.get_int();
+              int64_t num2 = obj2.get_int();
+              result_obj.set_int(num1 - num2);
+            }
           } else if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
             if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WDIAG("get double obj failed", K(obj1), K(obj2), K(ret));
@@ -1140,6 +1244,16 @@ int ObProxyExprMul::calc(const ObProxyExprCtx &ctx,
           ObObj result_obj;
           if (obj1.is_null() || obj2.is_null()) {
             result_obj.set_null();
+          } else if (OB_UNLIKELY(ObProxyExprCtx::NORMAL_CAST_MODE != ctx.int_cast_mode_)) {
+            if (OB_FAIL(get_int_obj(param_result.at(0), obj1, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, ctx))) {
+              LOG_WDIAG("get int obj failed", K(ret));
+            } else {
+              int64_t num1 = obj1.get_int();
+              int64_t num2 = obj2.get_int();
+              result_obj.set_int(num1 * num2);
+            }
           } else if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
             if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
               LOG_WDIAG("get double obj failed", K(obj1), K(obj2), K(ret));
@@ -1391,7 +1505,22 @@ int ObProxyExprAvg::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &c
         ObObj obj1 = param_result.at(0);
         ObObj obj2 = param_result.at(1);
         ObObj result_obj;
-        if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
+        if (OB_UNLIKELY(ObProxyExprCtx::NORMAL_CAST_MODE != ctx.int_cast_mode_)) {
+          if (OB_FAIL(get_int_obj(param_result.at(0), obj1, ctx))) {
+            LOG_WDIAG("get int obj failed", K(ret));
+          } else if (OB_FAIL(get_int_obj(param_result.at(1), obj2, ctx))) {
+            LOG_WDIAG("get int obj failed", K(ret));
+          } else {
+            int64_t num1 = obj1.get_int();
+            int64_t num2 = obj2.get_int();
+            if (0 == num2) {
+              ret = OB_EXPR_CALC_ERROR;
+              LOG_WDIAG("div failed, num2 is 0", K(ret));
+            } else {
+              result_obj.set_int(num1 / num2);
+            }
+          }
+        } else if (ObDoubleTC == obj1.get_type_class() || ObDoubleTC == obj2.get_type_class()) {
           if (OB_FAIL((get_obj_for_calc<ObDoubleTC, ObDoubleType>(ctx.allocator_, obj1, obj2)))) {
             LOG_WDIAG("get double obj failed", K(obj1), K(obj2), K(ret));
           } else if (fabs(obj2.get_double()) < DBL_EPSILON) {
@@ -2983,10 +3112,15 @@ int ObProxyExprLower::calc(const ObProxyExprCtx &ctx,
           } else {
             ObCollationType collation = get_collation(ctx);
             ObCastCtx cast_ctx(ctx.allocator_, NULL, CM_NULL_ON_WARN, collation);
-            if (0 == ObCharset::casedn(collation, value)) {
+            char *lower_buf = NULL;
+            size_t out_size = 0;
+            if (OB_FAIL(string_case_operate(STR_LOWER, ctx, collation, value.ptr(), value.length(), lower_buf, out_size))) {
+              LOG_WDIAG("fail to do lower operation", K(ret), K(collation));
+            } else if (0 == out_size) {
               ret = OB_EXPR_CALC_ERROR;
               LOG_WDIAG("lower failed in charset::casedn", K(value), K(collation));
             } else {
+              value.assign(lower_buf, out_size);
               result_obj.set_varchar(value);
               result_obj.set_collation_type(collation);
             }
@@ -3043,12 +3177,15 @@ int ObProxyExprUpper::calc(const ObProxyExprCtx &ctx,
           } else {
             ObCollationType collation = get_collation(ctx);
             ObCastCtx cast_ctx(ctx.allocator_, NULL, CM_NULL_ON_WARN, collation);
-            size_t size = ObCharset::caseup(collation, value.ptr(), value.length(), value.ptr(), value.length());
-            if (0 == size) {
-              ret = OB_EXPR_CALC_ERROR;
-              LOG_WDIAG("upper failed in charset::caseup", K(value), K(collation));
+            char *upper_buf = NULL;
+            size_t out_size = 0;
+            if (OB_FAIL(string_case_operate(STR_UPPER, ctx, collation, value.ptr(), value.length(), upper_buf, out_size))) {
+              LOG_WDIAG("fail to do lower operation", K(ret), K(collation));
+            } else if (0 == out_size) {
+                ret = OB_EXPR_CALC_ERROR;
+                LOG_WDIAG("upper failed in charset::caseup", K(value), K(collation));
             } else {
-              value.set_length(static_cast<int32_t>(size));
+              value.assign(upper_buf, out_size);
               result_obj.set_varchar(value);
               result_obj.set_collation_type(collation);
             }
@@ -3158,40 +3295,6 @@ int ObProxyExprToNumber::calc(const ObProxyExprCtx &ctx,
   ObProxyExpr::print_proxy_expr(this);
   return ret;
 }
-
-int ObProxyExprNULL::calc(const ObProxyExprCtx &ctx,
-                          const ObProxyExprCalcItem &calc_item,
-                          common::ObIArray<common::ObObj> &result_obj_array)
-{
-  int ret = OB_SUCCESS;
-  common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
-  int cnt = 0;
-  int64_t len = result_obj_array.count();
-
-  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
-    LOG_WDIAG("calc expr failed", K(ret), K(param_array_.count()));
-  } else if (len == result_obj_array.count()) {
-    if (OB_UNLIKELY(param_array_.count() > 1)) {
-      ret = OB_EXPR_CALC_ERROR;
-      LOG_WDIAG("to_number has a minimum of two parameters and a maximum of 3 parameters ", K(ret), K(param_array_.count()));
-    } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
-      LOG_WDIAG("calc param expr failed", K(ret));
-    } else {
-      int i = 0;
-      do {
-        ObObj result_obj;
-        result_obj.set_null();
-        if (OB_FAIL(result_obj_array.push_back(result_obj))) {
-          LOG_WDIAG("result obj array push back failed", K(ret));
-        }
-      } while (OB_SUCC(ret) && ++i < cnt);
-    }
-  }
-  ObProxyExpr::print_proxy_expr(this);
-  return ret;
-
-}
-
 
 } // end opsql
 } // end obproxy

@@ -172,7 +172,7 @@ public:
   int analyze_fetch_request();
   int analyze_close_reset_request();
   int analyze_ps_prepare_execute_request();
-  int need_setup_client_transfer(bool &need);
+  int need_setup_client_transform_transfer(bool &need);
   bool check_connection_throttle();
   bool can_pass_white_list();
   int analyze_capacity_flag_from_client();

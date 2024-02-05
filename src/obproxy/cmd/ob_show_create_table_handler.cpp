@@ -34,25 +34,25 @@ const ObProxyColumnSchema SHOW_CREATE_TABLE_ARRAY[OB_CT_SHARD_MAX_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_CT_CREATE_TABLE,   "Create Table",    OB_MYSQL_TYPE_LONG_BLOB),
 };
 
-ObShowCreateTableHandler::ObShowCreateTableHandler(ObMIOBuffer *buf, ObCmdInfo &info)
+ObShardingShowCreateTableHandler::ObShardingShowCreateTableHandler(ObMIOBuffer *buf, ObCmdInfo &info)
   : ObCmdHandler(buf, info)
 {
 }
 
-int ObShowCreateTableHandler::show_create_table_cmd_callback(ObMIOBuffer *buf,
+int ObShardingShowCreateTableHandler::show_create_table_cmd_callback(ObMIOBuffer *buf,
                                                              ObCmdInfo &info,
                                                              const ObString &logic_tenant_name,
                                                              const ObString &logic_database_name,
                                                              const ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
-  ObShowCreateTableHandler *handler = NULL;
+  ObShardingShowCreateTableHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObShowCreateTableHandler(buf, info))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObShardingShowCreateTableHandler(buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_CMD("fail to new ObShowCreateTableHandler", K(ret));
+    ERROR_CMD("fail to new ObShardingShowCreateTableHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_CMD("fail to init for ObShowCreateTableHandler");
+    WARN_CMD("fail to init for ObShardingShowCreateTableHandler");
   } else if (OB_FAIL(handler->handle_show_create_table(logic_tenant_name, logic_database_name, logic_table_name))){
     WARN_CMD("fail to handle show create table", K(logic_tenant_name), K(logic_database_name),
                                                  K(logic_table_name), K(ret));
@@ -65,7 +65,7 @@ int ObShowCreateTableHandler::show_create_table_cmd_callback(ObMIOBuffer *buf,
   return ret;
 }
 
-int ObShowCreateTableHandler::handle_show_create_table(const ObString &tenant_name,
+int ObShardingShowCreateTableHandler::handle_show_create_table(const ObString &tenant_name,
                                                        const ObString &db_name,
                                                        const ObString &table_name)
 {

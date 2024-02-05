@@ -33,12 +33,12 @@ enum
   OB_CC_MAX_TABLE_COLUMN_ID,
 };
 
-ObShowTablesHandler::ObShowTablesHandler(ObMIOBuffer *buf, ObCmdInfo &info, ObProxyBasicStmtSubType sub_type)
+ObShardingShowTablesHandler::ObShardingShowTablesHandler(ObMIOBuffer *buf, ObCmdInfo &info, ObProxyBasicStmtSubType sub_type)
   : ObCmdHandler(buf, info), sub_type_(sub_type)
 {
 }
 
-int ObShowTablesHandler::handle_show_tables(const ObString &logic_tenant_name, const ObString &logic_database_name,
+int ObShardingShowTablesHandler::handle_show_tables(const ObString &logic_tenant_name, const ObString &logic_database_name,
                                             ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
@@ -70,7 +70,7 @@ int ObShowTablesHandler::handle_show_tables(const ObString &logic_tenant_name, c
   return ret;
 }
 
-int ObShowTablesHandler::dump_table_header(const ObString &logic_database_name)
+int ObShardingShowTablesHandler::dump_table_header(const ObString &logic_database_name)
 {
   int ret = OB_SUCCESS;
 
@@ -95,7 +95,7 @@ int ObShowTablesHandler::dump_table_header(const ObString &logic_database_name)
   return ret;
 }
 
-int ObShowTablesHandler::dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
+int ObShardingShowTablesHandler::dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
                                     ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
@@ -130,22 +130,22 @@ int ObShowTablesHandler::dump_table(const ObString &logic_tenant_name, const ObS
   return ret;
 }
 
-int ObShowTablesHandler::show_tables_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
+int ObShardingShowTablesHandler::show_tables_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
                                                   ObProxyBasicStmtSubType sub_type,
                                                   const ObString &logic_tenant_name,
                                                   const ObString &logic_database_name,
                                                   ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
-  ObShowTablesHandler *handler = NULL;
+  ObShardingShowTablesHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObShowTablesHandler(buf, info, sub_type))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObShardingShowTablesHandler(buf, info, sub_type))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_CMD("fail to new ObShowTablesHandler", K(ret));
+    ERROR_CMD("fail to new ObShardingShowTablesHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_CMD("fail to init for ObShowTablesHandler");
+    WARN_CMD("fail to init for ObShardingShowTablesHandler");
   } else if (OB_FAIL(handler->handle_show_tables(logic_tenant_name, logic_database_name, logic_table_name))) {
-    DEBUG_CMD("succ to schedule ObShowTablesHandler");
+    DEBUG_CMD("succ to schedule ObShardingShowTablesHandler");
   }
 
   if (OB_LIKELY(NULL != handler)) {

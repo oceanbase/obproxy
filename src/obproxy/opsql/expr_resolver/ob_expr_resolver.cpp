@@ -862,7 +862,7 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj,
     ObSqlParseResult &parse_result = client_request->get_parse_result();
     ObProxyCallInfo &call_info = parse_result.call_info_;
     if (parse_result.is_call_stmt() || parse_result.is_text_ps_call_stmt()) {
-      if (OB_UNLIKELY(!call_info.is_valid()) || OB_UNLIKELY(param_index >= call_info.param_count_)) {
+      if (OB_UNLIKELY(!call_info.is_valid()) || OB_UNLIKELY(param_index >= call_info.params_.count())) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("invalid placeholder idx", K(param_index), K(call_info), K(ret));
       } else {
@@ -915,10 +915,10 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj,
       LOG_DEBUG("will cal obj with value from ps execute param", K(execute_param_index));
       ObSqlParseResult &parse_result = client_request->get_parse_result();
       ObProxyTextPsInfo execute_info = parse_result.text_ps_info_;
-      if (execute_param_index >= execute_info.param_count_) {
+      if (execute_param_index >= execute_info.params_.count()) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("param index is large than param count", K(execute_param_index),
-            K(execute_info.param_count_), K(ret));
+                  K(execute_info.params_.count()), K(ret));
       } else {
         ObProxyTextPsParam* param = execute_info.params_.at(execute_param_index);
         ObString user_variable_name = param->str_value_.config_string_;

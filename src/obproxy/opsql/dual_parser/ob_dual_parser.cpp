@@ -278,7 +278,7 @@ int ObProxyDualParser::parse_seqs_and_fields()
       result_->select_fields_[result_->select_fields_size_].seq_name_ = seq_name;
       if (is_blanket_char(sql_ptr_[cur_pos_])) {
         if (OB_FAIL(find_next_dot())) {
-          LOG_WDIAG("find_next_dot failed", K(sql_ptr_), K(cur_pos_));
+          LOG_DEBUG("find_next_dot failed", K(sql_ptr_), K(cur_pos_));
           return ret;
         }
       }
@@ -438,7 +438,7 @@ int ObProxyDualParser::parse(const common::ObString &sql_string,
     LOG_WDIAG("parse_key_word SELECT failed");
     return ret;
   } else if (OB_FAIL(parse_seqs_and_fields())) {
-    LOG_WDIAG("parse_seqs_and_fields failed");
+    LOG_DEBUG("parse_seqs_and_fields failed");
     // } else if (OB_FAIL(parse_key_word("FROM", false))){
     //   LOG_WDIAG("parse_key_word FROM failed");
   } else if (OB_FAIL(parse_key_word("DUAL", true))) {
