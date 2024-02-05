@@ -63,7 +63,7 @@ int ObCgroupCtrl::init()
   //      └── cpu.tasks
   // 1. Initialize the obproxy root cgroup
   if (OB_FAIL(init_cgroup_root_dir(root_cgroup_))) {
-    LOG_WDIAG("init cgroup dir failed", K(ret), K(root_cgroup_));
+    LOG_INFO("init cgroup dir failed, check config whether support", K(ret), K(root_cgroup_));
   // 2. Create a user cgroup for the user tenant
   } else if (init_cgroup_dir(user_cgroup_)) {
     LOG_WDIAG("init tenants cgroup dir failed", K(ret), K(user_cgroup_));
@@ -188,7 +188,7 @@ int ObCgroupCtrl::init_cgroup_root_dir(const char *cgroup_path)
     LOG_WDIAG("fail check file exist", K(cgroup_path), K(ret));
   } else if (!exist_cgroup) {
     ret = OB_FILE_NOT_EXIST;
-    LOG_WDIAG("no cgroup directory found. disable cgroup support", K(cgroup_path), K(ret));
+    LOG_INFO("no cgroup directory found. disable cgroup support", K(cgroup_path), K(ret));
   } else {
     // set mems and cpus
     //  The cpu may be discontinuous, and it is very complicated to detect it

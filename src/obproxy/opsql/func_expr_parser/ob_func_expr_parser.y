@@ -94,10 +94,7 @@ static inline void add_param_node(ObProxyParamNodeList *list, ObFuncExprParseRes
  /* dummy node */
 %token DUMMY_FUNCTION_CLAUSE
  /* reserved keyword */
-%token TOKEN_SPECIAL FUNC_SUBSTR FUNC_CONCAT FUNC_HASH FUNC_TOINT FUNC_DIV FUNC_ADD FUNC_SUB FUNC_MUL FUNC_TESTLOAD
-%token FUNC_TO_DATE FUNC_TO_TIMESTAMP FUNC_NVL FUNC_TO_CHAR FUNC_MOD FUNC_SYSDATE FUNC_ISNULL FUNC_CEIL FUNC_FLOOR
-%token FUNC_LTRIM FUNC_RTRIM FUNC_TRIM FUNC_REPLACE FUNC_LENGTH FUNC_UPPER FUNC_LOWER TRIM_FROM TRIM_BOTH TRIM_LEADING TRIM_TRAILING FUNC_TO_NUMBER
-%token FUNC_ROUND FUNC_TRUNCATE FUNC_ABS FUNC_SYSTIMESTAMP FUNC_CURRENTDATE FUNC_CURRENTTIME FUNC_CURRENTTIMESTAMP
+%token TOKEN_SPECIAL NULL_VAL 
 %token END_P ERROR IGNORED_WORD
  /* expression priority */
  %left '&'
@@ -255,6 +252,7 @@ param: TOKEN_SPECIAL NAME_OB TOKEN_SPECIAL { malloc_param_node($$, result, PARAM
      | NAME_OB { malloc_param_node($$, result, PARAM_COLUMN); $$->col_name_ = $1; }
      | INT_VAL { malloc_param_node($$, result, PARAM_INT_VAL); $$->int_value_ = $1; }
      | STR_VAL { malloc_param_node($$, result, PARAM_STR_VAL); $$->str_value_ = $1; }
+     | NULL_VAL { malloc_param_node($$, result, PARAM_NULL); }
      | func_expr { malloc_param_node($$, result, PARAM_FUNC); $$->func_expr_node_ = $1; }
 
 %%

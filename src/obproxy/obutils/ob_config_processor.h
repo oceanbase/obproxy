@@ -96,7 +96,10 @@ public:
   ~ObConfigProcessor();
 
   int init();
-  int execute(common::ObString &sql, const ObProxyBasicStmtType stmt_type, obproxy::ObConfigV2Handler *handler);
+  int execute(common::ObString &sql,
+              const ObProxyBasicStmtType stmt_type,
+              obproxy::ObConfigV2Handler *handler,
+              const bool need_change_sync_file = false);
   int register_callback(const common::ObString &table_name, ObConfigHandler&handler);
   bool is_table_in_service(const common::ObString &table_name);
   int store_global_ssl_config(const common::ObString& name, const common::ObString &value);

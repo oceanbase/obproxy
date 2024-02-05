@@ -181,7 +181,8 @@ private:
                                   ObSqlString& new_sql,
                                   obutils::ObSqlParseResult &parse_result,
                                   int64_t& es_index,
-                                  int64_t& group_index);
+                                  int64_t& group_index,
+                                  const int64_t last_es_index);
   static int handle_select_request(ObMysqlClientSession &client_session,
                                    ObMysqlTransact::ObTransState &trans_state,
                                    const ObString &table_name,
@@ -262,7 +263,8 @@ private:
                                     char *real_table_name, int64_t tb_name_len,
                                     obutils::ObSqlParseResult &parse_result,
                                     int64_t& es_index,
-                                    int64_t& group_index);
+                                    int64_t& group_index,
+                                    const int64_t last_es_index);
   static int handle_scan_all_real_info(dbconfig::ObDbConfigLogicDb &logic_db_info,
                                        ObMysqlClientSession &client_session,
                                        ObMysqlTransact::ObTransState &trans_state,
@@ -277,6 +279,9 @@ private:
                                   int64_t& es_index,
                                   int64_t& group_index,
                                   const int64_t last_es_index);
+  static int check_dml_sql(const ObString &table_name,
+                           dbconfig::ObDbConfigLogicDb &logic_db_info,
+                           obutils::ObSqlParseResult &parse_result);                                
   static int handle_sys_read_consitency_prop(dbconfig::ObDbConfigLogicDb &logic_db_info,
                                              dbconfig::ObShardConnector& shard_conn,
                                              ObClientSessionInfo &session_info);

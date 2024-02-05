@@ -91,6 +91,7 @@ public:
   // Called by transact. Synchronous.
   event::ObVConnection *do_response_transform_open();
   int do_request_transform_open(event::ObVConnection *&vc);
+  inline bool is_request_transform_opened() { return request_transform_info_.vc_ != NULL; }
 
   int state_request_wait_for_transform_read(int event, void *data);
   int state_response_wait_for_transform_read(int event, void *data);

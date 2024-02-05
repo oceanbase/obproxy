@@ -183,6 +183,8 @@ int ObProxyPbUtils::parse_shard_rule(const std::string &rule_name,
   } else if (rule_name.compare("tbRules") == 0) {
     if (OB_FAIL(parse_json_rules(rule_value, rule_info.tb_rules_, rule_info.allocator_))) {
       LOG_WDIAG("fail to parse tb rules", K(ret), "rules_str", rule_value.c_str());
+    } else if (OB_FAIL(rule_info.store_shard_key_column())) {
+      LOG_WDIAG("fail to store shard key columns", K(ret));
     }
   } else if (rule_name.compare("dbRules") == 0) {
     if (OB_FAIL(parse_json_rules(rule_value, rule_info.db_rules_, rule_info.allocator_))) {
@@ -197,6 +199,7 @@ int ObProxyPbUtils::parse_shard_rule(const std::string &rule_name,
   } else {
     // TODO parse other rules
   }
+  
   return ret;
 }
 

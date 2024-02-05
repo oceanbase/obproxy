@@ -125,6 +125,10 @@ const char* get_func_param_type(const ObProxyParamType type)
       break;
     case PARAM_FUNC:
       str_ret = "PARAM_FUNC";
+      break;
+    case PARAM_NULL:
+      str_ret = "NULL";
+      break;
     default:
       break;
   }

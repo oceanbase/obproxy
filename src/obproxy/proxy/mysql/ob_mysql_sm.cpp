@@ -808,17 +808,18 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
             client_buffer_reader_->mbuf_->water_mark_ = request_max;
             LOG_DEBUG("modify client buffer reader water mark", K(request_max));
           }
-          if (ObMysqlTransact::is_large_request(trans_state_)) {
+          if (ObMysqlTransact::is_large_request(trans_state_) ||
+              ObMysqlTransact::is_transfer_content_of_file(trans_state_)) {
             // Disable further I/O on the client since there could
             // be rest request body that we are tunneling, and we can't issue
             // another IO later for the rest request body with a different buffer
             client_entry_->read_vio_->nbytes_ = client_entry_->read_vio_->ndone_;
             trans_state_.trans_info_.request_content_length_ = mysql_req_len;
-
-            MYSQL_INCREMENT_TRANS_STAT(CLIENT_LARGE_REQUESTS);
-            LOG_DEBUG("large request",
-                      K_(sm_id), K(mysql_req_len),
-                      "saved_request_len", client_buffer_reader_->read_avail());
+            if (ObMysqlTransact::is_large_request(trans_state_)) {
+              MYSQL_INCREMENT_TRANS_STAT(CLIENT_LARGE_REQUESTS);
+              LOG_DEBUG("large request", K_(sm_id), K(mysql_req_len),
+                        "saved_request_len", client_buffer_reader_->read_avail());
+            }
 
             client_entry_->vc_handler_ = &ObMysqlSM::state_watch_for_client_abort;
 
@@ -3037,7 +3038,7 @@ int ObMysqlSM::do_parse_text_ps_prepare_sql(char*& text_ps_prepare_buf,
 
   // 如果是 SET @s = CONCAT('SELECT * FROM ', 't1'); PREPARE stmt3 FROM @s; 这种prepare语句还需要解析一次
   ObProxyTextPsInfo prepare_info = client_request.get_parse_result().text_ps_info_;
-  if (1 == prepare_info.param_count_) {
+  if (1 == prepare_info.params_.count()) {
     ObProxyTextPsParam* param = prepare_info.params_.at(0);
     ObString user_name = param->str_value_.config_string_;
     if (cs_info.need_use_lower_case_names()) {
@@ -7598,7 +7599,7 @@ int ObMysqlSM::do_internal_request_for_sharding_show_db(ObMIOBuffer *buf)
 
   if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
     LOG_WDIAG("fail to get_logic_tenant_name", K(ret));
-  } else if (OB_FAIL(ObShowDatabasesHandler::show_databases_cmd_callback(buf, info, logic_tenant_name, *client_session_))) {
+  } else if (OB_FAIL(ObShardingShowDatabasesHandler::show_databases_cmd_callback(buf, info, logic_tenant_name, *client_session_))) {
     LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to handle show databases", K_(sm_id), K(ret));
   }
 
@@ -7637,7 +7638,7 @@ int ObMysqlSM::do_internal_request_for_sharding_show_table(ObMIOBuffer *buf)
     if (OB_FAIL(ObMysqlTransact::encode_error_message(trans_state_))) {
       LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to build not err resp", K_(sm_id), K(ret));
     }
-  } else if (OB_FAIL(ObShowTablesHandler::show_tables_cmd_callback(buf, info, client_request.get_parse_result().get_cmd_sub_type(),
+  } else if (OB_FAIL(ObShardingShowTablesHandler::show_tables_cmd_callback(buf, info, client_request.get_parse_result().get_cmd_sub_type(),
                                                                    logic_tenant_name, logic_database_name, logic_table_name))) {
     LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to handle show databases", K_(sm_id), K(ret));
   }
@@ -7678,7 +7679,7 @@ int ObMysqlSM::do_internal_request_for_sharding_show_table_status(ObMIOBuffer *b
     if (OB_FAIL(ObMysqlTransact::encode_error_message(trans_state_))) {
       LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to build not err resp", K_(sm_id), K(ret));
     }
-  } else if (OB_FAIL(ObShowTableStatusHandler::show_table_status_cmd_callback(buf, info,
+  } else if (OB_FAIL(ObShardingShowTableStatusHandler::show_table_status_cmd_callback(buf, info,
                      logic_tenant_name, logic_database_name, logic_table_name))) {
     LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to handle show table status", K_(sm_id), K(ret));
   }
@@ -7714,7 +7715,7 @@ int ObMysqlSM::do_internal_request_for_sharding_show_create_table(ObMIOBuffer *b
     LOG_WDIAG("fail to get_logic_db_name", K(ret));
   } else if (OB_FAIL(client_info.get_logic_tenant_name(logic_tenant_name))) {
     LOG_WDIAG("fail to get_logic_tenant_name", K(ret));
-  } else if (OB_FAIL(ObShowCreateTableHandler::show_create_table_cmd_callback(buf, info,
+  } else if (OB_FAIL(ObShardingShowCreateTableHandler::show_create_table_cmd_callback(buf, info,
                      logic_tenant_name, logic_db_name, logic_table_name))) {
     LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to handle show create table", K_(sm_id), K(ret));
   }
@@ -8565,7 +8566,7 @@ void ObMysqlSM::handle_observer_open()
       case ObMysqlTransact::SERVER_SEND_REQUEST:
       {
         bool need = false;
-        if (OB_FAIL(need_setup_client_transfer(need))) {
+        if (OB_FAIL(need_setup_client_transform_transfer(need))) {
           LOG_WARN("fail to check need setup client transfer", K(ret));
         } else if (OB_UNLIKELY(need)) {
           if (OB_FAIL(setup_client_transfer(MYSQL_TRANSFORM_VC))) {
@@ -8628,7 +8629,7 @@ void ObMysqlSM::handle_observer_open()
   }
 }
 
-inline int ObMysqlSM::need_setup_client_transfer(bool &need)
+inline int ObMysqlSM::need_setup_client_transform_transfer(bool &need)
 {
   int ret = OB_SUCCESS;
   need = false;
@@ -8643,12 +8644,15 @@ inline int ObMysqlSM::need_setup_client_transfer(bool &need)
                 || obmysql::OB_MYSQL_COM_STMT_EXECUTE == trans_state_.trans_info_.client_request_.get_packet_meta().cmd_
                 || trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_prepare_stmt()));
     ObVConnection *vc = NULL;
-    if (OB_FAIL(api_.do_request_transform_open(vc))) {
-      LOG_WDIAG("do request transform open failed");
-    } else if (need && NULL != vc) {
-      LOG_DEBUG("[need_setup_client_transfer] will setup client transfer", K_(sm_id));
-    } else {
-      need = false;
+    if (need) {
+      if (OB_FAIL(api_.do_request_transform_open(vc))) {
+        LOG_WDIAG("do request transform open failed");
+      } else if (OB_NOT_NULL(vc)) {
+        LOG_DEBUG("[need_setup_client_transform_transfer] will setup client transform transfer", K_(sm_id));
+      } else  {
+        // vc not opened
+        need = false;
+      }
     }
   }
 
@@ -9143,7 +9147,7 @@ int ObMysqlSM::setup_server_request_send()
       if (OB_UNLIKELY(!trans_state_.is_auth_request_ &&
           ObMysqlTransact::SERVER_SEND_REQUEST == trans_state_.current_.send_action_ &&
           ObMysqlTransact::need_use_tunnel(trans_state_))) {
-        if (NULL != api_.request_transform_info_.vc_) {
+        if (api_.is_request_transform_opened()) { // vc_ was inited in `need_setup_client_transform_transfer()`
           if (OB_FAIL(api_.setup_transform_to_server_transfer())) {
             LOG_WDIAG("failed to setup_transform_to_server_transfer", K_(sm_id), K(ret));
           }

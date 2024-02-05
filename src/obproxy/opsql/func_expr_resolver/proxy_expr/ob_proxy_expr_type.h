@@ -63,7 +63,6 @@ typedef enum ObProxyExprType
   OB_PROXY_EXPR_TYPE_FUNC_LOWER,
   OB_PROXY_EXPR_TYPE_FUNC_UPPER,
   OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER,
-  OB_PROXY_EXPR_TYPE_FUNC_NULL,
   OB_PROXY_EXPR_TYPE_MAX,
 } ObProxyExprType;
 
@@ -211,9 +210,6 @@ const char* get_expr_type_name(int expr_type)
       break;
     case OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER:
       type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER";
-      break;
-    case OB_PROXY_EXPR_TYPE_FUNC_NULL:
-      type_name = "OB_PROXY_EXPR_TYPE_FUNC_NULL";
       break;
     default:
       break;

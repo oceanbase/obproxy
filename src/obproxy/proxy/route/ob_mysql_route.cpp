@@ -540,7 +540,7 @@ inline int ObMysqlRoute::check_and_rebuild_call_params()
     ObClientSessionInfo &client_info = *param_.client_info_;
     ObSessionSysField *sys_filed = NULL;
     ObSessionUserField *user_filed = NULL;
-    for (int32_t i = 0; OB_SUCC(ret) && i < call_info.param_count_; ++i) {
+    for (int32_t i = 0; OB_SUCC(ret) && i < call_info.params_.count(); ++i) {
       ObProxyCallParam* call_param = call_info.params_.at(i);
       if (CALL_TOKEN_SYS_VAR == call_param->type_) {
         sys_filed = NULL;

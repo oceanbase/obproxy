@@ -143,6 +143,8 @@ int ObDbConfigProcessor::start_watch_parent_crd()
 int ObDbConfigProcessor::init_sharding_config()
 {
   int ret = OB_SUCCESS;
+
+  bool need_terminate = false;
   ObGrpcClient *grpc_client = NULL;
   if (OB_ISNULL(grpc_client = get_grpc_client_pool().acquire_grpc_client())) {
     ret = OB_ERR_UNEXPECTED;
@@ -177,13 +179,17 @@ int ObDbConfigProcessor::init_sharding_config()
     if (OB_SUCC(ret) && !is_config_inited_ && response.resources_size() > 0) {
       bool start_mode = true;
       if (OB_FAIL(sync_fetch_tenant_config(response, start_mode))) {
+        need_terminate = true;
         LOG_WDIAG("fail to fetch tenant config, will try to load local config", K(ret));
       } else {
         is_config_inited_ = true;
       }
     }
   }
-  if (!is_config_inited_) {
+
+  if (OB_UNLIKELY(need_terminate)) {
+    LOG_INFO("invalid beyondtrust env or remote config, need terminate startup", K(ret));
+  } else if (!is_config_inited_) {
     LOG_INFO("will try to load local dbconfig");
     if (OB_FAIL(get_global_dbconfig_cache().load_local_dbconfig())) {
       LOG_WDIAG("fail to load local dbconfig", K(ret));

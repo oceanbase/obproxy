@@ -487,6 +487,8 @@ public:
                              int64_t index, const common::ObString &name_prefix,
                              const common::ObString &name_tail,
                              char *buf, const int64_t buf_len);
+
+  int store_shard_key_column();
   static int get_physic_index_random(const int64_t physic_size,int64_t &index);
   static int get_physic_index(const obutils::SqlFieldResult &sql_result,
                        ObProxyShardRuleList &rules,
@@ -502,11 +504,11 @@ public:
                                     const ObTestLoadType type,
                                     common::ObIArray<int64_t> &index_array,
                                     const bool is_elastic_index = false);
-
 private:
   static int64_t get_index_from_route_info();
   int assign_rule_list(const ObProxyShardRuleList &src_rule_list,
                        ObProxyShardRuleList &target_rule_list);
+
 public:
   bool is_sequence_;
   int64_t tb_size_;
@@ -522,6 +524,7 @@ public:
   obutils::ObProxyConfigString tb_tail_;
   obutils::ObProxyConfigString db_tail_;
   common::ObString create_table_sql_;
+  common::ObSEArray<common::ObString, 4> shard_key_columns_;
   ObProxyShardRuleList tb_rules_;
   ObProxyShardRuleList db_rules_;
   ObProxyShardRuleList es_rules_;
@@ -953,7 +956,8 @@ public:
                       ObShardProp* &shard_prop);
   int get_real_table_name(const ObString &table_name, obutils::SqlFieldResult &sql_result,
                           char *real_table_name, int64_t tb_name_len, int64_t &tb_index,
-                          const ObString &hint_table, ObTestLoadType testload_type);
+                          const ObString &hint_table, ObTestLoadType testload_type,
+                          bool need_rewrite_table_name = true);
   int get_es_index_by_gc(ObGroupCluster *gc_info, ObShardRule *shard_rule,
                          ObTestLoadType testload_type, bool is_read_stmt,
                          obutils::SqlFieldResult &sql_result, int64_t &es_index);
@@ -974,6 +978,10 @@ public:
                                    common::ObIArray<ObShardConnector*> &shard_connector_array);
   int get_first_group_shard_connector(ObShardConnector *&shard_conn, int64_t es_id,
                                       bool is_read_stmt, ObTestLoadType testload_type);
+  int get_shard_connector_by_index(ObShardConnector *&shard_conn, int64_t& es_index,
+                                   int64_t last_es_index, int64_t group_index, bool is_read_stmt,
+                                   ObTestLoadType testload_type, ObShardRule* logic_tb_info,
+                                   const obutils::SqlFieldResult& sql_result);
   int get_table_name_by_index(obutils::ObSqlParseResult &parse_result,
                               ObTestLoadType testload_type,
                               ObIAllocator &allocator,

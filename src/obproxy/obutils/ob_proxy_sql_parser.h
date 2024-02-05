@@ -194,7 +194,7 @@ struct ObProxyCallParam
 
 struct ObProxyCallInfo
 {
-  ObProxyCallInfo() : params_(), param_count_(0), is_param_valid_(false) {}
+  ObProxyCallInfo() : params_(), is_param_valid_(false) {}
   ~ObProxyCallInfo() { reset(); }
   ObProxyCallInfo(const ObProxyCallInfo &other);
   DECLARE_TO_STRING;
@@ -202,17 +202,15 @@ struct ObProxyCallInfo
 
   void reset()
   {
-    for (int64_t i = 0; i < param_count_; i++) {
+    for (int64_t i = 0; i < params_.count(); i++) {
       ObProxyCallParam *param = params_.at(i);
       param->reset();
     }
-    param_count_ = 0;
     is_param_valid_ = false;
     params_.reset();
   }
-  bool is_valid() const { return is_param_valid_ && 0 <= param_count_; }
+  bool is_valid() const { return is_param_valid_ && 0 <= params_.count(); }
   common::ObSEArray<ObProxyCallParam*, OBPROXY_CALL_NODE_COUNT> params_;
-  int32_t param_count_;
   bool is_param_valid_;//whether size is valid
 };
 
@@ -229,7 +227,7 @@ struct ObProxyTextPsParam
 
 struct ObProxyTextPsInfo
 {
-  ObProxyTextPsInfo() : params_(), param_count_(0), is_param_valid_(false) {}
+  ObProxyTextPsInfo() : params_(), is_param_valid_(false) {}
   ~ObProxyTextPsInfo() { reset(); }
   ObProxyTextPsInfo(const ObProxyTextPsInfo &other);
   DECLARE_TO_STRING;
@@ -237,17 +235,15 @@ struct ObProxyTextPsInfo
 
   void reset()
   {
-    for (int64_t i = 0; i < param_count_; i++) {
+    for (int64_t i = 0; i < params_.count(); i++) {
       ObProxyTextPsParam *param = params_.at(i);
       param->reset();
     }
-    param_count_ = 0;
     is_param_valid_ = false;
     params_.reset();
   }
-  bool is_valid() const { return is_param_valid_ && 0 <= param_count_; }
+  bool is_valid() const { return is_param_valid_ && 0 <= params_.count(); }
   common::ObSEArray<ObProxyTextPsParam*, OBPROXY_TEXT_PS_EXECUTE_NODE_COUNT> params_;
-  int32_t param_count_;
   bool is_param_valid_;//whether size is valid
 };
 
@@ -733,6 +729,11 @@ struct ObSqlParseResult
   int load_ob_parse_result(const ParseResult &parse_result,
                            const common::ObString& sql,
                            const bool need_handle_result);
+  template <typename Stmt>
+  int alloc_stmt_and_handle_parse_result(Stmt*& dml_stmt,
+                                         ObProxyBasicStmtType type,
+                                         const ParseResult &parse_result,
+                                         const common::ObString& sql);
   static int ob_parse_resul_to_string(const ParseResult &parse_result, const common::ObString& sql,
                                       char* buf, int64_t buf_len, int64_t &pos);
   static int get_result_tree_str(ParseNode *root, const int level, char* buf, int64_t &pos, int64_t length);
@@ -740,9 +741,10 @@ struct ObSqlParseResult
   int64_t get_batch_insert_values_count() { return batch_insert_values_count_; }
   void set_batch_insert_values_count(int64_t count) { batch_insert_values_count_ = count; }
   DbMeshRouteInfo& get_dbmesh_route_info() { return dbmesh_route_info_; }
-  bool has_dbmesh_hint() {return has_dbmesh_hint_;};
+  bool has_dbmesh_hint() { return has_dbmesh_hint_; }
   DbpRouteInfo& get_dbp_route_info() { return dbp_route_info_; }
-  bool is_use_dbp_hint() {return use_dbp_hint_;}
+  bool is_use_dbp_hint() { return use_dbp_hint_; }
+  bool use_column_value_from_hint() { return use_column_value_from_hint_; }
   ObProxySetInfo& get_set_info() { return set_info_; }
   ObProxyDualParseResult& get_dual_result() {return dual_result_;}
   ParseResult* get_ob_parser_result() { return ob_parser_result_; }
@@ -943,11 +945,14 @@ private:
 
   SqlFieldResult fileds_result_;
   int64_t batch_insert_values_count_;
-  DbMeshRouteInfo dbmesh_route_info_;
+
   bool has_dbmesh_hint_;
-  ObProxySetInfo set_info_;
-  DbpRouteInfo dbp_route_info_;
   bool use_dbp_hint_;
+  bool use_column_value_from_hint_;
+  DbMeshRouteInfo dbmesh_route_info_;
+  DbpRouteInfo dbp_route_info_;
+  ObProxySetInfo set_info_;
+
   ObProxyDualParseResult dual_result_;
   ObDmlBuf origin_dml_buf_;
   bool is_multi_semicolon_in_stmt_;
@@ -1070,14 +1075,15 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   batch_insert_values_count_ = 0; // numbers of values like insert into xx(x1,x2) values(..), (..), (..);
   dbmesh_route_info_.reset();
   has_dbmesh_hint_ = false;
+  dbp_route_info_.reset();
+  use_dbp_hint_ = false;
+  use_column_value_from_hint_ = false;
   set_info_.reset();
   allocator_.reset();
   table_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   database_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   alias_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   col_name_quote_ = OBPROXY_QUOTE_T_INVALID;
-  dbp_route_info_.reset();
-  use_dbp_hint_ = false;
   is_multi_semicolon_in_stmt_ = false;
   ob_parser_result_ = NULL; //TODO check delete it
 }

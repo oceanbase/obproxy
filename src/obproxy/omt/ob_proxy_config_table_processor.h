@@ -146,7 +146,7 @@ private:
   int64_t index_;
   common::DRWLock proxy_config_lock_;
   uint64_t config_version_;
-  bool need_sync_to_file_;
+  volatile bool need_sync_to_file_;
   common::ObSEArray<obutils::ObProxyVariantString, 4> execute_sql_array_;
   bool need_rebuild_config_map_;
 private:

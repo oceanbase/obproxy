@@ -71,12 +71,12 @@ const ObProxyColumnSchema SHOW_TABLE_STATUS_ARRAY[OB_STS_MAX_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_STS_COMMENT,          "Comment",         OB_MYSQL_TYPE_VARCHAR),
 };
 
-ObShowTableStatusHandler::ObShowTableStatusHandler(ObMIOBuffer *buf, ObCmdInfo &info)
+ObShardingShowTableStatusHandler::ObShardingShowTableStatusHandler(ObMIOBuffer *buf, ObCmdInfo &info)
   : ObCmdHandler(buf, info)
 {
 }
 
-int ObShowTableStatusHandler::handle_show_table_status(const ObString &logic_tenant_name, const ObString &logic_database_name,
+int ObShardingShowTableStatusHandler::handle_show_table_status(const ObString &logic_tenant_name, const ObString &logic_database_name,
                                                        ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
@@ -108,7 +108,7 @@ int ObShowTableStatusHandler::handle_show_table_status(const ObString &logic_ten
   return ret;
 }
 
-int ObShowTableStatusHandler::dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
+int ObShardingShowTableStatusHandler::dump_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
                                          ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
@@ -153,20 +153,20 @@ int ObShowTableStatusHandler::dump_table(const ObString &logic_tenant_name, cons
   return ret;
 }
 
-int ObShowTableStatusHandler::show_table_status_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
+int ObShardingShowTableStatusHandler::show_table_status_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
                                                              const ObString &logic_tenant_name, const ObString &logic_database_name,
                                                              ObString &logic_table_name)
 {
   int ret = OB_SUCCESS;
-  ObShowTableStatusHandler *handler = NULL;
+  ObShardingShowTableStatusHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObShowTableStatusHandler(buf, info))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObShardingShowTableStatusHandler(buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_CMD("fail to new ObShowTableStatusHandler", K(ret));
+    ERROR_CMD("fail to new ObShardingShowTableStatusHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_CMD("fail to init for ObShowTableStatusHandler");
+    WARN_CMD("fail to init for ObShardingShowTableStatusHandler");
   } else if (OB_FAIL(handler->handle_show_table_status(logic_tenant_name, logic_database_name, logic_table_name))) {
-    DEBUG_CMD("succ to schedule ObShowTableStatusHandler");
+    DEBUG_CMD("succ to schedule ObShardingShowTableStatusHandler");
   }
 
   if (OB_LIKELY(NULL != handler)) {

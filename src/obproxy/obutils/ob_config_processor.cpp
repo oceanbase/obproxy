@@ -241,11 +241,17 @@ int ObConfigProcessor::init_config_from_disk()
   return ret;
 }
 
-int ObConfigProcessor::execute(ObString &sql, const ObProxyBasicStmtType stmt_type, obproxy::ObConfigV2Handler *v2_handler)
+int ObConfigProcessor::execute(ObString &sql,
+                               const ObProxyBasicStmtType stmt_type,
+                               obproxy::ObConfigV2Handler *v2_handler,
+                               const bool need_change_sync_file)
 {
   int ret = OB_SUCCESS;
   LOG_DEBUG("begin to execute", K(sql), K(stmt_type));
   DRWLock::WRLockGuard guard(config_lock_);
+  if (need_change_sync_file) {
+    get_global_proxy_config_table_processor().set_need_sync_to_file(false);
+  }
   if (OB_UNLIKELY(sql.empty())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid sql", K(ret), K(sql.length()));
@@ -264,6 +270,10 @@ int ObConfigProcessor::execute(ObString &sql, const ObProxyBasicStmtType stmt_ty
     } else if (OB_FAIL(handle_dml_stmt(sql, parse_result, allocator))) {
       LOG_WDIAG("handle stmt failed", K(ret), K(sql));
     }
+  }
+
+  if (need_change_sync_file) {
+    get_global_proxy_config_table_processor().set_need_sync_to_file(true);
   }
 
   return ret;
@@ -622,7 +632,6 @@ int ObConfigProcessor::store_proxy_config_with_level(int64_t vid, const ObString
     } else {
       ObString sql_string;
       int32_t len = 0;
-      get_global_proxy_config_table_processor().set_need_sync_to_file(false);
       len = static_cast<int32_t>(snprintf(sql_buf, buf_len, sql,
                                  vid,
                                  vip.length(), vip.ptr(),
@@ -637,10 +646,9 @@ int ObConfigProcessor::store_proxy_config_with_level(int64_t vid, const ObString
       if (OB_UNLIKELY(len <= 0)) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to fill sql", K(len), K(ret));
-      } else if (OB_FAIL(execute(sql_string, OBPROXY_T_REPLACE, NULL))) {
+      } else if (OB_FAIL(execute(sql_string, OBPROXY_T_REPLACE, NULL, true))) {
         LOG_WDIAG("execute sql failed", K(ret));
       }
-      get_global_proxy_config_table_processor().set_need_sync_to_file(true);
     }
 
     if (OB_NOT_NULL(sql_buf)) {

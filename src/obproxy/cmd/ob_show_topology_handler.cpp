@@ -337,8 +337,7 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_non_shard_tb(ObStrin
   ObString real_table_name = table_name;
   char group_name_buf[OB_MAX_TABLEGROUP_NAME_LENGTH];
   ObString schema_type("SHARD");
-  char shard_key_buf[OB_MAX_COLUMN_NAME_LENGTH];
-  ObString shard_key_str = get_shard_key_str(*shard_rule, shard_key_buf, OB_MAX_COLUMN_NAME_LENGTH);
+  ObString shard_key_str = get_shard_key_str(*shard_rule);
   ObString shard_rule_str = get_shard_rule_str(*shard_rule);
 
   int64_t count = shard_rule->db_size_;
@@ -378,9 +377,8 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_shard_tb(ObShardRule
     ObString real_table_name;
     char group_name_buf[OB_MAX_TABLEGROUP_NAME_LENGTH];
     char table_name_buf[OB_MAX_USER_TABLE_NAME_LENGTH];
-    char shard_key_buf[OB_MAX_COLUMN_NAME_LENGTH];
     ObString schema_type("SHARD");
-    ObString shard_key_str = get_shard_key_str(*shard_rule, shard_key_buf, OB_MAX_COLUMN_NAME_LENGTH);
+    ObString shard_key_str = get_shard_key_str(*shard_rule);
     ObString shard_rule_str = get_shard_rule_str(*shard_rule);
 
     int64_t count = shard_rule->tb_size_;
@@ -414,28 +412,11 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_shard_tb(ObShardRule
   return ret;
 }
 
-ObString ObShowTopologyHandler::get_shard_key_str(dbconfig::ObShardRule& shard_rule, char* const target_buf, const int target_buf_len)
+ObString ObShowTopologyHandler::get_shard_key_str(dbconfig::ObShardRule& shard_rule)
 {
   ObString ret_str = ObString::make_string("empty shard key");
-  if (OB_LIKELY(0 != shard_rule.tb_rules_.count())) {
-    ObString& origin_string = shard_rule.tb_rules_.at(0).shard_rule_str_.config_string_;
-    for(int i = 0; i < origin_string.length(); ++i) {
-      if(origin_string[i] != '#') {
-        continue;
-      } else {
-        int j = i + 1;
-        while(j < origin_string.length() && origin_string[j] != '#') {
-          ++j;
-        }
-        if((j == origin_string.length()) || (j - i - 1) >= target_buf_len) {
-          ret_str = ObString::make_string("error shard key");
-        } else {
-          MEMCPY(target_buf, origin_string.ptr() + i + 1, j - i - 1);
-          ret_str.assign_ptr(target_buf, j - i - 1);
-        }
-        break;
-      }
-    }
+  if (OB_LIKELY(shard_rule.shard_key_columns_.count() > 0)) {
+    ret_str = shard_rule.shard_key_columns_[0];
   }
   return ret_str;
 }
@@ -443,7 +424,7 @@ ObString ObShowTopologyHandler::get_shard_key_str(dbconfig::ObShardRule& shard_r
 ObString ObShowTopologyHandler::get_shard_rule_str(dbconfig::ObShardRule& shard_rule)
 {
   ObString ret_str = ObString::make_string("empty shard rule");
-  if (OB_LIKELY(0 != shard_rule.tb_rules_.count())) {
+  if (OB_LIKELY(shard_rule.tb_rules_.count() > 0)) {
     ret_str = shard_rule.tb_rules_.at(0).shard_rule_str_.config_string_;
   }
   return ret_str;

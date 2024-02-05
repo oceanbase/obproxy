@@ -788,7 +788,7 @@ namespace common
   static const int OB_ERR_SHARD_DDL_UNEXPECTED = -8204;
   static const int OB_ERR_CAN_NOT_PASS_WHITELIST = -8205;
 
-  // obproxy common error code 
+  // obproxy common error code
   static const int OB_PROXY_INTERNAL_ERROR = -10001;
   static const int OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR = -10010;
   static const int OB_CLIENT_HANDLING_REQUEST_CONNECTION_ERROR = -10011;
@@ -816,10 +816,10 @@ namespace common
   static const int OB_PROXY_SHARD_HINT_NOT_SUPPORTED = -10304;
   static const int OB_PROXY_SHARD_INVALID_CONFIG = -10305;
 
-  // kv related error code 
+  // kv related error code
 
 
-  // proxy client related error code  
+  // proxy client related error code
 
 
 #define OB_SUCCESS__USER_ERROR_MSG "Success"
@@ -1523,7 +1523,7 @@ namespace common
 #define OB_SERVER_IS_STOPPING__USER_ERROR_MSG "Server is stopping"
 #define OB_PACKET_CHECKSUM_ERROR__USER_ERROR_MSG "Packet checksum error"
 
-// obproxy common error code 
+// obproxy common error code
 #define OB_PROXY_INTERNAL_ERROR__USER_ERROR_MSG "An internal error occured in obproxy"
 #define OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR__USER_ERROR_MSG "An unexpected connection event received from client while obproxy reading request"
 #define OB_CLIENT_HANDLING_REQUEST_CONNECITON_ERROR__USER_ERROR_MSG "An unexpected connection event received from client while obproxy handling response"
@@ -1549,10 +1549,10 @@ namespace common
 #define OB_PROXY_SHARD_HINT_NOT_SUPPORTED__USER_ERROR_MSG "ObProxy shard hint usage not supported"
 #define OB_PROXY_SHARD_INVALID_CONFIG__USER_ERROR_MSG "ObProxy shard config is invalid"
 
-// kv related error code 
+// kv related error code
 
 
-// proxy client related error code  
+// proxy client related error code
 
 
   const char* ob_strerror(int oberr);

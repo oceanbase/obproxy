@@ -37,12 +37,12 @@ enum
 const static ObString &column_name = ObString::make_string("Database");
 const static EMySQLFieldType column_type = OB_MYSQL_TYPE_VARCHAR;
 
-ObShowDatabasesHandler::ObShowDatabasesHandler(ObMIOBuffer *buf, ObCmdInfo &info)
+ObShardingShowDatabasesHandler::ObShardingShowDatabasesHandler(ObMIOBuffer *buf, ObCmdInfo &info)
   : ObCmdHandler(buf, info)
 {
 }
 
-int ObShowDatabasesHandler::handle_show_databases(const ObString &logic_tenant_name,
+int ObShardingShowDatabasesHandler::handle_show_databases(const ObString &logic_tenant_name,
                                                   ObMysqlClientSession &client_session)
 {
   int ret = OB_SUCCESS;
@@ -75,7 +75,7 @@ int ObShowDatabasesHandler::handle_show_databases(const ObString &logic_tenant_n
   return ret;
 }
 
-int ObShowDatabasesHandler::dump_database_header()
+int ObShardingShowDatabasesHandler::dump_database_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(&column_name, &column_type, OB_CC_MAX_DATABASE_COLUMN_ID))) {
@@ -85,7 +85,7 @@ int ObShowDatabasesHandler::dump_database_header()
   return ret;
 }
 
-int ObShowDatabasesHandler::dump_database(const ObString &logic_tenant_name,
+int ObShardingShowDatabasesHandler::dump_database(const ObString &logic_tenant_name,
                                           ObMysqlClientSession &client_session)
 {
   int ret = OB_SUCCESS;
@@ -117,20 +117,20 @@ int ObShowDatabasesHandler::dump_database(const ObString &logic_tenant_name,
   return ret;
 }
 
-int ObShowDatabasesHandler::show_databases_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
+int ObShardingShowDatabasesHandler::show_databases_cmd_callback(ObMIOBuffer *buf, ObCmdInfo &info,
                                                         const ObString &logic_tenant_name,
                                                         ObMysqlClientSession &client_session)
 {
   int ret = OB_SUCCESS;
-  ObShowDatabasesHandler *handler = NULL;
+  ObShardingShowDatabasesHandler *handler = NULL;
 
-  if (OB_ISNULL(handler = new(std::nothrow) ObShowDatabasesHandler(buf, info))) {
+  if (OB_ISNULL(handler = new(std::nothrow) ObShardingShowDatabasesHandler(buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_CMD("fail to new ObShowDatabasesHandler", K(ret));
+    ERROR_CMD("fail to new ObShardingShowDatabasesHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_CMD("fail to init for ObShowDatabasesHandler");
+    WARN_CMD("fail to init for ObShardingShowDatabasesHandler");
   } else if (OB_FAIL(handler->handle_show_databases(logic_tenant_name, client_session))) {
-    DEBUG_CMD("succ to schedule ObShowDatabasesHandler");
+    DEBUG_CMD("succ to schedule ObShardingShowDatabasesHandler");
   }
 
   if (OB_LIKELY(NULL != handler)) {

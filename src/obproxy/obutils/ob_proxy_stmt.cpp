@@ -23,8 +23,10 @@ namespace obproxy
 namespace obutils
 {
 
-ObProxyDMLStmt::ObProxyDMLStmt(common::ObIAllocator& allocator): ObProxyStmt(allocator), limit_offset_(0), limit_size_(-1), limit_token_off_(-1), dml_field_results_(), comments_(),
-                column_name_array_(), table_name_(), is_inited_(false), has_unsupport_expr_type_(false), has_unsupport_expr_type_for_config_(false), table_pos_array_(), has_rollup_(false), has_for_update_(false), from_token_off_(-1), t_case_level_(0)
+ObProxyDMLStmt::ObProxyDMLStmt(common::ObIAllocator& allocator): ObProxyStmt(allocator), limit_offset_(0), limit_size_(-1),
+                limit_token_off_(-1), dml_field_results_(), comments_(), table_name_(), is_inited_(false),
+                has_unsupport_expr_type_(false), has_unsupport_expr_type_for_config_(false), has_sub_select_(false), use_column_value_from_hint_(false),
+                table_pos_array_(), has_rollup_(false), has_for_update_(false), from_token_off_(-1), t_case_level_(0)
 {
   field_results_ = &dml_field_results_;
 }
@@ -261,6 +263,7 @@ int ObProxyDMLStmt::handle_table_node_to_expr(ParseNode* node)
           }
           break;
         case T_SELECT:
+          has_sub_select_ = true;
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
             LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           } else {
@@ -472,6 +475,9 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
             }
             t_case_level_--;
             break;
+          case T_NULL: { // ignore NULL in where clause
+            break;
+          }
           default:
             if (OB_FAIL(handle_where_clause(tmp_node))) {
               LOG_WDIAG("handle_where_nodes failed", K(sql_string_), K(ret));
@@ -500,7 +506,7 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
   bool have_column = false;
   SqlField sql_field;
   SqlColumnValue column_value;
-  bool is_skip_field = false;
+  bool is_skip_field = use_column_value_from_hint_;
   if (t_case_level_ > 0) {
     is_skip_field = true;
   }
@@ -558,6 +564,11 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
               LOG_WDIAG("handle_expr_list_node_in_column_value failed", K(ret), K(i), K(sql_string_));
             }
             break;
+          case T_NULL: { // ignore NULL in where clause
+            is_skip_field = true;
+            has_unsupport_expr_type_for_config_ = true;
+            break;
+          }
           default:
             is_skip_field = true;
             has_unsupport_expr_type_ = true;
@@ -584,7 +595,6 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
       } else {
         SqlField *tmp_field = NULL;
         if (OB_FAIL(SqlField::alloc_sql_field(tmp_field))) {
-          ret = OB_ALLOCATE_MEMORY_FAILED;
           LOG_WDIAG("fail to allocate memory for sqlfield", K(ret));
         } else {
           *tmp_field = sql_field;
@@ -737,9 +747,25 @@ int ObProxyDMLStmt::handle_column_ref_in_list(ParseNode *node)
   } else {
     column_name = expr_column->get_column_name();
   }
+
   if(OB_SUCC(ret)) {
-    if (OB_FAIL(column_name_array_.push_back(column_name))) {
-      LOG_WDIAG("column name push back failed", K(ret));
+    if (OB_UNLIKELY(use_column_value_from_hint_)) {
+      // nothing
+    } else {
+      SqlField* tmp_sql_field = NULL;
+      if (OB_FAIL(SqlField::alloc_sql_field(tmp_sql_field))) {
+        LOG_WDIAG("fail to allocate memory for sqlfield", K(ret));
+      } else {
+        tmp_sql_field->column_name_.set_value(column_name);
+        if (OB_FAIL(field_results_->fields_.push_back(tmp_sql_field))) {
+          tmp_sql_field->reset();
+          tmp_sql_field = NULL;
+          LOG_WDIAG("column name push back failed", K(ret));
+        } else {
+          ++field_results_->field_num_;
+          LOG_DEBUG("add sql_field", K(tmp_sql_field), K(field_results_->field_num_));
+        }
+      }
     }
   }
   return ret;
@@ -900,6 +926,7 @@ int ObProxyDMLStmt::do_handle_parse_result(ParseNode* node)
           ret = handle_union_clause(tmp_node);
           break;
         case T_SELECT:
+          has_sub_select_ = true;
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
             LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           }
@@ -1745,6 +1772,7 @@ int ObProxyInsertStmt::handle_single_table_insert(ParseNode *node)
           break;
         case T_SELECT:
           has_unsupport_expr_type_for_config_ = true;
+          has_sub_select_ = true;
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
             LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           }
@@ -1841,89 +1869,64 @@ int ObProxyInsertStmt::handle_column_list(ParseNode *node)
 int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
 {
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(column_name_array_.empty())) {
-    ret = OB_EXPR_CALC_ERROR;
-    LOG_WDIAG("need column name in value vector", K(ret));
-  } else  if (OB_UNLIKELY(node->num_child_ != column_name_array_.count())){
+  if (OB_UNLIKELY(use_column_value_from_hint_
+                  || field_results_->fields_.empty())) {
+    ret = OB_SUCCESS;
+    LOG_DEBUG("use hint fields or no column name, skip fields for insert/replace", K(use_column_value_from_hint_));
+  } else if (OB_UNLIKELY(node->num_child_ != field_results_->fields_.count())){
     ret = OB_ERR_PARSER_SYNTAX;
     LOG_WDIAG("the num of column name do not match value vector", K(ret));
   } else {
-    bool is_skip_field = false;
-    SqlColumnValue column_value;
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode *tmp_node = node->children_[i];
-      SqlField *sql_field = NULL;
-      bool need_free_sql_field = false;
       if (NULL == tmp_node) {
         // do nothing
-      } else if (OB_FAIL(SqlField::alloc_sql_field(sql_field))) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WDIAG("fail to allocate memory for sqlfield", K(ret));
+      } else if (OB_ISNULL(field_results_->fields_.at(i))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("null sql field", K(i), K(ret));
       } else {
-        need_free_sql_field = true;
-        is_skip_field = false;
-        column_value.reset();
-        sql_field->column_name_.set_value(column_name_array_.at(i));
+        SqlField& sql_field = *(field_results_->fields_.at(i));
+        SqlColumnValue column_value;
         switch (tmp_node->type_) {
           case T_INT:
             {
-              sql_field->value_type_ = TOKEN_INT_VAL;
-              sql_field->column_int_value_ = tmp_node->value_;
+              sql_field.value_type_ = TOKEN_INT_VAL;
+              sql_field.column_int_value_ = tmp_node->value_;
               column_value.value_type_ = TOKEN_STR_VAL;
               column_value.column_value_.set_value(tmp_node->str_value_);
-              ret = sql_field->column_values_.push_back(column_value);
+              ret = sql_field.column_values_.push_back(column_value);
               break;
             }
           case T_VARCHAR:
             {
-              ret = handle_varchar_node_in_column_value(tmp_node, *sql_field);
+              ret = handle_varchar_node_in_column_value(tmp_node, sql_field);
               break;
             }
           case T_OP_NEG:
             {
               ParseNode *child_node = tmp_node->children_[0];
               if (child_node->type_ == T_INT) {
-                sql_field->value_type_ = TOKEN_INT_VAL;
-                sql_field->column_int_value_ = -1 * (child_node->value_);
+                sql_field.value_type_ = TOKEN_INT_VAL;
+                sql_field.column_int_value_ = -1 * (child_node->value_);
               } else {
-                ret = OB_ERR_UNEXPECTED;
-                LOG_WDIAG("unknown node type", K_(child_node->type), K(ret));
+                has_unsupport_expr_type_for_config_ = true;
+                LOG_DEBUG("unknown node type fro config", K_(child_node->type), K(ret));
               }
               break;
             }
+          case T_NULL:
+          {
+            column_value.value_type_ = TOKEN_NULL;
+            ret = sql_field.column_values_.push_back(column_value);
+            has_unsupport_expr_type_for_config_ = true;
+            break;
+          }
           default:
             column_value.value_type_ = TOKEN_NONE;
-            ret = sql_field->column_values_.push_back(column_value);
+            ret = sql_field.column_values_.push_back(column_value);
             has_unsupport_expr_type_ = true;
             LOG_DEBUG("unknown node type", "node type", tmp_node->type_, K(ret));
             break;
-        }
-        if (OB_SUCC(ret) && !is_skip_field) {
-          int duplicate_column_idx = -1;
-          for (int i = 0; i < field_results_->fields_.count(); i++) {
-            if (0 == sql_field->column_name_.config_string_.case_compare(field_results_->fields_[i]->column_name_.config_string_)) {
-              duplicate_column_idx = i;
-              break;
-            }
-          }
-          if (OB_UNLIKELY(-1 != duplicate_column_idx)) {
-            for (int i = 0; OB_SUCC(ret) && i < sql_field->column_values_.count(); i++) {
-              SqlColumnValue tmp_column_value = sql_field->column_values_[i];
-              if (OB_FAIL(field_results_->fields_.at(duplicate_column_idx)->column_values_.push_back(tmp_column_value))) {
-                LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
-              }
-            }
-          } else if (OB_FAIL(field_results_->fields_.push_back(sql_field))) {
-            LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
-          } else {
-            need_free_sql_field = false;
-            ++field_results_->field_num_;
-            LOG_DEBUG("add sql_field", KPC(sql_field), K(field_results_->field_num_));
-          }
-        }
-        if (need_free_sql_field) {
-          sql_field->reset();
-          sql_field = NULL;
         }
       }
     }

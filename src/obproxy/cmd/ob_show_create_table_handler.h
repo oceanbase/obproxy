@@ -16,18 +16,18 @@ namespace obproxy
 {
 namespace obutils
 {
-class ObShowCreateTableHandler : public ObCmdHandler
+class ObShardingShowCreateTableHandler : public ObCmdHandler
 {
 public:
-  ObShowCreateTableHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
-  virtual ~ObShowCreateTableHandler() {}
+  ObShardingShowCreateTableHandler(event::ObMIOBuffer *buf, ObCmdInfo &info);
+  virtual ~ObShardingShowCreateTableHandler() {}
   int handle_show_create_table(const ObString &logic_tenant_name, const ObString &logic_database_name,
                                const ObString &logic_table_name);
   static int show_create_table_cmd_callback(event::ObMIOBuffer *buf, ObCmdInfo &info,
                                             const ObString &logic_tenant_name, const ObString &logic_database_name,
                                             const ObString &logic_table_name);
 
-  DISALLOW_COPY_AND_ASSIGN(ObShowCreateTableHandler);
+  DISALLOW_COPY_AND_ASSIGN(ObShardingShowCreateTableHandler);
 };
 } // end of namespace obutils
 } // end of namespace obproxy

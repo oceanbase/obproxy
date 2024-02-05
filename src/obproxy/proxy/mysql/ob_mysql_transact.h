@@ -920,6 +920,7 @@ enum ObServerRespErrorType
   static bool is_in_trans(ObTransState &s);
   static bool is_user_trans_complete(ObTransState &s);
   static bool is_large_request(ObTransState &s) { return s.trans_info_.client_request_.is_large_request(); }
+  static bool is_transfer_content_of_file(ObTransState &s) { return s.trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT; }
   static bool is_bad_route_request(ObTransState &s);
   static bool is_session_memory_overflow(ObTransState &s);
   static bool need_use_dup_replica(const common::ObConsistencyLevel level, ObTransState &s);

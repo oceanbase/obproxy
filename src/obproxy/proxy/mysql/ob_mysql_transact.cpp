@@ -1558,7 +1558,7 @@ inline ObMysqlTransact::ObPLLookupState ObMysqlTransact::need_pl_lookup(ObTransS
   bool is_dep_func = has_dependent_func(s);
   bool in_trans = is_in_trans(s);
   // 如果 OB_MYSQL_COM_LOAD
-  if (OB_UNLIKELY(OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT == s.trans_info_.sql_cmd_)) {
+  if (OB_UNLIKELY(ObMysqlTransact::is_transfer_content_of_file(s))) {
     state = USE_LAST_SERVER_SESSION;
   } else if (in_trans && s.sm_->get_client_session()->is_proxy_enable_trans_internal_routing()) {
     if (is_dep_func) {

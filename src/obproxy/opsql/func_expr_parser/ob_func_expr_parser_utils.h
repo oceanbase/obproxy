@@ -35,88 +35,63 @@ public:
       VBUF_PRINTF("  ");
     }
   }
+
+  inline bool is_valid_print_func_node(const ObProxyParamNode *node) const
+  {
+    return OB_NOT_NULL(node) &&
+           PARAM_FUNC == node->type_ &&
+          
+           OB_NOT_NULL(node->func_expr_node_) &&
+           OB_NOT_NULL(node->func_expr_node_->func_name_.str_) &&
+           node->func_expr_node_->func_name_.str_len_ >= 0 &&
+           OB_NOT_NULL(node->func_expr_node_->child_);
+  }
+
   int64_t to_string(char* buf, const int64_t buf_len) const
   {
     int64_t pos = 0;
-    int64_t level = 0;
     VBUF_PRINTF("{\n");
-    if (OB_NOT_NULL(result_.param_node_) &&
-        OB_NOT_NULL(result_.param_node_->func_expr_node_) &&
-        OB_NOT_NULL(result_.param_node_->func_expr_node_->func_name_.str_) &&
-        result_.param_node_->func_expr_node_->func_name_.str_len_ >= 0 &&
-        OB_NOT_NULL(result_.param_node_->func_expr_node_->child_)) {
-      ObFuncExprNode *node = result_.param_node_->func_expr_node_;
-      ObProxyParamNodeList *child = node->child_;
-      VBUF_PRINTF(" function:%.*s, param_num:%ld\n", node->func_name_.str_len_, node->func_name_.str_, child->child_num_);
-      ObProxyParamNode *param = child->head_;
-      for (int64_t i = 0; i < child->child_num_; ++i) {
-        if (OB_NOT_NULL(param)) {
-          if (PARAM_COLUMN == param->type_) {
-            VBUF_PRINTF(" param[%ld]:[type:%s, value:%.*s], \n", i,
-                        get_func_param_type(param->type_),
-                        param->col_name_.str_len_, param->col_name_.str_);
-          } else if (PARAM_INT_VAL == param->type_) {
-            VBUF_PRINTF(" param[%ld]:[type:%s, value:%ld], \n", i,
-                        get_func_param_type(param->type_),
-                        param->int_value_);
-          } else if (PARAM_STR_VAL == param->type_) {
-            VBUF_PRINTF(" param[%ld]:[type:%s, value:%.*s], \n", i,
-                        get_func_param_type(param->type_),
-                        param->str_value_.str_len_, param->str_value_.str_);
-          } else if (PARAM_FUNC == param->type_) {
-            VBUF_PRINTF(" param[%ld]:[type:%s, child_num:%ld], \n", i,
-                        get_func_param_type(param->type_),
-                        param->func_expr_node_->child_->child_num_);
-            print_func_expr(buf, buf_len, param->func_expr_node_, pos, level+1);
-          }
-        }
-        param = param->next_;
-      }
+    if (OB_NOT_NULL(result_.param_node_)) {
+      print_func_param(buf, buf_len, pos, 0, 0, result_.param_node_, 1);
     }
     VBUF_PRINTF("}\n");
     return pos;
   }
-  void print_func_expr(char *buf, const int64_t buf_len, ObFuncExprNode *func, int64_t &pos, const int64_t level) const
-  {
-    if (OB_NOT_NULL(func) && OB_NOT_NULL(func->child_) &&
-        OB_NOT_NULL(func->func_name_.str_) &&
-        func->func_name_.str_len_ >= 0) {
-      ObProxyParamNodeList *child = func->child_;
+  void print_func_param(char *buf, const int64_t buf_len, int64_t &pos,
+                       const int64_t level, const int64_t param_index,
+                       const ObProxyParamNode *node,
+                       const int64_t child_num) const {
+    if (OB_NOT_NULL(node) && child_num > 0) {
       print_indent(buf, buf_len, pos, level);
-      VBUF_PRINTF("{\n");
-      print_indent(buf, buf_len, pos, level);
-      VBUF_PRINTF("function:%.*s, param_num:%ld\n", func->func_name_.str_len_, func->func_name_.str_, child->child_num_);
-      ObProxyParamNode *param = child->head_;
-      for (int64_t i = 0; i < child->child_num_; ++i) {
-        if (OB_NOT_NULL(param)) {
-          if (PARAM_COLUMN == param->type_) {
-            print_indent(buf, buf_len, pos, level);
-            VBUF_PRINTF(" param[%ld]:[type:%s, value:%.*s], \n", i,
-                        get_func_param_type(param->type_),
-                        param->col_name_.str_len_, param->col_name_.str_);
-          } else if (PARAM_INT_VAL == param->type_) {
-            print_indent(buf, buf_len, pos, level);
-            VBUF_PRINTF(" param[%ld]:[type:%s, value:%ld], \n", i,
-                        get_func_param_type(param->type_),
-                        param->int_value_);
-          } else if (PARAM_STR_VAL == param->type_) {
-            print_indent(buf, buf_len, pos, level);
-            VBUF_PRINTF(" param[%ld]:[type:%s, value:%.*s], \n", i,
-                        get_func_param_type(param->type_),
-                        param->str_value_.str_len_, param->str_value_.str_);
-          } else if (PARAM_FUNC == param->type_) {
-            print_indent(buf, buf_len, pos, level);
-            VBUF_PRINTF(" param[%ld]:[type:%s], \n", i,
-                        get_func_param_type(param->type_));
-            print_func_expr(buf, buf_len, param->func_expr_node_,pos,level+1);
+      if (PARAM_COLUMN == node->type_ && node->col_name_.str_len_ > 0 && OB_NOT_NULL(node->col_name_.str_)) {
+        VBUF_PRINTF("param[%ld]:[type:%s, value:%.*s], \n", param_index, get_func_param_type(node->type_), node->col_name_.str_len_, node->col_name_.str_);
+      } else if (PARAM_INT_VAL == node->type_) {
+        VBUF_PRINTF("param[%ld]:[type:%s, value:%ld], \n", param_index, get_func_param_type(node->type_), node->int_value_);
+      } else if (PARAM_STR_VAL == node->type_ && node->str_value_.str_len_ > 0 && OB_NOT_NULL(node->str_value_.str_)) {
+        VBUF_PRINTF("param[%ld]:[type:%s, value:%.*s], \n", param_index, get_func_param_type(node->type_),node->str_value_.str_len_, node->str_value_.str_);
+      } else if (PARAM_FUNC == node->type_) {
+        if (is_valid_print_func_node(node)) {
+          const ObProxyParamNodeList *child = node->func_expr_node_->child_;
+          const ObProxyParamNode *param_node = child->head_;
+          VBUF_PRINTF("param[%ld]:[func:%.*s], param_num:%ld\n", param_index,
+                      node->func_expr_node_->func_name_.str_len_,
+                      node->func_expr_node_->func_name_.str_,
+                      child->child_num_);
+          print_indent(buf, buf_len, pos, level);
+          VBUF_PRINTF("{\n");
+          for (int64_t i = 0; i < child->child_num_ && OB_NOT_NULL(param_node); i++, param_node = param_node->next_) {
+            print_func_param(buf, buf_len, pos, level + 1, i, param_node, 1);
           }
+          print_indent(buf, buf_len, pos, level);
+          VBUF_PRINTF("}\n");
         }
-        param = param->next_;
+      } else if (PARAM_NULL == node->type_) {
+        VBUF_PRINTF("param[%ld]:[type:%s, value: NULL], \n", param_index, get_func_param_type(node->type_));
       }
-      print_indent(buf, buf_len, pos, level);
-      VBUF_PRINTF("}\n");
+      print_func_param(buf, buf_len, pos, level, param_index + 1, node->next_, child_num - 1);
     }
   }
+
 private:
   DISALLOW_COPY_AND_ASSIGN(ObFuncExprParseResultPrintWrapper);
 private:

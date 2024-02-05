@@ -200,7 +200,6 @@ inline int ObSqlParseResult::set_call_prarms(const ObProxyCallParseInfo &call_pa
     LOG_WDIAG("invalid argument", K(call_parse_info.node_count_), K(ret));
   } else if (call_parse_info.node_count_ >= 0) {
     call_info_.is_param_valid_ = true;
-    call_info_.param_count_ = call_parse_info.node_count_;
     ObProxyCallParam* tmp_param = NULL;
     ObProxyCallParseNode *tmp_node = call_parse_info.head_;
     while(OB_SUCC(ret) && tmp_node) {
@@ -382,6 +381,7 @@ int ObSqlParseResult::set_dbmesh_route_info(const ObProxyParseResult &parse_resu
   }
   if (OB_SUCC(ret) && route_info.node_count_ > 0) {
     has_dbmesh_hint_ = true;
+    use_column_value_from_hint_ = true;
     ObShardColumnNode *tmp_node = route_info.head_;
     fileds_result_.field_num_ = 0;
     fileds_result_.fields_.reuse();
@@ -458,6 +458,7 @@ int ObSqlParseResult::set_dbmesh_route_info(const ObProxyParseResult &parse_resu
 
     if (OB_SUCC(ret) && dbp_route_info.has_shard_key_) {
       use_dbp_hint_ = true;
+      use_column_value_from_hint_ = true;
       fileds_result_.field_num_ = 0;
       fileds_result_.fields_.reuse();
       dbp_route_info_.has_shard_key_ = dbp_route_info.has_shard_key_;
@@ -572,7 +573,6 @@ int ObSqlParseResult::set_text_ps_info(ObProxyTextPsInfo& text_ps_info,
     LOG_WDIAG("invalid argument", K(parse_info.node_count_), K(ret));
   } else if (parse_info.node_count_ > 0) {
     text_ps_info.is_param_valid_ = true;
-    text_ps_info.param_count_ = parse_info.node_count_;
     ObProxyTextPsParam* tmp_param = NULL;
     ObProxyTextPsParseNode *tmp_node = parse_info.head_;
     while (OB_SUCC(ret) && OB_NOT_NULL(tmp_node)) {
@@ -836,7 +836,7 @@ int64_t ObProxyCallInfo::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(is_param_valid), K_(param_count), "params", params_);
+  J_KV(K_(is_param_valid), "params", params_);
   J_OBJ_END();
   return pos;
 }
@@ -845,8 +845,7 @@ ObProxyCallInfo::ObProxyCallInfo(const ObProxyCallInfo &other)
 {
   int ret = OB_SUCCESS;
   is_param_valid_ = other.is_param_valid_;
-  param_count_ = other.param_count_;
-  for (int64_t i = 0; OB_SUCC(ret) && i < param_count_; i++) {
+  for (int64_t i = 0; OB_SUCC(ret) && i < other.params_.count(); i++) {
     ObProxyCallParam *param = other.params_.at(i);
     ObProxyCallParam *tmp_param = NULL;
     if (OB_FAIL(ObProxyCallParam::alloc_call_param(tmp_param))) {
@@ -867,8 +866,7 @@ ObProxyCallInfo& ObProxyCallInfo::operator=(const ObProxyCallInfo &other)
   int ret = OB_SUCCESS;
   if (this != &other) {
     is_param_valid_ = other.is_param_valid_;
-    param_count_ = other.param_count_;
-    for (int64_t i = 0; OB_SUCC(ret) && i < param_count_; i++) {
+    for (int64_t i = 0; OB_SUCC(ret) && i < other.params_.count(); i++) {
       ObProxyCallParam *param = other.params_.at(i);
       ObProxyCallParam *tmp_param = NULL;
       if (OB_FAIL(ObProxyCallParam::alloc_call_param(tmp_param))) {
@@ -899,7 +897,7 @@ int64_t ObProxyTextPsInfo::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(is_param_valid), K_(param_count), "params", params_);
+  J_KV(K_(is_param_valid), "params", params_);
   J_OBJ_END();
   return pos;
 }
@@ -909,8 +907,7 @@ ObProxyTextPsInfo::ObProxyTextPsInfo(const ObProxyTextPsInfo &other)
 
   int ret = OB_SUCCESS;
   is_param_valid_ = other.is_param_valid_;
-  param_count_ = other.param_count_;
-  for (int64_t i = 0; OB_SUCC(ret) && i < param_count_; i++) {
+  for (int64_t i = 0; OB_SUCC(ret) && i < other.params_.count(); i++) {
     ObProxyTextPsParam *param = other.params_.at(i);
     ObProxyTextPsParam *tmp_param = NULL;
     if (OB_FAIL(ObProxyTextPsParam::alloc_text_ps_param(param->str_value_.ptr(), param->str_value_.length(), tmp_param))) {
@@ -931,8 +928,7 @@ ObProxyTextPsInfo& ObProxyTextPsInfo::operator=(const ObProxyTextPsInfo &other)
   int ret = OB_SUCCESS;
   if (this != &other) {
     is_param_valid_ = other.is_param_valid_;
-    param_count_ = other.param_count_;
-    for (int64_t i = 0; OB_SUCC(ret) && i < param_count_; i++) {
+    for (int64_t i = 0; OB_SUCC(ret) && i < other.params_.count(); i++) {
       ObProxyTextPsParam *param = other.params_.at(i);
       ObProxyTextPsParam *tmp_param = NULL;
       if (OB_FAIL(ObProxyTextPsParam::alloc_text_ps_param(param->str_value_.ptr(), param->str_value_.length(), tmp_param))) {
@@ -1398,100 +1394,35 @@ int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
     switch(node->type_) {
       case T_SELECT:
         if (need_handle_result) {
-          char* buf = NULL;
-          ObProxySelectStmt* select_stmt= NULL;
-          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxySelectStmt)))) {
-            LOG_WDIAG("failed to alloc buf");
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-          } else if (OB_ISNULL(select_stmt = new (buf) ObProxySelectStmt(allocator_))) {
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WDIAG("failed to new ObProxySelectStmt", K(ret));
-          } else if (OB_FAIL(select_stmt->init())) {
-            LOG_WDIAG("init failed", K(ret));
+          ObProxySelectStmt* select_stmt = NULL;
+          if (OB_FAIL(alloc_stmt_and_handle_parse_result(select_stmt, OBPROXY_T_SELECT, parse_result, sql))) {
+            LOG_WDIAG("fail to handle parse result", K(ret));
           } else {
-            select_stmt->set_sql_string(sql);
-            select_stmt->set_stmt_type(OBPROXY_T_SELECT);
-            select_stmt->set_field_results(&fileds_result_);
-            select_stmt->set_table_name(origin_table_name_);
-            proxy_stmt_ = select_stmt;
-            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
-              LOG_WDIAG("handle select parse result failed", K(ret));
-            } else {
-              has_for_update_ = select_stmt->has_for_update();
-            }
+            has_for_update_ = select_stmt->has_for_update();
           }
         }
         break;
       case T_INSERT:
         if (need_handle_result) {
-          char* buf = NULL;
-          ObProxyInsertStmt* insert_stmt= NULL;
-          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxyInsertStmt)))) {
-            LOG_WDIAG("failed to alloc buf");
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-          } else if (OB_ISNULL(insert_stmt = new (buf) ObProxyInsertStmt(allocator_))) {
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WDIAG("failed to new ObProxyInsertStmt", K(ret));
-          } else if (OB_FAIL(insert_stmt->init())) {
-            LOG_WDIAG("init failed", K(ret));
-          } else {
-            insert_stmt->set_sql_string(sql);
-            insert_stmt->set_stmt_type(OBPROXY_T_INSERT);
-            insert_stmt->set_field_results(&fileds_result_);
-            insert_stmt->set_table_name(origin_table_name_);
-            proxy_stmt_ = insert_stmt;
-            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
-              LOG_WDIAG("handle Insert parse result failed", K(ret));
-            }
+          ObProxyInsertStmt* insert_stmt = NULL;
+          if (OB_FAIL(alloc_stmt_and_handle_parse_result(insert_stmt, OBPROXY_T_INSERT, parse_result, sql))) {
+            LOG_WDIAG("fail to handle parse result", K(ret));
           }
         }
         break;
       case T_DELETE:
         if (need_handle_result) {
-          char* buf = NULL;
-          ObProxyDeleteStmt* delete_stmt= NULL;
-          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxyDeleteStmt)))) {
-            LOG_WDIAG("failed to alloc buf");
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-          } else if (OB_ISNULL(delete_stmt = new (buf) ObProxyDeleteStmt(allocator_))) {
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WDIAG("failed to new ObProxyDeleteStmt", K(ret));
-          } else if (OB_FAIL(delete_stmt->init())) {
-            LOG_WDIAG("init failed", K(ret));
-          } else {
-            delete_stmt->set_sql_string(sql);
-            delete_stmt->set_stmt_type(OBPROXY_T_DELETE);
-            delete_stmt->set_field_results(&fileds_result_);
-            delete_stmt->set_table_name(origin_table_name_);
-            proxy_stmt_ = delete_stmt;
-            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
-              LOG_WDIAG("handle delete parse result failed", K(ret));
-            }
+            ObProxyDeleteStmt* delete_stmt = NULL;
+            if (OB_FAIL(alloc_stmt_and_handle_parse_result(delete_stmt, OBPROXY_T_DELETE, parse_result, sql))) {
+            LOG_WDIAG("fail to handle parse result", K(ret));
           }
         }
         break;
-      //TODO
       case T_UPDATE:
         if (need_handle_result) {
-          char* buf = NULL;
           ObProxyUpdateStmt* update_stmt= NULL;
-          if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(ObProxyUpdateStmt)))) {
-            LOG_WDIAG("failed to alloc buf");
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-          } else if (OB_ISNULL(update_stmt = new (buf) ObProxyUpdateStmt(allocator_))) {
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WDIAG("failed to new ObProxyUpdateStmt", K(ret));
-          } else if (OB_FAIL(update_stmt->init())) {
-            LOG_WDIAG("init failed", K(ret));
-          } else {
-            update_stmt->set_sql_string(sql);
-            update_stmt->set_stmt_type(OBPROXY_T_UPDATE);
-            update_stmt->set_field_results(&fileds_result_);
-            update_stmt->set_table_name(origin_table_name_);
-            proxy_stmt_ = update_stmt;
-            if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
-              LOG_WDIAG("handle update parse result failed", K(ret));
-            }
+          if (OB_FAIL(alloc_stmt_and_handle_parse_result(update_stmt, OBPROXY_T_UPDATE, parse_result, sql))) {
+            LOG_WDIAG("fail to handle parse result", K(ret));
           }
         }
         break;
@@ -1505,6 +1436,36 @@ int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
   }
   return ret;
 }
+
+template <typename Stmt>
+int ObSqlParseResult::alloc_stmt_and_handle_parse_result(Stmt*& dml_stmt,
+                                                         ObProxyBasicStmtType type,
+                                                         const ParseResult &parse_result,
+                                                         const common::ObString& sql)
+{
+  int ret = OB_SUCCESS;
+  
+  char* buf = NULL;
+  if (OB_ISNULL(buf = (char*)allocator_.alloc(sizeof(Stmt)))) {
+    LOG_WDIAG("failed to alloc buf");
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+  } else if (OB_ISNULL(dml_stmt = new (buf) Stmt(allocator_))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("failed to new Stmt", K(ret));
+  } else if (OB_FAIL(dml_stmt->init())) {
+    LOG_WDIAG("init failed", K(ret));
+  } else {
+    dml_stmt->set_stmt_property(sql, type, origin_table_name_, &fileds_result_,
+                                use_column_value_from_hint_);
+    proxy_stmt_ = dml_stmt;
+    if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
+      LOG_WDIAG("handle select parse result failed", K(ret));
+    }
+  }
+
+  return ret;
+}
+
 
 int ObProxySqlParser::parse_sql_by_obparser(const ObString &sql,
                                             const ObProxyParseMode parse_mode,

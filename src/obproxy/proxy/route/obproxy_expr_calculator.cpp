@@ -222,7 +222,15 @@ int ObProxyExprCalculator::do_expr_parse(const common::ObString &req_sql,
   if (OB_FAIL(expr_parser.parse_reqsql(req_sql,  parse_result.get_parsed_length(), expr_result,
                                        parse_result.get_stmt_type(), connection_collation))) {
     LOG_DEBUG("fail to do expr parse_reqsql", K(req_sql), K(ret));
+  } else if (OB_FAIL(do_expr_parse_diagnosis(expr_result))) {
+    LOG_DEBUG("fail to expr parse diagnosis", K(ret));
   }
+  return ret;
+}
+
+int ObProxyExprCalculator::do_expr_parse_diagnosis(ObExprParseResult &expr_result)
+{
+  int ret = OB_SUCCESS;
   if (OB_NOT_NULL(route_diagnosis_) && route_diagnosis_->is_diagnostic(EXPR_PARSE)) {
     ObProxyRelationExpr **relations = expr_result.relation_info_.relations_;
     char col_val_buf[EXPR_PARSE_MAX_LEN];
@@ -256,7 +264,9 @@ int ObProxyExprCalculator::do_expr_parse(const common::ObString &req_sql,
         } else if (relation->right_value_->head_->type_ == TOKEN_PLACE_HOLDER) {
           buf[0] = '?';
           val.assign_ptr(buf, (ObString::obstr_size_t) strlen(buf));
-        }
+        } else if (relation->right_value_->head_->type_ == TOKEN_NULL) {
+          val = "NULL";
+        } 
       }
       if (pos + col.length() + val.length() + 2 > EXPR_PARSE_MAX_LEN) {
         LOG_DEBUG("reach max len of expr parse", K(pos), K(col), K(val), K(i));
