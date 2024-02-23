@@ -4045,8 +4045,6 @@ uint8_t ObMysqlSM::get_compressed_or_ob20_request_seq()
 {
   uint8_t seq = 0;
   ObProxyProtocol server_protocol = get_server_session_protocol();
-  // compressed pkt seq use the mysql pkt seq
-  // if you're confused about this, please check the doc <https://yuque.antfin-inc.com/ob/odp/myfg2mlwo9qiifg7>
   if (ObProxyProtocol::PROTOCOL_CHECKSUM == server_protocol) {
     // load content of file's response use compressed seq
     if (OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT == trans_state_.trans_info_.sql_cmd_) {
@@ -9838,8 +9836,6 @@ bool ObMysqlSM::need_close_last_used_ss()
     common::ObAddr current_addr;
     (void)current_addr.set_sockaddr(trans_state_.server_info_.addr_.sa_);
     const bool is_current_route_readonly_zone = client_session_->dummy_ldc_.is_readonly_zone(current_addr);
-    // 当有只读zone存在时，我们期望弱读走只读zone，如果路由策略选择了只读zone，关闭readwrite zone的
-    // 连接，节约连接资源，参考问题 https://aone.alibaba-inc.com/code/D579173
     if (is_last_route_readonly_zone != is_current_route_readonly_zone) {
       bret = true;
       LOG_INFO("last used server session not match readwrite policy, need close it", K_(sm_id),
@@ -10198,7 +10194,6 @@ void ObMysqlSM::get_monitor_error_info(int32_t &error_code, ObString &error_msg,
 {
   const char *msg = NULL;
 
-  //错误设计文档: https://yuque.antfin-inc.com/mesh/tech-risk/pr9ggf#DmHdS
   if (ObMysqlTransact::TRANSACTION_COMPLETE == trans_state_.current_.state_ || ObMysqlTransact::CMD_COMPLETE == trans_state_.current_.state_) {
     ObRespAnalyzeResult &resp = trans_state_.trans_info_.server_response_.get_analyze_result();
     if (trans_state_.inner_errcode_ != 0) {

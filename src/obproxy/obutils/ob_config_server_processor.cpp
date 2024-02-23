@@ -558,13 +558,6 @@ int ObConfigServerProcessor::get_idc_url(const char *rs_url_buf, const int64_t r
              K(idc_url_buf_len), K(ret));
   } else {
     const char *pos = strcasestr(rs_url_buf, RS_URL_KEY_STRING);
-    /*
-     * rs url
-     * http://x.x.x.x:xxxx/services?Action=ObRootServiceInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
-     *
-     * idc url
-     * http://x.x.x.x:xxxx/services?Action=ObIDCRegionInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
-     * */
     if (NULL != pos) {
       const int64_t url_head_len = static_cast<int64_t>(pos - rs_url_buf);
       const int64_t url_key_len = static_cast<int64_t>(strlen(RS_URL_KEY_STRING));
@@ -576,13 +569,6 @@ int ObConfigServerProcessor::get_idc_url(const char *rs_url_buf, const int64_t r
              url_tailer_len);
       idc_url_buf[url_head_len + IDC_URL_KEY_STRING.length() + url_tailer_len] = '\0';
     } else {
-      /*
-       * rs url
-       * http://x.x.x.x:xxxx/oceanbase_obconfig/${cluster_name}
-       *
-       * idc url
-       * http://x.x.x.x:xxxx/oceanbase_obconfig/${cluster_name}
-       * */
       MEMCPY(idc_url_buf, rs_url_buf, rs_url_buf_len);
       MEMCPY(idc_url_buf + rs_url_buf_len,
              IDC_URL_TAILER_STRING.ptr(),
@@ -2218,10 +2204,6 @@ int ObConfigServerProcessor::concat_cluster_name_array(char *data, const char *c
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("NULL pointer, invalid curl or url", K(ret));
   } else {
-    /* 批量逻辑租户接口：
-    curl --location --request GET 'http://127.0.0.1:8000/services?User_ID=alibaba&UID=HNBC&Action=LdgInstanceInfoBatchQuery' --header 'Content-Type: application/json' --data '{
-    "LdgClusters": "cluster1,cluster2"}'
-    */
     char tail[] = "\"}";
     int64_t len_data = strlen(data);
     int64_t len_cluster_name = strlen(cluster_name_array);

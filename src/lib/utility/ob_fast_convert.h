@@ -189,7 +189,6 @@ private:
   int64_t len_;
 };
 
-//ref: https://github.com/jsteemann/atoi
 template<typename T>
 class ObFastAtoi
 {

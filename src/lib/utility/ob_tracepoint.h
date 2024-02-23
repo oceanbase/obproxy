@@ -35,8 +35,6 @@ bool &get_tp_switch()
       EventItem &item = ::oceanbase::common::EventTable::instance().get_event(event_no); \
       item.call(SELECT(1, ##__VA_ARGS__)); })
 
-// doc: https://yuque.antfin-inc.com/ob/sql/ssc2x0
-
 // to check if a certain tracepoint is set
 // example: if (E(50) OB_SUCCESS) {...}
 // you can also specify condition:

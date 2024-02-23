@@ -17,7 +17,6 @@
 #include "lib/number/ob_number_v2.h"
 #include "common/ob_object.h"
 
-//see oracle doc Number Format Models: https://docs.oracle.com/cd/B19306_01/server.102/b14200/sql_elements004.htm
 #define MAX_FMT_STR_LEN 64
 
 namespace oceanbase
