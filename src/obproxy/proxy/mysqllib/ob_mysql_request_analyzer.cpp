@@ -154,7 +154,9 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
 
     if (OB_SUCC(ret) && (ANALYZE_DONE == status || ANALYZE_CONT == status)) {
       // 3. set mysql request packet meta
-      sql_cmd = result.meta_.cmd_;
+      if (OB_LIKELY(OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != sql_cmd)) {
+        sql_cmd = result.meta_.cmd_;
+      }
       if (OB_UNLIKELY(OB_MYSQL_COM_LOGIN == result.meta_.cmd_ || OB_MYSQL_COM_HANDSHAKE == result.meta_.cmd_)) {
         // add pkt meta to mysql auth request
         auth_request.set_packet_meta(result.meta_);
