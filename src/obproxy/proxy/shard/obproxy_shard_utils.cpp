@@ -86,12 +86,17 @@ int ObProxyShardUtils::check_logic_database(ObMysqlTransact::ObTransState &trans
 
   //有的 SQL 不需要改写, 可以直接依赖上一次的 DBKey, 切换逻辑库以后, 也随机选一个, 避免使用到上一个逻辑库的
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(db_info->acquire_random_shard_connector(shard_conn))) {
+    if (OB_NOT_NULL(shard_conn = session_info.get_txn_shard_connector())) {
+      shard_conn->inc_ref();
+    } else if (OB_FAIL(db_info->acquire_random_shard_connector(shard_conn))) {
       LOG_WDIAG("fail to get random shard connector", K(ret), KPC(db_info));
-    } else if (*prev_shard_conn != *shard_conn) {
-      if (OB_FAIL(change_connector(*db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-        LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
-      }
+    }
+
+    if (OB_ISNULL(shard_conn)
+        || OB_ISNULL(prev_shard_conn)) {
+      // nothing
+    } else if (OB_FAIL(change_connector(*db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
+      LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
     }
   }
 
@@ -152,30 +157,89 @@ int ObProxyShardUtils::check_logic_db_priv_for_cur_user(const ObString &logic_te
 int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
                                         ObMysqlClientSession &client_session,
                                         ObMysqlTransact::ObTransState &trans_state,
-                                        const ObShardConnector *prev_shard_conn,
-                                        ObShardConnector *shard_conn)
+                                        ObShardConnector * const prev_shard_conn,
+                                        ObShardConnector *shard_conn,
+                                        bool allow_cross_shards /* false */)
 {
   int ret = OB_SUCCESS;
 
   ObClientSessionInfo &session_info = client_session.get_session_info();
-
+  ObShardConnector *txn_shard_conn = session_info.get_txn_shard_connector();
   if (!shard_conn->is_same_connection(prev_shard_conn)) {
     // 这里要用 ObMysqlTransact::is_in_trans, 比如 begin 后的第一条 SQL,
     // is_sharding_in_trans 会认为在事务中, 但是这里需要认为不在事务中, 否则会认为是分布式
     if (OB_UNLIKELY(ObMysqlTransact::is_in_trans(trans_state))) {
-      ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
-      LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
-               K(trans_state.is_auth_request_),
-               K(trans_state.is_hold_start_trans_),
-               K(trans_state.is_hold_xa_start_),
-               KPC(prev_shard_conn),
-               KPC(shard_conn), K(ret));
+      if (OB_NOT_NULL(txn_shard_conn)
+          && *shard_conn == *txn_shard_conn) {
+        session_info.set_need_close_last_server_session(false);
+        session_info.set_allow_use_last_session(false);
+        LOG_DEBUG("change back to txn shard connector", K(prev_shard_conn), K(shard_conn));
+      } else if (OB_UNLIKELY(!allow_cross_shards
+                 || !client_session.is_proxy_enable_cross_shard_txn())) {
+        ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
+        LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
+                  K(trans_state.is_auth_request_),
+                  K(trans_state.is_hold_start_trans_),
+                  K(trans_state.is_hold_xa_start_),
+                  KPC(prev_shard_conn),
+                  KPC(shard_conn), K(ret));
+      } else {
+        LOG_DEBUG("allow sharding transaction cross shards");
+        session_info.set_need_close_last_server_session(true);
+        session_info.set_allow_use_last_session(false);
+        if (OB_ISNULL(txn_shard_conn)) {
+          if (OB_ISNULL(client_session.get_server_session())
+              || OB_ISNULL(client_session.get_server_session()->get_session_info().get_shard_connector())) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WDIAG("last txn sever session is NULL", K(ret));
+          } else {
+            session_info.set_txn_shard_connector(client_session.get_server_session()->get_session_info().get_shard_connector());
+            session_info.set_need_record_shard_txn_server(true);
+            client_session.get_server_session()->get_session_info().set_sharding_txn_session(true);
+          }
+        } else {
+          // nothing
+        }
+      }
     } else {
       session_info.set_allow_use_last_session(false);
     }
+  } else {
+    // shard_conn->is_same_connection(prev_shard_conn)
+    if (OB_UNLIKELY(ObMysqlTransact::is_in_trans(trans_state))) {
+      if (OB_NOT_NULL(txn_shard_conn)) {
+        if (shard_conn->is_same_connection(txn_shard_conn)) {
+          session_info.set_allow_use_last_session(false);
+          session_info.set_need_close_last_server_session(false);
+          LOG_DEBUG("change back to txn shard connector", K(prev_shard_conn), K(shard_conn));
+        } else if (allow_cross_shards) {
+          // !shard_conn->is_same_connection(txn_shard_conn)
+          session_info.set_allow_use_last_session(false);
+        } else {
+          // !shard_conn->is_same_connection(txn_shard_conn)
+          // && !allow_cross_shards
+          ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
+          LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
+                  K(trans_state.is_auth_request_),
+                  K(trans_state.is_hold_start_trans_),
+                  K(trans_state.is_hold_xa_start_),
+                  KPC(prev_shard_conn),
+                  KPC(shard_conn),
+                  KPC(txn_shard_conn), K(ret));
+        }
+      } else {
+        // NULL == txn_shard_conn
+      }
+    } else {
+      // nothing for not in trans
+    }
   }
 
-  if (OB_SUCC(ret)) {
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (*shard_conn == *prev_shard_conn) {
+    LOG_DEBUG("same shard conn, ignore shard prop set");
+  } else {
     if (OB_FAIL(handle_sys_read_consitency_prop(logic_db_info, *shard_conn, session_info))) {
       LOG_WDIAG("fail to handle_sys_read_consitency_prop", KPC(shard_conn));
     } else {
@@ -189,7 +253,11 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
     }
   }
 
-  if (OB_SUCC(ret)) {
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (*shard_conn == *prev_shard_conn) {
+    LOG_DEBUG("same shard conn, ignore shard prop set");
+  } else {
     session_info.set_shard_connector(shard_conn);
     // 虽然分库分表不会同步 database, 但是从分库分表到单库单表,
     // 由于分库分表没同步, 当切换到单库单表时, 如果 dbkey 相同, 单库单表逻辑不设置 database, 会导致设置为错误的数据库
@@ -1147,6 +1215,8 @@ bool ObProxyShardUtils::is_read_stmt(ObClientSessionInfo &session_info, ObMysqlT
               || parse_result.has_explain()));
 }
 
+// special shard request
+// unsupported in multi stmt
 bool ObProxyShardUtils::is_unsupport_type_in_multi_stmt(ObSqlParseResult& parse_result)
 {
   return parse_result.is_shard_special_cmd()
@@ -1220,11 +1290,18 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
           } else if (OB_ISNULL(logic_db_info = dbconfig_cache.get_exist_db_info(logic_tenant_name, database_name))) {
             ret = OB_ERR_BAD_DATABASE;
             LOG_WDIAG("database not exist", K(logic_tenant_name), K(database_name));
-          } else if (OB_FAIL(logic_db_info->get_first_group_shard_connector(shard_conn, OBPROXY_MAX_DBMESH_ID, false, TESTLOAD_NON))) {
-            LOG_WDIAG("fail to get random shard connector", K(ret), KPC(logic_db_info));
-          } else if (*prev_shard_conn != *shard_conn) {
-            if (OB_FAIL(change_connector(*logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
-              LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
+          } else {
+            if (OB_NOT_NULL(cs_info.get_txn_shard_connector())) {
+              shard_conn = cs_info.get_txn_shard_connector();
+              shard_conn->inc_ref();
+            } else if (OB_FAIL(logic_db_info->get_first_group_shard_connector(shard_conn, OBPROXY_MAX_DBMESH_ID, false, TESTLOAD_NON))) {
+              LOG_WDIAG("fail to get random shard connector", K(ret), KPC(logic_db_info));
+            }
+
+            if (OB_SUCC(ret)) {
+              if (OB_FAIL(change_connector(*logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
+                LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
+              }
             }
           }
 
@@ -1399,6 +1476,7 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
     // 写请求走写权重, 事务内请求都认为是写
     // 读请求走读权重
     bool is_read_stmt = ObProxyShardUtils::is_read_stmt(session_info, trans_state, parse_result);
+    bool allow_cross_shards = parse_result.is_select_stmt() && !parse_result.has_for_update();
 
     if (OB_FAIL(logic_db_info.get_single_table_info(table_name, shard_conn,
                                                     real_database_name, OB_MAX_DATABASE_NAME_LENGTH,
@@ -1411,10 +1489,24 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
       LOG_WDIAG("shard connector info or prev shard connector info is null", KP(shard_conn),
                KP(prev_shard_conn), K(ret));
     } else if (*prev_shard_conn != *shard_conn) {
-      if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
+      if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn, allow_cross_shards))) {
         LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
       }
+    } else {
+      if (OB_UNLIKELY(ObMysqlTransact::is_in_trans(trans_state))
+          && OB_NOT_NULL(session_info.get_txn_shard_connector())
+          && *shard_conn != *session_info.get_txn_shard_connector()
+          && !allow_cross_shards) {
+        ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
+        LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
+                  K(trans_state.is_auth_request_),
+                  K(trans_state.is_hold_start_trans_),
+                  K(trans_state.is_hold_xa_start_),
+                  KPC(prev_shard_conn),
+                  KPC(shard_conn), K(ret));
+      }
     }
+
     if (OB_NOT_NULL(shard_conn)) {
       shard_conn->dec_ref();
       shard_conn = NULL;
@@ -1665,6 +1757,12 @@ int ObProxyShardUtils::do_handle_shard_request(ObMysqlClientSession &client_sess
       || table_name.empty())) {
     //暂时先放过, 保持兼容
     new_sql.append(sql);
+    if (is_unsupport_type_in_multi_stmt(parse_result)) {
+      // special shard request
+      // no need choose shard connector
+    } else if (OB_FAIL(do_set_txn_shard_connector(client_session, trans_state, db_info))) {
+      LOG_WDIAG("fail to set txn shard connector", K(ret));
+    }
   } else if (parse_result.is_show_stmt() || parse_result.is_desc_table_stmt()) {
     if (OB_FAIL(handle_other_request(client_session, trans_state, table_name, db_info,
                                      sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
@@ -1714,6 +1812,27 @@ int ObProxyShardUtils::build_shard_request_packet(ObClientSessionInfo &session_i
   return ret;
 }
 
+int ObProxyShardUtils::do_set_txn_shard_connector(ObMysqlClientSession &client_session,
+                                                  ObMysqlTransact::ObTransState &trans_state,
+                                                  ObDbConfigLogicDb &db_info)
+{
+  int ret = OB_SUCCESS;
+
+  ObClientSessionInfo &session_info = client_session.get_session_info();
+  ObShardConnector *prev_shard_conn = session_info.get_shard_connector();
+  ObShardConnector *txn_shard_conn = NULL;
+  if (OB_ISNULL(prev_shard_conn)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("shard connector info is null", K(ret));
+  } else if (OB_ISNULL(txn_shard_conn = session_info.get_txn_shard_connector())) {
+    // nothing
+  } else if (OB_FAIL(change_connector(db_info, client_session, trans_state, prev_shard_conn, txn_shard_conn))) {
+    LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(txn_shard_conn), K(ret));
+  }
+
+  return ret;
+}
+
 int ObProxyShardUtils::handle_ddl_request(ObMysqlSM *sm,
                                           ObMysqlClientSession &client_session,
                                           ObMysqlTransact::ObTransState &trans_state,
@@ -1738,12 +1857,16 @@ int ObProxyShardUtils::handle_ddl_request(ObMysqlSM *sm,
   int64_t es_id = OBPROXY_MAX_DBMESH_ID;
   ObTestLoadType testload_type = TESTLOAD_NON;
   ObString hint_table_name;
-  if (OB_FAIL(get_shard_hint(table_name, session_info, db_info, parse_result,
+
+  if (OB_UNLIKELY(ObMysqlTransact::is_in_trans(trans_state))) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_WDIAG("DDL is not supported in transaction for ODP sharding", K(ret));
+  } else if (OB_FAIL(get_shard_hint(table_name, session_info, db_info, parse_result,
                              group_id, table_id, es_id, hint_table_name, testload_type))) {
     LOG_WDIAG("fail to get shard hint", K(ret));
   } else if (FALSE_IT(group_id = (group_id == OBPROXY_MAX_DBMESH_ID) ? -1 : group_id)) {
     //impossible
-  } if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
+  } else if (OB_FAIL(session_info.get_logic_tenant_name(logic_tenant_name))) {
     ret = OB_ERR_UNEXPECTED; // no need response, just return ret and disconnect
     LOG_EDIAG("fail to get logic tenant name", K(ret));
   } else if (OB_ISNULL(cont = new(std::nothrow) ObShardDDLCont(sm, cb_thread))) {
@@ -1820,7 +1943,9 @@ int ObProxyShardUtils::handle_select_request(ObMysqlClientSession &client_sessio
   int ret = OB_SUCCESS;
   SqlFieldResult& sql_result = parse_result.get_sql_filed_result();
   ObProxySqlParser sql_parser;
-  if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
+  if (OB_FAIL(check_hint_sql_fields(table_name, db_info, parse_result))) {
+    LOG_WDIAG("fail to check dml sql before parse", K(sql), K(ret));
+  } else if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
     LOG_WDIAG("parse_sql_by_obparser failed", K(ret), K(sql));
   } else if (FALSE_IT(is_scan_all = need_scan_all(parse_result))) {
     // impossible
@@ -1857,11 +1982,59 @@ int ObProxyShardUtils::handle_dml_request(ObMysqlClientSession &client_session,
 {
   int ret = OB_SUCCESS;
   ObProxySqlParser sql_parser;
-  if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
+  if (OB_FAIL(check_hint_sql_fields(table_name, db_info, parse_result))) {
+    LOG_WDIAG("fail to check dml sql before parse", K(sql), K(ret));
+  } else if (OB_FAIL(sql_parser.parse_sql_by_obparser(ObProxyMysqlRequest::get_parse_sql(sql), NORMAL_PARSE_MODE, parse_result, true))) {
     LOG_WDIAG("parse_sql_by_obparser failed", K(ret), K(sql));
   } else if (OB_FAIL(handle_dml_real_info(db_info, client_session, trans_state, table_name,
                                        sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
     LOG_WDIAG("fail to handle dml real info", K(table_name), K(ret));
+  }
+
+  return ret;
+}
+
+/*
+* sharding use fields in hint for default if there is any sharding hint in sql.
+* but it need use fields in sql if there is no sharding key in hint.
+* like this, sharding key is C1
+*      hint: "ODP:  t1.C2 = 1, t1.C3 = 2"
+*      SQL:  "insert into t1(C1) values(0);"
+*/
+int ObProxyShardUtils::check_hint_sql_fields(const ObString &table_name,
+                                             ObDbConfigLogicDb &logic_db_info,
+                                             ObSqlParseResult &parse_result)
+{
+  int ret = OB_SUCCESS;
+
+  ObShardRule *logic_tb_info = NULL;
+  SqlFieldResult &sql_result = parse_result.get_sql_filed_result();
+  if (!parse_result.use_column_value_from_hint()) {
+    // nothing
+  } else if (OB_FAIL(logic_db_info.get_shard_rule(logic_tb_info, table_name))) {
+    ret = OB_SUCCESS;
+    LOG_DEBUG("fail to get shard rule, check later", K(table_name));
+  } else {
+    const ObIArray<ObString>& shard_key_columns = logic_tb_info->shard_key_columns_;
+    ObIArray<SqlField*>& sql_fields = sql_result.fields_;
+    int64_t column_num = sql_fields.count();
+    int64_t shard_key_num = shard_key_columns.count();
+    bool find = false;
+    // find shard key fields
+    ObSEArray<int64_t, 4> shard_key_fields_index;
+    for (int64_t i = 0; !find && i < column_num; ++i) {
+      for (int64_t j = 0; !find && j < shard_key_num; ++j) {
+        if (0 == shard_key_columns.at(j).case_compare(sql_fields.at(i)->column_name_.config_string_)) {
+          find = true;
+          break;
+        }
+      }
+    }
+
+    if (OB_UNLIKELY(!find)) {
+      parse_result.set_use_column_value_from_hint(false);
+      sql_result.reset();
+    }
   }
 
   return ret;
@@ -2181,8 +2354,17 @@ int ObProxyShardUtils::handle_shard_auth(ObMysqlClientSession &client_session, c
       }
     }
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(db_info->acquire_random_shard_connector(shard_conn))) {
+      if (OB_NOT_NULL(shard_conn = session_info.get_txn_shard_connector())) {
+        shard_conn->inc_ref();
+      } else if (OB_FAIL(db_info->acquire_random_shard_connector(shard_conn))) {
         LOG_WDIAG("fail to get random shard connector", K(ret), KPC(db_info));
+      }
+
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (OB_ISNULL(shard_conn)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("shard conn is NULL", K(ret));
       } else {
         if (DB_OB_MYSQL == shard_conn->server_type_ || DB_OB_ORACLE == shard_conn->server_type_) {
           if (OB_FAIL(change_user_auth(client_session, *shard_conn, true, true))) {
@@ -2369,22 +2551,31 @@ int ObProxyShardUtils::handle_other_real_info(ObDbConfigLogicDb &logic_db_info,
       es_index = cs_info.get_es_id();
     }
 
-    if (OBPROXY_MAX_DBMESH_ID == group_index
-        && OB_FAIL(ObShardRule::get_physic_index_random(logic_tb_info->db_size_, group_index))) {
-      LOG_WDIAG("fail to get physic db index", "db_size", logic_tb_info->db_size_, K(group_index), K(ret));
-    }
+
   }
 
   // 2.get shard_connector and real db_name
   if (OB_FAIL(ret)) {
     // nothing
-  } else if (OB_FAIL(logic_db_info.get_shard_connector_by_index(shard_conn, es_index, last_es_index, group_index,
-             is_read_stmt, testload_type, NULL/* logic_tb_info */, sql_result))
-             || OB_ISNULL(shard_conn)) {
-    LOG_WDIAG("fail to get shard connector", K(table_name), KPC(logic_tb_info), K(ret));
   } else {
-    snprintf(real_database_name, db_name_len, "%.*s", shard_conn->database_name_.length(), shard_conn->database_name_.ptr());
-    if (*prev_shard_conn != *shard_conn) {
+    if (OB_NOT_NULL(cs_info.get_txn_shard_connector())) {
+      shard_conn = cs_info.get_txn_shard_connector();
+      shard_conn->inc_ref();
+    } else if (OBPROXY_MAX_DBMESH_ID == group_index
+               && OB_FAIL(ObShardRule::get_physic_index_random(logic_tb_info->db_size_, group_index))) {
+      LOG_WDIAG("fail to get physic db index", "db_size", logic_tb_info->db_size_, K(group_index), K(ret));
+    } else if (OB_FAIL(logic_db_info.get_shard_connector_by_index(shard_conn, es_index, last_es_index, group_index,
+                is_read_stmt, testload_type, NULL/* logic_tb_info */, sql_result))) {
+      LOG_WDIAG("fail to get shard connector", K(table_name), KPC(logic_tb_info), K(ret));
+    }
+
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else if (OB_ISNULL(shard_conn)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("shard conn is NULL", KPC(prev_shard_conn), K(ret));
+    } else {
+      snprintf(real_database_name, db_name_len, "%.*s", shard_conn->database_name_.length(), shard_conn->database_name_.ptr());
       if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
         LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
       }
@@ -2453,6 +2644,10 @@ int ObProxyShardUtils::handle_scan_all_real_info(ObDbConfigLogicDb &logic_db_inf
   if (OB_ISNULL(dml_stmt)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("dml stmt is null, unexpected", K(ret));
+  } else if (OB_UNLIKELY(ObMysqlTransact::is_in_trans(trans_state)
+             && !client_session.is_proxy_enable_cross_shard_txn())) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_WDIAG("scanall select is not supported in transaction for ODP sharding", K(ret));
   } else if (dml_stmt->has_unsupport_expr_type()) {
     ret = OB_ERROR_UNSUPPORT_EXPR_TYPE;
     LOG_WDIAG("unsupport sql", K(ret));
@@ -2534,6 +2729,7 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
   // 写请求走写权重, 事务内请求都认为是写
   // 读请求走读权重
   bool is_read_stmt = ObProxyShardUtils::is_read_stmt(session_info, trans_state, parse_result);
+  bool allow_cross_shards = parse_result.is_select_stmt() && !parse_result.has_for_update();
   bool need_rewrite_table_name = true;
 
   if (OB_ISNULL(dml_stmt)) {
@@ -2610,8 +2806,8 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
     }
   }
 
-  if (OB_SUCC(ret) && *prev_shard_conn != *shard_conn) {
-    if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn))) {
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(change_connector(logic_db_info, client_session, trans_state, prev_shard_conn, shard_conn, allow_cross_shards))) {
       LOG_WDIAG("fail to change connector", KPC(prev_shard_conn), KPC(shard_conn), K(ret));
     }
   }

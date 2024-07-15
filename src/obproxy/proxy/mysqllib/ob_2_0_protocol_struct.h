@@ -41,11 +41,13 @@ const char * const OB_TRACE_INFO_CLIENT_IP = "client_ip";
  */
 enum Ob20NewExtraInfoProtocolKeyType {
   OB20_DRIVER_END = 1000,
+  FEEDBACK_PROXY_INFO = 1001,
   OB20_PROXY_END = 2000,
   TRACE_INFO = 2001,
   SESS_INFO = 2002,
   FULL_TRC = 2003,
   SESS_INFO_VERI = 2004,
+
   OB20_SVR_END,
 };
 
@@ -88,16 +90,31 @@ enum SessionSyncInfoType {
   SESSION_SYNC_MAX_TYPE,
 };
 
+enum FeedbackProxyInfoType {
+  IS_LOCK_SESSION = 0,
+  FEEDBACK_PROXY_MAX_TYPE,
+};
+
+// all feedback info from observer in extra info should define here
+struct Ob20FeedbackProxyInfo {
+  Ob20FeedbackProxyInfo() : is_lock_session_(false) {}
+  ~Ob20FeedbackProxyInfo() {}
+  bool is_lock_session_;
+};
+
+
 struct Ob20ExtraInfo
 {
 public:
-  Ob20ExtraInfo() : is_exist_sess_info_(false), extra_info_buf_(), sess_info_buf_(),
-                    sess_info_count_(0), extra_len_(0), sess_info_length_(),
-                    sess_info_cur_idx_(0), sess_info_offset_(0) {}
+  Ob20ExtraInfo() : is_exist_sess_info_(false), is_exist_feedback_proxy_info_(false),
+                    extra_info_buf_(), sess_info_buf_(),
+                    sess_info_count_(0), extra_len_(0), feedback_proxy_info_(), 
+                    sess_info_length_(), sess_info_cur_idx_(0), sess_info_offset_(0) {}
   ~Ob20ExtraInfo() {}
   
   void reset() {
     is_exist_sess_info_ = false;
+    is_exist_feedback_proxy_info_ = false;
     extra_info_buf_.reset();
     sess_info_buf_.reset();
     sess_info_count_ = 0;
@@ -107,22 +124,28 @@ public:
     sess_info_cur_idx_ = 0;
     sess_info_offset_ = 0;
   }
-  inline bool exist_sess_info() const { return is_exist_sess_info_; }
-  inline uint32_t get_sess_info_count() { return sess_info_count_; }
-  inline int get_next_sess_info(common::ObString &sess_info);
+  bool exist_sess_info() const { return is_exist_sess_info_; }
+  bool exist_feedback_proxy_info() const { return is_exist_feedback_proxy_info_; }
+  uint32_t get_sess_info_count() { return sess_info_count_; }
+  int get_next_sess_info(common::ObString &sess_info);
   void reset_sess_info_iterate_idx() { 
     sess_info_cur_idx_ = 0;
     sess_info_offset_ = 0;
   }
   int add_sess_info_buf(const char *str, const int64_t len);
+  int decode_feedback_proxy_info(const char * str, const int64_t len);
+
   TO_STRING_KV(K_(is_exist_sess_info), K_(sess_info_count), K_(extra_len));
 public:
   // for session info sync mechanism
   bool is_exist_sess_info_;
+  bool is_exist_feedback_proxy_info_;
   obutils::ObVariableLenBuffer<32> extra_info_buf_;     // save last packet extra info kv
   common::ObSqlString sess_info_buf_;                   // save all sess info 
   uint32_t sess_info_count_;
   uint32_t extra_len_;                                 // extra len in ob20 payload, if the flag.exist_extra_info
+
+  Ob20FeedbackProxyInfo feedback_proxy_info_;
 
 private:
   // sess info iterator info
@@ -131,39 +154,6 @@ private:
   uint64_t sess_info_offset_;
 };
 
-int Ob20ExtraInfo::get_next_sess_info(common::ObString &sess_info)
-{
-  sess_info.reset();
-  int ret = common::OB_SUCCESS;
-  uint64_t length = sess_info_length_.at(sess_info_cur_idx_);
-  uint64_t buf_length = sess_info_buf_.length(); 
-  if (sess_info_offset_ + length > buf_length) {
-    ret = common::OB_ERR_UNEXPECTED;
-    PROXY_LOG(WDIAG, "unexpected length of sess info buffer", K(ret), K(sess_info_offset_), K(length));
-  } else {
-    sess_info.assign_ptr(sess_info_buf_.ptr() + sess_info_offset_, static_cast<int32_t>(length));
-    sess_info_offset_ += length;
-    sess_info_cur_idx_ ++;
-  }
-  return ret;
-}
-
-int Ob20ExtraInfo::add_sess_info_buf(const char *value, const int64_t len)
-{
-  int ret = common::OB_SUCCESS;
-  if (OB_UNLIKELY(NULL == value || 0 >= len)) {
-    ret = common::OB_INVALID_ARGUMENT;
-    PROXY_LOG(WDIAG, "invalid argument", K(value), K(len), K(ret));
-  } else if (OB_FAIL(sess_info_buf_.append(value, len))) {
-    PROXY_LOG(WDIAG, "fail to append sess info buf", K(value), K(len), K(ret));
-  } else if (OB_FAIL(sess_info_length_.push_back(len))) {
-    PROXY_LOG(WDIAG, "fail to record sess info buf length", K(ret));
-  } else {
-    is_exist_sess_info_ = true;
-    sess_info_count_++;
-  }
-  return ret;
-}
 
 class Ob20ProtocolHeader
 {

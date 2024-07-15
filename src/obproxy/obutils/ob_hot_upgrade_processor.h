@@ -85,7 +85,7 @@ public:
   static void update_hot_upgrade_interval();
   int start_hot_upgrade_task();
   int do_hot_upgrade_work();
-
+  void do_hot_upgrade_internal(); // need do hot upgrade for internal reason
   DECLARE_TO_STRING;
 
 private:

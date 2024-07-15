@@ -17,7 +17,7 @@
 #include "proxy/api/ob_api.h"
 #include "proxy/api/ob_transaction_plugin.h"
 #include "proxy/mysqllib/ob_mysql_request_analyzer.h"
-#include "proxy/mysqllib/ob_mysql_response.h"
+#include "proxy/mysqllib/ob_resp_analyze_result.h"
 
 namespace oceanbase
 {
@@ -151,18 +151,18 @@ public:
   ObProxyMysqlRequest &get_server_request() { return *server_request_; }
 
   /**
-   * Returns a ObMysqlResp object which is the response coming from the observer
+   * Returns a ObRespAnalyzeResult object which is the response coming from the observer
    *
    * @return Response object that can be used to manipulate the incoming response from the observer.
    */
-  ObMysqlResp &get_server_response() { return *server_response_; }
+  ObRespAnalyzeResult &get_server_resp_result() { return *server_resp_result_; }
 
   /**
-   * Returns a ObMysqlResp object which is the response going to the client
+   * Returns a ObRespAnalyzeResult object which is the response going to the client
    *
    * @return Response object that can be used to manipulate the outgoing response from the client.
    */
-  ObMysqlResp &get_client_response() { return *client_response_; }
+  ObRespAnalyzeResult &get_client_resp_result() { return *client_resp_result_; }
 
   /**
    * The available types of timeouts you can set on a ObApiTransaction.
@@ -207,8 +207,8 @@ private:
   SList(ObTransactionPlugin, link_) plugins_;
   ObProxyMysqlRequest *client_request_; // for other packets
   ObProxyMysqlRequest *server_request_;
-  ObMysqlResp *server_response_;
-  ObMysqlResp *client_response_;
+  ObRespAnalyzeResult *server_resp_result_;
+  ObRespAnalyzeResult *client_resp_result_;
 };
 
 } // end of namespace proxy

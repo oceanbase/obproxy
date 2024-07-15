@@ -31,7 +31,8 @@
 #include "obutils/ob_connection_diagnosis_trace.h"
 #include "rpc/proxy_protocol/proxy_protocol_v2.h"
 #include "lib/hash/ob_hashset.h"
-#include "lib/list//ob_list.h"
+#include "lib/list/ob_list.h"
+#include "obproxy/proxy/mysql/ob_mysql_sm_time_stat.h"
 
 namespace oceanbase
 {
@@ -133,11 +134,17 @@ public:
   inline ObMysqlServerSession *get_cur_server_session() const { return cur_ss_; }
   inline ObMysqlServerSession *get_lii_server_session() const { return lii_ss_; }
   inline ObMysqlServerSession *get_last_bound_server_session() const { return last_bound_ss_; }
+  inline ObMysqlServerSession *get_lock_server_session() const { return lock_ss_; }
+  inline ObMysqlServerSession *get_closed_key_server_session() const { return closed_key_ss_; }
   inline net::ObIpEndpoint &get_trans_coordinator_ss_addr() { return trans_coordinator_ss_addr_; }
   inline void set_server_session(ObMysqlServerSession *ssession) { bound_ss_ = ssession; }
   inline void set_cur_server_session(ObMysqlServerSession *ssession) { cur_ss_ = ssession; }
   inline void set_lii_server_session(ObMysqlServerSession *ssession) { lii_ss_ = ssession; }
   inline void set_last_bound_server_session(ObMysqlServerSession *ssession) { last_bound_ss_ = ssession; }
+  inline void set_lock_server_session(ObMysqlServerSession *ssession) { lock_ss_ = ssession; }
+  inline void set_closed_key_server_session(ObMysqlServerSession *ssession) { closed_key_ss_ = ssession; }
+  inline net::ObIpEndpoint &get_sharding_txn_ss_addr() { return sharding_txn_ss_addr_; }
+  inline void set_sharding_txn_ss_addr(const sockaddr &addr) { sharding_txn_ss_addr_.assign(addr); }
   inline void set_trans_coordinator_ss_addr(const sockaddr &addr) { trans_coordinator_ss_addr_.assign(addr); }
   bool is_hold_conn_id(const uint32_t conn_id);
 
@@ -192,6 +199,7 @@ public:
   int acquire_client_session_id(const ObClientSessionIDVersion version);
   static uint64_t get_next_proxy_sessid();
 
+  int async_disconnect_by_internal_reason(int64_t async_disconnect_code);
   int add_to_list();
   void handle_new_connection();
   int fill_session_priv_info();
@@ -332,7 +340,12 @@ public:
   void set_need_return_last_bound_ss(bool is_need_return_last_bound_ss) { is_need_return_last_bound_ss_ = is_need_return_last_bound_ss; }
   bool is_need_return_last_bound_ss() const { return is_need_return_last_bound_ss_; }
   void set_proxy_enable_trans_internal_routing(bool is_enable_internal_route) { is_proxy_enable_trans_internal_routing_ = is_enable_internal_route; }
-  bool is_proxy_enable_trans_internal_routing() const { return is_proxy_enable_trans_internal_routing_; }
+  // treat disable_trans_internal_routeing where shard_conn change for sharding
+  bool is_proxy_enable_trans_internal_routing() const { return is_proxy_enable_trans_internal_routing_
+                                                               && (OB_ISNULL(this->get_session_info().get_txn_shard_connector())
+                                                                   || this->get_session_info().is_allow_use_last_session()); }
+  void set_proxy_enable_cross_shard_txn(bool is_proxy_enable_cross_shard_txn) { is_proxy_enable_cross_shard_txn_ = is_proxy_enable_cross_shard_txn; }
+  bool is_proxy_enable_cross_shard_txn() const { return is_proxy_enable_cross_shard_txn_; }
   bool enable_analyze_internal_cmd() const { return session_info_.enable_analyze_internal_cmd(); }
   bool is_metadb_user() const { return session_info_.is_metadb_user(); }
   bool is_proxysys_user() const { return session_info_.is_proxysys_user(); }
@@ -382,6 +395,8 @@ public:
 
   void set_using_ldg(const bool using_ldg) { using_ldg_ = using_ldg; }
   bool using_ldg() const { return using_ldg_; }
+  void set_using_service_name(const bool using_service_name) { using_service_name_ = using_service_name; }
+  bool using_service_name() const { return using_service_name_; }
   obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() const { return timeout_event_;}
   ObHRTime get_timeout_record() const { return timeout_record_; }
   bool is_request_transferring() const { return is_request_transferring_; }
@@ -444,6 +459,7 @@ public:
   bool is_first_dml_sql_got_;//default false, will route with merge status careless
                              //it is true after user first dml sql arrived.
   bool is_proxy_enable_trans_internal_routing_; // from config, update each tranasction start
+  bool is_proxy_enable_cross_shard_txn_; // from config, update each tranasction start
   uint8_t compressed_seq_;   // seq management between client & proxy
 
   obutils::ObClusterResource *cluster_resource_;
@@ -465,6 +481,7 @@ public:
   ObProxySchemaKey schema_key_;
   obutils::ObInactivityTimeoutEvent timeout_event_;     // just record timeout event for log
   ObHRTime timeout_record_;                             // just record timeout for log
+  ObConnDiagRecord conn_record_;
   LINK(ObMysqlClientSession, stat_link_);
 
 #ifdef USE_MYSQL_DEBUG_LISTS
@@ -511,6 +528,15 @@ private:
   ObMysqlServerSession *lii_ss_;
   ObMysqlServerSession *last_bound_ss_;
 
+  // only a pointer used for table lock route, no hold it
+  ObMysqlServerSession *lock_ss_;
+  // to indicate client session closed because a key server session close.
+  // only a pointer, no hold it
+  ObMysqlServerSession *closed_key_ss_;
+
+  // for sharding txn route in multi_shard transaction
+  net::ObIpEndpoint sharding_txn_ss_addr_;
+
   // coordinator session address in transaction
   net::ObIpEndpoint trans_coordinator_ss_addr_;
 
@@ -536,6 +562,7 @@ private:
   uint32_t ps_id_;
   uint32_t cursor_id_;
   bool using_ldg_;
+  bool using_service_name_;
   ObClientSessionIDVersion cs_id_version_;
   int64_t connected_time_;
 private:

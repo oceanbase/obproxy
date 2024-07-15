@@ -87,7 +87,7 @@ extern "C" {
 #define OB_STRXFRM_LEVEL5          0x00000010
 #define OB_STRXFRM_LEVEL6          0x00000020
 #define OB_STRXFRM_LEVEL_ALL       0x0000003F
-#define OB_STRXFRM_NLEVELS         6         
+#define OB_STRXFRM_NLEVELS         6
 
 #define OB_STRXFRM_PAD_WITH_SPACE  0x00000040
 #define OB_STRXFRM_PAD_TO_MAXLEN   0x00000080
@@ -216,7 +216,7 @@ typedef struct ObUnicaseInfoChar
 typedef struct ObUnicaseInfo
 {
   ob_wc_t maxchar;
-  const ObUnicaseInfoChar **page;
+  ObUnicaseInfoChar **page;
 } ObUnicaseInfo;
 
 typedef struct ObCharsetHandler
@@ -298,15 +298,15 @@ typedef struct ObCollationHandler
   /* Collation routines */
   // Functions that do string comparisons
   int     (*strnncoll)(const struct ObCharsetInfo *,
-               const uchar *, size_t, const uchar *, size_t, bool);
+               const uchar *, size_t, const uchar *, size_t, ob_bool);
   // Ignore trailing spaces when comparing strings
   int     (*strnncollsp)(const struct ObCharsetInfo *,
                          const uchar *, size_t, const uchar *, size_t,
-                         bool diff_if_only_endspace_difference);
+                         ob_bool diff_if_only_endspace_difference);
   // makes a sort key suitable for memcmp() corresponding to the given string
   size_t  (*strnxfrm)(const struct ObCharsetInfo *,
                       uchar *dst, size_t dstlen, uint nweights,
-                      const uchar *src, size_t srclen, uint flags, bool *is_valid_unicode);
+                      const uchar *src, size_t srclen, uint flags, ob_bool *is_valid_unicode);
   //size_t    (*strnxfrmlen)(const struct ObCharsetInfo *, size_t);
 
   // creates a LIKE range, for optimizer, the query range module is used
@@ -334,10 +334,20 @@ typedef struct ObCollationHandler
   /* Hash calculation */
   // calculates hash value taking into account the collation rules, e.g. case-insensitivity
   void (*hash_sort)(const struct ObCharsetInfo *cs, const uchar *key, size_t len, ulong *nr1,
-                    ulong *nr2, const bool calc_end_space, hash_algo hash_algo);
+                    ulong *nr2, const ob_bool calc_end_space, hash_algo hash_algo);
   bool (*propagate)(const struct ObCharsetInfo *cs, const uchar *str,
                        size_t len);
 } ObCollationHandler;
+
+typedef struct OB_UNI_IDX {
+  uint16 from;
+  uint16 to;
+  const uchar *tab;
+} OB_UNI_IDX;
+typedef struct {
+  int nchars;
+  OB_UNI_IDX uidx;
+} uni_idx;
 
 typedef struct ObCharsetInfo
 {
@@ -354,8 +364,8 @@ typedef struct ObCharsetInfo
   uchar    *to_upper;
   uchar    *sort_order;
   ObUCAInfo *uca;
-  //uint16      *tab_to_uni;
-  //MY_UNI_IDX  *tab_from_uni;
+  uint16      *tab_to_uni;
+  OB_UNI_IDX  *tab_from_uni;
   ObUnicaseInfo *caseinfo;
   uchar     *state_map;
   uchar     *ident_map;
@@ -412,18 +422,31 @@ extern ObUniCtype ob_uni_ctype[256];
 //=============================================================================
 
 extern ObUnicaseInfo ob_unicase_default;
+extern ObUnicaseInfo ob_unicase_unicode520;
 
 //=============================================================================
 
 extern ObCharsetInfo ob_charset_bin;
 extern ObCharsetInfo ob_charset_utf8mb4_bin;
 extern ObCharsetInfo ob_charset_utf8mb4_general_ci;
+extern ObCharsetInfo ob_charset_utf8mb4_unicode_ci;
+extern ObCharsetInfo ob_charset_utf8mb4_0900_ai_ci;
 extern ObCharsetInfo ob_charset_latin1;
 extern ObCharsetInfo ob_charset_latin1_bin;
+extern ObCharsetInfo ob_charset_utf8mb4_croatian_uca_ci;
+extern ObCharsetInfo ob_charset_utf8mb4_unicode_520_ci;
+extern ObCharsetInfo ob_charset_utf8mb4_czech_uca_ci;
+extern ObCharsetInfo ob_charset_utf8mb4_0900_bin;
+extern ObCollationHandler ob_collation_8bit_bin_handler;
+extern ObCharsetInfo ob_charset_ascii;
+extern ObCharsetInfo ob_charset_ascii_bin;
+extern ObCharsetInfo ob_charset_tis620_thai_ci;
+extern ObCharsetInfo ob_charset_tis620_bin;
 extern ObCharsetInfo ob_charset_gbk_chinese_ci;
 extern ObCharsetInfo ob_charset_gbk_bin;
 extern ObCharsetInfo ob_charset_utf16_general_ci;
 extern ObCharsetInfo ob_charset_utf16_bin;
+extern ObCharsetInfo ob_charset_utf16_unicode_ci;
 extern ObCharsetInfo ob_charset_gb18030_chinese_ci;
 extern ObCharsetInfo ob_charset_gb18030_bin;
 extern ObCharsetInfo ob_charset_gb18030_2022_pinyin_ci;
@@ -518,7 +541,7 @@ uint ob_instr_mb(const ObCharsetInfo *cs,
 void ob_hash_sort_simple(const ObCharsetInfo *cs,
 				const uchar *key, size_t len,
                 ulong *nr1, ulong *nr2,
-        const bool calc_end_space, hash_algo hash_algo);
+        const ob_bool calc_end_space, hash_algo hash_algo);
 
 const uchar *skip_trailing_space(const uchar *ptr,size_t len);
 
@@ -552,16 +575,16 @@ size_t ob_lengthsp_8bit(const ObCharsetInfo *cs __attribute__((unused)),
 int ob_strnncoll_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
                     const uchar *s, size_t slen,
                     const uchar *t, size_t tlen,
-                        bool t_is_prefix);
+                    ob_bool t_is_prefix);
 
 int ob_strnncollsp_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
                       const uchar *a, size_t a_length,
                       const uchar *b, size_t b_length,
-                          bool diff_if_only_endspace_difference);
+                          ob_bool diff_if_only_endspace_difference);
 
 size_t ob_strnxfrm_mb(const ObCharsetInfo *,
                       uchar *dst, size_t dstlen, uint nweights,
-                      const uchar *src, size_t srclen, uint flags, bool *is_valid_unicode);
+                      const uchar *src, size_t srclen, uint flags, ob_bool *is_valid_unicode);
 
 int ob_wildcmp_mb_bin(const ObCharsetInfo *cs,
                   const char *str,const char *str_end,
@@ -570,7 +593,7 @@ int ob_wildcmp_mb_bin(const ObCharsetInfo *cs,
 
 void ob_hash_sort_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
                          const uchar *key, size_t len, ulong *nr1, ulong *nr2,
-                         const bool calc_end_space, hash_algo hash_algo);
+                         const ob_bool calc_end_space, hash_algo hash_algo);
 
 uint32 ob_convert(char *to, uint32 to_length, const ObCharsetInfo *to_cs,
                   const char *from, uint32 from_length,
@@ -578,7 +601,7 @@ uint32 ob_convert(char *to, uint32 to_length, const ObCharsetInfo *to_cs,
 
 size_t ob_strnxfrm_unicode_full_bin(const ObCharsetInfo *cs,
                              uchar *dst, size_t dstlen, uint nweights,
-                             const uchar *src, size_t srclen, uint flags, bool *is_valid_unicode);
+                             const uchar *src, size_t srclen, uint flags, ob_bool *is_valid_unicode);
 
 bool ob_like_range_generic(const ObCharsetInfo *cs, const char *ptr,
                               size_t ptr_length, char escape, char w_one,
@@ -588,7 +611,7 @@ bool ob_like_range_generic(const ObCharsetInfo *cs, const char *ptr,
 
 size_t ob_strnxfrm_unicode(const ObCharsetInfo *cs,
                     uchar *dst, size_t dstlen, uint nweights,
-                    const uchar *src, size_t srclen, uint flags, bool *is_valid_unicode);
+                    const uchar *src, size_t srclen, uint flags, ob_bool *is_valid_unicode);
 
 int ob_wildcmp_unicode(const ObCharsetInfo *cs,
                    const char *str,const char *str_end,
@@ -635,6 +658,24 @@ size_t ob_caseup_8bit(const ObCharsetInfo *cs __attribute__((unused)),
 size_t ob_casedn_8bit(const ObCharsetInfo *cs __attribute__((unused)),
                       char* src __attribute__((unused)), size_t srclen __attribute__((unused)),
                       char* dst __attribute__((unused)), size_t dstlen __attribute__((unused)));
+
+int ob_wildcmp_8bit(const ObCharsetInfo* cs, const char* str, const char* str_end, const char* wildstr,
+                    const char* wildend, int escape, int w_one, int w_many);
+uint32_t ob_instr_simple(const ObCharsetInfo* cs , const char* b, size_t b_length,
+    const char* s, size_t s_length, ob_match_t* match, unsigned int nmatch);
+//+tis使用
+size_t ob_strnxfrmlen_simple(const struct ObCharsetInfo *, size_t);
+//+ascii使用
+size_t ob_well_formed_len_ascii(const ObCharsetInfo *cs,
+                                const char *start, const char *end,
+                                size_t nchars,
+                                int *error);
+//+ascii使用
+int ob_wc_mb_8bit(const ObCharsetInfo *cs, ob_wc_t wc, uchar *str, uchar *end);
+//+ascii 使用
+int ob_mb_wc_8bit(const ObCharsetInfo *cs, ob_wc_t *wc, const uchar *str,const uchar *end);
+int ob_mb_wc_utf8mb4_thunk(const ObCharsetInfo *cs, ob_wc_t *pwc,
+                           const unsigned char *s, const unsigned char *e);
 
 #ifdef	__cplusplus
 }

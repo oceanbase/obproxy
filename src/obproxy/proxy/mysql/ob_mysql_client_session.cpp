@@ -70,19 +70,21 @@ ObMysqlClientSession::ObMysqlClientSession()
       is_need_send_trace_info_(true), is_already_send_trace_info_(false),
       is_first_handle_request_(true), is_in_trans_for_close_request_(false), is_last_request_in_trans_(false),
       is_trans_internal_routing_(false), is_need_return_last_bound_ss_(false), need_delete_cluster_(false),
-      is_first_dml_sql_got_(false), is_proxy_enable_trans_internal_routing_(false), compressed_seq_(0),
+      is_first_dml_sql_got_(false), is_proxy_enable_trans_internal_routing_(false),
+      is_proxy_enable_cross_shard_txn_(false), compressed_seq_(0),
       cluster_resource_(NULL), dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(), dummy_entry_valid_time_ns_(0), server_state_version_(0),
       inner_request_param_(NULL), is_request_transferring_(false), timeout_event_(OB_TIMEOUT_UNKNOWN_EVENT),
-      timeout_record_(0), tcp_init_cwnd_set_(false), half_close_(false),
+      timeout_record_(0), conn_record_(), tcp_init_cwnd_set_(false), half_close_(false),
       conn_decrease_(false), conn_prometheus_decrease_(false), vip_connection_decrease_(false),
       magic_(MYSQL_CS_MAGIC_DEAD), create_thread_(NULL), is_local_connection_(false),
       client_vc_(NULL), in_list_stat_(LIST_INIT), current_tid_(-1),
       cs_id_(0), proxy_sessid_(0), bound_ss_(NULL), cur_ss_(NULL), lii_ss_(NULL), last_bound_ss_(NULL),
-      trans_coordinator_ss_addr_(), read_buffer_(NULL),
+      lock_ss_(NULL), closed_key_ss_(NULL), sharding_txn_ss_addr_(), trans_coordinator_ss_addr_(), read_buffer_(NULL),
       buffer_reader_(NULL), mysql_sm_(NULL), read_state_(MCS_INIT), ka_vio_(NULL),
       server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
-      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false), cs_id_version_(CLIENT_SESSION_ID_V1), connected_time_(0)
+      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false), using_service_name_(false),
+      cs_id_version_(CLIENT_SESSION_ID_V1), connected_time_(0)
 {
   SET_HANDLER(&ObMysqlClientSession::main_handler);
   bool enable_session_pool = get_global_proxy_config().is_pool_mode
@@ -136,7 +138,6 @@ void ObMysqlClientSession::destroy()
   // here need place before session_info_.destroy, because use some session_info's data
   if (conn_prometheus_decrease_) {
     SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);
-    SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_USED_CONNECTIONS, -1);
     conn_prometheus_decrease_ = false;
   }
   if (vip_connection_decrease_) {
@@ -167,11 +168,15 @@ void ObMysqlClientSession::destroy()
   is_first_dml_sql_got_ = false;
   is_proxy_enable_trans_internal_routing_ = false;
   compressed_seq_ = 0;
+  lock_ss_ = NULL;
+  closed_key_ss_ = NULL;
+  sharding_txn_ss_addr_.reset();
   trans_coordinator_ss_addr_.reset();
   schema_key_.reset();
   ObProxyClientSession::cleanup();
   create_thread_ = NULL;
   using_ldg_ = false;
+  using_service_name_ = false;
   cs_id_version_ = CLIENT_SESSION_ID_V1;
   op_reclaim_free(this);
 }
@@ -640,6 +645,30 @@ int ObMysqlClientSession::get_thread_init_cs_id(const ObClientSessionIDVersion v
   return ret;
 }
 
+int ObMysqlClientSession::async_disconnect_by_internal_reason(int64_t async_disconnect_code)
+{
+  int ret = OB_SUCCESS;
+
+  ObUnixNetVConnection* client_vc = NULL;
+  if (OB_ISNULL(mysql_sm_)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(EDIAG, "fail to find mysql_sm, maybe client session is released", K(this), K(ret));
+  } else if (OB_FALSE_IT(mysql_sm_->set_kill_this_after_cmd_done(async_disconnect_code))) {
+    // nothing
+  } else if (OB_UNLIKELY(is_request_transferring_)) {
+    PROXY_CS_LOG(DEBUG, "mysql sm is running, will close connection after cmd done");
+  } else if (OB_ISNULL(client_vc = static_cast<ObUnixNetVConnection*>(client_vc_))) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(EDIAG, "invalid client vc", K(client_vc_), K(ret));
+  } else {
+    ObVIO* client_vio = &(client_vc->read_.vio_);
+    mysql_sm_->handle_event(VC_EVENT_EOS, client_vio);
+    PROXY_CS_LOG(DEBUG, "mysql sm is idle, stop it and close connection");
+  }
+
+  return ret;
+}
+
 int ObMysqlClientSession::add_to_list()
 {
   int ret = OB_SUCCESS;
@@ -959,6 +988,8 @@ inline int ObMysqlClientSession::handle_delete_cluster()
 int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
 {
   STATE_ENTER(&ObMysqlClientSession::state_server_keep_alive, event, data);
+
+  int64_t async_disconnect_code = OB_SUCCESS;
   if (OB_LIKELY(data == server_ka_vio_) && OB_LIKELY(NULL != bound_ss_)) {
     switch (event) {
         // fallthrough
@@ -972,9 +1003,22 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_INACTIVITY_TIMEOUT:
         // Timeout - close it
-        bound_ss_->do_io_close();
-        bound_ss_ = NULL;
-        server_ka_vio_ = NULL;
+        if (bound_ss_->get_session_info().is_sharding_txn_session()) {
+          async_disconnect_code = OB_PROXY_SHARD_TXN_SESSION_CLOSE;
+        } else if (bound_ss_->get_session_info().is_lock_session()) {
+          async_disconnect_code = OB_LOCK_SESSION_CLOSED_ERROR;
+        } else {
+          // nothing
+        }
+        if (OB_UNLIKELY(OB_SUCCESS != async_disconnect_code)) {
+          PROXY_CS_LOG(DEBUG, "client session because of lock server session close");
+          set_closed_key_server_session(bound_ss_);
+          async_disconnect_by_internal_reason(async_disconnect_code);
+        } else {
+          bound_ss_->do_io_close();
+          bound_ss_ = NULL;
+          server_ka_vio_ = NULL;
+        }
         break;
 
       case VC_EVENT_READ_COMPLETE:
@@ -1068,6 +1112,7 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
 
 void ObMysqlClientSession::close_last_used_ss()
 {
+   PROXY_CS_LOG(INFO, "close last server session", KPC(bound_ss_));
   if (NULL != bound_ss_) {
     if (is_session_pool_client() && can_server_session_release_) {
       PROXY_CS_LOG(DEBUG, "is_session_pool_client will release");
@@ -1357,6 +1402,9 @@ int ObMysqlClientSession::acquire_svr_session_no_pool(const sockaddr &addr, ObMy
                                                             addr, session_info_.get_full_username(), svr_session))) {
       PROXY_CS_LOG(DEBUG, "[acquire server session] fail to acquire server session from "
                           "new server session pool", K_(cs_id), KPC(svr_session), K(ret));
+      PROXY_CS_LOG(WARN ,"fail to get shard server session for this shard", "shard name", shard_conn->shard_name_.config_string_,
+               "full use name", session_info_.get_full_username());
+
     }
   } else {
     if (OB_FAIL(session_manager_.acquire_server_session(addr, session_info_.get_full_username(), svr_session))) {
@@ -1558,9 +1606,12 @@ int64_t ObMysqlClientSession::to_string(char *buf, const int64_t buf_len) const
        KP_(cur_ss),
        KP_(bound_ss),
        KP_(lii_ss),
+       KP_(lock_ss),
+       KP_(closed_key_ss),
        KPC_(cluster_resource),
        KP_(client_vc),
        K_(using_ldg),
+       K_(using_service_name),
        KPC_(trace_stats));
   J_OBJ_END();
   return pos;
@@ -1716,8 +1767,8 @@ ObString ObMysqlClientSession::get_current_idc_name() const
         //if empty, return default empty
         ret_idc = session_info_.get_idc_name();
       }
-    } else if (OB_LIKELY(NULL != mysql_sm_)) {
-      ObString tmp_idc(mysql_sm_->proxy_idc_name_);
+    } else if (OB_NOT_NULL(mysql_sm_) && OB_NOT_NULL(mysql_sm_->multi_level_config_)) {
+      ObString tmp_idc(mysql_sm_->multi_level_config_->proxy_idc_name_);
       if (!tmp_idc.empty()) {
         //if empty, return default empty
         ret_idc = tmp_idc;
@@ -1842,8 +1893,10 @@ int ObMysqlClientSession::check_update_ldc()
                    "old_ss_version", server_state_version_,
                    "new_ss_version", cluster_resource->server_state_version_,
                    "dummy_ldc_is_empty", dummy_ldc_.is_empty(),
+                   "cluster_resource", cluster_resource->cluster_info_key_,
                    K(is_base_servers_added),
-                   K(dummy_ldc_));
+                   K(dummy_ldc_),
+                   KPC_(dummy_entry));
     }
     allocator = NULL;
   }

@@ -47,6 +47,21 @@ struct ObMysqlProxyAcceptor
   net::ObNetProcessor::ObAcceptOptions net_opt_;
 };
 
+// data about an acceptor
+// this is used to separate setting up the rpc proxy ports and
+// starting to accept on them
+struct ObRpcProxyAcceptor
+{
+  // default constructor.
+  ObRpcProxyAcceptor() : accept_(NULL) {}
+  ~ObRpcProxyAcceptor() { accept_ = NULL; }
+
+  // accept continuation.
+  event::ObContinuation* accept_;
+  // options for ObNetProcessor.
+  net::ObNetProcessor::ObAcceptOptions net_opt_;
+};
+
 class ObMysqlProxyServerMain
 {
 public:
@@ -58,6 +73,13 @@ public:
   // init_mysql_proxy_server()
   static int start_mysql_proxy_server(const ObMysqlConfigParams &config_params);
   static int start_mysql_proxy_acceptor();
+
+
+  // initialize rpc obproxy port data structures needed to run
+  static int init_rpc_proxy_server(const ObMysqlConfigParams &config_params);
+  static int start_rpc_proxy_server(const ObMysqlConfigParams &config_params);
+  static int start_rpc_proxy_acceptor();
+  static int close_listen_fd(const int32_t listen_fd);
 
 private:
   static int make_net_accept_options(
@@ -71,6 +93,14 @@ private:
 
   static int init_mysql_proxy_port(const ObMysqlConfigParams &config_params);
   static int init_inherited_info(ObMysqlProxyPort &proxy_port, const int fd);
+
+  /* RPC Service */
+  static int make_rpc_proxy_acceptor(const ObMysqlConfigParams &config_params,
+                                       const ObMysqlProxyPort &port,
+                                       ObRpcProxyAcceptor &acceptor);
+
+  static int init_rpc_proxy_port(const ObMysqlConfigParams &config_params);
+  /* END RPC Service */
 };
 
 } // end of namespace proxy

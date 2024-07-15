@@ -23,6 +23,12 @@ namespace common
 
 #define TRACE_ID_FORMAT "Y%lX-%016lX"
 
+/**request_type-table_id-partition_id-absolute_net_time-wait_time
+ * such as:
+ *   single-11-11-10-2
+ *   shard-11-0-10-2
+*/
+#define RPC_REQUEST_INFO_FORMAT "%s-%ld-%ld-%ld-%ld"
 struct ObCurTraceId
 {
   class SeqGenerator

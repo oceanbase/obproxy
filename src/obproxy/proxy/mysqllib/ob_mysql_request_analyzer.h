@@ -70,6 +70,7 @@ struct ObRequestAnalyzeCtx
   int64_t large_request_threshold_len_;
   int64_t request_buffer_length_;
   bool using_ldg_;
+  bool using_service_name_;
 };
 
 class ObMysqlRequestAnalyzer

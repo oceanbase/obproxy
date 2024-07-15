@@ -937,8 +937,8 @@ struct ObIpAddr
   // Address data.
   union
   {
-    in_addr_t ip4_;           // IPv4 address storage.
-    in6_addr ip6_;            // IPv6 address storage.
+    in_addr_t ip4_;           // IPv4 address storage. network order（big-endian order）
+    in6_addr ip6_;            // IPv6 address storage. network order（big-endian order）
     uint8_t byte_[IP6_SIZE];  // As raw bytes.
   } addr_;
 };

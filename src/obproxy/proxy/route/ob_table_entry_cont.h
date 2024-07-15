@@ -52,6 +52,8 @@ enum ObTableEntryLookupState
   LOOKUP_FIRST_PART_STATE,
   LOOKUP_SUB_PART_STATE,
   LOOKUP_BINLOG_ENTRY_STATE,
+  LOOKUP_BINLOG_HOSTNAME_STATE,
+  LOOKUP_RETRY_STATE,
   LOOKUP_DONE_STATE,
 };
 
@@ -149,6 +151,7 @@ private:
   int handle_lookup_remote();
   int handle_lookup_remote_done();
   int handle_binlog_entry_resp(ObResultSetFetcher &rs_fetcher);
+  int do_lookup_binlog_entry_remote(bool need_use_next_hostname_ip, bool hostname_refresh_succ = false);
 
   int handle_lookup_remote_for_update();
   int add_to_global_cache(bool &add_succ);
@@ -170,9 +173,16 @@ private:
   ObTableEntry *newest_table_entry_; // the entry fetch from remote
   ObTableEntry *table_entry_; // the entry get from global cache
   ObTableCache *table_cache_;
-  bool need_notify_;
   ObMysqlClient *mysql_client_;
+  char *binlog_sql_;
+  ObMysqlRequestParam request_param_;
+  bool need_notify_;
+  bool need_prepare_binlog_entry_param_;
   common::ObString binlog_service_ip_;
+  ObSEArray<ObString, 4> binlog_service_hostname_ip_list_;
+  ObSEArray<ObAddr, 4> binlog_service_addr_list_;
+  int64_t used_hostname_ip_count_; // config 'binlog_service_ip' may contain multiple hostname/ip
+  int64_t used_addr_count_; // one hostname may indicate multiple addr
 
   DISALLOW_COPY_AND_ASSIGN(ObTableEntryCont);
 };

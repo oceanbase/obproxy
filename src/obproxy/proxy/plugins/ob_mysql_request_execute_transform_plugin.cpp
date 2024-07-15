@@ -56,14 +56,7 @@ int ObMysqlRequestExecuteTransformPlugin::consume(event::ObIOBufferReader *reade
     if (NULL == local_reader_) {
       local_reader_ = reader->clone();
       ObClientSessionInfo &session_info = sm_->get_client_session()->get_session_info();
-      if (OB_UNLIKELY(ps_pkt_len_ >= MYSQL_PACKET_MAX_LENGTH)) {
-        ret = OB_NOT_SUPPORTED;
-        COLLECT_INTERNAL_DIAGNOSIS(sm_->connection_diagnosis_trace_,
-                                   OB_PROXY_INTERNAL_TRACE, OB_NOT_SUPPORTED,
-                                   "user request is over 16MB, not supported");
-        PROXY_API_LOG(WDIAG, "we cannot support packet which is larger than 16MB", K_(ps_pkt_len),
-                      K(MYSQL_PACKET_MAX_LENGTH), K(ret));
-      } else if (OB_ISNULL(ps_id_entry_ = session_info.get_ps_id_entry()) || !ps_id_entry_->is_valid()) {
+      if (OB_ISNULL(ps_id_entry_ = session_info.get_ps_id_entry()) || !ps_id_entry_->is_valid()) {
         ret = OB_ERR_UNEXPECTED;
         PROXY_API_LOG(WDIAG, "ps id entry does not exist", KPC(ps_id_entry_), K(ret));
       } else {

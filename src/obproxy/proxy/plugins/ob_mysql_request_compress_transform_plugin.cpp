@@ -34,7 +34,7 @@ ObMysqlRequestCompressTransformPlugin *ObMysqlRequestCompressTransformPlugin::al
 
 ObMysqlRequestCompressTransformPlugin::ObMysqlRequestCompressTransformPlugin(ObApiTransaction &transaction)
   : ObTransformationPlugin(transaction, ObTransformationPlugin::REQUEST_TRANSFORMATION),
-    local_reader_(NULL), local_transfer_reader_(NULL), mio_buffer_(NULL), compressed_seq_(0),
+    local_reader_(NULL), local_transfer_reader_(NULL), mio_buffer_(NULL), next_compressed_seq_(0),
     request_id_(UINT24_MAX + 1)
 {
   MEMSET(&content_of_file_, 0, sizeof(content_of_file_));
@@ -62,7 +62,7 @@ int ObMysqlRequestCompressTransformPlugin::consume(event::ObIOBufferReader *read
   } else {
     if (NULL == local_reader_) {
       local_reader_ = reader->clone();
-      compressed_seq_ = 0;
+      next_compressed_seq_ = 0;
     }
 
     if (NULL == local_transfer_reader_) {
@@ -297,7 +297,7 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
   const bool is_checksum_on = true;
   const bool is_need_reroute = false; //large request don't save, so can't reroute;
   // local_reader_ will consume in consume_and_compress_data(),
-  //  compressed_seq_ will inc in consume_and_compress_data
+  //  next_compressed_seq_ will inc in consume_and_compress_data
   ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
   if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
     if (request_id_ > UINT24_MAX) {
@@ -333,8 +333,8 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
       const bool is_weak_read = (WEAK == sm_->trans_state_.get_trans_consistency_level(client_session->get_session_info()));
       const int64_t compression_level = sm_->compression_algorithm_.level_;
       const bool is_compressed_ob20 = (compression_level != 0 && server_session->get_session_info().is_server_ob20_compress_supported());
-      Ob20HeaderParam ob20_head_param(server_session->get_server_sessid(), request_id_, compressed_seq_,
-                                      compressed_seq_, is_last_segment, is_weak_read, is_need_reroute,
+      Ob20HeaderParam ob20_head_param(server_session->get_server_sessid(), request_id_, next_compressed_seq_,
+                                      next_compressed_seq_, is_last_segment, is_weak_read, is_need_reroute,
                                       server_session->get_session_info().is_new_extra_info_supported(),
                                       client_session->is_trans_internal_routing(), is_proxy_switch_route,
                                       is_compressed_ob20, compression_level);
@@ -342,6 +342,8 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
       if (OB_FAIL(ObProto20Utils::consume_and_compress_data(local_reader_, mio_buffer_, to_compress_len,
                                                             ob20_head_param, &extra_info))) {
         PROXY_API_LOG(WDIAG, "fail to consume and compress data with OB20", K(ret));
+      } else {
+        next_compressed_seq_ = ob20_head_param.get_compressed_seq();
       }
     }
 
@@ -352,18 +354,18 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
       total_flt_info_buf = NULL;
     }
   } else {
-    ObCmpHeaderParam param(compressed_seq_, is_checksum_on, compression_level);
+    ObCompressedHeaderParam param(next_compressed_seq_, is_checksum_on, compression_level);
     INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
     if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(local_reader_, mio_buffer_, to_compress_len, param))) {
       PROXY_API_LOG(WDIAG, "fail to consume and compress data", K(ret));
     } else {
-      compressed_seq_ = param.get_compressed_seq();
+      next_compressed_seq_ = param.get_compressed_seq();
     }
   }
 
   if (OB_SUCC(ret)) {
     int64_t compressed_len = local_transfer_reader_->read_avail();
-    sm_->get_server_session()->set_compressed_seq(compressed_seq_++);
+    sm_->get_server_session()->set_cur_compressed_seq(next_compressed_seq_ - 1);
 
     PROXY_API_LOG(DEBUG, "build compressed packet succ", "origin len", to_compress_len,
                   "compressed len(include header)", compressed_len, K(ob_proxy_protocol), K(is_checksum_on));

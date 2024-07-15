@@ -61,7 +61,9 @@ int ObPrometheusMetric::init(const ObPrometheusMetricHashKey &key, bool allow_de
   }
 
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(ObProxyPrometheusUtils::copy_label_hash(key.labels_, labels_, buf_, buf_len_))) {
+    if (OB_UNLIKELY(0 == buf_size)) {
+      LOG_DEBUG("empty lables, no need copy");
+    } else if (OB_FAIL(ObProxyPrometheusUtils::copy_label_hash(key.labels_, labels_, buf_, buf_len_))) {
       LOG_WDIAG("fail to copy label hash", K(ret));
     }
   }
@@ -134,8 +136,20 @@ int ObPrometheusFamily::remove_metric(ObPrometheusMetric *metric)
 {
   int ret = OB_SUCCESS;
 
-  ObPrometheusMetricHashKey key = ObPrometheusMetricHashing::key(metric);
   DRWLock::WRLockGuard lock(lock_);
+
+  if (OB_FAIL(remove_metric_without_lock(metric))) {
+    LOG_WDIAG("remove metric without lock failed", K(ret));
+  }
+
+  return ret;
+}
+
+int ObPrometheusFamily::remove_metric_without_lock(ObPrometheusMetric *metric)
+{
+  int ret = OB_SUCCESS;
+
+  ObPrometheusMetricHashKey key = ObPrometheusMetricHashing::key(metric);
   if (OB_FAIL(metrics_.erase_refactored(key))) {
     LOG_WDIAG("remove remtric failed", K(ret));
   } else {

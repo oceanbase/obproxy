@@ -48,6 +48,16 @@ namespace common
 #define CFG_NEED_REBOOT             common::ObCfgNeedRebootLabel(common::OB_CONFIG_NEED_REBOOT)
 #define CFG_NO_NEED_REBOOT          common::ObCfgNeedRebootLabel(common::OB_CONFIG_NOT_NEED_REBOOT)
 
+// CFG_ACTIVATE_LEVEL
+#define CFG_MULTI_LEVEL_GLOBAL  \
+  common::ObCfgConfigLevelConfigLabel(common::OB_CONFIG_MULTI_LEVEL_GLOBAL)
+#define CFG_MULTI_LEVEL_CLUSTER  \
+  common::ObCfgConfigLevelConfigLabel(common::OB_CONFIG_MULTI_LEVEL_CLUSTER)
+#define CFG_MULTI_LEVEL_TENANT  \
+  common::ObCfgConfigLevelConfigLabel(common::OB_CONFIG_MULTI_LEVEL_TENANT)
+#define CFG_MULTI_LEVEL_VIP  \
+  common::ObCfgConfigLevelConfigLabel(common::OB_CONFIG_MULTI_LEVEL_VIP)
+
 class ObInitConfigContainer
 {
 public:

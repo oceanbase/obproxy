@@ -662,6 +662,10 @@ LOG_MOD_END(STORAGETEST)
                                                                   info_string, ##args)
 #define _PROXY_SM_LOG(level, _fmt_, args...) _OBPROXY_SUB_MOD_LOG(PROXY, SM, level,                   \
                                                                 _fmt_, ##args)
+#define PROXY_RPC_SM_LOG(level, info_string, args...) OBPROXY_SUB_MOD_LOG(PROXY, RPCSM, level,               \
+                                                                  info_string, ##args)
+#define _PROXY_RPC_SM_LOG(level, _fmt_, args...) _OBPROXY_SUB_MOD_LOG(PROXY, RPCSM, level,                   \
+                                                                _fmt_, ##args)
 #define PROXY_CS_LOG(level, info_string, args...) OBPROXY_SUB_MOD_LOG(PROXY, CS, level,               \
                                                                   info_string, ##args)
 #define _PROXY_CS_LOG(level, _fmt_, args...) _OBPROXY_SUB_MOD_LOG(PROXY, CS, level,                   \

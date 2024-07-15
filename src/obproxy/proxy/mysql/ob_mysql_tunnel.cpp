@@ -34,6 +34,7 @@
 #include "proxy/mysql/ob_mysql_debug_names.h"
 #include "lib/ptr/ob_ptr.h"
 #include "proxy/mysqllib/ob_protocol_diagnosis.h"
+#include "proxy/mysqllib/ob_resp_analyze_result.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -49,8 +50,8 @@ namespace proxy
 #define get_based_hrtime() (sm_->trans_state_.mysql_config_params_->enable_strict_stat_time_ ? get_hrtime_internal() : get_hrtime())
 
 ObPacketAnalyzer::ObPacketAnalyzer()
-    : producer_(NULL), request_analyzer_(NULL), resp_analyzer_(NULL),
-      packet_reader_(NULL), server_response_(NULL), packet_type_(MYSQL_NONE),
+    : producer_(NULL), analyzer_(NULL),
+      packet_reader_(NULL), resp_result_(NULL), packet_type_(MYSQL_NONE),
       last_server_event_(VC_EVENT_NONE), skip_bytes_(0), protocol_diagnosis_(NULL)
 {
 }
@@ -132,34 +133,36 @@ inline int ObPacketAnalyzer::process_request_content(
   return ret;
 }
 
-inline int ObPacketAnalyzer::process_response_content(bool &cmd_complete, bool &trans_complete)
+inline int ObPacketAnalyzer::process_response_content(
+  bool &cmd_complete, bool &trans_complete)
 {
   int ret = OB_SUCCESS;
 
   cmd_complete = false;
   trans_complete = false;
-  if (NULL != server_response_ && server_response_->get_analyze_result().is_resp_completed()) {
+  if (NULL != resp_result_ && resp_result_->is_resp_completed()) {
     // non-resultset protocol
     cmd_complete = true;
-    trans_complete = server_response_->get_analyze_result().is_trans_completed();
+    trans_complete = resp_result_->is_trans_completed();
     LOG_DEBUG("process_response_content, is_resp_completed = true",
               K_(packet_type), "vc_type", producer_->vc_type_, K(trans_complete));
-  } else if (NULL != resp_analyzer_ && NULL != server_response_) {
+  } else if (NULL != resp_analyzer_ && NULL != resp_result_) {
     // resultset protocol
     int64_t data_size = packet_reader_->read_avail();
 
     if (data_size > 0) {
-      if (OB_FAIL(resp_analyzer_->analyze_response(*packet_reader_, server_response_))) {
-        LOG_WDIAG("fail to analyze response", K(ret));
+      if (analyzer_ == NULL) {
+        LOG_DEBUG("no need analyze response");
+      } else if (OB_FAIL(resp_analyzer_->analyze_response(*packet_reader_, *resp_result_))) {
+        LOG_WDIAG("fail to analyze response with resp analyzer v2", K(ret));
       } else {
-        trans_complete = server_response_->get_analyze_result().is_trans_completed();
-        cmd_complete = server_response_->get_analyze_result().is_resp_completed();
+        trans_complete = resp_result_->is_trans_completed();
+        cmd_complete = resp_result_->is_resp_completed();
         LOG_DEBUG("process_response_content", K_(packet_type),
                   K(data_size), "vc_type", producer_->vc_type_, K(cmd_complete), K(trans_complete),
-                  "reserved_len", server_response_->get_analyze_result().get_reserved_len(), K(packet_reader_));
+                  "reserved_ok_len_of_mysql", resp_result_->get_reserved_ok_len_of_mysql(),
+                  "reserved_ok_len_of_compressed", resp_result_->get_reserved_ok_len_of_compressed(), K(packet_reader_));
       }
-    } else {
-      LOG_DEBUG("no need analyze response", K(data_size));
     }
   }
 
@@ -645,14 +648,14 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
       // If it doesn't receive the last eof or error packet and extra ok packet, the consumer can't
       // consume the last eof or error packet. So if the extra ok packet isn't received, the reserved_len
       // isn't 0, we can hold the last eof or error packet.
-      if (NULL != p.packet_analyzer_.server_response_) {
-        int64_t reserved_size = p.packet_analyzer_.server_response_->get_analyze_result().get_reserved_len();
+      if (NULL != p.packet_analyzer_.resp_result_) {
+        int64_t reserved_size = p.packet_analyzer_.resp_result_->get_reserved_ok_len_of_mysql();
         for (ObMysqlTunnelConsumer *c = p.consumer_list_.head_; NULL != c; c = c->link_.next_) {
           LOG_DEBUG("reader avail size", "size", c->buffer_reader_->read_avail());
           if (c->alive_) {
             c->buffer_reader_->reserved_size_ = reserved_size;
           }
-          LOG_DEBUG("after reserved, reader avail size", "size", c->buffer_reader_->read_avail());
+          LOG_DEBUG("after reserved, reader avail size", "size", c->buffer_reader_->read_avail(), K(reserved_size));
           if (OB_UNLIKELY(reserved_size > 0) && OB_UNLIKELY(c->buffer_reader_->read_avail() < 0)) {
             LOG_EDIAG("unexpected read_avail size, BUG!", K(reserved_size),
                       "read avail size", c->buffer_reader_->read_avail());

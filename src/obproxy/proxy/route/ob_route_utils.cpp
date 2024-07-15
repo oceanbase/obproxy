@@ -19,17 +19,20 @@
 #include "proxy/route/ob_routine_processor.h"
 #include "proxy/route/ob_mysql_route.h"
 #include "proxy/route/ob_partition_entry.h"
+#include "proxy/route/ob_index_entry.h"
 #include "proxy/route/ob_table_cache.h"
 #include "proxy/route/ob_table_entry.h"
 #include "proxy/route/ob_routine_cache.h"
 #include "proxy/route/ob_routine_entry.h"
 #include "proxy/route/ob_tenant_server.h"
+#include "proxy/rpc_optimize/rpclib/ob_tablegroup_entry.h"
 #include "opsql/expr_resolver/ob_expr_resolver.h"
 #include "opsql/func_expr_parser/ob_func_expr_parser.h"
 #include "opsql/func_expr_parser/ob_func_expr_parser_utils.h"
 #include "obutils/ob_proxy_sql_parser.h"
 #include "utils/ob_proxy_utils.h"
 #include "opsql/func_expr_resolver/ob_func_expr_resolver.h"
+#include "lib/utility/ob_ls_id.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share;
@@ -50,19 +53,75 @@ namespace proxy
 
 static const char PART_KEY_EXTRA_SEPARATOR               = ';';
 
-static const char *PROXY_PLAIN_SCHEMA_SQL                =
-    //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1
-    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ * "
-    "FROM oceanbase.%s "
-    "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' "
-    "AND %s = %ld "
-    "ORDER BY role ASC LIMIT %ld";
-static const char *PROXY_TENANT_SCHEMA_SQL               =
-    //svr_ip, sql_port, table_id, role, part_num, replica_num
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
-    "FROM oceanbase.%s "
-    "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' AND sql_port > 0 "
-    "ORDER BY %s ASC, role ASC LIMIT %ld";
+//Not to use any more
+// static const char *PROXY_PLAIN_SCHEMA_SQL =
+//     //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1
+//     "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ * "
+//     "FROM oceanbase.%s "
+//     "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' "
+//     "AND %s = %ld "
+//     "ORDER BY role ASC LIMIT %ld";
+//RPC serivce
+static const char *PROXY_PLAIN_SCHEMA_SQL_RPC =
+    //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1, svr_port
+    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port "
+    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "ON A.svr_ip = B.svr_ip and A.sql_port = B.inner_port "
+    "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
+    "AND A.partition_id = %ld "
+    "ORDER BY A.role ASC LIMIT %ld";
+
+static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_V4 =
+    //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1, svr_port
+    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port "
+    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "ON A.svr_ip = B.svr_ip and A.sql_port = B.sql_port "
+    "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
+    "AND A.tablet_id = %ld "
+    "ORDER BY A.role ASC LIMIT %ld";
+
+static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_BATCH =
+    //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1, svr_port
+    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port "
+    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "ON A.svr_ip = B.svr_ip and A.sql_port = B.inner_port "
+    "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
+    "AND A.partition_id IN (%.*s) "
+    "ORDER BY A.role ASC LIMIT %ld";
+
+static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_V4_BATCH =
+    //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1, svr_port
+    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port "
+    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "ON A.svr_ip = B.svr_ip and A.sql_port = B.sql_port "
+    "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
+    "AND A.tablet_id IN (%.*s) "
+    "ORDER BY A.tablet_id, A.role ASC LIMIT %ld";
+
+// Not to use any more
+// static const char *PROXY_TENANT_SCHEMA_SQL =
+//     //svr_ip, sql_port, table_id, role, part_num, replica_num
+//     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
+//     "FROM oceanbase.%s "
+//     "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' AND sql_port > 0 "
+//     "ORDER BY %s ASC, role ASC LIMIT %ld";
+
+//RPC Service
+static const char *PROXY_TENANT_SCHEMA_SQL_RPC =
+    //svr_ip, sql_port, table_id, role, part_num, replica_num, svr_port
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ A.*, B.svr_port as svr_port "
+    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "ON A.svr_ip = B.svr_ip and A.sql_port = B.inner_port "
+    "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' AND A.sql_port > 0 "
+    "ORDER BY A.partition_id ASC, role ASC LIMIT %ld";
+
+static const char *PROXY_TENANT_SCHEMA_SQL_RPC_V4 =
+    //svr_ip, sql_port, table_id, role, part_num, replica_num, svr_port
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ A.*, B.svr_port as svr_port "
+    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "ON A.svr_ip = B.svr_ip and A.sql_port = B.sql_port "
+    "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' AND A.sql_port > 0 "
+    "ORDER BY A.tablet_id ASC, role ASC LIMIT %ld";
 
 static const char *PROXY_PART_INFO_SQL                   =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
@@ -86,9 +145,13 @@ static const char *PROXY_HASH_FIRST_PART_SQL             =
     "WHERE table_id = %lu LIMIT %ld;";
 
 static const char *PROXY_FIRST_PART_SQL_V4 =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ tablet_id, part_id, part_name, high_bound_val_bin, sub_part_num "
-    "FROM oceanbase.%s "
-    "WHERE table_id = %lu and tenant_name = '%.*s' LIMIT %ld;";
+    // tablet_id, ls_id(ifnull return INVALID_LS_ID), part_id, part_name, high_bound_val_bin, sub_part_num
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/  A.tablet_id as tablet_id, "
+    "IFNULL((SELECT B.ls_id FROM oceanbase.%s B "
+    "WHERE A.tablet_id = B.tablet_id AND B.table_id = %lu AND B.tenant_id = "
+    "(SELECT tenant_id FROM oceanbase.%s WHERE tenant_name = '%.*s' LIMIT 1) LIMIT 1), %ld) as ls_id, "
+    "A.part_id as part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin, A.sub_part_num AS sub_part_num "
+    "FROM oceanbase.%s A WHERE A.table_id = %lu AND A.tenant_name = '%.*s'LIMIT %ld;";
 
 static const char *PROXY_SUB_PART_SQL                    =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, part_name, high_bound_val_bin "
@@ -101,9 +164,13 @@ static const char *PROXY_NON_TEMPLATE_SUB_PART_SQL       =
   "WHERE table_id = %lu LIMIT %ld;";
 
 static const char *PROXY_SUB_PART_SQL_V4                 =
-  "SELECT /*+READ_CONSISTENCY(WEAK)*/ tablet_id, part_id, sub_part_id, part_name, high_bound_val_bin "
-  "FROM oceanbase.%s "
-  "WHERE table_id = %lu and tenant_name = '%.*s' LIMIT %ld;";
+    // tablet_id, ls_id(ifnull return INVALID_LS_ID), sub_part_id, part_name, high_bound_val_bin
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/  A.tablet_id as tablet_id, "
+    "IFNULL((SELECT B.ls_id FROM oceanbase.%s B "
+    "WHERE A.tablet_id = B.tablet_id AND B.table_id = %lu AND B.tenant_id = "
+    "(SELECT tenant_id FROM oceanbase.%s WHERE tenant_name = '%.*s' LIMIT 1) LIMIT 1), %ld) as ls_id, "
+    "A.part_id as part_id, A.sub_part_id as sub_part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin "
+    "FROM oceanbase.%s A WHERE A.table_id = %lu AND A.tenant_name = '%.*s'LIMIT %ld;";
 
 static const char *PROXY_ROUTINE_SCHEMA_SQL              =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
@@ -127,6 +194,12 @@ static const char *PROXY_ROUTINE_SCHEMA_SQL_V4 =
 
 static const char *PROXY_BINLOG_ADDR_SQL =
   "show binlog server for tenant `%.*s`.`%.*s`";
+
+static const char *PROXY_TABLEGROUP_TABLES_SQL_V4 =
+  "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
+  "FROM %s "
+  "WHERE tenant_id = '%lu' and tablegroup_name = '%.*s' and owner = '%.*s' "
+  "LIMIT %ld;";
 
 static void get_tenant_name(const ObString &origin_tenant_name, char *new_tenant_name_buf, ObString &new_tenant_name) {
   new_tenant_name = origin_tenant_name;
@@ -162,24 +235,48 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
     char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
     ObString new_tenant_name;
     get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
-    if (name.is_all_dummy_table()) {
-      len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_TENANT_SCHEMA_SQL,
-                                          OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
-                                          new_tenant_name.length(), new_tenant_name.ptr(),
-                                          name.database_name_.length(), name.database_name_.ptr(),
-                                          name.table_name_.length(), name.table_name_.ptr(),
-                                          IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) ? "partition_id" : "tablet_id",
-                                          INT64_MAX));
+
+    //contains RPC service in fetch sql
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      if (name.is_all_dummy_table()) {
+        len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_TENANT_SCHEMA_SQL_RPC,
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            OB_ALL_VIRTUAL_SERVER_STAT_TNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr(),
+                                            INT64_MAX));
+      } else {
+        const int64_t FIRST_PARTITION_ID = 0;
+        len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_PLAIN_SCHEMA_SQL_RPC,
+                                            is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            OB_ALL_VIRTUAL_SERVER_STAT_TNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr(),
+                                            FIRST_PARTITION_ID, INT64_MAX));
+      }
     } else {
-      const int64_t FIRST_PARTITION_ID = 0;
-      len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_PLAIN_SCHEMA_SQL,
-                                          is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
-                                          OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
-                                          new_tenant_name.length(), new_tenant_name.ptr(),
-                                          name.database_name_.length(), name.database_name_.ptr(),
-                                          name.table_name_.length(), name.table_name_.ptr(),
-                                          IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) ? "partition_id" : "tablet_id",
-                                          FIRST_PARTITION_ID, INT64_MAX));
+      if (name.is_all_dummy_table()) {
+        len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_TENANT_SCHEMA_SQL_RPC_V4,
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            DBA_OB_SERVERS_VNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr(),
+                                            INT64_MAX));
+      } else {
+        const int64_t FIRST_PARTITION_ID = 0;
+        len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_PLAIN_SCHEMA_SQL_RPC_V4,
+                                            is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            DBA_OB_SERVERS_VNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr(),
+                                            FIRST_PARTITION_ID, INT64_MAX));
+      }
     }
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
@@ -250,6 +347,11 @@ int ObRouteUtils::get_first_part_sql(char *sql_buf,
     ObString new_tenant_name;
     get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
     len = snprintf(sql_buf, buf_len, PROXY_FIRST_PART_SQL_V4,
+                   OB_ALL_VIRTUAL_TABLET_TO_LS,
+                   table_id,
+                   DBA_OB_TENANTS_VNAME,
+                   new_tenant_name.length(), new_tenant_name.ptr(),
+                   ObLSID::INVALID_LS_ID,
                    OB_ALL_VIRTUAL_PROXY_PARTITION_TNAME,
                    table_id,
                    new_tenant_name.length(), new_tenant_name.ptr(),
@@ -284,10 +386,15 @@ int ObRouteUtils::get_sub_part_sql(char *sql_buf,
       ObString new_tenant_name;
       get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
       len = snprintf(sql_buf, buf_len, PROXY_SUB_PART_SQL_V4,
-                     OB_ALL_VIRTUAL_PROXY_SUB_PARTITION_TNAME,
-                     table_id,
-                     new_tenant_name.length(), new_tenant_name.ptr(),
-                     INT64_MAX);
+                    OB_ALL_VIRTUAL_TABLET_TO_LS,
+                    table_id,
+                    DBA_OB_TENANTS_VNAME,
+                    new_tenant_name.length(), new_tenant_name.ptr(),
+                    ObLSID::INVALID_LS_ID,
+                    OB_ALL_VIRTUAL_PROXY_SUB_PARTITION_TNAME,
+                    table_id,
+                    new_tenant_name.length(), new_tenant_name.ptr(),
+                    INT64_MAX);
     } else if (is_template_table) {
       const int64_t TEMPLATE_PART_ID = -1;
       len = snprintf(sql_buf, buf_len, PROXY_SUB_PART_SQL,
@@ -353,6 +460,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
   char ip_str[MAX_IP_ADDR_LENGTH];
   ip_str[0] = '\0';
   int64_t port = 0;
+  int64_t svr_port = 0;
   uint64_t table_id = OB_INVALID_ID;
   int64_t part_num = 0;
   int64_t replica_num = 0;
@@ -376,6 +484,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
     role = -1;
     replica_type = -1;
     table_type = -1;
+    svr_port = 0;
 
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "svr_ip", ip_str, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
     PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sql_port", port, int64_t);
@@ -429,6 +538,16 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
     }
 
     if (OB_SUCC(ret)) {
+      LOG_DEBUG("RPC service mode need fetch srv_port");
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "svr_port", svr_port, int64_t);
+      if (OB_ERR_COLUMN_NOT_FOUND == ret) {
+        LOG_DEBUG("can not found svr_port, maybe not in rpc service mode, ignore", K(ret));
+        ret = OB_SUCCESS;
+        svr_port = 0;
+      }
+    }
+
+    if (OB_SUCC(ret)) {
       prl.role_ = static_cast<ObRole>(role);
       if (OB_FAIL(prl.add_addr(ip_str, port))) {
         if (is_fake_ip_port(ip_str, port)) {
@@ -448,6 +567,14 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
         ret = OB_SUCCESS;
       } else if (FALSE_IT(prl.set_dup_replica_type(dup_replica_type))) {
         // can not happen
+      } else if (svr_port > 0 && OB_FAIL(prl.add_rpc_addr(ip_str, svr_port))) {
+        if (is_fake_ip_port(ip_str, svr_port)) {
+          use_fake_addrs = true;
+        } else {
+          LOG_WDIAG("invalid rpc ip, port in fetching table entry, just skip it,"
+                   " do not return err", K(ip_str), K(svr_port), K(ret));
+        }
+        ret = OB_SUCCESS;
       } else if (OB_FAIL(server_list.push_back(prl))) {
         LOG_WDIAG("fail to add server", K(prl), K(ret));
       } else {
@@ -455,6 +582,19 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
           has_dup_replica = true;
         }
       }//end of else
+      //RPC Service add rpc servce port
+      LOG_DEBUG("RPC service mode need fetch srv_port", K(svr_port));
+      //if (OB_SUCC(ret) && svr_port > 0) {
+      //  if (OB_FAIL(prl.add_rpc_addr(ip_str, svr_port))) {
+      //    if (is_fake_ip_port(ip_str, svr_port)) {
+      //      use_fake_addrs = true;
+      //    } else {
+      //      LOG_WDIAG("invalid rpc ip, port in fetching table entry, just skip it,"
+      //               " do not return err", K(ip_str), K(svr_port), K(ret));
+      //    }
+      //    ret = OB_SUCCESS;
+      //  }
+      //}
     }//end of OB_SUCC(ret)
   }
 
@@ -1309,6 +1449,7 @@ int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_
 int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
                                                 const int64_t cluster_id,
                                                 const ObIArray<ObAddr> &addr_list,
+                                                const ObIArray<ObAddr> &rpc_addr_list,
                                                 const bool is_rslist)
 {
   int ret = OB_SUCCESS;
@@ -1317,7 +1458,7 @@ int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_
     LOG_WDIAG("invalid input vlue", K(addr_list), K(cluster_name), K(ret));
   } else {
     LocationList location_list;
-    if (OB_FAIL(convert_addrs_to_locations(addr_list, location_list))) {
+    if (OB_FAIL(convert_addrs_to_locations(addr_list, rpc_addr_list, location_list))) {
       LOG_WDIAG("fail to convert_addrs_to_locations", K(ret));
     } else if (OB_FAIL(build_and_add_sys_dummy_entry(cluster_name, cluster_id, location_list, is_rslist))) {
       LOG_WDIAG("fail to build_and_add_sys_dummy_entry", K(cluster_name), K(cluster_id), K(location_list), K(ret));
@@ -1329,7 +1470,8 @@ int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_
 
 
 int ObRouteUtils::convert_addrs_to_locations(const ObIArray<ObAddr> &addr_list,
-                                                  LocationList &location_list)
+                                             const ObIArray<ObAddr> &rpc_addr_list,
+                                             LocationList &location_list)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(addr_list.empty())) {
@@ -1340,6 +1482,7 @@ int ObRouteUtils::convert_addrs_to_locations(const ObIArray<ObAddr> &addr_list,
     for (int64_t i = 0; (i < addr_list.count()) && OB_SUCC(ret); ++i) {
       prl.reset();
       prl.server_ = addr_list.at(i);
+      prl.rpc_server_ = rpc_addr_list.at(i);
       prl.role_ = FOLLOWER;
       if (OB_FAIL(location_list.push_back(prl))) {
         LOG_WDIAG("fail to push back replica location", K(prl), K(ret));
@@ -1414,14 +1557,94 @@ int ObRouteUtils::get_partition_entry_sql(char *sql_buf, const int64_t buf_len,
     char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
     ObString new_tenant_name;
     get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
-    len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_PLAIN_SCHEMA_SQL,
-                                        is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
-                                        OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
-                                        new_tenant_name.length(), new_tenant_name.ptr(),
-                                        name.database_name_.length(), name.database_name_.ptr(),
-                                        name.table_name_.length(), name.table_name_.ptr(),
-                                        cluster_version < 4 ? "partition_id" : "tablet_id",
-                                        partition_id, INT64_MAX));
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_PLAIN_SCHEMA_SQL_RPC,
+                                          is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
+                                          OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                          OB_ALL_VIRTUAL_SERVER_STAT_TNAME,
+                                          new_tenant_name.length(), new_tenant_name.ptr(),
+                                          name.database_name_.length(), name.database_name_.ptr(),
+                                          name.table_name_.length(), name.table_name_.ptr(),
+                                          partition_id, INT64_MAX));
+    } else {
+      len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_PLAIN_SCHEMA_SQL_RPC_V4,
+                                          is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
+                                          OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                          DBA_OB_SERVERS_VNAME,
+                                          new_tenant_name.length(), new_tenant_name.ptr(),
+                                          name.database_name_.length(), name.database_name_.ptr(),
+                                          name.table_name_.length(), name.table_name_.ptr(),
+                                          partition_id, INT64_MAX));
+    }
+
+    if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObRouteUtils::get_batch_partition_entry_sql(char *sql_buf, const int64_t buf_len,
+                                                const ObTableEntryName &name,
+                                                const common::ObIArray<uint64_t> &partition_ids,
+                                                bool is_need_force_flush,
+                                                const int64_t cluster_version)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)
+      || OB_UNLIKELY(!name.is_valid()) || 0 == partition_ids.count()) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len),
+             K(name), K(partition_ids), K(ret));
+  } else {
+    int64_t len = 0;
+    char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
+    ObString new_tenant_name;
+    get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
+
+    char partitions_buf[OB_SHORT_SQL_LENGTH]; // batch not more than 40{ UINT64_MAX = 18446744073709552000(20)  + ', '(2) 22 * 40 }
+    uint32_t i = 0;
+    char *buf = partitions_buf;
+    uint32_t pbuf_len = OB_SHORT_SQL_LENGTH;
+    for (i = 0; i < partition_ids.count(); i++) {
+      int32_t write_len = snprintf(buf, pbuf_len, i != partition_ids.count() - 1 ? "%ld, " : "%ld", partition_ids.at(i));
+      if (OB_UNLIKELY(write_len < 0 || write_len >= pbuf_len)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("invalid batch count to handle", K(ret), "count", partition_ids.count());
+      } else {
+        pbuf_len -= write_len;
+        buf += write_len;
+      }
+    }
+    pbuf_len = buf - partitions_buf;
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      // to use for <4.0.0
+      if (OB_SUCC(ret)) {
+        len = static_cast<int64_t>(snprintf(sql_buf, OB_MEDIUM_SQL_LENGTH, PROXY_PLAIN_SCHEMA_SQL_RPC_BATCH,
+                                            is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            OB_ALL_VIRTUAL_SERVER_STAT_TNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr(),
+                                            pbuf_len, partitions_buf, //partition_id,
+                                            INT64_MAX));
+      }
+    } else {
+      if (OB_SUCC(ret)) {
+        len = static_cast<int64_t>(snprintf(sql_buf, OB_MEDIUM_SQL_LENGTH, PROXY_PLAIN_SCHEMA_SQL_RPC_V4_BATCH,
+                                            is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
+                                            OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
+                                            DBA_OB_SERVERS_VNAME,
+                                            new_tenant_name.length(), new_tenant_name.ptr(),
+                                            name.database_name_.length(), name.database_name_.ptr(),
+                                            name.table_name_.length(), name.table_name_.ptr(),
+                                            pbuf_len, partitions_buf,
+                                            INT64_MAX));
+      }
+    }
 
     if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
       ret = OB_ERR_UNEXPECTED;
@@ -1443,6 +1666,7 @@ int ObRouteUtils::fetch_one_partition_entry_info(
   char ip_str[MAX_IP_ADDR_LENGTH];
   ip_str[0] = '\0';
   int64_t port = 0;
+  int64_t rpc_port = 0;
   uint64_t table_id = OB_INVALID_ID;
   uint64_t partition_id = OB_INVALID_ID;
   int64_t part_num = 0;
@@ -1470,6 +1694,7 @@ int ObRouteUtils::fetch_one_partition_entry_info(
     } else {
       PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", partition_id, uint64_t);
     }
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "svr_port", rpc_port, int64_t);
 
     if (OB_SUCC(ret)) {
       PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "schema_version", schema_version, int64_t);
@@ -1512,6 +1737,10 @@ int ObRouteUtils::fetch_one_partition_entry_info(
       if (OB_FAIL(prl.add_addr(ip_str, port))) {
         LOG_WDIAG("invalid ip, port in fetching table entry, just skip it,"
                  " do not return err", K(ip_str), K(port), K(ret));
+        ret = OB_SUCCESS;
+      } else if (OB_FAIL(prl.add_rpc_addr(ip_str, rpc_port))) {
+        LOG_WDIAG("invalid rpc ip, port in fetching table entry, just skip it,"
+                 " do not return err", K(ip_str), K(rpc_port), K(ret));
         ret = OB_SUCCESS;
       } else if (OB_UNLIKELY(LEADER != prl.role_) && OB_UNLIKELY(FOLLOWER != prl.role_)) {
         LOG_WDIAG("invalid role in fetching table entry, just skip it,"
@@ -1572,6 +1801,192 @@ int ObRouteUtils::fetch_one_partition_entry_info(
   return ret;
 }
 
+int ObRouteUtils::fetch_more_partition_entrys_info(obproxy::ObResultSetFetcher &rs_fetcher,
+                                            ObTableEntry &table_entry,
+                                            // ObPartitionEntry *&entry,
+                                            common::ObIArray<ObPartitionEntry *> &entry_array,
+                                            const int64_t cluster_version)
+{
+  int ret = OB_SUCCESS;
+  int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
+  char ip_str[MAX_IP_ADDR_LENGTH];
+  ip_str[0] = '\0';
+  int64_t port = 0;
+  int64_t rpc_port = 0;
+  uint64_t table_id = OB_INVALID_ID;
+  uint64_t partition_id = OB_INVALID_ID;
+  uint64_t last_partition_id = OB_INVALID_ID;
+  int64_t part_num = 0;
+  int64_t schema_version = 0;
+  int64_t role = -1;
+  int32_t replica_type = -1;
+  int32_t dup_replica_type = 0; // 0 for non dup replica; 1 for dup replica; -1 for invalid dup replica type
+  ObAddr leader_addr;
+  ObPartitionEntry *part_entry = NULL;
+  ObProxyReplicaLocation prl;
+  ObSEArray<ObProxyReplicaLocation, 32> replicas;
+  bool has_dup_replica = false;
+
+  while ((OB_SUCC(ret)) && (OB_SUCC(rs_fetcher.next()))) {
+    ip_str[0] = '\0';
+    port = 0;
+
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "svr_ip", ip_str, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sql_port", port, int64_t);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "table_id", table_id, uint64_t);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "role", role, int64_t);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_num", part_num, int64_t);
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "partition_id", partition_id, uint64_t);
+    } else {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", partition_id, uint64_t);
+    }
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "svr_port", rpc_port, int64_t);
+
+    if (OB_SUCC(ret)) {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "schema_version", schema_version, int64_t);
+      if (OB_ERR_COLUMN_NOT_FOUND == ret) {
+        LOG_DEBUG("can not find schema version, maybe is old server, ignore", K(ret));
+        ret = OB_SUCCESS;
+        schema_version = 0;
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", replica_type, int32_t);
+        if (OB_ERR_COLUMN_NOT_FOUND == ret) {
+          LOG_DEBUG("can not find spare1, maybe is old server, ignore", K(replica_type), K(ret));
+          ret = OB_SUCCESS;
+          replica_type = 0;
+        }
+      } else {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "replica_type", replica_type, int32_t);
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare2", dup_replica_type, int32_t);
+        if (OB_ERR_COLUMN_NOT_FOUND == ret) {
+          LOG_DEBUG("can not find spare2, maybe is old server, ignore", K(dup_replica_type), K(ret));
+          ret = OB_SUCCESS;
+          dup_replica_type = 0;
+        }
+      } else {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "dup_replica_type", dup_replica_type, int32_t);
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (last_partition_id != partition_id && last_partition_id != OB_INVALID_PARTITION) {
+        //fill the previous partition id first
+        if (OB_SUCC(ret) && !replicas.empty()) {
+          if (table_id != table_entry.get_table_id() || part_num != table_entry.get_part_num()) {
+            LOG_INFO("table id or part num is changed, this table entry is expired",
+                     "table names", table_entry.get_names(),
+                     "origin table id", table_entry.get_table_id(),
+                     "current table id", table_id,
+                     "origin part num", table_entry.get_part_num(),
+                     "current part num", part_num);
+            if (table_entry.cas_compare_and_swap_state(ObTableEntry::AVAIL, ObTableEntry::DIRTY)) {
+              LOG_INFO("mark this table entry dirty succ", K(table_entry));
+            }
+          } else if (table_entry.get_schema_version() > 0
+                     && schema_version > 0
+                     && table_entry.get_schema_version() != schema_version) {
+            LOG_WDIAG("schema version has changed, the table entry is expired",
+                     K(table_entry), K(schema_version));
+            if (table_entry.cas_compare_and_swap_state(ObTableEntry::AVAIL, ObTableEntry::DIRTY)) {
+              LOG_INFO("mark this table entry dirty succ", K(table_entry));
+            }
+          } else if (OB_FAIL(ObPartitionEntry::alloc_and_init_partition_entry(table_id, last_partition_id,
+                  table_entry.get_cr_version(), table_entry.get_cr_id(), replicas, part_entry))) {
+            LOG_WDIAG("fail to alloc and init partition entry", K(ret));
+          } else {
+            part_entry->set_schema_version(schema_version); // do not forget
+            if (has_dup_replica) {
+              part_entry->set_has_dup_replica();
+            }
+            // entry = part_entry; // hand over the ref count
+            entry_array.push_back(part_entry);
+            part_entry = NULL;
+          }
+          replicas.reset();  //reset replicas info
+        }
+      }
+
+      prl.reset();
+      prl.role_ = static_cast<ObRole>(role);
+      if (OB_FAIL(prl.add_addr(ip_str, port))) {
+        LOG_WDIAG("invalid ip, port in fetching table entry, just skip it,"
+                 " do not return err", K(ip_str), K(port), K(ret));
+        ret = OB_SUCCESS;
+      } else if (OB_FAIL(prl.add_rpc_addr(ip_str, rpc_port))) {
+        LOG_WDIAG("invalid rpc ip, port in fetching table entry, just skip it,"
+                 " do not return err", K(ip_str), K(rpc_port), K(ret));
+        ret = OB_SUCCESS;
+      } else if (OB_UNLIKELY(LEADER != prl.role_) && OB_UNLIKELY(FOLLOWER != prl.role_)) {
+        LOG_WDIAG("invalid role in fetching table entry, just skip it,"
+                 " do not return err", "role", prl.role_);
+        ret = OB_SUCCESS;
+      } else if (OB_FAIL(prl.set_replica_type(replica_type))) {
+        LOG_INFO("invalid replica_type in fetching table entry, just skip it,"
+                 " do not return err", "replica_type", replica_type);
+        ret = OB_SUCCESS;
+      } else if (FALSE_IT(prl.set_dup_replica_type(dup_replica_type))) {
+        // can not happen
+      } else if (OB_FAIL(replicas.push_back(prl))) {
+        LOG_WDIAG("fail to add replica location", K(replicas), K(prl), K(ret));
+      } else {
+        if (prl.is_dup_replica() && !has_dup_replica) {
+          has_dup_replica = true;
+        }
+      }
+      last_partition_id = partition_id;
+    }
+  }
+
+  if (OB_ITER_END == ret) {
+    ret = OB_SUCCESS;
+  }
+
+  if (OB_SUCC(ret) && !replicas.empty()) {
+    if (table_id != table_entry.get_table_id() || part_num != table_entry.get_part_num()) {
+      LOG_INFO("table id or part num is changed, this table entry is expired",
+               "table names", table_entry.get_names(),
+               "origin table id", table_entry.get_table_id(),
+               "current table id", table_id,
+               "origin part num", table_entry.get_part_num(),
+               "current part num", part_num);
+      if (table_entry.cas_compare_and_swap_state(ObTableEntry::AVAIL, ObTableEntry::DIRTY)) {
+        LOG_INFO("mark this table entry dirty succ", K(table_entry));
+      }
+    } else if (table_entry.get_schema_version() > 0
+               && schema_version > 0
+               && table_entry.get_schema_version() != schema_version) {
+      LOG_WDIAG("schema version has changed, the table entry is expired",
+               K(table_entry), K(schema_version));
+      if (table_entry.cas_compare_and_swap_state(ObTableEntry::AVAIL, ObTableEntry::DIRTY)) {
+        LOG_INFO("mark this table entry dirty succ", K(table_entry));
+      }
+    } else if (OB_FAIL(ObPartitionEntry::alloc_and_init_partition_entry(table_id, partition_id,
+            table_entry.get_cr_version(), table_entry.get_cr_id(), replicas, part_entry))) {
+      LOG_WDIAG("fail to alloc and init partition entry", K(ret));
+    } else {
+      part_entry->set_schema_version(schema_version); // do not forget
+      if (has_dup_replica) {
+        part_entry->set_has_dup_replica();
+      }
+      // entry = part_entry; // hand over the ref count
+      entry_array.push_back(part_entry);
+      part_entry = NULL;
+    }
+  }
+
+  return ret;
+}
+
 int ObRouteUtils::get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
                                         const ObTableEntryName &name,
                                         const int64_t cluster_version)
@@ -1591,6 +2006,7 @@ int ObRouteUtils::get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
     // call A.B or call A.B.C
     if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
       if (OB_UNLIKELY(!name.package_name_.empty())) {
+        // TODO : add rpc if (is_route_contains_rpc_port())
         len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_ROUTINE_SCHEMA_SQL_WITH_PACKAGE,
                                             OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
                                             new_tenant_name.length(), new_tenant_name.ptr(),
@@ -1740,6 +2156,99 @@ int ObRouteUtils::fetch_binlog_entry(ObResultSetFetcher &rs_fetcher,
   return ret;
 }
 
+int ObRouteUtils::get_tablegroup_entry_sql(char *sql_buf,
+                                           const int64_t buf_len,
+                                           int64_t tenant_id,
+                                           const ObString &tablegroup_name,
+                                           const ObString &database_name,
+                                           const int64_t cluster_version)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)
+      || OB_UNLIKELY(tablegroup_name.empty()) || OB_UNLIKELY(database_name.empty())
+      ||common::OB_INVALID_TENANT_ID == tenant_id || cluster_version < 4) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len),
+             K(tenant_id), K(tablegroup_name), K(database_name), K(cluster_version));
+  } else {
+    int64_t len = 0;
+    len = static_cast<int64_t>(snprintf(sql_buf, OB_SHORT_SQL_LENGTH, PROXY_TABLEGROUP_TABLES_SQL_V4,
+                                        CDB_OB_TABLEGROUP_TABLES_VNAME,
+                                        tenant_id,
+                                        tablegroup_name.length(), tablegroup_name.ptr(),
+                                        database_name.length(), database_name.ptr(),
+                                        INT64_MAX));
+
+    if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObRouteUtils::fetch_one_tablegroup_entry_info(obproxy::ObResultSetFetcher &rs_fetcher,
+                                                  const int64_t cr_version,
+                                                  const int64_t cr_id,
+                                                  ObTableGroupEntry *&entry,
+                                                  const int64_t cluster_version)
+{
+  UNUSED(cluster_version);
+  int ret = OB_SUCCESS;
+  bool is_first_row = true;
+  int64_t tenant_id = OB_INVALID_TENANT_ID;
+  int64_t sharding_len = 0;
+  int64_t database_len = 0;
+  int64_t tablegroup_len = 0;
+  int64_t max_sharding_len = ObTableGroupEntry::OB_TABLEGROUP_MAX_SHARDING_LENGTH;
+  char sharding_str[max_sharding_len];
+  char database_str[OB_MAX_DATABASE_NAME_LENGTH];
+  char tablegroup_str[OB_MAX_TABLEGROUP_NAME_LENGTH];
+  ObTableGroupTableNameInfo table_name_info;
+  ObSEArray<ObTableGroupTableNameInfo, 4> table_names;
+  ObTableGroupEntry *tmp_entry = NULL;
+  sharding_str[0] = '\0';
+
+  while ((OB_SUCC(ret)) && (OB_SUCC(rs_fetcher.next()))) {
+    table_name_info.reset();
+
+    if (is_first_row) {
+      PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "TENANT_ID", tenant_id, int64_t);
+      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "TABLEGROUP_NAME", tablegroup_str, OB_MAX_TABLEGROUP_NAME_LENGTH, tablegroup_len);
+      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "OWNER", database_str, OB_MAX_DATABASE_NAME_LENGTH, database_len);
+      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "SHARDING", sharding_str, max_sharding_len, sharding_len);
+      is_first_row = false;
+    }
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "TABLE_NAME", table_name_info.table_name_, OB_MAX_TABLE_NAME_LENGTH, table_name_info.table_name_length_);
+
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(table_names.push_back(table_name_info))) {
+        LOG_WDIAG("fail to add table_name_info", K(table_name_info), K(ret));
+      } else {
+        LOG_DEBUG("succ to get table_name_info", K(table_name_info));
+      }
+    }
+  }
+
+  if (OB_ITER_END == ret) {
+    ret = OB_SUCCESS;
+  }
+
+  if (OB_SUCC(ret) && !table_names.empty()) {
+    ObString tablegroup_name(tablegroup_len, tablegroup_str);
+    ObString database_name(database_len, database_str);
+    ObString sharding(sharding_len, sharding_str);
+    if (OB_FAIL(ObTableGroupEntry::alloc_and_init_tablegroup_entry(tenant_id, tablegroup_name, database_name, sharding, table_names, cr_version, cr_id, tmp_entry))) {
+      LOG_WDIAG("fail to alloc and init tablegroup entry", K(ret));
+    } else {
+      entry = tmp_entry; // hand over the ref count
+      tmp_entry = NULL;
+    }
+  }
+
+  return ret;
+}
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

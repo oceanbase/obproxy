@@ -157,15 +157,6 @@ void ObMysqlServerSession::do_io_close(const int alerrno)
     --server_trans_stat_;
   }
 
-  if (NULL != server_vc_) {
-    if (is_pool_session_) {
-      get_global_session_manager().remove_server_session(*this);
-      OBPROXY_POOL_LOG(INFO, "close_session", K(schema_key_), K(local_ip_), K(server_ip_));
-    }
-    server_vc_->do_io_close(alerrno);
-    server_vc_ = NULL;
-  }
-
   MYSQL_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
   MYSQL_SUM_DYN_STAT(TRANSACTIONS_PER_SERVER_CON, transact_count_);
 
@@ -173,6 +164,15 @@ void ObMysqlServerSession::do_io_close(const int alerrno)
     SESSION_PROMETHEUS_STAT(client_session_->get_session_info(), PROMETHEUS_CURRENT_SESSION, false, -1);
     if (this == client_session_->get_cur_server_session()) {
       client_session_->set_cur_server_session(NULL);
+      // client bound server session closed, record server sess info to build diagnosis info
+      ObConnDiagRecord &conn_record = client_session_->conn_record_;
+      if (OB_LIKELY(ObConnectionDiagnosisTrace::is_enable_diagnosis_log(get_global_proxy_config().connection_diagnosis_option))) {
+        conn_record.cur_server_sess_id_ = server_sessid_;
+        conn_record.cur_server_sess_dst_addr_ = server_ip_;
+        if (server_vc_ != NULL) {
+          net::ops_ip_copy(conn_record.cur_server_sess_src_addr_, server_vc_->get_local_addr());
+        }
+      }
     }
     if (this == client_session_->get_lii_server_session()) {
       client_session_->set_lii_server_session(NULL);
@@ -193,6 +193,15 @@ void ObMysqlServerSession::do_io_close(const int alerrno)
     }
   } else {
     PROXY_SS_LOG(INFO, "server session has not bound to client session", K(*this));
+  }
+
+  if (NULL != server_vc_) {
+    if (is_pool_session_) {
+      get_global_session_manager().remove_server_session(*this);
+      OBPROXY_POOL_LOG(INFO, "close_session", K(schema_key_), K(local_ip_), K(server_ip_));
+    }
+    server_vc_->do_io_close(alerrno);
+    server_vc_ = NULL;
   }
 
   destroy();
@@ -234,6 +243,7 @@ int ObMysqlServerSession::release()
     // if hava shard_connector, should push into new session pool, even if is not shardingUser
     ObShardConnector *shard_conn = session_info_.get_shard_connector();
     if (OB_NOT_NULL(shard_conn)) {
+      PROXY_SS_LOG(DEBUG, "release server session for this shard_connector", "shard_name", shard_conn->shard_name_.config_string_);
       if (OB_FAIL(client_session_->get_session_manager_new().release_session(
                   shard_conn->shard_name_.config_string_, *this))) {
         PROXY_SS_LOG(WDIAG, "fail to release server session to new session manager, it will be closed", K(ret));

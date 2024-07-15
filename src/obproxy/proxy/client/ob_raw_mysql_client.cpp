@@ -106,6 +106,12 @@ int ObRawMysqlClientActor::sync_raw_execute(const char *sql, const int64_t timeo
         OB_FAIL(connect(addr_, timeout_ms))) {
       if (!is_avail() && info_->change_password()) {
         if (OB_FAIL(connect(addr_, timeout_ms))) {
+          if (-ER_ACCESS_DENIED_ERROR == ret
+              && OB_NOT_NULL(info_)
+              && info_->get_user_name().prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME)) {
+          LOG_ERROR("proxyro@sys access denied, please check password",
+                    K(resp_->get_err_msg()), K(ret));
+          }
           LOG_WDIAG("fail to connect using password1", "addr", addr_, K(ret));
         }
       } else {

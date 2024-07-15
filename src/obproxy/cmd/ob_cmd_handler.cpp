@@ -146,7 +146,7 @@ int ObCmdHandler::encode_header(const ObProxyColumnSchema *column_schema, const 
   int ret = OB_SUCCESS;
   if (IS_NOT_INIT) {
     ret = OB_NOT_INIT;
-    WARN_ICMD("it has not inited", K(ret));
+    WDIAG_ICMD("it has not inited", K(ret));
   } else if (OB_ISNULL(column_schema) || OB_UNLIKELY(size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
   } else {
@@ -159,12 +159,12 @@ int ObCmdHandler::encode_header(const ObProxyColumnSchema *column_schema, const 
       field.org_cname_ = column_schema[i].cname_;
       field.type_ = column_schema[i].ctype_;
       if (OB_FAIL(fields.push_back(field))) {
-        WARN_ICMD("fail to push field into array", K(field), K(ret));
+        WDIAG_ICMD("fail to push field into array", K(field), K(ret));
       }
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(ObMysqlPacketUtil::encode_header(*internal_buf_, seq_, fields))) {
-        WARN_ICMD("fail to encode header", K(ret));
+        WDIAG_ICMD("fail to encode header", K(ret));
       } else {
         DEBUG_ICMD("succ to encode header", K(fields));
       }
@@ -247,18 +247,6 @@ int ObCmdHandler::encode_ok_packet(const int64_t affected_rows,
   return ret;
 }
 
-bool ObCmdHandler::match_like(const ObString &str_text, const ObString &str_pattern) const
-{
-  bool ret = false;
-  if (str_pattern.empty()) {
-    ret = true;
-  } else if (str_text.empty()) {
-    //return false if text config namme is NULL
-  } else {
-    ret = ObCharset::wildcmp(CS_TYPE_UTF8MB4_BIN, str_text, str_pattern, 0, '_', '%');
-  }
-  return ret;
-}
 
 int ObCmdHandler::fill_external_buf()
 {
@@ -267,7 +255,7 @@ int ObCmdHandler::fill_external_buf()
   if (OB_LIKELY(protocol_ == ObProxyProtocol::PROTOCOL_OB20)) {
     // cli - proxy not supports compressed ob20
     if (OB_FAIL(ObProto20Utils::consume_and_compress_data(internal_reader_, external_buf_, internal_reader_->read_avail(), ob20_param_))) {
-      WARN_ICMD("fail to consume and compress to ob20 packet", K(ret), K_(ob20_param));
+      WDIAG_ICMD("fail to consume and compress to ob20 packet", K(ret), K_(ob20_param));
     } else {
       DEBUG_ICMD("succ to write to client in ob20", K_(ob20_param));
     }
@@ -287,7 +275,7 @@ int ObCmdHandler::fill_external_buf()
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("unexpected protocol error", K(ret), K_(protocol));
+    WDIAG_ICMD("unexpected protocol error", K(ret), K_(protocol));
   }
   
   return ret;

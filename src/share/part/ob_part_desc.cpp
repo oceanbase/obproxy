@@ -21,11 +21,11 @@ namespace oceanbase
 namespace common
 {
 
-int ObPartDesc::get_part(common::ObNewRange &range,
-                         common::ObIAllocator &allocator,
-                         common::ObIArray<int64_t> &part_ids,
+int ObPartDesc::get_part(ObNewRange &range,
+                         ObIAllocator &allocator,
+                         ObIArray<int64_t> &part_ids,
                          ObPartDescCtx &ctx,
-                         common::ObIArray<int64_t> &tablet_ids,
+                         ObIArray<int64_t> &tablet_ids,
                          int64_t &part_idx)
 {
   UNUSED(range);
@@ -37,13 +37,46 @@ int ObPartDesc::get_part(common::ObNewRange &range,
   return OB_NOT_IMPLEMENT;
 }
 
+int ObPartDesc::get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
+                                         ObIArray<int64_t> &tablet_ids,
+                                         ObIArray<int64_t> &ls_ids)
+{
+  UNUSED(part_ids);
+  UNUSED(tablet_ids);
+  UNUSED(ls_ids);
+  return OB_NOT_IMPLEMENT;
+}
+
+int ObPartDesc::get_part_for_obkv(ObNewRange &range,
+                                  ObIAllocator &allocator,
+                                  ObIArray<int64_t> &part_ids,
+                                  ObPartDescCtx &ctx,
+                                  ObIArray<int64_t> &tablet_ids,
+                                  ObIArray<int64_t> &ls_ids)
+{
+  UNUSED(range);
+  UNUSED(allocator);
+  UNUSED(part_ids);
+  UNUSED(ctx);
+  UNUSED(tablet_ids);
+  UNUSED(ls_ids);
+  return OB_NOT_IMPLEMENT;
+}
+
 int ObPartDesc::get_part_by_num(const int64_t num,
-                                common::ObIArray<int64_t> &part_ids,
-                                common::ObIArray<int64_t> &tablet_ids)
+                                ObIArray<int64_t> &part_ids,
+                                ObIArray<int64_t> &tablet_ids)
 {
   UNUSED(num);
   UNUSED(part_ids);
   UNUSED(tablet_ids);
+  return OB_NOT_IMPLEMENT;
+}
+
+int ObPartDesc::get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids)
+{
+  UNUSED(num);
+  UNUSED(ls_ids);
   return OB_NOT_IMPLEMENT;
 }
 
@@ -165,7 +198,6 @@ int ObPartDesc::decimal_int_murmur_hash(const ObObj &val, const uint64_t seed, u
   constexpr static uint32_t SIGN_BIT_MASK = (1 << 31);
   const uint32_t *data = reinterpret_cast<const uint32_t *>(val.get_decimal_int());
   int32_t last = val.get_int_bytes() / sizeof(uint32_t) - 1;
-
   // find minimum length of uint32_t values to represent `val`:
   // if data[last] ==  UINT32_MAX && data[last - 1]'s highest bit is 1, last--
   // else if data[last] == 0 && data[last - 1]'s highest bit is 0, last--
@@ -183,6 +215,43 @@ int ObPartDesc::decimal_int_murmur_hash(const ObObj &val, const uint64_t seed, u
     }
   }
   res = murmurhash(data, (last + 1) * sizeof(uint32_t), seed);
+  return ret;
+}
+
+int ObPartDesc::cast_obj_for_obkv(ObObj &src_obj,
+                                  ObObj &target_obj,
+                                  ObIAllocator &allocator,
+                                  ObPartDescCtx &ctx,
+                                  ObAccuracy &accuracy)
+{
+  return cast_obj_for_obkv(src_obj, target_obj.get_type(), target_obj.get_collation_type(), allocator, ctx, accuracy);
+}
+
+int ObPartDesc::cast_obj_for_obkv(ObObj &src_obj,
+                                  ObObjType obj_type,
+                                  ObCollationType cs_type,
+                                  ObIAllocator &allocator,
+                                  ObPartDescCtx &ctx,
+                                  ObAccuracy &accuracy)
+{
+  int ret = OB_SUCCESS;
+  COMMON_LOG(DEBUG, "begin to cast obj", K(src_obj), K(obj_type), K(cs_type));
+
+  // Currently obkv does not handle timestamp variables and accurate check
+  ObDataTypeCastParams dtc_params;
+  ObCastCtx cast_ctx(&allocator, &dtc_params, CM_NULL_ON_WARN, cs_type);
+  const ObObj *res_obj = &src_obj;
+
+  // use src_obj as buf_obj
+  if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cs_type, cast_ctx, src_obj, src_obj))) {
+    COMMON_LOG(WDIAG, "failed to cast obj", K(ret), K(src_obj), K(obj_type), K(cs_type));
+  } else if (ctx.need_accurate()
+              && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type, *res_obj, src_obj, res_obj))) {
+    COMMON_LOG(WDIAG, "fail to obj accuracy check", K(ret), K(src_obj));
+  } else {
+    COMMON_LOG(DEBUG, "end to cast obj for range", K(src_obj), K(obj_type), K(cs_type));
+  }
+
   return ret;
 }
 

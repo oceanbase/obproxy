@@ -44,9 +44,9 @@ int ObKillGlobalSessionHandler::handle_kill_global_session_info(int event, void 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_FAIL(handle_kill_session_info())) {
-    WARN_ICMD("fail to handle_kill_session_info", K(ret));
+    WDIAG_ICMD("fail to handle_kill_session_info", K(ret));
   } else {
     INFO_ICMD("succ to handle_kill_session_info ", K_(like_name));
     event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -63,9 +63,9 @@ int ObKillGlobalSessionHandler::encode_err_packet(const int errcode)
   char msg_buf[ERR_MSG_BUF_SIZE];
   if (IS_NOT_INIT) {
     ret = OB_NOT_INIT;
-    WARN_ICMD("it has not inited", K(ret));
+    WDIAG_ICMD("it has not inited", K(ret));
   } else if (OB_FAIL(reset())) {//before encode_err_packet, we need clean buf
-    WARN_ICMD("fail to do reset", K(errcode), K(ret));
+    WDIAG_ICMD("fail to do reset", K(errcode), K(ret));
   } else {
     int32_t length = 0;
     if (strlen(err_msg_) == 0) {
@@ -75,12 +75,12 @@ int ObKillGlobalSessionHandler::encode_err_packet(const int errcode)
     }
     if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= ERR_MSG_BUF_SIZE)) {
       ret = OB_BUF_NOT_ENOUGH;
-      WARN_ICMD("msg_buf is not enough", K(length), K(err_msg_), K(ret));
+      WDIAG_ICMD("msg_buf is not enough", K(length), K(err_msg_), K(ret));
     } else {}
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, msg_buf))) {
-      WARN_ICMD("fail to encode err packet", K(errcode), K(msg_buf), K(ret));
+      WDIAG_ICMD("fail to encode err packet", K(errcode), K(msg_buf), K(ret));
     } else {
       INFO_ICMD("succ to encode err packet", K(errcode), K(msg_buf));
     }
@@ -111,7 +111,7 @@ int ObKillGlobalSessionHandler::handle_kill_session_info()
   if (OB_SUCC(ret)) {
     int64_t affected_row = 0;
     if (OB_FAIL(encode_ok_packet(affected_row, capability_))) {
-      WARN_ICMD("fail to encode ok packet", K(ret));
+      WDIAG_ICMD("fail to encode ok packet", K(ret));
     }
   }
   return ret;
@@ -142,17 +142,17 @@ static int kill_global_session_info_cmd_callback(ObContinuation * cont, ObIntern
   ObKillGlobalSessionHandler *handler = NULL;
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObKillGlobalSessionHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObKillGlobalSessionHandler", K(ret));
+    EDIAG_ICMD("fail to new ObKillGlobalSessionHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObKillGlobalSessionHandler");
+    WDIAG_ICMD("fail to init for ObKillGlobalSessionHandler");
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(self_ethread().schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule handler", K(ret));
+      EDIAG_ICMD("fail to schedule handler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule handler");
@@ -170,7 +170,7 @@ int kill_global_session_info_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_KILL_GLOBAL_SESSION,
               &kill_global_session_info_cmd_callback))) {
-    WARN_ICMD("fail to register OBPROXY_T_ICMD_KILL_GLOBAL_SESSION CMD", K(ret));
+    WDIAG_ICMD("fail to register OBPROXY_T_ICMD_KILL_GLOBAL_SESSION CMD", K(ret));
   }
   return ret;
 }

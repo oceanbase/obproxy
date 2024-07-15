@@ -65,6 +65,10 @@ private:
   bool is_add_building_entry_succ_;
   bool kill_self_;
 
+public:
+  event::ObAction *batch_schedule_action_;
+  event::ObAction *batch_schedule_time_action_;
+
   DISALLOW_COPY_AND_ASSIGN(ObRoutineEntryCont);
 };
 

@@ -84,7 +84,7 @@ class ObMysqlServerSession : public event::ObVConnection
 public:
   ObMysqlServerSession()
       : event::ObVConnection(NULL), common_addr_(), local_ip_(), server_ip_(), auth_user_(),
-        server_sessid_(0), ss_id_(0), transact_count_(0), state_(MSS_INIT), compressed_seq_(0),
+        server_sessid_(0), ss_id_(0), transact_count_(0), state_(MSS_INIT), cur_compressed_seq_(0),
         server_trans_stat_(0), read_buffer_(NULL), is_from_pool_(false), is_pool_session_(false),
         has_global_session_lock_(false), create_time_(0), last_active_time_(0),
         timeout_event_(obutils::OB_TIMEOUT_UNKNOWN_EVENT), timeout_record_(0),
@@ -164,8 +164,8 @@ public:
     return request_id_;
   }
 
-  uint8_t get_compressed_seq() const { return compressed_seq_; }
-  void set_compressed_seq(const uint8_t compressed_seq) { compressed_seq_ = compressed_seq; }
+  uint8_t get_cur_compressed_seq() const { return cur_compressed_seq_; }
+  void set_cur_compressed_seq(const uint8_t compressed_seq) { cur_compressed_seq_ = compressed_seq; }
   obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() const { return timeout_event_;}
   ObHRTime get_timeout_record() const { return timeout_record_; }
   ObMysqlServerSessionHashKey get_server_session_hash_key() const
@@ -199,7 +199,8 @@ public:
   ObMSSState state_;
 
   uint32_t request_id_;
-  uint8_t compressed_seq_;
+  // current compressed_seq not the next
+  uint8_t cur_compressed_seq_;
 
   // Used to verify we are recording the server
   // transaction stat properly

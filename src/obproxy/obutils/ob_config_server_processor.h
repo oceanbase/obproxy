@@ -56,6 +56,7 @@ public:
   int get_newest_cluster_rs_list(const common::ObString &cluster_name,
                                  const int64_t cluster_id,
                                  common::ObIArray<common::ObAddr> &rs_list,
+                                 common::ObIArray<common::ObAddr> &rpc_rs_list,
                                  const bool need_update_dummy_entry = true);
   int swap_origin_web_rslist_and_build_sys(const ObString &cluster, const int64_t cluster_id, const bool need_save_rslist_hash);
 
@@ -66,10 +67,12 @@ public:
   //if succeed, copy its web rs list to rs list
   int get_cluster_rs_list(const common::ObString &cluster_name,
                           const int64_t cluster_id,
-                          common::ObIArray<common::ObAddr> &rs_list) const;
+                          common::ObIArray<common::ObAddr> &rs_list,
+                          common::ObIArray<common::ObAddr> &rpc_rs_list) const;
   bool has_slave_clusters(const common::ObString &cluster_name);
   int get_next_master_cluster_rslist(const common::ObString &cluster_name,
-                                     common::ObIArray<common::ObAddr> &rs_list);
+                                     common::ObIArray<common::ObAddr> &rs_list,
+                                     common::ObIArray<common::ObAddr> &rpc_rs_list);
   int get_master_cluster_id(const common::ObString &cluster_name, int64_t &cluster_id) const;
   int set_master_cluster_id(const common::ObString &cluster_name, int64_t cluster_id);
   int get_rs_list_hash(const common::ObString &cluster_name, const int64_t cluster_id, uint64_t &rs_list_hash) const;
@@ -129,14 +132,23 @@ public:
 
   static int do_repeat_task();
   static int do_ldg_repeat_task();
+  static int do_service_name_repeat_task();
   static void update_interval();
   static void update_ldg_interval();
+  static void update_service_name_interval();
   int refresh_config_server();
   ObAsyncCommonTask *get_refresh_cont() { return refresh_cont_; }
   ObAsyncCommonTask *get_refresh_ldg_cont() { return refresh_ldg_cont_; }
+  ObAsyncCommonTask *get_refresh_service_name_cont() { return refresh_service_name_cont_; }
   int get_ldg_primary_role_instance(const ObString &tenant_name,
                                     const ObString &cluster_name,
                                     ObProxyObInstance* &instance);
+  // 登录的时候，如果找不到service name，会尝试拉取ocp一次
+  int get_service_name_with_fetch(const ObString &service_name, ObServiceNameInstance* &instance);
+  int get_service_name_without_fetch(const ObString &service_name, ObServiceNameInstance* &instance);
+  // 批量更新所有的service name，如果传入参数不为空，只更新传入的service name
+  int refresh_service_name_info(const ObString service_name = ObString::make_string(""),
+                                const bool force_update = false);
 
   bool is_cluster_array_empty();
   typedef ObProxyLdgInfo::LdgClusterVersionPair LdgClusterVersionPair;
@@ -156,7 +168,8 @@ private:
   int init_proxy_kernel_release();
 
   int convert_root_addr_to_addr(const LocationList &web_rs_list,
-                                common::ObIArray<common::ObAddr> &rs_list) const;
+                                common::ObIArray<common::ObAddr> &rs_list,
+                                common::ObIArray<common::ObAddr> &rpc_rs_list) const;
 
   //1. fetch config string from config_server_url, if failed try to load config from local
   //2. convert config string to json format
@@ -168,6 +181,8 @@ private:
   int load_rslist_info_from_local();
   int dump_idc_list_info_to_local();
   int load_idc_list_info_from_local();
+  int dump_service_name_info_to_local();
+  int load_service_name_info_from_local();
 
   //add record header before write json config info and rslist to local file, so that
   //the two files  will be invalid if changed by mannual
@@ -202,6 +217,20 @@ private:
   int copy_cluster_info(ObIArray<LdgClusterVersionPair>& cluster_info_array, const ObString &login_cluster_name);
   int update_cluster_version(ObIArray<LdgClusterVersionPair>& cluster_info_array);
   int refresh_ldg_config_info(const ObString &login_cluster_name = ObString(NULL));
+  int refresh_binlog_server_host_ip_map();
+
+  int get_service_name(const ObString& service_name,
+                       ObIArray<ObServiceNameInstance::ServiceNameVersionPair> &service_name_array) const;
+  int request_service_name_info(ObServiceNameInfo &service_name_info,
+                                const char *service_name_url,
+                                const ObIArray<ObServiceNameInstance::ServiceNameVersionPair> &service_name_version_array,
+                                const int64_t start_index, const int64_t end_index,
+                                ObIArray<ObProxyConfigString> &delete_service_name_array);
+  int fetch_service_name_info(const char *tenant_info_url,
+                              ObServiceNameInfo &service_name_info,
+                              const ObIArray<ObServiceNameInstance::ServiceNameVersionPair> &service_name_version_array,
+                              ObIArray<ObProxyConfigString> &delete_service_name_array);
+  int get_cluster_resource_for_service_name();
 private:
   static const int64_t OBPROXY_MAX_JSON_INFO_SIZE = 64 * 1024; // 64K
   static const int16_t OB_PROXY_CONFIG_MAGIC = static_cast<int16_t>(0X4A43); // "JC",short for JsonConfig
@@ -220,13 +249,18 @@ private:
 
   ObAsyncCommonTask *refresh_cont_;
   ObAsyncCommonTask *refresh_ldg_cont_;
+  ObAsyncCommonTask *refresh_service_name_cont_;
 
   ObProxyJsonConfigInfo *json_config_info_;
   mutable obsys::CRWLock json_info_lock_;
   obutils::ObProxyConfig &proxy_config_;
   ObProxyKernelRelease kernel_release_;
   ObProxyLdgInfo *ldg_info_;
+  ObServiceNameInfo *service_name_info_;
+  uint64_t service_name_info_version_;
+  uint64_t disk_server_name_version_;
   mutable common::DRWLock ldg_info_lock_;
+  mutable common::DRWLock service_name_info_lock_;
 
   DISALLOW_COPY_AND_ASSIGN(ObConfigServerProcessor);
 };

@@ -686,10 +686,11 @@ inline int ObSocketManager::handle_ssl_error(int tmp_code)
       PROXY_NET_LOG(WDIAG, "the ssl peer has closed", K(ret));
       break;
     case SSL_ERROR_SYSCALL: {
-      unsigned long e = ERR_peek_error();
+      unsigned long e = ERR_get_error();
+      ret = common::OB_SSL_ERROR;
       if (e == 0) {
         ret = common::OB_SSL_ERROR;
-        PROXY_NET_LOG(WDIAG, "the ssl peer has closed", K(ret));
+        PROXY_NET_LOG(INFO, "the ssl peer has closed with no error", K(ret));
       } else {
         ret = ob_get_sys_errno();
         // Shouldn't have come here, be defensive
@@ -703,10 +704,10 @@ inline int ObSocketManager::handle_ssl_error(int tmp_code)
       break;
     }
     case SSL_ERROR_SSL: {
-      unsigned long e = ERR_peek_error();
+      unsigned long e = ERR_get_error();
       ret = common::OB_SSL_ERROR;
       if (e == 0) {
-        PROXY_NET_LOG(WDIAG, "the ssl peer has closed", K(ret));
+        PROXY_NET_LOG(INFO, "the ssl peer has closed with no error", K(ret));
       } else {
         char temp_buf[512];
         ERR_error_string_n(e, temp_buf, sizeof(temp_buf));

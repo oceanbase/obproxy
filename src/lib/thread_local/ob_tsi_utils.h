@@ -15,7 +15,6 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/syscall.h>
-#include <linux/futex.h>
 #include "lib/atomic/ob_atomic.h"
 #include "lib/ob_define.h"
 
@@ -23,21 +22,6 @@ namespace oceanbase
 {
 namespace common
 {
-#define futex(...) syscall(SYS_futex,__VA_ARGS__)
-inline int64_t futex_wake(volatile int *p, int val)
-{
-  return futex((int *)p, FUTEX_WAKE_PRIVATE, val, NULL, NULL, 0);
-}
-
-inline int futex_wait(volatile int *p, int val, const timespec *timeout)
-{
-  int ret = 0;
-  if (0 != futex((int *)p, FUTEX_WAIT_PRIVATE, val, timeout, NULL, 0)) {
-    ret = errno;
-  }
-  return ret;
-}
-
 volatile int64_t __next_tid __attribute__((weak));
 inline int64_t get_itid()
 {

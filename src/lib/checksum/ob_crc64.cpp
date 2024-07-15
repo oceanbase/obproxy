@@ -1136,4 +1136,3 @@ uint64_t crc64_sse42_dispatch(uint64_t crc, const char *buf, int64_t len)
 ObCRC64Func ob_crc64_sse42_func = &crc64_sse42_dispatch;
 }
 }
-

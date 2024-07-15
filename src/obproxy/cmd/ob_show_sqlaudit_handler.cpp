@@ -206,13 +206,13 @@ int ObSqlauditRecordQueue::init(const int64_t available_memory_size)
     DEBUG_ICMD("init twice", K(available_memory_size), K(ret));
   } else if (OB_UNLIKELY(available_memory_size <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument", K(available_memory_size), K(ret));
+    WDIAG_ICMD("invalid argument", K(available_memory_size), K(ret));
   } else if ((current_memory_size_ = ob_roundup(available_memory_size, MMAP_BLOCK_ALIGN)) <=  0) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("invalid current_memory_size", K(current_memory_size_), K(available_memory_size), K(MMAP_BLOCK_ALIGN));
+    WDIAG_ICMD("invalid current_memory_size", K(current_memory_size_), K(available_memory_size), K(MMAP_BLOCK_ALIGN));
   } else if (OB_ISNULL(sqlaudit_records_ = reinterpret_cast<ObSqlauditRecord *>(direct_malloc(current_memory_size_)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    WARN_ICMD("fail to direct_malloc", K(current_memory_size_), K(ret));
+    WDIAG_ICMD("fail to direct_malloc", K(current_memory_size_), K(ret));
   } else {
     current_records_list_len_ = current_memory_size_ / sizeof(ObSqlauditRecord);
     audit_id_ = 0;
@@ -274,7 +274,7 @@ int ObSqlauditProcessor::release(ObSqlauditRecordQueue *queue)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(queue)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("queue is null", K(queue), K(ret));
+    WDIAG_ICMD("queue is null", K(queue), K(ret));
   } else {
     (void)(queue->refcount_dec());
   }
@@ -288,10 +288,10 @@ int ObSqlauditProcessor::init_sqlaudit_record_queue(int64_t sqlaudit_mem_limited
   if (sqlaudit_mem_limited > 0) {
     if (OB_ISNULL(queue = new (std::nothrow) ObSqlauditRecordQueue())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      WARN_ICMD("fail to new ObSqlauditRecordQueue", K(ret));
+      WDIAG_ICMD("fail to new ObSqlauditRecordQueue", K(ret));
     } else if (OB_FAIL(queue->init(sqlaudit_mem_limited))) {
       delete queue;
-      WARN_ICMD("fail to init ObSqlauditRecordQueue", K(ret));
+      WDIAG_ICMD("fail to init ObSqlauditRecordQueue", K(ret));
     } else {
       obsys::CWLockGuard lock(queue_lock_);
       sqlaudit_record_queue_ = queue;
@@ -315,7 +315,7 @@ bool ObSqlauditProcessor::set_status(ObSqlauditProcessorStatus status)
     status_ = status;
     if (STOPPING == status) {
       if (OB_UNLIKELY(NULL != sqlaudit_record_queue_last_)) {
-        ERROR_ICMD("sqlaudit_record_queue_last_ is not NULL, maybe memory leak", KP(sqlaudit_record_queue_last_));
+        EDIAG_ICMD("sqlaudit_record_queue_last_ is not NULL, maybe memory leak", KP(sqlaudit_record_queue_last_));
       }
       sqlaudit_record_queue_last_ = sqlaudit_record_queue_;
       sqlaudit_record_queue_last_memory_size_ = sqlaudit_record_queue_->get_current_memory_size();
@@ -448,9 +448,9 @@ int ObShowSqlauditHandler::handle_show_sqlaudit(int event, ObEvent *e)
 
     if (OB_UNLIKELY(!is_argument_valid(event, e))) {
       ret = OB_INVALID_ARGUMENT;
-      WARN_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
+      WDIAG_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
     } else if (OB_FAIL(dump_header())) {
-      WARN_ICMD("fail to dump_threads_header", K(ret));
+      WDIAG_ICMD("fail to dump_threads_header", K(ret));
     } else {
       switch (sub_cmd_type_) {
         case OBPROXY_T_SUB_SQLAUDIT_AUDIT_ID:
@@ -459,7 +459,7 @@ int ObShowSqlauditHandler::handle_show_sqlaudit(int event, ObEvent *e)
           } else if (OB_ISNULL(it = new (std::nothrow) ObSqlauditRecordQueue::Iterator(
               *record_queue, audit_id_offset_, audit_id_limit_))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            WARN_ICMD("fail to new ObSqlauditRecordQueue:Iterator", K(ret));
+            WDIAG_ICMD("fail to new ObSqlauditRecordQueue:Iterator", K(ret));
           }
           break;
 
@@ -468,20 +468,20 @@ int ObShowSqlauditHandler::handle_show_sqlaudit(int event, ObEvent *e)
             sqlaudit_argument_valid = false;
           } else if (OB_ISNULL(it = new (std::nothrow) ObSqlauditRecordQueue::Iterator(*record_queue, sm_id_))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            WARN_ICMD("fail to new ObSqlauditRecordQueue:Iterator", K(ret));
+            WDIAG_ICMD("fail to new ObSqlauditRecordQueue:Iterator", K(ret));
           }
           break;
 
         default:
           ret = OB_INVALID_ARGUMENT;
-          WARN_ICMD("invalid sub_stat_type", K(sub_cmd_type_), K(ret));
+          WDIAG_ICMD("invalid sub_stat_type", K(sub_cmd_type_), K(ret));
           break;
       }
 
       if (sqlaudit_argument_valid && OB_SUCC(ret)) {
         while ((NULL != (record = it->next())) && OB_SUCC(ret)) {
-          if (match_like(record->sql_, like_name_) && OB_FAIL(dump_sqlaudit_record(*record))) {
-            WARN_ICMD("fail to dump_sqlaudit_record");
+          if (common::match_like(record->sql_, like_name_) && OB_FAIL(dump_sqlaudit_record(*record))) {
+            WDIAG_ICMD("fail to dump_sqlaudit_record");
           }
         }
       }
@@ -492,15 +492,15 @@ int ObShowSqlauditHandler::handle_show_sqlaudit(int event, ObEvent *e)
     if (OB_SUCC(ret)) {
       if (!sqlaudit_argument_valid) {
         if (OB_FAIL(encode_err_packet(OB_ERR_OPERATOR_UNKNOWN))) {
-          WARN_ICMD("fail to encode err packet", K(ret));
+          WDIAG_ICMD("fail to encode err packet", K(ret));
         }
       } else if (it->is_overlap()) {
         if (OB_FAIL(encode_err_packet(OB_BUF_NOT_ENOUGH))) {
-          WARN_ICMD("fail to encode err packet", K(ret));
+          WDIAG_ICMD("fail to encode err packet", K(ret));
         }
       } else {
         if (OB_FAIL(encode_eof_packet())) {
-          WARN_ICMD("fail to encode eof packet", K(ret));
+          WDIAG_ICMD("fail to encode eof packet", K(ret));
         }
       }
     }
@@ -526,7 +526,7 @@ int ObShowSqlauditHandler::dump_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(SSA_COLUMN_ARRAY, OB_SSA_MAX_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -578,7 +578,7 @@ int ObShowSqlauditHandler::dump_sqlaudit_record(ObSqlauditRecord &record)
   row.cells_ = cells;
   row.count_ = OB_SSA_MAX_COLUMN_ID;
   if (OB_FAIL(encode_row_packet(row))) {
-    WARN_ICMD("fail to encode row packet", K(row), K(ret));
+    WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
   } else {
     DEBUG_ICMD("succ to encode row packet", K(row), K(record.audit_id_));
   }
@@ -594,18 +594,18 @@ static int show_sqlaudit_callback(ObContinuation *cont, ObInternalCmdInfo &info,
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new (std::nothrow) ObShowSqlauditHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    WARN_ICMD("fail to new ObShowSqlauditHandler", K(ret));
+    WDIAG_ICMD("fail to new ObShowSqlauditHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowSqlauditHandler");
+    WDIAG_ICMD("fail to init for ObShowSqlauditHandler");
   } else {
     SET_CONTINUATION_HANDLER(handler, &ObShowSqlauditHandler::handle_show_sqlaudit);
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      WARN_ICMD("fail to schedule ObShowSqlauditHandler", K(ret));
+      WDIAG_ICMD("fail to schedule ObShowSqlauditHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObShowSqlauditHandler");
@@ -624,7 +624,7 @@ int show_sqlaudit_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_SQLAUDIT,
                                                                &show_sqlaudit_callback))) {
-    WARN_ICMD("fail to register CMD_TYPE_SQLAUDIT", K(ret));
+    WDIAG_ICMD("fail to register CMD_TYPE_SQLAUDIT", K(ret));
   }
   return ret;
 }

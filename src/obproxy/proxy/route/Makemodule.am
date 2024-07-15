@@ -9,6 +9,12 @@ obproxy/proxy/route/ob_partition_entry.h\
 obproxy/proxy/route/ob_partition_entry.cpp\
 obproxy/proxy/route/ob_partition_cache.h\
 obproxy/proxy/route/ob_partition_cache.cpp\
+obproxy/proxy/route/ob_index_entry.h\
+obproxy/proxy/route/ob_index_entry.cpp\
+obproxy/proxy/route/ob_index_cache.h\
+obproxy/proxy/route/ob_index_cache.cpp\
+obproxy/proxy/route/ob_index_processor.h\
+obproxy/proxy/route/ob_index_processor.cpp\
 obproxy/proxy/route/ob_table_processor.h\
 obproxy/proxy/route/ob_table_processor.cpp\
 obproxy/proxy/route/ob_route_struct.h\

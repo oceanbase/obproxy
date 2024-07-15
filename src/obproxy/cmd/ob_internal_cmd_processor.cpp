@@ -74,10 +74,10 @@ int ObInternalCmdProcessor::init(ObProxyReloadConfig *reload_config)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
-    WARN_ICMD("it has been already inited", K(is_inited_), K(ret));
+    WDIAG_ICMD("it has been already inited", K(is_inited_), K(ret));
   } else if (OB_ISNULL(reload_config)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument", K(reload_config), K(ret));
+    WDIAG_ICMD("invalid argument", K(reload_config), K(ret));
   } else {
     reload_config_ = reload_config;
     is_inited_ = true;
@@ -96,7 +96,7 @@ int ObInternalCmdProcessor::execute_cmd(ObContinuation *cont, ObInternalCmdInfo 
   ObString table_name;
   if (OB_UNLIKELY(!info.is_internal_cmd())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("invalid cmd type", K(type), K(ret));
+    WDIAG_ICMD("invalid cmd type", K(type), K(ret));
   } else if (NULL == sm) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("sm is null unexpected", K(ret));
@@ -112,25 +112,25 @@ int ObInternalCmdProcessor::execute_cmd(ObContinuation *cont, ObInternalCmdInfo 
     // Take the new configuration parsing framework
     DEBUG_ICMD("begin to handle table", K(table_name));
     if (OB_FAIL(ObConfigV2Handler::config_v2_cmd_callback(cont, info, buf, action))) {
-      WARN_ICMD("fail to call config_v2_cmd_callback", K(ret));
+      WDIAG_ICMD("fail to call config_v2_cmd_callback", K(ret));
     } else if (OB_ISNULL(action)) {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("action is still null, it should not happend", K(ret));
+      WDIAG_ICMD("action is still null, it should not happend", K(ret));
     }
   } else if (OB_ISNULL(cmd_table_[type].func_)) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("func is null, it should not happend", K(type), K(ret));
+    WDIAG_ICMD("func is null, it should not happend", K(type), K(ret));
   } else if (OB_FAIL((*(cmd_table_[type].func_))(cont, info, buf, action))) {
-    WARN_ICMD("fail to call ObInternalCmdCallbackFunc", K(type), K(ret));
+    WDIAG_ICMD("fail to call ObInternalCmdCallbackFunc", K(type), K(ret));
   } else if (OB_ISNULL(action)) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("action is still null, it should not happened", K(type), K(ret));
+    WDIAG_ICMD("action is still null, it should not happened", K(type), K(ret));
   } else {
     DEBUG_ICMD("succ to invoke registered func", K(type), K(info));
   }
 
   if (OB_FAIL(ret) && OB_UNLIKELY(NULL != action)) {
-    WARN_ICMD("action is not null, but ret is fail, it should not happened", K(type), K(ret));
+    WDIAG_ICMD("action is not null, but ret is fail, it should not happened", K(type), K(ret));
     action = NULL;
   }
 
@@ -143,15 +143,15 @@ int ObInternalCmdProcessor::register_cmd(const ObProxyBasicStmtType type, ObInte
   if (OB_ISNULL(func) || (!skip_type_check &&
       (OB_UNLIKELY(type <= OBPROXY_T_INVALID) || OB_UNLIKELY(type >= OBPROXY_T_ICMD_MAX)))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid func which is NULL", K(type), K(ret));
+    WDIAG_ICMD("invalid func which is NULL", K(type), K(ret));
   } else if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
-    WARN_ICMD("it has not inited", K(ret));
+    WDIAG_ICMD("it has not inited", K(ret));
   } else {
     ObCmdTableInfo &cmd_table = cmd_table_[type];
     if (OB_UNLIKELY(NULL != cmd_table.func_)) {
       ret = OB_INIT_TWICE;
-      WARN_ICMD("cmd_table has already been registered", K(cmd_table), K(ret));
+      WDIAG_ICMD("cmd_table has already been registered", K(cmd_table), K(ret));
     } else {
       cmd_table.type_ = type;
       cmd_table.func_ = func;

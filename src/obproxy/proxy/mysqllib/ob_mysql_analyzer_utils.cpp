@@ -31,43 +31,9 @@ namespace obproxy
 {
 namespace proxy
 {
-ObCmpHeaderParam::ObCmpHeaderParam(const ObCmpHeaderParam &param) {
-  compressed_seq_ = param.compressed_seq_;
-  compression_level_ = param.compression_level_;
-  is_checksum_on_ = param.is_checksum_on_;
-  protocol_diagnosis_ = NULL;
-  INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
-}
-
-ObCmpHeaderParam &ObCmpHeaderParam::operator=(const ObCmpHeaderParam &param) {
-  if (this != &param) {
-    compressed_seq_ = param.compressed_seq_;
-    compression_level_ = param.compression_level_;
-    is_checksum_on_ = param.is_checksum_on_;
-    INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
-  }
-  return *this;
-}
-
-ObCmpHeaderParam::~ObCmpHeaderParam() {
-  DEC_SHARED_REF(protocol_diagnosis_);
-}
-
-ObProtocolDiagnosis *&ObCmpHeaderParam::get_protocol_diagnosis_ref() {
-return protocol_diagnosis_;
-}
-
-ObProtocolDiagnosis *ObCmpHeaderParam::get_protocol_diagnosis() {
-  return protocol_diagnosis_;
-}
-
-const ObProtocolDiagnosis *ObCmpHeaderParam::get_protocol_diagnosis() const{
-  return protocol_diagnosis_;
-}
-
 int ObMysqlAnalyzerUtils::analyze_one_compressed_packet(
     ObIOBufferReader &reader,
-    ObMysqlCompressedAnalyzeResult &result)
+    ObAnalyzeHeaderResult &result)
 {
   int ret = OB_SUCCESS;
   int64_t len = reader.read_avail();
@@ -91,12 +57,11 @@ int ObMysqlAnalyzerUtils::analyze_one_compressed_packet(
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(analyze_compressed_packet_header(buf_start, MYSQL_COMPRESSED_HEALDER_LENGTH, result.header_))) {
+      if (OB_FAIL(analyze_compressed_packet_header(buf_start, MYSQL_COMPRESSED_HEALDER_LENGTH, result.compressed_mysql_header_))) {
         LOG_WDIAG("fail to analyze compressed packet header", K(ret));
       } else {
-        if (len >= (result.header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH)) {
+        if (len >= (result.compressed_mysql_header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH)) {
           result.status_ = ANALYZE_DONE;
-          result.is_checksum_on_ = result.header_.is_compressed_payload();
           LOG_DEBUG("analyze one compressed packet succ", "data len", len, K(result));
         }
       }
@@ -189,10 +154,10 @@ int ObMysqlAnalyzerUtils::consume_and_normal_compress_data(
     ObIOBufferReader *reader,
     ObMIOBuffer *write_buf,
     const int64_t data_len,
-    ObCmpHeaderParam &param)
+    ObCompressedHeaderParam &param)
 {
   int ret = OB_SUCCESS;
-  uint8_t &compressed_seq = param.get_compressed_seq();
+  uint8_t compressed_seq = param.get_compressed_seq();
   const bool is_checksum_on = param.is_checksum_on();
   const int64_t compression_level = param.get_compression_level();
   char *mio_hdr_buf_start = NULL;
@@ -222,6 +187,8 @@ int ObMysqlAnalyzerUtils::consume_and_normal_compress_data(
     }
     LOG_DEBUG("build mysql compress packet succ", "origin len", data_len, K(total_compressed_len),
               K(total_uncompressed_len), K(compressed_seq), K(is_checksum_on));
+    ++compressed_seq;
+    param.set_compressed_seq(compressed_seq);
   }
 
   return ret;
@@ -333,10 +300,10 @@ int ObMysqlAnalyzerUtils::consume_and_fast_compress_data(
     ObIOBufferReader *reader,
     ObMIOBuffer *write_buf,
     const int64_t data_len,
-    ObCmpHeaderParam &param)
+    ObCompressedHeaderParam &param)
 {
   int ret = OB_SUCCESS;
-  uint8_t &compressed_seq = param.get_compressed_seq();
+  uint8_t compressed_seq = param.get_compressed_seq();
   ObProtocolDiagnosis *protocol_diagnosis = param.get_protocol_diagnosis();
 
   if (OB_ISNULL(reader) || OB_ISNULL(write_buf) || data_len > reader->read_avail()) {
@@ -392,10 +359,7 @@ int ObMysqlAnalyzerUtils::consume_and_fast_compress_data(
         }
       }
     }
-
-    if (OB_SUCC(ret)) {
-      --compressed_seq;
-    }
+    param.set_compressed_seq(compressed_seq);
   }
   return ret;
 }
@@ -448,11 +412,11 @@ int ObMysqlAnalyzerUtils::consume_and_compress_data(
     ObIOBufferReader *reader,
     ObMIOBuffer *write_buf,
     const int64_t data_len,
-    ObCmpHeaderParam &param)
+    ObCompressedHeaderParam &param)
 {
   int ret = OB_SUCCESS;
   if (0 == param.get_compression_level() && param.is_checksum_on()) {
-    LOG_DEBUG("[obmysqlanalyzerutils::consume_and_compress_data] do fast compress", K(param));
+    LOG_DEBUG("[ObMysqlAnalyzerUtils::consume_and_compress_data] do fast compress", K(param));
     ret = consume_and_fast_compress_data(reader, write_buf, data_len, param);
   } else {
     LOG_DEBUG("[ObMysqlAnalyzerUtils::consume_and_compress_data] do normal compress", K(param));

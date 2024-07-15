@@ -38,6 +38,7 @@ class ObTableEntryName;
 class ObTableEntry;
 class ObRoutineEntry;
 class ObPartitionEntry;
+class ObTableGroupEntry;
 class ObRouteUtils
 {
 public:
@@ -72,15 +73,23 @@ public:
                                    const obutils::LocationList &rs_list,
                                    const bool is_rslist,
                                    ObTableEntry *&entry);
+  //static int build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
+  //                                         const int64_t cluster_id,
+  //                                         const common::ObIArray<common::ObAddr> &addr_list,
+  //                                         const bool is_rslist);
   static int build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
                                            const int64_t cluster_id,
                                            const common::ObIArray<common::ObAddr> &addr_list,
+                                           const common::ObIArray<common::ObAddr> &rpc_addr_list,
                                            const bool is_rslist);
   static int build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
                                            const int64_t cluster_id,
                                            const obutils::LocationList &location_list,
                                            const bool is_rslist);
+  //static int convert_addrs_to_locations(const common::ObIArray<common::ObAddr> &addr_list,
+  //                                      obutils::LocationList &location_list);
   static int convert_addrs_to_locations(const common::ObIArray<common::ObAddr> &addr_list,
+                                        const common::ObIArray<common::ObAddr> &rpc_addr_list,
                                         obutils::LocationList &location_list);
 
   static int convert_route_param_to_table_param(const ObRouteParam &route_param,
@@ -94,9 +103,19 @@ public:
                                      bool is_need_force_flush,
                                      const int64_t cluster_version);
 
+  static int get_batch_partition_entry_sql(char *sql_buf, const int64_t buf_len,
+                                           const ObTableEntryName &name, const common::ObIArray<uint64_t> &partition_ids,
+                                           bool is_need_force_flush,
+                                           const int64_t cluster_version);
+
   static int fetch_one_partition_entry_info(obproxy::ObResultSetFetcher &rs_fetcher,
                                             ObTableEntry &table_entry,
                                             ObPartitionEntry *&entry,
+                                            const int64_t cluster_version);
+  static int fetch_more_partition_entrys_info(obproxy::ObResultSetFetcher &rs_fetcher,
+                                            ObTableEntry &table_entry,
+                                            // ObPartitionEntry *&entry,
+                                            common::ObIArray<ObPartitionEntry *> &entry_array,
                                             const int64_t cluster_version);
   static int get_routine_entry_sql(char *sql_buf, const int64_t buf_len,
                                    const ObTableEntryName &name,
@@ -108,6 +127,19 @@ public:
                                           const int64_t cr_id,
                                           ObRoutineEntry *&entry,
                                           const int64_t cluster_version);
+
+  static int get_tablegroup_entry_sql(char *sql_buf,
+                                      const int64_t buf_len,
+                                      int64_t tenant_id,
+                                      const ObString &tablegroup_name,
+                                      const ObString &database_name,
+                                      const int64_t cluster_version);
+
+  static int fetch_one_tablegroup_entry_info(obproxy::ObResultSetFetcher &rs_fetcher,
+                                            const int64_t cr_version,
+                                            const int64_t cr_id,
+                                            ObTableGroupEntry *&entry,
+                                            const int64_t cluster_version);
 
 private:
   static int fetch_part_key(obproxy::ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info,

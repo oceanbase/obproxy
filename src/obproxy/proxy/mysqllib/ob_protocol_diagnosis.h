@@ -82,8 +82,7 @@ namespace obproxy
 {
 namespace proxy
 {
-class ObMysqlPacketMetaAnalyzer;
-class ObRespResult;
+class ObRespPacketAnalyzeResult;
 enum ObPacketFoldType {
   OB_PACKET_FOLD_TYPE_NONE,
   OB_PACKET_FOLD_TYPE_ROW,
@@ -153,7 +152,7 @@ struct ObMysqlPacketRecord // 5 bytes
   ObPacketFoldType fold_type_;
 
   // fold the consecutive col_def and row into one record
-  static ObPacketFoldType get_fold_type(const ObRespResult &result);
+  static ObPacketFoldType get_fold_type(const ObRespPacketAnalyzeResult &result);
 };
 struct ObCompressedMysqlPacketRecord	// 7 bytes
 {

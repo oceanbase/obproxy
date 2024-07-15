@@ -43,19 +43,23 @@ namespace omt
 class ObResourceUnitTableProcessor
 {
 public:
-  ObResourceUnitTableProcessor() : is_inited_(false) {}
+  ObResourceUnitTableProcessor() : is_inited_(false), name_type_(0) {}
   virtual ~ObResourceUnitTableProcessor() {}
   static int execute(void* args);
   static int commit(void* args, bool is_success);
   int init();
   static int get_config_params(void* args, common::ObString& cluster_str, common::ObString& tenant_str,
       common::ObString& name_str, common::ObString& value_str, ObProxyBasicStmtType& stmt_type);
-  int handle_replace_config(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& name_str, common::ObString& value_str);
-  int handle_delete_config(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& name_str);
+  int handle_replace_config(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& name_str, common::ObString& value_str, const bool need_to_backup);
+  int handle_delete_config(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& name_str, const bool need_to_backup);
   TO_STRING_KV(K_(is_inited));
+  uint8_t get_name_type() { return name_type_; }
+  void reset_name_type() { name_type_ = 0; }
 
 private:
   bool is_inited_;
+  // 表示sql中插入了哪些name的种类。第1个bit表示conn_name,第二个bit表示cpu_name
+  uint8_t name_type_;
   DISALLOW_COPY_AND_ASSIGN(ObResourceUnitTableProcessor);
 };
 

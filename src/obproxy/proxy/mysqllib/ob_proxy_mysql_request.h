@@ -128,8 +128,8 @@ public:
   inline void borrow_req_buf(char *&req_buf, int64_t &req_buf_len_);
   common::ObIAllocator &get_param_allocator() { return allocator_; }
 
-  void set_enable_internal_kill_connection(const bool enable_internal_kill) { enable_internal_kill_connection_ = enable_internal_kill; }
-  bool is_enable_internal_kill_connection() const { return enable_internal_kill_connection_; }
+  void set_enable_server_kill_connection(const bool enable_server_kill_connection) { enable_server_kill_connection_ = enable_server_kill_connection; }
+  bool is_enable_server_kill_connection() const { return enable_server_kill_connection_; }
 
   ObInternalCmdInfo *cmd_info_;
   ObProxyKillQueryInfo *query_info_;
@@ -154,7 +154,7 @@ private:
   bool is_large_request_;
   bool enable_analyze_internal_cmd_;//indicate whether need analyze internal cmd
   bool is_mysql_req_in_ob20_payload_; // whether the mysql req is in ob20 protocol req payload
-  bool enable_internal_kill_connection_; // whether internal handle OBPROXY_T_SUB_KILL_CONNECTION
+  bool enable_server_kill_connection_; // whether server handle OBPROXY_T_SUB_KILL_CONNECTION
 
   common::ObArenaAllocator allocator_;
   char sql_id_buf_[common::OB_MAX_SQL_ID_LENGTH + 1];
@@ -327,7 +327,9 @@ inline common::ObString ObProxyMysqlRequest::get_sql()
         PROXY_LOG(EDIAG, "failed to get length", K(ret));
       } else if (query_len > 0) {
         int64_t copy_len = std::min(static_cast<int64_t>(query_len), req_buf_len_ - PARSE_EXTRA_CHAR_NUM);
-        if (OB_ISNULL(req_buf_for_prepare_execute_) || OB_UNLIKELY(req_buf_for_prepare_execute_len_ != req_buf_len_)) {
+        if (OB_ISNULL(req_buf_for_prepare_execute_) 
+            || req_buf_for_prepare_execute_len_ < req_buf_len_ 
+            || req_buf_for_prepare_execute_len_ > req_buf_len_ * 2) {
           if (OB_FAIL(alloc_prepare_execute_request_buf(req_buf_len_))) {
             PROXY_LOG(EDIAG, "fail to alloc buf", K_(req_buf_len), K(ret));
           } else {

@@ -52,6 +52,8 @@ obproxy/obutils/ob_session_pool_processor.h\
 obproxy/obutils/ob_session_pool_processor.cpp\
 obproxy/obutils/ob_hot_upgrade_processor.h\
 obproxy/obutils/ob_hot_upgrade_processor.cpp\
+obproxy/obutils/ob_hostname_ip_processor.h\
+obproxy/obutils/ob_hostname_ip_processor.cpp\
 obproxy/obutils/ob_congestion_entry.cpp\
 obproxy/obutils/ob_congestion_entry.h\
 obproxy/obutils/ob_congestion_manager.cpp\

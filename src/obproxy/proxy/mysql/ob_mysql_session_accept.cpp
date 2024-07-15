@@ -39,7 +39,9 @@ int ObMysqlSessionAccept::accept(ObNetVConnection *netvc, ObMIOBuffer *iobuf, Ob
     ObMysqlClientSession *new_session = op_reclaim_alloc(ObMysqlClientSession);
     if (OB_ISNULL(new_session)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObMysqlClientSession", K(ret));
+      // there is no client session, must close client_vc here
+      netvc->do_io_close();
+      PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObMysqlClientSession, close client vc", K(ret));
     } else {
       if (OB_FAIL(new_session->new_connection(netvc, iobuf, reader))) {
         PROXY_NET_LOG(EDIAG, "fail to new_connection", K(ret));

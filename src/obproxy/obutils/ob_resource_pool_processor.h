@@ -230,6 +230,27 @@ public:
   LINK(ObLocationTenantInfo, cr_link_);
 };
 
+class ObTenantSingleLeaderInfo
+{
+public:
+  void set_tenant_name(const common::ObString &tenant_name);
+  inline void set_leader_addr(const net::ObIpEndpoint &leader_addr) { leader_addr_ = leader_addr; }
+  int64_t to_string(char *buf, const int64_t buf_len) const
+  {
+    int64_t pos = 0;
+    J_OBJ_START();
+    J_KV(K_(tenant_name), K_(leader_addr));
+    J_OBJ_END();
+    return pos;
+  }
+public:
+  common::ObString tenant_name_;
+  net::ObIpEndpoint leader_addr_;
+  LINK(ObTenantSingleLeaderInfo, single_leader_);
+private:
+  char tenant_name_str_[OB_MAX_TENANT_NAME_LENGTH];
+};
+
 class ObProxyConfig;
 class ObResourcePoolConfig;
 class ObClusterResource : public common::ObSharedRefCount
@@ -242,7 +263,8 @@ public:
       version_(0), fetch_rslist_task_count_(0), fetch_idc_list_task_count_(0),
       last_idc_list_refresh_time_ns_(0), last_rslist_refresh_time_ns_(0),
       pending_list_(), cluster_version_(0), alive_addr_set_(), is_inited_(false), cr_state_(CR_BORN), sys_ldg_info_map_(),
-      sys_ldg_info_lock_(), location_tenant_info_lock_(), location_tenant_info_map_() {}
+      sys_ldg_info_lock_(), location_tenant_info_lock_(), location_tenant_info_map_(),
+      single_leader_info_lock_(), single_leader_info_map_(), single_leader_map_version_(0) {}
   virtual ~ObClusterResource() {}
   virtual void free();
   bool is_congestion_avail() { return congestion_manager_.is_congestion_avail(); }
@@ -324,6 +346,13 @@ public:
   uint64_t get_location_tenant_version(const ObString& tenant_name);
   int get_location_tenant_info(const ObString &tenant_name, ObLocationTenantInfo *&info_out);
   void destroy_location_tenant_info();
+  int update_single_leader_info(const common::ObString &tenant_name,
+                                const net::ObIpEndpoint &leader_addr);
+  int remove_single_leader_info(const common::ObString &tenant_name);
+  int get_single_leader_info(const common::ObString &tenant_name, net::ObIpEndpoint &addr);
+  OB_INLINE int64_t get_single_leader_map_version() { return single_leader_map_version_; };
+  bool tenant_has_single_leader(const common::ObString &tenant_name);
+  void destory_single_leader_info_map();
 
 private:
   int set_cluster_info(const common::ObString &cluster_name, const int64_t cluster_id);
@@ -342,6 +371,17 @@ private:
   static const int64_t LTI_HASH_BUCKET_SIZE = 10;
   typedef common::hash::ObBuildInHashMap<ObLocationTenantInfoHashing, LTI_HASH_BUCKET_SIZE> ObLocationTenantInfoHashMap;
 
+private:
+  struct ObTenantSingleLeaderInfoHashing
+  {
+    typedef const ObString &Key; // tenant_name
+    typedef ObTenantSingleLeaderInfo Value;
+    typedef ObDLList(ObTenantSingleLeaderInfo, single_leader_) ListHead;
+    static uint64_t hash(Key key) { return key.hash(); }
+    static Key key(Value *value) { return value->tenant_name_; }
+    static bool equal(Key lhs, Key rhs) { return (lhs == rhs); }
+  };
+  typedef common::hash::ObBuildInHashMap<ObTenantSingleLeaderInfoHashing> ObTenantSingleLeaderInfoMap;
 public:
   static const int64_t OP_LOCAL_NUM = 16;
   static const uint64_t MAX_SERVER_STATE_INFO_ARRAY_SIZE = 2;
@@ -381,6 +421,10 @@ private:
   mutable common::DRWLock sys_ldg_info_lock_;
   common::DRWLock location_tenant_info_lock_;
   ObLocationTenantInfoHashMap location_tenant_info_map_;
+
+  common::DRWLock single_leader_info_lock_;
+  ObTenantSingleLeaderInfoMap single_leader_info_map_;
+  int64_t single_leader_map_version_;
 
   DISALLOW_COPY_AND_ASSIGN(ObClusterResource);
 };

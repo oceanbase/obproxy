@@ -12,6 +12,7 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysql/ob_mysql_session_manager.h"
+#include "proxy/mysql/ob_mysql_client_session.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -90,6 +91,38 @@ ObMysqlServerSession *ObServerSessionPool::get_server_session(const int64_t inde
   }
 
   return ss_ret;
+}
+
+ObMysqlServerSession* ObServerSessionPool::acquire_lock_server_session()
+{
+  ObMysqlServerSession *ss_ret = NULL;
+  IPHashTable::iterator last = ip_pool_.end();
+  bool found = false;
+  for (IPHashTable::iterator spot = ip_pool_.begin(); !found && spot != last; ++spot) {
+    if (spot->get_session_info().is_lock_session()) {
+      ss_ret = &(*spot);
+      found = true;
+    }
+  }
+  return ss_ret;
+}
+
+int ObServerSessionPool::remove_server_session(ObMysqlServerSession* server_session)
+{
+  int ret  = OB_SUCCESS;
+
+  if (OB_ISNULL(server_session)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_EDIAG("invalid input server_session", K(ret));
+  } else if (OB_UNLIKELY(server_session !=
+             ip_pool_.get(server_session->get_server_session_hash_key()))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("invalid server session in pool", K(ret));
+  } else {
+    ip_pool_.remove(server_session);
+  }
+
+  return ret;
 }
 
 int ObServerSessionPool::release_session(ObMysqlServerSession &ss)
@@ -172,6 +205,8 @@ int ObServerSessionPool::acquire_random_session(ObMysqlServerSession *&server_se
 int ObServerSessionPool::event_handler(int event, void *data)
 {
   int ret = OB_SUCCESS;
+  int64_t server_session_err_code = OB_SUCCESS;
+
   ObNetVConnection *net_vc = NULL;
   ObMysqlServerSession *ss = NULL;
   if (OB_ISNULL(data)) {
@@ -214,7 +249,13 @@ int ObServerSessionPool::event_handler(int event, void *data)
       found = true;
       LOG_DEBUG("[session_pool] session received io notice ",
           K(event), "ss_id", ss->ss_id_, K(ss));
-      if (OB_LIKELY(MSS_KA_SHARED == ss->state_)) {
+      
+      if (OB_UNLIKELY(ss->get_session_info().is_sharding_txn_session())) {
+        // close by client session, do nothing here
+        server_session_err_code = OB_PROXY_SHARD_TXN_SESSION_CLOSE;
+      } else if (OB_UNLIKELY(ss->get_session_info().is_lock_session())) {
+        server_session_err_code = OB_LOCK_SESSION_CLOSED_ERROR;
+      } else if (OB_LIKELY(MSS_KA_SHARED == ss->state_)) {
         // Out of the pool! Now!
         if (OB_ISNULL(ip_pool_.remove(hash_key))) {
           //impossible happen here
@@ -237,6 +278,14 @@ int ObServerSessionPool::event_handler(int event, void *data)
   if (0 == ip_pool_.count() && is_delete_when_empty_ && NULL != session_manager_) {
     session_manager_->get_session_pool_hash().remove(hash_key_);
     destroy();
+  }
+  
+  if (OB_FAIL(server_session_err_code)) {
+    ss->get_client_session()->set_closed_key_server_session(ss);
+    if (OB_FAIL(ss->get_client_session()->async_disconnect_by_internal_reason(server_session_err_code))) {
+      LOG_WDIAG("fail to close client session", "client session", ss->get_client_session(), K(ret));
+    }
+    LOG_DEBUG("client session close because of a key server session close");
   }
 
   return VC_EVENT_NONE;

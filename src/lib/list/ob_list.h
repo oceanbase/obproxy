@@ -19,6 +19,7 @@
 #include <new>
 #include "lib/hash/ob_hashutils.h"
 #include "lib/utility/ob_print_utils.h"
+#include "lib/allocator/ob_mod_define.h"
 namespace oceanbase
 {
 namespace common
@@ -264,6 +265,7 @@ public:
   {
     root_.next = root_;
     root_.prev = root_;
+    allocator_.set_mod_id(ObModIds::OB_LIST);
   };
   ~ObList()
   {
@@ -305,6 +307,24 @@ public:
     }
     return ret;
   };
+
+  int pop_back(value_type &value)
+  {
+    int ret = common::OB_SUCCESS;
+    if (0 >= size_) {
+      ret = common::OB_ENTRY_NOT_EXIST;
+    } else {
+      node_ptr_t tmp = root_.prev;
+      root_.prev = tmp->prev;
+      tmp->prev->next = root_;
+      value = tmp->data;
+      allocator_.free(tmp);
+      tmp = NULL;
+      size_--;
+    }
+    return ret;
+  }
+
   int pop_back()
   {
     int ret = common::OB_SUCCESS;
@@ -314,7 +334,7 @@ public:
       node_ptr_t tmp = root_.prev;
       root_.prev = tmp->prev;
       tmp->prev->next = root_;
-      allocator_.deallocate(tmp);
+      allocator_.free(tmp);
       size_--;
     }
     return ret;

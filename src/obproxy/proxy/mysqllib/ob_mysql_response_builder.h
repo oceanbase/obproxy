@@ -91,6 +91,11 @@ public:
                                             ObProxyMysqlRequest &client_request,
                                             ObClientSessionInfo &info,
                                             const bool is_in_trans);
+  static int build_empty_resultset(event::ObMIOBuffer &mio_buf,
+                                   ObProxyMysqlRequest &client_request,
+                                   ObMysqlClientSession &client_session,
+                                   const ObProxyProtocol protocol,
+                                   const bool is_in_trans);
 };
 
 inline int ObMysqlResponseBuilder::build_start_trans_resp(event::ObMIOBuffer &mio_buf,

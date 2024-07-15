@@ -391,7 +391,7 @@ void ObCongestionEntry::set_alive_failed_at(const ObHRTime t)
         if (new_congested && !ATOMIC_TAS(&alive_congested_, 1)) {
           last_alive_congested_ = alive_fail_history_.last_event_;
           // action congested ?
-          LOG_INFO("set alive congested", KPC(this));
+          LOG_WARN("set alive congested", KPC(this));
         }
       }
     } else {

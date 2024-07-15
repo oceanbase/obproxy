@@ -48,7 +48,7 @@ public:
   virtual void handle_input_complete();
 
   static int handle_resultset_row(event::ObIOBufferReader *reader, ObMysqlSM *sm,
-                                  common::ObArray<obmysql::EMySQLFieldType> field_types,
+                                  const common::ObArray<obmysql::EMySQLFieldType> &field_types,
                                   bool hava_cursor, uint64_t column_num);
   static int add_cursor_id_pair(ObMysqlServerSession *server_session, uint32_t client_cursor_id, uint32_t server_cursor_id);
   static int add_cursor_id_addr(ObMysqlClientSession *client_session, uint32_t client_cursor_id, const sockaddr &addr);
@@ -117,7 +117,7 @@ public:
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && obmysql::OB_MYSQL_COM_STMT_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_
             && !sm->trans_state_.trans_info_.client_request_.get_parse_result().is_dml_stmt()
-            && sm->trans_state_.trans_info_.server_response_.get_analyze_result().is_resultset_resp());
+            && sm->trans_state_.trans_info_.resp_result_.is_resultset_resp());
   }
 
 private:

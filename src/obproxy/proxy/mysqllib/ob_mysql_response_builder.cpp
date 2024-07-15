@@ -23,6 +23,7 @@
 #include "obproxy/packet/ob_proxy_packet_writer.h"
 #include "obproxy/proxy/mysql/ob_mysql_client_session.h"
 #include "stat/ob_net_stats.h"
+#include "proxy/mysqllib/ob_2_0_protocol_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -518,6 +519,37 @@ int ObMysqlResponseBuilder::build_select_proxy_status_resp(ObMIOBuffer &mio_buf,
     LOG_WDIAG("fail to encode kv resultset", K(seq), K(ret));
   }
   return ret;
+}
+
+int ObMysqlResponseBuilder::build_empty_resultset(event::ObMIOBuffer &mio_buf,
+                                                               ObProxyMysqlRequest &client_request,
+                                                               ObMysqlClientSession &client_session,
+                                                               const ObProxyProtocol protocol,
+                                                               const bool is_in_trans)
+{
+  int ret = OB_SUCCESS;
+  ObClientSessionInfo &info = client_session.get_session_info();
+  
+  // get seq
+  uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+
+  // get status flag
+  uint16_t status_flag = 0;
+  int64_t autocommit = info.get_cached_variables().get_autocommit();
+  if (0 != autocommit) {
+    status_flag |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+  }
+  if (is_in_trans) {
+    status_flag |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+  }
+
+  // encode to mio_buf
+  if (OB_FAIL(ObProxyPacketWriter::write_empty_resultset(mio_buf, client_session, protocol, seq, status_flag))) {
+    LOG_WDIAG("fail to write empty resultset", K(ret));
+  }
+  
+  return ret;
+
 }
 
 } // end of namespace proxy

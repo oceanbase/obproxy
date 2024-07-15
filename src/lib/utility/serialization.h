@@ -291,6 +291,57 @@ inline int64_t encoded_length_vi64(int64_t val)
   return need_bytes;
 }
 
+inline int encode_ten_bytes_i64(char *buf, const int64_t buf_len, int64_t &pos, int64_t val)
+{
+  uint64_t __v = static_cast<uint64_t>(val);
+  int bytes = 10;
+  int ret = ((NULL != buf) &&
+             ((buf_len - pos) >= bytes)) ? OB_SUCCESS : OB_SIZE_OVERFLOW;
+  if (OB_SUCC(ret)) {
+    int n = bytes;
+    while (n--) {
+      if (n > 0) {
+        *(buf + pos++) = static_cast<int8_t>((__v) | 0x80);
+        __v >>= 7;
+      } else {
+        *(buf + pos++) = static_cast<int8_t>((__v) & 0x7f);
+      }
+    }
+  }
+  return ret;
+}
+
+/**
+ * @brief Encode a integer (up to 64bit) in variable length encoding
+ *
+ * @return true - success, false - failed
+ */
+inline int encode_with_len_vi64(char *buf, const int64_t buf_len, int64_t &pos, int64_t val, int64_t len)
+{
+  uint64_t __v = static_cast<uint64_t>(val);
+  int ret = ((NULL != buf) &&
+             ((buf_len - pos) >= encoded_length_vi64(__v))) ?
+             ((len >= encoded_length_vi64(__v)) ? OB_SUCCESS : OB_SIZE_OVERFLOW) : OB_SIZE_OVERFLOW;
+
+  if (OB_SUCC(ret)) {
+    // while (__v > OB_MAX_V1B || len > 0)
+    len --;
+    while (len > 0) {
+      *(buf + pos++) = static_cast<int8_t>((__v) | 0x80);
+      if (__v <= OB_MAX_V1B) {
+        __v = 0;
+      } else {
+        __v >>= 7;
+      }
+      len--;
+    }
+    if (__v <= OB_MAX_V1B) {
+      *(buf + pos++) = static_cast<int8_t>((__v) & 0x7f);
+    }
+  }
+  return ret;
+}
+
 /**
  * @brief Encode a integer (up to 64bit) in variable length encoding
  *
@@ -1073,6 +1124,22 @@ inline int encode_str(char *buf, const int64_t buf_len, int64_t &pos, const void
   return ret;
 }
 
+inline int encode_raw_buf(char *buf, const int64_t buf_len, int64_t &pos, const void *rbuf, int64_t len)
+{
+  int ret = OB_SUCCESS;
+  if ((NULL == buf) || (buf_len - pos < len)) {
+    ret = OB_SIZE_OVERFLOW;
+  } else if ((rbuf == NULL && len > 0) || len < 0 || pos < 0) {
+    ret = OB_INVALID_ARGUMENT;
+  } else if (len == 0 || rbuf == NULL) {
+    // do nothing
+  } else {
+    MEMCPY(buf + pos, rbuf, len);
+    pos += len;
+  }
+  return ret;
+}
+
 inline const char *decode_str(const char *buf, const int64_t data_len, int8_t first_byte,
                               int64_t &pos, int32_t &lenp)
 {
@@ -1679,7 +1746,7 @@ struct EnumEncoder<true>
   template <typename T>
   static int encode(char *buf, const int64_t buf_len, int64_t &pos, const T &val)
   {
-    return encode_vi32(buf, buf_len, pos, val);
+    return encode_vi32(buf, buf_len, pos, static_cast<int32_t>(val));
   }
 
   template<typename T>

@@ -52,12 +52,19 @@ class ObCongestionRefHashMap;
 namespace proxy
 {
 class ObMysqlClientSessionMap;
+class ObRpcClientNetHandlerMap;
+class ObRpcServerNetTableEntryPool;
 class ObClientSessionIDList;
 class ObTableRefHashMap;
+class ObIndexRefHashMap;
+class ObTableGroupRefHashMap;
+class ObTableQueryAsyncRefHashMap;
+class ObRpcReqCtxRefHashMap;
 class ObPartitionRefHashMap;
 class ObRoutineRefHashMap;
 class ObSqlTableRefHashMap;
 class ObCacheCleaner;
+class ObRpcCacheCleaner;
 class ObBasePsEntryThreadCache;
 }
 namespace net
@@ -322,7 +329,13 @@ public:
   net::ObNetPoll &get_net_poll() { return *net_poll_; }
   net::ObInactivityCop &get_inactivity_cop() { return *inactivity_cop_; }
   proxy::ObMysqlClientSessionMap &get_client_session_map() { return *cs_map_; }
+  proxy::ObRpcClientNetHandlerMap &get_rpc_client_net_handler_map() { return *rpc_net_cs_map_; } //TODO RPC need used the same with cs_map_
+  proxy::ObRpcServerNetTableEntryPool &get_rpc_server_net_handler_map() { return *rpc_net_ss_map_; } //TODO RPC need used the same with cs_map_
   proxy::ObClientSessionIDList &get_client_session_id_list() { return *cs_id_list_; }
+  proxy::ObIndexRefHashMap &get_index_map() { return *index_map_; }
+  proxy::ObTableGroupRefHashMap &get_tablegroup_map() { return *tablegroup_map_; }
+  proxy::ObTableQueryAsyncRefHashMap &get_table_query_async_map() { return *table_query_async_map_; }
+  proxy::ObRpcReqCtxRefHashMap &get_rpc_req_ctx_map() { return *rpc_req_ctx_map_; }
   proxy::ObTableRefHashMap &get_table_map() { return *table_map_; }
   proxy::ObSqlTableRefHashMap &get_sql_table_map() { return *sql_table_map_; }
   proxy::ObPartitionRefHashMap &get_partition_map() { return *partition_map_; }
@@ -344,6 +357,7 @@ public:
   // TODO: This would be much nicer to have "run-time" configurable
   // when add new local thread, need
   static const int64_t MAX_THREAD_DATA_SIZE = 8096;//8 * 1024
+  //static const int64_t MAX_THREAD_DATA_SIZE = 10240;//10 * 1024 //TODO need reduce for g_event_processor.allocate when add RPC stat
   static const int64_t THREAD_MAX_HEARTBEAT_MSECONDS = 30;
   static const int64_t NO_ETHREAD_ID = -1;
   static const int64_t DELAY_FOR_RETRY = HRTIME_MSECONDS(1);
@@ -377,12 +391,19 @@ public:
   net::ObNetPoll *net_poll_;
   net::ObInactivityCop *inactivity_cop_;
   proxy::ObMysqlClientSessionMap *cs_map_;
+  proxy::ObRpcClientNetHandlerMap *rpc_net_cs_map_;
+  proxy::ObRpcServerNetTableEntryPool *rpc_net_ss_map_;
   proxy::ObClientSessionIDList *cs_id_list_;
+  proxy::ObIndexRefHashMap *index_map_;
+  proxy::ObTableQueryAsyncRefHashMap *table_query_async_map_;
+  proxy::ObTableGroupRefHashMap *tablegroup_map_;
+  proxy::ObRpcReqCtxRefHashMap *rpc_req_ctx_map_;
   proxy::ObTableRefHashMap *table_map_;
   proxy::ObPartitionRefHashMap *partition_map_;
   proxy::ObRoutineRefHashMap *routine_map_;
   obutils::ObCongestionRefHashMap *congestion_map_;
   proxy::ObCacheCleaner *cache_cleaner_;
+  proxy::ObRpcCacheCleaner *rpc_cache_cleaner_;
   proxy::ObSqlTableRefHashMap *sql_table_map_;
   proxy::ObBasePsEntryThreadCache *ps_entry_cache_;
   proxy::ObBasePsEntryThreadCache *text_ps_entry_cache_;

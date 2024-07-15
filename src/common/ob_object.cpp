@@ -231,6 +231,15 @@ int ObObj::build_not_strict_default_value()
         set_char(null_str);
       }
       break;
+    case ObTinyTextType:
+    case ObTextType:
+    case ObMediumTextType:
+    case ObLongTextType: {
+        ObString null_str;
+        set_string(data_type, null_str);
+        meta_.set_inrow();
+      }
+      break;
     case ObTimestampTZType:
     case ObTimestampLTZType:
     case ObTimestampNanoType: {
@@ -244,48 +253,43 @@ int ObObj::build_not_strict_default_value()
   return ret;
 }
 
-int64_t ObObj::get_deep_copy_size() const
-{
-  int64_t ret = 0;
-  if (is_string_type() || is_decimal_int()) {
-    ret += val_len_;
-  } else if (ob_is_number_tc(get_type())) {
-    ret += (sizeof(uint32_t) * nmb_desc_.len_);
-  }
-  return ret;
-}
-
 int ObObj::deep_copy(const ObObj &src, char *buf, const int64_t size, int64_t &pos)
 {
   int ret = OB_SUCCESS;
-  if (ob_is_string_tc(src.get_type())) {
+  if (ob_is_string_type(src.get_type()) || ob_is_json(src.get_type()) || ob_is_geometry(src.get_type())) {
     ObString src_str = src.get_string();
-    if (size < (pos + src_str.length())) {
+    if (OB_UNLIKELY(size < (pos + src_str.length()))) {
       ret = OB_BUF_NOT_ENOUGH;
     } else {
       MEMCPY(buf + pos, src_str.ptr(), src_str.length());
-      ObString dest_str;
-      dest_str.assign_ptr(buf + pos, src_str.length());
-      this->set_varchar(dest_str);
-      this->set_type(src.get_type());
-//      this->set_collation_level(src.get_collation_level());
-      this->set_collation_type(src.get_collation_type());
+      *this = src;
+      this->set_string(src.get_type(), buf + pos, src_str.length());
+      // set_string lose orign cs_level
+      if (CS_LEVEL_INVALID != src.get_collation_level()) {
+        this->set_collation_level(src.get_collation_level());
+      }
       pos += src_str.length();
     }
-  } else if (ObNumberTC == src.get_type_class()) {
-    number::ObNumber src_nmb;
-    src_nmb = src.get_number();
-    if (size < (int64_t)(pos + sizeof(uint32_t) * src_nmb.get_length())) {
+  } else if (ob_is_number_tc(src.get_type())) {
+    const int64_t number_size =  src.get_number_byte_length();
+    if (OB_UNLIKELY(size < (int64_t)(pos + number_size))) {
       ret = OB_BUF_NOT_ENOUGH;
     } else {
-      MEMCPY(buf + pos, src_nmb.get_digits(), sizeof(uint32_t) * src_nmb.get_length());
-      number::ObNumber dest_nmb;
-      dest_nmb.assign(src_nmb.get_desc(), (uint32_t *)(buf + pos));
+      MEMCPY(buf + pos, src.get_number_digits(), number_size);
       *this = src;
-      this->set_number(src.get_type(), dest_nmb);
-      pos += (sizeof(uint32_t) * src_nmb.get_length());
+      this->set_number(src.get_type(), src.get_number_desc(), (uint32_t *)(buf + pos));
+      pos += number_size;
     }
-  } else if (ObDecimalIntTC == src.get_type_class()) {
+  } else if (ob_is_rowid_tc(src.get_type())) {
+    if (OB_UNLIKELY(size < (int64_t)(pos + src.get_string_len()))) {
+      ret = OB_BUF_NOT_ENOUGH;
+    } else {
+      MEMCPY(buf + pos, src.get_string_ptr(), src.get_string_len());
+      *this = src;
+      this->set_urowid(buf + pos, src.get_string_len());
+      pos += src.get_string_len();
+    }
+  } else if (ob_is_decimal_int_tc(src.get_type())) {
     if (OB_UNLIKELY(size < (pos + src.get_val_len()))) {
       ret = OB_BUF_NOT_ENOUGH;
     } else {
@@ -438,10 +442,10 @@ ObObjTypeFuncs OBJ_FUNCS[ObMaxType] =
   DEF_FUNC_ENTRY(ObHexStringType),  // 24, hex_string
   DEF_FUNC_ENTRY(ObExtendType),  // 25, ext
   DEF_FUNC_ENTRY(ObUnknownType),  // 26, unknown
-  DEF_FUNC_ENTRY(ObNullType),          // 27
-  DEF_FUNC_ENTRY(ObNullType),          // 28
-  DEF_FUNC_ENTRY(ObNullType),          // 29
-  DEF_FUNC_ENTRY(ObNullType),          // 30
+  DEF_FUNC_ENTRY(ObTinyTextType),   // 27, tiny_text
+  DEF_FUNC_ENTRY(ObTextType),       // 28, text
+  DEF_FUNC_ENTRY(ObMediumTextType), // 29, medium_text
+  DEF_FUNC_ENTRY(ObLongTextType),   // 30, longtext
   DEF_FUNC_ENTRY(ObNullType),          // 31
   DEF_FUNC_ENTRY(ObNullType),          // 32
   DEF_FUNC_ENTRY(ObNullType),          // 33

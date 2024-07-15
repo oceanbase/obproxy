@@ -17,6 +17,7 @@
 #include "packet/ob_mysql_packet_writer.h"
 #include "proxy/mysqllib/ob_mysql_ob20_packet_write.h"
 #include "proxy/mysql/ob_mysql_server_session.h"
+#include "proxy/mysqllib/ob_compressed_header_param.h"
 
 namespace oceanbase
 {
@@ -213,7 +214,7 @@ inline int ObMysqlRequestBuilder::build_mysql_request(event::ObMIOBuffer &mio_bu
                                                       const bool is_checksum_on,
                                                       const int64_t compression_level)
 {
-  proxy::ObCmpHeaderParam param(0, is_checksum_on, compression_level);
+  proxy::ObCompressedHeaderParam param(0, is_checksum_on, compression_level);
   return packet::ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, sql, need_compress, param);
 }
 

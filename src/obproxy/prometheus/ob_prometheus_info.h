@@ -49,10 +49,11 @@ enum ObPrometheusMetrics
   PROMETHEUS_REQUEST_TOTAL_TIME,
 
   PROMETHEUS_CURRENT_SESSION,
-  PROMETHEUS_USED_CONNECTIONS,
+  PROMETHEUS_NEW_CLIENT_CONNECTIONS,
 
   PROMETHEUS_ENTRY_LOOKUP_COUNT,
   PROMETHEUS_REQUEST_BYTE,
+  PROMETHEUS_RPC_REQUEST_BYTE,
   PROMETHEUS_METRIC_COUNT
 };
 
@@ -254,6 +255,7 @@ public:
                     bool &is_new, bool allow_delete = true);
 
   int remove_metric(ObPrometheusMetric *metric);
+  int remove_metric_without_lock(ObPrometheusMetric *metric);
 
   template <typename TA, typename T>
   int get_or_create_metric(const common::ObVector<ObPrometheusLabel> &label_array,

@@ -22,7 +22,6 @@
 #include "obproxy/proxy/mysql/ob_mysql_sm.h"
 #include "obproxy/obutils/ob_proxy_config.h"
 #include "lib/utility/ob_2_0_sess_veri.h"
-#include "proxy/mysqllib/ob_protocol_diagnosis.h"
 
 
 using namespace oceanbase::obproxy::event;
@@ -36,63 +35,6 @@ namespace obproxy
 {
 namespace proxy
 {
-Ob20HeaderParam::Ob20HeaderParam(const Ob20HeaderParam &param) {
-  connection_id_ = param.connection_id_;
-  request_id_ = param.request_id_;
-  compressed_seq_ = param.compressed_seq_;
-  pkt_seq_ = param.pkt_seq_;
-  is_last_packet_ = param.is_last_packet_;
-  is_weak_read_ = param.is_weak_read_;
-  is_need_reroute_ = param.is_need_reroute_;
-  is_new_extra_info_ = param.is_new_extra_info_;
-  is_trans_internal_routing_ = param.is_trans_internal_routing_;
-  is_switch_route_ = param.is_switch_route_;
-  is_compressed_ob20_ = param.is_compressed_ob20_;
-  compression_level_ = param.compression_level_;
-  protocol_diagnosis_ = NULL;
-  INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
-}
-
-Ob20HeaderParam &Ob20HeaderParam::operator=(const Ob20HeaderParam &param) {
-  if (this != &param) {
-    connection_id_ = param.connection_id_;
-    request_id_ = param.request_id_;
-    compressed_seq_ = param.compressed_seq_;
-    pkt_seq_ = param.pkt_seq_;
-    is_last_packet_ = param.is_last_packet_;
-    is_weak_read_ = param.is_weak_read_;
-    is_need_reroute_ = param.is_need_reroute_;
-    is_new_extra_info_ = param.is_new_extra_info_;
-    is_trans_internal_routing_ = param.is_trans_internal_routing_;
-    is_switch_route_ = param.is_switch_route_;
-    is_compressed_ob20_ = param.is_compressed_ob20_;
-    compression_level_ = param.compression_level_;
-    INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
-  }
-  return *this;
-}
-
-Ob20HeaderParam::~Ob20HeaderParam() {
-  DEC_SHARED_REF(protocol_diagnosis_);
-}
-
-void Ob20HeaderParam::reset() {
-  DEC_SHARED_REF(protocol_diagnosis_);
-  MEMSET(this, 0x0, sizeof(Ob20HeaderParam));
-}
-
-ObProtocolDiagnosis *&Ob20HeaderParam::get_protocol_diagnosis_ref() {
-  return protocol_diagnosis_;
-}
-
-ObProtocolDiagnosis *Ob20HeaderParam::get_protocol_diagnosis() {
-  return protocol_diagnosis_;
-}
-
-const ObProtocolDiagnosis *Ob20HeaderParam::get_protocol_diagnosis() const {
-  return protocol_diagnosis_;
-}
-
 int ObProto20Utils::encode_ok_packet(event::ObMIOBuffer &write_buf, Ob20HeaderParam &ob20_head_param,
                                      uint8_t &seq, const int64_t affected_rows,
                                      const obmysql::ObMySQLCapabilityFlags &capability,
@@ -149,6 +91,38 @@ int ObProto20Utils::encode_kv_resultset(ObMIOBuffer &write_buf, Ob20HeaderParam 
     LOG_WDIAG("fail to consume and compress kv resultset in ob20 packet", K(ret));
   } else {
     LOG_DEBUG("succ to encode kv resultset in ob20 packet");
+  }
+
+  if (OB_LIKELY(tmp_mio_buf != NULL)) {
+    free_miobuffer(tmp_mio_buf);
+    tmp_mio_buf = NULL;
+    tmp_mio_reader = NULL;
+  }
+
+  return ret;
+}
+
+int ObProto20Utils::encode_empty_resultset(ObMIOBuffer &write_buf, Ob20HeaderParam &ob20_head_param,
+                                           uint8_t &seq, const uint16_t status_flag)
+{
+  int ret = OB_SUCCESS;
+
+  event::ObIOBufferReader *tmp_mio_reader = NULL;
+  event::ObMIOBuffer *tmp_mio_buf = NULL;
+  if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer(MYSQL_BUFFER_SIZE))) {
+    ret = common::OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc miobuffer", K(ret));
+  } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
+    ret = common::OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to alloc reader", K(ret));
+  } else if (OB_FAIL(ObMysqlPacketUtil::encode_empty_resultset(*tmp_mio_buf, seq, status_flag))) {
+    LOG_WDIAG("fail to encode empty resultset", K(ret));
+  // cli - prxoy not supports compressed ob20
+  } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &write_buf,
+                                                               tmp_mio_reader->read_avail(), ob20_head_param))) {
+    LOG_WDIAG("fail to consume and compress empty resultset in ob20 packet", K(ret));
+  } else {
+    LOG_DEBUG("succ to encode empty resultset in ob20 packet");
   }
 
   if (OB_LIKELY(tmp_mio_buf != NULL)) {
@@ -227,8 +201,7 @@ int ObProto20Utils::analyze_ok_packet_and_get_reroute_info(ObIOBufferReader *rea
 
 int ObProto20Utils::analyze_first_mysql_packet(
     ObIOBufferReader &reader,
-    ObMysqlCompressedOB20AnalyzeResult &result,
-    ObMysqlAnalyzeResult &mysql_result)
+    ObAnalyzeHeaderResult &result)
 {
   int ret = OB_SUCCESS;
   char mysql_hdr[MYSQL_NET_META_LENGTH];
@@ -257,7 +230,7 @@ int ObProto20Utils::analyze_first_mysql_packet(
       LOG_WDIAG("not copy completely", K(written_pos), K(mysql_hdr),
                "meta_length", MYSQL_NET_META_LENGTH, K(ret));
     } else {
-      if (OB_FAIL(ObProxyParserUtils::analyze_mysql_packet_meta(mysql_hdr, MYSQL_NET_META_LENGTH, mysql_result.meta_))) {
+      if (OB_FAIL(ObProxyParserUtils::analyze_mysql_packet_meta(mysql_hdr, MYSQL_NET_META_LENGTH, result.mysql_header_))) {
         LOG_WDIAG("fail to analyze mysql packet meta", K(ret));
       }
     }
@@ -266,10 +239,10 @@ int ObProto20Utils::analyze_first_mysql_packet(
   return ret;
 }
 
-int ObProto20Utils::analyze_one_compressed_packet(
+int ObProto20Utils::analyze_one_ob20_packet_header(
     ObIOBufferReader &reader,
-    ObMysqlCompressedOB20AnalyzeResult &result,
-    bool is_analyze_compressed_ob20)
+    ObAnalyzeHeaderResult &result,
+    bool is_compressed)
 {
   int ret = OB_SUCCESS;
   int64_t len = reader.read_avail();
@@ -277,7 +250,7 @@ int ObProto20Utils::analyze_one_compressed_packet(
   result.status_ = ANALYZE_CONT;
 
   int64_t header_len = 0;
-  if (is_analyze_compressed_ob20) {
+  if (is_compressed) {
     header_len = OB20_PROTOCOL_HEADER_LENGTH;
   } else {
     header_len = MYSQL_COMPRESSED_OB20_HEALDER_LENGTH;
@@ -300,12 +273,11 @@ int ObProto20Utils::analyze_one_compressed_packet(
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(analyze_compressed_packet_header(buf_start, header_len, result, is_analyze_compressed_ob20))) {
+      if (OB_FAIL(analyze_compressed_packet_header(buf_start, header_len, result, is_compressed))) {
         LOG_WDIAG("fail to analyze compressed packet header", K(ret));
       } else {
-        if (len >= result.header_.compressed_len_ + (is_analyze_compressed_ob20 ? 0 : MYSQL_COMPRESSED_HEALDER_LENGTH)) {
+        if (len >= result.ob20_header_.cp_hdr_.compressed_len_ + (is_compressed ? 0 : MYSQL_COMPRESSED_HEALDER_LENGTH)) {
           result.status_ = ANALYZE_DONE;
-          result.is_checksum_on_ = result.header_.is_compressed_payload();
           LOG_DEBUG("analyze one compressed packet succ", "data len", len, K(result));
         }
       }
@@ -316,16 +288,16 @@ int ObProto20Utils::analyze_one_compressed_packet(
 
 int ObProto20Utils::analyze_compressed_packet_header(
     const char *start, const int64_t len,
-    ObMysqlCompressedOB20AnalyzeResult &result,
-    bool enable_compress_ob20)
+    ObAnalyzeHeaderResult &result,
+    bool is_compressed)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(start) || len < (enable_compress_ob20 ? OB20_PROTOCOL_HEADER_LENGTH : MYSQL_COMPRESSED_OB20_HEALDER_LENGTH)) {
+  if (OB_ISNULL(start) || len < (is_compressed ? OB20_PROTOCOL_HEADER_LENGTH : MYSQL_COMPRESSED_OB20_HEALDER_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid input value", KP(start), K(len), K(ret));
   } else {
     // 1. decode mysql compress header
-    if (!enable_compress_ob20) {
+    if (!is_compressed) {
       uint32_t pktlen = 0;
       uint8_t pktseq = 0;
       uint32_t pktlen_before_compress = 0; // here, must be 0
@@ -335,9 +307,6 @@ int ObProto20Utils::analyze_compressed_packet_header(
       result.ob20_header_.cp_hdr_.compressed_len_ = pktlen;
       result.ob20_header_.cp_hdr_.seq_ = pktseq;
       result.ob20_header_.cp_hdr_.non_compressed_len_ = pktlen_before_compress;
-      result.header_.compressed_len_ = pktlen;
-      result.header_.seq_ = pktseq;
-      result.header_.non_compressed_len_ = pktlen_before_compress;
     }
 
 
@@ -352,12 +321,12 @@ int ObProto20Utils::analyze_compressed_packet_header(
     ObMySQLUtil::get_uint2(start, result.ob20_header_.reserved_);
     ObMySQLUtil::get_uint2(start, result.ob20_header_.header_checksum_);
 
-    if (enable_compress_ob20) {
+    if (is_compressed) {
       // mock the normal ob20
-      result.header_.compressed_len_ = result.ob20_header_.payload_len_ 
+      result.ob20_header_.cp_hdr_.compressed_len_ = result.ob20_header_.payload_len_ 
         + static_cast<uint32_t>(OB20_PROTOCOL_HEADER_TAILER_LENGTH);
-      result.header_.seq_ = result.ob20_header_.pkt_seq_;
-      result.header_.non_compressed_len_ = 0;
+      result.ob20_header_.cp_hdr_.seq_ = result.ob20_header_.pkt_seq_;
+      result.ob20_header_.cp_hdr_.non_compressed_len_ = 0;
     }
     LOG_DEBUG("decode proto20 header succ", K(result.ob20_header_));
   }
@@ -784,6 +753,7 @@ int ObProto20Utils::consume_and_compress_data(ObIOBufferReader *reader,
 
     // mysql ===> ob20
     if (OB_SUCC(ret)) {
+      uint8_t compressed_seq = ob20_head_param.get_compressed_seq();
       if (OB_FAIL(reserve_proto_hdr(ob20_buf, hdr_start, hdr_len))) {
         LOG_EDIAG("fail to reserve proto20 hdr", K(ret));
       } else if (OB_NOT_NULL(extra_info) && OB_FAIL(fill_proto20_extra_info(ob20_buf, extra_info, is_new_extra_info,
@@ -810,7 +780,7 @@ int ObProto20Utils::consume_and_compress_data(ObIOBufferReader *reader,
                                                                   compressed_len, uncompressed_len))) {
           LOG_WDIAG("fail to do zlib compress", K(ret));
         } else if (OB_FAIL(ObMysqlAnalyzerUtils::fill_compressed_header(uncompressed_len,
-                                                                        ob20_head_param.get_compressed_seq(),
+                                                                        compressed_seq,
                                                                         compressed_len,
                                                                         mio_hdr_buf_start))) {
           LOG_WDIAG("fail to fill compressed hdr", K(ret));
@@ -833,7 +803,7 @@ int ObProto20Utils::consume_and_compress_data(ObIOBufferReader *reader,
         flags.st_flags_.OB_IS_TRANS_INTERNAL_ROUTING = ob20_head_param.is_trans_internal_routing() ? 1 : 0;
         flags.st_flags_.OB_PROXY_SWITCH_ROUTE = ob20_head_param.is_switch_route() ? 1 : 0;
         PROTOCOL_DIAGNOSIS(OCEANBASE20, send, protocol_diagnosis,
-                           static_cast<uint32_t>(compressed_len), ob20_head_param.get_compressed_seq(),
+                           static_cast<uint32_t>(compressed_len), compressed_seq,
                            static_cast<uint32_t>(uncompressed_len), static_cast<uint32_t>(payload_len),
                            ob20_head_param.get_connection_id(), flags,
                            ob20_head_param.get_pkt_seq(), ob20_head_param.get_request_id());
@@ -841,6 +811,12 @@ int ObProto20Utils::consume_and_compress_data(ObIOBufferReader *reader,
         diagnosis_reader->dealloc();
         diagnosis_reader = NULL;
       }
+
+      if (OB_SUCC(ret)) {
+        ++compressed_seq;
+        ob20_head_param.set_compressed_seq(compressed_seq);
+      }
+
     }
 
     // for compressed ob20 we use ob20_buf to store normal ob20 packet 

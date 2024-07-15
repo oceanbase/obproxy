@@ -17,7 +17,9 @@
 #include "lib/profile/ob_trace_id.h"
 #include "lib/utility/ob_print_utils.h"
 #include "lib/checksum/ob_crc64.h"
+#include "lib/compress/ob_compress_util.h"
 #include "rpc/ob_packet.h"
+#include "ob_rpc_time.h"
 
 namespace oceanbase
 {
@@ -94,6 +96,13 @@ public:
     return pcode;
   }
 
+  static const char *name_of_pcode(ObRpcPacketCode code)
+  {
+    static ObRpcPacketSet ins;
+    int64_t idx = ins.idx_of_pcode(code);
+    return ins.name_of_idx(idx);
+  }
+
   static ObRpcPacketSet &instance()
   {
     return instance_;
@@ -113,10 +122,12 @@ private:
 class ObRpcPacketHeader
 {
 public:
-  static const uint8_t HEADER_SIZE = 72;
+  static const uint8_t  HEADER_SIZE = 88;
   static const uint16_t RESP_FLAG = 1 << 15;
   static const uint16_t STREAM_FLAG = 1 << 14;
   static const uint16_t STREAM_LAST_FLAG = 1 << 13;
+  static const uint16_t REQUIRE_REROUTING_FLAG = 1<<9;
+  static const uint16_t RPC_REQ_TRACE_ID_POS = 40;
 
   uint64_t checksum_;
   ObRpcPacketCode pcode_;
@@ -129,16 +140,53 @@ public:
   uint64_t trace_id_[2];  // 128 bits trace id
   uint64_t timeout_;
   int64_t timestamp_;
+  ObRpcCostTime cost_time_;
+  common::ObCompressorType compressor_type_;
+  int64_t dst_cluster_id_;
+
+  int32_t original_len_;
 
   NEED_SERIALIZE_AND_DESERIALIZE;
 
   TO_STRING_KV(K(checksum_), K(pcode_), K(hlen_), K(priority_),
                K(flags_), K(tenant_id_), K(priv_tenant_id_), K(session_id_),
-               K(trace_id_), K(timeout_), K_(timestamp));
+               K(trace_id_), K(timeout_), K_(timestamp), K_(cost_time),
+               K_(compressor_type), K_(original_len), K_(dst_cluster_id));
 
-  ObRpcPacketHeader() { memset(this, 0, sizeof(*this)); flags_ |= (OB_LOG_LEVEL_NONE & 0x7); }
+  ObRpcPacketHeader() { memset(this, 0, sizeof(*this)); flags_ |= (OB_LOG_LEVEL_NONE & 0x7); dst_cluster_id_=-1; }
+  ObRpcPacketHeader(const ObRpcPacketHeader &header) : checksum_(header.checksum_), pcode_(header.pcode_),
+                        hlen_(header.hlen_), priority_(header.priority_), flags_(header.flags_),
+                        tenant_id_(header.tenant_id_), session_id_(header.session_id_), timeout_(header.timeout_),
+                        timestamp_(header.timestamp_), compressor_type_(header.compressor_type_),
+                        dst_cluster_id_(header.dst_cluster_id_), original_len_(header.original_len_)
+  {
+    MEMCPY(trace_id_, header.trace_id_, 2 * sizeof(uint64_t));
+    MEMCPY(&cost_time_, &(header.cost_time_), sizeof(cost_time_));
+  }
 
-  int64_t get_encoded_size() const { return HEADER_SIZE; }
+  void set_flag(uint16_t flag_value) { flags_ |= flag_value; }
+  static inline int64_t get_encoded_size() { return HEADER_SIZE + ObRpcCostTime::get_encoded_size(); }
+
+  static inline int64_t get_flags_position() { return  4   /*pcode*/
+                                                        + 1   /*hlen*/
+                                                        + 1   /*priority*/;}
+
+  static inline int64_t get_checksum_position() { return  4   /*pcode*/
+                                                        + 1   /*hlen*/
+                                                        + 1   /*priority*/
+                                                        + 2   /*flags*/ ;}
+
+  static inline int64_t get_timeout_position() { return   4   /*pcode*/
+                                                        + 1   /*hlen*/
+                                                        + 1   /*priority*/
+                                                        + 2   /*flags*/
+                                                        + 8   /*checksum*/
+                                                        + 8   /*tenant_id*/
+                                                        + 8   /*priv tenant_id*/
+                                                        + 8   /*session id*/
+                                                        + 8   /*trace_id 0*/
+                                                        + 8   /*trace_id 1*/
+                                                        ;}
 };
 
 class ObRpcPacket
@@ -150,8 +198,8 @@ public:
   static uint32_t global_chid;
 
 public:
-  ObRpcPacket();
-  virtual ~ObRpcPacket();
+  ObRpcPacket() {};
+  virtual ~ObRpcPacket() {};
 
   inline void set_checksum(uint64_t checksum);
   inline uint64_t get_checksum() const;
@@ -215,6 +263,8 @@ public:
 
   inline void set_timestamp(const int64_t timestamp);
   inline int64_t get_timestamp() const;
+
+  inline ObRpcPacketHeader& get_hdr() { return hdr_; }
 
   TO_STRING_KV(K(hdr_), K(chid_), K(clen_));
 

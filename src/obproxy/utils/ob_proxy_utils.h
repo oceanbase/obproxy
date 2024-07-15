@@ -89,6 +89,11 @@ int paste_tenant_and_cluster_name(const common::ObString &tenant_name, const com
 int split_weight_group(common::ObString weight_group_str, 
                        common::ObIArray<common::ObString> &item, 
                        common::ObIArray<int8_t> &weights);
+
+int split_string_by_char(common::ObString &org_str,
+                         common::ObIArray<common::ObString> &result_strs,
+                         const char split_char = ';',
+                         const bool contain_split_char = false);
 } // end of namespace obproxy
 } // end of namespace oceanbase
 

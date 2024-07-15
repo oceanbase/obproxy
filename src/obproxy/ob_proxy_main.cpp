@@ -24,6 +24,7 @@
 #include "utils/ob_proxy_utils.h"
 #include "utils/ob_layout.h"
 #include "utils/ob_proxy_hot_upgrader.h"
+#include "obproxy/obutils/ob_hot_upgrade_processor.h"
 
 #include "stat/ob_proxy_warning_stats.h"
 
@@ -32,7 +33,7 @@
 
 #include "cmd/ob_show_sqlaudit_handler.h"
 #include "ob_proxy_init.h"
-#include "proxy/mysql/ob_prepare_statement_struct.h"
+#include "lib/charset/ob_charset.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::lib;
@@ -94,6 +95,7 @@ int ObProxyMain::get_opts_setting(struct option long_opts[], const int64_t long_
     {"help", 'h', 0},
     {"listen_port", 'p', 1},
     {"prometheus_listen_port", 'l', 1},
+    {"rpc_listen_port", 's', 1},
     {"upgrade_ver", 'u', 1},
     {"dump_config_sql", 'd', 0},
     {"execute_config_sql", 'e', 0},
@@ -139,6 +141,7 @@ void ObProxyMain::print_usage() const
   MPRINT("  -h,--help                              print this help");
   MPRINT("  -p,--listen_port         LPORT         obproxy listen port");
   MPRINT("  -l,--promethues_listen_port  PLPORT    obproxy prometheus listen port");
+  MPRINT("  -s,--rpc_listen_port     PLPORT        obproxy rpc service listen port");
   MPRINT("  -o,--optstr              OPTSTR        extra options string");
   MPRINT("  -n,--appname             APPNAME       application name");
   MPRINT("  -r,--rs_list             RS_LIST       root server list(format ip:sql_port)");
@@ -222,6 +225,12 @@ int ObProxyMain::parse_short_opt(const int32_t c, const char *value, ObProxyOpti
       MPRINT("prometheus listen port: %s", value);
       if (OB_FAIL(str_to_port(value, opts.prometheus_listen_port_))) {
         MPRINT("fail to parse short opt: prometheus listen port, ret=%d", ret);
+      }
+      break;
+    } case 's': {
+      MPRINT("rpc service listen port: %s", value);
+      if (OB_FAIL(str_to_port(value, opts.rpc_listen_port_))) {
+        MPRINT("fail to parse short opt: rpc service listen port, ret=%d", ret);
       }
       break;
     } case 'u': {
@@ -467,7 +476,7 @@ int ObProxyMain::start(const int argc, char *const argv[])
 
   if (RUN_MODE_PROXY == g_run_mode && OB_SUCC(ret)) {
     if (info.is_inherited_) {
-      if (OB_FAIL(close_all_fd(info.ipv4_fd_, info.ipv6_fd_))) {
+      if (OB_FAIL(close_all_fd(info.ipv4_fd_, info.ipv6_fd_, info.rpc_ipv4_fd_, info.rpc_ipv6_fd_))) {
         MPRINT("fail to close all fd, ret=%d", ret);
       }
     }
@@ -491,8 +500,9 @@ int ObProxyMain::start(const int argc, char *const argv[])
       app_info_.setup(PACKAGE_STRING, APP_NAME, RELEASEID);
       _LOG_INFO("%s-%s", app_info_.full_version_info_str_, build_version());
       if (info.is_inherited_) {
-        LOG_INFO("obproxy will start by hot upgrade", " listen ipv4 fd", info.ipv4_fd_,
-                        "listen ipv6 fd", info.ipv6_fd_, K(info));
+        LOG_INFO("obproxy will start by hot upgrade", "listen ipv4 fd", info.ipv4_fd_,
+                 "listen ipv6 fd", info.ipv6_fd_, "rpc listen ipv4 fd", info.rpc_ipv4_fd_,
+                 "rpc listen ipv6 fd", info.rpc_ipv6_fd_, K(info));
       } else {
         LOG_INFO("has no inherited sockets, start new obproxy", K(info));
       }
@@ -551,6 +561,20 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
         MPRINT("fail to unsetenv OBPROXY_INHERITED_IPV4_FD, ret=%d", ret);
       } else if (OB_FAIL(unsetenv(OBPROXY_INHERITED_IPV6_FD))) {
         MPRINT("fail to unsetenv OBPROXY_INHERITED_IPV6_FD, ret=%d", ret);
+      }
+    }
+    if (OB_SUCC(ret)) {
+      if (OB_NOT_NULL(inherited_ipv4 = getenv(OBPROXY_INHERITED_RPC_IPV4_FD))) {
+        info.rpc_ipv4_fd_ = atoi(inherited_ipv4);
+        if (OB_FAIL(unsetenv(OBPROXY_INHERITED_RPC_IPV4_FD))) {
+          MPRINT("fail to unsetenv OBPROXY_INHERITED_RPC_IPV4_FD, ret=%d", ret);
+        }
+      }
+      if (OB_SUCC(ret) && OB_NOT_NULL(inherited_ipv6 = getenv(OBPROXY_INHERITED_RPC_IPV6_FD))) {
+        info.rpc_ipv6_fd_ = atoi(inherited_ipv6);
+        if (OB_FAIL(unsetenv(OBPROXY_INHERITED_RPC_IPV6_FD))) {
+          MPRINT("fail to unsetenv OBPROXY_INHERITED_RPC_IPV6_FD, ret=%d", ret);
+        }
       }
     }
   }
@@ -1010,7 +1034,7 @@ int ObProxyMain::do_monitor_mem()
   }
 
   if (is_out_of_mem_limit && RUN_MODE_PROXY == g_run_mode) {
-    LOG_ERROR("obproxy's memroy is out of limit, will be going to commit suicide",
+    LOG_ERROR("obproxy's memory is out of limit, will disable alloc memory from the OS",
               K(mem_limited), "OTHER_MEMORY_SIZE", static_cast<int64_t>(OTHER_MEMORY_SIZE),
               K(is_out_of_mem_limit), K(cur_pos));
     for (int64_t i = 0; i < HISTORY_MEMORY_RECORD_COUNT; ++i) {
@@ -1021,21 +1045,10 @@ int ObProxyMain::do_monitor_mem()
     ObProxyMain::print_memory_usage();
     ObMemoryResourceTracker::dump();
 
-    ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-    ObHRTime interval = HRTIME_SECONDS(2) ; // nanosecond;
-    info.graceful_exit_start_time_ = get_hrtime_internal();
-    info.graceful_exit_end_time_ = info.graceful_exit_start_time_ + interval;
-    g_proxy_fatal_errcode = OB_EXCEED_MEM_LIMIT;
-    if (OB_LIKELY(info.need_conn_accept_)) {
-      info.disable_net_accept();             // disable accecpt new connection
-      LOG_EDIAG("obproxy will kill itself in seconds", "seconds", hrtime_to_sec(interval), K(g_proxy_fatal_errcode));
-    } else {
-      LOG_WDIAG("obproxy is already in graceful exit process",
-               "need_conn_accept", info.need_conn_accept_);
-    }
+    ObProxyMain::freeze_mem_alloc();
   } else if (is_out_of_error_mem_limit) {
     //will print every 2s
-    LOG_ERROR("obproxy's memroy is out of limit's 90% !!!",
+    LOG_ERROR("obproxy's memory is out of limit's 90% !!!",
               K(mem_limited), "OTHER_MEMORY_SIZE", static_cast<int64_t>(OTHER_MEMORY_SIZE),
               K(is_out_of_error_mem_limit), K(cur_pos));
     for (int64_t i = 0; i < HISTORY_MEMORY_RECORD_COUNT; ++i) {
@@ -1048,12 +1061,12 @@ int ObProxyMain::do_monitor_mem()
     // print memory usage
     ObProxyMain::print_memory_usage();
     ObMemoryResourceTracker::dump();
-    ObProxyMain::freeze_mem_alloc();
-    ObProxyMain::freeze_new_connection();
+    ObProxyMain::unfreeze_mem_alloc();
+    get_global_hot_upgrade_processor().do_hot_upgrade_internal();
   } else if (is_out_of_warn_mem_limit) {
     if (0 == cur_pos) {
       //only print every 20s
-      LOG_WARN("obproxy's memroy is out of limit's 80% !!!",
+      LOG_WDIAG("obproxy's memory is out of limit's 80% !!!",
                 K(mem_limited), "OTHER_MEMORY_SIZE", static_cast<int64_t>(OTHER_MEMORY_SIZE),
                 K(is_out_of_error_mem_limit), K(cur_pos));
       for (int64_t i = 0; i < HISTORY_MEMORY_RECORD_COUNT; ++i) {
@@ -1065,14 +1078,12 @@ int ObProxyMain::do_monitor_mem()
       get_global_objpool_leak_checker().print();
       ObProxyMain::print_memory_usage();
       ObMemoryResourceTracker::dump();
-      ObProxyMain::unfreeze_mem_alloc();
-      ObProxyMain::unfreeze_new_connection();
     }
+    ObProxyMain::unfreeze_mem_alloc();
+    get_global_hot_upgrade_processor().do_hot_upgrade_internal();
   } else {
     ObProxyMain::unfreeze_mem_alloc();
-    ObProxyMain::unfreeze_new_connection();
   }
-
   return ret;
 }
 
@@ -1110,7 +1121,8 @@ int ObProxyMain::do_detect_sqlaudit()
   return ret;
 }
 
-int ObProxyMain::close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen_ipv6_fd)
+// TODO add rpc
+int ObProxyMain::close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen_ipv6_fd, const int32_t rpc_listen_ipv4_fd, const int32_t rpc_listen_ipv6_fd)
 {
   //this func can't print log, because log isn't initialized
   int ret = OB_SUCCESS;
@@ -1119,7 +1131,7 @@ int ObProxyMain::close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen
   DIR *fd_dir = NULL;
   char fd_dir_path [OB_MAX_FILE_NAME_LENGTH];
 
-  if (OB_UNLIKELY(listen_ipv4_fd < 3 && listen_ipv6_fd < 3)) {
+  if (OB_UNLIKELY(listen_ipv4_fd < 3 && listen_ipv6_fd < 3 && rpc_listen_ipv4_fd < 3 && rpc_listen_ipv6_fd < 3)) {
     ret = OB_INVALID_ARGUMENT;
   } else {
     int n = snprintf(fd_dir_path, OB_MAX_FILE_NAME_LENGTH, "/proc/%d/fd", pid);
@@ -1140,7 +1152,8 @@ int ObProxyMain::close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen
             if (fd < 0) {
               continue;
             } else if (fd < 3 || fd == dirfd(fd_dir) || fd == listen_ipv4_fd
-                       || fd == listen_ipv6_fd) {
+                       || fd == listen_ipv6_fd || fd  == rpc_listen_ipv4_fd
+                       || fd == rpc_listen_ipv6_fd) {
               continue;
             } else {
               if (OB_UNLIKELY(0 != close(fd))) {
@@ -1158,42 +1171,30 @@ int ObProxyMain::close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen
   return ret;
 }
 
-void ObProxyMain::freeze_mem_alloc()
-{
-  // now only freeze PS related mem alloc
-  ObBasePsEntry::alloc_new_entry_disabled_ = true;
-  lib::ObMallocAllocator::get_instance()->set_disabled_mod_id(ObModIds::OB_PROXY_PS_RELATED);
-}
-
-void ObProxyMain::unfreeze_mem_alloc()
-{
-  ObBasePsEntry::alloc_new_entry_disabled_ = false;
-  lib::ObMallocAllocator::get_instance()->reset_disabled_mod_id();
-}
-
-void ObProxyMain::freeze_new_connection()
-{
-  g_proxy_connection_errcode = OB_ALLOCATE_MEMORY_FAILED;
-}
-
-void ObProxyMain::unfreeze_new_connection()
-{
-  g_proxy_connection_errcode = OB_SUCCESS;
-}
-
 int ObProxyMain::init_data_type()
 {
   int ret = OB_SUCCESS;
   // character collation conversion
-  if (OB_FALSE_IT(init_gb18030_2022())) {
+  if (OB_FAIL(ObCharset::init_charset())) {
+    LOG_EDIAG("fail to init charset", K(ret));
   // decimal int precision conversion
   } else if (OB_FAIL(common::wide::ObDecimalIntConstValue::init_const_values())) {
-    LOG_ERROR("fail to init decimal int const value", K(ret));
+    LOG_EDIAG("fail to init decimal int const value", K(ret));
   } else {
     /* do nothing */
   }
 
   return ret;
+}
+
+void ObProxyMain::freeze_mem_alloc()
+{
+  CHUNK_MGR.disable_mem_alloc();
+}
+
+void ObProxyMain::unfreeze_mem_alloc()
+{
+  CHUNK_MGR.enable_mem_alloc();
 }
 
 } //end of namespace obproxy

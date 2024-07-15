@@ -71,7 +71,14 @@ public:
   static int fill_local_vt_cache(proxy::ObMysqlResultHandler &result_handler,
                                  ObVipTenantCache::VTHashMap &cache_map);
 
-
+  static int concate_sql_value(char *sql_buf, int64_t &sql_buf_len,
+                               const int64_t max_buf_len, const int64_t vid,
+                               const common::ObString &vip, const int64_t vport,
+                               const common::ObString &tenant_name,
+                               const common::ObString &cluster_name,
+                               const common::ObString &name,
+                               const common::ObString &value,
+                               const common::ObString &level);
   static int update_proxy_table_config(proxy::ObMysqlProxy &mysql_proxy,
                                        const char *proxy_ip,
                                        const int32_t proxy_port,

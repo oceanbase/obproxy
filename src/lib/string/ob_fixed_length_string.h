@@ -50,7 +50,7 @@ public:
   int64_t size() const { return strlen(buf_); }
   // dangerous api, invoker assure not to write more than N-1 bytes
   char *ptr() { return buf_; }
-
+  ObString get_obstring() const { return ObString(size(), buf_); }
   uint64_t hash(uint64_t seed = 0) const;
 
   int64_t to_string(char *buf, const int64_t buf_len) const;

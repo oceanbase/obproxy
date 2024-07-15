@@ -80,6 +80,7 @@ public:
   }
   int convert_ipv4_addr(const char *ip);
   int convert_ipv6_addr(const char *ip);
+  int set_ip_from_ip_addr(const obproxy::net::ObIpAddr& ip_addr);
   struct sockaddr_storage get_sockaddr() const;
   void set_sockaddr(const struct sockaddr &sock_addr);
 
@@ -96,7 +97,10 @@ public:
   bool set_ipv4_addr(const char *ip, const int32_t port);
   bool set_ipv4_addr(const uint32_t ip, const int32_t port);
 
+  bool is_invalid() { return IPINVALID == version_; }
   int parse_from_cstring(const char *ip_str);
+  int parse_from_obtring(const ObString& ipport);
+  static int parse_hostname_port_from_obtring(const ObString& hostname_port, ObString& hostname, int32_t& port);
   int64_t get_ipv4_server_id() const;
   void set_ipv4_server_id(const int64_t ipv4_server_id);
 

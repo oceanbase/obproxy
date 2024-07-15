@@ -355,8 +355,8 @@ ObCharsetInfo ob_charset_latin1 = {
     to_upper_latin1,
     sort_order_latin1,
     NULL,             /* uca          */
-    //NULL,           /* tab_to_uni   */
-    //NULL,             /* tab_from_uni */
+    NULL,           /* tab_to_uni   */
+    NULL,             /* tab_from_uni */
     &ob_unicase_default, /* caseinfo     */
     NULL,             /* state_map    */
     NULL,             /* ident_map    */
@@ -386,8 +386,8 @@ ObCharsetInfo ob_charset_latin1_bin = {
     to_upper_latin1,
     NULL,             /* sort_order   */
     NULL,             /* uca          */
-    //NULL,           /* tab_to_uni   */
-    //NULL,             /* tab_from_uni */
+    NULL,           /* tab_to_uni   */
+    NULL,             /* tab_from_uni */
     &ob_unicase_default, /* caseinfo     */
     NULL,             /* state_map    */
     NULL,             /* ident_map    */

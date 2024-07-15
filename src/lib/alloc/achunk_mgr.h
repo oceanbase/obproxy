@@ -61,6 +61,8 @@ public:
   inline void set_urgent(int64_t limit);
   inline int64_t get_urgent() const;
   inline int64_t get_hold() const;
+  inline void disable_mem_alloc() { disable_mem_alloc_ = true; }
+  inline void enable_mem_alloc() { disable_mem_alloc_ = false; }
 
 private:
   typedef ABitSet<CHUNK_BITMAP_SIZE> ChunkBitMap;
@@ -71,6 +73,7 @@ private:
 
   int update_hold(int64_t bytes, bool high_prio);
 
+  bool disable_mem_alloc_;
   ChunkBitMap *chunk_bitmap_;
 
   int64_t limit_;

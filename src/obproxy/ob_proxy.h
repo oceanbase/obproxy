@@ -67,6 +67,7 @@ struct ObProxyOptions
 
   int32_t listen_port_;
   int32_t prometheus_listen_port_;
+  int32_t rpc_listen_port_;
   int64_t upgrade_version_;
 
   const char *optstr_;
@@ -105,6 +106,7 @@ private:
   int init_config();
   int init_resource_pool();
   int init_inner_request_env();
+  int get_password_from_env();
   int get_meta_table_server(common::ObIArray<proxy::ObProxyReplicaLocation> &replicas,
                             obutils::ObProxyConfigString &username);
   bool need_dump_config() const;

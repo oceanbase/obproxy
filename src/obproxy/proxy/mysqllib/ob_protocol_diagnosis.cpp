@@ -13,7 +13,7 @@
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysqllib/ob_protocol_diagnosis.h"
 #include "rpc/obmysql/ob_mysql_util.h"
-#include "proxy/mysqllib/ob_mysql_resp_analyzer.h"
+#include "proxy/mysqllib/ob_resp_packet_analyze_result.h"
 namespace oceanbase
 {
 using namespace common;
@@ -23,7 +23,7 @@ namespace obproxy
 namespace proxy
 {
 
-ObPacketFoldType ObMysqlPacketRecord::get_fold_type(const ObRespResult &result) {
+ObPacketFoldType ObMysqlPacketRecord::get_fold_type(const ObRespPacketAnalyzeResult &result) {
   ObPacketFoldType fold_type = OB_PACKET_FOLD_TYPE_NONE;
   if (OB_MYSQL_COM_QUERY == result.get_cmd() || OB_MYSQL_COM_STMT_EXECUTE == result.get_cmd()) {
     if (1 < result.get_all_pkt_cnt() &&

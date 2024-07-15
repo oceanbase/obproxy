@@ -58,42 +58,56 @@ int ObSSLConfigTableProcessor::execute(void *arg)
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("arg is null unexpected", K(ret));
   } else {
-    ObCloudFnParams *params = reinterpret_cast<ObCloudFnParams*>(arg);
-    ObString tenant_name = params->tenant_name_;
-    ObString cluster_name = params->cluster_name_;
+    ObFnParams *params = static_cast<ObFnParams*>(arg);
+    ObString tenant_name;
+    ObString cluster_name;
     ObString name;
     ObString value;
     if (NULL == params->fields_) {
       ret = OB_INVALID_ARGUMENT;
       LOG_WDIAG("fields is null unexpected", K(ret));
-    } else if (cluster_name.empty() || cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH
-              || tenant_name.empty() || tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH) {
-      ret = OB_INVALID_ARGUMENT;
-      LOG_WDIAG("execute failed, tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
     } else {
-      for (int64_t i = 0; i < params->fields_->field_num_; i++) {
+      int64_t index = params->row_index_;
+      for (int64_t i = 0; OB_SUCC(ret) && i < params->fields_->field_num_; i++) {
         SqlField *sql_field = params->fields_->fields_.at(i);
-        if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
-          value = sql_field->column_value_.config_string_;
+        if (index >= sql_field->column_values_.count()) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("index out of range, invalid value for ssl_config",
+                    K(index), K(sql_field->column_values_.count()), K_(sql_field->column_name), K(ret));
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
+          value = sql_field->column_values_.at(index).column_value_;
         } else if (0 == sql_field->column_name_.config_string_.case_compare("name")) {
-          name = sql_field->column_value_.config_string_;
+          name = sql_field->column_values_.at(index).column_value_;
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("cluster_name")) {
+          cluster_name = sql_field->column_values_.at(index).column_value_;
+          if (cluster_name.empty() || cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH) {
+            ret = OB_INVALID_ARGUMENT;
+            LOG_WDIAG("execute failed, cluster_name is null or length is large", K(cluster_name.length()), K(OB_PROXY_MAX_CLUSTER_NAME_LENGTH), K(ret));
+          }
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("tenant_name")) {
+          tenant_name = sql_field->column_values_.at(index).column_value_;
+          if (tenant_name.empty() || tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH) {
+            ret = OB_INVALID_ARGUMENT;
+            LOG_WDIAG("execute failed, tenant_name is null or length is large", K(tenant_name.length()), K(OB_MAX_TENANT_NAME_LENGTH), K(ret));
+          }
         }
       }
 
-      if (params->stmt_type_ == OBPROXY_T_REPLACE) {
-        if (OB_FAIL(get_global_ssl_config_table_processor().set_ssl_config(cluster_name, tenant_name, name, value))) {
-          LOG_WDIAG("set ssl config failed", K(ret), K(cluster_name), K(tenant_name), K(name), K(value));
+      // 多值修改时，仅第一个值需要创建backup；其他值可以直接写入backup
+      if (OB_SUCC(ret) && params->stmt_type_ == OBPROXY_T_REPLACE) {
+        if (OB_FAIL(get_global_ssl_config_table_processor().set_ssl_config(cluster_name, tenant_name, name, value, params->row_index_ == 0))) {
+          LOG_WDIAG("set ssl config failed", K(cluster_name), K(tenant_name), K(name), K(value), K(ret));
         }
-      } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
+      } else if (OB_SUCC(ret) && params->stmt_type_ == OBPROXY_T_DELETE) {
         if (!name.empty() || !value.empty()) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("delete failed, name or value is not null", K(ret), K(name), K(value));
-        } else if (OB_FAIL(get_global_ssl_config_table_processor().delete_ssl_config(cluster_name, tenant_name))) {
-          LOG_WDIAG("delete ssl config failed", K(ret), K(cluster_name), K(tenant_name));
+          LOG_WDIAG("delete failed, name or value is not null", K(name), K(value), K(ret));
+        } else if (OB_FAIL(get_global_ssl_config_table_processor().delete_ssl_config(cluster_name, tenant_name, params->row_index_ == 0))) {
+          LOG_WDIAG("delete ssl config failed", K(cluster_name), K(tenant_name), K(ret));
         }
       } else {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("unexpected stmt type", K(ret), K(params->stmt_type_));
+        LOG_WDIAG("unexpected stmt type", K(params->stmt_type_), K(ret));
       }
     }
   }
@@ -143,14 +157,15 @@ int ObSSLConfigTableProcessor::init()
 int ObSSLConfigTableProcessor::set_ssl_config(const ObString &cluster_name,
                                               const ObString &tenant_name,
                                               const ObString &name,
-                                              const ObString &value)
+                                              const ObString &value,
+                                              const bool need_to_backup)
 {
   int ret = OB_SUCCESS;
   DRWLock::WRLockGuard guard(ssl_config_lock_);
   if (OB_UNLIKELY(cluster_name.empty() || tenant_name.empty() || name.empty() || value.empty())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("set ssl config failed, invalid argument", K(cluster_name), K(tenant_name), K(name), K(value), K(ret));
-  } else if (OB_FAIL(backup_hash_map())) {
+  } else if (need_to_backup && OB_FAIL(backup_hash_map())) {
     LOG_WDIAG("backup hash map failed", K(ret));
   } else {
     ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
@@ -240,14 +255,15 @@ int ObSSLConfigTableProcessor::set_ssl_config(const ObString &cluster_name,
   return ret;
 }
 
-int ObSSLConfigTableProcessor::delete_ssl_config(ObString &cluster_name, ObString &tenant_name)
+int ObSSLConfigTableProcessor::delete_ssl_config(ObString &cluster_name, ObString &tenant_name,
+                                                 bool need_to_backup)
 {
   int ret = OB_SUCCESS;
   DRWLock::WRLockGuard guard(ssl_config_lock_);
   if (cluster_name.empty() || tenant_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("cluster name or tenant name empty unexpected", K(ret));
-  } else if (OB_FAIL(backup_hash_map())) {
+  } else if (need_to_backup && OB_FAIL(backup_hash_map())) {
     LOG_WDIAG("backup hash map failed", K(ret));
   } else {
     LOG_DEBUG("delete ssl config", K(cluster_name), K(tenant_name));

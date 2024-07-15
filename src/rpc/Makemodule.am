@@ -45,9 +45,13 @@ rpc/ob_request.h\
 rpc/ob_request.cpp\
 rpc/ob_rpc_define.h\
 rpc/obrpc/ob_rpc_packet.h\
+rpc/obrpc/ob_rpc_packet.cpp\
+rpc/obrpc/ob_rpc_time.h\
+rpc/obrpc/ob_rpc_time.cpp\
 rpc/obrpc/ob_rpc_packet_list.h\
 rpc/obrpc/ob_rpc_proxy.h\
 rpc/obrpc/ob_rpc_result_code.h\
+rpc/obrpc/ob_rpc_result_code.cpp\
 rpc/obrpc/ob_rpc_proxy_macros.h\
 rpc/obrpc/ob_rpc_proxy.ipp\
 rpc/obrpc/ob_rpc_processor.h\

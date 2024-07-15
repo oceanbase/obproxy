@@ -77,6 +77,8 @@ public:
                                  const obmysql::ObMySQLField &field,
                                  common::ObObj &field_value,
                                  const uint16_t status_flag);
+  static int encode_empty_resultset(event::ObMIOBuffer &write_buf,
+                                 uint8_t &seq, const uint16_t status_flag);
 
   static inline int get_int1(const char *&pos, int64_t &buf_len, int8_t &v);
   static inline int get_int2(const char *&pos, int64_t &buf_len, int16_t &v);

@@ -276,6 +276,7 @@ function checkalive()
             else
               ($OBPROXY_ROOT/bin/obproxy -p $OBPROXY_PORT $OBPROXY_APP_NAME_ARG -o obproxy_config_server_url=''$OBPROXY_CONFIG_SERVER_URL''"$OBPROXY_OPT_LOCAL")
             fi
+            sleep 8
           else
             if [ x$ENABLE_ROOT_SERVER == xtrue ];
             then

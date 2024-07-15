@@ -72,8 +72,8 @@ public:
   int backup_local_vt_conn_cache();
 
   int conn_handle_replace_config(common::ObString& cluster_name, common::ObString& tenant_name,
-      common::ObString& name_str, common::ObString& value_str);
-  int conn_handle_delete_config(common::ObString& cluster_name, common::ObString& tenant_name);
+      common::ObString& name_str, common::ObString& value_str, const bool need_to_backup);
+  int conn_handle_delete_config(common::ObString& cluster_name, common::ObString& tenant_name, const bool need_to_backup);
 
   ObVipTenantConnCache &get_vt_conn_cache() { return vt_conn_cache_; }
   int conn_rollback();

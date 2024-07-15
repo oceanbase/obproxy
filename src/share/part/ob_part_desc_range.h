@@ -42,24 +42,37 @@ public:
   ObPartDescRange();
   virtual ~ObPartDescRange();
 
-  virtual int get_part(common::ObNewRange &range,
-                       common::ObIAllocator &allocator,
+  virtual int get_part(ObNewRange &range,
+                       ObIAllocator &allocator,
                        ObIArray<int64_t> &part_ids,
                        ObPartDescCtx &ctx,
                        ObIArray<int64_t> &tablet_ids,
-                       int64_t &part_idx);
-  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids);
+                       int64_t &part_idx) override;
+  virtual int get_part_by_num(const int64_t num, ObIArray<int64_t> &part_ids, ObIArray<int64_t> &tablet_ids) override;
+  virtual int get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids) override;
+  virtual int get_part_for_obkv(ObNewRange &range, ObIAllocator &allocator,
+                                ObIArray<int64_t> &part_ids, ObPartDescCtx &ctx,
+                                ObIArray<int64_t> &tablet_ids,
+                                ObIArray<int64_t> &ls_ids) override;
+  virtual int get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
+                                       ObIArray<int64_t> &tablet_ids,
+                                       ObIArray<int64_t> &ls_ids) override;
   RangePartition* get_part_array() { return part_array_; }
   int set_part_array(RangePartition *part_array, int64_t size) {
     part_array_ = part_array;
     part_array_size_ = size;
-    return common::OB_SUCCESS;
+    return OB_SUCCESS;
   }
 
   int cast_key(ObRowkey &src_key,
                ObRowkey &target_key,
                ObIAllocator &allocator,
                ObPartDescCtx &ctx);
+
+  int cast_key_for_obkv(ObRowkey &src_key,
+                        ObRowkey &target_key,
+                        ObIAllocator &allocator,
+                        ObPartDescCtx &ctx);
 
   DECLARE_VIRTUAL_TO_STRING;
   virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const;

@@ -69,6 +69,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
 
     local_bound_ip_(),
     listen_port_(0),
+    rpc_listen_port_(0),
     stack_size_(0),
     work_thread_num_(0),
     task_thread_num_(0),
@@ -110,6 +111,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     enable_trace_stats_(false),
     enable_partition_table_route_(false),
     enable_pl_route_(false),
+    enable_obproxy_rpc_service_(true),
     slow_transaction_time_threshold_(0),
     slow_proxy_process_time_threshold_(0),
     query_digest_time_threshold_(0),
@@ -124,6 +126,8 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     local_bound_ipv6_ip_(),
     read_stale_retry_interval_(0),
     ob_max_read_stale_time_(0),
+    rpc_request_max_retries_(0),
+    rpc_srv_session_pool_inactive_timeout_(0),
     client_session_id_version_(1)
 {
   proxy_idc_name_[0] = '\0';
@@ -172,6 +176,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_TIME_ASSIGN(tenant_location_valid_time);
 
   CONFIG_ITEM_ASSIGN(listen_port);
+  CONFIG_ITEM_ASSIGN(rpc_listen_port);
   CONFIG_ITEM_ASSIGN(stack_size);
   CONFIG_ITEM_ASSIGN(work_thread_num);
   CONFIG_ITEM_ASSIGN(task_thread_num);
@@ -213,6 +218,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(enable_trace_stats);
   CONFIG_ITEM_ASSIGN(enable_partition_table_route);
   CONFIG_ITEM_ASSIGN(enable_pl_route);
+  CONFIG_ITEM_ASSIGN(enable_obproxy_rpc_service);
   CONFIG_TIME_ASSIGN(slow_transaction_time_threshold);
   CONFIG_TIME_ASSIGN(slow_proxy_process_time_threshold);
   CONFIG_TIME_ASSIGN(query_digest_time_threshold);
@@ -224,6 +230,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(ip_listen_mode);
   CONFIG_TIME_ASSIGN(read_stale_retry_interval);
   CONFIG_ITEM_ASSIGN(ob_max_read_stale_time);
+  CONFIG_ITEM_ASSIGN(rpc_request_max_retries);
 
   if (OB_SUCC(ret)) {
     obsys::CRLockGuard guard(proxy_config.rwlock_);
@@ -324,11 +331,12 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(server_tcp_init_cwnd), K_(frequent_accept), K_(net_accept_threads));
   J_COMMA();
   J_KV(K_(short_async_task_timeout), K_(short_async_task_timeout), K_(min_congested_connect_timeout),
-       K_(tenant_location_valid_time), K_(local_bound_ip), K_(listen_port), K_(stack_size), K_(work_thread_num),
+       K_(tenant_location_valid_time), K_(local_bound_ip), K_(listen_port), K_(rpc_listen_port), K_(stack_size), K_(work_thread_num),
        K_(task_thread_num), K_(block_thread_num), K_(grpc_thread_num), K_(shard_scan_thread_num), K_(automatic_match_work_thread),
        K_(enable_congestion), K_(enable_bad_route_reject), K_(test_server_addr),
        K_(sqlaudit_mem_limited), K_(max_connections), K_(client_max_connections),
        K_(enable_client_connection_lru_disconnect), K_(connect_observer_max_retries),
+       K_(rpc_request_max_retries),
        K_(monitor_stat_low_threshold), K_(monitor_stat_middle_threshold), K_(monitor_stat_high_threshold));
   J_COMMA();
   J_KV(K_(enable_trans_detail_stats), K_(enable_mysqlsm_info),

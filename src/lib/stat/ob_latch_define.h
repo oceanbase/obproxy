@@ -11,7 +11,7 @@
  */
 
 #ifdef LATCH_DEF
-LATCH_DEF(LATCH_WAIT_QUEUE_LOCK, 0, "latch wait queue lock", LATCH_FIFO, 1, 0, NULL_EVENT, "latch wait queue lock")
+LATCH_DEF(LATCH_WAIT_QUEUE_LOCK, 0, "latch wait queue lock", LATCH_FIFO, 1, 0, LATCH_WAIT_QUEUE_LOCK_WAIT, "latch wait queue lock")
 LATCH_DEF(DEFAULT_SPIN_LOCK, 1, "default spin lock", LATCH_FIFO, 2000, 0, DEFAULT_SPIN_LOCK_WAIT, "default spin lock")
 LATCH_DEF(DEFAULT_SPIN_RWLOCK, 2, "default spin rwlock", LATCH_FIFO, 2000, 0, DEFAULT_SPIN_RWLOCK_WAIT, "default spin rwlock")
 LATCH_DEF(DEFAULT_MUTEX, 3, "default mutex", LATCH_FIFO, 2000, 0, DEFAULT_MUTEX_WAIT, "default mutex")

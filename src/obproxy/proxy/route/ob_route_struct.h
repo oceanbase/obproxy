@@ -79,9 +79,11 @@ do { \
 struct ObProxyReplicaLocation
 {
 public:
-  ObProxyReplicaLocation() : is_dup_replica_(false), server_(), role_(common::FOLLOWER), replica_type_(common::REPLICA_TYPE_FULL) {}
+  ObProxyReplicaLocation() : is_dup_replica_(false), server_(), rpc_server_(), role_(common::FOLLOWER), replica_type_(common::REPLICA_TYPE_FULL) {}
   ObProxyReplicaLocation(const common::ObAddr &server, const common::ObRole role, const common::ObReplicaType replica_type)
-    : is_dup_replica_(false), server_(server), role_(role), replica_type_(replica_type) {}
+   : is_dup_replica_(false), server_(server), role_(role), replica_type_(replica_type) {}
+  ObProxyReplicaLocation(const common::ObAddr &server, const common::ObAddr &rpc_server, const common::ObRole role, const common::ObReplicaType replica_type)
+    : is_dup_replica_(false), server_(server), rpc_server_(rpc_server), role_(role), replica_type_(replica_type) {}
   ~ObProxyReplicaLocation() { reset(); }
 
   void reset();
@@ -90,6 +92,7 @@ public:
   bool operator!=(const ObProxyReplicaLocation &other) const;
   int64_t to_string(char *buf, const int64_t buf_len) const;
   int add_addr(const char *ip, const int64_t port);
+  int add_rpc_addr(const char *ip, const int64_t svr_port);
   int set_replica_type(const int32_t replica_type);
   common::ObReplicaType get_replica_type() const { return replica_type_; }
   bool is_leader() const { return common::LEADER == role_; }
@@ -108,6 +111,7 @@ public:
 
   bool is_dup_replica_;
   common::ObAddr server_;
+  common::ObAddr rpc_server_;
   common::ObRole role_;
   common::ObReplicaType replica_type_;
 };
@@ -237,6 +241,17 @@ inline int ObProxyReplicaLocation::add_addr(const char *ip, const int64_t port)
   return ret;
 }
 
+inline int ObProxyReplicaLocation::add_rpc_addr(const char *ip, const int64_t svr_port)
+{
+  int ret = common::OB_SUCCESS;
+  if (OB_UNLIKELY(NULL == ip || svr_port <= 0)) {
+    ret = common::OB_INVALID_ARGUMENT;
+  } else if (OB_UNLIKELY(!rpc_server_.set_ipv4_addr(ip, static_cast<int32_t>(svr_port)))) {
+    ret = common::OB_INVALID_ARGUMENT;
+  }
+  return ret;
+}
+
 inline int ObProxyReplicaLocation::set_replica_type(const int32_t replica_type)
 {
   int ret = common::OB_SUCCESS;
@@ -261,6 +276,7 @@ inline void ObProxyReplicaLocation::reset()
 {
   is_dup_replica_ = false;
   server_.reset();
+  rpc_server_.reset();
   role_ = common::FOLLOWER;
   replica_type_ = common::REPLICA_TYPE_FULL;
 }
@@ -275,6 +291,7 @@ inline bool ObProxyReplicaLocation::is_valid() const
 inline bool ObProxyReplicaLocation::operator==(const ObProxyReplicaLocation &other) const
 {
   return (server_ == other.server_)
+          && (rpc_server_ == other.rpc_server_)
           && (role_ == other.role_)
           && (replica_type_ == other.replica_type_)
           && (is_dup_replica_ == other.is_dup_replica_);
@@ -425,11 +442,13 @@ public:
   int64_t to_string(char *buf, const int64_t buf_len) const;
   // Atttention!! this func only use to avoid entry frequently updating
   bool is_need_update() const;
+  bool is_enougth_old() const;
   void set_tenant_version(const uint64_t tenant_version) { tenant_version_ = tenant_version; }
   uint64_t get_tenant_version() const { return tenant_version_; }
   int64_t get_time_for_expired() const { return time_for_expired_; }
   void set_time_for_expired(int64_t expire_time) { time_for_expired_ = expire_time; }
   void check_and_set_expire_time(const uint64_t tenant_version, const bool is_sys_dummy_entry);
+  void set_entry_expired_direct_for_rpc();
 
 protected:
   int64_t cr_version_; // one entry must belong to one cluster with the specfied version
@@ -466,6 +485,16 @@ inline bool ObRouteEntry::is_need_update() const
   }
 
   return (is_dirty && can_update);
+}
+
+inline bool ObRouteEntry::is_enougth_old() const
+{
+  const int64_t UPDATE_INTERVAL_US = obutils::get_global_proxy_config().delay_update_entry_interval;
+  ObHRTime now_time = common::hrtime_to_usec(event::get_hrtime());
+  /** check last update time or create time to avoid frequently pull route info from remote directly. */
+  bool is_old = ((now_time - last_update_time_us_) > UPDATE_INTERVAL_US)
+                  || (0 == last_update_time_us_ && (now_time - create_time_us_) > UPDATE_INTERVAL_US);
+  return is_old;
 }
 
 inline void  ObRouteEntry::renew_last_update_time() {

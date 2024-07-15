@@ -590,7 +590,7 @@ bool ObResultSetFetcher::is_eof_packet(const ObString &packet_body) const
   bool bret = false;
   if (!packet_body.empty()) {
     int64_t type = static_cast<uint8_t>(packet_body.ptr()[0]);
-    if ((MYSQL_EOF_PACKET_TYPE == type) && (packet_body.length() < 9)) {
+    if ((MYSQL_EOF_PACKET_TYPE == type) && (packet_body.length() < MYSQL_MAX_EOF_PACKET_LEN)) {
       bret = true;
     }
   }

@@ -25,14 +25,14 @@ namespace obproxy
 {
 volatile int g_proxy_fatal_errcode = OB_SUCCESS;
 
-volatile int g_proxy_connection_errcode = OB_SUCCESS;
-
 ObHotUpgraderInfo g_hot_upgrade_info;
 
 void ObHotUpgraderInfo::reset()
 {
   ipv4_fd_ = OB_INVALID_INDEX;
   ipv6_fd_ = OB_INVALID_INDEX;
+  rpc_ipv4_fd_ = OB_INVALID_INDEX;
+  rpc_ipv6_fd_ = OB_INVALID_INDEX;
   received_sig_ = OB_INVALID_INDEX;
   sub_pid_ = OB_INVALID_INDEX;
   rc_status_ = RCS_NONE;
@@ -60,6 +60,7 @@ void ObHotUpgraderInfo::reset()
   memset(upgrade_version_buf_, 0, sizeof(upgrade_version_buf_));
   is_inherited_ = false;
   parent_hot_upgrade_flag_ = false;
+  port_state_ = OB_PROXY_PORT_DEFAULT;
 }
 
 void ObHotUpgraderInfo::set_main_arg(const int32_t argc, char *const *argv)
@@ -75,8 +76,8 @@ DEF_TO_STRING(ObHotUpgraderInfo)
   int64_t pos = 0;
   J_OBJ_START();
   J_KV(K_(is_inherited), K_(upgrade_version), K_(need_conn_accept), K_(user_rejected), K_(ipv4_fd),
-       K_(ipv6_fd), K_(received_sig), K_(sub_pid), K_(graceful_exit_end_time),
-       K_(graceful_exit_start_time), K_(active_client_vc_count), K_(local_addr),
+       K_(ipv6_fd), K_(rpc_ipv4_fd), K_(rpc_ipv6_fd), K_(received_sig), K_(sub_pid), K_(graceful_exit_end_time),
+       K_(graceful_exit_start_time), K_(active_client_vc_count), K_(local_addr), K_(rpc_local_addr), 
        "rc_status", get_rc_status_string(rc_status_),
        "hu_cmd", get_cmd_string(cmd_),
        "state", get_state_string(state_),

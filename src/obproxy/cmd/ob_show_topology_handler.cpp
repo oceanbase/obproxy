@@ -329,7 +329,8 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_single_tb(ObString t
 
 int ObShowTopologyHandler::dump_shard_topology_for_shard_db_non_shard_tb(ObString table_name, ObShardRule *shard_rule)
 {
-  int ret = OB_SUCCESS; 
+  int ret = OB_SUCCESS;
+
   ObNewRow row;
   ObObj cells[OB_TC_SHARD_MAX_COLUMN_ID];
   int size = OB_TC_SHARD_MAX_COLUMN_ID;
@@ -337,8 +338,10 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_non_shard_tb(ObStrin
   ObString real_table_name = table_name;
   char group_name_buf[OB_MAX_TABLEGROUP_NAME_LENGTH];
   ObString schema_type("SHARD");
-  ObString shard_key_str = get_shard_key_str(*shard_rule);
-  ObString shard_rule_str = get_shard_rule_str(*shard_rule);
+  char shard_key_buf[MAX_RULE_BUF_SIEZ];
+  char shard_rule_buf[MAX_RULE_BUF_SIEZ];
+  ObString shard_key_str = get_shard_key_str(*shard_rule, shard_key_buf, MAX_RULE_BUF_SIEZ);
+  ObString shard_rule_str = get_shard_rule_str(*shard_rule, shard_rule_buf, MAX_RULE_BUF_SIEZ);
 
   int64_t count = shard_rule->db_size_;
   for(int64_t index = 0; index < count; ++index) {
@@ -367,6 +370,7 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_non_shard_tb(ObStrin
 int ObShowTopologyHandler::dump_shard_topology_for_shard_db_shard_tb(ObShardRule *shard_rule)
 {
   int ret = OB_SUCCESS;
+
   if (OB_UNLIKELY((0 == shard_rule->db_size_) || (shard_rule->tb_size_ < shard_rule->db_size_))) {
     WARN_CMD("wrong shard rule for shard_db_shard_tb", K(shard_rule->db_size_), K(shard_rule->tb_size_), K(ret));
   } else {
@@ -378,8 +382,10 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_shard_tb(ObShardRule
     char group_name_buf[OB_MAX_TABLEGROUP_NAME_LENGTH];
     char table_name_buf[OB_MAX_USER_TABLE_NAME_LENGTH];
     ObString schema_type("SHARD");
-    ObString shard_key_str = get_shard_key_str(*shard_rule);
-    ObString shard_rule_str = get_shard_rule_str(*shard_rule);
+    char shard_key_buf[MAX_RULE_BUF_SIEZ];
+    char shard_rule_buf[MAX_RULE_BUF_SIEZ];
+    ObString shard_key_str = get_shard_key_str(*shard_rule, shard_key_buf, MAX_RULE_BUF_SIEZ);
+    ObString shard_rule_str = get_shard_rule_str(*shard_rule, shard_rule_buf, MAX_RULE_BUF_SIEZ);
 
     int64_t count = shard_rule->tb_size_;
     for(int64_t index = 0; index < count; ++index) {
@@ -412,21 +418,65 @@ int ObShowTopologyHandler::dump_shard_topology_for_shard_db_shard_tb(ObShardRule
   return ret;
 }
 
-ObString ObShowTopologyHandler::get_shard_key_str(dbconfig::ObShardRule& shard_rule)
+ObString ObShowTopologyHandler::get_shard_key_str(dbconfig::ObShardRule& shard_rule,
+                                                  char * const buf,
+                                                  const int64_t buf_len)
 {
   ObString ret_str = ObString::make_string("empty shard key");
-  if (OB_LIKELY(shard_rule.shard_key_columns_.count() > 0)) {
+
+  if (OB_UNLIKELY(0 >= shard_rule.shard_key_columns_.count())) {
+    // nothing
+  } else if (OB_LIKELY(1 == shard_rule.shard_key_columns_.count())) {
     ret_str = shard_rule.shard_key_columns_[0];
+  } else {
+    int pos = 0;
+    int write_len = 0;
+    for (int64_t i = 0; i < shard_rule.shard_key_columns_.count(); ++i) {
+      const ObString& tmp_shard_key = shard_rule.shard_key_columns_.at(i);
+      write_len = snprintf(buf + pos, buf_len, "%.*s,", tmp_shard_key.length(), tmp_shard_key.ptr());
+      if (write_len <= 0) {
+        break;
+      }
+      pos += write_len;
+    }
+
+    if (OB_LIKELY(pos > 0)) {
+      buf[pos] = '\0';
+      ret_str.assign_ptr(buf, pos);
+    }
   }
+
   return ret_str;
 }
 
-ObString ObShowTopologyHandler::get_shard_rule_str(dbconfig::ObShardRule& shard_rule)
+ObString ObShowTopologyHandler::get_shard_rule_str(dbconfig::ObShardRule& shard_rule,
+                                                   char * const buf,
+                                                   const int64_t buf_len)
 {
   ObString ret_str = ObString::make_string("empty shard rule");
-  if (OB_LIKELY(shard_rule.tb_rules_.count() > 0)) {
+
+  if (OB_UNLIKELY(0 >= shard_rule.tb_rules_.count())) {
+    // nothing
+  } else if (OB_LIKELY(1 == shard_rule.tb_rules_.count())) {
     ret_str = shard_rule.tb_rules_.at(0).shard_rule_str_.config_string_;
+  } else {
+    int pos = 0;
+    int write_len = 0;
+    for (int64_t i = 0; i < shard_rule.tb_rules_.count(); ++i) {
+      const ObString& tmp_shard_rule = shard_rule.tb_rules_.at(i).shard_rule_str_.config_string_;
+      write_len = snprintf(buf + pos, buf_len, "%.*s;", tmp_shard_rule.length(), tmp_shard_rule.ptr());
+      if (write_len <= 0) {
+        break;
+      }
+      pos += write_len;
+    }
+
+    if (OB_LIKELY(pos > 0)) {
+      buf[pos] = '\0';
+      ret_str.assign_ptr(buf, pos);
+    }
   }
+
   return ret_str;
 }
 } // end of namespace proxy

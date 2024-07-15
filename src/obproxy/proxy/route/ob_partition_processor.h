@@ -78,6 +78,39 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObPartitionParam);
 };
 
+class ObBatchPartitionParam
+{
+public:
+  ObBatchPartitionParam()
+    : cont_(NULL), force_renew_(false), is_need_force_flush_(false),
+      mysql_proxy_(NULL), current_idc_name_(), tenant_version_(0),
+      cluster_version_(0), table_entry_(NULL) {}
+  ~ObBatchPartitionParam() { reset(); }
+
+  void reset();
+  bool is_valid() const;
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+  bool need_fetch_from_remote() const { return force_renew_; }
+  void set_table_entry(ObTableEntry *entry);
+  ObTableEntry *get_table_entry() const { return table_entry_; }
+  void deep_copy(ObBatchPartitionParam &other);
+
+  event::ObContinuation *cont_; //maybe not to use
+  // uint64_t partition_id_;
+  bool force_renew_;
+  bool is_need_force_flush_;
+  // ObPartitionResult result_;
+  ObMysqlProxy *mysql_proxy_;
+  common::ObString current_idc_name_;
+  char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
+  uint64_t tenant_version_;
+  int64_t cluster_version_;
+
+private:
+  ObTableEntry *table_entry_;
+  DISALLOW_COPY_AND_ASSIGN(ObBatchPartitionParam);
+};
+
 inline bool ObPartitionParam::is_valid() const
 {
   return (NULL != cont_)
@@ -112,6 +145,38 @@ inline void ObPartitionParam::set_table_entry(ObTableEntry *entry)
   }
 }
 
+inline bool ObBatchPartitionParam::is_valid() const
+{
+  return //(NULL != cont_)
+          (NULL != get_table_entry())
+          && (NULL != mysql_proxy_);
+}
+
+inline void ObBatchPartitionParam::reset()
+{
+  cont_ = NULL;
+  // result_.reset();
+  mysql_proxy_ = NULL;
+  force_renew_ = false;
+  is_need_force_flush_ = false;
+  set_table_entry(NULL);
+  current_idc_name_.reset();
+  tenant_version_ = 0;
+  cluster_version_ = 0;
+}
+
+inline void ObBatchPartitionParam::set_table_entry(ObTableEntry *entry)
+{
+  if (NULL != table_entry_) {
+    table_entry_->dec_ref();
+    table_entry_ = NULL;
+  }
+  table_entry_ = entry;
+  if (NULL != table_entry_) {
+    table_entry_->inc_ref();
+  }
+}
+
 class ObPartitionProcessor
 {
 public:
@@ -119,6 +184,8 @@ public:
   ~ObPartitionProcessor() {}
 
   static int get_partition_entry(ObPartitionParam &param, event::ObAction *&action);
+
+  static int put_and_check_schedule_async_batch_fetch(ObTableEntry *entry, uint64_t partition_id);
 
 private:
   static int get_partition_entry_from_thread_cache(ObPartitionParam &param,

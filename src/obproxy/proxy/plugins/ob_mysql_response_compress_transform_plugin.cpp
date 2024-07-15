@@ -32,24 +32,20 @@ ObMysqlResponseCompressTransformPlugin *ObMysqlResponseCompressTransformPlugin::
 ObMysqlResponseCompressTransformPlugin::ObMysqlResponseCompressTransformPlugin(ObApiTransaction &transaction)
   : ObTransformationPlugin(transaction, ObTransformationPlugin::RESPONSE_TRANSFORMATION),
     req_seq_(0), request_id_(0), server_sessid_(0),
-    local_reader_(NULL), local_transfer_reader_(NULL), compress_analyzer_(),
-    compress_ob20_analyzer_(), analyzer_(NULL)
+    local_reader_(NULL), local_transfer_reader_(NULL)
 {
-  ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
-  if (ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM) {
-    analyzer_ = &compress_analyzer_;
-  } else if (ob_proxy_protocol == ObProxyProtocol::PROTOCOL_OB20) {
-    analyzer_ = &compress_ob20_analyzer_;
-  }
+  protocol_ = sm_->get_server_session_protocol();
 
   // get request seq
   req_seq_ = sm_->get_compressed_or_ob20_request_seq();
-  request_id_ = sm_->get_server_session()->get_server_request_id();
-  server_sessid_ = sm_->get_server_session()->get_server_sessid();
-  is_analyze_compressed_ob20 =
-      sm_->get_server_session()->get_session_info().is_server_ob20_compress_supported() && sm_->compression_algorithm_.level_ != 0;
-  INC_SHARED_REF(analyzer_->get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
-  PROXY_API_LOG(DEBUG, "ObMysqlResponseCompressTransformPlugin born", K(ob_proxy_protocol), K_(req_seq),
+   // save sm_->server_session info now otherwise in `consume()` sm_->server_session has been reset
+  ObMysqlServerSession *server_session = sm_->get_server_session();
+  request_id_ = server_session->get_server_request_id();
+  server_sessid_ = server_session->get_server_sessid();
+  is_compressed_ob20_ = server_session->get_session_info().is_server_ob20_compress_supported()
+                        && 0 != sm_->compression_algorithm_.level_;
+  INC_SHARED_REF(resp_analyzer_.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
+  PROXY_API_LOG(DEBUG, "ObMysqlResponseCompressTransformPlugin born", K(protocol_), K_(req_seq),
                 K_(request_id), K_(server_sessid), K(this));
 }
 
@@ -57,7 +53,6 @@ void ObMysqlResponseCompressTransformPlugin::destroy()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCompressTransformPlugin destroy", K(this));
   ObTransformationPlugin::destroy();
-  analyzer_->reset();
   op_reclaim_free(this);
 }
 
@@ -73,42 +68,35 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
     local_reader_ = reader->clone();
   }
 
-  if (!analyzer_->is_inited()) {
-    const obmysql::ObMySQLCmd cmd = sm_->trans_state_.trans_info_.client_request_.get_packet_meta().cmd_;
-    const ObMysqlProtocolMode mysql_mode = sm_->client_session_->get_session_info().is_oracle_mode() ?
-                                           OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
-    const bool extra_ok_packet_for_stats_enabled = sm_->is_extra_ok_packet_for_stats_enabled();
-    
-
-    // should decompress the data
-    if (OB_FAIL(analyzer_->init(req_seq_, ObMysqlCompressAnalyzer::DECOMPRESS_MODE,
-                                cmd, mysql_mode, extra_ok_packet_for_stats_enabled,
-                                req_seq_, request_id_, server_sessid_,
-                                is_analyze_compressed_ob20))) {
-      PROXY_API_LOG(WDIAG, "fail to init compress analyzer", K_(req_seq), K_(request_id), K_(server_sessid),
-                    K(cmd), K(extra_ok_packet_for_stats_enabled), K(ret));
-    }
+  const obmysql::ObMySQLCmd cmd = sm_->trans_state_.trans_info_.client_request_.get_packet_meta().cmd_;
+  const ObMysqlProtocolMode protocol_mode = sm_->client_session_->get_session_info().is_oracle_mode() ?
+                                            OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
+  const bool enable_trans_checksum = sm_->client_session_->get_session_info().get_enable_transmission_checksum();
+  if (resp_analyzer_.is_inited()) {
+  } else if (OB_FAIL(resp_analyzer_.init(protocol_, cmd, protocol_mode, ObRespAnalyzeMode::DECOMPRESS_MODE,
+                                         sm_->is_extra_ok_packet_for_stats_enabled(), is_compressed_ob20_,
+                                         req_seq_, req_seq_, request_id_, server_sessid_,
+                                         enable_trans_checksum))) {
+    PROXY_API_LOG(EDIAG, "fail to init resp analyzer", K(ret));
   }
 
-  ObRespAnalyzeResult &analyze_result = sm_->trans_state_.trans_info_.server_response_.get_analyze_result();
+
+  ObRespAnalyzeResult &resp_result = sm_->trans_state_.trans_info_.resp_result_;
   if (OB_SUCC(ret)) {
     if (NULL == local_transfer_reader_) {
-      local_transfer_reader_ = analyzer_->get_transfer_reader();
+      local_transfer_reader_ = resp_analyzer_.alloc_mysql_pkt_reader();
     }
-
-    ObMysqlResp &server_response = sm_->trans_state_.trans_info_.server_response_;
-    // the ObMysqlResp will be use both by tunnel and this class, and if tunnel analyze finished,
+    // the ObRespAnalyzeResult will be use both by tunnel and this class, and if tunnel analyze finished,
     // is_resp_completed_ will set true, here we set back to false to ensure compress_analyzer
     // work happy.
-    if (analyze_result.is_resp_completed()) {
-      analyze_result.is_resp_completed_ = false;
+    if (resp_result.is_resp_completed()) {
+      resp_result.is_resp_completed_ = false;
     }
 
     int64_t plugin_decompress_response_begin = sm_->get_based_hrtime();
     read_avail = local_reader_->read_avail();
     PROXY_API_LOG(DEBUG, "[ObMysqlResponseCompressTransformPlugin] local_reader_", K(read_avail));
-    // 1. for compressed ob20 analyzer_ will consume all local_reader_ and write mysql packet back to local_reader
-    if (OB_FAIL(analyzer_->analyze_response(*local_reader_, &server_response))) {
+    if (OB_FAIL(resp_analyzer_.analyze_response(*local_reader_, resp_result))) {
       PROXY_API_LOG(EDIAG, "fail to analyze mysql compress", K_(local_reader), K(ret));
     } else if (OB_FAIL(local_reader_->consume(read_avail))) {// consume all input data anyway
       PROXY_API_LOG(WDIAG, "fail to consume", K(consume_size), K(ret));
@@ -120,19 +108,22 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
         milestone_diff(plugin_decompress_response_begin, plugin_decompress_response_end);
 
       // save flt from response analyze result to sm
-      sm_->save_response_flt_result_to_sm(server_response.get_analyze_result().flt_);
+      sm_->save_response_flt_result_to_sm(resp_result.flt_);
+      if (OB_FAIL(sm_->handle_feedback_proxy_info(resp_result.extra_info_))) {
+        PROXY_API_LOG(WDIAG, "fail to handle feedback proxy info", "sm_id", sm_->sm_id_,
+                      "result", resp_result, K(ret));
+      }
     }
   }
-
   if (OB_SUCC(ret) && consume_size > 0) {
     // all data has recevied complete, and decompress totally
-    if (!analyze_result.is_last_ok_handled()
-        && analyze_result.get_last_ok_pkt_len() > 0) {
+    if (!resp_result.is_last_ok_handled()
+        && resp_result.get_last_ok_pkt_len() > 0) {
       // only resultset will use transform to decompress, so we just trim last ok packet
       if (OB_FAIL(sm_->trim_ok_packet(*local_transfer_reader_))) {
         PROXY_API_LOG(WDIAG, "fail to trim last ok packet", K(ret));
       } else {
-        analyze_result.is_last_ok_handled_ = true;
+        resp_result.is_last_ok_handled_ = true;
       }
       sm_->print_mysql_complete_log(NULL);
     }
@@ -141,14 +132,13 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       // the current state may be has already set to CMD_COMPLETE in tunnel by thre
       // producer of server session, when received complete. but it not decompressed,
       // so we should set TRANSACTION_COMPLETE here.
-      if (analyze_result.is_trans_completed()) {
+      if (resp_result.is_trans_completed()) {
         sm_->trans_state_.current_.state_ = ObMysqlTransact::TRANSACTION_COMPLETE;
-      } else if (analyze_result.is_resp_completed()) {
+      } else if (resp_result.is_resp_completed()) {
         sm_->trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
       }
-
-      if (analyze_result.is_trans_completed() || analyze_result.is_resp_completed()) {
-        if (sm_->enable_record_full_link_trace_info()) {
+      if (sm_->enable_record_full_link_trace_info()) {
+        if (resp_result.is_trans_completed() || resp_result.is_resp_completed()) {
           trace::ObSpanCtx *ctx = sm_->flt_.trace_log_info_.server_response_read_ctx_;
           if (OB_NOT_NULL(ctx)) {
             // set show trace buffer before flush trace
@@ -164,7 +154,7 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       }
 
       // get consume size again, for trim the last packet
-      consume_size = local_transfer_reader_->read_avail() - analyze_result.get_reserved_len_of_last_ok();
+      consume_size = local_transfer_reader_->read_avail() - resp_result.get_reserved_ok_len_of_compressed();
 
       // Here is a situation:
       //   under the 2.0 protocol, the last 4 tail checksum bytes were not read,
@@ -182,9 +172,11 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       //
       // Therefore, it is modified here that if the entire Tunnel is not over,
       //   the last bit of MySQL packet content will not be sent, and will not be sent until the entire Tunnel is over
-      //   And with consume_size > 0 or analyze_result.get_reserved_len_of_last_ok() == 0
-      if ((!analyze_result.is_last_ok_handled() || analyzer_->is_stream_finished())
-          && (consume_size > 0 || analyze_result.get_reserved_len_of_last_ok() == 0)) {
+      //   And with consume_size > 0 or resp_result.get_reserved_ok_len_of_compressed() == 0
+      //if ((!resp_result.is_last_ok_handled() || resp_analyzer_->is_stream_finished())
+      bool is_stream_finished = resp_analyzer_.is_stream_end();
+      if ((!resp_result.is_last_ok_handled() || is_stream_finished)
+          && (consume_size > 0 || resp_result.get_reserved_ok_len_of_compressed() == 0)) {
         // just send all data in local_transfer_reader_
         if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
           ret = OB_ERR_UNEXPECTED;

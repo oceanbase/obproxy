@@ -29,8 +29,6 @@ namespace obproxy
 namespace proxy
 {
 
-bool ObBasePsEntry::alloc_new_entry_disabled_ = false;
-
 DEF_TO_STRING(ObPsIdAddrs)
 {
   int64_t pos = 0;

@@ -131,7 +131,7 @@ int ObMysqlPacketWriter::write_raw_packet(ObMIOBuffer &write_buf, const ObMySQLR
 // only compress ObMysqlRawPacket
 int ObMysqlPacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
                                                  const ObMySQLRawPacket &packet,
-                                                 proxy::ObCmpHeaderParam &param)
+                                                 proxy::ObCompressedHeaderParam &param)
 {
   int ret = OB_SUCCESS;
 
@@ -232,7 +232,7 @@ int ObMysqlPacketWriter::write_compressed_packet(
 int ObMysqlPacketWriter::write_request_packet(ObMIOBuffer &mio_buf, const ObMySQLCmd cmd,
                                               const common::ObString &sql_str,
                                               const bool need_compress,
-                                              ObCmpHeaderParam &compressed_param)
+                                              ObCompressedHeaderParam &compressed_param)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(sql_str.empty())) {

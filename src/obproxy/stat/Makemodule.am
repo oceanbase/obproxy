@@ -5,6 +5,8 @@ obproxy/stat/ob_proxy_warning_stats.cpp\
 obproxy/stat/ob_proxy_warning_stats.h\
 obproxy/stat/ob_mysql_stats.cpp\
 obproxy/stat/ob_mysql_stats.h\
+obproxy/stat/ob_rpc_stats.cpp\
+obproxy/stat/ob_rpc_stats.h\
 obproxy/stat/ob_lock_stats.cpp\
 obproxy/stat/ob_lock_stats.h\
 obproxy/stat/ob_congestion_stats.cpp\

@@ -52,6 +52,14 @@
 #include "lib/utility/ob_macro_utils.h"
 #include "lib/utility/serialization.h"
 #include "lib/oblog/ob_log.h"
+#define REQUEST_REWRITE_ARG_VALUE  payload_len_position_, payload_len_len_, table_id_position_, table_id_len_, partition_id_position_, partition_id_len_
+#define REWRITE_INFO_ARG int64_t &payload_len_pos, int64_t &payload_len_len, int64_t &table_id_pos, int64_t &table_id_len, int64_t &partition_id_pos, int64_t &partition_id_len
+#define REWRITE_INFO_ARG_VALUE payload_len_pos, payload_len_len, table_id_pos, table_id_len, partition_id_pos, partition_id_len
+
+
+#define OB_RPC_REQUEST_ARG ObRpcRequest *rpc_request
+
+#define OB_RPC_REQUEST_VALUE rpc_request
 
 #define SERIAL_PARAMS char *buf, const int64_t buf_len, int64_t &pos
 #define DESERIAL_PARAMS const char *buf, const int64_t data_len, int64_t &pos
@@ -97,6 +105,38 @@
   len += NS_::encoded_length(obj)
 //-----------------------------------------------------------------------
 
+#define CAR(a, b) a
+#define CDR(a, b) b
+#define MY_CLS(CLS) IF_IS_PAREN(CLS, CAR CLS, CLS)
+#define BASE_CLS(CLS) IF_IS_PAREN(CLS, CDR CLS, EmptyParent)
+
+// serialize_ no header
+#define OB_SERIALIZE_NOHEADER(CLS, PARENT, SUFFIX, PRED, ...) \
+  int CLS::serialize##SUFFIX(SERIAL_PARAMS) const {           \
+    int ret = PARENT::serialize(buf, buf_len, pos);           \
+    if (OB_SUCC(ret) && (PRED)) {                             \
+      LST_DO_CODE(OB_UNIS_ENCODE, ##__VA_ARGS__);             \
+    }                                                         \
+    return ret;                                               \
+  }
+
+#define OB_DESERIALIZE_NOHEADER(CLS, PARENT, SUFFIX, ...) \
+  int CLS::deserialize##SUFFIX(DESERIAL_PARAMS) {         \
+    int ret = PARENT::deserialize(buf, data_len, pos);    \
+    if (OB_SUCC(ret)) {                                   \
+      LST_DO_CODE(OB_UNIS_DECODE, ##__VA_ARGS__);         \
+    }                                                     \
+    return ret;                                           \
+  }
+
+#define OB_SERIALIZE_SIZE_NOHEADER(CLS, PARENT, SUFFIX, PRED, ...) \
+  int64_t CLS::get_serialize_size##SUFFIX(void) const {            \
+    int64_t len = PARENT::get_serialize_size();                    \
+    if (PRED) {                                                    \
+      LST_DO_CODE(OB_UNIS_ADD_LEN, ##__VA_ARGS__);                 \
+    }                                                              \
+    return len;                                                    \
+  }
 /// utility macros to deal with C native array
 #define OB_UNIS_ENCODE_ARRAY(objs, objs_count)                          \
   OB_UNIS_ENCODE((objs_count));                                         \
@@ -114,6 +154,15 @@
   for (int64_t i = 0; OB_SUCC(ret) && i < (objs_count); ++i) {          \
     OB_UNIS_DECODE(objs[i]);                                            \
   }
+
+#define OB_UNIS_DEF_SERIALIZE(CLS, ...) \
+  OB_UNIS_SERIALIZE(MY_CLS(CLS));       \
+  OB_SERIALIZE_NOHEADER(MY_CLS(CLS), BASE_CLS(CLS), _, true, ##__VA_ARGS__);
+
+#define OB_UNIS_DEF_SERIALIZE_SIZE(CLS, ...)                      \
+  OB_UNIS_SERIALIZE_SIZE(MY_CLS(CLS));                            \
+  OB_SERIALIZE_SIZE_NOHEADER(MY_CLS(CLS), BASE_CLS(CLS), _, true, \
+                             ##__VA_ARGS__);
 
 ///
 // define macros deal with parent class
@@ -167,6 +216,20 @@
     }                                                                   \
   }
 
+#define CHECK_VERSION_LENGTH_WITH_TARGET_VER(CLS, VER, LEN, TARGET_VER)                                                \
+  if (OB_SUCC(ret)) {                                                                                                  \
+    if (VER != TARGET_VER) {                                                                                           \
+      ret = ::oceanbase::common::OB_NOT_SUPPORTED;                                                                     \
+      RPC_WARN("object version mismatch", "cls", #CLS, K(ret), K(VER));                                                \
+    } else if (LEN < 0) {                                                                                              \
+      ret = ::oceanbase::common::OB_ERR_UNEXPECTED;                                                                    \
+      RPC_WARN("can't decode object with negative length", K(LEN));                                                    \
+    } else if (data_len < LEN + pos) {                                                                                 \
+      ret = ::oceanbase::common::OB_DESERIALIZE_ERROR;                                                                 \
+      RPC_WARN("buf length not enough", K(LEN), K(pos), K(data_len));                                                  \
+    }                                                                                                                  \
+  }
+
 #define CALL_SERIALIZE_()                                               \
   if (OB_SUCC(ret)) {                                                   \
     if (OB_FAIL(serialize_(buf, buf_len, pos))) {                       \
@@ -208,6 +271,15 @@
     CHECK_VERSION_LENGTH(CLS, version, len);                            \
   }
 
+#define DESERIALIZE_HEADER_WITH_INFO(CLS, version, len, payload_len_pos, payload_len_len)   \
+  if (OB_SUCC(ret)) {                                                   \
+    OB_UNIS_DECODEx(version);                                           \
+    payload_len_pos = pos;                                              \
+    OB_UNIS_DECODEx(len);                                               \
+    payload_len_len = pos - payload_len_pos;                            \
+    CHECK_VERSION_LENGTH(CLS, version, len);                            \
+  }
+
 #define OB_UNIS_DESERIALIZE(CLS)                                        \
   int CLS::deserialize(DESERIAL_PARAMS)                                 \
   {                                                                     \
@@ -246,6 +318,14 @@
   VIR int64_t get_serialize_size() const PURE;                          \
   int64_t get_serialize_size_() const
 
+#define OB_DECLARE_UNIS_WITH_REWRITE_INFO(VIR, PURE)                                                                   \
+  VIR int serialize(SERIAL_PARAMS) const PURE;                                                                         \
+  int serialize_(SERIAL_PARAMS) const;                                                                                 \
+  VIR int deserialize(DESERIAL_PARAMS, OB_RPC_REQUEST_ARG) PURE;                                                       \
+  int deserialize_(DESERIAL_PARAMS, OB_RPC_REQUEST_ARG);                                                               \
+  VIR int64_t get_serialize_size() const PURE;                                                                         \
+  int64_t get_serialize_size_() const
+
 //-----------------------------------------------------------------------
 
 ///
@@ -253,13 +333,25 @@
 //-----------------------------------------------------------------------
 #define OB_UNIS_VERSION(VER)                                            \
   public: OB_DECLARE_UNIS(,);                                           \
-  private:                                                              \
+  public:                                                               \
     const static int64_t UNIS_VERSION = VER
+
+// with OB_RPC_REQUEST_ARG
+#define OB_UNIS_VERSION_WITH_REWRITE_INFO(VER)                          \
+ public: OB_DECLARE_UNIS_WITH_REWRITE_INFO(, );                         \
+ public:                                                                \
+  const static int64_t UNIS_VERSION = VER
 
 #define OB_UNIS_VERSION_V(VER)                                          \
   public: OB_DECLARE_UNIS(virtual,);                                    \
-  private:                                                              \
+  public:                                                               \
     const static int64_t UNIS_VERSION = VER
+
+// with OB_RPC_REQUEST_ARG
+#define OB_UNIS_VERSION_WITH_REWRITE_INFO_V(VER)                        \
+ public: OB_DECLARE_UNIS_WITH_REWRITE_INFO(virtual, );                  \
+ public:                                                                \
+  const static int64_t UNIS_VERSION = VER;
 
 #define OB_UNIS_VERSION_PV()                                            \
   public: OB_DECLARE_UNIS(virtual,=0); private:
@@ -317,6 +409,51 @@
 
 #define OB_DEF_SERIALIZE_SIZE_SIMPLE(CLS)                               \
   int64_t CLS::get_serialize_size(void) const
+
+/////////////////////////////
+#define ODP_CALL_DESERIALIZE_(SLEN)                                                                                    \
+  if (OB_SUCC(ret)) {                                                                                                  \
+    int64_t pos_orig = pos;                                                                                            \
+    pos = 0;                                                                                                           \
+    if (OB_FAIL(deserialize_(buf + pos_orig, SLEN, pos, OB_RPC_REQUEST_VALUE))) {                             \
+      RPC_WARN("deserialize_ fail", "slen", SLEN, K(pos), K(ret));                                                     \
+    }                                                                                                                  \
+    pos = pos_orig + SLEN;                                                                                             \
+  }
+
+#define ODP_UNIS_DESERIALIZE(CLS)                                                                                      \
+  int CLS::deserialize(DESERIAL_PARAMS, OB_RPC_REQUEST_ARG)                                                       \
+  {                                                                                                                    \
+    int ret = OK_;                                                                                                     \
+    int64_t version = 0;                                                                                               \
+    int64_t len = 0;                                                                                                   \
+    DESERIALIZE_HEADER(CLS, version, len);                                                                             \
+    ODP_CALL_DESERIALIZE_(len);                                                                                        \
+    return ret;                                                                                                        \
+  }
+
+#define ODP_DEF_DESERIALIZE_HEADER(CLS) int CLS::deserialize(DESERIAL_PARAMS, OB_RPC_REQUEST_ARG)
+#define ODP_DEF_DESERIALIZE_PAYLOAD(CLS) int CLS::deserialize_(DESERIAL_PARAMS, OB_RPC_REQUEST_ARG)
+#define ODP_DEF_DESERIALIZE(CLS, TEMP...)                                                                              \
+  TEMP ODP_UNIS_DESERIALIZE(CLS)                                                                                       \
+  TEMP int CLS::deserialize_(DESERIAL_PARAMS, OB_RPC_REQUEST_ARG)
+
+/////////////////////////////
+struct EmptyUnisStruct
+{
+  static int serialize(SERIAL_PARAMS) {
+    UNF_UNUSED_SER;
+    return 0;
+  }
+  static int deserialize(DESERIAL_PARAMS) {
+    UNF_UNUSED_DES;
+    return 0;
+  }
+  static int64_t get_serialize_size() {
+    return 0;
+  }
+};
+#define EmptyParent EmptyUnisStruct
 
 #define OB_SERIALIZE_MEMBER_SIMPLE(CLS, ...)                            \
   OB_DEF_SERIALIZE_SIMPLE(CLS)                                          \

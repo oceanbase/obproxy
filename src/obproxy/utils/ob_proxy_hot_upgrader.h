@@ -22,9 +22,10 @@ namespace obproxy
 {
 #define OBPROXY_INHERITED_IPV4_FD "OBPROXY_INHERITED_FD"
 #define OBPROXY_INHERITED_IPV6_FD "OBPROXY_INHERITED_IPV6_FD"
-extern volatile int g_proxy_fatal_errcode;
+#define OBPROXY_INHERITED_RPC_IPV4_FD "OBPROXY_INHERITED_RPC_FD"
+#define OBPROXY_INHERITED_RPC_IPV6_FD "OBPROXY_INHERITED_RPC_IPV6_FD"
 
-extern volatile int g_proxy_connection_errcode;
+extern volatile int g_proxy_fatal_errcode;
 
 enum ObReloadConfigStatus
 {
@@ -131,6 +132,14 @@ enum ObProxyLoginUserType
   USER_TYPE_MAX,
 };
 
+enum ObProxyPortServiceState
+{
+  OB_PROXY_PORT_DEFAULT = 0,
+  OB_PROXY_PORT_SQL_SERVICE,
+  OB_PROXY_PORT_RPC_SERVICE,
+  OB_PROXY_PORT_MAX_VALUE
+};
+
 // variables relatived to hot upgrade
 class ObHotUpgraderInfo
 {
@@ -202,6 +211,8 @@ public:
 
   int ipv4_fd_;                              // listen fd, which to be passed to sub process
   int ipv6_fd_;
+  int rpc_ipv4_fd_;                              // listen fd, which to be passed to sub process
+  int rpc_ipv6_fd_;
   int received_sig_;
   ObReloadConfigStatus rc_status_;      // identify the current status for reload config
   volatile pid_t sub_pid_;              // sub process pid if fork succeed
@@ -237,6 +248,8 @@ public:
   lib::ObMutex hot_upgrade_mutex_;
 
   common::ObAddr local_addr_;
+  common::ObAddr rpc_local_addr_;
+  volatile ObProxyPortServiceState port_state_;  // identify the current sql port service or rpc port service
 private:
   DISALLOW_COPY_AND_ASSIGN(ObHotUpgraderInfo);
 };

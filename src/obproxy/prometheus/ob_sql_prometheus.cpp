@@ -126,12 +126,15 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   {
     bool is_slow = (bool)va_arg(args, int);
     bool is_error = (bool)va_arg(args, int);
+    bool is_partition_hit = (bool)va_arg(args, int);
+    int64_t value = va_arg(args, int64_t);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_TYPE, get_print_stmt_name(stmt_type), false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_SLOW, is_slow ? LABEL_TRUE : LABEL_FALSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_PARTITION_HINT, is_partition_hit ? LABEL_TRUE : LABEL_FALSE, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_TOTAL, REQUEST_TOTAL_HELP, label_vector))) {
+    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_TOTAL, REQUEST_TOTAL_HELP, label_vector, value))) {
       LOG_WDIAG("fail to handle counter with REQUEST_TOTAL", K(ret));
     }
     break;
@@ -167,6 +170,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     int32_t value = va_arg(args, int32_t);
 
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SESSION_TYPE, is_client ? LABEL_SESSION_CLIENT : LABEL_SESSION_SERVER, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, is_client ? vip_addr_name : "", true);
 
     if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(CURRENT_SESSION, CURRENT_SESSION_HELP,
                                                        label_vector, value, false))) {
@@ -174,15 +178,17 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     }
     break;
   }
-  case PROMETHEUS_USED_CONNECTIONS:
+  case PROMETHEUS_NEW_CLIENT_CONNECTIONS:
   {
     int32_t value = va_arg(args, int32_t);
+    int32_t is_success = va_arg(args, int32_t);
 
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, vip_addr_name, true);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_CONNECT_RESULT, is_success ? LABEL_SUCC : LABEL_FAIL, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(USED_CONNECTIONS, USED_CONNECTIONS_HELP,
-                                                       label_vector, value, false))) {
-      LOG_WDIAG("fail to handle counter with USED_CONNECTIONS", K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(NEW_CLIENT_CONNECTIONS, NEW_CLIENT_CONNECTIONS_HELP,
+                                                         label_vector, value))) {
+      LOG_WDIAG("fail to handle counter with NEW_CLIENT_CONNECTIONS", K(ret));
     }
     break;
   }

@@ -17,6 +17,8 @@ obproxy/prometheus/ob_prometheus_utils.cpp\
 obproxy/prometheus/ob_prometheus_utils.h\
 obproxy/prometheus/ob_sql_prometheus.cpp\
 obproxy/prometheus/ob_sql_prometheus.h\
+obproxy/prometheus/ob_rpc_prometheus.cpp\
+obproxy/prometheus/ob_rpc_prometheus.h\
 obproxy/prometheus/ob_net_prometheus.cpp\
 obproxy/prometheus/ob_net_prometheus.h\
 obproxy/prometheus/ob_route_prometheus.cpp\

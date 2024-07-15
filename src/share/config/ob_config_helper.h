@@ -318,6 +318,46 @@ private:
 
 typedef __ObConfigContainer<ObConfigStringKey,
                             ObConfigItem, OB_MAX_CONFIG_NUMBER> ObConfigContainer;
+
+// ObConfigVariableString
+  // 1. 适合短字符（15个字符以内）使用，短字符下，内存使用更低
+  // 2. 短字符下，ObConfigVariableString内存占用24bytes，ObVariableLenBuffer<16>内存占用48bytes
+  // ObConfigVariableString相对ObVariableLenBuffer，内存优化50%，更适合配置使用场景
+class ObConfigVariableString
+{
+public: 
+  ObConfigVariableString(): used_len_(0), data_union_() {}
+  ~ObConfigVariableString() { reset(); }
+  ObConfigVariableString(const ObConfigVariableString& other);
+  ObConfigVariableString& operator=(const ObConfigVariableString& other);
+  void reset();
+  bool is_empty() const { return used_len_ == 0; }
+  uint64_t hash(uint64_t seed) const;
+  bool operator==(const ObConfigVariableString& other) const;
+  int64_t size() const { return used_len_; }
+  int rewrite(const char *ptr, const int64_t len);
+  int rewrite(const ObString &str);
+  int rewrite(const char *ptr);
+  const char *ptr() const
+  {
+    return used_len_ > VARIABLE_BUF_LEN ? data_union_.ptr_ : data_union_.buf_;
+  }
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+  operator const ObString() const;
+private:
+  // SSO优化，堆上指针ptr_和buf_共用内存
+  int alloc_mem(int64_t len);
+  static constexpr int64_t VARIABLE_BUF_LEN = 15;
+  int64_t used_len_;  // 已写入的内存，注意：如果在堆上，分配内存为used_len_+1
+  union DataUnion
+  {
+    DataUnion(): buf_() {}
+    char* ptr_;    // 指向op_fixed_mem_alloc堆上分配的内存
+    char buf_[VARIABLE_BUF_LEN + 1];
+  } ;
+  DataUnion data_union_;
+};
+
 } // namespace common
 } // namespace oceanbase
 

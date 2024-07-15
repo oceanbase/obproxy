@@ -67,6 +67,26 @@ int ObAddr::convert_ipv6_addr(const char *ip)
   return ret;
 }
 
+int ObAddr::set_ip_from_ip_addr(const obproxy::net::ObIpAddr& ip_addr)
+{
+  int ret = OB_SUCCESS;
+  
+  if (ip_addr.is_ip4()) {
+    // 此处存储为小端格式
+    version_ = IPV4;
+    ip_.v4_ = ntohl(ip_addr.addr_.ip4_);
+  } else if (ip_addr.is_ip6()) {
+    // 此处存储为大端格式
+    version_ = IPV6;
+    MEMCPY(ip_.v6_, ip_addr.addr_.ip6_.s6_addr, sizeof(ip_.v6_));
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unknown ip family", K(ret));
+  }
+
+  return ret;
+}
+
 int ObAddr::parse_from_cstring(const char *ipport)
 {
   int ret = OB_SUCCESS;
@@ -74,7 +94,7 @@ int ObAddr::parse_from_cstring(const char *ipport)
   int port = 0;
 
   if (!OB_ISNULL(ipport)) {
-    MEMCPY(buf, ipport, MIN(strlen(ipport), sizeof (buf) - 1));
+    MEMCPY(buf, ipport, MIN(strlen(ipport), MAX_IP_ADDR_LENGTH - 1));
     char *pport = strrchr(buf, ':');
     if (NULL != pport) {
       *(pport++) = '\0';
@@ -108,6 +128,84 @@ int ObAddr::parse_from_cstring(const char *ipport)
       }
     }
   }
+  return ret;
+}
+
+int ObAddr::parse_from_obtring(const ObString& ipport)
+{
+  int ret = OB_SUCCESS;
+  char buf[MAX_IP_ADDR_LENGTH] = "";
+  int port = 0;
+
+  if (OB_UNLIKELY(ipport.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+  } else {
+    MEMCPY(buf, ipport.ptr(), MIN(ipport.length(), MAX_IP_ADDR_LENGTH - 1));
+    char *pport = strrchr(buf, ':');
+    if (NULL != pport) {
+      *(pport++) = '\0';
+      char *end = NULL;
+      port = static_cast<int>(strtol(pport, &end, 10));
+      if (NULL == end
+          || end - pport != static_cast<int64_t>(strlen(pport))) {
+        ret = OB_INVALID_ARGUMENT;
+      }
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    if ('[' != buf[0]) {  // IPV4 format
+      if (false == set_ipv4_addr(buf, port)) {
+        ret = OB_INVALID_ARGUMENT;
+      }
+    } else {              // IPV6 format
+      const char *ipv6 = buf + 1;
+      if (']' == buf[strlen(buf) - 1]) {
+        buf[strlen(buf) - 1] = '\0';
+        if (!set_ipv6_addr(ipv6, port)) {
+          ret = OB_INVALID_ARGUMENT;
+        }
+      } else {
+        ret = OB_INVALID_ARGUMENT;
+      }
+    }
+  }
+  return ret;
+}
+
+int ObAddr::parse_hostname_port_from_obtring(const ObString& hostname_port,
+                                             ObString& hostname,
+                                             int32_t& port)
+{
+  int ret = OB_SUCCESS;
+  char buf[MAX_IP_ADDR_LENGTH] = "";
+  int hostname_len = 0;
+
+  if (OB_UNLIKELY(hostname_port.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+  } else {
+    MEMCPY(buf, hostname_port.ptr(), MIN(hostname_port.length(), MAX_IP_ADDR_LENGTH - 1));
+    char *pport = strrchr(buf, ':');
+    hostname_len = pport - buf;
+    if (NULL != pport) {
+      *(pport++) = '\0';
+      char *end = NULL;
+      port = static_cast<int>(strtol(pport, &end, 10));
+      if (NULL == end
+          || end - pport != static_cast<int64_t>(strlen(pport))) {
+        ret = OB_INVALID_ARGUMENT;
+      }
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    hostname.assign_ptr(hostname_port.ptr(), hostname_len);
+  }
+
   return ret;
 }
 

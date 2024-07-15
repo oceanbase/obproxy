@@ -70,6 +70,7 @@ struct ObServerStateInfo
   bool is_valid() const;
   void reset();
   int add_addr(const char *ip, const int64_t port);
+  int add_rpc_addr(const char *ip, const int64_t port);
   int64_t to_string(char *buffer, const int64_t size) const;
 
   proxy::ObProxyReplicaLocation replica_;
@@ -85,7 +86,7 @@ struct ObServerStateSimpleInfo
   ObServerStateSimpleInfo() { reset(); }
   ObServerStateSimpleInfo(const ObServerStateSimpleInfo &other) { *this = other; }
   ~ObServerStateSimpleInfo() {}
-  bool is_valid() const { return (addr_.is_valid()
+  bool is_valid() const { return (addr_.is_valid() //ignore rpc_port
                                   && !zone_name_.empty()
                                   && !region_name_.empty()
                                   && !idc_name_.empty()
@@ -93,6 +94,8 @@ struct ObServerStateSimpleInfo
   void reset();
   int set_addr(const common::ObAddr &addr);
   int set_addr(const char *ip, const int64_t port);
+  int set_rpc_addr(const common::ObAddr &addr);
+  int set_rpc_addr(const char *ip, const int64_t port);
   int set_zone_name(const common::ObString &zone_name);
   int set_region_name(const common::ObString &region_name);
   int set_idc_name(const common::ObString &idc_name);
@@ -101,6 +104,7 @@ struct ObServerStateSimpleInfo
 
 public:
   common::ObAddr addr_;
+  common::ObAddr rpc_addr_;
   common::ObString zone_name_;
   common::ObString region_name_;
   common::ObString idc_name_;
@@ -282,6 +286,15 @@ inline int ObServerStateInfo::add_addr(const char *ip, const int64_t port)
   return ret;
 }
 
+inline int ObServerStateInfo::add_rpc_addr(const char *ip, const int64_t port)
+{
+  int ret = common::OB_SUCCESS;
+  if (OB_FAIL(replica_.add_rpc_addr(ip, static_cast<int32_t>(port)))) {
+    PROXY_LOG(WDIAG, "fail to add addr", K(ip), K(port), K(ret));
+  }
+  return ret;
+}
+
 //-------------------------------ObServerStateSimpleInfo-------------------------------------//
 inline ObServerStateSimpleInfo &ObServerStateSimpleInfo::operator=(const ObServerStateSimpleInfo &other)
 {
@@ -344,6 +357,27 @@ inline int ObServerStateSimpleInfo::set_addr(const char *ip, const int64_t port)
   return ret;
 }
 
+inline int ObServerStateSimpleInfo::set_rpc_addr(const common::ObAddr &addr)
+{
+  int ret = common::OB_SUCCESS;
+  if (OB_UNLIKELY(!addr.is_valid())) {
+    ret = common::OB_INVALID_ARGUMENT;
+    PROXY_LOG(WDIAG, "invalid argument", K(addr), K(ret));
+  } else {
+    rpc_addr_ = addr;
+  }
+  return ret;
+}
+
+inline int ObServerStateSimpleInfo::set_rpc_addr(const char *ip, const int64_t port)
+{
+  int ret = common::OB_SUCCESS;
+  if (OB_UNLIKELY(!rpc_addr_.set_ip_addr(ip, static_cast<int32_t>(port)))) {
+    ret = common::OB_INVALID_ARGUMENT;
+  }
+  return ret;
+}
+
 inline int ObServerStateSimpleInfo::set_zone_name(const ObString &zone_name)
 {
   int ret = common::OB_SUCCESS;
@@ -388,6 +422,7 @@ inline int64_t ObServerStateSimpleInfo::to_string(char *buf, const int64_t buf_l
   int64_t pos = 0;
   J_OBJ_START();
   J_KV(K_(addr),
+       K_(rpc_addr),
        K_(zone_name),
        K_(region_name),
        K_(idc_name),

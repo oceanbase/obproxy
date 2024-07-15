@@ -15,8 +15,11 @@
 #include "opsql/expr_parser/ob_expr_parse_result.h"
 #include "lib/charset/ob_charset.h"
 #include "common/ob_obj_type.h"
+#include "lib/container/ob_iarray.h"
 #include "common/ob_object.h"
 #include "lib/container/ob_se_array.h"
+#include "obkv/table/ob_table.h"
+#include "obkv/table/ob_table_rpc_request.h"
 
 namespace oceanbase
 {
@@ -27,9 +30,15 @@ class ObArenaAllocator;
 class ObString;
 class ObTimeZoneInfo;
 class ObDataTypeCastParams;
+class ObRowkey;
 }
 namespace obproxy
 {
+namespace obkv
+{
+class ObTableOperation;
+class ObTableQuery;
+}
 namespace opsql
 {
 class ObExprResolverResult;
@@ -47,6 +56,7 @@ class ObClientSessionInfo;
 class ObPsIdEntry;
 class ObTextPsEntry;
 class ObServerRoute;
+class ObRpcReq;
 class ObRouteDiagnosis;
 
 class ObProxyExprCalculator
@@ -65,7 +75,14 @@ public:
   int calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
                                                int64_t &first_part_id,
                                                int64_t &sub_part_id,
-                                               int64_t &phy_part_id);
+                                               int64_t &phy_part_id);                          
+
+  int calculate_partition_id_for_rpc(common::ObArenaAllocator &allocator,
+                                     ObRpcReq &ob_rpc_req,
+                                     // ObRpcClientSessionInfo &client_info,
+                                     ObProxyPartInfo &part_info,
+                                     int64_t &partition_id);
+
   void set_route_diagnosis(ObRouteDiagnosis *route_diagnosis);
 private:
   // do parse -> do resolve -> do partition id calc
@@ -94,6 +111,12 @@ private:
                            int64_t &partition_id,
                            int64_t &part_idx,
                            int64_t &sub_part_idx);
+
+  int calculate_partition_id_for_obkv(common::ObArenaAllocator &allocator,
+                                      ObRpcReq &client_request,
+                                      ObProxyPartInfo &part_info,
+                                      int64_t &partition_id);
+
   int calc_part_id_with_simple_route_info(common::ObArenaAllocator &allocator,
                                           const obutils::ObSqlParseResult &parse_result,
                                           ObClientSessionInfo &client_info,
@@ -124,6 +147,29 @@ private:
                                        int16_t &version);
   int do_expr_parse_diagnosis(ObExprParseResult &expr_result);
   ObRouteDiagnosis *route_diagnosis_;
+};
+
+
+class ObRpcExprCalcTool 
+{
+public:
+  static int eval_rowkey_index(const ObProxyPartKeyInfo &part_info,
+                               const common::ObIArray<common::ObString> &rowkey_columns_name,
+                               const common::ObIArray<common::ObString> &part_columns_name,
+                               ObProxyPartKeyLevel level,
+                               common::ObIArray<int64_t> &rowkey_index);
+
+  // eval part key from rowkey, stored in eval_rowkey
+  static int eval_rowkey_values(common::ObArenaAllocator &allocator,
+                                const common::ObRowkey &rowkey,
+                                common::ObIArray<int64_t> &rowkey_index,
+                                common::ObRowkey &eval_part_rowkey);
+  static int do_partition_id_calc_for_obkv(opsql::ObExprResolverResult &resolve_result,
+                                           // ObRpcClientSessionInfo &client_info,
+                                           ObProxyPartInfo &part_info,
+                                           common::ObIAllocator &allocator,
+                                           common::ObIArray<int64_t> &partition_ids,
+                                           common::ObIArray<int64_t> &ls_ids);
 };
 
 class ObExprCalcTool {

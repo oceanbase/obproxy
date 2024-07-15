@@ -138,12 +138,14 @@ const uint64_t OB_DEFAULT_GROUP_CONCAT_MAX_LEN                 = 1024;
 const int64_t OB_DEFAULT_OB_INTERM_RESULT_MEM_LIMIT            = 2L * 1024L * 1024L * 1024L;
 // The maximum table name length that the user can specify
 const int64_t OB_MAX_USER_TABLE_NAME_LENGTH                    = 65;  // Compatible with mysql, the OB code logic is greater than the time error
+const int64_t OB_MAX_INDEX_TABLE_NAME_LENGTH = 256;
 // The actual maximum table name length of table_schema (the index table will have an additional prefix, so the actual length is greater than OB_MAX_USER_TABLE_NAME_LENGTH)
 const int64_t OB_MAX_TABLE_NAME_LENGTH                         = 128;
 const int64_t OB_MAX_TABLE_TYPE_LENGTH                         = 64;
 const int64_t OB_MAX_INFOSCHEMA_TABLE_NAME_LENGTH              = 64;
 const int64_t OB_MAX_FILE_NAME_LENGTH                          = 512;
 const int64_t OB_MAX_TENANT_NAME_LENGTH                        = 64;
+const int64_t OB_MAX_SERVICE_NAME_LENGTH = 64;
 const int64_t OB_MAX_TENANT_NAME_LENGTH_STORE                  = 128;
 const int64_t OB_MAX_TENANT_INFO_LENGTH                        = 4096;
 const int64_t OB_MAX_PARTITION_NAME_LENGTH                     = 64;
@@ -152,6 +154,7 @@ const int64_t OB_MAX_PARTITION_COMMENT_LENGTH                  = 1024;
 const int64_t OB_MAX_PARTITION_METHOD_LENGTH                   = 18;
 const int64_t OB_MAX_NODEGROUP_LENGTH                          = 12;
 const int64_t OB_MAX_TEXT_PS_NAME_LENGTH                       = 128;
+const int64_t OB_MAX_DBLINK_NAME_LENGTH = 128;  // Compatible with Oracle
 //change from 128 to 64, according to production definition document
 
 
@@ -236,6 +239,8 @@ static const int64_t OB_MAX_TABLE_NUM_PER_STMT                 = 256;
 static const int64_t OB_TMP_BUF_SIZE_256                       = 256;
 static const int64_t OB_SCHEMA_MGR_MAX_USED_TID_MAP_BUCKET_NUM = 64;
 static const int64_t OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM         = 8;
+static const int64_t OB_RPC_PARALLE_REQUEST_MAP_MAX_BUCKET_NUM = 64;
+static const int64_t OB_RPC_ASYNC_QUERY_MAP_MAX_BUCKET_NUM = 64;
 
 //plan cache
 const int64_t OB_PC_NOT_PARAM_COUNT                            = 8;
@@ -580,6 +585,9 @@ static const char *const OB_MYSQL_CLUSTER_ID                = "__cluster_id";
 static const char *const OB_MYSQL_CLIENT_IP                 = "__client_ip";
 static const char *const OB_MYSQL_CLIENT_PORT               = "__client_addr_port";
 static const char *const OB_MYSQL_CLIENT_CONNECT_TIME       = "__client_connect_time";
+static const char *const OB_MYSQL_PROXY_IDC_NAME = "__proxy_idc_name";
+static const char *const OB_MYSQL_PROXY_SERVICE_NAME = "__proxy_service_name";
+static const char *const OB_MYSQL_PROXY_FAILOVER_MODE = "__proxy_failover_mode";
 
 static const char *const OB_MYSQL_CAPABILITY_FLAG           = "__proxy_capability_flag";
 static const char *const OB_MYSQL_PROXY_SESSION_VARS        = "__proxy_session_vars";
@@ -622,6 +630,7 @@ enum ObCapabilityFlagShift
   OB_CAP_LOAD_DATA_LOCAL_FILE_SHIFT,                // 20
   OB_CAP_ENABLE_CLIENT_SESSION_ID_V2_SHIFT,         // 21
   OB_CAP_OB_PROTOCOL_V2_COMPRESS_SHIFT,             // 22
+  OB_CAP_FEEDBACK_PROXY_SHIFT,                      // 23
 };
 
 #define OB_TEST_CAPABILITY(cap, tg_cap) (((cap) & (tg_cap)) == (tg_cap))
@@ -648,6 +657,7 @@ enum ObCapabilityFlagShift
 #define OB_CAP_ENABLE_UNIQUE_CS_ID OB_CAP_GET_TYPE(common::OB_CAP_ENABLE_UNIQUE_CS_ID_SHIFT)
 #define OB_CAP_ENABLE_CLIENT_SESSION_ID_V2 OB_CAP_GET_TYPE(common::OB_CAP_ENABLE_CLIENT_SESSION_ID_V2_SHIFT)
 #define OB_CAP_OB_PROTOCOL_V2_COMPRESS OB_CAP_GET_TYPE(common::OB_CAP_OB_PROTOCOL_V2_COMPRESS_SHIFT)
+#define OB_CAP_FEEDBACK_PROXY OB_CAP_GET_TYPE(common::OB_CAP_FEEDBACK_PROXY_SHIFT)
 
 // for obproxy debug
 #define OBPROXY_DEBUG 0
@@ -813,6 +823,10 @@ static const int32_t OB_DEFAULT_CHARACTER_SET                = 33; //UTF8
 static const int64_t OB_MYSQL_PACKET_BUFF_SIZE               = 6 * 1024; //6KB
 static const int64_t OB_MAX_THREAD_NUM                       = 4096;
 static const int64_t OB_MAX_CPU_NUM                          = 256;
+
+// an unstrict upper-bound on the number of obproxy threads
+static const int64_t OB_PROXY_COMMON_THREAD_NUM = 32;
+
 static const int64_t OB_MAX_STATICS_PER_TABLE                = 128;
 
 static const int64_t OB_INDEX_WRITE_START_DELAY              = 20 * 1000 * 1000; //20s
@@ -846,6 +860,11 @@ static const char *const OB_CONFIG_VISIBLE_LEVEL_DBA         = "DBA";
 static const char *const OB_CONFIG_VISIBLE_LEVEL_MEMORY      = "MEMORY";
 static const char *const OB_CONFIG_NEED_REBOOT               = "true";
 static const char *const OB_CONFIG_NOT_NEED_REBOOT           = "false";
+//表示配置生效的级别：全局、集群、租户、VIP
+static const char *const OB_CONFIG_MULTI_LEVEL_GLOBAL = "LEVEL_GLOBAL";
+static const char *const OB_CONFIG_MULTI_LEVEL_CLUSTER = "LEVEL_CLUSTER";
+static const char *const OB_CONFIG_MULTI_LEVEL_TENANT = "LEVEL_TENANT";
+static const char *const OB_CONFIG_MULTI_LEVEL_VIP = "LEVEL_VIP";
 
 //Precision in user data type
 static const int16_t MAX_SCALE_FOR_TEMPORAL                  = 6;
@@ -1138,6 +1157,11 @@ char *lbt();
   inline int deserialize(const char* buf, const int64_t data_len, int64_t& pos); \
   inline int64_t get_serialize_size(void) const
 
+#define ODP_RPC_NEED_SERIALIZE_AND_DESERIALIZE \
+  int serialize(char* buf, const int64_t buf_len, int64_t& pos) const; \
+  int deserialize(const char* buf, const int64_t data_len, int64_t& pos, OB_RPC_REQUEST_ARG); \
+  int64_t get_serialize_size(void) const
+
 #define VIRTUAL_NEED_SERIALIZE_AND_DESERIALIZE \
   virtual int serialize(char* buf, const int64_t buf_len, int64_t& pos) const; \
   virtual int deserialize(const char* buf, const int64_t data_len, int64_t& pos); \
@@ -1156,6 +1180,16 @@ char *lbt();
 
 #define DEFINE_GET_SERIALIZE_SIZE(TypeName) \
   int64_t TypeName::get_serialize_size(void) const
+
+#define ODP_DEFINE_SERIALIZE(TypeName) \
+  int TypeName::serialize(char* buf, const int64_t buf_len, int64_t& pos) const
+
+#define ODP_DEFINE_DESERIALIZE(TypeName) \
+  int TypeName::deserialize(const char* buf, const int64_t data_len, int64_t& pos, OB_RPC_REQUEST_ARG)
+
+#define ODP_DEFINE_GET_SERIALIZE_SIZE(TypeName) \
+  int64_t TypeName::get_serialize_size(void) const
+
 
 #define DATABUFFER_SERIALIZE_INFO \
   data_buffer_.get_data(), data_buffer_.get_capacity(), data_buffer_.get_position()

@@ -178,5 +178,79 @@ int64_t ObNewRange::get_serialize_size(void) const
   return total_size;
 }
 
+int ObNewRange::serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const
+{
+  int ret = OB_SUCCESS;
+  if (NULL == buf || buf_len <= 0) {
+    ret = OB_INVALID_ARGUMENT;
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(buf_len), K(ret));
+  } else if (OB_FAIL(serialization::encode_vi64(
+      buf, buf_len, pos, static_cast<int64_t>(table_id_)))) {
+    COMMON_LOG(WDIAG, "serialize table_id failed.",
+               KP(buf), K(buf_len), K(pos), K_(table_id), K(ret));
+  } else if (OB_FAIL(serialization::encode_i8(
+      buf, buf_len, pos, border_flag_.get_data()))) {
+    COMMON_LOG(WDIAG, "serialize border_flag failed.",
+               KP(buf), K(buf_len), K(pos), K_(border_flag), K(ret));
+  } else if (OB_FAIL(start_key_.serialize(buf, buf_len, pos))) {
+    COMMON_LOG(WDIAG, "serialize start_key failed.",
+               KP(buf), K(buf_len), K(pos), K_(start_key), K(ret));
+  } else if (OB_FAIL(end_key_.serialize(buf, buf_len, pos))) {
+    COMMON_LOG(WDIAG, "serialize end_key failed.",
+               KP(buf), K(buf_len), K(pos), K_(end_key), K(ret));
+  } else if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, flag_))) {
+    COMMON_LOG(WDIAG, "serialize flag failed.",
+               KP(buf), K(buf_len), K(pos), K_(flag), K(ret));
+  }
+  return ret;
+}
+
+int ObNewRange::deserialize_v4(const char *buf, const int64_t data_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  int8_t flag = 0;
+  if (NULL == buf || data_len <= 0) {
+    ret = OB_INVALID_ARGUMENT;
+    COMMON_LOG(WDIAG, "invalid arguments.", KP(buf), K(data_len), K(ret));
+  } else if (NULL == start_key_.get_obj_ptr() || NULL == end_key_.get_obj_ptr()) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    COMMON_LOG(WDIAG, "start_key or end_key ptr is NULL",
+               K_(start_key), K_(end_key), K(ret));
+  } else if (OB_FAIL(serialization::decode_vi64(
+      buf, data_len, pos, reinterpret_cast<int64_t *>(&table_id_)))) {
+    COMMON_LOG(WDIAG, "deserialize table_id failed.",
+               KP(buf), K(data_len), K(pos), K_(table_id), K(ret));
+  } else if (OB_FAIL(serialization::decode_i8(buf, data_len, pos, &flag))) {
+    COMMON_LOG(WDIAG, "deserialize flag failed.",
+               KP(buf), K(data_len), K(pos), K(flag), K(ret));
+  } else if (OB_FAIL(start_key_.deserialize(buf, data_len, pos))) {
+    COMMON_LOG(WDIAG, "deserialize start_key failed.",
+               KP(buf), K(data_len), K(pos), K_(start_key), K(ret));
+  } else if (OB_FAIL(end_key_.deserialize(buf, data_len, pos))) {
+    COMMON_LOG(WDIAG, "deserialize end_key failed.",
+               KP(buf), K(data_len), K(pos), K_(end_key), K(ret));
+  } else if (OB_FAIL(serialization::decode_vi64(buf, data_len, pos, &flag_))) {
+    COMMON_LOG(WDIAG, "deserialize flag failed.",
+               KP(buf), K(data_len), K(pos), K_(flag), K(ret));
+  } else {
+    border_flag_.set_data(flag);
+  }
+  return ret;
+}
+
+int64_t ObNewRange::get_serialize_size_v4(void) const
+{
+  int64_t total_size = 0;
+
+  total_size += serialization::encoded_length_vi64(table_id_);
+  total_size += serialization::encoded_length_i8(border_flag_.get_data());
+
+  total_size += start_key_.get_serialize_size();
+  total_size += end_key_.get_serialize_size();
+  total_size += serialization::encoded_length_vi64(flag_);
+
+  return total_size;
+}
+
 }
 }

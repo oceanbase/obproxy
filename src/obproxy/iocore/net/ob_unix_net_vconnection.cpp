@@ -554,7 +554,7 @@ inline int ObUnixNetVConnection::read_from_net_internal(
 
       if (using_ssl_) {
         if (OB_FAIL(ObSocketManager::ssl_read(ssl_, tiovec[0].iov_base, tiovec[0].iov_len, count, tmp_code))) {
-          PROXY_NET_LOG(WDIAG, "ssl read failed", K(ret));
+          PROXY_NET_LOG(INFO, "ssl read failed", K(ret));
         } else if (count > 0) {
           total_read += count;
         } else {
@@ -715,7 +715,7 @@ inline int ObUnixNetVConnection::write_to_net_internal(ObIOBufferReader &reader,
 
         if (using_ssl_) {
           if (OB_FAIL(ObSocketManager::ssl_write(ssl_, tiovec[0].iov_base, tiovec[0].iov_len, count, tmp_code))) {
-            PROXY_NET_LOG(WDIAG, "ssl write failed", K(ret));
+            PROXY_NET_LOG(INFO, "ssl write failed", K(ret));
           } else if (count > 0)  {
             total_write += count;
           } else {
@@ -1810,7 +1810,7 @@ void ObUnixNetVConnection::handle_ssl_err_code(const int err_code)
     PROXY_NET_LOG(DEBUG, "ssl return SSL_ERROR_WANT_ACCEPT");
     break;
   case SSL_ERROR_WANT_X509_LOOKUP:
-    PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_WANT_X509_LOOKUP");
+    PROXY_NET_LOG(INFO, "ssl return SSL_ERROR_WANT_X509_LOOKUP");
     break;
   // case SSL_ERROR_WANT_ASYNC:
   //   PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_WANT_ASYNC");
@@ -1826,19 +1826,19 @@ void ObUnixNetVConnection::handle_ssl_err_code(const int err_code)
     close_ssl();
     break;
   case SSL_ERROR_SYSCALL:
-    PROXY_NET_LOG(WDIAG, "ssl return SSL_ERROR_SYSCALL");
+    PROXY_NET_LOG(INFO, "ssl return SSL_ERROR_SYSCALL");
     can_shutdown_ssl_ = false;
     close_ssl();
     break;
   case SSL_ERROR_SSL:
-    PROXY_NET_LOG(EDIAG, "ssl return SSL_ERROR_SYSCALL");
+    PROXY_NET_LOG(INFO, "ssl return SSL_ERROR_SYSCALL");
     can_shutdown_ssl_ = false;
     close_ssl();
     break;
   default:
     can_shutdown_ssl_ = false;
     close_ssl();
-    PROXY_NET_LOG(EDIAG, "unknown ssl error code, should not happen");
+    PROXY_NET_LOG(INFO, "unknown ssl error code, should not happen");
     break;
   }
 }

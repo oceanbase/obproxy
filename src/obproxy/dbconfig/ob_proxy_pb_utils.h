@@ -78,8 +78,6 @@ public:
   static int parse_group_cluster(const std::string &gc_name, const std::string &es_str, ObGroupCluster &gc_info);
   static int parse_shard_url(const std::string &shard_url, ObShardConnector &conn_info);
 
-  static bool match_like(const common::ObString &str_text, const common::ObString &str_pattern);
-
 private:
   static void get_str_value_by_name(const std::string &shard_url, const char* name, obutils::ObProxyConfigString& value);
 public:

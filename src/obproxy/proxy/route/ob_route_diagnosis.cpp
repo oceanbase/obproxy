@@ -166,59 +166,67 @@ static const char *get_diagnosis_type_name(const ObDiagnosisType type) {
   }
   return name;
 }
-static const char *get_route_info_type_name(const ObDiagnosisRouteInfo::RouteInfoType type)
+static const char *get_route_info_type_name(const ObRouteInfoType type)
 {
   const char *name = NULL;
   switch(type) {
-    case ObDiagnosisRouteInfo::INVALID:
+    case ObRouteInfoType::INVALID:
       name = "INVALID";
       break;
 
-    case ObDiagnosisRouteInfo::USE_GLOBAL_INDEX:
+    case ObRouteInfoType::USE_GLOBAL_INDEX:
       name = "USE_GLOBAL_INDEX";
       break;
 
-    case ObDiagnosisRouteInfo::USE_OBPROXY_ROUTE_ADDR:
+    case ObRouteInfoType::USE_OBPROXY_ROUTE_ADDR:
       name = "USE_OBPROXY_ROUTE_ADDR";
       break;
 
-    case ObDiagnosisRouteInfo::USE_CURSOR:
+    case ObRouteInfoType::USE_CURSOR:
       name = "USE_CURSOR";
       break;
 
-    case ObDiagnosisRouteInfo::USE_PIECES_DATA:
+    case ObRouteInfoType::USE_PIECES_DATA:
       name = "USE_PIECES_DATA";
       break;
 
-    case ObDiagnosisRouteInfo::USE_CONFIG_TARGET_DB:
+    case ObRouteInfoType::USE_CONFIG_TARGET_DB:
       name = "USE_CONFIG_TARGET_DB";
       break;
 
-    case ObDiagnosisRouteInfo::USE_COMMENT_TARGET_DB:
+    case ObRouteInfoType::USE_COMMENT_TARGET_DB:
       name = "USE_COMMENT_TARGET_DB";
       break;
 
-    case ObDiagnosisRouteInfo::USE_TEST_SVR_ADDR:
+    case ObRouteInfoType::USE_TEST_SVR_ADDR:
       name = "USE_TEST_SVR_ADDR";
       break;
 
-    case ObDiagnosisRouteInfo::USE_LAST_SESSION:
+    case ObRouteInfoType::USE_LAST_SESSION:
       name = "USE_LAST_SESSION";
       break;
 
-    case ObDiagnosisRouteInfo::USE_CACHED_SESSION:
+    case ObRouteInfoType::USE_LOCK_SESSION:
+      name = "USE_LOCK_SESSION";
+      break;
+
+    case ObRouteInfoType::USE_CACHED_SESSION:
       name = "USE_CACHED_SESSION";
       break;
 
-    case ObDiagnosisRouteInfo::USE_PARTITION_LOCATION_LOOKUP:
+    case ObRouteInfoType::USE_SINGLE_LEADER:
+      name = "USE_SINGLE_LEADER";
+      break;
+
+    case ObRouteInfoType::USE_PARTITION_LOCATION_LOOKUP:
       name = "USE_PARTITION_LOCATION_LOOKUP";
       break;
 
-    case ObDiagnosisRouteInfo::USE_COORDINATOR_SESSION:
+    case ObRouteInfoType::USE_COORDINATOR_SESSION:
       name = "USE_COODINATOR_SESSION";
       break;
 
-    case ObDiagnosisRouteInfo::USE_ROUTE_POLICY:
+    case ObRouteInfoType::USE_ROUTE_POLICY:
       name = "USE_ROUTE_POLICY";
       break;
 
@@ -246,8 +254,8 @@ static const char *get_retry_type_name(const ObRetryType type) {
       name = "TEST_SERVER_ADDR";
       break;
 
-    case USE_PARTITION_LOCATION_LOOKUP:
-      name = "USE_PARTITION_LOCATION_LOOKUP";
+    case PARTITION_LOCATION_LOOKUP:
+      name = "PARTITION_LOCATION_LOOKUP";
       break;
 
     case REROUTE:
@@ -661,38 +669,39 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
     char svr_buf[1 << 7] { 0 };
     svr_addr_.to_plain_string(svr_buf, 1 << 7);
     if (!svr_addr_.is_valid() &&
-        (USE_CURSOR == route_info_type_ ||
-         USE_PIECES_DATA == route_info_type_ ||
-         USE_COMMENT_TARGET_DB == route_info_type_ ||
-         USE_CONFIG_TARGET_DB == route_info_type_ ||
-         USE_LAST_SESSION == route_info_type_ ||
-         USE_COORDINATOR_SESSION == route_info_type_ ||
-         USE_CACHED_SESSION == route_info_type_)) {
+        (ObRouteInfoType::USE_CURSOR == route_info_type_ ||
+         ObRouteInfoType::USE_PIECES_DATA == route_info_type_ ||
+         ObRouteInfoType::USE_COMMENT_TARGET_DB == route_info_type_ ||
+         ObRouteInfoType::USE_CONFIG_TARGET_DB == route_info_type_ ||
+         ObRouteInfoType::USE_LAST_SESSION == route_info_type_ ||
+         ObRouteInfoType::USE_COORDINATOR_SESSION == route_info_type_ ||
+         ObRouteInfoType::USE_CACHED_SESSION == route_info_type_ ||
+         ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_)) {
       DIAGNOSE_WARN("Unexpected invalid server addr")
-    } else if (USE_CURSOR == route_info_type_ || USE_PIECES_DATA == route_info_type_) {
+    } else if (ObRouteInfoType::USE_CURSOR == route_info_type_ || ObRouteInfoType::USE_PIECES_DATA == route_info_type_) {
       DIAGNOSE_INFO("Will route to starting server(%s) because use streaming data transfer", svr_buf);
-    } else if (USE_CONFIG_TARGET_DB == route_info_type_ || USE_COMMENT_TARGET_DB == route_info_type_) {
+    } else if (ObRouteInfoType::USE_CONFIG_TARGET_DB == route_info_type_ || ObRouteInfoType::USE_COMMENT_TARGET_DB == route_info_type_) {
       if (!net::ops_is_ip_loopback(svr_addr_)) {
         DIAGNOSE_INFO("Will route to target db server(%s)", svr_buf);
       } else {
         DIAGNOSE_INFO("Will route to target db server(%s) and it's loopback addr wouldn't do congestion control", svr_buf);
       }
-    } else if (USE_PARTITION_LOCATION_LOOKUP == route_info_type_) {
+    } else if (ObRouteInfoType::USE_PARTITION_LOCATION_LOOKUP == route_info_type_) {
       DIAGNOSE_INFO("Will do table partition location lookup to decide which OBServer to route to")
-    } else if (USE_ROUTE_POLICY == route_info_type_) {
+    } else if (ObRouteInfoType::USE_ROUTE_POLICY == route_info_type_) {
       DIAGNOSE_INFO("Will use route policy to decide which OBServer to route to")
-    } else if (USE_GLOBAL_INDEX == route_info_type_) {
+    } else if (ObRouteInfoType::USE_GLOBAL_INDEX == route_info_type_) {
       DIAGNOSE_INFO("Will use global index table name as real table name to route")
-    } else if (USE_TEST_SVR_ADDR == route_info_type_) {
+    } else if (ObRouteInfoType::USE_TEST_SVR_ADDR == route_info_type_) {
       DIAGNOSE_INFO("Do NOT use deprecated feature test_server_addr")
     } else {
-      if (USE_COORDINATOR_SESSION == route_info_type_) {
+      if (ObRouteInfoType::USE_COORDINATOR_SESSION == route_info_type_) {
         if (trans_specified_) {
           DIAGNOSE_INFO("Will route to transaction coordinator(%s) because current query for session temporary table but last session not equals to coordinator", svr_buf);
         } else {
           DIAGNOSE_INFO("Will route to transaction coordinator(%s) because current query unable to be freely routed", svr_buf);
         }
-      } else if (USE_LAST_SESSION == route_info_type_) {
+      } else if (ObRouteInfoType::USE_LAST_SESSION == route_info_type_) {
         if (depent_func_) {
           DIAGNOSE_INFO("Will route to last connected server(%s) because 'select found_rows()/select row_count()/select connection_id()/show warnings/show errors/show trace' command and these queries depend on the last query session", svr_buf)
         } else if (trans_specified_) {
@@ -702,8 +711,10 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
         } else {
           DIAGNOSE_INFO("Will route to last connected server(%s)", svr_buf);
         }
-      } else if (USE_CACHED_SESSION == route_info_type_) {
+      } else if (ObRouteInfoType::USE_CACHED_SESSION == route_info_type_) {
         DIAGNOSE_INFO("Will route to cached connected server(%s)", svr_buf);
+      } else if (ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_) {
+        DIAGNOSE_INFO("Will route to tenant's single leader node(%s)", svr_buf);
       }
     }
   )
@@ -736,7 +747,7 @@ int64_t ObDiagnosisRouteInfo::to_string(char *buf, const int64_t buf_len) const
 
 void ObDiagnosisRouteInfo::reset() {
   this->ObDiagnosisBase::reset();
-  route_info_type_ = INVALID;
+  route_info_type_ = ObRouteInfoType::INVALID;
   svr_addr_.reset();
   in_transaction_ = false;
   depent_func_ = false;
@@ -793,17 +804,18 @@ int64_t ObDiagnosisRoutePolicy::diagnose(char *buf, const int64_t buf_len, int &
 int64_t ObDiagnosisRoutePolicy::to_string(char *buf, const int64_t buf_len) const
 {
   DIAGNOSIS_DATA_PRINT(
+    if (pos != 0) {
+      J_COMMA();
+    }
+    J_KV("route_policy", get_route_policy_enum_string(opt_route_policy_));
     if (chosen_route_type_ == ROUTE_TYPE_LEADER) {
-      if (pos != 0) {
-        J_COMMA();
-      }
+      J_COMMA();
       J_KV("chosen_route_type", get_route_type_string(chosen_route_type_));
     } else if (!replica_.is_valid()) {
-      if (pos != 0) {
-        J_COMMA();
-      }
+      J_COMMA();
       J_KV("chosen_server", "Invalid");
     } else {
+      J_COMMA();
       J_KV("replica", replica_.server_);
       J_COMMA();
       J_KV("idc_type", get_idc_type_string(chosen_server_.idc_type_));
@@ -843,8 +855,6 @@ int64_t ObDiagnosisRoutePolicy::to_string(char *buf, const int64_t buf_len) cons
       } else {
         J_COMMA();
         J_KV("chosen_route_type", get_route_type_string(chosen_route_type_));
-        J_COMMA();
-        J_KV("route_policy", get_route_policy_enum_string(opt_route_policy_));
         if (trans_consistency_level_ != INVALID_CONSISTENCY) {
           J_COMMA();
           J_KV("trans_consistency", get_consistency_level_str(trans_consistency_level_));
@@ -1438,6 +1448,8 @@ ObDiagnosisPoint::ObDiagnosisPoint(const ObDiagnosisPoint& odp) {
 ObDiagnosisPoint::~ObDiagnosisPoint() {
   switch(base_.type_) {
     case BASE_ROUTE_DIAGNOSIS_TYPE:
+    case PARTITION_ID_CALC_START:
+    case TABLE_ENTRY_LOOKUP_START:
       base_.~ObDiagnosisBase();
       break;
 
@@ -1754,6 +1766,7 @@ int64_t ObRouteDiagnosis::to_string(char *buf, const int64_t buf_len) const
       FORMAT_PRINT(query_diagnosis_array_[i]);
     }
   }
+
   return pos;
 }
 int64_t ObRouteDiagnosis::to_explain_route_string(char *buf, const int64_t buf_len) const
@@ -1796,6 +1809,7 @@ int64_t ObRouteDiagnosis::to_explain_route_string(char *buf, const int64_t buf_l
       FORMAT_PRINT(query_diagnosis_array_[i]);
     }
   }
+
   return pos;
 }
 

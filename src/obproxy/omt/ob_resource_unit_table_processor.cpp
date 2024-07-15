@@ -55,25 +55,37 @@ int ObResourceUnitTableProcessor::get_config_params(void* args,
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("params is null", K(ret));
   } else {
-    ObCloudFnParams* params = (ObCloudFnParams*)args;
-    cluster_str  = params->cluster_name_;
-    tenant_str   = params->tenant_name_;
-    stmt_type    = params->stmt_type_;
+    ObFnParams* params = (ObFnParams*)args;
+    stmt_type = params->stmt_type_;
     SqlFieldResult* fields = params->fields_;
-    if (OB_UNLIKELY(cluster_str.empty()) || OB_UNLIKELY(tenant_str.empty())) {
-      ret = OB_INVALID_ARGUMENT;
-      LOG_WDIAG("tenant or cluster is null", K(ret), K(cluster_str), K(tenant_str));
-    } else if (OB_ISNULL(fields)) {
+    int64_t index = params->row_index_;
+    if (OB_ISNULL(fields)) {
       ret = OB_INVALID_ARGUMENT;
       LOG_WDIAG("fields is null", K(ret));
     } else {
       // The storage format is:[cluster|tenant|name|value]
-      for (int64_t i = 0; i < fields->field_num_; i++) {
+      for (int64_t i = 0; OB_SUCC(ret) && i < fields->field_num_; i++) {
         SqlField* sql_field = fields->fields_.at(i);
-        if (0 == sql_field->column_name_.config_string_.case_compare("name")) {
-          name_str = sql_field->column_value_.config_string_;
+        if (index >= sql_field->column_values_.count()) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("index out of range, invalid value for resource_unit",
+                    K(index), K(sql_field->column_values_.count()), K_(sql_field->column_name), K(ret));
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("name")) {
+          name_str = sql_field->column_values_.at(index).column_value_;
         } else if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
-          value_str = sql_field->column_value_.config_string_;
+          value_str = sql_field->column_values_.at(index).column_value_;
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("cluster_name")) {
+          cluster_str = sql_field->column_values_.at(index).column_value_;
+          if (OB_UNLIKELY(cluster_str.empty())) {
+            ret = OB_INVALID_ARGUMENT;
+            LOG_WDIAG("cluster_name is null", K(ret));
+          }
+        } else if (0 == sql_field->column_name_.config_string_.case_compare("tenant_name")) {
+          tenant_str = sql_field->column_values_.at(index).column_value_;
+          if (OB_UNLIKELY(tenant_str.empty())) {
+            ret = OB_INVALID_ARGUMENT;
+            LOG_WDIAG("tenant_name is null", K(ret));
+          }
         }
       }
     }
@@ -92,15 +104,17 @@ int ObResourceUnitTableProcessor::execute(void* args)
   if (OB_FAIL(get_config_params(args, cluster_name, tenant_name, name_str, value_str, stmt_type))) {
     LOG_WDIAG("fail to get config params", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
   } else {
-    LOG_DEBUG("execute cloud config", K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
+    ObFnParams* params = (ObFnParams*)args;
+    bool need_to_backup = (0 == params->row_index_);
+    LOG_DEBUG("execute cloud config", K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type), K(need_to_backup));
     if (OBPROXY_T_REPLACE == stmt_type) {
       if (OB_FAIL(get_global_resource_unit_table_processor().handle_replace_config(
-        cluster_name, tenant_name, name_str, value_str))) {
+        cluster_name, tenant_name, name_str, value_str, need_to_backup))) {
         LOG_WDIAG("fail to handle replace cmd", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
       }
     } else if (OBPROXY_T_DELETE == stmt_type) {
       if (OB_FAIL(get_global_resource_unit_table_processor().handle_delete_config(
-        cluster_name, tenant_name, name_str))) {
+        cluster_name, tenant_name, name_str, need_to_backup))) {
         LOG_WDIAG("fail to handle delete cmd", K(ret), K(cluster_name), K(tenant_name), K(name_str));
       }
     } else {
@@ -115,24 +129,29 @@ int ObResourceUnitTableProcessor::execute(void* args)
 int ObResourceUnitTableProcessor::commit(void* args, bool is_success)
 {
   int ret = OB_SUCCESS;
-  ObString cluster_name;
-  ObString tenant_name;
-  ObString name_str;
-  ObString value_str;
-  ObProxyBasicStmtType stmt_type;
+  UNUSED(args);
+  /* ObString cluster_name;
+  // ObString tenant_name;
+  // ObString name_str;
+  // ObString value_str;
+  // ObProxyBasicStmtType stmt_type;
   if (OB_FAIL(get_config_params(args, cluster_name, tenant_name, name_str, value_str, stmt_type))) {
     LOG_WDIAG("fail to get config params", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type));
   } else {
     LOG_DEBUG("commit cloud config", K(cluster_name), K(tenant_name), K(name_str), K(value_str), K(stmt_type), K(is_success));
-    if (name_str == conn_name) {
-      if (OB_FAIL(get_global_conn_table_processor().commit(is_success))) {
-        LOG_WDIAG("fail to handle connection commit", K(ret), K(cluster_name), K(tenant_name), K(name_str));
-      }
-    } else if (name_str == cpu_name) {
-      get_global_cpu_table_processor().commit(is_success);
+    */
+  LOG_DEBUG("commit cloud config");
+  // 用2bit表示，修改的name种类
+  if (get_global_resource_unit_table_processor().get_name_type() & 1) {
+    if (OB_FAIL(get_global_conn_table_processor().commit(is_success))) {
+      LOG_WDIAG("fail to handle connection commit", K(ret));
     }
   }
+  if (get_global_resource_unit_table_processor().get_name_type() & 2) {
+    get_global_cpu_table_processor().commit(is_success);
+  }
 
+  get_global_resource_unit_table_processor().reset_name_type();
   return ret;
 }
 
@@ -161,7 +180,7 @@ int ObResourceUnitTableProcessor::init()
 }
 
 int ObResourceUnitTableProcessor::handle_replace_config(
-    ObString& cluster_name, ObString& tenant_name, ObString& name_str, ObString& value_str)
+    ObString& cluster_name, ObString& tenant_name, ObString& name_str, ObString& value_str, const bool need_to_backup)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(name_str.empty()) || OB_UNLIKELY(value_str.empty())) {
@@ -169,11 +188,13 @@ int ObResourceUnitTableProcessor::handle_replace_config(
     LOG_WDIAG("name or value is null", K(ret), K(name_str), K(value_str));
   } else {
     if (name_str == conn_name) {
-      if (OB_FAIL(get_global_conn_table_processor().conn_handle_replace_config(cluster_name, tenant_name, name_str, value_str))) {
+      name_type_ |= 1;  // 第1个bit置1
+      if (OB_FAIL(get_global_conn_table_processor().conn_handle_replace_config(cluster_name, tenant_name, name_str, value_str, need_to_backup))) {
         LOG_WDIAG("fail to replace connection config", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
       }
     } else if (name_str == cpu_name) {
-      if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_replace_config(cluster_name, tenant_name, name_str, value_str))) {
+      name_type_ |= 2;  // 第2个bit置1
+      if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_replace_config(cluster_name, tenant_name, name_str, value_str, need_to_backup))) {
         LOG_WDIAG("fail to replace cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str), K(value_str));
       }
     } else {
@@ -186,25 +207,25 @@ int ObResourceUnitTableProcessor::handle_replace_config(
 }
 
 int ObResourceUnitTableProcessor::handle_delete_config(
-    ObString& cluster_name, ObString& tenant_name, ObString& name_str)
+    ObString& cluster_name, ObString& tenant_name, ObString& name_str, const bool need_to_backup)
 {
   int ret = OB_SUCCESS;
   // note: Now only supports the deletion of cluster and tenant information
   if (name_str.empty()) {
-    if (OB_FAIL(get_global_conn_table_processor().conn_handle_delete_config(cluster_name, tenant_name))) {
+    if (OB_FAIL(get_global_conn_table_processor().conn_handle_delete_config(cluster_name, tenant_name, need_to_backup))) {
       LOG_WDIAG("fail to handle delete conn config", K(ret), K(cluster_name), K(tenant_name));
     }
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_delete_config(cluster_name, tenant_name))) {
+      if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_delete_config(cluster_name, tenant_name, need_to_backup))) {
         LOG_WDIAG("fail to handle delete cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
       }
     }
   } else if (name_str == conn_name) {
-    if (OB_FAIL(get_global_conn_table_processor().conn_handle_delete_config(cluster_name, tenant_name))) {
+    if (OB_FAIL(get_global_conn_table_processor().conn_handle_delete_config(cluster_name, tenant_name, need_to_backup))) {
       LOG_WDIAG("fail to handle delete conn config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
     }
   } else if (name_str == cpu_name) {
-    if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_delete_config(cluster_name, tenant_name))) {
+    if (OB_FAIL(get_global_cpu_table_processor().cpu_handle_delete_config(cluster_name, tenant_name, need_to_backup))) {
       LOG_WDIAG("fail to handle delete cpu config", K(ret), K(cluster_name), K(tenant_name), K(name_str));
     }
   } else {

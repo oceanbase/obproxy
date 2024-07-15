@@ -1,4 +1,4 @@
-AM_CPPFLAGS += -I${top_srcdir}/src
+AM_CPPFLAGS += -I${top_srcdir}/src -I${top_srcdir}/deps/easy/src/include -I${top_srcdir}/deps/easy/src/io -I${top_srcdir}/deps/easy/src/util -I${top_srcdir}/deps/easy/src/thread
 
 # define empty targets
 noinst_LTLIBRARIES=

@@ -21,6 +21,7 @@
 #include "proxy/client/ob_client_utils.h"
 #include "obutils/ob_proxy_table_processor.h"
 #include "obutils/ob_config_server_processor.h"
+#include "omt/ob_proxy_config_table_processor.h"
 
 
 using namespace oceanbase::share;
@@ -439,10 +440,34 @@ int ObProxyTableProcessorUtils::get_vip_tenant_info(ObMysqlProxy &mysql_proxy,
   } else if (OB_FAIL(mysql_proxy.read(sql, result_handler))) {
     LOG_WDIAG("fail to read all vip tenant", K(sql), K(ret));
   } else if (OB_FAIL(fill_local_vt_cache(result_handler, cache_map))) {
-    LOG_WDIAG("fail to fill vip tenant cache", K(ret));
+    LOG_WARN("fetch Config from Metadb and replace into obproxy failed", K(ret));
   } else {
     LOG_DEBUG("succ to vip tenant info", "count", cache_map.count());
   }
+  return ret;
+}
+
+int ObProxyTableProcessorUtils::concate_sql_value(
+    char *sql_buf, int64_t &sql_buf_len, const int64_t max_buf_len, const int64_t vid, const ObString &vip,
+    const int64_t vport, const ObString &tenant_name, const ObString &cluster_name,
+    const ObString &name, const ObString &value, const ObString &level)
+{
+  int ret = OB_SUCCESS;
+  const char *sql_value = "(%ld, '%.*s', %ld, '%.*s', '%.*s', '%.*s', '%.*s', '%.*s'),";
+  int64_t len = 0;
+  len = static_cast<int32_t>(snprintf(
+      sql_buf + sql_buf_len, max_buf_len - sql_buf_len, sql_value, vid,
+      vip.length(), vip.ptr(), vport, cluster_name.length(), cluster_name.ptr(),
+      tenant_name.length(), tenant_name.ptr(), name.length(), name.ptr(),
+      value.length(), value.ptr(), level.length(), level.ptr()));
+  if (OB_UNLIKELY(len <= 0)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to add value to sql buf", K(cluster_name), K(tenant_name),
+              K(vip), K(name), K(value), K(ret));
+  } else {
+    sql_buf_len += len;
+  }
+
   return ret;
 }
 
@@ -476,6 +501,24 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
   int64_t sleep_time = get_global_proxy_config().metadb_batch_interval;
   LOG_INFO("begin to fill_local_vt_cache", K(batch_size), K(sleep_time));
 
+  char *sql_buf = NULL;
+  const char *origin_sql = "replace into proxy_config(vid, vip, vport, cluster_name, tenant_name, name, value, config_level) values";
+  int64_t sql_buf_len = 0;
+  const int64_t origin_sql_len = static_cast<int64_t>(strlen(origin_sql));
+  // batch * 一个rslist最多插入配置 * metadb插入配置最大长度
+  // 256: metadb每条插入最大长度，tenant_name最长为64，cluster_name为256, 一个配置的长度不超过512
+  const int64_t max_buf_len = batch_size * 4 * 512 + sizeof(origin_sql) + 1;
+  if (OB_ISNULL(sql_buf = static_cast<char*>(op_fixed_mem_alloc(max_buf_len)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc mem for sql buf", K(ret));
+  } else if (OB_UNLIKELY(0 >= (sql_buf_len = snprintf(
+                                sql_buf, static_cast<uint64_t>(max_buf_len), "%s", origin_sql)))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to build sql buf", K(ret));
+  }
+
+  // 1. 将每batch_size个sql拼接到一起，收集之后，调用execute执行sql
+  // 2. 接口中调用了handle_dml_stmt，改造接口，可以支持批量修改，并且回滚
   while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "vid", vid, int64_t);
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "vip", vip, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
@@ -487,7 +530,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
     if (OB_SUCC(ret) && !info.empty()) {
       if (OB_FAIL(parser.parse(info.ptr(), info.length(), info_config))) {
         LOG_WDIAG("parse json failed", K(ret), K(info));
-      } if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(info_config, json::JT_OBJECT))) {
+      } else if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(info_config, json::JT_OBJECT))) {
         LOG_WDIAG("check config info type failed", K(ret));
       } else {
         DLIST_FOREACH(it, info_config->get_object()) {
@@ -537,23 +580,19 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
         int32_t rw_len = snprintf(rw_buf, sizeof(rw_buf), "%ld", rw_type);
         request_target_string.assign_ptr(request_target_buf, request_len);
         rw_string.assign_ptr(rw_buf, rw_len);
-        if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
-          vid, vip, vport, "", "", "proxy_tenant_name", tenant_name, "LEVEL_VIP"))) {
-          LOG_WDIAG("store proxy_tenant_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
-        } else if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
-          vid, vip, vport, "", "", "rootservice_cluster_name", cluster_name, "LEVEL_VIP"))) {
-          LOG_WDIAG("store rootservice_cluster_name failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
+        if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, "", "", "proxy_tenant_name", tenant_name, "LEVEL_VIP"))) {
+          LOG_WDIAG("fail to concate proxy_tenant_name to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
+        } else if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, "", "", "rootservice_cluster_name", cluster_name, "LEVEL_VIP"))) {
+          LOG_WDIAG("fail to concate rootservice_cluster_name to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
         }
         if (OB_SUCC(ret) && -1 != rw_type) {
-          if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
-            vid, vip, vport, tenant_name, cluster_name, "obproxy_read_only", rw_string, "LEVEL_VIP"))) {
-            LOG_WDIAG("store obporxy_read_only failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(rw_type), K(ret));
+          if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, tenant_name, cluster_name, "obproxy_read_only", rw_string, "LEVEL_VIP"))) {
+            LOG_WDIAG("fail to concate obproxy_read_only to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(rw_type), K(ret));
           }
         }
         if (OB_SUCC(ret) && -1 != request_target_type) {
-          if (OB_FAIL(get_global_config_processor().store_proxy_config_with_level(
-            vid, vip, vport, tenant_name, cluster_name, "obproxy_read_consistency", request_target_string, "LEVEL_VIP"))) {
-            LOG_WDIAG("store obproxy_read_consistency failed", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(request_target_type), K(ret));
+          if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, tenant_name, cluster_name, "obproxy_read_consistency", request_target_string, "LEVEL_VIP"))) {
+            LOG_WDIAG("fail to concate obproxy_read_consistency to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(request_target_type), K(ret));
           }
         }
         if (OB_SUCC(ret)) {
@@ -569,19 +608,50 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
           rw_type = -1;
           request_target_string.reset();
           rw_string.reset();
-          if (cnt % batch_size == 0) {
-            if (0 != sleep_time) {
-              usleep(static_cast<__useconds_t>(sleep_time));
+          if (++cnt % batch_size == 0) {
+            // 删除末尾的','
+            sql_buf[--sql_buf_len] = '\0';
+            ObString sql_string(sql_buf_len, sql_buf);
+            if (OB_FAIL(get_global_config_processor().execute(sql_string, OBPROXY_T_REPLACE, NULL, true))) {
+              // 如果失败，不需要将sql_buf_len = origin_sql_len，因为错误码不会等于OB_ITER_END
+              LOG_WDIAG("fail to execute sql from metadb", K(sql_buf_len), K(ret));
+            } else {
+              sql_buf_len = origin_sql_len;
+              sql_buf[sql_buf_len] = '\0';
+              if (0 != sleep_time) {
+                usleep(static_cast<__useconds_t>(sleep_time));
+              }
             }
           }
         }
       }
     }//end if OB_SUCCESS
   }//end of while
-  LOG_INFO("end fill_local_vt_cache", K(cnt));
-
-  if (OB_LIKELY(OB_ITER_END == ret)) {
+  // 执行剩余插入配置的sql
+  const int iter_ret = ret;
+  if (OB_ITER_END != iter_ret) {
+    // do nothing
+  } else if (OB_ITER_END == iter_ret && origin_sql_len < sql_buf_len) {
     ret = OB_SUCCESS;
+    sql_buf[--sql_buf_len] = '\0';
+    ObString sql_string(sql_buf_len, sql_buf);
+    if (OB_FAIL(get_global_config_processor().execute(sql_string, OBPROXY_T_REPLACE, NULL, true))) {
+      LOG_WDIAG("fail to execute sql from metadb", K(sql_buf_len), K(ret));
+    } else {
+      sql_buf_len = origin_sql_len;
+      sql_buf[sql_buf_len] = '\0';
+    }
+  } else {
+    // 此时执行成功(OB_ITER_END == iter_ret)，并没有剩余配置需要插入
+    ret = OB_SUCCESS;
+  }
+
+  LOG_INFO("end fill_local_vt_cache", K(cnt), K(ret));
+  if (OB_NOT_NULL(sql_buf)) {
+    op_fixed_mem_free(sql_buf, max_buf_len);
+  }
+
+  if (OB_LIKELY(OB_ITER_END == iter_ret) && OB_SUCC(ret)) {
     LOG_DEBUG("succ to fill local vt cache", K(ret));
   } else {
     if (need_free && OB_LIKELY(NULL != vip_tenant)) {

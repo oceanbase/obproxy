@@ -14,7 +14,6 @@
 #define OBPROXY_MYSQL_TUNNEL_H
 
 #include "iocore/eventsystem/ob_vconnection.h"
-#include "proxy/mysqllib/ob_mysql_transaction_analyzer.h"
 #include "proxy/mysqllib/ob_mysql_request_analyzer.h"
 #include "proxy/mysqllib/ob_protocol_diagnosis.h"
 
@@ -39,7 +38,7 @@ struct ObMysqlTunnelConsumer;
 struct ObMysqlTunnelProducer;
 typedef int (ObMysqlSM::*MysqlProducerHandler)(int event, ObMysqlTunnelProducer &p);
 typedef int (ObMysqlSM::*MysqlConsumerHandler)(int event, ObMysqlTunnelConsumer &c);
-
+class ObRespAnalyzer;
 enum ObMysqlTunnelType
 {
   MT_MYSQL_SERVER,
@@ -67,12 +66,15 @@ struct ObPacketAnalyzer
   int process_request_content(bool &cmd_complete, bool &trans_complete, uint8_t &request_pkt_seq, obmysql::ObMySQLCmd cmd);
   ObMysqlTunnelProducer *producer_;
 
-  ObMysqlRequestAnalyzer *request_analyzer_;
-  ObIMysqlRespAnalyzer *resp_analyzer_;
+  union {
+    ObMysqlRequestAnalyzer *request_analyzer_;
+    ObRespAnalyzer *resp_analyzer_;
+    void *analyzer_;
+  };
 
   event::ObIOBufferReader *packet_reader_;
 
-  ObMysqlResp *server_response_;
+  ObRespAnalyzeResult *resp_result_;
   ObMysqlPacketType packet_type_;
   int last_server_event_;
   int64_t skip_bytes_;
@@ -151,11 +153,10 @@ struct ObMysqlTunnelProducer
   int set_request_packet_analyzer(ObMysqlPacketType packet_type,
                                   ObMysqlRequestAnalyzer *analyzer,
                                   ObProtocolDiagnosis *protocol_diagnosis);
-
   int set_response_packet_analyzer(const int64_t skip_bytes,
                                    ObMysqlPacketType packet_type,
-                                   ObIMysqlRespAnalyzer *analyzer,
-                                   ObMysqlResp *server_response);
+                                   void *analyzer,
+                                   ObRespAnalyzeResult *resp_result);
   void reset();
 
   common::DLL<ObMysqlTunnelConsumer> consumer_list_;
@@ -428,8 +429,7 @@ inline int ObMysqlTunnelProducer::set_request_packet_analyzer(
   packet_analyzer_.producer_ = this;
   packet_analyzer_.skip_bytes_ = 0;
   packet_analyzer_.packet_type_ = packet_type;
-  packet_analyzer_.resp_analyzer_ = NULL;
-  packet_analyzer_.server_response_ = NULL;
+  packet_analyzer_.resp_result_ = NULL;
   packet_analyzer_.request_analyzer_ = analyzer;
   INC_SHARED_REF(packet_analyzer_.protocol_diagnosis_, protocol_diagnosis);
   if (NULL != analyzer && NULL != buffer_start_) {
@@ -443,18 +443,16 @@ inline int ObMysqlTunnelProducer::set_request_packet_analyzer(
   }
   return ret;
 }
-
 inline int ObMysqlTunnelProducer::set_response_packet_analyzer(
     const int64_t skip_bytes, ObMysqlPacketType packet_type,
-    ObIMysqlRespAnalyzer *analyzer, ObMysqlResp *server_response)
+    void *analyzer, ObRespAnalyzeResult *resp_result)
 {
   int ret = common::OB_SUCCESS;
   packet_analyzer_.producer_ = this;
   packet_analyzer_.skip_bytes_ = skip_bytes;
   packet_analyzer_.packet_type_ = packet_type;
-  packet_analyzer_.resp_analyzer_ = analyzer;
-  packet_analyzer_.server_response_ = server_response;
-  packet_analyzer_.request_analyzer_ = NULL;
+  packet_analyzer_.analyzer_ = analyzer;
+  packet_analyzer_.resp_result_ = resp_result;
 
   if (NULL != analyzer && NULL != buffer_start_) {
     // resultset protocol

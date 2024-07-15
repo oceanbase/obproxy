@@ -354,7 +354,7 @@ int ObMysqlProxyCont::do_post_request()
       if (OB_SUCC(ret)) {
         // succ to post request, do nothing
       } else if ((OB_EAGAIN == ret) || (OB_OP_NOT_ALLOW == ret)) { // fail to post, retry
-        LOG_INFO("fail to acquire mysql client, will retry", K(this), K_(mysql_client));
+        LOG_INFO("fail to acquire mysql client, will retry", K(this), K_(mysql_client), K(ret));
         ret = OB_SUCCESS;
         if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(
                 this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), MYSQL_PROXY_POST_REQUEST_EVENT))) {

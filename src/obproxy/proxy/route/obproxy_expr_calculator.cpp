@@ -26,16 +26,22 @@
 #include "lib/timezone/ob_time_convert.h"
 #include "lib/timezone/ob_timezone_info.h"
 #include "proxy/route/ob_server_route.h"
+#include "lib/hash/ob_hashset.h"
+#include "obkv/table/ob_table_rpc_request.h"
+#include "proxy/rpc_optimize/ob_rpc_req.h"
+#include "proxy/rpc_optimize/rpclib/ob_table_query_async_entry.h"
 #include "proxy/route/ob_route_diagnosis.h"
 
 
 using namespace oceanbase::common;
+using namespace oceanbase::common::hash;
 using namespace oceanbase::share::schema;
 using namespace oceanbase::obmysql;
 using namespace oceanbase::obproxy::opsql;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy;
+using namespace oceanbase::obproxy::obkv;
 
 int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allocator,
                                                   const ObString &req_sql,
@@ -767,6 +773,303 @@ int ObExprCalcTool::build_dtc_params(ObClientSessionInfo *session_info,
 
   return ret;
 }
+                                                         
+int ObProxyExprCalculator::calculate_partition_id_for_rpc(common::ObArenaAllocator &allocator,
+                                                  ObRpcReq &ob_rpc_req,
+                                                  // ObRpcClientSessionInfo &client_info,
+                                                  ObProxyPartInfo &part_info,
+                                                  int64_t &partition_id)
+{
+  int ret = OB_SUCCESS;
+
+  switch (ob_rpc_req.get_rpc_type()) {
+  case OBPROXY_RPC_OBRPC:
+    // ret = calculate_partition_id_for_obkv(allocator, client_request, client_info, part_info, partition_id);
+    ret = calculate_partition_id_for_obkv(allocator, ob_rpc_req, part_info, partition_id);
+    break;
+  case OBPROXY_RPC_HBASE:
+  default:
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unknown rpc type for request", K(ret), "rpc type", ob_rpc_req.get_rpc_type());
+    break;
+  }
+
+  return ret;
+}
+
+int ObProxyExprCalculator::calculate_partition_id_for_obkv(common::ObArenaAllocator &allocator,
+                                                           ObRpcReq &ob_rpc_req,
+                                                           ObProxyPartInfo &part_info,
+                                                           int64_t &partition_id)
+{
+  int ret = OB_SUCCESS;
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  ObRpcRequest *rpc_request = NULL;
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  int pcode = obkv_info.pcode_;
+  if (OB_ISNULL(rpc_request = ob_rpc_req.get_rpc_request())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("calculate_partition_id_for_obkv get a invalid rpc_req", K(ret), K(ob_rpc_req), K(rpc_trace_id));
+  } else if (obkv_info.partition_id_ != common::OB_INVALID_INDEX) {
+    partition_id = obkv_info.partition_id_; // not need calc it again
+    LOG_DEBUG("calculate_partition_id_for_obkv use partition id user set", K(partition_id), K(rpc_trace_id));
+  } else { // calc partition id by rpc request
+    if (OB_FAIL(rpc_request->calc_partition_id(allocator, ob_rpc_req, part_info, partition_id))) {
+      LOG_WDIAG("fail to calc_partition_id for rpc_request", K(ret), K(rpc_trace_id), K(pcode), KPC(rpc_request));
+    } else {
+      LOG_DEBUG("rpc partition id has done", K(ret), K(pcode), K(partition_id), "shard request", obkv_info.is_shard(),
+                K(rpc_trace_id));
+    }
+    #ifdef ERRSIM
+    if (OB_SUCC(ret) && OB_FAIL(OB_E(EventTable::EN_RPC_SET_SHARD) OB_SUCCESS)) {
+      ret = OB_SUCCESS;
+      obkv_info.set_definitely_single(false);
+      obkv_info.set_partition_id(common::OB_INVALID_INDEX);
+      obkv_info.set_ls_id(ObLSID::INVALID_LS_ID);
+      obkv_info.set_shard(true);
+      partition_id = common::OB_INVALID_INDEX;
+    }
+    #endif
+  }
+  return ret;
+}
+
+int ObRpcExprCalcTool::eval_rowkey_index(const ObProxyPartKeyInfo &part_info,
+                                         const common::ObIArray<common::ObString> &rowkey_columns_name,
+                                         const common::ObIArray<common::ObString> &part_columns_name,
+                                         ObProxyPartKeyLevel level,
+                                         common::ObIArray<int64_t> &rowkey_index)
+{
+  int ret = OB_SUCCESS;
+  // The table client sends rowkey columns in the Table Query request
+  rowkey_index.reset();
+
+  if (0 == part_columns_name.count()) {
+    LOG_DEBUG("eval_rowkey_index invalid part_colunms_name", K(part_columns_name), K(ret));
+  } else {
+    for (int i = 0; i < part_columns_name.count(); ++i) {
+      // remove character '`'
+      const ObString &part_col = part_columns_name.at(i);
+      ObString part_col_replace;
+      int32_t part_col_length = part_col.length();
+      const char *ptr = part_col.ptr();
+      LOG_DEBUG("get part columns", K(part_col_length), K(ptr[0]), K(ptr[part_col_length - 1])); //TODO will be delete in future
+      if (3 <= part_col_length && '`' == ptr[0] && '`' == ptr[part_col_length - 1]) {
+        part_col_length -= 2;
+        ptr += 1;
+        part_col_replace.assign_ptr(ptr, part_col_length);
+      } else {
+        part_col_replace = part_col;
+      }
+
+      if (0 != rowkey_columns_name.count()) {
+        // 客户端传rowkey列信息
+        for (int j = 0; j < rowkey_columns_name.count(); ++j) {
+          int compare_ret = rowkey_columns_name.at(j).case_compare(part_col_replace);
+          if (0 == compare_ret) {
+            rowkey_index.push_back(j);
+            break;
+          }
+        }
+      } else {
+        // 依赖observer返回的idx_in_rowid
+        ObString part_key_name;
+        int compare_ret;
+        for (int j = 0; OB_SUCC(ret) && j < part_info.key_num_; ++j) {
+          if (part_info.part_keys_[j].is_generated_) {
+            ret = OB_NOT_SUPPORTED;
+            LOG_WARN("part key is generated and not supported now", K(ret));
+          } else if (part_info.part_keys_[j].level_ == level) {
+            part_key_name.assign(part_info.part_keys_[j].name_.str_, part_info.part_keys_[j].name_.str_len_);
+            compare_ret = part_key_name.case_compare(part_col_replace);
+            if (0 == compare_ret) {
+              rowkey_index.push_back(part_info.part_keys_[j].idx_in_rowid_);
+              break;
+            }
+          }
+        }
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    if (rowkey_index.count() != part_columns_name.count()) {
+      ret = OB_ERR_KV_ROWKEY_MISMATCH;
+      LOG_WDIAG("eval_rowkey_index get err rowkey_index", K(rowkey_index), K(part_columns_name), K(rowkey_columns_name), K(ret));
+    } else {
+      LOG_DEBUG("get rowkey_index", K(rowkey_index), K(part_columns_name), K(rowkey_columns_name));
+    }
+  }
+
+  return ret;
+}
+
+// eval part key from rowkey, stored in eval_rowkey
+int ObRpcExprCalcTool::eval_rowkey_values(common::ObArenaAllocator &allocator,
+                                          const ObRowkey &rowkey,
+                                          common::ObIArray<int64_t> &rowkey_index,
+                                          ObRowkey &eval_part_rowkey)
+{
+  int ret = OB_SUCCESS;
+  ObObj *eval_obj = NULL;
+  const ObObj *src_obj = NULL;
+  void  *obj_buf = NULL;
+  int64_t index = 0;
+
+  if (0 == rowkey_index.count()) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("empty rowkey_index", K(rowkey_index), K(ret));
+  } else if (OB_ISNULL(obj_buf = (void *)allocator.alloc(rowkey_index.count() * sizeof(ObObj)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc new obj", K(ret));
+  } else {
+    eval_obj = new (obj_buf) ObObj[rowkey_index.count()]();
+
+    for (int i = 0; OB_SUCC(ret) && i < rowkey_index.count(); ++i) {
+      index = rowkey_index.at(i);
+      if (index >= rowkey.get_obj_cnt()) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WDIAG("part key idx in rowid greater than input rowkey obj cnt",
+          K(index), "cnt", rowkey.get_obj_cnt(), K(ret));
+      } else  {
+        src_obj = rowkey.get_obj_ptr();
+        eval_obj[i] = src_obj[index];
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    eval_part_rowkey.reset();
+    eval_part_rowkey.assign(eval_obj, rowkey_index.count());    // 设置新obj值
+
+    LOG_DEBUG("obkv eval part key from rowkey", K(rowkey), K(eval_part_rowkey), K(rowkey_index));
+  }
+
+  return ret;
+}
+
+int ObRpcExprCalcTool::do_partition_id_calc_for_obkv(opsql::ObExprResolverResult &resolve_result,
+                                                     ObProxyPartInfo &part_info,
+                                                     common::ObIAllocator &allocator,
+                                                     common::ObIArray<int64_t> &partition_ids,
+                                                     common::ObIArray<int64_t> &log_stream_ids)
+{
+  int ret = OB_SUCCESS;
+  ObProxyPartMgr &part_mgr = part_info.get_part_mgr();
+  int64_t first_part_id = OB_INVALID_INDEX;
+  int64_t sub_part_id = OB_INVALID_INDEX;
+  int64_t partition_id;
+
+  if (part_info.has_first_part()) {
+    // Currently obkv does not handle timestamp variables and accurate check
+    ObPartDescCtx ctx(NULL, false, part_info.get_cluster_version());
+    ObSEArray<int64_t, 1> part_ids;
+    ObSEArray<int64_t, 1> tablet_ids;
+    ObSEArray<int64_t, 1> ls_ids;
+
+    if (OB_FAIL(part_mgr.get_first_part_for_obkv(resolve_result.ranges_[PARTITION_LEVEL_ONE - 1], allocator, part_ids,
+                                                 ctx, tablet_ids, ls_ids))) {
+      LOG_DEBUG("fail to get first part", K(ret));
+    } else if ((tablet_ids.count() >= 1 && tablet_ids.count() != part_ids.count()) ||
+               (ls_ids.count() >= 1 && ls_ids.count() != part_ids.count())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("part_ids count is not equal to tablet_ids count",
+               "part_ids count", part_ids.count(),
+               "tablet_ids count", tablet_ids.count());
+    }
+
+    LOG_DEBUG("do partition id calc for rpc", K(part_ids), K(tablet_ids), K(part_info.has_sub_part()));
+
+    for (int i = 0; OB_SUCC(ret) && i < part_ids.count(); ++i) {
+      first_part_id = part_ids.at(i);
+      if (OB_INVALID_INDEX == first_part_id) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("do partition id calc for rpc get OB_INVALID_INDEX", K(partition_id));
+      } else if (part_info.has_sub_part()) {
+        ObPartDesc *sub_part_desc_ptr = NULL;
+        ObSEArray<int64_t, 1> sub_part_ids;
+        ObSEArray<int64_t, 1> tablet_ids;
+        ObSEArray<int64_t, 1> ls_ids;
+
+        /**
+         * @brief
+         *  For obkv secondary partition range calculation
+         *    1. If there is only one first-level partition
+         *      1.1. Calculate according to the previous logic
+         *    2. If there are multiple first-level partitions
+         *      2.1. For the first partition, use the start key in the passed range to calculate the [left, max] sub partition id
+         *      2.2. For the last partition, use the end key in the passed range to calculate the [min, right] sub partition id
+         *      2.3. Else, calc the whole sub partition id
+         */
+        if (1 == part_ids.count()) {
+          // do nothing
+        } else {
+          if (0 == i) {
+            ctx.set_calc_first_partition(true);
+            ctx.set_calc_last_partition(false);
+            ctx.set_need_get_whole_range(false);
+          } else if (part_ids.count() - 1 == i) {
+            ctx.set_calc_first_partition(false);
+            ctx.set_calc_last_partition(true);
+            ctx.set_need_get_whole_range(false);
+          } else {
+            ctx.set_calc_first_partition(false);
+            ctx.set_calc_last_partition(false);
+            ctx.set_need_get_whole_range(true);
+          }
+        }
+
+        if (OB_FAIL(part_mgr.get_sub_part_desc_by_first_part_id(part_info.is_template_table(),
+                                                                first_part_id,
+                                                                sub_part_desc_ptr,
+                                                                part_info.get_cluster_version()))) {
+          LOG_WDIAG("fail to get sub part desc by first", K(ret));
+        } else if (OB_FAIL(part_mgr.get_sub_part_for_obkv(resolve_result.ranges_[PARTITION_LEVEL_TWO - 1],
+                                                          allocator,
+                                                          sub_part_desc_ptr,
+                                                          sub_part_ids,
+                                                          ctx,
+                                                          tablet_ids,
+                                                          ls_ids))) {
+          LOG_WDIAG("fail to get sub part", K(ret));
+        } else {
+          if (tablet_ids.count() > 0) {
+            for (int i = 0; i < tablet_ids.count(); ++i) {
+              partition_ids.push_back(tablet_ids.at(i));
+            }
+          } else {
+            for (int i = 0; i < sub_part_ids.count(); ++i) {
+              sub_part_id = sub_part_ids.at(i);
+              partition_id = generate_phy_part_id(first_part_id, sub_part_id, PARTITION_LEVEL_TWO);
+              partition_ids.push_back(partition_id);
+            }
+          }
+          if (ls_ids.count() > 0) {
+            for (int i = 0; i < ls_ids.count(); i++) {
+              log_stream_ids.push_back(ls_ids.at(i));
+            }
+          }
+        }
+      } else {
+        if (tablet_ids.count() > 0) {
+          partition_ids.push_back(tablet_ids.at(i));
+        } else {
+          partition_ids.push_back(first_part_id);
+        }
+        if (ls_ids.count() > 0) {
+          log_stream_ids.push_back(ls_ids.at(i));
+        }
+      }
+    }
+
+    LOG_DEBUG("do partition id calc done", K(partition_ids), K(log_stream_ids));
+  } else {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("not a valid partition table", K(part_info.get_part_level()), K(ret));
+  }
+
+  return ret;
+}
 
 bool ObExprCalcTool::is_contains_null_params(ObSEArray<ObObj, 4> &param_result)
 {
@@ -780,5 +1083,3 @@ bool ObExprCalcTool::is_contains_null_params(ObSEArray<ObObj, 4> &param_result)
   }
   return contains_null;
 }
-
-

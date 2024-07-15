@@ -446,16 +446,16 @@ public:
   //@brief Check whether the level to print.
   OB_INLINE bool need_to_print(const int32_t level)
   {
-    return (level <= get_syslog_level() && left_syslog_io_bandwidth_ > 0);
+    return (level <= get_syslog_level() && (left_syslog_io_bandwidth_ > 0 || level <= OB_LOG_LEVEL_WARN));
   }
   OB_INLINE bool need_to_print_monitor(const int32_t level)
   {
-    return (level <= get_monitor_log_level() && left_syslog_io_bandwidth_ > 0);
+    return (level <= get_monitor_log_level() && (left_syslog_io_bandwidth_ > 0 || level <= OB_LOG_LEVEL_WARN));
   }
   //@brief Check whether the xflush level to print.
   OB_INLINE bool need_to_print_xflush(const int32_t level)
   {
-    return (level <= get_xflush_log_level() && left_syslog_io_bandwidth_ > 0);
+    return (level <= get_xflush_log_level() && (left_syslog_io_bandwidth_ > 0 || level <= OB_LOG_LEVEL_WARN));
   }
   //@brief Check whether the level of the par-module to print.
   bool need_to_print(const uint64_t par_mod_id, const int32_t level);
@@ -852,13 +852,13 @@ inline void ObLogger::log_user_message_info(
 
 inline bool ObLogger::need_to_print(const uint64_t par_mod_id, const int32_t level)
 {
-  return (level <= get_log_level(par_mod_id) && syslog_io_bandwidth_limit_ > 0);
+  return (level <= get_log_level(par_mod_id) && (syslog_io_bandwidth_limit_ > 0 || level <= OB_LOG_LEVEL_WARN));
 }
 
 inline bool ObLogger::need_to_print(const uint64_t par_mod_id, const uint64_t sub_mod_id,
                                     const int32_t level)
 {
-  return (level <= get_log_level(par_mod_id, sub_mod_id) && syslog_io_bandwidth_limit_ > 0);
+  return (level <= get_log_level(par_mod_id, sub_mod_id) && (syslog_io_bandwidth_limit_ > 0 || level <= OB_LOG_LEVEL_WARN));
 }
 
 inline int32_t ObLogger::get_log_level() const

@@ -291,13 +291,13 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token TABLEGROUP /*OB 特有的保留关键字*/
  /* non-reserved keyword */
 %token<str> FLASHBACK AUDIT NOAUDIT STATUS
-%token<str> BEGI START TRANSACTION READ ONLY WITH CONSISTENT SNAPSHOT INDEX XA
+%token<str> BEGI START TRANSACTION READ ONLY WITH CONSISTENT SNAPSHOT INDEX XA GLOBALINDEX
 %token<str> WARNINGS ERRORS TRACE
 %token<str> QUICK COUNT AS WHERE VALUES ORDER GROUP HAVING INTO UNION FOR
 %token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
 %token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR
-%token<str> LOAD DATA LOCAL INFILE
-%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION
+%token<str> LOAD DATA LOCAL INFILE SLAVE RELAYLOG EVENTS HOSTS BINLOG
+%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION GLOBAL_ALIAS SESSION_ALIAS LOCAL_ALIAS
 %token<str> NUMBER_VAL
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
 %token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
@@ -330,7 +330,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> ALTER_PROXYRESOURCE
 %token<str> PING_PROXY
 %token<str> KILL_PROXYSESSION KILL_GLOBALSESSION KILL QUERY
-%token<str> SHOW_BINLOG_SERVER_FOR_TENANT
+%token<str> SHOW_BINLOG_SERVER_FOR_TENANT BINLOG_VARIABLE BINLOG_USER_VAR BINLOG_SYS_VAR
 
 %type<str> table_factor non_reserved_keyword var_name
 %start root
@@ -379,7 +379,8 @@ stmt: select_stmt                    {}
     | load_data_stmt                 {}
     | other_stmt                     { result->cur_stmt_type_ = OBPROXY_T_OTHERS; }
 
-select_stmt: select_with_opt_hint select_expr_list opt_from
+select_stmt: select_with_binlog { result->is_binlog_related_ = true; }
+           | select_with_opt_hint select_expr_list opt_from
             {
               result->cur_stmt_type_ = OBPROXY_T_SELECT;
             }
@@ -751,6 +752,10 @@ merge_stmt: merge_with_opt_hint table_factor {
                                                  HANDLE_ACCEPT();
                                                }
 
+opt_sys_var_alias: GLOBAL_ALIAS
+                 | SESSION_ALIAS
+                 | LOCAL_ALIAS
+
 set_stmt: SET set_expr_list
 
 set_expr_list: set_expr ',' set_expr_list
@@ -893,6 +898,10 @@ name_right_string_val: /* empty */ { $$.str_ = NULL; $$.str_len_ = 0; }
 right_string_val: NAME_OB
                 | NAME_STR
 
+select_with_binlog: SELECT '@' BINLOG_USER_VAR
+                  | SELECT opt_sys_var_alias BINLOG_SYS_VAR
+                  | SELECT '@' '@' BINLOG_SYS_VAR
+
 select_with_opt_hint: SELECT
                     | SELECT_HINT_BEGIN hint_list_with_end
 update_with_opt_hint: UPDATE
@@ -917,13 +926,13 @@ hint_list_with_end: hint_list HINT_END
 hint_list: /* empty */
          | hint hint_list
 
-hint: var_name {}
-    | var_name '(' INT_NUM ')' {}
-    | var_name '(' var_name ')' {}
-    | var_name '(' var_name var_name ')' {}
-    | var_name '(' var_name INT_NUM ')' {}
-    | QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
-    | INT_NUM {}
+hint_val: INT_NUM
+        | var_name
+
+hint_val_list:
+             | hint_val hint_val_list
+
+hint: QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
     | READ_CONSISTENCY '(' opt_read_consistency ')'
     | INDEX '(' var_name var_name ')'
     {
@@ -931,6 +940,9 @@ hint: var_name {}
       result->dbmesh_route_info_.index_count_++;
     }
     | TRACE_LOG { result->has_trace_log_hint_ = true; }
+    | var_name '(' hint_val_list ')'
+    | var_name
+    | INT_NUM
 
 opt_read_consistency: /* empty */ {}
                     | WEAK { SET_READ_CONSISTENCY(OBPROXY_READ_CONSISTENCY_WEAK); }
@@ -945,6 +957,14 @@ show_stmt: SHOW opt_count WARNINGS { result->cur_stmt_type_ = OBPROXY_T_SHOW_WAR
          | SHOW opt_count ERRORS   { result->cur_stmt_type_ = OBPROXY_T_SHOW_ERRORS; }
          | SHOW TRACE              { result->cur_stmt_type_ = OBPROXY_T_SHOW_TRACE; }
          | SHOW TRACE NAME_OB '=' NAME_OB { result->cur_stmt_type_ = OBPROXY_T_SHOW_TRACE; }
+         | SHOW SLAVE HOSTS { result->cur_stmt_type_ = OBPROXY_T_SHOW_SLAVE_HOSTS; }
+         | SHOW SLAVE STATUS
+          {
+            result->is_binlog_related_ = true;
+            result->cur_stmt_type_ = OBPROXY_T_SHOW_SLAVE_STATUS;
+          }
+         | SHOW RELAYLOG EVENTS { result->cur_stmt_type_ = OBPROXY_T_SHOW_RELAYLOG_EVENTS; }
+
 
  /* internal cmd stmt */
 icmd_stmt: show_proxynet
@@ -971,7 +991,15 @@ icmd_stmt: show_proxynet
          | kill_globalsession
          | kill_mysql
 
-binlog_stmt: SHOW_BINLOG_SERVER_FOR_TENANT {}
+opt_global_or_session: /* empty */ 
+                     | GLOBAL
+                     | SESSION
+                     | LOCAL
+
+binlog_stmt:
+  BINLOG var_name { result->cur_stmt_type_ = OBPROXY_T_BINLOG_STR; }
+| SHOW_BINLOG_SERVER_FOR_TENANT {}
+| SHOW opt_global_or_session VARIABLES LIKE BINLOG_VARIABLE { result->is_binlog_related_ = true; }
 
  /* limit param stmt*/
 opt_limit:
@@ -1013,8 +1041,10 @@ opt_show_net:
  /*show proxyconfig grammer*/
 show_proxyconfig:
   SHOW_PROXYCONFIG opt_like           {}
+| SHOW_PROXYCONFIG ALL  opt_like      { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_CONFIG_ALL); }
 | SHOW_PROXYCONFIG DIFF opt_like      { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_CONFIG_DIFF); }
 | SHOW_PROXYCONFIG DIFF USER opt_like { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_CONFIG_DIFF_USER); }
+
 
   /*show processlist grammer*/
 show_processlist:
@@ -1070,6 +1100,7 @@ show_proxyroute:
   SHOW_PROXYROUTE opt_large_like  {}
 | SHOW_PROXYROUTE ROUTINE   opt_large_like  { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_ROUTINE); }
 | SHOW_PROXYROUTE PARTITION                 { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_PARTITION); }
+| SHOW_PROXYROUTE GLOBALINDEX                     { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_GLOBALINDEX); }
 
  /*show proxyvip grammer*/
 show_proxyvip:
@@ -1193,9 +1224,18 @@ table_references: table_factor partition_factor {
 table_factor: var_name  {
                           result->table_info_.table_name_ = $1;
                         }
+            | var_name '.' var_name '@' var_name {
+                                                  result->table_info_.database_name_ = $1;
+                                                  result->table_info_.table_name_ = $3;
+                                                  result->table_info_.dblink_name_ = $5;
+                                                 }
             | var_name '.' var_name {
                                       result->table_info_.database_name_ = $1;
                                       result->table_info_.table_name_ = $3;
+                                    }
+            | var_name '@' var_name {
+                                      result->table_info_.table_name_ = $1;
+                                      result->table_info_.dblink_name_ = $3;
                                     }
             | var_name var_name   {
                                     UPDATE_ALIAS_NAME($2);
@@ -1249,6 +1289,12 @@ non_reserved_keyword: START
                     | WEAK
                     | STRONG
                     | FROZEN
+                    | GLOBAL
+                    | SESSION
+                    | HOSTS
+                    | EVENTS
+                    | RELAYLOG
+                    | BINLOG
 
 var_name: NAME_OB
         | non_reserved_keyword

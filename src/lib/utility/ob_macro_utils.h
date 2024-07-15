@@ -362,6 +362,9 @@
 
 #define NO_PAREN(x, M) CONCAT(OBMNP, NPAR x)) M (x))
 
+#define COMMA_(...) ,
+#define APPLY_(f, ...) f(__VA_ARGS__)
+#define IF_IS_PAREN(x, yes_branch, no_branch) APPLY_(SELECT3, COMMA_ x, yes_branch, no_branch)
 #define IF_PAREN(x, MP, MNP) PAREN(x, MP) NO_PAREN(x, MNP)
 
 #ifndef MIN

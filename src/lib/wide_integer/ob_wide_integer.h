@@ -1260,7 +1260,7 @@ using int1024_t = wide::ObWideInteger<1024u, signed>;
   }                                                                                                \
   default: {                                                                                       \
     ret = OB_ERR_UNEXPECTED;                                                                       \
-    COMMON_LOG(WARN, "invalid int bytes", K((width)));                                             \
+    COMMON_LOG(WDIAG, "invalid int bytes", K((width)));                                             \
   }                                                                                                \
   }
 
@@ -1290,7 +1290,7 @@ using int1024_t = wide::ObWideInteger<1024u, signed>;
     }                                                                                              \
     default: {                                                                                     \
       ret = OB_ERR_UNEXPECTED;                                                                     \
-      COMMON_LOG(WARN, "invalid int bytes", K((out_width)));                                       \
+      COMMON_LOG(WDIAG, "invalid int bytes", K((out_width)));                                       \
       break;                                                                                       \
     }                                                                                              \
     }                                                                                              \
@@ -1320,7 +1320,7 @@ using int1024_t = wide::ObWideInteger<1024u, signed>;
     }                                                                                              \
     default: {                                                                                     \
       ret = OB_ERR_UNEXPECTED;                                                                     \
-      COMMON_LOG(WARN, "invalid int bytes", K((out_width)));                                       \
+      COMMON_LOG(WDIAG, "invalid int bytes", K((out_width)));                                       \
       break;                                                                                       \
     }                                                                                              \
     }                                                                                              \
@@ -1350,7 +1350,7 @@ using int1024_t = wide::ObWideInteger<1024u, signed>;
     }                                                                                              \
     default: {                                                                                     \
       ret = OB_ERR_UNEXPECTED;                                                                     \
-      COMMON_LOG(WARN, "invalid int bytes", K((out_width)));                                       \
+      COMMON_LOG(WDIAG, "invalid int bytes", K((out_width)));                                       \
       break;                                                                                       \
     }                                                                                              \
     }                                                                                              \
@@ -1379,7 +1379,7 @@ using int1024_t = wide::ObWideInteger<1024u, signed>;
     }                                                                                              \
     default: {                                                                                     \
       ret = OB_ERR_UNEXPECTED;                                                                     \
-      COMMON_LOG(WARN, "invalid int bytes", K((out_width)));                                       \
+      COMMON_LOG(WDIAG, "invalid int bytes", K((out_width)));                                       \
       break;                                                                                       \
     }                                                                                              \
     }                                                                                              \
@@ -1408,7 +1408,7 @@ using int1024_t = wide::ObWideInteger<1024u, signed>;
     }                                                                                              \
     default: {                                                                                     \
       ret = OB_ERR_UNEXPECTED;                                                                     \
-      COMMON_LOG(WARN, "invalid int bytes", K((out_width)));                                       \
+      COMMON_LOG(WDIAG, "invalid int bytes", K((out_width)));                                       \
       break;                                                                                       \
     }                                                                                              \
     }                                                                                              \
@@ -1416,7 +1416,7 @@ using int1024_t = wide::ObWideInteger<1024u, signed>;
   }                                                                                                \
   default: {                                                                                       \
     ret = OB_ERR_UNEXPECTED;                                                                       \
-    COMMON_LOG(WARN, "invalid int bytes", K((in_width)));                                          \
+    COMMON_LOG(WDIAG, "invalid int bytes", K((in_width)));                                          \
   }                                                                                                \
   }
 
@@ -2069,7 +2069,7 @@ int from_number(const number::ObNumber &nmb, Allocator &allocator, const int16_t
   if (nmb.is_zero()) {
     if (OB_ISNULL(decint = (ObDecimalInt *)allocator.alloc(sizeof(int32_t)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "allocate memory failed", K(ret));
+      COMMON_LOG(WDIAG, "allocate memory failed", K(ret));
     } else {
       *(reinterpret_cast<int32_t *>(decint)) = 0;
       int_bytes = sizeof(int32_t);
@@ -2077,7 +2077,7 @@ int from_number(const number::ObNumber &nmb, Allocator &allocator, const int16_t
   } else {
     if (OB_ISNULL(digits)) {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "invalid null digits");
+      COMMON_LOG(WDIAG, "invalid null digits");
     } else {
       last_digit = digits[nmb.get_length() - 1];
       if (in_scale > 0) { // remove trailing zeros for decimal part
@@ -2149,7 +2149,7 @@ int from_number(const number::ObNumber &nmb, Allocator &allocator, const int16_t
       }
       if (OB_ISNULL(cp_data = allocator.alloc(int_bytes))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        COMMON_LOG(WARN, "allocate memory failed", K(ret));
+        COMMON_LOG(WDIAG, "allocate memory failed", K(ret));
       } else {
         MEMCPY(cp_data, res.items_, int_bytes);
         decint = reinterpret_cast<ObDecimalInt *>(cp_data);
@@ -2197,7 +2197,7 @@ int to_number(const ObWideInteger<Bits, Signed> &x, int16_t scale, Allocator &al
     for (; OB_SUCC(ret) && scale > 0 && numerator != 0;) {
       if (OB_UNLIKELY(idx <= 0)) {
         ret = OB_ERROR_OUT_OF_RANGE;
-        COMMON_LOG(WARN, "out of number range", K(ret));
+        COMMON_LOG(WDIAG, "out of number range", K(ret));
       } else {
         ObWideInteger<Bits, unsigned>::_impl::template divide<IgnoreOverFlow>(numerator, nmb_base,
                                                                               quo, rem);
@@ -2220,7 +2220,7 @@ int to_number(const ObWideInteger<Bits, Signed> &x, int16_t scale, Allocator &al
       for (; OB_SUCC(ret) && numerator != 0;) {
         if (OB_UNLIKELY(idx <= 0)) {
           ret = OB_ERROR_OUT_OF_RANGE;
-          COMMON_LOG(WARN, "out of number range", K(ret));
+          COMMON_LOG(WDIAG, "out of number range", K(ret));
         } else {
           ObWideInteger<Bits, unsigned>::_impl::template divide<IgnoreOverFlow>(numerator, nmb_base,
                                                                                 quo, rem);
@@ -2251,7 +2251,7 @@ int to_number(const ObWideInteger<Bits, Signed> &x, int16_t scale, Allocator &al
     while (OB_SUCC(ret) && numerator != 0) {
       if (OB_UNLIKELY(idx <= 0)) {
         ret = OB_ERROR_OUT_OF_RANGE;
-        COMMON_LOG(WARN, "out of number range", K(ret));
+        COMMON_LOG(WDIAG, "out of number range", K(ret));
       } else {
         ObWideInteger<Bits, unsigned>::_impl::template divide<IgnoreOverFlow>(numerator, nmb_base,
                                                                               quo, rem);
@@ -2278,11 +2278,11 @@ int to_number(const ObWideInteger<Bits, Signed> &x, int16_t scale, Allocator &al
     if (digit_len > 0) {
       if (OB_ISNULL(copy_digits = (uint32_t *)allocator.alloc(digit_len * sizeof(uint32_t)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        COMMON_LOG(WARN, "allocate memory failed", K(ret));
+        COMMON_LOG(WDIAG, "allocate memory failed", K(ret));
       } else {
         numb.assign(desc.desc_, copy_digits);
         if (OB_FAIL(numb.normalize_(digits + idx, digit_len))) {
-          COMMON_LOG(WARN, "normalize number failed", K(ret));
+          COMMON_LOG(WDIAG, "normalize number failed", K(ret));
         }
       }
     } else if (digit_len == 0) {
@@ -2381,11 +2381,11 @@ int to_number(const int64_t v, int16_t scale, Allocator &allocator, number::ObNu
     if (digit_len > 0) {
       if (OB_ISNULL(copy_digits = (uint32_t *)allocator.alloc(digit_len * sizeof(uint32_t)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        COMMON_LOG(WARN, "allocate memory failed", K(ret));
+        COMMON_LOG(WDIAG, "allocate memory failed", K(ret));
       } else {
         nmb.assign(desc.desc_, copy_digits);
         if (OB_FAIL(nmb.normalize_(digits + idx, digit_len))) {
-          COMMON_LOG(WARN, "normalize number failed", K(ret));
+          COMMON_LOG(WDIAG, "normalize number failed", K(ret));
         }
       }
     } else if (digit_len == 0) {
@@ -2406,10 +2406,10 @@ int to_number(const ObDecimalInt *decint, const int32_t int_bytes, int16_t scale
   int ret = OB_SUCCESS;
   if (OB_ISNULL(decint) || OB_UNLIKELY(int_bytes <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    COMMON_LOG(WARN, "invalid decimal int", K(decint), K(int_bytes));
+    COMMON_LOG(WDIAG, "invalid decimal int", K(decint), K(int_bytes));
   } else if (OB_UNLIKELY(scale == NUMBER_SCALE_UNKNOWN_YET)) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid scale", K(ret), K(scale), K(lib::is_oracle_mode()));
+    COMMON_LOG(WDIAG, "invalid scale", K(ret), K(scale), K(lib::is_oracle_mode()));
   } else {
     DISPATCH_WIDTH_TASK(int_bytes, ASSIGN_NMB);
   }
@@ -2430,7 +2430,7 @@ int from_integer(const T v, Allocator &allocator, ObDecimalInt *&decint, int32_t
     T *data = (T *)allocator.alloc(alloc_size);
     if (OB_ISNULL(data)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "allocate memory failed", K(ret), K(alloc_size));
+      COMMON_LOG(WDIAG, "allocate memory failed", K(ret), K(alloc_size));
     } else {
       *data = v;
       decint = (ObDecimalInt *)data;
@@ -2441,7 +2441,7 @@ int from_integer(const T v, Allocator &allocator, ObDecimalInt *&decint, int32_t
     int64_t *data = (int64_t *)allocator.alloc(int_bytes);
     if (OB_ISNULL(data)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "allocate memory failed", K(ret), K(int_bytes));
+      COMMON_LOG(WDIAG, "allocate memory failed", K(ret), K(int_bytes));
     } else {
       *data = v;
       decint = (ObDecimalInt *)data;
@@ -2450,7 +2450,7 @@ int from_integer(const T v, Allocator &allocator, ObDecimalInt *&decint, int32_t
     int128_t *data = (int128_t *)allocator.alloc(sizeof(int128_t));
     if (OB_ISNULL(data)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      COMMON_LOG(WARN, "allocate memory failed", K(ret), K(sizeof(int128_t)));
+      COMMON_LOG(WDIAG, "allocate memory failed", K(ret), K(sizeof(int128_t)));
     } else {
       data->items_[0] = v;
       data->items_[1] = 0;
@@ -2471,10 +2471,10 @@ int from_integer(const T v, Allocator &allocator, ObDecimalInt *&decint, int32_t
   void *data = nullptr;
   if (OB_UNLIKELY(int_bytes <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid input precision", K(ret), K(in_prec));
+    COMMON_LOG(WDIAG, "invalid input precision", K(ret), K(in_prec));
   } else if (OB_ISNULL(data = allocator.alloc(int_bytes))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "allocate memory failed", K(ret), K(int_bytes));
+    COMMON_LOG(WDIAG, "allocate memory failed", K(ret), K(int_bytes));
   } else {
     decint = reinterpret_cast<ObDecimalInt *>(data);
     switch (int_bytes) {
@@ -2495,7 +2495,7 @@ int from_integer(const T v, Allocator &allocator, ObDecimalInt *&decint, int32_t
       break;
     default:
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(WARN, "invalid int bytes for integer", K(ret), K(int_bytes));
+      COMMON_LOG(WDIAG, "invalid int bytes for integer", K(ret), K(int_bytes));
       break;
     }
   }
@@ -2519,10 +2519,10 @@ int batch_from_integer(const T *val_arr, Allocator &allocator, const ObDecimalIn
   void *data = nullptr;
   if (OB_UNLIKELY(int_bytes <= 0)) {
     ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(WARN, "invalid input precision", K(ret), K(in_prec));
+    COMMON_LOG(WDIAG, "invalid input precision", K(ret), K(in_prec));
   } else if (OB_ISNULL(data = allocator.alloc(int_bytes * batch_size))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    COMMON_LOG(WARN, "allocate memory failed", K(ret));
+    COMMON_LOG(WDIAG, "allocate memory failed", K(ret));
   } else {
     DISPATCH_WIDTH_TASK(int_bytes, ASSIGN_VAL);
   }

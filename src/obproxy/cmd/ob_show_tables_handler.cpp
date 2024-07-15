@@ -113,7 +113,7 @@ int ObShardingShowTablesHandler::dump_table(const ObString &logic_tenant_name, c
   } else {
     string_to_upper_case(logic_table_name.ptr(), logic_table_name.length());
     for (ObStringArray::iterator it = table_names.begin(); OB_SUCC(ret) && it != table_names.end(); it++) {
-      if (match_like(*it, logic_table_name)) {
+      if (common::match_like(*it, logic_table_name)) {
         cells[OB_CC_NAME].set_varchar(*it);
         if (OBPROXY_T_SUB_SHOW_FULL_TABLES == sub_type_) {
           cells[OB_CC_TYPE].set_varchar("BASE TABLE");

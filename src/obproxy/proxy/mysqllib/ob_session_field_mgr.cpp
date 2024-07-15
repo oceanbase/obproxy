@@ -583,6 +583,18 @@ int ObSessionFieldMgr::set_database_name(const ObString &database_name)
   return ret;
 }
 
+int ObSessionFieldMgr::set_service_name(const ObString &service_name)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WDIAG("not inited", K(ret));
+  } else if (OB_FAIL(replace_str_field(OB_V_FIELD_SERVICE_NAME, service_name))) {
+    LOG_WDIAG("fail to set tenant_name", K(service_name), K(ret));
+  }
+  return ret;
+}
+
 int ObSessionFieldMgr::set_ldg_logical_cluster_name(const ObString &cluster_name)
 {
   int ret = OB_SUCCESS;
@@ -670,6 +682,11 @@ int ObSessionFieldMgr::get_user_name(ObString &user_name) const
 int ObSessionFieldMgr::get_logic_tenant_name(ObString &logic_tenant_name) const
 {
   return get_str_field_value(OB_V_FIELD_LOGIC_TENANT_NAME, logic_tenant_name);
+}
+
+int ObSessionFieldMgr::get_service_name(ObString &service_name) const
+{
+  return get_str_field_value(OB_V_FIELD_SERVICE_NAME, service_name);
 }
 
 int ObSessionFieldMgr::get_logic_database_name(ObString &logic_database_name) const
@@ -2784,6 +2801,8 @@ int ObDefaultSysVarSet::load_default_system_variable()
     LOG_WDIAG("fail to load default sysvar ob_read_consistency", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_COLLATION_CONNECTION), 45, both_scope, print_info_log))) {
     LOG_WDIAG("fail to load default sysvar collation_connection", K(ret));
+  } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_ENABLE_TRANSMISSION_CHECKSUM), 1, both_scope, print_info_log))) {
+    LOG_WDIAG("fail to load default sysvar ob_enable_transmission_checksum", K(ret));
   }
   return ret;
 }

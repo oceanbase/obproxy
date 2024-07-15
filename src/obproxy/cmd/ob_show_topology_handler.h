@@ -54,6 +54,7 @@ public:
   static const int64_t OB_MAX_ELASTIC_ID_COUNT = 256;
 
 private:
+  static const int64_t MAX_RULE_BUF_SIEZ = 512;
   int dump_elastic_id_header();
   int dump_elastic_id(const int64_t eid);
 
@@ -62,8 +63,12 @@ private:
   int dump_shard_topology_for_shard_db_non_shard_tb(ObString table_name, dbconfig::ObShardRule *shard_rule);
   int dump_shard_topology_for_shard_db_shard_tb(dbconfig::ObShardRule *shard_rule);
 
-  ObString get_shard_key_str(dbconfig::ObShardRule& shard_rule);
-  ObString get_shard_rule_str(dbconfig::ObShardRule& shard_rule);
+  ObString get_shard_key_str(dbconfig::ObShardRule& shard_rule,
+                             char * const buf,
+                             const int64_t buf_len);
+  ObString get_shard_rule_str(dbconfig::ObShardRule& shard_rule,
+                              char * const buf,
+                              const int64_t buf_len);
 private:
   DISALLOW_COPY_AND_ASSIGN(ObShowTopologyHandler);
 };

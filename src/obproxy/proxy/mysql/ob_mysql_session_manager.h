@@ -81,10 +81,11 @@ public:
   // @return A pointer to the session or NULL if not matching session was found.
   ObMysqlServerSession *acquire_session(const ObMysqlServerSessionHashKey &key);
   ObMysqlServerSession *acquire_session(const sockaddr &addr, const ObString &auth_user);
-
   // Get a session by index. If found the session is kept in the pool
   ObMysqlServerSession *get_server_session(const int64_t index);
+  ObMysqlServerSession* acquire_lock_server_session();
 
+  int remove_server_session(ObMysqlServerSession *server_session);
   int acquire_random_session(ObMysqlServerSession *&server_session);
 
   // Release a session to pool.

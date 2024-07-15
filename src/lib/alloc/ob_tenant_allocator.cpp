@@ -110,6 +110,7 @@ void ObTenantAllocator::print_usage() const
   int64_t pos = 0;
   ObModItem sum_item;
 
+  buf[pos++] = '\n'; //first mod item print in a new line too.
   for (int32_t idx = 0; OB_SUCC(ret) && idx < ObModSet::MOD_COUNT_LIMIT; idx++) {
     if (!is_allocator_mod(idx)) {
       ObModItem item = obj_mgr_.get_mod_usage(idx);;
@@ -124,7 +125,7 @@ void ObTenantAllocator::print_usage() const
     }
   }
 
-  _OBPROXY_XFLUSH_LOG(INFO, "[MEMORY] tenant: %lu, limit: %lu, hold: %lu\n%s",
+  _OBPROXY_XFLUSH_LOG(INFO, "[MEMORY] tenant: %lu, limit: %lu, hold: %lu %s",
                       tenant_id_, limit_, hold_bytes_, buf);
 
   if (OB_SUCC(ret) && sum_item.count_ > 0) {

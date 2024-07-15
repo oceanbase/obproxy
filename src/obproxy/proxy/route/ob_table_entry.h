@@ -17,6 +17,8 @@
 #include "lib/string/ob_string.h"
 #include "lib/ptr/ob_ptr.h"
 #include "lib/list/ob_intrusive_list.h"
+#include "lib/hash/ob_hashset.h"
+#include "iocore/eventsystem/ob_lock.h"
 #include "common/ob_role.h"
 #include "share/inner_table/ob_inner_table_schema_constants.h"
 #include "share/schema/ob_schema_struct.h"
@@ -43,7 +45,8 @@ public:
     : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(NULL), is_entry_from_rslist_(false),
       is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), table_id_(common::OB_INVALID_ID),
       table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
-      buf_len_(0), buf_start_(NULL), first_pl_(NULL)
+      buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),
+      batch_mutex_(), batch_fetch_cont_(NULL)
   {
   }
 
@@ -115,6 +118,20 @@ public:
   ObProxyPartInfo *get_part_info() const { return part_info_; }
   int is_contain_all_dummy_entry(const ObTableEntry &new_entry, bool &is_contain_all) const;
   int64_t to_string(char *buf, const int64_t buf_len) const;
+
+  // batch fetch for partition table_entry
+  int put_batch_fetch_tablet_id(uint64_t tablet_id);
+  int put_batch_fetch_tablet_id(uint64_t tablet_id, int &count);
+  int get_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids);
+  int get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int max_count, uint64_t tablet_id);
+  int remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids, bool force);
+  int get_batch_fetch_size();
+  void *get_batch_fetch_cont() { return batch_fetch_cont_; }
+  void set_batch_fetch_cont(void *cont) { batch_fetch_cont_ = cont; }
+  void reset_batch_tablet_ids();
+  event::ObProxyMutex *get_batch_fetch_mutex() { return batch_mutex_.ptr_; }
+  int init_new_batch_cont();
+
 private:
   uint64_t get_all_server_hash() const;
   bool is_leader_server_equal(const ObTableEntry &entry) const;
@@ -148,6 +165,11 @@ private:
     ObTenantServer *tenant_servers_;     // __all_dummy table use it
     ObProxyPartInfo *part_info_; // part_info use it
   };
+
+  common::hash::ObHashSet<uint64_t> batch_fetch_tablet_id_set_;
+  common::hash::ObHashSet<uint64_t> remote_fetching_tablet_id_set_; //tablet id in remote fetching 
+  common::ObPtr<obproxy::event::ObProxyMutex> batch_mutex_; //used by batch fetch
+  void *batch_fetch_cont_;
 
   DISALLOW_COPY_AND_ASSIGN(ObTableEntry);
 };

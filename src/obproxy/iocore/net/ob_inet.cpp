@@ -43,9 +43,11 @@ namespace net
 
 uint64_t ObIpEndpoint::hash(const uint64_t hash) const
 {
-  char buf[MAX_IP_ADDR_LENGTH];
-  int64_t pos = to_string(buf, MAX_IP_ADDR_LENGTH);
-  return murmurhash(buf, static_cast<int32_t>(pos), hash);
+  if (is_ip6()) {
+    return murmurhash(&sin6_, sizeof(sin6_), hash);
+  } else {
+    return murmurhash(&sin_, sizeof(sin_), hash);
+  }
 }
 
 int64_t ObIpEndpoint::to_string(char *buf, const int64_t buf_len) const

@@ -37,6 +37,7 @@ ObSqlTableCache &get_global_sql_table_cache()
 int ObSqlTableCache::init(const int64_t bucket_size)
 {
   int ret = OB_SUCCESS;
+  LOG_INFO("start init ObSqlTableCache");
   int64_t sub_bucket_size = bucket_size / MT_HASHTABLE_PARTITIONS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;

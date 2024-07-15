@@ -15,7 +15,7 @@
 #include "rpc/obmysql/packet/ompk_ok.h"
 #include "packet/ob_mysql_packet_writer.h"
 #include "packet/ob_mysql_packet_reader.h"
-#include "proxy/mysqllib/ob_mysql_response.h"
+#include "proxy/mysqllib/ob_resp_analyze_result.h"
 #include "proxy/mysqllib/ob_mysql_packet_rewriter.h"
 #include "proxy/mysqllib/ob_mysql_request_analyzer.h"
 #include "proxy/mysqllib/ob_proxy_session_info.h"
@@ -614,14 +614,20 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
             | OB_CAP_PROXY_FULL_LINK_TRACING_EXT
             | OB_CAP_PROXY_REROUTE
             | OB_CAP_PROXY_SESSION_SYNC
-            | OB_CAP_PROXY_SESSION_VAR_SYNC);
+            | OB_CAP_PROXY_SESSION_VAR_SYNC
+            | OB_CAP_FEEDBACK_PROXY);
   } else {
     cap &= ~(OB_CAP_OB_PROTOCOL_V2
              | OB_CAP_PROXY_NEW_EXTRA_INFO
              | OB_CAP_PROXY_FULL_LINK_TRACING_EXT
              | OB_CAP_PROXY_REROUTE
              | OB_CAP_PROXY_SESSION_SYNC
-             | OB_CAP_PROXY_SESSION_VAR_SYNC);
+             | OB_CAP_PROXY_SESSION_VAR_SYNC
+             | OB_CAP_FEEDBACK_PROXY);
+  }
+
+  if (!param.enable_full_link_trace_) {
+    cap &= ~(OB_CAP_PROXY_FULL_LINK_TRACING | OB_CAP_PROXY_FULL_LINK_TRACING_EXT);
   }
 
   if (!param.use_ob_protocol_v2_compress_) {

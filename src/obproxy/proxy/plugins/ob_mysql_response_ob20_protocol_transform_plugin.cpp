@@ -52,7 +52,7 @@ void ObMysqlResponseOb20ProtocolTransformPlugin::destroy()
 int ObMysqlResponseOb20ProtocolTransformPlugin::consume(event::ObIOBufferReader *reader)
 {
   int ret = OB_SUCCESS;
-  bool is_resp_finished = sm_->trans_state_.trans_info_.server_response_.get_analyze_result().is_resp_completed();
+  bool is_resp_finished = sm_->trans_state_.trans_info_.resp_result_.is_resp_completed();
 
   PROXY_API_LOG(DEBUG, "ObMysqlResponseOb20ProtocolTransformPlugin::consume begin", K(is_resp_finished), K(state_));
   

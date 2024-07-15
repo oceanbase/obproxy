@@ -23,7 +23,7 @@ using namespace oceanbase::common;
 ObMallocAllocator *ObMallocAllocator::instance_ = NULL;
 
 ObMallocAllocator::ObMallocAllocator()
-    : locks_(), allocators_(), reserved_(0), urgent_(0), disabled_mod_id_(-1)
+    : locks_(), allocators_(), reserved_(0), urgent_(0)
 {
 }
 
@@ -54,11 +54,7 @@ void *ObMallocAllocator::alloc(
   int ret = OB_SUCCESS;
   void *ptr = NULL;
   ObIAllocator *allocator = NULL;
-  
-  if (OB_UNLIKELY(disabled_mod_id_ == attr.mod_id_)) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WDIAG("mod is disabled alloc", K_(disabled_mod_id), K(attr.tenant_id_));
-  } else if (OB_UNLIKELY(0 == attr.tenant_id_)
+  if (OB_UNLIKELY(0 == attr.tenant_id_)
       || OB_UNLIKELY(INT64_MAX == attr.tenant_id_)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_EDIAG("invalid argument", K(lbt()), K(attr.tenant_id_), K(ret));
@@ -103,9 +99,7 @@ void *ObMallocAllocator::realloc(
 {
   // Won't create tenant allocator!!
   void *nptr = NULL;
-  if (OB_UNLIKELY(disabled_mod_id_ == attr.mod_id_)) {
-    LOG_WDIAG("mod is disabled alloc", K_(disabled_mod_id), K(attr.tenant_id_));
-  } else if (OB_UNLIKELY(attr.tenant_id_ >= PRESERVED_TENANT_COUNT)) {
+  if (OB_UNLIKELY(attr.tenant_id_ >= PRESERVED_TENANT_COUNT)) {
     const int64_t slot = attr.tenant_id_ % PRESERVED_TENANT_COUNT;
     obsys::CRLockGuard guard(locks_[slot]);
     ObIAllocator *allocator = get_tenant_allocator(attr.tenant_id_);

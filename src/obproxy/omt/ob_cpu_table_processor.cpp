@@ -81,7 +81,7 @@ void ObCpuTableProcessor::destroy()
 }
 
 int ObCpuTableProcessor::cpu_handle_replace_config(
-    ObString& cluster_name, ObString& tenant_name, ObString& name_str, ObString& value_str)
+    ObString& cluster_name, ObString& tenant_name, ObString& name_str, ObString& value_str, const bool need_to_backup)
 {
   UNUSED(name_str);
   int ret = OB_SUCCESS;
@@ -89,7 +89,7 @@ int ObCpuTableProcessor::cpu_handle_replace_config(
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("tenant or cluster is null", K(ret), K(cluster_name), K(tenant_name));
-  } else if (FALSE_IT(backup_local_cpu_cache())) {
+  } else if (need_to_backup && FALSE_IT(backup_local_cpu_cache())) {
   } else if (OB_FAIL(fill_local_cpu_cache(cluster_name, tenant_name, value_str))) {
     LOG_WDIAG("update vip tenant cpu cache failed", K(ret));
   } else {
@@ -99,7 +99,7 @@ int ObCpuTableProcessor::cpu_handle_replace_config(
   return ret;
 }
 
-int ObCpuTableProcessor::cpu_handle_delete_config(ObString& cluster_name, ObString& tenant_name)
+int ObCpuTableProcessor::cpu_handle_delete_config(ObString& cluster_name, ObString& tenant_name, const bool need_to_backup)
 {
   int ret = OB_SUCCESS;
 
@@ -107,7 +107,9 @@ int ObCpuTableProcessor::cpu_handle_delete_config(ObString& cluster_name, ObStri
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
   } else {
-    backup_local_cpu_cache();
+    if (need_to_backup) {
+      backup_local_cpu_cache();
+    }
     DRWLock::WRLockGuard guard(tenant_cpu_rwlock_);
     tenant_cpu_cache_.erase(cluster_name, tenant_name);
     LOG_INFO("erase vip tenant cpu cache succ", "count", get_cpu_map_count(), K(cluster_name), K(tenant_name));

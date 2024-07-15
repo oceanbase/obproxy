@@ -14,6 +14,8 @@
 #define OBPROXY_CONFIG_H
 
 #include <sqlite/sqlite3.h>
+#include <cstring>
+#include "lib/utility/ob_tracepoint.h"
 #include "lib/hash/ob_hashmap.h"
 #include "share/config/ob_common_config.h"
 #include "iocore/net/ob_inet.h"
@@ -71,8 +73,7 @@ public:
   // FIXME: here we use true value to init dump_config_res_, so that in start period,
   // if proxy fail to load config from local and ocp database,
   // we wont dump default config to local.
-  ObProxyConfig() : with_config_server_(false), with_control_plane_(false),
-                    proxy_config_db_(NULL), rwlock_()
+  ObProxyConfig() : with_config_server_(false), with_control_plane_(false), rwlock_()
   {
     original_value_str_[0] = '\0';
     set_app_name(app_name);
@@ -91,14 +92,15 @@ public:
     MEMCPY(app_name_str_, app_name_item.str(), length);
     app_name_str_[length] = '\0';
   }
-
+  bool is_memory_visible(const common::ObString &key_name);
+  static int load_sqlite_config_init_callback(void *data, int argc, char **argv, char **column_name);
   //dump config to local file
   int dump_config_to_local();
   int dump_config_to_sqlite();
   int update_config_item(const common::ObString &key_name, const common::ObString &value);
   int update_user_config_item(const common::ObString &key_name, const common::ObString &value);
 
-  int get_old_config_value(const common::ObString &key_name, char *buf, const int64_t buf_size);
+  int get_config_value(const common::ObString &key_name, common::ObConfigVariableString &value);
   int get_config_item(const common::ObString &key_name, common::ObConfigItem &ret_item);
 
   // if level_flag = true, we will up sys log level
@@ -142,7 +144,6 @@ public:
   bool with_config_server_;
   bool with_control_plane_;
   char app_name_str_[common::OB_MAX_APP_NAME_LENGTH + 1];
-  sqlite3 *proxy_config_db_;
 
 private:
   char original_value_str_[common::OB_MAX_CONFIG_VALUE_LEN];
@@ -153,373 +154,404 @@ public:
   // FIXME: DEF_INT can not compare with 0(<, >, >=, <=)
   mutable obsys::CRWLock rwlock_;
   // xa transaction
-  DEF_BOOL(enable_xa_route, "true", "whether to enable hold XA_START and route to the partition that the next dml will visit",CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_xa_route, "true", "whether to enable hold XA_START and route to the partition that the next dml will visit",CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // refresh local config
-  DEF_BOOL(refresh_json_config, "false", "force update json info if refresh_json_config is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
-  DEF_BOOL(refresh_rslist, "false", "when refresh config server, update all rslist if refresh_rslist is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
-  DEF_BOOL(refresh_idc_list, "false", "when refresh config server, update all idc list if refresh_idc_list is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
-  DEF_BOOL(refresh_config, "false", "when table processor do check work, update all proxy config if refresh_config is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
+  DEF_BOOL(refresh_json_config, "false", "force update json info if refresh_json_config is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(refresh_rslist, "false", "when refresh config server, update all rslist if refresh_rslist is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(refresh_idc_list, "false", "when refresh config server, update all idc list if refresh_idc_list is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(refresh_config, "false", "when table processor do check work, update all proxy config if refresh_config is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);
 
   //repeat task interval related
-  DEF_TIME(proxy_info_check_interval, "60s", "[1s,1h]", "proxy info check task interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(proxy_hot_upgrade_check_interval, "5s", "[1s,1h]", "proxy info check task interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(cache_cleaner_clean_interval, "20s", "[1s, 1d]", "the interval for cache cleaner to clean cache, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(server_state_refresh_interval, "20s", "[10ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(metadb_server_state_refresh_interval, "60s", "[10ms, 1h]", "the interval to refresh metadb server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(metadb_batch_size, "5", "[1, 10000]", "pull config from metadb, replace batch size to proxy_config", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(metadb_batch_interval, "10ms", "[0ms, 60s]", "pull config from metadb, replace interval time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(config_server_refresh_interval, "60s", "[10s,1d]", "config server info refresh task interval, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(idc_list_refresh_interval, "2h", "[10s, 1d]", "the interval to refresh idc list for getting newest region-idc, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(stat_table_sync_interval, "60s", "[0s,1d]", "update sync statistic to ob_all_proxy_stat table interval, [0s, 1d], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(stat_dump_interval, "6000s", "[0s,1d]", "dump statistic in log interval, [0s, 1d], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(cluster_count_high_water_mark, "256", "[2, 102400]", "if cluster count is greater than this water mark, cluser will be kicked out by LRU", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(cluster_expire_time, "1d", "[0,]", "cluster resource expire time, 0 means never expire,cluster will be deleted if it has not been accessed for more than the time,[0, ]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(proxy_info_check_interval, "60s", "[1s,1h]", "proxy info check task interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(proxy_hot_upgrade_check_interval, "5s", "[1s,1h]", "proxy info check task interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(cache_cleaner_clean_interval, "20s", "[1s, 1d]", "the interval for cache cleaner to clean cache, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(server_state_refresh_interval, "20s", "[10ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(metadb_server_state_refresh_interval, "60s", "[10ms, 1h]", "the interval to refresh metadb server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  // 表示metadb获取到batch_size个rslist下发的配置，才会更新一次配置
+  DEF_INT(metadb_batch_size, "10", "[1, 30]", "pull config from metadb, replace batch size to proxy_config", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(metadb_batch_interval, "10ms", "[0ms, 60s]", "pull config from metadb, replace interval time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(config_server_refresh_interval, "60s", "[10s,1d]", "config server info refresh task interval, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(idc_list_refresh_interval, "2h", "[10s, 1d]", "the interval to refresh idc list for getting newest region-idc, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(stat_table_sync_interval, "60s", "[0s,1d]", "update sync statistic to ob_all_proxy_stat table interval, [0s, 1d], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(stat_dump_interval, "6000s", "[0s,1d]", "dump statistic in log interval, [0s, 1d], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(cluster_count_high_water_mark, "256", "[2, 102400]", "if cluster count is greater than this water mark, cluser will be kicked out by LRU", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(cluster_expire_time, "1d", "[0,]", "cluster resource expire time, 0 means never expire,cluster will be deleted if it has not been accessed for more than the time,[0, ]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //proxy hot_upgrade related
-  DEF_TIME(fetch_proxy_bin_random_time, "300s", "[1s,1h]", "max random waiting time of fetching proxy bin in hot upgrade, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(fetch_proxy_bin_timeout, "120s", "[1s,1200s]", "default hot upgrade fetch binary timeout, proxy will stop fetching after such long time, [1s, 1200s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(hot_upgrade_failure_retries, "5", "[1,20]", "default hot upgrade failure retries, proxy will stop handle hot_upgrade command after such retries, [1, 20]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(hot_upgrade_rollback_timeout, "24h", "[1s,30d]", "default hot upgrade rollback timeout, proxy will do rollback if receive no rollback command in such long time, [1s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(fetch_proxy_bin_random_time, "300s", "[1s,1h]", "max random waiting time of fetching proxy bin in hot upgrade, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(fetch_proxy_bin_timeout, "120s", "[1s,1200s]", "default hot upgrade fetch binary timeout, proxy will stop fetching after such long time, [1s, 1200s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(hot_upgrade_failure_retries, "5", "[1,20]", "default hot upgrade failure retries, proxy will stop handle hot_upgrade command after such retries, [1, 20]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(hot_upgrade_rollback_timeout, "24h", "[1s,30d]", "default hot upgrade rollback timeout, proxy will do rollback if receive no rollback command in such long time, [1s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(hot_upgrade_exit_timeout, "30000000", "[-1,86400000000]", "graceful exit timeout, also use as INACTIVE timeout when rolling upgrade, unit is us, default 30s, "
-                                             "-1 means no timeout, 0 means quit now, > 0 means wait time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(delay_exit_time, "100ms", "[100ms,500ms]", "delay exit time, [100ms,500ms]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+                                             "-1 means no timeout, 0 means quit now, > 0 means wait time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(delay_exit_time, "100ms", "[100ms,500ms]", "delay exit time, [100ms,500ms]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_auto_restart, "false", "specifies whether obproxy do auto restart when hold memory reach 80%% of proxy_mem_limited", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //log cleanup related
-  DEF_INT(log_file_percentage, "80", "[0, 100]", "max percentage of avail size occupied by proxy log file, [0, 90], 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(log_cleanup_interval, "1m","[5s,30d]", "log file clean up task schedule interval, set 1 day or longer, [5s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(log_dir_size_threshold, "64GB", "[256M,1T]", "max usable space size of log dir, used to decide whether should clean up log file, [256MB, 1T]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(max_syslog_file_time, "7d","[1s,]", "Maximum retention time of archive logs, 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(max_syslog_file_count, "0", "[0,]", "Maximum number of archive files to keep, 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_syslog_file_compress, "false", "Whether to enable archive log compression", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_syslog_wf, "false", "specifies whether any log message with a log level higher than WARN would be printed into a separate file with a suffix of wf", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_LOG_LEVEL(syslog_level, "WDIAG", "specifies the current level of logging: DEBUG, TRACE, WDIAG, EDIAG, INFO, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(syslog_io_bandwidth_limit, "30MB", "[0, 1GB]", "Syslog IO bandwidth limitation, exceeding syslog would be truncated.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(log_file_percentage, "80", "[0, 100]", "max percentage of avail size occupied by proxy log file, [0, 90], 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(log_cleanup_interval, "1m","[5s,30d]", "log file clean up task schedule interval, set 1 day or longer, [5s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(log_dir_size_threshold, "64GB", "[256M,1T]", "max usable space size of log dir, used to decide whether should clean up log file, [256MB, 1T]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(max_syslog_file_time, "7d","[1s,]", "Maximum retention time of archive logs, 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(max_syslog_file_count, "0", "[0,]", "Maximum number of archive files to keep, 0 means ignore such limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_syslog_file_compress, "false", "Whether to enable archive log compression", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_syslog_wf, "false", "specifies whether any log message with a log level higher than WARN would be printed into a separate file with a suffix of wf", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_LOG_LEVEL(syslog_level, "WDIAG", "specifies the current level of logging: DEBUG, TRACE, WDIAG, EDIAG, INFO, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(syslog_io_bandwidth_limit, "30MB", "[0, 1GB]", "Syslog IO bandwidth limitation, exceeding syslog would be truncated.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //resource pool related
-  DEF_BOOL(need_convert_vip_to_tname, "false", "convert vip to tenant name, which is useful in cloud", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(long_async_task_timeout, "60s", "[1s,1h]", "long async task timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(short_async_task_timeout, "5s", "[1s,1h]", "short async task timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR_LIST(username_separator, ":;-;.", "username separator", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(need_convert_vip_to_tname, "false", "convert vip to tenant name, which is useful in cloud", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(long_async_task_timeout, "60s", "[1s,1h]", "long async task timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(short_async_task_timeout, "5s", "[1s,1h]", "short async task timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR_LIST(username_separator, ":;-;.", "username separator", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(mysql_client_num, "64", "[1,128]", "proxy mysql client num, [1, 128]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //client session related
   DEF_BOOL(enable_client_connection_lru_disconnect, "false",
-        "if client connections reach throttle, true is that new connection will be accepted, and eliminate lru client connection, false is that new connection will disconnect, and err packet will be returned", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(client_max_connections, "8192", "[0,]", "client max connections for one obproxy, [0, +∞]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(observer_query_timeout_delta, "20s", "[1s,30s]", "the delta value for @@ob_query_timeout, to cover net round trip time(proxy<->server) and task schedule time(server), [1s, 30s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_cluster_checkout, "true", "if enable cluster checkout, proxy will send cluster name when login and server will check it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_proxy_scramble, "false", "if enable proxy scramble, proxy will send client its variable scramble num, not support old observer", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_client_ip_checkout, "true", "if enabled, proxy send client ip when login", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+        "if client connections reach throttle, true is that new connection will be accepted, and eliminate lru client connection, false is that new connection will disconnect, and err packet will be returned", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(client_max_connections, "8192", "[0,]", "client max connections for one obproxy, [0, +∞]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(observer_query_timeout_delta, "20s", "[1s,30s]", "the delta value for @@ob_query_timeout, to cover net round trip time(proxy<->server) and task schedule time(server), [1s, 30s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_cluster_checkout, "true", "if enable cluster checkout, proxy will send cluster name when login and server will check it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_proxy_scramble, "false", "if enable proxy scramble, proxy will send client its variable scramble num, not support old observer", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_client_ip_checkout, "true", "if enabled, proxy send client ip when login", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //connection related
-  DEF_INT(connect_observer_max_retries, "3", "[2,5]", "max retries to do connect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(connect_observer_max_retries, "3", "[2,5]", "max retries to do connect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //net related
-  DEF_BOOL(frequent_accept, "true", "frequent accept", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(net_accept_threads, "2", "[0,8]", "net accept threads num, [0, 8]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(net_config_poll_timeout, "1ms", "[0,]", "not used, just for compatible", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(default_inactivity_timeout, "180000s", "[1s,30d]", "default inactivity timeout, [1s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(sock_recv_buffer_size_out, "0", "[0,8MB]", "sock param, recv buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(sock_send_buffer_size_out, "0", "[0,8MB]", "sock param, send buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(sock_option_flag_out, "3", "[0, 3]","sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE, bit 3: LINGER_ON", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(sock_packet_mark_out, "0", "[0,]","sock param, packet mark out, [0, 1]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(sock_packet_tos_out, "0", "[0,]","sock param, packet tos out, [0, 1]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_init_cwnd, "0", "[0,64]", "the initial tcp congestion window, [0, 64]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_keepidle, "5", "[0,7200]", "tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_keepintvl, "5", "[0,75]", "tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_keepcnt, "5", "[0,9]", "tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_tcp_user_timeout, "0", "[0,20]", "tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(frequent_accept, "true", "frequent accept", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(net_accept_threads, "2", "[0,8]", "net accept threads num, [0, 8]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(net_config_poll_timeout, "1ms", "[0,]", "not used, just for compatible", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(default_inactivity_timeout, "180000s", "[1s,30d]", "default inactivity timeout, [1s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(sock_recv_buffer_size_out, "0", "[0,8MB]", "sock param, recv buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(sock_send_buffer_size_out, "0", "[0,8MB]", "sock param, send buffer size, [0, 8MB], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(sock_option_flag_out, "3", "[0, 3]","sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE, bit 3: LINGER_ON", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(sock_packet_mark_out, "0", "[0,]","sock param, packet mark out, [0, 1]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(sock_packet_tos_out, "0", "[0,]","sock param, packet tos out, [0, 1]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(server_tcp_init_cwnd, "0", "[0,64]", "the initial tcp congestion window, [0, 64]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(server_tcp_keepidle, "5", "[0,7200]", "tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(server_tcp_keepintvl, "5", "[0,75]", "tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(server_tcp_keepcnt, "5", "[0,9]", "tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(server_tcp_user_timeout, "0", "[0,20]", "tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_INT(client_sock_option_flag_out, "3", "[0, 3]","client sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_keepidle, "5", "[0,7200]", "client tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_keepintvl, "5", "[0,75]", "client tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_keepcnt, "5", "[0,9]", "client tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_tcp_user_timeout, "0", "[0,20]", "client tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(client_sock_option_flag_out, "3", "[0, 3]","client sock param, option flag out, bit 1: NO_DELAY, bit 2: KEEP_ALIVE", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(client_tcp_keepidle, "5", "[0,7200]", "client tcp keepalive idle time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(client_tcp_keepintvl, "5", "[0,75]", "client tcp keepalive interval time, unit is second, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(client_tcp_keepcnt, "5", "[0,9]", "client tcp keepalive probe count, 0 means use default value by kernel", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(client_tcp_user_timeout, "0", "[0,20]", "client tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //proxy init related
-  DEF_CAP(proxy_mem_limited, "2G", "[100MB,100G]", "proxy memory limited, [100MB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(stack_size, "1MB", "[1MB,10MB]", "stack size of one thread, [1MB, 10MB]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(routing_cache_mem_limited, "128MB", "[1KB,100G]", "max size of all proxy routing cache size, like table cache, location cache, etc. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(work_thread_num, "128", "[1,128]", "proxy work thread num or max work thread num when automatic match, [1, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(task_thread_num, "2", "[1,4]", "proxy task thread num, [1, 4]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(block_thread_num, "1", "[1,4]", "proxy block thread num, [1, 4]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(grpc_thread_num, "8", "[8,16]", "proxy grpc thread num, [8, 16]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(grpc_client_num, "9", "[9,16]", "proxy grpc client num, [9, 16]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(shard_scan_thread_num, "0", "[0,128]", "proxy shard scan thread num, if 0, use (real work thread num/2), [0, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(automatic_match_work_thread, "true", "ignore work_thread_num configuration item, use the count of cpu for current proxy work thread num", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_strict_kernel_release, "true", "If is true, proxy only support 5u/6u/7u redhat. Otherwise no care kernel release, and proxy maybe unstable", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_CAP(max_log_file_size, "256MB", "[1MB,1G]", "max size of log file, [1MB, 1G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_CAP(proxy_mem_limited, "2G", "[100MB,100G]", "proxy memory limited, [100MB, 100G], will disable alloc memory from the OS ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(stack_size, "1MB", "[1MB,10MB]", "stack size of one thread, [1MB, 10MB]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(routing_cache_mem_limited, "128MB", "[1KB,100G]", "max size of all proxy routing cache size, like table cache, location cache, etc. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(work_thread_num, "128", "[1,128]", "proxy work thread num or max work thread num when automatic match, [1, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(task_thread_num, "2", "[1,4]", "proxy task thread num, [1, 4]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(block_thread_num, "1", "[1,4]", "proxy block thread num, [1, 4]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(grpc_thread_num, "8", "[8,16]", "proxy grpc thread num, [8, 16]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(grpc_client_num, "9", "[9,16]", "proxy grpc client num, [9, 16]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(shard_scan_thread_num, "0", "[0,128]", "proxy shard scan thread num, if 0, use (real work thread num/2), [0, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(automatic_match_work_thread, "true", "ignore work_thread_num configuration item, use the count of cpu for current proxy work thread num", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_strict_kernel_release, "false", "If is true, proxy only support 5u/6u/7u redhat. Otherwise no care kernel release, and proxy maybe unstable", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(max_log_file_size, "256MB", "[1MB,1G]", "max size of log file, [1MB, 1G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //request&response transform related
-  DEF_CAP(default_buffer_water_mark, "32KB", "[4B,64KB]", "default buffer water mark, [4B, 64KB]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(tunnel_request_size_threshold, "8KB", "(0,16MB]", "use tunnel to transfer request, [4KB, 16MB], if request bigger than the threshold, 0 disable", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(request_buffer_length, "4KB", "[1KB, 16MB]", "the max length of request buffer we will alloc for each reqeust", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(flow_high_water_mark, "64K", "[0,16MB]", "flow high water mark for flow control, [0, 16MB], if set a negative value, proxy treat it as 64K", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(flow_low_water_mark, "64K", "[0,16MB]", "flow low water mark for flow control, [0, 16MB], if set a negative value, proxy treat it as 64K", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(flow_consumer_reenable_threshold, "256", "[0,131072]", "consumer reenable threshold for flow control, [0, 131072], if set a negative value, proxy treat it as 256", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(flow_event_queue_threshold, "5", "[0,20]", "event queue threshold for flow control, [0, 20], if set a negative value, proxy treat it as 5", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_flow_control, "true", "whether flow control is enabled in a mysql tunnel, applied instantly in new created tunnels after updated", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_CAP(default_buffer_water_mark, "32KB", "[4B,64KB]", "default buffer water mark, [4B, 64KB]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(tunnel_request_size_threshold, "8KB", "(0,16MB]", "use tunnel to transfer request, [4KB, 16MB], if request bigger than the threshold, 0 disable", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(request_buffer_length, "4KB", "[1KB, 16MB]", "the max length of request buffer we will alloc for each reqeust", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(flow_high_water_mark, "64K", "[0,16MB]", "flow high water mark for flow control, [0, 16MB], if set a negative value, proxy treat it as 64K", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(flow_low_water_mark, "64K", "[0,16MB]", "flow low water mark for flow control, [0, 16MB], if set a negative value, proxy treat it as 64K", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(flow_consumer_reenable_threshold, "256", "[0,131072]", "consumer reenable threshold for flow control, [0, 131072], if set a negative value, proxy treat it as 256", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(flow_event_queue_threshold, "5", "[0,20]", "event queue threshold for flow control, [0, 20], if set a negative value, proxy treat it as 5", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_flow_control, "true", "whether flow control is enabled in a mysql tunnel, applied instantly in new created tunnels after updated", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //statistics related
-  DEF_BOOL(enable_trans_detail_stats, "true", "enable mysql transaction detail stats", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_sync_all_stats, "true", "enable proxy sync all stats", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_mysqlsm_info, "true", "enable mysqlsm info, not used in proxy now", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_report_session_stats, "false", "enable report client session statistic table", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_strict_stat_time, "true", "enable strict statistic time, use gettimeofday or clock_gettime(CLOCK_REALTIME)", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_cpu_topology, "false", "enable cpu topology, work threads bind to cpu", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_trace_stats, "false", "enable mysql trace stats", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(slow_transaction_time_threshold, "1s", "[0s,30d]", "slow transaction time threshold, [0s, 30d], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(slow_proxy_process_time_threshold, "2ms", "[0s,30d]", "slow proxy process time threshold, [0s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(query_digest_time_threshold, "100ms", "[0s,30d]", "digest time threshold, [0s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(slow_query_time_threshold, "500ms", "[0s,30d]", "slow query time threshold, [0s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(scan_buffered_rows_warning_threshold, "50000", "[-1,]", "warn in obproxy log when obtained rows of a sharding table scan request exceed the threshold, [-1,]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_trans_detail_stats, "true", "enable mysql transaction detail stats", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_sync_all_stats, "true", "enable proxy sync all stats", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_mysqlsm_info, "true", "enable mysqlsm info, not used in proxy now", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_report_session_stats, "false", "enable report client session statistic table", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_strict_stat_time, "false", "enable strict statistic time, use gettimeofday or clock_gettime(CLOCK_REALTIME)", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_cpu_topology, "false", "enable cpu topology, work threads bind to cpu", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_trace_stats, "false", "enable mysql trace stats", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(slow_transaction_time_threshold, "1s", "[0s,30d]", "slow transaction time threshold, [0s, 30d], if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(slow_proxy_process_time_threshold, "2ms", "[0s,30d]", "slow proxy process time threshold, [0s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(query_digest_time_threshold, "100ms", "[0s,30d]", "digest time threshold, [0s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
+  DEF_TIME(slow_query_time_threshold, "500ms", "[0s,30d]", "slow query time threshold, [0s, 30d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
+  DEF_INT(scan_buffered_rows_warning_threshold, "50000", "[-1,]", "warn in obproxy log when obtained rows of a sharding table scan request exceed the threshold, [-1,]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //start up params, do not modify by manual
-  DEF_BOOL(ignore_local_config, "true", "ignore all local cached files, start proxy with remote json", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_IP(local_bound_ip, "0.0.0.0", "local bound ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(listen_port, "6688", "(1024,65536)", "obproxy listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(ip_listen_mode, "1", "[1, 3]", "1 means ipv4 listen mode, 2 means ipv6 listen mode, 3 means ipv4 and ipv6 listen mode", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_IP(local_bound_ipv6_ip, "::", "local bound ipv6 ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(obproxy_config_server_url, "", "url of config info(rs list and so on)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(proxy_service_mode, "client", "proxy deploy and service mode: 1.client(default); 2.server", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(proxy_id, "0", "[0, 8191]", "used to identify each obproxy and generate cs_id, if change client_session_id to version 1, have to set proxy_id to less than 255 ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(app_name, "undefined", "current application name which proxy works for, need defined, only modified when restart", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(proxy_cluster, "undefined", "proxy cluster name, mark which proxy cluster the proxy belongs to", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_metadb_used, "true", "use MetaDataBase when proxy run", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_get_rslist_remote, "false", "enable direct get rootservice list from remote", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(ignore_local_config, "true", "ignore all local cached files, start proxy with remote json", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_IP(local_bound_ip, "0.0.0.0", "local bound ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(listen_port, "6688", "(1024,65536)", "obproxy listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(ip_listen_mode, "1", "[1, 3]", "1 means ipv4 listen mode, 2 means ipv6 listen mode, 3 means ipv4 and ipv6 listen mode", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_IP(local_bound_ipv6_ip, "::", "local bound ipv6 ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(obproxy_config_server_url, "", "url of config info(rs list and so on)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(proxy_service_mode, "client", "proxy deploy and service mode: 1.client(default); 2.server", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(proxy_id, "0", "[0, 8191]", "used to identify each obproxy and generate cs_id, if change client_session_id to version 1, have to set proxy_id to less than 255 ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(app_name, "undefined", "current application name which proxy works for, need defined, only modified when restart", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(proxy_cluster, "undefined", "proxy cluster name, mark which proxy cluster the proxy belongs to", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_metadb_used, "true", "use MetaDataBase when proxy run", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_get_rslist_remote, "false", "enable direct get rootservice list from remote", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // without config server url
-  DEF_STR(rootservice_cluster_name, "undefined", "default cluster name for rootservice_list", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR_LIST(rootservice_list, "", "a list of servers against which election candidate is checked for validation, format ip1:sql_port1;ip2:sql_port2", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(rootservice_cluster_name, "undefined", "default cluster name for rootservice_list", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR_LIST(rootservice_list, "", "a list of servers against which election candidate is checked for validation, format ip1:sql_port1;ip2:sql_port2", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // default tenant
-  DEF_STR(proxy_tenant_name, "", "default tenant name for cloud user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(proxy_tenant_name, "", "default tenant name for cloud user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   // congestion
-  DEF_INT(congestion_failure_threshold, "5", "[0,]", "congestion failure threshold, [0, +∞], 0 means disable congestion", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(min_keep_congestion_interval, "20s", "[1s,1d]", "minimum keep congestion interval, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(congestion_fail_window, "120s", "[1s,1h]", "congestion failure window size, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(congestion_retry_interval, "20s", "[1s,1h]", "congestion retry interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(min_congested_connect_timeout, "100ms", "[1ms,1h]", "if client connect timeout after the time, proxy set target server alive congested, [1ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_congestion, "true", "enable congestion feature or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_detect_mode, "1", "[0,2]", "0 means no detect, 1 means target server detect, 2 means all server detect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(server_detect_fail_threshold, "3", "[1,10000]", "server detect try times", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(server_detect_refresh_interval, "1s", "[1ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(detect_server_timeout, "5s", "[1s,1h]", "detect server sql timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(congestion_failure_threshold, "5", "[0,]", "congestion failure threshold, [0, +∞], 0 means disable congestion", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(min_keep_congestion_interval, "20s", "[1s,1d]", "minimum keep congestion interval, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(congestion_fail_window, "120s", "[1s,1h]", "congestion failure window size, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(congestion_retry_interval, "20s", "[1s,1h]", "congestion retry interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(min_congested_connect_timeout, "100ms", "[1ms,1h]", "if client connect timeout after the time, proxy set target server alive congested, [1ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_congestion, "true", "enable congestion feature or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(server_detect_mode, "1", "[0,2]", "0 means no detect, 1 means target server detect, 2 means all server detect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(server_detect_fail_threshold, "3", "[1,10000]", "server detect try times", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(server_detect_refresh_interval, "1s", "[1ms, 1h]", "the interval to refresh server state for getting zone or server newest state, [10ms, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(detect_server_timeout, "5s", "[1s,1h]", "detect server sql timeout, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_BOOL(enable_bad_route_reject, "false", "if enabled, bad route request will be rejected, e.g. first statement of transaction opened by BEGIN(or START TRANSACTION) without table name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_partition_table_route, "true", "if enabled, partition table will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_compression_protocol, "true", "if enabled, proxy will use compression protocol with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_ob_protocol_v2, "true", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_ob_protocol_v2_with_client, "false", "if enabled, proxy will use oceanbase protocol 2.0 with client", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_transaction_internal_routing, "true", "if enabled, proxy will route the dml statement in a transaction to different servers", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(compression_algorithm, "", "format: <algorithm_name>:<compression_level>, only support zlib:[0-9] now, compression level for compressed protocol and oceanbase 2.0 protocol, 0 will disable compression for compressed protocol and oceanbase 2.0 protocol", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-
-  DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_weak_reroute, "true", "if this and protocol_v2 enabled, proxy will reroute weak read request when server ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_cached_server, "true", "if enabled, use cached server session when no table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_bad_route_reject, "false", "if enabled, bad route request will be rejected, e.g. first statement of transaction opened by BEGIN(or START TRANSACTION) without table name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_partition_table_route, "true", "if enabled, partition table will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_compression_protocol, "true", "if enabled, proxy will use compression protocol with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_ob_protocol_v2, "true", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_ob_protocol_v2_with_client, "false", "if enabled, proxy will use oceanbase protocol 2.0 with client", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_transaction_internal_routing, "true", "if enabled, proxy will route the dml statement in a transaction to different servers", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_full_link_trace, "false", "if enable proxy will use full link trace to trace query execution", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(compression_algorithm, "", "format: <algorithm_name>:<compression_level>, only support zlib:[0-9] now, compression level for compressed protocol and oceanbase 2.0 protocol, 0 will disable compression for compressed protocol and oceanbase 2.0 protocol", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_single_leader_node_routing, "true", "if enabled, proxy detect tenant's single leader node and route strong-read request to leader node", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_weak_reroute, "true", "if this and protocol_v2 enabled, proxy will reroute weak read request when server ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_cached_server, "true", "if enabled, use cached server session when no table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // location rate limit
-  DEF_INT(normal_pl_update_threshold, "100", "[0,]", "max partition location update task processing per second", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(limited_pl_update_threshold, "10", "[0,]", "in merging state, max partition location update task processing per second", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_INT(normal_pl_update_threshold, "100", "[0,]", "max partition location update task processing per second", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(limited_pl_update_threshold, "10", "[0,]", "in merging state, max partition location update task processing per second", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // sqlaudit
-  DEF_CAP(sqlaudit_mem_limited, "0", "[0,1G]", "sqlaudit memory limited, [0, 1GB]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_CAP(internal_cmd_mem_limited, "16M", "[0,64MB]", "internal cmd response memory limited, [0, 64MB], 0 means unlimited", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_CAP(sqlaudit_mem_limited, "0", "[0,1G]", "sqlaudit memory limited, [0, 1GB]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(internal_cmd_mem_limited, "16M", "[0,64MB]", "internal cmd response memory limited, [0, 64MB], 0 means unlimited", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // target db servers
-  DEF_STR(target_db_server, "", "proxy will choose to route target db server addr forcibly, format ip0:port0,ip1:port1,ip2:port2;ip3:port3;ip4:port4", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(target_db_server, "", "proxy will choose to route target db server addr forcibly, format ip0:port0,ip1:port1,ip2:port2;ip3:port3;ip4:port4", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
-  DEF_INT(route_diagnosis_level, "2", "[0,4]", "'0' disable route diagnosis, greater level will collect more dedicated info of route", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(protocol_diagnosis_level, "0", "[0,2]", "[0,2], '0' disable protocol diagnosis, '1' output diagnosis info with connection diagnosis, '2' output additional diagnosis info to obproxy_diagnosis.log after query exeucted ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-
+  DEF_INT(route_diagnosis_level, "2", "[0,4]", "[0,4], '0' disable route diagnosis, greater level will collect more dedicated info of route.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_INT(protocol_diagnosis_level, "0", "[0,2]", "[0,2], '0' disable protocol diagnosis, '1' output diagnosis info with connection diagnosis, '2' output additional diagnosis info to obproxy_diagnosis.log after query exeucted ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   //debug
-  DEF_STR(test_server_addr, "", "proxy will choose this addr(if not empty) as observer addr forcibly, format ip1:sql_port1;ip2:sql_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(server_routing_mode, "oceanbase", "server routing mode: 1.oceanbase(default mode); 2.random; 3.mock; 4.mysql", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_LOG_LEVEL(monitor_log_level, "INFO", "specifies the current level of logging: DEBUG, TRACE, WDIAG, EDIAG, INFO, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_LOG_LEVEL(xflush_log_level, "ERROR", "specifies the current level of logging: DEBUG, TRACE, INFO, WDIAG, EDIAG, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-   DEF_BOOL(enable_async_log, "true", "if enabled, use async logging way, maybe lost some log when busy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-   DEF_STR(mem_leak_check_mod_name, "", "proxy will record mem alloc backtrace for this mod at ob_malloc except OB_PROXY_MEM_LEAK_CHECK, name list can be find in [show proxymemory], [ALL] means record all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-   DEF_STR(mem_leak_check_class_name, "", "proxy will record mem alloc backtrace for this class at op_alloc, name list can be find in [show proxymemory objpool], [ALL] means record all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(test_server_addr, "", "proxy will choose this addr(if not empty) as observer addr forcibly, format ip1:sql_port1;ip2:sql_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(server_routing_mode, "oceanbase", "server routing mode: 1.oceanbase(default mode); 2.random; 3.mock; 4.mysql", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_LOG_LEVEL(monitor_log_level, "INFO", "specifies the current level of logging: DEBUG, TRACE, WDIAG, EDIAG, INFO, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_LOG_LEVEL(xflush_log_level, "ERROR", "specifies the current level of logging: DEBUG, TRACE, INFO, WDIAG, EDIAG, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_async_log, "true", "if enabled, use async logging way, maybe lost some log when busy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(mem_leak_check_mod_name, "", "proxy will record mem alloc backtrace for this mod at ob_malloc except OB_PROXY_MEM_LEAK_CHECK, name list can be find in [show proxymemory], [ALL] means record all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(mem_leak_check_class_name, "", "proxy will record mem alloc backtrace for this class at op_alloc, name list can be find in [show proxymemory objpool], [ALL] means record all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // proxy cmd
-  DEF_INT(proxy_local_cmd, "0", "[0,4]", "proxy local cmd type: 0->none(default), 1->exit, 2->restart, 3->offline, 4->online", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
+  DEF_INT(proxy_local_cmd, "0", "[0,4]", "proxy local cmd type: 0->none(default), 1->exit, 2->restart, 3->offline, 4->online", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);
 
   //ldc
-  DEF_STR(proxy_idc_name, "", "idc name for proxy ldc route. If is empty or invalid, treat as do not use ldc. User session vars 'proxy_session_ldc' can cover it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(proxy_idc_name, "", "idc name for proxy ldc route. If is empty or invalid, treat as do not use ldc. User session vars 'proxy_session_ldc' can cover it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
-  DEF_INT(current_local_config_version, "0", "[0,]", "local config version for current app", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(local_vip_tenant_version, "0", "[0,]", "local vip tenant version", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY);
+  DEF_INT(current_local_config_version, "0", "[0,]", "local config version for current app", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(local_vip_tenant_version, "0", "[0,]", "local vip tenant version", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);
   // unused now, keep it for test,deleted later
-  DEF_INT(max_connections, "60000", "(128,65535]", "max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_CAP(client_max_memory_size, "8MB", "[8KB, 64MB]", "max dynamic alloc memory size of one client session", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_CAP(client_max_memory_size, "8MB", "[8KB, 64MB]", "max dynamic alloc memory size of one client session", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // delay update table entry or partition entry
-  DEF_TIME(delay_update_entry_interval, "5s", "[0s,1d]", "delay update table entry or partition entry interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(delay_update_entry_interval, "5s", "[0s,1d]", "delay update table entry or partition entry interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // tenant location valid time, if expred, will update all dummy
-  DEF_TIME(tenant_location_valid_time, "1d", "[0s,100d]", "tenant location valid time, [0s, 100d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(tenant_location_valid_time, "1d", "[0s,100d]", "tenant location valid time, [0s, 100d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // monitor
-  DEF_INT(monitor_item_limit, "3000", "[0,10000]", "obproxy monitor stat item/prometheus metric limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(monitor_item_max_idle_period, "30m", "[1m, 1d]", "monitor stat item in memory idle period. it will remove if timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(monitor_cost_ms_unit, "false", "enable monitor cost unit is ms, default is us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(monitor_stat_dump_interval, "1m", "[1s,1h]", "dump monitor statistic in log interval, [1s, 1h], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(monitor_stat_low_threshold, "30ms", "[0s, 5s]", "tenant stat time low threshold", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(monitor_stat_middle_threshold, "100ms", "[0s, 30s]", "tenant stat time middle threshold", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(monitor_stat_high_threshold, "500ms", "[0s, 1m]", "tenant stat time high threshold", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_monitor_stat, "true", "enable monitor stat or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(monitor_item_limit, "3000", "[0,10000]", "obproxy monitor stat item/prometheus metric limit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(monitor_item_max_idle_period, "30m", "[1m, 1d]", "monitor stat item in memory idle period. it will remove if timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(monitor_cost_ms_unit, "false", "enable monitor cost unit is ms, default is us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(monitor_stat_dump_interval, "1m", "[1s,1h]", "dump monitor statistic in log interval, [1s, 1h], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(monitor_stat_low_threshold, "30ms", "[0s, 5s]", "tenant stat time low threshold", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(monitor_stat_middle_threshold, "100ms", "[0s, 30s]", "tenant stat time middle threshold", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(monitor_stat_high_threshold, "500ms", "[0s, 1m]", "tenant stat time high threshold", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_monitor_stat, "true", "enable monitor stat or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // prometheus
-  DEF_INT(prometheus_listen_port, "2884", "(1024,65536)", "obproxy prometheus listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(prometheus_cost_ms_unit, "false", "enable prometheus cost unit is ms, default is us", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(prometheus_sync_interval, "1m", "[1s,1h]", "update sync metrics to prometheus exposer interval, [1s, 1h], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_prometheus, "true", "enable prometheus or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_extra_prometheus_metric, "false", "enable net and route prometheus merics or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_INT(prometheus_listen_port, "2884", "(1024,65536)", "obproxy prometheus listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(prometheus_cost_ms_unit, "false", "enable prometheus cost unit is ms, default is us", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(prometheus_sync_interval, "1m", "[1s,1h]", "update sync metrics to prometheus exposer interval, [1s, 1h], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_prometheus, "true", "enable prometheus or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_extra_prometheus_metric, "false", "enable net and route prometheus merics or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_BOOL(enable_causal_order_read, "true", "if enabled, proxy will choose server by priority and sync safe snapshot version if need", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  // The following four parameters are related to the location cache at the table level.
-  // Here, it is recommended to use partition_location_expire_relative_time in an emergency,
-  // and set the active expiration recommendation location_expire_period_time
-  // enable_qa_mode and location_expire_period will be discarded later
-  DEF_INT(partition_location_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire partition location base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_qa_mode, "false", "just for test, not recommended, if enabled, proxy can forcibly expire all location cache", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(location_expire_period, "0", "[0,36000000]", "just for test, not recommended, the unit is ms, only work if qa_mode is set, it means location cache which has been created for more than this value will be expired", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(location_expire_period_time, "0d", "[0s, 30d]", "time for location expire period, values in [0s, 30d], 0 means no expire", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_causal_order_read, "true", "if enabled, proxy will choose server by priority and sync safe snapshot version if need", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  // 下面四个参数都和table级别的location cache有关，这里应急推荐使用partition_location_expire_relative_time，设置主动过期推荐location_expire_period_time，
+  // enable_qa_mode和location_expire_period后续考虑废弃掉
+  DEF_INT(partition_location_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire partition location base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_qa_mode, "false", "just for test, not recommended, if enabled, proxy can forcibly expire all location cache", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(location_expire_period, "0", "[0,36000000]", "just for test, not recommended, the unit is ms, only work if qa_mode is set, it means location cache which has been created for more than this value will be expired", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(location_expire_period_time, "0d", "[0s, 30d]", "time for location expire period, values in [0s, 30d], 0 means no expire", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
-  // in public cloud, will assign a vip addr to proxy. qa_mode_mock_slb_vip is a vip addr for testing
-  DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(qa_mode_mock_public_cloud_vid, "1", "[1,102400]", "mock public cloud vid", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(proxy_route_policy, "", "proxy route policy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(proxy_route_policy, "", "proxy route policy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
-  DEF_BOOL(enable_cpu_isolate, "false", "enable cpu isolate or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_cpu_isolate, "false", "enable cpu isolate or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_STR(mysql_version, "5.6.25", "returned version for mysql mode, default value is 5.6.25. If set, proxy will send new version when user connect to proxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER)
+  DEF_STR(mysql_version, "5.6.25", "returned version for mysql mode, default value is 5.6.25. If set, proxy will send new version when user connect to proxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP)
   // sql table cache
-  DEF_BOOL(enable_index_route, "false", "enable index route or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(sql_table_cache_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire sql table cache base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_CAP(sql_table_cache_mem_limited, "128MB", "[1KB,100G]", "max size of proxy sql table cache size. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_cloud_full_username, "false", "used for cloud user, if set false, treat all login user as username", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_full_username, "false", "used for non-cloud user, if set true, username must have tenant and cluster", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(skip_proxyro_check, "false", "used for proxro@sys, if set false, access denied", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_index_route, "false", "enable index route or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(sql_table_cache_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire sql table cache base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(sql_table_cache_mem_limited, "128MB", "[1KB,100G]", "max size of proxy sql table cache size. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_cloud_full_username, "false", "used for cloud user, if set false, treat all login user as username", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_full_username, "false", "used for non-cloud user, if set true, username must have tenant and cluster", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(skip_proxyro_check, "false", "used for proxro@sys, if set false, access denied", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_BOOL(skip_proxy_sys_private_check, "false", "skip_proxy_sys_private_check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(skip_proxy_sys_private_check, "false", "skip_proxy_sys_private_check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // SSL 配置相关，包括开关和 SSL 相关属性，由于历史兼容性问题，设置密钥证书需要通过 ssl_config 表
-  DEF_BOOL(enable_client_ssl, "false", "if enabled, proxy will try best to connect client with ssl", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_server_ssl, "false", "if enabled, proxy will try best to connect server whith ssl", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(ssl_attributes, "", "store ssl config to control ssl behavior, works for new connection", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_client_ssl, "false", "if enabled, proxy will try best to connect client with ssl", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_server_ssl, "false", "if enabled, proxy will try best to connect server whith ssl", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(ssl_attributes, "", "store ssl config to control ssl behavior, works for new connection", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
   // QOS
-  DEF_BOOL(enable_qos, "false", "if enabled, proxy will be able to qos", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(qos_stat_clean_interval, "1m", "[1s,1h]", "clean qos stat interval, [1s, 1h], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(qos_stat_item_max_idle_period, "30m", "[1m, 1d]", "qos stat item in memory idle period. it will remove if timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(qos_stat_item_limit, "3000", "[0,10000]", "obproxy qos stat item", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_qos, "false", "if enabled, proxy will be able to qos", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(qos_stat_clean_interval, "1m", "[1s,1h]", "clean qos stat interval, [1s, 1h], 0 means disable, if set a negative value, proxy treat it as 0", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(qos_stat_item_max_idle_period, "30m", "[1m, 1d]", "qos stat item in memory idle period. it will remove if timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(qos_stat_item_limit, "3000", "[0,10000]", "obproxy qos stat item", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // standby
-  DEF_BOOL(enable_standby, "true", "enable standby or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_standby, "true", "enable standby or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // primary zone
-  DEF_STR(proxy_primary_zone_name, "", "primary zone name for proxy ldc route. If not empty, proxy only route to the zone", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_primary_zone, "true", "enable proxy route according to the tenant primary zone priority while proxy calculate route failed.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(proxy_primary_zone_name, "", "primary zone name for proxy ldc route. If not empty, proxy only route to the zone", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_primary_zone, "true", "enable proxy route according to the tenant primary zone priority while proxy calculate route failed.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // LGD config
-  DEF_BOOL(enable_ldg, "false", "enable proxy to support ldg", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_TIME(ldg_info_refresh_interval, "20s", "[10s,1d]", "config server info refresh task interval, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_ldg, "false", "enable proxy to support ldg", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(ldg_info_refresh_interval, "20s", "[10s,1d]", "config server info refresh task interval, [10s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // location cache
-  DEF_BOOL(check_tenant_locality_change, "true", "enable locality change trigger location cache dirty", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_async_pull_location_cache, "true", "enable async pull location cache when is dirty", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(check_tenant_locality_change, "true", "enable locality change trigger location cache dirty", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_async_pull_location_cache, "true", "enable async pull location cache when is dirty", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // sequence
-  DEF_TIME(sequence_entry_expire_time, "1d", "[0s,1d]", "sequence entry valid time, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(sequence_fail_retry_count, "2", "[0,100]", "the count sequence retry when fail, [0, 100]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_sequence_prefetch, "true", "if enabled, will prefetch sequence ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(sequence_prefetch_threshold, "7000", "[0,10000]", "when cost reach threshold will prefetch, [0, 10000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_mysql_proxy_pool, "true", "if enabled, will long conn for  sequence ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_TIME(sequence_entry_expire_time, "1d", "[0s,1d]", "sequence entry valid time, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(sequence_fail_retry_count, "2", "[0,100]", "the count sequence retry when fail, [0, 100]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_sequence_prefetch, "true", "if enabled, will prefetch sequence ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(sequence_prefetch_threshold, "7000", "[0,10000]", "when cost reach threshold will prefetch, [0, 10000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_mysql_proxy_pool, "true", "if enabled, will long conn for  sequence ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // sidecar
-  DEF_BOOL(enable_sharding, "false", "if enabled means use beyond trust", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(sidecar_node_id, "", "node id for dbmesh", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(dataplane_host, "", "dataplane address or hostname", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(use_local_dbconfig, "false", "if enabled, start dbmesh with local dbconfig", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_shard_authority, "false", "if enabled, check authority for sharding user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(grpc_timeout, "30m", "[1s,1d]", "grpc client timeout, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(env_tenant_name, "", "app tenant name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(workspace_name, "", "app workspace name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(server_zone, "", "app server location", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(pod_name, "", "sidecar pod name ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(pod_namespace, "", "sidecar pod namespace", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(instance_ip, "", "ip addr string", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(runtime_env, "", "runtime env", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(mng_url, "", "ob sharding console url", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(cloud_instance_id, "", "ob sharding cloud instance id", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(auto_scan_all, "false", "if enabled, need scan all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-
+  DEF_BOOL(enable_sharding, "false", "if enabled means use beyond trust", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(sidecar_node_id, "", "node id for dbmesh", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(dataplane_host, "", "dataplane address or hostname", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(use_local_dbconfig, "false", "if enabled, start dbmesh with local dbconfig", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_shard_authority, "false", "if enabled, check authority for sharding user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(grpc_timeout, "30m", "[1s,1d]", "grpc client timeout, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(env_tenant_name, "", "app tenant name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(workspace_name, "", "app workspace name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(server_zone, "", "app server location", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(pod_name, "", "sidecar pod name ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(pod_namespace, "", "sidecar pod namespace", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(instance_ip, "", "ip addr string", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(runtime_env, "", "runtime env", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(mng_url, "", "ob sharding console url", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(cloud_instance_id, "", "ob sharding cloud instance id", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(auto_scan_all, "false", "if enabled, need scan all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_cross_shard_txn, "true", "ODP will allow sharding read request cross shards in transaction", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // session pool
-  DEF_BOOL(is_pool_mode, "false", "if enabled means useing session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_conn_precreate, "false", "if enabled means precreate conn for session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_session_pool_for_no_sharding, "false", "if enabled can use session pool for no sharding", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(enable_no_sharding_skip_real_conn, "false", "if enabled no sharding will use saved password check to skip real conn", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(need_release_after_tx, "false", "if enabled means release server session after transaction complete", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(session_pool_retry_interval, "1ms", "[0s,1d]", "session_pool_retry_interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(refresh_server_cont_num, "5", "[0,100]", "the num of refresh server cont, [0,1000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(create_conn_cont_num, "10", "[0,100]", "the num of create  conn cont, [0, 1000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(max_pending_num, "100000", "[0,1000000]", "the num of conn in pending list, [0, 100000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(session_pool_cont_delay_interval, "5ms", "[0s,1d]", "session_pool_cont_delay_interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(use_local_session_prop, "false", "if enabled means use_local_session prop", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(session_pool_default_min_conn, "0", "[0,10000]", "the num of min conn , [0, 100000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(session_pool_default_max_conn, "20", "[0,100000]", "the num of max conn , [0, 100000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(session_pool_default_idle_timeout, "1800s", "[0s,1d]", "session_pool_default_idle_timeout, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(session_pool_default_blocking_timeout, "500ms", "[0ms,2s]", "session_pool_default_blocking_timeout, [0ms, 2s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_BOOL(session_pool_default_prefill, "false", "session_pool_default_prefill", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(session_pool_stat_log_ratio, "9000", "[0, 10000]", "the num when reach will log", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(session_pool_stat_log_interval, "1m", "[0s,1d]", "pool stat log interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(is_pool_mode, "false", "if enabled means useing session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_conn_precreate, "false", "if enabled means precreate conn for session pool", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_session_pool_for_no_sharding, "false", "if enabled can use session pool for no sharding", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_no_sharding_skip_real_conn, "false", "if enabled no sharding will use saved password check to skip real conn", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(need_release_after_tx, "false", "if enabled means release server session after transaction complete", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(session_pool_retry_interval, "1ms", "[0s,1d]", "session_pool_retry_interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(refresh_server_cont_num, "5", "[0,100]", "the num of refresh server cont, [0,1000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(create_conn_cont_num, "10", "[0,100]", "the num of create  conn cont, [0, 1000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(max_pending_num, "100000", "[0,1000000]", "the num of conn in pending list, [0, 100000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(session_pool_cont_delay_interval, "5ms", "[0s,1d]", "session_pool_cont_delay_interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(use_local_session_prop, "false", "if enabled means use_local_session prop", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(session_pool_default_min_conn, "0", "[0,10000]", "the num of min conn , [0, 100000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(session_pool_default_max_conn, "20", "[0,100000]", "the num of max conn , [0, 100000]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(session_pool_default_idle_timeout, "1800s", "[0s,1d]", "session_pool_default_idle_timeout, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(session_pool_default_blocking_timeout, "500ms", "[0ms,2s]", "session_pool_default_blocking_timeout, [0ms, 2s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(session_pool_default_prefill, "false", "session_pool_default_prefill", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(session_pool_stat_log_ratio, "9000", "[0, 10000]", "the num when reach will log", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(session_pool_stat_log_interval, "1m", "[0s,1d]", "pool stat log interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // beyond trust sdk
-  DEF_STR(domain_name, "", "app domain name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(bt_server_addr, "", "beyond trust server address or hostname", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(bt_retry_times, "3", "[0,100]", "beyond trust sdk retry times", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(bt_mode, "", "beyond trust mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_STR(citadel_agent_ip, "", "bkmi citadel agent ip", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR(domain_name, "", "app domain name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(bt_server_addr, "", "beyond trust server address or hostname", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(bt_retry_times, "3", "[0,100]", "beyond trust sdk retry times", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(bt_mode, "", "beyond trust mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(citadel_agent_ip, "", "bkmi citadel agent ip", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
-  // proxyro@sys and root@proxysys passwd
-  DEF_STR(inspector_password, "", "password for inspector user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(obproxy_sys_password, "", "password for obproxy sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(observer_sys_password, "", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(observer_sys_password1, "", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  // proxyro@sys和root@proxysys passwd
+  DEF_STR(inspector_password, "de6d44e0bb589f8044f6dde47d870569c31dbcec", "password for inspector user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(obproxy_sys_password, "f0455d5edb4833fa2e91762e71b61bc35d45cf0b", "password for obproxy sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(observer_sys_password, "ee0e5138c912aed80b683c05303684be347ce81d", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(observer_sys_password1, "ee0e5138c912aed80b683c05303684be347ce81d", "password for observer sys user", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
-  // performance_mode has two functions: competition and verification, it will turn off some auxiliary functions,
-  // but these functions are required in production; another case is to verify whether the optimization method is effective
-  DEF_BOOL(enable_performance_mode, "false", "if enabled, for performance situation", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_trace, "true", "if enabled, log will print trace info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_stat, "true", "if enabled, will collect stat info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  // performance_mode有两个作用：比赛和验证，它会关闭一些辅助功能，但在生产中这些功能是需要的；另外一种情况是验证优化手段是否有效
+  DEF_BOOL(enable_performance_mode, "false", "if enabled, for performance situation", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_trace, "true", "if enabled, log will print trace info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_stat, "true", "if enabled, will collect stat info", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_INT(digest_sql_length, "1024", "0 means use default print sql len, otherwise is digest_sql_length", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_INT(digest_sql_length, "1024", "0 means use default print sql len, otherwise is digest_sql_length", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_INT(obproxy_read_only, "1", "[0,1]", "read write type: 0 means ReadOnly, 1 means ReadWrite", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(obproxy_read_consistency, "0", "[0,1]", "request target: 0 means leader; 1 means follower", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_INT(obproxy_force_parallel_query_dop, "1", "[1,]", "set observer _force_parallel_query_dop variables", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_INT(obproxy_read_only, "1", "[0,1]", "read write type: 0 means ReadOnly, 1 means ReadWrite", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_INT(obproxy_read_consistency, "0", "[0,1]", "request target: 0 means leader; 1 means follower", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_INT(obproxy_force_parallel_query_dop, "1", "[1,]", "set observer _force_parallel_query_dop variables", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
-  DEF_BOOL(enable_global_ps_cache, "true", "if enabled, use global ps cache", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_BOOL(enable_global_ps_cache, "true", "if enabled, use global ps cache", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_BOOL(enable_read_write_split, "false", "if enabled, use read write split mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_BOOL(enable_transaction_split, "false", "if enabled, support transaction split", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-
-  DEF_STR_LIST(weak_read_user_list, "", "weak read for list of users, format user1;user2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_read_write_split, "false", "if enabled, use read write split mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_transaction_split, "false", "if enabled, support transaction split", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
   // binlog service
-  DEF_STR(binlog_service_ip, "", "binlog service ip, format ip1:sql_port1", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
-  DEF_STR(init_sql, "", "proxy will send init sql to observer after login success", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(binlog_service_ip, "", "binlog service ip/hostname list, format ip1:sql_port1;hostname2:sql_port2, separate with ';'. prefer to use the forward", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(init_sql, "", "proxy will send init sql to observer after login success", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
   // session info verification with server
-  DEF_BOOL(enable_session_info_verification, "false", "if enabled, obproxy will send last server session info to the observer which is different to the last server session for session verification", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_BOOL(enable_session_info_verification, "false", "if enabled, obproxy will send last server session info to the observer which is different to the last server session for session verification", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // weak read stale reroute
-  DEF_TIME(read_stale_retry_interval, "5s", "[0, 600s]", "read stale retry interval", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(ob_max_read_stale_time, "-1", "[-1,]", "max read stale time, unit us, -1 means close server read stale check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_TIME(read_stale_remove_interval, "6h", "[0s, 1d]", "read stale feedback remove interval", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(connection_diagnosis_option, "3", "[0,3]", "connection diagnosis control, bit 1: record connection diagnosis log, bit 2: try to build error packet while proxy internal error occurred", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
-  DEF_INT(client_session_id_version, "1", "[1,2]","client session id version", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_TIME(read_stale_retry_interval, "5s", "[0, 600s]", "read stale retry interval", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
+  DEF_INT(ob_max_read_stale_time, "-1", "[-1,]", "max read stale time, unit us, -1 means close server read stale check", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
+  DEF_TIME(read_stale_remove_interval, "6h", "[0s, 1d]", "read stale feedback remove interval", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(connection_diagnosis_option, "3", "[0,3]", "connection diagnosis control, bit 1: record connection diagnosis log, bit 2: try to build error packet while proxy internal error occurred", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(client_session_id_version, "1", "[1,2]","client session id version", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   #ifdef ERRSIM
-  DEF_STR(error_inject, "", "proxy error inject config, format 'err_no,error_code,occur,frequency;err_no,error_code,occur,frequency;'", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+  DEF_STR(error_inject, "", "proxy error inject config, format 'err_no,error_code,occur,frequency;err_no,error_code,occur,frequency;'", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   #endif
+
+  // RPC Service
+  DEF_BOOL(enable_obproxy_rpc_service, "true", "enable obproxy rpc service or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_listen_port, "2885", "(1024,65536)", "obproxy rpc service listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_request_server_entry_max_retries, "3", "[1,)", "retry times when rpc request failed in server table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_support_key_partition_shard_request, "false", "support shard request for key partition table", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_srv_session_pool_inactive_timeout, "30s", "[0s,1d]", "rpc server session inactive timeout, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_force_srv_black_list, "false", "enable force black list for rpc service for table login route, false", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_direct_expire_route_entry, "false", "enable force expire route entry directly when route failed, false", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_max_server_table_entry_num, "10", "[1,)", "the number of server table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_max_request_batch_size, "20", "[1,)", "the maximum number of requests in one batch", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_max_response_batch_size, "20", "[1,)", "the maximum number of response in one batch", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_request_timeout, "5000000", "[0,)", "rpc resquest timeout, unit is us, default 5000000us, 0 means no timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_net_timeout_base, "5", "[0,)", "rpc network timeout base, controls the overall network timeout time, defaults to 1 bytes/5ms, and the timeout time for 400 bytes of data is 2 seconds", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_reroute, "true", "rpc request enable handle the move response for rpc request reroute", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_congestion, "false", "rpc request enable congestion feature or not for write request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_server_net_invalid_time_us, "10000000", "rpc server net invalid time us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_server_net_max_pending_request, "10", "rpc server net max pending request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_global_index, "false", "rpc request enable global index route for query request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_retry_request_info_log, "true", "rpc request enable to print detail log information if has retried by OBProxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_request_timeout_delta, "500ms", "[0ms,30s]", "rpc request delta timeout value handle in obproxy, [0ms, 30s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_period_task_interval, "600s", "[1ms,1d]", "rpc request period task interval, [1ms, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_server_net_handler_expire_time, "1d", "[0s,]", "rpc server net handler expire time, [0s, ]",  CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_server_entry_expire_time, "1d", "[0s,]", "rpc server entry expire time, [0s, ]",  CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_request_retry_waiting_time, "1ms", "[0ms,10s]", "rpc request retry waiting time, [0ms, 10s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_ctx_expire_time, "1d", "[0,]", "rpc context expire time, 0 means never expire, rpc context will be deleted if it has not been accessed for more than the time,[0, ]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_async_pull_batch_tablets, "false", "if enabled, will async pull batch tablet ids from remote", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_async_pull_batch_max_size, "10", "[2,50]", "max batch size for async pull, [2, 50]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_async_pull_batch_max_times, "0", "[0,)", "max batch fetch times for single entry cont", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_async_pull_batch_wait_interval, "10ms", "[1ms, 1s]", "wait interval for async batch pull, [1ms, 1s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_sub_req_max_retries, "10", "[0, 50]", "rpc sub request max retry times when sub request failed", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  // 以下是废弃、无用的配置，统一放在下面
+  DEF_INT(max_connections, "60000", "(128,65535]", "max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(qa_mode_mock_public_cloud_vid, "1", "[1,102400]", "mock public cloud vid", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_request_max_retries, "300", "[1,)", "retry times when rpc request failed in error partition lookup", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR_LIST(rpc_force_srv_black_list, "", "a list of servers not passed the login request, format ip1:rpc_port1;ip2:rpc_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 };
 
 ObProxyConfig &get_global_proxy_config();

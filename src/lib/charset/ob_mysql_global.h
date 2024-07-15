@@ -79,7 +79,7 @@
 #include <crypt.h>
 
 #include <assert.h>
-
+#include <stdbool.h>
 
 
 #if defined(_lint) || defined(FORCE_INIT_OF_VARS) || \

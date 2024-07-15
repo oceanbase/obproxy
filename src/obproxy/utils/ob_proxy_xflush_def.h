@@ -85,6 +85,15 @@ inline const char *get_xflush_error_name(const int error)
 #define XFH_SQL_FLOW_CTL        "SQL_FLOW_CTL"
 #define XFH_SQL_PARTITION_MISS  "SQL_PARTITION_MISS"
 
+// RPC
+#define XFH_RPC_SLOW_TRX        "RPC_SLOW_TRX" //unused
+#define XFH_RPC_SLOW_QUERY      "RPC_SLOW_QUERY"
+#define XFH_RPC_SLOW_PROCESS    "RPC_SLOW_PROCESS"
+#define XFH_RPC_NOT_SUPPORT     "RPC_NOT_SUPPORT"
+#define XFH_RPC_ERROR_RESP      "RPC_ERROR_RESP"
+#define XFH_RPC_FLOW_CTL        "RPC_FLOW_CTL"
+#define XFH_RPC_PARTITION_MISS  "RPC_PARTITION_MISS"
+
 // CONNECTION
 #define XFH_CONNECTION_CLIENT_ABORT      "CONNECTION_CLIENT_ABORT"
 #define XFH_CONNECTION_SERVER_ABORT      "CONNECTION_SERVER_ABORT"
@@ -102,6 +111,7 @@ inline const char *get_xflush_error_name(const int error)
 #define XFH_CLUSTER_RESOURCE_STATE  "CLUSTER_RESOURCE_STATE"
 #define XFH_LOCK_STATE              "LOCK_STATE"
 #define XFH_WARNING_STATE           "WARNING_STATE"
+#define XFH_RPC_STATE               "RPC_STATE"
 
 } // end of namespace obproxy
 } // end of namespace oceanbase

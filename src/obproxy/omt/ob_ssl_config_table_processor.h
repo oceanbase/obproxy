@@ -62,8 +62,8 @@ public:
   void inc_index();
   void handle_delete();
   int set_ssl_config(const common::ObString &cluster_name, const common::ObString &tenant_name,
-                     const common::ObString &name, const common::ObString &value);
-  int delete_ssl_config(common::ObString &cluster_name, common::ObString &tenant_name);
+                     const common::ObString &name, const common::ObString &value, const bool need_to_backup);
+  int delete_ssl_config(common::ObString &cluster_name, common::ObString &tenant_name, const bool need_to_backup);
   bool is_ssl_key_info_valid(const common::ObString &cluster_name, const common::ObString &tenant_name);
   void print_config();
 private:

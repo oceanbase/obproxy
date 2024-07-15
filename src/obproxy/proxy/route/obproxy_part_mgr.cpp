@@ -22,6 +22,7 @@
 #include "utils/ob_proxy_utils.h"
 #include "proxy/route/obproxy_expr_calculator.h"
 #include "proxy/route/ob_server_route.h"
+#include "lib/utility/ob_ls_id.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::share::schema;
@@ -189,6 +190,27 @@ int ObProxyPartMgr::get_first_part(ObNewRange &range,
   return ret;
 }
 
+int ObProxyPartMgr::get_first_part_for_obkv(common::ObNewRange &range,
+                                            common::ObIAllocator &allocator,
+                                            common::ObIArray<int64_t> &part_ids,
+                                            common::ObPartDescCtx &ctx,
+                                            common::ObIArray<int64_t> &tablet_ids,
+                                            common::ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_NOT_NULL(first_part_desc_)) {
+    ret = first_part_desc_->get_part_for_obkv(range, allocator, part_ids, ctx, tablet_ids, ls_ids);
+  } else {
+    ret = OB_INVALID_ARGUMENT;
+  }
+
+  if (OB_FAIL(ret)) {
+    LOG_DEBUG("fail to get part", K_(first_part_desc), K(ret));
+  }
+  return ret;
+}
+
 int ObProxyPartMgr::get_sub_part_desc_by_first_part_id(const bool is_template_table,
                                                        const int64_t first_part_id,
                                                        ObPartDesc *&sub_part_desc_ptr,
@@ -274,7 +296,29 @@ int ObProxyPartMgr::get_sub_part(ObNewRange &range,
   return ret;
 }
 
-int ObProxyPartMgr::get_sub_part_by_random(const int64_t rand_num,
+int ObProxyPartMgr::get_sub_part_for_obkv(ObNewRange &range,
+                                          ObIAllocator &allocator,
+                                          ObPartDesc *sub_part_desc_ptr,
+                                          ObIArray<int64_t> &part_ids,
+                                          ObPartDescCtx &ctx,
+                                          ObIArray<int64_t> &tablet_ids,
+                                          ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_ISNULL(sub_part_desc_ptr)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("fail to get sub part, null ptr", K(ret));
+  } else {
+    if (OB_FAIL(sub_part_desc_ptr->get_part_for_obkv(range, allocator, part_ids, ctx, tablet_ids, ls_ids))) {
+      LOG_WDIAG("fail to get sub part", K(sub_part_desc_ptr), K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyPartMgr::get_sub_part_by_random(const int64_t rand_num, 
                                            ObPartDesc *sub_part_desc_ptr,
                                            ObIArray<int64_t> &part_ids,
                                            ObIArray<int64_t> &tablet_ids)
@@ -329,6 +373,9 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_hash->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("part mgr reach memory limit, alloc tablet id array failed", K(ret), K(part_num));
+  } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_hash->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
+    ret = OB_REACH_MEMORY_LIMIT;
+    LOG_WDIAG("part mgr reach memory limit, alloc ls id array failed", K(ret), K(part_num));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(part_array = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("part mgr reach memory limit, alloc part array failed", K(ret), K(part_num));
@@ -349,9 +396,12 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
 
             if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
               int64_t tablet_id = -1;
+              int64_t ls_id = ObLSID::INVALID_LS_ID;
               part_array[i] = part_id_buf[i];
               PROXY_EXTRACT_INT_FIELD_MYSQL(*rs_fetcher, "tablet_id", tablet_id, int64_t);
+              PROXY_EXTRACT_INT_FIELD_MYSQL(*rs_fetcher, "ls_id", ls_id, int64_t);
               desc_hash->tablet_id_array_[i] = tablet_id;
+              desc_hash->ls_id_array_[i] = ls_id;
               if ((tablet_id != -1) && (tablet_id != 0)) {
                 part_id_buf[i] = tablet_id;
               }
@@ -481,9 +531,14 @@ int ObProxyPartMgr::build_sub_hash_part_with_non_template(const bool is_oracle_m
   int64_t index=0;
   for (int64_t i = 0; i < first_part_num_ && OB_SUCC(ret); ++i) {
     desc_hash = (((ObPartDescHash *)sub_part_desc) + i);
-    if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_hash->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
-      ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WDIAG("allocator alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
+    if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      if (OB_ISNULL(desc_hash->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
+        ret = OB_REACH_MEMORY_LIMIT;
+        LOG_WDIAG("allocator alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
+      } else if (OB_ISNULL(desc_hash->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(ino64_t) * sub_part_num_[i]))) {
+        ret = OB_REACH_MEMORY_LIMIT;
+        LOG_WDIAG("allocator alloc ls id array failed", K(ret), K(sub_part_num_[i]));
+      }
     }
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
@@ -495,6 +550,7 @@ int ObProxyPartMgr::build_sub_hash_part_with_non_template(const bool is_oracle_m
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_name", sub_part_name);
         if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
           PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", desc_hash->tablet_id_array_[j], int64_t);
+          PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "ls_id", desc_hash->ls_id_array_[j], int64_t);
         }
         if (sub_part_name.length() <= MAX_PART_NAME_LENGTH) {
           MEMCPY(name_buf[index], sub_part_name.ptr(), sub_part_name.length());
@@ -585,6 +641,9 @@ int ObProxyPartMgr::build_key_part(const ObPartitionLevel part_level,
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_key->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("part mgr reach memory limit", K(ret), K(part_num));
+  } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_key->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
+    ret = OB_REACH_MEMORY_LIMIT;
+    LOG_WDIAG("part mgr reach memory limit", K(ret), K(part_num));
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(part_array = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("fail to alloc part array", K(ret), K(part_num));
@@ -605,9 +664,12 @@ int ObProxyPartMgr::build_key_part(const ObPartitionLevel part_level,
 
             if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
               int64_t tablet_id = -1;
+              int64_t ls_id = ObLSID::INVALID_LS_ID;
               part_array[i] = part_id_buf[i];
               PROXY_EXTRACT_INT_FIELD_MYSQL(*rs_fetcher, "tablet_id", tablet_id, int64_t);
+              PROXY_EXTRACT_INT_FIELD_MYSQL(*rs_fetcher, "ls_id", ls_id, int64_t);
               desc_key->tablet_id_array_[i] = tablet_id;
+              desc_key->ls_id_array_[i] = ls_id;
               if ((tablet_id != -1) && (tablet_id != 0)) {
                 part_id_buf[i] = tablet_id;
               }
@@ -734,9 +796,14 @@ int ObProxyPartMgr::build_sub_key_part_with_non_template(const ObPartitionFuncTy
   int64_t index=0;
   for (int64_t i = 0; i < first_part_num_ && OB_SUCC(ret); ++i) {
     desc_key = (((ObPartDescKey *)sub_part_desc) + i);
-    if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_key->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
-      ret = OB_REACH_MEMORY_LIMIT;
-      LOG_WDIAG("allocate tablet id array failed", K(ret), K(sub_part_num_[i]));
+    if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+      if (OB_ISNULL(desc_key->tablet_id_array_ = (int64_t *)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
+        ret = OB_REACH_MEMORY_LIMIT;
+        LOG_WDIAG("allocate tablet id array failed", K(ret), K(sub_part_num_[i]));
+      } else if (OB_ISNULL(desc_key->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
+        ret = OB_REACH_MEMORY_LIMIT;
+        LOG_WDIAG("allocate ls id array failed", K(ret), K(sub_part_num_[i]));
+      }
     }
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
@@ -748,6 +815,7 @@ int ObProxyPartMgr::build_sub_key_part_with_non_template(const ObPartitionFuncTy
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_name", sub_part_name);
         if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
           PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", desc_key->tablet_id_array_[j], int64_t);
+          PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "ls_id", desc_key->ls_id_array_[j], int64_t);
         }
         if (sub_part_name.length() <= MAX_PART_NAME_LENGTH) {
           MEMCPY(name_buf[index], sub_part_name.ptr(), sub_part_name.length());
@@ -836,6 +904,9 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_range->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("part mgr reach memory limit", K(ret));
+  } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_range->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
+    ret = OB_REACH_MEMORY_LIMIT;
+    LOG_WDIAG("part mgr reach memory limit", K(ret));
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(RangePartition) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("part mgr reach memory limit", K(ret));
@@ -866,8 +937,11 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
         part_id_buf[i] = part_array[i].part_id_;
         if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
           int64_t tablet_id = -1;
+          int64_t ls_id = ObLSID::INVALID_LS_ID;
           PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", tablet_id, int64_t);
+          PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "ls_id", ls_id, int64_t);
           desc_range->tablet_id_array_[i] = tablet_id;
+          desc_range->ls_id_array_[i] = ls_id;
           if ((tablet_id != -1) && (tablet_id != 0)) {
             part_id_buf[i] = tablet_id;
           }
@@ -899,6 +973,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
         ret = OB_INVALID_ARGUMENT;
       }
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "high_bound_val_bin", tmp_str);
+      LOG_DEBUG("get high bound val bin", K(tmp_str));
 
       pos = 0;
       if (OB_FAIL(ret)) {
@@ -908,6 +983,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
         LOG_WDIAG("fail to deserialize", K(tmp_str), K(ret));
       } else {
         // do nothing
+        LOG_DEBUG("get high bound val rowkey", "high_bound_val", part_array[i].high_bound_val_);
       }
     }
   } // end of for
@@ -1004,6 +1080,9 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
     } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_range->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
       LOG_WDIAG("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
+    } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_range->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
+      ret = OB_REACH_MEMORY_LIMIT;
+      LOG_WDIAG("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
     }
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
@@ -1016,6 +1095,7 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
 
         if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
           PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", desc_range->tablet_id_array_[j], int64_t);
+          PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "ls_id", desc_range->ls_id_array_[j], int64_t);
         }
 
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_name", sub_part_name);
@@ -1111,6 +1191,9 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
   } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_list->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("part mgr reach memory limit, alloc tablet id array failed", K(ret));
+  } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_list->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * part_num))) {
+    ret = OB_REACH_MEMORY_LIMIT;
+    LOG_WDIAG("part mgr reach memory limit, alloc ls id array failed", K(ret));
   } else if (OB_ISNULL(tmp_buf = allocator_.alloc(sizeof(ListPartition) * part_num))) {
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("part mgr reach memory limit", K(ret));
@@ -1144,8 +1227,11 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
         part_id_buf[i] = part_array[i].part_id_;
         if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
           int64_t tablet_id = -1;
+          int64_t ls_id = ObLSID::INVALID_LS_ID;
           PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", tablet_id, int64_t);
+          PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "ls_id", ls_id, int64_t);
           desc_list->tablet_id_array_[i] = tablet_id;
+          desc_list->ls_id_array_[i] = ls_id;
           if ((tablet_id != -1) && (tablet_id != 0)) {
             part_id_buf[i] = tablet_id;
           }
@@ -1295,7 +1381,11 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
     } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_list->tablet_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
       ret = OB_REACH_MEMORY_LIMIT;
       LOG_WDIAG("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
+    } else if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && OB_ISNULL(desc_list->ls_id_array_ = (int64_t*)allocator_.alloc(sizeof(int64_t) * sub_part_num_[i]))) {
+      ret = OB_REACH_MEMORY_LIMIT;
+      LOG_WDIAG("alloc tablet id array failed", K(ret), K(sub_part_num_[i]));
     }
+
 
     for (int64_t j = 0; j < sub_part_num_[i] && OB_SUCC(ret); ++j) {
       if (OB_FAIL(rs_fetcher.next()) || index >= all_sub_part_num_) {
@@ -1307,6 +1397,7 @@ int ObProxyPartMgr::build_sub_list_part_with_non_template(const ObPartitionFuncT
 
         if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
           PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tablet_id", desc_list->tablet_id_array_[j], int64_t);
+          PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "ls_id", desc_list->ls_id_array_[j], int64_t);
         }
 
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_name", sub_part_name);

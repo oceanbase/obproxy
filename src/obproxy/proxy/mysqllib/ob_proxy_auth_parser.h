@@ -17,7 +17,7 @@
 #include "obutils/ob_proxy_sql_parser.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
-#include "proxy/mysqllib/ob_mysql_resp_analyzer.h"
+#include "proxy/mysqllib/ob_resp_packet_analyze_result.h"
 
 namespace oceanbase
 {

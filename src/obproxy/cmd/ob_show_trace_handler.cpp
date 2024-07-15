@@ -65,7 +65,7 @@ int ObShowTraceHandler::dump_trace_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(TRACE_COLUMN_ARRAY, OB_TC_MAX_TRACE_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -92,7 +92,7 @@ int ObShowTraceHandler::dump_trace(const ObMysqlClientSession &cs)
       for (i = 0; i < block->next_idx_ && i < ObTraceBlock::TRACE_BLOCK_ENTRIES && OB_SUCC(ret); ++i) {
         if (need_show_all || block->stats_[i].attempts_ == attempt_limit_) {
           if (OB_FAIL(dump_trace_item(block->stats_[i]))) {
-            WARN_ICMD("fail to dump_trace_item", "stat", block->stats_[i], K(ret));
+            WDIAG_ICMD("fail to dump_trace_item", "stat", block->stats_[i], K(ret));
           }
         }
       }
@@ -104,7 +104,7 @@ int ObShowTraceHandler::dump_trace(const ObMysqlClientSession &cs)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret));
+      WDIAG_ICMD("fail to encode eof packet", K(ret));
     } else {
       DEBUG_ICMD("succ to dump_trace", KPC(stats), K(attempt_limit_));
     }
@@ -134,7 +134,7 @@ int ObShowTraceHandler::dump_trace_item(const ObTraceRecord &item)
   row.cells_ = cells;
   row.count_ = OB_TC_MAX_TRACE_COLUMN_ID;
   if (OB_FAIL(encode_row_packet(row))) {
-    WARN_ICMD("fail to encode row packet", K(item), K(row), K(ret));
+    WDIAG_ICMD("fail to encode row packet", K(item), K(row), K(ret));
   } else {
     DEBUG_ICMD("succ to encode row packet", K(item));
   }
@@ -150,25 +150,25 @@ int ObShowTraceHandler::handle_trace(int event, void *data)
   bool is_proxy_conn_id = true;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_trace_header())) {
-    WARN_ICMD("fail to dump trace header, try to do internal_error_callback", K(ret));
+    WDIAG_ICMD("fail to dump trace header, try to do internal_error_callback", K(ret));
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+    WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
   } else {
     if (!is_conn_id_avail(cs_id_, is_proxy_conn_id)) {
       int errcode = OB_UNKNOWN_CONNECTION; //not found the specific session
-      WARN_ICMD("cs_id is not avail", K(cs_id_), K(errcode));
+      WDIAG_ICMD("cs_id is not avail", K(cs_id_), K(errcode));
       if (OB_FAIL(encode_err_packet(errcode, cs_id_))) {
-        WARN_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
+        WDIAG_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
       }
     } else {
       if (is_proxy_conn_id) {
         //connection id got from obproxy
         int64_t thread_id = -1;
         if (OB_FAIL(extract_thread_id(static_cast<uint32_t>(cs_id_), thread_id))) {
-          WARN_ICMD("fail to extract thread id, it should not happen", K(cs_id_), K(ret));
+          WDIAG_ICMD("fail to extract thread id, it should not happen", K(cs_id_), K(ret));
         } else if (thread_id == ethread->id_) {
           need_callback = false;
           event_ret = handle_cs_with_proxy_conn_id(EVENT_NONE, data);
@@ -176,7 +176,7 @@ int ObShowTraceHandler::handle_trace(int event, void *data)
           SET_HANDLER(&ObInternalCmdHandler::handle_cs_with_proxy_conn_id);
           if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][thread_id]->schedule_imm(this))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            ERROR_ICMD("fail to schedule self", K(thread_id), K(ret));
+            EDIAG_ICMD("fail to schedule self", K(thread_id), K(ret));
           } else {
             need_callback = false;
           }
@@ -186,7 +186,7 @@ int ObShowTraceHandler::handle_trace(int event, void *data)
         SET_HANDLER(&ObInternalCmdHandler::handle_cs_with_server_conn_id);
         if (OB_ISNULL(ethread->schedule_imm(this))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          ERROR_ICMD("fail to schedule self", K(ret));
+          EDIAG_ICMD("fail to schedule self", K(ret));
         } else {
           need_callback = false;
         }
@@ -214,15 +214,15 @@ static int show_trace_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowTraceHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowTraceHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowTraceHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowSessionHandler");
+    WDIAG_ICMD("fail to init for ObShowSessionHandler");
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+    WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
   } else {
     if (-1 == handler->cs_id_) {
       handler->cs_id_ = info.session_priv_->cs_id_;
@@ -230,7 +230,7 @@ static int show_trace_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info
     action = &handler->get_action();
     if (OB_ISNULL(ethread->schedule_imm(handler, ET_NET))) {// use work thread
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObShowTraceHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObShowTraceHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObShowTraceHandler");
@@ -248,7 +248,7 @@ int show_trace_cmd_init()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_TRACE, &show_trace_cmd_callback))) {
-    WARN_ICMD("fail to CMD_TYPE_TRACE", K(ret));
+    WDIAG_ICMD("fail to CMD_TYPE_TRACE", K(ret));
   }
   return ret;
 }

@@ -19,6 +19,7 @@
 #include "obutils/ob_proxy_config.h"
 #include "proxy/client/ob_mysql_proxy.h"
 #include "ob_proxy_init.h"
+#include "omt/ob_proxy_config_table_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy;
@@ -559,38 +560,33 @@ int ObProxyConfigUtils::dump2file(const ObProxyConfig &proxy_config)
   return ret;
 }
 
-int ObProxyConfigUtils::load_config_from_file(ObProxyConfig &proxy_config)
+int ObProxyConfigUtils::load_config_from_sqlite(ObProxyConfig &proxy_config)
 {
   int ret = OB_SUCCESS;
-  char *buf = NULL;
-  int64_t read_len = 0;
-  int64_t pos = 0;
-  ObMemAttr mem_attr;
-  mem_attr.mod_id_ = ObModIds::OB_PROXY_FILE;
+  sqlite3 *proxy_config_db = get_global_config_processor().get_sqlite_db();
 
-  if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(OB_PROXY_CONFIG_BUFFER_SIZE, mem_attr)))) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WDIAG("ob tc malloc memory for buf fail", K(ret));
-  // If it is a rich client mode, the configuration will not be read from the local file
-  } else if (RUN_MODE_PROXY == g_run_mode
-             && OB_FAIL(ObProxyFileUtils::read(CFG_DUMP_NAME, buf, OB_PROXY_CONFIG_BUFFER_SIZE, read_len))) {
-    // no need to print warn log, the caller will do it
-  } else {
-    obsys::CWLockGuard guard(proxy_config.rwlock_);
-    if (OB_FAIL(proxy_config.deserialize(buf, read_len, pos))) {
-      LOG_WDIAG("fail to deserialize proxy config", K(ret));
-    } else if (OB_UNLIKELY(pos != read_len)) {
-      ret = OB_DESERIALIZE_ERROR;
-      LOG_WDIAG("deserialize proxy config failed", K(ret));
+  // 如果没有db库，则使用ob_proxy_config的默认配置（默认构造中生成）
+  if (OB_ISNULL(proxy_config_db)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexcept null pointer from sqlite", K(ret));
+  } else if (RUN_MODE_PROXY == g_run_mode) {
+    const char *select_sql = "select name, value from proxy_config where "
+                             "config_level = 'LEVEL_GLOBAL'";
+    char *err_msg = NULL;
+    if (SQLITE_OK != sqlite3_exec(proxy_config_db, select_sql,
+                     ObProxyConfig::load_sqlite_config_init_callback,
+                     &proxy_config, &err_msg)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to exec sql to sqlite", K(ret), "err_msg", err_msg);
     } else {
+      obsys::CWLockGuard guard(proxy_config.rwlock_);
       proxy_config.set_app_name(proxy_config.app_name);
     }
-  }
+    if (OB_NOT_NULL(err_msg)) {
+      sqlite3_free(err_msg);
+    }
+   }
 
-  if (OB_LIKELY(NULL != buf)) {
-    ob_free(buf);
-    buf = NULL;
-  }
   return ret;
 }
 
