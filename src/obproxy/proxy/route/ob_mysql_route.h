@@ -35,9 +35,14 @@ class ObPartitionEntry;
 class ObProxyMysqlRequest;
 class ObClientSessionInfo;
 class ObServerRoute;
+class ObRpcReq;
 
 class ObRouteDiagnosis;
 typedef int (ObMysqlRoute::*MysqlRouteHandler)(int event, void *data);
+enum ObRouteSource {
+  OB_PROXY_ROUTE_FOR_SQL = 0,
+  OB_RPOXY_ROUTE_FOR_RPC
+};
 
 class ObMysqlRouteResult
 {
@@ -46,7 +51,8 @@ public:
     : table_entry_(NULL), part_entry_(NULL),
       is_table_entry_from_remote_(false),
       is_partition_entry_from_remote_(false),
-      has_dup_replica_(false) {}
+      has_dup_replica_(false),
+      rpc_calc_error_(false), rpc_error_code_(OB_SUCCESS) {}
   ~ObMysqlRouteResult() {}
   void reset();
   void ref_reset();
@@ -57,6 +63,8 @@ public:
   bool is_table_entry_from_remote_;
   bool is_partition_entry_from_remote_;
   bool has_dup_replica_;
+  bool rpc_calc_error_;
+  int64_t rpc_error_code_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObMysqlRouteResult);
 };
@@ -68,6 +76,8 @@ inline void ObMysqlRouteResult::reset()
   is_table_entry_from_remote_ = false;
   is_partition_entry_from_remote_ = false;
   has_dup_replica_ = false;
+  rpc_calc_error_ = false;
+  rpc_error_code_ = OB_SUCCESS;
 }
 
 inline void ObMysqlRouteResult::ref_reset()
@@ -83,6 +93,8 @@ inline void ObMysqlRouteResult::ref_reset()
   is_table_entry_from_remote_ = false;
   is_partition_entry_from_remote_ = false;
   has_dup_replica_ = false;
+  rpc_calc_error_ = false;
+  rpc_error_code_ = OB_SUCCESS;
 }
 
 class ObRouteParam
@@ -93,7 +105,8 @@ public:
       is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false),
       is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(NULL),
       route_(NULL), cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
-      cluster_version_(0), route_diagnosis_(NULL), binlog_service_ip_(), cr_(NULL) {}
+      cluster_version_(0), ob_rpc_req_(NULL), src_type_(OB_PROXY_ROUTE_FOR_SQL), route_diagnosis_(NULL),
+      binlog_service_ip_(), cr_(NULL) {}
   ~ObRouteParam() { reset(); }
 
   void set_route_diagnosis(ObRouteDiagnosis *route_diagnosis);
@@ -126,6 +139,8 @@ public:
   common::ObString current_idc_name_;
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
   int64_t cluster_version_;
+  ObRpcReq *ob_rpc_req_;
+  ObRouteSource src_type_;
   ObRouteDiagnosis *route_diagnosis_;
   common::ObString binlog_service_ip_;
 
@@ -166,6 +181,7 @@ inline void ObRouteParam::reset()
   set_cluster_resource(NULL);
   current_idc_name_.reset();
   cluster_version_ = 0;
+  ob_rpc_req_ = NULL;
   binlog_service_ip_.reset();
   set_route_diagnosis(NULL);
 }
@@ -196,6 +212,7 @@ public:
 
     ROUTE_ACTION_UNEXPECTED_NOOP,
   };
+
 
   ObMysqlRoute();
   virtual ~ObMysqlRoute() {}
@@ -228,6 +245,7 @@ private:
   void handle_routine_entry_lookup_done();
 
   void setup_route_sql_parse();
+  void setup_route_rpc_request();
   int state_route_sql_parse(int event, void *data);
   void handle_route_sql_parse_done();
 
@@ -236,6 +254,7 @@ private:
   void handle_table_entry_lookup_done();
 
   void setup_partition_id_calc();
+  void setup_partition_id_calc_for_rpc();
   int state_partition_id_calc(int event, void *data);
   void handle_partition_id_calc_done();
 
@@ -287,6 +306,7 @@ private:
 
   MysqlRouteHandler default_handler_;
   int32_t reentrancy_count_;
+  ObRouteSource src_type_;  // for sql or for rpc or other later
 
   DISALLOW_COPY_AND_ASSIGN(ObMysqlRoute);
 };

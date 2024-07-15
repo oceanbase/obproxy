@@ -140,7 +140,7 @@ void ObProxyBaseConfig::destroy_config_container()
   ObConfigContainer::const_iterator it = container_.begin();
   for (; it != container_.end(); ++it) {
     if (OB_NOT_NULL(it->second)) {
-      delete it->second;
+      it->second->free();
     }
   }
 }
@@ -344,7 +344,7 @@ int ObProxyBaseConfig::add_config_item(const ObString &name, const ObString &val
   }
 
   if (OB_FAIL(ret) && OB_NOT_NULL(new_item)) {
-    delete new_item; // new item was allocate by new in clone
+    new_item->free(); // item was allocate by op_alloc in clone
     new_item = NULL;
   }
   return ret;
@@ -1896,7 +1896,8 @@ int ObProxyConfigProcessor::update_global_proxy_config(const ObProxyAppConfig &n
   for (int64_t i = 0; i < old_global_config_items.count(); ++i) {
     ObConfigItem *&old_config_item = old_global_config_items.at(i);
     if (NULL != old_config_item) {
-     delete old_config_item;
+      old_config_item->free();
+      old_config_item = NULL;
     }
   }
   return ret;
@@ -1945,7 +1946,7 @@ int ObProxyConfigProcessor::do_update_global_proxy_config(const ObProxyBaseConfi
         LOG_WDIAG("fail to clone global app config item to new app item", K(key_string), K(ret));
       } else if (OB_FAIL(old_config_items.push_back(old_config_item))) {
         LOG_WDIAG("fail to push back old config item", K(key_string), K(ret));
-        delete old_config_item;
+        old_config_item->free();
         old_config_item = NULL;
       } else if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
         LOG_WDIAG("fail to update config", K(key_string), K(value_string), K(ret));

@@ -63,8 +63,8 @@ public:
   int init();
   bool can_ip_pass(const common::ObString &cluster_name, const common::ObString &tenant_name,
                    const common::ObString &user_name, const struct sockaddr& addr);
-  int set_ip_list(common::ObString &cluster_name, common::ObString &tenant_name, common::ObString &ip_list);
-  int delete_ip_list(common::ObString &cluster_name, common::ObString &tenant_name);
+  int set_ip_list(common::ObString &cluster_name, common::ObString &tenant_name, common::ObString &ip_list, const bool need_to_backup);
+  int delete_ip_list(common::ObString &cluster_name, common::ObString &tenant_name, const bool need_to_backup);
   void inc_index();
   void print_config();
   WhiteListHashMap& get_backup_hashmap() { return addr_hash_map_array_[(index_ + 1) % 2]; }

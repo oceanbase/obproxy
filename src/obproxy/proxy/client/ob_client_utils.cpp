@@ -101,7 +101,7 @@ int ObMysqlRequestParam::deep_copy(const ObMysqlRequestParam &other)
 void ObClientMysqlResp::reset()
 {
   analyzer_.reset();
-  mysql_resp_.reset();
+  resp_result_.reset();
   if (NULL != rs_fetcher_) {
     op_free(rs_fetcher_);
     rs_fetcher_ = NULL;
@@ -150,12 +150,12 @@ int ObClientMysqlResp::analyze_resp(const ObMySQLCmd cmd)
     LOG_WDIAG("not init", K_(is_inited), K(ret));
   } else {
     reset();
-    analyzer_.set_server_cmd(cmd, STANDARD_MYSQL_PROTOCOL_MODE, false, false);
+    analyzer_.init(cmd, STANDARD_MYSQL_PROTOCOL_MODE, false, false, true, false);
 
     if (response_reader_->read_avail() > 0) {
-      if (OB_FAIL(analyzer_.analyze_trans_response(*response_reader_, &mysql_resp_))) {
+      if (OB_FAIL(analyzer_.analyze_response(*response_reader_, resp_result_))) {
         LOG_WDIAG("fail to analyze_trans_response", K(ret));
-      } else if (!analyzer_.is_resp_completed()) {
+      } else if (!is_resp_completed()) {
         ret = OB_EAGAIN;
         LOG_INFO("response has not received complete", K(ret));
       } else {
@@ -207,7 +207,7 @@ int ObClientMysqlResp::get_resultset_fetcher(ObResultSetFetcher *&result)
   int ret = OB_SUCCESS;
   if (OB_ISNULL(rs_fetcher_)) {
     ret = OB_ENTRY_NOT_EXIST;
-    LOG_WDIAG("this response is not the resultset response", K_(mysql_resp), K(ret));
+    LOG_WDIAG("this response is not the resultset response", K_(resp_result), K(ret));
   } else {
     result = rs_fetcher_;
   }

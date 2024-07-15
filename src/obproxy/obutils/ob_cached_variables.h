@@ -36,6 +36,7 @@ enum ObCachedVariableType
   CACHED_INT_VAR_READ_CONSISTENCY,
   CACHED_INT_VAR_COLLATION_CONNECTION,
   CACHED_INT_VAR_NCHARACTER_SET_CONNECTION,
+  CACHED_INT_VAR_ENABLE_TRANSMISSION_CHECKSUM,
   CACHED_VAR_MAX,
 };
 
@@ -62,7 +63,6 @@ public:
   int64_t get_tx_read_only() const { return get_int_var(CACHED_INT_VAR_TX_READ_ONLY); }
   int64_t get_read_consistency() const { return get_int_var(CACHED_INT_VAR_READ_CONSISTENCY); }
   int64_t get_ncharacter_set_connection() const { return get_int_var(CACHED_INT_VAR_NCHARACTER_SET_CONNECTION); }
-
   const common::ObObj &get_query_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_QUERY_TIMEOUT); }
   const common::ObObj &get_collation_connection_obj() const { return get_obj_var(CACHED_INT_VAR_COLLATION_CONNECTION); }
   const common::ObObj &get_trx_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_TRX_TIMEOUT); }
@@ -75,6 +75,7 @@ public:
   const common::ObObj &get_read_consistency_obj() const { return get_obj_var(CACHED_INT_VAR_READ_CONSISTENCY); }
 
   bool need_use_lower_case_names() const { return common::OB_ORIGIN_AND_SENSITIVE != get_int_var(CACHED_INT_VAR_LOWER_CASE_TABLE_NAMES);}
+  bool get_enable_transmission_checksum() const { return 1 == get_int_var(CACHED_INT_VAR_ENABLE_TRANSMISSION_CHECKSUM); }
   ObSQLMode get_sql_mode() const { return cached_sql_mode_; }
   const common::ObString& get_tx_read_only_str() const { return tx_read_only_str_; }
 

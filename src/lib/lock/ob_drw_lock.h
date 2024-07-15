@@ -84,7 +84,7 @@ private:
   {
     ObLatch latch_;
   } CACHE_ALIGNED;
-  AlignedLatch latches_[OB_MAX_CPU_NUM];
+  AlignedLatch latches_[OB_PROXY_COMMON_THREAD_NUM];
   uint32_t latch_id_;
 private:
   DISALLOW_COPY_AND_ASSIGN(DRWLock);
@@ -95,12 +95,12 @@ private:
  */
 inline int DRWLock::rdlock()
 {
-  return latches_[get_itid() % OB_MAX_CPU_NUM].latch_.rdlock(latch_id_);
+  return latches_[get_itid() % OB_PROXY_COMMON_THREAD_NUM].latch_.rdlock(latch_id_);
 }
 
 inline int DRWLock::rdunlock()
 {
-  return latches_[get_itid() % OB_MAX_CPU_NUM].latch_.unlock();
+  return latches_[get_itid() % OB_PROXY_COMMON_THREAD_NUM].latch_.unlock();
 }
 
 inline int DRWLock::wrlock()
@@ -108,7 +108,7 @@ inline int DRWLock::wrlock()
   int ret = OB_SUCCESS;
   int tmp_ret = OB_SUCCESS;
   int64_t i = 0;
-  for (i = 0; i < OB_MAX_CPU_NUM; ++i) {
+  for (i = 0; i < OB_PROXY_COMMON_THREAD_NUM; ++i) {
     if (OB_FAIL(latches_[i].latch_.wrlock(latch_id_))) {
       COMMON_LOG(WDIAG, "Fail to lock latch, ", K(i), K(ret));
       break;
@@ -128,7 +128,7 @@ inline int DRWLock::wrunlock()
 {
   int ret = OB_SUCCESS;
   int tmp_ret = OB_SUCCESS;
-  for (int64_t i = OB_MAX_CPU_NUM - 1; i >= 0; --i) {
+  for (int64_t i = OB_PROXY_COMMON_THREAD_NUM - 1; i >= 0; --i) {
     if (OB_SUCCESS != (tmp_ret = latches_[i].latch_.unlock())) {
       ret = tmp_ret;
       COMMON_LOG(WDIAG, "Fail to unlock latch, ", K(i), K(tmp_ret));
@@ -139,7 +139,7 @@ inline int DRWLock::wrunlock()
 
 inline int DRWLock::try_rdlock()
 {
-  return latches_[get_itid() % OB_MAX_CPU_NUM].latch_.try_rdlock(latch_id_);
+  return latches_[get_itid() % OB_PROXY_COMMON_THREAD_NUM].latch_.try_rdlock(latch_id_);
 }
 
 inline int DRWLock::try_wrlock()
@@ -147,7 +147,7 @@ inline int DRWLock::try_wrlock()
   int ret = OB_SUCCESS;
   int tmp_ret = OB_SUCCESS;
   int64_t i = 0;
-  for (i = 0; i < OB_MAX_CPU_NUM; ++i) {
+  for (i = 0; i < OB_PROXY_COMMON_THREAD_NUM; ++i) {
     if (OB_FAIL(latches_[i].latch_.try_wrlock(latch_id_))) {
       COMMON_LOG(WDIAG, "Fail to try lock latch, ", K(i), K(ret));
       break;

@@ -621,7 +621,7 @@ int ObDataBaseAuth::get_user_priv_info(const ObString &username,
   for (int64_t i = 0; !found && i < up_array_.count(); ++i) {
     const ObShardUserPrivInfo &tmp_up_info = up_array_.at(i);
     if (username.case_compare(tmp_up_info.username_.config_string_) == 0
-        && ObProxyPbUtils::match_like(host, tmp_up_info.host_.config_string_)) {
+        && common::match_like(host, tmp_up_info.host_.config_string_)) {
       found = true;
       up_info.assign(tmp_up_info);
     }
@@ -1784,11 +1784,12 @@ int ObShardRule::get_physic_index(const SqlFieldResult &sql_result,
       } else {
         index = last_index;
       }
-    } else if (ret == OB_INVALID_ARGUMENT
-                  || ret == OB_INVALID_DATA
-                  || ret == OB_EXPR_CALC_ERROR) {
-       LOG_WDIAG("error to get physic index use rules", K(ret), "rule_index", i);
-       ret = OB_ERR_GET_PHYSIC_INDEX_BY_RULE;
+    } else if (OB_UNLIKELY(ret == OB_ERR_DISTRIBUTED_NOT_SUPPORTED)) {
+      // some error code is not need to be changed, nothing
+    } else {
+      // change error code when fail to cal physic index
+      LOG_WDIAG("error to get physic index use rules", K(ret), "rule_index", i);
+      ret = OB_ERR_GET_PHYSIC_INDEX_BY_RULE;
     }
   }
   return ret;

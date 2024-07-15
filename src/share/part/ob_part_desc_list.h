@@ -45,8 +45,20 @@ public:
                        ObIArray<int64_t> &part_ids,
                        ObPartDescCtx &ctx,
                        ObIArray<int64_t> &tablet_ids,
-                       int64_t &part_idx);
-  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids);
+                       int64_t &part_idx) override;
+  virtual int get_part_by_num(const int64_t num,
+                              ObIArray<int64_t> &part_ids,
+                              ObIArray<int64_t> &tablet_ids) override;
+  virtual int get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids) override;
+  virtual int get_part_for_obkv(ObNewRange &range,
+                                ObIAllocator &allocator,
+                                ObIArray<int64_t> &part_ids,
+                                ObPartDescCtx &ctx,
+                                ObIArray<int64_t> &tablet_ids,
+                                ObIArray<int64_t> &ls_ids) override;
+  virtual int get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
+                                       ObIArray<int64_t> &tablet_ids,
+                                       ObIArray<int64_t> &ls_ids) override;
   void set_default_part_array_idx(int64_t idx) { default_part_array_idx_ = idx; }
   int64_t get_default_part_array_idx() const { return default_part_array_idx_; }
   ListPartition *get_part_array() { return part_array_; }
@@ -60,6 +72,11 @@ public:
                ObNewRow &target_row,
                ObIAllocator &allocator,
                ObPartDescCtx &ctx);
+  
+  int cast_row_for_obkv(ObNewRow &src_row,
+                        ObNewRow &target_row,
+                        ObIAllocator &allocator,
+                        ObPartDescCtx &ctx);
 
   DECLARE_VIRTUAL_TO_STRING;
   virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const;

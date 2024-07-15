@@ -42,30 +42,30 @@ int ObKillOpHandler::handle_kill_option(int event, void *data)
   bool need_callback = true;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else {
     ObEThread *ethread = NULL;
     bool is_proxy_conn_id = true;
     if (need_privilege_check() && OB_FAIL(do_privilege_check(session_priv_, need_priv_, errcode))) {
-      WARN_ICMD("fail to do privilege check", K(errcode), K(ret));
+      WDIAG_ICMD("fail to do privilege check", K(errcode), K(ret));
     }
     if (OB_SUCCESS != errcode) {
-      WARN_ICMD("fail to check user privilege, try to response err packet", K(errcode), K(ret));
+      WDIAG_ICMD("fail to check user privilege, try to response err packet", K(errcode), K(ret));
     } else if (OB_ISNULL(ethread = this_ethread())) {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+      WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
     } else if (!is_conn_id_avail(cs_id_, is_proxy_conn_id)) {
       errcode = OB_UNKNOWN_CONNECTION; //not found the specific session
-      WARN_ICMD("cs_id is not avail", K(cs_id_), K(errcode));
+      WDIAG_ICMD("cs_id is not avail", K(cs_id_), K(errcode));
       if (OB_FAIL(encode_err_packet(errcode, cs_id_))) {
-        WARN_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
+        WDIAG_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
       }
     } else {
       if (is_proxy_conn_id) {
         //session id got from obproxy
         int64_t thread_id = -1;
         if (OB_FAIL(extract_thread_id(static_cast<uint32_t>(cs_id_), thread_id))) {
-          WARN_ICMD("fail to extract thread id, it should not happened", K(cs_id_), K(ret));
+          WDIAG_ICMD("fail to extract thread id, it should not happened", K(cs_id_), K(ret));
         } else if (thread_id == ethread->id_) {
           need_callback = false;
           event_ret = handle_cs_with_proxy_conn_id(EVENT_NONE, data);
@@ -73,7 +73,7 @@ int ObKillOpHandler::handle_kill_option(int event, void *data)
           SET_HANDLER(&ObInternalCmdHandler::handle_cs_with_proxy_conn_id);
           if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][thread_id]->schedule_imm(this))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            ERROR_ICMD("fail to schedule self", K(thread_id), K(ret));
+            EDIAG_ICMD("fail to schedule self", K(thread_id), K(ret));
           } else {
             need_callback = false;
           }
@@ -83,7 +83,7 @@ int ObKillOpHandler::handle_kill_option(int event, void *data)
         SET_HANDLER(&ObInternalCmdHandler::handle_cs_with_server_conn_id);
         if (OB_ISNULL(ethread->schedule_imm(this))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          ERROR_ICMD("fail to schedule self", K(ret));
+          EDIAG_ICMD("fail to schedule self", K(ret));
         } else {
           need_callback = false;
         }
@@ -140,7 +140,7 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
         errcode = OB_ERR_QUERY_INTERRUPTED;
         DEBUG_ICMD("try to kill self client session", K_(cs_id), K(errcode));
         if (OB_FAIL(encode_err_packet(errcode))) {
-          WARN_ICMD("fail to encode err resp packet", K(errcode), K(ret));
+          WDIAG_ICMD("fail to encode err resp packet", K(errcode), K(ret));
         } else {
           cs.vc_ready_killed_ = true;// after send msg succ, we will kill self
           cs.record_sess_killed(session_priv_.cs_id_);
@@ -188,7 +188,7 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
         }
         if (has_privilege) {
           if (OB_FAIL(encode_ok_packet(affected_row, capability_))) {
-            WARN_ICMD("fail to encode ok packet", K(ret));
+            WDIAG_ICMD("fail to encode ok packet", K(ret));
           } else {
             ObNetVConnection *net_vc = cs.get_netvc();
             if (NULL != net_vc) {
@@ -199,7 +199,7 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
           }
         } else {
           if (OB_FAIL(encode_err_packet(errcode, cs_id_))) {
-            WARN_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
+            WDIAG_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
           }
         }
       }
@@ -209,16 +209,16 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
       DEBUG_ICMD("try to kill server session", K_(cs_id), K_(ss_id));
       const ObMysqlServerSession *server_session = NULL;
       if (OB_FAIL(get_server_session(cs, server_session))) {
-        WARN_ICMD("fail to get server session", K_(cs_id), K_(ss_id), K(ret));
+        WDIAG_ICMD("fail to get server session", K_(cs_id), K_(ss_id), K(ret));
         if (OB_ENTRY_NOT_EXIST == ret) {
           errcode = OB_UNKNOWN_CONNECTION;
           DEBUG_ICMD("unknown server session", K_(cs_id), K_(ss_id), K(errcode), K(ret));
           if (OB_FAIL(encode_err_packet(errcode, ss_id_))) {
-            WARN_ICMD("fail to encode err resp packet", K(errcode), K_(ss_id), K(ret));
+            WDIAG_ICMD("fail to encode err resp packet", K(errcode), K_(ss_id), K(ret));
           }
         }
       } else if (OB_FAIL(encode_ok_packet(affected_row, capability_))) {
-        WARN_ICMD("fail to encode ok packet", K(ret));
+        WDIAG_ICMD("fail to encode ok packet", K(ret));
       } else {
         server_session->get_netvc()->set_is_force_timeout(true);
       }
@@ -226,7 +226,7 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
     }
     default: {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("it should not come here", K_(sub_type), K(ret));
+      WDIAG_ICMD("it should not come here", K_(sub_type), K(ret));
       break;
     }
   }
@@ -244,24 +244,24 @@ static int kill_op_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info,
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObKillOpHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObKillOpHandler", K(ret));
+    EDIAG_ICMD("fail to new ObKillOpHandler", K(ret));
   } else if (OB_FAIL(handler->init(is_query_cmd))) {
-    WARN_ICMD("fail to init for ObKillOpHandler");
+    WDIAG_ICMD("fail to init for ObKillOpHandler");
   } else if (OB_FAIL(handler->session_priv_.deep_copy(info.session_priv_))) {
-    WARN_ICMD("fail to deep copy session priv");
+    WDIAG_ICMD("fail to deep copy session priv");
   } else if (OB_FAIL(ObProxyPrivilegeCheck::get_need_priv(sql::stmt::T_KILL, handler->session_priv_, handler->need_priv_))) {
-    WARN_ICMD("fail to get need priv");
+    WDIAG_ICMD("fail to get need priv");
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+    WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(ethread->schedule_imm(handler, ET_NET))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObKillOpHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObKillOpHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObKillOpHandler", K(handler->session_priv_));
@@ -279,9 +279,9 @@ int kill_op_cmd_init()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_KILL_MYSQL, &kill_op_cmd_callback))) {
-    WARN_ICMD("fail to register OBPROXY_T_ICMD_KILL", K(ret));
+    WDIAG_ICMD("fail to register OBPROXY_T_ICMD_KILL", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_KILL_SESSION, &kill_op_cmd_callback))) {
-    WARN_ICMD("fail to register OBPROXY_T_ICMD_KILL_SESSION", K(ret));
+    WDIAG_ICMD("fail to register OBPROXY_T_ICMD_KILL_SESSION", K(ret));
   }
   return ret;
 }

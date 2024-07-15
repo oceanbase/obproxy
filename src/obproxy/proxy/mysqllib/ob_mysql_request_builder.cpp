@@ -35,7 +35,7 @@ int ObMysqlRequestBuilder::build_request_packet(ObString sql,
                                                 const ObProxyProtocol ob_proxy_protocol)
 {
   int ret = OB_SUCCESS;
-  uint8_t compressed_seq = 0;
+  uint8_t next_compress_seq = 0;
   ObServerSessionInfo &server_info = server_session->get_session_info();
   if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
     ObSEArray<ObObJKV, 3> extra_info;
@@ -49,7 +49,7 @@ int ObMysqlRequestBuilder::build_request_packet(ObString sql,
     const int64_t compression_level = sm->compression_algorithm_.level_;
     const bool is_compressed_ob20 = (server_info.is_server_ob20_compress_supported() && compression_level !=0);
     Ob20HeaderParam ob20_head_param(server_session->get_server_sessid(), server_session->get_next_server_request_id(),
-                                            compressed_seq, compressed_seq, is_last_packet, /* is_weak_read */ false,
+                                            next_compress_seq, next_compress_seq, is_last_packet, /* is_weak_read */ false,
                                             /* is_need_reroute */ false, server_info.is_new_extra_info_supported(),
                                             sm->get_client_session()->is_trans_internal_routing(), is_proxy_switch_route,
                                             is_compressed_ob20, compression_level);
@@ -64,21 +64,21 @@ int ObMysqlRequestBuilder::build_request_packet(ObString sql,
     } else if (OB_FAIL(ObMysqlOB20PacketWriter::write_request_packet(mio_buf, cmd, sql, ob20_head_param, &extra_info))) {
       LOG_WDIAG("fail to write request packet in ob20", K(ret));
     } else {
-      compressed_seq = ob20_head_param.get_compressed_seq();
+      next_compress_seq = ob20_head_param.get_compressed_seq();
     }
   } else {
     const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM ? true : false;
-    ObCmpHeaderParam param(compressed_seq, server_info.is_checksum_on(), sm->compression_algorithm_.level_);
+    ObCompressedHeaderParam param(next_compress_seq, server_info.is_checksum_on(), sm->compression_algorithm_.level_);
     INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (OB_FAIL(ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, sql, need_compress, param))) {
       LOG_WDIAG("fail to write request packet in mysql/compressed mysql", K(ob_proxy_protocol), K(ret));
     } else {
-      compressed_seq = param.get_compressed_seq();
+      next_compress_seq = param.get_compressed_seq();
     }
   }
 
   if (OB_SUCC(ret)) {
-    server_session->set_compressed_seq(compressed_seq);
+    server_session->set_cur_compressed_seq(next_compress_seq - 1);
   }
 
   return ret;

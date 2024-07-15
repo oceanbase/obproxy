@@ -35,6 +35,7 @@ common::ObString get_routine_type_string(const ObRoutineType type)
       ObString::make_string("PROCEDURE_TYPE"),
       ObString::make_string("FUNCTION_TYPE"),
       ObString::make_string("PACKAGE_TYPE"),
+      ObString::make_string("RPC_OBKV_TYPE"),
   };
 
   ObString string;

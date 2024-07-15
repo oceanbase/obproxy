@@ -396,5 +396,47 @@ int split_weight_group(ObString weight_group_str,
   return ret;
 }
 
+int split_string_by_char(ObString &org_str,
+                         ObIArray<ObString> &result_strs,
+                         const char split_char, /* ';' */
+                         const bool contain_split_char /* false */)
+{
+  int ret = OB_SUCCESS;
+
+  int64_t str_len = org_str.length();
+  int64_t last_split_char_pos = -1;
+  char * const str_ptr = org_str.ptr();
+
+  if (OB_UNLIKELY(org_str.empty())) {
+    if (OB_FAIL(result_strs.push_back(org_str))) {
+      LOG_WDIAG("fail to push back empty str", K(ret));
+    } else {
+      //nothing
+    }
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < str_len; ++i) {
+      ObString tmp_str;
+      if (str_ptr[i] == split_char) {
+        tmp_str.assign(str_ptr + last_split_char_pos + 1, i - last_split_char_pos - 1 + (contain_split_char? 1 : 0));
+        last_split_char_pos = i;
+
+        if (OB_FAIL(result_strs.push_back(tmp_str))) {
+          LOG_WDIAG("fail to push back str", K(tmp_str), K(ret));
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObString tmp_str;
+      tmp_str.assign(str_ptr + last_split_char_pos + 1, str_len - last_split_char_pos);
+      if (OB_FAIL(result_strs.push_back(tmp_str))) {
+        LOG_WDIAG("fail to push back str", K(tmp_str), K(ret));
+      }
+    }
+  } 
+  
+  return ret;
+}
+
 } // end of namespace obproxy
 } // end of namespace oceanbase

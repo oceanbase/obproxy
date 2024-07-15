@@ -122,6 +122,34 @@ int ObProxyPacketWriter::write_kv_resultset(event::ObMIOBuffer &write_buf,
   return ret;
 }
 
+int ObProxyPacketWriter::write_empty_resultset(event::ObMIOBuffer &write_buf,
+                                                ObMysqlClientSession &client_session,
+                                                const ObProxyProtocol protocol,
+                                                uint8_t &seq,
+                                                const uint16_t status_flag)
+{
+  int ret = OB_SUCCESS;
+
+  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+    Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
+    uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
+    Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
+                                    compressed_seq, true, false, false,
+                                    client_session.is_client_support_new_extra_info(),
+                                    client_session.is_trans_internal_routing(), false);
+    if (OB_FAIL(ObProto20Utils::encode_empty_resultset(write_buf, ob20_head_param, seq, status_flag))) {
+      LOG_WDIAG("fail to encode kv resultset", K(ret));
+    }    
+  } else {
+    // mysql
+    if (OB_FAIL(ObMysqlPacketUtil::encode_empty_resultset(write_buf, seq, status_flag))) {
+      LOG_WDIAG("fail to encode empty resultset", K(seq), K(ret));
+    }
+  }
+
+  return ret;
+}
+
 int ObProxyPacketWriter::write_ok_packet(event::ObMIOBuffer &write_buf,
                                          ObMysqlClientSession &client_session,
                                          const ObProxyProtocol protocol,

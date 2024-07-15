@@ -61,7 +61,7 @@ struct ObPieceInfoHashing
   static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
 };
 
-typedef common::hash::ObBuildInHashMap<ObPieceInfoHashing, 64> ObPieceInfoMap;
+typedef common::hash::ObBuildInHashMap<ObPieceInfoHashing> ObPieceInfoMap;
 
 } // end proxy
 } // end obproxy

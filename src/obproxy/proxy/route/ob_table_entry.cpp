@@ -13,6 +13,7 @@
 #define USING_LOG_PREFIX PROXY
 
 #include "iocore/eventsystem/ob_buf_allocator.h"
+#include "iocore/eventsystem/ob_lock.h"
 #include "proxy/route/ob_table_entry.h"
 #include "utils/ob_proxy_utils.h"
 #include "proxy/route/obproxy_part_info.h"
@@ -27,6 +28,8 @@ namespace obproxy
 namespace proxy
 {
 
+#define MAX_BATCH_PARTION_IDS_NUM 50
+
 int ObTableEntry::init(char *buf_start, const int64_t buf_len)
 {
   int ret = OB_SUCCESS;
@@ -36,7 +39,12 @@ int ObTableEntry::init(char *buf_start, const int64_t buf_len)
   } else if (OB_UNLIKELY(buf_len <= 0) || OB_ISNULL(buf_start)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid input value", K(buf_len), K(buf_start), K(ret));
+  } else if (OB_ISNULL(batch_mutex_ = event::new_proxy_mutex())) { //must be inited
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid input value", K(buf_len), K(buf_start), K(ret));
   } else {
+    batch_fetch_tablet_id_set_.create(MAX_BATCH_PARTION_IDS_NUM); // maybe set by 
+    remote_fetching_tablet_id_set_.create(MAX_BATCH_PARTION_IDS_NUM);
     create_time_us_ = ObTimeUtility::current_time();
     buf_len_ = buf_len;
     buf_start_ = buf_start;
@@ -148,6 +156,10 @@ void ObTableEntry::free()
       LOG_EDIAG("tenant_servers_ is not null here, we will have memory leak here", KPC(this));
     }
   }
+
+  batch_fetch_tablet_id_set_.destroy();
+  remote_fetching_tablet_id_set_.destroy();
+  batch_mutex_.release();
 
   is_need_force_flush_ = false;
 
@@ -299,6 +311,147 @@ bool ObTableEntry::is_the_same_entry(const ObTableEntry &entry) const
     }
   }
   return bret;
+}
+
+int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id)
+{
+  int ret = OB_SUCCESS; //always 0 
+  event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
+  if (lock.is_locked()) { 
+    ret = batch_fetch_tablet_id_set_.set_refactored(tablet_id);
+    LOG_DEBUG("batch fetch put tablet_id to bucket", K(ret), K(tablet_id), "locked", lock.is_locked(), 
+              "size", batch_fetch_tablet_id_set_.size());
+  }
+  if (ret == OB_HASH_EXIST) {
+    ret = OB_SUCCESS;
+  }
+
+  return ret;
+}
+
+//TODO will be used in ObBatchPartitionEntryCont
+int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id, int &count)
+{
+  int ret = OB_SUCCESS; //always 0 
+  count = 0; //0 means not put to batch set, > 0 batch size in set
+  event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
+  if (lock.is_locked()) { 
+    if (batch_fetch_tablet_id_set_.size() < obutils::get_global_proxy_config().rpc_async_pull_batch_max_size) {
+      batch_fetch_tablet_id_set_.set_refactored(tablet_id);
+      count = batch_fetch_tablet_id_set_.size();
+      LOG_DEBUG("batch fetch put tablet_id to bucket", K(ret), K(tablet_id), "locked", lock.is_locked(), K(count),
+                "size", batch_fetch_tablet_id_set_.size(), "max_size", obutils::get_global_proxy_config().rpc_async_pull_batch_max_size);
+    } else if (OB_HASH_EXIST == batch_fetch_tablet_id_set_.exist_refactored(tablet_id)) {
+      count = batch_fetch_tablet_id_set_.size(); //has exist
+    }
+  }
+
+  return ret;
+}
+
+//TODO will be used in ObBatchPartitionEntryCont
+int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids)
+{
+  int ret = OB_SUCCESS;
+  event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
+  batch_ids.reset();
+  if (lock.is_locked() && batch_fetch_tablet_id_set_.size() > 0) {
+    common::hash::ObHashSet<uint64_t>::iterator it = batch_fetch_tablet_id_set_.begin();;
+    common::hash::ObHashSet<uint64_t>::iterator end = batch_fetch_tablet_id_set_.end();;
+    for (; it != end; it++) {
+      batch_ids.push_back(it->first);
+    }
+    LOG_DEBUG("batch fetch put tablet_id to bucket to get and reset", K(ret), "locked", lock.is_locked(), "count", batch_ids.count(),
+            "size", batch_fetch_tablet_id_set_.size(), "max_size", obutils::get_global_proxy_config().rpc_async_pull_batch_max_size);
+    batch_fetch_tablet_id_set_.reuse(); //clear all ids
+  }
+
+  return ret;
+}
+
+int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int max_count, uint64_t tablet_id)
+{
+  int ret = OB_SUCCESS;
+  event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
+  batch_ids.reset();
+  if (lock.is_locked() && batch_fetch_tablet_id_set_.size() > 0 && max_count > 0) {
+    common::hash::ObHashSet<uint64_t>::iterator it = batch_fetch_tablet_id_set_.begin();;
+    common::hash::ObHashSet<uint64_t>::iterator end = batch_fetch_tablet_id_set_.end();;
+    if (tablet_id != OB_INVALID_INDEX) {
+      ret = batch_ids.push_back(tablet_id); //put it first
+      max_count--;
+    }
+    for (; OB_SUCC(ret) && it != end && max_count > 0; it++) {
+      if (OB_LIKELY(tablet_id != it->first)) {
+        ret = batch_ids.push_back(it->first);
+        max_count--;
+      }
+    }
+    int count = batch_ids.count();
+    for (int i = 0; OB_SUCC(ret) && i < count; i++) {
+      ret = batch_fetch_tablet_id_set_.erase_refactored(batch_ids.at(i));
+      if (ret == OB_HASH_NOT_EXIST || ret == OB_HASH_EXIST) {
+        ret = OB_SUCCESS;
+      }
+      if (OB_SUCC(ret)) {
+        ret = remote_fetching_tablet_id_set_.set_refactored(batch_ids.at(i));
+      }
+      if (ret == OB_HASH_EXIST) {
+        ret = OB_SUCCESS;
+      }
+    }
+    LOG_DEBUG("batch fetch put tablet_id to bucket to get and reset", K(ret), "locked", lock.is_locked(), "count", batch_ids.count(),
+              "size", batch_fetch_tablet_id_set_.size(), "remote_fetching", remote_fetching_tablet_id_set_.size(), K(tablet_id));
+  } else {
+    ret = OB_NEED_RETRY;
+    LOG_DEBUG("batch fetch put tablet_id to bucket not catch the lock", K(ret));
+  }
+  return ret;
+}
+
+int ObTableEntry::remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids, bool force)
+{
+  int ret = OB_SUCCESS;
+  if (batch_ids.count() > 0) {
+    if (force) {
+      MUTEX_LOCK(lock, batch_mutex_, event::this_ethread());
+      int i = 0;
+      for (i = 0; i < batch_ids.count(); i++) {
+        remote_fetching_tablet_id_set_.erase_refactored(batch_ids.at(i)); // not to care abort return value
+      }
+      batch_ids.reset();
+      //wiil ret OB_SUCCESS only
+    } else {
+      event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
+      if (lock.is_locked()) {
+        int i = 0;
+        for (i = 0; i < batch_ids.count(); i++) {
+          remote_fetching_tablet_id_set_.erase_refactored(batch_ids.at(i)); // not to care abort return value
+        }
+        batch_ids.reset();
+      } else {
+       ret = OB_NEED_RETRY;
+      }
+    }
+  }
+  return ret;
+}
+
+int ObTableEntry::get_batch_fetch_size()
+{
+  int ret = 0; //0 means not put to batch set, > 0 batch size in set
+  event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
+  if (lock.is_locked()) { 
+    ret = batch_fetch_tablet_id_set_.size();
+  }
+
+  return ret;
+} 
+
+void ObTableEntry::reset_batch_tablet_ids()
+{
+  MUTEX_LOCK(lock, batch_mutex_, event::this_ethread());
+  batch_fetch_tablet_id_set_.reuse();
 }
 
 } // end of namespace proxy

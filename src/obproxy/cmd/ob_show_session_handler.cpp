@@ -170,19 +170,19 @@ int ObShowSessionHandler::dump_cs_list_header()
   } else {
     if (OBPROXY_T_SUB_SESSION_LIST == sub_type_) {
       if (OB_FAIL(encode_header(LIST_COLUMN_ARRAY, OB_SLC_MAX_SLIST_COLUMN_ID))) {
-        WARN_ICMD("fail to encode header", K(ret), K_(sub_type));
+        WDIAG_ICMD("fail to encode header", K(ret), K_(sub_type));
       } else {
         header_encoded_ = true;
       }
     } else if (OBPROXY_T_SUB_SESSION_LIST_INTERNAL == sub_type_) {
       if (OB_FAIL(encode_header(INTERNAL_LIST_COLUMN_ARRAY, OB_SILC_MAX_SLIST_COLUMN_ID))) {
-        WARN_ICMD("fail to encode header", K(ret), K_(sub_type));
+        WDIAG_ICMD("fail to encode header", K(ret), K_(sub_type));
       } else {
         header_encoded_ = true;
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      ERROR_ICMD("it should not happened, unknown sub_type", K(ret), K_(sub_type));
+      EDIAG_ICMD("it should not happened, unknown sub_type", K(ret), K_(sub_type));
     }
   }
   return ret;
@@ -192,7 +192,7 @@ int ObShowSessionHandler::dump_cs_attribute_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(ATTRIBUTE_COLUMN_ARRAY, OB_SAC_MAX_ATTRIBUTE_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -201,7 +201,7 @@ int ObShowSessionHandler::dump_cs_variable_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(VARIABLES_COLUMN_ARRAY, OB_SVC_MAX_VARIABLES_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -210,7 +210,7 @@ int ObShowSessionHandler::dump_cs_stat_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(STAT_COLUMN_ARRAY, OB_SSC_MAX_STAT_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -221,54 +221,54 @@ int ObShowSessionHandler::dump_cs_details(ObMysqlClientSession &cs)
   switch (sub_type_) {
     case OBPROXY_T_SUB_SESSION_ATTRIBUTE: {
       if (OB_FAIL(dump_cs_attribute_header())) {
-        WARN_ICMD("fail to dump cs attribute header", K(ret));
+        WDIAG_ICMD("fail to dump cs attribute header", K(ret));
       } else if (OB_FAIL(dump_cs_attribute(cs))) {
-        WARN_ICMD("fail to dump cs attribute body", K(ret));
+        WDIAG_ICMD("fail to dump cs attribute body", K(ret));
       }
       break;
     }
     case OBPROXY_T_SUB_SESSION_VARIABLES_LOCAL: {
       if (OB_FAIL(dump_cs_variable_header())) {
-        WARN_ICMD("fail to dump cs variable header", K(ret));
+        WDIAG_ICMD("fail to dump cs variable header", K(ret));
       } else if (OB_FAIL(dump_cs_variables_local(cs))) {
-        WARN_ICMD("fail to dump cs variable local body", K(ret));
+        WDIAG_ICMD("fail to dump cs variable local body", K(ret));
       }
       break;
     }
     case OBPROXY_T_SUB_SESSION_VARIABLES_ALL: {
       if (OB_FAIL(dump_cs_variable_header())) {
-        WARN_ICMD("fail to dump cs variable header", K(ret));
+        WDIAG_ICMD("fail to dump cs variable header", K(ret));
       } else if (OB_FAIL(dump_cs_variables_all(cs))) {
-        WARN_ICMD("fail to dump cs variable all body", K(ret));
+        WDIAG_ICMD("fail to dump cs variable all body", K(ret));
       }
       break;
     }
     case OBPROXY_T_SUB_SESSION_STAT: {
       if (OB_FAIL(dump_cs_stat_header())) {
-        WARN_ICMD("fail to dump cs stat header", K(ret));
+        WDIAG_ICMD("fail to dump cs stat header", K(ret));
       } else if (OB_FAIL(dump_cs_stat(cs))) {
-        WARN_ICMD("fail to dump cs stat body", K(ret));
+        WDIAG_ICMD("fail to dump cs stat body", K(ret));
       }
       break;
     }
     case OBPROXY_T_SUB_SESSION_READ_STALE: {
       if (OB_FAIL(dump_cs_read_stale_replica_header())) {
-        WARN_ICMD("fail to dump weak read stale replica", K(ret));
+        WDIAG_ICMD("fail to dump weak read stale replica", K(ret));
       } else if(OB_FAIL(dump_cs_read_stale_replica(cs))) {
-        WARN_ICMD("fail to dump weak read stale replica body", K(ret));
+        WDIAG_ICMD("fail to dump weak read stale replica body", K(ret));
       }
       break;
     }
     default: {
       ret = OB_INVALID_ARGUMENT;
-      WARN_ICMD("unknown type to dump_cs_details", K(sub_type_), K(ret));
+      WDIAG_ICMD("unknown type to dump_cs_details", K(sub_type_), K(ret));
       break;
     }
   }
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet",  K(ret));
+      WDIAG_ICMD("fail to encode eof packet",  K(ret));
     } else {
       DEBUG_ICMD("succ to dump cs details", K(sub_type_));
     }
@@ -282,11 +282,11 @@ int ObShowSessionHandler::dump_cs_variables_local(ObMysqlClientSession &cs)
   ObClientSessionInfo &client_info = cs.get_session_info();
   ObSEArray<ObSessionSysField, MAX_CHANGED_SYS_VAR_COUNT> sys_vars;
   if (OB_FAIL(client_info.get_changed_sys_vars(sys_vars))) {
-    WARN_ICMD("fail to get changed sys vars", K(ret));
+    WDIAG_ICMD("fail to get changed sys vars", K(ret));
   } else if (OB_FAIL(dump_cs_variables_common(sys_vars, OB_FIELD_CHANGED_SYS_VAR))) {
-    WARN_ICMD("fail to dump cs changed sys variables", K(ret));
+    WDIAG_ICMD("fail to dump cs changed sys variables", K(ret));
   } else if (OB_FAIL(dump_cs_variables_user(cs))) {
-    WARN_ICMD("fail to dump cs user variables", K(ret));
+    WDIAG_ICMD("fail to dump cs user variables", K(ret));
   } else {
     DEBUG_ICMD("succ to dump cs local variables", K(ret));
   }
@@ -300,11 +300,11 @@ int ObShowSessionHandler::dump_cs_variables_all(ObMysqlClientSession &cs)
 
   ObSEArray<ObSessionSysField, MAX_SYS_VAR_COUNT> sys_vars;
   if (OB_FAIL(client_info.get_all_sys_vars(sys_vars))) {
-    WARN_ICMD("fail to get all sys vars", K(ret));
+    WDIAG_ICMD("fail to get all sys vars", K(ret));
   } else if (OB_FAIL(dump_cs_variables_common(sys_vars, OB_FIELD_SYS_VAR))) {
-    WARN_ICMD("fail to dump cs all sys variables", K(ret));
+    WDIAG_ICMD("fail to dump cs all sys variables", K(ret));
   } else if (OB_FAIL(dump_cs_variables_user(cs))) {
-    WARN_ICMD("fail to dump cs user variables", K(ret));
+    WDIAG_ICMD("fail to dump cs user variables", K(ret));
   } else {
     DEBUG_ICMD("succ to dump cs all variables", K(ret));
   }
@@ -317,9 +317,9 @@ int ObShowSessionHandler::dump_cs_variables_user(ObMysqlClientSession &cs)
   ObClientSessionInfo &client_info = cs.get_session_info();
   ObSEArray<ObSessionBaseField, MAX_USER_VAR_COUNT> user_vars;
   if (OB_FAIL(client_info.get_all_user_vars(user_vars))) {
-    WARN_ICMD("fail to get all user vars", K(ret));
+    WDIAG_ICMD("fail to get all user vars", K(ret));
   } else if (OB_FAIL(dump_cs_variables_common(user_vars, OB_FIELD_USER_VAR))) {
-    WARN_ICMD("fail to dump cs all user variables", K(ret));
+    WDIAG_ICMD("fail to dump cs all user variables", K(ret));
   } else {
     DEBUG_ICMD("succ to dump cs all user variables", K(ret));
   }
@@ -336,12 +336,12 @@ int ObShowSessionHandler::dump_cs_variables_item(const ObSessionBaseField *field
   if (OB_FIELD_USER_VAR == var_type) {
     // user field has store ' into value, no need to print ' again
     if (OB_FAIL(field->value_.print_plain_str_literal(buf, sizeof(buf), pos))) {
-      WARN_ICMD("fail to print sql literal", K(ret));
+      WDIAG_ICMD("fail to print sql literal", K(ret));
     }
   } else {
     // sys field will use print_sql to add '
     if (OB_FAIL(field->value_.print_sql_literal(buf, sizeof(buf), pos))) {
-      WARN_ICMD("fail to print sql literal", K(ret));
+      WDIAG_ICMD("fail to print sql literal", K(ret));
     }
   }
 
@@ -366,7 +366,7 @@ int ObShowSessionHandler::dump_cs_variables_item(const ObSessionBaseField *field
       char scope_array[MAX_VAR_SCOPE_LENGTH] = {'\0'};
       ObString scope_string(MAX_VAR_SCOPE_LENGTH, 0, scope_array);
       if (OB_FAIL(get_var_scope_str(reinterpret_cast<const ObSessionSysField *>(field), scope_string))) {
-        WARN_ICMD("fail to get_var_scope_str", K(ret));
+        WDIAG_ICMD("fail to get_var_scope_str", K(ret));
       } else {
         cells[OB_SVC_FLAG].set_varchar(scope_string);
       }
@@ -375,7 +375,7 @@ int ObShowSessionHandler::dump_cs_variables_item(const ObSessionBaseField *field
       row.cells_ = cells;
       row.count_ = OB_SVC_MAX_VARIABLES_COLUMN_ID;
       if (OB_FAIL(encode_row_packet(row))) {
-        WARN_ICMD("fail to encode row packet", K(row), K(ret));
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
       }
     }
   }
@@ -386,10 +386,10 @@ int ObShowSessionHandler::dump_cs_stat(const ObMysqlClientSession &cs)
 {
   int ret = OB_SUCCESS;
   for (int64_t i = 0; OB_SUCC(ret) && i < SESSION_STAT_COUNT; ++i) {
-    if (match_like(g_mysql_stat_name[i], like_name_)) {
+    if (common::match_like(g_mysql_stat_name[i], like_name_)) {
       DEBUG_ICMD("session stat name matched", K_(like_name), K(g_mysql_stat_name[i]));
       if (OB_FAIL(dump_cs_stat_item(g_mysql_stat_name[i], cs.get_session_stats().stats_[i]))) {
-        WARN_ICMD("fail to dump cs stat item", K(ret));
+        WDIAG_ICMD("fail to dump cs stat item", K(ret));
       }
     }
   }
@@ -401,7 +401,7 @@ int ObShowSessionHandler::dump_cs_stat_item(const char *name, const int64_t &val
   int ret = OB_SUCCESS;
   if (OB_ISNULL(name)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("name is null", K(ret));
+    WDIAG_ICMD("name is null", K(ret));
   } else {
     ObNewRow row;
     ObObj cells[OB_SSC_MAX_STAT_COLUMN_ID];
@@ -411,7 +411,7 @@ int ObShowSessionHandler::dump_cs_stat_item(const char *name, const int64_t &val
     row.count_ = OB_SSC_MAX_STAT_COLUMN_ID;
 
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   return ret;
@@ -469,58 +469,58 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
 
   //dump common cs info
   if (OB_FAIL(dump_cs_attribute_item("proxy_sessid", static_cast<int64_t>(cs.get_proxy_sessid()), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("cs_id", static_cast<int64_t>(cs.get_cs_id()), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("cluster", cluster_name, cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("tenant", tenant_name, cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("user", user_name, cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("host_ip", host_ip_buf, cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("host_port", static_cast<int64_t>(host_port), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("db", db_name, cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("total_trans_cnt", cs.get_transact_count(), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("svr_session_cnt", cs.get_svr_session_count(), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("active", (cs.active_ ? "true" : "false"), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("read_state", cs.get_read_state_str(), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("tid", cs.get_current_tid(), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("pid", static_cast<int64_t>(getpid()), cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("idc_name", idc_name, cs_common_info))) {
-    WARN_ICMD("fail to dump attribute item", K(ret));
+    WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else { }
 
   //dump session stat
   if (OB_SUCC(ret)) {
     if (OB_FAIL(dump_cs_attribute_item("modified_time", session_stat.modified_time_, cs_stat_info))) {
-      WARN_ICMD("fail to dump attribute item", K(ret));
+      WDIAG_ICMD("fail to dump attribute item", K(ret));
     } else if (OB_FAIL(dump_cs_attribute_item("reported_time", session_stat.reported_time_, cs_stat_info))) {
-      WARN_ICMD("fail to dump attribute item", K(ret));
+      WDIAG_ICMD("fail to dump attribute item", K(ret));
     } else {}
   }
 
   //dump session variables version
   if (OB_SUCC(ret)) {
     if (OB_FAIL(dump_cs_attribute_item("hot_sys_var_version", client_info.get_hot_sys_var_version(), cs_var_info))) {
-      WARN_ICMD("fail to dump attribute item", K(ret));
+      WDIAG_ICMD("fail to dump attribute item", K(ret));
     } else if (OB_FAIL(dump_cs_attribute_item("sys_var_version", client_info.get_sys_var_version(), cs_var_info))) {
-      WARN_ICMD("fail to dump attribute item", K(ret));
+      WDIAG_ICMD("fail to dump attribute item", K(ret));
     } else if (OB_FAIL(dump_cs_attribute_item("user_var_version", client_info.get_user_var_version(), cs_var_info))) {
-      WARN_ICMD("fail to dump attribute item", K(ret));
+      WDIAG_ICMD("fail to dump attribute item", K(ret));
     } else if (OB_FAIL(dump_cs_attribute_item("last_insert_id_version", client_info.get_last_insert_id_version(), cs_var_info))) {
-      WARN_ICMD("fail to dump attribute item", K(ret));
+      WDIAG_ICMD("fail to dump attribute item", K(ret));
     } else if (OB_FAIL(dump_cs_attribute_item("db_name_version", client_info.get_db_name_version(), cs_var_info))) {
-      WARN_ICMD("fail to dump attribute item", K(ret));
+      WDIAG_ICMD("fail to dump attribute item", K(ret));
     } else {}
   }
 
@@ -544,7 +544,7 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
         ss_type = OB_SST_LAST_USED;
       }
       if (OB_FAIL(dump_cs_attribute_ss(*svr_session, ss_type))) {
-        WARN_ICMD("fail to dump attribute item svr session", K(ss_type), K(ret));
+        WDIAG_ICMD("fail to dump attribute item svr session", K(ss_type), K(ret));
       }
     }
 
@@ -557,7 +557,7 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
         ss_type = OB_SST_CURRENT;
       }
       if (OB_FAIL(dump_cs_attribute_ss(*svr_session, ss_type))) {
-        WARN_ICMD("fail to dump attribute item svr session", K(ss_type), K(ret));
+        WDIAG_ICMD("fail to dump attribute item svr session", K(ss_type), K(ret));
       }
     }
 
@@ -574,7 +574,7 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
           ss_type = OB_SST_SS_POOL;
         }
         if (OB_FAIL(dump_cs_attribute_ss(*spot, ss_type, i))) {
-          WARN_ICMD("fail to dump attribute item svr session", K(ss_type), K(i), K(ret));
+          WDIAG_ICMD("fail to dump attribute item svr session", K(ss_type), K(i), K(ret));
         }
       }
     }
@@ -608,8 +608,8 @@ int ObShowSessionHandler::dump_cs_attribute_item(const char *name, const ObStrin
   int ret = OB_SUCCESS;
   if (OB_ISNULL(name) || OB_ISNULL(info)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("argument is null", K(name), K(info), K(ret));
-  } else if (!match_like(name, like_name_)) {
+    WDIAG_ICMD("argument is null", K(name), K(info), K(ret));
+  } else if (!common::match_like(name, like_name_)) {
     DEBUG_ICMD("no need dump it", K(like_name_), K(name), K(value), K(info));
   } else {
     ObNewRow row;
@@ -621,7 +621,7 @@ int ObShowSessionHandler::dump_cs_attribute_item(const char *name, const ObStrin
     row.count_ = OB_SAC_MAX_ATTRIBUTE_COLUMN_ID;
 
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(name), K(value), K(info),K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(name), K(value), K(info),K(ret));
     }
   }
   return ret;
@@ -633,7 +633,7 @@ int ObShowSessionHandler::dump_cs_attribute_ss(const ObMysqlServerSession &svr_s
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(type <= OB_SST_INVAILED) || OB_UNLIKELY(type >= OB_SST_MAX_TYPE)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("argument is null", K(type), K(ret));
+    WDIAG_ICMD("argument is null", K(type), K(ret));
   } else {
     const int64_t MAX_SS_INFO_LENGTH = 32;
     char info_buf[MAX_SS_INFO_LENGTH] = {'\0'};
@@ -652,7 +652,7 @@ int ObShowSessionHandler::dump_cs_attribute_ss(const ObMysqlServerSession &svr_s
       int32_t length = snprintf(info_buf, sizeof(info_buf), "%s [%ld]", ss_info[type], idx);
       if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int32_t>(sizeof(info_buf)))) {
         ret = OB_BUF_NOT_ENOUGH;
-        WARN_ICMD("info_buf is not enough", K(length), "info_buf length", sizeof(info_buf),
+        WDIAG_ICMD("info_buf is not enough", K(length), "info_buf length", sizeof(info_buf),
                   K(info_buf), K(ret));
       } else {
         info = info_buf;
@@ -667,39 +667,39 @@ int ObShowSessionHandler::dump_cs_attribute_ss(const ObMysqlServerSession &svr_s
       ops_ip_ntop(svr_session.server_ip_, buf, sizeof(buf));
 
       if (OB_FAIL(dump_cs_attribute_item("server_ip", buf, info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("server_port", static_cast<int64_t>((ntohs)(svr_session.server_ip_.port())), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("server_sessid", svr_session.server_sessid_, info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("ss_id", svr_session.ss_id_, info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("state", svr_session.get_state_str(), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("transact_count", static_cast<int64_t>(svr_session.transact_count_), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("server_trans_stat", static_cast<int64_t>(svr_session.server_trans_stat_), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("hot_sys_var_version", session_info.get_hot_sys_var_version(), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("sys_var_version", session_info.get_sys_var_version(), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("user_var_version", session_info.get_user_var_version(), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("last_insert_id_version", session_info.get_last_insert_id_version(), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("db_name_version", session_info.get_db_name_version(), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("is_checksum_supported", static_cast<int64_t>(session_info.is_checksum_supported()), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("is_safe_read_weak_supported", static_cast<int64_t>(session_info.is_safe_read_weak_supported()), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("is_checksum_switch_supported", static_cast<int64_t>(session_info.is_checksum_switch_supported()), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("checksum_switch", static_cast<int64_t>(session_info.get_checksum_switch()), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("enable_extra_ok_packet_for_stats", static_cast<int64_t>(session_info.is_extra_ok_packet_for_stats_enabled()), info))) {
-        WARN_ICMD("fail to dump attribute item", K(info), K(ret));
+        WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       }
     }
   }
@@ -731,7 +731,7 @@ int ObShowSessionHandler::dump_cs_list(const ObMysqlClientSession &cs)
   }
 
   if (OB_FAIL(ip_port.append_fmt("%s:%d", host_ip_buf, static_cast<int32_t>(host_port)))) {
-    WARN_ICMD("fail to append producer info", K(ret));
+    WDIAG_ICMD("fail to append producer info", K(ret));
   } else if (OBPROXY_T_SUB_SESSION_LIST == sub_type_) {
     //the follow user can see this session:
     //1. has_all_privilege_, such as root@proxysys
@@ -760,7 +760,7 @@ int ObShowSessionHandler::dump_cs_list(const ObMysqlClientSession &cs)
       row.count_ = OB_SLC_MAX_SLIST_COLUMN_ID;
       const bool need_limit_size = false;//show processlist no need limit size
       if (OB_FAIL(encode_row_packet(row, need_limit_size))) {
-        WARN_ICMD("fail to encode row packet", K_(sub_type), K(row), K(ret));
+        WDIAG_ICMD("fail to encode row packet", K_(sub_type), K(row), K(ret));
       }
     } else {
       DEBUG_ICMD("not the same user, no need to dump cs item", K(cluster_name), K(tenant_name),
@@ -785,7 +785,7 @@ int ObShowSessionHandler::dump_cs_list(const ObMysqlClientSession &cs)
     row.cells_ = cells;
     row.count_ = OB_SILC_MAX_SLIST_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K_(sub_type), K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K_(sub_type), K(row), K(ret));
     }
   }
   return ret;
@@ -800,10 +800,10 @@ int ObShowSessionHandler::handle_cs_details(int event, void *data)
   bool is_proxy_conn_id = true;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+    WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
   } else {
     if (-1 == cs_id_) {
       //-1 means us currnet cs_id
@@ -812,16 +812,16 @@ int ObShowSessionHandler::handle_cs_details(int event, void *data)
 
     if (!is_conn_id_avail(cs_id_, is_proxy_conn_id)) {
       int errcode = OB_UNKNOWN_CONNECTION; //not found the specific session
-      WARN_ICMD("cs_id is not avail", K(cs_id_), K(errcode));
+      WDIAG_ICMD("cs_id is not avail", K(cs_id_), K(errcode));
       if (OB_FAIL(encode_err_packet(errcode, cs_id_))) {
-        WARN_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
+        WDIAG_ICMD("fail to encode err resp packet", K(errcode), K_(cs_id), K(ret));
       }
     } else {
       if (is_proxy_conn_id) {
         //connection id got from obproxy
         int64_t thread_id = -1;
         if (OB_FAIL(extract_thread_id(static_cast<uint32_t>(cs_id_), thread_id))) {
-          WARN_ICMD("fail to extract thread id, it should not happen", K(cs_id_), K(ret));
+          WDIAG_ICMD("fail to extract thread id, it should not happen", K(cs_id_), K(ret));
         } else if (thread_id == ethread->id_) {
           need_callback = false;
           event_ret = handle_cs_with_proxy_conn_id(EVENT_NONE, data);
@@ -829,7 +829,7 @@ int ObShowSessionHandler::handle_cs_details(int event, void *data)
           SET_HANDLER(&ObInternalCmdHandler::handle_cs_with_proxy_conn_id);
           if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][thread_id]->schedule_imm(this))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
-            ERROR_ICMD("fail to schedule self", K(thread_id), K(ret));
+            EDIAG_ICMD("fail to schedule self", K(thread_id), K(ret));
           } else {
             need_callback = false;
           }
@@ -839,7 +839,7 @@ int ObShowSessionHandler::handle_cs_details(int event, void *data)
         SET_HANDLER(&ObInternalCmdHandler::handle_cs_with_server_conn_id);
         if (OB_ISNULL(ethread->schedule_imm(this))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          ERROR_ICMD("fail to schedule self", K(ret));
+          EDIAG_ICMD("fail to schedule self", K(ret));
         } else {
           need_callback = false;
         }
@@ -867,7 +867,7 @@ int ObShowSessionHandler::show_cs_list_in_thread(const ObEThread &ethread)
     // here we only read cs, no need try lock it
     if (enable_show_session(*spot)) {
       if (OB_FAIL(dump_cs_list(*spot))) {
-        WARN_ICMD("fail to dump client session", K(spot->get_cs_id()));
+        WDIAG_ICMD("fail to dump client session", K(spot->get_cs_id()));
       } else {
         DEBUG_ICMD("succ to dump client_session", K(spot->get_cs_id()));
       }
@@ -884,24 +884,24 @@ int ObShowSessionHandler::show_cs_list(int event, void *data)
   ObEThread *ethread = NULL;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+    WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
   } else if (OB_FAIL(show_cs_list_in_thread(*ethread))) {
-    WARN_ICMD("fail to do show_cs_list_in_thread", K(ret));
+    WDIAG_ICMD("fail to do show_cs_list_in_thread", K(ret));
   } else {
     const int64_t next_id = ((ethread->id_ + 1) % g_event_processor.thread_count_for_type_[ET_NET]);
     if (OB_LIKELY(NULL != submit_thread_) && next_id != submit_thread_->id_) {
       if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][next_id]->schedule_imm(this))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        ERROR_ICMD("fail to schedule self", K(next_id), K(ret));
+        EDIAG_ICMD("fail to schedule self", K(next_id), K(ret));
       } else {
         is_finished = false;
       }
     } else {
       if (OB_FAIL(encode_eof_packet())) {
-        WARN_ICMD("fail to encode eof packet", K(ret));
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
       }
     }
   }
@@ -925,23 +925,23 @@ int ObShowSessionHandler::handle_cs_list(int event, void *data)
   ObEThread *ethread = NULL;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else {
     if (need_privilege_check() && OB_FAIL(do_privilege_check(session_priv_, need_priv_, errcode))) {
-      WARN_ICMD("fail to do privilege check", K(errcode), K(ret));
+      WDIAG_ICMD("fail to do privilege check", K(errcode), K(ret));
     }
     if (OB_SUCCESS != errcode) {
-      WARN_ICMD("fail to check user privilege, try to response err packet", K(errcode), K(ret));
+      WDIAG_ICMD("fail to check user privilege, try to response err packet", K(errcode), K(ret));
     } else if (OB_FAIL(dump_cs_list_header())) {
-      WARN_ICMD("fail to dump list header, try to do internal_error_callback", K(ret));
+      WDIAG_ICMD("fail to dump list header, try to do internal_error_callback", K(ret));
     } else if (OB_ISNULL(ethread = this_ethread())) {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+      WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
     } else {
       SET_HANDLER(&ObShowSessionHandler::show_cs_list);
       if (OB_ISNULL(ethread->schedule_imm(this))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        ERROR_ICMD("fail to schedule self", K(ret));
+        EDIAG_ICMD("fail to schedule self", K(ret));
       } else {
         need_callback = false;
       }
@@ -1012,10 +1012,10 @@ inline int ObShowSessionHandler::fill_scope_string(const char *string, const int
   int ret = OB_SUCCESS;
   if (OB_ISNULL(string) || OB_UNLIKELY(string_len <= 0) || OB_UNLIKELY(scope_string.remain() < string_len)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument", K(string), K(string_len), "remain", scope_string.remain(), K(ret));
+    WDIAG_ICMD("invalid argument", K(string), K(string_len), "remain", scope_string.remain(), K(ret));
   } else if (OB_UNLIKELY(string_len != scope_string.write(string, string_len))) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("fail to write scopes string into buf", K(string), K(string_len), K(scope_string), K(ret));
+    WDIAG_ICMD("fail to write scopes string into buf", K(string), K(string_len), K(scope_string), K(ret));
   } else {/*do nothing*/}
   return ret;
 }
@@ -1026,20 +1026,20 @@ int ObShowSessionHandler::get_var_scope_str(const ObSessionSysField *field,
   int ret = OB_SUCCESS;
   if (OB_ISNULL(field) || OB_UNLIKELY(scope_string.remain() <= 0)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument", K(field), "remain", scope_string.remain(), K(ret));
+    WDIAG_ICMD("invalid argument", K(field), "remain", scope_string.remain(), K(ret));
   } else {
     if (field->is_invisible()) {
       const char string[] = {" && invisible"};
       const int64_t string_len = static_cast<int64_t>(sizeof(string) - 1);
       if (OB_FAIL(fill_scope_string(string, string_len, scope_string))) {
-        WARN_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
+        WDIAG_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
       }
     }
     if (OB_SUCC(ret) && field->is_global_scope()) {
       const char string[] = {" && global_scope"};
       const int64_t string_len = static_cast<int64_t>(sizeof(string) - 1);
       if (OB_FAIL(fill_scope_string(string, string_len, scope_string))) {
-        WARN_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
+        WDIAG_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
       }
     }
 
@@ -1047,7 +1047,7 @@ int ObShowSessionHandler::get_var_scope_str(const ObSessionSysField *field,
       const char string[] = {" && session_scope"};
       const int64_t string_len = static_cast<int64_t>(sizeof(string) - 1);
       if (OB_FAIL(fill_scope_string(string, string_len, scope_string))) {
-        WARN_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
+        WDIAG_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
       }
     }
 
@@ -1055,7 +1055,7 @@ int ObShowSessionHandler::get_var_scope_str(const ObSessionSysField *field,
       const char string[] = {" && readonly"};
       const int64_t string_len = static_cast<int64_t>(sizeof(string) - 1);
       if (OB_FAIL(fill_scope_string(string, string_len, scope_string))) {
-        WARN_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
+        WDIAG_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
       }
     }
 
@@ -1063,7 +1063,7 @@ int ObShowSessionHandler::get_var_scope_str(const ObSessionSysField *field,
       const char string[] = {" && nullable"};
       const int64_t string_len = static_cast<int64_t>(sizeof(string) - 1);
       if (OB_FAIL(fill_scope_string(string, string_len, scope_string))) {
-        WARN_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
+        WDIAG_ICMD("fail to fill scope string", K(string), K(string_len), K(ret));
       }
     }
 
@@ -1084,20 +1084,20 @@ static int show_session_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &in
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowSessionHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowSessionHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowSessionHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowSessionHandler");
+    WDIAG_ICMD("fail to init for ObShowSessionHandler");
   } else if (OB_FAIL(handler->session_priv_.deep_copy(info.session_priv_))) {
-    WARN_ICMD("fail to deep copy session priv");
+    WDIAG_ICMD("fail to deep copy session priv");
   } else if (OB_FAIL(ObProxyPrivilegeCheck::get_need_priv(sql::stmt::T_SHOW_PROCESSLIST,
       handler->session_priv_, handler->need_priv_))) {
-    WARN_ICMD("fail to get need priv");
+    WDIAG_ICMD("fail to get need priv");
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("cur ethread is null, it should not happened", K(ret));
+    WDIAG_ICMD("cur ethread is null, it should not happened", K(ret));
   } else {
     DEBUG_ICMD("schedule encode packet continuation");
     if (OBPROXY_T_SUB_SESSION_LIST == info.get_sub_cmd_type()
@@ -1111,7 +1111,7 @@ static int show_session_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &in
       action = &handler->get_action();
       if (OB_ISNULL(ethread->schedule_imm(handler, ET_NET))) {// use work thread
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        ERROR_ICMD("fail to schedule ObShowSessionHandler", K(ret));
+        EDIAG_ICMD("fail to schedule ObShowSessionHandler", K(ret));
         action = NULL;
       } else {
         DEBUG_ICMD("succ to schedule ObShowSessionHandler", K(handler->session_priv_));
@@ -1131,10 +1131,10 @@ int show_session_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_PROCESSLIST,
                                                                &show_session_cmd_callback))) {
-    WARN_ICMD("fail to OBPROXY_T_ICMD_SHOW_PROCESSLIST", K(ret));
+    WDIAG_ICMD("fail to OBPROXY_T_ICMD_SHOW_PROCESSLIST", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_SESSION,
                                                                &show_session_cmd_callback))) {
-    WARN_ICMD("fail to OBPROXY_T_ICMD_SHOW_SESSION", K(ret));
+    WDIAG_ICMD("fail to OBPROXY_T_ICMD_SHOW_SESSION", K(ret));
   }
   return ret;
 }
@@ -1143,7 +1143,7 @@ int ObShowSessionHandler::dump_cs_read_stale_replica_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(READ_STALE_ARRAY, OB_SWRS_MAX_STALE_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -1161,7 +1161,7 @@ int ObShowSessionHandler::dump_cs_read_stale_replica(ObMysqlClientSession &cs)
   ObVipAddr vip_addr = cs.get_ct_info().vip_tenant_.vip_addr_;
 
   if (OB_FAIL(processor.acquire_vip_feedback_record(vip_addr, tenant_name, cluster_name, vip_read_stale_info))) {
-    WARN_ICMD("fail to acquire vip read stale feedback map", K(ret));
+    WDIAG_ICMD("fail to acquire vip read stale feedback map", K(ret));
   } 
   if (OB_SUCC(ret) && vip_read_stale_info != NULL) {
     DRWLock::RDLockGuard vip_guard(vip_read_stale_info->get_lock());
@@ -1170,7 +1170,7 @@ int ObShowSessionHandler::dump_cs_read_stale_replica(ObMysqlClientSession &cs)
     for(; OB_SUCC(ret) && it != end; ++it) {
       ObReadStaleFeedback *feedback = it.value_;
       if (OB_FAIL(dump_cs_read_stale_replica_item(feedback))) {
-        WARN_ICMD("fail to dump weak read stale replica item",K(feedback), K(ret));
+        WDIAG_ICMD("fail to dump weak read stale replica item",K(feedback), K(ret));
       }
     }
   }
@@ -1187,9 +1187,9 @@ int ObShowSessionHandler::dump_cs_read_stale_replica_item(const ObReadStaleFeedb
   ip_port_text_buffer server_ip;
 
   if (OB_FAIL(ops_ip_nptop(feedback->replica_.server_addr_, server_ip, sizeof(server_ip)))) {
-    WARN_ICMD("fail to convert server addr", K(feedback->replica_.server_addr_), K(ret));
+    WDIAG_ICMD("fail to convert server addr", K(feedback->replica_.server_addr_), K(ret));
   } else if (OB_FAIL(ObTimeUtility::usec_to_str(feedback->feedback_time_, time_buf, OB_MAX_TIMESTAMP_LENGTH, pos))) {
-    WARN_ICMD("fail to convert feedback time", K(feedback->replica_.server_addr_), K(ret));
+    WDIAG_ICMD("fail to convert feedback time", K(feedback->replica_.server_addr_), K(ret));
   } else {
     cells[OB_SWRS_ADDR].set_varchar(server_ip);
     cells[OB_SWRS_TABLE_ID].set_int(feedback->replica_.table_id_);
@@ -1199,7 +1199,7 @@ int ObShowSessionHandler::dump_cs_read_stale_replica_item(const ObReadStaleFeedb
     row.cells_ = cells;
     row.count_ = OB_SWRS_MAX_STALE_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   return ret;

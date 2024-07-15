@@ -92,7 +92,7 @@ typedef unsigned int in_addr_t;
 #endif
 #include <sys/sysinfo.h>
 #ifdef EL9_PLATFORM
-#else 
+#else
 #include <sys/sysctl.h>
 #endif
 #include <dlfcn.h>
@@ -125,6 +125,9 @@ static const char *const OB_PROXY_DEFAULT_CLUSTER_NAME = "obcloud";
 
 //dbp runtime env
 static const char *const OB_PROXY_DBP_RUNTIME_ENV      = "dbpcloud";
+
+//service name
+static const char *const OB_SERVICE_NAME_PRIFIX = "SERVICE:";
 
 static const int64_t OB_DEFAULT_CLUSTER_ID             = 0;
 
@@ -163,7 +166,12 @@ const static int64_t PRINT_JSON_LEN                        = 16 * 1024;
 // Attention!! must confirm OB_NORMAL_MYSQL_CLIENT_COUNT >= OB_META_MYSQL_CLIENT_COUNT
 // or will dead lock
 static const int64_t OB_META_MYSQL_CLIENT_COUNT            = 2;
-static const int64_t OB_NORMAL_MYSQL_CLIENT_COUNT          = 64;
+// use proxy config[mysql_client_num] replace OB_NORMAL_MYSQL_CLIENT_COUNT
+// static const int64_t OB_NORMAL_MYSQL_CLIENT_COUNT = 64;
+
+//add rpc count
+static const int64_t OB_META_RPC_CLIENT_COUNT = 8;
+static const int64_t OB_NORMAL_RPC_CLIENT_COUNT = 16;
 
 static const int64_t OB_PROXY_WARN_LOG_BUF_LENGTH          = (1 << 20) * 1;
 static const int64_t OB_PROXY_WARN_LOG_AVG_LENGTH          = 512;
@@ -201,14 +209,13 @@ static const uint64_t OBPROXY_DEFAULT_CAPABILITY_FLAG =
      | OB_CAP_PL_ROUTE
      | OB_CAP_PROXY_REROUTE
      | OB_CAP_PROXY_SESSION_SYNC
-     | OB_CAP_PROXY_FULL_LINK_TRACING
      | OB_CAP_PROXY_NEW_EXTRA_INFO
      | OB_CAP_PROXY_SESSION_VAR_SYNC
      | OB_CAP_PROXY_READ_STALE_FEEDBACK
-     | OB_CAP_PROXY_FULL_LINK_TRACING_EXT
      | OB_CAP_SERVER_DUP_SESS_INFO_SYNC
      | OB_CAP_ENABLE_CLIENT_SESSION_ID_V2
      | OB_CAP_OB_PROTOCOL_V2_COMPRESS
+     | OB_CAP_FEEDBACK_PROXY
     );
 
 #define OBPROXY_SYS_ERRNO_START -10000

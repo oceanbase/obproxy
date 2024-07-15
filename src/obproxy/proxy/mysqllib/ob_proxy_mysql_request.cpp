@@ -108,7 +108,7 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
       }
 
       // if buf is not suitable we re-alloc it
-      if (OB_ISNULL(req_buf_) || OB_UNLIKELY(req_buf_len_ != req_buf_len)) {
+      if (OB_ISNULL(req_buf_) || OB_UNLIKELY(req_buf_len_ < req_buf_len || req_buf_len_ > req_buf_len * 2)) {
         if (OB_FAIL(alloc_request_buf(req_buf_len))) {
           LOG_EDIAG("fail to alloc buf", K(req_buf_len), K(ret));
         } else {
@@ -186,7 +186,7 @@ void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
   is_mysql_req_in_ob20_payload_ = false;
   user_identity_ = USER_TYPE_NONE;
   req_pkt_len_ = 0;
-  enable_internal_kill_connection_ = false;
+  enable_server_kill_connection_ = false;
   allocator_.reuse();
   sql_id_buf_[0] = '\0';
 }

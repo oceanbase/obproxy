@@ -75,9 +75,13 @@ public:
   int64_t cluster_id_;
   bool use_ssl_;
   bool enable_client_ip_checkout_;
+  bool enable_full_link_trace_;
   ObClientSessionIDVersion cs_id_version_;
   common::ObString cluster_name_;
   common::ObString proxy_scramble_;
+  common::ObString proxy_idc_name_;
+  common::ObString proxy_service_name_;
+  common::ObString proxy_failover_mode_;
 
   char conn_id_buf_[OB_MAX_UINT32_BUF_LEN];
   char proxy_version_buf_[OB_MAX_VERSION_BUF_LEN];

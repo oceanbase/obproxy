@@ -77,7 +77,7 @@ ob_charpos_utf16(const ObCharsetInfo *cs,
   unsigned int char_len;
   while (pos) {
     if (!(char_len= ob_ismbchar(cs, begin, end))) {
-      return (end + 2 - b0); 
+      return (end + 2 - b0);
     } else {
       begin += char_len;
       pos--;
@@ -288,7 +288,7 @@ ob_strntol_mb2_or_mb4(const ObCharsetInfo *cs,
         //do nothing
       } else {
         break;
-      } 
+      }
     } else  {
       if (end_ptr != NULL) *end_ptr= (char*) str;
       err[0]= (cnv==OB_CS_ILSEQ) ? EILSEQ : EDOM;
@@ -386,7 +386,7 @@ ob_strntoul_mb2_or_mb4(const ObCharsetInfo *cs,
         //do nothing
       } else {
         break;
-      } 
+      }
     } else  {
       if (NULL != end_ptr) {
         *end_ptr= (char*)str;
@@ -449,7 +449,7 @@ ob_strntoul_mb2_or_mb4(const ObCharsetInfo *cs,
   return (negative ? -((long) res) : (long) res);
 }
 
-static longlong 
+static longlong
 ob_strntoll_mb2_or_mb4(const ObCharsetInfo *cs,
                        const char *nptr, size_t l, int base,
                        char **end_ptr, int *err)
@@ -625,7 +625,7 @@ ob_strntoull_mb2_or_mb4(const ObCharsetInfo *cs,
     } else {
       break;
     }
-  } 
+  }
 
   if (NULL != end_ptr) {
     *end_ptr = (char *) str;
@@ -654,7 +654,7 @@ ob_strntod_mb2_or_mb4(const ObCharsetInfo *cs,
   int     cnv;
 
   *err= 0;
-  
+
   if (length >= sizeof(buf)) {
     length= sizeof(buf) - 1;
   }
@@ -664,8 +664,8 @@ ob_strntod_mb2_or_mb4(const ObCharsetInfo *cs,
   while (cnv > 0) {
     str+= cnv;
     if (wc > (int) (unsigned char) 'e' || !wc) {
-      break;                                    
-    } else {    
+      break;
+    } else {
       *begin++= (char) wc;
       cnv= cs->cset->mb_wc(cs,&wc,str,end);
     }
@@ -697,7 +697,7 @@ ob_strntoull10rnd_mb2_or_mb4(const ObCharsetInfo *cs,
   while (cnv > 0) {
     str += cnv;
     if (wc > (int) (unsigned char) 'e' || !wc) {
-      break;                            
+      break;
     } else {
       *begin++= (char) wc;
       cnv= cs->cset->mb_wc(cs,&wc,str,end);
@@ -733,7 +733,7 @@ static int
 ob_strnncoll_utf16_bin(const ObCharsetInfo *cs,
                        const unsigned char *str, size_t s_len,
                        const unsigned char *t, size_t t_len,
-                       bool t_is_prefix)
+                       ob_bool t_is_prefix)
 {
   int s_res,t_res;
   ob_wc_t UNINIT_VAR(s_wc), UNINIT_VAR(t_wc);
@@ -760,7 +760,7 @@ static int
 ob_strnncollsp_utf16_bin(const ObCharsetInfo *cs,
                          const unsigned char *str, size_t s_len,
                          const unsigned char *t, size_t t_len,
-                         bool diff_if_only_endspace_difference)
+                         ob_bool diff_if_only_endspace_difference)
 {
   int res;
   ob_wc_t UNINIT_VAR(s_wc), UNINIT_VAR(t_wc);
@@ -828,7 +828,7 @@ static void
 ob_hash_sort_utf16_bin(const ObCharsetInfo *cs,
                        const unsigned char *pos, size_t len,
                        unsigned long int *nr1, unsigned long int *nr2,
-                       const bool calc_end_space, hash_algo hash_algo)
+                       const ob_bool calc_end_space, hash_algo hash_algo)
 {
   const unsigned char *end= pos + (calc_end_space ? len : cs->cset->lengthsp(cs, (const char *) pos, len));
 
@@ -848,7 +848,7 @@ static int
 ob_strnncoll_utf16(const ObCharsetInfo *cs,
                    const unsigned char *str, size_t s_len,
                    const unsigned char *t, size_t t_len,
-                   bool t_is_prefix)
+                   ob_bool t_is_prefix)
 {
   int s_res, t_res;
   ob_wc_t UNINIT_VAR(s_wc), UNINIT_VAR(t_wc);
@@ -880,7 +880,7 @@ static int
 ob_strnncollsp_utf16(const ObCharsetInfo *cs,
                      const unsigned char *str, size_t s_len,
                      const unsigned char *t, size_t t_len,
-                     bool diff_if_only_endspace_difference)
+                     ob_bool diff_if_only_endspace_difference)
 {
   int res;
   ob_wc_t UNINIT_VAR(s_wc), UNINIT_VAR(t_wc);
@@ -951,7 +951,7 @@ ob_wildcmp_utf16_ci(const ObCharsetInfo *cs,
 
 static void
 ob_hash_sort_utf16(const ObCharsetInfo *cs, const unsigned char *str, size_t s_len,
-                   unsigned long int *n1, unsigned long int *n2, const bool calc_end_space, hash_algo hash_algo)
+                   unsigned long int *n1, unsigned long int *n2, const ob_bool calc_end_space, hash_algo hash_algo)
 {
   ob_wc_t wc;
   int res;
@@ -1011,9 +1011,9 @@ ob_like_range_generic(const ObCharsetInfo *cs,
     int res = cs->cset->mb_wc(cs, &wc, (unsigned char*) ptr, (unsigned char*) end);
     if (res <= 0) {
       if (res == OB_CS_ILSEQ) {
-        return TRUE; 
+        return TRUE;
       } else {
-        break; 
+        break;
       }
     } else {
       ptr+= res;
@@ -1023,20 +1023,20 @@ ob_like_range_generic(const ObCharsetInfo *cs,
       res = cs->cset->mb_wc(cs, &wc, (unsigned char*) ptr, (unsigned char*) end);
       if (res <= 0) {
         if (res == OB_CS_ILSEQ) {
-          return TRUE; 
+          return TRUE;
         }
       } else {
         ptr+= res;
       }
       res= cs->cset->wc_mb(cs, wc, (unsigned char*) min_str, (unsigned char*) min_end);
       if (res <= 0) {
-        goto PAD_SET_LEN; 
+        goto PAD_SET_LEN;
       } else {
         min_str+= res;
         res= cs->cset->wc_mb(cs, wc, (unsigned char*) max_str, (unsigned char*) max_end);
       }
       if (res <= 0) {
-        goto PAD_SET_LEN; 
+        goto PAD_SET_LEN;
       } else {
         max_str+= res;
         continue;
@@ -1068,7 +1068,7 @@ ob_like_range_generic(const ObCharsetInfo *cs,
       if ((wc2 == (ob_wc_t) w_one || wc2 == (ob_wc_t) w_many)) {
         *min_length= *max_length= res_length;
         goto PAD_MIN_MAX;
-      } else if ((weight= ob_uca_contraction2_weight(contractions, wc, wc2)) && 
+      } else if ((weight= ob_uca_contraction2_weight(contractions, wc, wc2)) &&
                   weight[0] &&
                   ob_uca_can_be_contraction_tail(contractions, wc2))  {
         if (char_len == 1) {
@@ -1090,9 +1090,9 @@ ob_like_range_generic(const ObCharsetInfo *cs,
         } else {
           max_str+= res;
           wc= wc2;
-        } 
+        }
       }
-    }    
+    }
     res= cs->cset->wc_mb(cs, wc, (unsigned char*) min_str, (unsigned char*) min_end);
     if (res <= 0) {
       goto PAD_SET_LEN;
@@ -1116,7 +1116,7 @@ PAD_MIN_MAX:
   res_length_diff= res_length % cs->mbminlen;
   cs->cset->fill(cs, min_str, min_end - min_str - res_length_diff, cs->min_sort_char);
   cs->cset->fill(cs, max_str, max_end - max_str - res_length_diff, cs->max_sort_char);
-  
+
   if (res_length_diff != 0) {
     memset(min_end - res_length_diff, 0, res_length_diff);
     memset(max_end - res_length_diff, 0, res_length_diff);
@@ -1126,15 +1126,15 @@ PAD_MIN_MAX:
 
 ObCharsetHandler ob_charset_utf16_handler=
 {
-  ob_ismbchar_utf16,   
-  ob_mbcharlen_utf16,  
+  ob_ismbchar_utf16,
+  ob_mbcharlen_utf16,
   ob_numchars_utf16,
   ob_charpos_utf16,
   ob_max_bytes_charpos_mb,
   ob_well_formed_len_utf16,
   ob_lengthsp_mb2,
-  ob_utf16_uni,        
-  ob_uni_utf16,        
+  ob_utf16_uni,
+  ob_uni_utf16,
   ob_mb_ctype_mb,
   ob_caseup_utf16,
   ob_casedn_utf16,
@@ -1185,6 +1185,8 @@ ObCharsetInfo ob_charset_utf16_bin=
   NULL,
   NULL,
   NULL,
+  NULL,
+  NULL,
   &ob_unicase_default,
   NULL,
   NULL,
@@ -1210,6 +1212,8 @@ ObCharsetInfo ob_charset_utf16_general_ci=
   OB_UTF16,
   OB_UTF16_GENERAL_CI,
   "UTF-16 Unicode",
+  NULL,
+  NULL,
   NULL,
   NULL,
   NULL,

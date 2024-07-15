@@ -208,6 +208,14 @@ do { \
   }\
 } while (0);
 
+#define SET_TABLE_LOCK_RELATED() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    p->is_table_lock_related_ = true;\
+  }\
+} while (0);
+
 #define RETURN_SHARD_COMMENT_NAME_OB_DOT(word_type) \
 do {\
   ObProxyParseResult *p = yyget_extra(yyscanner);\
@@ -233,6 +241,7 @@ do { \
   if (OB_NOTNULL(p)) {\
     if (OBPROXY_T_INVALID == p->cur_stmt_type_) {\
       p->has_anonymous_block_ = true;\
+      p->has_ever_set_anonymous_block_ = true;\
     } \
   }\
 } while (0);
@@ -342,22 +351,10 @@ set_password            (set{space}+password{space}+)
 set_default             (set{space}+default{space}+)
 set_ob_read_consistency    (set{space}+(@@session{space}*\.{space}*ob_read_consistency|@@ob_read_consistency|ob_read_consistency){space}*)
 set_tx_read_only        (set{space}+(@@session{space}*\.{space}*(tx|transaction)_read_only|@@(tx|transaction)_read_only|(tx|transaction)_read_only){space}*)
-/* binlog related variables */
-binlog_variables (like{space}+'gtid_mode'|like{space}+"gtid_mode"|like{space}+'gtid_executed'|like{space}+"gtid_executed"|like{space}+'gtid_purged'|like{space}+"gtid_purged"|like{space}+'gtid_next'|like{space}+"gtid_next"|like{space}+'gtid_owned'|like{space}+"gtid_owned"|like{space}+'enforce_gtid_consistency'|like{space}+"enforce_gtid_consistency"|like{space}+'gtid_executed_compression_period'|like{space}+"gtid_executed_compression_period"|like{space}+'binlog_gtid_simple_recovery'|like{space}+"binlog_gtid_simple_recovery"|like{space}+'binlog_gtid_recovery_ordinal'|like{space}+"binlog_gtid_recovery_ordinal"|like{space}+'binlog_gtid_recovery_ignore_duplicates'|like{space}+"binlog_gtid_recovery_ignore_duplicates"|like{space}+'master_binlog_checksum'|like{space}+"master_binlog_checksum"|like{space}+'slave_uuid'|like{space}+"slave_uuid"|like{space}+'master_heartbeat_period'|like{space}+"master_heartbeat_period")
-show_binlog_variables (show{space}+global{space}+variables{space}+{binlog_variables}|show{space}+session{space}+variables{space}+{binlog_variables}|show{space}+local{space}+variables{space}+{binlog_variables}|show{space}+variables{space}+{binlog_variables})
-gtid_mode               (@@session{space}*\.{space}*gtid_mode|@@global{space}*\.{space}*gtid_mode|@@local{space}*\.{space}*gtid_mode|@@gtid_mode)
-gtid_executed           (@@session{space}*\.{space}*gtid_executed|@@global{space}*\.{space}*gtid_executed|@@local{space}*\.{space}*gtid_executed|@@gtid_executed)
-gtid_purged             (@@session{space}*\.{space}*gtid_purged|@@global{space}*\.{space}*gtid_purged|@@local{space}*\.{space}*gtid_purged|@@gtid_purged)
-gtid_next               (@@session{space}*\.{space}*gtid_next|@@global{space}*\.{space}*gtid_next|@@local{space}*\.{space}*gtid_next|@@gtid_next)
-gtid_owned              (@@session{space}*\.{space}*gtid_owned|@@global{space}*\.{space}*gtid_owned|@@local{space}*\.{space}*gtid_owned|@@gtid_owned)
-enforce_gtid_consistency (@@session{space}*\.{space}*enforce_gtid_consistency|@@global{space}*\.{space}*enforce_gtid_consistency|@@local{space}*\.{space}*enforce_gtid_consistency|@@enforce_gtid_consistency)
-gtid_executed_compression_period (@@session{space}*\.{space}*gtid_executed_compression_period|@@global{space}*\.{space}*gtid_executed_compression_period|@@local{space}*\.{space}*gtid_executed_compression_period|@@gtid_executed_compression_period)
-binlog_gtid_simple_recovery (@@session{space}*\.{space}*binlog_gtid_simple_recovery|@@global{space}*\.{space}*binlog_gtid_simple_recovery|@@local{space}*\.{space}*binlog_gtid_simple_recovery|@@binlog_gtid_simple_recovery)
-binlog_gtid_recovery_ordinal (@@session{space}*\.{space}*binlog_gtid_recovery_ordinal|@@global{space}*\.{space}*binlog_gtid_recovery_ordinal|@@local{space}*\.{space}*binlog_gtid_recovery_ordinal|@@binlog_gtid_recovery_ordinal)
-binlog_gtid_recovery_ignore_duplicates (@@session{space}*\.{space}*binlog_gtid_recovery_ignore_duplicates|@@global{space}*\.{space}*binlog_gtid_recovery_ignore_duplicates|@@local{space}*\.{space}*binlog_gtid_recovery_ignore_duplicates|@@binlog_gtid_recovery_ignore_duplicates)
-master_binlog_checksum (@master_binlog_checksum)
-slave_uuid             (@slave_uuid)
-master_heartbeat_period (@master_heartbeat_period)
+/* binlog related variables, and will return a binlog_variable token */
+binlog_user_var        (slave_uuid|master_heartbeat_period|master_binlog_checksum)
+binlog_sys_var         (gtid_mode|server_id|server_uuid|gtid_executed|gtid_purged|gtid_next|gtid_owned|enforce_gtid_consistency|gtid_executed_compression_period|binlog_gtid_simple_recovery|binlog_gtid_recovery_ordinal|binlog_gtid_recovery_ignore_duplicates)
+all_binlog_var         (\"{binlog_user_var}\"|\'{binlog_user_var}\'|\"{binlog_sys_var}\"|\'{binlog_sys_var}\')
 
 quote         '
 sqbegin       {quote}
@@ -429,7 +426,6 @@ show_binlog_events (show{space}+binlog{space}+events)
 purge_binary_logs (purge{space}+binary{space}+logs)
 reset_master (reset{space}+master)
 show_binlog_server_for_tenant (show{space}+binlog{space}+server{space}+for{space}+tenant)
-show_slave_status (show{space}+slave{space}+status)
 flush_binary_logs (flush{space}+binary{space}+logs)
 
 stop_ddl_task             (stop{space}+ddl{space}+task)
@@ -451,6 +447,7 @@ MERGE            { SET_DML_STMT(OBPROXY_T_MERGE); return MERGE; }
 SHOW             { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW; }
 XA               { RETURN_NON_RESERVED_KEYWORD(XA); }
  /* if begin is for starting transaction, will set has_anonymous_block = false in yacc */
+ /* if client is oracle mode and call SET_HAS_ANONYMOUS_BLOCK(), will set has_anonymous_block = true */
 BEGIN            { SET_HAS_ANONYMOUS_BLOCK(); RETURN_NON_RESERVED_KEYWORD(BEGI); }
 START            { RETURN_NON_RESERVED_KEYWORD(START); }
 COMMIT           { SET_BASIC_STMT(OBPROXY_T_COMMIT); RETURN_IGNORED_WORD(); }
@@ -532,8 +529,17 @@ LOAD             { return LOAD; }
 DATA             { RETURN_NON_RESERVED_KEYWORD(DATA); }
 LOCAL            { RETURN_NON_RESERVED_KEYWORD(LOCAL); }
 INFILE           { return INFILE; }
+slave            { RETURN_NON_RESERVED_KEYWORD(SLAVE); }
+HOSTS            { RETURN_NON_RESERVED_KEYWORD(HOSTS); }
+EVENTS           { RETURN_NON_RESERVED_KEYWORD(EVENTS); }
+BINLOG           { RETURN_NON_RESERVED_KEYWORD(BINLOG); }
+RELAYLOG         { RETURN_NON_RESERVED_KEYWORD(RELAYLOG); }
+{all_binlog_var} { return BINLOG_VARIABLE; }
 {sq_filename}    { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_SINGLE); }
 {dq_filename}    { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_DOUBLE); }
+
+GLOBAL           { RETURN_NON_RESERVED_KEYWORD(GLOBAL); }
+SESSION          { RETURN_NON_RESERVED_KEYWORD(SESSION); }
 
  /* no reserved keyword , don't forget to add these keyword in .y */
  /*refer：https://dev.mysql.com/doc/refman/5.6/en/keywords.html*/
@@ -579,15 +585,16 @@ OFFSET           { RETURN_NON_RESERVED_KEYWORD(OFFSET); }
 {show_processlist}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_PROCESSLIST); return SHOW_PROCESSLIST; }
 ATTRIBUTE           { RETURN_NON_RESERVED_KEYWORD(ATTRIBUTE); }
 VARIABLES           { RETURN_NON_RESERVED_KEYWORD(VARIABLES); }
-READ_STALE     { RETURN_NON_RESERVED_KEYWORD(READ_STALE); }
+READ_STALE          { RETURN_NON_RESERVED_KEYWORD(READ_STALE); }
 
 STAT                { RETURN_NON_RESERVED_KEYWORD(STAT); }
 
- /*show config*/
+ /*show config [all]*/
 {show_proxyconfig}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_CONFIG); PUSH_STATE(proxy_icmd_state); return SHOW_PROXYCONFIG; }
 
 <proxy_icmd_state>"DIFF"                { RETURN_NON_RESERVED_KEYWORD(DIFF); }
 <proxy_icmd_state>"USER"                { RETURN_NON_RESERVED_KEYWORD(USER); }
+<proxy_icmd_state>"ALL"                 { RETURN_NON_RESERVED_KEYWORD(ALL); }
 <proxy_icmd_state>"LIKE"                { POP_STATE(); return LIKE; }
 
  /*show sm*/
@@ -606,6 +613,7 @@ STAT                { RETURN_NON_RESERVED_KEYWORD(STAT); }
 {show_proxyroute}   { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_ROUTE); return SHOW_PROXYROUTE; }
 
 ROUTINE             { RETURN_NON_RESERVED_KEYWORD(ROUTINE); }
+GLOBALINDEX        { RETURN_NON_RESERVED_KEYWORD(GLOBALINDEX); }
 
  /*show vip*/
 {show_proxyvip}     { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_VIP); return SHOW_PROXYVIP; }
@@ -749,13 +757,11 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 {show_binlog_events} { SET_BINLOG_RELATED(); }
 {purge_binary_logs} { SET_BINLOG_RELATED(); }
 {reset_master} { SET_BINLOG_RELATED(); }
-{show_slave_status} { SET_BINLOG_RELATED(); }
 {flush_binary_logs} { SET_BINLOG_RELATED(); }
 {show_binlog_server_for_tenant} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT); SET_BINLOG_RELATED(); return SHOW_BINLOG_SERVER_FOR_TENANT; }
-{show_binlog_variables} { SET_BINLOG_RELATED(); }
 
-<set_expr>"global"                      { return GLOBAL; }
-<set_expr>"session"                     { return SESSION; }
+<set_expr>"global"                      { RETURN_NON_RESERVED_KEYWORD(GLOBAL); }
+<set_expr>"session"                     { RETURN_NON_RESERVED_KEYWORD(SESSION); }
 <set_expr>{int_num}                     { RETURN_INT_NUM(); }
 <set_expr>{comma}|{multi_byte_comma}    { return ','; }
 <set_expr>{identifer}                   { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
@@ -1250,22 +1256,17 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"global"                      { SET_GLOBAL_SET_STMT(); RETURN_IGNORED_WORD(); }
 <in_expr>"connection_id"               { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>"sys_context"                 { SET_SYS_CONTEXT(); RETURN_IGNORED_WORD(); }
-<in_expr>"gtid_subset"                 { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>"gtid_subtract"               { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>"wait_for_executed_gtid_set"  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{gtid_mode}                   { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{gtid_executed}               { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{gtid_purged}                 { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{gtid_next}                   { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{gtid_owned}                  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{enforce_gtid_consistency}    { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{gtid_executed_compression_period} { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{binlog_gtid_simple_recovery} { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{binlog_gtid_recovery_ordinal} { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{binlog_gtid_recovery_ignore_duplicates}    { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{master_binlog_checksum}      { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{slave_uuid}                  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
-<in_expr>{master_heartbeat_period}     { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"@@global\."                  { return GLOBAL_ALIAS; }
+<in_expr>"@@session\."                 { return SESSION_ALIAS; }
+<in_expr>"@@local\."                   { return LOCAL_ALIAS; }
+<in_expr>"@"                          { return yytext[0]; }
+<in_expr>{binlog_user_var}             { return BINLOG_USER_VAR; }
+<in_expr>{binlog_sys_var}              { return BINLOG_SYS_VAR; }
+<in_expr>"get_lock"                    { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"is_free_lock"                { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"is_used_lock"                { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"release_all_locks"           { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"release_lock"                { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>{tx_read_only}                { RETURN_COL_NAME(TX_READ_ONLY); }
 <in_expr>{identifer}                   { RETURN_IGNORED_WORD(); }
 <in_expr><<EOF>>                       { return END_P; }

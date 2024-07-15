@@ -1,6 +1,7 @@
 obproxy_common_sources:=\
 common/ob_common_utility.h\
 common/ob_common_utility.cpp\
+common/ob_common_types.h\
 common/ob_obj_cast.h\
 common/ob_obj_cast.cpp\
 common/ob_obj_funcs.h\
@@ -37,6 +38,7 @@ common/ob_role.cpp\
 common/ob_trace_profile.h\
 common/ob_trace_profile.cpp\
 common/data_buffer.h\
+common/data_buffer.cpp\
 common/ob_string_buf.h\
 common/ob_string_buf.ipp\
 common/ob_action_flag.h\
@@ -87,4 +89,6 @@ common/expression/ob_expr_util.h\
 common/expression/ob_expr_regexp_context.h\
 common/expression/ob_expr_regexp_context.cpp\
 common/ob_datum_cast.h\
-common/ob_datum_cast.cpp
+common/ob_datum_cast.cpp\
+common/ob_table_object.h\
+common/ob_table_object.cpp

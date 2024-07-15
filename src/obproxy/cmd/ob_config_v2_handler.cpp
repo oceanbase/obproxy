@@ -59,18 +59,24 @@ int ObConfigV2Handler::main_handler(int event, void *data)
   UNUSED(data);
   int event_ret = EVENT_DONE;
   int ret = OB_SUCCESS;
-  switch (cmd_type_) {
-    case OBPROXY_T_SELECT:
-      event_ret = handle_select_stmt();
-      break;
-    case OBPROXY_T_REPLACE:
-    case OBPROXY_T_DELETE:
-      event_ret = handle_dml_stmt();
-      break;
-    default:
-      ret = OB_NOT_SUPPORTED;
-      WARN_ICMD("unknown type", "cmd_type", get_print_stmt_name(cmd_type_), K(ret));
-      event_ret = internal_error_callback(ret);
+  if (OB_UNLIKELY(action_.cancelled_)) {
+    ret = OB_ERR_UNEXPECTED;
+    WDIAG_ICMD("action canceled", K(ret));
+    event_ret = internal_error_callback(ret);
+  } else {
+    switch (cmd_type_) {
+      case OBPROXY_T_SELECT:
+        event_ret = handle_select_stmt();
+        break;
+      case OBPROXY_T_REPLACE:
+      case OBPROXY_T_DELETE:
+        event_ret = handle_dml_stmt();
+        break;
+      default:
+        ret = OB_NOT_SUPPORTED;
+        WDIAG_ICMD("unknown type", "cmd_type", get_print_stmt_name(cmd_type_), K(ret));
+        event_ret = internal_error_callback(ret);
+    }
   }
 
   return event_ret;
@@ -83,12 +89,12 @@ int ObConfigV2Handler::handle_select_stmt()
   ObString sql = sm_->trans_state_.trans_info_.client_request_.get_sql();
   DEBUG_ICMD("handle select stmt", K(sql));
   if (OB_FAIL(get_global_config_processor().execute(sql, cmd_type_, this))) {
-    WARN_ICMD("execute sql faield", K(sql), K(ret));
+    WDIAG_ICMD("execute sql faield", K(sql), K(ret));
   } else {
     const int64_t column_num = sqlite3_column_name_.count();
     if (OB_UNLIKELY(column_num > OB_PROXY_MAX_INNER_TABLE_COLUMN_NUM)) {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("column num is bigger than OB_PROXY_MAX_INNER_TABLE_COLUMN_NUM", K(ret), K(column_num));
+      WDIAG_ICMD("column num is bigger than OB_PROXY_MAX_INNER_TABLE_COLUMN_NUM", K(ret), K(column_num));
     } else {
       ObProxyColumnSchema schema_array[OB_PROXY_MAX_INNER_TABLE_COLUMN_NUM];
       for (int i = 0; i < column_num; i++) {
@@ -97,12 +103,12 @@ int ObConfigV2Handler::handle_select_stmt()
 
       if (0 == column_num) {
         if (OB_FAIL(encode_ok_packet(0, capability_))) {
-          WARN_ICMD("fail to encode eof packet", K(ret));
+          WDIAG_ICMD("fail to encode eof packet", K(ret));
         } else {
           event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
         }
       } else if (OB_FAIL(encode_header(schema_array, column_num))) {
-        WARN_ICMD("fail to encode header", K(ret));
+        WDIAG_ICMD("fail to encode header", K(ret));
       } else {
         for (int64_t i = 0; OB_SUCC(ret) && i < sqlite3_column_value_.count(); i++) {
           ObIArray<ObProxyVariantString> &tmp_array = sqlite3_column_value_.at(i);
@@ -114,7 +120,7 @@ int ObConfigV2Handler::handle_select_stmt()
           row.cells_ = cells;
           row.count_ = column_num;
           if (OB_FAIL(encode_row_packet(row))) {
-            WARN_ICMD("fail to encode row packet", K(row), K(ret));
+            WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
           }
         }
         sqlite3_column_name_.reset();
@@ -123,7 +129,7 @@ int ObConfigV2Handler::handle_select_stmt()
         if (OB_FAIL(ret)) {
           // do nothing
         } else if (OB_FAIL(encode_eof_packet())) {
-          WARN_ICMD("fail to encode eof packet", K(ret));
+          WDIAG_ICMD("fail to encode eof packet", K(ret));
         } else {
           event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
         }
@@ -145,9 +151,9 @@ int ObConfigV2Handler::handle_dml_stmt()
   ObString sql = sm_->trans_state_.trans_info_.client_request_.get_sql();
   DEBUG_ICMD("handle dml stmt", K(sql));
   if (OB_FAIL(get_global_config_processor().execute(sql, cmd_type_, this))) {
-    WARN_ICMD("fail to execute sql", K(sql), K(ret));
+    WDIAG_ICMD("fail to execute sql", K(sql), K(ret));
   } else if (OB_FAIL(encode_ok_packet(0, capability_))) {
-    WARN_ICMD("fail to encode_ok_packet", K(ret));
+    WDIAG_ICMD("fail to encode_ok_packet", K(ret));
   } else {
     event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
   }
@@ -167,17 +173,17 @@ int ObConfigV2Handler::config_v2_cmd_callback(ObContinuation *cont, ObInternalCm
   ObConfigV2Handler *handler = NULL;
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObConfigV2Handler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObConfigV2Handler", K(ret));
+    EDIAG_ICMD("fail to new ObConfigV2Handler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObConfigV2Handler", K(ret));
+    WDIAG_ICMD("fail to init for ObConfigV2Handler", K(ret));
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObConfigV2Handler", K(ret));
+      EDIAG_ICMD("fail to schedule ObConfigV2Handler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObConfigV2Handler");

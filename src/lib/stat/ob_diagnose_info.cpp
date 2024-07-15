@@ -460,10 +460,10 @@ int ObDiagnoseSessionInfo::notify_wait_end(ObDiagnoseTenantInfo *tenant_info)
           tenant_event_stat->total_timeouts_++;
         }
         if (event_desc->wait_time_ > static_cast<int64_t>(event_stat->max_wait_)) {
-          event_stat->max_wait_ = event_desc->wait_time_;
+          event_stat->max_wait_ = static_cast<uint32_t>(event_desc->wait_time_);
         }
         if (event_desc->wait_time_ > static_cast<int64_t>(tenant_event_stat->max_wait_)) {
-          tenant_event_stat->max_wait_ = event_desc->wait_time_;
+          tenant_event_stat->max_wait_ = static_cast<uint32_t>(event_desc->wait_time_);
         }
       }
     }
@@ -682,7 +682,7 @@ ObWaitEventGuard::~ObWaitEventGuard()
       tenant_event_stat->total_timeouts_++;
     }
     if (wait_time > static_cast<int64_t>(tenant_event_stat->max_wait_)) {
-      tenant_event_stat->max_wait_ = wait_time;
+      tenant_event_stat->max_wait_ = static_cast<uint32_t>(wait_time);
     }
   }
 }

@@ -15,6 +15,7 @@
 #include <cstring>
 #include <ctype.h>
 #include "lib/tbsys.h"
+#include "lib/objectpool/ob_concurrency_objpool.h"
 
 namespace oceanbase
 {
@@ -22,7 +23,8 @@ namespace common
 {
 // ObConfigItem
 ObConfigItem::ObConfigItem()
-    : ck_(NULL), version_(0), need_reboot_(false), is_initial_value_set_(false)
+    : ck_(NULL), version_(0), need_reboot_(false),
+      is_initial_value_set_(false), config_level_(ObConfigLevel::OB_CONFIG_MULTI_LEVEL_MAX)
 {
   MEMSET(value_str_, 0, sizeof(value_str_));
   MEMSET(name_str_, 0, sizeof(name_str_));
@@ -39,16 +41,70 @@ ObConfigItem::~ObConfigItem()
   }
 }
 
+void ObConfigItem::free()
+{
+  op_free(this);
+}
+
 int64_t ObConfigItem::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV("value_str:", value_str_,
-       "name_str:", name_str_,
-       "visible_level_str:", visible_level_str_,
-       "info:", info_str_);
+  J_KV("value_str", value_str_,
+       "name_str", name_str_,
+       "visible_level_str", visible_level_str_,
+       "info", info_str_,
+       "range", range_str_,
+       "config_level", config_level_to_str());
   J_OBJ_END();
   return pos;
+}
+
+const char* ObConfigItem::config_level_to_str() const
+{
+  const char *config_level_str = "";
+  if (config_level_ < OB_CONFIG_MULTI_LEVEL_GLOBAL || config_level_ >= OB_CONFIG_MULTI_LEVEL_MAX) {
+    OB_LOG(WDIAG, "Unknown config level type",K_(name_str), K_(value_str), K_(config_level));
+  } else {
+    switch (config_level_) {
+      case OB_CONFIG_MULTI_LEVEL_GLOBAL:
+        config_level_str = common::OB_CONFIG_MULTI_LEVEL_GLOBAL;
+        break;
+      case OB_CONFIG_MULTI_LEVEL_CLUSTER:
+        config_level_str = common::OB_CONFIG_MULTI_LEVEL_CLUSTER;
+        break;
+      case OB_CONFIG_MULTI_LEVEL_TENANT:
+        config_level_str = common::OB_CONFIG_MULTI_LEVEL_TENANT;
+        break;
+      case OB_CONFIG_MULTI_LEVEL_VIP:
+        config_level_str = common::OB_CONFIG_MULTI_LEVEL_VIP;
+        break;
+      default:
+        // impossiable
+        OB_LOG(WDIAG, "Invaile config level type, unexcepted branch", K_(config_level));
+        break;
+    }
+  }
+  return config_level_str;
+}
+
+ObConfigItem::ObConfigLevel ObConfigItem::str_to_config_level(const char *config_level_str)
+{
+  ObConfigLevel ret = OB_CONFIG_MULTI_LEVEL_MAX;
+  if (OB_ISNULL(config_level_str)) {
+    OB_LOG(WDIAG, "unexpected null pointer");
+  } else if (0 == STRCMP(common::OB_CONFIG_MULTI_LEVEL_GLOBAL, config_level_str)) {
+    ret = OB_CONFIG_MULTI_LEVEL_GLOBAL;
+  } else if (0 == STRCMP(common::OB_CONFIG_MULTI_LEVEL_CLUSTER, config_level_str)) {
+    ret = OB_CONFIG_MULTI_LEVEL_CLUSTER;
+  } else if (0 == STRCMP(common::OB_CONFIG_MULTI_LEVEL_TENANT, config_level_str)) {
+    ret = OB_CONFIG_MULTI_LEVEL_TENANT;
+  } else if (0 == STRCMP(common::OB_CONFIG_MULTI_LEVEL_VIP, config_level_str)) {
+    ret = OB_CONFIG_MULTI_LEVEL_VIP;
+  } else {
+    OB_LOG(WDIAG, "Unknown config level str", K(config_level_str));
+  }
+  return ret;
 }
 
 void ObConfigItem::init(const char *name,
@@ -56,7 +112,8 @@ void ObConfigItem::init(const char *name,
                         const char *info,
                         const ObCfgItemExtraInfo e1,
                         const ObCfgItemExtraInfo e2,
-                        const ObCfgItemExtraInfo e3)
+                        const ObCfgItemExtraInfo e3,
+                        const ObCfgItemExtraInfo e4)
 {
   if (OB_ISNULL(name) || OB_ISNULL(def) || OB_ISNULL(info)) {
     OB_LOG(EDIAG, "name or def or info is null", K(name), K(def), K(info));
@@ -84,6 +141,10 @@ void ObConfigItem::init(const char *name,
           set_need_reboot(extra_infos[i].value_);
           break;
         }
+      case ObCfgItemExtraInfo::CONFIG_LEVEL: {
+          set_config_level(str_to_config_level(extra_infos[i].value_));
+          break;
+      }
       default: {
           OB_LOG(EDIAG, "Unknown extra info type", "type", extra_infos[i].type_);
         }
@@ -98,7 +159,8 @@ void ObConfigItem::init(const char *name,
                         const char *info,
                         const ObCfgItemExtraInfo e1,
                         const ObCfgItemExtraInfo e2,
-                        const ObCfgItemExtraInfo e3)
+                        const ObCfgItemExtraInfo e3,
+                        const ObCfgItemExtraInfo e4)
 {
   init(name, def, info, CFG_EXTRA_INFO_LIST);
   if (OB_ISNULL(range)) {
@@ -119,6 +181,7 @@ ObConfigItem::ObConfigItem(const ObConfigItem& item)
   set_visible_level(item.visible_level());
   set_range_str(item.range_str());
   set_version(item.version());
+  set_config_level(item.config_level());
   need_reboot_ = item.need_reboot();
   is_initial_value_set_ = item.is_initial_value_set();
 }
@@ -133,6 +196,7 @@ ObConfigItem& ObConfigItem::operator =(const ObConfigItem& item)
     set_visible_level(item.visible_level());
     set_range_str(item.range_str());
     set_version(item.version());
+    set_config_level(item.config_level());
     need_reboot_ = item.need_reboot();
     is_initial_value_set_ = item.is_initial_value_set();
   }
@@ -140,19 +204,116 @@ ObConfigItem& ObConfigItem::operator =(const ObConfigItem& item)
   return *this;
 }
 
+void ObConfigItem::reset()
+{
+  version_ = 0;
+  need_reboot_ = false;
+  is_initial_value_set_ = false;
+  value_str_[0] = '\0';
+  name_str_[0] = '\0';
+  info_str_[0] = '\0';
+  section_str_[0] = '\0';
+  visible_level_str_[0] = '\0';
+  range_str_[0] = '\0';
+}
+
+ObConfigItem& ObConfigItem::operator =(const ObVariableLenConfigItem& item)
+{
+  if (this != reinterpret_cast<ObConfigItem*>(&(const_cast<ObVariableLenConfigItem&>(item)))) {
+    // 兼容接口
+    reset();
+    set_name(item.name());
+    set_value(item.str());
+  }
+
+  return *this;
+}
+
+// ObVariableLenConfigItem
+void ObVariableLenConfigItem::reset()
+{
+  name_str_.reset();
+  value_str_.reset();
+}
+
+ObVariableLenConfigItem& ObVariableLenConfigItem::operator =(const ObVariableLenConfigItem& item)
+{
+  if (this != &item) {
+    reset();
+    set_name(item.name());
+    set_value(item.str());
+  }
+  return *this;
+}
+
+ObVariableLenConfigItem::ObVariableLenConfigItem(const ObVariableLenConfigItem& item): value_str_(item.value_str_), name_str_(item.name_str_)
+{
+}
+
+int64_t ObVariableLenConfigItem::to_string(char *buf, const int64_t buf_len) const
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV(K_(value_str), K_(name_str));
+  J_OBJ_END();
+  return pos;
+}
+
+bool ObVariableLenConfigItem::set_value(const common::ObString& string)
+{
+  bool bret = true;
+  if (string.empty()) {
+    value_str_.reset();
+  } else {
+    int64_t len = std::min<int64_t>(OB_MAX_CONFIG_VALUE_LEN, static_cast<int64_t>(string.length()));
+    bret = set_variable(value_str_, string.ptr(), len);
+  }
+  return bret;
+}
+
+bool ObVariableLenConfigItem::set_value(const char* str)
+{
+  bool bret = true;
+  if (OB_NOT_NULL(str) && '\0' != str[0]) {
+    int64_t len = std::min<int64_t>(OB_MAX_CONFIG_VALUE_LEN, static_cast<int64_t>(strlen(str)));
+    bret = set_variable(value_str_, str, len);
+  } else {
+    value_str_.reset();
+  }
+  return bret;
+}
+
+bool ObVariableLenConfigItem::set_name(const char* name)
+{
+  bool bret = true;
+  if (OB_NOT_NULL(name) && OB_LIKELY('\0' != name[0])) {
+    int64_t len = std::min<int64_t>(OB_MAX_CONFIG_NAME_LEN, static_cast<int64_t>(strlen(name)));
+    bret = set_variable(name_str_, name, len);
+  } else {
+    name_str_.reset();
+  }
+  return bret;
+}
+
 // ObConfigIntListItem
 ObConfigItem *ObConfigIntListItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigIntListItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigIntListItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigIntListItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigIntListItem::free()
+{
+  op_free(this);
 }
 
 ObConfigIntListItem::ObConfigIntListItem(ObConfigContainer *container,
@@ -161,7 +322,8 @@ ObConfigIntListItem::ObConfigIntListItem(ObConfigContainer *container,
                                          const char *info,
                                          const ObCfgItemExtraInfo e1,
                                          const ObCfgItemExtraInfo e2,
-                                         const ObCfgItemExtraInfo e3)
+                                         const ObCfgItemExtraInfo e3,
+                                         const ObCfgItemExtraInfo e4)
     : value_(), initial_value_()
 {
   if (OB_LIKELY(NULL != container)) {
@@ -203,15 +365,21 @@ bool ObConfigIntListItem::set(const char *str)
 ObConfigItem *ObConfigStrListItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigStrListItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigStrListItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigStrListItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigStrListItem::free()
+{
+  op_free(this);
 }
 
 ObConfigStrListItem::ObConfigStrListItem()
@@ -225,7 +393,8 @@ ObConfigStrListItem::ObConfigStrListItem(ObConfigContainer *container,
                                          const char *info,
                                          const ObCfgItemExtraInfo e1,
                                          const ObCfgItemExtraInfo e2,
-                                         const ObCfgItemExtraInfo e3)
+                                         const ObCfgItemExtraInfo e3,
+                                         const ObCfgItemExtraInfo e4)
     : value_(), initial_value_()
 {
   if (OB_LIKELY(NULL != container)) {
@@ -428,19 +597,30 @@ bool ObConfigIntegralItem::parse_range(const char *range)
   return bool_ret;
 }
 
+void ObConfigIntegralItem::free()
+{
+  op_free(this);
+}
+
 // ObConfigDoubleItem
 ObConfigItem *ObConfigDoubleItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigDoubleItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigDoubleItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigDoubleItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigDoubleItem::free()
+{
+  op_free(this);
 }
 
 ObConfigDoubleItem::ObConfigDoubleItem(ObConfigContainer *container,
@@ -450,7 +630,8 @@ ObConfigDoubleItem::ObConfigDoubleItem(ObConfigContainer *container,
                                        const char *info,
                                        const ObCfgItemExtraInfo e1,
                                        const ObCfgItemExtraInfo e2,
-                                       const ObCfgItemExtraInfo e3)
+                                       const ObCfgItemExtraInfo e3,
+                                       const ObCfgItemExtraInfo e4)
     : value_(0), initial_value_(0)
 {
   if (OB_LIKELY(NULL != container)) {
@@ -465,7 +646,8 @@ ObConfigDoubleItem::ObConfigDoubleItem(ObConfigContainer *container,
                                       const char *info,
                                       const ObCfgItemExtraInfo e1,
                                       const ObCfgItemExtraInfo e2,
-                                      const ObCfgItemExtraInfo e3)
+                                      const ObCfgItemExtraInfo e3,
+                                      const ObCfgItemExtraInfo e4)
     : value_(0), initial_value_(0)
 {
   if (OB_LIKELY(NULL != container)) {
@@ -555,15 +737,21 @@ bool ObConfigDoubleItem::parse_range(const char *range)
 ObConfigItem *ObConfigCapacityItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigCapacityItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigCapacityItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigCapacityItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigCapacityItem::free()
+{
+  op_free(this);
 }
 
 ObConfigCapacityItem::ObConfigCapacityItem(ObConfigContainer *container,
@@ -573,7 +761,8 @@ ObConfigCapacityItem::ObConfigCapacityItem(ObConfigContainer *container,
                                             const char *info,
                                             const ObCfgItemExtraInfo e1,
                                             const ObCfgItemExtraInfo e2,
-                                            const ObCfgItemExtraInfo e3)
+                                            const ObCfgItemExtraInfo e3,
+                                            const ObCfgItemExtraInfo e4)
 {
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
@@ -587,7 +776,8 @@ ObConfigCapacityItem::ObConfigCapacityItem(ObConfigContainer *container,
                                            const char *info,
                                            const ObCfgItemExtraInfo e1,
                                            const ObCfgItemExtraInfo e2,
-                                           const ObCfgItemExtraInfo e3)
+                                           const ObCfgItemExtraInfo e3,
+                                           const ObCfgItemExtraInfo e4)
 {
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
@@ -608,15 +798,21 @@ int64_t ObConfigCapacityItem::parse(const char *str, bool &valid) const
 ObConfigItem *ObConfigTimeItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigTimeItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigTimeItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigTimeItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigTimeItem::free()
+{
+  op_free(this);
 }
 
 ObConfigTimeItem::ObConfigTimeItem(ObConfigContainer *container,
@@ -626,7 +822,8 @@ ObConfigTimeItem::ObConfigTimeItem(ObConfigContainer *container,
                                    const char *info,
                                    const ObCfgItemExtraInfo e1,
                                    const ObCfgItemExtraInfo e2,
-                                   const ObCfgItemExtraInfo e3)
+                                   const ObCfgItemExtraInfo e3,
+                                   const ObCfgItemExtraInfo e4)
 {
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
@@ -640,7 +837,8 @@ ObConfigTimeItem::ObConfigTimeItem(ObConfigContainer *container,
                                  const char *info,
                                  const ObCfgItemExtraInfo e1,
                                  const ObCfgItemExtraInfo e2,
-                                 const ObCfgItemExtraInfo e3)
+                                 const ObCfgItemExtraInfo e3,
+                                 const ObCfgItemExtraInfo e4)
 {
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
@@ -686,15 +884,21 @@ int64_t ObConfigTimeItem::parse(const char *str, bool &valid) const
 ObConfigItem *ObConfigIntItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigIntItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigIntItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigIntItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigIntItem::free()
+{
+  op_free(this);
 }
 
 ObConfigIntItem::ObConfigIntItem(ObConfigContainer *container,
@@ -704,7 +908,8 @@ ObConfigIntItem::ObConfigIntItem(ObConfigContainer *container,
                                  const char *info,
                                  const ObCfgItemExtraInfo e1,
                                  const ObCfgItemExtraInfo e2,
-                                 const ObCfgItemExtraInfo e3)
+                                 const ObCfgItemExtraInfo e3,
+                                 const ObCfgItemExtraInfo e4)
 {
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
@@ -718,7 +923,8 @@ ObConfigIntItem::ObConfigIntItem(ObConfigContainer *container,
                                  const char *info,
                                  const ObCfgItemExtraInfo e1,
                                  const ObCfgItemExtraInfo e2,
-                                 const ObCfgItemExtraInfo e3)
+                                 const ObCfgItemExtraInfo e3,
+                                 const ObCfgItemExtraInfo e4)
 {
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
@@ -750,15 +956,21 @@ int64_t ObConfigIntItem::parse(const char *str, bool &valid) const
 ObConfigItem *ObConfigMomentItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigMomentItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigMomentItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigMomentItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigMomentItem::free()
+{
+  op_free(this);
 }
 
 ObConfigMomentItem::ObConfigMomentItem(ObConfigContainer *container,
@@ -767,7 +979,8 @@ ObConfigMomentItem::ObConfigMomentItem(ObConfigContainer *container,
                                        const char *info,
                                        const ObCfgItemExtraInfo e1,
                                        const ObCfgItemExtraInfo e2,
-                                       const ObCfgItemExtraInfo e3)
+                                       const ObCfgItemExtraInfo e3,
+                                       const ObCfgItemExtraInfo e4)
     :  value_(), initial_value_()
 {
   if (OB_LIKELY(NULL != container)) {
@@ -798,15 +1011,21 @@ bool ObConfigMomentItem::set(const char *str)
 ObConfigItem *ObConfigBoolItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigBoolItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigBoolItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigBoolItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigBoolItem::free()
+{
+  op_free(this);
 }
 
 ObConfigBoolItem::ObConfigBoolItem(ObConfigContainer *container,
@@ -815,7 +1034,8 @@ ObConfigBoolItem::ObConfigBoolItem(ObConfigContainer *container,
                                    const char *info,
                                    const ObCfgItemExtraInfo e1,
                                    const ObCfgItemExtraInfo e2,
-                                   const ObCfgItemExtraInfo e3)
+                                   const ObCfgItemExtraInfo e3,
+                                   const ObCfgItemExtraInfo e4)
     : value_(false), initial_value_(false)
 {
   if (OB_LIKELY(NULL != container)) {
@@ -883,15 +1103,21 @@ bool ObConfigBoolItem::parse(const char *str, bool &valid) const
 ObConfigItem *ObConfigStringItem::clone()
 {
   ObConfigItem *ret = NULL;
-  if (OB_ISNULL(ret = new (std::nothrow) ObConfigStringItem())) {
+  if (OB_ISNULL(ret = op_alloc(ObConfigStringItem))) {
     OB_LOG(WDIAG, "fail to new ObConfigStringItem", K(name_str_));
   } else {
     ObCfgNeedRebootLabel e1 = need_reboot_ ? ObCfgNeedRebootLabel("true") : ObCfgNeedRebootLabel("false");
     ObCfgVisibleLevelLabel e2(visible_level_str_);
     ObCfgSectionLabel e3(section_str_);
+    ObCfgConfigLevelConfigLabel e4(config_level_to_str());
     ret->init(name_str_, value_str_, range_str_, info_str_, CFG_EXTRA_INFO_LIST);
   }
   return ret;
+}
+
+void ObConfigStringItem::free()
+{
+  op_free(this);
 }
 
 ObConfigStringItem::ObConfigStringItem(ObConfigContainer *container,
@@ -900,7 +1126,8 @@ ObConfigStringItem::ObConfigStringItem(ObConfigContainer *container,
                                        const char *info,
                                        const ObCfgItemExtraInfo e1,
                                        const ObCfgItemExtraInfo e2,
-                                       const ObCfgItemExtraInfo e3)
+                                       const ObCfgItemExtraInfo e3,
+                                       const ObCfgItemExtraInfo e4)
 {
   MEMSET(initial_value_str_, 0, sizeof(initial_value_str_));
   if (OB_LIKELY(NULL != container)) {

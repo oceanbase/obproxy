@@ -66,9 +66,9 @@ int ObShowSMHandler::init_hash_set()
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(is_hash_set_inited_)) {
     ret = OB_INIT_TWICE;
-    WARN_ICMD("fail to init got_id_set twice", K(ret));
+    WDIAG_ICMD("fail to init got_id_set twice", K(ret));
   } else if (OB_FAIL(got_id_set_.create(BUCKET_SIZE))) {
-    WARN_ICMD("fail to init got_id_set", K(ret));
+    WDIAG_ICMD("fail to init got_id_set", K(ret));
   } else {
     is_hash_set_inited_ = true;
   }
@@ -82,12 +82,12 @@ int ObShowSMHandler::handle_smdetails(int event, void *data)
   ObEThread *ethread = NULL;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("it should not happened, this_ethread is null", K(ret));
+    WDIAG_ICMD("it should not happened, this_ethread is null", K(ret));
   } else if (OB_FAIL(dump_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else {
     bool need_encode_eof = false;
     if (sm_id_ >= UINT32_MAX || sm_id_ < 0) {
@@ -100,7 +100,7 @@ int ObShowSMHandler::handle_smdetails(int event, void *data)
         DEBUG_ICMD("fail to try lock list, schedule in again", K(bucket));
         if (OB_ISNULL(g_event_processor.schedule_in(this, MYSQL_LIST_RETRY, ET_TASK))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          ERROR_ICMD("fail to schedule self", K(ret));
+          EDIAG_ICMD("fail to schedule self", K(ret));
         } else {
           event_ret = EVENT_CONT;
         }
@@ -117,13 +117,13 @@ int ObShowSMHandler::handle_smdetails(int event, void *data)
               DEBUG_ICMD("fail to try lock sm, schedule in again", K(sm_id_));
               if (OB_ISNULL(g_event_processor.schedule_in(this, MYSQL_LIST_RETRY, ET_TASK))) {
                 ret = OB_ALLOCATE_MEMORY_FAILED;
-                ERROR_ICMD("fail to schedule self", K(ret));
+                EDIAG_ICMD("fail to schedule self", K(ret));
               } else {
                 event_ret = EVENT_CONT;
               }
             } else {
               if (OB_FAIL(dump_sm_internal(*sm))) {
-                WARN_ICMD("fail to dump sm", K(sm_id_));
+                WDIAG_ICMD("fail to dump sm", K(sm_id_));
               } else {
                 DEBUG_ICMD("succ to dump sm", K(sm_id_));
                 need_encode_eof = true;
@@ -142,7 +142,7 @@ int ObShowSMHandler::handle_smdetails(int event, void *data)
 
     if (need_encode_eof) {
       if (OB_FAIL(encode_eof_packet())) {
-        WARN_ICMD("fail to encode eof packet", K(ret));
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
       } else {
         INFO_ICMD("succ to dump sm detail", K_(sm_id));
         event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -163,15 +163,15 @@ int ObShowSMHandler::handle_smlist(int event, void *data)
   ObEThread *ethread = NULL;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (!is_hash_set_inited_) {
     ret = OB_NOT_INIT;
-    WARN_ICMD("hash set is not inited_", K_(is_hash_set_inited), K(ret));
+    WDIAG_ICMD("hash set is not inited_", K_(is_hash_set_inited), K(ret));
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("it should not happened, this_ethread is null", K(ret));
+    WDIAG_ICMD("it should not happened, this_ethread is null", K(ret));
   } else if (OB_FAIL(dump_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else {
     DEBUG_ICMD("begin traversing the buckets", K_(list_bucket), K(MYSQL_SM_LIST_BUCKETS));
     bool terminate = false;
@@ -182,7 +182,7 @@ int ObShowSMHandler::handle_smlist(int event, void *data)
         DEBUG_ICMD("fail to try lock list, schedule in again", K(list_bucket_));
         if (OB_ISNULL(g_event_processor.schedule_in(this, MYSQL_LIST_RETRY, ET_TASK))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
-          ERROR_ICMD("fail to schedule self", K(ret));
+          EDIAG_ICMD("fail to schedule self", K(ret));
         } else {
           event_ret = EVENT_CONT;
         }
@@ -200,12 +200,12 @@ int ObShowSMHandler::handle_smlist(int event, void *data)
               //do nothing
             } else if (OB_HASH_NOT_EXIST != hash_ret) {
               ret = hash_ret;
-              WARN_ICMD("fail to check if sm has been dumped", K(sm->sm_id_), K(ret));
+              WDIAG_ICMD("fail to check if sm has been dumped", K(sm->sm_id_), K(ret));
             } else if (OB_FAIL(dump_sm_internal(*sm))) {
-              WARN_ICMD("fail to dump sm", K(sm->sm_id_));
+              WDIAG_ICMD("fail to dump sm", K(sm->sm_id_));
             } else {
               if (OB_FAIL(got_id_set_.set_refactored(sm->sm_id_))) {
-                WARN_ICMD("fail to set sm into got_id_set_", K(sm->sm_id_), K(ret));
+                WDIAG_ICMD("fail to set sm into got_id_set_", K(sm->sm_id_), K(ret));
               } else {
                 DEBUG_ICMD("succ to dump sm", K(sm->sm_id_));
               }
@@ -223,7 +223,7 @@ int ObShowSMHandler::handle_smlist(int event, void *data)
     if (!terminate && list_bucket_ >= MYSQL_SM_LIST_BUCKETS) {
       DEBUG_ICMD("finish traversing all the state machine");
       if (OB_FAIL(encode_eof_packet())) {
-        WARN_ICMD("fail to encode eof packet", K(ret));
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
       } else {
         INFO_ICMD("succ to dump sm list");
         event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -243,9 +243,9 @@ int ObShowSMHandler::dump_smlist()
   ObEThread *ethread = NULL;
   if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("it should not happened, this_ethread is null", K(ret));
+    WDIAG_ICMD("it should not happened, this_ethread is null", K(ret));
   } else if (OB_FAIL(dump_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else {
     DEBUG_ICMD("begin traversing the buckets", K_(list_bucket), K(MYSQL_SM_LIST_BUCKETS));
     ObMysqlSM *sm = NULL;
@@ -257,7 +257,7 @@ int ObShowSMHandler::dump_smlist()
         // In this block we try to get the lock of the state machine
         MUTEX_LOCK(sm_lock, sm->mutex_, ethread);
         if (OB_FAIL(dump_sm_internal(*sm))) {
-          WARN_ICMD("fail to dump sm", K(sm->sm_id_), K(ret));
+          WDIAG_ICMD("fail to dump sm", K(sm->sm_id_), K(ret));
         } else {
           DEBUG_ICMD("succ to dump sm", K(sm->sm_id_));
         }
@@ -270,7 +270,7 @@ int ObShowSMHandler::dump_smlist()
   if (OB_SUCC(ret)) {
     DEBUG_ICMD("finish traversing all the state machine");
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret));
+      WDIAG_ICMD("fail to encode eof packet", K(ret));
     }
   }
   return ret;
@@ -281,7 +281,7 @@ int ObShowSMHandler::dump_common_info(const ObMysqlSM &sm, ObSqlString &sm_info)
   int ret = OB_SUCCESS;
   const char *sm_state = ObMysqlTransact::get_action_name(sm.trans_state_.next_action_);
   if (OB_FAIL(sm_info.append_fmt("CURRENT_STATE:%s\n", sm_state))) {
-    WARN_ICMD("fail to append common info", K(sm_state), K(ret));
+    WDIAG_ICMD("fail to append common info", K(sm_state), K(ret));
   }
   return ret;
 }
@@ -291,13 +291,13 @@ int ObShowSMHandler::dump_tunnel_info(const ObMysqlSM &sm, ObSqlString &sm_info)
   int ret = OB_SUCCESS;
   const ObMysqlTunnel &t = sm.get_tunnel();
   if (OB_FAIL(sm_info.append_fmt("PRODUCERS::\n"))) {
-    WARN_ICMD("fail to append producer info", K(sm_info), K(ret));
+    WDIAG_ICMD("fail to append producer info", K(sm_info), K(ret));
   } else {
     bool read_vio_avail = false;
     const ObMysqlTunnelProducer *producer = NULL;
     for (int64_t i = 0; OB_SUCC(ret) && i < ObMysqlTunnel::MAX_PRODUCERS; ++i) {
       if (OB_FAIL(sm_info.append_fmt("  [%ld]=={", i))) {
-        WARN_ICMD("fail to append index info", K(sm_info), K(ret));
+        WDIAG_ICMD("fail to append index info", K(sm_info), K(ret));
       } else {
         producer = &(t.producers_[i]);
         if (NULL != (producer->vc_)) {
@@ -306,10 +306,10 @@ int ObShowSMHandler::dump_tunnel_info(const ObMysqlSM &sm, ObSqlString &sm_info)
                                          producer->name_, (producer->alive_ ? "true" : "false"),
                                          (read_vio_avail ? producer->read_vio_->ndone_ : producer->bytes_read_),
                                          (read_vio_avail ? producer->read_vio_->nbytes_ : -1)))) {
-            WARN_ICMD("fail to append producer info", K(i), K(sm_info), K(ret));
+            WDIAG_ICMD("fail to append producer info", K(i), K(sm_info), K(ret));
           }
         } else if (OB_FAIL(sm_info.append_fmt("NULL}\n"))) {
-          WARN_ICMD("fail to append producer info", K(i), K(sm_info), K(ret));
+          WDIAG_ICMD("fail to append producer info", K(i), K(sm_info), K(ret));
         }
       }
     }
@@ -317,13 +317,13 @@ int ObShowSMHandler::dump_tunnel_info(const ObMysqlSM &sm, ObSqlString &sm_info)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(sm_info.append_fmt("CONSUMER:\n"))) {
-      WARN_ICMD("fail to append Cosumers info", K(sm_info), K(ret));
+      WDIAG_ICMD("fail to append Cosumers info", K(sm_info), K(ret));
     } else {
       bool write_vio_avail = false;
       const ObMysqlTunnelConsumer *consumer = NULL;
       for (int64_t i = 0; OB_SUCC(ret) && i < ObMysqlTunnel::MAX_CONSUMERS; ++i) {
         if (OB_FAIL(sm_info.append_fmt("  [%ld]=={", i))) {
-          WARN_ICMD("fail to append consumer info", K(i), K(sm_info), K(ret));
+          WDIAG_ICMD("fail to append consumer info", K(i), K(sm_info), K(ret));
         } else {
           consumer = &(t.consumers_[i]);
           write_vio_avail = (true == consumer->alive_ && NULL != consumer->write_vio_);
@@ -332,10 +332,10 @@ int ObShowSMHandler::dump_tunnel_info(const ObMysqlSM &sm, ObSqlString &sm_info)
                                            consumer->name_, (consumer->alive_ ? "true" : "false"),
                                            (write_vio_avail ? consumer->write_vio_->ndone_ : consumer->bytes_written_),
                                            (write_vio_avail ? consumer->write_vio_->nbytes_ : -1)))) {
-              WARN_ICMD("fail to append consumer info", K(i), K(sm_info), K(ret));
+              WDIAG_ICMD("fail to append consumer info", K(i), K(sm_info), K(ret));
             }
           } else if (OB_FAIL(sm_info.append_fmt("NULL}\n"))) {
-            WARN_ICMD("fail to append consumer info", K(i), K(sm_info), K(ret));
+            WDIAG_ICMD("fail to append consumer info", K(i), K(sm_info), K(ret));
           }
         }
       }
@@ -348,7 +348,7 @@ int ObShowSMHandler::dump_history_info(const ObMysqlSM &sm, ObSqlString &sm_info
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(sm_info.append_fmt("HISTORY:\n"))) {
-    WARN_ICMD("fail to append History info", K(sm_info), K(ret));
+    WDIAG_ICMD("fail to append History info", K(sm_info), K(ret));
   } else {
     int64_t size = sm.history_pos_;
     int64_t start = 0;
@@ -359,12 +359,12 @@ int ObShowSMHandler::dump_history_info(const ObMysqlSM &sm, ObSqlString &sm_info
     const ObMysqlSM::ObHistory *history = NULL;
     for (int64_t i = 0, j = start; OB_SUCC(ret) && i < size; ++i) {
       if (OB_FAIL(sm_info.append_fmt("  [%ld]=={", i))) {
-        WARN_ICMD("fail to append history info", K(i),K(sm_info),  K(ret));
+        WDIAG_ICMD("fail to append history info", K(i),K(sm_info),  K(ret));
       } else {
         history = &(sm.history_[j]);
         if (OB_FAIL(sm_info.append_fmt("fileline:%s; event:%u; reentrancy:%d;}\n",
                                        history->file_line_, history->event_, history->reentrancy_))) {
-          WARN_ICMD("fail to append history info", K(i), K(sm_info), K(ret));
+          WDIAG_ICMD("fail to append history info", K(i), K(sm_info), K(ret));
         }
       }
       j = (j + 1) % ObMysqlSM::HISTORY_SIZE;
@@ -406,17 +406,17 @@ int ObShowSMHandler::dump_sm_internal(const ObMysqlSM &sm)
   cells[OB_SMC_SM_CLUSTER_NAME].set_varchar(cluster_name);
 
   if (OB_FAIL(dump_common_info(sm, sm_info))) {
-    WARN_ICMD("fail to dump_common_info", K(sm_info), K(ret));
+    WDIAG_ICMD("fail to dump_common_info", K(sm_info), K(ret));
   } else if (OB_FAIL(dump_tunnel_info(sm, sm_info))) {
-    WARN_ICMD("fail to dump_tunnel_info", K(sm_info), K(ret));
+    WDIAG_ICMD("fail to dump_tunnel_info", K(sm_info), K(ret));
   } else if (OB_FAIL(dump_history_info(sm, sm_info))) {
-    WARN_ICMD("fail to dump_history_info", K(sm_info), K(ret));
+    WDIAG_ICMD("fail to dump_history_info", K(sm_info), K(ret));
   } else {
     cells[OB_SMC_SM_INFO].set_varchar(sm_info.string());
     row.cells_ = cells;
     row.count_ = OB_SMC_MAX_SM_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   return ret;
@@ -428,7 +428,7 @@ int ObShowSMHandler::dump_header()
   if (header_encoded_) {
     DEBUG_ICMD("header is already encoded, skip this");
   } else if (OB_FAIL(encode_header(SM_COLUMN_ARRAY, OB_SMC_MAX_SM_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   } else {
     header_encoded_ = true;
   }
@@ -444,19 +444,19 @@ static int mysqlsm_stat_callback(ObContinuation *cont, ObInternalCmdInfo &info,
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowSMHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowSMHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowSMHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowSMHandler");
+    WDIAG_ICMD("fail to init for ObShowSMHandler");
   } else if (handler->need_init_hash_set() && OB_FAIL(handler->init_hash_set())) {
-    WARN_ICMD("fail to init hash set for ObShowSMHandler");
+    WDIAG_ICMD("fail to init hash set for ObShowSMHandler");
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObShowSMHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObShowSMHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObShowSMHandler");
@@ -474,13 +474,13 @@ int show_sm_cmd_init()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_SM, &mysqlsm_stat_callback))) {
-    WARN_ICMD("fail to register CMD_TYPE_SM", K(ret));
+    WDIAG_ICMD("fail to register CMD_TYPE_SM", K(ret));
   } else {
     // Create the mutexes for mysql list protection
     for (int64_t i = 0; OB_SUCC(ret) && i < MYSQL_SM_LIST_BUCKETS; ++i) {
       if (OB_ISNULL(g_mysqlsm_list[i].mutex_ = new_proxy_mutex())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        WARN_ICMD("fail to new_proxy_mutex for g_mysqlsm_list", K(i), K(ret));
+        WDIAG_ICMD("fail to new_proxy_mutex for g_mysqlsm_list", K(i), K(ret));
       }
     }
   }

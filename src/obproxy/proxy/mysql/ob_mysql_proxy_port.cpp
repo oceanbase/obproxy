@@ -35,6 +35,20 @@ ObMysqlProxyPort &get_global_proxy_ipv6_port()
   return g_proxy_ipv6_port;
 }
 
+/* RPC Service */
+ObMysqlProxyPort &get_global_rpc_proxy_ipv4_port()
+{
+  static ObMysqlProxyPort g_rpc_proxy_ipv4_port;
+  return g_rpc_proxy_ipv4_port;
+}
+
+ObMysqlProxyPort &get_global_rpc_proxy_ipv6_port()
+{
+  static ObMysqlProxyPort g_rpc_proxy_ipv6_port;
+  return g_rpc_proxy_ipv6_port;
+}
+/* END RPC service */
+
 void ObMysqlProxyPort::reset()
 {
   fd_ = NO_FD;

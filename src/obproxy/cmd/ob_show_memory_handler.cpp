@@ -95,9 +95,9 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_mod_memory_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else {
     const ObModSet &mod_set = get_global_mod_set();
     ObModItem mod_item;
@@ -120,7 +120,7 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
           // nothing
         } else if (OB_FAIL(dump_mod_memory(mod_set.get_mod_name(i), is_allocator_mod(i) ? "allocator" : "user",
                                            mod_item.hold_, mod_item.used_, mod_item.count_, backtrace))) {
-          WARN_ICMD("fail to dump mod memory", K(mod_set.get_mod_name(i)), K(ret));
+          WDIAG_ICMD("fail to dump mod memory", K(mod_set.get_mod_name(i)), K(ret));
         }
       }
     }
@@ -171,7 +171,7 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret));
+      WDIAG_ICMD("fail to encode eof packet", K(ret));
     } else {
       INFO_ICMD("succ to dump memory info");
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -188,7 +188,7 @@ int ObShowMemoryHandler::dump_mod_memory_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(MOD_MEMORY_COLUMN_ARRAY, OB_MMC_MAX_MOD_MEMORY_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -246,7 +246,7 @@ int ObShowMemoryHandler::dump_mod_memory(const char *name, const char *type, con
     row.cells_ = cells;
     row.count_ = OB_MMC_MAX_MOD_MEMORY_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   return ret;
@@ -258,9 +258,9 @@ int ObShowMemoryHandler::handle_show_objpool(int event, void *data)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_objpool_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else {
     ObVector<common::ObObjFreeList *> fll;
     if (OB_FAIL(ObObjFreeListList::get_freelists().get_info(fll))) {
@@ -275,14 +275,14 @@ int ObShowMemoryHandler::handle_show_objpool(int event, void *data)
         LOG_WDIAG("backtrace_buf is null", K(backtrace_buf), K(ret));
       }
       for (int64_t i = 0; OB_SUCC(ret) && i < fll.size(); ++i) {
-        if (match_like(fll[i]->get_name(), like_name_)) {
+        if (common::match_like(fll[i]->get_name(), like_name_)) {
           // objpool use ObObjFreeList* as id
           if (OB_FAIL(get_global_objpool_leak_checker().load_backtrace_info_for_id((int64_t)fll[i], backtrace_count_, backtrace_buf, max_backtrace_len, backtrace_len))) {
             LOG_WDIAG("fail to load backtrace info", K(i), K(ret));
           } else if (FALSE_IT(backtrace.assign_ptr(backtrace_buf, (common::ObString::obstr_size_t)backtrace_len))) {
             // nothing
           } else if (OB_FAIL(dump_objpool_memory(fll[i], backtrace))) {
-            WARN_ICMD("fail to dump objpool memory", K(ret));
+            WDIAG_ICMD("fail to dump objpool memory", K(ret));
           }
         }
       }
@@ -295,7 +295,7 @@ int ObShowMemoryHandler::handle_show_objpool(int event, void *data)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret));
+      WDIAG_ICMD("fail to encode eof packet", K(ret));
     } else {
       INFO_ICMD("succ to dump objpool info");
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -313,7 +313,7 @@ int ObShowMemoryHandler::dump_objpool_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(OBJPOOL_COLUMN_ARRAY, OB_OPC_MAX_OBJPOOL_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -380,7 +380,7 @@ int ObShowMemoryHandler::dump_objpool_memory(const ObObjFreeList *fl, const ObSt
     row.cells_ = cells;
     row.count_ = OB_OPC_MAX_OBJPOOL_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   return ret;
@@ -395,12 +395,12 @@ static int show_memory_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &inf
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowMemoryHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowMemoryHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowMemoryHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowMemoryHandler");
+    WDIAG_ICMD("fail to init for ObShowMemoryHandler");
   } else {
     if (OBPROXY_T_SUB_MEMORY_OBJPOOL == info.get_sub_cmd_type()) {
       SET_CONTINUATION_HANDLER(handler, &ObShowMemoryHandler::handle_show_objpool);
@@ -410,7 +410,7 @@ static int show_memory_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &inf
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObShowMemoryHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObShowMemoryHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObShowMemoryHandler");
@@ -429,7 +429,7 @@ int show_memory_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_MEMORY,
                                                                &show_memory_cmd_callback))) {
-    WARN_ICMD("fail to proxy_memory_stat_callback", K(ret));
+    WDIAG_ICMD("fail to proxy_memory_stat_callback", K(ret));
   }
   return ret;
 }

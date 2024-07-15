@@ -265,7 +265,7 @@ TEST_F(TestConfigServerProcessor, test_get_newest_cluster_rs_list)
 
   ObSEArray<ObAddr, 16> rs_list;
   ObString cluster_name = ObString::make_string("xxx");
-  ret = config_processor_.get_newest_cluster_rs_list(cluster_name, 0, rs_list);
+  ret = config_processor_.get_newest_cluster_rs_list(cluster_name, 0, rs_list, rs_list);
   ASSERT_EQ(OB_ENTRY_NOT_EXIST, ret);
 }
 
@@ -599,7 +599,7 @@ TEST_F(TestFakeConfigServerProcessor, test_get_cluster_rs_list)
   ASSERT_EQ(2, cluster_info->get_rs_list_count());
 
   ObSEArray<ObAddr, 16> rs_list;
-  ret = config_processor_.get_cluster_rs_list(cluster_name1, 0, rs_list);
+  ret = config_processor_.get_cluster_rs_list(cluster_name1, 0, rs_list, rs_list);
   ASSERT_EQ(OB_SUCCESS, ret);
   ASSERT_EQ(rs_list.count(), 2);
   ObAddr rs_1;
@@ -611,7 +611,7 @@ TEST_F(TestFakeConfigServerProcessor, test_get_cluster_rs_list)
   ASSERT_EQ(OB_SUCCESS, ret);
 
   ObString cluster_name2("mysql");
-  ret = config_processor_.get_cluster_rs_list(cluster_name2, 0, rs_list);
+  ret = config_processor_.get_cluster_rs_list(cluster_name2, 0, rs_list, rs_list);
   ASSERT_EQ(OB_ENTRY_NOT_EXIST, ret);
 }
 

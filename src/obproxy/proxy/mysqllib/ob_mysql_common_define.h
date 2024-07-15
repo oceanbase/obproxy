@@ -33,6 +33,8 @@ static const int64_t MYSQL_PS_SEND_LONG_DATA_PARAM_ID_LENGTH = 2;  // mysql ps s
 // mysql meta info include mysql header and mysql request type
 static const int64_t MYSQL_NET_META_LENGTH                = MYSQL_NET_TYPE_LENGTH + MYSQL_NET_HEADER_LENGTH;
 
+static const int64_t RPC_NET_HEADER_LENGTH = 16;        // RPC Serivce header
+
 // compressed packet
 // The header looks like:
 //
@@ -52,6 +54,7 @@ static const int64_t MYSQL_ERR_PACKET_TYPE                = 0xFF;
 //may appear. You must check whether the packet length is less than 9 to
 //make sure that it is a EOF packet.
 static const int64_t MYSQL_EOF_PACKET_TYPE                = 0xFE;
+static const int64_t MYSQL_MAX_EOF_PACKET_LEN = 9;
 static const int64_t MYSQL_LOCAL_INFILE_TYPE              = 0xFB;
 static const int64_t MYSQL_HANDSHAKE_PACKET_TYPE          = 0x0A;
 

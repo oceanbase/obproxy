@@ -151,15 +151,15 @@ int ObShowNetHandler::handle_show_threads(int event, ObEvent *e)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_argument_valid(event, e))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_thread_header())) {
-    WARN_ICMD("fail to dump_threads_header", K(ret));
+    WDIAG_ICMD("fail to dump_threads_header", K(ret));
   } else {
     SET_HANDLER(&ObShowNetHandler::show_single_thread);
     next_thread_id_ = 0;
     if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][next_thread_id_]->schedule_imm(this))) {
       ret = OB_ERR_UNEXPECTED;
-      ERROR_ICMD("fail to schedule self", K(next_thread_id_), K(ret));
+      EDIAG_ICMD("fail to schedule self", K(next_thread_id_), K(ret));
     } else {
       event_ret = EVENT_CONT;
     }
@@ -177,15 +177,15 @@ int ObShowNetHandler::handle_show_connections(int event, ObEvent *e)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_argument_valid(event, e))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_connections_header())) {
-    WARN_ICMD("fail to dump_connections_header", K(ret));
+    WDIAG_ICMD("fail to dump_connections_header", K(ret));
   } else if (thread_id_ < 0 ) {//dump all connection
     next_thread_id_ = 0;
     SET_HANDLER(&ObShowNetHandler::show_connections);
     if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][next_thread_id_]->schedule_imm(this))) {
       ret = OB_ERR_UNEXPECTED;
-      ERROR_ICMD("fail to schedule self", K(next_thread_id_), K(ret));
+      EDIAG_ICMD("fail to schedule self", K(next_thread_id_), K(ret));
     } else {
       event_ret = EVENT_CONT;
     }
@@ -193,13 +193,13 @@ int ObShowNetHandler::handle_show_connections(int event, ObEvent *e)
     SET_HANDLER(&ObShowNetHandler::show_connections);
     if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][thread_id_]->schedule_imm(this))) {
       ret = OB_ERR_UNEXPECTED;
-      ERROR_ICMD("fail to schedule self", K_(thread_id), K(ret));
+      EDIAG_ICMD("fail to schedule self", K_(thread_id), K(ret));
     } else {
       event_ret = EVENT_CONT;
     }
   } else {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret));
+      WDIAG_ICMD("fail to encode eof packet", K(ret));
     } else {
       INFO_ICMD("dump no connections", K_(thread_id));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -220,23 +220,23 @@ int ObShowNetHandler::show_single_thread(int event, ObEvent *e)
   bool is_dump_succ = false;
   if (OB_UNLIKELY(!is_argument_valid(event, e))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
   } else if (OB_ISNULL(ethread = e->ethread_)) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("it should not happen", K(ethread), K(ret));
+    WDIAG_ICMD("it should not happen", K(ethread), K(ret));
   } else {
     ObNetHandler &nh = ethread->get_net_handler();
     MUTEX_TRY_LOCK(lock, nh.mutex_, ethread);
     if (!lock.is_locked()) {
       if (OB_ISNULL(ethread->schedule_in(this, MYSQL_LIST_RETRY))) {
         ret = OB_ERR_UNEXPECTED;
-        ERROR_ICMD("fail to schedule self", "this_ethread", ethread->id_, K(ret));
+        EDIAG_ICMD("fail to schedule self", "this_ethread", ethread->id_, K(ret));
       } else {
         event_ret = EVENT_CONT;
       }
     } else {
       if (OB_FAIL(dump_single_thread(ethread, nh))) {
-        WARN_ICMD("fail to dump single thread", K(ret));
+        WDIAG_ICMD("fail to dump single thread", K(ret));
       } else {
         is_dump_succ = true;
       }
@@ -248,13 +248,13 @@ int ObShowNetHandler::show_single_thread(int event, ObEvent *e)
     if (next_thread_id_ < g_event_processor.thread_count_for_type_[ET_NET]) {
       if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][next_thread_id_]->schedule_imm(this))) {
         ret = OB_ERR_UNEXPECTED;
-        ERROR_ICMD("fail to do next schedule", K(next_thread_id_), K(ret));
+        EDIAG_ICMD("fail to do next schedule", K(next_thread_id_), K(ret));
       } else {
         event_ret = EVENT_CONT;
       }
     } else {
       if (OB_FAIL(encode_eof_packet())) {
-        WARN_ICMD("fail to encode eof packet", K(ret));
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
       } else {
         INFO_ICMD("succ to dump threads");
         event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -276,23 +276,23 @@ int ObShowNetHandler::show_connections(int event, ObEvent *e)
   bool is_dump_succ = false;
   if (OB_UNLIKELY(!is_argument_valid(event, e))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(e), K_(is_inited), K(ret));
   } else if (OB_ISNULL(ethread = e->ethread_)) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("it should not happen", K(ethread), K(ret));
+    WDIAG_ICMD("it should not happen", K(ethread), K(ret));
   } else {
     ObNetHandler &nh = ethread->get_net_handler();
     MUTEX_TRY_LOCK(lock, nh.mutex_, ethread);
     if (!lock.is_locked()) {
       if (OB_ISNULL(ethread->schedule_in(this, MYSQL_LIST_RETRY))) {
         ret = OB_ERR_UNEXPECTED;
-        ERROR_ICMD("fail to schedule self", "this_ethread", ethread->id_, K(ret));
+        EDIAG_ICMD("fail to schedule self", "this_ethread", ethread->id_, K(ret));
       } else {
         event_ret = EVENT_CONT;
       }
     } else {
       if (OB_FAIL(dump_connections_on_thread(ethread, &nh))) {
-        WARN_ICMD("fail to dump connections on thread", K(ret));
+        WDIAG_ICMD("fail to dump connections on thread", K(ret));
       } else {
         is_dump_succ = true;
       }
@@ -303,13 +303,13 @@ int ObShowNetHandler::show_connections(int event, ObEvent *e)
     if (thread_id_ < 0  && ++next_thread_id_ < g_event_processor.thread_count_for_type_[ET_NET]) {//dump all thread
       if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][next_thread_id_]->schedule_imm(this))) {
         ret = OB_ERR_UNEXPECTED;
-        ERROR_ICMD("fail to schedule self", K(next_thread_id_), K(ret));
+        EDIAG_ICMD("fail to schedule self", K(next_thread_id_), K(ret));
       } else {
         event_ret = EVENT_CONT;
       }
     } else {
       if (OB_FAIL(encode_eof_packet())) {
-       WARN_ICMD("fail to encode eof packet", K(ret));
+       WDIAG_ICMD("fail to encode eof packet", K(ret));
       } else {
        INFO_ICMD("succ to dump connections", K_(thread_id));
        event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -327,7 +327,7 @@ int ObShowNetHandler::dump_thread_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(THREAD_COLUMN_ARRAY, OB_TC_MAX_THREAD_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -336,7 +336,7 @@ int ObShowNetHandler::dump_connections_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(CONN_COLUMN_ARRAY, OB_CC_MAX_CONN_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -346,7 +346,7 @@ int ObShowNetHandler::dump_single_thread(ObEThread *ethread, const ObNetHandler 
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ethread)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(ret));
   } else {
     ObNewRow row;
     ObObj cells[OB_TC_MAX_THREAD_COLUMN_ID];
@@ -382,7 +382,7 @@ int ObShowNetHandler::dump_single_thread(ObEThread *ethread, const ObNetHandler 
     row.cells_ = cells;
     row.count_ = OB_TC_MAX_THREAD_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     } else {
       DEBUG_ICMD("succ to encode row packet", K(row), K(next_thread_id_));
     }
@@ -395,7 +395,7 @@ int ObShowNetHandler::dump_connections_on_thread(const ObEThread *ethread, const
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ethread) || OB_ISNULL(nh)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(ret));
   } else {
     ObHRTime now = get_hrtime();
     int64_t current_rows = limit_rows_;
@@ -477,7 +477,7 @@ int ObShowNetHandler::dump_connections_on_thread(const ObEThread *ethread, const
       row.cells_ = cells;
       row.count_ = OB_CC_MAX_CONN_COLUMN_ID;
       if (OB_FAIL(encode_row_packet(row))) {
-        WARN_ICMD("fail to encode row packet", K(row), K(ret), K(next_thread_id_), K(vc->id_),
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret), K(next_thread_id_), K(vc->id_),
                                               K(current_rows), K(current_offset));
       } else {
         DEBUG_ICMD("succ to encode row packet", K(row), K(next_thread_id_), K(vc->id_),
@@ -499,12 +499,12 @@ static int show_net_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info,
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowNetHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowNetHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowNetHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowSMHandler", K(ret));
+    WDIAG_ICMD("fail to init for ObShowSMHandler", K(ret));
   } else {
     switch (info.get_sub_cmd_type()) {
       case OBPROXY_T_SUB_NET_THREAD: {
@@ -517,7 +517,7 @@ static int show_net_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info,
       }
       default: {
         ret = OB_INVALID_ARGUMENT;
-        ERROR_ICMD("invalid sub_stat_type", K(info.get_sub_cmd_type()), K(ret));
+        EDIAG_ICMD("invalid sub_stat_type", K(info.get_sub_cmd_type()), K(ret));
         break;
       }
     }
@@ -525,7 +525,7 @@ static int show_net_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info,
       action = &handler->get_action();
       if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        ERROR_ICMD("fail to schedule ObShowNetHandler", K(ret));
+        EDIAG_ICMD("fail to schedule ObShowNetHandler", K(ret));
         action = NULL;
       } else {
         DEBUG_ICMD("succ to schedule ObShowNetHandle");
@@ -545,7 +545,7 @@ int show_net_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_NET,
                                                                &show_net_cmd_callback))) {
-    WARN_ICMD("fail to register_cmd CMD_TYPE_NET", K(ret));
+    WDIAG_ICMD("fail to register_cmd CMD_TYPE_NET", K(ret));
   }
   return ret;
 }

@@ -257,8 +257,8 @@ int ObTransformationPlugin::handle_transform_read(ObContInternal *contp)
       if (OB_SUCC(ret)) {
         if (write_vio->ntodo() > 0) {
           DEBUG_API("Transformation contp=%p write_vio=%p, vio_cont=%p still has bytes "
-                    "left to process, ntodo > 0.",
-                    contp, write_vio, vio_cont);
+                    "left to process, ntodo > 0. write_vio.nbytes_=%ld, write_vio.ndone_=%ld",
+                    contp, write_vio, vio_cont, write_vio->nbytes_, write_vio->ndone_);
 
           if (to_read > 0) {
             write_vio->reenable();
@@ -270,8 +270,8 @@ int ObTransformationPlugin::handle_transform_read(ObContInternal *contp)
           }
         } else {
           DEBUG_API("Transformation contp=%p write_vio=%p, vio_cont=%p has no bytes "
-                    "left to process, will send WRITE_COMPLETE.",
-                    contp, write_vio, vio_cont);
+                    "left to process, will send WRITE_COMPLETE. write_vio.nbytes_=%ld, write_vio.ndone_=%ld",
+                    contp, write_vio, vio_cont, write_vio->nbytes_, write_vio->ndone_);
 
           // Call back the write VIO continuation to let it know that we have
           // completed the write operation.

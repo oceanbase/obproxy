@@ -122,7 +122,7 @@ int ObShardingShowTableStatusHandler::dump_table(const ObString &logic_tenant_na
   } else {
     string_to_upper_case(logic_table_name.ptr(), logic_table_name.length());
     for (ObStringArray::iterator it = table_names.begin(); OB_SUCC(ret) && it != table_names.end(); it++) {
-      if (match_like(*it, logic_table_name)) {
+      if (common::match_like(*it, logic_table_name)) {
         cells[OB_STS_NAME].set_varchar(*it);
         cells[OB_STS_ENGINE].set_varchar("Innodb");
         cells[OB_STS_VERSION].set_varchar("10");

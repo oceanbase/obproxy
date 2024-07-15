@@ -1,0 +1,12 @@
+obkv_sources:=\
+obproxy/obkv/table/ob_proxy_rpc_serialize_utils.h\
+obproxy/obkv/table/ob_table.h\
+obproxy/obkv/table/ob_table.cpp\
+obproxy/obkv/table/ob_rpc_struct.h\
+obproxy/obkv/table/ob_rpc_struct.cpp\
+obproxy/obkv/table/ob_table_rpc_struct.h\
+obproxy/obkv/table/ob_table_rpc_struct.cpp\
+obproxy/obkv/table/ob_table_rpc_request.h\
+obproxy/obkv/table/ob_table_rpc_request.cpp\
+obproxy/obkv/table/ob_table_rpc_response.h\
+obproxy/obkv/table/ob_table_rpc_response.cpp

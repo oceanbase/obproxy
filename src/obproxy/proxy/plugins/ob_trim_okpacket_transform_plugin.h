@@ -175,13 +175,11 @@ public:
         const obmysql::ObMySQLCapabilityFlags cap = server_info.get_compatible_capability_flags();
         src_ok.set_capability(cap);
 
-        ObRespAnalyzeResult &analyze_result =
-          sm_->trans_state_.trans_info_.server_response_.get_analyze_result();
-
         if (OB_SUCCESS != (ret = src_ok.decode())) {
           PROXY_API_LOG(WDIAG, "fail to decode ok packet", K(src_ok), K(ret));
         } else if (OB_SUCCESS != (ret = ObProxySessionInfoHandler::save_changed_session_info(
-            client_info, server_info, sm_->trans_state_.is_auth_request_, NULL, src_ok, analyze_result, sm_->trans_state_.trace_log_))) {
+            client_info, server_info, sm_->trans_state_.is_auth_request_, NULL, src_ok, 
+            sm_->trans_state_.trans_info_.resp_result_, sm_->trans_state_.trace_log_))) {
           _PROXY_API_LOG(WDIAG, "fail to save changed session info, is_auth_request=%d, ret=%d",
                          sm_->trans_state_.is_auth_request_, ret);
         }
@@ -241,7 +239,7 @@ public:
     return (!sm->trans_state_.is_auth_request_
             && !sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
-            && sm->analyzer_.is_resultset_resp());
+            && sm->trans_state_.trans_info_.resp_result_.is_resultset_resp());
   }
 };
 

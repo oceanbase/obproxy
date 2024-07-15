@@ -50,36 +50,50 @@ namespace omt
 int ObWhiteListTableProcessor::execute(void *arg)
 {
   int ret = OB_SUCCESS;
-  ObCloudFnParams *params = reinterpret_cast<ObCloudFnParams*>(arg);
-  ObString tenant_name = params->tenant_name_;
-  ObString cluster_name = params->cluster_name_;
+  ObFnParams *params = static_cast<ObFnParams*>(arg);
+  ObString tenant_name;
+  ObString cluster_name;
   ObString ip_list;
   if (NULL == params->fields_) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("fileds is null unexpected", K(ret));
-  } else if (cluster_name.empty() || cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH
-            || tenant_name.empty() || tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("execute failed, tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
   } else {
-    for (int64_t i = 0; i < params->fields_->field_num_; i++) {
+    int64_t index = params->row_index_;
+    for (int64_t i = 0; OB_SUCC(ret) && i < params->fields_->field_num_; i++) {
       SqlField *sql_field = params->fields_->fields_.at(i);
-      if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
-        ip_list = sql_field->column_value_.config_string_;
+      if (index >= sql_field->column_values_.count()) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("index out of range, invalid value for white_list",
+                  K(index), K(sql_field->column_values_.count()), K_(sql_field->column_name), K(ret));
+      } else if (0 == sql_field->column_name_.config_string_.case_compare("value")) {
+        ip_list = sql_field->column_values_.at(index).column_value_;
+      } else if (0 == sql_field->column_name_.config_string_.case_compare("cluster_name")) {
+        cluster_name = sql_field->column_values_.at(index).column_value_;
+      } else if (0 == sql_field->column_name_.config_string_.case_compare("tenant_name")) {
+        tenant_name = sql_field->column_values_.at(index).column_value_;
       }
     }
-
-    if (params->stmt_type_ == OBPROXY_T_REPLACE) {
-      if (OB_FAIL(get_global_white_list_table_processor().set_ip_list(cluster_name, tenant_name, ip_list))) {
-        LOG_WDIAG("set ip list failed", K(ret), K(cluster_name), K(tenant_name), K(ip_list));
+    if (cluster_name.empty() || cluster_name.length() > OB_PROXY_MAX_CLUSTER_NAME_LENGTH
+        || tenant_name.empty() || tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("execute failed, tenant_name or cluster_name is null", K(ret),
+                K(cluster_name), K(tenant_name));
+    } else if (OB_SUCC(ret)){
+      // 多值修改时，仅第一个值需要创建backup；其他值可以直接写入backup
+      if (params->stmt_type_ == OBPROXY_T_REPLACE) {
+        if (OB_FAIL(get_global_white_list_table_processor().set_ip_list(
+                cluster_name, tenant_name, ip_list, params->row_index_ == 0))) {
+          LOG_WDIAG("set ip list failed", K(ret), K(cluster_name), K(tenant_name), K(ip_list));
+        }
+      } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
+        if (OB_FAIL(get_global_white_list_table_processor().delete_ip_list(
+                cluster_name, tenant_name, params->row_index_ == 0))) {
+          LOG_WDIAG("delete ip list failed", K(ret), K(cluster_name), K(tenant_name));
+        }
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("unexpected stmt type", K(ret), K(params->stmt_type_));
       }
-    } else if (params->stmt_type_ == OBPROXY_T_DELETE) {
-      if (OB_FAIL(get_global_white_list_table_processor().delete_ip_list(cluster_name, tenant_name))) {
-        LOG_WDIAG("delete ip list failed", K(ret), K(cluster_name), K(tenant_name));
-      }
-    } else {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("unexpected stmt type", K(ret), K(params->stmt_type_));
     }
   }
 
@@ -113,6 +127,7 @@ int ObWhiteListTableProcessor::init()
 {
   int ret = OB_SUCCESS;
   ObConfigHandler handler;
+  LOG_INFO("start init ObWhiteListTableProcessor");
   handler.execute_func_ = &ObWhiteListTableProcessor::execute;
   handler.commit_func_ = &ObWhiteListTableProcessor::commit;
   if (OB_FAIL(addr_hash_map_array_[0].create(32, ObModIds::OB_HASH_BUCKET))) {
@@ -138,7 +153,8 @@ int ObWhiteListTableProcessor::ip_to_int(char *ip_addr, uint32_t& value)
   return ret;
 }
 
-int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &tenant_name, ObString &ip_list)
+int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &tenant_name, ObString &ip_list,
+                                          const bool need_to_backup)
 {
   int ret = OB_SUCCESS;
 
@@ -146,7 +162,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
   if (cluster_name.empty() || tenant_name.empty() || ip_list.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("argument is unexpected", K(ret), K(cluster_name), K(tenant_name), K(ip_list));
-  } else if (OB_FAIL(backup_hash_map())) {
+  } else if (need_to_backup && OB_FAIL(backup_hash_map())) {
     LOG_WDIAG("backup hash map failed", K(ret));
   } else {
     ObSEArray<AddrStruct, 4> addr_array;
@@ -217,14 +233,15 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
   return ret;
 }
 
-int ObWhiteListTableProcessor::delete_ip_list(ObString &cluster_name, ObString &tenant_name)
+int ObWhiteListTableProcessor::delete_ip_list(ObString &cluster_name, ObString &tenant_name,
+                                              const bool need_to_backup)
 {
   int ret = OB_SUCCESS;
   DRWLock::WRLockGuard guard(white_list_lock_);
   if (cluster_name.empty() || tenant_name.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("cluster name or tenant name empty unexpected", K(ret));
-  } else if (OB_FAIL(backup_hash_map())) {
+  } else if (need_to_backup && OB_FAIL(backup_hash_map())) {
     LOG_WDIAG("backup hash map failed", K(ret));
   } else {
     LOG_DEBUG("delete ip list", K(cluster_name), K(tenant_name));

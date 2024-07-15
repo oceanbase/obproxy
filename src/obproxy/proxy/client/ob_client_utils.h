@@ -14,9 +14,9 @@
 #define OBPROXY_CLIENT_UTILS_H
 
 #include "iocore/net/ob_net.h"
-#include "proxy/mysqllib/ob_mysql_transaction_analyzer.h"
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
 #include "utils/ob_proxy_table_define.h"
+#include "proxy/mysqllib/ob_resp_analyzer.h"
 
 namespace oceanbase
 {
@@ -67,6 +67,7 @@ public:
       ob_client_flags_(0), mysql_client_(NULL), client_vc_type_(CLIENT_VC_TYPE_NORMAL) {};
   void reset();
   void reset_sql();
+  void set_sql(common::ObString sql) { sql_ = sql; }
   void set_target_addr(const common::ObAddr addr) { target_addr_ = addr; }
   void set_mysql_client(ObMysqlClient *mysql_client) { mysql_client_ = mysql_client; }
   void set_client_vc_type(const ClientVCType client_vc_type) { client_vc_type_ = client_vc_type; }
@@ -94,7 +95,7 @@ class ObClientMysqlResp
 {
 public:
   ObClientMysqlResp()
-    : is_inited_(false), analyzer_(), mysql_resp_(), rs_fetcher_(NULL),
+    : is_inited_(false), analyzer_(), resp_result_(), rs_fetcher_(NULL),
       response_buf_(NULL), response_reader_(NULL) {}
   ~ObClientMysqlResp() { destroy(); }
 
@@ -103,12 +104,12 @@ public:
   void destroy();
 
   int analyze_resp(const obmysql::ObMySQLCmd cmd);
-  bool is_error_resp() const { return mysql_resp_.get_analyze_result().is_error_resp(); }
-  bool is_ok_resp() const { return mysql_resp_.get_analyze_result().is_ok_resp(); }
-  bool is_resultset_resp() const { return mysql_resp_.get_analyze_result().is_eof_resp(); }
-  bool is_resp_completed() const { return analyzer_.is_resp_completed(); }
-  uint16_t get_err_code() const { return mysql_resp_.get_analyze_result().get_error_code(); }
-  common::ObString get_err_msg() const {return mysql_resp_.get_analyze_result().get_error_pkt().get_message();}
+  bool is_error_resp() const { return resp_result_.is_error_resp(); }
+  bool is_ok_resp() const { return resp_result_.is_ok_resp(); }
+  bool is_resultset_resp() const { return resp_result_.is_eof_resp(); }
+  bool is_resp_completed() const { return resp_result_.is_resp_completed(); }
+  uint16_t get_err_code() const { return resp_result_.get_error_code(); }
+  common::ObString get_err_msg() const {return resp_result_.get_error_pkt().get_message();}
   int get_affected_rows(int64_t &affected_row);
 
   int get_resultset_fetcher(ObResultSetFetcher *&result);
@@ -119,8 +120,8 @@ public:
 
 private:
   bool is_inited_;
-  ObMysqlTransactionAnalyzer analyzer_;
-  ObMysqlResp mysql_resp_;
+  ObRespAnalyzer analyzer_;
+  ObRespAnalyzeResult resp_result_;
   ObResultSetFetcher *rs_fetcher_;
 
   event::ObMIOBuffer *response_buf_;

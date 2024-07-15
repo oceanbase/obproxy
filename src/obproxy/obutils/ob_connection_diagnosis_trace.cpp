@@ -115,7 +115,7 @@ DEF_TO_STRING(ObConnectionDiagnosisInfo)
   const char *request_cmd = ObProxyParserUtils::get_sql_cmd_name(request_cmd_);
   const char *sql_cmd = ObProxyParserUtils::get_sql_cmd_name(sql_cmd_);
   J_KV(K_(cs_id), K_(ss_id), K_(proxy_session_id), K_(server_session_id), K_(client_addr),
-       K_(server_addr), K_(cluster_name), K_(tenant_name), K_(user_name), K_(error_code),
+       K_(server_addr), K_(proxy_server_addr), K_(cluster_name), K_(tenant_name), K_(user_name), K_(error_code),
        K_(error_msg), K(request_cmd), K(sql_cmd), "req_total_time(us)", req_total_time_);
   J_OBJ_END();
   return pos;
@@ -203,6 +203,7 @@ void ObConnectionDiagnosisTrace::reset()
   trace_type_ = OB_MAX_TRACE_TYPE;
   is_user_client_ = true;
   is_first_packet_received_ = false;
+  is_detect_request_ = false;
   is_com_quit_ = false;
   is_detect_user_ = false;
 }
@@ -290,11 +291,11 @@ int ObConnectionDiagnosisTrace::record_login_disconnection(const ObString &inter
   return ret;
 }
 
-bool ObConnectionDiagnosisTrace::need_record_diagnosis_log(ObConnectionDiagnosisTraceType trace_type) const
+bool ObConnectionDiagnosisTrace::need_record_diagnosis_log() const
 {
   bool bret = true;
   if (!is_user_client_
-      || (!is_first_packet_received_ && trace_type == OB_CLIENT_VC_TRACE)
+      || is_detect_request_
       || is_com_quit_
       || is_detect_user_) {
     bret = false;
@@ -305,7 +306,7 @@ bool ObConnectionDiagnosisTrace::need_record_diagnosis_log(ObConnectionDiagnosis
 void ObConnectionDiagnosisTrace::log_diagnosis_info() const
 {
   const char *trace_type = get_connection_diagnosis_trace_str(trace_type_);
-  if (diagnosis_info_ != NULL && need_record_diagnosis_log(trace_type_)) {
+  if (diagnosis_info_ != NULL && need_record_diagnosis_log()) {
     if (obmysql::ObMySQLCmd::OB_MYSQL_COM_LOGIN == diagnosis_info_->request_cmd_) {
       OBPROXY_DIAGNOSIS_LOG(INFO, "[LOGIN]", K(trace_type),
                             "connection_diagnosis", *diagnosis_info_);

@@ -93,13 +93,13 @@ int ObShowGlobalSessionHandler::handle_show_global_session_info(int event, void 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else if (OB_FAIL(dump_body())) {
-    WARN_ICMD("fail to dump_body", K(ret));
+    WDIAG_ICMD("fail to dump_body", K(ret));
   } else if (OB_FAIL(encode_eof_packet())) {
-    WARN_ICMD("fail to encode eof packet", K(ret));
+    WDIAG_ICMD("fail to encode eof packet", K(ret));
   } else {
     INFO_ICMD("succ to dump config", K_(like_name));
     event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -113,7 +113,7 @@ int ObShowGlobalSessionHandler::dump_session_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(LIST_COLUMN_ARRAY, OB_IC_GLOBAL_MAX_COLUMN_ID))) {
-    WARN_ICMD("fail to dump_session_header", K(ret));
+    WDIAG_ICMD("fail to dump_session_header", K(ret));
   }
   return ret;
 }
@@ -125,7 +125,7 @@ int ObShowGlobalSessionHandler::dump_session_body() {
   ObMysqlGlobalSessionManager::SessionPoolListHashTable::iterator spot = session_pool_list_table.begin();
   ObMysqlGlobalSessionManager::SessionPoolListHashTable::iterator last = session_pool_list_table.end();
   for (int64_t i = 0; OB_SUCC(ret) && spot != last; ++spot, ++i) {
-    if (like_name_.empty() || match_like(spot->schema_key_.dbkey_.config_string_, like_name_)) {
+    if (like_name_.empty() || common::match_like(spot->schema_key_.dbkey_.config_string_, like_name_)) {
       ObNewRow row;
       ObObj cells[OB_IC_GLOBAL_MAX_COLUMN_ID];
       row.cells_ = cells;
@@ -138,7 +138,7 @@ int ObShowGlobalSessionHandler::dump_session_body() {
       cells[OB_IC_GLOBAL_POOL_PREFILL].set_int(ObMysqlSessionUtils::get_session_prefill(spot->schema_key_));
       cells[OB_IC_GLOBAL_POOL_LIVE_COUNT].set_int(spot->client_session_count_);
       if (OB_FAIL(encode_row_packet(row))) {
-        WARN_ICMD("fail to encode row packet", K(row), K(ret));
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
       }
     }
   }
@@ -149,7 +149,7 @@ int ObShowGlobalSessionHandler::dump_session_info_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(LIST_INFO_COLUMN_ARRAY, OB_IC_GLOBAL_SESSION_INFO_MAX_COLUMN_ID))) {
-    WARN_ICMD("fail to dump_session_info_header header", K(ret));
+    WDIAG_ICMD("fail to dump_session_info_header header", K(ret));
   }
   return ret;
 }
@@ -158,12 +158,12 @@ int ObShowGlobalSessionHandler::dump_session_info_body(const common::ObString& d
 {
   int ret = OB_SUCCESS;
   if (dbkey.empty()) {
-    WARN_ICMD("invalid: dbkey is empty");
+    WDIAG_ICMD("invalid: dbkey is empty");
     ret = OB_INVALID_ARGUMENT;
   } else {
     ObMysqlServerSessionListPool* session_list_pool = get_global_session_manager().get_server_session_list_pool(dbkey);
     if (OB_ISNULL(session_list_pool)) {
-      WARN_ICMD("invalid: session_list_pool is null", K(dbkey));
+      WDIAG_ICMD("invalid: session_list_pool is null", K(dbkey));
       ret = OB_INVALID_ARGUMENT;
     } else {
       DRWLock::RDLockGuard  guard(session_list_pool->rwlock_);
@@ -214,7 +214,7 @@ int ObShowGlobalSessionHandler::dump_session_info_body(const common::ObString& d
           }
           cells[OB_IC_GLOBAL_SESSION_INFO_SESSION_LAST_RELEASE_TIME].set_varchar(last_release_time_buf);
           if (OB_FAIL(encode_row_packet(row))) {
-            WARN_ICMD("fail to encode row packet", K(row), K(ret));
+            WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
           }
         }
       }
@@ -269,7 +269,7 @@ int ObShowGlobalSessionHandler::dump_body()
     ObMysqlGlobalSessionManager::SessionPoolListHashTable::iterator spot = session_pool_list_table.begin();
     ObMysqlGlobalSessionManager::SessionPoolListHashTable::iterator last = session_pool_list_table.end();
     for (int64_t i = 0; OB_SUCC(ret) && spot != last; ++spot, ++i) {
-      if (match_like(spot->schema_key_.dbkey_.config_string_, like_name_)) {
+      if (common::match_like(spot->schema_key_.dbkey_.config_string_, like_name_)) {
         ret = dump_session_info_body(spot->schema_key_.dbkey_.config_string_);
       }
     }
@@ -285,17 +285,17 @@ static int show_global_session_info_cmd_callback(ObContinuation * cont, ObIntern
   ObShowGlobalSessionHandler *handler = NULL;
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowGlobalSessionHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowGlobalSessionHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowGlobalSessionHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowGlobalSessionHandler");
+    WDIAG_ICMD("fail to init for ObShowGlobalSessionHandler");
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(self_ethread().schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule handler", K(ret));
+      EDIAG_ICMD("fail to schedule handler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule handler");
@@ -313,7 +313,7 @@ int show_global_session_info_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_GLOBAL_SESSION,
               &show_global_session_info_cmd_callback))) {
-    WARN_ICMD("fail to register OBPROXY_T_ICMD_SHOW_GLOBAL_SESSION CMD", K(ret));
+    WDIAG_ICMD("fail to register OBPROXY_T_ICMD_SHOW_GLOBAL_SESSION CMD", K(ret));
   }
   return ret;
 }

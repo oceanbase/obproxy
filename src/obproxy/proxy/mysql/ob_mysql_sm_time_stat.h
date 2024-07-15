@@ -15,6 +15,7 @@
 
 #include "lib/time/ob_hrtime.h"
 #include "utils/ob_proxy_lib.h"
+#include "iocore/net/ob_inet.h"
 
 namespace oceanbase
 {
@@ -276,12 +277,17 @@ struct ObTransactionStat
 };
 
 // record connection stat, won't reset by cmd_complete
-struct ObConnectionMilestones {
-  ObConnectionMilestones() { reset(); }
-  ~ObConnectionMilestones() { }
+struct ObConnDiagRecord {
+  ObConnDiagRecord() { reset(); }
+  ~ObConnDiagRecord() { }
   int64_t to_string(char *buf, const int64_t buf_len) const;
-  void reset() { MEMSET(this, 0, sizeof(ObConnectionMilestones)); }
+  void reset() { MEMSET(this, 0, sizeof(ObConnDiagRecord)); }
   ObHRTime last_cmd_complete_;
+
+  // server session info
+  net::ObIpEndpoint cur_server_sess_src_addr_;
+  net::ObIpEndpoint cur_server_sess_dst_addr_;
+  uint32_t cur_server_sess_id_;
 };
 
 } // end of namespace proxy

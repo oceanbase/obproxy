@@ -21,7 +21,7 @@
 #include "iocore/eventsystem/ob_event.h"
 #include "iocore/net/ob_inet.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
-#include "proxy/mysqllib/ob_2_0_protocol_utils.h"
+#include "proxy/mysqllib/ob_oceanbase_20_header_param.h"
 
 #define  INTERNAL_CMD_EVENTS_SUCCESS   INTERNAL_CMD_EVENTS_START + 1
 #define  INTERNAL_CMD_EVENTS_FAILED    INTERNAL_CMD_EVENTS_START + 2
@@ -46,8 +46,10 @@ class ObProxySessionPrivInfo;
 
 #define DEBUG_ICMD(fmt...) PROXY_ICMD_LOG(DEBUG, ##fmt)
 #define INFO_ICMD(fmt...) PROXY_ICMD_LOG(INFO, ##fmt)
-#define WARN_ICMD(fmt...) PROXY_ICMD_LOG(WDIAG, ##fmt)
-#define ERROR_ICMD(fmt...) PROXY_ICMD_LOG(EDIAG, ##fmt)
+#define WARN_ICMD(fmt...) PROXY_ICMD_LOG(WARN, ##fmt)
+#define ERROR_ICMD(fmt...) PROXY_ICMD_LOG(ERROR, ##fmt)
+#define WDIAG_ICMD(fmt...) PROXY_ICMD_LOG(WDIAG, ##fmt)
+#define EDIAG_ICMD(fmt...) PROXY_ICMD_LOG(EDIAG, ##fmt)
 
 const int64_t PROXY_LIKE_NAME_MAX_SIZE = common::OB_MAX_CONFIG_NAME_LEN;
 

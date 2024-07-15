@@ -62,7 +62,7 @@ private:
   EnumPrepareExecuteStateType prepare_execute_state_;
   uint16_t num_columns_;
   uint16_t num_params_;
-  uint16_t pkt_count_;
+  uint32_t pkt_count_;
   bool hava_cursor_;
   common::ObArray<obmysql::EMySQLFieldType> field_types_;
 
@@ -112,7 +112,7 @@ public:
     return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_
-            && sm->trans_state_.trans_info_.server_response_.get_analyze_result().is_resultset_resp());
+            && sm->trans_state_.trans_info_.resp_result_.is_resultset_resp());
   }
 
 private:

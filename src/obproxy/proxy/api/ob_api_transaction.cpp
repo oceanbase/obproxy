@@ -25,8 +25,8 @@ using namespace event;
 using namespace net;
 
 ObApiTransaction::ObApiTransaction(ObMysqlSM *sm)
-    : sm_(NULL), client_request_(NULL), server_request_(NULL), server_response_(NULL),
-      client_response_(NULL)
+    : sm_(NULL), client_request_(NULL), server_request_(NULL), server_resp_result_(NULL),
+      client_resp_result_(NULL)
 {
   if (NULL == sm) {
     WARN_API("invalid argument, sm=%p", sm);
@@ -35,8 +35,8 @@ ObApiTransaction::ObApiTransaction(ObMysqlSM *sm)
     sm_ = sm;
     client_request_ = &sm_->trans_state_.trans_info_.client_request_;
     server_request_ = &sm_->trans_state_.trans_info_.client_request_;
-    server_response_ = &sm_->trans_state_.trans_info_.server_response_;
-    client_response_ = &sm_->trans_state_.trans_info_.server_response_;
+    server_resp_result_ = &sm_->trans_state_.trans_info_.resp_result_;
+    client_resp_result_ = &sm_->trans_state_.trans_info_.resp_result_;
   }
 }
 

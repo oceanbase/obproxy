@@ -31,7 +31,7 @@ int ObWarningProcessor::get_warn_log_index(const ObThreadType type, const int64_
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(MONITOR == type) || OB_UNLIKELY(ethread_id < 0) || OB_UNLIKELY(ethread_id > MAX_EVENT_THREADS)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument", K(type), K(ethread_id), K(ret));
+    WDIAG_ICMD("invalid argument", K(type), K(ethread_id), K(ret));
   } else {
     get_warn_log_index_internal(type, ethread_id, start_index, end_index);
   }
@@ -159,11 +159,11 @@ int ObShowWarningHandler::handle_show_warning(int event, event::ObEvent *e)
 
   if (OB_UNLIKELY(!is_argument_valid(event, e))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(e), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(e), K(ret));
   } else if (OB_FAIL(resolve_param())) {
-    WARN_ICMD("fail to resolve_param", K(ret));
+    WDIAG_ICMD("fail to resolve_param", K(ret));
   } else if (OB_FAIL(dump_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else if (OB_FAIL(dump_warning_record_from_ethreads(g_event_processor.all_event_threads_,
                                                        g_event_processor.event_thread_count_))) {
     INFO_ICMD("fail to dump warning_record form event_threads", K(ret));
@@ -171,7 +171,7 @@ int ObShowWarningHandler::handle_show_warning(int event, event::ObEvent *e)
                                                        g_event_processor.dedicate_thread_count_))) {
     INFO_ICMD("fail to dump warning_record form dedicate_threads", K(ret));
   } else if (OB_FAIL(encode_eof_packet())) {
-    WARN_ICMD("fail to encode eof packet", K(ret));
+    WDIAG_ICMD("fail to encode eof packet", K(ret));
   } else {
     // do nothing
   }
@@ -192,23 +192,23 @@ int resolve_value(ObString &str, int64_t &value)
   char *endptr = NULL;
   if (NULL != str.find(':')) {
     if (OB_FAIL(ObTimeUtility::str_to_usec(str, value))) {
-      WARN_ICMD("fail to str_to_usec", K(str), K(ret));
+      WDIAG_ICMD("fail to str_to_usec", K(str), K(ret));
     }
   } else {
     value = std::strtol(str.ptr(), &endptr, 10);
     if ((ERANGE == errno && (LONG_MAX == value || LONG_MIN == value))
         || (0 != errno && 0 == value)) {
       ret = OB_ERR_SYS;
-      WARN_ICMD("fail to strtol", K(str), K(value), K(ret));
+      WDIAG_ICMD("fail to strtol", K(str), K(value), K(ret));
     } else if (str.ptr() == endptr) {
       ret = OB_INVALID_ARGUMENT;
-      WARN_ICMD("no digits were found", K(str), K(ret));
+      WDIAG_ICMD("no digits were found", K(str), K(ret));
     } else if ('\0' != *endptr) {
       str.split_on(endptr);
       ObString remain = str.trim();
       if(!remain.empty()) {
         ret = OB_INVALID_ARGUMENT;
-        WARN_ICMD("invalid digits", K(str), K(remain), K(endptr), K(ret));
+        WDIAG_ICMD("invalid digits", K(str), K(remain), K(endptr), K(ret));
       }
     } else {
       // do nothing
@@ -223,7 +223,7 @@ int ObShowWarningHandler::resolve_param()
   ObString str(like_name_);
   if (!str.empty()) {
     if (OB_FAIL(resolve_value(str, param_.time_))) {
-      WARN_ICMD("fail to resolve time", K(ret));
+      WDIAG_ICMD("fail to resolve time", K(ret));
       ret = OB_ERR_OPERATOR_UNKNOWN;
     }
   }
@@ -237,7 +237,7 @@ int ObShowWarningHandler::dump_warning_record_from_ethreads(ObEThread **ethreads
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ethreads) || OB_UNLIKELY(count < 0)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument", KP(ethreads), K(count));
+    WDIAG_ICMD("invalid argument", KP(ethreads), K(count));
   } else {
     int64_t j = 0;
     int64_t k = 0;
@@ -261,13 +261,13 @@ int ObShowWarningHandler::dump_warning_record_from_ethreads(ObEThread **ethreads
       ethread = ethreads[i];
       if (OB_ISNULL(ethread)) {
         ret = OB_ERR_UNEXPECTED;
-        WARN_ICMD("can't find ethread in all_event_threads_", K(i), K(ret));
+        WDIAG_ICMD("can't find ethread in all_event_threads_", K(i), K(ret));
       } else {
         if (OB_ISNULL(warning_record_array = reinterpret_cast<ObWarningRecord *>(ethread->warn_log_buf_))) {
           ret = OB_ERR_UNEXPECTED;
-          WARN_ICMD("ethread warn_log_buf_ is NULL", K(ethread->id_), K(ethread->tt_), K(ret));
+          WDIAG_ICMD("ethread warn_log_buf_ is NULL", K(ethread->id_), K(ethread->tt_), K(ret));
         } else if (OB_FAIL(g_warning_processor.get_warn_log_index(ethread->tt_, ethread->id_, start_index, end_index))) {
-          WARN_ICMD("fail to get_warn_seq_id", K(ethread->id_), K(ethread->tt_), K(ret));
+          WDIAG_ICMD("fail to get_warn_seq_id", K(ethread->id_), K(ethread->tt_), K(ret));
         }
       }
       warn_log_buf_end = ethread->warn_log_buf_ + OB_PROXY_WARN_LOG_BUF_LENGTH;
@@ -307,7 +307,7 @@ int ObShowWarningHandler::dump_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(SW_COLUMN_ARRAY, OB_SW_MAX_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -344,18 +344,18 @@ static int show_warning_callback(ObContinuation *cont, ObInternalCmdInfo &info,
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new (std::nothrow) ObShowWarningHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    WARN_ICMD("fail to new ObShowWarningHandler", K(ret));
+    WDIAG_ICMD("fail to new ObShowWarningHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowWarningHandler", K(ret));
+    WDIAG_ICMD("fail to init for ObShowWarningHandler", K(ret));
   } else {
     SET_CONTINUATION_HANDLER(handler, &ObShowWarningHandler::handle_show_warning);
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      WARN_ICMD("fail to schedule ObShowWarningHandler", K(ret));
+      WDIAG_ICMD("fail to schedule ObShowWarningHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObShowWarningHandler");
@@ -374,7 +374,7 @@ int show_warning_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_WARNLOG,
                                                                &show_warning_callback))) {
-    WARN_ICMD("fail to register OBPROXY_T_ICMD_SHOW_WARNLOG", K(ret));
+    WDIAG_ICMD("fail to register OBPROXY_T_ICMD_SHOW_WARNLOG", K(ret));
   }
   return ret;
 }

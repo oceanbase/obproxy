@@ -17,6 +17,7 @@
 #include "proxy/route/ob_table_cache.h"
 #include "proxy/route/ob_partition_cache.h"
 #include "proxy/route/ob_routine_cache.h"
+#include "proxy/route/ob_index_cache.h"
 
 namespace oceanbase
 {
@@ -32,12 +33,14 @@ public:
   int handle_show_table(int event, void *data);
   int handle_show_partition(int event, void *data);
   int handle_show_routine(int event, void *data);
+  int handle_show_global_index(int event, void *data);
 
 private:
   int dump_header();
   int dump_table_item(const ObTableEntry &entry);
   int dump_partition_item(const ObPartitionEntry &entry);
   int dump_routine_item(const ObRoutineEntry &entry);
+  int dump_global_index_item(const ObIndexEntry &entry);
 
   int fill_table_entry_name();
   int fill_routine_entry_name();

@@ -61,12 +61,12 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
 {
   int event_ret = EVENT_DONE;
   int ret = OB_SUCCESS;
-  char *old_value = NULL;
   ObProxyReloadConfig *reload_config = NULL;
   bool has_update_config = false;
-  bool has_dump_config = false;
+  bool has_reload_config = false;
   ObString key_string(key_str_);
   ObString value_string(value_str_);
+  common::ObConfigVariableString old_value;
 
   if ((0 == key_string.case_compare("observer_sys_password")
       || 0 == key_string.case_compare("obproxy_sys_password")
@@ -86,29 +86,25 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
 
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(ret));
   } else if (OB_ISNULL(reload_config = get_global_internal_cmd_processor().get_reload_config())) {
     ret = OB_ERR_NULL_VALUE;
-    WARN_ICMD("fail to get reload config", K(ret));
+    WDIAG_ICMD("fail to get reload config", K(ret));
 
   //1. get old config value
-  } else if (OB_ISNULL(old_value = static_cast<char *>(op_fixed_mem_alloc(OB_MAX_CONFIG_VALUE_LEN)))) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WDIAG("fail to alloc mem for old_value", "size", OB_MAX_CONFIG_VALUE_LEN, K(ret));
-  } else if (OB_FAIL(get_global_proxy_config().get_old_config_value(key_string, old_value, OB_MAX_CONFIG_VALUE_LEN))) {
+  } else if (OB_FAIL(get_global_proxy_config().get_config_value(key_string, old_value))) {
     LOG_WDIAG("fail to get old config value", K(key_string), K(ret));
-
   //2. update config value
   } else if (key_string == get_global_proxy_config().app_name.name()) {
     ret = OB_NOT_SUPPORTED;
-    WARN_ICMD("app_name can only modified when restart", K(old_value), K(ret));
+    WDIAG_ICMD("app_name can only modified when restart", K(old_value), K(ret));
   } else if (key_string == get_global_proxy_config().client_session_id_version.name()) {
     // check proxy_id operator
     char *value_end = NULL;
     int64_t cs_id_version = strtol(value_string.ptr(), &value_end, 10);
     if ((value_end - value_str_) != value_string.length()) {
       ret = OB_INVALID_ARGUMENT;
-      WARN_ICMD("fail to convert proxy_id to int", K(value_string), K(ret));
+      WDIAG_ICMD("fail to convert proxy_id to int", K(value_string), K(ret));
     } else if (get_global_proxy_config().proxy_id.get_value() > CLIENT_SESSION_ID_V1_PROXY_ID_LIMIT  && cs_id_version == 1) {
       ret = OB_PROXY_PROXY_ID_OVER_LIMIT;
     }
@@ -117,7 +113,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     int64_t proxy_id = strtol(value_string.ptr(), &value_end, 10);
     if ((value_end - value_str_) != value_string.length()) {
       ret = OB_INVALID_ARGUMENT;
-      WARN_ICMD("fail to convert proxy_id to int", K(value_string), K(ret));
+      WDIAG_ICMD("fail to convert proxy_id to int", K(value_string), K(ret));
     } else if (get_global_proxy_config().client_session_id_version == 1 && proxy_id > CLIENT_SESSION_ID_V1_PROXY_ID_LIMIT) {
       ret = OB_PROXY_PROXY_ID_OVER_LIMIT;
     }
@@ -125,7 +121,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
-      WARN_ICMD("fail to update config", K(key_string), K(value_string), K(ret));
+      WDIAG_ICMD("fail to update config", K(key_string), K(value_string), K(ret));
     } else {
       has_update_config = true;
       DEBUG_ICMD("succ to update config", K(key_string), K(value_string), K(old_value));
@@ -134,7 +130,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
 
   #ifdef ERRSIM
   if (key_string == get_global_proxy_config().error_inject.name() && OB_FAIL(get_global_proxy_config().parse_error_inject_config())) {
-    WARN_ICMD("fail to update error inject config and clear origin config", K(ret));
+    WDIAG_ICMD("fail to update error inject config and clear origin config", K(ret));
   }
   #endif
 
@@ -142,18 +138,15 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
   if (OB_SUCC(ret)) {
     if (OB_FAIL(get_global_proxy_config().check_proxy_serviceable())) {
       LOG_WDIAG("fail to check proxy string_item config", K(ret));
-    } else if (OB_FAIL(get_global_proxy_config().dump_config_to_local())) {
-      WARN_ICMD("fail to dump_config_to_local", K(ret));
-    } else {
-      has_dump_config = true;
     }
   }
 
   //4. reload config to memory
   if (OB_SUCC(ret)) {
     if (OB_FAIL((*reload_config)(get_global_proxy_config()))) {
-      WARN_ICMD("fail to reload config, but config has already dumped!!", K(ret));
+      WDIAG_ICMD("fail to reload config, but config has already dumped!!", K(ret));
     } else {
+      has_reload_config = true;
       DEBUG_ICMD("succ to update config", K(key_string), K(value_string));
     }
   }
@@ -164,42 +157,32 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     LOG_WDIAG("store proxy config failed", K(ret));
   }
 
-  //5. rollback
+  //6. rollback
   if (OB_FAIL(ret)) {
     int tmp_ret = OB_SUCCESS;
     if (has_update_config) {
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = get_global_proxy_config().update_config_item(
-          key_string, ObString::make_string(old_value))))) {
-        WARN_ICMD("fail to back to old config", K(key_string), K(old_value), K(tmp_ret));
+          key_string, old_value)))) {
+        WDIAG_ICMD("fail to back to old config", K(key_string), K(old_value), K(tmp_ret));
       } else if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret =
             get_global_config_processor().store_global_proxy_config(key_string, old_value)))) {
-        WARN_ICMD("fail to store global proxy config", K(key_string), K(old_value), K(tmp_ret));
+        WDIAG_ICMD("fail to store global proxy config", K(key_string), K(old_value), K(tmp_ret));
       } else {
         DEBUG_ICMD("succ to back to old config", K(key_string), K(old_value));
       }
     }
-    if (has_dump_config && OB_LIKELY(OB_SUCCESS == tmp_ret)) {
+    if (has_reload_config && OB_LIKELY(OB_SUCCESS == tmp_ret)) {
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = (*reload_config)(get_global_proxy_config())))) {
-        WARN_ICMD("fail to reload old config", K(tmp_ret));
+        WDIAG_ICMD("fail to reload old config", K(tmp_ret));
       } else {
         DEBUG_ICMD("succ to reload old config");
-      }
-      if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = get_global_proxy_config().dump_config_to_local()))) {
-        WARN_ICMD("fail to dump old config", K(tmp_ret));
-      } else {
-        DEBUG_ICMD("succ to dump old config");
       }
     }
   }
 
-  if (OB_LIKELY(NULL != old_value)) {
-    op_fixed_mem_free(old_value, OB_MAX_CONFIG_VALUE_LEN);
-    old_value = NULL;
-  }
-
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_ok_packet(0, capability_))) {
-      WARN_ICMD("fail to encode ok packet", K(ret));
+      WDIAG_ICMD("fail to encode ok packet", K(ret));
     } else {
       INFO_ICMD("succ to update config", K(key_string));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -207,7 +190,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
   } else {
     int errcode = ret;
     if (OB_FAIL(encode_err_packet(errcode))) {
-      WARN_ICMD("fail to encode err resp packet", K(errcode), K(ret));
+      WDIAG_ICMD("fail to encode err resp packet", K(errcode), K(ret));
     } else {
       INFO_ICMD("succ to encode err resp packet", K(errcode));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -230,17 +213,17 @@ static int alter_config_set_cmd_callback(ObContinuation *cont, ObInternalCmdInfo
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObAlterConfigSetHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObAlterConfigSetHandler", K(ret));
+    EDIAG_ICMD("fail to new ObAlterConfigSetHandler", K(ret));
   } else if (OB_FAIL(handler->init(is_query_cmd))) {
-    WARN_ICMD("fail to init for ObAlterConfigSetHandler", K(ret));
+    WDIAG_ICMD("fail to init for ObAlterConfigSetHandler", K(ret));
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObAlterConfigSetHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObAlterConfigSetHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObAlterConfigSetHandler");
@@ -259,7 +242,7 @@ int alter_config_set_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_ALTER_CONFIG,
                                                                &alter_config_set_cmd_callback))) {
-    WARN_ICMD("fail to register CMD_TYPE_ALTER", K(ret));
+    WDIAG_ICMD("fail to register CMD_TYPE_ALTER", K(ret));
   }
   return ret;
 }

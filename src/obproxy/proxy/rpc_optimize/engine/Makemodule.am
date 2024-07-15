@@ -1,0 +1,15 @@
+proxy_rpc_req_engine_sources:=\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_async_task.cpp\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_async_task.h\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator.cpp\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator.h\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_projection.cpp\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_projection.h\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_batch.cpp\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_batch.h\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_ls.cpp\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_ls.h\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_query.cpp\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_query.h\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_table_scan.cpp\
+obproxy/proxy/rpc_optimize/engine/ob_rpc_req_operator_table_scan.h

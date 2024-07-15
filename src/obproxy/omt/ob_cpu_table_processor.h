@@ -51,8 +51,8 @@ public:
   void destroy();
   void commit(bool is_success);
   int check_json_value(bool has_set_vip, common::ObString vip_list_str, bool has_set_value, common::ObString value);
-  int cpu_handle_replace_config(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& name_str, common::ObString& value_str);
-  int cpu_handle_delete_config(common::ObString& cluster_name, common::ObString& tenant_name);
+  int cpu_handle_replace_config(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& name_str, common::ObString& value_str, const bool need_to_backup);
+  int cpu_handle_delete_config(common::ObString& cluster_name, common::ObString& tenant_name, const bool need_to_backup);
   void backup_local_cpu_cache();
   int fill_local_cpu_cache(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& vip_name);
   int create_tenant_cpu(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& vip_name, common::ObString& key_name, double max_cpu_usage, ObTenantCpu*& tenant_cpu);

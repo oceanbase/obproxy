@@ -212,7 +212,7 @@ int ObTableProcessor::get_table_entry_from_global_cache(
             ret = OB_ERR_UNEXPECTED;
             LOG_EDIAG("deleting table entry must not be in global cache", KPC(target_entry), K(ret));
           } else if (table_cache.is_table_entry_expired_in_qa_mode(*target_entry)
-             || (!get_global_proxy_config().enable_async_pull_location_cache
+             || ((!get_global_proxy_config().enable_async_pull_location_cache || get_global_proxy_config().rpc_enable_direct_expire_route_entry)
                  && table_cache.is_table_entry_expired_in_time_mode(*target_entry))) {
             // cr_version or expire time mismatch
             LOG_DEBUG("the table entry in global cache is expired", "expire_time_us",

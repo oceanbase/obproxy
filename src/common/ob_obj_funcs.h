@@ -16,6 +16,8 @@
 #include "lib/timezone/ob_timezone_info.h"
 #include "common/ob_object.h"
 #include "lib/wide_integer/ob_wide_integer_str_funcs.h"
+#include "lib/checksum/ob_crc64.h"
+#include "lib/timezone/ob_time_convert.h"
 
 namespace oceanbase
 {
@@ -1093,6 +1095,116 @@ template <>
   OB_UNIS_ADD_LEN(obj.get_unknown());
   return len;
 }
+
+// TODO@hanhui print and cs func need truncate values
+#define DEF_TEXT_PRINT_FUNCS(OBJTYPE)                                \
+  template <>                                                           \
+  inline int obj_print_sql<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                    int64_t &pos, const ObObjPrintParams &params) \
+  {                                                                     \
+    UNUSED(params);                                                    \
+    int ret = OB_SUCCESS;                                        \
+    ObString str = obj.get_print_string(length - pos);                  \
+    if (CS_TYPE_BINARY == obj.get_collation_type()) {                   \
+      if (!lib::is_oracle_mode() && OB_SUCCESS != (ret = databuff_printf(buffer, \
+                                                                        length, pos, "X'"))) { \
+      } else if (lib::is_oracle_mode() && OB_SUCCESS != (ret = databuff_printf(buffer, \
+                                                                            length, pos, "'"))) { \
+      } else if (OB_SUCCESS != (ret = hex_print(str.ptr(), str.length(), buffer, length, pos))) { \
+      } else {                                                            \
+        ret = databuff_printf(buffer, length, pos, "'");                  \
+      }                                                                   \
+    } else if (OB_FAIL(databuff_printf(buffer, length, pos, "'"))) {    \
+    } else {                                                            \
+      ObHexEscapeSqlStr sql_str(str);                      \
+      pos += sql_str.to_string(buffer + pos, length - pos);             \
+      ret = databuff_printf(buffer, length, pos, "'");                  \
+    }                                                                   \
+    return ret;                                                         \
+  }                                                                     \
+  template <>                                                           \
+  inline int obj_print_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, int64_t &pos, \
+                                    const ObObjPrintParams &params) \
+  {                                                                     \
+    UNUSED(params);                                                    \
+    int ret = OB_SUCCESS;                                               \
+    ObString str = obj.get_print_string(length - pos);                              \
+    if (CS_TYPE_BINARY == obj.get_collation_type()) {                   \
+      ret = databuff_printf(buffer, length, pos, "'%.*s", str.length(), str.ptr());  \
+      if (OB_SUCC(ret)) {                                        \
+        if (OB_FAIL(databuff_printf(buffer, length, pos, "'"))) {       \
+        }                                                             \
+      }                                                               \
+    } else {                                                            \
+      ret = databuff_printf(buffer, length, pos, "'%.*s'", str.length(), str.ptr()); \
+    }                                                                   \
+    return ret;                                                         \
+  }                                                                     \
+  template <>                                                           \
+  inline int obj_print_plain_str<OBJTYPE>(const ObObj &obj, char *buffer, int64_t length, \
+                                          int64_t &pos, const ObObjPrintParams &params) \
+  {                                                                     \
+    return obj_print_plain_str<ObVarcharType>(obj, buffer, length, pos, params); \
+  }                                                                     \
+  template <>                                                           \
+  inline int obj_print_json<OBJTYPE>(const ObObj &obj, char *buf, int64_t buf_len, \
+                                    int64_t &pos, const ObObjPrintParams &params) \
+  {                                                                     \
+    UNUSED(params);                                                    \
+    J_OBJ_START();                                                      \
+    PRINT_META();                                                       \
+    BUF_PRINTO(ob_obj_type_str(obj.get_type()));                        \
+    J_COLON();                                                          \
+    BUF_PRINTO(obj.get_print_string(buf_len - pos));                    \
+    J_COMMA();                                                          \
+    J_KV(N_COLLATION, ObCharset::collation_name(obj.get_collation_type()));\
+    J_COMMA();                                                          \
+    J_KV(N_COERCIBILITY, ObCharset::collation_level(obj.get_collation_level()));\
+    J_OBJ_END();                                                        \
+    return OB_SUCCESS;                                                  \
+  }
+
+#define DEF_TEXT_SERIALIZE_FUNCS(OBJTYPE, TYPE, VTYPE)                       \
+  template <>                                                           \
+      inline int obj_val_serialize<OBJTYPE>(const ObObj &obj, char* buf, \
+                                            const int64_t buf_len, int64_t& pos) \
+  {                                                                     \
+   int ret = OB_SUCCESS;                                                \
+   OB_UNIS_ENCODE(obj.get_##TYPE());                                    \
+   return ret;                                                          \
+   }                                                                    \
+                                                                        \
+  template <>                                                           \
+  inline int obj_val_deserialize<OBJTYPE>(ObObj &obj, const char* buf,  \
+                                          const int64_t data_len, int64_t& pos) \
+  {                                                                     \
+   int ret = OB_SUCCESS;                                                \
+   VTYPE v = VTYPE();                                                   \
+   OB_UNIS_DECODE(v);                                                   \
+   if (OB_SUCC(ret)) {                                                  \
+     obj.set_##TYPE(OBJTYPE, v);                                        \
+   }                                                                    \
+   return ret;                                                          \
+  }                                                                    \
+                                                                        \
+  template <>                                                           \
+  inline int64_t obj_val_get_serialize_size<OBJTYPE>(const ObObj &obj)         \
+  {                                                                     \
+   int64_t len = 0;                                                     \
+   OB_UNIS_ADD_LEN(obj.get_##TYPE());                                   \
+   return len;                                                          \
+   }
+
+#define DEF_TEXT_FUNCS(OBJTYPE, TYPE, VTYPE) \
+  DEF_TEXT_PRINT_FUNCS(OBJTYPE);             \
+  DEF_STRING_CS_FUNCS(OBJTYPE);                 \
+  DEF_TEXT_SERIALIZE_FUNCS(OBJTYPE, TYPE, VTYPE)
+
+DEF_TEXT_FUNCS(ObTinyTextType, string, ObString);
+DEF_TEXT_FUNCS(ObTextType, string, ObString);
+DEF_TEXT_FUNCS(ObMediumTextType, string, ObString);
+DEF_TEXT_FUNCS(ObLongTextType, string, ObString);
+
 
 ////////////////
 // ObTimestampTZType=36,

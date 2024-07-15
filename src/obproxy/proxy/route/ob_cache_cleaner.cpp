@@ -20,6 +20,7 @@
 #include "proxy/route/ob_partition_cache.h"
 #include "proxy/route/ob_routine_cache.h"
 #include "proxy/route/ob_sql_table_cache.h"
+#include "proxy/route/ob_index_cache.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
 #include "iocore/eventsystem/ob_event_processor.h"
 #include "iocore/net/ob_net_def.h"
@@ -57,11 +58,11 @@ int64_t ObCountRange::to_string(char *buf, const int64_t buf_len) const
 ObCacheCleaner::ObCacheCleaner()
     : ObContinuation(), is_inited_(false), triggered_(false), cleaner_reschedule_interval_us_(0),
       total_cleaner_count_(0), this_cleaner_idx_(), next_action_(IDLE_CLEAN_ACTION),
-      ethread_(NULL), table_cache_(NULL), partition_cache_(NULL), routine_cache_(NULL), sql_table_cache_(NULL),
-      table_cache_range_(), partition_cache_range_(), routine_cache_range_(), sql_table_cache_range_(),
+      ethread_(NULL), table_cache_(NULL), partition_cache_(NULL), index_cache_(NULL), routine_cache_(NULL), sql_table_cache_(NULL),
+      table_cache_range_(), partition_cache_range_(), index_cache_range_(), routine_cache_range_(), sql_table_cache_range_(),
       tc_part_clean_count_(0), table_cache_deleted_cr_version_(),
-      partition_cache_deleted_cr_version_(), routine_cache_deleted_cr_version_(), sql_table_cache_deleted_cr_version_(),
-      table_cache_last_expire_time_us_(0), partition_cache_last_expire_time_us_(0),
+      partition_cache_deleted_cr_version_(), index_cache_deleted_cr_version_(), routine_cache_deleted_cr_version_(), sql_table_cache_deleted_cr_version_(),
+      table_cache_last_expire_time_us_(0), partition_cache_last_expire_time_us_(0), index_cache_last_expire_time_us_(0),
       routine_cache_last_expire_time_us_(0), sql_table_cache_last_expire_time_us_(0), pending_action_(NULL)
 {
   SET_HANDLER(&ObCacheCleaner::main_handler);
@@ -69,6 +70,7 @@ ObCacheCleaner::ObCacheCleaner()
 
 int ObCacheCleaner::init(ObTableCache &table_cache, ObPartitionCache &partition_cache,
                          ObRoutineCache &routine_cache, ObSqlTableCache &sql_table_cache,
+                         ObIndexCache &index_cache,
                          const ObCountRange &range, const int64_t total_count,
                          const int64_t idx, const int64_t clean_interval_us)
 {
@@ -94,11 +96,13 @@ int ObCacheCleaner::init(ObTableCache &table_cache, ObPartitionCache &partition_
     partition_cache_ = &partition_cache;
     routine_cache_ = &routine_cache;
     sql_table_cache_ = &sql_table_cache;
+    index_cache_ = &index_cache;
     // table cache and partition cache have the same sub partitions
     table_cache_range_ = range;
     partition_cache_range_ = range;
     routine_cache_range_ = range;
     sql_table_cache_range_ = range;
+    index_cache_range_ = range;
     tc_part_clean_count_ = 0;
     pending_action_ = NULL;
     total_cleaner_count_ = total_count;
@@ -107,6 +111,7 @@ int ObCacheCleaner::init(ObTableCache &table_cache, ObPartitionCache &partition_
     partition_cache_last_expire_time_us_ = partition_cache.get_cache_expire_time_us();
     routine_cache_last_expire_time_us_ = routine_cache.get_cache_expire_time_us();
     sql_table_cache_last_expire_time_us_ = sql_table_cache.get_cache_expire_time_us();
+    index_cache_last_expire_time_us_ = index_cache.get_cache_expire_time_us();
     cleaner_reschedule_interval_us_ = clean_interval_us;
   }
   return ret;
@@ -284,6 +289,34 @@ int ObCacheCleaner::do_clean_job()
         ObPartitionRefHashMap &partition_map = self_ethread().get_partition_map();
         if (OB_FAIL(partition_map.clean_hash_map())) {
           LOG_WDIAG("fail to clean partition hash map", K(ret));
+          ret = OB_SUCCESS; // continue
+        }
+        next_action_ = EXPIRE_INDEX_ENTRY_ACTION;
+        break;
+      }
+
+      case EXPIRE_INDEX_ENTRY_ACTION: {
+        if (OB_FAIL(do_expire_index_entry())) {
+          LOG_WDIAG("fail to do index entry", K(ret));
+          ret = OB_SUCCESS; // continue
+        }
+        next_action_ = CLEAN_INDEX_CACHE_ACTION;
+        break;
+      }
+
+     case CLEAN_INDEX_CACHE_ACTION: {
+        if (OB_FAIL(clean_index_cache())) {
+          LOG_WDIAG("fail to clean index cache", K(ret));
+          ret = OB_SUCCESS; // continue
+        }
+        next_action_ = CLEAN_THREAD_CACHE_INDEX_ENTRY_ACTION;
+        break;
+      }
+
+      case CLEAN_THREAD_CACHE_INDEX_ENTRY_ACTION: {
+        ObIndexRefHashMap &index_map = self_ethread().get_index_map();
+        if (OB_FAIL(index_map.clean_hash_map())) {
+          LOG_WDIAG("fail to clean index hash map", K(ret));
           ret = OB_SUCCESS; // continue
         }
         next_action_ = EXPIRE_ROUTINE_ENTRY_ACTION;
@@ -728,6 +761,159 @@ int ObCacheCleaner::clean_one_sub_bucket_partition_cache(const int64_t bucket_id
   return ret;
 }
 
+int ObCacheCleaner::clean_index_cache() {
+  int ret = OB_SUCCESS;
+  ObCountRange &range = index_cache_range_;
+  int64_t mt_part_count_for_clean = range.count();
+  if (mt_part_count_for_clean > 0) {
+    ObProxyConfig &config = get_global_proxy_config();
+    int64_t mt_part_num = index_cache_->get_sub_part_count();
+    int64_t mem_limited = (((config.routing_cache_mem_limited) / 1) / mt_part_num);
+    int64_t mem_limited_threshold = ((mem_limited * 3) / 4);
+    int64_t max_sub_bucket_count = mem_limited_threshold / AVG_INDEX_ENTRY_SIZE;
+
+    if (max_sub_bucket_count > 0) {
+      // get max count for every sub bucket
+      for (int64_t i = range.cur_idx_; (i <= range.end_idx_) && OB_SUCC(ret); ++i) {
+        int64_t entry_count = index_cache_->get_part_cur_size(i);
+        int64_t clean_count = entry_count - max_sub_bucket_count;
+        LOG_DEBUG("after calc", "sub bucket idx", i, K(clean_count), K(entry_count),
+                  K(max_sub_bucket_count));
+        if (clean_count > 0)  {
+          LOG_INFO("will clean index cache", "sub bucket idx", i, K(clean_count),
+                   K(max_sub_bucket_count), K(entry_count), K(mem_limited));
+          if (OB_FAIL(clean_one_sub_bucket_index_cache(i, clean_count))) {
+            LOG_WDIAG("fail to clean sub bucket index cache", "sub bucket idx", i,
+                     K(clean_count), K(max_sub_bucket_count), K(mem_limited));
+            ret = OB_SUCCESS; // ignore, and coutine
+          }
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+struct ObIndexEntryElem
+{
+  ObIndexEntryElem() : entry_(NULL) {}
+  ~ObIndexEntryElem() {}
+
+  ObIndexEntry *entry_;
+};
+
+struct ObIndexEntryCmp
+{
+  bool operator() (const ObIndexEntryElem& lhs, const ObIndexEntryElem& rhs) const
+  {
+    bool bret = false;
+    if ((NULL != lhs.entry_) && (NULL != rhs.entry_)) {
+      bret = (lhs.entry_->get_last_access_time_us() <= rhs.entry_->get_last_access_time_us());
+    } else if (NULL != lhs.entry_) {
+      bret = (lhs.entry_->get_last_access_time_us() <= 0);
+    } else if (NULL != rhs.entry_) {
+      bret = (0 <= rhs.entry_->get_last_access_time_us());
+    } else {
+      bret = true;
+    }
+    return bret;
+  }
+};
+
+int ObCacheCleaner::clean_one_sub_bucket_index_cache(const int64_t bucket_idx,
+                                                         const int64_t clean_count)
+{
+  int ret = OB_SUCCESS;
+  int64_t bucket_num = index_cache_->get_sub_part_count();
+  if ((bucket_idx < 0) || (bucket_idx >= bucket_num) || (clean_count <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid input value", K(bucket_idx), K(clean_count), K(bucket_num), K(ret));
+  } else {
+    ObIndexEntryCmp cmp;
+    ObIndexEntry *entry = NULL;
+    IndexIter it;
+    ObProxyMutex *bucket_mutex = index_cache_->lock_for_key(bucket_idx);
+    MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
+    if (lock.is_locked()) {
+      int64_t tmp_clean_count = std::max(clean_count, 2L);
+      int64_t buf_len = sizeof(ObIndexEntryElem) * tmp_clean_count;
+      char *buf = static_cast<char *>(op_fixed_mem_alloc(buf_len));
+      if (OB_ISNULL(buf)) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WDIAG("fail to alloc memory", K(buf_len), K(ret));
+      } else if (OB_FAIL(index_cache_->run_todo_list(bucket_idx))) {
+        LOG_WDIAG("fail to run todo list", K(bucket_idx), K(ret));
+      } else {
+        // 1.make a smallest heap
+        ObIndexEntryElem *eles = new (buf) ObIndexEntryElem[tmp_clean_count];
+        ObIndexEntryElem tmp_ele;
+        int64_t i = 0;
+        entry = index_cache_->first_entry(bucket_idx, it);
+        while (NULL != entry) {
+          if (i < tmp_clean_count) {
+            eles[i].entry_ = entry;
+            ++i;
+            if (i == tmp_clean_count) {
+              std::make_heap(eles, eles + tmp_clean_count, cmp);
+            }
+          } else {
+            std::pop_heap(eles, eles + tmp_clean_count, cmp);
+            tmp_ele.entry_ = entry;
+            if (cmp(tmp_ele, eles[tmp_clean_count - 1])) {
+              eles[tmp_clean_count - 1].entry_ = entry;
+              std::push_heap(eles, eles + tmp_clean_count, cmp);
+            } else {
+              std::make_heap(eles, eles + tmp_clean_count, cmp);
+            }
+          }
+
+          entry = index_cache_->next_entry(bucket_idx, it);
+        }
+
+        // 2. calc wash count again for defense
+        int64_t part_entry_count = index_cache_->get_part_cur_size(bucket_idx);
+        int64_t orig_clean_count = tmp_clean_count;
+        if (part_entry_count <= PART_INDEX_ENTRY_MIN_COUNT) {
+          tmp_clean_count = 0; // don't clean
+        } else if ((part_entry_count - tmp_clean_count) <= PART_INDEX_ENTRY_MIN_COUNT) {
+          int64_t dcount = part_entry_count - PART_INDEX_ENTRY_MIN_COUNT;
+          tmp_clean_count = ((dcount >= 0) ? dcount : 0);
+        }
+        LOG_INFO("begin to wash index entry", "wash_count",
+                 tmp_clean_count, K(part_entry_count), K(orig_clean_count), K(bucket_idx),
+                 LITERAL_K(PART_INDEX_ENTRY_MIN_COUNT));
+
+        // 3. remove the LRU entry
+        ObIndexEntryKey key;
+        for (int64_t i = 0; (i < tmp_clean_count) && OB_SUCC(ret); ++i) {
+          entry = eles[i].entry_;
+          // do not remove building state index entry
+          if (NULL != entry && !entry->is_building_state()) {
+            // PROCESSOR_INCREMENT_DYN_STAT(KICK_OUT_PARTITION_ENTRY_FROM_GLOBAL_CACHE);
+            LOG_INFO("this index entry will be washed", KPC(entry));
+            key.reset();
+            entry->get_key(key);
+            if (OB_FAIL(index_cache_->remove_index_entry(key))) {
+              LOG_WDIAG("fail to remove index entry", KPC(entry), K(ret));
+            }
+          }
+        }
+      }
+
+      // 3. free the mem
+      if ((NULL != buf) && (buf_len > 0)) {
+        op_fixed_mem_free(buf, buf_len);
+        buf = NULL;
+        buf_len = 0;
+      }
+    } else { // fail to try lock
+      LOG_INFO("fail to try lock, wait next round", K(bucket_idx), K(clean_count));
+    }
+  }
+
+  return ret;
+}
+
 
 int ObCacheCleaner::schedule_in(const int64_t timeout_us)
 {
@@ -786,6 +972,15 @@ const char *ObCacheCleaner::get_cleaner_action_name(const ObCleanAction action) 
     case CLEAN_THREAD_CACHE_ROUTINE_ENTRY_ACTION:
       name = "CLEAN_THREAD_CACHE_ROUTINE_ENTRY_ACTION";
       break;
+    case EXPIRE_INDEX_ENTRY_ACTION:
+      name = "EXPIRE_INDEX_ENTRY_ACTION";
+      break;
+    case CLEAN_INDEX_CACHE_ACTION:
+      name = "CLEAN_INDEX_CACHE_ACTION";
+      break;
+    case CLEAN_THREAD_CACHE_INDEX_ENTRY_ACTION:
+      name = "CLEAN_THREAD_CACHE_INDEX_ENTRY_ACTION";
+      break;
 
     default:
       name = "CLIENT_ACTION_UNKNOWN";
@@ -803,11 +998,13 @@ int64_t ObCacheCleaner::to_string(char *buf, const int64_t buf_len) const
        K_(table_cache_range),
        K_(partition_cache_range),
        K_(routine_cache_range),
+       K_(index_cache_range),
        K_(tc_part_clean_count),
        K_(table_cache_last_expire_time_us),
        K_(partition_cache_last_expire_time_us),
        K_(routine_cache_last_expire_time_us),
        K_(sql_table_cache_last_expire_time_us),
+       K_(index_cache_last_expire_time_us),
        KP_(pending_action));
   J_OBJ_END();
   return pos;
@@ -852,6 +1049,7 @@ int ObCacheCleaner::schedule_one_cache_cleaner(int64_t index)
   ObPartitionCache &partition_cache = get_global_partition_cache();
   ObRoutineCache &routine_cache = get_global_routine_cache();
   ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
+  ObIndexCache &index_cache = get_global_index_cache();
 
   const int64_t mt_part_num = MT_HASHTABLE_PARTITIONS;
   if (net_thread_count > 0 && mt_part_num > 0) {
@@ -881,7 +1079,7 @@ int ObCacheCleaner::schedule_one_cache_cleaner(int64_t index)
       if (OB_ISNULL(cleaner = new (std::nothrow) ObCacheCleaner())) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WDIAG("fail to alloc cleaner", K(ret));
-      } else if (OB_FAIL(cleaner->init(table_cache, partition_cache, routine_cache, sql_table_cache, range,
+      } else if (OB_FAIL(cleaner->init(table_cache, partition_cache, routine_cache, sql_table_cache, index_cache, range,
               net_thread_count, index, clean_interval))) {
         LOG_WDIAG("fail to init cleaner", K(range), K(ret));
       } else if (OB_ISNULL(target_ethread = netthreads[index])) {
@@ -1103,6 +1301,35 @@ int ObCacheCleaner::do_expire_partition_entry()
   return ret;
 }
 
+int ObCacheCleaner::do_expire_index_entry()
+{
+  int ret = OB_SUCCESS;
+  if (!index_cache_deleted_cr_version_.empty() || is_index_cache_expire_time_changed()) {
+    ObProxyMutex *bucket_mutex = NULL;
+    bool all_locked = true;
+    if (index_cache_range_.count() > 0) {
+      // every bucket
+      for (int64_t i = index_cache_range_.start_idx_; i <= index_cache_range_.end_idx_; ++i) {
+        bucket_mutex = index_cache_->lock_for_key(i);
+        MUTEX_TRY_LOCK(lock, bucket_mutex, this_ethread());
+        if (lock.is_locked()) {
+          index_cache_->gc(i);
+        } else {
+          all_locked = false;
+        }
+      }
+    }
+
+    // if all buckets are locked at once, we will reset partition_cache_deleted_cr_version_
+    if (all_locked) {
+      index_cache_deleted_cr_version_.reset();
+      index_cache_last_expire_time_us_ = index_cache_->get_cache_expire_time_us();
+    }
+  }
+
+  return ret;
+}
+
 bool ObCacheCleaner::is_table_entry_expired(ObTableEntry &entry)
 {
   bool expired = false;
@@ -1135,6 +1362,26 @@ bool ObCacheCleaner::is_partition_entry_expired(ObPartitionEntry &entry)
     if (lock.is_locked()) {
       for (int64_t i = 0; (i < partition_cache_deleted_cr_version_.count()) && !expired; ++i) {
         if (entry.get_cr_version() == partition_cache_deleted_cr_version_.at(i)) {
+          expired = true;
+        }
+      }
+    }
+  }
+  return expired;
+}
+
+bool ObCacheCleaner::is_global_index_entry_expired(ObIndexEntry &entry)
+{
+  bool expired = false;
+  if (index_cache_->is_index_entry_expired(entry)) {
+    expired = true;
+  }
+  if (!expired) {
+    // must acquire ObCacheCleaner' mustex, or deleted_cr_verison_ maybe multi read and write
+    MUTEX_TRY_LOCK(lock, this->mutex_, this_ethread());
+    if (lock.is_locked()) {
+      for (int64_t i = 0; (i < index_cache_deleted_cr_version_.count()) && !expired; ++i) {
+        if (entry.get_cr_version() == index_cache_deleted_cr_version_.at(i)) {
           expired = true;
         }
       }
@@ -1190,6 +1437,11 @@ bool ObCacheCleaner::is_table_cache_expire_time_changed()
 bool ObCacheCleaner::is_partition_cache_expire_time_changed()
 {
   return (partition_cache_last_expire_time_us_ != partition_cache_->get_cache_expire_time_us());
+}
+
+bool ObCacheCleaner::is_index_cache_expire_time_changed()
+{
+  return (index_cache_last_expire_time_us_ != index_cache_->get_cache_expire_time_us());
 }
 
 bool ObCacheCleaner::is_routine_cache_expire_time_changed()

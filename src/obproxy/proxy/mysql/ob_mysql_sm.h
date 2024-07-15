@@ -18,8 +18,9 @@
 #include "utils/ob_target_db_server.h"
 #include "iocore/eventsystem/ob_event_system.h"
 #include "proxy/mysqllib/ob_mysql_request_analyzer.h"
-#include "proxy/mysqllib/ob_mysql_compress_analyzer.h"
-#include "proxy/mysqllib/ob_mysql_compress_ob20_analyzer.h"
+#include "proxy/mysqllib/ob_compression_algorithm.h"
+#include "proxy/mysqllib/ob_oceanbase_20_request_analyzer.h"
+#include "proxy/mysqllib/ob_resp_analyzer.h"
 #include "proxy/api/ob_api_internal.h"
 #include "proxy/api/ob_mysql_sm_api.h"
 #include "proxy/mysql/ob_mysql_transact.h"
@@ -98,6 +99,9 @@ class ObMysqlSM : public event::ObContinuation
   friend class ObShowSMHandler;
 public:
   ObMysqlSM();
+  // Attention!
+  // when deallocate ObMysqlSM deconstructor will not be called
+  // in case of memory leaking, please manually release refered memory in ::cleanup()
   virtual ~ObMysqlSM() {}
 
   void cleanup();
@@ -189,8 +193,6 @@ public:
   ObMysqlClientSession *get_client_session() { return client_session_; }
   ObMysqlClientSession *get_client_session() const { return client_session_; }
 
-  ObMysqlTransactionAnalyzer &get_trans_analyzer() { return analyzer_; }
-
   int64_t get_query_timeout();
   ObHRTime get_based_hrtime();
   bool is_causal_order_read_enabled();
@@ -208,6 +210,8 @@ public:
   void update_session_stats(int64_t *stats, const int64_t stats_size);
 
   void get_server_session_ids(uint32_t &server_sessid, int64_t &ss_id);
+  bool need_update_non_login_config() { return need_update_non_login_config_; }
+  bool need_depend_last_session() { return need_depend_last_session_; }
 
   const common::ObString &get_server_trace_id();
 
@@ -225,11 +229,12 @@ public:
   uint8_t get_compressed_or_ob20_request_seq();
   obmysql::ObMySQLCmd get_request_cmd();
 
-  ObMysqlCompressAnalyzer &get_compress_analyzer();
+  inline ObRespAnalyzer& get_resp_analyzer() { return resp_analyzer_; }
 
   int swap_mutex(event::ObProxyMutex *mutex);
 
   int trim_ok_packet(event::ObIOBufferReader &reader);
+  int handle_feedback_proxy_info(const Ob20ExtraInfo& extra_info);
   int use_set_pool_addr();
 
   bool is_cloud_user() const;
@@ -241,6 +246,8 @@ public:
   inline void set_skip_plugin(const bool bvalue) { skip_plugin_ = bvalue; }
   void set_detect_server_info(net::ObIpEndpoint target_addr, int cnt, int64_t time);
   int build_error_packet_for_connection_diagnosis(bool &is_packet_build);
+  void set_need_update_non_login_config(const bool need_update_non_login_config) { need_update_non_login_config_ = need_update_non_login_config; }
+  void set_need_renew_cluster_resource(const bool need_renew_cluster_resource) { need_renew_cluster_resource_ = need_renew_cluster_resource; }
 public:
   static const int64_t OP_LOCAL_NUM = 32;
   static const int64_t MAX_SCATTER_LEN;
@@ -262,7 +269,6 @@ public:
   ObCmdTimeStat cmd_time_stats_;
   ObTransactionStat trans_stats_;
   ObTransactionMilestones milestones_;
-  ObConnectionMilestones conn_milestones_;
   bool is_updated_stat_;
   bool is_in_list_;
 
@@ -271,10 +277,7 @@ public:
   // do_api_callout_internal()
   bool hooks_set_;
   ObMysqlSMApi api_;
-
-  ObMysqlTransactionAnalyzer analyzer_;
-  ObMysqlCompressAnalyzer compress_analyzer_;
-  ObMysqlCompressOB20Analyzer compress_ob20_analyzer_;
+  ObRespAnalyzer resp_analyzer_;
   ObMysqlRequestAnalyzer request_analyzer_;
 
 public:
@@ -404,7 +407,10 @@ public:
   // terminate sm
   int kill_this_async_hook(int event, void *data);
   void kill_this();
-
+  void set_kill_this_after_cmd_done(int64_t kill_after_cmd_done_err_code) {
+    kill_after_cmd_done_err_code_ = kill_after_cmd_done_err_code;
+  }
+  
   void update_stats();
   void update_cmd_stats();
   void update_monitor_log();
@@ -423,6 +429,7 @@ public:
 
   int handle_limit(bool &need_direct_response_for_client);
   int handle_ldg(bool &need_direct_response_for_client);
+  int handle_service_name(bool &need_direct_response_for_client);
 
   void save_response_flt_result_to_sm(common::FLTObjManage &flt);
   int save_request_flt_result_to_sm(common::FLTObjManage &flt);
@@ -436,18 +443,22 @@ public:
   int handle_resp_for_end_flt_trace(bool is_trans_completed);
   void set_server_protocol(ObProxyProtocol protocol) { server_protocol_ = protocol; }
   ObProxyProtocol get_server_protocol() const { return server_protocol_; }
-
   bool is_proxy_switch_route() const;
   void build_basic_connection_diagnosis_info();
   void fill_disconnect_message();
+  inline void reset_single_leader() { single_leader_addr_.reset(); }
+  inline const net::ObIpEndpoint &get_single_leader() { return single_leader_addr_; }
+  inline bool is_vaild_single_leader() { return single_leader_addr_.is_valid(); }
+  void refresh_single_leader();
 
 private:
   // private functions
   int handle_server_request_send_long_data();
   int do_analyze_ps_execute_request_with_remain_value(event::ObMIOBuffer *writer, int64_t read_avail,
                                                       int64_t param_type_pos);
-  int handle_compress_request_analyze_done(ObMysqlCompressedOB20AnalyzeResult &ob20_result, int64_t &first_packet_len,
-                                           ObMysqlAnalyzeStatus &status);
+  int handle_compress_request_analyze_done(ObAnalyzeHeaderResult &ob20_result, int64_t &first_packet_len,
+                                           ObMysqlAnalyzeStatus &status, Ob20ExtraInfo &extra_info,
+                                           common::FLTObjManage &flt);
   void analyze_status_after_analyze_mysql_in_ob20_payload(ObMysqlAnalyzeStatus &status,
                                                           ObClientSessionInfo &client_session_info);
   int analyze_ob20_remain_after_analyze_mysql_request_done(ObClientSessionInfo &client_session_info);
@@ -497,34 +508,26 @@ private:
   bool add_detect_server_cnt_;
   proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
   ObProxyProtocol server_protocol_; // server protocol configured by `enable_compression_protocol` or `enable_ob_protocol_v2`
+  bool need_update_non_login_config_; // 默认false，登录时设置为true，然后刷新vip级别配置后，重新设置为false
+  net::ObIpEndpoint single_leader_addr_;
+  int64_t single_leader_version_;
+  bool need_depend_last_session_;
 public:
+  bool enable_full_link_trace_;
+  int64_t kill_after_cmd_done_err_code_;
   // 多级别配置项：因为配置项最细粒度可以在VIP级别生效，所以需要每个SM可能都不同
   // 非配置相关的不要放在这里
-  char proxy_route_policy_[OB_MAX_CONFIG_VALUE_LEN];
-  char proxy_idc_name_[OB_MAX_CONFIG_VALUE_LEN];
-  char proxy_primary_zone_name_[OB_MAX_CONFIG_VALUE_LEN];
-  bool enable_cloud_full_username_;
-  bool enable_client_ssl_;
-  bool enable_server_ssl_;
-  bool enable_read_write_split_;
-  bool enable_transaction_split_;
-  bool enable_ob_protocol_v2_; // limit the scope of changing enable_protocol_v2_ to client session level
-  bool enable_compression_protocol_;
-  bool enable_read_stale_feedback_;
-  int64_t read_stale_retry_interval_;
-  omt::ObProxyConfigTableProcessor::SSLAttributes ssl_attributes_;
-  char binlog_service_ip_[OB_MAX_CONFIG_VALUE_LEN];
-  uint64_t config_version_;
-  ObTargetDbServer *target_db_server_;
+  omt::ObProxyMultiLevelConfig *multi_level_config_;    // 多级配置，都放在ObProxyMultiLevelConfig结构里
+  ObTargetDbServer* target_db_server_;
   struct {
-    ObCompressionAlgorithm algorithm_; // we only support zlib now
+    proxy::ObCompressionAlgorithm algorithm_; // we only support zlib now
     int64_t level_;                    // only be zlib compression level now
   } compression_algorithm_;
-
   // 诊断使用
   ObRouteDiagnosis *route_diagnosis_;
   ObProtocolDiagnosis *protocol_diagnosis_;
   obutils::ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
+  ObServiceNameInstance *service_name_instance_;
 };
 
 inline ObMysqlSM *ObMysqlSM::allocate()
@@ -621,7 +624,10 @@ inline void ObMysqlSM::set_internal_cmd_timeout(const ObHRTime timeout)
 
 inline int64_t ObMysqlSM::get_query_timeout()
 {
-  int64_t timeout = HRTIME_NSECONDS(trans_state_.mysql_config_params_->observer_query_timeout_delta_);
+  int64_t timeout = 0;
+  if (OB_NOT_NULL(multi_level_config_)) {
+    timeout = HRTIME_NSECONDS(multi_level_config_->observer_query_timeout_delta_);
+  }
   if (OB_LIKELY(NULL != client_session_)) {
     int64_t hint_query_timeout = trans_state_.trans_info_.client_request_.get_parse_result().get_hint_query_timeout();
     // if the request contains query_timeout in hint, we use it
@@ -766,8 +772,7 @@ inline bool ObMysqlSM::need_print_trace_stat() const
 
 inline const common::ObString &ObMysqlSM::get_server_trace_id()
 {
-  ObMysqlResp &server_response = trans_state_.trans_info_.server_response_;
-  return server_response.get_analyze_result().server_trace_id_;
+  return trans_state_.trans_info_.resp_result_.server_trace_id_;
 }
 
 struct ObMysqlSMListBucket

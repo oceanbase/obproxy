@@ -686,6 +686,12 @@ public:
            || full_username_ != other.full_username_;
   }
 
+  bool operator ==(const ObShardConnector &other) const
+  {
+    return  this == &other
+            || !(*this != other);
+  }
+
 public:
   static const int64_t OB_MAX_CONNECTOR_NAME_LENGTH = 128;
 

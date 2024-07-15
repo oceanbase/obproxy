@@ -116,6 +116,8 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
     } else if (OB_UNLIKELY(OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT == sql_cmd)) {
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet_only_header(*ctx.reader_, result))) {
         LOG_WDIAG("fail to analyze one packet only header", K(ret), "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(sql_cmd));
+      } else {
+        result.meta_.cmd_ = OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT;
       }
     } else {
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*ctx.reader_, result))) {
@@ -188,6 +190,7 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
             && !client_request.is_sharding_user()
             && !client_request.is_proxysys_user()
             && !ctx.using_ldg_
+            && !ctx.using_service_name_
             && OB_MYSQL_COM_STMT_SEND_LONG_DATA != sql_cmd
             && OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != sql_cmd
             && OB_MYSQL_COM_CHANGE_USER != sql_cmd) {
@@ -271,7 +274,11 @@ int ObMysqlRequestAnalyzer::is_request_finished(
   int64_t i = 0;
 
   int64_t header_len = 0;
-  if (OB_LIKELY(OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != cmd)) {
+  // payload_len_ is last mysql packet's payload_len
+  // if payload_len_ == MYSQL_PACKET_MAX_LENGTH then
+  // the next packet would be an empty packet(4 bytes)
+  // to mark end of the request packets
+  if (OB_LIKELY(OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != cmd && MYSQL_PACKET_MAX_LENGTH != payload_len_)) {
     header_len = MYSQL_NET_META_LENGTH;
   } else {
     header_len = MYSQL_NET_HEADER_LENGTH;
@@ -328,7 +335,6 @@ int ObMysqlRequestAnalyzer::is_request_finished(
         LOG_WDIAG("fail to check_is_last_request_packet", K(ret), K(cmd));
       } else {
         PROTOCOL_DIAGNOSIS(SINGLE_MYSQL, send, protocol_diagnosis, static_cast<int32_t>(payload_len_), packet_seq_, cmd_);
-        payload_len_ = -1;
         cmd_ = 0;
       }
     }
@@ -688,6 +694,56 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
       }
       break;
     }
+    case OB_MYSQL_COM_PROCESS_INFO: {
+      if (!client_request.is_proxysys_tenant()) {
+        if (!client_request.is_enable_server_kill_connection()) {
+          client_request.get_parse_result().set_show_processlist_cmd();
+          if (OB_FAIL(init_cmd_info(client_request))) {
+            LOG_WDIAG("fail to init_cmd_info", K(ret));
+          }
+        }
+      } else {
+        if (OB_FAIL(handle_internal_cmd(client_request))) {
+          LOG_WDIAG("fail to handle internal cmd", K(sql_cmd), K(ret));
+        } else {
+          LOG_INFO("this is proxysys user, current cmd was treated as error inter request cmd",
+                   K(sql_cmd));
+        }
+      }
+      break;
+    }
+
+    case OB_MYSQL_COM_PROCESS_KILL: {
+      if (!client_request.is_proxysys_tenant()) {
+        if (!client_request.is_enable_server_kill_connection()) {
+          // COM_PROCESS_KILL total 9 bytes
+          // len (3)| seq (1)| type(1)| thread_id(4)
+          const uint64_t com_process_kill_pkt_len = 9;
+          if (ctx.reader_->read_avail() == com_process_kill_pkt_len) {
+            char thread_buf[4];
+            ctx.reader_->copy(thread_buf, 4, MYSQL_NET_HEADER_LENGTH + MYSQL_NET_TYPE_LENGTH);
+            uint32_t thread_id = uint4korr(thread_buf);
+            client_request.get_parse_result().set_kill_connection_cmd();
+            client_request.get_parse_result().cmd_info_.integer_[0] = thread_id;
+            if (OB_FAIL(init_cmd_info(client_request))) {
+              LOG_WDIAG("fail to init_cmd_info", K(ret));
+            }
+          } else {
+           ret = OB_ERR_UNEXPECTED;
+           LOG_WDIAG("unexpected COM_PROCESS_KILL packet length", K(ctx.reader_->read_avail()), K(ret));
+          }
+        }
+      } else {
+        if (OB_FAIL(handle_internal_cmd(client_request))) {
+          LOG_WDIAG("fail to handle internal cmd", K(sql_cmd), K(ret));
+        } else {
+          LOG_INFO("this is proxysys user, current cmd was treated as error inter request cmd",
+                   K(sql_cmd));
+        }
+      }
+      break;
+    }
+
     case OB_MYSQL_COM_SHUTDOWN:
     case OB_MYSQL_COM_SLEEP:
     case OB_MYSQL_COM_FIELD_LIST:
@@ -695,9 +751,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     case OB_MYSQL_COM_DROP_DB:
     case OB_MYSQL_COM_REFRESH:
     case OB_MYSQL_COM_STATISTICS:
-    case OB_MYSQL_COM_PROCESS_INFO:
     case OB_MYSQL_COM_CONNECT:
-    case OB_MYSQL_COM_PROCESS_KILL:
     case OB_MYSQL_COM_DEBUG:
     case OB_MYSQL_COM_TIME:
     case OB_MYSQL_COM_DELAYED_INSERT:
@@ -774,7 +828,7 @@ int ObMysqlRequestAnalyzer::handle_internal_cmd(ObProxyMysqlRequest &client_requ
       if (OB_FAIL(client_request.fill_query_info(parse_result.cmd_info_.integer_[0]))) {
         LOG_WDIAG("fail to fill query info", K(parse_result), K(ret));
       }
-    } else if ((parse_result.is_kill_connection_cmd() || parse_result.is_show_processlist_cmd()) && client_request.is_enable_internal_kill_connection()) {
+    } else if ((parse_result.is_kill_connection_cmd() || parse_result.is_show_processlist_cmd()) && client_request.is_enable_server_kill_connection()) {
       // if use client session id v2, transfer kill cs_id/ show processlist to observer
     } else {
       is_internal_cmd = true;

@@ -31,8 +31,20 @@ public:
                        ObIArray<int64_t> &part_ids,
                        ObPartDescCtx &ctx,
                        ObIArray<int64_t> &tablet_ids,
-                       int64_t &part_idx);
-  virtual int get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids);
+                       int64_t &part_idx) override;
+  virtual int get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids) override;
+  virtual int get_part_by_num(const int64_t num,
+                              ObIArray<int64_t> &part_ids,
+                              ObIArray<int64_t> &tablet_ids) override;
+  virtual int get_part_for_obkv(ObNewRange &range,
+                                ObIAllocator &allocator,
+                                ObIArray<int64_t> &part_ids,
+                                ObPartDescCtx &ctx,
+                                ObIArray<int64_t> &tablet_ids,
+                                ObIArray<int64_t> &ls_ids) override;
+  virtual int get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
+                               ObIArray<int64_t> &tablet_ids,
+                               ObIArray<int64_t> &ls_ids) override;
   void set_part_num(int64_t part_num) { part_num_ = part_num; }
   void set_part_space(int64_t part_space) { part_space_ = part_space; }
   void set_first_part_id(int64_t first_part_id) { first_part_id_ = first_part_id; }

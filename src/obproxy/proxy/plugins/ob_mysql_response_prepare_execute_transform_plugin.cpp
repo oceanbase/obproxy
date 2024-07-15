@@ -93,7 +93,7 @@ int ObMysqlResponsePrepareExecuteTransformPlugin::consume(event::ObIOBufferReade
             ret = handle_prepare_column(local_analyze_reader_);
             break;
           case PREPARE_EXECUTE_ROW :
-            if (MYSQL_EOF_PACKET_TYPE == result.meta_.pkt_type_) {
+            if (result.is_eof_packet()) {
               ret = handle_prepare_execute_eof(local_analyze_reader_);
             } else if (MYSQL_ERR_PACKET_TYPE == result.meta_.pkt_type_) {
               prepare_execute_state_ = PREPARE_EXECUTE_END;

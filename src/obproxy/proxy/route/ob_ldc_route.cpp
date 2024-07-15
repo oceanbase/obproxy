@@ -530,6 +530,18 @@ static ObRouteType route_order_cursor_of_follower_only_optimized[] = {
     ROUTE_TYPE_MAX
 };
 
+static ObRouteType route_order_cursor_of_proxy_primary_zone_name_only[] = {
+  ROUTE_TYPE_MAX
+};
+
+static ObRouteType route_order_cursor_of_target_db_server_only[] = {
+  ROUTE_TYPE_MAX
+};
+
+static ObRouteType route_order_cursor_of_primary_zone_first[] = {
+  ROUTE_TYPE_MAX
+};
+
 const ObRouteType *ObLDCRoute::route_order_cursor_[] = {
     route_order_cursor_of_merge_idc_order,
     route_order_cursor_of_readonly_zone_first,
@@ -548,6 +560,9 @@ const ObRouteType *ObLDCRoute::route_order_cursor_[] = {
     route_order_cursor_of_dup_strong_read_order,
     route_order_cursor_of_follower_only,
     route_order_cursor_of_follower_only_optimized,
+    route_order_cursor_of_proxy_primary_zone_name_only,
+    route_order_cursor_of_target_db_server_only,
+    route_order_cursor_of_primary_zone_first,
 };
 
 int64_t ObLDCRoute::route_order_size_[] = {
@@ -571,6 +586,9 @@ int64_t ObLDCRoute::route_order_size_[] = {
 
     sizeof(route_order_cursor_of_follower_only) / sizeof(ObRouteType),//13
     sizeof(route_order_cursor_of_follower_only_optimized) / sizeof(ObRouteType),//13
+    sizeof(route_order_cursor_of_proxy_primary_zone_name_only) / sizeof(ObRouteType),//1
+    sizeof(route_order_cursor_of_target_db_server_only) / sizeof(ObRouteType),//1
+    sizeof(route_order_cursor_of_primary_zone_first) / sizeof(ObRouteType),//1
 };
 
 const ObLDCItem *ObLDCRoute::get_next_item()
@@ -579,9 +597,11 @@ const ObLDCItem *ObLDCRoute::get_next_item()
   if (!location_.is_empty()) {
     const int64_t *site_start_index_array = location_.get_site_start_index_array();
     ObLDCItem *item_array = location_.get_item_array();
+    // 目前PROXY_PRIMARY_ZONE_NAME_ONLY、TARGET_DB_SERVER_ONLY、PRIMARY_ZONE_FIRST没有机器列表，不关心observer类型
+    bool need_random_policy = is_random_policy();
     ObRouteType route_type = get_route_type(curr_cursor_index_);
-    ObIDCType idc_type = get_idc_type(route_type);
-    bool need_break = (ROUTE_TYPE_MAX == route_type);
+    ObIDCType idc_type = need_random_policy ? ObIDCType::OTHER_REGION : get_idc_type(route_type);
+    bool need_break = need_random_policy ? false : (ROUTE_TYPE_MAX == route_type);
     while (!need_break) {
       if (next_index_in_site_ >= site_start_index_array[idc_type + 1]) {
         LOG_DEBUG("need try next cursor type", K_(curr_cursor_index),
@@ -600,16 +620,18 @@ const ObLDCItem *ObLDCRoute::get_next_item()
       } else {
         ret_item = item_array + next_index_in_site_;
         ++next_index_in_site_;
+        // 对新增路由策略，采用随机的方式，没有机器优先级，无需比较
         if (!ret_item->is_used_
-            && is_same_role(route_type, *ret_item)
-            && is_same_partition_type(route_type, *ret_item)
-            && is_same_zone_type(route_type, *ret_item)
-            && is_same_dup_replica_type(route_type, *ret_item)
-            && (disable_merge_status_check_ || is_same_merge_type(route_type, *ret_item))) {
+            && (need_random_policy
+                || (is_same_role(route_type, *ret_item)
+                    && is_same_partition_type(route_type, *ret_item)
+                    && is_same_zone_type(route_type, *ret_item)
+                    && is_same_dup_replica_type(route_type, *ret_item)
+                    && (disable_merge_status_check_ || is_same_merge_type(route_type, *ret_item))))) {
           ret_item->is_used_ = true;
           need_break = true;
           LOG_DEBUG("succ to get_next_replica", KPC(ret_item), K_(disable_merge_status_check),
-                    "curr_route_type", get_route_type_string(route_type));
+                    "curr_route_type", get_route_type_string(route_type), K(need_random_policy));
         } else {
           LOG_DEBUG("item is not excepted, try next", KPC(ret_item),
                     "curr_route_type", get_route_type_string(route_type),

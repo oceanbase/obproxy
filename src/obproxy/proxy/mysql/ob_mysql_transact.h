@@ -20,7 +20,7 @@
 #include "obutils/ob_congestion_entry.h"
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
-#include "proxy/mysqllib/ob_mysql_response.h"
+#include "proxy/mysqllib/ob_resp_analyze_result.h"
 #include "proxy/mysqllib/ob_proxy_parser_utils.h"
 #include "proxy/mysqllib/ob_mysql_config_processor.h"
 #include "proxy/route/ob_table_cache.h"
@@ -32,7 +32,7 @@
 #include "proxy/mysqllib/ob_proxy_ob20_request.h"
 #include "lib/oblog/ob_simple_trace.h"
 #include "obutils/ob_read_stale_processor.h"
-#include "proxy/mysqllib/ob_mysql_compress_analyzer.h"
+#include "proxy/mysqllib/ob_compression_algorithm.h"
 
 namespace oceanbase
 {
@@ -68,6 +68,8 @@ class ObServerSessionInfo;
 class ObSqlauditRecordQueue;
 class ObDiagnosisRoutePolicy;
 
+enum class ObRouteInfoType;
+
 enum
 {
   MYSQL_UNDEFINED_CL = -1
@@ -87,7 +89,9 @@ public:
   {
     NEED_PL_LOOKUP = 0,
     USE_LAST_SERVER_SESSION,
-    USE_COORDINATOR_SESSION
+    USE_COORDINATOR_SESSION,
+    USE_SHARD_TXN_SESSION,
+    USE_LOCK_SERVER_SESSION,
   };
 
   enum ObMysqlTransactMagic
@@ -172,6 +176,11 @@ enum ObServerRespErrorType
     TRANS_FREE_ROUTE_NOT_SUPPORTED_ERROR,
     SEND_INIT_SQL_ERROR,
     CLIENT_SESSION_KILLED_ERROR,
+    // service name related
+    SERVICE_NAME_NOT_FOUND_ERROR,
+    NOT_PRIMARY_TENANT_ERROR,
+    LOGIN_SERVICE_NAME_NOT_FOUND_ERROR,
+    LOGIN_NOT_PRIMARY_TENANT_ERROR,
     // attention!! add error type between MIN_RESP_ERROR and MAX_RESP_ERROR
     MAX_RESP_ERROR
   };
@@ -213,6 +222,7 @@ enum ObServerRespErrorType
     SM_ACTION_API_SM_SHUTDOWN,
 
     SM_ACTION_BINLOG_LOCATION_LOOKUP,
+    SM_ACTION_SETUP_GET_CLUSTER_RESOURCE,
   };
 
   enum ObAttachDummyEntryType
@@ -320,7 +330,9 @@ enum ObServerRespErrorType
         : state_(STATE_UNDEFINED),
           error_type_(MIN_RESP_ERROR),
           send_action_(SERVER_SEND_NONE),
-          attempts_(1)
+          attempts_(1),
+          retry_service_name_count_(0),
+          first_retry_service_name_(true)
     { }
     ~ObCurrentInfo() { }
 
@@ -330,12 +342,16 @@ enum ObServerRespErrorType
       error_type_ = MIN_RESP_ERROR;
       send_action_ = SERVER_SEND_NONE;
       attempts_ = 1;
+      retry_service_name_count_ = 0;
+      first_retry_service_name_ = true;
     }
 
     ObServerStateType state_;
     ObServerRespErrorType error_type_;
     ObServerSendActionType send_action_;
     int32_t attempts_;
+    int32_t retry_service_name_count_;
+    bool first_retry_service_name_;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ObCurrentInfo);
@@ -446,7 +462,7 @@ enum ObServerRespErrorType
   {
     ObTransactInfo()
         : client_request_(),
-          server_response_(),
+          resp_result_(),
           request_content_length_(MYSQL_UNDEFINED_CL),
           transform_request_cl_(MYSQL_UNDEFINED_CL),
           transform_response_cl_(MYSQL_UNDEFINED_CL),
@@ -456,7 +472,7 @@ enum ObServerRespErrorType
     void reset()
     {
       client_request_.reuse();
-      server_response_.reset();
+      resp_result_.reset();
       sql_cmd_ = obmysql::OB_MYSQL_COM_END;
     }
 
@@ -478,7 +494,7 @@ enum ObServerRespErrorType
     }
 
     ObProxyMysqlRequest client_request_; // for mysql packets except login packet
-    ObMysqlResp server_response_;        // for server response
+    ObRespAnalyzeResult resp_result_;        // for server response
     int64_t request_content_length_;
     int64_t transform_request_cl_;
     int64_t transform_response_cl_;
@@ -564,7 +580,7 @@ enum ObServerRespErrorType
     }
 
     void refresh_mysql_config();
-    int get_config_item(const common::ObString& cluster_name,
+    int get_multi_level_config_item(const common::ObString& cluster_name,
                         const common::ObString &tenant_name,
                         const obutils::ObVipAddr &addr,
                         const int64_t global_version = 0);
@@ -678,7 +694,7 @@ enum ObServerRespErrorType
 
     void reset()
     {
-      // do not reset trans_info_.server_response_
+      // do not reset trans_info_.resp_result_
       // because it will maybe be used in processing the next request
       update_transaction_stats();
       reset_internal_buffer();
@@ -723,6 +739,14 @@ enum ObServerRespErrorType
       } else { /* do nothing */ }
     }
 
+    void reset_trans_internal_server_info()
+    {
+      server_info_.reset();
+      pll_info_.reset();
+      current_.attempts_ = 1;
+      reset_congestion_entry();
+    }
+
     void reset_congestion_entry()
     {
       if (NULL != congestion_entry_) {
@@ -745,7 +769,7 @@ enum ObServerRespErrorType
       record_transaction_stats();
       magic_ = MYSQL_TRANSACT_MAGIC_DEAD;
       trans_info_.client_request_.reset();
-      trans_info_.server_response_.reset();
+      trans_info_.resp_result_.reset();
       free_internal_buffer();
       if (NULL != mysql_config_params_) {
         mysql_config_params_->dec_ref();
@@ -890,6 +914,8 @@ enum ObServerRespErrorType
   static void get_region_name_and_server_info(ObTransState &s,
                                               common::ObIArray<obutils::ObServerStateSimpleInfo> &simple_servers_info,
                                               common::ObIArray<common::ObString> &region_names);
+  static int get_proxy_primary_zone_array(common::ObString zone,
+                                          common::ObSEArray<common::ObString, 5> &zone_array);
   static void handle_pl_lookup(ObTransState &s);
   static void handle_bl_lookup(ObTransState &s);
   static void modify_pl_lookup(ObTransState &s);
@@ -905,10 +931,12 @@ enum ObServerRespErrorType
   static int attach_cached_dummy_entry(ObTransState &s, const ObAttachDummyEntryType type);
   static void handle_server_connection_break(ObTransState &s);
   static void handle_on_forward_server_response(ObTransState &s);
+  static int handle_retry_service_name(ObTransState &s);
   static void handle_api_error_jump(ObTransState &s);
   static void handle_pl_update(ObTransState &s);
 
   static void handle_server_failed(ObTransState &s);
+  static int handle_rewrite_request(ObTransState &s);
   static void handle_oceanbase_server_resp_error(ObTransState &s, obmysql::ObMySQLCmd request_cmd, obmysql::ObMySQLCmd current_cmd);
   static void handle_server_resp_error(ObTransState &s);
 
@@ -995,7 +1023,7 @@ enum ObServerRespErrorType
   static void update_sync_session_stat(ObTransState &s);
 
   // get partition location info from sql parse result
-  static int extract_partition_info(ObTransState &s, int32_t &type);
+  static int extract_partition_info(ObTransState &s, ObRouteInfoType *type);
 
   static bool is_in_auth_process(ObTransState &s);
   static bool is_in_internal_send_process(ObTransState &s);
@@ -1015,11 +1043,15 @@ enum ObServerRespErrorType
   static bool is_sql_able_to_route_participant_in_trans(obutils::ObSqlParseResult& base_sql_parse_result, obmysql::ObMySQLCmd  sql_cmd);
   static bool is_trans_specified(ObTransState &s);
   static bool has_dependent_func(ObTransState &s);
+  static int refresh_service_name_role(ObTransState &s);
+  static bool is_depend_last_session(ObTransState &s);
   static void record_trans_state(ObTransState &s, bool is_in_trans);
   static bool is_addr_logonly(const net::ObIpEndpoint &addr, const ObTenantServer *ts);
   static void build_read_stale_param(const ObTransState &s, obutils::ObReadStaleParam &param);
   static void set_route_leader_replica(ObTransState &s, const ObProxyReplicaLocation *&replica);
   static bool need_use_tunnel(ObTransState &s);
+  static int init_route_diagnosis(ObTransState &s);
+  static int init_protocol_diagnosis(ObTransState &s);
 };
 
 inline bool ObMysqlTransact::is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s)
@@ -1035,7 +1067,7 @@ typedef void (*TransactEntryFunc)(ObMysqlTransact::ObTransState &s);
 
 inline bool ObMysqlTransact::is_user_trans_complete(ObTransState &s)
 {
-  return (!s.is_trans_first_request_
+  return (!(s.is_hold_start_trans_ || s.is_hold_xa_start_)
           && !s.is_auth_request_
           && !ObMysqlTransact::is_in_trans(s));
 }
@@ -1067,10 +1099,10 @@ inline bool ObMysqlTransact::is_db_reset(ObTransState &s)
   // 1. in auth request
   // 2. the db is empty originally, then we use db failed, observer will reset default database
   //    in this case, the db is not changed in fact
-  if (s.trans_info_.server_response_.get_analyze_result().is_server_db_reset()
+  if (s.trans_info_.resp_result_.is_server_db_reset()
       && (!is_in_auth_process(s))
       && (!(obmysql::OB_MYSQL_COM_INIT_DB == s.trans_info_.client_request_.get_packet_meta().cmd_
-            && s.trans_info_.server_response_.get_analyze_result().is_error_resp()))) {
+            && s.trans_info_.resp_result_.is_error_resp()))) {
     bret = true;
   }
   return bret;

@@ -32,18 +32,24 @@
   BUF_PRINTF(args);
 
 // connection related trace, record disconnection of client or observer
-#define COLLECT_VC_DIAGNOSIS(diag, trace_type, event, code, args...)      \
-  if (OB_NOT_NULL(diag) && diag->need_record_diagnosis_log(trace_type) && \
-      diag->diagnosis_info_ == NULL) {                                    \
-    COLLECT_MSG_BUF(args);                                                \
-    diag->set_trace_type(trace_type);                                     \
-    diag->record_vc_disconnection(event, code, buf);                      \
+// if proxy not received first packet and client disconnect, marked as detect request
+#define COLLECT_VC_DIAGNOSIS(diag, trace_type, event, code, args...) \
+  if (OB_NOT_NULL(diag) && diag->diagnosis_info_ == NULL) {          \
+    if (trace_type == OB_CLIENT_VC_TRACE && event == VC_EVENT_EOS && \
+        !diag->is_first_packet_received_) {                          \
+      diag->set_is_detect_request(true);                             \
+    }                                                                \
+    if (diag->need_record_diagnosis_log()) {                         \
+      COLLECT_MSG_BUF(args);                                         \
+      diag->set_trace_type(trace_type);                              \
+      diag->record_vc_disconnection(event, code, buf);               \
+    }                                                                \
   }
 
 // timeout related trace, record timeout disconnection event
 #define COLLECT_TIMEOUT_DIAGNOSIS(diag, trace_type, event, timeout, code,     \
                                   args...)                                    \
-  if (OB_NOT_NULL(diag) && diag->need_record_diagnosis_log(trace_type) &&     \
+  if (OB_NOT_NULL(diag) && diag->need_record_diagnosis_log() &&     \
       diag->diagnosis_info_ == NULL) {                                        \
     COLLECT_MSG_BUF(args);                                                    \
     diag->set_trace_type(trace_type);                                         \
@@ -52,7 +58,7 @@
 
 // internal error related trace, record obproxy internal disconnection
 #define COLLECT_INTERNAL_DIAGNOSIS(diag, trace_type, code, args...)       \
-  if (OB_NOT_NULL(diag) && diag->need_record_diagnosis_log(trace_type) && \
+  if (OB_NOT_NULL(diag) && diag->need_record_diagnosis_log() && \
       diag->diagnosis_info_ == NULL) {                                    \
     COLLECT_MSG_BUF(args);                                                \
     diag->set_trace_type(trace_type);                                     \
@@ -61,7 +67,7 @@
 
 // login related trace, record login failed event
 #define COLLECT_LOGIN_DIAGNOSIS(diag, trace_type, sql, code, args...)     \
-  if (OB_NOT_NULL(diag) && diag->need_record_diagnosis_log(trace_type) && \
+  if (OB_NOT_NULL(diag) && diag->need_record_diagnosis_log() && \
       diag->diagnosis_info_ == NULL) {                                    \
     COLLECT_MSG_BUF(args);                                                \
     diag->set_trace_type(trace_type);                                     \
@@ -129,6 +135,7 @@ public:
         diagnosis_info_(NULL),
         is_user_client_(true),
         is_first_packet_received_(false),
+        is_detect_request_(false),
         is_com_quit_(false),
         is_detect_user_(false),
         protocol_diagnosis_(NULL) {}
@@ -155,9 +162,10 @@ public:
   void log_diagnosis_info() const;
   void set_trace_type(ObConnectionDiagnosisTraceType trace_type) { trace_type_ = trace_type; }
   void set_user_client(const bool is_user_client) { is_user_client_ = is_user_client; }
+  void set_is_detect_request(const bool is_detect_request) { is_detect_request_ = is_detect_request; }
   void set_first_packet_received(const bool is_first_packet_received) { is_first_packet_received_ = is_first_packet_received; }
   void set_is_detect_user(const bool is_detect_user) { is_detect_user_ = is_detect_user; }
-  bool need_record_diagnosis_log(ObConnectionDiagnosisTraceType trace_type) const;
+  bool need_record_diagnosis_log() const;
   void set_is_com_quit(const bool is_com_quit) { is_com_quit_ = is_com_quit; }
   virtual void free();
   static bool is_enable_diagnosis_log(int64_t connection_diagnosis_control)
@@ -173,6 +181,7 @@ public:
   ObConnectionDiagnosisInfo *diagnosis_info_;
   bool is_user_client_;
   bool is_first_packet_received_;
+  bool is_detect_request_;
   bool is_com_quit_;
   bool is_detect_user_;
   proxy::ObProtocolDiagnosis *protocol_diagnosis_;
@@ -191,6 +200,7 @@ public:
     server_session_id_ = 0;
     MEMSET(client_addr_, '\0', MAX_IP_ADDR_LENGTH);
     MEMSET(server_addr_, '\0', MAX_IP_ADDR_LENGTH);
+    MEMSET(proxy_server_addr_, '\0', MAX_IP_ADDR_LENGTH);
     MEMSET(cluster_name_, '\0', OB_PROXY_MAX_CLUSTER_NAME_LENGTH);
     MEMSET(tenant_name_, '\0', OB_MAX_TENANT_NAME_LENGTH);
     MEMSET(user_name_, '\0', OB_MAX_USER_NAME_LENGTH);
@@ -209,6 +219,7 @@ public:
   int64_t server_session_id_;
   char client_addr_[MAX_IP_ADDR_LENGTH];
   char server_addr_[MAX_IP_ADDR_LENGTH];
+  char proxy_server_addr_[MAX_IP_ADDR_LENGTH];
   char cluster_name_[OB_PROXY_MAX_CLUSTER_NAME_LENGTH];
   char tenant_name_[OB_MAX_TENANT_NAME_LENGTH];
   char user_name_[OB_MAX_USER_NAME_LENGTH];

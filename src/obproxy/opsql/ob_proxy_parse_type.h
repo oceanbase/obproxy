@@ -37,6 +37,7 @@ typedef struct _ObProxyTableInfo
   ObProxyParseString package_name_;
   ObProxyParseString table_name_;
   ObProxyParseString alias_name_;
+  ObProxyParseString dblink_name_;
 } ObProxyTableInfo;
 
 #endif /* end of OBPROXY_PARSE_TYPE_H */

@@ -108,7 +108,6 @@ public:
   virtual void destroy();
 
 public:
-  static bool alloc_new_entry_disabled_;
   common::ObString base_ps_sql_;
   LINK(ObBasePsEntry, base_ps_entry_link_);
 
@@ -228,11 +227,7 @@ int ObPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
   int64_t sql_len = ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
 
   alloc_size += sizeof(T) + sql_len;
-  if (OB_UNLIKELY(ObBasePsEntry::alloc_new_entry_disabled_)) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(WDIAG, "fail to alloc mem for ps entry, disabled",
-                 K(alloc_size), K_(alloc_new_entry_disabled), K(ret));
-  } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_SM_LOG(WDIAG, "fail to alloc mem for ps entry", K(alloc_size), K(ret));
   } else {
@@ -345,11 +340,7 @@ int ObTextPsEntry::alloc_and_init_ps_entry(const ObString &text_ps_sql,
   int64_t sql_len = text_ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
 
   alloc_size = obj_size + sql_len;
-  if (OB_UNLIKELY(ObBasePsEntry::alloc_new_entry_disabled_)) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    PROXY_SM_LOG(WDIAG, "fail to alloc mem for text ps entry, disabled",
-                 K(alloc_size), K_(alloc_new_entry_disabled), K(ret));
-  } else if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_SM_LOG(WDIAG, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
   } else {

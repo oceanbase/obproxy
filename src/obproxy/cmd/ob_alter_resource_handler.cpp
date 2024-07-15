@@ -50,7 +50,7 @@ int ObAlterResourceHandler::handle_delete_cluster(int event, void *data)
   ObString cluster_name(cluster_str_);
   if (cluster_name.empty()) {
     ret = OB_INNER_STAT_ERROR;
-    WARN_ICMD("cluster name can not be empty", K(cluster_name), K(ret));
+    WDIAG_ICMD("cluster name can not be empty", K(cluster_name), K(ret));
   } else {
     ObResourcePoolProcessor &rpp = get_global_resource_pool_processor();
     if (ObString::make_string(OB_META_DB_CLUSTER_NAME) == cluster_name) {
@@ -64,7 +64,7 @@ int ObAlterResourceHandler::handle_delete_cluster(int event, void *data)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_ok_packet(0, capability_))) {
-      WARN_ICMD("fail to encode ok packet", K(ret));
+      WDIAG_ICMD("fail to encode ok packet", K(ret));
     } else {
       INFO_ICMD("succ to delete cluster resource", K(cluster_name));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -72,7 +72,7 @@ int ObAlterResourceHandler::handle_delete_cluster(int event, void *data)
   } else {
     int errcode = ret;
     if (OB_FAIL(encode_err_packet(errcode))) {
-      WARN_ICMD("fail to encode err resp packet", K(errcode), K(ret));
+      WDIAG_ICMD("fail to encode err resp packet", K(errcode), K(ret));
     } else {
       INFO_ICMD("succ to encode err resp packet", K(errcode));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -95,17 +95,17 @@ static int delete_cluster_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObAlterResourceHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObAlterResourceHandler", K(ret));
+    EDIAG_ICMD("fail to new ObAlterResourceHandler", K(ret));
   } else if (OB_FAIL(handler->init(is_query_cmd))) {
-    WARN_ICMD("fail to init for ObAlterResourceHandler", K(ret));
+    WDIAG_ICMD("fail to init for ObAlterResourceHandler", K(ret));
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_CALL))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObAlterResourceHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObAlterResourceHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObAlterResourceHandler");
@@ -124,7 +124,7 @@ int alter_resource_delete_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_ALTER_RESOURCE,
                                                                &delete_cluster_cmd_callback))) {
-    WARN_ICMD("fail to register CMD_TYPE_DELETE_CLUSTER", K(ret));
+    WDIAG_ICMD("fail to register CMD_TYPE_DELETE_CLUSTER", K(ret));
   }
   return ret;
 }

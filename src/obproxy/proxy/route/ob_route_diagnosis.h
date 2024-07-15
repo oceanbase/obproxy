@@ -196,30 +196,34 @@ public:
   obmysql::ObMySQLCmd sql_cmd_;
 };
 
+enum class ObRouteInfoType {
+  INVALID = 0,
+  USE_GLOBAL_INDEX,
+  USE_OBPROXY_ROUTE_ADDR,
+  USE_CURSOR,
+  USE_PIECES_DATA,
+  USE_CONFIG_TARGET_DB,
+  USE_COMMENT_TARGET_DB,
+  USE_TEST_SVR_ADDR,
+  USE_LAST_SESSION,
+  USE_SHARD_TXN_SESSION,
+  USE_LOCK_SESSION,
+  USE_CACHED_SESSION,
+  USE_SINGLE_LEADER,
+  USE_PARTITION_LOCATION_LOOKUP,
+  USE_COORDINATOR_SESSION,
+  USE_ROUTE_POLICY
+};
+
 class ObDiagnosisRouteInfo : public ObDiagnosisBase {
 public:
-  enum RouteInfoType {
-    INVALID = 0,
-    USE_GLOBAL_INDEX,
-    USE_OBPROXY_ROUTE_ADDR,
-    USE_CURSOR,
-    USE_PIECES_DATA,
-    USE_CONFIG_TARGET_DB,
-    USE_COMMENT_TARGET_DB,
-    USE_TEST_SVR_ADDR,
-    USE_LAST_SESSION,
-    USE_CACHED_SESSION,
-    USE_PARTITION_LOCATION_LOOKUP,
-    USE_COORDINATOR_SESSION,
-    USE_ROUTE_POLICY
-  };
   ObDiagnosisRouteInfo() :
-      ObDiagnosisBase(), route_info_type_(INVALID), svr_addr_(),
+      ObDiagnosisBase(), route_info_type_(ObRouteInfoType::INVALID), svr_addr_(),
       in_transaction_(false), depent_func_(false), trans_specified_(false) {};
   explicit ObDiagnosisRouteInfo(
     int ret,
     ObIAllocator *alloc,
-    RouteInfoType type,
+    ObRouteInfoType type,
     net::ObIpEndpoint &svr_addr,
     bool in_trans,
     bool depent_func,
@@ -228,7 +232,7 @@ public:
       route_info_type_(type), svr_addr_(svr_addr),
       in_transaction_(in_trans), depent_func_(depent_func), trans_specified_(trans_specified) {};
   ~ObDiagnosisRouteInfo() {
-    route_info_type_ = INVALID;
+    route_info_type_ = ObRouteInfoType::INVALID;
     svr_addr_.reset();
     in_transaction_ = false;
     depent_func_ = false;
@@ -238,7 +242,7 @@ public:
   int64_t diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const;
   int64_t to_string(char *buf, const int64_t buf_len) const;
   void reset();
-  RouteInfoType     route_info_type_;
+  ObRouteInfoType     route_info_type_;
   net::ObIpEndpoint svr_addr_;
   bool              in_transaction_;
   bool              depent_func_;
@@ -580,7 +584,7 @@ enum ObRetryType {
   CMNT_TARGET_DB_SERVER,
   CONF_TARGET_DB_SERVER,
   TEST_SERVER_ADDR,
-  USE_PARTITION_LOCATION_LOOKUP,
+  PARTITION_LOCATION_LOOKUP,
   TRANS_INTERNAL_ROUTING,
   REROUTE,
   NOT_RETRY,
@@ -899,11 +903,11 @@ public:
     return is_log_warn_ && (is_trans_first_request || (is_in_trans && is_trans_internal_routing));
   }
   // whether need to be output to obproxy_diagnosis.log
-  inline bool need_log_to_file(const ObMysqlResp &resp) {
+  inline bool need_log_to_file(const ObRespAnalyzeResult &resp) {
     return level_ != 0 &&
            !is_support_explain_route_ &&
            is_request_diagnostic_ &&
-           (!resp.get_analyze_result().is_partition_hit() || level_ == DIAGNOSIS_LEVEL_FOUR) &&
+           (!resp.is_partition_hit() || level_ == DIAGNOSIS_LEVEL_FOUR) &&
            !query_diagnosis_array_.empty();
   }
   // diagnostic request cmd:
@@ -936,7 +940,7 @@ public:
     obmysql::ObMySQLCmd sql_cmd);
   void diagnosis_route_info(
     int ret,
-    ObDiagnosisRouteInfo::RouteInfoType type,
+    ObRouteInfoType type,
     net::ObIpEndpoint &svr_addr,
     bool in_trans,
     bool depent_func,
@@ -1062,7 +1066,7 @@ inline void ObRouteDiagnosis::diagnosis_sql_parse(
 }
 inline void ObRouteDiagnosis::diagnosis_route_info(
   int ret,
-  ObDiagnosisRouteInfo::RouteInfoType type,
+  ObRouteInfoType type,
   net::ObIpEndpoint &svr_addr,
   bool in_trans,
   bool depent_func,

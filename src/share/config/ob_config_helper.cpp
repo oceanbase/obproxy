@@ -12,6 +12,10 @@
 
 #include "share/config/ob_config_helper.h"
 #include "share/config/ob_config.h"
+#include "obproxy/iocore/eventsystem/ob_buf_allocator.h"
+#include "lib/utility/ob_macro_utils.h"
+#include "lib/alloc/alloc_assist.h"
+#include "lib/hash_func/murmur_hash.h"
 
 namespace oceanbase
 {
@@ -107,6 +111,137 @@ int64_t ObConfigCapacityParser::get(const char *str, bool &valid)
   }
 
   return value;
+}
+
+// ObConfigVariableString
+ObConfigVariableString::ObConfigVariableString(const ObConfigVariableString& other): used_len_(0)
+{
+  rewrite(other.ptr(), other.size());
+}
+
+void ObConfigVariableString::reset()
+{
+  if (used_len_ > VARIABLE_BUF_LEN) {
+    obproxy::op_fixed_mem_free(data_union_.ptr_, used_len_ + 1);
+  }
+  MEMSET(static_cast<void*>(&data_union_), 0, sizeof(data_union_));
+  used_len_ = 0;
+}
+
+ObConfigVariableString& ObConfigVariableString::operator=(const ObConfigVariableString& other)
+{
+  int ret = OB_SUCCESS;
+  if (this != &other && OB_FAIL(rewrite(other.ptr(), other.size()))) {
+    OB_LOG(WDIAG, "fail to alloc rewrite ObConfigVariableString", K(ret));
+  }
+  return *this;
+}
+
+uint64_t ObConfigVariableString::hash(uint64_t seed) const
+{
+  seed = murmurhash(ptr(), static_cast<int32_t>(used_len_), seed);
+  return seed;
+}
+
+bool ObConfigVariableString::operator==(const ObConfigVariableString& other) const
+{
+  bool bret = true;
+  if (this != &other) {
+    if (other.used_len_ != used_len_) {
+      bret = false;
+    } else {
+      bret = (0 == STRNCMP(this->ptr(), other.ptr(), used_len_));
+    }
+  }
+  return bret;
+}
+
+int ObConfigVariableString::alloc_mem(int64_t len)
+{
+  int ret = OB_SUCCESS;
+  reset();
+  if (len > VARIABLE_BUF_LEN
+      && OB_ISNULL(data_union_.ptr_ = static_cast<char*>(
+                                                obproxy::op_fixed_mem_alloc(len + 1)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    OB_LOG(WDIAG, "fail to alloc data_info_ mem", K(len), K(ret));
+  } else {
+    used_len_ = len;
+  }
+  return ret;
+}
+
+int ObConfigVariableString::rewrite(const char *ptr)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(ptr)) {
+    ret = OB_INVALID_ARGUMENT;
+    OB_LOG(WDIAG, "unexcepted to input null pointer", K(ptr), K(ret));
+  } else {
+    int64_t len = static_cast<int64_t>(strlen(ptr));
+    if (OB_FAIL(rewrite(ptr, len))) {
+      OB_LOG(WDIAG, "fail to rewrite ptr", K(ptr), K(len), K(ret));
+    }
+  }
+  return ret;
+}
+
+int ObConfigVariableString::rewrite(const ObString &str)
+{
+  int ret = OB_SUCCESS;
+  const char* ptr = str.ptr();
+  int64_t len = str.length();
+  if (OB_FAIL(rewrite(ptr, len))) {
+    OB_LOG(WDIAG, "fail to rewrite ObString", K(ptr), K(len), K(ret));
+  }
+  return ret;
+}
+
+int ObConfigVariableString::rewrite(const char *ptr, const int64_t len)
+{
+  int64_t pos = 0;
+  int ret = OB_SUCCESS;
+  // 1. 扩缩容
+  if (OB_UNLIKELY(len < 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    OB_LOG(WDIAG, "write length can't less than 0", K(ptr), K(len), K(ret));
+  } else if (used_len_ != len && OB_FAIL(alloc_mem(len))) {
+      OB_LOG(WDIAG, "fail to alloc_mem", K(len), K(ret));
+  }
+  // 2. 写入数据
+  if (OB_SUCC(ret)
+      && OB_NOT_NULL(ptr)
+      && OB_LIKELY(len > 0)
+      && OB_FAIL(databuff_printf(used_len_ > VARIABLE_BUF_LEN ? 
+                                        data_union_.ptr_ : data_union_.buf_,
+                                 len > VARIABLE_BUF_LEN ? 
+                                      used_len_ + 1 : VARIABLE_BUF_LEN + 1,
+                                  pos, "%.*s", static_cast<int32_t>(len), ptr))) {
+    OB_LOG(WDIAG, "fail to databuff_printf ptr to union buffer", K(ptr), K(len),
+           K(ret));
+  }
+  return ret;
+}
+
+int64_t ObConfigVariableString::to_string(char *buf, const int64_t len) const
+{
+  int64_t pos = 0;
+  if (OB_LIKELY(NULL != buf) && OB_LIKELY(len > 0)) {
+    if (NULL != ptr()) {
+      pos = snprintf(buf, len, "%.*s", static_cast<int>(used_len_), ptr());
+      if (pos < 0) {
+        pos = 0;
+      } else if (pos >= len) {
+        pos = len - 1;
+      }
+    }
+  }
+  return pos;
+}
+
+ObConfigVariableString::operator const ObString() const
+{
+  return ObString(used_len_, ptr());
 }
 
 } // end of namepace common

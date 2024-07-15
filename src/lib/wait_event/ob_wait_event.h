@@ -102,7 +102,7 @@ WAIT_EVENT_DEF(SESSION_TRACE_RECORDER_LOCK_WAIT, 15060, "latch: session trace re
 WAIT_EVENT_DEF(TRANS_TRACE_RECORDER_LOCK_WAIT, 15061, "latch: trans trace recorder lock wait", "address", "number", "tries", CONCURRENCY, "latch: trans trace recorder lock wait", true)
 WAIT_EVENT_DEF(ELECT_TRACE_RECORDER_LOCK_WAIT, 15062, "latch: election trace recorder lock wait", "address", "number", "tries", CONCURRENCY, "latch: election trace recorder lock wait", true)
 WAIT_EVENT_DEF(ALIVE_SERVER_TRACER_LOCK_WAIT, 15063, "latch: alive server tracer lock wait", "address", "number", "tries", CONCURRENCY, "latch: alive server tracer lock wait", true)
-
+WAIT_EVENT_DEF(LATCH_WAIT_QUEUE_LOCK_WAIT, 15084, "latch: wait queue lock wait", "address", "number", "tries", CONCURRENCY, "latch: wait queue lock wait", true)
 
 WAIT_EVENT_DEF(DEFAULT_COND_WAIT, 15101, "default condition wait", "address", "", "", CONCURRENCY, "default condition wait", true)
 WAIT_EVENT_DEF(DEFAULT_SLEEP, 15102, "default sleep", "", "", "", CONCURRENCY, "default sleep", true)

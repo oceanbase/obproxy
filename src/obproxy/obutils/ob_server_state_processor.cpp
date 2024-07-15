@@ -54,15 +54,40 @@ static const char *SELECT_ZONE_STATE_INFO_SQL_V4 =
 //it is design defect, but proxy need compatible with it.
 //so select svr_port > 0 one
 const static char *SELECT_SERVER_STATE_INFO_SQL                   =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ svr_ip, svr_port, zone, status, start_service_time, stop_time "
-    "FROM oceanbase.%s "
-    "WHERE svr_port > 0 ORDER BY zone LIMIT %ld";
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ ss.svr_ip AS svr_ip, ss.svr_port AS svr_port, ss.zone AS zone, ss.status AS status, ss.start_service_time AS start_service_time, ss.stop_time AS stop_time, ass.svr_port AS rpc_port "
+    "FROM oceanbase.%s ss left join oceanbase.%s ass on ss.svr_ip = ass.svr_ip and ss.svr_port = ass.inner_port "
+    "WHERE ss.svr_port > 0 ORDER BY zone LIMIT %ld";
 
 const static char *SELECT_SERVER_STATE_INFO_SQL_V4 =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ svr_ip, sql_port AS svr_port, zone, status, "
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ svr_ip, svr_port AS rpc_port, sql_port AS svr_port, zone, status,"
     "start_service_time is not null AS start_service_time, stop_time is not null as stop_time "
     "FROM oceanbase.%s "
     "WHERE svr_port > 0 ORDER BY zone LIMIT %ld";
+
+const static char *SELECT_TENANT_SINGLE_LEADER_SQL_V4 =
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ t.tenant_name as tenant_name, leader_addr, count(*) = 1 AS is_single_leader "
+    "FROM oceanbase.DBA_OB_TENANTS t "
+      "RIGHT JOIN ( "
+        "SELECT DISTINCT tenant_id, CONCAT(svr_ip, ':', sql_port) AS leader_addr "
+        "FROM oceanbase.CDB_OB_LS_LOCATIONS "
+        "WHERE ls_id != 1 AND role='leader' AND tenant_id IN (%s)) s "
+      "ON t.tenant_id = s.tenant_id "
+    "GROUP BY tenant_name";
+
+const static char *SELECT_TENANT_SINGLE_LEADER_SQL_V3 =
+    "SELECT  /*+READ_CONSISTENCY(WEAK)*/  tenant_name, CONCAT(vs.svr_ip, ':', vs.inner_port) AS leader_addr, st.unit_count = 1 AS is_single_leader "
+    "FROM (oceanbase.__all_unit AS u "
+    "RIGHT JOIN ( "
+      "SELECT t.tenant_name AS tenant_name, t.tenant_id, unit_count, SUBSTRING_INDEX(t.primary_zone, ';', 1) AS primary_zone, resource_pool_id "
+      "FROM  oceanbase.__all_tenant AS t "
+        "LEFT JOIN oceanbase.__all_resource_pool AS s "
+        "ON t.tenant_id = s.tenant_id "
+      "WHERE t.tenant_id != 1 AND t.primary_zone != 'RANDOM' "
+      "GROUP BY tenant_id "
+      "HAVING count(*) = 1) AS st "
+    "ON u.zone = st.primary_zone AND u.resource_pool_id = st.resource_pool_id AND u.status = 'ACTIVE') "
+    "LEFT JOIN oceanbase.__all_virtual_server_stat vs "
+    "ON vs.svr_ip = u.svr_ip AND vs.svr_port = u.svr_port AND INSTR(primary_zone, ',') = 0";
 
 const static char *SELECT_CLUSTER_ROEL_SQL                        =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster_role, cluster_status, primary_cluster_id "
@@ -72,8 +97,12 @@ const static char *SYS_LDG_INFO_SQL                               =
     "SELECT TENANT_ID, TENANT_NAME, CLUSTER_ID, CLUSTER_NAME, LDG_ROLE "
     "FROM oceanbase.ldg_standby_status";
 const static char *SELECT_ALL_TENANT_SQL                          =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ tenant_name, locality, previous_locality, primary_zone "
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ tenant_name, tenant_id, locality, previous_locality, primary_zone%s "
     "FROM oceanbase.%s where %s and tenant_id != 1";
+
+const static char *SELECT_TENANT_ROLE_SQL =
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ dba_tenant.tenant_role, c_service_name.service_name from oceanbase.%s "
+    "c_service_name join oceanbase.%s dba_tenant on dba_tenant.tenant_id = c_service_name.tenant_id where dba_tenant.tenant_name ='%s' ";
 
 class ObDetectOneServerStateCont : public obutils::ObAsyncCommonTask
 {
@@ -290,6 +319,15 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       }
       break;
     }
+    case REFRESH_SINGLE_LEADER_EVENT: {
+      pending_action_ = NULL;
+      cur_job_event_ = event;
+      if (OB_FAIL(refresh_single_leader())) {
+        LOG_WDIAG("fail to refresh single leader", K(ret));
+      }
+      break;
+    }
+
     case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
       pending_action_ = NULL;
       if (REFRESH_CLUSTER_ROLE_EVENT == cur_job_event_) {
@@ -314,6 +352,10 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
         if (OB_FAIL(handle_all_tenant(data))) {
           LOG_WDIAG("fail to handle all tenant", K(data), K(ret));
         }
+      } else if (REFRESH_SINGLE_LEADER_EVENT == cur_job_event_) {
+        if (OB_FAIL(handle_single_leader(data))) {
+          LOG_WDIAG("fail to handle single leader", K(data), K(ret));
+        }
       }
       break;
     }
@@ -335,7 +377,7 @@ int ObServerStateRefreshCont::main_handler(int event, void *data)
       LOG_DEBUG("primary cluster server state task has failed more than MIN_REFRESH_FAILURE times, will schedule immediately",
                 K(ss_refresh_failure_), K(static_cast<int64_t>(MIN_REFRESH_FAILURE)), K(cluster_name_), K(cluster_id_));
     }
-    if (-OB_CLUSTER_NO_MATCH == ret) {
+    if (OB_CLUSTER_NO_MATCH == ret) {
       imm_reschedule = false;
       if (OB_FAIL(handle_delete_cluster_resource(OB_DEFAULT_CLUSTER_ID))) {
         LOG_WDIAG("fail to delete cluster resource", K(ret));
@@ -454,7 +496,7 @@ int ObServerStateRefreshCont::refresh_zone_state()
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
-    LOG_WDIAG("fail to syanc read zone state", K(sql), K(ret));
+    LOG_WDIAG("fail to async read zone state", K(sql), K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
@@ -470,7 +512,8 @@ int ObServerStateRefreshCont::refresh_server_state()
   int64_t len =0;
   if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_)) {
     len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_SERVER_STATE_INFO_SQL,
-                                        OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME, INT64_MAX));
+                                                    OB_ALL_VIRTUAL_PROXY_SERVER_STAT_TNAME,
+                                                    OB_ALL_VIRTUAL_SERVER_STAT_TNAME, INT64_MAX));
   } else {
     len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_SERVER_STATE_INFO_SQL_V4,
                                         DBA_OB_SERVERS_VNAME, INT64_MAX));
@@ -482,7 +525,7 @@ int ObServerStateRefreshCont::refresh_server_state()
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
   } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
-    LOG_WDIAG("fail to syanc read zone state", K(sql), K(ret));
+    LOG_WDIAG("fail to async read zone state", K(sql), K(ret));
   } else if (OB_ISNULL(pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
@@ -575,6 +618,8 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
     ObString locality;
     ObString previous_locality;
     ObString primary_zone;
+    ObString status;
+    int64_t tenant_id;
     ObSEArray<ObString, 4> tenant_array;
     ObSEArray<ObString, 4> locality_array;
     ObSEArray<ObString, 4> primary_zone_array;
@@ -583,10 +628,27 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
       locality.reset();
       previous_locality.reset();
       primary_zone.reset();
+      status.reset();
+      tenant_id = 0;
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "tenant_name", tenant_name);
+      PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "tenant_id", tenant_id, int64_t);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "locality", locality);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "previous_locality", previous_locality);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "primary_zone", primary_zone);
+      // 4x cluster
+      if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_)) {
+        PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "status", status);
+        if (status.case_compare("NORMAL") == 0) {
+          if (OB_FAIL(tenant_id_array_.push_back(tenant_id))) {
+            LOG_WDIAG("tenant id array push back failed", K(ret));
+          } else {
+            LOG_DEBUG("found normal tenant", K(tenant_name), K(tenant_id), K(status));
+          }
+        } else {
+          cluster_resource_->remove_single_leader_info(tenant_name);
+          LOG_DEBUG("remove tenant from single leader map info", K(tenant_name));
+        }
+      }
 
       if (OB_FAIL(tenant_array.push_back(tenant_name))) {
         LOG_WDIAG("tenant array push back failed", K(ret));
@@ -618,19 +680,131 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
         LOG_WDIAG("fail to get all tenant info", K(ret));
       }
     } else {
-      if (OB_FAIL(cluster_resource_->update_location_tenant_info(tenant_array, locality_array, primary_zone_array))) {
-        LOG_WDIAG("update location tenant info failed", K(ret));
-      } else {
-        LOG_DEBUG("update location tenant info succ");
+      if (get_global_proxy_config().check_tenant_locality_change ||
+          get_global_proxy_config().enable_primary_zone) {
+        if (OB_FAIL(cluster_resource_->update_location_tenant_info(tenant_array, locality_array, primary_zone_array))) {
+          LOG_WDIAG("update location tenant info failed", K(ret));
+        } else {
+          LOG_DEBUG("update location tenant info succ");
+        }
       }
       ret = OB_SUCCESS;
     }
 
-    if (OB_SUCC(ret) && OB_FAIL(schedule_refresh_server_state())) {
-      LOG_WDIAG("fail to schedule refresh server state", K(ret));
+    if (OB_SUCC(ret)) {
+      bool refresh_single_leader = false;
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_)) {
+        refresh_single_leader = true;
+      } else if (!tenant_id_array_.empty()) {
+        refresh_single_leader = true;
+      }
+
+      if (refresh_single_leader) {
+        if (OB_FAIL(schedule_imm(REFRESH_SINGLE_LEADER_EVENT))) {
+          LOG_WDIAG("fail to schedule refresh single leader even");
+        }
+      } else if (OB_FAIL(schedule_refresh_server_state())) {
+        LOG_WDIAG("fail to schedule refresh server state", K(ret));
+      }
     }
   }
 
+  return ret;
+}
+
+int ObServerStateRefreshCont::refresh_single_leader()
+{
+  int ret = OB_SUCCESS;
+  char sql[OB_SHORT_SQL_LENGTH];
+  sql[0] = '\0';
+  int64_t len = 0;
+  if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_)) {
+    // 3x will only return part of the tenants
+    // so delete all first
+    cluster_resource_->destory_single_leader_info_map();
+    len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_TENANT_SINGLE_LEADER_SQL_V3));
+  } else {
+    // 4x query the CDB_OB_LS_LOCATIONS table with `where tenant_id IN (?,?,?)`
+    // because directly joining the tables CDB_OB_LS_LOCATIONS and DBA_OB_TENANTS
+    // may cause the OBServer to get stuck when querying for an unusual tenant
+    char tenant_ids_str[OB_SHORT_SQL_LENGTH];
+    int64_t pos = 0;
+    tenant_ids_str[0] = '\0';
+    for (int i = 0; i < tenant_id_array_.count(); i++) {
+      databuff_printf(tenant_ids_str, OB_SHORT_SQL_LENGTH, pos, "%ld,", tenant_id_array_[i]);
+    }
+    // write the last ',' to '\0'
+    if (pos > 0) {
+      tenant_ids_str[pos - 1] = '\0';
+    }
+    tenant_id_array_.reset();
+    len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_TENANT_SINGLE_LEADER_SQL_V4, tenant_ids_str));
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= OB_SHORT_SQL_LENGTH)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
+    } else if (OB_UNLIKELY(NULL != pending_action_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
+    } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
+      LOG_WDIAG("fail to async read tenant single leader", K(ret));
+    } else if (OB_ISNULL(pending_action_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObServerStateRefreshCont::handle_single_leader(void *data)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(data)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid data, fail to detect single leader", K(data), K(ret));
+    ++ss_refresh_failure_;
+  } else {
+    ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
+    ObMysqlResultHandler result_handler;
+    result_handler.set_resp(resp);
+    ObString tenant_name;
+    char leader_addr[MAX_IP_PORT_SQL_LENGTH];
+    bool is_single_leader = false;
+    int64_t tmp_real_str_len = 0;
+    while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
+      leader_addr[0] = '\0';
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "tenant_name", tenant_name);
+      PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "leader_addr", leader_addr, sizeof(leader_addr), tmp_real_str_len);
+      PROXY_EXTRACT_BOOL_FIELD_MYSQL(result_handler, "is_single_leader", is_single_leader);
+      if (is_single_leader) {
+        LOG_DEBUG("update single leader", K(tenant_name), K(leader_addr));
+        ObIpEndpoint addr;
+        if (OB_FAIL(ops_ip_pton(leader_addr, addr))) {
+          LOG_WDIAG("fail to ops_ip_pton", K(leader_addr), K(ret));
+        } else if (OB_FAIL(cluster_resource_->update_single_leader_info(tenant_name, addr))) {
+          LOG_WDIAG("fail to update_single_leader_info", K(tenant_name), K(leader_addr), K(ret));
+        }
+      } else {
+        LOG_DEBUG("remove single leader", K(tenant_name), K(leader_addr));
+        if (OB_FAIL(cluster_resource_->remove_single_leader_info(tenant_name))) {
+          LOG_WDIAG("fail to remove_single_leader_info", K(tenant_name), K(ret));
+        }
+      }
+    }
+
+    if (ret != OB_ITER_END) {
+      LOG_WDIAG("fail to get single leader info", K(ret));
+    } else {
+      ret = OB_SUCCESS;
+    }
+
+    if (OB_SUCC(ret) && OB_FAIL(schedule_refresh_server_state())) {
+      LOG_WDIAG("fail to schedule_refresh_server_state", K(ret));
+    }
+  }
   return ret;
 }
 
@@ -789,14 +963,8 @@ int ObServerStateRefreshCont::handle_server_state(void *data)
   }
 
   if (OB_SUCC(ret)) {
-    if (get_global_proxy_config().check_tenant_locality_change) {
-      if (OB_FAIL(schedule_imm(REFRESH_ALL_TENANT_EVENT))) {
-        LOG_WDIAG("fail to schedule imm all tenant event", K(ret));
-      }
-    } else {
-      if (OB_FAIL(schedule_refresh_server_state())) {
-        LOG_WDIAG("fail to schedule refresh server state", K(ret));
-      }
+    if (OB_FAIL(schedule_imm(REFRESH_ALL_TENANT_EVENT))) {
+      LOG_WDIAG("fail to schedule imm all tenant event", K(ret));
     }
   }
 
@@ -830,6 +998,7 @@ int ObServerStateRefreshCont::refresh_all_tenant()
   char sql[OB_SHORT_SQL_LENGTH];
   sql[0] = '\0';
   const int64_t len = static_cast<int64_t>(snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_ALL_TENANT_SQL,
+    IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_) ? " " : ", status",
     IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_) ? OB_ALL_TENANT_TNAME : DBA_OB_TENANTS_VNAME,
     IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_resource_->cluster_version_) ? "previous_locality = ''" : "previous_locality is null"));
   if (OB_UNLIKELY(len <= 0)) {
@@ -907,6 +1076,8 @@ int ObServerStateRefreshCont::update_last_zs_state(
                   simple_server_info.zone_type_ = server_state.zone_state_->zone_type_;
                   if (OB_FAIL(simple_server_info.set_addr(server_state.replica_.server_))) {
                     LOG_WDIAG("fail to set addr", "addr", server_state.replica_.server_, K(ret));
+                  } else if (OB_FAIL(simple_server_info.set_rpc_addr(server_state.replica_.rpc_server_))) {
+                    LOG_WDIAG("fail to set rpc addr", "rpc addr", server_state.replica_.rpc_server_, K(ret));
                   } else if (OB_FAIL(simple_server_info.set_zone_name(server_state.zone_state_->zone_name_))) {
                     LOG_WDIAG("fail to set zone name", "zone_name", server_state.zone_state_->zone_name_, K(ret));
                   } else if (OB_FAIL(simple_server_info.set_region_name(server_state.zone_state_->region_name_))) {
@@ -1668,6 +1839,7 @@ int ObServerStateRefreshUtils::get_server_state_info(
 
   char ip_str[MAX_IP_ADDR_LENGTH];
   int64_t port = 0;
+  int64_t rpc_port = 0;
   ObServerStateInfo server_state;
   const int64_t MAX_DISPLAY_STATUS_LEN = 64;
   char display_status_str[MAX_DISPLAY_STATUS_LEN];
@@ -1691,6 +1863,7 @@ int ObServerStateRefreshUtils::get_server_state_info(
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "start_service_time",
                                   server_state.start_service_time_, int64_t);
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "stop_time", server_state.stop_time_, int64_t);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "rpc_port", rpc_port, int64_t);
     if (OB_SUCC(ret)) {
       zone_name_str = ObString(zone_name_len, zone_name);
       server_state.server_status_ = ObServerStatus::OB_DISPLAY_MAX;
@@ -1708,6 +1881,10 @@ int ObServerStateRefreshUtils::get_server_state_info(
         //we can skip over this server_state.
         ret = OB_SUCCESS;
         continue;
+      } else if (OB_FAIL(server_state.add_rpc_addr(ip_str, rpc_port))) {
+        LOG_WDIAG("fail to add addr", K(ip_str), K(port), K(ret));
+        has_invalid_server = true;
+        ret = OB_SUCCESS;
       } else if (OB_ISNULL(server_state.zone_state_ = get_zone_info_ptr(zones_state, zone_name_str))) {
         LOG_INFO("this server can not find it's zone, maybe it's zone has been "
                  "deleted, so treat this server as deleted also", K(server_state),
@@ -2276,6 +2453,347 @@ int ObDetectOneServerStateCont::handle_client_resp(void *data)
   terminate_ = true;
 
   return ret;
+}
+
+// ObServiceNameRoleRefreshCont：刷新主备租户身份
+int ObServiceNameRoleRefreshCont::init(ObServiceNameInstance *service_name_instance)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(service_name_instance)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("service_name_info is nullptr when init refresh service name role", K(service_name_instance), K(ret));
+  } else if (OB_ISNULL(mutex_ = new_proxy_mutex())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to new_proxy_mutex", K(ret));
+  } else {
+    service_name_instance->inc_ref();
+    service_name_instance_ = service_name_instance;
+    is_inited_ = true;
+  }
+  return ret;
+}
+
+int ObServiceNameRoleRefreshCont::main_handler(int event, void *data)
+{
+  int ret = OB_SUCCESS;
+  LOG_DEBUG("refresh role for service name", K_(is_refresh_service_name_info), K_(is_get_cr_event), K(event), K_(self_ethread().event_types));
+  switch (event) {
+    case REFRESH_TENANT_ROLE_EVENT: {
+      pending_action_ = NULL;
+      if (OB_FAIL(refresh_tenant_role())) {
+        LOG_WDIAG("fail to refresh tenant role", K_(tenant_name), K(ret));
+      }
+      break;
+    }
+    case CLUSTER_RESOURCE_CREATE_COMPLETE_EVENT: {
+      pending_action_ = NULL;
+      if (OB_FAIL(process_cluster_resource(data))) {
+        LOG_WDIAG("fail to process cluster resource", K_(tenant_name), K(ret));
+      } else if (is_get_cr_event_) {
+        next_job_event_ = REFRESH_TENANT_ROLE_EVENT;
+        ++service_name_index_;
+      } else if (OB_FAIL(request_tenant_role())) {
+        LOG_WDIAG("fail to request tenant role", K_(tenant_name), K(ret));
+      }
+      break;
+    }
+    case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
+      pending_action_ = NULL;
+      if (OB_FAIL(handle_tenant_role(data))) {
+        LOG_WDIAG("fail to handle tenant role", K_(tenant_name), K(ret));
+      } else {
+        ++service_name_index_;
+      }
+      break;
+    }
+    case REFRESH_SERVICE_NAME_INFO_EVENT: {
+      const char *service_name = service_name_instance_->service_name_;
+      pending_action_ = NULL;
+      if (OB_FAIL(get_global_config_server_processor().refresh_service_name_info(service_name))) {
+        LOG_WDIAG("fail to refresh service name info", K(service_name), K(ret));
+      }
+      kill_this_ = true;
+      break;
+    }
+    default: {
+      // 注册了非定义的任务
+      ret = OB_ERR_UNEXPECTED;
+      kill_this_ = true;
+      LOG_WDIAG("fail to handle tenant role", K(event), K(ret));
+      break;
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    if (is_get_cr_event_) {
+      fail_get_cr_event_ = true;
+    }
+    next_job_event_ = REFRESH_TENANT_ROLE_EVENT;
+    pending_action_ = NULL;
+    DEC_SHARED_REF(cr_);
+    ++service_name_index_;
+    LOG_WDIAG("fail to handle service_name_handler, will try next tenant",
+              K_(is_refresh_service_name_info), K_(is_get_cr_event), K(event), K_(tenant_name), K(ret));
+  }
+
+  if (service_name_index_ >= service_name_instance_->instance_array_.count()) {
+    // 重试了所有的tenant，销毁任务
+    kill_this_ = true;
+    LOG_DEBUG("retry all tenant, will, kill this", K_(service_name_index), K(service_name_instance_->instance_array_.count()));
+  }
+
+  if (kill_this_) {
+    bool need_destory = true;
+    if (OB_FAIL(check_need_kill_this(need_destory))) {
+      LOG_WDIAG("fait to check need kill this", K(ret));
+    }
+    if (need_destory) {
+      kill_this();
+    }
+  } else {
+    if (NULL != pending_action_) {
+      // 集群资源异步/发送sql，会回调到main_handler，无需schedule_imm
+    } else if (OB_FAIL(schedule_imm(next_job_event_))) {
+      kill_this();
+    } else {
+      LOG_DEBUG("succ to schedule imm ServiceNameRoleRefresh", K_(tenant_name), K(next_job_event_));
+    }
+  }
+  return ret;
+}
+
+int ObServiceNameRoleRefreshCont::check_need_kill_this(bool &need_destory)
+{
+  // 对遍历所有租户列表后，都没有找到primary:
+  // 设置state为dirty: 会注册ET_BLOCKING中重新拉一次ocp，避免拉取ocp次数太多，设置阈值
+  int ret = OB_SUCCESS;
+  ObServiceNameInstance::ObSerViceNameRefreshState refresh_role_state = service_name_instance_->refresh_role_state_;
+  const char *service_name = service_name_instance_->service_name_;
+
+  if (is_get_cr_event_) {
+    // 让下一次service name的定时任务，重新获取
+    if (fail_get_cr_event_ && OB_FAIL(service_name_instance_->cas_set_not_get_cr())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexcepted set has_get_cr false failed",
+                K(refresh_role_state), K(service_name), K(ret));
+    }
+  } else if (is_refresh_service_name_info_) {
+    if (!service_name_instance_->cas_set_dirty_to_avail_state()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexcepted set dirty to avail failed, maybe other task modify state",
+                K(service_name), K(refresh_role_state), K(ret));
+    }
+  } else if (found_primary_) {
+    if (!service_name_instance_->cas_set_update_to_avail_state()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexcepted set update to avail failed, maybe other task modify state",
+                K(service_name), K(refresh_role_state), K(ret));
+    }
+  } else {
+    const int64_t fail_threshold = 3;
+    int64_t fail_cnt = ATOMIC_AAF(&service_name_instance_->fail_cnt_, 1);
+    if (fail_cnt > fail_threshold) {
+      if (!service_name_instance_->cas_set_update_to_avail_state()) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("unexcepted set dirty to avail failed, and fail_cnt is greater than fail_threshold",
+                  K(service_name), K(refresh_role_state), K(fail_cnt), K(fail_threshold), K(ret));
+      }
+      LOG_DEBUG("fail_cnt is greater than fail_threshold, will not fetch GetTenantInfoUrl",
+                K(fail_cnt), K(fail_threshold), K(ret));
+    } else if (!service_name_instance_->cas_set_dirty_state()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexcepted set dirty failed, maybe other task modify state",
+                K(service_name), K(refresh_role_state), K(ret));
+    } else {
+      is_refresh_service_name_info_ = true;
+      if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_BLOCKING, REFRESH_SERVICE_NAME_INFO_EVENT))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WDIAG("failed to schedule REFRESH_SERVICE_NAME_INFO_EVENT to ET_BLOCKING", K(service_name), K(ret));
+      } else {
+        need_destory = false;
+        LOG_WDIAG("not found primary, will refresh service name info", K(service_name));
+      }
+    }
+  }
+  return ret;
+}
+
+void ObServiceNameRoleRefreshCont::kill_this()
+{
+  int ret = OB_SUCCESS;
+  if (NULL != pending_action_) {
+    if (OB_FAIL(pending_action_->cancel())) {
+      LOG_WDIAG("fail to cancel pending action", K_(pending_action), K(ret));
+    } else {
+      pending_action_ = NULL;
+    }
+  }
+
+  DEC_SHARED_REF(service_name_instance_);
+  DEC_SHARED_REF(cr_);
+  mysql_proxy_ = NULL;
+  mutex_.release();
+  op_free(this);
+}
+
+int ObServiceNameRoleRefreshCont::schedule_imm(const int event)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WDIAG("Service Name Role Refresh not init", K_(is_inited), K(ret));
+  } else if (NULL != pending_action_) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("pending_action must be NULL", K_(pending_action), K(ret));
+  } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
+    ret = OB_SERVER_IS_STOPPING;
+    LOG_WDIAG("proxy need exit now", K(ret));
+  } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, event))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("fail to schedule imm", K(event), K(ret));
+  }
+  return ret;
+}
+
+int ObServiceNameRoleRefreshCont::process_cluster_resource(void *data)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(data)) {
+    ret = OB_INVALID_ARGUMENT;
+    ObIArray<ObProxyObInstance*> &instance_array = service_name_instance_->instance_array_;
+    const ObString &cluster_name = instance_array.at(service_name_index_)->ob_cluster_;
+    LOG_WDIAG("invalid argument, cluster resource is null", K(data), K(cluster_name), K_(is_get_cr_event), K(ret));
+  } else {
+    DEC_SHARED_REF(cr_);
+    cr_ = reinterpret_cast<ObClusterResource *>(data);
+    mysql_proxy_ = &cr_->mysql_proxy_;
+  }
+  return ret;
+}
+
+int ObServiceNameRoleRefreshCont::request_tenant_role()
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(tenant_name_.empty())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("tenant_name is empty", K(tenant_name_), K(ret));
+  } else {
+    char sql[OB_SHORT_SQL_LENGTH];
+    sql[0] = '\0';
+    const int64_t len = snprintf(sql, OB_SHORT_SQL_LENGTH, SELECT_TENANT_ROLE_SQL,
+                                 CDB_OB_SERVICES_VNAME, DBA_OB_TENANTS_VNAME, tenant_name_.ptr());
+    if (OB_UNLIKELY(len <= 0 || len >= OB_SHORT_SQL_LENGTH)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
+    } else if (OB_UNLIKELY(NULL != pending_action_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
+    } else if (OB_ISNULL(mysql_proxy_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("mysql_proxy is null ptr", K_(mysql_proxy), K(ret));
+    } else if (OB_FAIL(mysql_proxy_->async_read(this, sql, pending_action_))) {
+      LOG_WDIAG("fail to sync read cluster role", K(sql), K(ret));
+    } else if (OB_ISNULL(pending_action_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
+    } else {
+      next_job_event_ = CLIENT_TRANSPORT_MYSQL_RESP_EVENT;
+    }
+  }
+  return ret;
+}
+
+int ObServiceNameRoleRefreshCont::refresh_tenant_role()
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(service_name_instance_)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("service_name_info is nullptr, don't refresh tenant role", K(service_name_instance_), K(ret));
+  } else {
+    ObIArray<ObProxyObInstance*> &instance_array = service_name_instance_->instance_array_;
+    if (service_name_index_ >= instance_array.count()) {
+      // 所有的tenant都重试，销毁任务
+      kill_this_ = true;
+      LOG_DEBUG("retry all tenant, will, kill this", K_(service_name_index), K(instance_array.count()));
+    } else if (OB_ISNULL(instance_array.at(service_name_index_))) {
+      LOG_WDIAG("unexcepted obinstance is null",
+                K(service_name_index_), K(service_name_instance_->service_name_), K(ret));
+    } else {
+      const ObString &cluster_name = instance_array.at(service_name_index_)->ob_cluster_;
+      tenant_name_ = instance_array.at(service_name_index_)->ob_tenant_;
+      ObResourcePoolProcessor &rp_processor = get_global_resource_pool_processor();
+      if (OB_FAIL(rp_processor.get_cluster_resource(*this,
+              (process_async_task_pfn)&ObServiceNameRoleRefreshCont::process_cluster_resource,
+              false, cluster_name, OB_DEFAULT_CLUSTER_ID, NULL, pending_action_))) {
+        LOG_WDIAG("fail to get cluster resource", K_(pending_action), K(ret));
+      } else if (NULL == pending_action_) { // 已存在cr
+        if (is_get_cr_event_) {
+          next_job_event_ = REFRESH_TENANT_ROLE_EVENT;
+          ++service_name_index_;
+        } else if (OB_FAIL(request_tenant_role())) {  // 发送sql查询租户role
+          LOG_WDIAG("fail to request tenant role", K(ret));
+        }
+      } else {
+        // pending_action_ != NULL, 产生异步，会执行main handler
+        LOG_DEBUG("cluster resource will exec rsync task", K_(pending_action));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObServiceNameRoleRefreshCont::handle_tenant_role(void *data)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(data) || OB_ISNULL(service_name_instance_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid data, fail to handle tenant role", K(data), K_(service_name_instance), K_(service_name_index), K_(is_get_cr_event), K_(tenant_name), K(ret));
+  } else {
+    ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
+    ObMysqlResultHandler result_handler;
+    result_handler.set_resp(resp);
+    ObString tenant_role;
+    ObString service_name;
+    while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "tenant_role", tenant_role);
+      PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "service_name", service_name);
+      LOG_TRACE("succ to get tenant role", K_(tenant_name), K(tenant_role),
+                "service name", service_name_instance_->service_name_);
+      if (tenant_role == "PRIMARY" && 0 == service_name.case_compare(service_name_instance_->service_name_)) {
+        // 通过cas保证某个service_name_instance，在某个时间段，
+        //   只会有一个RefreshCont被注册，这样也可以避免primary_index_被多线程写
+        service_name_instance_->primary_index_ = service_name_index_;
+        found_primary_ = true;
+        kill_this_ = true;
+        if (IS_DEBUG_ENABLED() && OB_NOT_NULL(cr_)) {
+          LOG_DEBUG("found primary tenant ", K_(tenant_name), K_(cr_->cluster_info_key));
+        }
+        break;
+      }
+    }
+    if (ret != OB_ITER_END) {
+      LOG_WDIAG("fail to get DBA_OB_TENANTS_VNAME info",
+                K(resp->get_err_code()), K_(tenant_name), K(resp->get_err_msg()), K(ret));
+    } else {
+      ret = OB_SUCCESS;
+      next_job_event_ = REFRESH_TENANT_ROLE_EVENT;
+    }
+  }
+  return ret;
+}
+
+bool ObServiceNameRoleRefreshCont::set_update_state()
+{
+  bool bret = false;
+  if (OB_UNLIKELY(!is_inited_)) {
+    LOG_WDIAG("Service Name Role Refresh not init, don't modify state", K_(is_inited));
+  } else if (!service_name_instance_->is_avail_state()) {
+    LOG_DEBUG("not aviail state, will not set state to 'update'", K_(service_name_instance_->refresh_role_state));
+  } else {
+    bret = service_name_instance_->cas_set_update_state();
+  }
+  return bret;
 }
 
 } // end of namespace obutils

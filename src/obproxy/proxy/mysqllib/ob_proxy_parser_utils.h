@@ -54,49 +54,12 @@ struct ObMysqlAnalyzeResult
   }
 
   bool is_ok_packet() const { return (MYSQL_OK_PACKET_TYPE == meta_.cmd_); }
+  bool is_eof_packet() const { return (MYSQL_EOF_PACKET_TYPE == meta_.cmd_) && (meta_.pkt_len_ < MYSQL_MAX_EOF_PACKET_LEN + MYSQL_NET_HEADER_LENGTH); }
   bool is_error_packet() const { return (MYSQL_ERR_PACKET_TYPE == meta_.cmd_); }
 
   ObMysqlAnalyzeStatus status_;
   ObMysqlPacketMeta meta_;
-};
-
-class ObMysqlCompressedAnalyzeResult
-{
-public:
-  ObMysqlCompressedAnalyzeResult() : status_(ANALYZE_ERROR), header_(), is_checksum_on_(true) {}
-  ~ObMysqlCompressedAnalyzeResult() {}
-  virtual void reset()
-  {
-    status_ = ANALYZE_ERROR;
-    header_.reset();
-    is_checksum_on_ = true;
-  }
-
-  ObMysqlAnalyzeStatus status_;
-  ObMysqlCompressedPacketHeader header_;
-  bool is_checksum_on_;
-  TO_STRING_KV(K_(status), K_(header), K_(is_checksum_on));
-};
-
-class ObMysqlCompressedOB20AnalyzeResult : public ObMysqlCompressedAnalyzeResult
-{
-public:
-  ObMysqlCompressedOB20AnalyzeResult()
-    : ObMysqlCompressedAnalyzeResult(), ob20_header_(), extra_info_(), flt_() {}
-  ~ObMysqlCompressedOB20AnalyzeResult() { reset(); }
-  virtual void reset()
-  {
-    ObMysqlCompressedAnalyzeResult::reset();
-    ob20_header_.reset();
-    extra_info_.reset();
-    flt_.reset();
-  }
-
-  Ob20ProtocolHeader ob20_header_;
-  Ob20ExtraInfo extra_info_;
-  common::FLTObjManage flt_;
-  
-  TO_STRING_KV(K_(status), K_(header), K_(is_checksum_on), K_(ob20_header), K_(extra_info));
+  TO_STRING_KV(K_(status), K_(meta));
 };
 
 class ObProxyParserUtils
@@ -126,13 +89,9 @@ public:
                                             ObMysqlAnalyzeResult &result);
 
   static bool is_ok_packet(event::ObIOBufferReader &reader, ObMysqlAnalyzeResult &result);
+
   static bool is_error_packet(event::ObIOBufferReader &reader, ObMysqlAnalyzeResult &result);
 
-  // judge whether one mysql compressed packet has been received complete, and get packt len
-  // if completed, return ANALYZE_DONE
-  // if not,       return ANALYZE_CONT
-  static int analyze_one_compressed_packet(event::ObIOBufferReader &reader,
-                                           ObMysqlCompressedAnalyzeResult &result);
   static int analyze_mysql_packet_meta(const char *ptr, const int64_t len, ObMysqlPacketMeta &meta);
 
   static int analyze_mysql_packet_header(const char *ptr, const int64_t len, obmysql::ObMySQLPacketHeader &header);

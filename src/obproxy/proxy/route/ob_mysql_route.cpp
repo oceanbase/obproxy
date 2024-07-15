@@ -25,6 +25,8 @@
 #include "obutils/ob_resource_pool_processor.h"
 #include "obutils/ob_proxy_sql_parser.h"
 #include "opsql/parser/ob_proxy_parser.h"
+#include "proxy/rpc_optimize/ob_rpc_req.h"
+#include "proxy/rpc_optimize/rpclib/ob_rpc_req_analyzer.h"
 #include "proxy/route/ob_route_diagnosis.h"
 
 using namespace oceanbase::common;
@@ -99,7 +101,7 @@ ObMysqlRoute::ObMysqlRoute()
     is_routine_entry_lookup_succ_(true), is_route_sql_parse_succ_(true),
     is_table_entry_lookup_succ_(true), is_part_id_calc_succ_(true),
     is_part_entry_lookup_succ_(true), terminate_route_(false),
-    part_id_(OB_INVALID_INDEX), route_sql_result_(), reentrancy_count_(0)
+    part_id_(OB_INVALID_INDEX), route_sql_result_(), reentrancy_count_(0), src_type_(OB_PROXY_ROUTE_FOR_SQL)
 {
   SET_HANDLER(&ObMysqlRoute::main_handler);
   MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_route_start);
@@ -280,7 +282,12 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
                       false,
                       ObRouteEntry::DELETED);
     }
+  } else if ((NULL != routine_entry_) && routine_entry_->get_routine_type() == ROUTINE_RPC_OBKV_TYPE) {
+    //TODO if not found by RPC Service, need to return error response to client, directly.
+    // RPC service has done
+    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_START);
   } else {
+    // SQL service has done
     // table entry lookup succ
     if (NULL != routine_entry_
         && !routine_entry_->get_route_sql().empty()) {
@@ -392,6 +399,52 @@ inline void ObMysqlRoute::setup_route_sql_parse()
         }
       }
       allocator->reuse();
+    }
+    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("this routine entry is available, should not arrive here", KPC_(routine_entry), K(ret));
+  }
+
+  if (OB_FAIL(ret)) {
+    is_route_sql_parse_succ_ = false;
+    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
+  }
+}
+
+// same as ObMysqlRoute::setup_route_sql_parse, get dbname and table name from rpc request
+inline void ObMysqlRoute::setup_route_rpc_request()
+{
+  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_route_sql_parse);
+  int ret = OB_SUCCESS;
+  //if (NULL != routine_entry_ && !routine_entry_->get_parsed_rpc_request()) {
+  if (NULL != routine_entry_) {
+    //typedef (void) ObParsedRpcRequest
+    // ObProxyRpcRequest &rpc_request = routine_entry_->get_parsed_rpc_request();
+    // LOG_DEBUG("success to get parsed rpc request database name and table_name", K(&rpc_request));
+
+    param_.name_.package_name_.reset();
+    //TODO RPC remove // next
+    // ObString table_name = rpc_request.get_table_name();
+    // ObString database_name = rpc_request.get_database_name();
+
+    ObString table_name;
+    ObString database_name;
+
+    if (param_.is_oracle_mode_) {
+      if (!table_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_.get_table_name_quote()) {
+        string_to_upper_case(table_name.ptr(), table_name.length());
+      }
+
+      if (!database_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_.get_database_name_quote()) {
+        string_to_upper_case(database_name.ptr(), database_name.length());
+      }
+    }
+
+    if (database_name.empty() && routine_entry_->is_package_database()) {
+      rewrite_route_names(routine_entry_->get_package_name(), table_name);
+    } else {
+      rewrite_route_names(database_name, table_name);
     }
     set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
   } else {
@@ -666,6 +719,75 @@ inline void ObMysqlRoute::setup_partition_id_calc()
   }
 }
 
+inline void ObMysqlRoute::setup_partition_id_calc_for_rpc()
+{
+  // 1. get rowkey info
+  // 2. get calc expr
+  // 3. calc the partition id
+
+  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_partition_id_calc);
+  int ret = OB_SUCCESS;
+
+  part_id_ = OB_INVALID_INDEX;
+  if (NULL != table_entry_ && table_entry_->is_partition_table()) {
+    ObProxyPartInfo *part_info = NULL;
+    // obutils::ObSqlParseResult *result = NULL;
+    // ObString user_sql;
+    ObArenaAllocator *allocator = NULL;
+    if (OB_ISNULL(part_info = table_entry_->get_part_info())) {
+      table_entry_->set_dirty_state();
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to get part info, maybe not support partition table routing, dirty table entry", K(ret), KPC_(table_entry));
+    } else if (part_info->has_unknown_part_key()) {
+      table_entry_->set_dirty_state();
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("some part key type is unsupported now, dirty table entry", KPC(part_info), K(ret));
+    } else if (OB_ISNULL(param_.ob_rpc_req_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("client request  and client_info_ should not be null here", K(ret),
+              K(param_.ob_rpc_req_), K(param_.client_info_));
+    } else if (OB_FAIL(ObProxyRpcReqAnalyzer::get_parse_allocator(allocator))) {
+      LOG_WDIAG("fail to get parse allocator", K(ret));
+    } else if (OB_ISNULL(allocator)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("allocator is null", K(ret));
+    }
+
+    if (OB_SUCC(ret)) {
+      ObProxyExprCalculator expr_calculator;
+      int ret = OB_SUCCESS;
+      if (OB_FAIL(expr_calculator.calculate_partition_id_for_rpc(*allocator,
+                                                                *param_.ob_rpc_req_,
+                                                                *part_info,
+                                                                part_id_))) {
+        param_.result_.rpc_calc_error_ = true;
+        param_.result_.rpc_error_code_ = ret;
+        LOG_WDIAG("fail to calculate partition id for rpc", K(ret));
+      } else {
+        LOG_DEBUG("succ to calculate partition id", K(part_id_));
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (NULL != allocator) {
+        allocator->reuse();
+      }
+
+      set_state_and_call_next(ROUTE_ACTION_PARTITION_ID_CALC_DONE);
+    }
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("this table entry is non-partition table", KPC_(table_entry), K(ret));
+  }
+
+  if (OB_FAIL(ret)) {
+    LOG_WDIAG("setup_partition_id_calc_for_rpc calc error", K_(param_.result_.rpc_calc_error), K(ret));
+    param_.result_.rpc_calc_error_ = true;
+    param_.result_.rpc_error_code_ = ret;
+    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+  }
+}
+
 int ObMysqlRoute::state_partition_id_calc(int event, void *data)
 {
   UNUSED(event);
@@ -913,7 +1035,12 @@ inline void ObMysqlRoute::call_next_action()
       break;
     }
     case ROUTE_ACTION_ROUTE_SQL_PARSE_START: {
-      setup_route_sql_parse();
+      // init dbname and table name
+      if (src_type_ == OB_RPOXY_ROUTE_FOR_RPC) {
+        setup_route_rpc_request();
+      } else {
+        setup_route_sql_parse();
+      }
       break;
     }
     case ROUTE_ACTION_ROUTE_SQL_PARSE_DONE: {
@@ -929,7 +1056,11 @@ inline void ObMysqlRoute::call_next_action()
       break;
     }
     case ROUTE_ACTION_PARTITION_ID_CALC_START: {
-      setup_partition_id_calc();
+      if (src_type_ == OB_RPOXY_ROUTE_FOR_RPC) {
+        setup_partition_id_calc_for_rpc();
+      } else {
+        setup_partition_id_calc();
+      }
       break;
     }
     case ROUTE_ACTION_PARTITION_ID_CALC_DONE: {
@@ -976,6 +1107,8 @@ inline int ObMysqlRoute::init(ObRouteParam &route_param)
     action_.set_continuation(route_param.cont_);
     mutex_ = route_param.cont_->mutex_;
     submit_thread_ = route_param.cont_->mutex_->thread_holding_;
+    src_type_ = route_param.src_type_; //TODO support rpc type route calc
+    LOG_DEBUG("route calc", K_(src_type));
   }
 
   return ret;
@@ -1010,9 +1143,11 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
         param_.current_idc_name_.reset();
       }
       // !!Attention client_request should not be used in scheduled cont
-      param_.client_request_ = param.client_request_;
+      param_.client_request_ = param.client_request_;         //used by sql service 
+      param_.ob_rpc_req_ = param.ob_rpc_req_; //used by rpc service
       param_.client_info_ = param.client_info_;
       param_.route_ = param.route_;
+      param_.src_type_ = param.src_type_;
       // no need assign result_ and cr
       if (NULL != name_buf_ && name_buf_len_ > 0) {
         op_fixed_mem_free(name_buf_, name_buf_len_);

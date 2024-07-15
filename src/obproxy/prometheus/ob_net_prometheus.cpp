@@ -81,6 +81,21 @@ int ObNetPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     }
     break;
   }
+  case PROMETHEUS_RPC_REQUEST_BYTE:
+  {
+    bool is_request = va_arg(args, int);
+    bool is_client = va_arg(args, int);
+    int64_t value = va_arg(args, int64_t);
+
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_TRANS_TYPE, is_request ? LABEL_TRANS_REQUEST : LABEL_TRANS_RESPONSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_SESSION_TYPE, is_client ? LABEL_SESSION_CLIENT : LABEL_SESSION_SERVER, false);
+
+    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_RPC_BYTE, REQUEST_RPC_BYTE_HELP, label_vector, value))) {
+      LOG_WDIAG("fail to handle counter with REQUEST_BYTE", K(value), K(ret));
+    }
+    break;
+
+  }
   default:
     break;
   }

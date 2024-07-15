@@ -46,11 +46,16 @@
 #include "proxy/mysql/ob_mysql_proxy_server_main.h"
 #include "proxy/route/ob_table_processor.h"
 #include "proxy/route/ob_partition_cache.h"
+#include "proxy/route/ob_index_cache.h"
 #include "proxy/route/ob_routine_cache.h"
 #include "proxy/route/ob_sql_table_cache.h"
 #include "proxy/route/ob_cache_cleaner.h"
 #include "proxy/route/ob_route_utils.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
+
+#include "proxy/rpc_optimize/rpclib/ob_table_query_async_cache.h"
+#include "proxy/rpc_optimize/rpclib/ob_tablegroup_cache.h"
+#include "proxy/rpc_optimize/rpclib/ob_rpc_req_ctx_cache.h"
 
 #include "cmd/ob_show_net_handler.h"
 #include "cmd/ob_show_warning_handler.h"
@@ -96,7 +101,7 @@ namespace obproxy
 //---------------------ObProxy---------------------//
 ObProxyOptions::ObProxyOptions()
     : nodaemon_(false), execute_cfg_sql_(false),
-      listen_port_(0), prometheus_listen_port_(0), upgrade_version_(-1),
+      listen_port_(0), prometheus_listen_port_(0), rpc_listen_port_(0), upgrade_version_(-1),
       optstr_(NULL), rs_list_(NULL), rs_cluster_name_(NULL),
       app_name_(NULL), regression_test_(NULL)
 {
@@ -108,6 +113,7 @@ bool ObProxyOptions::has_specified_config() const
   bret = (execute_cfg_sql_
           || 0 != listen_port_
           || 0 != prometheus_listen_port_
+          || 0 != rpc_listen_port_
           || NULL != optstr_
           || NULL != rs_list_
           || NULL != rs_cluster_name_
@@ -152,6 +158,10 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
     start_time_ = ObTimeUtility::current_time();
     ObTableCache &table_cache = get_global_table_cache();
     ObPartitionCache &partition_cache = get_global_partition_cache();
+    ObIndexCache &index_cache = get_global_index_cache();
+    ObTableQueryAsyncCache &table_query_async_cache = get_global_table_query_async_cache();
+    ObTableGroupCache &tablegroup_cache = get_global_tablegroup_cache();
+    ObRpcReqCtxCache &rpc_ctx_cache = get_global_rpc_req_ctx_cache();
     ObRoutineCache &routine_cache = get_global_routine_cache();
     ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
     ObTableProcessor &table_processor = get_global_table_processor();
@@ -166,6 +176,14 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_EDIAG("fail to init table cache", K(ret));
     } else if (OB_FAIL(partition_cache.init(ObPartitionCache::PARTITION_CACHE_MAP_SIZE))) {
       LOG_EDIAG("fail to init partition cache", K(ret));
+    } else if (OB_FAIL(index_cache.init(ObIndexCache::INDEX_CACHE_MAP_SIZE))) {
+      LOG_EDIAG("fail to init init cache", K(ret));
+    } else if (OB_FAIL(table_query_async_cache.init(ObTableQueryAsyncCache::TABLE_QUERY_ASYNC_CACHE_MAP_SIZE))) {
+      LOG_EDIAG("fail to init table query async cache", K(ret));
+    } else if (OB_FAIL(tablegroup_cache.init(ObTableGroupCache::TABLEGROUP_CACHE_MAP_SIZE))) {
+      LOG_EDIAG("fail to init tablegroup cache", K(ret));
+    } else if (OB_FAIL(rpc_ctx_cache.init(ObRpcReqCtxCache::RPC_REQ_CTX_CACHE_MAP_SIZE))) {
+      LOG_EDIAG("fail to init rpc ctx cache", K(ret));
     } else if (OB_FAIL(routine_cache.init(ObRoutineCache::ROUTINE_CACHE_MAP_SIZE))) {
       LOG_EDIAG("fail to init routine cache", K(ret));
     } else if (OB_FAIL(sql_table_cache.init(ObSqlTableCache::SQL_TABLE_CACHE_MAP_SIZE))) {
@@ -217,6 +235,10 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
           LOG_WDIAG("fail to init net_stats", K(ret));
         } else if (OB_FAIL(ObMysqlProxyServerMain::init_mysql_proxy_server(*mysql_config_params_))) {
           LOG_WDIAG("fail to init mysql_proxy_server", K(ret));
+        //TODO add switch to control obkv start
+        } else if (mysql_config_params_->enable_obproxy_rpc_service_  //not init obproxy rpc service port when false
+            && OB_FAIL(ObMysqlProxyServerMain::init_rpc_proxy_server(*mysql_config_params_))) {
+          LOG_WDIAG("fail to init mysql_proxy_server", K(ret));
         } else if (OB_FAIL(init_processor_stats())) {
           LOG_WDIAG("fail to init processor_stats", K(ret));
         } else if (OB_FAIL(init_congestion_control())) {
@@ -227,6 +249,21 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
           LOG_WDIAG("fail to init lock_stats", K(ret));
         } else if (OB_FAIL(init_warning_stats())) {
           LOG_WDIAG("fail to init warning_stats", K(ret));
+        }
+      }
+    }
+
+    // 统一执行commit，释放sqlite排它锁
+    {
+      sqlite3* proxy_config_db = get_global_config_processor().get_sqlite_db();
+      char *err_msg = NULL;
+      if (get_global_config_processor().init_need_commit_ && OB_NOT_NULL(proxy_config_db)) {
+        const char *commit_sql = OB_SUCC(ret) ? "commit;" : "rollback;";
+        int sqlite_err_code = SQLITE_OK;
+        if (SQLITE_OK != (sqlite_err_code = sqlite3_exec(proxy_config_db, commit_sql, NULL, NULL, &err_msg))) {
+          ret = OB_ERR_UNEXPECTED;
+          sqlite3_free(err_msg);
+          LOG_WDIAG("exec commit sql failed", K(sqlite_err_code), K(proxy_config_db), K(ret), "err_msg", err_msg);
         }
       }
     }
@@ -282,6 +319,35 @@ void ObProxy::destroy()
   }
 }
 
+int ObProxy::get_password_from_env()
+{
+  int ret = OB_SUCCESS;
+  char *password1 = getenv("observer_sys_password");
+  char *password2 = getenv("observer_sys_password1");
+  if (NULL != password1) {
+    ObString key_string("observer_sys_password");
+    ObString value_string(password1);
+    if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
+      LOG_WDIAG("fail to update config", K(key_string), K(ret));
+    // 同步到proxy_config表中
+    } else if (OB_FAIL(get_global_config_processor().store_global_proxy_config(key_string,
+                                                                               value_string))) {
+      LOG_WDIAG("store proxy config failed", K(key_string), K(value_string), K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret) && NULL != password2) {
+    ObString key_string("observer_sys_password1");
+    ObString value_string(password2);
+    if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
+      LOG_WDIAG("fail to update config", K(key_string), K(ret));
+    } else if (OB_FAIL(get_global_config_processor().store_global_proxy_config(key_string, value_string))) {
+      LOG_WDIAG("store proxy config failed", K(key_string), K(value_string), K(ret));
+    }
+  }
+  return ret;
+}
+
 int ObProxy::start(ObAppVersionInfo &app_info)
 {
   int ret = OB_SUCCESS;
@@ -290,6 +356,8 @@ int ObProxy::start(ObAppVersionInfo &app_info)
     LOG_EDIAG("ObProxy not init", K(ret));
   } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_server(*mysql_config_params_))) {
     LOG_EDIAG("fail to start mysql proxy server", K(ret));
+  } else if (OB_FAIL(ObMysqlProxyServerMain::start_rpc_proxy_server(*mysql_config_params_))) { //TODO RPC ZDW, need checkout flag for rpc service port (IMPORTANT!!!)
+    LOG_EDIAG("fail to start rpc service proxy server", K(ret));
   } else if (OB_FAIL(ObProxyMain::get_instance()->schedule_detect_task())) {
     LOG_EDIAG("fail to schedule detect task", K(ret));
   } else {
@@ -309,30 +377,9 @@ int ObProxy::start(ObAppVersionInfo &app_info)
 
   }
 
-  if (OB_SUCC(ret)) {
-    char *password1 = NULL;
-    char *password2 = NULL;
-    password1 = getenv("observer_sys_password");
-    password2 = getenv("observer_sys_password1");
-    if (NULL != password1) {
-      ObString key_string("observer_sys_password");
-      ObString value_string(password1);
-      if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
-        LOG_WDIAG("fail to update config", K(key_string));
-      }
-    }
-
-    if (OB_SUCC(ret) && NULL != password2) {
-      ObString key_string("observer_sys_password1");
-      ObString value_string(password2);
-      if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
-        LOG_WDIAG("fail to update config", K(key_string));
-      }
-    }
-
-    if (OB_SUCC(ret) && OB_FAIL(get_global_proxy_config().dump_config_to_local())) {
-      LOG_WDIAG("fail to dump config to local", K(ret));
-    }
+  // 从环境变量中获取密码
+  if (OB_SUCC(ret) && OB_FAIL(get_password_from_env())) {
+    LOG_WDIAG("fail to get password from env variable", K(ret));
   }
 
   if (OB_SUCC(ret) && config_->is_metadb_used()) {
@@ -354,6 +401,9 @@ int ObProxy::start(ObAppVersionInfo &app_info)
       LOG_WDIAG("fail to release mysql config params", K(ret));
     } else if (OB_FAIL(ObCacheCleaner::schedule_cache_cleaner())) {
       LOG_WDIAG("fail to alloc and schedule cache cleaner", K(ret));
+    } else if (config_->enable_obproxy_rpc_service
+             && OB_FAIL(ObRpcCacheCleaner::schedule_cache_cleaner())) {
+      LOG_WDIAG("fail to alloc and schedule rpc cache cleaner", K(ret));
     } else if (config_->is_metadb_used() && OB_FAIL(proxy_table_processor_.start_check_table_task())) {
       LOG_WDIAG("fail to start check table task", K(ret));
     } else if (OB_FAIL(hot_upgrade_processor_.start_hot_upgrade_task())) {
@@ -376,8 +426,11 @@ int ObProxy::start(ObAppVersionInfo &app_info)
     } else if (OB_FAIL(get_global_read_stale_processor().start_read_stale_feedback_clean_task())) {
       LOG_WDIAG("fail to start_read_stale_feedback_clean_task", K(ret));
     } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_acceptor())) {
-      LOG_EDIAG("fail to start accept server", K(ret));
+      LOG_EDIAG("fail to start mysql accept server", K(ret));
+    } else if (OB_FAIL(ObMysqlProxyServerMain::start_rpc_proxy_acceptor())) {
+      LOG_EDIAG("fail to start rpc accept server", K(ret));
     } else {
+      LOG_WDIAG("config_->enable_obproxy_rpc_service value ", "enable_obproxy_rpc_service", config_->enable_obproxy_rpc_service, K(config_->enable_sharding));
       if (RUN_MODE_PROXY == g_run_mode) {
         // if fail to init prometheus, do not stop the startup of obproxy
         if (OB_FAIL(g_ob_prometheus_processor.start_prometheus())) {
@@ -473,6 +526,10 @@ int ObProxy::init_user_specified_config()
 
     if (proxy_opts_->prometheus_listen_port_ > 0) {
       config_->prometheus_listen_port = proxy_opts_->prometheus_listen_port_;
+    }
+
+    if (proxy_opts_->rpc_listen_port_ > 0) {
+      config_->rpc_listen_port = proxy_opts_->rpc_listen_port_;
     }
 
     //3.2 if change appname, we need reset local_config_version
@@ -654,7 +711,8 @@ int ObProxy::init_conn_pool(const bool load_local_config_succ)
 int ObProxy::init_local_config(bool &load_local_config_succ)
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(ObProxyConfigUtils::load_config_from_file(*config_))) {
+  LOG_INFO("start init_local_config");
+  if (OB_FAIL(ObProxyConfigUtils::load_config_from_sqlite(*config_))) {
     load_local_config_succ = false;
     if (get_global_hot_upgrade_info().is_inherited_) {
       //if we failed to local config from local, proxy will get the config from OCP
@@ -741,9 +799,8 @@ bool ObProxy::need_dump_config() const
 int ObProxy::dump_config()
 {
   int ret = OB_SUCCESS;
-  if (need_dump_config() && OB_FAIL(config_->dump_config_to_local())) {
-    LOG_EDIAG("fail to dump config to local config", K(ret));
-  } else if (OB_FAIL(get_global_mysql_config_processor().reconfigure(*config_))) {
+  // 无需同步到sqlite，后续一定会同步
+  if (OB_FAIL(get_global_mysql_config_processor().reconfigure(*config_))) {
     LOG_EDIAG("fail to reconfig mysql config", K(ret));
   } else if (OB_ISNULL(mysql_config_params_ = get_global_mysql_config_processor().acquire())) {
     ret = OB_ERR_UNEXPECTED;
@@ -843,7 +900,11 @@ int ObProxy::init_config()
   int ret = OB_SUCCESS;
   bool load_local_config_succ = false;
 
-  if (OB_FAIL(init_local_config(load_local_config_succ))) {
+  if (get_global_config_processor().open_sqlite3()) {
+    LOG_WDIAG("fail to open sqlite3", K(ret));
+  } else if (OB_FAIL(get_global_config_processor().check_and_create_table())) {
+    LOG_WDIAG("check create table failed", K(ret));
+  } else if (OB_FAIL(init_local_config(load_local_config_succ))) {
     LOG_WDIAG("fail to init local config", K(ret));
   } else if (OB_FAIL(config_->init_need_reboot_config())) {
     LOG_WDIAG("fail to init need reboot config", K(ret));
@@ -851,13 +912,12 @@ int ObProxy::init_config()
     LOG_WDIAG("fail to init connection pool", K(ret));
   } else if (OB_FAIL(init_remote_config(load_local_config_succ))) {
     LOG_WDIAG("fail to init remote config", K(ret));
-  } else if (OB_FAIL(config_->init_need_reboot_config())) {
-    LOG_WDIAG("fail to init need reboot config", K(ret));
   } else if (OB_FAIL(dump_config())) {
     LOG_WDIAG("fail to dump config", K(ret));
   } else {
-    //do nothing
+    // do nothing
   }
+
   return ret;
 }
 
@@ -893,12 +953,18 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
       ObTableCache &table_cache = get_global_table_cache();
       ObPartitionCache &part_cache = get_global_partition_cache();
       ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
+      ObIndexCache &index_cache = get_global_index_cache();
+      ObTableGroupCache &tablegroup_cache = get_global_tablegroup_cache();
       table_cache.set_cache_expire_time(relative_expire_time_ms);
       part_cache.set_cache_expire_time(relative_expire_time_ms);
+      index_cache.set_cache_expire_time(relative_expire_time_ms);
+      tablegroup_cache.set_cache_expire_time(relative_expire_time_ms);
       sql_table_cache.set_cache_expire_time(relative_sql_table_expire_time_ms);
       LOG_INFO("current table cache and part cache will exipre", K(relative_expire_time_ms), K(relative_sql_table_expire_time_ms),
                "table entry expire_time_us", table_cache.get_cache_expire_time_us(),
                "part entry expire_time_us", part_cache.get_cache_expire_time_us(),
+               "index entry expire_time_us", index_cache.get_cache_expire_time_us(),
+               "tablegroup entry expire_time_us", tablegroup_cache.get_cache_expire_time_us(),
                "sql table entry expire time us", sql_table_cache.get_cache_expire_time_us());
       config.partition_location_expire_relative_time = 0;
       config.sql_table_cache_expire_relative_time = 0;
@@ -956,6 +1022,8 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
       LOG_WDIAG("fail to update table processor check interval", K(ret));
     } else if (OB_FAIL(ObCacheCleaner::update_clean_interval())) {
       LOG_WDIAG("fail to update clean interval", K(ret));
+    } else if (config_->enable_obproxy_rpc_service && OB_FAIL(ObRpcCacheCleaner::update_clean_interval())) {
+      LOG_WDIAG("fail to update rpc clean interval", K(ret));
     } else {/*do nothing*/}
   }
 
@@ -992,9 +1060,10 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
   ObString password1(config_->observer_sys_password1.str());
   ObSEArray<ObAddr, 5> rs_list;
   int64_t cluster_version = 0;
+  ObSEArray<ObAddr, 5> rpc_rs_list;
 
   // first get from local
-  if (OB_FAIL(cs_processor_->get_cluster_rs_list(cluster_name, OB_DEFAULT_CLUSTER_ID, rs_list))) {
+  if (OB_FAIL(cs_processor_->get_cluster_rs_list(cluster_name, OB_DEFAULT_CLUSTER_ID, rs_list, rpc_rs_list))) {
     LOG_INFO("fail to get rs list from local, try to get from remote", K(cluster_name));
     rs_list.reset();
     ret = OB_SUCCESS;
@@ -1002,7 +1071,7 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
 
   // if failed, try to get from remote
   if (rs_list.empty()) {
-    if (OB_FAIL(cs_processor_->get_newest_cluster_rs_list(cluster_name, OB_DEFAULT_CLUSTER_ID, rs_list))) {
+    if (OB_FAIL(cs_processor_->get_newest_cluster_rs_list(cluster_name, OB_DEFAULT_CLUSTER_ID, rs_list, rpc_rs_list))) {
       LOG_WDIAG("fail to get newest rs list through config server processor", K(cluster_name), K(ret));
     }
   }

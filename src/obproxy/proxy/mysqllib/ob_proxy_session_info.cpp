@@ -21,6 +21,7 @@
 #include "obutils/ob_proxy_json_config_info.h"
 #include "obutils/ob_resource_pool_processor.h"
 #include "rpc/obmysql/ob_mysql_util.h"
+#include "proxy/mysqllib/ob_2_0_protocol_utils.h"
 
 using namespace oceanbase::sql;
 using namespace oceanbase::common;
@@ -38,7 +39,7 @@ namespace proxy
 const int64_t SESSION_ITEM_NUM = 256;
 ObServerSessionInfo::ObServerSessionInfo() :
     cap_(0), compatible_capability_(0), checksum_switch_(CHECKSUM_ON), is_inited_(false),
-    server_type_(DB_OB_MYSQL), shard_conn_(NULL),
+    is_sharding_txn_session_(false), is_lock_session_(false), server_type_(DB_OB_MYSQL), shard_conn_(NULL),
     ps_id_(0), ps_id_pair_map_(), cursor_id_pair_map_(), allocator_(), text_ps_version_set_()
 {
   const int BUCKET_SIZE = 8;
@@ -115,6 +116,8 @@ void ObServerSessionInfo::reset()
     is_inited_ = false;
   }
 
+  is_sharding_txn_session_ = false;
+  is_lock_session_ = false;
   destroy_ps_id_pair_map();
   destroy_cursor_id_pair_map();
   ob_server_.reset();
@@ -218,17 +221,18 @@ void ObServerSessionInfo::reuse_text_ps_version_set()
 }
 
 ObClientSessionInfo::ObClientSessionInfo()
-    : is_inited_(false), is_trans_specified_(false), is_global_vars_changed_(false),
+    : lock_session_num_(0), is_inited_(false), is_trans_specified_(false), is_global_vars_changed_(false),
       is_user_idc_name_set_(false), is_read_consistency_set_(false), is_oracle_mode_(false),
       is_proxy_route_policy_set_(false),
-      enable_shard_authority_(false), enable_reset_db_(true), client_cap_(0), server_cap_(0),
+      enable_shard_authority_(false), enable_reset_db_(true), need_record_shard_txn_server_(false),
+      need_close_last_server_session_(false), client_cap_(0), server_cap_(0),
       safe_read_snapshot_(0),
       syncing_safe_read_snapshot_(0), route_policy_(1), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY),
       user_identity_(USER_TYPE_NONE), cached_variables_(),
       global_vars_version_(OB_INVALID_VERSION), obproxy_route_addr_(0),
       var_set_processor_(NULL), cluster_id_(OB_INVALID_CLUSTER_ID),
       real_meta_cluster_name_(), real_meta_cluster_name_str_(NULL),
-      server_type_(DB_OB_MYSQL), shard_conn_(NULL), shard_prop_(NULL),
+      server_type_(DB_OB_MYSQL), shard_conn_(NULL), txn_shard_conn_(NULL), shard_prop_(NULL),
       group_id_(OBPROXY_MAX_DBMESH_ID), table_id_(OBPROXY_MAX_DBMESH_ID), es_id_(OBPROXY_MAX_DBMESH_ID),
       is_allow_use_last_session_(true),
       consistency_level_prop_(INVALID_CONSISTENCY),
@@ -238,6 +242,7 @@ ObClientSessionInfo::ObClientSessionInfo()
       obproxy_force_parallel_query_dop_(1), ob_max_read_stale_time_(-1), last_server_addr_(),
       last_server_sess_id_(0), sync_conf_sys_var_(false), init_sql_()
 {
+  // const int BUCKET_SIZE = 8;
   is_session_pool_client_ = true;
   MEMSET(scramble_buf_, 0, sizeof(scramble_buf_));
   MEMSET(idc_name_buf_, 0, sizeof(idc_name_buf_));
@@ -263,7 +268,7 @@ int64_t ObClientSessionInfo::to_string(char *buf, const int64_t buf_len) const
        K_(proxy_route_policy), K_(user_identity), K_(global_vars_version),
        K_(is_read_only_user), K_(is_request_follower_user), K_(obproxy_force_parallel_query_dop),
        K_(ob20_request), K_(client_cap), K_(server_cap), K_(last_server_addr), K_(last_server_sess_id),
-       K_(init_sql));
+       K_(init_sql), K_(lock_session_num));
   J_OBJ_END();
   return pos;
 }
@@ -409,6 +414,11 @@ int ObClientSessionInfo::set_ldg_logical_cluster_name(const ObString &cluster_na
   return field_mgr_.set_ldg_logical_cluster_name(cluster_name);
 }
 
+int ObClientSessionInfo::set_service_name(const ObString &service_name)
+{
+  return field_mgr_.set_service_name(service_name);
+}
+
 int ObClientSessionInfo::set_ldg_logical_tenant_name(const ObString &tenant_name)
 {
   return field_mgr_.set_ldg_logical_tenant_name(tenant_name);
@@ -548,6 +558,11 @@ int ObClientSessionInfo::get_tenant_name(ObString &tenant_name) const
 int ObClientSessionInfo::get_logic_tenant_name(ObString &logic_tenant_name) const
 {
   return field_mgr_.get_logic_tenant_name(logic_tenant_name);
+}
+
+int ObClientSessionInfo::get_service_name(ObString &service_name) const
+{
+  return field_mgr_.get_service_name(service_name);
 }
 
 int ObClientSessionInfo::get_logic_database_name(ObString &logic_database_name) const
@@ -1397,6 +1412,8 @@ void ObClientSessionInfo::destroy()
 
   enable_shard_authority_ = false;
   enable_reset_db_ = true;
+  need_record_shard_txn_server_ = false;
+  need_close_last_server_session_ = false;
 
   is_read_only_user_ = false;
   is_request_follower_user_ = false;
@@ -1419,6 +1436,10 @@ void ObClientSessionInfo::destroy()
     shard_conn_->dec_ref();
     shard_conn_ = NULL;
   }
+  if (NULL != txn_shard_conn_) {
+    txn_shard_conn_->dec_ref();
+    txn_shard_conn_ = NULL;
+  }
   if (NULL != shard_prop_) {
     shard_prop_->dec_ref();
     shard_prop_ = NULL;
@@ -1431,6 +1452,7 @@ void ObClientSessionInfo::destroy()
 
   last_server_addr_.reset();
   last_server_sess_id_ = 0;
+  lock_session_num_ = 0;
 }
 
 void ObClientSessionInfo::destroy_ps_id_entry_map()

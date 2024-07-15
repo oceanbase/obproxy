@@ -172,7 +172,78 @@ int ObPartDescRange::get_part(ObNewRange &range,
   return ret;
 }
 
-int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids)
+int ObPartDescRange::get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
+                                              ObIArray<int64_t> &tablet_ids,
+                                              ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+
+  for(int64_t part_idx = 0; part_idx < part_array_size_; ++part_idx) {
+    if (OB_FAIL(get_part_by_num(part_idx, part_ids, tablet_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_part_by_num", K(ret));
+    } else if (OB_FAIL(get_ls_id_by_num(part_idx, ls_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_ls_id_by_num", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    COMMON_LOG(DEBUG, "obkv get all hash part ids", K(part_ids));
+  }
+
+  return ret;
+}
+
+int ObPartDescRange::get_part_for_obkv(ObNewRange &range,
+                                       ObIAllocator &allocator,
+                                       ObIArray<int64_t> &part_ids,
+                                       ObPartDescCtx &ctx,
+                                       ObIArray<int64_t> &tablet_ids,
+                                       ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+  // part_ids.reset();
+  UNUSED(allocator);
+
+  if (OB_ISNULL(part_array_)
+      || OB_UNLIKELY(part_array_size_ <= 0)
+      || OB_UNLIKELY(part_array_[0].is_max_value_)
+      || (!range.start_key_.is_valid() && !range.end_key_.is_valid())
+      || (range.start_key_.is_max_row() || range.end_key_.is_min_row())) {
+    ret = OB_INVALID_ARGUMENT;
+    COMMON_LOG(WDIAG, "invalid argument", K_(part_array), K_(part_array_size), K(range), K(ret));
+    // use the fisrt range as the type to cast
+  } else if (range.is_whole_range() || range.get_end_key().is_max_row() || range.get_start_key().is_min_row()
+      || ctx.calc_first_partition() || ctx.calc_last_partition() || ctx.need_get_whole_range()) {
+    if (OB_FAIL(get_all_part_id_for_obkv(part_ids, tablet_ids, ls_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_all_part_id_for_obkv", K(ret));
+    }
+  } else if (OB_FAIL(cast_key_for_obkv(range.start_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
+    COMMON_LOG(INFO, "fail to cast start key for obkv",
+                     K(range), K(part_array_[0].high_bound_val_), K(ret));
+  } else if (OB_FAIL(cast_key_for_obkv(range.end_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
+    COMMON_LOG(INFO, "fail to cast end key for obkv",
+                     K(range), K(part_array_[0].high_bound_val_), K(ret));
+  } else {
+    int64_t start = get_start(part_array_, part_array_size_, range);
+    int64_t end = get_end(part_array_, part_array_size_, range);
+
+    for (int64_t i = start; OB_SUCC(ret) && i <= end; i ++) {
+      if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
+        COMMON_LOG(WDIAG, "fail to push part id", K(ret));
+      } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
+        COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
+      } else if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[i]))) {
+        COMMON_LOG(WDIAG, "fail to push ls id", K(ret));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObPartDescRange::get_part_by_num(const int64_t num,
+                                     ObIArray<int64_t> &part_ids,
+                                     ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   int64_t part_idx = num % part_array_size_;
@@ -184,10 +255,17 @@ int ObPartDescRange::get_part_by_num(const int64_t num, common::ObIArray<int64_t
   return ret;
 }
 
-int ObPartDescRange::cast_key(ObRowkey &src_key,
-                         ObRowkey &target_key,
-                         ObIAllocator &allocator,
-                         ObPartDescCtx &ctx)
+int ObPartDescRange::get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+  int64_t part_idx = num % part_array_size_;
+  if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[part_idx]))) {
+    COMMON_LOG(WDIAG, "fail to push ls id", K(ret));
+  }
+  return ret;
+}
+
+int ObPartDescRange::cast_key(ObRowkey &src_key, ObRowkey &target_key, ObIAllocator &allocator, ObPartDescCtx &ctx)
 {
   int ret = OB_SUCCESS;
   int64_t min_col_cnt = std::min(src_key.get_obj_cnt(), target_key.get_obj_cnt());
@@ -204,6 +282,32 @@ int ObPartDescRange::cast_key(ObRowkey &src_key,
                                 ctx,
                                 accuracies_.at(i)))) {
       COMMON_LOG(DEBUG, "fail to cast obj", K(i), K(ret));
+    } else {
+      // do nothing
+    }
+  }
+  return ret;
+}
+
+int ObPartDescRange::cast_key_for_obkv(ObRowkey &src_key,
+                                       ObRowkey &target_key,
+                                       ObIAllocator &allocator,
+                                       ObPartDescCtx &ctx)
+{
+  int ret = OB_SUCCESS;
+  int64_t min_col_cnt = std::min(src_key.get_obj_cnt(), target_key.get_obj_cnt());
+  for (int64_t i = 0; i < min_col_cnt && OB_SUCC(ret); ++i) {
+    if (src_key.get_obj_ptr()[i].is_max_value() ||
+        src_key.get_obj_ptr()[i].is_min_value()) {
+      COMMON_LOG(DEBUG, "skip min/max obj");
+      continue;
+    }
+    if (OB_FAIL(cast_obj_for_obkv(const_cast<ObObj &>(src_key.get_obj_ptr()[i]),
+                                  const_cast<ObObj &>(target_key.get_obj_ptr()[i]),
+                                  allocator,
+                                  ctx,
+                                  accuracies_.at(i)))) {
+      COMMON_LOG(INFO, "fail to cast obj", K(i), K(ret));
     } else {
       // do nothing
     }

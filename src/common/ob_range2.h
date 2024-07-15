@@ -36,6 +36,14 @@ public:
   ObBorderFlag border_flag_;
   ObRowkey start_key_;
   ObRowkey end_key_;
+  union {
+    int64_t flag_;
+    struct {
+      int64_t group_idx_: 32;
+      int64_t is_physical_rowid_range_: 1;
+      int64_t reserved_: 31;
+    };
+  };
 
 
   ObNewRange()
@@ -54,6 +62,7 @@ public:
     border_flag_.set_data(0);
     start_key_.assign(NULL, 0);
     end_key_.assign(NULL, 0);
+    flag_ = 0;
   }
 
   inline const ObRowkey &get_start_key()
@@ -276,6 +285,10 @@ public:
   int serialize(char *buf, const int64_t buf_len, int64_t &pos) const;
   int deserialize(const char *buf, const int64_t data_len, int64_t &pos);
   int64_t get_serialize_size(void) const;
+
+  int serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const;
+  int deserialize_v4(const char *buf, const int64_t data_len, int64_t &pos);
+  int64_t get_serialize_size_v4(void) const;
 
   template <typename Allocator>
   int deserialize(Allocator &allocator, const char *buf, const int64_t data_len, int64_t &pos);

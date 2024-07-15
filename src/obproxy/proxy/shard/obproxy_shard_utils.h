@@ -161,8 +161,9 @@ private:
   static int change_connector(dbconfig::ObDbConfigLogicDb &logic_db_info,
                               ObMysqlClientSession &client_session,
                               ObMysqlTransact::ObTransState &trans_state,
-                              const dbconfig::ObShardConnector *prev_shard_conn,
-                              dbconfig::ObShardConnector *shard_conn);
+                              dbconfig::ObShardConnector * const prev_shard_conn,
+                              dbconfig::ObShardConnector *shard_conn,
+                              bool allow_cross_shards = false);
   static int handle_dml_request(ObMysqlClientSession &client_session,
                                 ObMysqlTransact::ObTransState &trans_state,
                                 const ObString &table_name,
@@ -173,6 +174,9 @@ private:
                                 int64_t& es_index,
                                 int64_t& group_index,
                                 const int64_t last_es_index);
+  static int check_hint_sql_fields(const ObString &table_name,
+                                   dbconfig::ObDbConfigLogicDb &logic_db_info,
+                                   obutils::ObSqlParseResult &parse_result);
   static int handle_other_request(ObMysqlClientSession &client_session,
                                   ObMysqlTransact::ObTransState &trans_state,
                                   const ObString &table_name,
@@ -291,6 +295,9 @@ private:
                                         ObProxyMysqlRequest &client_request,
                                         ObIOBufferReader &client_buffer_reader,
                                         const ObString& sql);
+  static int do_set_txn_shard_connector(ObMysqlClientSession &client_session,
+                                        ObMysqlTransact::ObTransState &trans_state,
+                                        dbconfig::ObDbConfigLogicDb &db_info);
 };
 
 

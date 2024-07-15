@@ -60,9 +60,6 @@ public:
   int create_tenant_allocator(uint64_t tenant_id);
   int delete_tenant_allocator(uint64_t tenant_id);
 
-  void set_disabled_mod_id(int64_t disabled_mod_id) { disabled_mod_id_ = disabled_mod_id; }
-  void reset_disabled_mod_id() { disabled_mod_id_ = -1; }
-
   // statistic relating
   void set_urgent(int64_t bytes);
   int64_t get_urgent() const;
@@ -86,7 +83,7 @@ private:
   ObTenantAllocator *allocators_[PRESERVED_TENANT_COUNT];
   int64_t reserved_;
   int64_t urgent_;
-  int64_t disabled_mod_id_;
+
   static ObMallocAllocator *instance_;
 }; // end of class ObMallocAllocator
 

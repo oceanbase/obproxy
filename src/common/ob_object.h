@@ -38,6 +38,38 @@ class ObjTest;
 }
 namespace common
 {
+struct ObLobScale
+{
+  static const uint8_t LOB_SCALE_MASK = 0xF;
+  enum StorageType
+  {
+    STORE_IN_ROW = 0,
+    STORE_OUT_ROW,
+    STORE_HAS_LOB_HEADER,
+  };
+  union
+  {
+    int8_t scale_;
+    struct
+    {
+      uint8_t reserve_: 4;
+      uint8_t type_: 4;
+    };
+  };
+  ObLobScale() : scale_(0) {}
+  ObLobScale(const ObScale scale) : scale_(static_cast<const int8_t>(scale)) { reserve_ = 0; }
+  OB_INLINE void reset() { scale_ = -1; }
+  OB_INLINE bool is_valid() { return STORE_IN_ROW == type_ || STORE_OUT_ROW == type_ || STORE_HAS_LOB_HEADER == type_; }
+  OB_INLINE void set_in_row() { reserve_ = 0; type_ = STORE_IN_ROW; }
+  OB_INLINE void set_out_row() { reserve_ = 0; type_ = STORE_OUT_ROW; }
+  OB_INLINE void set_has_lob_header() { reserve_ = 0; type_ = STORE_HAS_LOB_HEADER; }
+  OB_INLINE bool is_in_row() const { return type_ == STORE_IN_ROW; }
+  OB_INLINE bool is_out_row() const { return type_ == STORE_OUT_ROW; }
+  OB_INLINE bool has_lob_header() const { return type_ == STORE_HAS_LOB_HEADER; }
+  OB_INLINE ObScale get_scale() const { return static_cast<ObScale>(scale_); }
+  TO_STRING_KV(K_(scale));
+};
+
 struct ObObjMeta
 {
 public:
@@ -147,6 +179,11 @@ public:
     set_collation_level(CS_LEVEL_NUMERIC);
     set_collation_type(CS_TYPE_BINARY);
   }
+  OB_INLINE void set_clob() { type_ = static_cast<uint8_t>(ObLongTextType); lob_scale_.set_in_row(); set_collation_level(CS_LEVEL_IMPLICIT); set_default_collation_type(); }
+  OB_INLINE void set_blob() { type_ = static_cast<uint8_t>(ObLongTextType); lob_scale_.set_in_row(); set_collation_level(CS_LEVEL_IMPLICIT); set_collation_type(CS_TYPE_BINARY); }
+  OB_INLINE void set_inrow() { lob_scale_.set_in_row(); }
+  OB_INLINE void set_outrow() { lob_scale_.set_out_row(); }
+  OB_INLINE void set_has_lob_header() { lob_scale_.set_has_lob_header(); }
 
   OB_INLINE bool is_valid() const { return ob_is_valid_obj_type(static_cast<ObObjType>(type_)); }
   OB_INLINE bool is_invalid() const { return !ob_is_valid_obj_type(static_cast<ObObjType>(type_)); }
@@ -206,10 +243,18 @@ public:
   OB_INLINE bool is_nvarchar2() const { return type_ == static_cast<uint8_t>(ObNVarchar2Type); }
   OB_INLINE bool is_nstring() const { return is_nvarchar2() || is_nchar(); }
   OB_INLINE bool is_blob() const { return (ob_is_text_tc(get_type()) && CS_TYPE_BINARY == cs_type_); }
+  OB_INLINE bool is_lob() const { return ob_is_text_tc(get_type()); }
+  OB_INLINE bool is_inrow() const { return is_lob() && lob_scale_.is_in_row(); }
+  OB_INLINE bool is_outrow() const { return is_lob() && lob_scale_.is_out_row(); }
+  OB_INLINE bool has_lob_header() const { return is_lob() && lob_scale_.has_lob_header(); }
   OB_INLINE bool is_character_type() const { return is_nstring() || is_varchar_or_char(); }
   OB_INLINE bool is_timestamp_tz() const { return type_ == static_cast<uint8_t>(ObTimestampTZType); }
   OB_INLINE bool is_timestamp_ltz() const { return type_ == static_cast<uint8_t>(ObTimestampLTZType); }
   OB_INLINE bool is_timestamp_nano() const { return type_ == static_cast<uint8_t>(ObTimestampNanoType); }
+  OB_INLINE bool is_lob_locator() const { return ObLobType == type_; }
+  OB_INLINE bool is_json() const { return type_ == static_cast<uint8_t>(ObJsonType); }
+  OB_INLINE bool is_geometry() const { return type_ == static_cast<uint8_t>(ObGeometryType); }
+  OB_INLINE bool is_user_defined_sql_type() const { return ObUserDefinedSQLType == type_; }
   OB_INLINE bool is_unsigned_integer() const
   {
     return (static_cast<uint8_t>(ObUTinyIntType) <= type_
@@ -242,7 +287,11 @@ private:
   uint8_t type_;
   uint8_t cs_level_;    // collation level
   uint8_t cs_type_;     // collation type
-  int8_t scale_;        // scale
+  union {
+    int8_t scale_;  // scale, 当type_ 为ObBitType时，该字段存储bit的length
+    ObLobScale lob_scale_;
+    uint8_t extend_type_; //当类型为Extend时，表达该Extend的类型时具体类型，其值为enum ObPLType
+  };
 };
 
 struct ObObjPrintParams {
@@ -366,6 +415,7 @@ public:
   void set_number(const number::ObNumber &num);
   void set_number_value(const number::ObNumber &num);
   void set_number(const number::ObNumber::Desc nmb_desc, uint32_t *nmb_digits);
+  void set_number(const ObObjType type, const number::ObNumber::Desc nmb_desc, uint32_t *nmb_digits);
 
   void set_unumber(const number::ObNumber &num);
   void set_unumber(const number::ObNumber::Desc nmb_desc, uint32_t *nmb_digits);
@@ -422,6 +472,10 @@ public:
   inline void set_max_value();
   inline void set_nop_value();
 
+  inline void set_inrow() { meta_.set_inrow(); }
+  inline void set_outrow() { meta_.set_outrow(); }
+  inline void set_has_lob_header() { meta_.set_has_lob_header(); }
+
   void set_val_len(const int32_t val_len);
 
   void set_nvarchar2(const ObString &value);
@@ -440,7 +494,7 @@ public:
     v_.string_ = ptr;
     val_len_ = static_cast<int32_t>(size);
   }
-  
+
   //@}
 
   //@{ getters
@@ -490,6 +544,7 @@ public:
   inline int get_raw(ObString &value) const;
   inline int get_binary(ObString &value) const;
   inline int get_hex_string(ObString &value) const;
+  inline int get_print_string(ObString &value) const;
 
   inline int get_bool(bool &value) const;
   inline int get_ext(int64_t &value) const;
@@ -532,6 +587,7 @@ public:
   OB_INLINE ObString get_varbinary() const { return ObString(val_len_, v_.string_); }
   OB_INLINE ObString get_raw() const { return ObString(val_len_, v_.string_); }
   OB_INLINE ObString get_binary() const { return ObString(val_len_, v_.string_); }
+  OB_INLINE ObString get_print_string(const int64_t max_len) const { return ObString(MIN(val_len_, max_len), v_.string_); }
   OB_INLINE ObString get_hex_string() const { return ObString(val_len_, v_.string_); }
   OB_INLINE int64_t get_number_byte_length() const { return nmb_desc_.len_ * sizeof(uint32_t); }
 
@@ -547,7 +603,7 @@ public:
 
   inline ObString get_nvarchar2() const { return ObString(val_len_, v_.string_); }
   inline ObString get_nchar() const { return ObString(val_len_, v_.string_); }
-  
+
   inline ObOTimestampData::UnionTZCtx get_tz_desc() const
   {
     return time_ctx_;
@@ -564,7 +620,7 @@ public:
   {
     return get_otimestamp_store_size(is_timestamp_tz());
   }
-  
+
   //@}
 
   //@{ test functions
@@ -600,6 +656,10 @@ public:
   OB_INLINE bool is_raw() const { return meta_.is_raw(); }
   OB_INLINE bool is_binary() const { return meta_.is_binary(); }
   OB_INLINE bool is_hex_string() const { return meta_.is_hex_string(); }
+  OB_INLINE bool is_lob_locator() const { return meta_.is_lob_locator(); }
+  OB_INLINE bool is_json() const { return meta_.is_json(); }
+  OB_INLINE bool is_geometry() const { return meta_.is_geometry(); }
+  OB_INLINE bool is_user_defined_sql_type() const { return meta_.is_user_defined_sql_type(); }
   OB_INLINE bool is_ext() const { return meta_.is_ext(); }
   OB_INLINE bool is_unknown() const { return meta_.is_unknown(); }
 
@@ -660,7 +720,7 @@ public:
 
   //@{  deep copy
   bool need_deep_copy()const;
-  int64_t get_deep_copy_size() const;
+  OB_INLINE int64_t get_deep_copy_size() const;
   int deep_copy(const ObObj &src, char *buf, const int64_t size, int64_t &pos);
 
   const void *get_data_ptr() const;
@@ -959,6 +1019,14 @@ inline void ObObj::set_number_value(const number::ObNumber &num)
 inline void ObObj::set_number(const number::ObNumber::Desc nmb_desc, uint32_t *nmb_digits)
 {
   meta_.set_number();
+  nmb_desc_ = nmb_desc;
+  v_.nmb_digits_ = nmb_digits;
+}
+
+inline void ObObj::set_number(const ObObjType type, const number::ObNumber::Desc nmb_desc, uint32_t *nmb_digits)
+{
+  meta_.set_type(type);
+  meta_.set_collation_level(CS_LEVEL_NUMERIC);
   nmb_desc_ = nmb_desc;
   v_.nmb_digits_ = nmb_digits;
 }
@@ -1292,8 +1360,17 @@ inline bool ObObj::is_false() const
 
 inline bool ObObj::need_deep_copy()const
 {
-  return ((is_string_type() && 0 != get_val_len())
-          || ob_is_number_tc(meta_.get_type()));
+  return (((ob_is_string_type(meta_.get_type())
+            || ob_is_lob_locator(meta_.get_type())
+            || ob_is_json(meta_.get_type())
+            || ob_is_geometry(meta_.get_type())
+            || ob_is_raw(meta_.get_type())
+            || ob_is_user_defined_sql_type(meta_.get_type())
+            || ob_is_rowid_tc(meta_.get_type())) && 0 != val_len_ && NULL != get_string_ptr())
+            || (ob_is_number_tc(meta_.get_type())
+             && 0 != nmb_desc_.len_ && NULL != get_number_digits())
+            || (ob_is_decimal_int(meta_.get_type())
+             && 0 != val_len_ && NULL != get_decimal_int()));
 }
 
 inline int64_t ObObj::get_ext() const
@@ -1559,6 +1636,19 @@ inline int ObObj::get_string(ObString &v) const
   return ret;
 }
 
+inline int ObObj::get_print_string(ObString &v) const
+{
+  int ret = OB_OBJ_TYPE_ERROR;
+  if (meta_.is_string_type()) {
+    v.assign_ptr(v_.string_, MIN(val_len_, OB_MAX_VARCHAR_LENGTH));
+    ret = OB_SUCCESS;
+  } else if (meta_.is_null()) {
+    v.assign_ptr(NULL, 0);
+    ret = OB_SUCCESS;
+  }
+  return ret;
+}
+
 inline int ObObj::get_varchar(ObString &v) const
 {
   return get_string(v);
@@ -1657,6 +1747,18 @@ inline int ObObj::get_unknown(int64_t &v) const
   return ret;
 }
 
+OB_INLINE int64_t ObObj::get_deep_copy_size() const
+{
+  int64_t ret = 0;
+  if (is_string_type() || is_raw() || ob_is_rowid_tc(get_type()) || is_lob_locator() || is_json()
+      || is_geometry() || is_user_defined_sql_type() || ob_is_decimal_int(get_type())) {
+    ret += val_len_;
+  } else if (ob_is_number_tc(get_type())) {
+    ret += (sizeof(uint32_t) * nmb_desc_.len_);
+  }
+  return ret;
+}
+
 inline static uint64_t varchar_hash_with_collation(const ObObj &obj,
                                                    const ObCollationType cs_type,
                                                    const uint64_t hash, hash_algo hash_al)
@@ -1718,19 +1820,15 @@ template <typename AllocatorT>
     int ob_write_obj(AllocatorT &allocator, const ObObj &src, ObObj &dst)
 {
   int ret = OB_SUCCESS;
-  if (ob_is_string_tc(src.get_type())) {
-    ObString str = src.get_string();
-    ObString str_clone;
-    if (OB_SUCCESS == (ret = ob_write_string(allocator, str, str_clone))) {
-      dst.set_string(src.get_type(), str_clone);
-      dst.set_collation_level(src.get_collation_level());
-      dst.set_collation_type(src.get_collation_type());
-    }
-  } else if (ob_is_number_tc(src.get_type())) {
-    number::ObNumber nmb = src.get_number();
-    number::ObNumber nmb_clone;
-    if (OB_SUCCESS == (ret = nmb_clone.from(nmb, allocator))) {
-      dst.set_number(src.get_type(), nmb_clone);
+  if (OB_UNLIKELY(src.need_deep_copy())) {
+    int64_t deep_copy_size = src.get_deep_copy_size();
+    char *buf = static_cast<char*>(allocator.alloc(deep_copy_size));
+    int64_t pos = 0;
+    if (OB_ISNULL(buf)) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LIB_LOG(WARN, "allocate memory failed", K(ret), K(deep_copy_size));
+    } else if (OB_FAIL(dst.deep_copy(src, buf, deep_copy_size, pos))) {
+      LIB_LOG(WARN, "deep copy src obj failed", K(ret), K(deep_copy_size), K(pos));
     }
   } else {
     dst = src;

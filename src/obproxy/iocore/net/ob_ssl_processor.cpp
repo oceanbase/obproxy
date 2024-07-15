@@ -38,7 +38,7 @@ ObSSLProcessor g_ssl_processor;
 int ObSSLProcessor::init()
 {
   int ret = OB_SUCCESS;
-
+  LOG_INFO("start init ObSSLProcessor");
   CRYPTO_set_mem_functions(ObSSLProcessor::malloc_for_ssl, ObSSLProcessor::realloc_for_ssl,
                            ObSSLProcessor::free_for_ssl);
   // SSL_library_init() always returns "1", so it is safe to discard the return value.
@@ -162,6 +162,8 @@ int ObSSLProcessor::update_key_from_file(SSL_CTX *ssl_ctx,
                                          const ObString &private_key)
 {
   int ret = OB_SUCCESS;
+  char err_buf[512];
+  unsigned long err;
   if (NULL == ssl_ctx || ca.empty() || public_key.empty()
       || private_key.empty()) {
     ret = OB_INVALID_ARGUMENT;
@@ -169,16 +171,24 @@ int ObSSLProcessor::update_key_from_file(SSL_CTX *ssl_ctx,
   } else {
     if (OB_SSL_SUCC_RET != SSL_CTX_load_verify_locations(ssl_ctx, ca.ptr(), NULL)) {
       ret = OB_SSL_ERROR;
-      LOG_WDIAG("load verify location failed", K(ca), K(ret));
+      err = ERR_get_error();
+      ERR_error_string_n(err, err_buf, sizeof(err_buf));
+      LOG_WDIAG("load verify location failed", K(ca), K(err_buf), K(ret));
     } else if (OB_SSL_SUCC_RET != SSL_CTX_use_certificate_chain_file(ssl_ctx, public_key.ptr())) {
       ret = OB_SSL_ERROR;
-      LOG_WDIAG("use certificate file failed", K(ret), K(public_key));
+      err = ERR_get_error();
+      ERR_error_string_n(err, err_buf, sizeof(err_buf));
+      LOG_WDIAG("use certificate file failed", K(public_key), K(err_buf), K(ret));
     } else if (OB_SSL_SUCC_RET != SSL_CTX_use_PrivateKey_file(ssl_ctx, private_key.ptr(), SSL_FILETYPE_PEM)) {
       ret = OB_SSL_ERROR;
-      LOG_WDIAG("use private key file failed", K(ret), K(private_key));
+      err = ERR_get_error();
+      ERR_error_string_n(err, err_buf, sizeof(err_buf));
+      LOG_WDIAG("use private key file failed", K(private_key), K(err_buf), K(ret));
     } else if (OB_SSL_SUCC_RET != SSL_CTX_check_private_key(ssl_ctx)) {
       ret = OB_SSL_ERROR;
-      LOG_WDIAG("check private key failed", K(ret), K(ca), K(public_key), K(private_key));
+      err = ERR_get_error();
+      ERR_error_string_n(err, err_buf, sizeof(err_buf));
+      LOG_WDIAG("check private key failed", K(ca), K(public_key), K(private_key), K(err_buf), K(ret));
     }
   }
 
@@ -191,6 +201,8 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
                                            const ObString &private_key)
 {
   int ret = OB_SUCCESS;
+  char err_buf[512];
+  unsigned long err;
   if (NULL == ssl_ctx || ca.empty() || public_key.empty() || private_key.empty()) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(ret));
@@ -204,9 +216,25 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
       LOG_WDIAG("pem read bio x509 failed", K(ret));
     } else if (OB_SSL_SUCC_RET != X509_STORE_add_cert(x509_store, cert_x509)) {
       ret = OB_SSL_ERROR;
-      LOG_WDIAG("x509 store add cert failed", K(ret));
-    } else {
+      err = ERR_get_error();
+      ERR_error_string_n(err, err_buf, sizeof(err_buf));
+      LOG_WDIAG("x509 store add cert failed", K(err_buf), K(ret));
+    }
+    if (OB_SUCC(ret)) {
       SSL_CTX_set_cert_store(ssl_ctx, x509_store);
+    } else {
+      // if failed and store bound to ctx, store should be freed outside in SSL_CTX_free
+      if (NULL != x509_store) {
+        X509_STORE_free(x509_store);
+      }
+    }
+
+    if (NULL != cbio) {
+      BIO_free(cbio);
+    }
+    // cert_x5089 inc_ref in X509_STORE_add_cert
+    if (NULL != cert_x509) {
+      X509_free(cert_x509);
     }
 
     // load app cert chain
@@ -221,14 +249,18 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
             is_first = 0;
             if (OB_SSL_SUCC_RET != SSL_CTX_use_certificate(ssl_ctx, itmp->x509)) {
               ret = OB_SSL_ERROR;
+              err = ERR_get_error();
+              ERR_error_string_n(err, err_buf, sizeof(err_buf));
               sk_X509_INFO_pop_free(inf, X509_INFO_free); //cleanup
-              LOG_WDIAG("ssl ctx use cerjtificate failed", K(ret));
+              LOG_WDIAG("ssl ctx use cerjtificate failed", K(err_buf), K(ret));
             }
           } else {
             if (OB_SSL_SUCC_RET != SSL_CTX_add_extra_chain_cert(ssl_ctx, itmp->x509)) {
               ret = OB_SSL_ERROR;
+              err = ERR_get_error();
+              ERR_error_string_n(err, err_buf, sizeof(err_buf));
               sk_X509_INFO_pop_free(inf, X509_INFO_free); //cleanup
-              LOG_WDIAG("ssl ctx add extra chain cert failed", K(ret));
+              LOG_WDIAG("ssl ctx add extra chain cert failed", K(err_buf), K(ret));
             } else {
               /*
                * Above function doesn't increment cert reference count. NULL the info
@@ -239,7 +271,12 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
           }
         }
       }
-      sk_X509_INFO_pop_free(inf, X509_INFO_free); //cleanup
+      if (NULL != cbio) {
+        BIO_free(cbio);
+      }
+      if (inf != NULL) {
+        sk_X509_INFO_pop_free(inf, X509_INFO_free); //cleanup
+      }
     }
 
     //load private key
@@ -251,9 +288,18 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
         LOG_WDIAG("pem read bio rsaprivatekey failed", K(ret));
       } else if (OB_SSL_SUCC_RET != SSL_CTX_use_RSAPrivateKey(ssl_ctx, rsa)) {
         ret = OB_SSL_ERROR;
-        LOG_WDIAG("ssl ctx use rsaprivatekey failed", K(ret));
+        err = ERR_get_error();
+        ERR_error_string_n(err, err_buf, sizeof(err_buf));
+        LOG_WDIAG("ssl ctx use rsaprivatekey failed", K(err_buf), K(ret));
       } else {
         LOG_DEBUG("update ssl key from dbmesh");
+      }
+      //rsa inc ref in SSL_CTX_use_RSAPrivateKey
+      if (NULL != rsa) {
+        RSA_free(rsa);
+      }
+      if (NULL != cbio) {
+        BIO_free(cbio);
       }
     }
   }

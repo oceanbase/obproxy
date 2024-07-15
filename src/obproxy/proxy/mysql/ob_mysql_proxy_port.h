@@ -58,6 +58,10 @@ public:
 ObMysqlProxyPort &get_global_proxy_ipv4_port();
 ObMysqlProxyPort &get_global_proxy_ipv6_port();
 
+/* RPC Service */
+ObMysqlProxyPort &get_global_rpc_proxy_ipv4_port();
+ObMysqlProxyPort &get_global_rpc_proxy_ipv6_port();
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

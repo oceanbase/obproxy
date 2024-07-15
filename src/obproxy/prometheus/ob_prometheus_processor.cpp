@@ -226,9 +226,11 @@ int ObPrometheusProcessor::do_prometheus_sync_task()
   max_idle_period = max_idle_period == 0 ? 1 : max_idle_period;
   bool need_expire_metric = need_expire_metric_;
 
+  DRWLock::RDLockGuard lock(lock_);
   ObPrometheusFamilyHashTable::iterator family_iter = family_hash_.begin();
   ObPrometheusFamilyHashTable::iterator family_last = family_hash_.end();
   for (; family_iter != family_last; ++family_iter) {
+    DRWLock::WRLockGuard lock(family_iter->lock_);
     ObPrometheusMetricHashTable::iterator metric_iter = family_iter->get_metrics().begin();
     ObPrometheusMetricHashTable::iterator metric_last = family_iter->get_metrics().end();
 
@@ -249,7 +251,7 @@ int ObPrometheusProcessor::do_prometheus_sync_task()
           LOG_WDIAG("fail to remove exporter metric", K(ret));
         } else {
           tmp_iter->set_exporter_metric(NULL);
-          if (OB_FAIL(family_iter->remove_metric(tmp_iter.value_))) {
+          if (OB_FAIL(family_iter->remove_metric_without_lock(tmp_iter.value_))) {
             LOG_WDIAG("fail to remove metric", K(ret));
           } else {
             ATOMIC_AAF(&metric_num_, -1);

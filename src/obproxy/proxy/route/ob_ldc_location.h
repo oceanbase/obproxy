@@ -42,7 +42,7 @@ class ObLDCItem
 {
 public:
   ObLDCItem() : replica_(NULL), idc_type_(MAX_IDC_TYPE),
-                zone_type_(common::ZONE_TYPE_INVALID), is_merging_(false),
+                zone_type_(common::ZONE_TYPE_INVALID), priority_(0), is_merging_(false),
                 is_partition_server_(false), is_force_congested_(false), is_used_(false)
   {}
   ObLDCItem(const ObProxyReplicaLocation &replica, const bool is_merging,
@@ -59,6 +59,10 @@ public:
   {}
   ~ObLDCItem() {}
   void reset();
+  bool operator<(const ObLDCItem &other) const
+  {
+    return priority_ < other.priority_;
+  }
   bool is_valid() const
   {
     return (OB_LIKELY(NULL != replica_)
@@ -81,6 +85,7 @@ public:
   const ObProxyReplicaLocation *replica_;
   ObIDCType idc_type_;
   common::ObZoneType zone_type_;
+  int64_t priority_;
   bool is_merging_;
   bool is_partition_server_;
   bool is_force_congested_;
@@ -96,6 +101,7 @@ inline void ObLDCItem::reset()
   is_partition_server_ = false;
   is_force_congested_ = false;
   is_used_ = false;
+  priority_ = 0;
 }
 
 inline void ObLDCItem::set(const ObProxyReplicaLocation &replica, const bool is_merging,
@@ -119,6 +125,7 @@ inline void ObLDCItem::set_partition_item(const ObProxyReplicaLocation &replica,
   idc_type_ = non_partition_item.idc_type_;
   zone_type_ = non_partition_item.zone_type_;
   is_force_congested_ = non_partition_item.is_force_congested_;
+  priority_ = non_partition_item.priority_;
   is_partition_server_ = true;
   is_used_ = false;
 }
@@ -222,7 +229,7 @@ public:
                                        const bool is_random_routing_mode,
                                        const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                        const common::ObIArray<common::ObString> &region_names,
-                                       const common::ObString &proxy_primary_zone_name,
+                                       const common::ObIArray<common::ObString> &proxy_primary_zone_name,
                                        const common::ObString &tenant_name,
                                        obutils::ObClusterResource *cluster_resource);
   static int fill_weak_read_location(const ObProxyPartitionLocation *pl,
@@ -232,14 +239,19 @@ public:
                                      const bool is_only_readonly_zone,
                                      const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                      const common::ObIArray<common::ObString> &region_names,
-                                     const common::ObString &proxy_primary_zone_name);
+                                     const common::ObIArray<common::ObString> &proxy_primary_zone_name);
   static bool check_need_update_entry(const ObProxyReplicaLocation &replica,
                                       ObLDCLocation &dummy_ldc,
                                       const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                       const common::ObIArray<common::ObString> &region_names);
+  static bool is_in_proxy_primary_zone(const ObProxyReplicaLocation &replica,
+                                 const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
+                                 const common::ObIArray<common::ObString> &proxy_primary_zone_name,
+                                 int64_t &priority);
   static bool is_in_primary_zone(const ObProxyReplicaLocation &replica,
                                  const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
-                                 const common::ObString &proxy_primary_zone_name);
+                                 const common::ObString &primary_zone_name);
+  static int copy_dummy_ldc(ObLDCLocation &src_dummy_ldc, ObLDCLocation &dest_dummy_ldc);
   int set_ldc_location(const ObProxyPartitionLocation *pl,
                        const ObLDCLocation &dummy_ldc,
                        const common::ObIArray<ObLDCItem> &tmp_item_array,
@@ -288,7 +300,7 @@ private:
   static int fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
                                      const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                      const common::ObIArray<ObString> &region_names,
-                                     const ObString &proxy_primary_zone_name,
+                                     const common::ObIArray<common::ObString> &proxy_primary_zone_name,
                                      const bool need_skip_leader_item,
                                      const bool is_only_readwrite_zone,
                                      const bool need_use_dup_replica,

@@ -204,6 +204,50 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT:
       str_ret = "SHOW_BINLOG_SERVER_FOR_TENANT";
       break;
+    case OBPROXY_T_SHOW_SLAVE_HOSTS:
+      str_ret = "SHOW_SLAVE_HOSTS";
+      break;
+    case OBPROXY_T_SHOW_SLAVE_STATUS:
+      str_ret = "SHOW_SLAVE_STATUS";
+      break;
+    case OBPROXY_T_SHOW_RELAYLOG_EVENTS:
+      str_ret = "SHOW_REPLAY_EVENTS";
+      break;
+    case OBPROXY_T_BINLOG_STR:
+      str_ret = "BINLOG_STR";
+      break;
+    // for rpc
+    case OBRPC_INVALID:
+      str_ret = "OB_RPC_INVALID";
+      break;
+    case OBRPC_OBKV_TABLE_API_LOGIN:
+      str_ret = "OB_TABLE_API_LOGIN";
+      break;
+    case OBRPC_OBKV_TABLE_API_EXECUTE:
+      str_ret = "OB_TABLE_API_EXECUTE";
+      break;
+    case OBRPC_OBKV_TABLE_API_BATCH_EXECUTE:
+      str_ret = "OB_TABLE_API_BATCH_EXECUTE";
+      break;
+    case OBRPC_OBKV_TABLE_API_EXECUTE_QUERY:
+      str_ret = "OB_TABLE_API_EXECUTE_QUERY";
+      break;
+    case OBRPC_OBKV_TABLE_API_QUERY_AND_MUTATE:
+      str_ret = "OB_TABLE_API_QUERY_AND_MUTATE";
+      break;
+    case OBRPC_OBKV_TABLE_API_EXECUTE_QUERY_SYNC:
+      str_ret = "OB_TABLE_API_EXECUTE_QUERY_SYNC";
+      break;
+    case OBRPC_OBKV_TABLE_API_DIRECT_LOAD:
+      str_ret = "OB_TABLE_API_DIRECT_LOAD";
+      break;
+    case OBRPC_OBKV_TABLE_API_MOVE:
+      str_ret = "OB_TABLE_API_MOVE";
+      break;
+    case OBRPC_OBKV_TABLE_API_LS_EXECUTE:
+      str_ret = "OB_TABLE_API_LS_EXECUTE";
+      break;
+    // end rpc
 
     case OBPROXY_T_INVALID:
     case OBPROXY_T_MAX:
@@ -446,6 +490,21 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_LOAD_DATA_INFILE:
       str_ret = "OBPROXY_T_LOAD_DATA_INFILE";
       break;
+    case OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT:
+      str_ret = "OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT";
+      break;
+    case OBPROXY_T_SHOW_SLAVE_HOSTS:
+      str_ret = "OBPROXY_T_SHOW_SLAVE_HOSTS";
+      break;
+    case OBPROXY_T_SHOW_SLAVE_STATUS:
+      str_ret = "OBPROXY_T_SHOW_SLAVE_STATUS";
+      break;
+    case OBPROXY_T_SHOW_RELAYLOG_EVENTS:
+      str_ret = "OBPROXY_T_SHOW_RELAYLOG_EVENTS";
+      break;
+    case OBPROXY_T_BINLOG_STR:
+      str_ret = "OBPROXY_T_BINLOG_STR";
+      break;
     case OBPROXY_T_MAX:
       str_ret = "OBPROXY_T_MAX";
       break;
@@ -526,6 +585,9 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
     case OBPROXY_T_SUB_CONFIG_DIFF_USER:
       str_ret = "OBPROXY_T_SUB_CONFIG_DIFF_USER";
       break;
+    case OBPROXY_T_SUB_CONFIG_ALL:
+      str_ret = "OBPROXY_T_SUB_CONFIG_ALL";
+      break;
     case OBPROXY_T_SUB_KILL_CS:
       str_ret = "OBPROXY_T_SUB_KILL_CS";
       break;
@@ -543,6 +605,9 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
       break;
     case OBPROXY_T_SUB_ROUTE_ROUTINE:
       str_ret = "OBPROXY_T_SUB_ROUTE_ROUTINE";
+      break;
+    case OBPROXY_T_SUB_ROUTE_GLOBALINDEX:
+      str_ret = "OBPROXY_T_SUB_ROUTE_INDEX";
       break;
     case OBPROXY_T_SUB_SHOW_ELASTIC_ID:
       str_ret = "OBPROXY_T_SUB_SHOW_ELASTIC_ID";

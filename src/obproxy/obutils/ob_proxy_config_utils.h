@@ -35,6 +35,7 @@ static const char *const CFG_SERVER_INFO_DUMP_NAME       = "./obproxy_config_ser
 static const char *const CFG_SERVER_SHARD_INFO_DUMP_NAME = "./obproxy_shard_config_server_info.json";
 static const char *const CFG_RSLIST_INFO_DUMP_NAME       = "./obproxy_rslist_info.json";
 static const char *const CFG_IDC_LIST_INFO_DUMP_NAME     = "./obproxy_idc_list_info.json";
+static const char *const CFG_SERVICE_NAME_INFO_DUMP_NAME = "./obproxy_service_name_info.json";
 
 class ObProxyConfig;
 class ObProxyConfigUtils
@@ -48,7 +49,7 @@ public:
 
   // dump obproxy config to file
   static int dump2file(const ObProxyConfig &proxy_config);
-  static int load_config_from_file(ObProxyConfig &proxy_config);
+  static int load_config_from_sqlite(ObProxyConfig &proxy_config);
   static bool is_user_visible(const common::ObConfigItem &item);
   static bool is_memory_visible(const common::ObConfigItem &item);
 

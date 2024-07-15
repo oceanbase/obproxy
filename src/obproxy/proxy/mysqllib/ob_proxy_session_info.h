@@ -24,7 +24,6 @@
 #include "obutils/ob_cached_variables.h"
 #include "proxy/mysqllib/ob_session_field_mgr.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
-#include "proxy/mysqllib/ob_2_0_protocol_utils.h"
 #include "proxy/route/ob_ldc_struct.h"
 #include "proxy/mysql/ob_prepare_statement_struct.h"
 #include "proxy/mysql/ob_cursor_struct.h"
@@ -191,7 +190,7 @@ public:
     static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
   };
 
-  typedef common::hash::ObBuildInHashMap<ObPsIdPairHashing> ObPsIdPairMap;
+  typedef common::hash::ObBuildInHashMap<ObPsIdPairHashing, 64> ObPsIdPairMap;
 
 public:
   int init();
@@ -228,6 +227,8 @@ public:
     return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_OB_PROTOCOL_V2_COMPRESS);
   }
 
+  bool is_sharding_txn_session() const { return is_sharding_txn_session_; }
+  bool is_lock_session() const { return is_lock_session_; }
   const obmysql::ObMySQLCapabilityFlags get_compatible_capability_flags() const {
     // for compatible, OBServer 1479 handshake return SESSION_TRACK = 0, but still return session state info in ok packet
     if (is_oceanbase_server()) {
@@ -266,6 +267,8 @@ public:
   void set_last_insert_id_version(const int64_t version) { version_.last_insert_id_version_ = version; }
   void set_sess_info_version(const int64_t version) { version_.sess_info_version_ = version; }
   int update_sess_info_field_version(int16_t type, int64_t version);
+  void set_sharding_txn_session(bool is_sharding_txn_session) { is_sharding_txn_session_ = is_sharding_txn_session; }
+  void set_lock_session(bool is_lock_session) { is_lock_session_ = is_lock_session; }
 
   ObProxyChecksumSwitch get_checksum_switch() const { return checksum_switch_; }
   void set_checksum_switch(const ObProxyChecksumSwitch checksum_switch) { checksum_switch_ = checksum_switch; }
@@ -351,6 +354,12 @@ private:
   ObSessionVarVersion version_;
   ObProxyChecksumSwitch checksum_switch_;
   bool is_inited_;
+  // client session must close when below server session get VC_EVENT_EOS.
+  // don`t use lock session in global server session pool
+  // - is_sharding_txn_session_ == true
+  // - is_lock_session_ == true
+  bool is_sharding_txn_session_;
+  bool is_lock_session_;
   common::DBServerType server_type_;
   dbconfig::ObShardConnector *shard_conn_;
 
@@ -463,9 +472,8 @@ public:
     static uint64_t hash(Key key) { return common::murmurhash(&key, sizeof(key), 0); }
     static Key key(Value const *value) { return value->ps_id_; }
     static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
-  };
-
-  typedef common::hash::ObBuildInHashMap<ObPsIdEntryHashing> ObPsIdEntryMap;
+  }; 
+  typedef common::hash::ObBuildInHashMap<ObPsIdEntryHashing, 128> ObPsIdEntryMap;
 
   // text_ps_name ----> ObTextPsNameEntry
   struct ObTextPsNameEntryHashing
@@ -575,10 +583,8 @@ public:
   ObString& get_init_sql() { return init_sql_; }
   void set_init_sql(const char *buf, const int32_t len) { init_sql_.assign_ptr(buf, len); }
   void clear_init_sql() {
-    if (!init_sql_.empty() && NULL != init_sql_.ptr()) {
-      ob_free(init_sql_.ptr());
-      init_sql_.reset();
-    }
+    // 生命周期由ObProxyMultiLevelConfig管理
+    init_sql_.reset();
   }
 
   void set_db_name_version(const int64_t version) { version_.db_name_version_ = version; }
@@ -589,6 +595,7 @@ public:
   int set_vip_addr_name(const common::ObAddr &vip_addr);
   int set_database_name(const common::ObString &database_name, const bool inc_db_version = true);
   int set_user_name(const common::ObString &user_name);
+  int set_service_name(const common::ObString &service_name);
   int set_ldg_logical_cluster_name(const common::ObString &cluster_name);
   int set_ldg_logical_tenant_name(const common::ObString &tenant_name);
   int set_logic_tenant_name(const common::ObString &logic_tenant_name);
@@ -602,6 +609,7 @@ public:
   common::ObString get_database_name() const;
   common::ObString get_full_username();
   int get_user_name(common::ObString &user_name) const;
+  int get_service_name(common::ObString &service_name) const;
   int get_ldg_logical_cluster_name(common::ObString &cluster_name) const;
   int get_ldg_logical_tenant_name(common::ObString &tenant_name) const;
   int get_logic_tenant_name(common::ObString &logic_tenant_name) const;
@@ -682,6 +690,7 @@ public:
   int get_session_timeout(const char *timeout_name, int64_t &timeout) const;
 
   proxy::ObMysqlAuthRequest &get_login_req() { return login_req_; }
+  //proxy::ObRpcLoginRequest &rpc_get_login_req() { return rpc_login_req_; }
   obmysql::OMPKSSLRequest &get_ssl_req() { return ssl_req_; }
   ObProxySessionPrivInfo &get_priv_info() { return priv_info_; }
   const ObProxySessionPrivInfo &get_priv_info() const { return priv_info_; }
@@ -740,6 +749,10 @@ public:
   int set_origin_username(const common::ObString &username);
 
   void set_enable_reset_db(bool enable) { enable_reset_db_ = enable; }
+  void set_need_record_shard_txn_server(bool need_record_shard_txn_server) { need_record_shard_txn_server_ = need_record_shard_txn_server; }
+  bool need_record_shard_txn_server()  const { return need_record_shard_txn_server_; }
+  void set_need_close_last_server_session(bool need_close_last_server_session) { need_close_last_server_session_ = need_close_last_server_session; }
+  bool need_close_last_server_session() const { return need_close_last_server_session_; }
 
   void set_user_priv_set(const int64_t user_priv_set) { priv_info_.user_priv_set_ = user_priv_set; }
 
@@ -788,6 +801,7 @@ public:
   int64_t get_read_consistency() const { return cached_variables_.get_read_consistency(); }
   int64_t get_collation_connection() const { return cached_variables_.get_collation_connection(); }
   int64_t get_ncharacter_set_connection() const { return cached_variables_.get_ncharacter_set_connection(); }
+  bool get_enable_transmission_checksum() const { return cached_variables_.get_enable_transmission_checksum(); }
 
   ObConsistencyLevel get_consistency_level_prop() const {return consistency_level_prop_;}
   void set_consistency_level_prop(ObConsistencyLevel level) {consistency_level_prop_ = level;}
@@ -811,6 +825,23 @@ public:
     shard_conn_ = shard_conn;
   }
 
+  dbconfig::ObShardConnector *get_txn_shard_connector() const { return txn_shard_conn_; }
+  void set_txn_shard_connector(dbconfig::ObShardConnector *shard_conn) {
+    if (NULL != txn_shard_conn_) {
+      txn_shard_conn_->dec_ref();
+      txn_shard_conn_ = NULL;
+    }
+
+    if (NULL != shard_conn) {
+      shard_conn->inc_ref();
+    }
+    txn_shard_conn_ = shard_conn;
+  }
+  bool is_on_txn_shard_connector() const {
+    return OB_NOT_NULL(shard_conn_)
+           && OB_NOT_NULL(txn_shard_conn_)
+           && *shard_conn_ == *txn_shard_conn_;
+  }
   dbconfig::ObShardProp *get_shard_prop() { return shard_prop_; }
   void set_shard_prop(dbconfig::ObShardProp *shard_prop) {
     if (NULL != shard_prop_) {
@@ -829,7 +860,9 @@ public:
 
   inline bool is_oceanbase_server() const { return DB_OB_MYSQL == server_type_ || DB_OB_ORACLE == server_type_; }
   void set_allow_use_last_session(const bool is_allow_use_last_session) { is_allow_use_last_session_ = is_allow_use_last_session; }
-  bool is_allow_use_last_session() { return is_allow_use_last_session_; }
+  // same shard connector with last request
+  // allow use last session
+  bool is_allow_use_last_session() const { return is_allow_use_last_session_; }
 
   void set_group_id(const int64_t group_id) { group_id_ = group_id; }
   int64_t get_group_id() { return group_id_; }
@@ -1023,10 +1056,11 @@ public:
 
 public:
   ObSessionFieldMgr field_mgr_;
-  bool is_session_pool_client_; // used for ObMysqlClient
   ObSessionVarVersion hash_version_;
   ObSessionVarValHash val_hash_;
   ObProxyObProto20Request ob20_request_;  // handle ob v2.0 protocol request info from client
+  bool is_session_pool_client_; // used for ObMysqlClient
+  uint32_t lock_session_num_; // used for table lock/lock function route
 
 private:
   int load_all_cached_variable();
@@ -1046,6 +1080,8 @@ private:
 
   bool enable_shard_authority_;
   bool enable_reset_db_;
+  bool need_record_shard_txn_server_;
+  bool need_close_last_server_session_;
 
   // original login capability
   obmysql::ObMySQLCapabilityFlags orig_capability_;
@@ -1067,6 +1103,7 @@ private:
 
   // login packet will be used to next time(include raw packet data and analyzed result)
   proxy::ObMysqlAuthRequest login_req_;
+  //proxy::ObRpcLoginRequest  rpc_login_req_;
 
   // ssl request packet
   obmysql::OMPKSSLRequest ssl_req_;
@@ -1107,6 +1144,7 @@ private:
 
   DBServerType server_type_;
   dbconfig::ObShardConnector *shard_conn_;
+  dbconfig::ObShardConnector *txn_shard_conn_;
   dbconfig::ObShardProp *shard_prop_;
   int64_t group_id_;
   int64_t table_id_;

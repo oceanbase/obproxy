@@ -88,23 +88,21 @@ protected:
     int ret = OB_SUCCESS;
     if (IS_NOT_INIT){
       ret = OB_NOT_INIT;
-      WARN_ICMD("it has not inited", K(ret));
+      WDIAG_ICMD("it has not inited", K(ret));
     } else if (OB_FAIL(reset())) { // before encode err packet, we need clean buf
-      WARN_ICMD("fail to do reset", K(errcode), K(ret));
+      WDIAG_ICMD("fail to do reset", K(errcode), K(ret));
     } else {
       char *err_msg = NULL;
       if (OB_FAIL(packet::ObProxyPacketWriter::get_user_err_buf(errcode, err_msg, param))) {
-        WARN_ICMD("fail to get user err buf", K(errcode), K(ret));
+        WDIAG_ICMD("fail to get user err buf", K(errcode), K(ret));
       } else if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, err_msg))) {
-        WARN_ICMD("fail to encode err packet buf", K(errcode), K(ret));
+        WDIAG_ICMD("fail to encode err packet buf", K(errcode), K(ret));
       } else {
         INFO_ICMD("succ to encode err packet", K(errcode));
       }
     }
     return ret;
   }
-
-  bool match_like(const ObString &str_text, const ObString &str_pattern) const;
 
 protected:
   event::ObMIOBuffer *external_buf_;

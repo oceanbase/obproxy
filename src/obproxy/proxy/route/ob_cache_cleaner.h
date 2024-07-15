@@ -75,10 +75,12 @@ class ObTableCache;
 class ObSqlTableCache;
 class ObPartitionCache;
 class ObRoutineCache;
+class ObIndexCache;
 class ObTableEntry;
 class ObPartitionEntry;
 class ObRoutineEntry;
 class ObSqlTableEntry;
+class ObIndexEntry;
 // every work thread has one cache cleaner
 class ObCacheCleaner : public event::ObContinuation
 {
@@ -88,6 +90,7 @@ public:
 
   int init(ObTableCache &table_cache, ObPartitionCache &partition_cache,
            ObRoutineCache &routine_cache, ObSqlTableCache &sql_table_cache,
+           ObIndexCache &index_cache,
            const ObCountRange &range, const int64_t total_count,
            const int64_t idx, const int64_t clean_interval_us);
   int main_handler(int event, void *data);
@@ -99,6 +102,7 @@ public:
   int push_deleting_cr(obutils::ObResourceDeleteActor *actor);
   bool is_table_entry_expired(ObTableEntry &entry);
   bool is_partition_entry_expired(ObPartitionEntry &entry);
+  bool is_global_index_entry_expired(ObIndexEntry &entry);
   bool is_routine_entry_expired(ObRoutineEntry &entry);
   bool is_sql_table_entry_expired(ObSqlTableEntry &entry);
   int set_clean_interval(const int64_t interval);
@@ -117,6 +121,9 @@ private:
     EXPIRE_PARTITION_ENTRY_ACTION,
     CLEAN_PARTITION_CACHE_ACTION,
     CLEAN_THREAD_CACHE_PARTITION_ENTRY_ACTION,
+    EXPIRE_INDEX_ENTRY_ACTION,
+    CLEAN_INDEX_CACHE_ACTION,
+    CLEAN_THREAD_CACHE_INDEX_ENTRY_ACTION,
     EXPIRE_ROUTINE_ENTRY_ACTION,
     CLEAN_ROUTINE_CACHE_ACTION,
     CLEAN_THREAD_CACHE_ROUTINE_ENTRY_ACTION,
@@ -140,6 +147,7 @@ private:
   bool need_expire_cluster_resource() { return (0 == this_cleaner_idx_); }
   bool is_table_cache_expire_time_changed();
   bool is_partition_cache_expire_time_changed();
+  bool is_index_cache_expire_time_changed();
   bool is_routine_cache_expire_time_changed();
   bool is_sql_table_cache_expire_time_changed();
   int cancel_pending_action();
@@ -147,6 +155,10 @@ private:
   int do_expire_partition_entry();
   int clean_partition_cache();
   int clean_one_sub_bucket_partition_cache(const int64_t bucket_idx, const int64_t clean_count);
+
+  int do_expire_index_entry();
+  int clean_index_cache();
+  int clean_one_sub_bucket_index_cache(const int64_t bucket_idx, const int64_t clean_count);
 
   int do_expire_routine_entry();
   int clean_routine_cache();
@@ -160,10 +172,12 @@ private:
 
   const static int64_t AVG_TABLE_ENTRY_SIZE = 512; // 512 bytes
   const static int64_t AVG_PARTITION_ENTRY_SIZE = 512; // 512 bytes
+  const static int64_t AVG_INDEX_ENTRY_SIZE = 512; // 512 bytes
   const static int64_t AVG_ROUTINE_ENTRY_SIZE = 512; // 512 bytes
   const static int64_t AVG_SQL_TABLE_ENTRY_SIZE = 512; // 512 bytes
   const static int64_t PART_TABLE_ENTRY_MIN_COUNT = 10;
   const static int64_t PART_PARTITION_ENTRY_MIN_COUNT = 10;
+  const static int64_t PART_INDEX_ENTRY_MIN_COUNT = 10;
   const static int64_t PART_ROUTINE_ENTRY_MIN_COUNT = 10;
   const static int64_t PART_SQL_TABLE_ENTRY_MIN_COUNT = 10;
 
@@ -178,19 +192,23 @@ private:
   event::ObEThread *ethread_; // this cleaner's ethread
   ObTableCache *table_cache_;
   ObPartitionCache *partition_cache_;
+  ObIndexCache *index_cache_;
   ObRoutineCache *routine_cache_;
   ObSqlTableCache *sql_table_cache_;
   ObCountRange table_cache_range_;
   ObCountRange partition_cache_range_;
+  ObCountRange index_cache_range_;
   ObCountRange routine_cache_range_;
   ObCountRange sql_table_cache_range_;
   int64_t tc_part_clean_count_; // table cache every partition clean count
   common::ObSEArray<int64_t, 8> table_cache_deleted_cr_version_; // for expire table entry
   common::ObSEArray<int64_t, 8> partition_cache_deleted_cr_version_; // for expir partition entry
+  common::ObSEArray<int64_t, 8> index_cache_deleted_cr_version_; // for expir index entry
   common::ObSEArray<int64_t, 8> routine_cache_deleted_cr_version_; // for expir routine entry
   common::ObSEArray<int64_t, 8> sql_table_cache_deleted_cr_version_; // for expire table entry
   int64_t table_cache_last_expire_time_us_;
   int64_t partition_cache_last_expire_time_us_;
+  int64_t index_cache_last_expire_time_us_;
   int64_t routine_cache_last_expire_time_us_;
   int64_t sql_table_cache_last_expire_time_us_;
   event::ObAction *pending_action_;

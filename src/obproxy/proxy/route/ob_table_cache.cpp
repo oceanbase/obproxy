@@ -217,6 +217,7 @@ int ObTableCache::init(const int64_t bucket_size)
 {
   int ret = OB_SUCCESS;
   int64_t sub_bucket_size = bucket_size / MT_HASHTABLE_PARTITIONS;
+  LOG_INFO("start init ObTableCache");
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;
     LOG_WDIAG("init twice", K_(is_inited), K(ret));

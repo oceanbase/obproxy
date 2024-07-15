@@ -38,6 +38,7 @@ public:
   ObRouteType get_curr_route_type() const;
   ObRouteType get_route_type(const int64_t cursor_index) const;
   int64_t get_cursor_index(const ObRouteType route_type);
+  bool is_random_policy() const;
 
   static ObRouteType get_route_type(const ObRoutePolicyEnum policy, const int64_t cursor_index);
   static ObIDCType get_idc_type(const ObRouteType route_type);
@@ -204,6 +205,17 @@ inline int64_t ObLDCRoute::get_cursor_index(const ObRouteType route_type)
     }
   }
   return idx;
+}
+
+inline bool ObLDCRoute::is_random_policy() const
+{
+  bool bret = false;
+  if (PROXY_PRIMARY_ZONE_NAME_ONLY == policy_
+      || TARGET_DB_SERVER_ONLY == policy_
+      || PRIMARY_ZONE_FIRST == policy_) {
+    bret = true;
+  }
+  return bret;
 }
 
 

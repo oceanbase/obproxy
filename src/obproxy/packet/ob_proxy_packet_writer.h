@@ -39,9 +39,13 @@ public:
                               proxy::ObMysqlClientSession &client_session,
                               const proxy::ObProxyProtocol protocol,
                               ObString &pkt_str);
+
   static int write_kv_resultset(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession &client_session,
                                 const proxy::ObProxyProtocol protocol, uint8_t &seq,
                                 const obmysql::ObMySQLField &field, ObObj &field_value, const uint16_t status_flag);
+
+  static int write_empty_resultset(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession &client_session,
+                                const proxy::ObProxyProtocol protocol, uint8_t &seq, const uint16_t status_flag);
   static int write_ok_packet(event::ObMIOBuffer &write_buf, proxy::ObMysqlClientSession &client_session,
                              const proxy::ObProxyProtocol protocol, uint8_t &seq, const int64_t affected_rows,
                              const obmysql::ObMySQLCapabilityFlags &capability);

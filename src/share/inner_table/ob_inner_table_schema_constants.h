@@ -489,9 +489,12 @@ const char *const OB_ALL_VIRTUAL_SQL_AUDIT_I1_TNAME                 = "__idx_109
 
 // 4.0 schema
 const char* const OB_ALL_VIRTUAL_PROXY_ROUTINE_TNAME = "__all_virtual_proxy_routine";
+const char* const OB_ALL_VIRTUAL_TABLET_TO_LS = "__all_virtual_tablet_to_ls";
 const char* const DBA_OB_ZONES_VNAME = "DBA_OB_ZONES";
 const char* const DBA_OB_SERVERS_VNAME = "DBA_OB_SERVERS";
 const char* const DBA_OB_TENANTS_VNAME = "DBA_OB_TENANTS";
+const char* const CDB_OB_SERVICES_VNAME = "CDB_OB_SERVICES";
+const char* const CDB_OB_TABLEGROUP_TABLES_VNAME = "CDB_OB_TABLEGROUP_TABLES";
 
 // initial data for __all_privilege
 struct PrivilegeRow {

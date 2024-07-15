@@ -19,6 +19,7 @@
 #include "proxy/mysqllib/ob_resultset_stream_analyzer.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
 #include "proxy/mysql/ob_mysql_sm.h"
+#include "proxy/mysqllib/ob_resp_analyzer.h"
 
 namespace oceanbase
 {
@@ -42,15 +43,14 @@ public:
   virtual void handle_input_complete();
 
 private:
-  bool is_analyze_compressed_ob20;
+  ObProxyProtocol protocol_;
+  bool is_compressed_ob20_;
   uint8_t req_seq_;
   uint32_t request_id_;
   uint32_t server_sessid_;
   event::ObIOBufferReader *local_reader_;
   event::ObIOBufferReader *local_transfer_reader_;
-  ObMysqlCompressAnalyzer compress_analyzer_;
-  ObMysqlCompressOB20Analyzer compress_ob20_analyzer_;
-  ObMysqlCompressAnalyzer *analyzer_;
+  ObRespAnalyzer resp_analyzer_;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlResponseCompressTransformPlugin);
 };
 
@@ -97,7 +97,7 @@ public:
     return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && NULL != sm->client_session_
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
-            && !sm->trans_state_.trans_info_.server_response_.get_analyze_result().is_decompressed()
+            && !sm->trans_state_.trans_info_.resp_result_.is_decompressed()
             && (ObProxyProtocol::PROTOCOL_CHECKSUM == sm->get_server_session_protocol()
                 || ObProxyProtocol::PROTOCOL_OB20 == sm->get_server_session_protocol()));
   }

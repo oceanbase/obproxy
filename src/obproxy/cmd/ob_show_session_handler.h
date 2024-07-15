@@ -92,10 +92,10 @@ private:
     for (int64_t i = 0; OB_SUCC(ret) && i < vars.count(); ++i) {
       field = static_cast<const ObSessionBaseField *>(&(vars.at(i)));
       name.assign_ptr(field->name_, field->name_len_);
-      if (match_like(name, like_name_)) {
+      if (common::match_like(name, like_name_)) {
         DEBUG_ICMD("session variables name matched", K_(like_name), K(name));
         if (OB_FAIL(dump_cs_variables_item(field, var_type))) {
-          WARN_ICMD("fail to dump cs variables item", K(ret));
+          WDIAG_ICMD("fail to dump cs variables item", K(ret));
         }
       }
     }

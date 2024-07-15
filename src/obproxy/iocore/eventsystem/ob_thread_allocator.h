@@ -177,6 +177,9 @@ struct ObThreadAllocator
   ObProxyThreadAllocator io_data_allocator_;
   ObProxyThreadAllocator block_8k_allocator_;
   ObProxyThreadAllocator sm_allocator_;
+  ObProxyThreadAllocator rpc_sm_allocator_;
+  ObProxyThreadAllocator ob_rpc_req_allocator_;
+  ObProxyThreadAllocator rpc_request_handle_sm_allocator_;
 };
 
 inline ObThreadAllocator &get_thread_allocator()
@@ -213,6 +216,22 @@ inline ObProxyThreadAllocator &get_sm_allocator()
 {
   return get_thread_allocator().sm_allocator_;
 }
+
+inline ObProxyThreadAllocator &get_rpc_sm_allocator()
+{
+  return get_thread_allocator().rpc_sm_allocator_;
+}
+
+inline ObProxyThreadAllocator &get_rpc_req_allocator()
+{
+  return get_thread_allocator().ob_rpc_req_allocator_;
+}
+
+inline ObProxyThreadAllocator &get_rpc_request_handle_sm_allocator()
+{
+  return get_thread_allocator().rpc_request_handle_sm_allocator_;
+}
+
 } // end of namespace event
 } // end of namespace obproxy
 } // end of namespace oceanbase

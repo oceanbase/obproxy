@@ -99,24 +99,30 @@ int ObDdsConfigHandler::main_handler(int event, void *data)
   int ret = OB_SUCCESS;
   UNUSED(event);
   UNUSED(data);
-  switch (cmd_type_) {
-  case OBPROXY_T_SHOW:
-    event_ret = handle_show_variables();
-    break;
-  case OBPROXY_T_SET:
-  case OBPROXY_T_SET_NAMES:
-    event_ret = handle_set_variables();
-    break;
-  case OBPROXY_T_SELECT:
-    event_ret = handle_select_variables();
-    break;
-  case OBPROXY_T_UPDATE:
-    event_ret = handle_update_variables();
-    break;
-  default:
+  if (OB_UNLIKELY(action_.cancelled_)) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("unknown type", "cmd_type", get_print_stmt_name(cmd_type_));
+    WDIAG_ICMD("action canceled", K(ret));
     event_ret = internal_error_callback(ret);
+  } else {
+    switch (cmd_type_) {
+    case OBPROXY_T_SHOW:
+      event_ret = handle_show_variables();
+      break;
+    case OBPROXY_T_SET:
+    case OBPROXY_T_SET_NAMES:
+      event_ret = handle_set_variables();
+      break;
+    case OBPROXY_T_SELECT:
+      event_ret = handle_select_variables();
+      break;
+    case OBPROXY_T_UPDATE:
+      event_ret = handle_update_variables();
+      break;
+    default:
+      ret = OB_ERR_UNEXPECTED;
+      WDIAG_ICMD("unknown type", "cmd_type", get_print_stmt_name(cmd_type_));
+      event_ret = internal_error_callback(ret);
+    }
   }
   return event_ret;
 }
@@ -127,7 +133,7 @@ int ObDdsConfigHandler::handle_show_variables()
   ObString sql = sm_->trans_state_.trans_info_.client_request_.get_sql();
   DEBUG_ICMD("handle_show_variables", K(sql));
   if (OB_FAIL(encode_header(SESSION_VAR_COLUMN_ARRAY, OB_CC_MAX_VAR_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   SessionHash& str_session_map = session_map.str_session_map_;
   for (SessionHash::iterator it = str_session_map.begin();
@@ -139,12 +145,12 @@ int ObDdsConfigHandler::handle_show_variables()
     row.cells_ = cells;
     row.count_ = OB_CC_MAX_VAR_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode_eof_packet", K(ret));
+      WDIAG_ICMD("fail to encode_eof_packet", K(ret));
     } else {
       DEBUG_ICMD("succ to encode_eof_packet");
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -165,7 +171,7 @@ int ObDdsConfigHandler::handle_set_variables()
   DEBUG_ICMD("handle_set_variables", K(sql));
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_ok_packet(0, capability_))) {
-      WARN_ICMD("fail to encode_ok_packet", K(ret));
+      WDIAG_ICMD("fail to encode_ok_packet", K(ret));
     } else {
       DEBUG_ICMD("succ to encode_ok_packet");
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -204,20 +210,22 @@ int ObDdsConfigHandler::handle_select_session_variables()
   DEBUG_ICMD("handle_select_session_variables", K(sql), K(select_key));
   if (select_key.case_compare("@@session.auto_increment_increment") == 0) {
     if (OB_FAIL(handle_one_select_session_variable("@@session.auto_increment_increment", "1"))) {
-      WARN_ICMD("handle_one_select_session_variable failed", K(select_key));
+      WDIAG_ICMD("handle_one_select_session_variable failed", K(select_key));
     }
   } else if (select_key.case_compare("@@session.tx_read_only") == 0) {
     if (OB_FAIL(handle_one_select_session_variable("@@session.tx_read_only", "0"))) {
-      WARN_ICMD("handle_one_select_session_variable failed", K(select_key));
+      WDIAG_ICMD("handle_one_select_session_variable failed", K(select_key));
     }
   } else if (select_key.case_compare("@@session.tx_isolation") == 0) {
     if (OB_FAIL(handle_one_select_session_variable("@@session.tx_isolation", "READ-COMMITTED"))) {
-      WARN_ICMD("handle_one_select_session_variable failed", K(select_key));
+      WDIAG_ICMD("handle_one_select_session_variable failed", K(select_key));
     }
+  } else {
+    ret = OB_NOT_SUPPORTED;
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode_eof_packet", K(ret));
+      WDIAG_ICMD("fail to encode_eof_packet", K(ret));
     } else {
       INFO_ICMD("succ to encode_eof_packet");
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -235,7 +243,7 @@ int ObDdsConfigHandler::handle_one_select_session_variable(const char* key, cons
     ObProxyColumnSchema::make_schema(0, key, OB_MYSQL_TYPE_VARCHAR),
   };
   if (OB_FAIL(encode_header(COLUMN_ARRAY, 1))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   } else {
     ObNewRow row;
     ObObj cells[1];
@@ -243,7 +251,7 @@ int ObDdsConfigHandler::handle_one_select_session_variable(const char* key, cons
     row.cells_ = cells;
     row.count_ = 1;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   return ret;
@@ -254,13 +262,13 @@ int ObDdsConfigHandler::dump_select_result(const common::ObString& app_name, con
   common::ObSqlString config_val;
   ObProxyConfigType config_type = get_config_type_by_str(app_block);
   if (OB_FAIL(get_global_proxy_config_processor().get_app_config_string(app_name, config_type, config_val))) {
-    WARN_ICMD("fail to get_app_config_string", K(ret));
+    WDIAG_ICMD("fail to get_app_config_string", K(ret));
   } else {
     const ObProxyColumnSchema COLUMN_ARRAY[1] = {
       ObProxyColumnSchema::make_schema(0, CONFIG_VAL, OB_MYSQL_TYPE_VARCHAR),
     };
     if (OB_FAIL(encode_header(COLUMN_ARRAY, 1))) {
-      WARN_ICMD("fail to encode header", K(ret));
+      WDIAG_ICMD("fail to encode header", K(ret));
     } else {
       ObNewRow row;
       ObObj cells[1];
@@ -268,9 +276,9 @@ int ObDdsConfigHandler::dump_select_result(const common::ObString& app_name, con
       row.cells_ = cells;
       row.count_ = 1;
       if (OB_FAIL(encode_row_packet(row))) {
-        WARN_ICMD("fail to encode row packet", K(row), K(ret));
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
       } else if (OB_FAIL(encode_eof_packet())) {
-        WARN_ICMD("fail to encode eof packet", K(ret));
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
       }
     }
   }
@@ -292,17 +300,17 @@ int ObDdsConfigHandler::handle_select_sql_variables()
   ObString sql = client_request.get_sql();
   // find select column
   if (NULL == (pos1 = strcasestr(sql.ptr(), "SELECT"))) {
-    WARN_ICMD("invalid sql", K(sql));
+    WDIAG_ICMD("invalid sql", K(sql));
     ret = OB_ERR_UNEXPECTED;
   } else if (NULL == (pos2 = strcasestr(pos1, "FROM"))) {
-     WARN_ICMD("invalid sql", K(sql));
+     WDIAG_ICMD("invalid sql", K(sql));
     ret = OB_ERR_UNEXPECTED;
   } else {
     ObString select_col = ObString(pos2 - (pos1 + 6), pos1 + 6).trim();
     if (select_col.case_compare(CONFIG_VAL) == 0 ||
         select_col.case_compare("*") == 0) {
     } else {
-      WARN_ICMD("invalid select_col", K(select_col), K(sql));
+      WDIAG_ICMD("invalid select_col", K(select_col), K(sql));
       ret = OB_ERR_UNEXPECTED;
     }
   }
@@ -310,7 +318,7 @@ int ObDdsConfigHandler::handle_select_sql_variables()
     //do nothing
   } else if (OB_FAIL(handle_parse_where_fields(&allocator, expr_result,
                      static_cast<ObCollationType>(sm_->get_client_session()->get_session_info().get_collation_connection())))) {
-    WARN_ICMD("fail to parse where fileds", K(ret));
+    WDIAG_ICMD("fail to parse where fileds", K(ret));
   } else {
     ObString app_block = table_name;
     ObString app_name;
@@ -321,9 +329,9 @@ int ObDdsConfigHandler::handle_select_sql_variables()
     DEBUG_ICMD("after parse ", K(app_name), K(app_block));
     if (app_name.empty() || app_block.empty()) {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("invalid argument", K(app_name), K(app_block));
+      WDIAG_ICMD("invalid argument", K(app_name), K(app_block));
     } else if (OB_FAIL(dump_select_result(app_name, app_block))) {
-      WARN_ICMD("fail to dump_select_result", K(ret));
+      WDIAG_ICMD("fail to dump_select_result", K(ret));
     } else {
       DEBUG_ICMD("succ to dump_select_result");
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -357,14 +365,14 @@ int ObDdsConfigHandler::handle_parse_where_fields(ObArenaAllocator* allocator, O
   if (need_parse_fields) {
     if (OB_ISNULL(allocator)) {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("allocator is null", K(ret));
+      WDIAG_ICMD("allocator is null", K(ret));
     } else {
       ObExprParser expr_parser(*allocator, parse_mode);
       expr_result.part_key_info_.key_num_ = 0;
       if (OB_FAIL(expr_parser.parse_reqsql(sql,  sql_parse_result.get_parsed_length(),
                                            expr_result, sql_parse_result.get_stmt_type(),
                                            connection_collation))) {
-        WARN_ICMD("fail to do expr parse_reqsql", K(sql), K(ret));
+        WDIAG_ICMD("fail to do expr parse_reqsql", K(sql), K(ret));
       } else {
         DEBUG_ICMD("parse success:", K(sql), K(expr_result.all_relation_info_.relation_num_));
       }
@@ -380,7 +388,7 @@ void ObDdsConfigHandler::get_params_from_parse_result(const ObExprParseResult& e
     ObString name_str;
     ObString value_str;
     if (OB_ISNULL(relation_expr)) {
-      WARN_ICMD("Got an empty relation_expr", K(i));
+      WDIAG_ICMD("Got an empty relation_expr", K(i));
       continue;
     }
     if (relation_expr->left_value_ != NULL
@@ -390,10 +398,10 @@ void ObDdsConfigHandler::get_params_from_parse_result(const ObExprParseResult& e
         name_str.assign_ptr(relation_expr->left_value_->head_->column_name_.str_,
                             relation_expr->left_value_->head_->column_name_.str_len_);
       } else {
-        WARN_ICMD("get an empty column_name");
+        WDIAG_ICMD("get an empty column_name");
       }
     } else {
-      WARN_ICMD("left value is null");
+      WDIAG_ICMD("left value is null");
     }
     if (relation_expr->right_value_ != NULL) {
       ObProxyTokenNode *token = relation_expr->right_value_->head_;
@@ -409,7 +417,7 @@ void ObDdsConfigHandler::get_params_from_parse_result(const ObExprParseResult& e
         token = token->next_;
       }
     } else {
-      WARN_ICMD("right value is null");
+      WDIAG_ICMD("right value is null");
     }
     if (name_str.case_compare(APP_NAME_COL) == 0) {
       app_name = value_str;
@@ -431,10 +439,10 @@ int ObDdsConfigHandler::update_dds_config_to_processor(
   ObProxyConfigType config_type = get_config_type_by_str(app_block);
   if (SECURITY_CONFIG == config_type) {
     if (OB_FAIL(get_global_proxy_config_processor().update_app_security_config(app_name, app_version, config_val, config_type))) {
-      WARN_ICMD("fail to update app security config", K(ret), K(app_name), K(app_version));
+      WDIAG_ICMD("fail to update app security config", K(ret), K(app_name), K(app_version));
     }
   } else if (OB_FAIL(get_global_proxy_config_processor().update_app_config(app_name, app_version, config_val, config_type))) {
-    WARN_ICMD("fail to update app config", K(ret), K(app_name), K(app_version));
+    WDIAG_ICMD("fail to update app config", K(ret), K(app_name), K(app_version));
   }
   return ret;
 }
@@ -450,7 +458,7 @@ int ObDdsConfigHandler::handle_update_variables()
   ObExprParseResult expr_result;
   if (OB_FAIL(handle_parse_where_fields(&allocator, expr_result,
               static_cast<ObCollationType>(sm_->get_client_session()->get_session_info().get_collation_connection())))) {
-    WARN_ICMD("fail to parse where fileds", K(ret));
+    WDIAG_ICMD("fail to parse where fileds", K(ret));
   } else {
     ObString app_block = table_name;
     ObString app_name;
@@ -464,11 +472,11 @@ int ObDdsConfigHandler::handle_update_variables()
     DEBUG_ICMD("after parse", K(app_block), K(app_name), K(app_version), K(config_val));
     if (app_name.empty() || app_version.empty() || config_val.empty()) {
       ret = OB_ERR_UNEXPECTED;
-      WARN_ICMD("invalid argument", K(app_name), K(app_version), K(config_val));
+      WDIAG_ICMD("invalid argument", K(app_name), K(app_version), K(config_val));
     } else if (OB_FAIL(update_dds_config_to_processor(app_name, app_version, app_block, config_val))) {
-      WARN_ICMD("fail to update_dds_config_to_processor", K(ret));
+      WDIAG_ICMD("fail to update_dds_config_to_processor", K(ret));
     } else if (OB_FAIL(encode_ok_packet(1, capability_))) {
-      WARN_ICMD("fail to encode_ok_packet", K(ret));
+      WDIAG_ICMD("fail to encode_ok_packet", K(ret));
     } else {
       DEBUG_ICMD("succ to encode_ok_packet");
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -488,17 +496,17 @@ static int dds_config_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info
   ObDdsConfigHandler *handler = NULL;
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObDdsConfigHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObDdsConfigHandler", K(ret));
+    EDIAG_ICMD("fail to new ObDdsConfigHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObDdsConfigHandler", K(ret));
+    WDIAG_ICMD("fail to init for ObDdsConfigHandler", K(ret));
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObDdsConfigHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObDdsConfigHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObDdsConfigHandler");
@@ -516,19 +524,19 @@ int dds_config_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SHOW,
               &dds_config_cmd_callback, true))) {
-    WARN_ICMD("fail to register_cmd for OBPROXY_T_SHOW", K(ret));
+    WDIAG_ICMD("fail to register_cmd for OBPROXY_T_SHOW", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SET_NAMES,
                     &dds_config_cmd_callback, true))) {
-    WARN_ICMD("fail to register_cmd for OBPROXY_T_SET_NAMES", K(ret));
+    WDIAG_ICMD("fail to register_cmd for OBPROXY_T_SET_NAMES", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SET,
                     &dds_config_cmd_callback, true))) {
-    WARN_ICMD("fail to register_cmd for OBPROXY_T_SET", K(ret));
+    WDIAG_ICMD("fail to register_cmd for OBPROXY_T_SET", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_SELECT,
                     &dds_config_cmd_callback, true))) {
-    WARN_ICMD("fail to register_cmd for OBPROXY_T_SELECT", K(ret));
+    WDIAG_ICMD("fail to register_cmd for OBPROXY_T_SELECT", K(ret));
   } else if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_UPDATE,
                     &dds_config_cmd_callback, true))) {
-    WARN_ICMD("fail to register_cmd for OBPROXY_T_UPDATE", K(ret));
+    WDIAG_ICMD("fail to register_cmd for OBPROXY_T_UPDATE", K(ret));
   }
   return ret;
 }

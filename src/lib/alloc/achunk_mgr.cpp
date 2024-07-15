@@ -29,7 +29,8 @@ AChunkMgr &AChunkMgr::instance()
 }
 
 AChunkMgr::AChunkMgr()
-    : chunk_bitmap_(NULL), limit_(DEFAULT_LIMIT), urgent_(0), hold_bytes_(0)
+    : disable_mem_alloc_(false), chunk_bitmap_(NULL),
+      limit_(DEFAULT_LIMIT), urgent_(0), hold_bytes_(0)
 {
 #if MEMCHK_LEVEL >= 1
   uint64_t bmsize = sizeof (ChunkBitMap);
@@ -46,43 +47,52 @@ void *AChunkMgr::direct_alloc(const uint64_t size) const
   void *ptr = NULL;
   const int prot = PROT_READ | PROT_WRITE;
   const int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+  const int flags_hp = flags | MAP_HUGETLB;
   const int fd = -1;
   const int offset = 0;
+  bool hp_on = true;
 
-  if (MAP_FAILED == (
-          ptr = ::mmap(
-              NULL, size, prot, flags, fd, offset))) {
-    ptr = NULL;
+  if (OB_UNLIKELY(disable_mem_alloc_)) {
+    // nothing
   } else {
-#if MEMCHK_LEVEL >= 1
-    if (((uint64_t)ptr & (ALIGN_SIZE - 1)) != 0) {
-      // not aligned
-      ::munmap(ptr, size);
+    if (MAP_FAILED == (ptr = ::mmap(NULL, size, prot, flags_hp, fd, offset))) {
+      hp_on = false;
+      ptr = NULL;
+    }
 
-      uint64_t new_size = size + ALIGN_SIZE;
-      if (MAP_FAILED == (
-              ptr = ::mmap(
-                  NULL, new_size, prot, flags, fd, offset))) {
-        ptr = NULL;
-      } else {
-        const uint64_t addr = align_up2((uint64_t)ptr, ALIGN_SIZE);
-        if (addr - (uint64_t)ptr > 0) {
-          ::munmap(ptr, addr - (uint64_t)ptr);
-        }
-        if (ALIGN_SIZE - (addr - (uint64_t)ptr) > 0) {
-          ::munmap((void*)(addr + size), ALIGN_SIZE - (addr - (uint64_t)ptr));
-        }
-        ptr = (void*)addr;
-      }
+    if (!hp_on && MAP_FAILED == (ptr = ::mmap(NULL, size, prot, flags, fd, offset))) {
+      ptr = NULL;
     } else {
-      // aligned address returned
-    }
+#if MEMCHK_LEVEL >= 1
+      if (((uint64_t)ptr & (ALIGN_SIZE - 1)) != 0) {
+        // not aligned
+        ::munmap(ptr, size);
 
-    if (NULL != chunk_bitmap_ && NULL != ptr) {
-      chunk_bitmap_->set((int)((uint64_t)ptr >> MEMCHK_CHUNK_ALIGN_BITS));
-    }
+        uint64_t new_size = size + ALIGN_SIZE;
+        if (MAP_FAILED == (
+              ptr = ::mmap(
+                NULL, new_size, prot, flags, fd, offset))) {
+          ptr = NULL;
+        } else {
+          const uint64_t addr = align_up2((uint64_t)ptr, ALIGN_SIZE);
+          if (addr - (uint64_t)ptr > 0) {
+            ::munmap(ptr, addr - (uint64_t)ptr);
+          }
+          if (ALIGN_SIZE - (addr - (uint64_t)ptr) > 0) {
+            ::munmap((void*)(addr + size), ALIGN_SIZE - (addr - (uint64_t)ptr));
+          }
+          ptr = (void*)addr;
+        }
+      } else {
+        // aligned address returned
+      }
+
+      if (NULL != chunk_bitmap_ && NULL != ptr) {
+        chunk_bitmap_->set((int)((uint64_t)ptr >> MEMCHK_CHUNK_ALIGN_BITS));
+      }
 #endif
-  }
+    }
+  } 
 
   return ptr;
 }

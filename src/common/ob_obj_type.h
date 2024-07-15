@@ -275,7 +275,15 @@ inline bool ob_is_real_type(ObObjType type) { return type >= ObFloatType && type
 
 inline bool ob_is_string_type(ObObjType type) { return type >= ObVarcharType && type <= ObHexStringType; }
 inline bool ob_is_temporal_type(ObObjType type) { return type >= ObDateTimeType && type <= ObYearType; }
-
+inline bool ob_is_decimal_int(const ObObjType type) { return ObDecimalIntType == type; }
+inline bool ob_is_lob_locator(ObObjType type) { return ObLobType == type; }
+inline bool ob_is_json(ObObjType type) { return ObJsonType == type; }
+inline bool ob_is_geometry(ObObjType type) { return ObGeometryType == type; }
+inline bool ob_is_raw(ObObjType type) { return ObRawType == type; }
+inline bool ob_is_user_defined_sql_type(ObObjType type) { return ObUserDefinedSQLType == type; }
+inline bool ob_is_urowid(ObObjType type) { return ObURowIDType == type; }
+inline bool ob_is_decimal_int_tc(ObObjType type) { return ObDecimalIntTC == ob_obj_type_class(type); }
+inline bool ob_is_rowid_tc(ObObjType type) { return ob_is_urowid(type); }
 inline bool ob_is_int_tc(ObObjType type) { return ObIntTC == ob_obj_type_class(type); }
 inline bool ob_is_uint_tc(ObObjType type) { return ObUIntTC == ob_obj_type_class(type); }
 inline bool ob_is_float_tc(ObObjType type) { return ObFloatTC == ob_obj_type_class(type); }

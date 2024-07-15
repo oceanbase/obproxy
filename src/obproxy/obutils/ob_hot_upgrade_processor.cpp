@@ -112,12 +112,26 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
   int ret = OB_SUCCESS;
   int64_t count = 2;  // envp's valid items count
   bool is_obproxy_root_set = false;
+  bool is_obproxy_rpc_ipv4_listen = false;
+  bool is_obproxy_rpc_ipv6_listen = false;
   char *obproxy_root = NULL;
+  int pos = 0;
   if (NULL != (obproxy_root = getenv("OBPROXY_ROOT"))) {
     ++count;
     is_obproxy_root_set = true;
     LOG_DEBUG("get env", K(obproxy_root));
   }
+  if (get_global_hot_upgrade_info().rpc_ipv4_fd_ > 0) { //contains rpc listen fd
+    ++count;
+    is_obproxy_rpc_ipv4_listen = true;
+    LOG_DEBUG("rpc listen", "rpc_ipv4_fd", get_global_hot_upgrade_info().rpc_ipv4_fd_);
+  }
+  if (get_global_hot_upgrade_info().rpc_ipv6_fd_ > 0) { //contains rpc listen fd
+    ++count;
+    is_obproxy_rpc_ipv6_listen = true;
+    LOG_DEBUG("rpc listen", "rpc_ipv6_fd", get_global_hot_upgrade_info().rpc_ipv6_fd_);
+  }
+
   int64_t size = (count + 1) * sizeof(char *);
   char *var = NULL;
   var = reinterpret_cast<char *>(malloc(size));
@@ -150,6 +164,7 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
           LOG_WDIAG("buf not enought", K(length), "envp[0]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[1]), K(ret));
         }
       }
+      pos = 2;  //set pos to next position
     }
     //set OBPROXY_ROOT
     if (OB_SUCC(ret) && is_obproxy_root_set) {
@@ -169,6 +184,47 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
           LOG_WDIAG("buf not enought", K(length), "envp[2]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[2]), K(ret));
         }
       }
+      pos++;  //set pos to next position
+    }
+
+    if (OB_SUCC(ret) && is_obproxy_rpc_ipv4_listen) {
+      envp[pos] = reinterpret_cast<char *>(malloc(OBPROXY_ENVP_MAX_SIZE));
+      if (OB_ISNULL(envp[pos])) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        free(var);
+        var = NULL;
+        envp = NULL;
+        LOG_EDIAG("fail to malloc", K(OBPROXY_ENVP_MAX_SIZE), K(ret));
+      } else {
+        const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+        int64_t length = snprintf(envp[pos], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
+                                  OBPROXY_INHERITED_RPC_IPV4_FD"=%d", info.rpc_ipv4_fd_);
+        if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
+          ret = OB_BUF_NOT_ENOUGH;
+          LOG_WDIAG("buf not enought", K(length), "envp[pos]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[pos]), K(ret));
+        }
+      }
+      pos++;  //set pos to next position
+    }
+
+    if (OB_SUCC(ret) && is_obproxy_rpc_ipv6_listen) {
+      envp[pos] = reinterpret_cast<char *>(malloc(OBPROXY_ENVP_MAX_SIZE));
+      if (OB_ISNULL(envp[pos])) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        free(var);
+        var = NULL;
+        envp = NULL;
+        LOG_EDIAG("fail to malloc", K(OBPROXY_ENVP_MAX_SIZE), K(ret));
+      } else {
+        const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+        int64_t length = snprintf(envp[pos], static_cast<size_t>(OBPROXY_ENVP_MAX_SIZE),
+                                  OBPROXY_INHERITED_RPC_IPV6_FD"=%d", info.rpc_ipv6_fd_);
+        if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= OBPROXY_ENVP_MAX_SIZE)) {
+          ret = OB_BUF_NOT_ENOUGH;
+          LOG_WDIAG("buf not enought", K(length), "envp[pos]_length", OBPROXY_ENVP_MAX_SIZE, K(envp[pos]), K(ret));
+        }
+      }
+      pos++;  //set pos to next position
     }
     //attention:do not forget to set this
     if (OB_SUCC(ret)) {
@@ -179,9 +235,13 @@ int ObProxyHotUpgrader::get_envp(char **&envp)
   // for debug
   if (OB_SUCC(ret)) {
     if (is_obproxy_root_set) {
-      LOG_INFO("current envp", K(count), K(envp[0]), K(envp[1]), K(envp[2]));
+      LOG_INFO("current envp", K(count), K(envp[0]), K(envp[1]), K(envp[2]),
+               "rpc_ipv4_fd", is_obproxy_rpc_ipv4_listen ? envp[3] : "NULL",
+               "rpc_ipv6_fd", is_obproxy_rpc_ipv6_listen ? envp[4] : "NULL");
     } else {
-      LOG_INFO("current envp", K(count), K(envp[0]), K(envp[1]), K(is_obproxy_root_set));
+      LOG_INFO("current envp", K(count), K(envp[0]), K(envp[1]), K(is_obproxy_root_set),
+               "rpc_ipv4_fd", is_obproxy_rpc_ipv4_listen ? envp[2] : "NULL",
+               "rpc_ipv6_fd", is_obproxy_rpc_ipv6_listen ? envp[3] : "NULL");
     }
   }
   return ret;
@@ -1212,8 +1272,8 @@ int ObHotUpgradeProcessor::rename_binary(const char *obproxy_tmp) const
 int ObHotUpgradeProcessor::dump_config() const
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(get_global_proxy_config().dump_config_to_local())) {
-    LOG_WDIAG("fail to dump obproxy_config.bin", K(ret));
+  if (OB_FAIL(get_global_proxy_config().dump_config_to_sqlite())) {
+    LOG_WDIAG("fail to dump proxyconfig_v1.db", K(ret));
   }
   return ret;
 }
@@ -1614,7 +1674,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
      }
 
      break;
-   }
+    }
     case OB_LOCAL_CMD_RESTART: {
       get_global_proxy_config().reset_local_cmd();
       if (info_.is_in_idle_state() && info_.is_parent()) {
@@ -1662,12 +1722,22 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
             LOG_WDIAG("fail to close sqlite3", K(ret));
           } else if (OB_FAIL(ObProxyHotUpgrader::spawn_process())) {
             LOG_WDIAG("fail to spawn sub process", K_(info), K(ret));
+            // 兼容低版本，保证回滚后有obproxy_config.bin
+          } else if (get_global_proxy_config().dump_config_to_local()) {
+            LOG_WDIAG("fail to dump global config to disk", K_(info), K(ret));
           } else {
             schedule_timeout_rollback();
             info_.disable_net_accept();  // disable accecpt new connection
             info_.update_sub_status(HU_STATUS_NONE);
             info_.update_state(HU_STATE_WAIT_LOCAL_CR_FINISH);
             LOG_INFO("succ to fork new proxy, start turn to HU_STATE_WAIT_LOCAL_CR_FINISH", K_(info));
+          }
+
+          if (OB_FAIL(ret)) {
+            g_ob_prometheus_processor.create_exposer();
+            if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
+              LOG_WDIAG("fail to reopen sqlite3", K(ret));
+            }
           }
 
           if (OB_FAIL(ret)) {
@@ -1722,6 +1792,9 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
               info_.update_state(HU_STATE_WAIT_HU_CMD);
               info_.parent_hot_upgrade_flag_ = true;
               LOG_INFO("upgrade timeout, will send SIGKILL to subprocess", K_(info));
+              if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
+                LOG_WDIAG("fail to reopen sqlite3", K(ret));
+              }
             }
 
             if (OB_FAIL(get_global_config_processor().open_sqlite3())) {
@@ -1740,6 +1813,23 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
   }
 
   return ret;
+}
+
+void ObHotUpgradeProcessor::do_hot_upgrade_internal()
+{
+  if (OB_UNLIKELY(get_global_proxy_config().enable_auto_restart)) {
+    if (info_.is_in_idle_state()
+        && info_.is_parent()
+        && (getppid() == 1
+            || info_.is_parent_exited())) {
+      info_.cmd_ = HUC_LOCAL_RESTART;
+      LOG_ERROR("obproxy start hot upgrade because memory out of 80%", K_(info));
+    } else {
+      LOG_WDIAG("it is doing hot upgrading or parent not exit now, CAN NOT do quick restart for internal", K_(info));
+    }
+  } else {
+    LOG_DEBUG("disable auto restart");
+  }
 }
 
 } // end of namespace obutils

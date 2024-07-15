@@ -51,6 +51,13 @@ public:
   int obparse(const common::ObString &sql_string, ParseResult &parse_result);
 private:
   int init_result(ObProxyParseResult &parse_result, const char *start_pos);
+  OB_INLINE void init_result_basic(ObProxyParseResult &parse_result, const char *start_pos);
+  OB_INLINE void init_result_ps(ObProxyParseResult &parse_result);
+  OB_INLINE void init_result_route(ObProxyParseResult &parse_result);
+  OB_INLINE void init_result_set(ObProxyParseResult &parse_result);
+  OB_INLINE void init_result_call(ObProxyParseResult &parse_result);
+  OB_INLINE void init_result_sharding(ObProxyParseResult &parse_result);
+  OB_INLINE void init_result_others(ObProxyParseResult &parse_result);
   int init_ob_result(ParseResult &parse_result, const common::ObString &sql_string);
   // data members
   common::ObIAllocator &allocator_;
@@ -64,45 +71,128 @@ inline ObProxyParser::ObProxyParser(common::ObIAllocator &allocator, ObProxyPars
 {
 }
 
-inline int ObProxyParser::init_result(ObProxyParseResult &parse_result, const char *start_pos)
+inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *start_pos)
 {
-  memset(&parse_result, 0, sizeof(parse_result));
-  parse_result.malloc_pool_ = static_cast<void *>(&allocator_);
-  parse_result.parse_mode_ = parse_mode_;
-  parse_result.start_pos_ = start_pos;
-  parse_result.end_pos_ = NULL;
-  parse_result.read_consistency_type_ = OBPROXY_READ_CONSISTENCY_INVALID;
-  parse_result.table_info_.table_name_.str_len_ = 0;
-  parse_result.table_info_.alias_name_.str_len_ = 0;
-  parse_result.table_info_.database_name_.str_len_ = 0;
+  p.malloc_pool_ = static_cast<void *>(&allocator_);
+  p.parse_mode_ = parse_mode_;
+  p.yyscan_info_ = NULL;
+  p.tmp_buf_ = NULL;
+  p.tmp_start_ptr_ = NULL;
+  p.tmp_len_ = 0;
+  memset(p.jmp_buf_, 0, sizeof(p.jmp_buf_));
+  p.cur_stmt_type_ = OBPROXY_T_INVALID;
+  p.has_ignored_word_ = false;
+  p.is_dual_request_ = false;
+  p.start_pos_ = start_pos;
+  p.end_pos_ = NULL;
+  p.comment_begin_ = NULL;
+  p.comment_end_ = NULL;
+  p.placeholder_list_idx_ = 0;
+  p.has_last_insert_id_ = false;
+  p.has_found_rows_ = false;
+  p.has_row_count_ = false;
+  p.has_explain_ = false;
+  p.has_explain_route_ = false;
+  p.has_simple_route_info_ = false;
+  p.has_anonymous_block_ = false;
+  p.has_trace_log_hint_ = false;
+  p.has_connection_id_ = false;
+  p.has_sys_context_ = false;
+  p.stmt_type_ = OBPROXY_T_INVALID;
+  p.sub_stmt_type_ = OBPROXY_T_SUB_INVALID;
+  p.stmt_count_ = 0;
+  p.query_timeout_ = 0;
+  p.accept_pos_ = NULL;
+  p.col_name_.str_len_ = 0;
+  p.trace_id_.str_len_ = 0;
+  p.rpc_id_.str_len_ = 0;
+  p.target_db_server_.str_len_ = 0;
+  p.table_info_.database_name_.str_len_ = 0;
+  p.table_info_.package_name_.str_len_ = 0;
+  p.table_info_.table_name_.str_len_ = 0;
+  p.table_info_.alias_name_.str_len_ = 0;
+  p.table_info_.dblink_name_.str_len_ = 0;
 
-  parse_result.cmd_info_.sub_type_ = OBPROXY_T_SUB_INVALID;
-  parse_result.cmd_info_.err_type_ = OBPROXY_T_ERR_INVALID;
+  p.read_consistency_type_ = OBPROXY_READ_CONSISTENCY_INVALID;
+  p.cmd_info_.sub_type_ = OBPROXY_T_SUB_INVALID;
+  p.cmd_info_.err_type_ = OBPROXY_T_ERR_INVALID;
   for (int64_t i = 0; i < OBPROXY_ICMD_MAX_VALUE_COUNT; ++i) {
-    parse_result.cmd_info_.integer_[i] = -1;
+    p.cmd_info_.integer_[i] = -1;
+    p.cmd_info_.string_[i].str_len_ = 0;
   }
-  parse_result.has_simple_route_info_ = false;
-  parse_result.placeholder_list_idx_ = 0;
-  parse_result.text_ps_name_.str_len_ = 0;
+}
+inline void ObProxyParser::init_result_sharding(ObProxyParseResult &p)
+{
+  if (p.is_sharding_req_) {
+    p.dbmesh_route_info_.tb_idx_str_.str_len_ = 0;
+    p.dbmesh_route_info_.table_name_str_.str_len_ = 0;
+    p.dbmesh_route_info_.group_idx_str_.str_len_ = 0;
+    p.dbmesh_route_info_.es_idx_str_.str_len_ = 0;
+    p.dbmesh_route_info_.testload_str_.str_len_ = 0;
+    p.dbmesh_route_info_.disaster_status_str_.str_len_ = 0;
+    p.dbmesh_route_info_.tnt_id_str_.str_len_ = 0;
+    p.dbmesh_route_info_.head_ = NULL;
+    p.dbmesh_route_info_.tail_ = NULL;
+    p.dbmesh_route_info_.node_count_ = 0;
+    p.dbmesh_route_info_.index_count_ = 0;
+    p.dbp_route_info_.has_group_info_ = false;
+    p.dbp_route_info_.table_name_.str_len_ = 0;
+    p.dbp_route_info_.group_idx_str_.str_len_ = 0;
+    p.dbp_route_info_.scan_all_ = false;
+    p.dbp_route_info_.sticky_session_ = false;
+    p.dbp_route_info_.has_shard_key_ = false;
+    p.dbp_route_info_.shard_key_count_ = 0;
+    p.is_sharding_req_ = false;
+    p.has_shard_comment_ = false;
+  }
+}
 
-  parse_result.has_shard_comment_ = false;
-  parse_result.dbmesh_route_info_.group_idx_str_.str_len_ = 0;
-  parse_result.dbmesh_route_info_.tb_idx_str_.str_len_ = 0;
-  parse_result.dbmesh_route_info_.es_idx_str_.str_len_ = 0;
-  parse_result.dbmesh_route_info_.testload_str_.str_len_ = 0;
-  parse_result.dbmesh_route_info_.table_name_str_.str_len_ = 0;
-  parse_result.dbmesh_route_info_.disaster_status_str_.str_len_ = 0;
-  parse_result.dbmesh_route_info_.node_count_ = 0;
-  parse_result.dbmesh_route_info_.head_ = NULL;
-  parse_result.dbmesh_route_info_.tail_ = NULL;
-  parse_result.dbmesh_route_info_.index_count_ = 0;
+inline void ObProxyParser::init_result_ps(ObProxyParseResult &p)
+{
+  p.text_ps_parse_info_.node_count_ = 0;
+  p.text_ps_parse_info_.head_ = NULL;
+  p.text_ps_parse_info_.tail_ = NULL;
+  p.text_ps_name_.str_len_ = 0;
+  p.text_ps_inner_stmt_type_ = OBPROXY_T_INVALID;
+}
 
-  parse_result.set_parse_info_.node_count_ = 0;
-  parse_result.set_parse_info_.head_ = NULL;
-  parse_result.set_parse_info_.tail_ = NULL;
+inline void ObProxyParser::init_result_call(ObProxyParseResult &p)
+{
+  p.call_parse_info_.node_count_ = 0;
+  p.call_parse_info_.head_ = NULL;
+  p.call_parse_info_.tail_ = NULL;
+}
 
-  parse_result.comment_begin_ = NULL;
-  parse_result.comment_end_ = NULL;
+inline void ObProxyParser::init_result_route(ObProxyParseResult &p)
+{
+  p.simple_route_info_.table_name_.str_len_ = 0;
+  p.simple_route_info_.part_key_.str_len_ = 0;
+  p.part_name_.str_len_ = 0;
+}
+
+inline void ObProxyParser::init_result_set(ObProxyParseResult &p)
+{
+  p.set_parse_info_.node_count_ = 0;
+  p.set_parse_info_.head_ = NULL;
+  p.set_parse_info_.tail_ = NULL;
+  p.session_var_count_ = 0;
+}
+
+inline void ObProxyParser::init_result_others(ObProxyParseResult &p)
+{
+  p.is_binlog_related_ = false;
+  p.has_ever_set_anonymous_block_ = false;
+  p.is_table_lock_related_ = false;
+}
+inline int ObProxyParser::init_result(ObProxyParseResult &p, const char *start_pos)
+{
+  init_result_basic(p, start_pos);
+  init_result_call(p);
+  init_result_route(p);
+  init_result_ps(p);
+  init_result_set(p);
+  init_result_sharding(p);
+  init_result_others(p);
 
   return common::OB_SUCCESS;
 }

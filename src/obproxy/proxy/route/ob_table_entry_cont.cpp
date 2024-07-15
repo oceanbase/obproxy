@@ -27,6 +27,9 @@
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
 #include "prometheus/ob_route_prometheus.h"
 #include "proxy/route/ob_route_diagnosis.h"
+#include "obproxy/obutils/ob_async_common_task.h"
+#include "obproxy/utils/ob_proxy_utils.h"
+#include "obproxy/obutils/ob_hostname_ip_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -35,6 +38,7 @@ using namespace oceanbase::share::schema;
 using namespace oceanbase::obproxy;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::proxy;
+using namespace oceanbase::obproxy::net;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::prometheus;
 
@@ -44,6 +48,9 @@ namespace obproxy
 {
 namespace proxy
 {
+
+static const int HOSTNAME_REFRESH_COMPLETE_EVENT = ASYNC_PROCESS_DONE_EVENT;
+
 int64_t ObRouteResult::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
@@ -127,7 +134,10 @@ ObTableEntryCont::ObTableEntryCont()
     : ObAsyncCommonTask(NULL, "table_entry_build_task"), magic_(OB_TABLE_ENTRY_CONT_MAGIC_ALIVE),
       table_param_(),
       name_buf_(NULL), name_buf_len_(0), te_op_(LOOKUP_MIN_OP), state_(LOOKUP_TABLE_ENTRY_STATE),
-      newest_table_entry_(NULL), table_entry_(NULL), table_cache_(NULL), need_notify_(true), mysql_client_(NULL)
+      newest_table_entry_(NULL), table_entry_(NULL), table_cache_(NULL), mysql_client_(NULL), binlog_sql_(NULL),
+      request_param_(), need_notify_(true), need_prepare_binlog_entry_param_(true),
+      binlog_service_ip_(), binlog_service_hostname_ip_list_(), binlog_service_addr_list_(), used_hostname_ip_count_(0),
+      used_addr_count_(0)
 {
   SET_HANDLER(&ObTableEntryCont::main_handler);
 }
@@ -169,6 +179,12 @@ void ObTableEntryCont::kill_this()
     name_buf_ = NULL;
     name_buf_len_ = 0;
   }
+
+  if (OB_UNLIKELY(NULL != binlog_sql_)) {
+    op_fixed_mem_free(binlog_sql_, OB_SHORT_SQL_LENGTH);
+    binlog_sql_ = NULL;
+  }
+
   int ret = OB_SUCCESS;
   if (OB_FAIL(cancel_timeout_action())) {
     LOG_WDIAG("fail to cancel timeout action", K(ret));
@@ -234,6 +250,10 @@ const char *ObTableEntryCont::get_event_name(const int64_t event)
       name = "TABLE_ENTRY_NOTIFY_CALLER_EVENT";
       break;
     }
+    case HOSTNAME_REFRESH_COMPLETE_EVENT: {
+      name = "HOSTNAME_REFRESH_COMPLETE_EVENT";
+      break;
+    }
     default: {
       name = "unknown event name";
       break;
@@ -263,6 +283,9 @@ const char *ObTableEntryCont::get_state_name(const ObTableEntryLookupState state
       break;
     case LOOKUP_BINLOG_ENTRY_STATE:
       name = "LOOKUP_BINLOG_ENTRY_STATE";
+      break;
+    case LOOKUP_BINLOG_HOSTNAME_STATE:
+      name = "LOOKUP_BINLOG_HOSTNAME_STATE";
       break;
     default:
       name = "Unknown State";
@@ -319,7 +342,11 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
             LOG_EDIAG("fail to handle lookup remote done", K(ret));
           }
         }
-
+        if (OB_UNLIKELY(LOOKUP_RETRY_STATE == state_)) {
+          if (OB_FAIL(do_lookup_binlog_entry_remote(true))) {
+            LOG_WDIAG("fail to do lookup binlog service entry", K(ret));
+          }
+        }
         break;
       }
       case TABLE_ENTRY_CHAIN_NOTIFY_CALLER_EVENT: {
@@ -338,6 +365,26 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
       case TABLE_ENTRY_NOTIFY_CALLER_EVENT: {
         if (OB_FAIL(notify_caller())) {
           LOG_WDIAG("fail to notify caller", K(ret));
+        }
+        break;
+      }
+      case HOSTNAME_REFRESH_COMPLETE_EVENT: {
+        int64_t async_task_ret = *static_cast<int64_t*>(data);
+        bool need_use_next_hostname_ip = false;
+        bool refresh_succ = (OB_SUCCESS == async_task_ret);
+        LOG_DEBUG("get hostname refresh complete event", K(event), "state", get_state_name(state_), K(async_task_ret));
+        if (LOOKUP_BINLOG_HOSTNAME_STATE != state_) {
+          ret = OB_ERR_UNEXPECTED;
+          terminate_ = true;
+          LOG_WDIAG("unexpected state", K(event), K_(state), K(ret));
+        } else {
+          if (OB_FAIL(async_task_ret)) {
+            need_use_next_hostname_ip = true;
+            LOG_WDIAG("fail to hostname refresh, try next", K(event), K_(state), K(async_task_ret));
+          }
+          if (OB_FAIL(do_lookup_binlog_entry_remote(need_use_next_hostname_ip, refresh_succ))) {
+            LOG_WDIAG("fail to do lookup binlog service entry", K(ret));
+          }
         }
         break;
       }
@@ -417,7 +464,6 @@ inline int ObTableEntryCont::set_next_state()
   bool is_part_table_route_supported = table_param_.is_partition_table_route_supported_;
   switch (state_) {
     case LOOKUP_TABLE_ENTRY_STATE:
-    case LOOKUP_BINLOG_ENTRY_STATE:
       if (OB_ISNULL(newest_table_entry_)) {
         next_state = LOOKUP_DONE_STATE;
       } else if (newest_table_entry_->is_partition_table() && is_part_table_route_supported) {
@@ -426,7 +472,13 @@ inline int ObTableEntryCont::set_next_state()
         next_state = LOOKUP_DONE_STATE;
       }
       break;
-
+    case LOOKUP_BINLOG_ENTRY_STATE:
+      if (OB_ISNULL(newest_table_entry_)) {
+        next_state = LOOKUP_RETRY_STATE;
+      } else {
+        next_state = LOOKUP_DONE_STATE;
+      }
+      break;
     case LOOKUP_PART_INFO_STATE:
       if (OB_ISNULL(newest_table_entry_)) {
         next_state = LOOKUP_DONE_STATE;
@@ -557,7 +609,8 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
   }
   if (OB_SUCCESS == tmp_ret &&
       OB_SUCCESS == error_code && 
-      ObTableEntryLookupState::LOOKUP_DONE_STATE == state_) {
+      (ObTableEntryLookupState::LOOKUP_DONE_STATE == state_
+       || ObTableEntryLookupState::LOOKUP_RETRY_STATE == state_)) {
     if (!table_param_.name_.is_all_dummy_table()) {
       ROUTE_DIAGNOSIS(table_param_.route_diagnosis_,
                       FETCH_TABLE_RELATED_DATA,
@@ -693,6 +746,7 @@ inline int ObTableEntryCont::handle_lookup_remote()
       break;
 
     case LOOKUP_DONE_STATE:
+    case LOOKUP_RETRY_STATE:
       // do nothing here
       break;
 
@@ -709,7 +763,8 @@ inline int ObTableEntryCont::handle_lookup_remote()
     state_ = LOOKUP_DONE_STATE;
   }
 
-  if (LOOKUP_DONE_STATE == state_) {
+  if (LOOKUP_DONE_STATE == state_
+      || LOOKUP_RETRY_STATE == state_) {
     if (OB_ISNULL(newest_table_entry_)) {
       PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_REMOTE_FAIL);
       ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, TBALE_ENTRY, false, false);
@@ -951,47 +1006,17 @@ inline int ObTableEntryCont::handle_chain_notify_caller()
 inline int ObTableEntryCont::lookup_entry_remote()
 {
   int ret = OB_SUCCESS;
-  ObMysqlProxy *mysql_proxy = table_param_.mysql_proxy_;
-  char sql[OB_SHORT_SQL_LENGTH];
-  sql[0] = '\0';
-  if (table_param_.name_.table_name_ == OB_ALL_BINLOG_DUMMY_TNAME) {
-    if (OB_FAIL(ObRouteUtils::get_binlog_entry_sql(sql, OB_SHORT_SQL_LENGTH,
-          table_param_.name_.cluster_name_, table_param_.name_.tenant_name_))) {
-      LOG_WDIAG("fail to get binlog entry sql", K(ret));
-    } else {
-      state_ = LOOKUP_BINLOG_ENTRY_STATE;
-      ObMysqlRequestParam request_param(sql);
-      ObAddr addr;
-      if (OB_FAIL(addr.parse_from_cstring(binlog_service_ip_.ptr()))) {
-        LOG_WDIAG("parse from cstring failed", K_(binlog_service_ip), K(ret));
-      } else {
-        if (OB_ISNULL(mysql_client_)) {
-          mysql_client_ = op_alloc(ObMysqlClient);
-          if (OB_ISNULL(mysql_client_)) {
-            ret = OB_ALLOCATE_MEMORY_FAILED;
-            LOG_WDIAG("fail to allocate ObMysqlClient", K(ret));
-          } else if (OB_FAIL(mysql_client_->init_binlog_client(table_param_.name_.cluster_name_,
-                                                               table_param_.name_.tenant_name_))) {
-            LOG_WDIAG("fail to init binlog client", K_(table_param), K(ret));
-          }
-        }
 
-        if (OB_SUCC(ret)) {
-          request_param.set_target_addr(addr);
-          request_param.set_mysql_client(mysql_client_);
-          request_param.set_client_vc_type(ObMysqlRequestParam::CLIENT_VC_TYPE_BINLOG);
-          request_param.ob_client_flags_.client_flags_.OB_CLIENT_SKIP_AUTOCOMMIT = 1;
-          if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-            LOG_WDIAG("fail to aysnc read", K(sql), K(addr), K(ret));
-          }
-        }
-        if (OB_FAIL(ret) && NULL != mysql_client_) {
-          mysql_client_->kill_this();
-          mysql_client_ = NULL;
-        }
-      }
+  if (OB_UNLIKELY(table_param_.name_.table_name_ == OB_ALL_BINLOG_DUMMY_TNAME)) {
+    if (OB_FAIL(do_lookup_binlog_entry_remote(false))) {
+      LOG_WDIAG("fail to get binlog entry from remote", K(ret));
+    } else {
+      LOG_DEBUG("succ to get binlog entry or wait to hostname refresh and callback", K(ret));
     }
   } else {
+    ObMysqlProxy *mysql_proxy = table_param_.mysql_proxy_;
+    char sql[OB_SHORT_SQL_LENGTH];
+    sql[0] = '\0';
     if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, table_param_.name_,
                                                   table_param_.is_need_force_flush_, table_param_.cluster_version_))) {
       LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
@@ -1009,6 +1034,140 @@ inline int ObTableEntryCont::lookup_entry_remote()
       LOG_WDIAG("fail to schedule in", K(ret));
     }
   }
+  return ret;
+}
+
+int ObTableEntryCont::do_lookup_binlog_entry_remote(bool need_use_next_hostname_ip,
+                                                    bool hostname_refresh_succ /* false */)
+{
+  int ret = OB_SUCCESS;
+
+  ObMysqlProxy *mysql_proxy = table_param_.mysql_proxy_;
+  if (need_prepare_binlog_entry_param_) {
+    if (OB_FAIL(obproxy::split_string_by_char(binlog_service_ip_, binlog_service_hostname_ip_list_, ';'))) {
+      LOG_WDIAG("fail to split binlog_service_ip", K_(binlog_service_ip), K(ret));
+    } else if (OB_ISNULL(binlog_sql_ = static_cast<char *>(op_fixed_mem_alloc(OB_SHORT_SQL_LENGTH)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to alloc mem", K(ret));
+    } else if (OB_FAIL(ObRouteUtils::get_binlog_entry_sql(binlog_sql_, OB_SHORT_SQL_LENGTH,
+               table_param_.name_.cluster_name_, table_param_.name_.tenant_name_))) {
+      LOG_WDIAG("fail to get binlog entry sql", K(ret));
+    } else if (OB_ISNULL(mysql_client_)
+               && OB_ISNULL(mysql_client_ = op_alloc(ObMysqlClient))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to allocate ObMysqlClient", K(ret));
+    } else if (OB_FAIL(mysql_client_->init_binlog_client(table_param_.name_.cluster_name_,
+                                                         table_param_.name_.tenant_name_))) {
+      LOG_WDIAG("fail to init binlog client", K_(table_param), K(ret));  
+    }
+
+    request_param_.set_sql(binlog_sql_);
+    request_param_.set_mysql_client(mysql_client_);
+    request_param_.set_client_vc_type(ObMysqlRequestParam::CLIENT_VC_TYPE_BINLOG);
+    request_param_.ob_client_flags_.client_flags_.OB_CLIENT_SKIP_AUTOCOMMIT = 1;
+    need_prepare_binlog_entry_param_ = false;
+  }
+
+  ObAddr addr;
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (!binlog_service_addr_list_.empty()
+             && used_addr_count_ < binlog_service_addr_list_.count()) {
+    // cur hostname have multiple ip, use rest available one
+    addr = binlog_service_addr_list_.at(used_addr_count_);
+    used_addr_count_++;
+  } else do {
+    // need use new hostname or ip
+    binlog_service_addr_list_.reset();
+    used_addr_count_ = 0;
+    ObString single_binlog_service_ip;
+    ObString hostname;
+    ObSEArray<ObIpAddr, 2> ip_list;
+
+    if (need_use_next_hostname_ip) {
+      used_hostname_ip_count_++;
+    }
+
+    while (used_hostname_ip_count_ < binlog_service_hostname_ip_list_.count()
+           && binlog_service_hostname_ip_list_.at(used_hostname_ip_count_).empty()) {
+      used_hostname_ip_count_++;
+    }
+
+    if (OB_UNLIKELY(used_hostname_ip_count_ == binlog_service_hostname_ip_list_.count())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to find available hostname or ip", K_(binlog_service_ip), K_(used_hostname_ip_count), K(ret));
+    } else if (FALSE_IT(single_binlog_service_ip = binlog_service_hostname_ip_list_.at(used_hostname_ip_count_))) {
+      // impossible
+    } else if (OB_FAIL(addr.parse_from_obtring(single_binlog_service_ip))) {
+      LOG_DEBUG("parse from cstring failed, treat as hostname", K_(binlog_service_ip), K(ret));
+      if (OB_FAIL(ObAddr::parse_hostname_port_from_obtring(single_binlog_service_ip, hostname, addr.port_))) {
+        ret = OB_EAGAIN;
+        LOG_WDIAG("parse from cstring failed", K_(binlog_service_ip), K(hostname), K(ret));
+      } else if (OB_FAIL(get_binlog_service_hostname_ip_processor().sync_get_ip_by_hostname(hostname, ip_list))) {
+        LOG_DEBUG("fail to get binlog service ip sync, maybe need refresh", K(hostname), K(ret));
+        if (OB_UNLIKELY(hostname_refresh_succ)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("fail to async get hostname after refresh succ, cannot retry", K(hostname), K(ret));
+        } else if (OB_EAGAIN == ret) {
+          if (OB_NOT_NULL(pending_action_)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WDIAG("fail to do async task", K_(pending_action), K(ret));
+          } else if (OB_FAIL(get_binlog_service_hostname_ip_processor().async_refresh_ip_by_hostname(hostname, this, pending_action_))) {
+            LOG_WDIAG("fail to refresh hostname", K(ret));
+          } else {
+            ret = OB_NEED_WAIT;
+            state_ = LOOKUP_BINLOG_HOSTNAME_STATE;
+          }
+        } else {
+          LOG_WDIAG("fail to get binlog service ip", K(hostname), K(ret));
+        }
+      } else {
+        // get hostname ip from local directly
+        for (int64_t i = 0; OB_SUCC(ret) && i < ip_list.count(); ++i) {
+          addr.set_ip_from_ip_addr(ip_list.at(i));
+          LOG_DEBUG("succ to get ip from hostname", K(addr), K(i));
+          if (OB_FAIL(binlog_service_addr_list_.push_back(addr))) {
+            LOG_WDIAG("fail to push back binlog service addr", K(addr), K(ret));
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          addr = binlog_service_addr_list_.at(used_addr_count_);
+          used_addr_count_++;
+        }
+      }
+
+      if (OB_FAIL(ret)
+          && (OB_NEED_WAIT != ret)) {
+        ret = OB_EAGAIN;
+        need_use_next_hostname_ip = true;
+      }
+    } else {
+      // get ip from binlog_service_ip
+      // nothing
+    }
+  } while (OB_EAGAIN == ret);
+
+
+  if (OB_UNLIKELY(OB_NEED_WAIT == ret)) {
+    // nothing wait callback
+    ret = OB_SUCCESS;
+  } else if (addr.is_invalid()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to get valid binlog service addr", K(addr), K(ret));
+  } else if (OB_SUCC(ret)) {
+    state_ = LOOKUP_BINLOG_ENTRY_STATE;
+    request_param_.set_target_addr(addr);
+    if (OB_FAIL(mysql_proxy->async_read(this, request_param_, pending_action_))) {
+      LOG_WDIAG("fail to async read", K_(binlog_sql), K(addr), K(ret));
+    }
+    if (OB_FAIL(ret) && NULL != mysql_client_) {
+      mysql_client_->kill_this();
+      mysql_client_ = NULL;
+    }
+  }
+
   return ret;
 }
 

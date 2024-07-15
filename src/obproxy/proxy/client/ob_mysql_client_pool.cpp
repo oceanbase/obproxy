@@ -150,7 +150,7 @@ int ObMysqlClientDestroyCont::handle_destroy_mysql_client()
 
 int64_t ObMysqlClientPool::get_mysql_client_pool_count(const bool is_meta_mysql_client)
 {
-  return (is_meta_mysql_client ? OB_META_MYSQL_CLIENT_COUNT : OB_NORMAL_MYSQL_CLIENT_COUNT);
+  return (is_meta_mysql_client ? OB_META_MYSQL_CLIENT_COUNT : get_global_proxy_config().mysql_client_num);
 }
 
 int ObMysqlClientPool::init(

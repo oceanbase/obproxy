@@ -131,6 +131,21 @@ typedef enum ObProxyBasicStmtType
 
   // binglog related
   OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT,
+  OBPROXY_T_SHOW_SLAVE_HOSTS,
+  OBPROXY_T_SHOW_SLAVE_STATUS,
+  OBPROXY_T_SHOW_RELAYLOG_EVENTS,
+  OBPROXY_T_BINLOG_STR,
+  //PRC static in monitor log
+  OBRPC_INVALID, //default value
+  OBRPC_OBKV_TABLE_API_LOGIN,         //4353
+  OBRPC_OBKV_TABLE_API_EXECUTE,       //4354
+  OBRPC_OBKV_TABLE_API_BATCH_EXECUTE, //4355
+  OBRPC_OBKV_TABLE_API_EXECUTE_QUERY, //4356
+  OBRPC_OBKV_TABLE_API_QUERY_AND_MUTATE,  //4357
+  OBRPC_OBKV_TABLE_API_EXECUTE_QUERY_SYNC,//4358
+  OBRPC_OBKV_TABLE_API_DIRECT_LOAD,   //4387
+  OBRPC_OBKV_TABLE_API_MOVE,          //4388
+  OBRPC_OBKV_TABLE_API_LS_EXECUTE,    //4389
 
   OBPROXY_T_MAX
 } ObProxyBasicStmtType;
@@ -185,6 +200,7 @@ typedef enum ObProxyBasicStmtSubType
   OBPROXY_T_SUB_CONFIG_INT_VAULE,
   OBPROXY_T_SUB_CONFIG_DIFF,
   OBPROXY_T_SUB_CONFIG_DIFF_USER,
+  OBPROXY_T_SUB_CONFIG_ALL,
 
   //kill
   OBPROXY_T_SUB_KILL_CS,
@@ -197,6 +213,7 @@ typedef enum ObProxyBasicStmtSubType
   //route
   OBPROXY_T_SUB_ROUTE_PARTITION,
   OBPROXY_T_SUB_ROUTE_ROUTINE,
+  OBPROXY_T_SUB_ROUTE_GLOBALINDEX,
 
   //show
   OBPROXY_T_SUB_SHOW_DATABASES,
@@ -472,6 +489,9 @@ typedef struct _ObProxyParseResult
   ObDbMeshRouteInfo dbmesh_route_info_;
   ObDbpRouteInfo dbp_route_info_;
   bool is_binlog_related_;
+  bool has_ever_set_anonymous_block_;
+  bool is_table_lock_related_;
+  bool is_sharding_req_;
 } ObProxyParseResult;
 
 #ifdef __cplusplus

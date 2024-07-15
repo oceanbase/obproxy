@@ -949,37 +949,36 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
     sm_->server_entry_->in_tunnel_ = true;
     response_transform_info_.entry_->in_tunnel_ = true;
 
-    ObMysqlResp *server_response = &sm_->trans_state_.trans_info_.server_response_;
-    ObIMysqlRespAnalyzer *analyzer = NULL;
     ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
     ObMysqlServerSession *server_session = sm_->get_server_session();
+
+    ObRespAnalyzer *resp_analyzer = &sm_->resp_analyzer_;
     if (ObProxyProtocol::PROTOCOL_CHECKSUM == ob_proxy_protocol
         || ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
       const uint8_t req_seq = sm_->get_compressed_or_ob20_request_seq();
       const obmysql::ObMySQLCmd cmd = sm_->get_request_cmd();
-      ObMysqlCompressAnalyzer *compress_analyzer = &sm_->get_compress_analyzer();
       const ObMysqlProtocolMode mysql_mode = sm_->get_client_session()->get_session_info().is_oracle_mode() ?
                                               OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
-      compress_analyzer->reset();
+      const bool enable_transmission_checksum = sm_->get_client_session()->get_session_info().get_enable_transmission_checksum();
       const bool enable_extra_ok_packet_for_stats = sm_->is_extra_ok_packet_for_stats_enabled();
-      const bool is_analyze_compressed_ob20 =
-        server_session->get_session_info().is_server_ob20_compress_supported() && sm_->compression_algorithm_.level_ != 0;
-      if (OB_FAIL(compress_analyzer->init(req_seq, ObMysqlCompressAnalyzer::SIMPLE_MODE,
-                                          cmd, mysql_mode, enable_extra_ok_packet_for_stats, req_seq,
-                                          server_session->get_server_request_id(),
-                                          server_session->get_server_sessid(),
-                                          is_analyze_compressed_ob20))) {
-        LOG_WDIAG("fail to init compress analyzer", K(req_seq), K(cmd),
-                 K(enable_extra_ok_packet_for_stats), K(ret));
+      const bool is_analyze_compressed_ob20 = server_session->get_session_info().is_server_ob20_compress_supported()
+                                              && sm_->compression_algorithm_.level_ != 0;
+      if (OB_FAIL(resp_analyzer->init(ob_proxy_protocol, cmd, mysql_mode, ObRespAnalyzeMode::SIMPLE_MODE,
+                                      enable_extra_ok_packet_for_stats, is_analyze_compressed_ob20,
+                                      req_seq, req_seq, server_session->get_server_request_id(),
+                                      server_session->get_server_sessid(),
+                                      enable_transmission_checksum))) {
+        LOG_WDIAG("fail to init resp analyzer for tunnel", K(ret));
       }
-      analyzer = compress_analyzer;
     } else {
-      //sm_->analyzer_.reset();
-      analyzer = &sm_->analyzer_;
+      // resp_analyzer has been inited in handle_first_normal_response_packet() and analyze_response() be called
+      // analyze_response() will changes mysql packets related data in resp_analyzer
+      // so, to reset the changed mysql related data to analyze response again in the tunnel
+      resp_analyzer->reset_for_mysql_tunnel();
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, analyzer, server_response))) {
+      if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, resp_analyzer, &sm_->trans_state_.trans_info_.resp_result_))) {
         LOG_WDIAG("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
       } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
         LOG_WDIAG("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
@@ -1042,21 +1041,16 @@ int ObMysqlSMApi::setup_transfer_from_transform()
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
       } else {
-        ObIMysqlRespAnalyzer *analyzer = NULL;
-        if (ObProxyProtocol::PROTOCOL_OB20 == sm_->get_client_session_protocol()) {
-          analyzer = &sm_->compress_ob20_analyzer_;
-          LOG_DEBUG("set res packet analyzer is ob20");
-        } else {
-          analyzer = &sm_->analyzer_;
-          LOG_DEBUG("set res packet analyzer is normal");
-        }
-
         response_transform_info_.entry_->in_tunnel_ = true;
         sm_->client_entry_->in_tunnel_ = true;
         if (OB_FAIL(setup_plugin_clients(*p))) {
           LOG_WDIAG("failed to setup_plugin_clients", K(p), K_(sm_->sm_id), K(ret));
-        } else if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, analyzer, NULL))) {
-          LOG_WDIAG("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
+        // plugin have decompressed oceanbase/compressed packet to mysql packets
+        // and plugin use resp analyzer to analyze mysql packets
+        // it's no need to analyze mysql packets again
+        // so pass NULL to param`analyzer` and just let consumer to consume all
+        } else if (OB_FAIL(p->set_response_packet_analyzer(0, MYSQL_RESPONSE, NULL, NULL))) {
+          LOG_WDIAG("failed to set_response_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
         } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
           LOG_WDIAG("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
         }

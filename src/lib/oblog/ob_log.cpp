@@ -1530,28 +1530,31 @@ void ObLogger::do_async_flush_log()
       process_items[process_item_cnt++] = reinterpret_cast<ObLogItem *>(item);
       if (OB_NOT_NULL(item)) {
         ObLogItem *log_item = reinterpret_cast<ObLogItem *>(item);
-        if (LOG_ITEM_FOR_WARN_ERROR == log_item->get_item_type()) {
-          left_syslog_io_bandwidth_ -= log_item->get_data_len();
-        } else if (left_syslog_io_bandwidth_ <= 0) {
+        left_syslog_io_bandwidth_ -= log_item->get_data_len();
+        if (LOG_ITEM_FOR_WARN_ERROR == log_item->get_item_type() || left_syslog_io_bandwidth_ > 0) {
+          item_cnt++;
+        } else {
           process_item_cnt--;
+          push_to_free_queue(log_item);
         }
       }
       item = NULL;
-      item_cnt++;
 
       if ((item_cnt += async_log_queue_->size()) > GROUP_COMMIT_MAX_ITEM_COUNT) {
         item_cnt = GROUP_COMMIT_MAX_ITEM_COUNT;
       }
 
-      for (int i = 1; OB_SUCC(ret) && left_syslog_io_bandwidth_ > 0 && i < item_cnt; i++) {
+      for (int i = 1; OB_SUCC(ret) && i < item_cnt; i++) {
         if (OB_SUCC(async_log_queue_->pop(item)) && OB_NOT_NULL(item)) {
           process_items[process_item_cnt++] = reinterpret_cast<ObLogItem *>(item);
           if (OB_NOT_NULL(item)) {
             ObLogItem *log_item = reinterpret_cast<ObLogItem *>(item);
-            if (LOG_ITEM_FOR_WARN_ERROR == log_item->get_item_type()) {
-              left_syslog_io_bandwidth_ -= log_item->get_data_len();
-            } else if (left_syslog_io_bandwidth_ <= 0) {
+            left_syslog_io_bandwidth_ -= log_item->get_data_len();
+            if (LOG_ITEM_FOR_WARN_ERROR == log_item->get_item_type() || left_syslog_io_bandwidth_ > 0) {
+              // nothing
+            } else {
               process_item_cnt--;
+              push_to_free_queue(log_item);
             }
           }
           item = NULL;
@@ -1561,7 +1564,10 @@ void ObLogger::do_async_flush_log()
       do_async_flush_to_file(process_items, process_item_cnt);
 
       async_flush_log_count += process_item_cnt;
-      if (process_items[process_item_cnt - 1]->get_timestamp() > (last_async_flush_ts + FLUSH_SAMPLE_TIME)) {
+      if (OB_UNLIKELY(process_item_cnt <= 0
+                      || process_item_cnt > GROUP_COMMIT_MAX_ITEM_COUNT)) {
+        // nothing
+      } else if (process_items[process_item_cnt - 1]->get_timestamp() > (last_async_flush_ts + FLUSH_SAMPLE_TIME)) {
         if (curr_ts != last_async_flush_ts) {
           last_async_flush_count_per_sec_ = static_cast<int64_t>((double)(async_flush_log_count * 1000000) / (double)(curr_ts - last_async_flush_ts));
           last_async_flush_ts = curr_ts;

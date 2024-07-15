@@ -41,6 +41,7 @@
 #include "proxy/route/ob_routine_cache.h"
 #include "proxy/route/ob_sql_table_cache.h"
 #include "prometheus/ob_prometheus_processor.h"
+#include "proxy/rpc_optimize/rpclib/ob_rpc_cache_cleaner.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::obutils;
@@ -337,14 +338,12 @@ int ObNetAccept::fetch_vip_tenant(ObUnixNetVConnection* vc, ObVipTenant& vip_ten
       vip_tenant.vip_addr_, "", "", "proxy_tenant_name", tenant_item, "LEVEL_VIP", found))) {
       PROXY_NET_LOG(WDIAG, "get proxy tenant name config failed", K(vip_tenant.vip_addr_), K(ret));
     }
-
     if (OB_SUCC(ret) && found) {
       if (OB_FAIL(get_global_config_processor().get_proxy_config_with_level(
         vip_tenant.vip_addr_, "", "", "rootservice_cluster_name", cluster_item, "LEVEL_VIP", found))) {
         PROXY_NET_LOG(WDIAG, "get cluster name config failed", K(vip_tenant.vip_addr_), K(ret));
       }
     }
-
     if (OB_SUCC(ret) && found) {
       if (OB_FAIL(vip_tenant.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
         PROXY_CS_LOG(WDIAG, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
@@ -611,6 +610,8 @@ int ObNetAccept::create_one_net_ethread(ObEThread*& target_ethread)
       PROXY_NET_LOG(EDIAG, "fail to init random seed for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(ObCacheCleaner::schedule_one_cache_cleaner(net_thread_count - 1))) {
       PROXY_NET_LOG(EDIAG, "fail to init cleaner cache for thread", K(net_thread_count), K(ret));
+    } else if (get_global_proxy_config().enable_obproxy_rpc_service && OB_FAIL(ObRpcCacheCleaner::schedule_one_cache_cleaner(net_thread_count - 1))) {
+      PROXY_NET_LOG(EDIAG, "fail to init rpc cleaner cache for thread", K(net_thread_count), K(ret));
     } else if (OB_FAIL(g_ob_prometheus_processor.start_one_prometheus(net_thread_count - 1))) {
       PROXY_NET_LOG(EDIAG, "fail to start one prometheus", K(net_thread_count), K(ret));
     } else {

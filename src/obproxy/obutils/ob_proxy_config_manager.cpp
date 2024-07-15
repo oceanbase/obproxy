@@ -163,8 +163,8 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
       LOG_WDIAG("fail to fill proxy config", K(ret));
     } else if (OB_FAIL(proxy_config_.check_proxy_serviceable())) {
       LOG_WDIAG("fail to check proxy string_item config", K(ret));
-    } else if (OB_FAIL(proxy_config_.dump_config_to_local())) {
-      LOG_WDIAG("fail to dump config to local", K(ret));
+    } else if (OB_FAIL(proxy_config_.dump_config_to_sqlite())) {
+      LOG_WDIAG("fail to dump config to local sqlite", K(ret));
     } else {
       has_dump_config = true;
       LOG_DEBUG("succ to dump config to local");
@@ -200,10 +200,10 @@ int ObProxyConfigManager::update_local_config(const int64_t new_config_version,
       } else {
         LOG_DEBUG("succ to reload old config");
       }
-      if(OB_UNLIKELY(OB_SUCCESS != (tmp_ret = proxy_config_.dump_config_to_local()))) {
-        LOG_WDIAG("fail to dump old config to local", K(tmp_ret));
+      if(OB_UNLIKELY(OB_SUCCESS != (tmp_ret = proxy_config_.dump_config_to_sqlite()))) {
+        LOG_WDIAG("fail to dump old config to local sqlite", K(tmp_ret));
       } else {
-        LOG_DEBUG("succ to dump old config to local");
+        LOG_DEBUG("succ to dump old config to local sqlite");
       }
     }
 

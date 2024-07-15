@@ -196,6 +196,7 @@ int ObLogFileProcessor::cleanup_log_file()
   const char *layout_log_dir = NULL;
   DIR *log_dir = NULL;
   bool enable_syslog_file_compress = get_global_proxy_config().enable_syslog_file_compress;
+  LOG_INFO("start clean up log file");
 
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;

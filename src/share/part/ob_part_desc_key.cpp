@@ -13,6 +13,7 @@
 #include "common/ob_obj_cast.h"
 #include "share/part/ob_part_desc_key.h"
 #include "obproxy/proxy/route/obproxy_expr_calculator.h"
+#include "obutils/ob_proxy_config.h"
 
 
 namespace oceanbase
@@ -153,7 +154,121 @@ int ObPartDescKey::calc_key_part_idx(const uint64_t val,
   return ret;
 }
 
-int ObPartDescKey::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids)
+int ObPartDescKey::get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
+                                            ObIArray<int64_t> &tablet_ids,
+                                            ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+
+  for(int64_t part_idx = 0; part_idx < part_num_; ++part_idx) {
+    if (OB_FAIL(get_part_by_num(part_idx, part_ids, tablet_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_part_by_num", K(ret));
+    } else if (OB_FAIL(get_ls_id_by_num(part_idx, ls_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_part_by_num", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    COMMON_LOG(DEBUG, "obkv get all hash part ids", K(part_ids));
+  }
+
+  return ret;
+}
+
+int ObPartDescKey::get_part_for_obkv(ObNewRange &range,
+                                     ObIAllocator &allocator,
+                                     ObIArray<int64_t> &part_ids,
+                                     ObPartDescCtx &ctx,
+                                     ObIArray<int64_t> &tablet_ids,
+                                     ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+  UNUSED(allocator);
+
+  if (range.is_whole_range() || ctx.calc_first_partition() || ctx.calc_last_partition() || ctx.need_get_whole_range()) {
+    if (obproxy::obutils::get_global_proxy_config().rpc_support_key_partition_shard_request) {
+      if (OB_FAIL(get_all_part_id_for_obkv(part_ids, tablet_ids, ls_ids))) {
+        COMMON_LOG(WDIAG, "fail to call get_all_part_id_for_obkv", K(ret));
+      }
+    } else {
+      ret = OB_NOT_SUPPORTED;
+      COMMON_LOG(WDIAG, "key partition shard request not support");
+    }
+  } else {
+    // provide all objs are valid. 
+    // "valid" means the obj not min or max
+    int64_t valid_obj_cnt = range.start_key_.get_obj_cnt();
+    bool is_obj_equal = true;
+    // cast objs store in range.start_key_
+    for (int64_t i = 0; OB_SUCC(ret) && i < range.start_key_.get_obj_cnt(); i++) {
+      // if obj is min or max, means all valid obj has been casted
+      if (range.start_key_.get_obj_ptr()[i].is_max_value() || 
+          range.start_key_.get_obj_ptr()[i].is_min_value()) {
+        if ((range.start_key_.get_obj_ptr()[i].is_max_value() && range.end_key_.get_obj_ptr()[i].is_max_value())
+          || (range.start_key_.get_obj_ptr()[i].is_min_value() && range.end_key_.get_obj_ptr()[i].is_min_value())) {
+          COMMON_LOG(WDIAG, "unable to calculate max/min objest part id");
+          ret = OB_ERR_UNEXPECTED;
+        } else {
+          is_obj_equal = false;
+          COMMON_LOG(DEBUG, "start obj is not equal to end obj");
+          break;
+        }
+      } else {
+        ObObj *src_obj = const_cast<ObObj*>(&range.start_key_.get_obj_ptr()[i]);
+        ObObj &end_obj = const_cast<ObObj &>(range.end_key_.get_obj_ptr()[i]);
+
+        // here src_obj shouldn't be null
+        if (OB_ISNULL(src_obj)) {
+          ret = OB_ERR_NULL_VALUE;
+          COMMON_LOG(EDIAG, "unexpected null pointer src_obj");
+          break;
+        } else if (!src_obj->is_equal(end_obj, src_obj->get_collation_type())) {
+          is_obj_equal = false;
+          COMMON_LOG(DEBUG, "start obj is not equal to end obj", "start obj", *src_obj, K(end_obj), "position", i);
+          break;
+        } else if(OB_FAIL(cast_obj_for_obkv(*src_obj, obj_types_[i], cs_types_[i], allocator, ctx, accuracies_.at(i)))) {
+          COMMON_LOG(WDIAG, "cast obj failed", K(src_obj), "obj_type", obj_types_[i], "cs_type", cs_types_[i]);
+          // TODO: handle failure
+        }
+      }
+    }
+
+    int64_t part_idx = -1;
+    if (OB_SUCC(ret)) {
+      if (!is_obj_equal) {
+        if (obproxy::obutils::get_global_proxy_config().rpc_support_key_partition_shard_request) {
+          if (OB_FAIL(get_all_part_id_for_obkv(part_ids, tablet_ids, ls_ids))) {
+            COMMON_LOG(WDIAG, "fail to call get_all_part_id_for_obkv", K(ret));
+          }
+        } else {
+          ret = OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST;
+          COMMON_LOG(WDIAG, "start key must equal to end key");
+        }
+      } else {
+        // hash val
+        int64_t result = 0;
+        int64_t part_id = -1;
+        if (OB_FAIL(calc_value_for_mysql(range.start_key_.get_obj_ptr(), valid_obj_cnt, result, ctx))) {
+          COMMON_LOG(WDIAG, "fail to cal key val", K(ret), K(valid_obj_cnt));
+        } else if (OB_FAIL(calc_key_part_idx(result, part_num_, part_idx))) {
+          COMMON_LOG(WDIAG, "fail to cal key part idx", K(ret), K(result), K(part_num_));
+        } else if (OB_FAIL(get_part_hash_idx(part_idx, part_id))) {
+          COMMON_LOG(WDIAG, "fail to get part key id", K(part_idx), K(ret));
+        } else if (OB_FAIL(part_ids.push_back(part_id))) {
+          COMMON_LOG(WDIAG, "fail to push part_id", K(ret));
+        } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+          COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
+        } else if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[part_idx]))) {
+          COMMON_LOG(WDIAG, "fail to push ls id", K(ret));
+        } 
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObPartDescKey::get_part_by_num(const int64_t num, ObIArray<int64_t> &part_ids, ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   int64_t part_id = -1;
@@ -164,6 +279,16 @@ int ObPartDescKey::get_part_by_num(const int64_t num, common::ObIArray<int64_t> 
     COMMON_LOG(DEBUG, "fail to push part_id", K(ret));
   } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
     COMMON_LOG(DEBUG, "fail to push tablet id", K(ret));
+  }
+  return ret;
+}
+
+int ObPartDescKey::get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+  int64_t part_idx = num % part_num_;
+  if (ls_id_array_ != NULL && OB_FAIL(ls_ids.push_back(ls_id_array_[part_idx]))) {
+    COMMON_LOG(DEBUG, "fail to push ls id", K(ret));
   }
   return ret;
 }

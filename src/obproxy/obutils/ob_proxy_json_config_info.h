@@ -50,6 +50,7 @@ public:
   virtual bool is_valid() const = 0;
   virtual int parse(const json::Value *value) = 0;
   friend class ObProxyLdgInfo;
+  friend class ObServiceNameInstance;
 protected:
   static const int64_t OB_PROXY_MAX_CONFIG_STRING_LENGTH = 512;
   static const int64_t OB_PROXY_MAX_PASSWORD_LENGTH = 64;
@@ -642,6 +643,7 @@ public:
   // for new ocp protocol v2
   ObProxyConfigString root_service_url_template_;
   ObProxyConfigString root_service_url_template_v2_;
+  ObProxyConfigString get_service_name_tenant_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyDataInfo);
@@ -795,6 +797,7 @@ public:
   int reset_create_failure_count(const common::ObString &cluster_name, const int64_t cluster_id);
 
   bool cluster_info_empty() const { return 0 == data_info_.cluster_array_.count(); }
+  void set_tenant_info_url(const ObProxyConfigString &url) { data_info_.get_service_name_tenant_ = url; }
   DECLARE_TO_STRING;
 
 public:
@@ -929,6 +932,126 @@ private:
   ObProxyConfigString version_;
   LdgInstanceMap ldg_instance_map_;
   DISALLOW_COPY_AND_ASSIGN(ObProxyLdgInfo);
+};
+
+class ObServiceNameInstance: public common::ObSharedRefCount
+{
+public: 
+  enum ObSerViceNameRefreshState
+  {
+    AVAIL = 0,
+    UPDATING,
+    DIRTY,
+  };
+  ObServiceNameInstance()
+    : service_name_{}, version_md5_{}, primary_index_(0), fail_cnt_(0),
+      hash_key_(), instance_array_(), refresh_role_state_(AVAIL), has_get_cluster_resource_(false)
+  {
+    inc_ref();
+  }
+  virtual ~ObServiceNameInstance() {}
+  virtual void free() override;
+  // ServiceNameVersionPair: <service_name, version_md5>
+  typedef std::pair<ObProxyConfigString, ObProxyConfigString> ServiceNameVersionPair;
+  int parse(const json::Value *value,
+            const ObIArray<ServiceNameVersionPair> &service_name_version_array, 
+            const int64_t start_index, const int64_t end_index,
+            bool &need_update, const bool parse_local = false);
+  int parse_tenant_info(const json::Value *value);
+  bool is_version_diff(const ObString &md5,
+                       const ObIArray<ServiceNameVersionPair> &service_name_version_array,
+                       const int64_t start_index, const int64_t end_index) const;
+  bool cas_compare_and_swap_refresh_state(const ObSerViceNameRefreshState old_state,
+                                          const ObSerViceNameRefreshState new_state)
+  {
+    return ATOMIC_BCAS(&refresh_role_state_, old_state, new_state);
+  }
+  bool cas_set_update_state();
+  bool cas_set_update_to_avail_state();
+  bool cas_set_dirty_to_avail_state();
+  bool cas_set_dirty_state();
+  bool cas_set_has_get_cr() { return ATOMIC_BCAS(&has_get_cluster_resource_, false, true); }
+  bool cas_set_not_get_cr() { return ATOMIC_BCAS(&has_get_cluster_resource_, true, false); }
+  bool is_dirty_state() const { return DIRTY == refresh_role_state_;}
+  bool is_avail_state() const { return AVAIL == refresh_role_state_;}
+  int service_name_instance_to_json(char *buf, const int64_t buf_len, int64_t &pos);
+  ObString& get_hash_key()
+  {
+    hash_key_.assign_ptr(service_name_, static_cast<int32_t>(strlen(service_name_)));
+    return hash_key_;
+  }
+public:
+  char service_name_[OB_MAX_SERVICE_NAME_LENGTH + 1];
+  char version_md5_[ObProxyBaseInfo::OB_PROXY_MAX_VERSION_LENGTH + 1];
+  // 重试刷新身份时，设置主租户
+  int64_t primary_index_;
+  int64_t fail_cnt_;
+  ObString hash_key_;
+  // 解析ocp的主租户，默认使用第一个主租户
+  ObSEArray<ObProxyObInstance*, 10> instance_array_;
+  ObSerViceNameRefreshState refresh_role_state_;
+  bool has_get_cluster_resource_;
+  LINK(ObServiceNameInstance, service_name_instance_link_);
+  DECLARE_TO_STRING;
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObServiceNameInstance);
+};
+
+inline bool ObServiceNameInstance::cas_set_update_state()
+{
+  return cas_compare_and_swap_refresh_state(AVAIL, UPDATING);
+}
+
+inline bool ObServiceNameInstance::cas_set_update_to_avail_state()
+{
+  return cas_compare_and_swap_refresh_state(UPDATING, AVAIL);
+}
+
+inline bool ObServiceNameInstance::cas_set_dirty_to_avail_state()
+{
+  return cas_compare_and_swap_refresh_state(DIRTY, AVAIL);
+}
+
+inline bool ObServiceNameInstance::cas_set_dirty_state()
+{
+  return cas_compare_and_swap_refresh_state(UPDATING, DIRTY);
+}
+
+class ObServiceNameInfo
+{
+public:
+  ObServiceNameInfo(const bool force_update = false): service_name_instance_map_(), force_update_(force_update) {}
+
+  virtual ~ObServiceNameInfo();
+  struct ObServiceNameInstanceHashing
+  {
+    typedef const common::ObString &Key;
+    typedef ObServiceNameInstance Value;
+    typedef ObDLList(ObServiceNameInstance, service_name_instance_link_) ListHead;
+    static uint64_t hash(Key key) { return key.hash(); }
+    static Key key(Value *value) { return value->get_hash_key(); }
+    static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
+  };
+  typedef ObServiceNameInstance::ServiceNameVersionPair ServiceNameVersionPair;
+  typedef common::hash::ObBuildInHashMap<ObServiceNameInstanceHashing, 32> ServiceNameMap;
+  int parse_local_service_name_info(const json::Value *root);
+  int parse(const json::Value *json_value,
+            const ObIArray<ServiceNameVersionPair> &service_name_version_array, 
+            const int64_t start_index, const int64_t end_index,
+            ObIArray<ObProxyConfigString> &delete_service_name_array);
+  int update(ServiceNameMap &service_name_map);
+  int delete_service_name(const ObIArray<ObProxyConfigString> &delete_service_name_array);
+  ServiceNameMap &get_service_name_instance_map() {return service_name_instance_map_;}
+  // 获取对应service name instance，引用计数会+1
+  int get_service_name_instance(const ObString &service_name, ObServiceNameInstance* &instance);
+  int get_file_max_size(int64_t &buf_size);
+  int info_to_json(char *buf, const int64_t buf_len, int64_t &data_len);
+  int64_t to_string(char* buf, const int64_t buf_len);
+private:
+  // tenant_info_url_ = 域名+odp集群名，集群名长度一般不超过30
+  ServiceNameMap service_name_instance_map_;
+  bool force_update_;
+  DISALLOW_COPY_AND_ASSIGN(ObServiceNameInfo);
 };
 
 class ObProxyJsonUtils

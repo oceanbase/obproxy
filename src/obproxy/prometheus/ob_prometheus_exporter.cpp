@@ -127,8 +127,9 @@ int ObProxyPrometheusExporter::handle_histogram(void *metric, const double sum,
 {
   int ret = OB_SUCCESS;
 
+  UNUSED(bucket_counts);
   Histogram* histogram = static_cast<Histogram*>(metric);
-  histogram->ObserveMultiple(bucket_counts, sum);
+  histogram->Observe(sum);
 
   return ret;
 }

@@ -1292,6 +1292,26 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_CLUSTER_NOT_EXIST] = "HY000";
     STR_ERROR[-OB_CLUSTER_NOT_EXIST] = "cluster not exist";
     STR_USER_ERROR[-OB_CLUSTER_NOT_EXIST] = "cluster \'%s\' not exist";
+    MYSQL_ERRNO[-OB_LS_NOT_EXIST] = -1;
+    SQLSTATE[-OB_LS_NOT_EXIST] = "HY000";
+    STR_ERROR[-OB_LS_NOT_EXIST] = "log stream does not exist";
+    STR_USER_ERROR[-OB_LS_NOT_EXIST] = "log stream does not exist";
+    MYSQL_ERRNO[-OB_TABLET_EXIST] = -1;
+    SQLSTATE[-OB_TABLET_EXIST] = "HY000";
+    STR_ERROR[-OB_TABLET_EXIST] = "tablet does not exist";
+    STR_USER_ERROR[-OB_TABLET_EXIST] = "tablet does not exist";
+    MYSQL_ERRNO[-OB_TABLET_NOT_EXIST] = -1;
+    SQLSTATE[-OB_TABLET_NOT_EXIST] = "HY000";
+    STR_ERROR[-OB_TABLET_NOT_EXIST] = "unexpected tablet existence";
+    STR_USER_ERROR[-OB_TABLET_NOT_EXIST] = "unexpected tablet existence";
+    MYSQL_ERRNO[-OB_SERVICE_NAME_NOT_FOUND] = -1;
+    SQLSTATE[-OB_SERVICE_NAME_NOT_FOUND] = "HY000";
+    STR_ERROR[-OB_SERVICE_NAME_NOT_FOUND] = "service name not exist";
+    STR_USER_ERROR[-OB_SERVICE_NAME_NOT_FOUND] = "service name not exist";
+    MYSQL_ERRNO[-OB_NOT_PRIMARY_TENANT] = -1;
+    SQLSTATE[-OB_NOT_PRIMARY_TENANT] = "HY000";
+    STR_ERROR[-OB_NOT_PRIMARY_TENANT] = "tenant isn't primary tenant";
+    STR_USER_ERROR[-OB_NOT_PRIMARY_TENANT] = "tenant isn't primary tenant";
     MYSQL_ERRNO[-OB_ERR_PARSER_INIT] = ER_PARSE_ERROR;
     SQLSTATE[-OB_ERR_PARSER_INIT] = "0B000";
     STR_ERROR[-OB_ERR_PARSER_INIT] = "Failed to init SQL parser";
@@ -2998,6 +3018,10 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_PROXY_INVALID_COORDINATOR] = "HY000";
     STR_ERROR[-OB_PROXY_PROXY_ID_OVER_LIMIT] = "When reset client_session_id_version to v1, proxy_id must be set to less than 255";
     STR_USER_ERROR[-OB_PROXY_PROXY_ID_OVER_LIMIT] = "When reset client_session_id_version to v1, proxy_id must be set to less than 255";
+    MYSQL_ERRNO[-OB_LOCK_SESSION_CLOSED_ERROR] = -1;
+    SQLSTATE[-OB_LOCK_SESSION_CLOSED_ERROR] = "HY000";
+    STR_ERROR[-OB_LOCK_SESSION_CLOSED_ERROR] = "A server session with table lock closed";
+    STR_USER_ERROR[-OB_LOCK_SESSION_CLOSED_ERROR] = "A server session with table lock closed";
     // obproxy related error code
     MYSQL_ERRNO[-OB_PROXY_FETCH_RSLIST_FAIL] = -1;
     SQLSTATE[-OB_PROXY_FETCH_RSLIST_FAIL] = "HY000";
@@ -3021,6 +3045,10 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_PROXY_SHARD_INVALID_CONFIG] = "HY000";
     STR_ERROR[-OB_PROXY_SHARD_INVALID_CONFIG] = "ObProxy shard config is invalid";
     STR_USER_ERROR[-OB_PROXY_SHARD_INVALID_CONFIG] = "ObProxy shard config is invalid";
+    MYSQL_ERRNO[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = -1;
+    SQLSTATE[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = "HY000";
+    STR_ERROR[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = "ObProxy shard txn server session is close";
+    STR_USER_ERROR[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = "ObProxy shard txn server session is close";
 
     // kv related error code
 

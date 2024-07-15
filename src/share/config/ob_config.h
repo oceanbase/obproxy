@@ -21,7 +21,7 @@ namespace oceanbase
 {
 namespace common
 {
-
+class ObVariableLenConfigItem;
 struct ObCfgItemExtraInfo
 {
   enum InfoType {
@@ -29,6 +29,7 @@ struct ObCfgItemExtraInfo
     SECTION,
     VISIBLE_LEVEL,
     NEED_REBOOT,
+    CONFIG_LEVEL,
   };
   ObCfgItemExtraInfo() : type_(NONE), value_(NULL) {}
   ObCfgItemExtraInfo(InfoType type, const char *value) : type_(type), value_(value) {}
@@ -52,22 +53,48 @@ struct ObCfgNeedRebootLabel: public ObCfgItemExtraInfo
   explicit ObCfgNeedRebootLabel(const char *need_reboot) : ObCfgItemExtraInfo(NEED_REBOOT, need_reboot) {}
 };
 
+struct ObCfgConfigLevelConfigLabel: public ObCfgItemExtraInfo
+{
+  explicit ObCfgConfigLevelConfigLabel(const char *config_level) : ObCfgItemExtraInfo(CONFIG_LEVEL, config_level) {}
+};
+
 #define CFG_EXTRA_INFO_DECLARE const ObCfgItemExtraInfo e1 = ObCfgItemExtraInfo(), \
                                const ObCfgItemExtraInfo e2 = ObCfgItemExtraInfo(), \
-                               const ObCfgItemExtraInfo e3 = ObCfgItemExtraInfo()
+                               const ObCfgItemExtraInfo e3 = ObCfgItemExtraInfo(), \
+                               const ObCfgItemExtraInfo e4 = ObCfgItemExtraInfo()
 
-#define CFG_EXTRA_INFO_LIST e1, e2, e3
+#define CFG_EXTRA_INFO_LIST e1, e2, e3, e4
 
-class ObConfigItem
+class ObBaseConfigItem
 {
 public:
+  ObBaseConfigItem(){}
+  virtual ~ObBaseConfigItem() {}
+  virtual const char* str() const = 0;
+  virtual const char* name() const = 0;
+};
+
+class ObConfigItem: public ObBaseConfigItem
+{
+public:
+  enum ObConfigLevel
+  {
+    OB_CONFIG_MULTI_LEVEL_GLOBAL = 0,
+    OB_CONFIG_MULTI_LEVEL_CLUSTER,
+    OB_CONFIG_MULTI_LEVEL_TENANT,
+    OB_CONFIG_MULTI_LEVEL_VIP,
+    OB_CONFIG_MULTI_LEVEL_MAX
+  };
   ObConfigItem();
   virtual ~ObConfigItem();
   ObConfigItem(const ObConfigItem& item);
   ObConfigItem& operator =(const ObConfigItem& item);
+  ObConfigItem& operator =(const ObVariableLenConfigItem& item);
 
   void init(const char *name, const char *def, const char *info, CFG_EXTRA_INFO_DECLARE);
   void init(const char *name, const char *def, const char *range, const char *info, CFG_EXTRA_INFO_DECLARE);
+  void reset();
+  virtual void free();
   virtual bool parse_range(const char *range) { UNUSED(range); return true; }
   virtual ObConfigItem *clone() { return NULL; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
@@ -143,9 +170,15 @@ public:
                              pos, "%s", range_str);
     }
   }
+  void set_config_level(const ObConfigLevel config_level)
+  {
+    config_level_ = config_level;
+  }
+  const char* config_level_to_str() const;
+  static ObConfigLevel str_to_config_level(const char *config_level_str);
 
-  const char *str() const { return value_str_; }
-  const char *name() const { return name_str_; }
+  virtual const char *str() const { return value_str_; }
+  virtual const char *name() const { return name_str_; }
   const char *info() const { return info_str_; }
   const char *section() const { return section_str_; }
   const char *visible_level() const { return visible_level_str_; }
@@ -153,6 +186,7 @@ public:
   bool need_reboot() const { return need_reboot_; }
   bool is_initial_value_set() const { return is_initial_value_set_; }
   int64_t version() const { return version_; }
+  ObConfigLevel config_level() const {return config_level_;}
 
   virtual bool operator >(const char *) const { return false; }
   virtual bool operator >=(const char *) const { return false; }
@@ -178,6 +212,42 @@ protected:
   char section_str_[OB_MAX_CONFIG_SECTION_LEN];
   char visible_level_str_[OB_MAX_CONFIG_VISIBLE_LEVEL_LEN];
   char range_str_[OB_RANGE_STR_BUFSIZ];
+  ObConfigLevel config_level_;
+};
+
+// ObVariableLenConfigItem作用：
+  // 1. 是为ObProxyConfigItme设计的类，成员使用了ObConfigVartiableString，可以节约内存
+  // 2. ObConfigItem使用在全局配置中，全局配置访问配置项通常不加锁，所以如果使用动态内存，并发可能会访问到非法内存;
+  // 考虑到内存优化性能，和并发内存安全，所以需要设计一个新的ObVariableLenConfigItem，给多级配置使用
+class ObVariableLenConfigItem: public ObBaseConfigItem
+{
+public:
+  ObVariableLenConfigItem(): value_str_(), name_str_() {}
+  virtual ~ObVariableLenConfigItem() {};
+  ObVariableLenConfigItem(const ObVariableLenConfigItem& item);
+  ObVariableLenConfigItem& operator =(const ObVariableLenConfigItem& item);
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+  static bool set_variable(ObConfigVariableString& val, const char *new_name, int64_t len)
+  {
+    bool bret = true;
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(val.rewrite(new_name, len))) {
+      bret = false;
+      OB_LOG(EDIAG, "fail to rewirte ptr to buf", K(new_name), K(len));
+    }
+    return bret;
+  }
+  bool set_value(const common::ObString &string);
+  bool set_value(const char *str);
+  bool set_name(const char *name);
+  void reset();
+  virtual const char *str() const { return value_str_.ptr(); }
+  virtual const char *name() const { return name_str_.ptr(); }
+
+protected:
+  //use current value to do input operation
+  ObConfigVariableString value_str_;               // 最大长度：OB_MAX_CONFIG_VALUE_LEN
+  ObConfigVariableString name_str_;                // OB_MAX_CONFIG_NAME_LEN
 };
 
 class ObConfigIntListItem
@@ -191,6 +261,7 @@ public:
                       const char *info,
                       CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigIntListItem() {}
+  virtual void free() override;
   virtual ObConfigItem *clone();
 
   //need reboot value need set it once startup, otherwise it will output current value
@@ -245,6 +316,7 @@ public:
                       CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigStrListItem() {}
   virtual ObConfigItem *clone();
+  virtual void free() override;
 
   int tryget(const int64_t idx, char *buf, const int64_t buf_len) const;
   int get(const int64_t idx, char *buf, const int64_t buf_len) const;
@@ -329,6 +401,7 @@ class ObConfigIntegralItem
 public:
   ObConfigIntegralItem() : value_(0), initial_value_(0) {}
   virtual ~ObConfigIntegralItem() {}
+  virtual void free() override;
 
   virtual ObConfigItem *clone() { return NULL; }
   bool operator >(const char *str) const
@@ -386,6 +459,7 @@ public:
                      const char *info,
                      CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigDoubleItem() {}
+  virtual void free() override;
   virtual ObConfigItem *clone();
 
   bool operator >(const char *str) const
@@ -455,6 +529,7 @@ public:
                        CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigCapacityItem() {}
   virtual ObConfigItem *clone();
+  virtual void free() override;
 
   ObConfigCapacityItem &operator = (int64_t value);
 
@@ -492,6 +567,8 @@ public:
                    CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigTimeItem() {}
   virtual ObConfigItem *clone();
+  virtual void free() override;
+
   ObConfigTimeItem &operator = (int64_t value);
 
 protected:
@@ -533,6 +610,7 @@ public:
                   CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigIntItem() {}
   virtual ObConfigItem *clone();
+  virtual void free() override;
   ObConfigIntItem &operator = (int64_t value);
 
 protected:
@@ -563,6 +641,7 @@ public:
                      CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigMomentItem() {}
   virtual ObConfigItem *clone();
+  virtual void free() override;
   //use current value to do input operation
   bool set(const char *str);
 
@@ -602,6 +681,7 @@ public:
                    CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigBoolItem() {}
   virtual ObConfigItem *clone();
+  virtual void free() override;
 
   //need reboot value need set it once startup, otherwise it will output current value
   operator const bool &() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_ : value_); }
@@ -635,6 +715,7 @@ public:
                      CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigStringItem() {}
   virtual ObConfigItem *clone();
+  virtual void free() override;
 
   //need reboot value need set it once startup, otherwise it will output current value
   operator const char *() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_str_ : value_str_); } // not safe, value maybe changed

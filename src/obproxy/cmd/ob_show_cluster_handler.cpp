@@ -84,27 +84,27 @@ int ObShowClusterHandler::handle_show_cluster(int event, void *data)
   ObProxyJsonConfigInfo *json_info= NULL;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_cluster_header())) {
-    WARN_ICMD("fail to dump cluster info header", K(ret));
+    WDIAG_ICMD("fail to dump cluster info header", K(ret));
   } else if (OB_ISNULL(json_info = get_global_config_server_processor().acquire())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("fail to get proxy json config info", K(ret));
+    WDIAG_ICMD("fail to get proxy json config info", K(ret));
   } else {
     ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
     ObProxyClusterArrayInfo &cluster_array = const_cast<ObProxyClusterArrayInfo &>(json_info->get_cluster_array());
     const ObProxyMetaTableInfo &table_info = json_info->get_meta_table_info();
     for (ObProxyClusterArrayInfo::CIHashMap::iterator it = cluster_array.ci_map_.begin();
          OB_SUCC(ret) && it != cluster_array.ci_map_.end(); ++it) {
-      if (match_like(it->cluster_name_, like_name_)) {
+      if (common::match_like(it->cluster_name_, like_name_)) {
         if (OB_FAIL(dump_cluster_info(*it, allocator))) {
-          WARN_ICMD("fail to dump cluster info", K(ret));
+          WDIAG_ICMD("fail to dump cluster info", K(ret));
         }
       }
     }
-    if (OB_SUCC(ret) && match_like(table_info.cluster_info_.cluster_name_, like_name_)) {
+    if (OB_SUCC(ret) && common::match_like(table_info.cluster_info_.cluster_name_, like_name_)) {
       if (OB_FAIL(dump_cluster_info(table_info.cluster_info_, allocator))) {
-        WARN_ICMD("fail to dump meta db cluster info", K(ret));
+        WDIAG_ICMD("fail to dump meta db cluster info", K(ret));
       }
     }
   }
@@ -113,7 +113,7 @@ int ObShowClusterHandler::handle_show_cluster(int event, void *data)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret));
+      WDIAG_ICMD("fail to encode eof packet", K(ret));
     } else {
       INFO_ICMD("succ to dump cluster", K_(like_name));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -131,11 +131,11 @@ int ObShowClusterHandler::dump_cluster_header()
   int ret = OB_SUCCESS;
   if (OBPROXY_T_SUB_INFO_IDC == sub_type_) {
     if (OB_FAIL(encode_header(CLUSTER_IDC_COLUMN_ARRAY, OB_CCI_MAX_CLUSTER_COLUMN_ID))) {
-      WARN_ICMD("fail to encode header", K(ret));
+      WDIAG_ICMD("fail to encode header", K(ret));
     }
   } else {
     if (OB_FAIL(encode_header(CLUSTER_COLUMN_ARRAY, OB_CC_MAX_CLUSTER_COLUMN_ID))) {
-      WARN_ICMD("fail to encode header", K(ret));
+      WDIAG_ICMD("fail to encode header", K(ret));
     }
   }
   return ret;
@@ -161,12 +161,12 @@ int ObShowClusterHandler::dump_cluster_info(const ObProxyClusterInfo &cluster_in
       if (NULL == sub_cluster_info || sub_cluster_info->idc_list_.empty()) {
         ObProxyIDCInfo idc_item;
         if (OB_FAIL(dump_cluster_idc_list_item(cluster_info, idc_item, allocator))) {
-          WARN_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
+          WDIAG_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
         }
       } else {
         for (int64_t i = 0; OB_SUCC(ret) && i < sub_cluster_info->idc_list_.count(); ++i) {
           if (OB_FAIL(dump_cluster_idc_list_item(cluster_info, sub_cluster_info->idc_list_[i], allocator))) {
-            WARN_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
+            WDIAG_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
           }
         }
       }
@@ -174,12 +174,12 @@ int ObShowClusterHandler::dump_cluster_info(const ObProxyClusterInfo &cluster_in
       if (NULL == sub_cluster_info || sub_cluster_info->web_rs_list_.empty()) {
         ObProxyReplicaLocation addr;
         if (OB_FAIL(dump_cluster_rslist_item(cluster_info, addr, allocator))) {
-          WARN_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
+          WDIAG_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
         }
       } else {
         for (int64_t i = 0; OB_SUCC(ret) && i < sub_cluster_info->web_rs_list_.count(); ++i) {
           if (OB_FAIL(dump_cluster_rslist_item(cluster_info, sub_cluster_info->web_rs_list_[i], allocator))) {
-            WARN_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
+            WDIAG_ICMD("fail to dump cluster info item", K(cluster_info), K(ret));
           }
         }
       }
@@ -208,7 +208,7 @@ int ObShowClusterHandler::dump_cluster_rslist_item(const ObProxyClusterInfo &clu
     cells[OB_CC_CLUSTER_ID].set_int(cluster_info.master_cluster_id_);
     cells[OB_CC_RS_URL].set_varchar(url);
     if (OB_FAIL(addr.server_.ip_port_to_string(addr_str, MAX_IP_PORT_LENGTH))) {
-      WARN_ICMD("fail to covert to addr to string");
+      WDIAG_ICMD("fail to covert to addr to string");
     } else {
       cells[OB_CC_ROOT_ADDR].set_varchar(addr_str);
       cells[OB_CC_ROLE].set_varchar(role2str(addr.role_));
@@ -218,7 +218,7 @@ int ObShowClusterHandler::dump_cluster_rslist_item(const ObProxyClusterInfo &clu
       row.cells_ = cells;
       row.count_ = OB_CC_MAX_CLUSTER_COLUMN_ID;
       if (OB_FAIL(encode_row_packet(row))) {
-        WARN_ICMD("fail to encode row packet", K(row), K(ret));
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
       }
     }
   }
@@ -254,7 +254,7 @@ int ObShowClusterHandler::dump_cluster_idc_list_item(const ObProxyClusterInfo &c
     row.cells_ = cells;
     row.count_ = OB_CCI_MAX_CLUSTER_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {
-      WARN_ICMD("fail to encode row packet", K(row), K(ret));
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
     }
   }
   return ret;
@@ -270,17 +270,17 @@ static int show_cluster_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &in
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowClusterHandler(cont, buf,info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowJsonConfigHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowJsonConfigHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowClusterHandler", K(ret));
+    WDIAG_ICMD("fail to init for ObShowClusterHandler", K(ret));
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObShowClusterHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObShowClusterHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObShowClusterHandler");
@@ -299,7 +299,7 @@ int show_cluster_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_CLUSTER,
                                                                &show_cluster_cmd_callback))) {
-    WARN_ICMD("fail to proxy_cluster_stat_callback", K(ret));
+    WDIAG_ICMD("fail to proxy_cluster_stat_callback", K(ret));
   }
   return ret;
 }

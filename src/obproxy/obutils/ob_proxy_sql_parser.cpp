@@ -90,6 +90,8 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
                                                const ObProxyParseString &package_name,
                                                const ObProxyParseString &table_name,
                                                const ObProxyParseString &alias_name,
+                                               const ObProxyParseString &dblink_name,
+                                               bool &is_dblink_name,
                                                const bool use_lower_case_name/*false*/,
                                                const bool drop_origin_db_table_name /*false*/)
 {
@@ -154,6 +156,17 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
       }
     }
   }
+  if (OB_SUCC(ret)) {
+    if (OB_UNLIKELY(NULL != dblink_name.str_ && 0 != dblink_name.str_len_)) {
+      if (OB_UNLIKELY(dblink_name.str_len_ > OB_MAX_DBLINK_NAME_LENGTH)
+          || OB_UNLIKELY(dblink_name.str_len_ < 0)) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WDIAG("invalid argument for dblink name", K(ret));
+      } else {
+        is_dblink_name = (dblink_name.str_len_ > 0);
+      }
+    }
+  }
   return ret;
 }
 
@@ -199,6 +212,7 @@ inline int ObSqlParseResult::set_call_prarms(const ObProxyCallParseInfo &call_pa
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(call_parse_info.node_count_), K(ret));
   } else if (call_parse_info.node_count_ >= 0) {
+    call_info_.reset();
     call_info_.is_param_valid_ = true;
     ObProxyCallParam* tmp_param = NULL;
     ObProxyCallParseNode *tmp_node = call_parse_info.head_;
@@ -383,8 +397,7 @@ int ObSqlParseResult::set_dbmesh_route_info(const ObProxyParseResult &parse_resu
     has_dbmesh_hint_ = true;
     use_column_value_from_hint_ = true;
     ObShardColumnNode *tmp_node = route_info.head_;
-    fileds_result_.field_num_ = 0;
-    fileds_result_.fields_.reuse();
+    fileds_result_.reset();
     SqlField* field = NULL;
     while(tmp_node) {
       field = NULL;
@@ -504,8 +517,7 @@ int ObSqlParseResult::set_var_info(const ObProxyParseResult &parse_result)
 
   const ObProxySetParseInfo &set_parse_info = parse_result.set_parse_info_;
   if (set_parse_info.node_count_ > 0) {
-    set_info_.node_count_ = 0;
-    set_info_.var_nodes_.reuse();
+    set_info_.reset();
 
     ObString tmp_str;
     ObProxySetVarNode *tmp_node = set_parse_info.head_;
@@ -572,6 +584,7 @@ int ObSqlParseResult::set_text_ps_info(ObProxyTextPsInfo& text_ps_info,
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(parse_info.node_count_), K(ret));
   } else if (parse_info.node_count_ > 0) {
+    text_ps_info.reset();
     text_ps_info.is_param_valid_ = true;
     ObProxyTextPsParam* tmp_param = NULL;
     ObProxyTextPsParseNode *tmp_node = parse_info.head_;
@@ -612,6 +625,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   has_last_insert_id_ = parse_result.has_last_insert_id_;
   hint_query_timeout_ = parse_result.query_timeout_;
   has_anonymous_block_ = parse_result.has_anonymous_block_;
+  has_ever_set_anonymous_block_ = parse_result.has_ever_set_anonymous_block_;
   has_trace_log_hint_ = parse_result.has_trace_log_hint_;
   stmt_type_ = parse_result.stmt_type_;
   cmd_sub_type_ = parse_result.sub_stmt_type_;
@@ -621,6 +635,8 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   parsed_length_ = static_cast<int64_t>(parse_result.end_pos_ - parse_result.start_pos_);
   text_ps_inner_stmt_type_ = parse_result.text_ps_inner_stmt_type_;
   is_binlog_related_ = parse_result.is_binlog_related_;
+  is_sharding_req_ = is_sharding_request;
+  is_table_lock_related_ = parse_result.is_table_lock_related_;
 
   if (OB_UNLIKELY(is_sharding_request && NULL != parse_result.table_info_.table_name_.str_
                   && parse_result.table_info_.table_name_.str_len_ > 0)) {
@@ -665,6 +681,8 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
                                   parse_result.table_info_.package_name_,
                                   parse_result.table_info_.table_name_,
                                   parse_result.table_info_.alias_name_,
+                                  parse_result.table_info_.dblink_name_,
+                                  is_dblink_name_,
                                   use_lower_case_name,
                                   drop_origin_db_table_name))) {
       LOG_WDIAG("failed to set db table name", K(use_lower_case_name), K(ret));
@@ -787,6 +805,7 @@ int64_t ObSqlParseResult::to_string(char *buf, const int64_t buf_len) const
   int64_t pos = 0;
   J_OBJ_START();
   J_KV("stmt_type", get_obproxy_stmt_name(stmt_type_),
+       "text ps inner stmt", get_obproxy_stmt_name(text_ps_inner_stmt_type_),
        K_(hint_query_timeout),
        "hint_read_consistency", get_consistency_level_str(hint_consistency_level_),
        K_(has_found_rows),
@@ -798,6 +817,9 @@ int64_t ObSqlParseResult::to_string(char *buf, const int64_t buf_len) const
        K_(has_simple_route_info),
        K_(parsed_length),
        K_(is_binlog_related),
+       K_(is_dblink_name),
+       K_(is_sharding_req),
+       K_(is_table_lock_related),
        "database_name", get_database_name(),
        "database_quote_type", get_obproxy_quote_name(get_database_name_quote()),
        "package_name", get_package_name(),
@@ -1075,13 +1097,15 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
   } else {
     ObProxyParser obproxy_parser(*allocator, parse_mode);
     ObProxyParseResult obproxy_parse_result;
+    obproxy_parse_result.is_sharding_req_ = is_sharding_request;
 
     int tmp_ret = OB_SUCCESS;
     if (OB_SUCCESS != (tmp_ret = obproxy_parser.parse(sql, obproxy_parse_result, connection_collation))) {
       LOG_INFO("fail to parse sql, will go on anyway", K(sql), K(tmp_ret));
     } else if (OB_SUCCESS != (tmp_ret = sql_parse_result.load_result(obproxy_parse_result,
                                                                      use_lower_case_name,
-                                                                     drop_origin_db_table_name, is_sharding_request))) {
+                                                                     drop_origin_db_table_name,
+                                                                     is_sharding_request))) {
       if (sql_parse_result.is_internal_cmd()  && OB_INTERNAL_CMD_VALUE_TOO_LONG == tmp_ret) {
         ret = OB_ERR_PARSE_SQL;
       } else {

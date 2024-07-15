@@ -309,7 +309,7 @@ int ObConnTableProcessor::backup_local_vt_conn_cache()
 }
 
 int ObConnTableProcessor::conn_handle_replace_config(
-    ObString& cluster_name, ObString& tenant_name, ObString& name_str, ObString& value_str)
+    ObString& cluster_name, ObString& tenant_name, ObString& name_str, ObString& value_str, const bool need_to_backup)
 {
   UNUSED(name_str);
   int ret = OB_SUCCESS;
@@ -317,7 +317,7 @@ int ObConnTableProcessor::conn_handle_replace_config(
   if (OB_UNLIKELY(cluster_name.empty()) || OB_UNLIKELY(tenant_name.empty())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("tenant or cluster is null", K(ret), K(cluster_name), K(tenant_name));
-  } else if (OB_FAIL(backup_local_vt_conn_cache())) {
+  } else if (need_to_backup && OB_FAIL(backup_local_vt_conn_cache())) {
     LOG_WDIAG("backup vip tenant connect cache failed", K(ret));
   } else if (OB_FAIL(fill_local_vt_conn_cache(cluster_name, tenant_name, value_str))) {
     LOG_WDIAG("update vip tenant connect cache failed", K(ret));
@@ -328,7 +328,7 @@ int ObConnTableProcessor::conn_handle_replace_config(
   return ret;
 }
 
-int ObConnTableProcessor::conn_handle_delete_config(ObString& cluster_name, ObString& tenant_name)
+int ObConnTableProcessor::conn_handle_delete_config(ObString& cluster_name, ObString& tenant_name, bool need_to_backup)
 {
   int ret = OB_SUCCESS;
 
@@ -336,7 +336,7 @@ int ObConnTableProcessor::conn_handle_delete_config(ObString& cluster_name, ObSt
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("tenant_name or cluster_name is null", K(ret), K(cluster_name), K(tenant_name));
   } else {
-    if (OB_FAIL(backup_local_vt_conn_cache())) {
+    if (need_to_backup && OB_FAIL(backup_local_vt_conn_cache())) {
       LOG_WDIAG("backup vip tenant connect cache failed", K(ret));
     } else {
       DRWLock::WRLockGuard guard(rwlock_);

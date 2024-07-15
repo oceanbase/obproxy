@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.2.3.0],
+            [4.3.1.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.2.3.0"
+    obapi_version="4.3.1.0"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC
@@ -18,6 +18,36 @@
     AC_PROG_CC
     AC_CANONICAL_HOST
 
+    AC_ARG_VAR([TOPDIR], [The path of the project])
+    TOPDIR="$(dirname $(readlink -f "$0"))"
+    AC_SUBST(TOPDIR)
+
+    AC_ARG_VAR([DEP_DIR], [the path of devel files])
+    DEP_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/deps/devel
+    AC_SUBST(DEP_DIR)
+
+    AC_ARG_VAR([TOOLS_DIR], [the path of devtools])
+    TOOLS_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/devtools
+    AC_SUBST(TOOLS_DIR)
+
+    AC_ARG_VAR([RUNTIME_DIR], [the path of runtime])
+    RUNTIME_DIR=${TOPDIR}/deps/3rd/usr
+    AC_SUBST(RUNTIME_DIR)
+
+    # 设置依赖的路径变量
+    AC_ARG_VAR([PATH], [The path to search for executables])
+    PATH="$TOOLS_DIR/bin::$PATH"
+    AC_SUBST(PATH)
+
+    # 设置 CC 和 CXX 变量的值
+    AC_ARG_VAR([CC], [set gcc executable path])
+    CC="$TOOLS_DIR/bin/gcc"
+    AC_SUBST(CC)
+
+    AC_ARG_VAR([CXX], [set g++ executable path])
+    CXX="$TOOLS_DIR/bin/g++"
+    AC_SUBST(CXX)
+
     dnl configure compiler flags
     AC_ARG_WITH([release],
     AS_HELP_STRING([--with-release],
@@ -26,12 +56,12 @@
     if test "$withval" = "yes"; then
       case "$host_cpu" in
         *aarch64* )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
-          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=generic -Wno-psabi -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wunused-parameter -Wformat -Wconversion -Wno-deprecated -Wno-invalid-offsetof -fno-reorder-blocks-and-partition -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
++          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=generic -Wno-psabi -Wno-sign-compare -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
         ;;
         * )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-deprecated -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
-          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=core2 -Wno-psabi -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wunused-parameter -Wformat -Wconversion -Wno-deprecated -Wno-invalid-offsetof -fno-reorder-blocks-and-partition -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=core2 -Wno-psabi -Wno-sign-compare -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
         ;;
       esac
     fi
@@ -40,6 +70,12 @@
       AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g -Wall -Wno-psabi  -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now"
         ]
     )
+
+    # 设置依赖的库和头文件路径
+    AM_CXXFLAGS="${AM_CXXFLAGS} -isystem $DEP_DIR/include -isystem ${RUNTIME_DIR}/include -L$DEP_DIR/lib"
+    AM_CFLAGS="${AM_CFLAGS} -isystem $DEP_DIR/include -isystem ${RUNTIME_DIR}/include -L$DEP_DIR/lib"
+    AM_CXXFLAGS="${AM_CXXFLAGS} -D_GLIBCXX_USE_CXX11_ABI=0"
+    AM_CFLAGS="${AM_CFLAGS} -D_GLIBCXX_USE_CXX11_ABI=0"
 
     AC_ARG_WITH([so],
            AS_HELP_STRING([--with-so],
@@ -56,12 +92,6 @@
 
     AM_CONDITIONAL([HAVE_SO], test x$support_so = xyes )
 
-    OSVER=`cat /etc/issue|head -1|awk -F. '{print $1}' | awk '{print $NF}'`
-    if test "$support_so" == "no" && test $OSVER -gt 6; then
-        AM_CXXFLAGS="${AM_CXXFLAGS} -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
-        AM_CFLAGS="${AM_CFLAGS} -fuse-ld=lld -ffunction-sections -Wl,--no-warn-symbol-ordering,--symbol-ordering-file,${ac_abs_confdir}/hotfuncs.txt"
-    fi
-
     #check el9, add -DEL9_PlATFORM for el9
     is_el9=`cat /proc/version | grep el9`
     if test "$is_el9" != ""; then
@@ -70,7 +100,7 @@
     fi
 
     #check gcc version, add -Wno-ignored-qualifiers flag for gcc version greater than 4.3.0
-    GCC_VERSION=`$CC -dumpfullversion -dumpversion`
+    GCC_VERSION=`$CC -dumpfullversion`
     if test $? -eq 0; then
         major=`echo $GCC_VERSION | cut -d. -f1`
         minor=`echo $GCC_VERSION | cut -d. -f2`
@@ -81,24 +111,9 @@
         AM_CXXFLAGS="${AM_CXXFLAGS} -DGCC_52"
     fi
 
+    echo "now gcc is: $GCC_VERSION"
+
     AM_CXXFLAGS="${AM_CXXFLAGS} -D_GLIBCXX_USE_CXX11_ABI=0"
-
-    gcc_version="4.4.4"
-    dnl condition OPT_GCC_VERSION
-    AC_ARG_WITH([gcc-version],
-        AS_HELP_STRING([--with-gcc-version],
-                       [opt gcc version (default is 4.4.4)]),
-                       [
-                           if test ! -z $withval; then
-                               gcc_version=$withval
-                           fi
-                       ],
-                       [gcc_version="4.4.4"])
-
-    if test "X$gcc_version" !=  "X$GCC_VERSION"; then
-      echo "you choice gcc: ${gcc_version}, but now gcc is: $GCC_VERSION"
-      exit 127
-    fi
 
     OSVER=`cat /etc/issue|head -1|awk -F. '{print $1}' | awk '{print $NF}'`
     if test $OSVER -le 6; then
@@ -344,7 +359,7 @@
     AC_DEFINE_UNQUOTED([RELEASEID], "$RELEASEID")
 
     dnl LDADD
-    AM_LDFLAGS="${AM_LDFLAGS} -Wl,--no-as-needed -Wl,--allow-multiple-definition"
+    AM_LDFLAGS="${AM_LDFLAGS} -Wl,--emit-relocs,--allow-multiple-definition"
     BIN_LDFLAGS="-lc -lrt -pie"
 
     if test "X9.3.0" = "X$GCC_VERSION"; then

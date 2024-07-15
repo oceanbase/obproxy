@@ -546,7 +546,12 @@ int ObServerConnection::listen_client_mode(const bool non_blocking, const int32_
     PROXY_SOCK_LOG(WDIAG, "fail to listen", KERRMSGS, K(ret));
   } else {
     ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-    info.ipv4_fd_ = fd_;
+
+    if (info.port_state_ != OB_PROXY_PORT_RPC_SERVICE) { // default sql port
+      info.ipv4_fd_ = fd_;
+    } else {
+      info.rpc_ipv4_fd_ = fd_;
+    }
   }
 
   if (OB_FAIL(ret)) {
@@ -586,10 +591,20 @@ int ObServerConnection::listen_proxy_mode(const bool non_blocking, const int32_t
     int64_t namelen = sizeof(addr_);
     if (OB_FAIL(ObSocketManager::getsockname(fd_, &addr_.sa_, &namelen))) {
       PROXY_SOCK_LOG(WDIAG, "failed to getsockname", K(addr_), KERRMSGS, K(ret));
-    } else if (addr_.is_ip4()) {
-      info.ipv4_fd_ = fd_;
-    } else if (addr_.is_ip6()) {
-      info.ipv6_fd_ = fd_;
+    } else {
+      if (info.port_state_ != OB_PROXY_PORT_RPC_SERVICE) { // default sql port
+        if (addr_.is_ip4()) {
+          info.ipv4_fd_ = fd_;
+        } else if (addr_.is_ip6()) {
+          info.ipv6_fd_ = fd_;
+        }
+      } else {
+        if (addr_.is_ip4()) {
+          info.rpc_ipv4_fd_ = fd_;
+        } else if (addr_.is_ip6()) {
+          info.rpc_ipv6_fd_ = fd_;
+        }
+      }
     }
   }
 

@@ -49,7 +49,11 @@ void OMPKOK::set_state_changed(const bool state_changed)
 {
   state_changed_ = state_changed;
   // is ok? mybe overwrite
-  server_status_.status_flags_.OB_SERVER_SESSION_STATE_CHANGED = 1;
+  if (state_changed_) {
+    server_status_.status_flags_.OB_SERVER_SESSION_STATE_CHANGED = 1;
+  } else {
+    server_status_.status_flags_.OB_SERVER_SESSION_STATE_CHANGED = 0;
+  }
 }
 
 void OMPKOK::set_changed_schema(const common::ObString &schema)

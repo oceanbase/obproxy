@@ -496,7 +496,8 @@ int ObMysqlClient::main_handler(int event, void *data)
   int ret = OB_SUCCESS;
   ++reentrancy_count_;
   LOG_DEBUG("ObMysqlClient Received event", "event_name", get_client_event_name(event),
-            "next action", get_client_action_name(next_action_), K(data), "thread", this_ethread());
+            "next action", get_client_action_name(next_action_), K(data), "thread", this_ethread(),
+            K(this));
   if (OB_UNLIKELY(CLIENT_MAGIC_ALIVE != magic_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_EDIAG("this mysql client is dead", K_(magic), K(this), K(ret));
@@ -548,6 +549,13 @@ int ObMysqlClient::main_handler(int event, void *data)
   if (1 == reentrancy_count_) {
     // here common_mutex_ is free or held by this thread, so we can ensure lock it
     MUTEX_LOCK(lock, common_mutex_, this_ethread());
+    if (reentrancy_count_ != 1) {
+      LOG_WDIAG("invalid reentrancy_count",
+                K(reentrancy_count_), K(event), K(this), K(terminate_),
+                K(is_inited_), K(in_use_), K(info_), K(server_addr_),
+                K(retry_times_), K(magic_),
+                "thread", this_ethread());
+    }
     if (OB_SUCCESS == ret && need_connect_retry_ && CLIENT_ACTION_CONNECT == next_action_) {
       need_connect_retry_ = false;
       retry_times_ = 0;
@@ -569,7 +577,11 @@ int ObMysqlClient::main_handler(int event, void *data)
 
       --reentrancy_count_;
       if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-        LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count), K(this));
+        LOG_WDIAG("invalid reentrancy_count",
+                  K(reentrancy_count_), K(event), K(this), K(terminate_),
+                  K(is_inited_), K(in_use_), K(info_), K(server_addr_),
+                  K(retry_times_), K(magic_),
+                  "thread", this_ethread());
       }
     } else {
       if (is_request_complete_) {
@@ -583,15 +595,23 @@ int ObMysqlClient::main_handler(int event, void *data)
         he_ret = EVENT_DONE;
       } else {
         --reentrancy_count_;
-        if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-          LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count), K(this));
+        if (reentrancy_count_ < 0) {
+          LOG_WDIAG("invalid reentrancy_count",
+                    K(reentrancy_count_), K(event), K(this), K(terminate_),
+                    K(is_inited_), K(in_use_), K(info_), K(server_addr_),
+                    K(retry_times_), K(magic_),
+                    "thread", this_ethread());
         }
       }
     }
   } else {
     --reentrancy_count_;
     if (OB_UNLIKELY(reentrancy_count_ < 0)) {
-      LOG_EDIAG("invalid reentrancy_count", K_(reentrancy_count), K(this));
+      LOG_WDIAG("invalid reentrancy_count",
+                K(reentrancy_count_), K(event), K(this), K(terminate_),
+                K(is_inited_), K(in_use_), K(info_), K(server_addr_),
+                K(retry_times_), K(magic_),
+                "thread", this_ethread());
     }
   }
 
@@ -851,6 +871,12 @@ int ObMysqlClient::do_next_action(void *data)
           LOG_WDIAG("fail to notify transfer completed", K(ret));
         } else if (NULL != client_vc_) { // NULL means client_vc has closed
           if (mysql_resp_->is_error_resp()) {
+            // proxyro判断。支持双密码，两个密码都失败后，才打印ERROR日志
+            if (0 == retry_times_
+                && ER_ACCESS_DENIED_ERROR == mysql_resp_->get_err_code()
+                && info_.get_user_name().prefix_case_match(ObProxyTableInfo::READ_ONLY_USERNAME)) {
+              LOG_ERROR("proxyro@sys access denied, please check password", K(mysql_resp_->get_err_msg()), K(retry_times_), K(ret));
+            }
             if (OB_FAIL(transport_mysql_resp())) {
               LOG_WDIAG("fail to transfrom mysql resp", K(ret));
             }
@@ -1203,7 +1229,9 @@ void ObMysqlClient::release(bool is_need_check_reentry)
 
 void ObMysqlClient::kill_this()
 {
-  LOG_INFO("mysql client will kill self", K(this));
+  LOG_INFO("mysql client will kill self",
+           K(this), K(is_inited_), K(in_use_), K(info_), K(server_addr_),
+           K(retry_times_), K(magic_), "thread", this_ethread());
   int ret = OB_SUCCESS;
   // ignore ret, continue
   if (OB_FAIL(cancel_active_timeout())) {

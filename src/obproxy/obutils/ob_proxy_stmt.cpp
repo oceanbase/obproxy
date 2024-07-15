@@ -569,6 +569,15 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
             has_unsupport_expr_type_for_config_ = true;
             break;
           }
+          case T_SELECT: {
+            is_skip_field = true;
+            has_unsupport_expr_type_for_config_ = true;
+            has_sub_select_ = true;
+            if (OB_FAIL(do_handle_parse_result(tmp_node))) {
+              LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
+            }
+            break;
+          }
           default:
             is_skip_field = true;
             has_unsupport_expr_type_ = true;
@@ -1908,6 +1917,9 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
               if (child_node->type_ == T_INT) {
                 sql_field.value_type_ = TOKEN_INT_VAL;
                 sql_field.column_int_value_ = -1 * (child_node->value_);
+                column_value.value_type_ = TOKEN_INT_VAL;
+                column_value.column_int_value_ = -1 * (child_node->value_);
+                ret = sql_field.column_values_.push_back(column_value);
               } else {
                 has_unsupport_expr_type_for_config_ = true;
                 LOG_DEBUG("unknown node type fro config", K_(child_node->type), K(ret));

@@ -112,7 +112,142 @@ int ObPartDescHash::get_part(ObNewRange &range,
   return ret;
 }
 
-int ObPartDescHash::get_part_by_num(const int64_t num, common::ObIArray<int64_t> &part_ids, common::ObIArray<int64_t> &tablet_ids)
+int ObPartDescHash::get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids, ObIArray<int64_t> &tablet_ids, ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+
+  for(int64_t part_idx = 0; part_idx < part_num_; ++part_idx) {
+    if (OB_FAIL(get_part_by_num(part_idx, part_ids, tablet_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_part_by_num", K(ret));
+    } else if (OB_FAIL(get_ls_id_by_num(part_idx, ls_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_ls_id_by_num", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    COMMON_LOG(DEBUG, "obkv get all hash part ids", K(part_ids));
+  }
+
+  return ret;
+}
+
+int ObPartDescHash::cast_rowkey_for_obkv(ObRowkey &rowkey, int64_t &valid_obj_cnt, ObIAllocator &allocator, ObPartDescCtx &ctx)
+{
+  int ret = OB_SUCCESS;
+  UNUSED(valid_obj_cnt);
+  UNUSED(ctx);
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < rowkey.get_obj_cnt(); i++) {
+    // if obj is min or max, means all valid obj has been casted
+    if (rowkey.get_obj_ptr()[i].is_max_value() || 
+        rowkey.get_obj_ptr()[i].is_min_value()) {
+      ret = OB_ERR_UNEXPECTED;
+      COMMON_LOG(WDIAG, "failed to cast max/min obobj to ObIntType", K(i), K(ret));
+    } else {
+      ObObj *src_obj = const_cast<ObObj*>(&rowkey.get_obj_ptr()[i]);
+      if (OB_ISNULL(src_obj)) {
+        // here src_obj shouldn't be null
+        ret = OB_ERR_NULL_VALUE;
+        COMMON_LOG(EDIAG, "unexpected null pointer src_obj");
+      } else if (is_oracle_mode_) {
+        ret = OB_NOT_SUPPORTED;
+        COMMON_LOG(WDIAG, "obkv not support oracle mode", K(i), K(ret));
+      // mysql mode only cast first valid obj to int type then break loop
+      } else /*if (is_mysql_mode_) */ {
+        ObCastCtx cast_ctx(&allocator, NULL, CM_NULL_ON_WARN, CS_TYPE_INVALID);
+        if (OB_FAIL(ObObjCasterV2::to_type(ObIntType, cs_types_[i], cast_ctx, *src_obj, *src_obj))) {
+          COMMON_LOG(WDIAG, "failed to cast to ObIntType", K(src_obj), K(ret));
+        }
+        if (1 != rowkey.get_obj_cnt()) {
+          COMMON_LOG(WDIAG, "Hash partition does not support multi-column routing", "rowkey obj count", rowkey.get_obj_cnt(), K(ret));
+        }
+        break;
+      }
+    }
+  }
+  return ret;
+}
+
+// range的方式获取hash分区的partid，参考table client实现，具体还需讨论
+int ObPartDescHash::get_part_for_obkv(ObNewRange &range,
+                                      ObIAllocator &allocator,
+                                      ObIArray<int64_t> &part_ids,
+                                      ObPartDescCtx &ctx,
+                                      ObIArray<int64_t> &tablet_ids,
+                                      ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+  COMMON_LOG(DEBUG, "ObPartDescHash::get_part_for_obkv", K(range));
+
+  if (is_oracle_mode_) {
+    ret = OB_ERR_UNEXPECTED; 
+    COMMON_LOG(WDIAG, "get_part_for_obkv not support oracle mode", K(ret));
+  } else if (range.is_whole_range() || range.start_key_.is_min_row() || range.end_key_.is_max_row()
+      || ctx.need_get_whole_range()) {
+    if (OB_FAIL(get_all_part_id_for_obkv(part_ids, tablet_ids, ls_ids))) {
+      COMMON_LOG(WDIAG, "fail to call get_all_part_id_for_obkv", K(ret));
+    }
+  } else {
+    int64_t start_valid_obj_cnt = range.start_key_.get_obj_cnt();
+    int64_t end_valid_obj_cnt = range.end_key_.get_obj_cnt();
+    if (OB_FAIL(cast_rowkey_for_obkv(range.start_key_, start_valid_obj_cnt, allocator, ctx))) {
+      COMMON_LOG(WDIAG, "fail to cast start key for obkv", K(ret), K_(range.start_key));
+    } else if (OB_FAIL(cast_rowkey_for_obkv(range.end_key_, end_valid_obj_cnt, allocator, ctx))) {
+      COMMON_LOG(WDIAG, "fail to cast end key for obkv", K(ret), K_(range.end_key));
+    } else {
+      // Calc partition id
+      int64_t part_id = -1;
+      int64_t part_idx = -1;
+      int64_t start_result = 0;
+      int64_t end_result = 0;
+
+      // obkv only support mysql mode: use single obj to calc hash val
+      if (OB_FAIL(calc_value_for_mysql(range.start_key_.get_obj_ptr(), start_result))) {
+        COMMON_LOG(WDIAG, "fail to call calc_value_for_mysql for start key", K(ret));
+      } else if (OB_FAIL(calc_value_for_mysql(range.end_key_.get_obj_ptr(), end_result))) {
+        COMMON_LOG(WDIAG, "fail to call calc_value_for_mysql for end key", K(ret));
+      } else {
+        /**
+         * @brief
+         *  The range needs to be adjusted here.
+         *  If it is the first partition, the end key needs to be adjusted to the right boundary,
+         *  which is INT64_MAX, but as long as the range exceeds part_num, it can represent all,
+         *  so first adjust based on part_num
+         */
+        if (ctx.calc_first_partition()) {
+          if (INT64_MAX - part_num_ > start_result) {
+            end_result = start_result + part_num_;
+          } else {
+            end_result = INT64_MAX;
+          }
+        } else if (ctx.calc_last_partition()) {
+          if (end_result < part_num_) {
+            start_result = 0;
+          } else {
+            start_result = end_result - part_num_;
+          }
+        }
+        for (int64_t result = start_result; OB_SUCC(ret) && result <= end_result; ++result) {
+          if (OB_SUCC(ret) && OB_FAIL(calc_hash_part_idx(result, part_num_, part_idx))) {
+            COMMON_LOG(WDIAG, "fail to cal hash part idx", K(ret), K(result), K(part_num_));
+          } else if (OB_FAIL(get_part_hash_idx(part_idx, part_id))) {
+            COMMON_LOG(WDIAG, "fail to get part hash id", K(part_idx), K(ret));
+          } else if (OB_FAIL(part_ids.push_back(part_id))) {
+            COMMON_LOG(WDIAG, "fail to push part_id", K(ret));
+          } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
+            COMMON_LOG(WDIAG, "fail to push tablet_id", K(ret));
+          } else if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[part_idx]))) {
+            COMMON_LOG(WDIAG, "fail to push ls_id", K(ret));
+          }
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObPartDescHash::get_part_by_num(const int64_t num, ObIArray<int64_t> &part_ids, ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   int64_t part_id = -1;
@@ -123,6 +258,16 @@ int ObPartDescHash::get_part_by_num(const int64_t num, common::ObIArray<int64_t>
     COMMON_LOG(DEBUG, "fail to push part_id", K(ret));
   } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[part_idx]))) {
     COMMON_LOG(DEBUG, "fail to push tablet_id", K(ret));
+  }
+  return ret;
+}
+
+int ObPartDescHash::get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids)
+{
+  int ret = OB_SUCCESS;
+  int part_idx = num % part_num_;
+  if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[part_idx]))) {
+    COMMON_LOG(DEBUG, "fail to push ls_id", K(ret));
   }
   return ret;
 }

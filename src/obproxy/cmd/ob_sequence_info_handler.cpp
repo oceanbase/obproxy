@@ -274,7 +274,7 @@ int ObSequenceInfoHandler::handle_sequence_done(int event, void *data)
   int event_ret = EVENT_NONE;
   DEBUG_ICMD("Enter handle_sequence_done");
   if (event != SEQUENCE_ENTRY_CREATE_COMPLETE_EVENT) {
-    WARN_ICMD("invalid event ", K(event));
+    WDIAG_ICMD("invalid event ", K(event));
   }
   event_ret = process_sequence_info(data);
   return event_ret;
@@ -287,9 +287,9 @@ int ObSequenceInfoHandler::encode_err_packet(const int errcode)
   char msg_buf[MAX_MSG_BUF_SIZE];
   if (IS_NOT_INIT) {
     ret = OB_NOT_INIT;
-    WARN_ICMD("it has not inited", K(ret));
+    WDIAG_ICMD("it has not inited", K(ret));
   } else if (OB_FAIL(reset())) {//before encode_err_packet, we need clean buf
-    WARN_ICMD("fail to do reset", K(errcode), K(ret));
+    WDIAG_ICMD("fail to do reset", K(errcode), K(ret));
   } else {
     int32_t length = 0;
     if (strlen(err_msg_) == 0) {
@@ -299,12 +299,12 @@ int ObSequenceInfoHandler::encode_err_packet(const int errcode)
     }
     if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= MAX_MSG_BUF_SIZE)) {
       ret = OB_BUF_NOT_ENOUGH;
-      WARN_ICMD("msg_buf is not enough", K(length), K(err_msg_), K(ret));
+      WDIAG_ICMD("msg_buf is not enough", K(length), K(err_msg_), K(ret));
     } else {}
   }
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ObMysqlPacketUtil::encode_err_packet(*internal_buf_, seq_, errcode, msg_buf))) {
-      WARN_ICMD("fail to encode err packet", K(errcode), K(msg_buf), K(ret));
+      WDIAG_ICMD("fail to encode err packet", K(errcode), K(msg_buf), K(ret));
     } else {
       INFO_ICMD("succ to encode err packet", K(errcode), K(msg_buf));
     }
@@ -321,10 +321,10 @@ int ObSequenceInfoHandler::process_sequence_info(void* data)
   ObEThread *ethread = NULL;
   if (OB_ISNULL(tmp_seq_info)) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("process_sequence_info get invalid argument", K(data));
+    WDIAG_ICMD("process_sequence_info get invalid argument", K(data));
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("it should not happened, this_ethread is null", K(ret));
+    WDIAG_ICMD("it should not happened, this_ethread is null", K(ret));
   } else if (tmp_seq_info->errno_ != 0) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("err happend in cont", K(tmp_seq_info->errno_ ), K(tmp_seq_info->err_msg_ ));
@@ -347,11 +347,11 @@ int ObSequenceInfoHandler::process_sequence_info(void* data)
   } else {
     seq_info_ = tmp_seq_info;
     if (OB_FAIL(dump_header())) {
-      WARN_ICMD("fail to dump_list_header", K(ret), K(*seq_info_));
+      WDIAG_ICMD("fail to dump_list_header", K(ret), K(*seq_info_));
     } else if (OB_FAIL(dump_body())) {
-      WARN_ICMD("fail to dump_list_body sm", K(ret), K(*seq_info_));
+      WDIAG_ICMD("fail to dump_list_body sm", K(ret), K(*seq_info_));
     } else if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret), K(*seq_info_));
+      WDIAG_ICMD("fail to encode eof packet", K(ret), K(*seq_info_));
     } else {
       DEBUG_ICMD("succ to dump info", K(retry_time_), K(param_), KPC(seq_info_));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -374,12 +374,15 @@ int ObSequenceInfoHandler::do_get_next_sequence(int event, void* data)
   ObEThread *ethread = NULL;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_ISNULL(ethread = this_ethread())) {
     ret = OB_ERR_UNEXPECTED;
-    WARN_ICMD("it should not happened, this_ethread is null", K(ret));
+    WDIAG_ICMD("it should not happened, this_ethread is null", K(ret));
+  } else if (OB_UNLIKELY(action_.cancelled_)) {
+    ret = OB_ERR_UNEXPECTED;
+    WDIAG_ICMD("action canceled", K(ret));
   } else if (OB_FAIL(handle_sequece_params())) {
-    WARN_ICMD("handle_sequece_params failed");
+    WDIAG_ICMD("handle_sequece_params failed");
   } else {
     SET_HANDLER(&ObSequenceInfoHandler::handle_sequence_done);
     event::ObAction* action = NULL;
@@ -434,7 +437,7 @@ int ObSequenceInfoHandler::dump_header()
     return OB_ERR_UNEXPECTED;
   }
   if (OB_FAIL(encode_header(cname, file_type, result_->select_fields_size_))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -472,7 +475,7 @@ int ObSequenceInfoHandler::dump_body()
     }
   }
   if (OB_FAIL(encode_row_packet(row))) {
-    WARN_ICMD("fail to encode row packet", K(row), K(ret));
+    WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
   }
   return ret;
 }
@@ -484,18 +487,18 @@ static int sequence_info_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &i
   ObSequenceInfoHandler *handler = NULL;
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObSequenceInfoHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObSequenceInfoHandler", K(ret));
+    EDIAG_ICMD("fail to new ObSequenceInfoHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObSequenceInfoHandler");
+    WDIAG_ICMD("fail to init for ObSequenceInfoHandler");
   } else {
     action = &handler->get_action();
     // if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
     if (OB_ISNULL(self_ethread().schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule handler", K(ret));
+      EDIAG_ICMD("fail to schedule handler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule handler");
@@ -513,7 +516,7 @@ int sequence_info_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_DUAL,
               &sequence_info_cmd_callback))) {
-    WARN_ICMD("fail to register OBPROXY_T_ICMD_DUAL CMD", K(ret));
+    WDIAG_ICMD("fail to register OBPROXY_T_ICMD_DUAL CMD", K(ret));
   }
   return ret;
 }

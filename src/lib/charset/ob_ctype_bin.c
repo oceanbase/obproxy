@@ -148,12 +148,12 @@ static size_t ob_case_bin(const ObCharsetInfo *cs __attribute__((unused)),
   return srclen;
 }
 
- 
+
 
 static int ob_strnncoll_binary(const ObCharsetInfo *cs __attribute__((unused)),
                                const unsigned char *str, size_t s_len,
                                const unsigned char *t, size_t t_len,
-                               bool t_is_prefix)
+                               ob_bool t_is_prefix)
 {
   size_t len = OB_MIN(s_len,t_len);
   int cmp = memcmp(str,t,len);
@@ -164,7 +164,7 @@ static int ob_strnncollsp_binary(const ObCharsetInfo *cs
                                  __attribute__((unused)),
                                  const unsigned char *str, size_t s_len,
                                  const unsigned char *t, size_t t_len,
-                                 bool diff_if_only_endspace_difference
+                                 ob_bool diff_if_only_endspace_difference
                                  __attribute__((unused)))
 {
   return ob_strnncoll_binary(cs,str,s_len,t,t_len,0);
@@ -174,7 +174,7 @@ static size_t
 ob_strnxfrm_8bit_bin(const ObCharsetInfo *cs,
                      unsigned char * dst, size_t dstlen, unsigned int nweights,
                      const unsigned char *src, size_t srclen, unsigned int flags,
-                     bool *is_valid_unicode __attribute__((unused)))
+                     ob_bool *is_valid_unicode __attribute__((unused)))
 {
   set_if_smaller(srclen, dstlen);
   set_if_smaller(srclen, nweights);
@@ -194,7 +194,7 @@ int ob_wildcmp_bin_impl(const ObCharsetInfo *cs,
                         const char *wild_str,const char *wild_end,
                         int escape_char, int w_one, int w_many, int recurse_level)
 {
-  int result= -1;			 
+  int result= -1;
 
   while (wild_str != wild_end) {
     while (*wild_str != w_many && *wild_str != w_one) {
@@ -202,11 +202,11 @@ int ob_wildcmp_bin_impl(const ObCharsetInfo *cs,
 	      wild_str++;
       }
       if (str == str_end || likeconv(cs,*wild_str++) != likeconv(cs,*str++)) {
-        return(1);			 
+        return(1);
       } else if (wild_str == wild_end) {
-	      return(str != str_end);		 
+	      return(str != str_end);
       } else {
-        result=1;				 
+        result=1;
       }
     }
     if (*wild_str == w_one) {
@@ -219,9 +219,9 @@ int ob_wildcmp_bin_impl(const ObCharsetInfo *cs,
       } while (++wild_str < wild_end && *wild_str == w_one);
       if (wild_str == wild_end) break;
     }
-    if (*wild_str == w_many) {					 
+    if (*wild_str == w_many) {
       unsigned char cmp;
-      wild_str++;  
+      wild_str++;
       for (; wild_str != wild_end ; wild_str++) {
         if (*wild_str == w_many) {
           continue;
@@ -233,17 +233,17 @@ int ob_wildcmp_bin_impl(const ObCharsetInfo *cs,
             continue;
           }
         }
-        break;				 
+        break;
       }
       if (wild_str == wild_end) {
-	      return(0);			 
+	      return(0);
       } else if (str == str_end) {
 	      return(-1);
       } else if ((cmp= *wild_str) == escape_char && wild_str+1 != wild_end) {
 	      cmp= *++wild_str;
       }
 
-      INC_PTR(cs,wild_str,wild_end);	 
+      INC_PTR(cs,wild_str,wild_end);
       cmp=likeconv(cs,cmp);
       do {
         while (str != str_end && (unsigned char) likeconv(cs,*str) != cmp) {
@@ -291,7 +291,7 @@ unsigned int ob_instr_bin(const ObCharsetInfo *cs __attribute__((unused)),
         match->end= 0;
         match->mb_len= 0;
       }
-      return 1;		 
+      return 1;
     }
 
     str= (const unsigned char*) begin;
@@ -331,8 +331,8 @@ loop:
 }
 
 void ob_hash_sort_bin(const ObCharsetInfo *cs __attribute__((unused)),
-		      const unsigned char *key, size_t len, unsigned long int *nr1, unsigned long int *nr2, 
-          const bool calc_end_space,
+		      const unsigned char *key, size_t len, unsigned long int *nr1, unsigned long int *nr2,
+          const char calc_end_space,
           hash_algo hash_algo)
 {
   const unsigned char *pos = key;
@@ -349,12 +349,12 @@ void ob_hash_sort_bin(const ObCharsetInfo *cs __attribute__((unused)),
   }
 }
 
- 
+
 
 static ObCharsetHandler ob_charset_handler=
 {
-  NULL,			 
-  ob_mbcharlen_8bit,	 
+  NULL,
+  ob_mbcharlen_8bit,
   ob_numchars_8bit,
   ob_charpos_8bit,
   ob_max_bytes_charpos_8bit,
@@ -400,6 +400,8 @@ ObCharsetInfo ob_charset_bin =
     bin_char_array,
     NULL,
     NULL,
+    NULL,			/* tab_to_uni    */
+    NULL,			/* tab_from_uni  */
     &ob_unicase_default,
     NULL,
     NULL,
@@ -418,3 +420,85 @@ ObCharsetInfo ob_charset_bin =
     &ob_collation_binary_handler
 };
 
+static int ob_strnncoll_8bit_bin(const ObCharsetInfo *cs __attribute__((unused)),
+                               const uchar *s, size_t slen,
+                               const uchar *t, size_t tlen,
+                               ob_bool t_is_prefix)
+{
+  size_t len= OB_MIN(slen,tlen);
+  int cmp= memcmp(s,t,len);
+  return cmp ? cmp : (int)((t_is_prefix ? len : slen) - tlen);
+}
+
+static int ob_strnncollsp_8bit_bin(const ObCharsetInfo *cs
+                                 __attribute__((unused)),
+                                 const unsigned char *str, size_t s_len,
+                                 const unsigned char *t, size_t t_len,
+                                 ob_bool diff_if_only_endspace_difference
+                                 __attribute__((unused)))
+{
+  const unsigned char *end;
+  size_t len = s_len < t_len ? s_len : t_len;
+  int res;
+  end = str + len;
+  while (str < end) {
+    if (*str++ != *t++) return ((int)str[-1] - (int)t[-1]);
+  }
+  res = 0;
+  if (s_len != t_len) {
+    int swap = 1;
+    if (diff_if_only_endspace_difference){
+      res=1;
+    }
+    if (s_len < t_len) {
+      s_len = t_len;
+      str = t;
+      swap = -1;
+      res = -res;
+    }
+    for (end = str + s_len - len; str < end; str++) {
+      if (*str != ' ') return (*str < ' ') ? -swap : swap;
+    }
+  }
+  return res;
+}
+
+void ob_hash_sort_8bit_bin(const ObCharsetInfo *cs __attribute__((unused)),
+              const uchar *key, size_t len, ulong *nr1, ulong *nr2, const ob_bool calc_end_space, hash_algo hash_algo)
+{
+  const uchar *pos = key;
+  key += len;
+  //trailing space to make 'A ' == 'A'
+  if (!calc_end_space) {
+    key = skip_trailing_space(pos, len);
+  }
+  if (NULL == hash_algo)
+  {
+    for (; pos < (uchar*) key ; pos++)
+    {
+      nr1[0]^=(ulong) ((((uint) nr1[0] & 63)+nr2[0]) *
+        ((uint)*pos)) + (nr1[0] << 8);
+      nr2[0]+=3;
+    }
+  } else {
+    nr1[0] = hash_algo((void*)pos, (int)(key - pos), nr1[0]);
+  }
+}
+
+ObCollationHandler ob_collation_8bit_bin_handler =
+{
+  // ob_coll_init_8bit_bin,			/* init 初始化max_sort_char=255，暂无用处*/
+  // NULL,			/* uninit */
+  ob_strnncoll_8bit_bin,
+  ob_strnncollsp_8bit_bin,
+  ob_strnxfrm_8bit_bin,
+  // ob_strnxfrmlen_simple,
+  // NULL,
+  //ob_strnxfrmlen_simple,
+  ob_like_range_simple,
+  ob_wildcmp_bin,
+  // NULL, //ob_strcasecmp_bin,
+  ob_instr_bin,
+  ob_hash_sort_8bit_bin,
+  ob_propagate_simple
+};

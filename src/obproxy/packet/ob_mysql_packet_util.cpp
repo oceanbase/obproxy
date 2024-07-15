@@ -212,5 +212,32 @@ int ObMysqlPacketUtil::encode_kv_resultset(ObMIOBuffer &write_buf,
 
   return ret;
 }
+
+int ObMysqlPacketUtil::encode_empty_resultset(ObMIOBuffer &write_buf,
+                                              uint8_t &seq,
+                                              const uint16_t status_flag)
+{
+  int ret = OB_SUCCESS;
+
+  // header , cols , first eof
+  if (OB_SUCC(ret)) {
+    ObMySQLField field;
+    ObSEArray<ObMySQLField, 1> fields;
+    if (OB_FAIL(fields.push_back(field))) {
+      LOG_WDIAG("faild to push field", K(field), K(ret));
+    } else if (OB_FAIL(ObMysqlPacketUtil::encode_header(write_buf, seq, fields, status_flag))) {
+      LOG_WDIAG("faild to encode header", K(field), K(seq), K(status_flag), K(ret));
+    }
+  }
+
+  // second eof
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(ObMysqlPacketUtil::encode_eof_packet(write_buf, seq, status_flag))) {
+      LOG_WDIAG("faild to encode row", K(seq), K(status_flag), K(ret));
+    }
+  }
+
+  return ret;
+}
 }//end of namespace obproxy
 }//end of namespace oceanbase

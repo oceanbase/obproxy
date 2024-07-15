@@ -327,12 +327,23 @@ int ObProxyPbUtils::force_parse_groovy(const ObString &expr,
     ObString end_str;
     int64_t start_pos = -1;
     int64_t end_pos = -1;
+    
     start_str.assign_ptr(sm.str(2).c_str(), static_cast<int32_t>(sm.str(2).length()));
-    end_str.assign_ptr(sm.str(3).c_str(), static_cast<int32_t>(sm.str(3).length()));
     if (OB_FAIL(get_int_value(start_str, start_pos))) {
       LOG_WDIAG("fail to get int value for sub_string_start_", K(start_str), K(ret));
+    }
+    
+    end_str.assign_ptr(sm.str(3).c_str(), static_cast<int32_t>(sm.str(3).length()));
+    if (OB_FAIL(ret)) {
+      // nothing
     } else if (OB_FAIL(get_int_value(end_str, end_pos))) {
       LOG_WDIAG("fail to get int value for sub_string_end", K(end_str), K(ret));
+    }
+
+    LOG_DEBUG("get regex str", K(start_pos), K(end_pos), K(sub_str_match1), K(sub_str_match2),
+              K(ad_sub_str_match1), K(ad_sub_str_match2));
+    if (OB_FAIL(ret)) {
+      // nothing
     } else {
       if (sub_str_match1) {
         snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(substr(%.*s, %ld, %ld))",
@@ -368,6 +379,7 @@ int ObProxyPbUtils::force_parse_groovy(const ObString &expr,
     ObProxyExprFactory factory(allocator);
     ObFuncExprResolverContext ctx(&allocator, &factory);
     ObFuncExprResolver resolver(ctx);
+    LOG_DEBUG("get parse sql", K(parse_sql));
     if (OB_FAIL(parser.parse(parse_sql, result))) {
       LOG_WDIAG("parse failed", K(ret), K(parse_sql));
     } else if (OB_FAIL(resolver.resolve(result.param_node_, info.expr_))) {
@@ -822,19 +834,6 @@ int ObProxyPbUtils::do_parse_from_local_file(const char *dir, const char *file_n
   if (NULL != buf) {
     ob_free(buf);
     buf = NULL;
-  }
-  return ret;
-}
-
-bool ObProxyPbUtils::match_like(const common::ObString &str_text, const common::ObString &str_pattern)
-{
-  bool ret = false;
-  if (str_text.empty()) {
-    // return false if text config namme is NULL
-  } else if (str_pattern.empty()) {
-    ret = true;
-  } else {
-    ret = ObCharset::wildcmp(CS_TYPE_UTF8MB4_BIN, str_text, str_pattern, 0, '_', '%');
   }
   return ret;
 }

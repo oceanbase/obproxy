@@ -1,0 +1,7 @@
+proxy_rpc_req_executor_sources:=\
+obproxy/proxy/rpc_optimize/executor/ob_rpc_req_parallel_processor.cpp\
+obproxy/proxy/rpc_optimize/executor/ob_rpc_req_parallel_processor.h\
+obproxy/proxy/rpc_optimize/executor/ob_rpc_req_parallel_cont.cpp\
+obproxy/proxy/rpc_optimize/executor/ob_rpc_req_parallel_cont.h\
+obproxy/proxy/rpc_optimize/executor/ob_rpc_req_parallel_execute_cont.cpp\
+obproxy/proxy/rpc_optimize/executor/ob_rpc_req_parallel_execute_cont.h

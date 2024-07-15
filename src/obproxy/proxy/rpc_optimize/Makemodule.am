@@ -1,0 +1,8 @@
+proxy_rpc_optimize_sources:=\
+obproxy/proxy/rpc_optimize/ob_rpc_req_trace.h\
+obproxy/proxy/rpc_optimize/ob_rpc_req.h\
+obproxy/proxy/rpc_optimize/ob_rpc_req.cpp\
+obproxy/proxy/rpc_optimize/ob_rpc_request_sm.h\
+obproxy/proxy/rpc_optimize/ob_rpc_request_sm.cpp\
+obproxy/proxy/rpc_optimize/ob_rpc_req_debug_names.h\
+obproxy/proxy/rpc_optimize/ob_rpc_req_debug_names.cpp

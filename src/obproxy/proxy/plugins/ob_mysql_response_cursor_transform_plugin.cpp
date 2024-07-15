@@ -95,19 +95,23 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
             }
             break;
           case RESULTSET_FIELD :
-            if (OB_FAIL(handle_resultset_field(local_analyze_reader_))) {
+            if (OB_UNLIKELY(result.is_eof_packet())) {
+              // just for defence 
+              ret = OB_UNKNOWN_PACKET;
+              PROXY_API_LOG(EDIAG, "unknown decode state", K_(column_num), K_(pkt_count), K(result), K(ret));
+            } else if (OB_FAIL(handle_resultset_field(local_analyze_reader_))) {
               PROXY_API_LOG(EDIAG, "handle resultset field", K(ret));
             }
             break;
           case RESULTSET_EOF_FIRST :
-            if (MYSQL_EOF_PACKET_TYPE != result.meta_.pkt_type_) {
+            if (OB_UNLIKELY(!result.is_eof_packet())) {
               PROXY_API_LOG(EDIAG, "excepted EOF packet, but not", "type", result.meta_.pkt_type_, K(ret));
             } else {
               resultset_state_ = RESULTSET_ROW;
             }
             break;
           case RESULTSET_ROW :
-            if (MYSQL_EOF_PACKET_TYPE == result.meta_.pkt_type_) {
+            if (result.is_eof_packet()) {
               reset();
             } else if (OB_FAIL(handle_resultset_row(local_analyze_reader_, sm_, field_types_, hava_cursor_, column_num_))) {
               PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
@@ -162,7 +166,11 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_header(event::ObIOBuf
     PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
   } else {
     column_num_ = resultset_header.get_field_count();
-    resultset_state_ = RESULTSET_FIELD;
+    if (OB_UNLIKELY(0 == column_num_)) {
+      resultset_state_ = RESULTSET_EOF_FIRST;
+    } else {
+      resultset_state_ = RESULTSET_FIELD;
+    }
   }
 
   return ret;
@@ -176,7 +184,10 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_field(event::ObIOBuff
   OMPKField field_packet(field);
 
   pkt_reader_.reset();
-  if (OB_FAIL(pkt_reader_.get_packet(*reader, field_packet))) {
+  if (OB_UNLIKELY(column_num_ < pkt_count_)) {
+    ret = OB_UNKNOWN_PACKET;
+    PROXY_API_LOG(WDIAG, "error packet decode state", K_(column_num), K_(pkt_count), K(ret));
+  } else if (OB_FAIL(pkt_reader_.get_packet(*reader, field_packet))) {
     PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
   } else {
     pkt_count_++;
@@ -195,7 +206,7 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_field(event::ObIOBuff
 }
 
 int ObMysqlResponseCursorTransformPlugin::handle_resultset_row(event::ObIOBufferReader *reader, ObMysqlSM *sm,
-                                                               ObArray<obmysql::EMySQLFieldType> field_types,
+                                                               const ObArray<obmysql::EMySQLFieldType> &field_types,
                                                                bool hava_cursor, uint64_t column_num)
 {
   int ret = OB_SUCCESS;

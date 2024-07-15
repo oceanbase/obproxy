@@ -13,7 +13,7 @@
 #ifndef __COMMON_OB_MYSQL_CONNECTION_POOL__
 #define __COMMON_OB_MYSQL_CONNECTION_POOL__
 
-#include <mysql.h>
+#include <mariadb/mysql.h>
 #include "lib/tbsys.h"
 #include "lib/container/ob_se_array.h"
 #include "lib/task/ob_timer.h"

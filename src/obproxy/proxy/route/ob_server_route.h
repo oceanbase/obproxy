@@ -35,6 +35,8 @@ class ObClusterResource;
 namespace proxy
 {
 class ObMysqlRouteResult;
+class ObRpcClientSession;
+class ObRpcOBKVInfo;
 class ObServerRoute
 {
 public:
@@ -42,7 +44,7 @@ public:
     : table_entry_(NULL), dummy_entry_(NULL), part_entry_(NULL), cur_chosen_pl_(NULL),
       is_table_entry_from_remote_(false), is_part_entry_from_remote_(false),
       has_dup_replica_(false), need_use_dup_replica_(false), no_need_pl_update_(false),
-      consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
+      use_proxy_primary_zone_name_(false), consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
       ldc_route_(), valid_count_(0), cur_chosen_server_(),
       cur_chosen_route_type_(ROUTE_TYPE_MAX), skip_leader_item_(false) {}
   ~ObServerRoute() { reset(); };
@@ -53,6 +55,9 @@ public:
   //                                         |                                        |
   //                                         +<---------------------------------------+
   const ObProxyReplicaLocation *get_next_avail_replica();
+  const ObProxyReplicaLocation *get_obkv_strong_read_avail_replica();
+  const ObProxyReplicaLocation *get_next_replica(const uint32_t cur_ip, const uint16_t cur_port,
+                                                 const bool is_force_retry);
   const ObProxyReplicaLocation *get_leader_replica_from_remote() const;
 
   ObTableEntry *get_dummy_entry();
@@ -65,23 +70,51 @@ public:
                     obutils::ObClusterResource *cluster_resource,
                     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                     const common::ObIArray<common::ObString> &region_names,
-                    const common::ObString &proxy_primary_zone_name
+                    const common::ObIArray<common::ObString> &proxy_primary_zone_name
 #if OB_DETAILED_SLOW_QUERY
                     ,ObHRTime &debug_random_time,
                     ObHRTime &debug_fill_time
 #endif
                     );
+
+  int fill_replicas(const common::ObConsistencyLevel level,
+                    const ObRoutePolicyEnum route_policy,
+                    const bool is_random_routing_mode,
+                    const bool disable_merge_status_check,
+                    ObRpcClientSession *client_session,
+                    obutils::ObClusterResource *cluster_resource,
+                    const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
+                    const common::ObIArray<common::ObString> &region_names,
+                    const common::ObIArray<common::ObString> &proxy_primary_zone_name
+#if OB_DETAILED_SLOW_QUERY
+                    ,ObHRTime &debug_random_time,
+                    ObHRTime &debug_fill_time
+#endif
+                    );
+
+  int fill_replicas(const common::ObConsistencyLevel level,
+                    const ObRoutePolicyEnum route_policy,
+                    const bool is_random_routing_mode,
+                    const bool disable_merge_status_check,
+                    ObRpcOBKVInfo &rpc_server_route_info,
+                    obutils::ObClusterResource *cluster_resource,
+                    const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
+                    const common::ObIArray<common::ObString> &region_names,
+                    const common::ObIArray<common::ObString> &proxy_primary_zone_name
+                    );
+
+
   int fill_strong_read_replica(const ObProxyPartitionLocation *pl, ObLDCLocation &dummy_ldc,
                                const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                const common::ObIArray<common::ObString> &region_names,
-                               const common::ObString &proxy_primary_zone_name,
+                               const common::ObIArray<common::ObString> &proxy_primary_zone_name,
                                const common::ObString &tenant_name,
                                obutils::ObClusterResource *cluster_resource,
                                const bool is_random_routing_mode);
   int fill_weak_read_replica(const ObProxyPartitionLocation *pl, ObLDCLocation &dummy_ldc,
                              const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                              const common::ObIArray<common::ObString> &region_names,
-                             const common::ObString &proxy_primary_zone_name);
+                             const common::ObIArray<common::ObString> &proxy_primary_zone_name);
   bool is_non_partition_table() const;
   bool is_partition_table() const;
   bool is_dummy_table() const;
@@ -114,6 +147,11 @@ public:
   bool is_weak_read() const { return common::WEAK == consistency_level_; }
   void set_consistency_level(const common::ObConsistencyLevel level) { consistency_level_ = level; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
+  bool is_enough_old_cache() const;
+  const ObProxyReplicaLocation *get_leader_replica_for_rpc() const;
+  void set_entry_expired_direct_for_rpc();
+  void set_table_entry_expire_for_rpc();
+  bool is_table_entry_enough_old_cache() const;
 
 private:
   const ObProxyReplicaLocation *get_leader_replica() const;
@@ -131,6 +169,7 @@ public:
   bool has_dup_replica_;
   bool need_use_dup_replica_;
   bool no_need_pl_update_;
+  bool use_proxy_primary_zone_name_;
 
   common::ObConsistencyLevel consistency_level_;
   ObLDCItem leader_item_;
@@ -150,6 +189,7 @@ inline void ObServerRoute::reset()
   has_dup_replica_ = false;
   need_use_dup_replica_ = false;
   no_need_pl_update_ = false;
+  use_proxy_primary_zone_name_ = false;
   skip_leader_item_ = false;
   set_dummy_entry(NULL);
   set_table_entry(NULL);
@@ -167,7 +207,7 @@ inline int ObServerRoute::fill_weak_read_replica(
     const ObProxyPartitionLocation *pl, ObLDCLocation &dummy_ldc,
     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
     const common::ObIArray<common::ObString> &region_names,
-    const ObString &proxy_primary_zone_name)
+    const common::ObIArray<common::ObString> &proxy_primary_zone_name)
 {
   int ret = common::OB_SUCCESS;
   const bool is_only_readonly_zone = (ONLY_READONLY_ZONE == ldc_route_.policy_);
@@ -197,7 +237,7 @@ inline int ObServerRoute::fill_weak_read_replica(
 inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocation *pl,
     ObLDCLocation &dummy_ldc, const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
     const common::ObIArray<common::ObString> &region_names,
-    const ObString &proxy_primary_zone_name, const ObString &tenant_name,
+    const ObIArray<common::ObString> &proxy_primary_zone_name, const ObString &tenant_name,
     obutils::ObClusterResource *cluster_resource, const bool is_random_routing_mode)
 {
   int ret = common::OB_SUCCESS;
@@ -215,7 +255,7 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
                                                     cluster_resource))) {
     PROXY_LOG(WDIAG, "fail to divide_leader_replica", K(ret));
   } else {
-    valid_count_ = ldc_route_.location_.count() + ((!need_use_dup_replica_ && leader_item_.is_valid()) ? 1 : 0);
+    valid_count_ = ldc_route_.location_.count() + (((!need_use_dup_replica_ && proxy_primary_zone_name.empty()) && leader_item_.is_valid()) ? 1 : 0);
     PROXY_LOG(DEBUG, "succ to fill_strong_read_replica", KPC(this), KPC(pl), K(dummy_ldc), K(valid_count_));
   }
   if (entry_need_update) {
@@ -234,7 +274,7 @@ inline int ObServerRoute::fill_replicas(
     obutils::ObClusterResource *cluster_resource,
     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
     const common::ObIArray<common::ObString> &region_names,
-    const ObString &proxy_primary_zone_name
+    const common::ObIArray<common::ObString> &proxy_primary_zone_name
 #if OB_DETAILED_SLOW_QUERY
     ,ObHRTime &debug_random_time,
     ObHRTime &debug_fill_time
@@ -263,6 +303,7 @@ inline int ObServerRoute::fill_replicas(
     set_consistency_level(level);
     ldc_route_.policy_ = route_policy;
     ldc_route_.disable_merge_status_check_ = disable_merge_status_check;
+    use_proxy_primary_zone_name_ = !proxy_primary_zone_name.empty();
 
     cur_chosen_pl_ = NULL;
     if (NULL != table_entry_) {
@@ -375,8 +416,8 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
 {
   const ObLDCItem *item = NULL;
   if (is_strong_read()) {
-    if (need_use_dup_replica_) {
-      // if need_use_dup_replica,
+    if (need_use_dup_replica_ || use_proxy_primary_zone_name_) {
+      // if need_use_dup_replica or proxy_primary_zone
       // leader item has already been added into item_array of ldc_route
       item = ldc_route_.get_next_item();
       cur_chosen_route_type_ = ldc_route_.get_curr_route_type();
@@ -618,6 +659,11 @@ inline bool ObServerRoute::set_target_dirty(bool is_need_force_flush /*false*/)
         && table_entry_->need_update_entry()
         && table_entry_->cas_set_dirty_state()) {
       table_entry_->set_need_force_flush(is_need_force_flush);
+      if (obutils::get_global_proxy_config().enable_async_pull_location_cache
+            && obutils::get_global_proxy_config().rpc_enable_async_pull_batch_tablets) {
+        //put it first, no care about that put it to batch set or not, we just try it, not to care about return value
+        table_entry_->put_batch_fetch_tablet_id(part_entry_->get_partition_id());
+      }
       bret = true;
       PROXY_LOG(INFO, "this table entry will set to dirty and wait for update", K(is_need_force_flush), KPC_(table_entry));
     }
@@ -731,6 +777,65 @@ inline bool ObServerRoute::is_server_from_rslist() const
     bret = dummy_entry_->is_entry_from_rslist();
   }
 
+  return bret;
+}
+
+inline bool ObServerRoute::is_enough_old_cache() const
+{
+  bool bret = false;
+  if (is_non_partition_table()) {
+    if (NULL != table_entry_
+        && !is_table_entry_from_remote_
+        && table_entry_->is_enougth_old()) {
+      bret = true;
+      PROXY_LOG(DEBUG, "this table entry got from cache and cached time more than delay_update_entry_interval", KPC_(table_entry));
+    }
+  } else if (is_partition_table()) {
+    if (NULL != part_entry_
+        && !is_part_entry_from_remote_
+        && part_entry_->is_enougth_old()) {
+      bret = true;
+      PROXY_LOG(DEBUG, "this partition entry got from cache and cached time more than delay_update_entry_interval", KPC_(table_entry), KPC_(part_entry));
+    }
+  }
+  return bret;
+}
+
+inline const ObProxyReplicaLocation *ObServerRoute::get_leader_replica_for_rpc() const
+{
+  return get_leader_replica();
+}
+
+void ObServerRoute::set_entry_expired_direct_for_rpc()
+{
+  if (is_non_partition_table()) {
+    if (NULL != table_entry_) {
+      table_entry_->set_entry_expired_direct_for_rpc();
+    }
+  } else if (is_partition_table()) {
+    if (NULL != part_entry_) {
+      part_entry_->set_entry_expired_direct_for_rpc();
+    }
+  }
+}
+
+inline void ObServerRoute::set_table_entry_expire_for_rpc() /** it will expire when table schema changed */
+{
+  if (NULL != table_entry_) {
+    table_entry_->set_entry_expired_direct_for_rpc();
+    PROXY_LOG(INFO, "this table entry will set to expire", KPC_(table_entry));
+  }
+}
+
+inline bool ObServerRoute::is_table_entry_enough_old_cache() const
+{
+  bool bret = false;
+  if (NULL != table_entry_
+      && !is_table_entry_from_remote_
+      && table_entry_->is_enougth_old()) {
+    bret = true;
+    PROXY_LOG(DEBUG, "this table entry got from cache and cached time more than delay_update_entry_interval", KPC_(table_entry));
+  }
   return bret;
 }
 

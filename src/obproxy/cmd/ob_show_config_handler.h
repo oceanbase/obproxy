@@ -23,6 +23,10 @@ class ObConfigItem;
 }
 namespace obproxy
 {
+namespace omt
+{
+class ObProxyConfigItem;
+}
 namespace obutils
 {
 class ObShowConfigHandler : public ObInternalCmdHandler
@@ -31,6 +35,7 @@ public:
   ObShowConfigHandler(event::ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowConfigHandler() {}
   int handle_show_config(int event, void *data);
+  int dump_all_config_item(const omt::ObProxyConfigItem &item);
 
 private:
   int dump_config_header();

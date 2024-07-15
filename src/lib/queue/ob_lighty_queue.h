@@ -18,7 +18,7 @@
 #include "lib/allocator/ob_malloc.h"
 #include "lib/ob_define.h"
 #include "lib/queue/ob_fixed_queue.h"
-#include "lib/thread_local/ob_tsi_utils.h"
+#include "lib/lock/ob_futex.h"
 
 namespace oceanbase
 {

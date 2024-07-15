@@ -1,0 +1,5 @@
+proxy_rpc_req_optimizer_sources:=\
+obproxy/proxy/rpc_optimize/optimizer/ob_rpc_req_sharding_plan.h\
+obproxy/proxy/rpc_optimize/optimizer/ob_rpc_req_sharding_plan.cpp\
+obproxy/proxy/rpc_optimize/optimizer/ob_rpc_req_optimizer_processor.h\
+obproxy/proxy/rpc_optimize/optimizer/ob_rpc_req_optimizer_processor.cpp

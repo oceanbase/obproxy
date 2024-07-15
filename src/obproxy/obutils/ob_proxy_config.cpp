@@ -201,6 +201,78 @@ int ObProxyConfig::check_proxy_serviceable() const
   return ret;
 }
 
+bool ObProxyConfig::is_memory_visible(const common::ObString &key_name)
+{
+  bool bret = false;
+  if (OB_UNLIKELY(key_name.empty())
+      || OB_UNLIKELY(key_name.length() >= static_cast<int32_t>(OB_MAX_CONFIG_NAME_LEN))) {
+    LOG_WDIAG("invalid argument", K(key_name), K(bret));
+  } else {
+    ObConfigItem *const *item = NULL;
+    ObConfigStringKey key(key_name);
+    // 无需加锁，因为memory_visiable不会被修改
+    if (OB_ISNULL(item = container_.get(key))) {
+      LOG_WDIAG("unknown key_name", K(key_name), K(bret));
+    } else if (OB_ISNULL(*item)) {
+      LOG_WDIAG("invalid item, it should not happened",K(key_name), K(bret));
+    } else {
+      bret = ObProxyConfigUtils::is_memory_visible(**item);
+    }
+  }
+  return bret;
+}
+
+int ObProxyConfig::load_sqlite_config_init_callback(void *data, int argc, char **argv, char **column_name)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(data) || OB_ISNULL(argv) || OB_ISNULL(column_name)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("sqlite argument is null unexpected", K(ret));
+  } else {
+    // 这里传入的是全局proxy_config，只会修改其value，不涉及其他属性
+    ObProxyConfig &proxy_config = *static_cast<ObProxyConfig*>(data);
+    ObConfigItem item;
+    for (int64_t i = 0; OB_SUCC(ret) && i < argc; ++i) {
+      ObString col_name(column_name[i]);
+      if (col_name == "name") {
+        if (NULL == argv[i]) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("name is null unexpected from sqlite", K(ret));
+        } else {
+          item.set_name(argv[i]);
+        }
+      } else if (col_name == "value") {
+        if (NULL == argv[i]) {
+          // do nothing, allowed to value is null
+        } else {
+          item.set_value(argv[i]);
+        }
+      } else {  // impossible
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("unexpected column name from sqlite", K(col_name), K(ret));
+      }
+    }
+
+    if (OB_FAIL(ret)) {
+      LOG_WDIAG("fail to parse config from sqlite", K(ret));
+    } else if (proxy_config.is_memory_visible(item.name())) {
+      // 内存级别配置，不使用磁盘数据，采用默认配置
+      // do nothing
+    } else if (OB_FAIL(proxy_config.update_config_item(item.name(), item.str()))) {
+      if (OB_ERR_SYS_CONFIG_UNKNOWN == ret || OB_INVALID_CONFIG == ret) {
+        // 兼容配置，1. 如果读取到不存在的配置，直接跳过，不插入；2. 配置是无效值，会回滚到默认配置
+        LOG_WDIAG("config is invaild, will ues default config value and ignore this error",
+                  K(item), K(ret));
+        ret = OB_SUCCESS;
+      } else {
+        LOG_WDIAG("fail to update config item", K(item.name()), K(item.str()), K(ret));
+      }
+    }
+  }
+
+  return ret;
+}
+
 int ObProxyConfig::dump_config_to_local()
 {
   int ret = OB_SUCCESS;
@@ -217,23 +289,30 @@ int ObProxyConfig::dump_config_to_local()
 int ObProxyConfig::dump_config_to_sqlite()
 {
   int ret = OB_SUCCESS;
-  CRLockGuard guard(rwlock_);
-  ObConfigContainer::const_iterator it = container_.begin();
-  for (; OB_SUCC(ret) && it != container_.end(); ++it) {
-    const char *sql = "replace into proxy_config(name, value, config_level) values('%s', '%s', 'LEVEL_GLOBAL')";
-    char buf[1024];
-    char *err_msg = NULL;
-    int64_t len = static_cast<int64_t>(snprintf(buf, 1024, sql, it->first.str(), it->second->str()));
-    if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= 1024)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("fail to fill sql", K(buf), K(len), K(ret));
-    } else if (SQLITE_OK != sqlite3_exec(proxy_config_db_, buf, NULL, 0, &err_msg)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("exec replace into proxy config failed", K(ret), "sql", buf, "err_msg", err_msg);
-    }
+  sqlite3 *proxy_config_db = get_global_config_processor().get_sqlite_db();
+  if (OB_ISNULL(proxy_config_db)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected null pointer from sqlite", K(ret));
+  } else {
+    CRLockGuard guard(rwlock_);
+    ObConfigContainer::const_iterator it = container_.begin();
+    const int64_t max_sql_len = 1024 * 4 + 256;   // value最长4k，name最长128
+    for (; OB_SUCC(ret) && it != container_.end(); ++it) {
+      const char *sql = "replace into proxy_config(name, value, config_level) values('%s', '%s', 'LEVEL_GLOBAL')";
+      char buf[max_sql_len];
+      char *err_msg = NULL;
+      int64_t len = static_cast<int64_t>(snprintf(buf, max_sql_len, sql, it->first.str(), it->second->str()));
+      if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= max_sql_len)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to fill sql", K(buf), K(len), K(max_sql_len), K(ret));
+      } else if (SQLITE_OK != sqlite3_exec(proxy_config_db, buf, NULL, 0, &err_msg)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WARN("exec replace proxy config into sqlite failed", K(ret), "sql", buf, "err_msg", err_msg);
+      }
 
-    if (NULL != err_msg) {
-      sqlite3_free(err_msg);
+      if (NULL != err_msg) {
+        sqlite3_free(err_msg);
+      }
     }
   }
   return ret;
@@ -348,16 +427,13 @@ int ObProxyConfig::update_user_config_item(const ObString &key_name, const ObStr
   return ret;
 }
 
-int ObProxyConfig::get_old_config_value(const common::ObString &key_name, char *buf,
-    const int64_t buf_size)
+int ObProxyConfig::get_config_value(const common::ObString &key_name, common::ObConfigVariableString &value)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(key_name.empty())
-      || OB_UNLIKELY(key_name.length() >= static_cast<int32_t>(OB_MAX_CONFIG_NAME_LEN))
-      || OB_ISNULL(buf)
-      || OB_UNLIKELY(buf_size < OB_MAX_CONFIG_VALUE_LEN)) {
+      || OB_UNLIKELY(key_name.length() >= static_cast<int32_t>(OB_MAX_CONFIG_NAME_LEN))) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("invalid argument", K(key_name), K(buf_size), K(buf), K(ret));
+    LOG_WDIAG("invalid argument", K(key_name), K(value), K(ret));
   } else {
     ObConfigItem *const *item = NULL;
     ObConfigStringKey key(key_name);
@@ -368,15 +444,15 @@ int ObProxyConfig::get_old_config_value(const common::ObString &key_name, char *
     } else {
       //we need lock it whenever handle item->value
       CRLockGuard guard(rwlock_);
-      const int32_t length = snprintf(buf, buf_size, "%s", (*item)->str());
-      if (length < 0 || length >= buf_size) {
-        ret = OB_BUF_NOT_ENOUGH;
-        OB_LOG(WDIAG, "buffer not enough", K(length), K(buf_size), "value", (*item)->str(), K(ret));
+      if (OB_FAIL(value.rewrite((*item)->str()))) {
+        OB_LOG(WDIAG, "fail to write config to value",
+              K(key_name), K(value), "value", (*item)->str(), K(ret));
       }
     }
   }
   return ret;
 }
+
 
 int ObProxyConfig::get_config_item(const common::ObString &key_name, ObConfigItem &ret_item)
 {
@@ -414,8 +490,6 @@ void ObProxyConfig::update_log_level(const bool level_flag)
   const ObString value(OB_LOGGER.get_level_str());
   if (OB_FAIL(update_config_item(name, value))) {
     LOG_WDIAG(" fail to update sys log level", K(ret));
-  } else if (OB_FAIL(dump_config_to_local())) {
-    LOG_WDIAG("dump config fail, inc log level fail", K(ret));
   } else if (OB_FAIL(dump_config_to_sqlite())) {
     LOG_WDIAG("dump config failed, inc log level fail", K(ret));
   } {

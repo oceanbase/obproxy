@@ -97,6 +97,7 @@ public:
 
   CfgIp local_bound_ip_;
   CfgPort listen_port_;
+  CfgPort rpc_listen_port_;
   CfgInt stack_size_;
   CfgInt work_thread_num_;
   CfgInt task_thread_num_;
@@ -138,6 +139,7 @@ public:
   CfgBool enable_trace_stats_;
   CfgBool enable_partition_table_route_;
   CfgBool enable_pl_route_;
+  CfgBool enable_obproxy_rpc_service_;
   CfgTime slow_transaction_time_threshold_;
   CfgTime slow_proxy_process_time_threshold_;
   CfgTime query_digest_time_threshold_;
@@ -152,6 +154,8 @@ public:
   CfgIp local_bound_ipv6_ip_;
   CfgTime read_stale_retry_interval_;
   CfgTime ob_max_read_stale_time_;
+  CfgInt rpc_request_max_retries_;
+  CfgTime rpc_srv_session_pool_inactive_timeout_;
   CfgInt client_session_id_version_ ;
   char proxy_idc_name_[OB_PROXY_MAX_IDC_NAME_LENGTH + 1];
   char proxy_primary_zone_name_[common::MAX_ZONE_LENGTH + 1];

@@ -91,6 +91,8 @@ const char *ob_sql_type_str(ObObjType type)
     "LOB",
     "JSON",
     "GEOMETRY",
+    "UDT",
+    "DECIMAL INT" /* 50 */
     ""
   };
   return sql_type_name[OB_LIKELY(type < ObMaxType) ? type : ObMaxType];

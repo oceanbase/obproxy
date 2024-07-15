@@ -1,0 +1,13 @@
+proxy_rpc_net_sources:=\
+obproxy/proxy/rpc_optimize/net/ob_proxy_rpc_global_net_processer.h\
+obproxy/proxy/rpc_optimize/net/ob_rpc_session_accept.h\
+obproxy/proxy/rpc_optimize/net/ob_rpc_session_accept.cpp\
+obproxy/proxy/rpc_optimize/net/ob_proxy_rpc_session_info.cpp\
+obproxy/proxy/rpc_optimize/net/ob_proxy_rpc_session_info.h\
+obproxy/proxy/rpc_optimize/net/ob_proxy_rpc_session_info.cpp\
+obproxy/proxy/rpc_optimize/net/ob_rpc_net_handler.h\
+obproxy/proxy/rpc_optimize/net/ob_rpc_net_handler.cpp\
+obproxy/proxy/rpc_optimize/net/ob_rpc_client_net_handler.h\
+obproxy/proxy/rpc_optimize/net/ob_rpc_client_net_handler.cpp\
+obproxy/proxy/rpc_optimize/net/ob_rpc_server_net_handler.h\
+obproxy/proxy/rpc_optimize/net/ob_rpc_server_net_handler.cpp

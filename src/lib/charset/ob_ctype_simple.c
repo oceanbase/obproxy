@@ -49,7 +49,7 @@ long ob_strntol_8bit(const ObCharsetInfo *cs,
   const char *save, *s = nptr, *e = nptr+l;
   unsigned char c;
   unsigned int cut_lim;
-  *err= 0;				
+  *err= 0;
   uint32 cut_off;
   while (s<e && ob_isspace(cs, *s)) {
     s++;
@@ -101,7 +101,7 @@ long ob_strntol_8bit(const ObCharsetInfo *cs,
     *end_ptr = (char *) s;
   }
 
-  if (neg) { 
+  if (neg) {
     if (i  > (uint32) INT_MIN32) {
       overflow = 1;
     }
@@ -135,7 +135,7 @@ ulong ob_strntoul_8bit(const ObCharsetInfo *cs,
   uint32 cut_off;
   unsigned int cut_lim;
 
-  *err= 0;				
+  *err= 0;
 
   while (s<e && ob_isspace(cs, *s)) {
     s++;
@@ -212,7 +212,7 @@ longlong ob_strntoll_8bit(const ObCharsetInfo *cs __attribute__((unused)),
   ulonglong cut_off;
   unsigned int cut_lim;
   const char *s = nptr, *e = nptr+l, *save;
-  *err= 0;		
+  *err= 0;
 
   while (s<e && ob_isspace(cs,*s)) {
     s++;
@@ -298,7 +298,7 @@ ulonglong ob_strntoull_8bit(const ObCharsetInfo *cs,
   ulonglong cut_off;
   unsigned int cut_lim;
   const char *s = nptr, *e = nptr + l, *save;
-  *err= 0;			
+  *err= 0;
 
   while (s<e && ob_isspace(cs,*s)) {
     s++;
@@ -379,8 +379,8 @@ double ob_strntod_8bit(const ObCharsetInfo *cs __attribute__((unused)),
 		       char **end, int *err)
 {
   if (len == INT_MAX32) {
-    len= 65535;          
-  }               
+    len= 65535;
+  }
   *end= str + len;
   return ob_strtod(str, end, err);
 }
@@ -410,7 +410,7 @@ ob_strntoull10rnd_8bit(const ObCharsetInfo *cs __attribute__((unused)),
 
   beg= str;
   end9= (str + 9) > end ? end : (str + 9);
-    
+
   for (ul= 0 ; str < end9 && (ch= (unsigned char) (*str - '0')) < 10; str++) {
     ul= ul * 10 + ch;
   }
@@ -477,10 +477,10 @@ ob_strntoull10rnd_8bit(const ObCharsetInfo *cs __attribute__((unused)),
     }
     break;
   }
-  shift= dot ? dot - str : 0;   
+  shift= dot ? dot - str : 0;
   addon= 0;
 
-EXP:      
+EXP:
   if (!digits) {
     str= beg;
     goto RET_EDOM;
@@ -519,7 +519,7 @@ EXP:
     ulonglong d, r, d_half;
 
     if (-shift >= DIGITS_IN_ULONGLONG) {
-      goto RET_ZERO;   
+      goto RET_ZERO;
     } else {
       d= d10[-shift];
       r= ull % d;
@@ -572,7 +572,7 @@ RET_SIGN:
     }
   }
 
-    
+
   if (neg && ull) {
     *err= OB_ERRNO_ERANGE;
     return 0;
@@ -666,11 +666,6 @@ size_t ob_strxfrm_pad_desc_and_reverse(const ObCharsetInfo *cs,
   return frm_end - str;
 }
 
-size_t ob_strnxfrmlen_simple(const ObCharsetInfo *cs, size_t len)
-{
-  return len * (cs->strxfrm_multiply ? cs->strxfrm_multiply : 1);
-}
-
 bool ob_like_range_simple(const ObCharsetInfo *cs,
 			     const char *ptr, size_t ptr_len,
 			     pbool escape_char, pbool w_one, pbool w_many,
@@ -685,11 +680,11 @@ bool ob_like_range_simple(const ObCharsetInfo *cs,
 
   for (; ptr != end && min_str != min_end && charlen > 0 ; ptr++, charlen--) {
     if (*ptr == escape_char && ptr+1 != end) {
-      ptr++;					  
+      ptr++;
       *min_str++= *max_str++ = *ptr;
       continue;
     } else if (*ptr == w_one) {
-      *min_str++='\0';				  
+      *min_str++='\0';
       *max_str++= (char) cs->max_sort_char;
       continue;
     } else if (*ptr == w_many) {
@@ -708,7 +703,7 @@ bool ob_like_range_simple(const ObCharsetInfo *cs,
 
   *min_len= *max_len = (size_t) (min_str - min_org);
   while (min_str != min_end) {
-    *min_str++= *max_str++ = ' ';        
+    *min_str++= *max_str++ = ' ';
   }
   return 0;
 }
@@ -746,7 +741,7 @@ int64_t ob_strntoull(const char *ptr, size_t len, int base, char **end, int *err
 void ob_hash_sort_simple(const ObCharsetInfo *cs,
 			 const unsigned char *key, size_t len,
 			 unsigned long int *nr1, unsigned long int *nr2,
-       const bool calc_end_space, hash_algo hash_algo)
+       const ob_bool calc_end_space, hash_algo hash_algo)
 {
   unsigned char *sort_order=cs->sort_order;
   const unsigned char *end;
@@ -835,7 +830,7 @@ size_t ob_casedn_8bit(const ObCharsetInfo *cs __attribute__((unused)),
 int ob_strnncoll_simple(const ObCharsetInfo *cs __attribute__((unused)),
                                const uchar *s, size_t slen,
                                const uchar *t, size_t tlen,
-                               bool is_prefix)
+                               ob_bool is_prefix)
 {
   size_t len = (slen > tlen) ? tlen : slen;
   if (is_prefix && slen > tlen) slen = tlen;
@@ -853,11 +848,11 @@ static int ob_strnncollsp_simple(const ObCharsetInfo *cs
                           __attribute__((unused)),
                           const uchar *s, size_t slen,
                           const uchar *t, size_t tlen,
-                          bool diff_if_only_endspace_difference
+                          ob_bool diff_if_only_endspace_difference
                           __attribute__((unused)))
 {
   size_t len = (slen > tlen) ? tlen : slen;
-  for (size_t i = 0; i < len; i++){  
+  for (size_t i = 0; i < len; i++){
      if(ob_sort_order(cs,*s)!=ob_sort_order(cs,*t)) {
         return (int)ob_sort_order(cs,*s) - (int)ob_sort_order(cs,*t);
      }
@@ -897,14 +892,14 @@ static int ob_strnncollsp_simple(const ObCharsetInfo *cs
 
 
 static size_t ob_strnxfrm_simple(const ObCharsetInfo* cs __attribute__((unused)), unsigned char* dst, size_t dstlen,
-    uint nweights, const unsigned char* src, size_t srclen, unsigned int flags, bool* is_valid_unicode)
+    uint nweights, const unsigned char* src, size_t srclen, unsigned int flags, ob_bool* is_valid_unicode)
 {
   uchar *dst0 = dst;
   const uchar *end;
   const uchar *remainder;
   size_t frmlen;
   frmlen = dstlen > nweights ? nweights : dstlen;
-  frmlen = frmlen > srclen ? srclen : frmlen; 
+  frmlen = frmlen > srclen ? srclen : frmlen;
   end = src + frmlen;
   remainder = src + (frmlen % 8);
   for (; src < remainder;) *dst++ = ob_sort_order(cs,*src++);
@@ -924,7 +919,7 @@ static size_t ob_strnxfrm_simple(const ObCharsetInfo* cs __attribute__((unused))
 #define likeconv(s, A) (A)
 #define INC_PTR(cs, A, B) (A)++
 
-static int ob_wildcmp_8bit_impl(const ObCharsetInfo* cs, const char* str_ptr, const char* str_end_ptr,
+int ob_wildcmp_8bit_impl(const ObCharsetInfo* cs, const char* str_ptr, const char* str_end_ptr,
     const char* wild_str, const char* wild_end, int escape_char, int w_one_char, int w_many_char, int recurse_level)
 {
   int cmp_result = -1;
@@ -1060,6 +1055,10 @@ uint ob_instr_simple(const ObCharsetInfo* cs __attribute__((unused)), const char
   return 0;
 }
 
+size_t ob_strnxfrmlen_simple(const ObCharsetInfo *cs, size_t len)
+{
+  return len * (cs->strxfrm_multiply ? cs->strxfrm_multiply : 1);
+}
 
 ObCollationHandler ob_collation_8bit_simple_ci_handler = {
     // NULL /* init */

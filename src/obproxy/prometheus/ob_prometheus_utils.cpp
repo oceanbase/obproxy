@@ -42,6 +42,8 @@ const char* ObProxyPrometheusUtils::get_type_lable(ObPrometheusEntryType type)
   switch(type) {
   case TBALE_ENTRY:
     return "table_entry";
+  case PARTITION_INFO:
+    return "partition_info";
   case PARTITION_ENTRY:
     return "partition_entry";
   case ROUTE_ENTRY:

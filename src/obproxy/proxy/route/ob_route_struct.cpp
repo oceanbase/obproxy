@@ -87,6 +87,7 @@ int64_t ObProxyReplicaLocation::to_string(char *buf, const int64_t buf_len) cons
   int64_t pos = 0;
   J_OBJ_START();
   J_KV(K_(server),
+       K_(rpc_server),
        K_(is_dup_replica),
        "role", get_role_type_string(role_),
        "type", get_replica_type_string(replica_type_));
@@ -339,6 +340,14 @@ void ObRouteEntry::check_and_set_expire_time(const uint64_t tenant_version, cons
     } else {
       // do nothing
     }
+  }
+}
+
+void ObRouteEntry::set_entry_expired_direct_for_rpc()
+{
+  if (obutils::get_global_proxy_config().rpc_enable_direct_expire_route_entry) {
+    LOG_WDIAG("will expire route entry directly", KPC(this));
+    time_for_expired_ = common::ObTimeUtility::current_time();
   }
 }
 

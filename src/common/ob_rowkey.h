@@ -39,6 +39,7 @@ public:
   void reset() {obj_ptr_ = NULL; obj_cnt_ = 0; }
   inline int64_t get_obj_cnt() const { return obj_cnt_; }
   inline const ObObj *get_obj_ptr() const { return obj_ptr_; }
+  inline ObObj *get_obj_ptr() { return obj_ptr_; }
   // for convenience compactible with ObString
   inline int64_t length()  const { return obj_cnt_; }
   inline const ObObj *ptr() const { return obj_ptr_; }

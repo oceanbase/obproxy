@@ -41,8 +41,15 @@ int ObZlibStreamCompressor::reset()
 
 ObZlibStreamCompressor::~ObZlibStreamCompressor()
 {
-  if (is_inited()) { // just for defense
-    LOG_EDIAG("never happen", K_(type), K_(is_finished));
+  int ret = OB_SUCCESS;
+  if (COMPRESS_TYPE == type_) {
+    if (OB_FAIL(compress_close())) {
+      LOG_WDIAG("fail to close zlib", K(ret));
+    }
+  } else if (DECOMPRESS_TYPE == type_) {
+    if (OB_FAIL(decompress_close())) {
+      LOG_WDIAG("fail to close zlib", K(ret));
+    }
   }
 }
 
@@ -184,9 +191,9 @@ int ObZlibStreamCompressor::decompress(char *dest_start, const int64_t len, int6
     zlib_ret = ::inflate(&stream_, Z_NO_FLUSH);
     lib::glibc_hook_opt = lib::GHO_NOHOOK;
 
-    LOG_DEBUG("zlib decomress complete", K(zlib_ret));
+    LOG_DEBUG("zlib decompress complete", K(zlib_ret));
     if (Z_STREAM_END == zlib_ret) { // this means the total decompres is finished
-      LOG_DEBUG("zlib decomress stream end");
+      LOG_DEBUG("zlib decompress stream end");
       filled_len = len - stream_.avail_out;
       is_finished_ = true;
       has_closed = true;

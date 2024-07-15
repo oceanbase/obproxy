@@ -76,14 +76,28 @@ const static uint64_t MMAP_BLOCK_ALIGN = 1ULL << 21;
 inline void *mmap_aligned(uint64_t size, uint64_t align)
 {
   void *ret = NULL;
-  if (MAP_FAILED == (ret = mmap(NULL, size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1,
-                                0))) {
+  const int flags = MAP_PRIVATE | MAP_ANONYMOUS;
+  const int flags_hp = flags | MAP_HUGETLB;
+  bool hp_on = true;
+  if (MAP_FAILED == (ret = mmap(NULL, size, PROT_READ | PROT_WRITE, flags_hp, -1, 0))) {
+    hp_on = false;
+    ret = NULL;
+  }
+
+  if (!hp_on
+      && MAP_FAILED == (ret = mmap(NULL, size, PROT_READ | PROT_WRITE, flags, -1, 0))) {
     ret = NULL;
   } else if (is_aligned((uint64_t)ret, align)) {
   } else {
     munmap(ret, size);
-    if (MAP_FAILED == (ret = mmap(NULL, size + align, PROT_READ | PROT_WRITE,
-                                  MAP_PRIVATE | MAP_ANONYMOUS, -1, 0))) {
+    hp_on = true;
+    if (MAP_FAILED == (ret = mmap(NULL, size + align, PROT_READ | PROT_WRITE, flags_hp, -1, 0))) {
+      hp_on = false;
+      ret = NULL;
+    }
+
+    if (!hp_on
+        && MAP_FAILED == (ret = mmap(NULL, size, PROT_READ | PROT_WRITE, flags, -1, 0))) {
       ret = NULL;
     } else {
       uint64_t aligned_addr = up2align((uint64_t)ret, align);

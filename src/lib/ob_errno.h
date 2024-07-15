@@ -360,6 +360,11 @@ namespace common
   static const int OB_INVALID_MACRO_BLOCK_TYPE = -4668;
   static const int OB_CLUSTER_NOT_EXIST = -4669;
   static const int OB_STANDBY_WEAK_READ_ONLY = -4688;
+  static const int OB_LS_NOT_EXIST = -4719;
+  static const int OB_TABLET_EXIST = -4724;
+  static const int OB_TABLET_NOT_EXIST = -4725;
+  static const int OB_SERVICE_NAME_NOT_FOUND = -4780;
+  static const int OB_NOT_PRIMARY_TENANT = -4782;
   static const int OB_ERR_PARSER_INIT = -5000;
   static const int OB_ERR_PARSE_SQL = -5001;
   static const int OB_ERR_RESOLVE_SQL = -5002;
@@ -806,6 +811,7 @@ namespace common
   static const int OB_PROXY_RECONNECT_COORDINATOR = -10023;
   static const int OB_PROXY_INVALID_COORDINATOR = -10024;
   static const int OB_PROXY_PROXY_ID_OVER_LIMIT = -10025;
+  static const int OB_LOCK_SESSION_CLOSED_ERROR = -10026;
 
   // obproxy related error code
   static const int OB_PROXY_FETCH_RSLIST_FAIL = -10101;
@@ -815,12 +821,35 @@ namespace common
   // sharding related error code
   static const int OB_PROXY_SHARD_HINT_NOT_SUPPORTED = -10304;
   static const int OB_PROXY_SHARD_INVALID_CONFIG = -10305;
+  static const int OB_PROXY_SHARD_TXN_SESSION_CLOSE = -10306;
 
   // kv related error code
 
 
   // proxy client related error code
 
+////////////////////////////////////////////////////////////////
+//error code for OBKV [-10500, -10700)
+//error code for ODP-OBKV [-10650, -10700)
+////////////////////////////////////////////////////////////////
+  static const int OB_ERR_KV_GLOBAL_INDEX_ROUTE = -10500;
+  static const int OB_TTL_NOT_ENABLE = -10501;
+  static const int OB_TTL_COLUMN_NOT_EXIST = -10502;
+  static const int OB_TTL_COLUMN_TYPE_NOT_SUPPORTED = -10503;
+  static const int OB_TTL_CMD_NOT_ALLOWED = -10504;
+  static const int OB_TTL_NO_TASK_RUNNING = -10505;
+  static const int OB_TTL_TENANT_IS_RESTORE = -10506;
+  static const int OB_TTL_INVALID_HBASE_TTL = -10507;
+  static const int OB_TTL_INVALID_HBASE_MAXVERSIONS = -10508;
+  static const int OB_KV_CREDENTIAL_NOT_MATCH = -10509;
+  static const int OB_KV_ROWKEY_COUNT_NOT_MATCH = -10510;
+  static const int OB_KV_COLUMN_TYPE_NOT_MATCH = -10511;
+  static const int OB_KV_COLLATION_MISMATCH = -10512;
+  static const int OB_KV_SCAN_RANGE_MISSING = -10513;
+  static const int OB_KV_FILTER_PARSE_ERROR = -10514;
+  static const int OB_ERR_KV_ODP_TIMEOUT = -10650;
+  static const int OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST = -10651;
+  static const int OB_ERR_KV_ROWKEY_MISMATCH = -10652;
 
 #define OB_SUCCESS__USER_ERROR_MSG "Success"
 #define OB_ERROR__USER_ERROR_MSG "Common error"
@@ -1139,6 +1168,9 @@ namespace common
 #define OB_CHECK_ZONE_MERGE_ORDER__USER_ERROR_MSG "Please check new zone in zone_merge_order. You can show parameters like 'zone_merge_order'"
 #define OB_INVALID_MACRO_BLOCK_TYPE__USER_ERROR_MSG "the macro block type does not exist"
 #define OB_CLUSTER_NOT_EXIST__USER_ERROR_MSG "cluster \'%s\' not exist"
+#define OB_LS_NOT_EXIST__USER_ERROR_MSG "log stream does not exist"
+#define OB_TABLET_EXIST__USER_ERROR_MSG "unexpected tablet existence"
+#define OB_TABLET_NOT_EXIST__USER_ERROR_MSG "tablet does not exist"
 #define OB_ERR_PARSER_INIT__USER_ERROR_MSG "Failed to init SQL parser"
 #define OB_ERR_PARSE_SQL__USER_ERROR_MSG "%s near \'%.*s\' at line %d"
 #define OB_ERR_RESOLVE_SQL__USER_ERROR_MSG "Resolve error"
@@ -1541,6 +1573,7 @@ namespace common
 #define OB_PROXY_RECONNECT_COORDINATOR__USER_ERROR_MSG "OBProxy try to reconnect coordinator in transaction"
 #define OB_PROXY_INVALID_COORDINATOR__USER_ERROR_MSG "OBProxy transaction coordinator is invalid"
 #define OB_PROXY_PROXY_ID_OVER_LIMIT__USER_ERROR_MSG "When changing proxy_id or client_session_id_version and client_session_id_version is version 1, proxy_id must be set to less than 255"
+#define OB_LOCK_SESSION_CLOSED_ERROR__USER_ERROR_MSG "A server session with table lock closed"
 // obproxy related error code
 #define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
 #define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"
@@ -1549,11 +1582,35 @@ namespace common
 #define OB_PROXY_SHARD_HINT_NOT_SUPPORTED__USER_ERROR_MSG "ObProxy shard hint usage not supported"
 #define OB_PROXY_SHARD_INVALID_CONFIG__USER_ERROR_MSG "ObProxy shard config is invalid"
 
-// kv related error code
+// service name related error code
+#define OB_SERVICE_NAME_NOT_FOUND__USER_ERROR_MSG "Service name not exist"
+#define OB_NOT_PRIMARY_TENANT__USER_ERROR_MSG "Tenant isn't primary tenant"
 
+// kv related error code
 
 // proxy client related error code
 
+////////////////////////////////////////////////////////////////
+//error code for OBKV [-10500, -10700)
+////////////////////////////////////////////////////////////////
+#define OB_ERR_KV_GLOBAL_INDEX_ROUTE__USER_ERROR_MSG "Incorrect route for obkv global index"
+#define OB_TTL_NOT_ENABLE__USER_ERROR_MSG "TTL feature is not enabled"
+#define OB_TTL_COLUMN_NOT_EXIST__USER_ERROR_MSG "TTL column '%.*s' not exists"
+#define OB_TTL_COLUMN_TYPE_NOT_SUPPORTED__USER_ERROR_MSG "Column type of '%.*s' is not supported for TTL definition"
+#define OB_TTL_CMD_NOT_ALLOWED__USER_ERROR_MSG "TTL command is not allowed, current TTL status is '%s'"
+#define OB_TTL_NO_TASK_RUNNING__USER_ERROR_MSG "No TTL task is running, please try trigger a new TTL task"
+#define OB_TTL_TENANT_IS_RESTORE__USER_ERROR_MSG "Cannot execute TTL task during tenant is restore"
+#define OB_TTL_INVALID_HBASE_TTL__USER_ERROR_MSG "Time to live of hbase table must be greater than 0"
+#define OB_TTL_INVALID_HBASE_MAXVERSIONS__USER_ERROR_MSG "MaxVersions of hbase table must be greater than 0"
+#define OB_KV_CREDENTIAL_NOT_MATCH__USER_ERROR_MSG "Access denied, credential '%.*s' not match '%.*s'"
+#define OB_KV_ROWKEY_COUNT_NOT_MATCH__USER_ERROR_MSG "Rowkey column count not match, schema rowkey count is '%ld', input rowkey count is '%ld'"
+#define OB_KV_COLUMN_TYPE_NOT_MATCH__USER_ERROR_MSG "Column type for '%.*s' not match, schema column type is '%.*s', input column type is '%.*s'"
+#define OB_KV_COLLATION_MISMATCH__USER_ERROR_MSG "Collation type for '%.*s' not match, schema collation type is '%.*s', input collation type is '%.*s'"
+#define OB_KV_SCAN_RANGE_MISSING__USER_ERROR_MSG "Scan range missing, input scan range cell count is '%ld', which should equal to rowkey count '%ld'"
+#define OB_KV_FILTER_PARSE_ERROR__USER_ERROR_MSG "Filter parse errror, the input filter string is: '%.*s'"
+#define OB_ERR_KV_ODP_TIMEOUT__USER_ERROR_MSG "ODP-OBKV execution timeout"
+#define OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST__USER_ERROR_MSG "ODP-OBKV key partition prohibits shard requests"
+#define OB_ERR_KV_ROWKEY_MISMATCH__USER_ERROR_MSG "ODP-OBKV the partition key cannot be parsed from rowkey"
 
   const char* ob_strerror(int oberr);
   const char* ob_sqlstate(int oberr);

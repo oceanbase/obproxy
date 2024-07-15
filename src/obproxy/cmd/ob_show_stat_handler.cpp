@@ -56,18 +56,18 @@ int ObShowStatHandler::handle_show_stat(int event, void *data)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
   } else if (OB_FAIL(dump_stat_header())) {
-    WARN_ICMD("fail to dump_header", K(ret));
+    WDIAG_ICMD("fail to dump_header", K(ret));
   } else if (OBPROXY_T_SUB_STAT_REFRESH == sub_type_ && OB_FAIL(g_stat_processor.exec_raw_stat_sync_cbs())) {
-    WARN_ICMD("fail to update all stat records", K(ret), K(sub_type_));
+    WDIAG_ICMD("fail to update all stat records", K(ret), K(sub_type_));
   } else {
     const ObRecRecord *record = g_stat_processor.get_all_records_head();
     while (OB_SUCC(ret) && NULL != record) {
-      if (match_like(record->name_, like_name_)) {
+      if (common::match_like(record->name_, like_name_)) {
         DEBUG_ICMD("stat name matched", K_(like_name), K(record->name_), K(sub_type_));
         if (OB_FAIL(dump_stat_item(record))) {
-          WARN_ICMD("fail to dump stat item", K(ret), K(record));
+          WDIAG_ICMD("fail to dump stat item", K(ret), K(record));
         }
       }
       record = g_stat_processor.get_all_records_next(const_cast<ObRecRecord *>(record));
@@ -76,7 +76,7 @@ int ObShowStatHandler::handle_show_stat(int event, void *data)
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
-      WARN_ICMD("fail to encode eof packet", K(ret));
+      WDIAG_ICMD("fail to encode eof packet", K(ret));
     } else {
       INFO_ICMD("succ to dump stat", K_(like_name), K_(sub_type));
       event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
@@ -103,7 +103,7 @@ int ObShowStatHandler::dump_stat_item(const obproxy::ObRecRecord *record)
   row.cells_ = cells;
   row.count_ = OB_SC_MAX_STAT_COLUMN_ID;
   if (OB_FAIL(encode_row_packet(row))) {
-    WARN_ICMD("fail to encode row packet", K(row), K(ret));
+    WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
   }
   return ret;
 }
@@ -112,7 +112,7 @@ int ObShowStatHandler::dump_stat_header()
 {
   int ret = OB_SUCCESS;
   if (OB_FAIL(encode_header(STAT_COLUMN_ARRAY, OB_SC_MAX_STAT_COLUMN_ID))) {
-    WARN_ICMD("fail to encode header", K(ret));
+    WDIAG_ICMD("fail to encode header", K(ret));
   }
   return ret;
 }
@@ -130,7 +130,7 @@ const ObString ObShowStatHandler::get_persist_type_str(const ObRecPersistType ty
       break;
     }
     default: {
-      WARN_ICMD("it should not happened", K(type));
+      WDIAG_ICMD("it should not happened", K(type));
       break;
     }
   }
@@ -146,17 +146,17 @@ static int show_stat_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info,
 
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
-    WARN_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
+    WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
   } else if (OB_ISNULL(handler = new(std::nothrow) ObShowStatHandler(cont, buf, info))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    ERROR_ICMD("fail to new ObShowStatHandler", K(ret));
+    EDIAG_ICMD("fail to new ObShowStatHandler", K(ret));
   } else if (OB_FAIL(handler->init())) {
-    WARN_ICMD("fail to init for ObShowStatHandler");
+    WDIAG_ICMD("fail to init for ObShowStatHandler");
   } else {
     action = &handler->get_action();
     if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_TASK))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      ERROR_ICMD("fail to schedule ObShowStatHandler", K(ret));
+      EDIAG_ICMD("fail to schedule ObShowStatHandler", K(ret));
       action = NULL;
     } else {
       DEBUG_ICMD("succ to schedule ObShowStatHandler");
@@ -175,7 +175,7 @@ int show_stat_cmd_init()
   int ret = OB_SUCCESS;
   if (OB_FAIL(get_global_internal_cmd_processor().register_cmd(OBPROXY_T_ICMD_SHOW_STAT,
                                                                &show_stat_cmd_callback))) {
-    WARN_ICMD("fail to register CMD_TYPE_PROXYSTAT", K(ret));
+    WDIAG_ICMD("fail to register CMD_TYPE_PROXYSTAT", K(ret));
   }
   return ret;
 }

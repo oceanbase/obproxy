@@ -67,7 +67,7 @@ private:
   event::ObIOBufferReader *local_reader_;
   event::ObIOBufferReader *local_transfer_reader_;
   event::ObMIOBuffer *mio_buffer_;
-  uint8_t compressed_seq_;
+  uint8_t next_compressed_seq_;
   uint32_t request_id_;
 
   // transfer content of file used in load data local infile cmd

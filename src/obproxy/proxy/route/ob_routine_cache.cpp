@@ -316,6 +316,7 @@ int64_t ObRoutineCacheParam::to_string(char *buf, const int64_t buf_len) const
 int ObRoutineCache::init(const int64_t bucket_size)
 {
   int ret = OB_SUCCESS;
+  LOG_INFO("start init ObTableQueryAsyncCache");
   int64_t sub_bucket_size = bucket_size / MT_HASHTABLE_PARTITIONS;
   if (OB_UNLIKELY(is_inited_)) {
     ret = OB_INIT_TWICE;

@@ -25,6 +25,9 @@
 #define REFRESH_LDG_INFO_EVENT (SERVER_STATE_EVENT_EVENTS_START + 5)
 #define REFRESH_ALL_TENANT_EVENT (SERVER_STATE_EVENT_EVENTS_START + 6)
 #define DETECT_SERVER_STATE_EVENT (SERVER_STATE_EVENT_EVENTS_START + 7)
+#define REFRESH_TENANT_ROLE_EVENT (SERVER_STATE_EVENT_EVENTS_START + 8)
+#define REFRESH_SERVICE_NAME_INFO_EVENT (SERVER_STATE_EVENT_EVENTS_START + 9)
+#define REFRESH_SINGLE_LEADER_EVENT (SERVER_STATE_EVENT_EVENTS_START + 10)
 
 namespace oceanbase
 {
@@ -68,12 +71,14 @@ private:
   int main_handler(int event, void *data);
   int schedule_imm(const int event);
 
+  int refresh_single_leader();
   int refresh_cluster_role();
   int refresh_server_state();
   int refresh_zone_state();
   int refresh_ldg_info();
   int refresh_all_tenant();
 
+  int handle_single_leader(void *data);
   int handle_delete_cluster_resource(int64_t master_cluster_id);
   int handle_cluster_role(void *data);
   int handle_zone_state(void *data);
@@ -127,13 +132,13 @@ private:
   volatile int64_t set_interval_task_count_; // inc when set_interval and dec when EVENT_IMMEDIATE has been done
   int64_t cluster_id_;
   common::ObString cluster_name_; // shallow copy, actual data buffer is in ObClusterResource
-
   common::ObSEArray<ObZoneStateInfo, DEFAULT_ZONE_COUNT> cur_zones_state_;
   uint64_t last_zones_state_hash_;
   uint64_t last_servers_state_hash_;
   uint64_t last_server_list_hash_;
   common::ObSEArray<ObZoneStateInfo,  DEFAULT_ZONE_COUNT> last_zones_state_;
   common::ObSEArray<ObServerStateInfo, DEFAULT_SERVER_COUNT> last_servers_state_;
+  common::ObSEArray<int64_t, 4> tenant_id_array_;
 
   DISALLOW_COPY_AND_ASSIGN(ObServerStateRefreshCont);
 };
@@ -191,6 +196,54 @@ private:
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObDetectServerStateCont);
+};
+
+/* 此类有两种用途：
+    1. observer错误码触发重试时，会注册类刷新role; 
+    2. 从ocp获取service name时，会获取与之关联的所有cluster resource
+*/
+class ObServiceNameRoleRefreshCont: public event::ObContinuation
+{
+public:
+  ObServiceNameRoleRefreshCont(bool is_get_cr = false)
+    : service_name_instance_(),  mysql_proxy_(NULL), pending_action_(NULL),
+      cr_(NULL), tenant_name_(), service_name_index_(0), next_job_event_(0),
+      is_inited_(false), kill_this_(false), found_primary_(false), is_get_cr_event_(is_get_cr),
+      fail_get_cr_event_(false), is_refresh_service_name_info_(false)
+  {
+    SET_HANDLER(&ObServiceNameRoleRefreshCont::main_handler);
+  }
+  virtual ~ObServiceNameRoleRefreshCont() {}
+  int init(ObServiceNameInstance *service_name_instance);
+  int main_handler(int event, void *data);
+  int refresh_tenant_role();
+  int process_cluster_resource(void *data);
+  int request_tenant_role();
+  int handle_tenant_role(void *data);
+  int schedule_imm(const int event);
+  bool set_update_state();
+  void kill_this();
+  int check_need_kill_this(bool &need_destory);
+
+public:
+  ObServiceNameInstance* service_name_instance_;
+  proxy::ObMysqlProxy *mysql_proxy_;
+  event::ObAction *pending_action_;
+  ObClusterResource *cr_;
+  ObString tenant_name_;
+  // 每轮tenant完成后，或者本轮失败时，进入下一轮
+  int64_t service_name_index_;
+  int next_job_event_;
+  bool is_inited_;
+  // 全部tenant重试后/找到primary，或者schedule_imm()注册失败，为true
+  bool kill_this_;
+  bool found_primary_;
+  bool is_get_cr_event_;
+  // 当获取集群资源失败时，将service name置为重新需要获取cr
+  bool fail_get_cr_event_;
+  bool is_refresh_service_name_info_;
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObServiceNameRoleRefreshCont);
 };
 
 } // end of namespace obutils

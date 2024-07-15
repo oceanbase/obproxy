@@ -12,7 +12,7 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysqllib/ob_mysql_packet_rewriter.h"
-#include "proxy/mysqllib/ob_mysql_response.h"
+#include "proxy/mysqllib/ob_resp_analyze_result.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
 #include "proxy/mysqllib/ob_session_field_mgr.h"
 #include "proxy/mysqllib/ob_proxy_session_info.h"
@@ -34,7 +34,8 @@ int64_t ObHandshakeResponseParam::to_string(char *buf, const int64_t buf_len) co
   J_OBJ_START();
   J_KV(K_(is_saved_login), K_(cluster_name), K_(proxy_scramble),
        K_(conn_id_buf), K_(proxy_conn_id_buf), K_(global_vars_version_buf),
-       K_(cap_buf), K_(proxy_version_buf), K_(client_ip_buf));
+       K_(cap_buf), K_(proxy_version_buf), K_(client_ip_buf),
+       K_(proxy_idc_name), K_(proxy_service_name), K_(proxy_failover_mode));
   J_OBJ_END();
   return pos;
 }
@@ -182,44 +183,42 @@ int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
   
   des_ok.set_affected_rows(src_ok.get_affected_rows());
   des_ok.set_last_insert_id(src_ok.get_last_insert_id());
-  des_ok.set_server_status(src_ok.get_server_status());
   des_ok.set_warnings(src_ok.get_warnings());
   des_ok.set_seq(src_ok.get_seq());
   des_ok.set_message(src_ok.get_message());
-  ObMySQLCapabilityFlags tmp_flags = des_cap;
-//  tmp_flags.cap_flags_.OB_CLIENT_SESSION_TRACK = 0;
-//  tmp_flags.cap_flags_.OB_CLIENT_DEPRECATE_EOF = 0;
-
-  if (client_info.is_oracle_mode()) {
-    des_ok.set_state_changed(true);
-//    tmp_flags.cap_flags_.OB_CLIENT_SESSION_TRACK = 1;
-    const common::ObIArray<ObStringKV> &system_vars = src_ok.get_system_vars();
-    for (int64_t i = 0; i < system_vars.count() && OB_SUCC(ret); ++i) {
-      if (ObSessionFieldMgr::is_nls_date_timestamp_format_variable(system_vars.at(i).key_)) {
-        if (OB_FAIL(des_ok.add_system_var(system_vars.at(i)))) {
-          LOG_WDIAG("fail to add system var", K(ret), "key:", system_vars.at(i).key_);
+  des_ok.set_server_status(src_ok.get_server_status());
+  des_ok.set_capability(des_cap);
+  if (!des_cap.cap_flags_.OB_CLIENT_SESSION_TRACK) {
+    des_ok.set_state_changed(false);
+  } else {
+    if (client_info.is_oracle_mode()) {
+      des_ok.set_state_changed(true);
+      const common::ObIArray<ObStringKV> &system_vars = src_ok.get_system_vars();
+      for (int64_t i = 0; i < system_vars.count() && OB_SUCC(ret); ++i) {
+        if (ObSessionFieldMgr::is_nls_date_timestamp_format_variable(system_vars.at(i).key_)) {
+          if (OB_FAIL(des_ok.add_system_var(system_vars.at(i)))) {
+            LOG_WDIAG("fail to add system var", K(ret), "key:", system_vars.at(i).key_);
+          }
         }
       }
     }
-  }
 
-  des_ok.set_capability(tmp_flags);
-  // cap.OB_CLIENT_SESSION_TRACK is already set in orig_cap
-  if (OB_SUCC(ret) && client_info.is_client_support_ob20_protocol() && is_auth_request) {
-    des_ok.set_state_changed(true);
-    uint64_t cap = client_info.get_client_ob_capability();
-    int64_t pos = 0;
-    
-    if (OB_FAIL(databuff_printf(cap_buf, cap_buf_len, pos, "%lu", cap))) {
-      LOG_WDIAG("fail to databuff printf", K(ret), K(pos));
-    } else {
-      ObStringKV str_kv;
-      str_kv.key_.assign_ptr(sql::OB_SV_CAPABILITY_FLAG, static_cast<int32_t>(STRLEN(sql::OB_SV_CAPABILITY_FLAG)));
-      str_kv.value_.assign_ptr(cap_buf, static_cast<int32_t>(STRLEN(cap_buf)));
-      if (OB_FAIL(des_ok.add_system_var(str_kv))) {
-        LOG_WDIAG("fail to add system var while rewrite ok packet", K(ret));
+    if (OB_SUCC(ret) && client_info.is_client_support_ob20_protocol() && is_auth_request) {
+      des_ok.set_state_changed(true);
+      uint64_t cap = client_info.get_client_ob_capability();
+      int64_t pos = 0;
+
+      if (OB_FAIL(databuff_printf(cap_buf, cap_buf_len, pos, "%lu", cap))) {
+        LOG_WDIAG("fail to databuff printf", K(ret), K(pos));
       } else {
-        LOG_DEBUG("succ to add system var in ok packet back to client", K(str_kv), K(cap));
+        ObStringKV str_kv;
+        str_kv.key_.assign_ptr(sql::OB_SV_CAPABILITY_FLAG, static_cast<int32_t>(STRLEN(sql::OB_SV_CAPABILITY_FLAG)));
+        str_kv.value_.assign_ptr(cap_buf, static_cast<int32_t>(STRLEN(cap_buf)));
+        if (OB_FAIL(des_ok.add_system_var(str_kv))) {
+          LOG_WDIAG("fail to add system var while rewrite ok packet", K(ret));
+        } else {
+          LOG_DEBUG("succ to add system var in ok packet back to client", K(str_kv), K(cap));
+        }
       }
     }
   }
@@ -338,6 +337,14 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
     LOG_WDIAG("fail to add connected time", K(param.cs_id_buf_), K(ret));
   } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_CONNECT_TIME, param.connected_time_buf_, tg_hsr))) {
     LOG_WDIAG("fail to add connected time", K(param.connected_time_buf_), K(ret));
+  } else if (!param.proxy_idc_name_.empty() && OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_IDC_NAME, param.proxy_idc_name_, tg_hsr))) {
+    LOG_WDIAG("fail to add proxy idc name", K(param.proxy_idc_name_), K(ret));
+  } else if (!param.proxy_service_name_.empty()
+             && OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_SERVICE_NAME, param.proxy_service_name_, tg_hsr))) {
+    LOG_WDIAG("fail to add proxy service name", K(param.proxy_service_name_), K(ret));
+  } else if (!param.proxy_failover_mode_.empty()
+             && OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_FAILOVER_MODE, param.proxy_failover_mode_, tg_hsr))) {
+    LOG_WDIAG("fail to add proxy failover mode", K(param.proxy_failover_mode_), K(ret));
   } else { /* succ */ }
 
 

@@ -15,6 +15,8 @@
 
 #include "lib/ob_define.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
+#include "proxy/mysqllib/ob_resp_analyzer_util.h"
+#include "proxy/mysqllib/ob_compressed_header_param.h"
 
 namespace oceanbase
 {
@@ -28,46 +30,6 @@ class ObMIOBuffer;
 }
 namespace proxy
 {
-class ObProtocolDiagnosis;
-class ObMysqlCompressedAnalyzeResult;
-class ObCmpHeaderParam
-{
-public:
-  ObCmpHeaderParam() :
-    compressed_seq_(0),
-    is_checksum_on_(false),
-    compression_level_(0),
-    protocol_diagnosis_(NULL) {}
-
-  ObCmpHeaderParam(
-    uint8_t compressed_seq,
-    bool is_checksum_on,
-    int64_t compression_level)
-    : compressed_seq_(compressed_seq),
-      is_checksum_on_(is_checksum_on),
-      compression_level_(compression_level),
-      protocol_diagnosis_(NULL){}
-
-  ~ObCmpHeaderParam();
-  ObCmpHeaderParam(const ObCmpHeaderParam &param);
-  ObCmpHeaderParam &operator=(const ObCmpHeaderParam &param);
-  inline uint8_t &get_compressed_seq() { return compressed_seq_; }
-  inline const bool is_checksum_on() { return is_checksum_on_; }
-  inline const int64_t get_compression_level() { return compression_level_; }
-
-  ObProtocolDiagnosis *&get_protocol_diagnosis_ref();
-  ObProtocolDiagnosis *get_protocol_diagnosis();
-  const ObProtocolDiagnosis *get_protocol_diagnosis() const;
-
-  TO_STRING_KV(K_(compressed_seq), K_(is_checksum_on), K_(compression_level), KP_(protocol_diagnosis));
-
-private:
-  uint8_t compressed_seq_;
-  bool is_checksum_on_;
-  int64_t compression_level_;
-  ObProtocolDiagnosis *protocol_diagnosis_;
-};
-
 class ObMysqlAnalyzerUtils
 {
 public:
@@ -75,7 +37,7 @@ public:
   // if completed, return ANALYZE_DONE
   // if not,       return ANALYZE_CONT
   static int analyze_one_compressed_packet(event::ObIOBufferReader &reader,
-                                           ObMysqlCompressedAnalyzeResult &result);
+                                           ObAnalyzeHeaderResult &result);
 
   static int analyze_compressed_packet_header(const char *start, const int64_t len,
                                               ObMysqlCompressedPacketHeader &header);
@@ -93,7 +55,7 @@ public:
   static int consume_and_normal_compress_data(event::ObIOBufferReader *reader,
                                               event::ObMIOBuffer *write_buf,
                                               const int64_t data_len,
-                                              ObCmpHeaderParam &param);
+                                              ObCompressedHeaderParam &param);
 
   // @reader, contain the standard mysql data;
   // @data_len, the len of standard mysql data to be compressed
@@ -102,12 +64,12 @@ public:
   static int consume_and_fast_compress_data(event::ObIOBufferReader *reader,
                                             event::ObMIOBuffer *write_buf,
                                             const int64_t data_len,
-                                            ObCmpHeaderParam &param);
+                                            ObCompressedHeaderParam &param);
 
   static int consume_and_compress_data(event::ObIOBufferReader *reader,
                                        event::ObMIOBuffer *write_buf,
                                        const int64_t data_len,
-                                       ObCmpHeaderParam &param);
+                                       ObCompressedHeaderParam &param);
 
   static int stream_compress_data(ObZlibStreamCompressor &compressor,
                                   event::ObMIOBuffer *write_buf, const char *buf,

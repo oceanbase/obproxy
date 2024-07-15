@@ -329,6 +329,11 @@ enum ObRoutePolicyEnum
                             //ANT, BNT, AMT, BMT;
                             //CNT, CMT
 
+  PROXY_PRIMARY_ZONE_NAME_ONLY,  // z11,z12,...;z21,z22,..;...
+
+  TARGET_DB_SERVER_ONLY,
+  PRIMARY_ZONE_FIRST,
+
   MAX_ROUTE_POLICY_COUNT,
 };
 common::ObString get_route_policy_enum_string(const ObRoutePolicyEnum policy);
@@ -356,6 +361,9 @@ common::ObString get_route_policy_enum_string(const ObRoutePolicyEnum policy)
       common::ObString::make_string("DUP_REPLICA_FIRST"),
       common::ObString::make_string("FOLLOWER_ONLY"),
       common::ObString::make_string("FOLLOWER_ONLY_OPTIMIZED"),
+      common::ObString::make_string("PROXY_PRIMARY_ZONE_NAME_ONLY"),
+      common::ObString::make_string("TARGET_DB_SERVER_ONLY"),
+      common::ObString::make_string("PRIMARY_ZONE_FIRST"),
   };
 
   common::ObString string;
